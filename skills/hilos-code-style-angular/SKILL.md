@@ -1,6 +1,6 @@
 ---
 name: hilos-code-style-angular
-description: "Apply Hilos code style to Angular components — the shared TypeScript rules plus the Angular specifics: a static hyphenated attribute such as `data-id` belongs in the template, never on the component `host`. Use when writing, reviewing, or refactoring a `.component.ts` or `.component.html` file under `framework/frontend/angular/**` or `demo/*/frontend/angular/**`."
+description: "Apply Hilos Angular component style — shared TypeScript rules, native select/option value and selected bindings, and template-owned static data-id attributes. Use when writing, reviewing, or refactoring Angular `.ts` or `.html` components under `framework/frontend/angular/**` or an Angular demo’s `demo/*/frontend/src/**`, especially a native select or option."
 ---
 
 # Hilos Code Style — Angular
@@ -19,9 +19,13 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
 |---|---|
 | `$hilos-code-style-typescript` | always, first — the shared TypeScript rules the component class obeys |
 | `docs/agents/code-style/warnings-and-ide.md` | placing `data-id` or another static attribute, silencing an `ng` / `eslint` / IDE warning, or writing a TSDoc block |
+| `docs/agents/code-style/angular-select-options.md` | writing a native select or option — option-owned selection, late options and empty choices |
 
 ## Hard Rules
 
+- A native select leaves value unbound; every option with `[value]` also has
+  `[selected]` (equivalently `bind-value` / `bind-selected`). A controlled empty
+  option has its own selected predicate (`angular-select-options.md`).
 - A static hyphenated attribute such as `data-id` goes in the **template** on a
   real element, never on the component `host`; keep `host` to `class` plus
   dynamic `[...]` / `(...)` bindings (`warnings-and-ide.md`).

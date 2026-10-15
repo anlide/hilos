@@ -252,7 +252,7 @@ test.describe('daemon overview', () => {
 
     await page.getByTestId('hilos-daemon-node-log').click()
     await expectDaemonPage(page, 'hilos_logs_view')
-    await expect(page.getByTestId('hilos-log-source')).toBeVisible()
+    await expect(page.getByTestId('hilos-log-source')).toHaveValue('live')
     const streams = page.getByTestId('hilos-log-stream')
     // Nonempty catalog options prove the selected node's live viewer is ready.
     // Its existing policy leaves the stream for the operator to choose.

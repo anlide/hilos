@@ -1,0 +1,11 @@
+<select bind-value="choice > 0 ? choice : 0">
+  @if (ready) {
+  <option
+    data-id="multiline-option-with-a-static-selected-attribute"
+    [value]="choice"
+    selected
+  >
+    Choice
+  </option>
+  }
+</select>

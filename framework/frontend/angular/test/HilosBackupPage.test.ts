@@ -10,6 +10,7 @@
 // the fact that a frame is read by running change detection rather than by
 // awaiting a tick.
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
+import { By } from '@angular/platform-browser'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionError,
@@ -471,8 +472,13 @@ describe('HilosBackupPage in the admin view mode', () => {
     const scopeSelect = byId<HTMLSelectElement>('hilos-backup-create-scope')
     expect(scopeSelect).not.toBeNull()
     expect(scopeSelect?.disabled).toBe(false)
-    enter(fixture, scopeSelect, 'schema-only', 'change')
+    expect(scopeSelect?.value).toBe('full')
+    fixture.debugElement
+      .query(By.css('[data-id="hilos-backup-create-scope"]'))
+      .triggerEventHandler('change', { target: { value: 'schema-only' } })
+    fixture.detectChanges()
     expect(scopeSelect?.value).toBe('schema-only')
+    expect(scopeSelect?.selectedOptions[0]?.value).toBe('schema-only')
 
     const createConfirm = byId<HTMLButtonElement>('hilos-backup-create-confirm')
     expect(createConfirm).not.toBeNull()
@@ -491,6 +497,11 @@ describe('HilosBackupPage in the admin view mode', () => {
     click(fixture, cancelButton)
     await settled(fixture)
     expect(byId('hilos-backup-create-scope')).toBeNull()
+    click(fixture, mainActionButton)
+    await settled(fixture)
+    const reopened = byId<HTMLSelectElement>('hilos-backup-create-scope')
+    expect(reopened?.value).toBe('full')
+    expect(reopened?.selectedOptions[0]?.value).toBe('full')
   })
 
   it('a viewer opens the delete dialog over a row and has nothing to delete with', async () => {

@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url'
 
 import { expect, it } from 'vitest'
 
+import { checkRepository as checkAngularSelectOption } from './angularSelectOption.js'
 import {
   Baseline,
   BASELINE_PATH,
@@ -51,6 +52,7 @@ const REPOSITORY_ROOT = join(
  * no registration of the id is needed beside the checker's own.
  */
 const RULES = [
+  checkAngularSelectOption,
   checkBrowserValueDeclared,
   checkDisabledTitle,
   checkE2eBoxMeasure,

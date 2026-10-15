@@ -1,0 +1,18 @@
+<select (change)="change($event)">
+  <option value="" [selected]="choice === ''">Choose</option>
+  @for (item of items; track item) {
+  <option [value]="item" [selected]="item === choice">{{ item }}</option>
+  <option bind-value="item" bind-selected="item === choice">{{ item }}</option>
+  <option [value]="item" bind-selected="item === choice">{{ item }}</option>
+  <option bind-value="item" [selected]="item === choice">{{ item }}</option>
+  }
+</select>
+@if (empty) {
+<select>
+  <option value="" selected>Empty</option>
+</select>
+}
+<input [value]="choice" />
+<custom-select [value]="choice" />
+<custom-option bind-value="choice" />
+<!-- <select [value]="bad"><option [value]="bad">Comment</option></select> -->

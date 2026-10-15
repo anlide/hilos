@@ -23,6 +23,14 @@ export interface TemplateAttribute {
   line: number
 }
 
+/** One opening tag, with the same attributes the older flat readers expose. */
+export interface TemplateTag {
+  name: string
+  attributes: TemplateAttribute[]
+  /** One-based line of the opening `<`. */
+  line: number
+}
+
 /** What may open a tag: a name starts with a letter, so `</` and `<!` are not tags. */
 const TAG_NAME_START = /[a-zA-Z]/
 
@@ -67,6 +75,16 @@ export function templateAttributes(markup: string): TemplateAttribute[] {
  *   source order
  */
 export function templateElements(markup: string): TemplateAttribute[][] {
+  return templateTags(markup).map((tag) => tag.attributes)
+}
+
+/**
+ * Reads opening tag names alongside their attributes without interpreting expressions.
+ *
+ * @param markup Template text
+ * @returns Tags in source order, with names as written and one-based lines
+ */
+export function templateTags(markup: string): TemplateTag[] {
   const text = withoutComments(markup)
   const starts = lineStarts(text)
 
@@ -83,7 +101,7 @@ export function templateElements(markup: string): TemplateAttribute[][] {
       match = ATTRIBUTE.exec(body.text)
     }
 
-    return attributes
+    return { name: body.name, attributes, line: lineAt(starts, body.tagStart) }
   })
 }
 
@@ -102,8 +120,15 @@ function withoutComments(markup: string): string {
  * @param text Template text with its comments already blanked
  * @returns One entry per opening tag: the run of attributes and where it begins
  */
-function tagBodies(text: string): { text: string; start: number }[] {
-  const bodies: { text: string; start: number }[] = []
+function tagBodies(
+  text: string,
+): { name: string; text: string; start: number; tagStart: number }[] {
+  const bodies: {
+    name: string
+    text: string
+    start: number
+    tagStart: number
+  }[] = []
 
   let index = 0
   while (index < text.length) {
@@ -118,6 +143,7 @@ function tagBodies(text: string): { text: string; start: number }[] {
     }
 
     const start = cursor
+    const name = text.slice(index + 1, cursor)
     let quote: string | null = null
     while (cursor < text.length) {
       const character = text[cursor]
@@ -133,7 +159,12 @@ function tagBodies(text: string): { text: string; start: number }[] {
       cursor += 1
     }
 
-    bodies.push({ text: text.slice(start, cursor), start })
+    bodies.push({
+      name,
+      text: text.slice(start, cursor),
+      start,
+      tagStart: index,
+    })
     index = cursor + 1
   }
 

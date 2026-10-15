@@ -259,6 +259,29 @@ function openModal(
 }
 
 describe('HilosSecurity2faPage setting modal', () => {
+  it('renders a nondefault required choice, follows its live update and reopens on it', () => {
+    const { context, pushUpdate } = seededContext()
+    const fixture = openModal(context, REQUIRED)
+    const select = () => valueInput(fixture) as HTMLSelectElement
+    expect(select().value).toBe('admins')
+    expect(select().selectedOptions[0]?.value).toBe('admins')
+    pushUpdate(REQUIRED, 'everyone')
+    fixture.detectChanges()
+    expect(select().value).toBe('everyone')
+    expect(select().selectedOptions[0]?.value).toBe('everyone')
+    el(fixture, 'modal-close')?.click()
+    fixture.detectChanges()
+    expect(el(fixture, 'modal')).toBeNull()
+    ;(fixture.nativeElement as HTMLElement)
+      .querySelector<HTMLElement>(
+        `table [data-id="hilos-2fa-edit-${REQUIRED}"]`,
+      )
+      ?.click()
+    fixture.detectChanges()
+    expect(select().value).toBe('everyone')
+    expect(saveButton(fixture).disabled).toBe(true)
+  })
+
   it('opens on the live value with save locked, the message line empty, and the row in focus', () => {
     const { context, focus } = seededContext()
     const fixture = openModal(context, TRUST_DAYS)

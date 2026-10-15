@@ -127,7 +127,6 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
                   class="form-select"
                   data-id="hilos-2fa-input"
                   data-autofocus
-                  [value]="editValue()"
                   (change)="onValueInput($event)"
                 >
                   @for (value of requiredValues; track value) {

@@ -1,4 +1,5 @@
-import { TestBed } from '@angular/core/testing'
+import { TestBed, type ComponentFixture } from '@angular/core/testing'
+import { By } from '@angular/platform-browser'
 import {
   ActionLifecycle,
   HIDDEN_VALUE,
@@ -10,6 +11,7 @@ import {
   bindSessionScope,
   createSignal,
   type HilosConnection,
+  type HilosLogViewerCatalog,
   type HilosRouter,
   type PageRouteMatch,
   type ProjectSignal,
@@ -25,14 +27,15 @@ afterEach(() => {
   for (const release of releases.splice(0)) release()
 })
 
-/** The address of the live file the fixture opens. */
-function router(): HilosRouter {
-  return {
-    currentRoute: createSignal<PageRouteMatch>({
-      page: HilosPages.LOGS_VIEW,
-      params: { nodeId: '-', source: 'live', stream: 'worker-0.log' },
-      admin: true,
-    }),
+/** The address can change while this same page remains mounted. */
+function router(params: PageRouteMatch['params']) {
+  const currentRoute = createSignal<PageRouteMatch>({
+    page: HilosPages.LOGS_VIEW,
+    params,
+    admin: true,
+  })
+  const address = {
+    currentRoute,
     currentPath: createSignal(''),
     currentTitle: createSignal(''),
     pageError: createSignal(null),
@@ -49,10 +52,11 @@ function router(): HilosRouter {
     start: () => {},
     stop: () => {},
   } as unknown as HilosRouter
+  return { address, currentRoute }
 }
 
 /** A live file catalog, with the no-name node of a single-node installation. */
-const CATALOG = {
+const CATALOG: HilosLogViewerCatalog = {
   available: true,
   clusterEnabled: false,
   nodes: [
@@ -97,7 +101,7 @@ function bindViewerSession(): void {
 /** A socket that can answer the first follow with one hidden entry. */
 function makeConnection(): {
   connection: HilosConnection
-  pushCatalog: () => void
+  pushCatalog: (catalog?: HilosLogViewerCatalog) => void
   answerFollow: () => void
 } {
   const listeners: Record<string, ((signal: unknown) => void)[]> = {}
@@ -116,11 +120,15 @@ function makeConnection(): {
     },
   } as unknown as HilosConnection
 
+  releases.push(() => {
+    for (const listener of listeners['state'] ?? []) listener('disconnected')
+  })
+
   return {
     connection,
-    pushCatalog(): void {
+    pushCatalog(catalog = CATALOG): void {
       for (const listener of listeners['projectSignal'] ?? []) {
-        listener({ type: LOG_VIEWER_CATALOG_SIGNAL, data: CATALOG })
+        listener({ type: LOG_VIEWER_CATALOG_SIGNAL, data: catalog })
       }
     },
     answerFollow(): void {
@@ -159,23 +167,85 @@ function makeConnection(): {
   }
 }
 
+/** Two nodes and two files: each nonfirst choice must survive a late catalog. */
+const BATCH = 1_786_000_000
+const CLUSTER_CATALOG: HilosLogViewerCatalog = {
+  available: true,
+  clusterEnabled: true,
+  nodes: ['alpha', 'beta'].map((nodeId) => ({
+    nodeId,
+    available: true,
+    batches: [BATCH, BATCH + 60],
+    streams: ['daemon.log', 'worker-0.log'].map((key) => ({
+      key,
+      class: 'worker',
+      live: true,
+      batchTimestamps: [BATCH, BATCH + 60],
+    })),
+  })),
+}
+
+/** Mount without a catalog, so the first render precedes its options. */
+function mountPage(params: PageRouteMatch['params']) {
+  const { address, currentRoute } = router(params)
+  const socket = makeConnection()
+  const actions = new ActionLifecycle(
+    socket.connection as unknown as ConstructorParameters<
+      typeof ActionLifecycle
+    >[0],
+  )
+  TestBed.configureTestingModule({
+    providers: [{ provide: HILOS_ROUTER, useValue: address }],
+  })
+  const fixture = TestBed.createComponent(HilosLogsViewPage)
+  fixture.componentRef.setInput('context', {
+    connection: socket.connection,
+    actions,
+  })
+  fixture.detectChanges()
+
+  return { ...socket, fixture, currentRoute }
+}
+
+/** Assert the browser's choice, including the single selected option. */
+function selected(
+  fixture: ComponentFixture<HilosLogsViewPage>,
+  id: string,
+  value: string,
+): HTMLSelectElement {
+  const control = (
+    fixture.nativeElement as HTMLElement
+  ).querySelector<HTMLSelectElement>(`[data-id="${id}"]`)
+  expect(control).not.toBeNull()
+  expect(control!.value).toBe(value)
+  expect([...control!.selectedOptions].map((option) => option.value)).toEqual([
+    value,
+  ])
+  return control!
+}
+
+/** Feed the ordinary change handler without assigning the DOM value under test. */
+async function change(
+  fixture: ComponentFixture<HilosLogsViewPage>,
+  id: string,
+  value: string,
+): Promise<void> {
+  fixture.debugElement
+    .query(By.css(`[data-id="${id}"]`))
+    .triggerEventHandler('change', { target: { value } })
+  fixture.detectChanges()
+  await fixture.whenStable()
+  fixture.detectChanges()
+}
+
 describe('HilosLogsViewPage', () => {
   it('shows a hidden entry with its time and level and leaves following available', async () => {
     bindViewerSession()
-    const { connection, pushCatalog, answerFollow } = makeConnection()
-    TestBed.configureTestingModule({
-      providers: [{ provide: HILOS_ROUTER, useValue: router() }],
+    const { fixture, pushCatalog, answerFollow } = mountPage({
+      nodeId: '-',
+      source: 'live',
+      stream: 'worker-0.log',
     })
-    const fixture = TestBed.createComponent(HilosLogsViewPage)
-    fixture.componentRef.setInput('context', {
-      connection,
-      actions: new ActionLifecycle(
-        connection as unknown as ConstructorParameters<
-          typeof ActionLifecycle
-        >[0],
-      ),
-    })
-    fixture.detectChanges()
     pushCatalog()
     fixture.detectChanges()
     answerFollow()
@@ -202,5 +272,134 @@ describe('HilosLogsViewPage', () => {
         .querySelector('[data-id="hilos-log-follow"]')
         ?.hasAttribute('disabled'),
     ).toBe(false)
+  })
+})
+
+describe('HilosLogsViewPage native selections', () => {
+  it.each<{
+    name: string
+    params: PageRouteMatch['params']
+    id: string
+    value: string
+  }>([
+    {
+      name: 'live source',
+      params: { nodeId: 'beta', source: 'live' },
+      id: 'hilos-log-source',
+      value: 'live',
+    },
+    {
+      name: 'numeric archive source',
+      params: { nodeId: 'beta', source: String(BATCH) },
+      id: 'hilos-log-source',
+      value: String(BATCH),
+    },
+    {
+      name: 'explicit nonfirst stream',
+      params: { nodeId: 'beta', source: 'live', stream: 'worker-0.log' },
+      id: 'hilos-log-stream',
+      value: 'worker-0.log',
+    },
+    {
+      name: 'second node',
+      params: { nodeId: 'beta', source: 'live' },
+      id: 'hilos-log-node',
+      value: 'beta',
+    },
+  ])(
+    'renders the $name from a direct address after the catalog arrives',
+    async ({ params, id, value }) => {
+      const h = mountPage(params)
+      h.pushCatalog(CLUSTER_CATALOG)
+      await h.fixture.whenStable()
+      h.fixture.detectChanges()
+      selected(h.fixture, id, value)
+    },
+  )
+
+  it('selects late options and keeps their keys when the catalog is replaced', async () => {
+    const h = mountPage({
+      nodeId: 'beta',
+      source: String(BATCH),
+      stream: 'worker-0.log',
+    })
+    h.pushCatalog({ ...CLUSTER_CATALOG, nodes: [] })
+    await h.fixture.whenStable()
+    h.fixture.detectChanges()
+    h.pushCatalog(CLUSTER_CATALOG)
+    await h.fixture.whenStable()
+    h.fixture.detectChanges()
+    selected(h.fixture, 'hilos-log-node', 'beta')
+    selected(h.fixture, 'hilos-log-source', String(BATCH))
+    selected(h.fixture, 'hilos-log-stream', 'worker-0.log')
+
+    h.pushCatalog({
+      ...CLUSTER_CATALOG,
+      nodes: CLUSTER_CATALOG.nodes.map((node) => ({
+        ...node,
+        batches: [...node.batches, BATCH + 120],
+        streams: [
+          {
+            key: 'new.log',
+            class: 'worker',
+            live: true,
+            batchTimestamps: [BATCH],
+          },
+          ...node.streams,
+        ],
+      })),
+    })
+    await h.fixture.whenStable()
+    h.fixture.detectChanges()
+    selected(h.fixture, 'hilos-log-node', 'beta')
+    selected(h.fixture, 'hilos-log-source', String(BATCH))
+    selected(h.fixture, 'hilos-log-stream', 'worker-0.log')
+  })
+
+  it('leaves an unchosen node and stream on their prompts', async () => {
+    const h = mountPage({})
+    h.pushCatalog(CLUSTER_CATALOG)
+    await h.fixture.whenStable()
+    h.fixture.detectChanges()
+    expect(
+      selected(h.fixture, 'hilos-log-node', '').selectedOptions[0]?.disabled,
+    ).toBe(true)
+    expect(
+      selected(h.fixture, 'hilos-log-stream', '').selectedOptions[0]
+        ?.textContent,
+    ).toContain('Choose a stream')
+
+    await change(h.fixture, 'hilos-log-node', 'beta')
+    selected(h.fixture, 'hilos-log-node', 'beta')
+    selected(h.fixture, 'hilos-log-source', 'live')
+    selected(h.fixture, 'hilos-log-stream', '')
+  })
+
+  it('renders changes of node, source, stream and level, then follows another address', async () => {
+    const h = mountPage({ nodeId: 'alpha', source: 'live' })
+    h.pushCatalog(CLUSTER_CATALOG)
+    await h.fixture.whenStable()
+    h.fixture.detectChanges()
+    await change(h.fixture, 'hilos-log-node', 'beta')
+    await change(h.fixture, 'hilos-log-source', String(BATCH))
+    await change(h.fixture, 'hilos-log-stream', 'worker-0.log')
+    await change(h.fixture, 'hilos-log-level', 'ERROR')
+    selected(h.fixture, 'hilos-log-node', 'beta')
+    selected(h.fixture, 'hilos-log-source', String(BATCH))
+    selected(h.fixture, 'hilos-log-stream', 'worker-0.log')
+    selected(h.fixture, 'hilos-log-level', 'ERROR')
+
+    h.currentRoute.set({
+      page: HilosPages.LOGS_VIEW,
+      admin: true,
+      params: { nodeId: 'alpha', source: 'live', stream: 'daemon.log' },
+    })
+    await h.fixture.whenStable()
+    h.fixture.detectChanges()
+    selected(h.fixture, 'hilos-log-node', 'alpha')
+    selected(h.fixture, 'hilos-log-source', 'live')
+    selected(h.fixture, 'hilos-log-stream', 'daemon.log')
+    await change(h.fixture, 'hilos-log-stream', '')
+    selected(h.fixture, 'hilos-log-stream', '')
   })
 })

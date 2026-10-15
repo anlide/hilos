@@ -175,7 +175,6 @@ let inputSequence = 0
                 class="form-select"
                 data-id="legal-setting-input"
                 data-autofocus
-                [value]="value()"
                 (change)="setValue($event)"
                 [disabled]="action.busy()"
               >

@@ -90,6 +90,28 @@ function harness() {
 
 afterEach(() => TestBed.resetTestingModule())
 describe('legal setting Angular modal', () => {
+  it('opens and reopens on the nondefault choice from the live row', async () => {
+    const h = harness()
+    const page = await mountPage(h)
+    h.push('line')
+    page.fixture.detectChanges()
+    page.edit().click()
+    page.fixture.detectChanges()
+    expect(page.input()?.value).toBe('line')
+    expect(page.input()?.selectedOptions[0]?.value).toBe('line')
+    page.cancel().click()
+    page.fixture.detectChanges()
+    expect(page.input()).toBeNull()
+    page.edit().click()
+    page.fixture.detectChanges()
+    expect(page.input()?.value).toBe('line')
+    h.push('checkbox')
+    page.fixture.detectChanges()
+    expect(page.input()?.value).toBe('checkbox')
+    expect(page.input()?.selectedOptions[0]?.value).toBe('checkbox')
+    expect(page.save().disabled).toBe(true)
+  })
+
   it('merges a pristine incoming value, locks an unchanged save and keeps a refused draft', async () => {
     const h = harness()
     await TestBed.configureTestingModule({

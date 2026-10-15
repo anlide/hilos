@@ -6,6 +6,7 @@
 // renders in place rather than through a portal — one root covers the page and
 // its dialog alike.
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
+import { By } from '@angular/platform-browser'
 import type { HilosLicenseEntry } from '@hilos/core'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -133,6 +134,46 @@ function setValue(
 }
 
 describe('HilosLicensePage', () => {
+  it('renders both filters from state, keeps late options selected and resets to the empty choices', async () => {
+    const fixture = mountPage()
+    const select = (id: string) => byId(fixture, id) as HTMLSelectElement
+    const change = (id: string, value: string) => {
+      fixture.debugElement
+        .query(By.css(`[data-id="${id}"]`))
+        .triggerEventHandler('change', { target: { value } })
+      fixture.detectChanges()
+    }
+    const license = 'license-filter-license'
+    const language = 'license-filter-language'
+    expect(select(license).value).toBe('')
+    expect(select(language).value).toBe('')
+    change(license, 'MIT')
+    change(language, 'php')
+    expect(select(license).value).toBe('MIT')
+    expect(select(language).value).toBe('php')
+
+    fixture.componentRef.setInput('inventory', { ...inventory, entries: [] })
+    fixture.detectChanges()
+    fixture.componentRef.setInput('inventory', inventory)
+    await fixture.whenStable()
+    fixture.detectChanges()
+    expect(select(license).value).toBe('MIT')
+    expect(select(license).selectedOptions[0]?.textContent?.trim()).toBe('MIT')
+    expect(select(language).value).toBe('php')
+    expect(select(language).selectedOptions[0]?.textContent?.trim()).toBe('PHP')
+    change(license, '')
+    change(language, '')
+    expect(select(license).value).toBe('')
+    expect(select(license).selectedOptions[0]?.textContent?.trim()).toBe(
+      'All licenses',
+    )
+    expect(select(language).value).toBe('')
+    expect(select(language).selectedOptions[0]?.textContent?.trim()).toBe(
+      'All languages',
+    )
+    expect(allById(fixture, 'license-row')).toHaveLength(3)
+  })
+
   it('draws one row per package the build stands on', () => {
     const fixture = mountPage()
     const rows = allById(fixture, 'license-row')

@@ -202,6 +202,7 @@ the rule away.
 | [code-style/page-action-handlers.md](docs/agents/code-style/page-action-handlers.md) | PHP | editing `Page::onAction()`, action DTO routing, page action acks/errors |
 | [code-style/signal-handlers.md](docs/agents/code-style/signal-handlers.md) | PHP | editing named signal handlers such as `onSignalAgent()` or `onSignalCron()` |
 | [code-style/import-aliases-and-helper-names.md](docs/agents/code-style/import-aliases-and-helper-names.md) | PHP | adding or changing PHP import aliases or helper method names |
+| [code-style/angular-select-options.md](docs/agents/code-style/angular-select-options.md) | frontend | writing a native Angular select or option — option value and selected bindings, late catalogs and empty choices |
 | [code-style/frontend-import-paths.md](docs/agents/code-style/frontend-import-paths.md) | frontend | adding or changing a relative import in frontend TS — explicit `.js`, the barrel `index.js`, the "Import can be shortened" warning |
 | [code-style/wire-key-ownership.md](docs/agents/code-style/wire-key-ownership.md) | frontend | naming a row-payload key in a frontend admin module — adding or renaming a table column, writing a row resolver, deciding what the core barrel exports |
 | [code-style/warnings-and-ide.md](docs/agents/code-style/warnings-and-ide.md) | frontend | silencing a toolchain or IDE warning — the zero-warning bar, canonical shape over suppression, TSDoc-all-params, Angular `data-id` placement |

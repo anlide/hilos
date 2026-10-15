@@ -741,11 +741,15 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
           [disabled]="create.busy()"
           data-id="hilos-backup-create-scope"
           data-autofocus
-          [value]="createScope()"
           (change)="onScope($event)"
         >
           @for (scope of scopes; track scope.value) {
-            <option [value]="scope.value">{{ scope.label }}</option>
+            <option
+              [value]="scope.value"
+              [selected]="scope.value === createScope()"
+            >
+              {{ scope.label }}
+            </option>
           }
         </select>
         <ng-template #modalActions let-requestClose="requestClose">

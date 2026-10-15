@@ -86,24 +86,26 @@ const DOWNLOAD_MIME_TYPE = 'text/csv;charset=utf-8'
           class="form-select form-select-sm w-auto"
           aria-label="All licenses"
           data-id="license-filter-license"
-          [value]="license()"
           (change)="onLicense($event)"
         >
-          <option value="">All licenses</option>
+          <option value="" [selected]="license() === ''">All licenses</option>
           @for (option of options().licenses; track option) {
-            <option [value]="option">{{ option }}</option>
+            <option [value]="option" [selected]="option === license()">
+              {{ option }}
+            </option>
           }
         </select>
         <select
           class="form-select form-select-sm w-auto"
           aria-label="All languages"
           data-id="license-filter-language"
-          [value]="language()"
           (change)="onLanguage($event)"
         >
-          <option value="">All languages</option>
+          <option value="" [selected]="language() === ''">All languages</option>
           @for (option of options().languages; track option) {
-            <option [value]="option">{{ languageLabel(option) }}</option>
+            <option [value]="option" [selected]="option === language()">
+              {{ languageLabel(option) }}
+            </option>
           }
         </select>
       </div>

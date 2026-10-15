@@ -100,13 +100,23 @@ const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
               <select
                 id="hilos-log-node"
                 class="form-select form-select-sm"
-                [value]="selection().nodeId ?? ''"
                 data-id="hilos-log-node"
                 (change)="onNode($event)"
               >
-                <option value="" disabled>Choose a node</option>
+                <option
+                  value=""
+                  disabled
+                  [selected]="(selection().nodeId ?? '') === ''"
+                >
+                  Choose a node
+                </option>
                 @for (entry of catalog()?.nodes ?? []; track entry.nodeId) {
-                  <option [value]="entry.nodeId">{{ entry.nodeId }}</option>
+                  <option
+                    [value]="entry.nodeId"
+                    [selected]="entry.nodeId === selection().nodeId"
+                  >
+                    {{ entry.nodeId }}
+                  </option>
                 }
               </select>
             </div>
@@ -121,13 +131,19 @@ const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
             <select
               id="hilos-log-source"
               class="form-select form-select-sm"
-              [value]="sourceValue(selection().source)"
               data-id="hilos-log-source"
               (change)="onSource($event)"
             >
-              <option [value]="live">Live journal</option>
+              <option [value]="live" [selected]="selection().source === live">
+                Live journal
+              </option>
               @for (batch of batches(); track batch) {
-                <option [value]="batch">Batch — {{ batchLabel(batch) }}</option>
+                <option
+                  [value]="batch"
+                  [selected]="selection().source === batch"
+                >
+                  Batch — {{ batchLabel(batch) }}
+                </option>
               }
             </select>
           </div>
@@ -141,13 +157,19 @@ const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
             <select
               id="hilos-log-stream"
               class="form-select form-select-sm"
-              [value]="selection().stream ?? ''"
               data-id="hilos-log-stream"
               (change)="onStream($event)"
             >
-              <option value="">Choose a stream</option>
+              <option value="" [selected]="(selection().stream ?? '') === ''">
+                Choose a stream
+              </option>
               @for (stream of streams(); track stream.key) {
-                <option [value]="stream.key">{{ stream.key }}</option>
+                <option
+                  [value]="stream.key"
+                  [selected]="stream.key === selection().stream"
+                >
+                  {{ stream.key }}
+                </option>
               }
             </select>
           </div>
@@ -161,12 +183,16 @@ const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
             <select
               id="hilos-log-level"
               class="form-select form-select-sm"
-              [value]="level()"
               data-id="hilos-log-level"
               (change)="onLevel($event)"
             >
               @for (option of levelOptions; track option.value) {
-                <option [value]="option.value">{{ option.label }}</option>
+                <option
+                  [value]="option.value"
+                  [selected]="option.value === level()"
+                >
+                  {{ option.label }}
+                </option>
               }
             </select>
           </div>
@@ -637,13 +663,6 @@ export class HilosLogsViewPage {
     set(source.get())
 
     return subscribeSignal(source, set)
-  }
-
-  /** The value the source select carries for one choice. */
-  protected sourceValue(
-    source: typeof LOG_SOURCE_LIVE | number | null,
-  ): string {
-    return source === null ? '' : String(source)
   }
 
   protected batchLabel(batch: number): string {
