@@ -235,7 +235,7 @@ describe('HilosAdminPage', () => {
       LEAF_IDENTITY,
       <HilosViewportTable
         controller={controller}
-        row={(row) => <td>{row.name}</td>}
+        cells={{ name: (row) => row.name }}
       />,
     )
 

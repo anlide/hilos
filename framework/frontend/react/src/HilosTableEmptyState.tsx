@@ -115,10 +115,9 @@ export function HilosTableEmptyState<R>({
             ) : null}
           </>
         ) : (
-          // A table with no declared empty state still says what its page passed
-          // in the empty or the emptyText prop: the framework's log pages hand
-          // their words over that way, and no leaf moves them onto the
-          // declaration yet.
+          // A frame without an empty declaration uses the page's own words — the
+          // table's `empty` prop, passed here as children: the log tables and the
+          // Daemon section supply their states through it.
           <div className={`text-muted${mainAction ? ' mb-3' : ''}`}>
             {children}
           </div>

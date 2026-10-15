@@ -14,7 +14,9 @@ function byId(id: string): HTMLElement | null {
   return document.querySelector(`[data-id="${id}"]`)
 }
 
-function makeController(frame?: HilosTableFrame): {
+function makeController(
+  frame: HilosTableFrame = { columns: [{ key: 'name', label: 'Name' }] },
+): {
   controller: TableViewportController<unknown>
   sent: TableViewportDescriptor[]
 } {

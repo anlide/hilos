@@ -53,6 +53,7 @@ function makeController(): TableViewportController<Row> {
   const controller = new TableViewportController<Row>({
     resolve: (raw) => ({ name: String(raw.slots['name']) }),
     sendViewport: () => undefined,
+    frame: { columns: COLUMNS },
   })
   controller.ingestWindow(
     [{ rowKey: 'a', slots: { name: 'Alice' } }],

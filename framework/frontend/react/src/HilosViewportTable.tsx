@@ -5,16 +5,12 @@
 // as a placeholder in its slot while the set still has rows elsewhere. It holds
 // NO table logic (multiframework-core.md): the controller owns the descriptor,
 // pending, and Apply. Body cells come from the page — one renderer per declared
-// column (`cells`) for a table whose page declared a frame, the whole row (`row`)
-// for one whose page did not — plus one framework-owned cell at the end of the row
-// carrying what waits on that row; the placeholder, header, paging, and the one room
-// of live messages above the rows stay framework-owned.
-// (Distinct from HilosTable, the client-side view.) A table whose page DECLARED a
-// frame draws the bar and the footer from that declaration instead
-// (HilosTableBar, HilosTableFooter), and takes its columns, its name, and the words
-// it says when empty from there too; a table whose page declared nothing is drawn
-// from its props, the older of the two epochs, which the framework's log pages
-// still take. A table whose page declared bulk operations also carries the
+// column (`cells`) — plus one framework-owned cell at the end of the row carrying
+// what waits on that row; the placeholder, header, paging, and the one room of live
+// messages above the rows stay framework-owned. The table draws the bar and the
+// footer from the page's HilosTableFrame (HilosTableBar, HilosTableFooter), and
+// takes its columns, its name, and the words it says when empty from there too.
+// A table whose page declared bulk operations also carries the
 // framework's checkbox column, on whichever edge the installation provided — one
 // choice for the whole application rather than a prop of this table
 // (mockups/components/table section 6). Below the md breakpoint a declared table is
@@ -66,12 +62,6 @@ export interface HilosViewportTableProps<R> {
   /** The headless server-windowed controller driving rows, descriptor, and pending. */
   controller: TableViewportController<R>
   /**
-   * Column declarations for the header (labels and sort controls) of a table whose
-   * page declared no frame; a declared table takes its columns from the declaration
-   * and is not handed these.
-   */
-  columns?: HilosTableColumn[]
-  /**
    * The content of one cell of a declared table, by the key of its column — the
    * content only, the framework writes the `<td>` around it and reads its class off
    * the column. A column this has no renderer for still gets its cell in the row.
@@ -80,29 +70,14 @@ export interface HilosViewportTableProps<R> {
   /**
    * The content of one field of the panel a row expands into, by the key of its
    * column — the content only, the framework writes the label and the room around
-   * it. Works in both epochs of the frame; a field this has no renderer for shows a
-   * dash.
+   * it. A field this has no renderer for shows a dash.
    */
   details?: Partial<Record<string, (row: R, rowKey: string) => ReactNode>>
-  /**
-   * Render the cells of one row of a table whose page declared no frame; the
-   * returned `<td>`s fill the row. A declared table takes `cells` instead and is not
-   * handed this.
-   */
-  row?: (row: R, rowKey: string) => ReactNode
-  /** Accessible name for the table, rendered as a visually-hidden caption. */
-  label?: string
-  /** Show the search box above the table. */
-  searchable?: boolean
-  /** Placeholder for the search box. */
-  searchPlaceholder?: string
   /** Whether the search box owns focus when this table opens inside a modal. */
   autofocusSearch?: boolean
-  /** Message shown when there are no rows and the page declared no empty state. */
-  emptyText?: string
   /**
-   * The page's own words in the "nothing here yet" state, standing in place of
-   * emptyText when the page declared no empty state.
+   * The page's own words in the "nothing here yet" state, when the frame declared
+   * no empty state.
    */
   empty?: ReactNode
   /**
@@ -136,20 +111,14 @@ type ProgressCell = { span: number; covered: boolean }
 /**
  * The framework-owned table chrome over a headless {@link TableViewportController}.
  *
- * @param props The controller, columns, cell or row renderers, label / search /
- *   empty config, and the project's places beside running work.
+ * @param props The controller, cell and detail renderers, the empty words, and the
+ *   project's places beside running work.
  */
 export function HilosViewportTable<R>({
   controller,
-  columns = [],
   cells,
   details,
-  row,
-  label,
-  searchable = false,
-  searchPlaceholder = 'Search…',
   autofocusSearch = false,
-  emptyText = 'No rows.',
   empty,
   dataId = 'hilos-viewport-table',
   tableProgress,
@@ -158,14 +127,7 @@ export function HilosViewportTable<R>({
   bulkUntouched,
 }: HilosViewportTableProps<R>) {
   const rows = useSignal(controller.rows)
-  const search = useSignal(controller.search)
   const order = useSignal(controller.order)
-  const page = useSignal(controller.page)
-  const pageCount = useSignal(controller.pageCount)
-  const totalCount = useSignal(controller.totalCount)
-  const totalExact = useSignal(controller.totalExact)
-  const hasNextPage = useSignal(controller.hasNextPage)
-  const hasPreviousPage = useSignal(controller.hasPreviousPage)
   const pendingCount = useSignal(controller.pendingCount)
   // Which state the body is in — rows, the skeleton, or one of the four worded
   // states. The core decides it (tableFrame.ts, HilosTableBody) so that the three
@@ -181,21 +143,17 @@ export function HilosViewportTable<R>({
   // the room of live messages above the rows (HilosTableLive).
   const rowProgressBars = useSignal(controller.progress.rows)
   // The marks, and the one sign that this table has them: a page that declared bulk
-  // operations. There is no second sign — a table drawing its frame from props has
-  // no declaration, so `enabled` is already false for it (Flow F14).
+  // operations (Flow F14).
   const selection = controller.selection
   const selectionEnabled = selection.enabled
   const selectionHeader = useSignal(selection.header)
   // The declaration does not change over the life of a table, so it is read once
   // rather than wrapped in a signal (tableFrame.ts, HilosTableFrameState).
   const declaration = controller.frame.declaration
-  // The columns the table is drawn from: the declaration's own where there is one,
-  // and the prop for a table whose page declared nothing. The header and every cell
-  // spanning the whole row count this one list, so they cannot disagree on its width.
-  const resolvedColumns = useSignal(controller.frame.columns)
-  const frameColumns: readonly HilosTableColumn[] = declaration
-    ? resolvedColumns
-    : columns
+  // The columns the table is drawn from, resolved by the core and reactive. The
+  // header and every cell spanning the whole row count this one list, so they cannot
+  // disagree on its width.
+  const frameColumns = useSignal(controller.frame.columns)
   // The fields that wait in a panel instead of taking a column of their own, and the
   // columns that are left standing in the row. Every place that measures or draws the
   // row itself — the header, the width of a full-row cell, the cells of a row bar —
@@ -252,12 +210,6 @@ export function HilosViewportTable<R>({
   // take.
   const pageHeadingId = useContext(HilosPageHeadingIdContext)
   const nameId = declaration?.title ? titleId : pageHeadingId
-  // A table whose count stopped at its ceiling has no page count to compare against, and
-  // the footer is what such a table still needs: it is the only place saying there is more.
-  const paginated = useSignal(controller.paginated)
-  // The total reads as "at least this many" when the count stopped at its ceiling, which is
-  // what the trailing plus says.
-  const countLabel = totalExact ? `${totalCount} total` : `${totalCount}+ total`
 
   // The cells of a row bar's row, in the order the columns are declared: runs of
   // marked columns merge into one covered cell, runs of unmarked ones into one
@@ -672,28 +624,10 @@ export function HilosViewportTable<R>({
         />
       ) : null}
 
-      {/* The bar a table draws from props, kept while a page still passes them —
-          the framework's log pages do. It goes with the props themselves. */}
-      {!declaration && searchable ? (
-        <div className="mb-3">
-          <input
-            type="search"
-            className="form-control"
-            placeholder={searchPlaceholder}
-            aria-label={searchPlaceholder}
-            value={search}
-            data-autofocus={autofocusSearch ? '' : undefined}
-            data-id="hilos-table-search"
-            onChange={(event) => controller.setSearch(event.target.value)}
-          />
-        </div>
-      ) : null}
-
       {/* Everything live the table has to say — work running over the set, a source
           gone quiet, new rows the window cannot show, changes waiting for Apply — in
-          one room that never changes height, outside both epochs of the frame: it
-          speaks about what is happening to the rows, not about what the page
-          declared. */}
+          one room that never changes height: it speaks about what is happening to
+          the rows, not about what the page declared. */}
       <HilosTableLive
         controller={controller}
         columns={frameColumns}
@@ -702,11 +636,8 @@ export function HilosViewportTable<R>({
         bulkUntouched={bulkUntouched}
       />
 
-      {/* A DECLARED table is a table on a wide screen and a list of cards on a
-          narrow one, so its scroll wrapper goes with the table itself: there is
-          nothing left to scroll sideways once the columns became lines of a card.
-          A table still drawn from props has no cards to fall back on and keeps
-          the wrapper at every width, scrollbar and all. */}
+      {/* The scroll wrapper belongs to the wide table: once the columns became
+          lines of a card, there is nothing left to scroll sideways. */}
       <div
         className={
           declaration
@@ -716,13 +647,8 @@ export function HilosViewportTable<R>({
       >
         <table
           className="table table-striped table-hover align-middle mb-0"
-          aria-labelledby={declaration ? nameId : undefined}
+          aria-labelledby={nameId}
         >
-          {/* A declared table already shows its name as a heading, and a hidden
-              caption repeating it would name the table twice. */}
-          {!declaration && label ? (
-            <caption className="visually-hidden">{label}</caption>
-          ) : null}
           <thead>
             <tr>
               {/* The checkbox column stands on the edge the installation chose,
@@ -866,13 +792,7 @@ export function HilosViewportTable<R>({
                     >
                       {selectionEdge === 'start' ? selectRowCell : null}
                       {/* A placeholder row carries a null row; the null check also
-                      narrows the type for the renderers. What stands where a row's
-                      values do takes one shape per epoch of the frame. A DECLARED
-                      table hands the page one renderer per column and writes the
-                      cell around it: that is what makes a cell addressable by
-                      column at all. A table still drawing its frame from props has
-                      no column to address a cell by, so it keeps handing over the
-                      whole row. */}
+                      narrows the type for the renderers. */}
                       {view.placeholder || view.row === null ? (
                         <td
                           colSpan={bodyColspan}
@@ -885,10 +805,8 @@ export function HilosViewportTable<R>({
                           />
                           {placeholder.text}
                         </td>
-                      ) : declaration ? (
-                        declaredCells(view.row, view.rowKey)
                       ) : (
-                        row?.(view.row, view.rowKey)
+                        declaredCells(view.row, view.rowKey)
                       )}
                       {markColumn && !view.placeholder && view.row !== null ? (
                         <td className="text-end text-nowrap">
@@ -1035,7 +953,7 @@ export function HilosViewportTable<R>({
                           : 'empty'
                       }
                     >
-                      {empty ?? emptyText}
+                      {empty ?? 'No rows.'}
                     </HilosTableEmptyState>
                   </td>
                 </tr>
@@ -1132,52 +1050,13 @@ export function HilosViewportTable<R>({
                   : 'empty'
               }
             >
-              {empty ?? emptyText}
+              {empty ?? 'No rows.'}
             </HilosTableEmptyState>
           )}
         </div>
       ) : null}
 
       {declaration ? <HilosTableFooter controller={controller} /> : null}
-
-      {/* The footer a table draws from its own comparisons, for the same tables
-          as the bar above. */}
-      {!declaration && paginated ? (
-        <div className="d-flex justify-content-between align-items-center mt-3">
-          <span className="text-muted small" data-id="hilos-table-count">
-            {countLabel}
-          </span>
-          <div className="btn-group" role="group" aria-label="Pagination">
-            <button
-              type="button"
-              className="btn btn-outline-secondary btn-sm"
-              disabled={!hasPreviousPage}
-              data-id="hilos-table-prev"
-              onClick={() => controller.prevPage()}
-            >
-              Previous
-            </button>
-            {pageCount === null ? null : (
-              <span
-                className="btn btn-sm disabled"
-                aria-label={`Page ${page + 1} of ${pageCount}`}
-                data-id="hilos-table-page"
-              >
-                {page + 1} / {pageCount}
-              </span>
-            )}
-            <button
-              type="button"
-              className="btn btn-outline-secondary btn-sm"
-              disabled={!hasNextPage}
-              data-id="hilos-table-next"
-              onClick={() => controller.nextPage()}
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      ) : null}
     </div>
   )
 }
