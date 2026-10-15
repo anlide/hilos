@@ -149,6 +149,10 @@ class Session extends Entity
 
     // A session is anonymous while user_id is empty, and a nullable column is not an owner:
     // a row that can fall out of the set was never in it.
+    // Sessions remain standalone and are written by the authorization holder, the sessions library
+    // (owner's decision, 2026-10-11, HIL-1403). A dedicated instance agent keyed by the stable
+    // session id is also an acceptable future design; this choice does not put the session in the
+    // signed-in person's set. See docs/agents/architecture/entity-libraries.md#session-ownership.
     public const string _setVia = Entity::SET_STANDALONE;
     public const bool _setRoot = false;
 

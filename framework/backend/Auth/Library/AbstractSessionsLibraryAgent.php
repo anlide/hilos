@@ -282,6 +282,13 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * registers this agent simply has no sessions rather than sessions changing in a process no
      * one else hears.
      *
+     * The session stays standalone and this library, the holder of authorization, stays its writer
+     * (owner's decision, 2026-10-11, HIL-1403): the handshake, sign-in and sign-out, the token
+     * rotation that keeps the row's id, the touch, the sweep and the sessions ended by an erasure
+     * or a merge all run here. A dedicated instance agent keyed by the stable session id is an
+     * acceptable future design, neither ruled out nor owed; the reason and the price of each shape
+     * are in docs/agents/architecture/entity-libraries.md#session-ownership.
+     *
      * The identity table is a borrowed claim, and the TODO on the entry says whose it is. It is
      * here because the account merge is here: {@see Identities::rePointToUser()} moves the loser's
      * identities onto the survivor and demotes or drops the password among them, so the claim
@@ -340,6 +347,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [
+        // The whole set, written by the holder of authorization; an instance agent keyed by the stable session id
+        // is an acceptable later design (HIL-1403). See docs/agents/architecture/entity-libraries.md#session-ownership.
         HilosDbContext::sessions => TruthSourceOperation::BY_KIND,
         // Created on the way in, capped or erased by the days an administrator sets for every person, moved by the merge
         // and removed by the erasure: operations over many people. One person's trust is taken away by their agent (HIL-1407).

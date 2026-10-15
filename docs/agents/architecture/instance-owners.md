@@ -110,9 +110,13 @@ a changed or recovered password and the block. The holder keeps creating the
 trust on the way in, applying the days an administrator sets to every person's
 trust at once, and the merge and the erasure. Notification marks, channel
 preferences and push unsubscribe are the person's agent's too (HIL-1408).
-Whether a session itself needs an instance owner is open in HIL-1403. Until
-that answer, this rule neither puts the session in the person's set nor rules
-it out as a future decision; it does not change the current Entity declaration.
+A session has no instance owner today: it stays standalone and the sessions
+holder, whose responsibility is authorization, stays its writer; an agent per
+session keyed by the stable `session.id` is an acceptable later design and
+not a ruled-out one (owner's decision, 2026-10-11, HIL-1403). The decision
+neither puts the session in the person's set nor changes the Entity
+declaration; the two shapes, the reason and the price of each are in
+[Session Ownership](entity-libraries.md#session-ownership).
 
 ## How It Is Declared
 
@@ -327,7 +331,7 @@ move keeps a `TODO` naming the leaf that will remove the borrowed write.
 | HIL-1410 | Erasure and merge stop the affected instance agents (built). |
 | HIL-1411 | The people library is the only full owner of codes and registration holds (built). The code agent writes neither table; the sessions holder retains only borrowed `Remove` on codes for account erasure. Verification codes are outside the person's set (P-163, 2026-08-30). |
 | HIL-1412 | Cluster behavior of the person's agent (not in the code yet — HIL-1412). |
-| HIL-1403 | Decide whether a session has an instance owner; the answer remains open. |
+| HIL-1403 | A session has no instance owner today: standalone, written by the sessions holder; an agent per session keyed by its stable id is acceptable later (decided 2026-10-11, [Session Ownership](entity-libraries.md#session-ownership)). |
 | HIL-1281 | Profile on the owner's agent and memory as the reader's truth (not in the code yet — HIL-1281). |
 
 The verification attempt guard is a separate decision after HIL-1411; no leaf

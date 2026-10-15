@@ -649,6 +649,70 @@ edits to `BrowserContext` or any other existing reader; the mechanics of a
 table's first window, which are the `windows` section of the subscription reply
 ([../signals/subscriptions.md](../signals/subscriptions.md)).
 
+## Session Ownership
+
+A session is standalone, and its writer is the sessions library — the holder
+of authorization (owner's decision, 2026-10-11, HIL-1403). The question put to
+the owner was whether a session needs an instance owner of its own; both of
+the shapes offered are acceptable to the owner, and the one built today is the
+first. Three questions are answered apart here, because a yes to one of them
+is routinely mistaken for a yes to the others:
+
+- **Whose set the session is in — nobody's.** `hilos_session` declares
+  `Entity::SET_STANDALONE` with `_setRoot = false`
+  (`framework/backend/Database/Entity/Item/Session.php`), and the decision
+  keeps that declaration. A row is born on the handshake of an unknown token
+  before anybody signs in, stays after the sign-out that reverts it to
+  anonymous, and its `user_id` is nullable — a row that can fall out of a set
+  was never in it
+  ([Whose set the table is part of](../orm/entity.md#whose-set-the-table-is-part-of)).
+  Do not move the session into the person's set to give it an owner. The trust
+  a browser earns to skip the second factor is keyed by the pair of the session
+  row and the person and sits in the PERSON's set
+  (`framework/backend/Database/Entity/Item/SecondFactorTrust.php`), precisely
+  because one browser serves different people over its life.
+- **Who writes the session row — the sessions library, as it does today.**
+  The holder of authorization creates the anonymous row on the first handshake
+  and touches it on every one after; binds it to a person at sign-in by
+  rotating the token in place, so `session.id` survives the rotation
+  (`SessionActions::rotateTokenAndBindUser()`); reverts it to anonymous at
+  sign-out; signs out every session of a person the erasure or a merge takes;
+  and removes the rows nobody can present any more in its sweep
+  (`hilos_sessions_expire`, every 15 minutes). An account erasure signs the
+  person's sessions out and leaves the rows to that sweep; it does not delete
+  them ([account-deletion.md](account-deletion.md)). This is the writer the
+  `OWNS_DB` claim of `AbstractSessionsLibraryAgent` already names.
+- **Whether the session has an agent per instance — not today, and
+  acceptable later.** The second question of
+  [Does A New Entity Need One](instance-owners.md#does-a-new-entity-need-one)
+  answers no at present: the row carries the state of its authorization and
+  the holder's memory about the browser — the pending step of a sign-in, the
+  wait on a second factor, the closed-access card, the takeover marker, the
+  device and address it was last seen from — all of it written by the holder,
+  and no content edited by anybody but the holder was found. An agent per
+  session keyed by the stable `session.id`, standing apart from the token that
+  rotates and the person who comes and goes, is an acceptable future design
+  and not a ruled-out one. It is a possibility and not a debt: no leaf is
+  owed, and nothing here promises the work. Do not write it into the code as a
+  TODO or a debt; the comments beside the Entity declaration and beside the
+  `OWNS_DB` claim point here and say no more.
+
+**The price of each shape, written down rather than hidden.** Keeping one
+writer keeps every handshake, sign-in and sign-out of the installation in one
+holder, and the load that holder can carry has not been measured; that is the
+cost paid today. What an agent per session could bring is the spreading of
+whatever work is moved onto it, and nothing more is claimed for it: the find
+by token on every handshake and the creation of a row that has no instance
+yet are set operations and stay with a library, so splitting the writer does
+not remove the library, and a gain is proved by a measurement, not by the
+split. What it would cost is named so that the leaf proposing it starts from
+the bill: an address and an answer path for every operation handed to the
+agent, the lifetime of an agent raised by a handshake and asleep between
+them, and the meeting of per-session agents with the operations over many
+sessions — the erasure and the merge in one transaction, the sweep, a block
+ending every session of a person — and with the failures of each. That shape
+needs an owner's decision and an interview of its own before any leaf is cut.
+
 ## Anti-Patterns
 
 ```php
@@ -717,7 +781,9 @@ Answer `SUBSCRIPTION_PAGE_ERROR`. An empty list is a claim about the data.
   it - and an anonymous row that never came back, seven days after its only
   handshake. A row with a live connection is never deleted. The deleted tokens go
   to the project in `hilos_sessions_swept`, sent only where an agent declares it,
-  so a project can drop what it keeps per browser.
+  so a project can drop what it keeps per browser. Whose set the session is in,
+  who writes it and whether it gets an agent of its own are decided in
+  [Session Ownership](#session-ownership).
 - `framework/backend/Notification/Library/AbstractNotificationsLibraryAgent.php` —
   the third (HIL-771): the notifications library, which still creates the
   notification rows, holds the delivery journal and brings a push endpoint into
