@@ -32,6 +32,7 @@ const CLOSE_COMMAND = 'test:protected-mode:close'
 const PASS_COMMAND = 'test:protected-mode:pass'
 const INSPECT_COMMAND = 'protected-mode:inspect'
 const MAINTENANCE_DISABLE_COMMAND = 'maintenance:disable'
+const MANUAL_MAINTENANCE_OPERATION = 'manual_maintenance'
 
 /**
  * A refusal the daemon answered with, as opposed to a command it never answered.
@@ -231,17 +232,29 @@ export async function mintProtectedModePass(): Promise<string> {
  *
  * For unconditional teardown: an enter may have been refused, or may have landed
  * after the test gave up on it, and either way the node must not be left frozen
- * for every spec that follows. The open lifts from any frozen phase for exactly
- * this reason — a teardown cannot know which one a failed assertion left behind.
- * A refusal here means there was nothing to lift.
+ * for every spec that follows. The open lifts from any phase of a driven freeze for
+ * exactly this reason — a teardown cannot know which one a failed assertion left
+ * behind. A manual window it refuses by design
+ * (framework/backend/Core/Agent/ProtectedModeTestDriverTrait.php:342-346), so after a
+ * refusal the teardown asks the master and turns a manual window off with its
+ * production command; any other refusal means there was nothing to lift.
  */
 export async function openProtectedModeIfAny(): Promise<void> {
   try {
     await openProtectedMode()
   } catch (error) {
     if (error instanceof ProtectedModeCommandRefused) {
-      // Answered, and the answer was that there is nothing to lift - the state the teardown
-      // wanted anyway.
+      // Answered. The refusal may stand for a manual window, which the test open never
+      // drives, so the master is asked and a window it reports is turned off; any other
+      // refusal means there is nothing to lift - the state the teardown wanted anyway.
+      // A failed inspect or disable goes red here, in the spec that left the window.
+      const snapshot = await inspectProtectedMode()
+      if (
+        snapshot.phase !== 'inactive' &&
+        snapshot.operation === MANUAL_MAINTENANCE_OPERATION
+      ) {
+        await disableManualMaintenance()
+      }
       return
     }
     // Anything else is the opposite of "nothing to lift". A freeze left standing takes the

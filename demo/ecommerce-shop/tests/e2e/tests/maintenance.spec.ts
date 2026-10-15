@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 
 import {
+  MAINTENANCE_PATH,
   addToMaintenanceCircle,
   clearMaintenanceCircle,
   dismissToasts,
@@ -25,14 +26,12 @@ import { signUp, uniqueEmail } from '../helpers/session.js'
 // framework/frontend/react/test/HilosMaintenancePage.test.tsx,
 // framework/frontend/angular/test/HilosMaintenancePage.test.ts.
 
-const MAINTENANCE_URL = '/hilos/maintenance'
-
 test('naming a verifier shows the row, and refuses an unproven address and a repeat in the dialog and in the corner', async ({
   page,
   browser,
 }) => {
   await grantAdminToSelf(page)
-  await gotoPage(page, MAINTENANCE_URL)
+  await gotoPage(page, MAINTENANCE_PATH)
   await clearMaintenanceCircle(page)
 
   // The registration code proves the address (HIL-825). This demo signs in by
@@ -127,6 +126,6 @@ test('naming a verifier shows the row, and refuses an unproven address and a rep
   await expect(dialog).toHaveCount(0)
   await memberContext.close()
 
-  await gotoPage(page, MAINTENANCE_URL)
+  await gotoPage(page, MAINTENANCE_PATH)
   await clearMaintenanceCircle(page)
 })

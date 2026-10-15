@@ -435,8 +435,19 @@ showing and closes the result, which forgets it on the page; it returns the code
 dialog: the lift reloads every open page, this one too, so the spec waits for the
 state it expects on the reloaded page. `presentMaintenanceCode` types a code into
 the maintenance screen and submits it. The first three expect the operator's page
-on `/hilos/maintenance`; turning the window off from a command for cleanup is the
-demo's own helper.
+on `/hilos/maintenance`. A spec's teardown — `openProtectedModeIfAny` in the
+demo's `helpers/protectedMode.ts` — turns a manual window off too, because the
+test open refuses one; a test carries no cleanup of its own.
+
+`MAINTENANCE_PATH`, the manual copy (`MANUAL_STUB_TITLE`, `MANUAL_STUB_MESSAGE`,
+`MAINTENANCE_ON_NOTICE`) and `MANUAL_MAINTENANCE_OPERATION`;
+`expectManualMaintenanceOn`, `expectHeldByManualMaintenance`,
+`expectMaintenanceCodeIssued`, `expectAdmittedToManualMaintenance` and
+`expectMaintenanceOpen` check the manual window, each taking the spec's `expect`
+first, then its `Page`. Each kit's `protected-mode.spec.ts` runs one manual
+scenario under the same title; only Vue (binance-btc-tracker) carries the console
+entry, one code for two browsers and every page reloading itself — server and core
+checks.
 
 ### The bell and the channel switch — `openBell`, `unreadBadge`, `enableEmailChannel`
 

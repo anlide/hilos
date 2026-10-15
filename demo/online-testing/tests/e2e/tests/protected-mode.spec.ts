@@ -2,22 +2,23 @@ import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import {
+  MAINTENANCE_PATH,
   clearMaintenanceCircle,
   dismissToasts,
+  expectAdmittedToManualMaintenance,
+  expectHeldByManualMaintenance,
+  expectMaintenanceCodeIssued,
+  expectMaintenanceOpen,
+  expectManualMaintenanceOn,
   issueMaintenanceCode,
   presentMaintenanceCode,
+  sidewaysOverflow,
   turnOffMaintenance,
   turnOnMaintenance,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant.js'
+import { PAGE_READY, gotoMaintenance, gotoPage } from '../helpers/page.js'
 import {
-  PAGE_READY,
-  expectPageReady,
-  gotoMaintenance,
-  gotoPage,
-} from '../helpers/page.js'
-import {
-  disableManualMaintenance,
   enterProtectedMode,
   inspectProtectedMode,
   leaveProtectedMode,
@@ -31,11 +32,10 @@ import {
 // live run is where the view package's binding of the route's surface type and of
 // the minted marker is actually proven.
 //
-// And the Angular half of HIL-1365: the Maintenance section's manual window driven
-// end to end by two administrators — on with the button, a code issued in the
-// section, the other browser let in by it, off from that browser. The branches of
-// each action (a refusal, an unconfirmed outcome, the viewer, the races) are the
-// Angular unit tests'; the CLI entry, one code for two browsers and every tab
+// And the Angular half of HIL-1365: the Maintenance section's manual window — the
+// same scenario, under the same title, in all three kits; its checks live in
+// framework/frontend/e2e/maintenance.ts. The branches of each action are the
+// Angular unit tests'; the console entry, one code for two browsers and every tab
 // reloading itself are proven once, on the binance-btc-tracker demo.
 //
 // The whole node freezes for the duration, so this spec must never leave one
@@ -48,9 +48,6 @@ const OPERATION = 'e2e-freeze'
 // declaration (HILOS_ROUTE_DECLARATIONS). Any admin url would do; this one needs
 // no route params.
 const ADMIN_URL = '/hilos'
-
-// The section that turns the manual window on and off.
-const MAINTENANCE_URL = '/hilos/maintenance'
 
 test.afterEach(async () => {
   // Unconditional, and an open rather than a leave: an enter can be refused and
@@ -151,67 +148,37 @@ test('two administrators close the system by hand, one lets the other in with a 
 }) => {
   test.slow() // Two sessions stay open through the manual window, its code and its reload.
   await grantAdminToSelf(page)
-  await gotoPage(page, MAINTENANCE_URL, PAGE_READY)
+  await gotoPage(page, MAINTENANCE_PATH, PAGE_READY)
   // An emptied circle keeps the second administrator outside until the code.
   await clearMaintenanceCircle(page)
+  await page.setViewportSize({ width: 375, height: 812 })
   const otherContext = await browser.newContext()
   const other = await otherContext.newPage()
   try {
     await grantAdminToSelf(other)
-    await gotoPage(other, MAINTENANCE_URL, PAGE_READY)
+    await gotoPage(other, MAINTENANCE_PATH, PAGE_READY)
 
     await turnOnMaintenance(page)
-
-    const success = page
-      .getByTestId('hilos-toasts')
-      .getByText('Maintenance is on — the system is closed to visitors', {
-        exact: true,
-      })
-    await expect(success).toHaveCount(1)
-    await expect(success).toBeVisible()
-    await expect(
-      page.getByTestId('hilos-maintenance-state-manual'),
-    ).toBeVisible()
-    await expect(other.getByTestId('maintenance')).toHaveAttribute(
-      'data-operation',
-      'manual_maintenance',
-    )
+    await expectManualMaintenanceOn(expect, page)
+    expect(await sidewaysOverflow(page)).toEqual([0, 0])
+    await expectHeldByManualMaintenance(expect, other)
 
     await dismissToasts(page)
     const code = await issueMaintenanceCode(page)
-    await expect(page.getByTestId('hilos-maintenance-pass-count')).toHaveText(
-      '1',
-    )
-    await expect(page.getByTestId('hilos-toasts')).not.toContainText(code)
+    await expectMaintenanceCodeIssued(expect, page, code, 1)
 
     await presentMaintenanceCode(other, code)
-    await expect(other.getByTestId('maintenance')).toBeHidden()
-    await expectPageReady(other)
-    await expect(
-      other.getByTestId('hilos-maintenance-state-manual'),
-    ).toBeVisible()
-    await expect(other.getByTestId('hilos-maintenance-pass-count')).toHaveText(
-      '1',
-    )
+    await expectAdmittedToManualMaintenance(expect, other, 1)
 
     await turnOffMaintenance(other)
 
     // Both pages reload themselves; each settles on the open banner.
     for (const admin of [page, other]) {
-      await expect(
-        admin.getByTestId('hilos-maintenance-state-open'),
-      ).toBeVisible()
+      await expectMaintenanceOpen(expect, admin)
     }
     expect((await inspectProtectedMode()).phase).toBe('inactive')
   } finally {
-    // The button is what is under test; the command only cleans up after a failed step.
-    try {
-      if ((await inspectProtectedMode()).operation === 'manual_maintenance') {
-        expect(await disableManualMaintenance()).toBe('inactive')
-      }
-    } finally {
-      await otherContext.close()
-    }
+    await otherContext.close()
   }
 })
 

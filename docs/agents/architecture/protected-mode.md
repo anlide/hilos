@@ -1157,6 +1157,11 @@ Refuse loudly and before any trace of entry, as above.
   browser: enter, the live window showing the stub with the operation the caller
   named, leave, the window working again, and the verifier circle walking in on
   the tab it had open. It freezes the whole node, so its teardown lifts
-  unconditionally; the runner is serialized (`CI=1`).
+  unconditionally; the runner is serialized (`CI=1`). The manual window from the
+  Maintenance section runs as one scenario in each kit's `protected-mode.spec.ts`
+  (binance-btc-tracker Vue, ecommerce-shop React, online-testing Angular), its
+  checks in `framework/frontend/e2e/maintenance.ts`; only binance-btc-tracker runs
+  the console entry, one code for two browsers and every page reloading itself.
+  The teardown turns a manual window off too: the test open refuses one.
 - `demo/binance-btc-tracker` cluster scenarios 23 and 25 — drive the freeze and
   verification window through the live peer mesh and repeated quiesce rounds.

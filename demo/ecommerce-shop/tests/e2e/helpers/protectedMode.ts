@@ -10,11 +10,11 @@ import { reAskProtectedMode } from '../../../../../framework/frontend/scripts/pr
 // Narrower than the binance-btc-tracker and online-testing peers on purpose:
 // this demo drives only what its own specs assert with - the freeze on, the
 // freeze off, the end of the operation that leaves the node in the
-// verification window (HIL-911), and the manual window off for a scenario that
-// failed before its own browser could turn it off. Inspect is present because
-// any drive may need one state re-ask after a lost reply, and because that
-// cleanup asks first whether there is a manual window to turn off; mint waits
-// for the first spec that has something to assert with it.
+// verification window (HIL-911), and the manual window off for the teardown,
+// which the test open refuses. Inspect is present because any drive may need
+// one state re-ask after a lost reply, and because the teardown asks whether a
+// manual window stands; mint waits for the first spec that has something to
+// assert with it.
 const COMMAND_HOST = process.env.COMMAND_HOST ?? 'ecommerce-shop-daemon-test'
 const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 
@@ -38,6 +38,7 @@ const LEAVE_COMMAND = 'test:protected-mode:leave'
 const OPEN_COMMAND = 'test:protected-mode:open'
 const INSPECT_COMMAND = 'protected-mode:inspect'
 const MAINTENANCE_DISABLE_COMMAND = 'maintenance:disable'
+const MANUAL_MAINTENANCE_OPERATION = 'manual_maintenance'
 
 /**
  * A refusal the daemon answered with, as opposed to a command it never answered.
@@ -118,17 +119,29 @@ export async function leaveProtectedMode(): Promise<string> {
  *
  * For unconditional teardown: an enter may have been refused, or may have landed
  * after the test gave up on it, and either way the node must not be left frozen
- * for every spec that follows. The open lifts from any frozen phase for exactly
- * this reason — a teardown cannot know which one a failed assertion left behind.
- * A refusal here means there was nothing to lift.
+ * for every spec that follows. The open lifts from any phase of a driven freeze for
+ * exactly this reason — a teardown cannot know which one a failed assertion left
+ * behind. A manual window it refuses by design
+ * (framework/backend/Core/Agent/ProtectedModeTestDriverTrait.php:342-346), so after a
+ * refusal the teardown asks the master and turns a manual window off with its
+ * production command; any other refusal means there was nothing to lift.
  */
 export async function openProtectedModeIfAny(): Promise<void> {
   try {
     await sendProtectedModeDrive(OPEN_COMMAND, {}, null, ['inactive'])
   } catch (error) {
     if (error instanceof ProtectedModeCommandRefused) {
-      // Answered, and the answer was that there is nothing to lift - the state the teardown
-      // wanted anyway.
+      // Answered. The refusal may stand for a manual window, which the test open never
+      // drives, so the master is asked and a window it reports is turned off; any other
+      // refusal means there is nothing to lift - the state the teardown wanted anyway.
+      // A failed inspect or disable goes red here, in the spec that left the window.
+      const snapshot = await inspectProtectedMode()
+      if (
+        snapshot.phase !== 'inactive' &&
+        snapshot.operation === MANUAL_MAINTENANCE_OPERATION
+      ) {
+        await disableManualMaintenance()
+      }
       return
     }
     // Anything else is the opposite of "nothing to lift". A freeze left standing takes the

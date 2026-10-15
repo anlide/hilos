@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 
 import {
+  MAINTENANCE_PATH,
   addToMaintenanceCircle,
   clearMaintenanceCircle,
   confirmMaintenanceCircleRemoval,
@@ -26,14 +27,12 @@ import { signUp } from '../helpers/session.js'
 // framework/frontend/react/test/HilosMaintenancePage.test.tsx,
 // framework/frontend/angular/test/HilosMaintenancePage.test.ts.
 
-const MAINTENANCE_URL = '/hilos/maintenance'
-
 test('taking a verifier out removes the row, and a dialog over a row taken out in another tab says so and locks Remove', async ({
   page,
   browser,
 }) => {
   await grantAdminToSelf(page)
-  await gotoPage(page, MAINTENANCE_URL)
+  await gotoPage(page, MAINTENANCE_PATH)
   await clearMaintenanceCircle(page)
 
   const memberContext = await browser.newContext()
@@ -44,7 +43,7 @@ test('taking a verifier out removes the row, and a dialog over a row taken out i
 
   // A second tab of the same administrator, on the same section and the same row.
   const tabB = await page.context().newPage()
-  await gotoPage(tabB, MAINTENANCE_URL)
+  await gotoPage(tabB, MAINTENANCE_PATH)
   await expect(maintenanceCircleRow(tabB, email)).toBeVisible()
 
   // A opens the dialog over the row: it names the address and Remove is live.
