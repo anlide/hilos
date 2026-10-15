@@ -1,14 +1,20 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ActionError,
   HILOS_MAINTENANCE_CIRCLE_COPY,
+  HILOS_MAINTENANCE_DISABLE_COPY,
+  HILOS_MAINTENANCE_ENABLE_COPY,
+  HILOS_MAINTENANCE_PASS_COPY,
+  HILOS_MAINTENANCE_STATE_COPY,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
+  MAINTENANCE_STATE_SIGNAL,
   ScopeManager,
   bindAdminAccess,
   bindSessionScope,
   createSignal,
+  hilosToasts,
 } from '@hilos/core'
 import type {
   ActionHandle,
@@ -16,9 +22,11 @@ import type {
   ActionResult,
   HilosConnection,
   HilosMaintenanceContext,
+  HilosMaintenanceState,
   HilosRouter,
   PageRouteMatch,
   ProjectSignal,
+  WritableSignal,
 } from '@hilos/core'
 
 import { HilosMaintenancePage } from '../src/admin/maintenance/HilosMaintenancePage.js'
@@ -79,6 +87,7 @@ function wireRow(member: CircleMember): {
 interface Dispatched {
   action: string
   payload: Record<string, unknown>
+  loading: WritableSignal<boolean>
   settle: (result: ActionResult) => void
   refuse: (error: ActionError) => void
 }
@@ -101,11 +110,12 @@ function makeActions(): {
         settle = resolve
         refuse = reject
       })
-      dispatched.push({ action, payload, settle, refuse })
+      const loading = createSignal(false)
+      dispatched.push({ action, payload, loading, settle, refuse })
 
       return {
         requestId: String(dispatched.length),
-        loading: createSignal(false),
+        loading,
         done,
       }
     },
@@ -120,6 +130,7 @@ function seededContext(
 ): {
   context: HilosMaintenanceContext
   focus: string[]
+  pushState: (state: HilosMaintenanceState) => void
   pushUpdate: (next: CircleMember) => void
   pushRemove: (memberId: number, own?: boolean) => void
 } {
@@ -129,6 +140,9 @@ function seededContext(
   scopes.openPage(HilosPages.MAINTENANCE)
   const windowListeners = new Set<(signal: { data: unknown }) => void>()
   const deltaListeners = new Set<(signal: { data: unknown }) => void>()
+  const stateListeners = new Set<
+    (signal: { type: string; data: unknown }) => void
+  >()
   const serveWindow = (
     page: string = HilosPages.MAINTENANCE,
     tableKey: string = CIRCLE_TABLE,
@@ -182,6 +196,16 @@ function seededContext(
 
         return () => deltaListeners.delete(listener)
       }
+      if (event === 'projectSignal') {
+        stateListeners.add(
+          listener as (signal: { type: string; data: unknown }) => void,
+        )
+
+        return () =>
+          stateListeners.delete(
+            listener as (signal: { type: string; data: unknown }) => void,
+          )
+      }
 
       return () => {}
     },
@@ -195,6 +219,12 @@ function seededContext(
       actions,
     },
     focus,
+    // The section's state frame, as the connection hands it to every listener.
+    pushState(state: HilosMaintenanceState): void {
+      for (const listener of stateListeners) {
+        listener({ type: MAINTENANCE_STATE_SIGNAL, data: state })
+      }
+    },
     pushUpdate(next: CircleMember): void {
       for (const listener of deltaListeners) {
         listener({
@@ -248,14 +278,18 @@ function mark(identifier: string): HTMLElement | null {
   )
 }
 
+afterEach(() => {
+  hilosToasts.clear()
+})
+
 /** Let a settled action reach the dialog through Angular's render. */
 async function settled(
   fixture: ComponentFixture<HilosMaintenancePage>,
 ): Promise<void> {
   // The test's action promise is outside Angular's pending-task accounting:
-  // let the driver and the submit continuation finish before waiting on render.
-  await Promise.resolve()
-  await Promise.resolve()
+  // let the driver and every submit continuation after it — the code result
+  // awaits the answer twice — finish before waiting on render.
+  await new Promise((resolve) => setTimeout(resolve))
   await fixture.whenStable()
   fixture.detectChanges()
 }
@@ -296,6 +330,99 @@ const ANN: CircleMember = {
   online: true,
 }
 
+function maintenanceState(
+  overrides: Partial<HilosMaintenanceState> = {},
+): HilosMaintenanceState {
+  return {
+    phase: 'inactive',
+    operation: null,
+    manual: false,
+    startedAt: null,
+    enteredFromBrowser: false,
+    passCount: 0,
+    circleNamed: 0,
+    circleAdmitted: 0,
+    ...overrides,
+  }
+}
+
+/** The manual window's frame: closed to visitors by hand, verification open. */
+function manualState(
+  overrides: Partial<HilosMaintenanceState> = {},
+): HilosMaintenanceState {
+  return maintenanceState({
+    phase: 'verifying',
+    operation: 'manual_maintenance',
+    manual: true,
+    ...overrides,
+  })
+}
+
+/**
+ * An element by its data-id anywhere in the document, or null while it is not
+ * drawn.
+ *
+ * @param dataId The element's data-id.
+ */
+function byId<T extends HTMLElement = HTMLElement>(dataId: string): T | null {
+  return document.querySelector<T>(`[data-id="${dataId}"]`)
+}
+
+/**
+ * The dialog around a confirmation's body, which must already be open.
+ *
+ * @param bodyId The data-id of the body the page draws inside the dialog.
+ */
+function dialogOf(bodyId: string): HTMLElement {
+  return byId(bodyId)?.closest<HTMLElement>('[role="dialog"]') as HTMLElement
+}
+
+/** Ways a dialog is closed before anything is sent. */
+type CloseMethod = 'cancel' | 'close' | 'escape' | 'backdrop'
+
+/**
+ * Close a dialog the way a person does.
+ *
+ * @param fixture The mounted page.
+ * @param dialog The dialog element.
+ * @param cancel The dialog's own Cancel button.
+ * @param method Which of the four ways.
+ */
+async function closeBy(
+  fixture: ComponentFixture<HilosMaintenancePage>,
+  dialog: HTMLElement,
+  cancel: HTMLButtonElement,
+  method: CloseMethod,
+): Promise<void> {
+  if (method === 'cancel') cancel.click()
+  if (method === 'close')
+    dialog.querySelector<HTMLButtonElement>('[data-id="modal-close"]')?.click()
+  if (method === 'escape')
+    dialog.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    )
+  if (method === 'backdrop')
+    dialog.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  await settled(fixture)
+}
+
+/**
+ * Try every way of closing a dialog at once — the busy dialog must refuse them all.
+ *
+ * @param fixture The mounted page.
+ * @param dialog The dialog element.
+ * @param cancel The dialog's own Cancel button.
+ */
+async function tryEveryClose(
+  fixture: ComponentFixture<HilosMaintenancePage>,
+  dialog: HTMLElement,
+  cancel: HTMLButtonElement,
+): Promise<void> {
+  for (const method of ['cancel', 'close', 'escape', 'backdrop'] as const) {
+    await closeBy(fixture, dialog, cancel, method)
+  }
+}
+
 /** Open the add dialog and enter the address without normalizing it. */
 function openAndType(
   fixture: ComponentFixture<HilosMaintenancePage>,
@@ -312,6 +439,151 @@ function openAndType(
 }
 
 describe('HilosMaintenancePage', () => {
+  it('offers enable only after the open frame arrives', async () => {
+    const { context, pushState } = seededContext([])
+    const fixture = mountPage(context)
+    expect(byId('hilos-maintenance-state-open')).toBeNull()
+    expect(byId('hilos-maintenance-enable')).toBeNull()
+
+    pushState(maintenanceState())
+    await settled(fixture)
+
+    const stateBlock = byId('hilos-maintenance-state') as HTMLElement
+    expect(stateBlock.getAttribute('aria-live')).toBe('polite')
+    expect(stateBlock.textContent).toContain(
+      HILOS_MAINTENANCE_STATE_COPY.openTitle,
+    )
+    expect(stateBlock.textContent).toContain(
+      HILOS_MAINTENANCE_STATE_COPY.openDescription,
+    )
+    expect(
+      stateBlock
+        .querySelector('[data-id="hilos-maintenance-enable"]')
+        ?.textContent?.trim(),
+    ).toBe(HILOS_MAINTENANCE_ENABLE_COPY.enableTitle)
+  })
+
+  it.each(['disable', 'pass'] as const)(
+    'offers %s only in the manual card, for either entry source',
+    async (button) => {
+      const { context, pushState } = seededContext([])
+      const fixture = mountPage(context)
+      const shown = () => byId(`hilos-maintenance-${button}`) !== null
+      expect(shown()).toBe(false)
+      for (const state of [
+        maintenanceState(),
+        maintenanceState({ phase: 'verifying', operation: 'restore' }),
+      ]) {
+        pushState(state)
+        await settled(fixture)
+        expect(shown()).toBe(false)
+      }
+      for (const enteredFromBrowser of [true, false]) {
+        pushState(manualState({ enteredFromBrowser }))
+        await settled(fixture)
+        expect(shown()).toBe(true)
+      }
+    },
+  )
+
+  it('renders the manual card and redraws its pass count on a new frame', async () => {
+    const { context, pushState } = seededContext([])
+    const fixture = mountPage(context)
+    const manual = manualState({
+      startedAt: new Date(Date.now() - 150_000).toISOString(),
+      enteredFromBrowser: false,
+      circleNamed: 3,
+      circleAdmitted: 2,
+    })
+
+    pushState(manual)
+    await settled(fixture)
+
+    const card = byId('hilos-maintenance-state-manual') as HTMLElement
+    expect(card.tagName).toBe('SECTION')
+    expect(card.getAttribute('aria-label')).toBe(
+      HILOS_MAINTENANCE_STATE_COPY.manualTitle,
+    )
+    expect(card.textContent).toContain(
+      HILOS_MAINTENANCE_STATE_COPY.turnedOnFromConsole,
+    )
+    expect(card.textContent).toContain('3 named · 2 let in')
+    expect(card.textContent).toContain('2 minutes ago')
+    expect(
+      card
+        .querySelector('[data-id="hilos-maintenance-disable"]')
+        ?.textContent?.trim(),
+    ).toBe(HILOS_MAINTENANCE_DISABLE_COPY.disableTitle)
+    expect(
+      card
+        .querySelector('[data-id="hilos-maintenance-pass"]')
+        ?.textContent?.trim(),
+    ).toBe(HILOS_MAINTENANCE_PASS_COPY.issue)
+
+    pushState({ ...manual, passCount: 1 })
+    await settled(fixture)
+
+    expect(byId('hilos-maintenance-pass-count')?.textContent?.trim()).toBe('1')
+  })
+
+  it("moves the manual card's elapsed time on the browser's clock", async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    // jsdom draws an animation frame on an interval too, and Angular's scheduler
+    // asks for frames, so the page's own clock is told apart by its period.
+    const startClock = vi.spyOn(globalThis, 'setInterval')
+    const stopClock = vi.spyOn(globalThis, 'clearInterval')
+    try {
+      const { context, pushState } = seededContext([])
+      const fixture = mountPage(context)
+      pushState(manualState({ startedAt: new Date().toISOString() }))
+      await settled(fixture)
+      const card = () => byId('hilos-maintenance-state-manual') as HTMLElement
+      expect(card().textContent).toContain(HILOS_MAINTENANCE_STATE_COPY.justNow)
+
+      vi.advanceTimersByTime(120_000)
+      await settled(fixture)
+
+      expect(card().textContent).toContain('2 minutes ago')
+      const clocks = startClock.mock.calls.flatMap(([, period], index) =>
+        period === 30_000 ? [startClock.mock.results[index]?.value] : [],
+      )
+      expect(clocks).toHaveLength(1)
+      expect(stopClock).not.toHaveBeenCalledWith(clocks[0])
+      fixture.destroy()
+      expect(stopClock).toHaveBeenCalledWith(clocks[0])
+    } finally {
+      vi.restoreAllMocks()
+      vi.useRealTimers()
+    }
+  })
+
+  it('renders only the planned operation lines in the frozen card', async () => {
+    const { context, pushState } = seededContext([])
+    const fixture = mountPage(context)
+
+    pushState(
+      maintenanceState({
+        phase: 'verifying',
+        operation: 'restore',
+        startedAt: '2026-10-10T10:00:00+00:00',
+        passCount: 2,
+      }),
+    )
+    await settled(fixture)
+
+    const card = byId('hilos-maintenance-state-operation') as HTMLElement
+    expect(card.textContent).toContain(
+      HILOS_MAINTENANCE_STATE_COPY.operationTitle,
+    )
+    expect(card.textContent).toContain(
+      HILOS_MAINTENANCE_STATE_COPY.verifyingPhaseNote,
+    )
+    expect(card.textContent).toContain('restore')
+    expect(card.textContent).toContain('2026-10-10T10:00:00+00:00')
+    expect(card.textContent).not.toContain('Initiator')
+    expect(card.querySelector('button')).toBeNull()
+  })
+
   it('renders a row per member with the mark of whether they are signed in', async () => {
     const { context } = seededContext([
       {
@@ -669,6 +941,292 @@ describe('HilosMaintenancePage', () => {
   })
 })
 
+/** One of the three manual actions, with what its confirmation says and guards. */
+interface ManualCase {
+  /** The action's name in its data-ids. */
+  name: 'enable' | 'disable' | 'pass'
+  /** The tracked action it sends. */
+  action: string
+  /** The frame its opener stands on. */
+  opensFrom: HilosMaintenanceState
+  /** Frames on which an unsent confirmation may not be sent any more. */
+  leaves: HilosMaintenanceState[]
+  /** The block the first of those frames draws. */
+  leftBlock: string
+  /** The confirmation's title, which names its dialog. */
+  title: string
+  /** Every sentence the confirmation explains itself with. */
+  texts: string[]
+  /** The heading of the refusal's details. */
+  refusalTitle: string
+  /** The action's note for an outcome nobody confirmed. */
+  unconfirmedNote: string
+  /** The success sentence the server sends. */
+  successMessage: string
+}
+
+const MANUAL_CASES: ManualCase[] = [
+  {
+    name: 'enable',
+    action: 'maintenance_enable',
+    opensFrom: maintenanceState(),
+    leaves: [
+      manualState(),
+      maintenanceState({ phase: 'active', operation: 'restore' }),
+    ],
+    leftBlock: 'hilos-maintenance-state-manual',
+    title: HILOS_MAINTENANCE_ENABLE_COPY.enableTitle,
+    texts: [
+      HILOS_MAINTENANCE_ENABLE_COPY.lead,
+      HILOS_MAINTENANCE_ENABLE_COPY.outsideNote,
+      HILOS_MAINTENANCE_ENABLE_COPY.insideNote,
+      HILOS_MAINTENANCE_ENABLE_COPY.agentsNote,
+      HILOS_MAINTENANCE_ENABLE_COPY.footer,
+    ],
+    refusalTitle: HILOS_MAINTENANCE_ENABLE_COPY.refusalTitle,
+    unconfirmedNote: HILOS_MAINTENANCE_ENABLE_COPY.unconfirmedNote,
+    successMessage: 'Maintenance is on — the system is closed to visitors',
+  },
+  {
+    name: 'disable',
+    action: 'maintenance_disable',
+    opensFrom: manualState(),
+    leaves: [
+      maintenanceState(),
+      maintenanceState({ phase: 'active', operation: 'restore' }),
+    ],
+    leftBlock: 'hilos-maintenance-state-open',
+    title: HILOS_MAINTENANCE_DISABLE_COPY.disableTitle,
+    texts: [
+      HILOS_MAINTENANCE_DISABLE_COPY.lead,
+      HILOS_MAINTENANCE_DISABLE_COPY.footer,
+    ],
+    refusalTitle: HILOS_MAINTENANCE_DISABLE_COPY.refusalTitle,
+    unconfirmedNote: HILOS_MAINTENANCE_DISABLE_COPY.unconfirmedNote,
+    successMessage: 'Maintenance is off — pages are reloading',
+  },
+  {
+    name: 'pass',
+    action: 'maintenance_pass',
+    opensFrom: manualState(),
+    leaves: [
+      maintenanceState(),
+      maintenanceState({ phase: 'active', operation: 'restore' }),
+    ],
+    leftBlock: 'hilos-maintenance-state-open',
+    title: HILOS_MAINTENANCE_PASS_COPY.mintTitle,
+    texts: [
+      HILOS_MAINTENANCE_PASS_COPY.lead,
+      HILOS_MAINTENANCE_PASS_COPY.reuseNote,
+    ],
+    refusalTitle: HILOS_MAINTENANCE_PASS_COPY.refusalTitle,
+    unconfirmedNote: HILOS_MAINTENANCE_PASS_COPY.unconfirmedNote,
+    successMessage: 'Code issued',
+  },
+]
+
+/**
+ * A button of a manual action's confirmation, which must already be open.
+ *
+ * @param name The action's name in its data-ids.
+ * @param button Which of the two buttons.
+ */
+function manualButton(
+  name: ManualCase['name'],
+  button: 'confirm' | 'cancel',
+): HTMLButtonElement {
+  return byId<HTMLButtonElement>(
+    `hilos-maintenance-${name}-${button}`,
+  ) as HTMLButtonElement
+}
+
+/**
+ * Mount the real page and open a manual action's confirmation from a server frame.
+ *
+ * @param manual The action and the frame its opener stands on.
+ */
+async function openManual(manual: Pick<ManualCase, 'name' | 'opensFrom'>) {
+  const { actions, dispatched } = makeActions()
+  const { context, pushState } = seededContext([], actions)
+  const fixture = mountPage(context)
+  pushState(manual.opensFrom)
+  await settled(fixture)
+  const opener = byId<HTMLButtonElement>(
+    `hilos-maintenance-${manual.name}`,
+  ) as HTMLButtonElement
+  opener.focus()
+  opener.click()
+  await settled(fixture)
+
+  return { fixture, pushState, dispatched, opener }
+}
+
+describe.each(MANUAL_CASES)(
+  'HilosMaintenancePage $name confirmation',
+  (manual) => {
+    const modal = () => byId(`hilos-maintenance-${manual.name}-modal`)
+    const confirm = () => manualButton(manual.name, 'confirm')
+    const cancel = () => manualButton(manual.name, 'cancel')
+
+    it.each(['cancel', 'close', 'escape', 'backdrop'] as const)(
+      'explains itself and allows %s before dispatch without sending anything',
+      async (method) => {
+        const { fixture, dispatched, opener } = await openManual(manual)
+        const dialog = dialogOf(`hilos-maintenance-${manual.name}-modal`)
+        expect(dialog.getAttribute('aria-label')).toBe(manual.title)
+        expect(dialog.getAttribute('aria-modal')).toBe('true')
+        expect(document.activeElement).toBe(dialog)
+        expect(dialog.querySelector('input, textarea')).toBeNull()
+        for (const text of manual.texts) {
+          expect(dialog.textContent).toContain(text)
+        }
+        expect(
+          dialog.querySelector('[data-id="hilos-action-error-idle"]'),
+        ).not.toBeNull()
+
+        await closeBy(fixture, dialog, cancel(), method)
+
+        expect(modal()).toBeNull()
+        expect(dispatched).toHaveLength(0)
+        expect(document.activeElement).toBe(opener)
+      },
+    )
+
+    it('blocks repeat and every close while busy, survives a state push and settles on its one success', async () => {
+      const { fixture, dispatched, pushState } = await openManual(manual)
+      const dialog = dialogOf(`hilos-maintenance-${manual.name}-modal`)
+      confirm().click()
+      confirm().click()
+      await settled(fixture)
+
+      expect(dispatched).toMatchObject([{ action: manual.action, payload: {} }])
+      expect(confirm().disabled).toBe(true)
+      expect(cancel().disabled).toBe(true)
+      await tryEveryClose(fixture, dialog, cancel())
+      expect(modal()).not.toBeNull()
+      dispatched[0]?.loading.set(true)
+      await settled(fixture)
+      expect(confirm().getAttribute('aria-busy')).toBe('true')
+
+      // A state push replaces the block under the dialog and leaves the dialog be.
+      pushState(manual.leaves[0] as HilosMaintenanceState)
+      await settled(fixture)
+      expect(byId(`hilos-maintenance-${manual.name}`)).toBeNull()
+      expect(byId(manual.leftBlock)).not.toBeNull()
+      expect(modal()?.closest('[role="dialog"]')).toBe(dialog)
+      expect(cancel().disabled).toBe(true)
+      expect(hilosToasts.toasts.get()).toHaveLength(0)
+
+      dispatched[0]?.settle({
+        message: manual.successMessage,
+        ...(manual.name === 'pass' ? { reply: { pass: 'opaque-secret' } } : {}),
+      })
+      await settled(fixture)
+
+      if (manual.name === 'pass') {
+        expect(modal()?.textContent).toContain('opaque-secret')
+        expect(byId('hilos-maintenance-pass-result')).not.toBeNull()
+      } else {
+        expect(modal()).toBeNull()
+      }
+      expect(hilosToasts.toasts.get()).toMatchObject([
+        { message: manual.successMessage, severity: 'success', repeats: 1 },
+      ])
+      expect(dispatched).toHaveLength(1)
+    })
+
+    it.each(manual.leaves)(
+      'blocks an unsent confirmation once its frame is gone: %j',
+      async (state) => {
+        const { fixture, pushState, dispatched } = await openManual(manual)
+
+        pushState(state)
+        await settled(fixture)
+
+        expect(confirm().disabled).toBe(true)
+        confirm().click()
+        expect(dispatched).toHaveLength(0)
+        expect(cancel().disabled).toBe(false)
+        cancel().click()
+        await settled(fixture)
+        expect(modal()).toBeNull()
+      },
+    )
+
+    it.each(['fail', 'timeout', 'disconnected', 'invalid-reply'] as const)(
+      'keeps %s readable in the modal, releases Cancel and never retries',
+      async (outcome) => {
+        const { fixture, dispatched, pushState } = await openManual(manual)
+        confirm().click()
+        await settled(fixture)
+        // A changed state never answers the action, even when its eventual answer is a refusal.
+        pushState(manual.leaves[0] as HilosMaintenanceState)
+        await settled(fixture)
+        const reason =
+          outcome === 'fail'
+            ? 'Another request is awaiting confirmation.'
+            : 'No reply received.'
+
+        dispatched[0]?.refuse(new ActionError(manual.action, outcome, reason))
+        await settled(fixture)
+
+        const message = outcome === 'fail' ? reason : manual.unconfirmedNote
+        expect(
+          modal()?.querySelector('[data-id="hilos-action-error"]')?.textContent,
+        ).toContain(message)
+        expect(
+          modal()
+            ?.querySelector('[data-id="hilos-action-error-slot"]')
+            ?.getAttribute('aria-live'),
+        ).toBe('assertive')
+        expect(cancel().disabled).toBe(false)
+        expect(confirm().disabled).toBe(true)
+        expect(hilosToasts.toasts.get()).toMatchObject([
+          { message, severity: 'error' },
+        ])
+        expect(dispatched).toHaveLength(1)
+        cancel().click()
+        await settled(fixture)
+        expect(modal()).toBeNull()
+      },
+    )
+
+    it('shows the entire backend unconfirmed reason and admin details through the standard refusal plate', async () => {
+      const { fixture, dispatched } = await openManual(manual)
+      confirm().click()
+      await settled(fixture)
+      const reason = `${manual.unconfirmedNote} The agent did not observe its phase.`
+
+      dispatched[0]?.refuse(
+        new ActionError(
+          manual.action,
+          'fail',
+          reason,
+          'MaintenanceFailure',
+          'Original detail',
+        ),
+      )
+      await settled(fixture)
+      modal()
+        ?.querySelector<HTMLButtonElement>(
+          '[data-id="hilos-action-error-details"]',
+        )
+        ?.click()
+      await settled(fixture)
+
+      expect(document.body.textContent).toContain(reason)
+      expect(document.body.textContent).toContain('MaintenanceFailure')
+      expect(document.body.textContent).toContain('Original detail')
+      expect(
+        [...document.querySelectorAll('[role="dialog"]')].map((dialog) =>
+          dialog.getAttribute('aria-label'),
+        ),
+      ).toContain(manual.refusalTitle)
+      expect(cancel().disabled).toBe(false)
+    })
+  },
+)
+
 describe('HilosMaintenancePage with the addresses hidden (HIL-1260)', () => {
   const HIDDEN = { _hidden: true } as const
 
@@ -772,6 +1330,43 @@ describe('HilosMaintenancePage and the admin view mode', () => {
     }
   }
 
+  it.each(MANUAL_CASES)(
+    'disables $name for a viewer and after a live revoke while its confirmation is open',
+    async (manual) => {
+      const { handshake } = bindSession()
+      handshake(null, true)
+      const { actions, dispatched } = makeActions()
+      const { context, pushState } = seededContext([], actions)
+      const fixture = mountPage(context)
+      pushState(manual.opensFrom)
+      await settled(fixture)
+      const button = byId<HTMLButtonElement>(
+        `hilos-maintenance-${manual.name}`,
+      ) as HTMLButtonElement
+      expect(button.disabled).toBe(true)
+      expect(button.getAttribute('aria-describedby')).toContain(
+        HILOS_VIEW_MODE_STRIP_TEXT_ID,
+      )
+      button.click()
+      await settled(fixture)
+      expect(byId(`hilos-maintenance-${manual.name}-modal`)).toBeNull()
+
+      handshake({ id: 7, admin: true }, true)
+      await settled(fixture)
+      expect(button.disabled).toBe(false)
+      button.click()
+      await settled(fixture)
+      expect(manualButton(manual.name, 'confirm').disabled).toBe(false)
+
+      handshake({ id: 7, admin: false }, true)
+      await settled(fixture)
+      expect(manualButton(manual.name, 'confirm').disabled).toBe(true)
+      manualButton(manual.name, 'confirm').click()
+      expect(dispatched).toHaveLength(0)
+      expect(manualButton(manual.name, 'cancel').disabled).toBe(false)
+    },
+  )
+
   it('a viewer opens the add dialog, may type an address and has nothing to send it with', async () => {
     const { handshake } = bindSession()
     handshake(null, true)
@@ -850,5 +1445,133 @@ describe('HilosMaintenancePage and the admin view mode', () => {
     openAndType(fixture, 'someone@example.test')
     expect(addConfirm().disabled).toBe(false)
     expect(addConfirm().getAttribute('aria-describedby')).toBeNull()
+  })
+})
+
+describe('HilosMaintenancePage code result', () => {
+  /**
+   * Leave the page as a route change does: the view is destroyed and its
+   * element leaves the document — a destroyed root view alone stays drawn.
+   */
+  function leavePage(): void {
+    TestBed.resetTestingModule()
+  }
+
+  const PASS: Pick<ManualCase, 'name' | 'opensFrom'> = {
+    name: 'pass',
+    opensFrom: manualState(),
+  }
+  const passModal = () => byId('hilos-maintenance-pass-modal')
+  const confirm = () => manualButton('pass', 'confirm')
+  const cancel = () => manualButton('pass', 'cancel')
+
+  it.each(['cancel', 'close', 'escape', 'backdrop'] as const)(
+    'forgets the secret on %s, returns focus and opens a fresh confirmation',
+    async (method) => {
+      const { fixture, dispatched, opener } = await openManual(PASS)
+      confirm().click()
+      await settled(fixture)
+      const secret = '<opaque&code>'
+      dispatched[0]?.settle({ message: 'Code issued', reply: { pass: secret } })
+      await settled(fixture)
+      const dialog = dialogOf('hilos-maintenance-pass-modal')
+      const value = byId('hilos-maintenance-pass-value')
+      expect(value?.textContent).toBe(secret)
+      expect(value?.querySelector('opaque')).toBeNull()
+      expect(document.activeElement).toBe(value)
+      expect(dialog.getAttribute('aria-label')).toBe(
+        HILOS_MAINTENANCE_PASS_COPY.codeTitle,
+      )
+      expect(cancel().textContent?.trim()).toBe(
+        HILOS_MAINTENANCE_PASS_COPY.close,
+      )
+      expect(byId('hilos-maintenance-pass-confirm')).toBeNull()
+      expect(hilosToasts.toasts.get()).toMatchObject([
+        { message: 'Code issued' },
+      ])
+      expect(JSON.stringify(hilosToasts.toasts.get())).not.toContain(secret)
+      for (const element of document.querySelectorAll('*')) {
+        for (const attribute of element.attributes) {
+          expect(attribute.value).not.toContain(secret)
+        }
+      }
+      expect(
+        JSON.stringify({ ...localStorage, ...sessionStorage }),
+      ).not.toContain(secret)
+      expect(window.location.href).not.toContain(secret)
+
+      await closeBy(fixture, dialog, cancel(), method)
+
+      expect(passModal()).toBeNull()
+      expect(document.body.textContent).not.toContain(secret)
+      expect(document.activeElement).toBe(opener)
+      opener.click()
+      await settled(fixture)
+      expect(passModal()?.textContent).not.toContain(secret)
+      expect(byId('hilos-maintenance-pass-result')).toBeNull()
+      expect(confirm().disabled).toBe(false)
+      expect(dispatched).toHaveLength(1)
+      confirm().click()
+      await settled(fixture)
+      expect(dispatched).toHaveLength(2)
+      dispatched[1]?.settle({ reply: { pass: 'new-code' } })
+      await settled(fixture)
+      expect(passModal()?.textContent).toContain('new-code')
+      expect(passModal()?.textContent).not.toContain(secret)
+    },
+  )
+
+  it('forgets a shown result on unmount', async () => {
+    const { fixture, dispatched } = await openManual(PASS)
+    confirm().click()
+    await settled(fixture)
+    dispatched[0]?.settle({ reply: { pass: 'departed-code' } })
+    await settled(fixture)
+    expect(passModal()?.textContent).toContain('departed-code')
+
+    leavePage()
+
+    expect(document.body.textContent).not.toContain('departed-code')
+    expect(passModal()).toBeNull()
+  })
+
+  it('cannot resurrect a result from a promise after unmount', async () => {
+    const { fixture, dispatched } = await openManual(PASS)
+    confirm().click()
+    await settled(fixture)
+    leavePage()
+
+    dispatched[0]?.settle({ reply: { pass: 'late-code' } })
+    await new Promise((resolve) => setTimeout(resolve))
+
+    expect(document.body.textContent).not.toContain('late-code')
+    expect(passModal()).toBeNull()
+    const reopened = await openManual(PASS)
+    expect(passModal()?.textContent).not.toContain('late-code')
+    expect(reopened.dispatched).toHaveLength(0)
+  })
+
+  it('a late success after timeout cannot replace a newly opened confirmation', async () => {
+    const { fixture, dispatched, opener } = await openManual(PASS)
+    confirm().click()
+    await settled(fixture)
+    dispatched[0]?.refuse(
+      new ActionError('maintenance_pass', 'timeout', 'Timed out'),
+    )
+    await settled(fixture)
+    expect(passModal()?.textContent).toContain(
+      HILOS_MAINTENANCE_PASS_COPY.unconfirmedNote,
+    )
+    cancel().click()
+    await settled(fixture)
+    opener.click()
+    await settled(fixture)
+
+    dispatched[0]?.settle({ reply: { pass: 'orphan-code' } })
+    await settled(fixture)
+
+    expect(document.body.textContent).not.toContain('orphan-code')
+    expect(byId('hilos-maintenance-pass-result')).toBeNull()
+    expect(dispatched).toHaveLength(1)
   })
 })

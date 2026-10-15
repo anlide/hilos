@@ -65,8 +65,9 @@ in `FEATURES`; the first one is `hilos_maintenance`
 verifier circle through the framework's `HilosVerifierCircleTable`. It is also
 where an admin closes the system to visitors by hand: its `maintenance_enable`
 action hands entry to the index agent and waits for confirmation
-([protected-mode.md](protected-mode.md), *Manual Maintenance*). The Vue open-state
-banner offers a confirmation with no visitor-message field. It stays mounted
+([protected-mode.md](protected-mode.md), *Manual Maintenance*). The open-state
+banner offers a confirmation with no visitor-message field, the same in all three
+SDKs. It stays mounted
 through state pushes, closes only on its tracked success, and holds refusals in
 the dialog; timeout or disconnect asks the administrator to check Maintenance
 before trying again. A view-mode viewer finds the enable button disabled.

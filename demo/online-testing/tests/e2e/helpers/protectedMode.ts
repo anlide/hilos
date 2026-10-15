@@ -29,6 +29,7 @@ const LEAVE_COMMAND = 'test:protected-mode:leave'
 const OPEN_COMMAND = 'test:protected-mode:open'
 const PASS_COMMAND = 'test:protected-mode:pass'
 const INSPECT_COMMAND = 'protected-mode:inspect'
+const MAINTENANCE_DISABLE_COMMAND = 'maintenance:disable'
 
 /**
  * A refusal the daemon answered with, as opposed to a command it never answered.
@@ -187,6 +188,24 @@ export async function openProtectedModeIfAny(): Promise<void> {
     // here, the failure surfaces in whatever spec runs next and looks like that one's defect.
     throw error
   }
+}
+
+/**
+ * Turns the manual window off through its production command, for cleanup.
+ *
+ * Resolves once this node's runtime row reads inactive.
+ *
+ * @returns The phase the agent observed.
+ */
+export async function disableManualMaintenance(): Promise<string> {
+  const reply = await sendProtectedModeDrive(
+    MAINTENANCE_DISABLE_COMMAND,
+    {},
+    null,
+    ['inactive'],
+  )
+
+  return String(reply.phase ?? '')
 }
 
 /**

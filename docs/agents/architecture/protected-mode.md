@@ -20,8 +20,8 @@ not a second entry "for tests".
 
 An administrator closes visitors out through the Maintenance page's
 `maintenance_enable` action or the CLI (`maintenance:enable`); both trigger
-the index agent, which asks through this same entry. The Vue page offers a
-confirmation dialog from its open-state banner (HIL-1362).
+the index agent, which asks through this same entry. The page of each SDK
+offers a confirmation dialog from its open-state banner (HIL-1362, HIL-1365).
 There is no second entry:
 the core authorizes the recorded agent by type and index; the agent authorizes
 the person.
@@ -971,7 +971,7 @@ existing 13-second agent wait remains the only server wait, within the client's
 30-second action timeout, and a late ready produces no second answer. The
 session hash stays inside the request and is absent from the outcome and ack.
 
-The Vue open-state banner carries a yellow **Turn on maintenance** button,
+The open-state banner carries a yellow **Turn on maintenance** button,
 below its text on a narrow screen. Unknown, manual and operation states carry
 no enable button. Its confirmation explains the visitor screen, the initiating
 tab, the captured circle and later code holders staying inside, and the agents
@@ -979,10 +979,11 @@ continuing to work. There is no visitor-message field; the footer names admitted
 administrators as those who may turn it off.
 
 The core owns `MAINTENANCE_ENABLE_ACTION`, `sendMaintenanceEnable()` and
-`HILOS_MAINTENANCE_ENABLE_COPY`; the action dispatches exactly `{}`. Vue binds
-`useTrackedAction`, `LoadingButton` and `HilosActionError`. Before submission,
-Cancel, the cross, Esc and backdrop close without sending. While waiting, every
-close and repeat submit is blocked. The dialog is mounted outside the open-state
+`HILOS_MAINTENANCE_ENABLE_COPY`; the action dispatches exactly `{}`. Each SDK
+binds its tracked-action driver (`useTrackedAction` in Vue and React,
+`createHilosTrackedAction` in Angular), `LoadingButton` and `HilosActionError`.
+Before submission, Cancel, the cross, Esc and backdrop close without sending.
+While waiting, every close and repeat submit is blocked. The dialog is mounted outside the open-state
 banner: a manual push replaces the banner without unmounting the pending submit.
 A changed position blocks an unsent confirmation; an already sent action waits
 for its own answer. Success closes and the ordinary tracked lifecycle shows the
@@ -1000,7 +1001,7 @@ unconfirmed. Check the state in Maintenance before trying again." followed by
 the reason. The same 13-second server wait and 30-second client timeout apply,
 with no retry or extra waiter. A late inactive produces no second answer.
 
-The Vue manual card alone offers the yellow **Turn off maintenance** button.
+The manual card alone offers the yellow **Turn off maintenance** button.
 Its confirmation explains opening to everyone, every page reloading itself,
 issued codes losing admission and a new enable being needed to close again.
 The core owns `MAINTENANCE_DISABLE_ACTION`, `sendMaintenanceDisable()` and
@@ -1015,7 +1016,7 @@ the actor's, without waiting for the ack. The component never reloads locally;
 if the ack arrives first, the ordinary tracked lifecycle may show the one server
 sentence "Maintenance is off — pages are reloading".
 
-The Vue manual card also offers **Issue code**. Its confirmation sends the
+The manual card also offers **Issue code**. Its confirmation sends the
 tracked `maintenance_pass` action with an empty `MaintenancePassActionDTO`;
 untracked requests are refused before minting. The page resolves the session
 and checks the verifying manual window and admission. Its ADMIN gate keeps
@@ -1040,7 +1041,7 @@ error, toast, log, URL or browser storage.
 The core owns `MAINTENANCE_PASS_ACTION`, `maintenancePassReplySchema`,
 `HilosMaintenancePassReply`, `sendMaintenancePass()` and
 `HILOS_MAINTENANCE_PASS_COPY`. A missing or empty reply code is `invalid-reply`.
-Vue uses the existing tracked runner, loading button and reserved refusal
+Each SDK uses its existing tracked runner, loading button and reserved refusal
 plate. Pending blocks every close and repeat submit; a changed state blocks
 an unsent confirmation, and the modal stands outside the conditional card.
 A confirmed reply replaces the confirmation with **Verification code**, focuses
@@ -1059,9 +1060,8 @@ a late hash produces no second answer. The ordinary state push updates only
 the pass count for every admitted subscriber.
 
 Enable, disable and code issuance are disabled for a view-mode viewer,
-including their confirmation openers. React and Angular manual
-controls follow separately (not in the code yet — HIL-1365). There is no extra
-project wiring: the index agent already serves this page and owns manual entry.
+including their confirmation openers, in each of the three SDKs. There is no
+extra project wiring: the index agent already serves this page and owns manual entry.
 In a cluster all masters close; disable and code minting work from any node
 (not in the code yet — HIL-1367).
 

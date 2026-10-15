@@ -411,6 +411,18 @@ named: a phone signed into by SMS code, or an email proven by its registration c
 confirmed through the profile (HIL-825). The database list outlives a scenario, so
 start every circle scenario with `clearMaintenanceCircle`. Assertions stay in the demo.
 
+Their file, `framework/frontend/e2e/maintenance.ts`, also drives the section's
+manual window. `turnOnMaintenance` presses **Turn on maintenance** on the open
+banner, confirms, and settles on the dialog's closing, which only the ack brings.
+`issueMaintenanceCode` issues a code from the manual card, reads it off its one
+showing and closes the result, which forgets it on the page; it returns the code.
+`turnOffMaintenance` confirms **Turn off maintenance** and does not wait for the
+dialog: the lift reloads every open page, this one too, so the spec waits for the
+state it expects on the reloaded page. `presentMaintenanceCode` types a code into
+the maintenance screen and submits it. The first three expect the operator's page
+on `/hilos/maintenance`; turning the window off from a command for cleanup is the
+demo's own helper.
+
 ### The bell and the channel switch — `openBell`, `unreadBadge`, `enableEmailChannel`
 
 `openBell` opens the bell a demo mounts in its header slot (`HilosNotificationBell`)

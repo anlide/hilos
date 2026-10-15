@@ -9,10 +9,12 @@ import { reAskProtectedMode } from '../../../../../framework/frontend/scripts/pr
 //
 // Narrower than the binance-btc-tracker and online-testing peers on purpose:
 // this demo drives only what its own specs assert with - the freeze on, the
-// freeze off, and the end of the operation that leaves the node in the
-// verification window (HIL-911). Inspect is
-// present only because any drive may need one state re-ask after a lost reply;
-// mint waits for the first spec that has something to assert with it.
+// freeze off, the end of the operation that leaves the node in the
+// verification window (HIL-911), and the manual window off for a scenario that
+// failed before its own browser could turn it off. Inspect is present because
+// any drive may need one state re-ask after a lost reply, and because that
+// cleanup asks first whether there is a manual window to turn off; mint waits
+// for the first spec that has something to assert with it.
 const COMMAND_HOST = process.env.COMMAND_HOST ?? 'ecommerce-shop-daemon-test'
 const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 
@@ -35,6 +37,7 @@ const ENTER_COMMAND = 'test:protected-mode:enter'
 const LEAVE_COMMAND = 'test:protected-mode:leave'
 const OPEN_COMMAND = 'test:protected-mode:open'
 const INSPECT_COMMAND = 'protected-mode:inspect'
+const MAINTENANCE_DISABLE_COMMAND = 'maintenance:disable'
 
 /**
  * A refusal the daemon answered with, as opposed to a command it never answered.
@@ -133,6 +136,24 @@ export async function openProtectedModeIfAny(): Promise<void> {
     // here, the failure surfaces in whatever spec runs next and looks like that one's defect.
     throw error
   }
+}
+
+/**
+ * Turns the manual window off through its production command, for cleanup.
+ *
+ * Resolves once this node's runtime row reads inactive.
+ *
+ * @returns The phase the agent observed.
+ */
+export async function disableManualMaintenance(): Promise<string> {
+  const reply = await sendProtectedModeDrive(
+    MAINTENANCE_DISABLE_COMMAND,
+    {},
+    null,
+    ['inactive'],
+  )
+
+  return String(reply.phase ?? '')
 }
 
 /**

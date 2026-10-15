@@ -18,7 +18,9 @@ import { signUp } from '../helpers/session.js'
 // binance-btc-tracker's protected-mode.spec.ts covers the freeze, the admitted circle
 // and an absent member with the live presence mark; ecommerce-shop's
 // maintenance.spec.ts covers naming and both refusals in the dialog and in the
-// corner.
+// corner. This demo's protected-mode.spec.ts drives the Angular section's manual
+// window: on with the button, a code issued in the section, a second administrator
+// let in by it and turning it off.
 // The section's dialogs in all three SDKs remain covered by unit tests:
 // framework/frontend/vue/src/admin/maintenance/HilosMaintenancePage.test.ts,
 // framework/frontend/react/test/HilosMaintenancePage.test.tsx,

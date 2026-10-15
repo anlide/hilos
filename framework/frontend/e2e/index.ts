@@ -49,8 +49,12 @@ export {
   addToMaintenanceCircle,
   clearMaintenanceCircle,
   confirmMaintenanceCircleRemoval,
+  issueMaintenanceCode,
   maintenanceCircleOnline,
   maintenanceCircleRow,
+  presentMaintenanceCode,
+  turnOffMaintenance,
+  turnOnMaintenance,
 } from './maintenance.js'
 export { enableEmailChannel, openBell, unreadBadge } from './notifications.js'
 export {

@@ -3,8 +3,9 @@ import type { Locator, Page } from '@playwright/test'
 import { shownByTestId } from './table.js'
 
 // Maintenance section steps shared by all three SDKs, whose data-id controls match.
-// These expect the operator's page on /hilos/maintenance. Only an address somebody
-// has confirmed can be named to the verifier circle.
+// These expect the operator's page on /hilos/maintenance, except the code's entry,
+// which is the maintenance screen's own. Only an address somebody has confirmed can
+// be named to the verifier circle.
 
 // How many rows the circle is emptied of before the attempt is called broken. Every
 // removal takes one row out, so the count is what ends that loop; this only makes a
@@ -136,4 +137,87 @@ export function maintenanceCircleOnline(
   identifier: string,
 ): Locator {
   return shownByTestId(page, `hilos-maintenance-circle-online-${identifier}`)
+}
+
+/**
+ * Presses a control the way a person does: brought into view, shown, focused, clicked.
+ *
+ * @param control The control to press.
+ */
+async function press(control: Locator): Promise<void> {
+  await control.scrollIntoViewIfNeeded()
+  await control.waitFor({ state: 'visible' })
+  await control.focus()
+  await control.click()
+}
+
+/**
+ * Closes the system to visitors from the section's open banner, confirmed in its dialog.
+ *
+ * @param page The operator's page, on the maintenance section of an open node.
+ */
+export async function turnOnMaintenance(page: Page): Promise<void> {
+  await press(page.getByTestId('hilos-maintenance-enable'))
+  await press(page.getByTestId('hilos-maintenance-enable-confirm'))
+  // The dialog closes on the ack and stays open on a refusal or an unconfirmed
+  // outcome, so its going is the window having opened rather than a fixed moment.
+  await page
+    .getByTestId('hilos-maintenance-enable-modal')
+    .waitFor({ state: 'detached' })
+}
+
+/**
+ * Issues a code from the manual card, reads it off its one showing, and closes the
+ * result — which forgets the code on the page.
+ *
+ * @param page The operator's page, on the maintenance section of the manual window.
+ * @returns The code, as the result dialog showed it.
+ */
+export async function issueMaintenanceCode(page: Page): Promise<string> {
+  await press(page.getByTestId('hilos-maintenance-pass'))
+  await press(page.getByTestId('hilos-maintenance-pass-confirm'))
+  // The value is drawn only from the action's own reply.
+  const value = page.getByTestId('hilos-maintenance-pass-value')
+  await value.waitFor({ state: 'visible' })
+  const code = (await value.innerText()).trim()
+  if (code === '') {
+    throw new Error('The code result showed no code')
+  }
+  await press(page.getByTestId('hilos-maintenance-pass-cancel'))
+  await page
+    .getByTestId('hilos-maintenance-pass-modal')
+    .waitFor({ state: 'detached' })
+
+  return code
+}
+
+/**
+ * Opens the system to everyone from the manual card, confirmed in its dialog.
+ *
+ * Does not wait for the dialog to close: the lift reloads every open page, this one
+ * too, and the document may go before the ack lands. A spec waits for the state it
+ * expects on the reloaded page instead.
+ *
+ * @param page An admitted operator's page, on the maintenance section of the manual window.
+ */
+export async function turnOffMaintenance(page: Page): Promise<void> {
+  await press(page.getByTestId('hilos-maintenance-disable'))
+  await press(page.getByTestId('hilos-maintenance-disable-confirm'))
+}
+
+/**
+ * Types a code into the maintenance screen and submits it.
+ *
+ * @param page A page showing the maintenance screen of the verification window.
+ * @param code The code to present.
+ */
+export async function presentMaintenanceCode(
+  page: Page,
+  code: string,
+): Promise<void> {
+  const field = page.getByTestId('maintenance-pass')
+  await field.waitFor({ state: 'visible' })
+  await field.fill('')
+  await field.pressSequentially(code, { delay: 10 })
+  await press(page.getByTestId('maintenance-pass-submit'))
 }

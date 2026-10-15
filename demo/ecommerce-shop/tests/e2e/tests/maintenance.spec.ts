@@ -17,7 +17,9 @@ import { signUp, uniqueEmail } from '../helpers/session.js'
 // The other live circle seams run once in their own demos: binance-btc-tracker's
 // protected-mode.spec.ts covers the freeze, the admitted circle and an absent member
 // with the live presence mark; online-testing's maintenance.spec.ts covers removal
-// and a dialog over a row removed in another tab.
+// and a dialog over a row removed in another tab. This demo's protected-mode.spec.ts
+// drives the React section's manual window: on with the button, a code issued in the
+// section, a second administrator let in by it and turning it off.
 // The section's dialogs in all three SDKs remain covered by unit tests:
 // framework/frontend/vue/src/admin/maintenance/HilosMaintenancePage.test.ts,
 // framework/frontend/react/test/HilosMaintenancePage.test.tsx,
