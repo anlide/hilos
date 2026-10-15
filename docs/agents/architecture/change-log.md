@@ -124,7 +124,7 @@ answer: `Session::userAtKeyboard()` in
 | `web` | The person; both people under impersonation | The page's agent; the agent that wrote, when the page handed the write over | The session | `PageSignalRouter` around the accepted synchronous handler |
 | `migration` | Empty | None — the migration runner | The migration file | `Migration` around one SQL file |
 | `agent` | Empty, shown as “System” | The initiating agent; the actual writer after handover | The initiating agent's id | Explicit `JournalReceiptScope::run()` around one autonomous operation |
-| `cli` | Empty | The executing agent | The command's name; never a value it was given | `WorkerManager` around the agent's `onSignalCommand()` |
+| `cli` | Empty | The executing agent | The command's name and its declared address fields; never a value it was given | `WorkerManager` around the agent's `onSignalCommand()` |
 | `cron` | Empty | The initiating agent; the actual writer after handover | The rule name and its schedule expression | Worker CRON dispatch and explicit scopes around local scheduled work |
 | `mcp` | The person | — | The tool | Outside phase 1; when the MCP server arrives, HIL-356 |
 
@@ -132,12 +132,16 @@ The CLI command channel has no person by design; see
 [Who may call a command — nobody is asked](command-server.md#who-may-call-a-command--nobody-is-asked).
 
 A CLI receipt scope opens in the worker once the command payload is parsed, and
-covers one `onSignalCommand()` call. Its action and its source are the command's
-wire name, and a command handed on to another agent stays under that one receipt
-(join). Commands the master answers itself, `cli-offline-write` commands and
-`daemon-spawned` children write without a `cli` receipt; migrations write under a
-receipt of their own. The source does not carry a command's own address yet, such
-as the setting key of `settings:set` (not in the code yet — HIL-1514).
+covers one `onSignalCommand()` call. Its action is the command's wire name, and
+its source is the command's name plus any receipt address fields declared by the
+command's topology (`AgentCommandConfigKey::ADDRESS`, see
+[Wiring a command](command-server.md#wiring-a-command)); by default it carries
+only the command name. The source never carries a value the command was given to
+write, and is truncated to 512 characters. A command handed on to another agent
+stays under that one receipt (join). Commands the master answers itself,
+`cli-offline-write` commands and `daemon-spawned` children write without a `cli`
+receipt; migrations write under a receipt of their own.
+
 
 The action is the name the server knows — `bot.update`, `settings.set` — not the
 button's label.

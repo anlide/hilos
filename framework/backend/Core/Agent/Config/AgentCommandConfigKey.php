@@ -12,7 +12,7 @@ use Hilos\Core\Router\SignalDataInterface;
  * Unlike agent signals, commands route to an agent type (not a specific
  * multi-instance agent), so there is no index-field key. What a command entry may
  * declare beyond its route is the inner payload DTO the framework hydrates at
- * dispatch:
+ * dispatch, and the receipt address payload fields captured in the change log:
  *
  * ```php
  * public const array AGENT_COMMANDS = [
@@ -20,14 +20,10 @@ use Hilos\Core\Router\SignalDataInterface;
  *     MyCommand::TYPED_COMMAND => MyCommandRequestData::class,
  *     MyCommand::CONFIG_COMMAND => [
  *         AgentCommandConfigKey::DTO => MyCommandRequestData::class,
+ *         AgentCommandConfigKey::ADDRESS => ['settingKey'],
  *     ],
  * ];
  * ```
- *
- * The class carries one key today and stays a class rather than collapsing into the
- * shape above it, because the two forms are not two ways of saying one thing: the
- * middle line and the config array are alternatives, and only the second can grow a
- * second key. Its own sibling {@see AgentSignalConfigKey} carries three.
  */
 final class AgentCommandConfigKey
 {
@@ -37,4 +33,12 @@ final class AgentCommandConfigKey
      * @var string Config key naming the {@see SignalDataInterface} class hydrated at dispatch
      */
     public const string DTO = 'dto';
+
+    /**
+     * Receipt address payload fields captured in the change log.
+     *
+     * @var string Config key naming the list of payload field names captured in the receipt source
+     */
+    public const string ADDRESS = 'address';
 }
+

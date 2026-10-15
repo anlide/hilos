@@ -86,4 +86,35 @@ final class AgentCommandRouteRegistry
 
         return $dtoRoutes;
     }
+
+    /**
+     * Returns agent-owned command receipt address field names.
+     *
+     * @param array $agents Agent registry
+     * @return array<string, list<string>> Address payload field names keyed by command name
+     */
+    public static function addressRoutes(array $agents): array
+    {
+        $addressRoutes = [];
+        foreach ($agents as $agentType => $registryEntry) {
+            $agentClass = AgentRegistry::workerClass($registryEntry);
+            if (!is_string($agentType) || $agentClass === null || !is_subclass_of($agentClass, AbstractAgent::class)) {
+                continue;
+            }
+
+            foreach ($agentClass::AGENT_COMMANDS as $key => $value) {
+                if (!is_string($key) || $key === '' || !is_array($value)) {
+                    continue;
+                }
+
+                $address = $value[AgentCommandConfigKey::ADDRESS] ?? null;
+                if (is_array($address) && $address !== []) {
+                    $addressRoutes[$key] = array_values($address);
+                }
+            }
+        }
+
+        return $addressRoutes;
+    }
 }
+

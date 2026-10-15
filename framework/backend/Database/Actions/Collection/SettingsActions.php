@@ -50,8 +50,9 @@ class SettingsActions extends DbActions
      * @param array<string, array<string, mixed>> $catalog Catalog: key => [type, default_value]
      * @return Setting Created setting Db item
      * @throws SettingNotInCatalogException When key is not declared in the settings catalog
-     * @throws SettingValueRefusedException When the key declares a catalog rule the value fails
+     * @throws SettingValueRefusedException When the value is not of the expected type, or fails the key's catalog rule
      * @throws SettingInvalidValueException When the value is null, or the catalog names a rule that is not one
+     * @throws SettingTypeMismatchException When the catalog type is not a supported setting type
      * @throws CallbackNotSetException When the collection cannot wrap the created object as a DB item
      * @throws DatabaseException When collection loading or setting persistence fails
      * @throws DuplicateIdException When the created setting id already exists in the collection
@@ -72,10 +73,12 @@ class SettingsActions extends DbActions
         if ($value === null) {
             throw new SettingInvalidValueException("Setting key '{$key}' cannot be stored without a value");
         }
-        SettingValueRules::assertValid($key, $value);
 
         $entry = $catalog[$key];
         $type = $entry[SettingsCatalogConstants::CATALOG_ENTRY_TYPE] ?? SettingsCatalogConstants::TYPE_STRING;
+
+        $value = SettingValueRules::typed($key, $type, $value);
+        SettingValueRules::assertValid($key, $value);
 
         $objectClass = $this->objectCollection::OBJECT_CLASS;
         $setting = $objectClass::create();

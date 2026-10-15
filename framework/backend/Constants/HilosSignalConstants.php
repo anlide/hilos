@@ -2653,6 +2653,14 @@ final class HilosSignalConstants
     public const string HILOS_SETTING_WRITE_DONE = 'hilos_setting_write_done';
 
     /**
+     * Settings library → settings library: a CLI setting command write is done, or refused (HIL-1514).
+     *
+     * The answer the library addresses to itself to reply to the command channel — including
+     * after a deferred second-factor trust reduction lands. Carried by {@see HandoverAnswerSignalData}.
+     */
+    public const string HILOS_SETTING_COMMAND_DONE = 'hilos_setting_command_done';
+
+    /**
      * The settings library → the communications channel screen: your write is done, or refused
      * (HIL-946).
      *

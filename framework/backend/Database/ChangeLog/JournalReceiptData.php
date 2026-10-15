@@ -7,6 +7,8 @@ namespace Hilos\Database\ChangeLog;
 /** The attribution stored for one journaled operation. */
 final readonly class JournalReceiptData
 {
+    public const int MAX_SOURCE_LENGTH = 512;
+
     private function __construct(
         public ?int $actorUserId,
         public ?int $subjectUserId,
@@ -47,12 +49,19 @@ final readonly class JournalReceiptData
     /**
      * @param string $command Command name as it goes on the wire
      * @param ?string $agent Agent that took the command
+     * @param list<string> $address Address field values captured in the receipt source
      * @return self CLI command attribution
      */
-    public static function cli(string $command, ?string $agent): self
+    public static function cli(string $command, ?string $agent, array $address = []): self
     {
-        return new self(null, null, null, 'cli', $command, $agent, $command);
+        $source = $address === [] ? $command : $command . ' ' . implode(' ', $address);
+        if (mb_strlen($source) > self::MAX_SOURCE_LENGTH) {
+            $source = mb_substr($source, 0, self::MAX_SOURCE_LENGTH);
+        }
+
+        return new self(null, null, null, 'cli', $command, $agent, $source);
     }
+
 
     /**
      * @param string $direction Migration direction, up or down

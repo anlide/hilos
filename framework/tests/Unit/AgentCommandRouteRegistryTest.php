@@ -47,6 +47,22 @@ final class AgentCommandRouteRegistryTest extends TestCase
         ], AgentCommandRouteRegistry::dtoRoutes($this->agents()));
     }
 
+    public function testAddressRoutesReturnOnlyCommandsThatDeclareAnAddress(): void
+    {
+        $this->assertSame([
+            'configured' => ['settingKey'],
+            'configured_without_dto' => ['id', 'action'],
+        ], AgentCommandRouteRegistry::addressRoutes($this->agents()));
+    }
+
+    public function testAddressRoutesSkipNonAgentRegistryEntries(): void
+    {
+        $this->assertSame([], AgentCommandRouteRegistry::addressRoutes([
+            'not_agent' => [AgentRegistryKey::WORKER => CommandRequestDTO::class],
+            0 => [AgentRegistryKey::WORKER => CommandListRouteAgent::class],
+        ]));
+    }
+
     public function testRoutesSkipNonAgentRegistryEntries(): void
     {
         $this->assertSame([], AgentCommandRouteRegistry::routes([
@@ -83,11 +99,17 @@ final class CommandConfigRouteAgent extends AbstractAgent
     public const string AGENT_TYPE = 'config_agent';
 
     public const array AGENT_COMMANDS = [
-        'configured' => [AgentCommandConfigKey::DTO => CommandRequestDTO::class],
-        'configured_without_dto' => [],
+        'configured' => [
+            AgentCommandConfigKey::DTO => CommandRequestDTO::class,
+            AgentCommandConfigKey::ADDRESS => ['settingKey'],
+        ],
+        'configured_without_dto' => [
+            AgentCommandConfigKey::ADDRESS => ['id', 'action'],
+        ],
     ];
 
     public function onStop(): void
     {
     }
 }
+

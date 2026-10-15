@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Action\HandoverAskInterface;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
@@ -22,7 +24,13 @@ use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\Preset\SettingPresetGroup;
 use Hilos\Database\Settings\Preset\SettingPresetGroupProviderInterface;
+use Hilos\Database\Settings\SettingsAccessor;
+use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Database\Settings\SettingsCatalogStub;
+use Hilos\Database\Settings\SettingsCommandConstants;
 use Hilos\Hilos;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 
@@ -67,10 +75,12 @@ final class SettingsLibraryAgentTest extends TestCase
         $this->logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-settings-library');
         Logger::setLogFile($this->logFile);
         Hilos::$sr = new SignalRouter();
+        Hilos::$setting = new SettingsAccessor(SettingsCatalogStub::class);
     }
 
     protected function tearDown(): void
     {
+        Hilos::$setting = null;
         Hilos::$sr = null;
         Logger::resetLogFile();
         if (is_file($this->logFile)) {
@@ -278,8 +288,128 @@ final class SettingsLibraryAgentTest extends TestCase
     public function testEveryAskIsOneTheReceiptStampsWithItsAsker(): void
     {
         foreach (SettingsLibraryAgent::AGENT_SIGNALS as $name => $class) {
+            if ($name === HilosSignalConstants::HILOS_SETTING_COMMAND_DONE) {
+                $this->assertSame(HandoverAnswerSignalData::class, $class);
+                continue;
+            }
             $this->assertTrue(is_subclass_of($class, HandoverAskInterface::class), $name);
         }
+    }
+
+    public function testCommandWithKeyOutsideCatalogIsRefusedWithoutFrame(): void
+    {
+        $agent = new SettingsLibraryAgent();
+        $correlationId = 'corr-unknown-key';
+        $command = new CommandRequestDTO(
+            correlationId: $correlationId,
+            command: CliCommands::SETTINGS_SET,
+            payload: [
+                SettingsCommandConstants::FIELD_KEY => 'unknown_setting_key',
+                SettingsCommandConstants::FIELD_VALUE => '42',
+            ],
+        );
+
+        $agent->onSignalCommand($command, 'cli', CliCommands::SETTINGS_SET);
+
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertSame(SignalTypeConstants::COMMAND_REPLY, $signal->signalType->getType());
+        $reply = $signal->data;
+        $this->assertInstanceOf(CommandReplyDTO::class, $reply);
+        $this->assertFalse($reply->isOk());
+        $this->assertSame($correlationId, $reply->correlationId);
+        $this->assertSame("Setting key 'unknown_setting_key' is not in catalog", $reply->payload['message'] ?? null);
+
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal(), 'Refusal must not queue any agent frames');
+    }
+
+    public function testCommandWithOrphanKeyIsRefusedWithoutFrame(): void
+    {
+        $agent = new SettingsLibraryAgent();
+        $correlationId = 'corr-orphan-key';
+        $command = new CommandRequestDTO(
+            correlationId: $correlationId,
+            command: CliCommands::SETTINGS_SET,
+            payload: [
+                SettingsCommandConstants::FIELD_KEY => 'some_orphan_key',
+                SettingsCommandConstants::FIELD_VALUE => 'test-val',
+            ],
+        );
+
+        $agent->onSignalCommand($command, 'cli', CliCommands::SETTINGS_SET);
+
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertSame(SignalTypeConstants::COMMAND_REPLY, $signal->signalType->getType());
+        $reply = $signal->data;
+        $this->assertInstanceOf(CommandReplyDTO::class, $reply);
+        $this->assertFalse($reply->isOk());
+        $this->assertSame($correlationId, $reply->correlationId);
+        $this->assertSame("Setting key 'some_orphan_key' is not in catalog", $reply->payload['message'] ?? null);
+
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal(), 'Refusal must not queue any agent frames');
+    }
+
+    public function testAcceptedSetCommandQueuesCommandDoneAnswerWithCorrelationId(): void
+    {
+        $agent = new SettingsLibraryAgent();
+        $correlationId = 'corr-accepted-set';
+        $command = new CommandRequestDTO(
+            correlationId: $correlationId,
+            command: CliCommands::SETTINGS_SET,
+            payload: [
+                SettingsCommandConstants::FIELD_KEY => SettingsCatalogConstants::STUB_KEY_EXAMPLE_INTEGER,
+                SettingsCommandConstants::FIELD_VALUE => '30',
+            ],
+        );
+
+        $agent->onSignalCommand($command, 'cli', CliCommands::SETTINGS_SET);
+
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertSame(SignalTypeConstants::AGENT_SIGNAL, $signal->signalType->getType());
+        $this->assertSame(HilosSignalConstants::HILOS_SETTING_COMMAND_DONE, $signal->signalName->getName());
+
+        $data = $signal->data;
+        $this->assertInstanceOf(AgentSignalData::class, $data);
+        $this->assertInstanceOf(HandoverAnswerSignalData::class, $data->data);
+        $this->assertSame($correlationId, $data->data->requestId);
+        $this->assertSame(CliCommands::SETTINGS_SET, $data->data->action);
+
+        $agent->onSignalAgent($data, 'hilos_settings_library', HilosSignalConstants::HILOS_SETTING_COMMAND_DONE);
+
+        $replySignal = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertNotNull($replySignal);
+        $this->assertSame(SignalTypeConstants::COMMAND_REPLY, $replySignal->signalType->getType());
+        $reply = $replySignal->data;
+        $this->assertInstanceOf(CommandReplyDTO::class, $reply);
+        $this->assertSame($correlationId, $reply->correlationId);
+    }
+
+    public function testAcceptedResetCommandQueuesCommandDoneAnswerWithCorrelationId(): void
+    {
+        $agent = new SettingsLibraryAgent();
+        $correlationId = 'corr-accepted-reset';
+        $command = new CommandRequestDTO(
+            correlationId: $correlationId,
+            command: CliCommands::SETTINGS_RESET,
+            payload: [
+                SettingsCommandConstants::FIELD_KEY => SettingsCatalogConstants::STUB_KEY_EXAMPLE_INTEGER,
+            ],
+        );
+
+        $agent->onSignalCommand($command, 'cli', CliCommands::SETTINGS_RESET);
+
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertSame(SignalTypeConstants::AGENT_SIGNAL, $signal->signalType->getType());
+        $this->assertSame(HilosSignalConstants::HILOS_SETTING_COMMAND_DONE, $signal->signalName->getName());
+
+        $data = $signal->data;
+        $this->assertInstanceOf(AgentSignalData::class, $data);
+        $this->assertInstanceOf(HandoverAnswerSignalData::class, $data->data);
+        $this->assertSame($correlationId, $data->data->requestId);
+        $this->assertSame(CliCommands::SETTINGS_RESET, $data->data->action);
     }
 
     /**

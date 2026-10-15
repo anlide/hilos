@@ -163,7 +163,28 @@ final class CatalogAgent extends AbstractAgent
 }
 ```
 
+A command may also declare a receipt address with `[AgentCommandConfigKey::ADDRESS => ['field']]`:
+
+```php
+final class SettingsLibraryAgent extends AbstractAgent
+{
+    public const array AGENT_COMMANDS = [
+        CliCommands::SETTINGS_SET => [
+            AgentCommandConfigKey::ADDRESS => ['settingKey'],
+        ],
+    ];
+
+    // …
+}
+```
+
+When an address is declared, the change log receipt's `source` carries the command name
+followed by the values of those payload fields separated by spaces. By default, the receipt
+source carries only the command name. The value that the command writes is never declared
+as an address.
+
 Handle it on that agent and always reply (ok or error), on every path:
+
 
 ```php
 public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void

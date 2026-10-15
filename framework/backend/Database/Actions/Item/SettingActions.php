@@ -15,6 +15,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Setting as ObjectSetting;
 use Hilos\Database\Settings\Exception\SettingInvalidValueException;
+use Hilos\Database\Settings\Exception\SettingTypeMismatchException;
 use Hilos\Database\Settings\Exception\SettingValueRefusedException;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\Settings\Validation\SettingValueRules;
@@ -37,8 +38,9 @@ class SettingActions extends DbActions
      *
      * @param mixed $value New value to store (a setting row without a value does not exist)
      * @throws ItemNotFoundForUpdateException When setting object has no persisted id
-     * @throws SettingValueRefusedException When the key declares a catalog rule the value fails
+     * @throws SettingValueRefusedException When the value is not of the expected type, or fails the key's catalog rule
      * @throws SettingInvalidValueException When the value is null, or the catalog names a rule that is not one
+     * @throws SettingTypeMismatchException When the setting type is not supported
      * @throws DatabaseException When collection loading or setting persistence fails
      * @throws ObjectCollectionNullException When the setting action is detached from its object collection
      * @throws ObjectGetIdStringNotImplementedException When the setting primary key is null during the per-item write check
@@ -63,6 +65,7 @@ class SettingActions extends DbActions
                 "Setting '{$this->object->key}' cannot be stored without a value; delete the row to reset it",
             );
         }
+        $value = SettingValueRules::typed($this->object->key, $this->object->type, $value);
         SettingValueRules::assertValid($this->object->key, $value);
 
         $this->object->value = $this->serializeValue($value, $this->object->type);

@@ -12,6 +12,7 @@ use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentRegistry;
+use Hilos\Core\Agent\Config\AgentCommandConfigKey;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
@@ -392,8 +393,42 @@ final class TopologyValidatorTest extends TestCase
         TopologyUnknownCommandConfigKeyHilos::validateTopology();
     }
 
+    public function testAgentCommandAddressConfigAcceptsNonEmptyListOfFieldNames(): void
+    {
+        TopologyValidCommandAddressHilos::validateTopology();
+
+        $this->assertSame(
+            ['addressed_command' => ['settingKey', 'contextId']],
+            TopologyValidCommandAddressHilos::getCommandAddressRoutes(),
+        );
+    }
+
+    public function testAgentCommandAddressMustBeNonEmptyListOfFieldNames(): void
+    {
+        $cases = [
+            TopologyEmptyCommandAddressHilos::class => 'empty_address_command',
+            TopologyNonStringCommandAddressHilos::class => 'non_string_address_command',
+            TopologyEmptyStringCommandAddressHilos::class => 'empty_string_address_command',
+            TopologyDuplicateCommandAddressHilos::class => 'duplicate_address_command',
+            TopologyAssocCommandAddressHilos::class => 'assoc_address_command',
+        ];
+
+        foreach ($cases as $facadeClass => $command) {
+            try {
+                $facadeClass::validateTopology();
+                $this->fail("Expected InvalidTopologyException for {$command}");
+            } catch (InvalidTopologyException $e) {
+                $this->assertStringContainsString(
+                    "AGENT_COMMANDS[{$command}][address] must be a non-empty list of payload field names",
+                    $e->getMessage(),
+                );
+            }
+        }
+    }
+
     /**
      * Each of the four keys is refused on its own - the three methods with a body the HTTP server
+
      * routes and one it does not know - because a request an agent answers carries neither.
      */
     public function testAgentHttpRoutesMustBeKeyedByGet(): void
@@ -2064,7 +2099,105 @@ final class TopologyUnknownCommandConfigKeyAgent extends TopologyTestAgent
     ];
 }
 
+final class TopologyValidCommandAddressAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'valid_command_address_agent';
+
+    public const array AGENT_COMMANDS = [
+        'addressed_command' => [
+            AgentCommandConfigKey::ADDRESS => ['settingKey', 'contextId'],
+        ],
+    ];
+}
+
+final class TopologyEmptyCommandAddressAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'empty_command_address_agent';
+
+    public const array AGENT_COMMANDS = [
+        'empty_address_command' => [
+            AgentCommandConfigKey::ADDRESS => [],
+        ],
+    ];
+}
+
+final class TopologyNonStringCommandAddressAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'non_string_command_address_agent';
+
+    public const array AGENT_COMMANDS = [
+        'non_string_address_command' => [
+            AgentCommandConfigKey::ADDRESS => [42],
+        ],
+    ];
+}
+
+final class TopologyEmptyStringCommandAddressAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'empty_string_command_address_agent';
+
+    public const array AGENT_COMMANDS = [
+        'empty_string_address_command' => [
+            AgentCommandConfigKey::ADDRESS => [''],
+        ],
+    ];
+}
+
+final class TopologyDuplicateCommandAddressAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'duplicate_command_address_agent';
+
+    public const array AGENT_COMMANDS = [
+        'duplicate_address_command' => [
+            AgentCommandConfigKey::ADDRESS => ['fieldName', 'fieldName'],
+        ],
+    ];
+}
+
+final class TopologyAssocCommandAddressAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'assoc_command_address_agent';
+
+    public const array AGENT_COMMANDS = [
+        'assoc_address_command' => [
+            AgentCommandConfigKey::ADDRESS => ['key' => 'fieldName'],
+        ],
+    ];
+}
+
+final class TopologyValidCommandAddressAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'valid_command_address_agent';
+}
+
+final class TopologyEmptyCommandAddressAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'empty_command_address_agent';
+}
+
+final class TopologyNonStringCommandAddressAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'non_string_command_address_agent';
+}
+
+final class TopologyEmptyStringCommandAddressAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'empty_string_command_address_agent';
+}
+
+final class TopologyDuplicateCommandAddressAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'duplicate_command_address_agent';
+}
+
+final class TopologyAssocCommandAddressAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'assoc_command_address_agent';
+}
+
 final class TopologyInvalidAgentHttpRouteAgent extends TopologyTestAgent
+
+
 {
     public const string AGENT_TYPE = 'invalid_agent_http_route_agent';
 
@@ -2905,6 +3038,128 @@ final class TopologyUnknownCommandConfigKeyHilos extends HilosFacade
         return new TopologyTestDbContext();
     }
 }
+
+final class TopologyValidCommandAddressHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyValidCommandAddressAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidCommandAddressAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidCommandAddressAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyEmptyCommandAddressHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyEmptyCommandAddressAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyEmptyCommandAddressAgent::class,
+            AgentRegistryKey::DAEMON => TopologyEmptyCommandAddressAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyNonStringCommandAddressHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyNonStringCommandAddressAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyNonStringCommandAddressAgent::class,
+            AgentRegistryKey::DAEMON => TopologyNonStringCommandAddressAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyEmptyStringCommandAddressHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyEmptyStringCommandAddressAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyEmptyStringCommandAddressAgent::class,
+            AgentRegistryKey::DAEMON => TopologyEmptyStringCommandAddressAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyDuplicateCommandAddressHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyDuplicateCommandAddressAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyDuplicateCommandAddressAgent::class,
+            AgentRegistryKey::DAEMON => TopologyDuplicateCommandAddressAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyAssocCommandAddressHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyAssocCommandAddressAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyAssocCommandAddressAgent::class,
+            AgentRegistryKey::DAEMON => TopologyAssocCommandAddressAgentDaemon::class,
+        ],
+    ];
+
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
 
 final class TopologyPageAgentSignalConflictHilos extends HilosFacade
 {

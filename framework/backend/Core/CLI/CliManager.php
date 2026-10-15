@@ -96,6 +96,8 @@ use Hilos\Core\CLI\Commands\ProtectedModeTestOpenCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeTestPassCommand;
 use Hilos\Core\CLI\Commands\SecondFactorUnlockCommand;
 use Hilos\Core\CLI\Commands\SessionTestExpireCommand;
+use Hilos\Core\CLI\Commands\SettingsResetCommand;
+use Hilos\Core\CLI\Commands\SettingsSetCommand;
 use Hilos\Core\CLI\Commands\StatusCommand;
 use Hilos\Core\CLI\Commands\TableTestLagCommand;
 use Hilos\Core\CLI\Commands\TableTestRefuseCommand;
@@ -212,6 +214,8 @@ class CliManager
         $this->commands[CliCommands::IMPERSONATE_STOP] = new ImpersonateStopCommand();
         $this->commands[CliCommands::ACCOUNT_MERGE] = new AccountMergeCommand();
         $this->commands[CliCommands::SECOND_FACTOR_UNLOCK] = new SecondFactorUnlockCommand();
+        $this->commands[CliCommands::SETTINGS_SET] = new SettingsSetCommand();
+        $this->commands[CliCommands::SETTINGS_RESET] = new SettingsResetCommand();
         $this->commands[CliCommands::ACCOUNT_TEST_FORCE_PURGE] = new AccountTestForcePurgeCommand();
         $this->commands[CliCommands::LEGAL_TEST_HOLD] = new LegalTestHoldCommand();
         $this->commands[CliCommands::I18N_TEST_LANGUAGE_ON] = new I18nTestLanguageOnCommand();

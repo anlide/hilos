@@ -2928,7 +2928,10 @@ final class TopologyValidator
                     continue;
                 }
 
-                $unknownKeys = array_diff(array_keys($value), [AgentCommandConfigKey::DTO]);
+                $unknownKeys = array_diff(array_keys($value), [
+                    AgentCommandConfigKey::DTO,
+                    AgentCommandConfigKey::ADDRESS,
+                ]);
                 if ($unknownKeys !== []) {
                     $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_COMMANDS[{$key}] contains"
                         . ' unknown config keys: ' . implode(', ', $unknownKeys);
@@ -2946,6 +2949,27 @@ final class TopologyValidator
                             . SignalDataInterface::class;
                     }
                 }
+
+                if (array_key_exists(AgentCommandConfigKey::ADDRESS, $value)) {
+                    $address = $value[AgentCommandConfigKey::ADDRESS];
+                    $isValidAddress = is_array($address) && $address !== [] && array_is_list($address);
+                    if ($isValidAddress) {
+                        $seen = [];
+                        foreach ($address as $field) {
+                            if (!is_string($field) || $field === '' || isset($seen[$field])) {
+                                $isValidAddress = false;
+                                break;
+                            }
+                            $seen[$field] = true;
+                        }
+                    }
+
+                    if (!$isValidAddress) {
+                        $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_COMMANDS[{$key}]["
+                            . AgentCommandConfigKey::ADDRESS . '] must be a non-empty list of payload field names';
+                    }
+                }
+
 
                 $this->recordDeclaredCommandRoute($key, $agentType, $declaredRoutes, $errors);
             }

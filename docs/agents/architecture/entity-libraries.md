@@ -386,12 +386,14 @@ verdict of a finished restore close the wait of the next one.
 *On several gatekeepers to one writer* (HIL-946). Nothing says the pair is one to
 one, and settings are the case where it is not: three admin screens write the same
 collection — the general settings screen, a communications channel, a presets
-section. Then **the name to answer under travels in the ask** rather than being
-pinned to the name of the ask: `SettingWriteSignalData::$replySignal` and its three
-siblings carry it, beside the accept key and the request id that are already the
-caller's own. A fixed pair of names would make the writer know every screen by name,
-and the next screen that writes the collection would edit the writer's body to be
-let in.
+section. A fourth asker — console commands (`settings:set`, `settings:reset`,
+HIL-1514) — is answered by the library itself, which puts its own reply name
+(`HILOS_SETTING_COMMAND_DONE`) into the ask. Then **the name to answer under
+travels in the ask** rather than being pinned to the name of the ask:
+`SettingWriteSignalData::$replySignal` and its three siblings carry it, beside the
+accept key and the request id that are already the caller's own. A fixed pair of
+names would make the writer know every screen by name, and the next screen that
+writes the collection would edit the writer's body to be let in.
 
 Two things follow, and both are the reason the shape is written down here rather
 than re-derived. The reply name must be **unique per gatekeeper**, because the map

@@ -87,7 +87,42 @@ final class CommandPayloadDtoTest extends TestCase
 
         new CommandPayloadTestRouter()->createCommandPayloadDTO('broken', $request);
     }
+
+    public function testCommandReceiptAddressResolvesStringAndIntegerValues(): void
+    {
+        $router = new CommandPayloadTestRouter();
+        $request = new CommandRequestDTO('corr-7', 'multi_addressed', [
+            'id' => 123,
+            'action' => 'reset',
+            'ignored' => '',
+            'extra' => 'value',
+        ]);
+
+        $this->assertSame(['123', 'reset'], $router->commandReceiptAddress('multi_addressed', $request));
+    }
+
+    public function testCommandReceiptAddressSkipsNonScalarOrEmptyValues(): void
+    {
+        $router = new CommandPayloadTestRouter();
+        $request = new CommandRequestDTO('corr-8', 'multi_addressed', [
+            'id' => ['array'],
+            'action' => null,
+            'ignored' => true,
+        ]);
+
+        $this->assertSame([], $router->commandReceiptAddress('multi_addressed', $request));
+    }
+
+    public function testCommandReceiptAddressReturnsEmptyWhenCommandHasNoDeclaredAddress(): void
+    {
+        $router = new CommandPayloadTestRouter();
+        $request = new CommandRequestDTO('corr-9', 'typed', ['value' => 'hi']);
+
+        $this->assertSame([], $router->commandReceiptAddress('typed', $request));
+        $this->assertSame([], $router->commandReceiptAddress('undeclared', $request));
+    }
 }
+
 
 /**
  * Test payload DTO requiring a non-empty 'value' field.
@@ -171,6 +206,17 @@ final class CommandPayloadTestHilos extends Hilos
             'typed' => RequireFieldCommandData::class,
             'helper' => HelperFieldCommandData::class,
             'broken' => self::MISSING_DTO_CLASS,
+        ];
+    }
+
+    /**
+     * @return array<string, list<string>> Address payload field names keyed by command name
+     */
+    public static function getCommandAddressRoutes(): array
+    {
+        return [
+            'addressed' => ['settingKey'],
+            'multi_addressed' => ['id', 'action', 'ignored'],
         ];
     }
 

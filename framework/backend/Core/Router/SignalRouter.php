@@ -2062,6 +2062,34 @@ class SignalRouter
     }
 
     /**
+     * Resolves receipt address field values from the command payload according to topology.
+     *
+     * @param string $command Command name
+     * @param CommandRequestDTO $data Incoming command request
+     * @return list<string> Resolved non-empty string and integer field values
+     */
+    public function commandReceiptAddress(string $command, CommandRequestDTO $data): array
+    {
+        $fields = $this->hilosClass()::getCommandAddressRoutes()[$command] ?? null;
+        if (!is_array($fields) || $fields === []) {
+            return [];
+        }
+
+        $address = [];
+        foreach ($fields as $field) {
+            $value = $data->payload[$field] ?? null;
+            if (is_int($value)) {
+                $address[] = (string) $value;
+            } elseif (is_string($value) && $value !== '') {
+                $address[] = $value;
+            }
+        }
+
+        return $address;
+    }
+
+
+    /**
      * Creates the typed payload DTO for a client action owned by the given agent.
      *
      * Returns null when the action is not owned by that agent through AGENT_ACTIONS,

@@ -516,6 +516,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_SETTING_RESET => HilosAgentType::HILOS_SETTINGS_LIBRARY,
                 HilosSignalConstants::HILOS_SETTING_DELETE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
                 HilosSignalConstants::HILOS_SETTING_PRESET_APPLY => HilosAgentType::HILOS_SETTINGS_LIBRARY,
+                HilosSignalConstants::HILOS_SETTING_COMMAND_DONE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
                 // Sign-in's own frames (HIL-623): the users library waits for the throttle
                 // verdict, and the mail agent and the node-scoped throttle answer on their own
                 // names.

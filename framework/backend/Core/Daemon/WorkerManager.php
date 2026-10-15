@@ -1976,9 +1976,14 @@ abstract class WorkerManager extends BaseManager implements PageResender
                     try {
                         $parsedCommandData = Hilos::$sr?->createCommandPayloadDTO($name, $signalData) ?? $signalData;
                         JournalReceiptScope::run(
-                            JournalReceiptData::cli($signalData->command, $agent->getId()),
+                            JournalReceiptData::cli(
+                                $signalData->command,
+                                $agent->getId(),
+                                Hilos::$sr?->commandReceiptAddress($name, $signalData) ?? [],
+                            ),
                             static fn () => $agent->onSignalCommand($parsedCommandData, $source, $name),
                         );
+
                     } catch (InvalidCommandPayloadException $e) {
                         Logger::logAgentError($agent->getId(), "Command payload validation failed: {$e->getMessage()}");
                         $agent->replyToCommand(CommandReplyDTO::error($signalData->correlationId, $e->getMessage()));

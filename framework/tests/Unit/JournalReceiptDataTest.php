@@ -38,6 +38,36 @@ final class JournalReceiptDataTest extends TestCase
         $this->assertSame('admin:grant', $receipt->source);
     }
 
+    public function testCliAttributionCarriesAddressInSource(): void
+    {
+        $receipt = JournalReceiptData::cli('settings:set', 'settings_agent', ['app.title']);
+
+        $this->assertNull($receipt->actorUserId);
+        $this->assertNull($receipt->subjectUserId);
+        $this->assertNull($receipt->sessionId);
+        $this->assertSame('cli', $receipt->channel);
+        $this->assertSame('settings:set', $receipt->action);
+        $this->assertSame('settings_agent', $receipt->agent);
+        $this->assertSame('settings:set app.title', $receipt->source);
+    }
+
+    public function testCliAttributionCarriesMultipleAddressFieldsSeparatedBySpaces(): void
+    {
+        $receipt = JournalReceiptData::cli('catalog:reindex', 'catalog_agent', ['10', 'items']);
+
+        $this->assertSame('catalog:reindex 10 items', $receipt->source);
+    }
+
+    public function testCliAttributionTruncatesSourceTo512Characters(): void
+    {
+        $longPayloadField = str_repeat('a', 600);
+        $receipt = JournalReceiptData::cli('test:command', 'test_agent', [$longPayloadField]);
+
+        $this->assertSame(512, mb_strlen($receipt->source));
+        $this->assertSame(JournalReceiptData::MAX_SOURCE_LENGTH, mb_strlen($receipt->source));
+        $this->assertStringStartsWith('test:command aaaaa', $receipt->source);
+    }
+
     /** Pins the immutable source captured at the start of a cron attempt. */
     public function testCronAttributionCarriesTheRuleAndExpressionWithoutAPerson(): void
     {

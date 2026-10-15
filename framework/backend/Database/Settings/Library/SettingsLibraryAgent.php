@@ -12,12 +12,14 @@ use Hilos\Auth\SecondFactor\SecondFactorPolicy;
 use Hilos\Auth\SecondFactor\SecondFactorSettings;
 use Hilos\Auth\Library\DTO\AuthSecondFactorTrustDaysApplySignalData;
 use Hilos\Auth\Verification\DTO\CodeDeliverySignalData;
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\ActionRefusal;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Action\HandoverAskInterface;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Config\AgentCommandConfigKey;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -33,10 +35,14 @@ use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
 use Hilos\Database\Settings\Exception\SettingPresetUnknownException;
 use Hilos\Database\Settings\Preset\SettingPresetGroupProviderInterface;
 use Hilos\Database\Settings\Preset\SettingPresetResolver;
+use Hilos\Database\Settings\SettingsCommandConstants;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Theme\DTO\ThemeSettingsSignalData;
+use Hilos\Utils\Logger;
 
 /**
  * SettingsLibraryAgent - the entity library of the settings collection (HIL-946).
@@ -66,6 +72,8 @@ use Hilos\Theme\DTO\ThemeSettingsSignalData;
  * owner of the row ("The Lock Does Not Travel With The Name"). So the screens stayed
  * gatekeepers and this is the scribe: the screen decides who may ask and says the sentence, this
  * writes and reports back. Nothing on the browser wire changed, and no frontend file was touched.
+ * The console is the fourth door (HIL-1514): settings:set and settings:reset arrive straight
+ * over the command channel, and the library answers them itself.
  *
  * WHY THE ASK ALSO CARRIES THE ASKER. A write is announced with the accept key of the
  * connection behind it, and a viewport uses that to tell the author of a change from a
@@ -91,10 +99,11 @@ use Hilos\Theme\DTO\ThemeSettingsSignalData;
  * readers independent of the method set. Each is compared around the same write, whichever
  * door requested it.
  *
- * WHY THE REPLY NAME RIDES IN THE ASK. There are three gatekeepers to this one scribe, and a
- * fixed pair of names would make it know each screen by name - the next screen that writes a
- * setting would have to edit this body to be let in. Instead every ask carries the name to
- * answer under, and this class knows no page at all.
+ * WHY THE REPLY NAME RIDES IN THE ASK. There are four gatekeepers to this one scribe (three
+ * screens and the console, HIL-1514), and a fixed pair of names would make it know each screen by
+ * name - the next screen that writes a setting would have to edit this body to be let in. Instead
+ * every ask carries the name to answer under, and the command route names its own reply signal
+ * too.
  */
 final class SettingsLibraryAgent extends AbstractAgent
 {
@@ -116,19 +125,40 @@ final class SettingsLibraryAgent extends AbstractAgent
     public const string AGENT_TYPE = HilosAgentType::HILOS_SETTINGS_LIBRARY;
 
     /**
-     * The four asks this library is addressed by, cut by kind of write.
+     * CLI commands owned directly by this library (HIL-1514).
      *
-     * Four and not eight: the eight calls the screens used to make come down to four things
+     * The settings library is the single writer of settings, so CLI setting commands route here.
+     * Captures the setting key in the change-log receipt address.
+     *
+     * @var array<string, array<string, list<string>>>
+     */
+    public const array AGENT_COMMANDS = [
+        CliCommands::SETTINGS_SET => [
+            AgentCommandConfigKey::ADDRESS => [SettingsCommandConstants::FIELD_KEY],
+        ],
+        CliCommands::SETTINGS_RESET => [
+            AgentCommandConfigKey::ADDRESS => [SettingsCommandConstants::FIELD_KEY],
+        ],
+    ];
+
+    /**
+     * The four asks this library is addressed by, cut by kind of write, and one answer (HIL-1514).
+     *
+     * Four asks and one answer: the eight calls the screens used to make come down to four things
      * that can be done to a settings row, and two buttons on two pages that end in the same
      * idempotent write are one ask with two callers. Cut by name rather than by a field inside
      * one payload because routing reads the name, and a kind hidden in a field would arrive
      * here already routed by nothing.
+     *
+     * The one answer is {@see HilosSignalConstants::HILOS_SETTING_COMMAND_DONE}, which the library
+     * addresses to itself when completing a CLI command request.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_SETTING_WRITE => SettingWriteSignalData::class,
         HilosSignalConstants::HILOS_SETTING_RESET => SettingResetSignalData::class,
         HilosSignalConstants::HILOS_SETTING_DELETE => SettingDeleteSignalData::class,
         HilosSignalConstants::HILOS_SETTING_PRESET_APPLY => SettingPresetApplySignalData::class,
+        HilosSignalConstants::HILOS_SETTING_COMMAND_DONE => HandoverAnswerSignalData::class,
     ];
 
     /**
@@ -150,6 +180,26 @@ final class SettingsLibraryAgent extends AbstractAgent
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
+        if ($name === HilosSignalConstants::HILOS_SETTING_COMMAND_DONE) {
+            if (!$data->data instanceof HandoverAnswerSignalData) {
+                throw new InvalidAgentSignalPayloadException($name, HandoverAnswerSignalData::class, $data->data);
+            }
+            $answer = $data->data;
+            $requestId = $answer->requestId;
+            if ($requestId === null) {
+                Logger::logAgentError($this->getId(), 'Setting command done reply has no requestId');
+
+                return;
+            }
+            if ($answer->error === null) {
+                $this->replyToCommand(CommandReplyDTO::ok($requestId, []));
+            } else {
+                $this->replyToCommand(CommandReplyDTO::error($requestId, $answer->errorDetail ?? $answer->error));
+            }
+
+            return;
+        }
+
         $methodsBefore = $this->offeredMethods();
         $policyBefore = $this->secondFactorPolicy();
         $deliveryBefore = CodeDeliverySignalData::current();
@@ -228,6 +278,132 @@ final class SettingsLibraryAgent extends AbstractAgent
             default:
                 throw new AgentUnknownSignalException($name);
         }
+    }
+
+    /**
+     * Routes settings CLI commands directly to this library (HIL-1514).
+     *
+     * @param CommandRequestDTO $data Command request carrying key and optional value
+     * @param string $source Signal source (unused)
+     * @param string $name Signal name (unused)
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
+    {
+        if ($data->command === CliCommands::SETTINGS_SET) {
+            $this->handleSettingsSetCommand($data);
+
+            return;
+        }
+
+        if ($data->command === CliCommands::SETTINGS_RESET) {
+            $this->handleSettingsResetCommand($data);
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
+    }
+
+    /**
+     * Runs {@see CliCommands::SETTINGS_SET} and answers the parked socket (HIL-1514).
+     *
+     * @param CommandRequestDTO $data Command request carrying setting key and value
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    private function handleSettingsSetCommand(CommandRequestDTO $data): void
+    {
+        $rawKey = $data->payload[SettingsCommandConstants::FIELD_KEY] ?? null;
+        $catalog = Hilos::$setting?->catalog() ?? [];
+        if (!is_string($rawKey) || $rawKey === '' || !array_key_exists($rawKey, $catalog)) {
+            $errorMessage = is_string($rawKey) && $rawKey !== ''
+                ? "Setting key '{$rawKey}' is not in catalog"
+                : "Setting key '' is not in catalog";
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $errorMessage));
+
+            return;
+        }
+        $key = $rawKey;
+
+        $rawValue = $data->payload[SettingsCommandConstants::FIELD_VALUE] ?? null;
+        if (!is_string($rawValue)) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Setting value for '{$key}' must be a string"));
+
+            return;
+        }
+        $value = $rawValue;
+
+        $methodsBefore = $this->offeredMethods();
+        $policyBefore = $this->secondFactorPolicy();
+        $deliveryBefore = CodeDeliverySignalData::current();
+        $impersonationBefore = $this->impersonationPolicy();
+        $themeBefore = $this->themeSettings();
+
+        $ask = new SettingWriteSignalData(
+            replySignal: HilosSignalConstants::HILOS_SETTING_COMMAND_DONE,
+            acceptKey: '',
+            requestId: $data->correlationId,
+            action: $data->command,
+            successMessage: null,
+            key: $key,
+            value: $value,
+        );
+
+        $this->settle(
+            $ask,
+            $this->storeValue($ask),
+            $methodsBefore,
+            $policyBefore,
+            $deliveryBefore,
+            $impersonationBefore,
+            $themeBefore,
+        );
+    }
+
+    /**
+     * Runs {@see CliCommands::SETTINGS_RESET} and answers the parked socket (HIL-1514).
+     *
+     * @param CommandRequestDTO $data Command request carrying setting key
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    private function handleSettingsResetCommand(CommandRequestDTO $data): void
+    {
+        $rawKey = $data->payload[SettingsCommandConstants::FIELD_KEY] ?? null;
+        $catalog = Hilos::$setting?->catalog() ?? [];
+        if (!is_string($rawKey) || $rawKey === '' || !array_key_exists($rawKey, $catalog)) {
+            $errorMessage = is_string($rawKey) && $rawKey !== ''
+                ? "Setting key '{$rawKey}' is not in catalog"
+                : "Setting key '' is not in catalog";
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $errorMessage));
+
+            return;
+        }
+        $key = $rawKey;
+
+        $methodsBefore = $this->offeredMethods();
+        $policyBefore = $this->secondFactorPolicy();
+        $deliveryBefore = CodeDeliverySignalData::current();
+        $impersonationBefore = $this->impersonationPolicy();
+        $themeBefore = $this->themeSettings();
+
+        $ask = new SettingResetSignalData(
+            replySignal: HilosSignalConstants::HILOS_SETTING_COMMAND_DONE,
+            acceptKey: '',
+            requestId: $data->correlationId,
+            action: $data->command,
+            successMessage: null,
+            key: $key,
+        );
+
+        $this->settle(
+            $ask,
+            $this->resetToDefault($ask),
+            $methodsBefore,
+            $policyBefore,
+            $deliveryBefore,
+            $impersonationBefore,
+            $themeBefore,
+        );
     }
 
     /**

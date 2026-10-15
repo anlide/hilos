@@ -91,6 +91,15 @@ switched off, and for a blocked person, a frozen person or another administrator
 switch is off, in the card's words on the error reply. It asks no step-up — the card's
 `impersonate` operation is the browser's alone.
 
+## Settings commands
+
+| Command | Site | Description |
+|---|---|---|
+| `settings:set <key> <value>` | `daemon` | Set a settings value |
+| `settings:reset <key>` | `daemon` | Reset a settings value to its catalog default |
+
+Equal to the general settings screen: catalog, type, key rule; without step confirmation.
+
 ## Protected mode commands
 
 | Command | Driver | What it does |
@@ -220,7 +229,8 @@ nothing), the protected-mode drive family `test:protected-mode:enter` / `:leave`
 / `:pass` / `:close` (the drive commands write nothing from this process, and the rows the
 mint and the close move are the agent's) and the account and session family `admin:grant`
 / `:revoke` / `:create`, `impersonate:start` / `:stop` and `account:merge` (same reason as
-`test:notification:emit`: every row they cause is written where the account lives), and
+`test:notification:emit`: every row they cause is written where the account lives),
+`settings:set` / `settings:reset` (every row they cause is written by the library), and
 the cluster TLS family `cluster:tls:ca` / `:issue` / `:trust` (they need no database at
 all: they issue the certificates of a cluster that may not exist yet, print PEM and
 nothing else, and are run exactly where there is no installation to connect to —

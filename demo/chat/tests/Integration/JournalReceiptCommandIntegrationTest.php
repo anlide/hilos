@@ -38,6 +38,8 @@ use Hilos\Database\ChangeLog\JournalTriggerFiles;
 use Hilos\Database\ChangeLog\JournalTriggerInstaller;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\Migration;
+use Hilos\Database\Settings\Library\SettingsLibraryAgent;
+use Hilos\Database\Settings\SettingsCommandConstants;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
@@ -74,6 +76,9 @@ final class JournalReceiptCommandIntegrationTest extends IntegrationTestCase
 
     /** @var list<int> Test people, removed after the case */
     private array $userIds = [];
+
+    /** @var list<string> Setting keys touched by tests, removed from hilos_setting after the case */
+    private array $touchedSettingKeys = [];
 
     private ?BrowserContext $previousBrowser = null;
 
@@ -116,6 +121,11 @@ final class JournalReceiptCommandIntegrationTest extends IntegrationTestCase
             Hilos::initBrowser($this->previousBrowser);
         }
         Hilos::$sr = $this->previousRouter;
+        if ($this->touchedSettingKeys !== []) {
+            foreach ($this->touchedSettingKeys as $key) {
+                Database::sqlRun('DELETE FROM `hilos_setting` WHERE `key` = ?', [$key]);
+            }
+        }
         Database::sqlRun('DELETE FROM `hilos_setting` WHERE `key` LIKE ?', [self::KEY_PREFIX . '%']);
         foreach (self::triggerCatalog() as $row) {
             Database::sql('DROP TRIGGER `' . $row['TRIGGER_NAME'] . '`');
@@ -321,6 +331,229 @@ final class JournalReceiptCommandIntegrationTest extends IntegrationTestCase
         $this->assertNull(JournalReceiptScope::currentId());
     }
 
+    public function testRealSettingsSetCommandAttributesReceiptAndUpdatesDatabase(): void
+    {
+        $this->touchedSettingKeys[] = 'example_integer';
+        Database::sqlRun('DELETE FROM `hilos_setting` WHERE `key` = ?', ['example_integer']);
+
+        $worker = new JournalReceiptCommandTestWorker();
+        $worker->handleDaemonMessage(new AgentStartDTO(SettingsLibraryAgent::AGENT_TYPE));
+
+        $correlationId = RandomHelper::hex(8);
+        $frame = new SignalDTO(
+            new SignalSource(SignalSource::DAEMON),
+            new SignalType(SignalTypeConstants::COMMAND_REQUEST),
+            new SignalName(CliCommands::SETTINGS_SET),
+            new CommandRequestDTO($correlationId, CliCommands::SETTINGS_SET, [
+                SettingsCommandConstants::FIELD_KEY => 'example_integer',
+                SettingsCommandConstants::FIELD_VALUE => '30',
+            ]),
+        );
+
+        $worker->handleDaemonMessage(new DaemonAgentMessageDTO(SettingsLibraryAgent::AGENT_TYPE, $frame));
+
+        $done = $this->nextAgentFrameNamed(HilosSignalConstants::HILOS_SETTING_COMMAND_DONE);
+        $this->assertInstanceOf(AgentSignalData::class, $done->data);
+        $receiptId = $done->data->receiptId;
+        $this->assertNotNull($receiptId);
+        $worker->handleDaemonMessage(new DaemonAgentMessageDTO(SettingsLibraryAgent::AGENT_TYPE, $done));
+
+        $reply = $this->nextCommandReply();
+        $this->assertTrue($reply->isOk());
+        $this->assertSame($correlationId, $reply->correlationId);
+
+        Database::sql('SELECT `value` FROM `hilos_setting` WHERE `key` = ?', ['example_integer']);
+        $this->assertSame('30', Database::field('value'));
+        $this->assertSame(30, Hilos::$setting['example_integer']->int());
+
+        $receipt = $this->receipt($receiptId);
+        $this->assertNotNull($receipt);
+        $this->assertSame('cli', $receipt['channel']);
+        $this->assertSame(CliCommands::SETTINGS_SET, $receipt['action']);
+        $this->assertSame('settings:set example_integer', $receipt['source']);
+        $this->assertSame(SettingsLibraryAgent::AGENT_TYPE, $receipt['agent']);
+        $this->assertNull($receipt['actor_user_id']);
+        $this->assertNull($receipt['subject_user_id']);
+        $this->assertNull($receipt['session_id']);
+        $this->assertSame(0, (int) $receipt['open_handovers']);
+
+        $this->assertGreaterThan(0, $this->logCount($receiptId));
+
+        $this->assertStringNotContainsString('30', $receipt['source']);
+        $this->assertStringNotContainsString('30', $receipt['action']);
+        $this->assertStringNotContainsString('30', $receipt['channel']);
+        $this->assertStringNotContainsString('30', $receipt['agent']);
+
+        Database::sql('SELECT @hilos_receipt AS `id`');
+        $this->assertNull(Database::field('id'));
+        $this->assertNull(JournalReceiptScope::currentId());
+    }
+
+    public function testRealSettingsCommandRefusalsLeaveNoReceiptAndNoWrites(): void
+    {
+        $this->touchedSettingKeys[] = 'example_integer';
+        $orphanKey = 'orphan_' . RandomHelper::hex(8);
+        $this->touchedSettingKeys[] = $orphanKey;
+        Database::sqlRun('DELETE FROM `hilos_setting` WHERE `key` = ?', ['example_integer']);
+
+        $worker = new JournalReceiptCommandTestWorker();
+        $worker->handleDaemonMessage(new AgentStartDTO(SettingsLibraryAgent::AGENT_TYPE));
+
+        $database = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
+
+        // (1) Typed validation failure: settings:set example_integer abc
+        Database::sql("SELECT COALESCE(MAX(`id`), 0) AS `id` FROM {$database}.`hilos_change_log_receipt`");
+        $baselineReceipt = (int) Database::field('id');
+
+        $correlationId1 = RandomHelper::hex(8);
+        $frame1 = new SignalDTO(
+            new SignalSource(SignalSource::DAEMON),
+            new SignalType(SignalTypeConstants::COMMAND_REQUEST),
+            new SignalName(CliCommands::SETTINGS_SET),
+            new CommandRequestDTO($correlationId1, CliCommands::SETTINGS_SET, [
+                SettingsCommandConstants::FIELD_KEY => 'example_integer',
+                SettingsCommandConstants::FIELD_VALUE => 'abc',
+            ]),
+        );
+        $worker->handleDaemonMessage(new DaemonAgentMessageDTO(SettingsLibraryAgent::AGENT_TYPE, $frame1));
+
+        $done1 = $this->nextAgentFrameNamed(HilosSignalConstants::HILOS_SETTING_COMMAND_DONE);
+        $this->assertInstanceOf(AgentSignalData::class, $done1->data);
+        $worker->handleDaemonMessage(new DaemonAgentMessageDTO(SettingsLibraryAgent::AGENT_TYPE, $done1));
+
+        $reply1 = $this->nextCommandReply();
+        $this->assertFalse($reply1->isOk());
+        $this->assertSame($correlationId1, $reply1->correlationId);
+
+        Database::sql('SELECT `value` FROM `hilos_setting` WHERE `key` = ?', ['example_integer']);
+        $this->assertNull(Database::field('value'));
+        $this->assertSame(0, Hilos::$setting['example_integer']->int());
+
+        Database::sql("SELECT COUNT(*) AS `count` FROM {$database}.`hilos_change_log_receipt` WHERE `id` > ?", [
+            $baselineReceipt,
+        ]);
+        $this->assertSame(0, (int) Database::field('count'), 'Receipt must not remain after typed refusal');
+
+        // (2) Key outside catalog: settings:set nonexistent_key 123
+        $correlationId2 = RandomHelper::hex(8);
+        $nonexistentKey = 'nonexistent_' . RandomHelper::hex(8);
+        $frame2 = new SignalDTO(
+            new SignalSource(SignalSource::DAEMON),
+            new SignalType(SignalTypeConstants::COMMAND_REQUEST),
+            new SignalName(CliCommands::SETTINGS_SET),
+            new CommandRequestDTO($correlationId2, CliCommands::SETTINGS_SET, [
+                SettingsCommandConstants::FIELD_KEY => $nonexistentKey,
+                SettingsCommandConstants::FIELD_VALUE => '123',
+            ]),
+        );
+        $worker->handleDaemonMessage(new DaemonAgentMessageDTO(SettingsLibraryAgent::AGENT_TYPE, $frame2));
+
+        $reply2 = $this->nextCommandReply();
+        $this->assertFalse($reply2->isOk());
+        $this->assertSame($correlationId2, $reply2->correlationId);
+        $this->assertSame("Setting key '{$nonexistentKey}' is not in catalog", $reply2->payload['message'] ?? null);
+
+        Database::sql('SELECT `value` FROM `hilos_setting` WHERE `key` = ?', [$nonexistentKey]);
+        $this->assertNull(Database::field('value'));
+
+        Database::sql("SELECT COUNT(*) AS `count` FROM {$database}.`hilos_change_log_receipt` WHERE `id` > ?", [
+            $baselineReceipt,
+        ]);
+        $this->assertSame(0, (int) Database::field('count'), 'Receipt must not remain after unknown key refusal');
+
+        // (3) Orphan key outside catalog: Hilos::$db->settings->actions->addOrphan
+        Hilos::$db->settings->actions->addOrphan($orphanKey, 'string', 'initial_orphan_val', Hilos::$setting->catalog());
+
+        Database::sql("SELECT COALESCE(MAX(`id`), 0) AS `id` FROM {$database}.`hilos_change_log_receipt`");
+        $baselineAfterOrphan = (int) Database::field('id');
+
+        $correlationId3 = RandomHelper::hex(8);
+        $frame3 = new SignalDTO(
+            new SignalSource(SignalSource::DAEMON),
+            new SignalType(SignalTypeConstants::COMMAND_REQUEST),
+            new SignalName(CliCommands::SETTINGS_SET),
+            new CommandRequestDTO($correlationId3, CliCommands::SETTINGS_SET, [
+                SettingsCommandConstants::FIELD_KEY => $orphanKey,
+                SettingsCommandConstants::FIELD_VALUE => 'new_orphan_val',
+            ]),
+        );
+        $worker->handleDaemonMessage(new DaemonAgentMessageDTO(SettingsLibraryAgent::AGENT_TYPE, $frame3));
+
+        $reply3 = $this->nextCommandReply();
+        $this->assertFalse($reply3->isOk());
+        $this->assertSame($correlationId3, $reply3->correlationId);
+        $this->assertSame("Setting key '{$orphanKey}' is not in catalog", $reply3->payload['message'] ?? null);
+
+        Database::sql('SELECT `value` FROM `hilos_setting` WHERE `key` = ?', [$orphanKey]);
+        $this->assertSame('initial_orphan_val', Database::field('value'));
+
+        Database::sql("SELECT COUNT(*) AS `count` FROM {$database}.`hilos_change_log_receipt` WHERE `id` > ?", [
+            $baselineAfterOrphan,
+        ]);
+        $this->assertSame(0, (int) Database::field('count'), 'Receipt must not remain after orphan key refusal');
+
+        Database::sql('SELECT @hilos_receipt AS `id`');
+        $this->assertNull(Database::field('id'));
+        $this->assertNull(JournalReceiptScope::currentId());
+    }
+
+    public function testRealSettingsResetCommandRemovesRowAndAttributesReceipt(): void
+    {
+        $this->touchedSettingKeys[] = 'example_integer';
+        Database::sqlRun('INSERT INTO `hilos_setting` (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = ?', [
+            'example_integer',
+            '42',
+            '42',
+        ]);
+        $this->assertSame(42, Hilos::$setting['example_integer']->int());
+
+        $worker = new JournalReceiptCommandTestWorker();
+        $worker->handleDaemonMessage(new AgentStartDTO(SettingsLibraryAgent::AGENT_TYPE));
+
+        $correlationId = RandomHelper::hex(8);
+        $frame = new SignalDTO(
+            new SignalSource(SignalSource::DAEMON),
+            new SignalType(SignalTypeConstants::COMMAND_REQUEST),
+            new SignalName(CliCommands::SETTINGS_RESET),
+            new CommandRequestDTO($correlationId, CliCommands::SETTINGS_RESET, [
+                SettingsCommandConstants::FIELD_KEY => 'example_integer',
+            ]),
+        );
+
+        $worker->handleDaemonMessage(new DaemonAgentMessageDTO(SettingsLibraryAgent::AGENT_TYPE, $frame));
+
+        $done = $this->nextAgentFrameNamed(HilosSignalConstants::HILOS_SETTING_COMMAND_DONE);
+        $this->assertInstanceOf(AgentSignalData::class, $done->data);
+        $receiptId = $done->data->receiptId;
+        $this->assertNotNull($receiptId);
+        $worker->handleDaemonMessage(new DaemonAgentMessageDTO(SettingsLibraryAgent::AGENT_TYPE, $done));
+
+        $reply = $this->nextCommandReply();
+        $this->assertTrue($reply->isOk());
+        $this->assertSame($correlationId, $reply->correlationId);
+
+        Database::sql('SELECT `value` FROM `hilos_setting` WHERE `key` = ?', ['example_integer']);
+        $this->assertNull(Database::field('value'));
+        $this->assertSame(0, Hilos::$setting['example_integer']->int());
+
+        $receipt = $this->receipt($receiptId);
+        $this->assertNotNull($receipt);
+        $this->assertSame('cli', $receipt['channel']);
+        $this->assertSame(CliCommands::SETTINGS_RESET, $receipt['action']);
+        $this->assertSame('settings:reset example_integer', $receipt['source']);
+        $this->assertSame(SettingsLibraryAgent::AGENT_TYPE, $receipt['agent']);
+        $this->assertNull($receipt['actor_user_id']);
+        $this->assertNull($receipt['subject_user_id']);
+        $this->assertNull($receipt['session_id']);
+        $this->assertSame(0, (int) $receipt['open_handovers']);
+
+        $this->assertGreaterThan(0, $this->logCount($receiptId));
+
+        Database::sql('SELECT @hilos_receipt AS `id`');
+        $this->assertNull(Database::field('id'));
+        $this->assertNull(JournalReceiptScope::currentId());
+    }
+
     /** @return ?array<string, mixed> Receipt row, or null after its deletion */
     private function receipt(int $id): ?array
     {
@@ -413,6 +646,7 @@ final class JournalReceiptCommandTestAgentManager extends AgentManager
     {
         return match ($agentType) {
             SessionsLibraryAgent::AGENT_TYPE => new SessionsLibraryAgent(),
+            SettingsLibraryAgent::AGENT_TYPE => new SettingsLibraryAgent(),
             UserAgent::AGENT_TYPE => new UserAgent($agentIndex ?? throw new LogicException('Person agent needs an index')),
             default => new JournalReceiptCommandTestAgent(),
         };

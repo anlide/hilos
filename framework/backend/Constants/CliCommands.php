@@ -529,4 +529,24 @@ final class CliCommands
      * @var string Command: Lift a person's second-factor app-code lock
      */
     public const string SECOND_FACTOR_UNLOCK = 'second-factor:unlock';
+
+    /**
+     * Put a value under a cataloged setting key (operator, HIL-1514).
+     *
+     * Not test-only: an operator may set any cataloged setting key directly from the console.
+     * Routed to the settings library, which is the only writer of settings.
+     *
+     * @var string Command: Set a setting value
+     */
+    public const string SETTINGS_SET = 'settings:set';
+
+    /**
+     * Return a cataloged setting key to its catalog default (operator, HIL-1514).
+     *
+     * Not test-only: an operator may reset an override directly from the console.
+     * Routed to the settings library, which is the only writer of settings.
+     *
+     * @var string Command: Reset a setting to its catalog default
+     */
+    public const string SETTINGS_RESET = 'settings:reset';
 }

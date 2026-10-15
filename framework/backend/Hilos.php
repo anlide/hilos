@@ -982,6 +982,17 @@ abstract class Hilos implements TruthSourceOwner
     }
 
     /**
+     * Returns agent-owned command receipt address field names.
+     *
+     * @return array<string, list<string>> Address payload field names keyed by command name
+     */
+    public static function getCommandAddressRoutes(): array
+    {
+        return AgentCommandRouteRegistry::addressRoutes(static::AGENTS);
+    }
+
+
+    /**
      * Returns page-owned non-action signal routes declared by registered page classes.
      *
      * Empty signal name lists declare a type-wide route; non-empty lists declare
