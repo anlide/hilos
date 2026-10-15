@@ -14,13 +14,13 @@ A chat attachment travels on the framework's upload machinery, not on the chat's
 
 ## The Composer
 
-`frontend/src/views/Main/useComposerUpload.ts` hands each picked, dropped or pasted file to `uploadFile('chat_attachment', file)` from `@hilos/core` and reads the client's `hilosUploads` back, keeping only this target's records:
+`frontend/src/views/Main/Main.vue` draws the composer on the SDK's upload field ([sdk-packaging.md](../../../../docs/agents/frontend/sdk-packaging.md)): `createHilosUploadField({ target: 'chat_attachment' })` from `@hilos/core`, drawn by `HilosUploadDrop` around the whole composer (drop and paste), `HilosUploadFiles` above the form and `HilosUploadPicker` as the paperclip. The field hands each picked, dropped or pasted file to `uploadFile('chat_attachment', file)` and reads the client's `hilosUploads` back, keeping only this target's records — a chip each, in attach order:
 
-- **Queued, ready, uploading** — the first of them shows as the progress bar; Send is disabled while any exists.
-- **Failed** — the latest one's sentence (the server's refusal) is the composer's error line. A new pick cancels this target's failed records, and the line clears with them.
-- **Complete** — a chip, in attach order. Its X calls `cancelUpload()`; it is disabled while the message is moderated or the cancel is on its way.
+- **Queued, ready, uploading** — a waiting chip, or the uploading one with its percent; Send is disabled while any exists.
+- **Failed** — a refused chip, and the latest one's sentence (the server's refusal) is the line above the chips. A refused file does not hold Send back. A new pick cancels this target's failed records, and the line clears with them.
+- **Complete** — a received chip; these are the files a message names. Its X calls `cancelUpload()`; it is disabled while the cancel is on its way.
 
-An empty file is dropped silently, never declared. For a guest the paperclip is disabled and a drop or paste is ignored.
+An empty file is dropped silently, never declared. The field is switched off as one — no drop overlay, no paperclip, no X — for a guest, without a connection, and while the message is moderated.
 
 ## Where A Draft Lives
 

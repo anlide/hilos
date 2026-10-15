@@ -61,7 +61,7 @@ Angular). Using the `main` page as the example:
 | Selectors (display data) | `mainPage.ts` | `mainPage.ts` | `main-page.ts` |
 | Actions (outbound + their errors) | `mainActions.ts` | `mainActions.ts` | `main-actions.ts` |
 | Error handling (optional) | `mainError.ts` | `mainError.ts` | `main-error.ts` |
-| View-layer helper (optional) | a composable (`useComposerUpload.ts`) | a hook (`useComposerUpload.ts`) | a service / signal helper |
+| View-layer helper (optional) | a composable (`use….ts`) | a hook (`use….ts`) | a service / signal helper |
 | Page-local types | `types/` | `types/` | `types/` |
 
 The **view file is the page name with no suffix** — `Main.vue`, not
@@ -97,18 +97,19 @@ indirection to maintain.
   next to the action whose contract it belongs to. Do not create an empty
   `…Error.ts` ahead of a real need.
 - **A view-layer helper (composable / hook) — optional.** Imperative, stateful
-  view logic that outgrows the view file — a file picker with drag/drop and
-  paste, a wizard's step machine — moves into a page-local composable
-  (Vue/React `use…`; an Angular service or signal helper) the view consumes,
-  keeping the view file markup-first. It stays view-layer: it may own reactive
-  UI state, call `…Actions.ts` and drive a client the core ships, but it is
-  **not** a selector (it projects no payload) and **not** an action module (it
-  adds no outbound actions). The chat's `useComposerUpload.ts` is the shape: it
-  hands each picked file to the `@hilos/core` uploads client (`uploadFile`,
-  `cancelUpload`) and reads its `hilosUploads` list back as progress, error
-  and chips — the queue and the frames are the client's. It is named for what
-  it does in the `use…` idiom, not the page-key prefix the other files carry.
-  Add it only when a view file genuinely grows one.
+  view logic that outgrows the view file — a wizard's step machine — moves into
+  a page-local composable (Vue/React `use…`; an Angular service or signal
+  helper) the view consumes, keeping the view file markup-first. It stays
+  view-layer: it may own reactive UI state, call `…Actions.ts` and drive a
+  client the core ships, but it is **not** a selector (it projects no payload)
+  and **not** an action module (it adds no outbound actions). The step machine
+  is the shape: it holds which step is open and what each step still lacks
+  before the next one opens, and calls `…Actions.ts` once the last one is done.
+  It is named for what it does in the `use…` idiom, not the page-key prefix the
+  other files carry. Add it only when a view file genuinely grows one. Picking
+  files — the picker, drag and drop, paste and the chips — is not such a
+  helper: that is the SDK's upload field
+  ([sdk-packaging.md](sdk-packaging.md)).
 - **`types/` — page-local types.** See the next section.
 
 ## Mounting a framework-owned page

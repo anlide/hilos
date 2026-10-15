@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 
 import {
   armSocketDrop,
+  dropFiles,
   dropSocket,
   isSessionCookie,
   SESSION_COOKIE_PREFIX,
@@ -36,18 +37,33 @@ const ATTACHMENT_PNG = Buffer.from(
 const ZIP_BYTES = Buffer.from('504b0304140000000800', 'hex')
 
 /**
- * Pick one PNG through the composer's file input and wait for its chip.
+ * Pick one PNG through the composer's file input and wait for its chip to read
+ * received.
  *
  * @param page The signed-in chat page.
  * @param filename Name the file is picked under.
  */
 async function attachPng(page: Page, filename: string): Promise<void> {
-  await page.getByTestId('file-input').setInputFiles({
+  await page.getByTestId('attach-button-input').setInputFiles({
     name: filename,
     mimeType: ATTACHMENT_MIME,
     buffer: ATTACHMENT_PNG,
   })
-  await expect(page.getByTestId('attachment-draft-name')).toHaveText(filename)
+  await expectReceived(page, filename)
+}
+
+/**
+ * Wait for the composer's one chip to read received under its name.
+ *
+ * @param page The signed-in chat page.
+ * @param filename Name the file was attached under.
+ */
+async function expectReceived(page: Page, filename: string): Promise<void> {
+  await expect(page.getByTestId('attachments-file')).toHaveAttribute(
+    'data-state',
+    'received',
+  )
+  await expect(page.getByTestId('attachments-file-name')).toHaveText(filename)
 }
 
 // Attachment lifecycle and authorization e2e (HIL-1035, HIL-144): the file
@@ -77,7 +93,7 @@ test('a sent image opens from the feed, and its address refuses a request withou
   await dictateModerationVerdict(key, true, 'ok')
 
   await attachPng(page, filename)
-  await expect(page.getByTestId('upload-error')).toHaveCount(0)
+  await expect(page.getByTestId('attachments-error')).toHaveCount(0)
 
   await typeInto(page.getByTestId('message-input'), text)
   await clickSubmit(page.getByTestId('message-send'))
@@ -136,24 +152,59 @@ test('a sent image opens from the feed, and its address refuses a request withou
   }
 })
 
+// The third door of the upload field (HIL-140): a picture dropped on the
+// composer goes the way a picked one does — a received chip, then the message
+// carries it into the feed.
+test('a picture dropped on the composer is sent with the message', async ({
+  page,
+}) => {
+  await signUp(page)
+
+  const key = modelKey()
+  const text = `dropped ${key}`
+  const filename = `${key}.png`
+  await dictateModerationVerdict(key, true, 'ok')
+  // The picture request finds the key in the file name. Without its own
+  // dictation the model answers 503 and the spec sees moderation unavailable.
+  await dictateModerationVerdict(key, true, 'ok')
+
+  await dropFiles(page.getByTestId('composer-upload'), [
+    { name: filename, mimeType: ATTACHMENT_MIME, buffer: ATTACHMENT_PNG },
+  ])
+  await expectReceived(page, filename)
+
+  await typeInto(page.getByTestId('message-input'), text)
+  await clickSubmit(page.getByTestId('message-send'))
+
+  const event = page
+    .getByTestId('event')
+    .filter({ has: page.getByTestId('event-text').filter({ hasText: text }) })
+  await expect(event.getByTestId('event-attachment')).toHaveCount(1)
+  await expect(page.getByTestId('attachments-file')).toHaveCount(0)
+})
+
 // The server reads the type from the content (HIL-144): a file that calls itself
 // a picture but holds a zip archive is refused with the server's sentence once its
-// bytes arrive, and leaves no chip.
+// bytes arrive, and stays on the composer as a refused chip.
 test('a file of a type the chat does not take is refused with the server sentence', async ({
   page,
 }) => {
   await signUp(page)
 
-  await page.getByTestId('file-input').setInputFiles({
+  await page.getByTestId('attach-button-input').setInputFiles({
     name: `${modelKey()}.png`,
     mimeType: ATTACHMENT_MIME,
     buffer: ZIP_BYTES,
   })
 
-  await expect(page.getByTestId('upload-error')).toHaveText(
+  await expect(page.getByTestId('attachments-error')).toHaveText(
     'File content does not match an allowed type',
   )
-  await expect(page.getByTestId('attachment-draft')).toHaveCount(0)
+  await expect(page.getByTestId('attachments-file')).toHaveCount(1)
+  await expect(page.getByTestId('attachments-file')).toHaveAttribute(
+    'data-state',
+    'failed',
+  )
 })
 
 // From the acceptance of HIL-139: the browser client sends a ready file again
@@ -178,8 +229,7 @@ test('a ready file survives a dropped connection and is sent with the message', 
   await dropSocket(page)
   await reconnected
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('attachment-draft-name')).toHaveText(filename)
-  await expect(page.getByTestId('upload-progress')).toHaveCount(0)
+  await expectReceived(page, filename)
 
   await typeInto(page.getByTestId('message-input'), text)
   await clickSubmit(page.getByTestId('message-send'))
@@ -188,7 +238,7 @@ test('a ready file survives a dropped connection and is sent with the message', 
     .getByTestId('event')
     .filter({ has: page.getByTestId('event-text').filter({ hasText: text }) })
   await expect(event.getByTestId('event-attachment')).toHaveCount(1)
-  await expect(page.getByTestId('attachment-draft')).toHaveCount(0)
+  await expect(page.getByTestId('attachments-file')).toHaveCount(0)
 })
 
 // From the acceptance of HIL-139: the client drops its list when the person
@@ -198,10 +248,10 @@ test('signing out drops the files waiting for a message', async ({ page }) => {
   await attachPng(page, `${modelKey()}.png`)
 
   await logout(page)
-  await expect(page.getByTestId('attachment-draft')).toHaveCount(0)
+  await expect(page.getByTestId('attachments-file')).toHaveCount(0)
   await page.getByTestId('message-signin').click()
   await login(page, user.email)
 
   await expect(page.getByTestId('self-user')).toHaveText(user.name)
-  await expect(page.getByTestId('attachment-draft')).toHaveCount(0)
+  await expect(page.getByTestId('attachments-file')).toHaveCount(0)
 })

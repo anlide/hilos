@@ -35,7 +35,8 @@ const OTHER_PNG = Buffer.from(
 const TRUNCATED_PNG = PICTURE_PNG.subarray(0, 33)
 
 /**
- * Pick PNG files through the composer's file input and wait for their chips.
+ * Pick PNG files through the composer's file input and wait for every chip to
+ * read received.
  *
  * @param page The signed-in chat page.
  * @param files Name and bytes of each file, in attach order.
@@ -44,14 +45,19 @@ async function attachPngs(
   page: Page,
   files: readonly { name: string; buffer: Buffer }[],
 ): Promise<void> {
-  await page.getByTestId('file-input').setInputFiles(
+  await page.getByTestId('attach-button-input').setInputFiles(
     files.map((file) => ({
       name: file.name,
       mimeType: PNG_MIME,
       buffer: file.buffer,
     })),
   )
-  await expect(page.getByTestId('attachment-draft-name')).toHaveText(
+  const chips = page.getByTestId('attachments-file')
+  await expect(chips).toHaveCount(files.length)
+  for (const chip of await chips.all()) {
+    await expect(chip).toHaveAttribute('data-state', 'received')
+  }
+  await expect(page.getByTestId('attachments-file-name')).toHaveText(
     files.map((file) => file.name),
   )
 }
@@ -78,7 +84,11 @@ test('a picture refused for nudity stays out of the room and on its chip', async
   await expect(
     page.getByTestId('event-text').filter({ hasText: key }),
   ).toHaveCount(0)
-  await expect(page.getByTestId('attachment-draft-name')).toHaveText(filename)
+  await expect(page.getByTestId('attachments-file')).toHaveAttribute(
+    'data-state',
+    'received',
+  )
+  await expect(page.getByTestId('attachments-file-name')).toHaveText(filename)
 })
 
 test('the second picture refused for violence names that attachment', async ({

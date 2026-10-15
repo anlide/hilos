@@ -247,6 +247,19 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   complete line in `HilosModal`, and carries no live region of its own, so the
   changing line is never read twice. The profile windows' regions voice their
   refusals only, so the line itself is not announced yet (P-486);
+- the **upload field** (HIL-140) is three tags over one state: the page creates
+  `createHilosUploadField({ target })` from `@hilos/core` `primitives/uploadField`,
+  hands it to every tag, and disposes it itself. **`HilosUploadDrop`** wraps the
+  project's own content as the drop and paste door; **`HilosUploadFiles`** draws a
+  chip per file and, above the chips, the last refusal in a `HilosFormError`
+  whose room is held from the first file to the last — with no files it takes no
+  room at all; **`HilosUploadPicker`** is the paperclip over a hidden chooser. The
+  voice lives on the wrapper, not on the line: `HilosUploadDrop` keeps two
+  permanent live regions — the refusal assertive, the file received polite — and
+  the refusal line carries no role, so nothing is heard twice
+  ([accessibility.md](accessibility.md), "The room belongs to the block, the
+  voice to the surface"). Words and classes come from the core; Vue, React, and
+  Angular only render them;
 
 - the **`HilosLayout`** application shell — the navbar (project brand and nav
   slots, the admin gear, the live connection indicator, and, last, the sign-out

@@ -420,6 +420,36 @@ body.modal-open .toast-container > * {
   --bs-border-style: dashed;
 }
 
+// WHY: Bootstrap's z-index utilities stop at 3, and an input group lifts its
+// focused control to 5 — an overlay any lower would let that field show through.
+// WHAT: the upload drop overlay over the whole wrapped area, at the mockup's 5
+// (mockups/components/upload); the views draw it after the wrapped content, so
+// on an equal 5 the overlay is the one painted on top.
+.hilos-upload-overlay {
+  z-index: 5;
+}
+
+// WHY: no Bootstrap max-width step is a fixed rem width; mw-* are percentages.
+// WHAT: the longest a file name grows on an upload chip before it truncates.
+.hilos-upload-name {
+  max-width: 12rem;
+}
+
+// WHY: Bootstrap has no min-width utility and no tabular-figures utility.
+// WHAT: the percent of an uploading chip, as wide at 7% as at 100%, so the chip
+// does not twitch while the number grows.
+.hilos-upload-percent {
+  min-width: 4.2ch;
+  font-variant-numeric: tabular-nums;
+}
+
+// WHY: .btn-close sizes itself in em and has no small variant; no font-size
+// utility goes below .fs-6.
+// WHAT: the × of an upload chip, scaled to the badge it sits in.
+.hilos-upload-remove {
+  font-size: 0.5rem;
+}
+
 // WHY: no Bootstrap size step makes a 1.4rem camera badge at the circle's corner.
 // WHAT: the decorative camera badge on the profile's Change your photo button.
 .hilos-avatar-camera {

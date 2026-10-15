@@ -6,13 +6,22 @@ line has two branches (HIL-625): with an account it names the account, without
 one it says the visit is anonymous — Chat hands a guest no name, so the
 `self-user` marker is absent rather than carrying an empty one. The message
 composer is pinned to the bottom: it submits the `message` action naming the
-attached files, hands each picked file (paperclip, drag & drop, or paste) to the
-framework uploads client via useComposerUpload, shows each upload's progress and
-the ready attachment chips, and runs a re-send lockout timer before the next
-submit. A feed image shows as its thumbnail and opens the original. Rendered by HilosView when the navigator's route is the main page. -->
+attached files, and runs a re-send lockout timer before the next submit. Its
+files are the framework upload field (createHilosUploadField over the chat's
+target): HilosUploadDrop wraps the whole composer and takes a drop or a paste,
+HilosUploadPicker is the paperclip, and HilosUploadFiles draws each file's chip
+and the line of the last refusal. A feed image shows as its thumbnail and opens the original. Rendered by HilosView when the navigator's route is the main page. -->
 <script setup lang="ts">
 import { computed, inject, nextTick, onUnmounted, ref, watch } from 'vue'
-import { hilosAuthGateKey, useConnectionState, useSignal } from '@hilos/vue'
+import { createHilosUploadField } from '@hilos/core'
+import {
+  HilosUploadDrop,
+  HilosUploadFiles,
+  HilosUploadPicker,
+  hilosAuthGateKey,
+  useConnectionState,
+  useSignal,
+} from '@hilos/vue'
 
 import { connection } from '../../bootstrap/connection'
 import { currentUserId, currentUserName } from '../../bootstrap/session'
@@ -27,9 +36,16 @@ import {
   messageError,
   sendChatMessage,
 } from './mainActions'
-import { useComposerUpload } from './useComposerUpload'
 
 defineOptions({ name: 'MainPage' })
+
+/** The chat's upload target (PHP `ChatAttachmentUploadTarget::NAME`). */
+const CHAT_ATTACHMENT_TARGET = 'chat_attachment'
+
+// The picker offers images, PDFs and text; drag/drop and paste bypass the
+// filter, and the server reads the type from the content and refuses the rest,
+// so this is advisory UX only.
+const FILE_ACCEPT = 'image/*,.pdf,.txt,text/plain,application/pdf'
 
 const selfName = useSignal(currentUserName)
 const selfId = useSignal(currentUserId)
@@ -124,37 +140,31 @@ const moderationBanner = computed<ModerationBanner | null>(() => {
   }
 })
 
-// The composer's file picking — drag/drop, the picker, paste — lives in its own
-// composable over the framework uploads client, so this view keeps only the
-// message composer and the markup.
-const {
-  fileAccept,
-  fileInputRef,
-  isDragging,
-  isUploading,
-  uploadProgress,
-  uploadProgressPercent,
-  uploadError,
-  drafts,
-  draftIds,
-  removeDraft,
-  openFilePicker,
-  onFileInputChange,
-  onDragEnter,
-  onDragLeave,
-  onDrop,
-  onPaste,
-} = useComposerUpload(isAuthenticated, isConnected)
+// The composer's files — drop, paste, the picker, the chips — are the framework
+// upload field; this view keeps only the message composer and the markup. The
+// field is one switch for all of it, off whenever the message input is: for a
+// guest, without a connection and while the last submit is moderated.
+const upload = createHilosUploadField({ target: CHAT_ATTACHMENT_TARGET })
+const uploadReady = useSignal(upload.ready)
+const uploadBusy = useSignal(upload.busy)
+watch(
+  () => !isAuthenticated.value || !isConnected.value || isModerating.value,
+  (disabled) => {
+    upload.setDisabled(disabled)
+  },
+  { immediate: true },
+)
 
 // The composer accepts a message with attachments and no text, so content is
-// present when the draft is non-blank OR at least one attachment is ready.
+// present when the draft is non-blank OR at least one attachment is ready. A
+// refused file is not ready, so it neither counts nor holds Send back.
 const hasContent = computed(
-  () => draft.value.trim() !== '' || draftIds.value.length > 0,
+  () => draft.value.trim() !== '' || uploadReady.value.length > 0,
 )
 
 // Send is gated: an authenticated + live connection, some content (text or an
 // attachment), no active re-send lockout, no in-flight moderation, and no
-// in-flight upload.
+// file waiting or uploading.
 const canSend = computed(
   () =>
     isAuthenticated.value &&
@@ -162,7 +172,7 @@ const canSend = computed(
     hasContent.value &&
     cooldownSeconds.value === 0 &&
     !isModerating.value &&
-    !isUploading.value,
+    !uploadBusy.value,
 )
 
 const startCooldown = (seconds = MESSAGE_RATE_LIMIT_SECONDS): void => {
@@ -190,7 +200,7 @@ const submitMessage = (): void => {
   if (!canSend.value) {
     return
   }
-  if (!sendChatMessage(draft.value.trim(), draftIds.value)) {
+  if (!sendChatMessage(draft.value.trim(), uploadReady.value)) {
     return
   }
   draft.value = ''
@@ -226,6 +236,7 @@ onUnmounted(() => {
   if (cooldownTimer !== null) {
     clearInterval(cooldownTimer)
   }
+  upload.dispose()
 })
 </script>
 
@@ -432,170 +443,84 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div
-      class="mt-3 flex-shrink-0 position-relative"
-      data-id="composer"
-      @dragenter.prevent="onDragEnter"
-      @dragover.prevent
-      @dragleave.prevent="onDragLeave"
-      @drop.prevent="onDrop"
-    >
-      <div
-        v-if="isDragging"
-        class="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center bg-primary-subtle border border-2 border-primary rounded"
-        style="z-index: 5"
-        data-id="composer-dropzone"
-      >
-        <span class="text-primary fw-semibold">
-          <i class="bi bi-paperclip me-1" aria-hidden="true" />Drop files to
-          upload
-        </span>
-      </div>
-
-      <div
-        v-if="moderationBanner"
-        class="small mb-1 d-flex align-items-center gap-2"
-        :class="moderationBanner.className"
-        data-id="moderation-banner"
-      >
-        <span
-          v-if="moderationBanner.spinner"
-          class="spinner-border spinner-border-sm"
-          aria-hidden="true"
-        />
-        <span data-id="moderation-text">{{ moderationBanner.text }}</span>
-      </div>
-      <!-- A moderation failure already shows in the banner above and also rides
-      back as an action_error; suppress the bare error then to avoid a duplicate.
-      Synchronous submit errors (rate-limited, empty) have no banner and show. -->
-      <div
-        v-if="error && !moderationBanner"
-        class="small text-danger mb-1"
-        data-id="message-error"
-      >
-        {{ error }}
-      </div>
-
-      <div
-        v-if="uploadError"
-        class="small text-danger mb-1"
-        data-id="upload-error"
-      >
-        {{ uploadError }}
-      </div>
-
-      <div v-if="uploadProgress" class="mb-2" data-id="upload-progress">
-        <div class="small text-muted d-flex justify-content-between gap-2 mb-1">
-          <span class="text-truncate"
-            >Uploading {{ uploadProgress.filename }}…</span
-          >
-          <span data-id="upload-progress-percent"
-            >{{ uploadProgressPercent }}%</span
-          >
-        </div>
-        <div class="progress" style="height: 4px">
-          <div
-            class="progress-bar"
-            :style="{ width: uploadProgressPercent + '%' }"
-          />
-        </div>
-      </div>
-
-      <div
-        v-if="drafts.length > 0"
-        class="d-flex flex-wrap gap-2 mb-2"
-        data-id="attachment-drafts"
-      >
-        <span
-          v-for="d in drafts"
-          :key="d.clientUploadId"
-          class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle d-inline-flex align-items-center gap-1"
-          data-id="attachment-draft"
+    <div class="mt-3 flex-shrink-0" data-id="composer">
+      <HilosUploadDrop :field="upload" data-id="composer-upload">
+        <div
+          v-if="moderationBanner"
+          class="small mb-1 d-flex align-items-center gap-2"
+          :class="moderationBanner.className"
+          data-id="moderation-banner"
         >
-          <i class="bi bi-paperclip" aria-hidden="true" />
           <span
-            class="text-truncate"
-            style="max-width: 12rem"
-            :title="d.filename"
-            data-id="attachment-draft-name"
-            >{{ d.filename }}</span
+            v-if="moderationBanner.spinner"
+            class="spinner-border spinner-border-sm"
+            aria-hidden="true"
+          />
+          <span data-id="moderation-text">{{ moderationBanner.text }}</span>
+        </div>
+        <!-- A moderation failure already shows in the banner above and also rides
+        back as an action_error; suppress the bare error then to avoid a duplicate.
+        Synchronous submit errors (rate-limited, empty) have no banner and show. -->
+        <div
+          v-if="error && !moderationBanner"
+          class="small text-danger mb-1"
+          data-id="message-error"
+        >
+          {{ error }}
+        </div>
+
+        <HilosUploadFiles :field="upload" data-id="attachments" />
+
+        <form
+          class="d-flex gap-2"
+          data-id="message-form"
+          @submit.prevent="submitMessage"
+        >
+          <HilosUploadPicker
+            :field="upload"
+            data-id="attach-button"
+            :accept="FILE_ACCEPT"
+          />
+          <input
+            :value="displayMessage"
+            type="text"
+            class="form-control"
+            :placeholder="
+              isAuthenticated
+                ? 'Type your message...'
+                : 'Sign in to send a message'
+            "
+            maxlength="500"
+            :disabled="!isAuthenticated || !isConnected || isModerating"
+            data-id="message-input"
+            @input="handleInput"
+          />
+          <span
+            v-if="cooldownSeconds > 0"
+            class="align-self-center text-muted small flex-shrink-0"
+            data-id="message-cooldown"
+            >{{ cooldownSeconds }}s</span
           >
           <button
+            v-if="isAuthenticated"
+            type="submit"
+            class="btn btn-primary flex-shrink-0"
+            :disabled="!canSend"
+            data-id="message-send"
+          >
+            Send
+          </button>
+          <button
+            v-else
             type="button"
-            class="btn-close"
-            style="font-size: 0.5rem"
-            aria-label="Remove attachment"
-            :disabled="isModerating || d.canceling"
-            data-id="attachment-draft-remove"
-            @click="removeDraft(d.clientUploadId)"
-          />
-        </span>
-      </div>
-
-      <form
-        class="d-flex gap-2"
-        data-id="message-form"
-        @submit.prevent="submitMessage"
-      >
-        <input
-          ref="fileInputRef"
-          type="file"
-          multiple
-          class="d-none"
-          :accept="fileAccept"
-          data-id="file-input"
-          @change="onFileInputChange"
-        />
-        <button
-          type="button"
-          class="btn btn-outline-secondary flex-shrink-0"
-          :disabled="!isAuthenticated || !isConnected || isModerating"
-          aria-label="Attach files"
-          data-id="attach-button"
-          @click="openFilePicker"
-        >
-          <i class="bi bi-paperclip" aria-hidden="true" />
-        </button>
-        <input
-          :value="displayMessage"
-          type="text"
-          class="form-control"
-          :placeholder="
-            isAuthenticated
-              ? 'Type your message...'
-              : 'Sign in to send a message'
-          "
-          maxlength="500"
-          :disabled="!isAuthenticated || !isConnected || isModerating"
-          data-id="message-input"
-          @input="handleInput"
-          @paste="onPaste"
-        />
-        <span
-          v-if="cooldownSeconds > 0"
-          class="align-self-center text-muted small flex-shrink-0"
-          data-id="message-cooldown"
-          >{{ cooldownSeconds }}s</span
-        >
-        <button
-          v-if="isAuthenticated"
-          type="submit"
-          class="btn btn-primary flex-shrink-0"
-          :disabled="!canSend"
-          data-id="message-send"
-        >
-          Send
-        </button>
-        <button
-          v-else
-          type="button"
-          class="btn btn-primary flex-shrink-0"
-          data-id="message-signin"
-          @click="promptSignIn"
-        >
-          Sign in to send
-        </button>
-      </form>
+            class="btn btn-primary flex-shrink-0"
+            data-id="message-signin"
+            @click="promptSignIn"
+          >
+            Sign in to send
+          </button>
+        </form>
+      </HilosUploadDrop>
     </div>
   </div>
 </template>

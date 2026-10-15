@@ -274,6 +274,18 @@ export {
   type HilosSendProgressProps,
 } from './HilosSendProgress.js'
 export {
+  HilosUploadDrop,
+  type HilosUploadDropProps,
+} from './HilosUploadDrop.js'
+export {
+  HilosUploadFiles,
+  type HilosUploadFilesProps,
+} from './HilosUploadFiles.js'
+export {
+  HilosUploadPicker,
+  type HilosUploadPickerProps,
+} from './HilosUploadPicker.js'
+export {
   HilosStepUpStep,
   type HilosStepUpStepProps,
 } from './auth/HilosStepUpStep.js'

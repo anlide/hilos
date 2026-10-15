@@ -255,7 +255,12 @@ above pages.
 
 The browser client does not apply target policy, publish a complete upload, or
 draw progress, failures, pickers, or drop zones. Target checks and publication
-belong to the server/project; presentation belongs to the consuming view.
+belong to the server/project. Presentation is the SDK's upload field: the page
+creates `createHilosUploadField({ target })` from `@hilos/core`, which reads this
+client's records back for its one target, and draws it with `HilosUploadDrop`,
+`HilosUploadFiles`, and `HilosUploadPicker`
+([sdk-packaging.md](../frontend/sdk-packaging.md)). The client itself still
+draws nothing.
 
 ## Cleanup
 
@@ -280,7 +285,6 @@ An upload goes with its file when:
 
 - Publishing a received file into the registry — see
   [files-registry.md](files-registry.md).
-- Drag and drop, the file picker and the upload list — HIL-140.
 - Streaming a file without writing it to disk — HIL-142.
 - Tmp files orphaned by a killed process are not swept.
 - Metadata in GIF, HEIC, AVIF, TIFF, PDF, and other formats is not stripped.

@@ -76,6 +76,15 @@ import {
   bindUploads,
   cancelUpload,
   uploadFile,
+  createHilosUploadField,
+  HILOS_UPLOAD_FIELD_COPY,
+  HILOS_UPLOAD_FIELD_CHIP_CLASS,
+  HILOS_UPLOAD_FIELD_CHIP_CALM_CLASS,
+  HILOS_UPLOAD_FIELD_CHIP_FAILED_CLASS,
+  HILOS_UPLOAD_FIELD_CHIP_CANCELING_CLASS,
+  HILOS_UPLOAD_FIELD_OVERLAY_CLASS,
+  type HilosUploadField,
+  type HilosUploadFieldFile,
   UPLOAD_ACTION_INIT,
   type DeferredDelay,
   type DeferredFlagState,
@@ -156,6 +165,16 @@ it('exports the @hilos/core public surface', () => {
   expect(bindUploads).toBeTypeOf('function')
   expect(uploadFile).toBeTypeOf('function')
   expect(cancelUpload).toBeTypeOf('function')
+  expect(HILOS_UPLOAD_FIELD_COPY.overlay).toBe('Drop files to upload')
+  expect(HILOS_UPLOAD_FIELD_CHIP_CLASS).toContain('badge')
+  expect(HILOS_UPLOAD_FIELD_CHIP_CALM_CLASS).toContain('bg-secondary-subtle')
+  expect(HILOS_UPLOAD_FIELD_CHIP_FAILED_CLASS).toContain('bg-danger-subtle')
+  expect(HILOS_UPLOAD_FIELD_CHIP_CANCELING_CLASS).toBe('opacity-50')
+  expect(HILOS_UPLOAD_FIELD_OVERLAY_CLASS).toContain('bg-primary-subtle')
+  const field: HilosUploadField = createHilosUploadField({ target: 'probe' })
+  const chips: readonly HilosUploadFieldFile[] = field.files.get()
+  expect(chips).toEqual([])
+  field.dispose()
   expect(UPLOAD_ACTION_INIT).toBe('hilos_upload_init')
   const delay: DeferredDelay = DEFAULT_SKELETON_DELAY_MS
   const flag: DeferredFlagState = createDeferredFlagState(delay)

@@ -456,6 +456,17 @@ export {
   type ModalControllerOptions,
 } from './primitives/modal.js'
 export {
+  createHilosUploadField,
+  HILOS_UPLOAD_FIELD_CHIP_CALM_CLASS,
+  HILOS_UPLOAD_FIELD_CHIP_CANCELING_CLASS,
+  HILOS_UPLOAD_FIELD_CHIP_CLASS,
+  HILOS_UPLOAD_FIELD_CHIP_FAILED_CLASS,
+  HILOS_UPLOAD_FIELD_COPY,
+  HILOS_UPLOAD_FIELD_OVERLAY_CLASS,
+  type HilosUploadField,
+  type HilosUploadFieldFile,
+} from './primitives/uploadField.js'
+export {
   FocusTrap,
   focusableElements,
   focusInitial,

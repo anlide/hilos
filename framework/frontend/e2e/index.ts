@@ -80,6 +80,7 @@ export {
 } from './standOAuthUser.js'
 export { acceptTermsAsNewAccount, signUpAs } from './providerSignUp.js'
 export { downloadBytes } from './download.js'
+export { dropFiles, type DroppedFile } from './upload.js'
 export { connectFirstApp, type ConnectedApp } from './secondFactor.js'
 export {
   SESSION_COOKIE_PREFIX,
