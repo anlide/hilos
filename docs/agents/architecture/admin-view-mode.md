@@ -716,7 +716,20 @@ column names and noise reasons are schema metadata, not personal values. Its Vue
 unit, `framework/frontend/vue/src/admin/changeLog/HilosChangeLogTablesPage.test.ts`,
 draws the same metadata and column-mode reference for admins and viewers, with
 no mutation controls. `demo/chat/tests/e2e/tests/change-log-tables.spec.ts` follows
-the section card, journal-label filtering and narrow-screen reference cards.
+the section card, journal-label filtering, `Open` into one table and
+narrow-screen reference cards.
+
+The Tracked table page carries its one-table section under both verdicts in
+`demo/chat/tests/Integration/ChangeLogTablePageIntegrationTest.php`: a viewer
+receives the same columns, modes and service triggers as an admin; an untracked
+table answers without modes or triggers, an unknown name is refused as not
+found, and an address change re-reads the section. Its Vue unit,
+`framework/frontend/vue/src/admin/changeLog/HilosChangeLogTablePage.test.ts`,
+draws the same header, columns and triggers for admins and viewers, hides people
+in the history beside their numbers, and offers no mutation control — only the
+receipt each history row opens. `demo/chat/tests/e2e/tests/change-log-table.spec.ts`
+follows a bot-update receipt to the history of its record and back to the whole
+table.
 
 The backup section carries the viewer cases of its keep toggle and of its
 restore and reopen dialogs as a unit of its page

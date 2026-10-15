@@ -2257,6 +2257,24 @@ export {
   type HilosChangeLogNoisyColumn,
 } from './admin/changeLog/hilosChangeLogTablePolicies.js'
 export {
+  CHANGE_LOG_TABLE_SECTION,
+  CHANGE_LOG_TABLE_ROUTE_PARAM,
+  CHANGE_LOG_RECORD_ROUTE_PARAM,
+  changeLogTableSchema,
+  CHANGE_LOG_TABLE_COPY,
+  readHilosChangeLogTable,
+  changeLogRecordRouteParam,
+  readChangeLogRecordRouteParam,
+  formatChangeLogColumnStorage,
+  changeLogColumnModeCard,
+  formatChangeLogTrigger,
+  formatChangeLogHistoryChanges,
+  type HilosChangeLogTableDetail,
+  type HilosChangeLogTableColumn,
+  type HilosChangeLogTableTrigger,
+  type HilosChangeLogTriggerText,
+} from './admin/changeLog/hilosChangeLogTable.js'
+export {
   CHANGE_LOG_OVERVIEW_SECTION,
   changeLogOverviewSchema,
   CHANGE_LOG_SECTION_NOTE,

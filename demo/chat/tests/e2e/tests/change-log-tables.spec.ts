@@ -41,9 +41,20 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
   await expect(shownByTestId(page, 'hilos-table-row-hilos_user')).toContainText(
     'Framework',
   )
-  await expect(
-    page.getByTestId('hilos-change-log-open-table-hilos_user'),
-  ).toHaveCount(0)
+  const open = shownByTestId(page, 'hilos-change-log-open-table-hilos_user')
+  await expect(open).toHaveAttribute(
+    'href',
+    '/hilos/change-log/tables/hilos_user',
+  )
+  await open.click()
+  await expectPageReady(page)
+  await expect(page.getByTestId('hilos-admin-title')).toHaveText(
+    'Tracked table',
+  )
+  await expect(page.getByTestId('hilos-change-log-table-header')).toContainText(
+    'hilos_user',
+  )
+  await gotoPage(page, '/hilos/change-log/tables')
 
   const noise = page.getByTestId('hilos-change-log-noisy-columns')
   const noiseTable = page.getByRole('table', {

@@ -38,7 +38,7 @@ export const HILOS_UNBUILT_PAGES: Readonly<
   [HilosPages.I18N_TRANSLATE_EMAIL]: ['vue', 'react', 'angular'],
   [HilosPages.CHANGE_LOG]: ['react', 'angular'],
   [HilosPages.CHANGE_LOG_TABLES]: ['react', 'angular'],
-  [HilosPages.CHANGE_LOG_TABLE]: ['vue', 'react', 'angular'],
+  [HilosPages.CHANGE_LOG_TABLE]: ['react', 'angular'],
   [HilosPages.DAEMON_WEBSOCKETS]: ['vue', 'react', 'angular'],
   [HilosPages.MCP_SKILLS]: ['vue', 'react', 'angular'],
   [HilosPages.MCP_SKILLS_MCP]: ['vue', 'react', 'angular'],

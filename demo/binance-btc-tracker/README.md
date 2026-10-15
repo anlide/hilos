@@ -98,9 +98,11 @@ Escape `_` and `%` in the database identifier used by `GRANT`, where they are
 patterns even inside backticks. The provisioning script validates names and the
 64-character limit and performs that escaping. It never clears a database.
 
-The Vue dashboard is mounted at `/hilos/change-log` with the ready SDK overview
-and feed. The tracked-tables and table-detail views follow in HIL-1461/HIL-1462;
-React/Angular parity follows in HIL-1463.
+The Vue views mount the three journal pages: the dashboard at
+`/hilos/change-log` with the ready SDK overview and feed, Tracked tables at
+`/hilos/change-log/tables`, and one table with its history at
+`/hilos/change-log/tables/{tableId}/{record?}`. React/Angular parity follows in
+HIL-1463.
 
 ## First run
 

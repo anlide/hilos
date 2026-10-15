@@ -3,12 +3,16 @@ import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createSignal,
+  HilosPages,
   type HilosChangeLogEntry,
   type HilosChangeLogReceiptDialog,
   type HilosChangeLogReceiptHeader,
   type HilosChangeLogReceiptReader,
+  type HilosRouter,
+  type PageRouteMatch,
 } from '@hilos/core'
 
+import { hilosRouterKey } from '../../hilosRouterKey.js'
 import HilosChangeLogReceiptModal from './HilosChangeLogReceiptModal.vue'
 
 function header(
@@ -71,7 +75,40 @@ afterEach(() => {
   for (const wrapper of mounted.splice(0)) wrapper.unmount()
 })
 
-async function render(value: HilosChangeLogReceiptDialog) {
+/** A navigator whose route map gives the Tracked table page an address only when built. */
+function router(tableBuilt: boolean): HilosRouter {
+  return {
+    currentRoute: createSignal<PageRouteMatch>({
+      page: HilosPages.CHANGE_LOG,
+      params: {},
+      admin: true,
+    }),
+    currentPath: createSignal('/hilos/change-log'),
+    currentTitle: createSignal(''),
+    pageError: createSignal(null),
+    pageLoading: createSignal(false),
+    pageIdentity: createSignal(undefined),
+    dashboardSections: createSignal(undefined),
+    resolvePath: vi.fn((page: string, params: Record<string, string> = {}) =>
+      tableBuilt && page === HilosPages.CHANGE_LOG_TABLE
+        ? `/hilos/change-log/tables/${encodeURIComponent(params.tableId ?? '')}/${encodeURIComponent(params.record ?? '')}`
+        : undefined,
+    ),
+    clearPageError: () => {},
+    denyCurrentPage: () => {},
+    awaitPageAnswer: () => {},
+    onLeave: () => () => {},
+    navigate: vi.fn(),
+    replacePath: () => {},
+    start: () => {},
+    stop: () => {},
+  }
+}
+
+async function render(
+  value: HilosChangeLogReceiptDialog,
+  navigator?: HilosRouter,
+) {
   const reader: HilosChangeLogReceiptReader = {
     dialog: createSignal(value),
     openReceipt: vi.fn(async () => {}),
@@ -85,19 +122,25 @@ async function render(value: HilosChangeLogReceiptDialog) {
   const wrapper = mount(HilosChangeLogReceiptModal, {
     props: { dialog: value, reader: markRaw(reader) },
     attachTo: document.body,
+    global: navigator
+      ? { provide: { [hilosRouterKey as symbol]: navigator } }
+      : {},
   })
   mounted.push(wrapper)
   await nextTick()
-  return document.querySelector(
-    '[data-id="hilos-change-log-detail"]',
-  ) as HTMLElement
+  return {
+    detail: document.querySelector(
+      '[data-id="hilos-change-log-detail"]',
+    ) as HTMLElement,
+    reader,
+  }
 }
 
 describe('HilosChangeLogReceiptModal', () => {
   it('shows complete escaped long values and distinct absent, NULL, and empty sides', async () => {
     const oldText = 'old <script>bad()</script>\n' + 'x'.repeat(6000)
     const newText = 'new <img src=x onerror=bad()>\n' + 'y'.repeat(6000)
-    const detail = await render(
+    const { detail } = await render(
       dialog([
         entry({
           changes: [
@@ -184,7 +227,7 @@ describe('HilosChangeLogReceiptModal', () => {
         bodyOmitted: false,
       },
     ]
-    const detail = await render(
+    const { detail } = await render(
       dialog(
         [
           entry({ mutation: 'create', changes }),
@@ -222,7 +265,7 @@ describe('HilosChangeLogReceiptModal', () => {
     ['web', 'Guest', 'Guest — no account yet.'],
     ['cron', 'System', 'System — no person.'],
   ])('keeps %s attribution distinct', async (channel, label, explanation) => {
-    const detail = await render(
+    const { detail } = await render(
       dialog([entry()], header({ actorId: null, actorLabel: null, channel })),
     )
     expect(detail.textContent).toContain(label)
@@ -232,7 +275,7 @@ describe('HilosChangeLogReceiptModal', () => {
   })
 
   it('retains a deleted person number and the actual cron writer', async () => {
-    const detail = await render(
+    const { detail } = await render(
       dialog(
         [entry()],
         header({
@@ -256,7 +299,7 @@ describe('HilosChangeLogReceiptModal', () => {
   })
 
   it('shows the migration runner only for migration with no recorded writer', async () => {
-    const detail = await render(
+    const { detail } = await render(
       dialog(
         [entry()],
         header({ channel: 'migration', agent: null, source: null }),
@@ -266,10 +309,58 @@ describe('HilosChangeLogReceiptModal', () => {
     expect(detail.textContent).toContain('bot.update')
   })
 
+  it('links an unmasked record to its Tracked table and closes on the way', async () => {
+    const navigator = router(true)
+    const { detail, reader } = await render(
+      dialog([entry({ recordKey: [3, 'a,b'] })]),
+      navigator,
+    )
+    const link = detail.querySelector(
+      '[data-id="hilos-change-log-receipt-record-11"]',
+    ) as HTMLAnchorElement
+    expect(link).not.toBeNull()
+    expect(link.tagName).toBe('A')
+    expect(link.textContent).toBe('bot #3, a,b')
+    expect(navigator.resolvePath).toHaveBeenCalledWith(
+      HilosPages.CHANGE_LOG_TABLE,
+      { tableId: 'bot', record: '3,a%2Cb' },
+    )
+    expect(link.getAttribute('href')).toBe(
+      '/hilos/change-log/tables/bot/3%2Ca%252Cb',
+    )
+    link.click()
+    expect(reader.close).toHaveBeenCalled()
+    expect(navigator.navigate).toHaveBeenCalledWith(
+      '/hilos/change-log/tables/bot/3%2Ca%252Cb',
+    )
+  })
+
+  it.each([
+    ['without a router', undefined, [3]],
+    ['while the page is unbuilt', false, [3]],
+    ['for a masked key', true, [null, 'retained']],
+  ] as const)(
+    'keeps the record as text %s',
+    async (_case, tableBuilt, recordKey) => {
+      const { detail } = await render(
+        dialog([entry({ recordKey: [...recordKey] })]),
+        tableBuilt === undefined ? undefined : router(tableBuilt),
+      )
+      expect(
+        detail.querySelector('[data-id="hilos-change-log-receipt-record-11"]'),
+      ).toBeNull()
+      expect(detail.querySelector('a')).toBeNull()
+      expect(
+        detail.querySelector('[data-id="hilos-change-log-entry-11"] h3 code')
+          ?.textContent,
+      ).toBe(recordKey[0] === null ? 'bot #?, retained' : 'bot #3')
+    },
+  )
+
   it.each([1, 50])(
     'offers no pagination controls for %s entries',
     async (entryCount) => {
-      const detail = await render(dialog([entry()], header({ entryCount })))
+      const { detail } = await render(dialog([entry()], header({ entryCount })))
       expect(
         detail.querySelector('[data-id="hilos-change-log-detail-count"]'),
       ).toBeNull()

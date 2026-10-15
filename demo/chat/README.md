@@ -153,8 +153,9 @@ patterns even inside backticks. The provisioning script validates names and the
 64-character limit and performs that escaping. It never clears a database.
 
 The backend registers all three journal pages and their table bindings.
-The Vue dashboard is mounted at `/hilos/change-log`. The tracked-tables and
-table-detail Vue views follow in HIL-1461/HIL-1462; React/Angular parity is HIL-1463.
+The Vue views mount all three: the dashboard at `/hilos/change-log`, Tracked
+tables at `/hilos/change-log/tables`, and one table with its history at
+`/hilos/change-log/tables/{tableId}/{record?}`. React/Angular parity is HIL-1463.
 
 ## Running modes
 

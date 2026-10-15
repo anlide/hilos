@@ -38,6 +38,9 @@ final class HilosPageRouteParams
      */
     public const string HILOS_ANALYTICS_PERSON_USER_ID = self::HILOS_USER_USER_ID;
 
+    /** Route param for one live table of the change log. */
+    public const string HILOS_CHANGE_LOG_TABLE_ID = 'tableId';
+
     /** Route param for language detail pages. */
     public const string HILOS_I18N_LANGUAGE_CODE = 'languageCode';
 

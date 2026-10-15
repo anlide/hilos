@@ -1,23 +1,32 @@
 <!-- Local read-only detail surface. The core reader owns requests, snapshots,
 attribution, value sides and pagination; HilosModal owns the keyboard and focus.
-Hide's focus/scroll placement is the only DOM effect this view adds. -->
+Hide's focus/scroll placement is the only DOM effect this view adds. A record
+whose key is not masked links to the Tracked table page once the router gives
+that page an address; following it closes the dialog. -->
 <script setup lang="ts">
 import {
   CHANGE_LOG_RECEIPT_COPY as copy,
+  CHANGE_LOG_RECORD_ROUTE_PARAM,
+  CHANGE_LOG_TABLE_ROUTE_PARAM,
   changeLogEntryDetails,
   changeLogReceiptAttribution,
   changeLogReceiptPagination,
+  changeLogRecordRouteParam,
   formatChangeLogTime,
+  HilosPages,
   isHiddenValue,
+  type HilosChangeLogEntry,
   type HilosChangeLogReceiptDialog,
   type HilosChangeLogReceiptReader,
 } from '@hilos/core'
-import { computed, nextTick, ref } from 'vue'
+import { computed, inject, nextTick, ref } from 'vue'
 
 import HilosFormError from '../../HilosFormError.vue'
 import HilosHiddenMark from '../../HilosHiddenMark.vue'
+import HilosLink from '../../HilosLink.vue'
 import HilosLongText from '../../HilosLongText.vue'
 import HilosModal from '../../HilosModal.vue'
+import { hilosRouterKey } from '../../hilosRouterKey.js'
 
 const props = defineProps<{
   /** The current lazy snapshot, or null when closed. */
@@ -25,6 +34,8 @@ const props = defineProps<{
   /** Intents of the page's one shared receipt reader. */
   reader: HilosChangeLogReceiptReader
 }>()
+
+const router = inject(hilosRouterKey, undefined)
 
 const title = computed(() =>
   props.dialog?.kind === 'receipt'
@@ -42,12 +53,33 @@ const entries = computed(() =>
   (props.dialog?.entries ?? []).map((entry) => ({
     entryId: entry.entryId,
     details: changeLogEntryDetails(entry),
+    recordPath: recordPath(entry),
   })),
 )
 const pagination = computed(() =>
   props.dialog ? changeLogReceiptPagination(props.dialog) : null,
 )
 const changesHeading = ref<HTMLElement>()
+
+/**
+ * Address the Tracked table page narrowed to the entry's record, when that page
+ * is built and no part of the key is masked.
+ *
+ * @param entry Journal entry of the open receipt.
+ */
+function recordPath(entry: HilosChangeLogEntry): string | undefined {
+  const key = entry.recordKey
+  const parts = (key ?? []).filter(
+    (part): part is number | string => part !== null,
+  )
+  if (key === null || parts.length === 0 || parts.length !== key.length) {
+    return undefined
+  }
+  return router?.resolvePath(HilosPages.CHANGE_LOG_TABLE, {
+    [CHANGE_LOG_TABLE_ROUTE_PARAM]: entry.table,
+    [CHANGE_LOG_RECORD_ROUTE_PARAM]: changeLogRecordRouteParam(parts),
+  })
+}
 
 /** Restore the first portion, then return to the beginning of What changed. */
 async function hide(): Promise<void> {
@@ -194,7 +226,16 @@ async function hide(): Promise<void> {
           :data-id="`hilos-change-log-entry-${entry.entryId}`"
         >
           <h3 class="h6 d-flex flex-wrap align-items-center gap-2 mb-2">
-            <code class="text-break">{{ entry.details.record }}</code>
+            <HilosLink
+              v-if="entry.recordPath !== undefined"
+              :to="entry.recordPath"
+              :data-id="`hilos-change-log-receipt-record-${entry.entryId}`"
+              @click="reader.close()"
+              ><code class="text-break">{{
+                entry.details.record
+              }}</code></HilosLink
+            >
+            <code v-else class="text-break">{{ entry.details.record }}</code>
             <span class="badge bg-body-secondary text-body border">{{
               entry.details.mutation
             }}</span>

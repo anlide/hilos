@@ -18,7 +18,7 @@ use Hilos\HilosException;
 
 /**
  * Change Log tracked-tables page served by the hilos_change_log agent.
- * Its subscription includes the live noisy-column snapshot; the single-table response follows in HIL-1462.
+ * Its subscription includes the live noisy-column snapshot.
  */
 abstract class AbstractHilosChangeLogTablesPage extends AbstractHilosPage
 {

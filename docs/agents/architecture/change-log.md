@@ -483,8 +483,33 @@ list as a table on wide screens and cards on narrow screens, and the core's
 column-mode reference. Viewport filters do not narrow the reference list. An
 untracked table carries its explicit no-label note and dashes for journal facts.
 `Open` appears only for a journaled table whose detail route resolves through
-the router; the unbuilt detail page therefore offers no link yet (HIL-1462).
-The address uses the live table name, never a journal dictionary number.
+the router: Vue draws it, while a view layer that has not built the Tracked
+table page offers no link. The address uses the live table name, never a
+journal dictionary number.
+
+The Tracked table page `hilos_change_log_table` lives at
+`/hilos/change-log/tables/{tableId}/{record?}`. `tableId` is the live table
+name; the optional `record` is the record key, each part through
+`encodeURIComponent` and the parts joined by `,`, which the router then encodes
+once more as one segment (`/hilos/change-log/tables/bot/57`). The page answers
+in its opening `page_response`, and again on `page_update_subscription`, with
+`payload.data.changeLogTable`: the table's name, owner, journal label, writes in
+the last 24 hours and last change, its columns in live-schema order with their
+SQL type, journal mode and storage, and its three service triggers with the
+migration each body is valid from. The section is schema metadata, declared
+`WireField::notPersonal()`, so an admin and a view-mode viewer receive the same
+one. An unknown name is refused as not found; an untracked table answers with
+`journaled` false, no modes and no triggers. The server never parses `record`:
+the view builds the `hilosChangeLogHistory` window after the page answers, only
+for a journaled table, with the table and the record as its preset, and builds
+it again when the address changes. The page declares no action of its own: its
+receipt modal reads through the Change Log's `hilos_change_log_receipt_read`,
+which is addressed by name and needs no subscription to the feed.
+
+In the receipt modal — on the Change Log and on this page alike — the `table
+#key` of an entry links to this page narrowed to that record, and following it
+closes the modal. The link is drawn only when the router gives the page an
+address and no part of the key is masked; otherwise the label stays text.
 
 ## Triggers Are Files
 

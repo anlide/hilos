@@ -121,6 +121,7 @@ describe('change-log history viewport', () => {
     const { table, fields } = stubTable()
     const frame = table.controller.frame
     expect(frame.declaration?.title).toBe('History')
+    expect(frame.declaration?.subtitle).toBe('All records of this table')
     expect(frame.declaration?.search?.placeholder).toBe('Who…')
     expect(frame.declaration?.empty?.title).toBe(
       'No changes recorded for this table yet',
@@ -173,6 +174,15 @@ describe('change-log history viewport', () => {
         'month',
       ])
     }
+  })
+
+  it('drops the subtitle and speaks of the record when narrowed to one', () => {
+    const declaration = stubTable([57]).table.controller.frame.declaration
+    expect(declaration?.title).toBe('History')
+    expect(declaration?.subtitle).toBeUndefined()
+    expect(declaration?.empty?.title).toBe(
+      'No changes recorded for this record yet',
+    )
   })
 
   it('keeps the table and record preset in the initial viewport and on reset', () => {

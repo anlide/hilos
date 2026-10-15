@@ -248,7 +248,7 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
     admin: true,
   },
   [HilosPages.CHANGE_LOG_TABLE]: {
-    path: '/hilos/change-log/tables/{tableId}',
+    path: '/hilos/change-log/tables/{tableId}/{record?}',
     admin: true,
   },
   [HilosPages.DAEMON]: { path: '/hilos/daemon', admin: true },

@@ -629,16 +629,17 @@ For its data and privacy boundaries, read
    `AbstractHilosChangeLogTablePage`. Bind the framework feed, tables and history
    tables respectively in `TABLES`, the project `TableContext` and `PAGE_TABLES`.
    Pages and tables use the framework `ChangeLogSectionReader`.
-7. In a Vue project, mount `HilosChangeLogPage` and `HilosChangeLogTablesPage` from
-   `@hilos/vue` through thin wrappers carrying the project's connection and scopes.
-   The table-detail Vue mount follows its own leaf (HIL-1462).
+7. In a Vue project, mount the section's three pages — `HilosChangeLogPage`,
+   `HilosChangeLogTablesPage` and `HilosChangeLogTablePage` — from `@hilos/vue`
+   through thin wrappers carrying the project's connection, scopes and tracked
+   actions; none of them is in the context-free default admin view map.
 
 The schema, receipt, trigger and restore contracts live in
 [change-log.md](change-log.md). All six demos activate the backend section.
 Chat journals the four framework tables plus `bot` and `moderator_prompt_piece`;
 binance-btc-tracker, ecommerce-shop, tasks, online-testing and polls each journal
-only the four framework tables. Chat and binance-btc-tracker mount the ready Vue
-dashboard. The remaining view mounts keep the leaf boundaries above. Where
+only the four framework tables. Chat and binance-btc-tracker mount all three Vue pages
+of the section. The remaining view mounts keep the leaf boundaries above. Where
 Backup is already active, name `ChangeLogTablesWithoutEntity` under connection
 1 in its catalog; activating the journal does not activate Backup.
 

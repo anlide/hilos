@@ -223,8 +223,10 @@ export function createHilosChangeLogHistoryTable(
       reads: [CHANGE_LOG_HISTORY_RECEIPT_ID_FIELD],
     },
   ]
+  const record = options.record ?? null
   const frame: HilosTableFrame = {
     title: 'History',
+    ...(record === null ? { subtitle: 'All records of this table' } : {}),
     search: { placeholder: 'Who…' },
     filters: [
       {
@@ -244,13 +246,18 @@ export function createHilosChangeLogHistoryTable(
       },
     ],
     columns,
-    empty: { title: 'No changes recorded for this table yet' },
+    empty: {
+      title:
+        record === null
+          ? 'No changes recorded for this table yet'
+          : 'No changes recorded for this record yet',
+    },
   }
   const initialFilter: Record<string, unknown> = {
     [CHANGE_LOG_FILTER_TABLE]: options.table,
   }
-  if (options.record !== undefined && options.record !== null) {
-    initialFilter[CHANGE_LOG_HISTORY_FILTER_RECORD] = [...options.record]
+  if (record !== null) {
+    initialFilter[CHANGE_LOG_HISTORY_FILTER_RECORD] = [...record]
   }
   const controller = new TableViewportController<HilosChangeLogHistoryRow>({
     resolve: resolveHilosChangeLogHistoryRow,
