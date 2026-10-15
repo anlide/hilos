@@ -542,7 +542,8 @@ confirmation (HIL-1495). The callout and legend are the shared components of
 the languages and countries lists. The root shows the Countries card (HIL-1475).
 React also serves all eight reference pages (HIL-1502); its section root remains
 the self-contained default shell with Languages and Countries cards.
-Angular remains unbuilt until HIL-1503.
+Angular serves the same eight pages (HIL-1503), with its section root the same
+self-contained default shell showing both cards.
 
 | Page key | Route |
 |---|---|
@@ -639,7 +640,15 @@ ecommerce-shop demos mount seven thin consumers over their own
 `hilosI18nLanguageContext` and `hilosI18nCountryContext`, each bound to that
 demo's connection, actions and scopes. These context-required pages stay outside
 `hilosAdminViews()`; the section root remains its default shell.
-Angular stays unbuilt until HIL-1503.
+Angular exports the same seven pages, each taking its `context` input
+(HIL-1503), and draws the same windows over the same core sessions: a language's
+add, view/edit, switch on and off, delete, name and locale windows, and a
+country's add with the own-country confirmation, view/edit, switch on and off,
+delete and name windows. The polls and online-testing demos mount seven thin
+OnPush wrappers over their own `hilosI18nLanguageContext` and
+`hilosI18nCountryContext`, each bound to that demo's connection, actions and
+scopes. These pages too stay outside `hilosAdminViews()`; the section root
+remains its default shell.
 
 Startup refuses a missing page or agent; the topology tests check that the
 six migration files are present after registration.

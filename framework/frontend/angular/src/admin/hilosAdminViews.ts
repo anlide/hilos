@@ -25,15 +25,11 @@ import { HilosPages } from '@hilos/core'
 import { HilosDashboardPage } from './dashboard/HilosDashboardPage.js'
 import { HilosRolesPage } from './roles/HilosRolesPage.js'
 import { HilosI18nPage } from './i18n/HilosI18nPage.js'
-import { HilosI18nLanguagesPage } from './i18n/lists/HilosI18nLanguagesPage.js'
-import { HilosI18nCountriesPage } from './i18n/lists/HilosI18nCountriesPage.js'
 import { HilosI18nEntitiesPage } from './i18n/lists/HilosI18nEntitiesPage.js'
 import { HilosI18nUiPagesPage } from './i18n/lists/HilosI18nUiPagesPage.js'
 import { HilosI18nGroupsPage } from './i18n/lists/HilosI18nGroupsPage.js'
 import { HilosI18nActionsPage } from './i18n/lists/HilosI18nActionsPage.js'
 import { HilosI18nEmailsPage } from './i18n/lists/HilosI18nEmailsPage.js'
-import { HilosI18nLanguagePage } from './i18n/details/HilosI18nLanguagePage.js'
-import { HilosI18nCountryPage } from './i18n/details/HilosI18nCountryPage.js'
 import { HilosI18nUiPagePage } from './i18n/details/HilosI18nUiPagePage.js'
 import { HilosI18nGroupPage } from './i18n/details/HilosI18nGroupPage.js'
 import { HilosI18nActionPage } from './i18n/details/HilosI18nActionPage.js'
@@ -75,15 +71,20 @@ export function hilosAdminViews(): Record<string, Type<unknown>> {
     [HilosPages.DASHBOARD]: HilosDashboardPage,
     [HilosPages.ROLES]: HilosRolesPage,
     [HilosPages.I18N]: HilosI18nPage,
-    [HilosPages.I18N_LANGUAGES]: HilosI18nLanguagesPage,
-    [HilosPages.I18N_COUNTRIES]: HilosI18nCountriesPage,
+    // I18N_LANGUAGES, I18N_LANGUAGE, I18N_LANGUAGE_NAMES, I18N_LANGUAGE_LOCALES,
+    // I18N_COUNTRIES, I18N_COUNTRY and I18N_COUNTRY_NAMES are real framework
+    // pages since HIL-1503: the lists, the names and the locales read a live
+    // connection for their table, every card page reads one for its page
+    // datum, and all of them send their tracked actions, so a project mounts
+    // HilosI18nLanguagesPage, HilosI18nLanguagePage, HilosI18nLanguageNamesPage
+    // and HilosI18nLanguageLocalesPage directly with its language context, and
+    // HilosI18nCountriesPage, HilosI18nCountryPage and HilosI18nCountryNamesPage
+    // with its country context. The section root above stays self-contained.
     [HilosPages.I18N_ENTITIES]: HilosI18nEntitiesPage,
     [HilosPages.I18N_UI_PAGES]: HilosI18nUiPagesPage,
     [HilosPages.I18N_GROUPS]: HilosI18nGroupsPage,
     [HilosPages.I18N_ACTIONS]: HilosI18nActionsPage,
     [HilosPages.I18N_EMAILS]: HilosI18nEmailsPage,
-    [HilosPages.I18N_LANGUAGE]: HilosI18nLanguagePage,
-    [HilosPages.I18N_COUNTRY]: HilosI18nCountryPage,
     [HilosPages.I18N_UI_PAGE]: HilosI18nUiPagePage,
     [HilosPages.I18N_GROUP]: HilosI18nGroupPage,
     [HilosPages.I18N_ACTION]: HilosI18nActionPage,

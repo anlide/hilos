@@ -218,15 +218,7 @@ describe('bootHilos', () => {
   it.each(['vue', 'react', 'angular'] as const)(
     'subscribes only completed i18n section and list views in %s',
     (viewLayer) => {
-      for (const page of [
-        ...(viewLayer !== 'angular'
-          ? []
-          : [
-              HilosPages.I18N,
-              HilosPages.I18N_LANGUAGES,
-              HilosPages.I18N_COUNTRIES,
-            ]),
-      ]) {
+      for (const page of [HilosPages.I18N_ENTITIES]) {
         const connection = fakeConnection()
         const hilosConnection = connection as unknown as HilosConnection
         const router = bootHilos({
@@ -251,41 +243,39 @@ describe('bootHilos', () => {
         })
         expect(connection.sent).toEqual([])
       }
-      if (viewLayer !== 'angular') {
-        for (const page of [
-          HilosPages.I18N,
-          HilosPages.I18N_LANGUAGES,
-          HilosPages.I18N_COUNTRIES,
-        ]) {
-          const connection = fakeConnection()
-          const hilosConnection = connection as unknown as HilosConnection
-          const router = bootHilos({
-            viewLayer,
-            connection: hilosConnection,
-            actions: new ActionLifecycle(hilosConnection),
-            scopes: new ScopeManager(),
-            router: createAppPageRouter(
-              { main: { path: '/', admin: false } },
-              { fallback: 'main' },
-            ),
-            navigationEnvironment: fakeNavigation(
-              HILOS_ROUTE_DECLARATIONS[page].path,
-            ),
-          })
-
-          expect(router.currentRoute.get().page).toBe(page)
-          expect(router.pageError.get()?.errorCode).toBeUndefined()
-          expect(router.resolvePath(page)).toBe(
+      for (const page of [
+        HilosPages.I18N,
+        HilosPages.I18N_LANGUAGES,
+        HilosPages.I18N_COUNTRIES,
+      ]) {
+        const connection = fakeConnection()
+        const hilosConnection = connection as unknown as HilosConnection
+        const router = bootHilos({
+          viewLayer,
+          connection: hilosConnection,
+          actions: new ActionLifecycle(hilosConnection),
+          scopes: new ScopeManager(),
+          router: createAppPageRouter(
+            { main: { path: '/', admin: false } },
+            { fallback: 'main' },
+          ),
+          navigationEnvironment: fakeNavigation(
             HILOS_ROUTE_DECLARATIONS[page].path,
-          )
-          expect(connection.sent).toEqual([])
-          connection.emitProjectSignal('handshake_response', {
-            entities: { currentUser: { id: 1, name: 'Ada', admin: true } },
-          })
-          expect(connection.sent).toEqual([
-            { type: 'page_subscribe', page, params: {} },
-          ])
-        }
+          ),
+        })
+
+        expect(router.currentRoute.get().page).toBe(page)
+        expect(router.pageError.get()?.errorCode).toBeUndefined()
+        expect(router.resolvePath(page)).toBe(
+          HILOS_ROUTE_DECLARATIONS[page].path,
+        )
+        expect(connection.sent).toEqual([])
+        connection.emitProjectSignal('handshake_response', {
+          entities: { currentUser: { id: 1, name: 'Ada', admin: true } },
+        })
+        expect(connection.sent).toEqual([
+          { type: 'page_subscribe', page, params: {} },
+        ])
       }
     },
   )
@@ -325,41 +315,27 @@ describe('bootHilos', () => {
         connection.emitProjectSignal('handshake_response', {
           entities: { currentUser: { id: 1, name: 'Ada', admin: true } },
         })
-        if (viewLayer === 'angular') {
-          expect(router.pageError.get()?.errorCode).toBe('not_served')
-          expect(
-            router.resolvePath(
-              page,
+        expect(router.pageError.get()?.errorCode).toBeUndefined()
+        expect(
+          router.resolvePath(
+            page,
+            page === HilosPages.I18N_COUNTRY ||
+              page === HilosPages.I18N_COUNTRY_NAMES
+              ? { countryCode: 'us' }
+              : { languageCode: 'en' },
+          ),
+        ).toBe(path)
+        expect(connection.sent).toEqual([
+          {
+            type: 'page_subscribe',
+            page,
+            params:
               page === HilosPages.I18N_COUNTRY ||
-                page === HilosPages.I18N_COUNTRY_NAMES
+              page === HilosPages.I18N_COUNTRY_NAMES
                 ? { countryCode: 'us' }
                 : { languageCode: 'en' },
-            ),
-          ).toBeUndefined()
-          expect(connection.sent).toEqual([])
-        } else {
-          expect(router.pageError.get()?.errorCode).toBeUndefined()
-          expect(
-            router.resolvePath(
-              page,
-              page === HilosPages.I18N_COUNTRY ||
-                page === HilosPages.I18N_COUNTRY_NAMES
-                ? { countryCode: 'us' }
-                : { languageCode: 'en' },
-            ),
-          ).toBe(path)
-          expect(connection.sent).toEqual([
-            {
-              type: 'page_subscribe',
-              page,
-              params:
-                page === HilosPages.I18N_COUNTRY ||
-                page === HilosPages.I18N_COUNTRY_NAMES
-                  ? { countryCode: 'us' }
-                  : { languageCode: 'en' },
-            },
-          ])
-        }
+          },
+        ])
       }
     },
   )

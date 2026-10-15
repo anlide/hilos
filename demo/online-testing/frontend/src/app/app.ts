@@ -22,6 +22,13 @@ import { connection } from './bootstrap/connection.js'
 import { PAGE_MAIN } from './pages/keys.js'
 import { About } from './views/about/about.js'
 import { License } from './views/license/license.js'
+import { I18nCountry } from './views/hilos/i18n/details/country.js'
+import { I18nCountryNames } from './views/hilos/i18n/details/country-names.js'
+import { I18nLanguage } from './views/hilos/i18n/details/language.js'
+import { I18nLanguageLocales } from './views/hilos/i18n/details/language-locales.js'
+import { I18nLanguageNames } from './views/hilos/i18n/details/language-names.js'
+import { I18nCountries } from './views/hilos/i18n/lists/countries.js'
+import { I18nLanguages } from './views/hilos/i18n/lists/languages.js'
 import { LogKeys } from './views/hilos/logs/keys.js'
 import { LogRotations } from './views/hilos/logs/rotations.js'
 import { LogSettings } from './views/hilos/logs/settings.js'
@@ -124,6 +131,13 @@ export class App {
     [HilosPages.LOGS_ROTATIONS]: LogRotations,
     [HilosPages.LOGS_SETTINGS]: LogSettings,
     [HilosPages.LOGS_VIEW]: LogViewer,
+    [HilosPages.I18N_LANGUAGES]: I18nLanguages,
+    [HilosPages.I18N_LANGUAGE]: I18nLanguage,
+    [HilosPages.I18N_LANGUAGE_NAMES]: I18nLanguageNames,
+    [HilosPages.I18N_LANGUAGE_LOCALES]: I18nLanguageLocales,
+    [HilosPages.I18N_COUNTRIES]: I18nCountries,
+    [HilosPages.I18N_COUNTRY]: I18nCountry,
+    [HilosPages.I18N_COUNTRY_NAMES]: I18nCountryNames,
     [HilosPages.MAINTENANCE]: Maintenance,
     [HilosPages.ABOUT]: About,
     [HilosPages.TERMS]: Terms,

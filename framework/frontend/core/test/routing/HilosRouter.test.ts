@@ -130,7 +130,7 @@ function fakePages() {
 }
 
 describe('unbuilt pages', () => {
-  it('serves eight Vue and React i18n URLs while Angular stays closed', () => {
+  it('serves the eight i18n URLs in every view layer and keeps translation closed', () => {
     const i18nRouter = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
       fallback: HilosPages.DASHBOARD,
     })
@@ -164,6 +164,7 @@ describe('unbuilt pages', () => {
           '/hilos/i18n/countries/pl/names',
           { countryCode: 'pl' },
         ],
+        [HilosPages.I18N_ENTITIES, '/hilos/i18n/entities', {}],
       ] as const) {
         const { env } = fakeEnvironment(path)
         const { pages, calls, refused } = fakePages()
@@ -181,26 +182,7 @@ describe('unbuilt pages', () => {
           params,
           admin: true,
         })
-        if (
-          (layer === 'vue' &&
-            (page === HilosPages.I18N ||
-              page === HilosPages.I18N_LANGUAGES ||
-              page === HilosPages.I18N_COUNTRIES ||
-              page === HilosPages.I18N_LANGUAGE ||
-              page === HilosPages.I18N_LANGUAGE_NAMES ||
-              page === HilosPages.I18N_LANGUAGE_LOCALES ||
-              page === HilosPages.I18N_COUNTRY ||
-              page === HilosPages.I18N_COUNTRY_NAMES)) ||
-          (layer === 'react' &&
-            (page === HilosPages.I18N ||
-              page === HilosPages.I18N_LANGUAGES ||
-              page === HilosPages.I18N_LANGUAGE ||
-              page === HilosPages.I18N_LANGUAGE_NAMES ||
-              page === HilosPages.I18N_LANGUAGE_LOCALES ||
-              page === HilosPages.I18N_COUNTRIES ||
-              page === HilosPages.I18N_COUNTRY ||
-              page === HilosPages.I18N_COUNTRY_NAMES))
-        ) {
+        if (page !== HilosPages.I18N_ENTITIES) {
           expect(refused).toEqual([])
           expect(calls).toEqual([{ page, params }])
           expect(navigator.resolvePath(page, params)).toBe(path)

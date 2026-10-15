@@ -527,15 +527,16 @@ name and an indeterminate bar — and a run that outlives its estimate is told i
 Configure-only: the framework owns the five reference tables, their library and the section's pages. The languages browser table is registered in all six demos (HIL-1474), and so is the countries table (HIL-1475).
 The project lists the feature in `Hilos::FEATURES` and registers the library's agent pair in `Hilos::AGENTS`.
 It registers three thin section pages in the server topology and migrates the five framework stubs (HIL-1470).
-Vue and React serve the root and seven reference pages. React exports
+Vue, React and Angular serve the root and seven reference pages. React exports
 `HilosI18nLanguagesPage`, `HilosI18nLanguagePage`, `HilosI18nLanguageNamesPage`,
 `HilosI18nLanguageLocalesPage`, `HilosI18nCountriesPage`, `HilosI18nCountryPage`
 and `HilosI18nCountryNamesPage`, with their public props (HIL-1502). Tasks and
 ecommerce-shop mount seven thin consumers with their own language and country
-contexts. The context-required pages stay outside `hilosAdminViews()`; the root
-remains the self-contained default shell, showing Languages and Countries.
-Angular remains unbuilt until HIL-1503: its URLs answer `not_served`/404 before
-subscription and have no card links.
+contexts. Angular exports the same seven pages with a `context` input
+(HIL-1503), and polls and online-testing mount seven thin wrappers over their own
+language and country contexts. The context-required pages stay outside
+`hilosAdminViews()`; the root remains the self-contained default shell, showing
+Languages and Countries.
 It supplies `HILOS_DEFAULT_LANGUAGE` with an exact built-in code.
 Startup refuses a missing page or agent; topology tests check the five migrations.
 For the section's rules and activation details, read [languages-and-countries.md](languages-and-countries.md), *Switching The Section On*.

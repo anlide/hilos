@@ -117,9 +117,10 @@ views) *is* built in all three view layers at full parity, because a React or
 Angular adopter needs the real component, not a stub. The bound demo is minimal;
 the primitive it binds is complete. An SDK page may land in Vue before React and
 Angular, and `SHELL-PARITY` learns it from `HILOS_UNBUILT_PAGES` instead of from
-an exception of its own. The languages and the countries lists are two
-(HIL-1474, HIL-1475): built in Vue, still listed for React and Angular, so their
-pages are not compared there. A page's files are its Vue view — the file that
+an exception of its own. The languages and the countries lists were two
+(HIL-1474, HIL-1475): built in Vue first, and compared in React and in Angular
+only from the ports that struck those layers (HIL-1502, HIL-1503). A page's
+files are its Vue view — the file that
 binds its key to `HilosAdminPage`, or its entry in `hilosAdminViews.ts` — and
 every file under `vue/src/admin/` that the view reaches by relative import
 without leaving `admin/`, together with a root `index.ts` export resolving to

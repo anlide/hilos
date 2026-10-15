@@ -1,5 +1,6 @@
 // Pins the public surface: everything an Angular consumer may import from
 // '@hilos/angular' is exported here. Behavior is covered by the module tests.
+import { HilosPages } from '@hilos/core'
 import { expect, it } from 'vitest'
 import {
   ConflictActions,
@@ -27,6 +28,13 @@ import {
   HilosAvatar,
   HilosHiddenMark,
   HilosHideable,
+  HilosI18nCountriesPage,
+  HilosI18nCountryNamesPage,
+  HilosI18nCountryPage,
+  HilosI18nLanguageLocalesPage,
+  HilosI18nLanguageNamesPage,
+  HilosI18nLanguagePage,
+  HilosI18nLanguagesPage,
   HilosSwitch,
   HilosUserPage,
   HilosUsersPage,
@@ -35,6 +43,7 @@ import {
   LoadingButton,
   connectionStateSignal,
   createHilosTrackedAction,
+  hilosAdminViews,
   injectLookOnly,
 } from '../src/index.js'
 
@@ -73,4 +82,19 @@ it('exports the @hilos/angular public surface', () => {
   expect(HilosUsersPage).toBeTypeOf('function')
   expect(HilosUserPage).toBeTypeOf('function')
   expect(createHilosTrackedAction).toBeTypeOf('function')
+  expect(HilosI18nLanguagesPage).toBeTypeOf('function')
+  expect(HilosI18nLanguagePage).toBeTypeOf('function')
+  expect(hilosAdminViews()).toHaveProperty(HilosPages.I18N)
+  expect(hilosAdminViews()).not.toHaveProperty(HilosPages.I18N_LANGUAGES)
+  expect(hilosAdminViews()).not.toHaveProperty(HilosPages.I18N_LANGUAGE)
+  expect(HilosI18nLanguageNamesPage).toBeTypeOf('function')
+  expect(HilosI18nLanguageLocalesPage).toBeTypeOf('function')
+  expect(hilosAdminViews()).not.toHaveProperty(HilosPages.I18N_LANGUAGE_NAMES)
+  expect(hilosAdminViews()).not.toHaveProperty(HilosPages.I18N_LANGUAGE_LOCALES)
+  expect(HilosI18nCountriesPage).toBeTypeOf('function')
+  expect(HilosI18nCountryPage).toBeTypeOf('function')
+  expect(HilosI18nCountryNamesPage).toBeTypeOf('function')
+  expect(hilosAdminViews()).not.toHaveProperty(HilosPages.I18N_COUNTRIES)
+  expect(hilosAdminViews()).not.toHaveProperty(HilosPages.I18N_COUNTRY)
+  expect(hilosAdminViews()).not.toHaveProperty(HilosPages.I18N_COUNTRY_NAMES)
 })

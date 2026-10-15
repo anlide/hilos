@@ -47,6 +47,13 @@ import { DaemonCron } from './views/hilos/daemon/cron.js'
 import { DaemonHttp } from './views/hilos/daemon/http.js'
 import { DaemonEnv } from './views/hilos/daemon/env.js'
 import { DaemonEnvMismatch } from './views/hilos/daemon/env-mismatch.js'
+import { I18nCountry } from './views/hilos/i18n/details/country.js'
+import { I18nCountryNames } from './views/hilos/i18n/details/country-names.js'
+import { I18nLanguage } from './views/hilos/i18n/details/language.js'
+import { I18nLanguageLocales } from './views/hilos/i18n/details/language-locales.js'
+import { I18nLanguageNames } from './views/hilos/i18n/details/language-names.js'
+import { I18nCountries } from './views/hilos/i18n/lists/countries.js'
+import { I18nLanguages } from './views/hilos/i18n/lists/languages.js'
 import { LogsOverview } from './views/hilos/logs/overview'
 import { Maintenance } from './views/hilos/maintenance/maintenance.js'
 import { Main } from './views/main/main'
@@ -231,6 +238,19 @@ export class App {
     [HilosPages.DAEMON_HTTP_SERVER]: DaemonHttp,
     [HilosPages.DAEMON_ENV]: DaemonEnv,
     [HilosPages.DAEMON_ENV_MISMATCH]: DaemonEnvMismatch,
+    // The framework languages and countries section: the framework owns the two
+    // lists, the two cards, their names, the language's locales and every
+    // window over them; the project binds its connection, scope stores and
+    // action lifecycle (views/hilos/i18n) and, on its backend, the pages, the
+    // library agent and the browser tables. The section root stays the
+    // framework default.
+    [HilosPages.I18N_LANGUAGES]: I18nLanguages,
+    [HilosPages.I18N_LANGUAGE]: I18nLanguage,
+    [HilosPages.I18N_LANGUAGE_NAMES]: I18nLanguageNames,
+    [HilosPages.I18N_LANGUAGE_LOCALES]: I18nLanguageLocales,
+    [HilosPages.I18N_COUNTRIES]: I18nCountries,
+    [HilosPages.I18N_COUNTRY]: I18nCountry,
+    [HilosPages.I18N_COUNTRY_NAMES]: I18nCountryNames,
     // The framework logs section, activated whole: the framework owns the six
     // screens, their tables and every phrase on them; the project binds its
     // connection, scope stores and action lifecycle (views/hilos/logs) and, on its
