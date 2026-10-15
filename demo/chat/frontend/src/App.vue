@@ -73,6 +73,7 @@ import HilosSecurityTwoFactor from './views/Hilos/Security/SecurityTwoFactor.vue
 import HilosSecurityStepUp from './views/Hilos/Security/SecurityStepUp.vue'
 import HilosSecurityImpersonation from './views/Hilos/Security/SecurityImpersonation.vue'
 import HilosAnalyticsBrowserSession from './views/Hilos/Analytics/BrowserSession.vue'
+import HilosAnalyticsPerson from './views/Hilos/Analytics/Person.vue'
 import HilosLegal from './views/Hilos/Legal/Legal.vue'
 import HilosLegalDocument from './views/Hilos/Legal/LegalDocument.vue'
 import HilosLegalRevision from './views/Hilos/Legal/LegalRevision.vue'
@@ -149,6 +150,7 @@ const pages: Record<string, Component> = {
   [HilosPages.SECURITY_STEP_UP]: HilosSecurityStepUp,
   [HilosPages.SECURITY_IMPERSONATION]: HilosSecurityImpersonation,
   [HilosPages.ANALYTICS_BROWSER_SESSION]: HilosAnalyticsBrowserSession,
+  [HilosPages.ANALYTICS_PERSON]: HilosAnalyticsPerson,
   [HilosPages.LEGAL]: HilosLegal,
   [HilosPages.LEGAL_DOCUMENT]: HilosLegalDocument,
   [HilosPages.LEGAL_REVISION]: HilosLegalRevision,

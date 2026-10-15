@@ -10,6 +10,9 @@ import {
   createHilosUsersTable,
   createHilosUserStanding,
   hilosStandingBadge,
+  HILOS_USER_ANALYTICS_ENABLED_KEY,
+  hilosUserAnalyticsEnabled,
+  hilosUserAnalyticsPath,
   hilosUserFrozenRow,
   hilosUserImpersonationSection,
   HILOS_USER_IMPERSONATION_COPY,
@@ -29,8 +32,15 @@ import {
 } from '../../../src/admin/users/hilosUsers.js'
 import { hilosLegalLapsedHref } from '../../../src/admin/legal/hilosLegal.js'
 import { type ProjectSignal } from '../../../src/protocol/parseSignal.js'
-import { HilosPages } from '../../../src/routing/hilosPages.js'
-import { type PageRouteMatch } from '../../../src/routing/PageRouter.js'
+import { type HilosPathResolver } from '../../../src/routing/hilosAdmin.js'
+import {
+  HILOS_ROUTE_DECLARATIONS,
+  HilosPages,
+} from '../../../src/routing/hilosPages.js'
+import {
+  createPageRouter,
+  type PageRouteMatch,
+} from '../../../src/routing/PageRouter.js'
 import { bindAdminAccess } from '../../../src/session/adminAccess.js'
 import {
   bindSessionScope,
@@ -1038,6 +1048,59 @@ describe('a merged account on the card (HIL-1292)', () => {
 
     page.tables.upsert('hilosUsers', 4, { users: ref, merge: { merged: true } })
     expect(resolveHilosUserRow(row(), users).merged).toBe(true)
+  })
+})
+
+describe('the card link to the person in Analytics (HIL-1420)', () => {
+  const frameworkRoutes = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
+    fallback: HilosPages.DASHBOARD,
+  })
+  const frameworkPath: HilosPathResolver = (page, params) =>
+    frameworkRoutes.path(page, params)
+
+  it('opens only for a literal true in the card answer and follows each answer', () => {
+    const { scopes } = userStore()
+    const enabled = hilosUserAnalyticsEnabled(scopes)
+    const path = () => hilosUserAnalyticsPath(enabled.get(), 7, frameworkPath)
+    expect(HILOS_USER_ANALYTICS_ENABLED_KEY).toBe('analyticsEnabled')
+
+    expect(enabled.get()).toBe(false)
+    expect(path()).toBeNull()
+
+    scopes.page()?.data.set('analyticsEnabled', true)
+    expect(enabled.get()).toBe(true)
+    expect(path()).toBe('/hilos/analytics/people/7')
+
+    scopes.page()?.data.set('analyticsEnabled', false)
+    expect(enabled.get()).toBe(false)
+    expect(path()).toBeNull()
+
+    for (const malformed of [HIDDEN_VALUE, 'true', 1, null, {}]) {
+      scopes.page()?.data.set('analyticsEnabled', malformed)
+      expect(enabled.get()).toBe(false)
+    }
+
+    scopes.page()?.data.set('analyticsEnabled', true)
+    scopes.openPage('hilos_user')
+    expect(enabled.get()).toBe(false)
+  })
+
+  it('links only a positive whole account id through the application resolver', () => {
+    for (const userId of [undefined, 0, -3, 1.5, Number.NaN, 2 ** 53]) {
+      expect(hilosUserAnalyticsPath(true, userId, frameworkPath)).toBeNull()
+    }
+    const customPath = vi.fn((page: string, params?: Record<string, string>) =>
+      page === HilosPages.ANALYTICS_PERSON
+        ? `/custom/people/${params?.['userId']}`
+        : undefined,
+    )
+    expect(hilosUserAnalyticsPath(false, 7, customPath)).toBeNull()
+    expect(customPath).not.toHaveBeenCalled()
+    expect(hilosUserAnalyticsPath(true, 7, customPath)).toBe('/custom/people/7')
+    expect(customPath).toHaveBeenCalledWith(HilosPages.ANALYTICS_PERSON, {
+      userId: '7',
+    })
+    expect(hilosUserAnalyticsPath(true, 7, () => undefined)).toBeNull()
   })
 })
 

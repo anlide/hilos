@@ -390,8 +390,17 @@ layer that has built the section, currently Vue.
   with `data.pageLabel` naming the session. A view-mode viewer receives a hidden
   header and the catalog label `Browser session`, without the personal number.
 - A person's page lists the browser sessions in which they were the last to
-  sign in, each linking to its session page; the entry is on the admin user card
-  (not in the code yet — HIL-1420).
+  sign in — first and last seen, browser and the number of actions — each
+  session number linking to its session page. Its key is
+  `hilos_analytics_person`, its route is `/hilos/analytics/people/{userId}`, and
+  its Vue SDK view is `HilosAnalyticsPersonPage`. The entry is the admin user
+  card: its `analyticsEnabled` is true while the feature is on and the project
+  registers the person page, and the card then links here, on a merged card
+  too. The opening `page_response` carries only `data.pageLabel`, the person's
+  current name and number; the heading and the table are a snapshot of the
+  subscription, without live updates. A view-mode viewer receives the catalog
+  label `Person` and the session numbers, with Hidden in place of every other
+  value.
 - React and Angular provide the same screens as Vue
   (not in the code yet — HIL-1421).
 
@@ -424,7 +433,8 @@ positive integer refuses the window. These tables have no search, mutations or
 live source-change frames. The frontend core supplies their controllers,
 column declarations, row readers and local-time labels. The Vue browser-session
 page opens the actions table with its route's session number as the preset;
-the person's sessions page follows in HIL-1420.
+the Vue person page opens the browser-sessions table with its route's `userId`
+as the preset.
 
 The section agent also answers the read-only `test:analytics:browser-session`
 command through the existing non-production command-channel gate. Given a
@@ -462,10 +472,12 @@ screen does not read it yet. A full visit model remains a Phase-2 question
 
 The reader checks `hilos_user` afresh and returns `Deleted user #<id>` when the
 account row is gone, never a remembered name. The browser-session header renders
-that current label under `Last signed in`, or says that nobody has signed in;
-the person's sessions page follows in HIL-1420. Account erasure leaves the
-numeric id, analytic events and addresses; the project's Privacy revision
-states this.
+that current label under `Last signed in`, or says that nobody has signed in.
+The person's page also reads the name afresh on every subscription: its
+heading is `Deleted user #<id>` while analytics still names the gone account
+as the last to sign in somewhere, and the page answers 404 for a number it
+names nowhere. Account erasure leaves the numeric id, analytic events and
+addresses; the project's Privacy revision states this.
 
 ### What the screen never shows
 

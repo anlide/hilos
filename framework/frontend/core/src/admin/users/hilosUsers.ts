@@ -39,7 +39,10 @@ import {
   formatAccountDeletionDays,
 } from '../../profile/accountDeletion.js'
 import { type ProjectSignal } from '../../protocol/parseSignal.js'
-import { resolveHilosPath } from '../../routing/hilosAdmin.js'
+import {
+  resolveHilosPath,
+  type HilosPathResolver,
+} from '../../routing/hilosAdmin.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import { type PageRouteMatch } from '../../routing/PageRouter.js'
 import { hilosAdminAccess } from '../../session/adminAccess.js'
@@ -86,6 +89,7 @@ import {
 } from '../../table/hilosTableColumn.js'
 import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
+import { ANALYTICS_PERSON_ROUTE_PARAM } from '../analytics/hilosAnalyticsPerson.js'
 import { hiddenAsWord } from '../viewMode.js'
 
 /** A user's connection presence; a string union so a third state extends it. */
@@ -1093,6 +1097,57 @@ export function hilosUserMergedNotice(
         ? null
         : resolveHilosPath(HilosPages.USER, { userId: String(userId) }),
   }
+}
+
+/** Page data key of whether the card links to the person's sessions in Analytics (HIL-1420). */
+export const HILOS_USER_ANALYTICS_ENABLED_KEY = 'analyticsEnabled'
+
+/** Caption of the card's link to the person's sessions in Analytics. */
+export const HILOS_USER_ANALYTICS_LINK_LABEL = 'Actions in Analytics'
+
+/**
+ * Whether the card may link to the person's page in Analytics: the project has
+ * the feature and serves the page. Anything but a literal `true` — absent,
+ * hidden, malformed — keeps the link away.
+ *
+ * @param scopes The page scope holding the card's answer.
+ */
+export function hilosUserAnalyticsEnabled(
+  scopes: ScopeManager,
+): ReadonlySignal<boolean> {
+  const source = scopes.pageDataSignal(HILOS_USER_ANALYTICS_ENABLED_KEY)
+
+  return computedSignal(() => source.get() === true)
+}
+
+/**
+ * The address of the person's page in Analytics, or `null` when the card draws
+ * no link: Analytics is off, the card has no valid person yet, or the
+ * application has no address for the page.
+ *
+ * @param enabled Whether the card may link to Analytics.
+ * @param userId The person on the card, or `undefined` before the card has one.
+ * @param resolvePath The application's resolver over its merged route map.
+ */
+export function hilosUserAnalyticsPath(
+  enabled: boolean,
+  userId: number | undefined,
+  resolvePath: HilosPathResolver,
+): string | null {
+  if (
+    !enabled ||
+    userId === undefined ||
+    !Number.isSafeInteger(userId) ||
+    userId <= 0
+  ) {
+    return null
+  }
+
+  return (
+    resolvePath(HilosPages.ANALYTICS_PERSON, {
+      [ANALYTICS_PERSON_ROUTE_PARAM]: String(userId),
+    }) ?? null
+  )
 }
 
 /**

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Pages\Hilos\Analytics\BrowserSessionPage;
+use Demo\Chat\Pages\Hilos\Analytics\PersonPage;
 
 use Hilos\Core\Analytics\AnalyticsCommandConstants;
 use Hilos\Auth\Code\DTO\AuthCodeMintSignalData;
@@ -603,6 +604,14 @@ final class ChatTopologyRegistryTest extends TestCase
         self::assertSame(BrowserSessionPage::class, Hilos::PAGES[BrowserSessionPage::PAGE]);
         self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[BrowserSessionPage::PAGE]);
         self::assertSame([ChatTableContext::hilosAnalyticsActions => []], Hilos::PAGE_TABLES[BrowserSessionPage::PAGE]);
+    }
+
+    /** The person's sessions page uses the Analytics owner and its existing sessions table. */
+    public function testAnalyticsPersonPageIsWired(): void
+    {
+        self::assertSame(PersonPage::class, Hilos::PAGES[PersonPage::PAGE]);
+        self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[PersonPage::PAGE]);
+        self::assertSame([ChatTableContext::hilosAnalyticsBrowserSessions => []], Hilos::PAGE_TABLES[PersonPage::PAGE]);
     }
 
     /** The Daemon environment page names the node whose replica serves it. */

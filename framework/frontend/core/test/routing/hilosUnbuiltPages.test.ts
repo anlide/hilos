@@ -69,6 +69,26 @@ describe('hilosUnbuiltPages', () => {
     }
   })
 
+  it('opens the Analytics person page in Vue and keeps it unbuilt in React and Angular', () => {
+    expect(hilosUnbuiltPages('vue').has(HilosPages.ANALYTICS_PERSON)).toBe(
+      false,
+    )
+    expect(hilosUnbuiltPages('react').has(HilosPages.ANALYTICS_PERSON)).toBe(
+      true,
+    )
+    expect(hilosUnbuiltPages('angular').has(HilosPages.ANALYTICS_PERSON)).toBe(
+      true,
+    )
+    for (const page of [
+      HilosPages.ANALYTICS,
+      HilosPages.ANALYTICS_BROWSER_SESSION,
+    ]) {
+      expect(hilosUnbuiltPages('vue').has(page)).toBe(false)
+      expect(hilosUnbuiltPages('react').has(page)).toBe(true)
+      expect(hilosUnbuiltPages('angular').has(page)).toBe(true)
+    }
+  })
+
   it('opens all eight completed Vue i18n pages', () => {
     const unbuilt = hilosUnbuiltPages('vue')
     expect(unbuilt.has(HilosPages.I18N)).toBe(false)

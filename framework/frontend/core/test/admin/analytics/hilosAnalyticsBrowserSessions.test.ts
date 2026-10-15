@@ -12,6 +12,7 @@ import {
 } from '../../../src/connection/HilosConnection.js'
 import { type ProjectSignal } from '../../../src/protocol/parseSignal.js'
 import { type PageResponseWire } from '../../../src/protocol/scopePayload.js'
+import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
 
@@ -117,22 +118,38 @@ describe('hilosAnalyticsBrowserSessions row', () => {
     expect(row.browser).toBeNull()
   })
 
-  it('folds the viewer hidden marks into safe defaults', () => {
+  it('keeps every viewer hidden mark as the one hidden value', () => {
+    const row = resolveHilosAnalyticsBrowserSessionRow(
+      rawRow({
+        firstSeenTs: { _hidden: true },
+        lastSeenTs: { _hidden: true },
+        browser: { _hidden: true },
+        actionCount: { _hidden: true },
+      }),
+    )
+    expect(row.rowKey).toBe(9)
+    expect(row.firstSeenTs).toBe(HIDDEN_VALUE)
+    expect(row.lastSeenTs).toBe(HIDDEN_VALUE)
+    expect(row.browser).toBe(HIDDEN_VALUE)
+    expect(row.actionCount).toBe(HIDDEN_VALUE)
+  })
+
+  it('keeps one hidden field hidden beside the others received', () => {
     expect(
       resolveHilosAnalyticsBrowserSessionRow(
         rawRow({
-          firstSeenTs: { _hidden: true },
+          firstSeenTs: 1791540000000,
           lastSeenTs: { _hidden: true },
-          browser: { _hidden: true },
-          actionCount: { _hidden: true },
+          browser: null,
+          actionCount: 7,
         }),
       ),
     ).toEqual({
       rowKey: 9,
-      firstSeenTs: 0,
-      lastSeenTs: 0,
+      firstSeenTs: 1791540000000,
+      lastSeenTs: HIDDEN_VALUE,
       browser: null,
-      actionCount: 0,
+      actionCount: 7,
     })
   })
 
@@ -141,6 +158,12 @@ describe('hilosAnalyticsBrowserSessions row', () => {
     [],
     'wrong',
     { firstSeenTs: '12', lastSeenTs: [], browser: 7, actionCount: '7' },
+    {
+      firstSeenTs: { _hidden: false },
+      lastSeenTs: { _hidden: true, extra: 1 },
+      browser: { _hidden: 'yes' },
+      actionCount: {},
+    },
   ])('tolerates an absent or malformed slot: %j', (slot) => {
     expect(resolveHilosAnalyticsBrowserSessionRow(rawRow(slot))).toEqual({
       rowKey: 9,

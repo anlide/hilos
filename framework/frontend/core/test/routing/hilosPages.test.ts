@@ -130,6 +130,33 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     expect(hilosUnbuiltPages('angular').has(page)).toBe(true)
   })
 
+  it('addresses a person in Analytics by their account id and stages the other view layers', () => {
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
+      fallback: HilosPages.DASHBOARD,
+    })
+    const page = HilosPages.ANALYTICS_PERSON
+    expect(page).toBe('hilos_analytics_person')
+    expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({
+      path: '/hilos/analytics/people/{userId}',
+      admin: true,
+    })
+    expect(resolveHilosPath(page, { userId: '7' })).toBe(
+      '/hilos/analytics/people/7',
+    )
+    expect(router.match('/hilos/analytics/people/7')).toEqual({
+      page,
+      params: { userId: '7' },
+      admin: true,
+    })
+    expect(router.match('/hilos/analytics/people').page).toBe(
+      HilosPages.DASHBOARD,
+    )
+    expect(router.match('/hilos/analytics/browser-sessions/7').page).toBe(
+      HilosPages.ANALYTICS_BROWSER_SESSION,
+    )
+    expect(router.match('/hilos/user/7').page).toBe(HilosPages.USER)
+  })
+
   it('declares a route for every Hilos page key', () => {
     for (const key of Object.values(HilosPages)) {
       expect(HILOS_ROUTE_DECLARATIONS[key].path).toBeTypeOf('string')

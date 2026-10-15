@@ -23,6 +23,7 @@ import {
   HilosPages,
   type Hideable,
   type ProjectSignal,
+  resolveHilosPath,
   ScopeManager,
   createSignal,
   entityCollection,
@@ -39,7 +40,12 @@ import type {
 import HilosUserPage from './HilosUserPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 
-function router(): HilosRouter {
+/**
+ * A router stub with no addresses unless a test gives it some.
+ *
+ * @param overrides The members a test needs live.
+ */
+function router(overrides: Partial<HilosRouter> = {}): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.USER,
@@ -61,6 +67,7 @@ function router(): HilosRouter {
     replacePath: () => {},
     start: () => {},
     stop: () => {},
+    ...overrides,
   }
 }
 
@@ -1961,5 +1968,112 @@ describe('HilosUserPage merged account (HIL-1292)', () => {
 
     expect(modalEl('modal')).toBeNull()
     expect(modalEl('hilos-user-merged')).not.toBeNull()
+  })
+})
+
+describe('HilosUserPage link to the person in Analytics (HIL-1420)', () => {
+  async function settle(): Promise<void> {
+    await flushPromises()
+    await nextTick()
+  }
+
+  /**
+   * Mount the card over a router that knows the framework addresses.
+   *
+   * @param context The card's project context.
+   * @param overrides Router members the test replaces.
+   */
+  function mountCard(
+    context: HilosUsersContext,
+    overrides: Partial<HilosRouter> = {},
+  ): void {
+    mounted.push(
+      mount(HilosUserPage, {
+        props: { context: markRaw(context) },
+        attachTo: document.body,
+        global: {
+          provide: {
+            [hilosRouterKey as symbol]: router({
+              resolvePath: resolveHilosPath,
+              ...overrides,
+            }),
+          },
+        },
+      }),
+    )
+  }
+
+  it('draws no link before the card says Analytics is served or while it is off', async () => {
+    const { context } = userContext()
+    mountCard(context)
+    await settle()
+    expect(modalEl('hilos-user-detail')).not.toBeNull()
+    expect(modalEl('hilos-user-analytics-link')).toBeNull()
+
+    context.scopes.page()?.data.set('analyticsEnabled', false)
+    await settle()
+    expect(modalEl('hilos-user-analytics-link')).toBeNull()
+  })
+
+  it('opens the person in Analytics from beside the card header', async () => {
+    const { context } = userContext()
+    context.scopes.page()?.data.set('analyticsEnabled', true)
+    const navigate = vi.fn()
+    mountCard(context, { navigate })
+    await settle()
+
+    const link = modalEl('hilos-user-analytics-link')
+    expect(link?.tagName).toBe('A')
+    expect(link?.textContent?.trim()).toBe('Actions in Analytics')
+    expect(link?.getAttribute('href')).toBe('/hilos/analytics/people/1')
+    expect(link?.closest('.card-header')).not.toBeNull()
+    link?.click()
+    expect(navigate).toHaveBeenCalledWith('/hilos/analytics/people/1')
+    expect(modalEl('modal')).toBeNull()
+
+    context.scopes.page()?.data.set('analyticsEnabled', false)
+    await settle()
+    expect(modalEl('hilos-user-analytics-link')).toBeNull()
+  })
+
+  it('draws no link when the application has no address for the page', async () => {
+    const { context } = userContext()
+    context.scopes.page()?.data.set('analyticsEnabled', true)
+    mountCard(context, { resolvePath: () => undefined })
+    await settle()
+    expect(modalEl('hilos-user-detail')).not.toBeNull()
+    expect(modalEl('hilos-user-analytics-link')).toBeNull()
+  })
+
+  it('keeps the link on a merged card that offers nothing to press', async () => {
+    const { context, standingFrame } = userContext(true, {
+      impersonation: impersonationSettings(),
+    })
+    context.scopes.page()?.data.set('analyticsEnabled', true)
+    mountCard(context)
+    await settle()
+    standingFrame({
+      userId: 1,
+      accountStanding: {
+        shown: 'merged',
+        blocked: true,
+        frozen: false,
+        deletionEffectiveAt: null,
+        lapsed: [],
+        window: [],
+        mergedInto: 9,
+        mergedIntoName: 'Bob',
+      },
+    })
+    await settle()
+
+    expect(modalEl('hilos-user-merged')).not.toBeNull()
+    expect(modalEl('hilos-user-edit')).toBeNull()
+    expect(modalEl('hilos-user-access')).toBeNull()
+    expect(modalEl('hilos-user-merge-zone')).toBeNull()
+    expect(modalEl('hilos-user-impersonate-open')).toBeNull()
+    expect(modalEl('hilos-user-analytics-link')?.getAttribute('href')).toBe(
+      '/hilos/analytics/people/1',
+    )
   })
 })

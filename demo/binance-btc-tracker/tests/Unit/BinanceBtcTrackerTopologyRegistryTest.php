@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\BinanceBtcTracker\Tests\Unit;
 
 use Demo\BinanceBtcTracker\Pages\Hilos\Analytics\BrowserSessionPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Analytics\PersonPage;
 
 use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosAnalyticsAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosChangeLogAgent;
@@ -228,6 +229,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             DashboardPage::PAGE => DashboardPage::class,
             AnalyticsPage::PAGE => AnalyticsPage::class,
             BrowserSessionPage::PAGE => BrowserSessionPage::class,
+            PersonPage::PAGE => PersonPage::class,
             BackupPage::PAGE => BackupPage::class,
             ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
             ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
@@ -281,6 +283,14 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         self::assertSame(BrowserSessionPage::class, Hilos::PAGES[BrowserSessionPage::PAGE]);
         self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[BrowserSessionPage::PAGE]);
         self::assertSame([BinanceBtcTrackerTableContext::hilosAnalyticsActions => []], Hilos::PAGE_TABLES[BrowserSessionPage::PAGE]);
+    }
+
+    /** The person's sessions page uses the Analytics owner and its existing sessions table. */
+    public function testAnalyticsPersonPageIsWired(): void
+    {
+        self::assertSame(PersonPage::class, Hilos::PAGES[PersonPage::PAGE]);
+        self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[PersonPage::PAGE]);
+        self::assertSame([BinanceBtcTrackerTableContext::hilosAnalyticsBrowserSessions => []], Hilos::PAGE_TABLES[PersonPage::PAGE]);
     }
 
     /** The Daemon environment page names the node whose replica serves it. */

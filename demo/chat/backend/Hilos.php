@@ -99,6 +99,7 @@ use Demo\Chat\Pages\Hilos\AboutPage;
 use Demo\Chat\Pages\Hilos\AppearancePage;
 use Demo\Chat\Pages\Hilos\AnalyticsPage;
 use Demo\Chat\Pages\Hilos\Analytics\BrowserSessionPage;
+use Demo\Chat\Pages\Hilos\Analytics\PersonPage;
 use Demo\Chat\Pages\Hilos\Backup\BackupPage;
 use Demo\Chat\Pages\Hilos\Billing\BillingPage;
 use Demo\Chat\Pages\Hilos\Billing\BillingPaymentsPage;
@@ -392,6 +393,7 @@ final class Hilos extends HilosFacade
         GuardianAgentPage::PAGE => GuardianAgentPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
         BrowserSessionPage::PAGE => BrowserSessionPage::class,
+        PersonPage::PAGE => PersonPage::class,
         BackupPage::PAGE => BackupPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         DaemonPage::PAGE => DaemonPage::class,
@@ -803,6 +805,9 @@ final class Hilos extends HilosFacade
     public const array PAGE_TABLES = [
         BrowserSessionPage::PAGE => [
             ChatTableContext::hilosAnalyticsActions => [],
+        ],
+        PersonPage::PAGE => [
+            ChatTableContext::hilosAnalyticsBrowserSessions => [],
         ],
         AdminBotsPage::PAGE => [
             ChatTableContext::bots => [],

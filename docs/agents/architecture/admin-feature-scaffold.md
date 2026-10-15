@@ -584,9 +584,14 @@ binance-btc-tracker, register a thin `AbstractHilosAnalyticsBrowserSessionPage`
 subclass in `PAGES`, bind `hilosAnalyticsActions` under that page in `PAGE_TABLES`,
 and mount the SDK's `HilosAnalyticsBrowserSessionPage` with the project's
 connection and scopes. Its route supplies the `browserSession` table preset.
-The person's sessions page binding follows in HIL-1420, and the remaining SDK
-views and demo bindings in HIL-1421; do not fabricate those bindings while
-activating this backend section.
+The same two demos register a thin `AbstractHilosAnalyticsPersonPage` subclass
+in `PAGES`, bind `hilosAnalyticsBrowserSessions` under that page in
+`PAGE_TABLES`, and mount the SDK's `HilosAnalyticsPersonPage` through a thin
+wrapper with the same context; its route's `userId` supplies the `user` table
+preset. The admin user card links to that page by itself once the feature is
+on and the person page is in `PAGES`; the project binds nothing for the link.
+The remaining SDK views and demo bindings follow in HIL-1421; do not fabricate
+those bindings while activating this backend section.
 For its data and privacy boundaries, read
 [analytics.md](analytics.md#the-admin-section), *The Admin Section*.
 

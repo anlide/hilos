@@ -1401,6 +1401,10 @@ export {
   hilosUserFrozenRow,
   hilosUserMergedNotice,
   HILOS_USER_MERGED_COPY,
+  HILOS_USER_ANALYTICS_ENABLED_KEY,
+  HILOS_USER_ANALYTICS_LINK_LABEL,
+  hilosUserAnalyticsEnabled,
+  hilosUserAnalyticsPath,
   hilosUserLifecycleSections,
   hilosUserLifecyclePrompt,
   hilosUsersPath,
@@ -2309,6 +2313,7 @@ export {
   type HilosAnalyticsBrowserSessionsTable,
   type HilosAnalyticsBrowserSessionsOptions,
 } from './admin/analytics/hilosAnalyticsBrowserSessions.js'
+export { ANALYTICS_PERSON_ROUTE_PARAM } from './admin/analytics/hilosAnalyticsPerson.js'
 export {
   hilosLogSettingsVocabulary,
   formatLogWriteLevel,

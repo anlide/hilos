@@ -464,6 +464,12 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Actions recorded in one browser session, in source-time order.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_ANALYTICS,
         ],
+        HilosPageConstants::HILOS_ANALYTICS_PERSON => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Person',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Browser sessions where this person signed in last. '
+                . 'Other people may have performed actions in the same browser.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_ANALYTICS,
+        ],
         HilosPageConstants::HILOS_MCP_SKILLS => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'MCP & Skills',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'MCP servers, skills, and their usage logs.',

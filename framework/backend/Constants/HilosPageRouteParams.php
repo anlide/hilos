@@ -33,6 +33,11 @@ final class HilosPageRouteParams
     /** Route param for one analytics browser session. */
     public const string HILOS_ANALYTICS_BROWSER_SESSION_ID = 'browserSessionId';
 
+    /**
+     * Route param for {@see HilosPageConstants::HILOS_ANALYTICS_PERSON} (`/hilos/analytics/people/{userId}`).
+     */
+    public const string HILOS_ANALYTICS_PERSON_USER_ID = self::HILOS_USER_USER_ID;
+
     /** Route param for language detail pages. */
     public const string HILOS_I18N_LANGUAGE_CODE = 'languageCode';
 

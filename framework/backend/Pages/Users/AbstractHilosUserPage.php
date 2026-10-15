@@ -20,12 +20,14 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\HandoverGatekeeperTrait;
+use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\AgentSignalData;
@@ -85,6 +87,9 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
 
     /** Page data key of the impersonation settings the card's takeover section is drawn from (HIL-1170). */
     public const string IMPERSONATION = 'impersonation';
+
+    /** Page data key of whether the card links to the person's browser sessions in Analytics (HIL-1420). */
+    public const string ANALYTICS_ENABLED = 'analyticsEnabled';
 
     public const PageReach REACH = PageReach::ROUTE;
 
@@ -299,10 +304,12 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
      * button is switched off (HIL-1170); later changes arrive as
      * {@see HilosSignalConstants::HILOS_IMPERSONATION_POLICY} (HIL-1307). A viewer of the admin
      * view mode is shown the standing, and the settings only when their catalog keys are open.
+     * Whether the card links to Analytics is configuration, the same for every person and every
+     * reader (HIL-1420).
      *
      * @param string $acceptKey Subscribing connection (unused)
      * @param PageRouteParams $params Route params naming the person
-     * @return ?PagePayload Grace period and standing snapshot, supplemented by the page's identity
+     * @return ?PagePayload Grace period, standing snapshot and the Analytics link, supplemented by the page's identity
      * @throws MissingPageRouteParamException When `userId` is absent
      * @throws InvalidPageRouteParamException When `userId` is non-numeric or `<= 0`
      * @throws DatabaseException When the stored setting or the person's standing cannot be read
@@ -317,6 +324,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
             self::ACCOUNT_DELETION_GRACE_DAYS => AccountDeletionSettings::graceDays(),
             self::ACCOUNT_STANDING => AccountStandingResolver::of($userId)->toArray(),
             self::IMPERSONATION => ImpersonationCardSettings::current()->toArray(),
+            self::ANALYTICS_ENABLED => self::analyticsEnabled(),
         ]);
     }
 
@@ -325,6 +333,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
      *
      * The standing goes by the one map its live frame uses too ({@see AccountStanding::wireFields()},
      * HIL-1254). The impersonation summary is sent only when every key behind its fields is open.
+     * The Analytics link is computed from the project's declaration, nobody's data.
      *
      * @return array<string, WireField> Data key to where it comes from
      */
@@ -341,6 +350,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
                 ImpersonationSettings::FROZEN_KEY,
                 ImpersonationSettings::EQUAL_KEY,
             ]),
+            self::ANALYTICS_ENABLED => WireField::notPersonal(),
         ];
     }
 
@@ -374,6 +384,21 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
      */
     protected function onHilosUserSubscribe(string $acceptKey, HilosUserPageSubscribeParams $params): void
     {
+    }
+
+    /**
+     * Whether the card links to the person's browser sessions in Analytics.
+     *
+     * Both halves of the project's declaration, asked of the running facade: the feature, and the
+     * person page in its PAGES. A known page is not a served one - {@see HilosPageFactory::hasPage()}
+     * answers yes for every framework admin page - so the registry entry itself is what is asked.
+     *
+     * @return bool True when Analytics is switched on and the person page is registered
+     */
+    private static function analyticsEnabled(): bool
+    {
+        return Hilos::hasFeature(HilosFeature::ANALYTICS)
+            && isset(Hilos::appClass()::PAGES[HilosPageConstants::HILOS_ANALYTICS_PERSON]);
     }
 
     /**

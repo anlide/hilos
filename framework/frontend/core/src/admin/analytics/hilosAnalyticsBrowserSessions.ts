@@ -1,6 +1,6 @@
-// SCAFFOLD: The person's Analytics page mounts this viewport in HIL-1420.
-
-import { readNumberOrNull, readStringOrNull } from '../../state/fieldReaders.js'
+import { z } from 'zod'
+import { hideable } from '../../state/hideableSchema.js'
+import { type Hideable } from '../../state/hiddenValue.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
 import { type HilosTableColumnOf } from '../../table/hilosTableColumn.js'
@@ -26,10 +26,10 @@ export const ANALYTICS_BROWSER_SESSION_ACTION_COUNT_FIELD = 'actionCount'
 /** One browser session in which the selected person signed in last. */
 export interface HilosAnalyticsBrowserSessionRow {
   readonly rowKey: number
-  readonly firstSeenTs: number
-  readonly lastSeenTs: number
-  readonly browser: string | null
-  readonly actionCount: number
+  readonly firstSeenTs: Hideable<number>
+  readonly lastSeenTs: Hideable<number>
+  readonly browser: Hideable<string | null>
+  readonly actionCount: Hideable<number>
 }
 
 /** Browser controller and mount lifecycle of a person's browser sessions. */
@@ -45,6 +45,17 @@ export interface HilosAnalyticsBrowserSessionsOptions {
   readonly userId: number
 }
 
+const browserSessionSchema = z.object({
+  [ANALYTICS_BROWSER_SESSION_FIRST_SEEN_TS_FIELD]: hideable(z.number()).catch(
+    0,
+  ),
+  [ANALYTICS_BROWSER_SESSION_LAST_SEEN_TS_FIELD]: hideable(z.number()).catch(0),
+  [ANALYTICS_BROWSER_SESSION_BROWSER_FIELD]: hideable(
+    z.string().nullable(),
+  ).catch(null),
+  [ANALYTICS_BROWSER_SESSION_ACTION_COUNT_FIELD]: hideable(z.number()).catch(0),
+})
+
 /** Read an inline slot, or an empty record when absent or malformed. */
 function recordSlot(slot: unknown): Record<string, unknown> {
   return typeof slot === 'object' && slot !== null && !Array.isArray(slot)
@@ -53,7 +64,7 @@ function recordSlot(slot: unknown): Record<string, unknown> {
 }
 
 /**
- * Resolve one inline session slot, folding hidden fields into safe defaults.
+ * Resolve one inline session slot, preserving hidden fields and defaulting malformed values.
  *
  * @param row Table row in the page scope; the fragment owns its row key.
  */
@@ -63,14 +74,7 @@ export function resolveHilosAnalyticsBrowserSessionRow(
   const slot = recordSlot(row.slots[ANALYTICS_BROWSER_SESSIONS_SLOT])
   return {
     rowKey: Number(row.rowKey),
-    firstSeenTs:
-      readNumberOrNull(slot, ANALYTICS_BROWSER_SESSION_FIRST_SEEN_TS_FIELD) ??
-      0,
-    lastSeenTs:
-      readNumberOrNull(slot, ANALYTICS_BROWSER_SESSION_LAST_SEEN_TS_FIELD) ?? 0,
-    browser: readStringOrNull(slot, ANALYTICS_BROWSER_SESSION_BROWSER_FIELD),
-    actionCount:
-      readNumberOrNull(slot, ANALYTICS_BROWSER_SESSION_ACTION_COUNT_FIELD) ?? 0,
+    ...browserSessionSchema.parse(slot),
   }
 }
 

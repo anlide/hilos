@@ -23,10 +23,13 @@ step, operation `impersonate` — whose words follow the settings
 (hilosUserImpersonationSection). A success needs no word: the session rebinds
 and the strip rises. A viewer of the admin view mode opens every window at once,
 without the confirmation step, and the confirmation in the window stands
-disabled by the mode (HIL-1263). Bootstrap classes only (styling-rules.md). -->
+disabled by the mode (HIL-1263). Beside the header a link opens the person's
+browser sessions in Analytics when the project serves that page (HIL-1420).
+Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   computed,
+  inject,
   nextTick,
   onMounted,
   onUnmounted,
@@ -46,7 +49,10 @@ import {
   HILOS_USER_IMPERSONATION_COPY,
   HILOS_USER_MERGED_COPY,
   HILOS_USER_LIFECYCLE_COPY,
+  HILOS_USER_ANALYTICS_LINK_LABEL,
   hilosStandingBadge,
+  hilosUserAnalyticsEnabled,
+  hilosUserAnalyticsPath,
   hilosUserImpersonationSection,
   hilosUserFrozenRow,
   hilosUserMergedNotice,
@@ -94,6 +100,7 @@ import HilosLink from '../../HilosLink.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import LoadingButton from '../../LoadingButton.vue'
+import { hilosRouterKey } from '../../hilosRouterKey.js'
 import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
 
@@ -109,6 +116,24 @@ const rename = createHilosUserRename(props.context)
 const detail = useSignal(userDetail)
 const photo = useSignal(userPhoto)
 const error = useSignal(rename.renameError)
+
+const router = inject(hilosRouterKey)
+if (!router) {
+  throw new Error('HilosUserPage requires a provided Hilos router.')
+}
+// The way to the person's browser sessions in Analytics (HIL-1420): navigation,
+// not an action, so a merged card keeps it.
+const analyticsEnabled = useSignal(
+  hilosUserAnalyticsEnabled(props.context.scopes),
+)
+const analyticsPath = computed(() =>
+  hilosUserAnalyticsPath(
+    analyticsEnabled.value,
+    detail.value?.id,
+    router.resolvePath,
+  ),
+)
+const analyticsLinkLabel = HILOS_USER_ANALYTICS_LINK_LABEL
 /** Move the focus into a window whose step changed under it. */
 function focusWindow(body: Ref<HTMLElement | null>): void {
   void nextTick(() => {
@@ -590,7 +615,7 @@ function submit(): void {
   <HilosAdminPage :page="HilosPages.USER">
     <template v-if="detail">
       <div class="card" data-id="hilos-user-detail">
-        <div class="card-header d-flex align-items-center gap-2">
+        <div class="card-header d-flex flex-wrap align-items-center gap-2">
           <HilosAvatar
             :name="isHiddenValue(detail.name) ? '' : detail.name"
             :photo="photo"
@@ -613,15 +638,24 @@ function submit(): void {
             ></i
             >{{ standingBadge.label }}
           </span>
-          <button
-            v-if="mergedNotice === null"
-            type="button"
-            class="btn btn-outline-primary btn-sm ms-auto"
-            data-id="hilos-user-edit"
-            @click="openEdit"
-          >
-            Edit
-          </button>
+          <div class="d-flex flex-wrap align-items-center gap-2 ms-auto">
+            <HilosLink
+              v-if="analyticsPath !== null"
+              :to="analyticsPath"
+              class="btn btn-outline-secondary btn-sm"
+              data-id="hilos-user-analytics-link"
+              >{{ analyticsLinkLabel }}</HilosLink
+            >
+            <button
+              v-if="mergedNotice === null"
+              type="button"
+              class="btn btn-outline-primary btn-sm"
+              data-id="hilos-user-edit"
+              @click="openEdit"
+            >
+              Edit
+            </button>
+          </div>
         </div>
         <div class="card-body">
           <dl class="row mb-0">

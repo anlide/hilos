@@ -32,7 +32,7 @@ final class HilosPageCatalogTest extends TestCase
      * catalog is a name and a lead an administrator will read, so it arrives by somebody writing
      * it down here as well.
      */
-    private const int CATALOG_ENTRIES = 86;
+    private const int CATALOG_ENTRIES = 87;
 
     /** Number of dashboard sections carried over in the same transfer. */
     private const int TRANSFERRED_SECTIONS = 5;
@@ -135,6 +135,20 @@ final class HilosPageCatalogTest extends TestCase
             'Env mismatch',
             HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH][PageCatalogConstants::CATALOG_ENTRY_LABEL],
         );
+    }
+
+    /** The person's sessions page is a child of Analytics and, needing a person, no dashboard card (HIL-1420). */
+    public function testAnalyticsPersonIsAChildOfAnalytics(): void
+    {
+        self::assertSame([
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Person',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Browser sessions where this person signed in last. '
+                . 'Other people may have performed actions in the same browser.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_ANALYTICS,
+        ], HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_ANALYTICS_PERSON]);
+        foreach (HilosPageCatalog::DASHBOARD_SECTIONS as $section) {
+            self::assertNotContains(HilosPageConstants::HILOS_ANALYTICS_PERSON, $section[PageCatalogConstants::SECTION_ITEMS]);
+        }
     }
 
     public function testI18nDetailPagesFollowTheirParent(): void

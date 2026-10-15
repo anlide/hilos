@@ -129,6 +129,9 @@ final class HilosPageConstants
     /** @var string Actions recorded in one analytics browser session */
     public const string HILOS_ANALYTICS_BROWSER_SESSION = 'hilos_analytics_browser_session';
 
+    /** @var string Browser sessions in which one person signed in last */
+    public const string HILOS_ANALYTICS_PERSON = 'hilos_analytics_person';
+
     /** @var string Hilos backups list */
     public const string HILOS_BACKUP = 'hilos_backup';
 

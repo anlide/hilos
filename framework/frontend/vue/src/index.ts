@@ -150,6 +150,7 @@ export { default as HilosLegalDocumentPage } from './admin/legal/HilosLegalDocum
 export { default as HilosLegalRevisionPage } from './admin/legal/HilosLegalRevisionPage.vue'
 
 export { default as HilosAnalyticsBrowserSessionPage } from './admin/analytics/HilosAnalyticsBrowserSessionPage.vue'
+export { default as HilosAnalyticsPersonPage } from './admin/analytics/HilosAnalyticsPersonPage.vue'
 
 export { default as HilosLegalAcceptancesPage } from './admin/legal/HilosLegalAcceptancesPage.vue'
 

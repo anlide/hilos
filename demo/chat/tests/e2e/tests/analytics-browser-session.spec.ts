@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import {
   readAnalyticsBrowserSession,
@@ -8,7 +8,7 @@ import { createCommandChannel } from '../../../../../framework/frontend/scripts/
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import { dictateModerationVerdict } from '../helpers/moderation.js'
-import { gotoPage } from '../helpers/page.js'
+import { expectPageReady, gotoPage } from '../helpers/page.js'
 import { clickSubmit, signUp, typeInto } from '../helpers/session.js'
 
 // spec-owner: demo — real chat messages create the recorded actions.
@@ -91,6 +91,13 @@ async function sendMessage(page: Page, label: string): Promise<string> {
   return body
 }
 
+/** The shown copy of one session's cell on the person's sessions table. */
+function sessionCell(table: Locator, testId: string, rowKey: number): Locator {
+  return shownByTestId(table, testId).and(
+    table.locator(`[data-record="${rowKey}"]`),
+  )
+}
+
 /** Read the visible branch, preserving the source moment and row-number tie break. */
 async function readRows(page: Page): Promise<ActionRow[]> {
   const table = page.getByTestId('hilos-analytics-actions-table')
@@ -163,10 +170,52 @@ test('shows real session actions in source order without bodies or another sessi
     expect(adminSession.browserSessionId).not.toBeNull()
     expect(userSession.browserSessionId).not.toBe(adminSession.browserSessionId)
 
-    await gotoPage(
-      admin,
-      `/hilos/analytics/browser-sessions/${userSession.browserSessionId}`,
+    // The way in: the person's admin card, then their sessions in Analytics.
+    await gotoPage(admin, `/hilos/user/${user.userId}`)
+    await admin.getByTestId('hilos-user-analytics-link').click()
+    await expect(admin).toHaveURL(
+      new RegExp(`/hilos/analytics/people/${user.userId}$`),
     )
+    await expectPageReady(admin)
+    await expect(admin.getByTestId('hilos-admin-title')).toHaveText(
+      `${user.name} (#${user.userId})`,
+    )
+    const sessions = admin.getByTestId('hilos-analytics-browser-sessions-table')
+    const sessionLink = sessionCell(
+      sessions,
+      'hilos-analytics-session-link',
+      userSession.browserSessionId!,
+    )
+    await expect(sessionLink).toHaveText(`#${userSession.browserSessionId}`)
+    await expect(
+      sessionCell(
+        sessions,
+        'hilos-analytics-session-browser',
+        userSession.browserSessionId!,
+      ),
+    ).toContainText(`Chrome ${browserMajor}`)
+    await expect(
+      sessionCell(
+        sessions,
+        'hilos-analytics-session-actions',
+        userSession.browserSessionId!,
+      ),
+    ).toHaveText(String(userSession.actionNames.length))
+    await expect(
+      sessionCell(
+        sessions,
+        'hilos-analytics-session-link',
+        adminSession.browserSessionId!,
+      ),
+    ).toHaveCount(0)
+
+    await sessionLink.click()
+    await expect(admin).toHaveURL(
+      new RegExp(
+        `/hilos/analytics/browser-sessions/${userSession.browserSessionId}$`,
+      ),
+    )
+    await expectPageReady(admin)
     await expect(admin.getByTestId('hilos-admin-title')).toHaveText(
       `Browser session #${userSession.browserSessionId}`,
     )
