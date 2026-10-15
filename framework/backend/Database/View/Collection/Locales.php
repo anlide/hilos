@@ -8,9 +8,10 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Actions\Collection\LocalesActions;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Collection\Locales as ObjectLocales;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\View\Item\Locale;
-use Hilos\I18n\DTO\CountryLocaleChoice;
 
 /**
  * Locales support code strings and primary-id integers as offsets.
@@ -44,35 +45,19 @@ class Locales extends DbCollection
     }
 
     /**
-     * @param int $countryId Country primary id
-     * @return int Number of its locales, regardless of enabled state
-     * @throws DatabaseException When the query fails
+     * @param ?int $countryId Parent country's primary id; null selects an empty collection
+     * @return static All locales of that country, regardless of enabled state, without an ordering promise
+     * @throws LogicException When collection classes are not configured
+     * @throws InvalidArgumentException When a loaded object has the wrong type
+     * @throws DatabaseException When the global locale collection cannot be loaded
+     * @throws ObjectGetIdStringNotImplementedException When a locale cannot name its id
+     * @throws CollectionNotManualException When the filtered collection refuses a locale
      */
-    public function countForCountry(int $countryId): int
+    public function forCountryId(?int $countryId): static
     {
-        return $this->objectCollection->countForCountry($countryId);
-    }
-
-    /**
-     * @param int $countryId Country primary id
-     * @return list<CountryLocaleChoice> Every locale of the country, on or off, by code
-     * @throws DatabaseException When the query fails
-     * @throws InvalidArgumentException When the entity query is invalid
-     */
-    public function choicesForCountry(int $countryId): array
-    {
-        return $this->objectCollection->choicesForCountry($countryId);
-    }
-
-    /**
-     * @param int $localeId Locale primary id
-     * @return ?bool Whether the locale is switched on, or null when it does not exist
-     * @throws DatabaseException When the query fails
-     * @throws InvalidArgumentException When the entity query is invalid
-     */
-    public function enabledById(int $localeId): ?bool
-    {
-        return $this->objectCollection->enabledById($localeId);
+        return $countryId === null
+            ? static::initEmpty()
+            : $this->filter(static fn (Locale $locale): bool => $locale->countryId === $countryId);
     }
 
     /**

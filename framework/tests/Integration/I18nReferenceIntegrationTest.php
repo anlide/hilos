@@ -32,6 +32,9 @@ use Hilos\Database\Entity\Item\CountryName as EntityCountryName;
 use Hilos\Database\Entity\Item\Locale as EntityLocale;
 use Hilos\Database\Object\Item\Locale as ObjectLocale;
 use Hilos\Database\View\Collection\LanguageNames;
+use Hilos\Database\View\Collection\Locales;
+use Hilos\Database\Entity\Item\Country as EntityCountry;
+use Hilos\Database\Object\Item\Country as ObjectCountry;
 use Hilos\Database\View\Collection\CountryNames;
 use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
 use Hilos\Database\Exception\SqlRuntime\ForeignKeyConstraintException;
@@ -186,6 +189,56 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         ExecutionContext::setCurrentAgentId('test-agent:outsider');
         $this->expectException(CreateNotAllowedException::class);
         Hilos::$db->languages->actions->create('de', 'Deutsch', false);
+    }
+
+    /** @throws HilosException When actions, bridges or the SQL counter fail */
+    public function testCountryLocaleBridgeLoadsOnceAndTracksWritesWithoutWarmSelects(): void
+    {
+        $english = Hilos::$db->languages->actions->create('en', 'English', false);
+        $german = Hilos::$db->languages->actions->create('de', 'Deutsch', false);
+        $country = Hilos::$db->countries->actions->create('qx', '¤', 'XXX');
+        $foreign = Hilos::$db->countries->actions->create('qy', '¤', 'XXX');
+        $empty = Hilos::$db->countries->actions->create('qz', '¤', 'XXX');
+        $bare = self::createLocale($english, null);
+        $regional = self::createLocale($english, $country);
+        $foreignLocale = self::createLocale($english, $foreign);
+        $countryId = $country->id;
+        $regionalId = $regional->id;
+
+        // A new context mounts the production eager collections, without preloading locales.
+        Hilos::$db = new I18nReferenceTestDbContext();
+        Hilos::$db->configure();
+        $country = Hilos::$db->countries[$countryId];
+        $before = (int) Database::sql("SHOW SESSION STATUS LIKE 'Com_select'")->firstRow()['Value'];
+        $locales = $country->locales;
+        $after = (int) Database::sql("SHOW SESSION STATUS LIKE 'Com_select'")->firstRow()['Value'];
+        self::assertSame(1, $after - $before, 'The cold bridge loads the complete locale table once.');
+        self::assertInstanceOf(Locales::class, $locales);
+        self::assertCount(1, $locales);
+        self::assertSame(Hilos::$db->locales[$regionalId], $locales[$regionalId]);
+        self::assertNull($locales[$bare->id]);
+        self::assertNull($locales[$foreignLocale->id]);
+        self::assertCount(0, Hilos::$db->countries[$empty->id]->locales);
+        self::assertCount(0, Hilos::$db->locales->forCountryId(null));
+        self::assertCount(0, new Country(ObjectCountry::fromEntity(new EntityCountry()))->locales);
+        $this->assertWarmCountryLocales($country, ['en-QX' => false], null, null);
+
+        $added = self::createLocale($german, $country);
+        $this->assertWarmCountryLocales($country, ['de-QX' => false, 'en-QX' => false], null, null);
+        Hilos::$db->locales[$regionalId]->actions->switchOn();
+        $this->assertWarmCountryLocales($country, ['de-QX' => false, 'en-QX' => true], null, null);
+        $country->actions->update('¤', 'XXX', $regionalId);
+        $this->assertWarmCountryLocales($country, ['de-QX' => false, 'en-QX' => true], 'en-QX', true);
+        Hilos::$db->locales[$regionalId]->actions->switchOff();
+        $this->assertWarmCountryLocales($country, ['de-QX' => false, 'en-QX' => false], 'en-QX', false);
+        $country->actions->update('¤', 'XXX', $added->id);
+        $this->assertWarmCountryLocales($country, ['de-QX' => false, 'en-QX' => false], 'de-QX', false);
+        $country->actions->update('¤', 'XXX', null);
+        $this->assertWarmCountryLocales($country, ['de-QX' => false, 'en-QX' => false], null, null);
+        $added->actions->delete();
+        $this->assertWarmCountryLocales($country, ['en-QX' => false], null, null);
+        Hilos::$db->locales[$regionalId]->actions->delete();
+        $this->assertWarmCountryLocales($country, [], null, null);
     }
 
     /** @throws HilosException When a database or action fails unexpectedly */
@@ -1007,6 +1060,32 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         ExecutionContext::setCurrentAgentId('test-agent:outsider');
         $this->expectException(WriteNotAllowedException::class);
         $locale->actions->delete();
+    }
+
+    /**
+     * SQL instrumentation observes reads only; actions complete before this window starts.
+     *
+     * @param Country $country Current country item
+     * @param array<string, bool> $expected Locale switches keyed by code, in ascending order
+     * @param ?string $defaultCode Chosen default, or null
+     * @param ?bool $defaultEnabled Chosen default switch, or null
+     * @throws HilosException When reading the bridge or counter fails
+     */
+    private function assertWarmCountryLocales(Country $country, array $expected, ?string $defaultCode, ?bool $defaultEnabled): void
+    {
+        $before = (int) Database::sql("SHOW SESSION STATUS LIKE 'Com_select'")->firstRow()['Value'];
+        for ($read = 0; $read < 2; $read++) {
+            $actual = [];
+            foreach ($country->locales as $locale) {
+                $actual[$locale->code] = $locale->enabled;
+            }
+            ksort($actual);
+            self::assertSame($expected, $actual);
+            self::assertCount(count($expected), $country->locales);
+            self::assertSame($defaultCode, $country->defaultLocale?->code);
+            self::assertSame($defaultEnabled, $country->defaultLocale?->enabled);
+        }
+        self::assertSame($before, (int) Database::sql("SHOW SESSION STATUS LIKE 'Com_select'")->firstRow()['Value']);
     }
 
     /**

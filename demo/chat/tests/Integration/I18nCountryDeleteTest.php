@@ -121,6 +121,17 @@ final class I18nCountryDeleteTest extends IntegrationTestCase
         self::assertNotNull(Hilos::$db->countries['us']);
     }
 
+    /** @throws HilosException When fixture creation or direct deletion fails */
+    public function testDirectDeletionDoesNotRequireAConfiguredDefaultLanguage(): void
+    {
+        $this->createFixture();
+        $id = Hilos::$db->countries['qx']->id;
+        putenv(EnvConstants::HILOS_DEFAULT_LANGUAGE->name);
+        $this->remove('item', 'qx');
+        self::assertNull(Hilos::$db->countries[$id]);
+        self::assertSame(0, EntityCountry::count([EntityCountry::id => $id]));
+    }
+
     /** @return iterable<string, array{string, string, string}> Protection reasons through all three doors */
     public static function refusals(): iterable
     {

@@ -10,10 +10,14 @@ use Hilos\Database\Actions\Collection\CountriesActions;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\Countries as ObjectCountries;
 use Hilos\Database\View\Item\Country;
+use Hilos\Database\View\Item\Locale;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Environment\Exception\EnvInvalidValueException;
+use Hilos\Hilos;
+use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\DTO\CountryCardSummary;
 use Hilos\I18n\DTO\CountryLocaleChoice;
+use Hilos\I18n\DefaultLanguage;
 
 /**
  * Countries support code strings and primary-id integers as offsets.
@@ -28,7 +32,6 @@ class Countries extends DbCollection
 
     /**
      * @param int $countryId Country primary id
-     * @param ?list<CountryLocaleChoice> $locales Complete choices by code from the current batch, or null to query them
      * @return CountryCardSummary Current read-only card facts
      * @throws DatabaseException When a country or dependent row query fails
      * @throws InvalidArgumentException When the country no longer exists
@@ -36,9 +39,34 @@ class Countries extends DbCollection
      * @throws EnvException When the default language setting is absent
      * @throws EnvInvalidValueException When its configured code is unknown
      */
-    public function cardSummary(int $countryId, ?array $locales = null): CountryCardSummary
+    public function cardSummary(int $countryId): CountryCardSummary
     {
-        return $this->objectCollection->cardSummary($countryId, $locales);
+        $country = $this[$countryId];
+        if ($country === null) {
+            throw new InvalidArgumentException("Country {$countryId} does not exist");
+        }
+
+        $defaultLanguageId = Hilos::$db->languages[DefaultLanguage::code()]?->id;
+        $name = $defaultLanguageId === null ? null : Hilos::$db->countryNames->findBase($countryId, $defaultLanguageId)?->name;
+        $locales = $country->locales;
+        $defaultLocale = $country->defaultLocale;
+        $choices = array_values($locales->map(static fn (Locale $locale): CountryLocaleChoice => new CountryLocaleChoice(
+            $locale->code,
+            $locale->enabled,
+        )));
+        usort($choices, static fn (CountryLocaleChoice $a, CountryLocaleChoice $b): int => strcmp($a->code, $b->code));
+
+        return new CountryCardSummary(
+            name: $name === '' ? null : $name,
+            isOwn: BuiltInI18nCatalog::country($country->code) === null,
+            defaultLocaleCode: $defaultLocale?->code,
+            defaultLocaleEnabled: $defaultLocale?->enabled,
+            localeCount: count($locales),
+            nameCount: Hilos::$db->countryNames->countBaseNamesForCountry($countryId),
+            locales: $choices,
+            catalogDefaultLocaleCode: BuiltInI18nCatalog::defaultLocale($country->code),
+            deleteReason: $country->deleteReason(),
+        );
     }
 
     /**

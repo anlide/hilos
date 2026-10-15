@@ -39,9 +39,9 @@ final class HilosI18nCountriesTableRow extends AbstractTableRow
      * @param ?string $defaultLocaleCode Code of the country's default locale, or null when none is chosen
      * @param bool $enabled Whether the country is switched on
      * @param bool $isOwn Whether the code is absent from the built-in catalog
-     * @param list<CountryLocaleChoice> $locales Every locale of the country, on or off, by code
+     * @param list<CountryLocaleChoice> $locales Serialization boundary: Every locale of the country, on or off, by code
      * @param ?string $catalogDefaultLocaleCode Built-in catalog suggestion, whether created or not
-     * @param bool $canDelete Whether the current summary permits deletion
+     * @param bool $canDelete Whether the country rule permits deletion
      * @param ?string $deleteReason Catalog or dependency refusal, or null when deletion is permitted
      */
     public function __construct(

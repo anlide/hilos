@@ -5,7 +5,6 @@
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/AccessLogEntries.php 2 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/AccountDeletions.php 2 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/AuthBlocks.php 1 # HIL-1531
-COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/Countries.php 1 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/CountryNames.php 2 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/DataExports.php 3 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/FileVariants.php 2 # HIL-1531
@@ -14,7 +13,6 @@ COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/Identities.p
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/LanguageNames.php 1 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/LegalAcceptanceExports.php 4 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/LegalAcceptances.php 2 # HIL-1531
-COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/Locales.php 1 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/Notifications.php 1 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/PasskeyCredentials.php 1 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/PushSubscriptions.php 1 # HIL-1531
@@ -30,7 +28,6 @@ COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/VerifierCirc
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/AccessLogEntries.php 1 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/AccountDeletions.php 1 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/AuthBlocks.php 1 # HIL-1531
-COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/Countries.php 1 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/CountryNames.php 2 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/DataExports.php 2 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/FileVariants.php 1 # HIL-1531
@@ -39,7 +36,6 @@ COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/Identities.php
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/LanguageNames.php 1 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/LegalAcceptanceExports.php 5 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/LegalAcceptances.php 1 # HIL-1531
-COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/Locales.php 1 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/PasskeyCredentials.php 1 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/SecondFactorBackupCodes.php 2 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/SecondFactorResets.php 4 # HIL-1531

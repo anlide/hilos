@@ -13,7 +13,6 @@ use Hilos\Database\Object\Item\Country as ObjectCountry;
 use Hilos\Database\View\Item\Country;
 use Hilos\Hilos;
 use Hilos\HilosException;
-use Hilos\I18n\DTO\CountryCardSummary;
 use Hilos\I18n\Exception\I18nRowFrozenException;
 
 /**
@@ -96,15 +95,14 @@ class CountryActions extends DbActions
             throw new ItemNotFoundForDeleteException('Country not found for delete (id is null)');
         }
 
-        $summary = Hilos::$db->countries->cardSummary($this->object->id);
-        switch ($summary->deleteReason) {
-            case CountryCardSummary::DELETE_KNOWN:
+        switch ($this->item->deleteReason()) {
+            case Country::DELETE_KNOWN:
                 throw new ValidationException(
                     "Country '{$this->object->code}' cannot be deleted: the built-in catalog would bring it back.",
                 );
-            case CountryCardSummary::DELETE_LOCALES:
+            case Country::DELETE_LOCALES:
                 throw new ValidationException("Country '{$this->object->code}' cannot be deleted: locales refer to it.");
-            case CountryCardSummary::DELETE_NAMES:
+            case Country::DELETE_NAMES:
                 throw new ValidationException("Country '{$this->object->code}' cannot be deleted: names refer to it.");
         }
 

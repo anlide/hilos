@@ -5,20 +5,12 @@ declare(strict_types=1);
 namespace Hilos\Database\Object\Collection;
 
 use Hilos\Core\Exception\InvalidArgumentException;
-use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\Countries as EntityCountries;
 use Hilos\Database\Entity\Item\Country as EntityCountry;
 use Hilos\Database\Object\Item\Country as ObjectCountry;
 use Hilos\Database\Object\Objects;
-use Hilos\Environment\Exception\EnvException;
-use Hilos\Environment\Exception\EnvInvalidValueException;
-use Hilos\Hilos;
-use Hilos\I18n\Catalog\BuiltInI18nCatalog;
-use Hilos\I18n\DefaultLanguage;
-use Hilos\I18n\DTO\CountryCardSummary;
-use Hilos\I18n\DTO\CountryLocaleChoice;
 
 /**
  * Countries loaded whole on first read.
@@ -31,38 +23,6 @@ class Countries extends Objects
     public const string OBJECT_CLASS = ObjectCountry::class;
     public const string ENTITY_COLLECTION_CLASS = EntityCountries::class;
     public const string COLLECTION_KEY = HilosDbContext::countries;
-
-    /**
-     * @param int $countryId Country primary id
-     * @param ?list<CountryLocaleChoice> $locales Complete choices by code from the current batch, or null to query them
-     * @return CountryCardSummary Current read-only card facts
-     * @throws InvalidArgumentException When the country no longer exists
-     * @throws DatabaseException When a country or dependent row query fails
-     * @throws LogicException When collection classes are not configured
-     * @throws EnvException When the default language setting is absent
-     * @throws EnvInvalidValueException When its configured code is unknown
-     */
-    public function cardSummary(int $countryId, ?array $locales = null): CountryCardSummary
-    {
-        $country = $this[$countryId];
-        if ($country === null) {
-            throw new InvalidArgumentException("Country {$countryId} does not exist");
-        }
-
-        $defaultLanguageId = Hilos::$db->languages[DefaultLanguage::code()]?->id;
-        $name = $defaultLanguageId === null ? null : Hilos::$db->countryNames->findBase($countryId, $defaultLanguageId)?->name;
-        return new CountryCardSummary(
-            name: $name === '' ? null : $name,
-            isOwn: BuiltInI18nCatalog::country($country->code) === null,
-            defaultLocaleCode: $country->defaultLocaleId === null ? null : Hilos::$db->locales[$country->defaultLocaleId]?->code,
-            defaultLocaleEnabled: $country->defaultLocaleId === null ? null : Hilos::$db->locales->enabledById($country->defaultLocaleId),
-            localeCount: Hilos::$db->locales->countForCountry($countryId),
-            nameCount: Hilos::$db->countryNames->countBaseNamesForCountry($countryId),
-            locales: $locales ?? Hilos::$db->locales->choicesForCountry($countryId),
-            catalogDefaultLocaleCode: BuiltInI18nCatalog::defaultLocale($country->code),
-            hasNames: Hilos::$db->countryNames->hasForCountry($countryId),
-        );
-    }
 
     /**
      * @param string $code Country code

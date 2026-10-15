@@ -4,19 +4,20 @@ declare(strict_types=1);
 
 namespace Hilos\I18n\DTO;
 
-/** Read-only facts shown on a country's main card. */
+use Hilos\Database\View\Item\Country;
+
+/** Read-only country card payload. */
 final readonly class CountryCardSummary
 {
-    public const string DELETE_KNOWN = 'known';
-    public const string DELETE_LOCALES = 'locales';
-    public const string DELETE_NAMES = 'names';
+    public const string DELETE_KNOWN = Country::DELETE_KNOWN;
+    public const string DELETE_LOCALES = Country::DELETE_LOCALES;
+    public const string DELETE_NAMES = Country::DELETE_NAMES;
 
     public const string DEFAULT_LOCALE_MISSING = 'missing';
     public const string DEFAULT_LOCALE_OFF = 'off';
     public const string DEFAULT_LOCALE_ON = 'on';
 
     public bool $canDelete;
-    public ?string $deleteReason;
     public string $defaultLocale;
 
     /**
@@ -26,9 +27,9 @@ final readonly class CountryCardSummary
      * @param ?bool $defaultLocaleEnabled Whether the chosen default locale is switched on; null when none is chosen
      * @param int $localeCount All locales of the country, enabled or not
      * @param int $nameCount Nonempty base names of the country in every language
-     * @param list<CountryLocaleChoice> $locales Every locale of the country, on or off, by code
+     * @param list<CountryLocaleChoice> $locales Serialization boundary: country locales, on or off, by code
      * @param ?string $catalogDefaultLocaleCode Built-in catalog suggestion, whether created or not
-     * @param bool $hasNames Whether any name row, base or override, even empty, names the country
+     * @param ?string $deleteReason Deletion blocker computed by the country, or null
      */
     public function __construct(
         public ?string $name,
@@ -39,18 +40,12 @@ final readonly class CountryCardSummary
         public int $nameCount,
         public array $locales,
         public ?string $catalogDefaultLocaleCode,
-        bool $hasNames,
+        public ?string $deleteReason,
     ) {
         $this->defaultLocale = match ($defaultLocaleEnabled) {
             null => self::DEFAULT_LOCALE_MISSING,
             false => self::DEFAULT_LOCALE_OFF,
             true => self::DEFAULT_LOCALE_ON,
-        };
-        $this->deleteReason = match (true) {
-            !$isOwn => self::DELETE_KNOWN,
-            $localeCount > 0 => self::DELETE_LOCALES,
-            $hasNames => self::DELETE_NAMES,
-            default => null,
         };
         $this->canDelete = $this->deleteReason === null;
     }

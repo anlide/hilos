@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
-use Generator;
 use Hilos\Constants\EnvConstants;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\Actions\Item\CountryActions;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Entity\Item\Country as EntityCountry;
 use Hilos\Database\Entity\Item\Locale as EntityLocale;
@@ -33,25 +35,14 @@ use Hilos\Tables\I18n\HilosI18nCountriesTableRow;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-/**
- * Counts locale-choice reads through the real table and both cardSummary layers (HIL-1496).
- * The locale read doors are doubles; neither summary assembly nor its deletion verdict is mocked.
- * Counts and names are separate reads and deliberately outside this regression's budget.
- */
+/** Real country bridges and projections retain HIL-1496 values without locale SQL helpers. */
 final class I18nCountriesLocaleChoiceReadTest extends TestCase
 {
     private ?HilosDbContext $previousDb;
     private ?EnvAccessor $previousEnv;
     private string|false $previousDefaultLanguage;
 
-    /** @var list<int> Country ids whose choices were read individually */
-    private array $singleReads = [];
-
-    /** @var list<list<int|string>> Country ids passed to each grouped read */
-    private array $batchReads = [];
-
-    /** @var array<int, list<CountryLocaleChoice>> Current answers of the locale read double */
-    private array $choices = [];
+    private Locales $locales;
 
     /** @throws HilosException When a fixture cannot be assembled */
     protected function setUp(): void
@@ -71,50 +62,31 @@ final class I18nCountriesLocaleChoiceReadTest extends TestCase
                 EntityCountry::code => $code,
                 EntityCountry::currency_symbol => '¤',
                 EntityCountry::currency_code => 'XXX',
-                EntityCountry::default_locale_id => null,
+                EntityCountry::default_locale_id => $id === 1 ? 10 : null,
                 EntityCountry::enabled => false,
             ]));
             $countries[$id] = new Country($objects[$id]);
         }
-        $countryObjects = $this->getMockBuilder(ObjectCountries::class)->onlyMethods(['offsetGet'])->getMock();
-        $countryObjects->method('offsetGet')->willReturnCallback(static fn (mixed $id): ?ObjectCountry => $objects[$id] ?? null);
-        $countryView = $this->getMockBuilder(Countries::class)->onlyMethods(['queryPageItems', 'offsetGet'])->getMock();
+        $countryObjects = ObjectCountries::initEmpty();
+        foreach ($objects as $id => $object) {
+            $countryObjects[$id] = $object;
+        }
+        $countryView = $this->getMockBuilder(Countries::class)->onlyMethods(['queryPageItems'])->getMock();
         $countryView->setObjectCollection($countryObjects);
         $countryView->method('queryPageItems')->willReturn([
             TableConstants::RESULT_KEY_ROWS => array_values($countries),
             TableConstants::RESULT_KEY_TOTAL_COUNT => count($countries),
         ]);
-        $countryView->method('offsetGet')->willReturnCallback(static fn (mixed $id): ?Country => $countries[$id] ?? null);
 
-        $this->choices = [
-            1 => [new CountryLocaleChoice('de-US', false), new CountryLocaleChoice('en-US', true)],
-            2 => [new CountryLocaleChoice('en-QX', false)],
-        ];
-        $localeRows = [
-            10 => $this->locale(10, 1, 'en-US', true),
-            11 => $this->locale(11, 1, 'de-US', false),
-            12 => $this->locale(12, 2, 'en-QX', false),
-            13 => $this->locale(13, null, 'en', true),
-        ];
-        $locales = $this->createMock(Locales::class);
-        $locales->method('offsetGet')->willReturnCallback(static fn (mixed $id): ?Locale => $localeRows[$id] ?? null);
-        $locales->method('countForCountry')->willReturnCallback(fn (int $id): int => count($this->choices[$id] ?? []));
-        $locales->method('choicesForCountry')->willReturnCallback(function (int $id): array {
-            $this->singleReads[] = $id;
-            return $this->choices[$id] ?? [];
-        });
-        $locales->method('whereColumnIn')->willReturnCallback(function (string $column, int|string ...$ids) use ($locales): Locales {
-            self::assertSame(ObjectLocale::countryId, $column);
-            $this->batchReads[] = $ids;
-            return $locales;
-        });
-        $locales->method('getIterator')->willReturnCallback(static function () use ($localeRows): Generator {
-            foreach ($localeRows as $locale) {
-                if ($locale->countryId !== null) {
-                    yield $locale;
-                }
-            }
-        });
+        $this->locales = Locales::initEmpty();
+        foreach ([
+            $this->locale(10, 1, 'en-US', true),
+            $this->locale(11, 1, 'de-US', false),
+            $this->locale(12, 2, 'en-QX', false),
+            $this->locale(13, null, 'en', true),
+        ] as $locale) {
+            $this->locales->add($locale);
+        }
 
         $names = $this->createMock(CountryNames::class);
         $names->method('hasForCountry')->willReturnCallback(static fn (int $id): bool => $id === 1 || $id === 2 || $id === 3);
@@ -123,7 +95,7 @@ final class I18nCountriesLocaleChoiceReadTest extends TestCase
         Hilos::$db = $this->createMock(HilosDbContext::class);
         Hilos::$db->method('__get')->willReturnMap([
             [HilosDbContext::countries, $countryView],
-            [HilosDbContext::locales, $locales],
+            [HilosDbContext::locales, $this->locales],
             [HilosDbContext::countryNames, $names],
             [HilosDbContext::languages, $languages],
         ]);
@@ -142,12 +114,10 @@ final class I18nCountriesLocaleChoiceReadTest extends TestCase
     }
 
     /** @throws HilosException When projecting the countries fails */
-    public function testSeveralCountriesShareOneChoiceReadIncludingCountriesWithoutLocales(): void
+    public function testSeveralCountriesUseTheirBridgesIncludingCountriesWithoutLocales(): void
     {
         $snapshot = new HilosI18nCountriesTable()->getPage(new TableQueryDTO());
 
-        self::assertSame([[1, 2, 3, 4]], $this->batchReads);
-        self::assertSame([], $this->singleReads, 'A grouped read must not be followed by one choice read per card summary.');
         $rows = [];
         foreach ($snapshot->rows as $row) {
             self::assertInstanceOf(HilosI18nCountriesTableRow::class, $row);
@@ -158,7 +128,7 @@ final class I18nCountriesLocaleChoiceReadTest extends TestCase
             ['code' => 'de-US', 'enabled' => false],
             ['code' => 'en-US', 'enabled' => true],
         ], $rows['us']->toArray()[HilosI18nCountriesTableRow::locales]);
-        self::assertEquals($this->choices[2], $rows['qx']->locales);
+        self::assertEquals([new CountryLocaleChoice('en-QX', false)], $rows['qx']->locales);
         self::assertSame([], $rows['qy']->locales);
         self::assertSame([], $rows['qz']->locales);
         self::assertSame(CountryCardSummary::DELETE_KNOWN, $rows['us']->deleteReason);
@@ -172,17 +142,15 @@ final class I18nCountriesLocaleChoiceReadTest extends TestCase
      * @throws HilosException When projecting the mutation fails
      */
     #[DataProvider('singleCountryChanges')]
-    public function testALiveMutationReadsItsCountryChoicesOnce(SourceChange $change): void
+    public function testALiveMutationReadsItsCountryBridge(SourceChange $change): void
     {
         $mutation = new HilosI18nCountriesTable()->buildMutationForSourceEvent($change);
 
-        self::assertSame([2], $this->singleReads, 'The summary and row must share the same choice read.');
-        self::assertSame([], $this->batchReads);
         self::assertNotNull($mutation);
         self::assertSame('qx', $mutation->rowKey);
         self::assertSame(TableMutationType::Update, $mutation->type);
         self::assertInstanceOf(HilosI18nCountriesTableRow::class, $mutation->row);
-        self::assertEquals($this->choices[2], $mutation->row->locales);
+        self::assertEquals([new CountryLocaleChoice('en-QX', false)], $mutation->row->locales);
     }
 
     /** @return array<string, array{SourceChange}> Country and locale source paths */
@@ -202,18 +170,56 @@ final class I18nCountriesLocaleChoiceReadTest extends TestCase
         self::assertNull(new HilosI18nCountriesTable()->buildMutationForSourceEvent(
             SourceChange::dbUpdated(HilosDbContext::locales, '13', []),
         ));
-        self::assertSame([], $this->singleReads);
-        self::assertSame([], $this->batchReads);
     }
 
     /** @throws HilosException When projecting the card fails */
     public function testADirectCardReadsFreshChoicesOnEveryCall(): void
     {
-        self::assertEquals($this->choices[1], Hilos::$db->countries->cardSummary(1)->locales);
-        $this->choices[1] = [new CountryLocaleChoice('de-US', true), new CountryLocaleChoice('en-US', false)];
-        self::assertEquals($this->choices[1], Hilos::$db->countries->cardSummary(1)->locales);
-        self::assertSame([1, 1], $this->singleReads);
-        self::assertSame([], $this->batchReads);
+        self::assertSame([
+            ['code' => 'de-US', 'enabled' => false],
+            ['code' => 'en-US', 'enabled' => true],
+        ], Hilos::$db->countries->cardSummary(1)->toArray()['locales']);
+        self::assertSame(CountryCardSummary::DEFAULT_LOCALE_ON, Hilos::$db->countries->cardSummary(1)->defaultLocale);
+        $this->locales[10]->getObject()->enabled = false;
+        $this->locales[11]->getObject()->enabled = true;
+        self::assertSame([
+            ['code' => 'de-US', 'enabled' => true],
+            ['code' => 'en-US', 'enabled' => false],
+        ], Hilos::$db->countries->cardSummary(1)->toArray()['locales']);
+        self::assertSame(CountryCardSummary::DEFAULT_LOCALE_OFF, Hilos::$db->countries->cardSummary(1)->defaultLocale);
+        $this->locales[11]->getObject()->countryId = null;
+        $this->locales->add($this->locale(14, 1, 'fr-US', true));
+        self::assertSame([
+            ['code' => 'en-US', 'enabled' => false],
+            ['code' => 'fr-US', 'enabled' => true],
+        ], Hilos::$db->countries->cardSummary(1)->toArray()['locales']);
+    }
+
+    /** @throws HilosException When projecting the table or checking removal fails */
+    public function testTableAndDeletionDoNotBuildACardSummary(): void
+    {
+        $countries = $this->getMockBuilder(Countries::class)->onlyMethods(['cardSummary', 'queryPageItems'])->getMock();
+        $countries->setObjectCollection(Hilos::$db->countries->getObjectCollection());
+        $countries->expects(self::never())->method('cardSummary');
+        $countries->method('queryPageItems')->willReturn([
+            TableConstants::RESULT_KEY_ROWS => [Hilos::$db->countries[2]],
+            TableConstants::RESULT_KEY_TOTAL_COUNT => 1,
+        ]);
+        $db = $this->createMock(HilosDbContext::class);
+        $db->method('__get')->willReturnMap([
+            [HilosDbContext::countries, $countries],
+            [HilosDbContext::locales, $this->locales],
+            [HilosDbContext::languages, Hilos::$db->languages],
+            [HilosDbContext::countryNames, Hilos::$db->countryNames],
+        ]);
+        Hilos::$db = $db;
+        self::assertCount(1, new HilosI18nCountriesTable()->getPage(new TableQueryDTO())->rows);
+        $actions = $this->getMockBuilder(CountryActions::class)
+            ->setConstructorArgs([$countries[2]])->onlyMethods(['ensureCanWrite'])->getMock();
+        $actions->expects(self::once())->method('ensureCanWrite')->with(TruthSourceOperation::Remove);
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage("Country 'qx' cannot be deleted: locales refer to it.");
+        $actions->delete();
     }
 
     /**

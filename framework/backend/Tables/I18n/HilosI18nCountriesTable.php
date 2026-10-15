@@ -35,6 +35,7 @@ use Hilos\Database\Object\Item\CountryName as ObjectCountryName;
 use Hilos\Database\Object\Item\Language as ObjectLanguage;
 use Hilos\Database\Object\Item\Locale as ObjectLocale;
 use Hilos\Database\View\Item\Country;
+use Hilos\Database\View\Item\Locale;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\Hilos;
@@ -260,9 +261,8 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
     /**
      * Every country, searched and ordered in memory.
      *
-     * Row labels use a grouped read of base names in the default language, and locale choices a
-     * grouped read of all country locales. Each country's deletion verdict comes from its current
-     * card summary, reusing the grouped locale choices.
+     * Row labels use a grouped read of base names in the default language.
+     * Locale choices and deletion verdicts come from the country item.
      *
      * @param TableQueryDTO $query Window query, its search already scoped
      * @return TableSnapshotDTO Countries window
@@ -281,14 +281,10 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
         $defaultLanguageId = $this->defaultLanguageId();
         $baseNames = $this->baseNames($defaultLanguageId);
         $result = Hilos::$db->countries->queryPageItems(new TableQueryDTO());
-        $localesByCountry = $this->localesByCountry(array_map(
-            static fn (Country $country): int => $country->id,
-            $result[TableConstants::RESULT_KEY_ROWS],
-        ));
 
         return $this->filterInMemory(
             array_map(
-                fn (Country $country): array => $this->rowForCountry($country, $defaultLanguageId, $baseNames, $localesByCountry)->toArray(),
+                fn (Country $country): array => $this->rowForCountry($country, $defaultLanguageId, $baseNames)->toArray(),
                 $result[TableConstants::RESULT_KEY_ROWS],
             ),
             $query,
@@ -420,39 +416,35 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
      * @param Country $country Country to project
      * @param ?int $defaultLanguageId Id of the installation default language, read once for the query
      * @param ?array<int, string> $baseNames Base names by country id, when the query already read them
-     * @param ?array<int, list<CountryLocaleChoice>> $localesByCountry Choices by country id, when the query already read them
      * @return HilosI18nCountriesTableRow Country table row
      * @throws DatabaseException When a name or a locale cannot be read
      * @throws LogicException When a collection is not configured
      * @throws InvalidArgumentException When a loaded row has the wrong type
-     * @throws EnvException When the default language setting is absent
-     * @throws EnvInvalidValueException When its configured code is unknown
      */
     private function rowForCountry(
         Country $country,
         ?int $defaultLanguageId,
         ?array $baseNames = null,
-        ?array $localesByCountry = null,
     ): HilosI18nCountriesTableRow {
-        $summary = Hilos::$db->countries->cardSummary(
-            (int) $country->id,
-            $localesByCountry === null ? null : ($localesByCountry[$country->id] ?? []),
-        );
+        $choices = array_values($country->locales->map(static fn (Locale $locale): CountryLocaleChoice => new CountryLocaleChoice(
+            $locale->code,
+            $locale->enabled,
+        )));
+        usort($choices, static fn (CountryLocaleChoice $a, CountryLocaleChoice $b): int => strcmp($a->code, $b->code));
+        $deleteReason = $country->deleteReason();
 
         return new HilosI18nCountriesTableRow(
             code: $country->code,
             name: $this->nameOf($country, $defaultLanguageId, $baseNames),
             currencySymbol: $country->currencySymbol,
             currencyCode: $country->currencyCode,
-            defaultLocaleCode: $country->defaultLocaleId === null
-                ? null
-                : Hilos::$db->locales[$country->defaultLocaleId]?->code,
+            defaultLocaleCode: $country->defaultLocale?->code,
             enabled: $country->enabled,
             isOwn: BuiltInI18nCatalog::country($country->code) === null,
-            locales: $summary->locales,
+            locales: $choices,
             catalogDefaultLocaleCode: BuiltInI18nCatalog::defaultLocale($country->code),
-            canDelete: $summary->canDelete,
-            deleteReason: $summary->deleteReason,
+            canDelete: $deleteReason === null,
+            deleteReason: $deleteReason,
         );
     }
 
@@ -509,29 +501,6 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
         }
 
         return $names;
-    }
-
-    /**
-     * @param list<int> $countryIds Countries projected in the window
-     * @return array<int, list<CountryLocaleChoice>> Locale choices grouped for the browser boundary, by code
-     * @throws DatabaseException When the locales cannot be read
-     * @throws LogicException When the locale collection is not configured
-     * @throws InvalidArgumentException When a loaded locale has the wrong type
-     * @throws ObjectGetIdStringNotImplementedException When a matched locale cannot name its id
-     * @throws CollectionNotManualException When the locale collection refuses a matched item
-     */
-    private function localesByCountry(array $countryIds): array
-    {
-        $choices = [];
-        foreach (Hilos::$db->locales->whereColumnIn(ObjectLocale::countryId, ...$countryIds) as $locale) {
-            $choices[$locale->countryId][] = new CountryLocaleChoice($locale->code, $locale->enabled);
-        }
-        foreach ($choices as &$countryChoices) {
-            usort($countryChoices, static fn (CountryLocaleChoice $a, CountryLocaleChoice $b): int => strcmp($a->code, $b->code));
-        }
-        unset($countryChoices);
-
-        return $choices;
     }
 
     /**

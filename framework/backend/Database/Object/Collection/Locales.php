@@ -11,7 +11,6 @@ use Hilos\Database\Entity\Collection\Locales as EntityLocales;
 use Hilos\Database\Entity\Item\Locale as EntityLocale;
 use Hilos\Database\Object\Item\Locale as ObjectLocale;
 use Hilos\Database\Object\Objects;
-use Hilos\I18n\DTO\CountryLocaleChoice;
 
 /**
  * Locales loaded whole on first read.
@@ -45,45 +44,6 @@ class Locales extends Objects
         $locale = static::entityClass()::get('`language_id` = ? AND `country_id` IS NULL', [$languageId])->first();
 
         return $locale?->enabled;
-    }
-
-    /**
-     * @param int $countryId Country primary id
-     * @return int Number of its locales, regardless of enabled state
-     * @throws DatabaseException When the query fails
-     */
-    public function countForCountry(int $countryId): int
-    {
-        return static::entityClass()::count([EntityLocale::country_id => $countryId]);
-    }
-
-    /**
-     * @param int $countryId Country primary id
-     * @return list<CountryLocaleChoice> Every locale of the country, on or off, by code
-     * @throws DatabaseException When the query fails
-     * @throws InvalidArgumentException When the entity query is invalid
-     */
-    public function choicesForCountry(int $countryId): array
-    {
-        $choices = [];
-        foreach (static::entityClass()::get([EntityLocale::country_id => $countryId], [], [EntityLocale::code => 'ASC']) as $locale) {
-            $choices[] = new CountryLocaleChoice($locale->code, $locale->enabled);
-        }
-
-        return $choices;
-    }
-
-    /**
-     * @param int $localeId Locale primary id
-     * @return ?bool Whether the locale is switched on, or null when it does not exist
-     * @throws DatabaseException When the query fails
-     * @throws InvalidArgumentException When the entity query is invalid
-     */
-    public function enabledById(int $localeId): ?bool
-    {
-        $entity = static::entityClass()::get([EntityLocale::id => $localeId])->first();
-
-        return $entity?->enabled;
     }
 
     /**
