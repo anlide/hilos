@@ -274,10 +274,11 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         // The probes of this demo's cluster stand - scenarios 3, 4, 9, 12, 14, 16 and 19 read the
-        // fleet, 14 stages a second owner of its collection with the claimer, 18 fills the slaves
-        // with the ballast. A probe starts only on a clustered node of a non-production
-        // environment, so this demo on one node, on its Playwright stand and in production carries
-        // the rows and runs none of them (docs/agents/testing.md, "The cluster stands").
+        // fleet, 37 asks for more of it than the slaves have slots for, 14 stages a second owner of
+        // its collection with the claimer, 18 fills the slaves with the ballast. A probe starts
+        // only on a clustered node of a non-production environment, so this demo on one node, on
+        // its Playwright stand and in production carries the rows and runs none of them
+        // (docs/agents/testing.md, "The cluster stands").
         HilosAgentType::HILOS_PROBE_FLEET => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_FLEET],
         HilosAgentType::HILOS_PROBE_CLAIMER => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_CLAIMER],
         HilosAgentType::HILOS_PROBE_BALLAST => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_BALLAST],

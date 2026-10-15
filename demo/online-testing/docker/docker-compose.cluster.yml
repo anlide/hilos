@@ -142,11 +142,12 @@ services:
       CLUSTER_TLS_CERT_FILE: /app/docker/tls/m1.pem
       CLUSTER_NODE_ROLE: master
       # Every master carries placed work on this stand — `worker` is the tag the probe fleet
-      # asks of its host, and a node that declares no key=value takes no placed work at all
-      # (HIL-445, rule 4); the three declare the same because they are equal, and the leader is
-      # still last among them (rule 3), so the fleet lives on the two that do not lead until a
-      # re-election hands the leader what it carried.
-      CLUSTER_NODE_CAPABILITIES: "worker,ram=10"
+      # asks of its host, a node that declares no key=value takes no placed work at all
+      # (HIL-445, rule 4), and every placed agent takes one of the slots a node declares
+      # (HIL-447), 64 being far more than the stand places; the three declare the same because
+      # they are equal, so the work spreads over all three by equal shares, and the leader is
+      # last only among equal shares (rule 3): it takes its share after the two that do not lead.
+      CLUSTER_NODE_CAPABILITIES: "worker,ram=10,slots=64"
       CLUSTER_PEER_ADVERTISE: "10.223.0.11:8095"
       CLUSTER_SEEDS: "10.223.0.12:8095,10.223.0.13:8095"
     volumes:
@@ -168,7 +169,7 @@ services:
       CLUSTER_TLS_CERT_FILE: /app/docker/tls/m2.pem
       CLUSTER_NODE_ROLE: master
       # The same as m1's, and for the same reasons; see the comment there.
-      CLUSTER_NODE_CAPABILITIES: "worker,ram=10"
+      CLUSTER_NODE_CAPABILITIES: "worker,ram=10,slots=64"
       CLUSTER_PEER_ADVERTISE: "10.223.0.12:8095"
       CLUSTER_SEEDS: "10.223.0.11:8095,10.223.0.13:8095"
     volumes:
@@ -190,7 +191,7 @@ services:
       CLUSTER_TLS_CERT_FILE: /app/docker/tls/m3.pem
       CLUSTER_NODE_ROLE: master
       # The same as m1's, and for the same reasons; see the comment there.
-      CLUSTER_NODE_CAPABILITIES: "worker,ram=10"
+      CLUSTER_NODE_CAPABILITIES: "worker,ram=10,slots=64"
       CLUSTER_PEER_ADVERTISE: "10.223.0.13:8095"
       CLUSTER_SEEDS: "10.223.0.11:8095,10.223.0.12:8095"
     volumes:

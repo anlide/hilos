@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Cluster\Peer\DTO;
 
 use Hilos\Cluster\Exception\PeerTransportException;
+use Hilos\Cluster\Placement\PlacementRefusal;
 use Hilos\Cluster\Placement\PlacementState;
 
 /**
@@ -16,6 +17,11 @@ use Hilos\Cluster\Placement\PlacementState;
  * it to the frames waiting at that moment and forgets it. The published view is
  * not this frame; a second failure of the same agent does not change the view, so
  * a waiter would never learn of it from a view update alone.
+ *
+ * A not-placed verdict also carries the gate's refusals (HIL-447): every node's refusal when no
+ * node could take the agent, the one node's when the gate refused the node that was tried, and an
+ * empty list for a failure that did not come from the gate. The reason stays the text a person
+ * reads. A placed verdict carries an empty list, and a frame that claims otherwise is refused.
  */
 final class PeerPlacementVerdictDTO extends PeerDTO
 {
@@ -37,12 +43,16 @@ final class PeerPlacementVerdictDTO extends PeerDTO
     /** @var string Payload key: reason the agent was not placed */
     public const string FIELD_REASON = 'reason';
 
+    /** @var string Payload key: placement-gate refusals behind a not-placed verdict, always a list */
+    public const string FIELD_REFUSALS = 'refusals';
+
     /**
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param PlacementState $state Placement state this verdict reports
      * @param ?string $nodeId Hosting node id, or null unless placed
      * @param ?string $reason Failure reason, or null unless not placed
+     * @param list<PlacementRefusal> $refusals Gate refusals behind a not-placed verdict; empty otherwise
      */
     public function __construct(
         public readonly string $agentType,
@@ -50,6 +60,7 @@ final class PeerPlacementVerdictDTO extends PeerDTO
         public readonly PlacementState $state,
         public readonly ?string $nodeId,
         public readonly ?string $reason,
+        public readonly array $refusals = [],
     ) {
     }
 
@@ -73,6 +84,7 @@ final class PeerPlacementVerdictDTO extends PeerDTO
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param PlacementState $state Failed, unplaced, or refused
      * @param string $reason Why the agent was not placed
+     * @param list<PlacementRefusal> $refusals Gate refusals behind it; empty for a failure outside the gate
      * @return self Not-placed verdict
      */
     public static function notPlaced(
@@ -80,8 +92,9 @@ final class PeerPlacementVerdictDTO extends PeerDTO
         ?string $agentIndex,
         PlacementState $state,
         string $reason,
+        array $refusals = [],
     ): self {
-        return new self($agentType, $agentIndex, $state, null, $reason);
+        return new self($agentType, $agentIndex, $state, null, $reason, $refusals);
     }
 
     /**
@@ -108,6 +121,10 @@ final class PeerPlacementVerdictDTO extends PeerDTO
             self::FIELD_STATE => $this->state->value,
             self::FIELD_NODE_ID => $this->nodeId,
             self::FIELD_REASON => $this->reason,
+            self::FIELD_REFUSALS => array_map(
+                static fn(PlacementRefusal $refusal): array => $refusal->toArray(),
+                $this->refusals,
+            ),
         ];
     }
 
@@ -116,7 +133,7 @@ final class PeerPlacementVerdictDTO extends PeerDTO
      *
      * @param array<string, mixed> $data Frame payload
      * @return static Restored frame
-     * @throws PeerTransportException When the agent type, state, node id or reason is invalid
+     * @throws PeerTransportException When the agent type, state, node id, reason or refusals are invalid
      */
     public static function fromArray(array $data): static
     {
@@ -145,9 +162,14 @@ final class PeerPlacementVerdictDTO extends PeerDTO
             $reason = null;
         }
 
+        $refusals = self::readPlacementRefusals($data, self::FIELD_REFUSALS, 'placement-verdict');
+
         if ($state === PlacementState::Started) {
             if ($nodeId === null) {
                 throw new PeerTransportException('Peer placement-verdict frame is missing the node id');
+            }
+            if ($refusals !== []) {
+                throw new PeerTransportException('Peer placement-verdict frame carries refusals on a placed verdict');
             }
 
             return new static(
@@ -169,6 +191,7 @@ final class PeerPlacementVerdictDTO extends PeerDTO
             state: $state,
             nodeId: null,
             reason: $reason,
+            refusals: $refusals,
         );
     }
 

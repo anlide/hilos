@@ -70,6 +70,15 @@ final class ClusterCommandConstants
     /** @var string Placement-row key: last-known placement state value */
     public const string FIELD_PLACEMENT_STATE = 'state';
 
+    /** @var string Placement-row and refusal-snapshot key: why the placement failed, or null (HIL-447) */
+    public const string FIELD_PLACEMENT_REASON = 'reason';
+
+    /** @var string Placement-row and refusal-snapshot key: the gate's refusals per node, or an empty list (HIL-447) */
+    public const string FIELD_PLACEMENT_REFUSALS = 'refusals';
+
+    /** @var string Inspect reply key: the leader's last failed placement attempt per agent, a list (HIL-447) */
+    public const string FIELD_PLACEMENT_REFUSALS_SNAPSHOT = 'placementRefusals';
+
     /**
      * @var string Signal name the test-only client commands raise, and the browser side of the
      *     mesh answers to

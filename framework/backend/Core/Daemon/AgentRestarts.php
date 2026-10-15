@@ -114,7 +114,7 @@ final class AgentRestarts
      * @throws EnvException When a cluster setting cannot be read
      * @throws AgentDaemonCreationFailedException When a placement profile cannot be built
      * @throws HilosException When the project cannot describe a placement candidate
-     * @throws LogicException When an agent declares a negative resource cost
+     * @throws LogicException When an agent declares a negative resource cost or the reserved slot
      */
     private function requestChecked(CommandRequestDTO $request, float $now): void
     {
@@ -233,7 +233,7 @@ final class AgentRestarts
      * @param PeerAgentRestartDTO $frame Validated peer frame
      * @throws AgentDaemonCreationFailedException When a placement profile cannot be built
      * @throws HilosException When the project cannot describe a placement candidate
-     * @throws LogicException When an agent declares a negative resource cost
+     * @throws LogicException When an agent declares a negative resource cost or the reserved slot
      */
     private function fromPeerChecked(CommandRequestDTO $request, PeerAgentRestartDTO $frame): void
     {
@@ -339,7 +339,7 @@ final class AgentRestarts
      * @throws EnvException When cluster settings cannot be read
      * @throws AgentDaemonCreationFailedException When a placement profile cannot be built
      * @throws HilosException When the project cannot describe a placement candidate
-     * @throws LogicException When an agent declares a negative resource cost
+     * @throws LogicException When an agent declares a negative resource cost or the reserved slot
      */
     public function executeAsLeader(
         CommandRequestDTO $request,

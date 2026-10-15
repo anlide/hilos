@@ -189,10 +189,11 @@ pointed at a subset.
 ## Cluster stand
 
 `docker/docker-compose.cluster.yml` raises this demo as a Hilos cluster of
-three equal masters, `m1`–`m3`, each declaring `worker,ram=10`: every master is
-the consensus and the data plane at once and carries placed work itself, and
-the leader is still last among them, so the work lives on the two that do not
-lead until a re-election hands the leader what it carried. All three share one
+three equal masters, `m1`–`m3`, each declaring `worker,ram=10,slots=64`: every
+master is the consensus and the data plane at once and carries placed work
+itself, every placed agent takes one slot, and the work spreads over all three
+by equal shares, the leader last only among equal shares — it takes its share
+after the two that do not lead. All three share one
 MariaDB 11.4 server, `online-testing-cluster-mysql`, with the primary database
 and its derived journal. The database is at 10.223.0.10; all of the stand sits
 on subnet 10.223, and nothing is published on the host. It is a compose project of its own,

@@ -24,17 +24,17 @@ final class PlacementRegistry
     /**
      * Upserts a placement record, replacing any earlier record for the same agent.
      *
+     * A record equal by value to the one already held changes nothing, the revision included.
+     * Equal means every field, the diagnosis among them (HIL-447): a second failure of the same
+     * agent on the same node for ANOTHER reason is news and replaces the first.
+     *
      * @param PlacementRecord $record Placement record to store
      */
     public function put(PlacementRecord $record): void
     {
         $id = $record->agentId();
         $old = $this->records[$id] ?? null;
-        if (
-            $old !== null
-            && $old->nodeId === $record->nodeId
-            && $old->state === $record->state
-        ) {
+        if ($old !== null && $old->sameAs($record)) {
             return;
         }
         $this->records[$id] = $record;

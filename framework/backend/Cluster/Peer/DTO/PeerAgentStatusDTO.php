@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Cluster\Peer\DTO;
 
 use Hilos\Cluster\Exception\PeerTransportException;
+use Hilos\Cluster\Placement\PlacementRefusal;
 use Hilos\Cluster\Placement\PlacementState;
 
 /**
@@ -15,6 +16,11 @@ use Hilos\Cluster\Placement\PlacementState;
  * reason, and {@see PlacementState::Stopped} confirms a revoke. The leader folds it into
  * its placement view. The provisional {@see PlacementState::Placing} is leader-local and
  * never travels the wire.
+ *
+ * A failure also carries the gate's refusals (HIL-447) when it was the node's own end of the
+ * placement gate that refused — one refusal, for this node — and an empty list for any other
+ * failure; the error stays the text a person reads. Started and stopped carry an empty list, and a
+ * frame that claims otherwise is refused.
  */
 final class PeerAgentStatusDTO extends PeerDTO
 {
@@ -36,12 +42,16 @@ final class PeerAgentStatusDTO extends PeerDTO
     /** @var string Payload key: failure reason */
     public const string FIELD_ERROR = 'error';
 
+    /** @var string Payload key: placement-gate refusals behind a failure, always a list */
+    public const string FIELD_REFUSALS = 'refusals';
+
     /**
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param PlacementState $state Reported placement state
      * @param ?int $workerId Worker id the agent landed on, or null unless started
      * @param ?string $error Failure reason, or null unless failed
+     * @param list<PlacementRefusal> $refusals Gate refusals behind a failure; empty otherwise
      */
     public function __construct(
         public readonly string $agentType,
@@ -49,6 +59,7 @@ final class PeerAgentStatusDTO extends PeerDTO
         public readonly PlacementState $state,
         public readonly ?int $workerId,
         public readonly ?string $error,
+        public readonly array $refusals = [],
     ) {
     }
 
@@ -71,11 +82,12 @@ final class PeerAgentStatusDTO extends PeerDTO
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param string $error Failure reason
+     * @param list<PlacementRefusal> $refusals Gate refusals when the gate refused; empty for any other failure
      * @return self Failed status
      */
-    public static function failed(string $agentType, ?string $agentIndex, string $error): self
+    public static function failed(string $agentType, ?string $agentIndex, string $error, array $refusals = []): self
     {
-        return new self($agentType, $agentIndex, PlacementState::Failed, null, $error);
+        return new self($agentType, $agentIndex, PlacementState::Failed, null, $error, $refusals);
     }
 
     /**
@@ -114,6 +126,10 @@ final class PeerAgentStatusDTO extends PeerDTO
             self::FIELD_STATE => $this->state->value,
             self::FIELD_WORKER_ID => $this->workerId,
             self::FIELD_ERROR => $this->error,
+            self::FIELD_REFUSALS => array_map(
+                static fn(PlacementRefusal $refusal): array => $refusal->toArray(),
+                $this->refusals,
+            ),
         ];
     }
 
@@ -122,7 +138,7 @@ final class PeerAgentStatusDTO extends PeerDTO
      *
      * @param array<string, mixed> $data Frame payload
      * @return static Restored frame
-     * @throws PeerTransportException When the agent type is missing or the state is invalid
+     * @throws PeerTransportException When the agent type is missing, the state is invalid, or the refusals are malformed or not a failure's
      */
     public static function fromArray(array $data): static
     {
@@ -139,6 +155,11 @@ final class PeerAgentStatusDTO extends PeerDTO
             throw new PeerTransportException("Peer agent-status frame has an invalid state '{$shownState}'");
         }
 
+        $refusals = self::readPlacementRefusals($data, self::FIELD_REFUSALS, 'agent-status');
+        if ($refusals !== [] && $state !== PlacementState::Failed) {
+            throw new PeerTransportException("Peer agent-status frame carries refusals in state '{$state->value}'");
+        }
+
         $workerId = $data[self::FIELD_WORKER_ID] ?? null;
         $error = $data[self::FIELD_ERROR] ?? null;
 
@@ -148,6 +169,7 @@ final class PeerAgentStatusDTO extends PeerDTO
             state: $state,
             workerId: $workerId !== null ? (int)$workerId : null,
             error: $error !== null ? (string)$error : null,
+            refusals: $refusals,
         );
     }
 }

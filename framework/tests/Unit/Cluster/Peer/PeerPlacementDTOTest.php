@@ -17,14 +17,19 @@ use Hilos\Cluster\Peer\DTO\PeerPlacementVerdictDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Peer\PeerProtocol;
+use Hilos\Cluster\Placement\PlacementRefusal;
+use Hilos\Cluster\Placement\PlacementRefusalCode;
 use Hilos\Cluster\Placement\PlacementState;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
  * Unit tests for the agent-placement peer frames (HIL-179).
  *
  * Each frame round-trips through the shared {@see PeerDTO::fromWire()} dispatch so a
- * frame serialized on one node parses back to the same concrete DTO on another.
+ * frame serialized on one node parses back to the same concrete DTO on another. The failed
+ * status and the not-placed verdict carry the gate's structured refusals (HIL-447), which must
+ * survive the wire whole and be refused in any form the writer never produces.
  */
 final class PeerPlacementDTOTest extends TestCase
 {
@@ -160,6 +165,7 @@ final class PeerPlacementDTOTest extends TestCase
             PeerPlacementVerdictDTO::TYPE => PeerPlacementVerdictDTO::MESSAGE_TYPE,
             PeerPlacementVerdictDTO::FIELD_AGENT_TYPE => 'chat',
             PeerPlacementVerdictDTO::FIELD_STATE => PlacementState::Started->value,
+            PeerPlacementVerdictDTO::FIELD_REFUSALS => [],
         ]);
     }
 
@@ -170,7 +176,223 @@ final class PeerPlacementDTOTest extends TestCase
             PeerPlacementVerdictDTO::TYPE => PeerPlacementVerdictDTO::MESSAGE_TYPE,
             PeerPlacementVerdictDTO::FIELD_AGENT_TYPE => 'chat',
             PeerPlacementVerdictDTO::FIELD_STATE => PlacementState::Failed->value,
+            PeerPlacementVerdictDTO::FIELD_REFUSALS => [],
         ]);
+    }
+
+    /**
+     * One refusal of every code, as the gate and the coordinator build them (HIL-447).
+     *
+     * @return array<string, array{PlacementRefusal}> Refusals keyed by code
+     */
+    public static function everyRefusalCode(): array
+    {
+        return [
+            'missing_capabilities' => [PlacementRefusal::unmetCapabilities('s1', ['gpu', 'ssd'])],
+            'no_declared_capacity' => [PlacementRefusal::noDeclaredCapacity('m1')],
+            'insufficient_capacity' => [PlacementRefusal::insufficientCapacity('s2', [
+                'ram' => ['cost' => 2.0, 'free' => 0.5],
+                'slots' => ['cost' => 1.0, 'free' => -1.0],
+            ])],
+            'no_online_nodes' => [PlacementRefusal::noOnlineNodes()],
+        ];
+    }
+
+    #[DataProvider('everyRefusalCode')]
+    public function testAFailedStatusCarriesEachRefusalAcrossTheWire(PlacementRefusal $refusal): void
+    {
+        $frame = PeerAgentStatusDTO::failed('worker', '7', 'refused', [$refusal]);
+        $parsed = PeerDTO::fromWire($frame->toJson());
+
+        $this->assertInstanceOf(PeerAgentStatusDTO::class, $parsed);
+        $this->assertSame('refused', $parsed->error, 'The text stays the one a person reads');
+        $this->assertCount(1, $parsed->refusals);
+        $this->assertTrue($refusal->equals($parsed->refusals[0]), 'The structure survives the wire whole');
+        $this->assertSame($frame->toJson(), $parsed->toJson());
+    }
+
+    #[DataProvider('everyRefusalCode')]
+    public function testANotPlacedVerdictCarriesEachRefusalAcrossTheWire(PlacementRefusal $refusal): void
+    {
+        $other = PlacementRefusal::noDeclaredCapacity('a0');
+        $frame = PeerPlacementVerdictDTO::notPlaced('worker', null, PlacementState::Unplaced, 'no node', [$other, $refusal]);
+        $parsed = PeerDTO::fromWire($frame->toJson());
+
+        $this->assertInstanceOf(PeerPlacementVerdictDTO::class, $parsed);
+        $this->assertSame('no node', $parsed->reason);
+        $this->assertCount(2, $parsed->refusals, 'Every node refusal travels, not one of them');
+        $this->assertTrue($other->equals($parsed->refusals[0]));
+        $this->assertTrue($refusal->equals($parsed->refusals[1]));
+        $this->assertSame($frame->toJson(), $parsed->toJson());
+    }
+
+    public function testARefusalOnTheWireKeepsShortfallsAnObjectAndCapabilitiesAList(): void
+    {
+        $this->assertSame(
+            '{"nodeId":"m1","reasonCode":"no_declared_capacity","missingCapabilities":[],"shortfalls":{}}',
+            json_encode(PlacementRefusal::noDeclaredCapacity('m1')->toArray()),
+        );
+        $this->assertSame(
+            '{"nodeId":null,"reasonCode":"no_online_nodes","missingCapabilities":[],"shortfalls":{}}',
+            json_encode(PlacementRefusal::noOnlineNodes()->toArray()),
+        );
+    }
+
+    public function testTheContractExampleReadsWithIntegerAmounts(): void
+    {
+        $refusal = PlacementRefusal::fromArray(json_decode(
+            '{"nodeId":"s1","reasonCode":"insufficient_capacity","missingCapabilities":[],"shortfalls":{"slots":{"cost":1,"free":0}}}',
+            true,
+        ));
+
+        $this->assertSame('s1', $refusal->nodeId);
+        $this->assertSame(PlacementRefusalCode::InsufficientCapacity, $refusal->reasonCode);
+        $this->assertSame(['slots' => ['cost' => 1.0, 'free' => 0.0]], $refusal->shortfalls);
+        $this->assertTrue($refusal->equals(PlacementRefusal::insufficientCapacity('s1', ['slots' => ['cost' => 1.0, 'free' => 0.0]])));
+    }
+
+    public function testSuccessfulFramesCarryAnEmptyRefusalList(): void
+    {
+        foreach ([
+            PeerAgentStatusDTO::started('worker', '7', 3),
+            PeerAgentStatusDTO::stopped('worker', '7'),
+            PeerAgentStatusDTO::failed('worker', '7', 'no worker'),
+            PeerPlacementVerdictDTO::placed('worker', '7', 's1'),
+        ] as $frame) {
+            $wire = json_decode($frame->toJson(), true);
+            $this->assertArrayHasKey('refusals', $wire, 'The key is always written');
+            $this->assertSame([], $wire['refusals']);
+            $this->assertSame([], PeerDTO::fromWire($frame->toJson())->refusals);
+        }
+    }
+
+    public function testAStatusWithoutTheRefusalsKeyIsRefused(): void
+    {
+        $wire = PeerAgentStatusDTO::failed('worker', '7', 'no worker')->toArray();
+        unset($wire[PeerAgentStatusDTO::FIELD_REFUSALS]);
+
+        $this->expectException(PeerTransportException::class);
+        $this->expectExceptionMessage("Peer agent-status frame is missing the 'refusals' list");
+        PeerAgentStatusDTO::fromArray($wire);
+    }
+
+    public function testAVerdictWithoutTheRefusalsKeyIsRefused(): void
+    {
+        $wire = PeerPlacementVerdictDTO::notPlaced('worker', '7', PlacementState::Failed, 'no worker')->toArray();
+        unset($wire[PeerPlacementVerdictDTO::FIELD_REFUSALS]);
+
+        $this->expectException(PeerTransportException::class);
+        $this->expectExceptionMessage("Peer placement-verdict frame is missing the 'refusals' list");
+        PeerPlacementVerdictDTO::fromArray($wire);
+    }
+
+    public function testAStartedStatusWithRefusalsIsRefused(): void
+    {
+        $wire = PeerAgentStatusDTO::started('worker', '7', 3)->toArray();
+        $wire[PeerAgentStatusDTO::FIELD_REFUSALS] = [$this->wireRefusal(PlacementRefusal::noDeclaredCapacity('s1'))];
+
+        $this->expectException(PeerTransportException::class);
+        $this->expectExceptionMessage("Peer agent-status frame carries refusals in state 'started'");
+        PeerAgentStatusDTO::fromArray($wire);
+    }
+
+    public function testAStoppedStatusWithRefusalsIsRefused(): void
+    {
+        $wire = PeerAgentStatusDTO::stopped('worker', '7')->toArray();
+        $wire[PeerAgentStatusDTO::FIELD_REFUSALS] = [$this->wireRefusal(PlacementRefusal::noDeclaredCapacity('s1'))];
+
+        $this->expectException(PeerTransportException::class);
+        $this->expectExceptionMessage("Peer agent-status frame carries refusals in state 'stopped'");
+        PeerAgentStatusDTO::fromArray($wire);
+    }
+
+    public function testAPlacedVerdictWithRefusalsIsRefused(): void
+    {
+        $wire = PeerPlacementVerdictDTO::placed('worker', '7', 's1')->toArray();
+        $wire[PeerPlacementVerdictDTO::FIELD_REFUSALS] = [$this->wireRefusal(PlacementRefusal::noOnlineNodes())];
+
+        $this->expectException(PeerTransportException::class);
+        $this->expectExceptionMessage('Peer placement-verdict frame carries refusals on a placed verdict');
+        PeerPlacementVerdictDTO::fromArray($wire);
+    }
+
+    /**
+     * Refusal forms the writer never produces, each beside the message it is refused with.
+     *
+     * @return array<string, array{mixed, string}> Raw refusals list and expected message part
+     */
+    public static function malformedRefusals(): array
+    {
+        $refusal = static fn(array $override): array => array_merge([
+            'nodeId' => 's1',
+            'reasonCode' => 'insufficient_capacity',
+            'missingCapabilities' => [],
+            'shortfalls' => ['slots' => ['cost' => 1, 'free' => 0]],
+        ], $override);
+        $withoutNode = $refusal([]);
+        unset($withoutNode['nodeId']);
+
+        return [
+            'refusals as a map' => [['first' => $refusal([])], "missing the 'refusals' list"],
+            'refusals as a string' => ['none', "missing the 'refusals' list"],
+            'a refusal that is not an object' => [['insufficient_capacity'], 'refusal that is not an object'],
+            'unknown code' => [[$refusal(['reasonCode' => 'too_busy'])], "unknown reason code 'too_busy'"],
+            'code of another type' => [[$refusal(['reasonCode' => 3])], "unknown reason code 'int'"],
+            'no node id key' => [[$withoutNode], 'missing the node id'],
+            'blank node id' => [[$refusal(['nodeId' => ' '])], "'insufficient_capacity' names no node"],
+            'null node id on a node code' => [[$refusal(['nodeId' => null])], "'insufficient_capacity' names no node"],
+            'a node on no online nodes' => [
+                [$refusal(['reasonCode' => 'no_online_nodes', 'shortfalls' => []])],
+                'with no online nodes names a node',
+            ],
+            'capabilities as a map' => [[$refusal(['missingCapabilities' => ['a' => 'gpu']])], 'are not a list'],
+            'a blank capability' => [
+                [$refusal(['reasonCode' => 'missing_capabilities', 'missingCapabilities' => [''], 'shortfalls' => []])],
+                'not a tag',
+            ],
+            'missing capabilities with none named' => [
+                [$refusal(['reasonCode' => 'missing_capabilities', 'shortfalls' => []])],
+                'does not fit its missing capabilities',
+            ],
+            'capabilities on a capacity refusal' => [
+                [$refusal(['missingCapabilities' => ['gpu']])],
+                'does not fit its missing capabilities',
+            ],
+            'insufficient capacity with no shortfall' => [[$refusal(['shortfalls' => []])], 'does not fit its shortfalls'],
+            'shortfalls on no declared capacity' => [
+                [$refusal(['reasonCode' => 'no_declared_capacity'])],
+                'does not fit its shortfalls',
+            ],
+            'shortfalls as a list' => [[$refusal(['shortfalls' => [['cost' => 1, 'free' => 0]]])], 'not a map by resource'],
+            'shortfalls missing' => [[$refusal(['shortfalls' => null])], 'not a map by resource'],
+            'a shortfall without free' => [[$refusal(['shortfalls' => ['slots' => ['cost' => 1]]])], "shortfall 'slots'"],
+            'a shortfall cost as text' => [
+                [$refusal(['shortfalls' => ['slots' => ['cost' => '1', 'free' => 0]]])],
+                "shortfall 'slots'",
+            ],
+        ];
+    }
+
+    #[DataProvider('malformedRefusals')]
+    public function testAFailedStatusRefusesMalformedRefusals(mixed $refusals, string $message): void
+    {
+        $wire = PeerAgentStatusDTO::failed('worker', '7', 'refused')->toArray();
+        $wire[PeerAgentStatusDTO::FIELD_REFUSALS] = $refusals;
+
+        $this->expectException(PeerTransportException::class);
+        $this->expectExceptionMessage($message);
+        PeerDTO::fromWire(json_encode($wire));
+    }
+
+    #[DataProvider('malformedRefusals')]
+    public function testANotPlacedVerdictRefusesMalformedRefusals(mixed $refusals, string $message): void
+    {
+        $wire = PeerPlacementVerdictDTO::notPlaced('worker', '7', PlacementState::Unplaced, 'no node')->toArray();
+        $wire[PeerPlacementVerdictDTO::FIELD_REFUSALS] = $refusals;
+
+        $this->expectException(PeerTransportException::class);
+        $this->expectExceptionMessage($message);
+        PeerDTO::fromWire(json_encode($wire));
     }
 
     public function testPlacementReportRoundTripsEveryHostedAgent(): void
@@ -280,5 +502,16 @@ final class PeerPlacementDTOTest extends TestCase
             PeerDTO::TYPE => PeerPlacementViewDTO::MESSAGE_TYPE,
             PeerPlacementViewDTO::FIELD_AGENTS => [],
         ]));
+    }
+
+    /**
+     * Renders a refusal the way a frame read off the wire holds it: decoded JSON, not objects.
+     *
+     * @param PlacementRefusal $refusal Refusal to render
+     * @return array<string, mixed> Decoded refusal payload
+     */
+    private function wireRefusal(PlacementRefusal $refusal): array
+    {
+        return json_decode(json_encode($refusal->toArray(), JSON_THROW_ON_ERROR), true);
     }
 }

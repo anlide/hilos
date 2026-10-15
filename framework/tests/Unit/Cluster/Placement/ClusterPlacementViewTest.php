@@ -480,6 +480,9 @@ final class ClusterPlacementViewTest extends TestCase
  */
 final class PlacementViewTestMesh implements PlacementMesh
 {
+    /** @var string Capacity tag every node declares: room for the agents these cases host (HIL-447) */
+    private const string SLOTS = 'slots=10';
+
     /** @var list<array{0: string, 1: PeerDTO}> Node-addressed frames, as [nodeId, frame] */
     public array $sent = [];
 
@@ -508,11 +511,11 @@ final class PlacementViewTestMesh implements PlacementMesh
 
     /**
      * @param string $nodeId Node id to look up
-     * @return ?list<string> Advertised capability tags; none here
+     * @return ?list<string> Advertised capability tags; the slots a node needs to take a place frame
      */
     public function nodeCapabilities(string $nodeId): ?array
     {
-        return [];
+        return [self::SLOTS];
     }
 
     /**

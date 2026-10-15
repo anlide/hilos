@@ -17,6 +17,8 @@ use Hilos\Cluster\Placement\NullPlacementObserver;
 use Hilos\Cluster\Placement\NullPlacementRestartSink;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Cluster\Placement\PlacementObserver;
+use Hilos\Cluster\Placement\PlacementRefusal;
+use Hilos\Cluster\Placement\PlacementRefusalSnapshot;
 use Hilos\Cluster\Placement\PlacementRestartSink;
 use Hilos\Cluster\Placement\PlacementPolicy;
 use Hilos\Constants\EnvConstants;
@@ -1070,6 +1072,12 @@ final class ClusterContext
      * The node's admin view mode comes from its RT row, which pages read, so a scenario can
      * check that cluster nodes agree about the mode they actually serve (HIL-1274).
      *
+     * Why placed work does not run travels out as well (HIL-447): each placement row carries the
+     * reason and the gate's refusals of a failed or unplaced record, and `placementRefusals` lists
+     * the leader's last failed attempt per agent — the only place a new agent that no node could
+     * take shows up, since it never got a record. Both are the leader's soft state, empty on any
+     * other node, and nothing of it is written to RT.
+     *
      * @return array<string, mixed> Inspection snapshot payload
      * @throws ClusterConfigurationException When enabled but node config is missing or invalid
      * @throws EnvException When a cluster env value cannot be read
@@ -1106,6 +1114,10 @@ final class ClusterContext
             ClusterCommandConstants::FIELD_HAS_QUORUM => $leadership->hasQuorum(),
             ClusterCommandConstants::FIELD_NODES => $nodes,
             ClusterCommandConstants::FIELD_PLACEMENTS => $this->inspectPlacements(),
+            ClusterCommandConstants::FIELD_PLACEMENT_REFUSALS_SNAPSHOT => array_map(
+                static fn(PlacementRefusalSnapshot $snapshot): array => $snapshot->toArray(),
+                $this->placement()?->placementRefusals() ?? [],
+            ),
             ClusterCommandConstants::FIELD_CLIENT_INDEX => $this->clientConnections?->countsByNode() ?? [],
             ClusterCommandConstants::FIELD_CLIENT_DELIVERIES => $this->clientConnections?->deliveries() ?? 0,
             ClusterCommandConstants::FIELD_LAST_CLIENT_ACCEPT_KEY => $this->clientConnections?->lastAcceptKey(),
@@ -1129,7 +1141,8 @@ final class ClusterContext
      * Builds the placement rows from the leader-side placement view, if present.
      *
      * Empty when this node has no placement coordinator (off-cluster) or is not the
-     * leader, since the placement view is leader-owned soft-state.
+     * leader, since the placement view is leader-owned soft-state. A row carries the record's
+     * diagnosis (HIL-447): null and an empty list unless the placement failed or is unplaced.
      *
      * @return list<array<string, mixed>> Placement rows
      */
@@ -1148,6 +1161,11 @@ final class ClusterContext
                 ClusterCommandConstants::FIELD_PLACEMENT_AGENT_ID => $record->agentId(),
                 ClusterCommandConstants::FIELD_NODE_ID => $record->nodeId,
                 ClusterCommandConstants::FIELD_PLACEMENT_STATE => $record->state->value,
+                ClusterCommandConstants::FIELD_PLACEMENT_REASON => $record->reason,
+                ClusterCommandConstants::FIELD_PLACEMENT_REFUSALS => array_map(
+                    static fn(PlacementRefusal $refusal): array => $refusal->toArray(),
+                    $record->refusals,
+                ),
             ];
         }
 

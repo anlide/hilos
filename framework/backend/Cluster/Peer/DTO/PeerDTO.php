@@ -6,6 +6,7 @@ namespace Hilos\Cluster\Peer\DTO;
 
 use Hilos\BaseDTO;
 use Hilos\Cluster\Exception\PeerTransportException;
+use Hilos\Cluster\Placement\PlacementRefusal;
 
 /**
  * Thin envelope base for every framed message on the peer channel.
@@ -190,6 +191,39 @@ abstract class PeerDTO extends BaseDTO
         }
 
         return $acceptKeys;
+    }
+
+    /**
+     * Reads the list of placement-gate refusals a placement frame carries (HIL-447).
+     *
+     * Shared by {@see PeerAgentStatusDTO} and {@see PeerPlacementVerdictDTO}. The key is always
+     * written, so an absent one is a malformed frame rather than an empty list, and one bad
+     * refusal refuses the whole frame: the list is the reason a placement failed, and a thinned
+     * one would name a different reason.
+     *
+     * @param array<string, mixed> $data Frame payload
+     * @param string $field Payload key holding the list
+     * @param string $frameName How the frame names itself in the failure message
+     * @return list<PlacementRefusal> Refusals as read from the wire
+     * @throws PeerTransportException When the field is absent, is not a list, or holds a malformed refusal
+     */
+    public static function readPlacementRefusals(array $data, string $field, string $frameName): array
+    {
+        $raw = $data[$field] ?? null;
+        if (!is_array($raw) || !array_is_list($raw)) {
+            throw new PeerTransportException("Peer {$frameName} frame is missing the '{$field}' list");
+        }
+
+        $refusals = [];
+        foreach ($raw as $refusal) {
+            if (!is_array($refusal)) {
+                throw new PeerTransportException("Peer {$frameName} frame carries a refusal that is not an object");
+            }
+
+            $refusals[] = PlacementRefusal::fromArray($refusal);
+        }
+
+        return $refusals;
     }
 
     /**

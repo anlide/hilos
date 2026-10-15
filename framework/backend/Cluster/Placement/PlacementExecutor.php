@@ -41,12 +41,14 @@ interface PlacementExecutor
      * capacity and keep a node without free room out of the candidates (HIL-448).
      *
      * Called on the leader's master loop for every live placement each time a node is chosen, so
-     * the answer comes from the agent type, index and constants — never from I/O.
+     * the answer comes from the agent type, index and constants — never from I/O. The answer is
+     * the agent's project cost as it declares it; the coordinator adds the mandatory slot itself
+     * ({@see ResourceProfile::forPlacement()}, HIL-447).
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
-     * @return ResourceProfile Resource cost; empty when the agent consumes nothing
-     * @throws LogicException When the agent declares a negative cost
+     * @return ResourceProfile Project cost; empty when the agent adds nothing to its slot
+     * @throws LogicException When the agent declares a negative cost or the reserved slot
      * @throws AgentDaemonCreationFailedException When the agent daemon cannot be built
      * @throws HilosException Whatever the project's agent-daemon factory raises
      */

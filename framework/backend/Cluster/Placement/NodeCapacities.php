@@ -20,7 +20,10 @@ use Hilos\Cluster\NodeIdentity;
  *
  * A node that declares no numeric capacity at all accepts no placed work (HIL-445): it is not a
  * candidate for the policy, and a placement naming it is refused. A capacity of zero is still a
- * declaration — the node takes agents that cost nothing.
+ * declaration; such a node is refused for want of room, not for want of a declaration. Every
+ * placed agent costs one `slots` (HIL-447, {@see ResourceProfile::RESOURCE_SLOTS}), so `slots=N`
+ * caps the placed agents a node runs, and a node that declares other capacities but no `slots`
+ * has room for none of them.
  *
  * The `key=value` grammar reuses the existing tag channel so no peer frame changes: a token
  * without `=`, or one whose value is not numeric, is kept as a plain tag, so operator typos

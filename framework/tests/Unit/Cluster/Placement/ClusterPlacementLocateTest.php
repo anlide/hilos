@@ -37,6 +37,9 @@ final class ClusterPlacementLocateTest extends TestCase
 {
     private const string SELF = 'node-a';
 
+    /** @var string Capacity tag this node declares so a place frame passes its own gate (HIL-447) */
+    private const string SLOTS = 'slots=10';
+
     /** @var class-string<Hilos> App class bound before this test touched it */
     private string $boundAppClass;
 
@@ -220,7 +223,7 @@ final class ClusterPlacementLocateTest extends TestCase
 
         return new ClusterPlacement(
             self::SELF,
-            new FakePlacementMesh([]),
+            new FakePlacementMesh([self::SELF => [self::SLOTS]]),
             new FakePlacementExecutor(),
         );
     }

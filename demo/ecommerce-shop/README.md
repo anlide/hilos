@@ -197,8 +197,9 @@ pointed at a subset.
 master and two slaves. `m1` is the whole master set and declares no capacity,
 so it takes no placed work and stays the leader for as long as it lives:
 placement and failover are proved where the leader is stable. The slaves are of
-unequal room on purpose — `s1` declares `worker,ram=10`, `s2` `worker,ram=4` —
-because scenario 18 fills them by the room they declare, not by their number.
+unequal room on purpose — `s1` declares `worker,ram=10,slots=64`, `s2`
+`worker,ram=4,slots=64` — because scenario 18 fills them by the room they declare,
+not by their number; the slots are what lets them take placed work at all.
 All three share one MariaDB 11.4 server, `ecommerce-shop-cluster-mysql`,
 with the primary database and its derived journal. It is the only database
 address the nodes and cli know. The stand uses subnet 10.222, publishes nothing
@@ -211,8 +212,8 @@ Nothing here drives the stand: the framework's shared cluster harness
 the scenarios it names — 3 placement, 4 slave-kill failover, 6 hot-join,
 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused,
 16 recreated node leaves no phantom fleet (parked, P-441/2), 18 capacity is consumed,
-and 19 worker death on a live node (`docs/agents/testing.md`, "The cluster stands —
-three demos, three shapes"). The framework's probe fleet, claimer and ballast
+19 worker death on a live node, and 37 costless agents consume slots
+(`docs/agents/testing.md`, "The cluster stands — three demos, three shapes"). The framework's probe fleet, claimer and ballast
 are in this demo's `AGENTS`, and they start only here: on one node, on the
 Playwright stand and in production the rows are carried and nothing is run.
 

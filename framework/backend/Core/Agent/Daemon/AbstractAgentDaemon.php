@@ -74,15 +74,16 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
     }
 
     /**
-     * Default implementation - consumes nothing.
+     * Default implementation - no project cost.
      *
-     * Returns the empty profile so the agent reserves no capacity on the node it lands on, and
-     * best-fit spreads it by head count. An agent with a real appetite (a heavy LLM worker)
-     * overrides this to declare its cost — from its type, index and constants only, since the
-     * leader reads it on its master loop.
+     * Returns the empty profile, so a placed agent reserves on the node it lands on only the one
+     * slot placement adds to every placed agent ({@see ResourceProfile::forPlacement()}), and
+     * best-fit spreads it by its share of the nodes' slots. An agent with a real appetite (a heavy
+     * LLM worker) overrides this to declare its cost — from its type, index and constants only,
+     * since the leader reads it on its master loop — and never names the slot itself.
      *
      * @return ResourceProfile Empty resource profile
-     * @throws LogicException When an override declares a negative cost ({@see ResourceProfile::costs()})
+     * @throws LogicException When an override declares a negative cost or the reserved slot ({@see ResourceProfile::costs()})
      */
     public function placementProfile(): ResourceProfile
     {

@@ -75,18 +75,22 @@ interface AgentDaemonInterface
     public function requiredCapabilities(): array;
 
     /**
-     * The agent's resource cost: how much of each declared node capacity it consumes (HIL-448).
+     * The agent's project cost: how much of each declared node capacity it consumes beyond its
+     * slot (HIL-448, HIL-447).
      *
      * The consumable half of resource-aware placement layered on the boolean
      * {@see requiredCapabilities()} gate. The cost is a reservation the leader subtracts from the
      * node's declared capacity while the agent's placement lives, and a node without free room for
-     * it is not a candidate. The leader reads it on its master loop every time it chooses a node,
-     * so compute it from the agent type, index and constants only — no database, file or network
-     * I/O. The default is {@see ResourceProfile::none()}: the agent consumes nothing and is spread
-     * over the nodes by head count.
+     * it is not a candidate. Placement adds one mandatory `slots` to whatever is returned here
+     * ({@see ResourceProfile::forPlacement()}), so the agent never declares that unit itself. Only
+     * a placed agent pays it: an every-node replica and a leader-hosted singleton never pass
+     * through placement, and no slot is reserved for them. The leader reads the cost on its master
+     * loop every time it chooses a node, so compute it from the agent type, index and constants
+     * only — no database, file or network I/O. The default is {@see ResourceProfile::none()}: no
+     * project cost, and placement charges the agent its slot alone.
      *
-     * @return ResourceProfile Resource cost; empty when the agent consumes nothing
-     * @throws LogicException When the declared cost is negative ({@see ResourceProfile::costs()})
+     * @return ResourceProfile Project cost; empty when the agent adds nothing to its slot
+     * @throws LogicException When the declared cost is negative or names the reserved slot ({@see ResourceProfile::costs()})
      */
     public function placementProfile(): ResourceProfile;
 

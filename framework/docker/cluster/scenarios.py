@@ -57,7 +57,8 @@ Plus scenarios beyond that matrix:
  17 foreign certificate        a node certified by an authority the cluster does not trust is
     refused                    refused on both ends of every link and admitted by nobody (HIL-1034)
  18 capacity is consumed       ballast fills the slaves in proportion to their declared ram,
-                               never lands on a master, and a full cluster places no more (HIL-448)
+                               never lands on a master, and a full cluster places no more, saying
+                               why node by node (HIL-448, HIL-447)
  19 worker death on a live     one worker of a slave is SIGKILLed: the node names the loss,
     node                       the leader re-places exactly those members, and the rest of the
                                node runs on (HIL-440)
@@ -88,6 +89,9 @@ Plus scenarios beyond that matrix:
     off is swept               hand-over and keeps rows written just after it (HIL-1178)
  36 slave cut off with its     a slave cut off together with its leader fences its work once that
     leader stops its work      leader stops leading, before the majority starts any of it (HIL-1287)
+ 37 costless agents consume    agents that declare no cost still take a slot each: the slaves hold
+    slots                      no more than the slots they declare, and the next is refused for
+                               want of a slot on every slave (HIL-447)
  31 replica keeps up with       a replica took every write the preceding scenarios made, stays
     the primary                read-only and is reached by nobody (HIL-1229)
 
@@ -97,6 +101,7 @@ run_matrix() answers 0 when every scenario passes, 1 otherwise.
 import json
 import os
 import re
+import sys
 import threading
 import time
 from collections import namedtuple
@@ -191,6 +196,40 @@ BALLAST_RAM_COST = 2
 SLAVE_RAM = {}
 # How many ballasts scenario 18 asks for: one more than the slaves have room for, set by bind().
 BALLAST_ASKED = 0
+
+# The resources the stand's nodes declare, by name. Ram mirrors ClusterProbe::RESOURCE_RAM
+# (framework/backend/Cluster/Probe/ClusterProbe.php); slots mirrors ResourceProfile::RESOURCE_SLOTS
+# (framework/backend/Cluster/Placement/ResourceProfile.php), the stock every placed agent takes
+# one of (HIL-447).
+RESOURCE_RAM = "ram"
+RESOURCE_SLOTS = "slots"
+# The tag the fleet asks of its host; mirrors ClusterProbe::CAPABILITY_WORKER
+# (framework/backend/Cluster/Probe/ClusterProbe.php).
+CAPABILITY_WORKER = "worker"
+# Placement states that hold a node's capacity: what the leader counts against what it declares.
+# Mirror PlacementState::Placing and PlacementState::Started
+# (framework/backend/Cluster/Placement/PlacementState.php).
+LIVE_PLACEMENT_STATES = ("placing", "started")
+# The gate's reasons for refusing a node; mirror PlacementRefusalCode
+# (framework/backend/Cluster/Placement/PlacementRefusalCode.php).
+REFUSAL_MISSING_CAPABILITIES = "missing_capabilities"
+REFUSAL_NO_DECLARED_CAPACITY = "no_declared_capacity"
+REFUSAL_INSUFFICIENT_CAPACITY = "insufficient_capacity"
+# What the leader logs each time an attempt finds no node for an agent, and when it answers the
+# nodes that asked for one; mirror ClusterPlacement::placeOnBestFitNode() and
+# ClusterPlacement::answerPlacementAskers() (framework/backend/Cluster/Placement/ClusterPlacement.php).
+NO_CAPABLE_NODE_LINE = "No capable node to place agent '{}'"
+ANSWERING_ASK_LINE = "Answering the placement ask of '{}': {}"
+# What a node logs when a peer frame does not parse, as it drops the link; mirrors PeerLink
+# (framework/backend/Cluster/Peer/PeerLink.php).
+PEER_LINK_DROPPED_LINE = "Peer link dropped"
+
+# The slots scenario 37 gives each slave in place of the stand's 64: few enough that the fleet,
+# the demo's own placed agents and a handful more fill them.
+COSTLESS_SLOTS = 16
+# The fleet indexes scenario 37 asks for beyond the fleet's own 0..9: enough to fill two empty
+# slaves of COSTLESS_SLOTS and one more.
+EXTRA_FLEET_INDEXES = range(1000, 1033)
 
 
 # ------------------------------------------------------- adaptive timing (HIL-367)
@@ -611,6 +650,56 @@ def placement_row(views, agent_id):
         if row.get("agentId") == agent_id:
             return row
     return {}
+
+
+def placement_refusal(views, agent_id):
+    """The leader's last failed attempt to place one agent id, or None when it keeps none.
+
+    The leader's diagnosis rather than a record (HIL-447): a new agent that no node takes gets no
+    placement row at all, so this is the one place its refusal shows up. Empty on every other node.
+
+    A refusal's empty `shortfalls` comes back as an empty list, and is turned back into the map it
+    is. The daemon writes an object there, as the peer wire does, but the reply reaches us printed
+    by the inspect CLI, which decoded it into PHP arrays first - and an empty PHP array prints as
+    a list.
+    """
+    ls = leaders(views)
+    if len(ls) != 1:
+        return None
+    for snapshot in views[ls[0]].get("placementRefusals") or []:
+        if snapshot.get("agentId") == agent_id:
+            refusals = [dict(refusal, shortfalls=refusal.get("shortfalls") or {})
+                        for refusal in snapshot.get("refusals") or []]
+            return dict(snapshot, refusals=refusals)
+    return None
+
+
+def node_refusal(node, reason_code, missing=(), shortfalls=None):
+    """One node's refusal the way the leader's reply writes it; mirrors PlacementRefusal::toArray()
+    (framework/backend/Cluster/Placement/PlacementRefusal.php). `shortfalls` maps a resource to the
+    agent's cost of it and what the node has free."""
+    return {
+        "nodeId": node,
+        "reasonCode": reason_code,
+        "missingCapabilities": list(missing),
+        "shortfalls": {resource: {"cost": cost, "free": free}
+                       for resource, (cost, free) in (shortfalls or {}).items()},
+    }
+
+
+def live_on(views, node):
+    """How many placements the leader holds live on one node: one slot taken each."""
+    return sum(1 for row in leader_placements(views)
+               if row.get("nodeId") == node and row.get("state") in LIVE_PLACEMENT_STATES)
+
+
+def declared_capabilities(views, node):
+    """The capability tags the leader's roster lists for one node, empty without a single leader."""
+    ls = leaders(views)
+    if len(ls) != 1:
+        return []
+    return next((row.get("capabilities") or [] for row in views[ls[0]].get("nodes", [])
+                 if row.get("nodeId") == node), [])
 
 
 def client_deliveries(views, node):
@@ -1725,7 +1814,13 @@ def scenario_18_capacity_is_consumed():
     - hilos_probe_ballast:7 has no record, and still has none after the retry interval has
       passed twice and a second ask: a node whose stock is spent is no candidate, and with both
       slaves full there is nowhere left. What should become of such work is HIL-446, not this
-      scenario.
+      scenario;
+    - the leader says why all the same (HIL-447): its last refusal of hilos_probe_ballast:7 names
+      every node, each by the first gate it failed - a master for declaring no capacity at all,
+      a slave for being short of ram, cost 2 against what its stock has left. That is the one
+      place work that never got a record shows up;
+    - the second ask is a fresh attempt rather than a remembered answer: the leader logs it, and
+      it leaves the same refusal and still no record - the diagnosis is renewed, nothing queued.
 
     The split does not depend on the order either: seven fit and seven are placed, and a slave
     never takes more than its stock - on a stand of a whole demo the head count includes the
@@ -1768,9 +1863,23 @@ def scenario_18_capacity_is_consumed():
     assert placement_row(views, last) == {}, \
         f"{last} was placed although both slaves are full: {placement_row(views, last)}"
 
+    # Why, node by node, in the order of their ids: a master declares nothing, so it fails the
+    # declaration before its room is ever asked about; a slave declares ram and has left only what
+    # no ballast fits in. The slots the slaves declare are far from spent, so ram is all they lack.
+    expected = [node_refusal(node, REFUSAL_NO_DECLARED_CAPACITY) if node in MASTERS
+                else node_refusal(node, REFUSAL_INSUFFICIENT_CAPACITY, shortfalls={
+                    RESOURCE_RAM: (BALLAST_RAM_COST, SLAVE_RAM.get(node, 0) % BALLAST_RAM_COST)})
+                for node in sorted(ALL_NODES)]
+    refusal = placement_refusal(views, last)
+    assert refusal is not None, \
+        f"{leader} keeps no refusal of {last}, the one place it could say why it placed it nowhere"
+    assert refusal.get("refusals") == expected, \
+        f"{leader} refused {last} for {refusal.get('refusals')}, not {expected}"
+
     # Full stays full: past two retry intervals and a second ask, the last ballast still has
     # nowhere to go and the split has not moved.
     time.sleep(POLICY_PLACEMENT_RETRY_SEC * 2)
+    mark = node_log_mark(leader)
     assert client(leader, "test:cluster:agent:place", BALLAST_AGENT_TYPE, str(BALLAST_ASKED - 1)), \
         f"could not ask {leader} for {last} a second time"
     time.sleep(POLICY_PLACEMENT_RETRY_SEC)
@@ -1778,9 +1887,145 @@ def scenario_18_capacity_is_consumed():
     assert placement_row(views, last) == {}, \
         f"{last} was placed on a second ask although both slaves are full: {placement_row(views, last)}"
     assert layout(views) == placed, f"the ballast layout moved from {placed} to {layout(views)}"
+    assert NO_CAPABLE_NODE_LINE.format(last) in node_log_since(leader, mark), \
+        f"{leader} logged no new attempt at {last} on the second ask"
+    assert placement_refusal(views, last) == refusal, \
+        f"the second ask left {placement_refusal(views, last)} as the refusal of {last}, not {refusal}"
 
     return (f"{leader} placed {fit} ballasts as {placed} in proportion to {SLAVE_RAM}, none on a "
-            f"master, and found no room for {last}")
+            f"master, found no room for {last} and said why for each of {', '.join(sorted(ALL_NODES))}, "
+            "again on a second ask, without a record")
+
+
+def scenario_37_costless_agents_consume_slots():
+    """Agents that declare no cost still take a slot each, and the slots run out (HIL-447).
+
+    A fleet member declares no cost of its own, so before HIL-447 a node took any number of them.
+    Now placement charges every placed agent one of the `slots` its node declares. Both slaves are
+    recreated declaring COSTLESS_SLOTS slots beside their own tag and ram, and once the stand has
+    settled more fleet members are asked for, one at a time, under indexes far from the fleet's own
+    0..9, each through a slave: a node that does not lead forwards the ask, so every answer is a
+    verdict sent back over the mesh. What each assertion proves:
+
+    - no slave ever holds more live placements than its slots, whatever the leader is asked: the
+      demo's own placed agents, the fleet and the extra members each take one;
+    - the extra members asked while slots were free really run: started, and writing their rows;
+    - the first one asked once both slaves are full is refused for want of a slot on each - cost 1,
+      free 0 - and the master for lacking the tag the fleet requires; it gets no record, as new
+      work no node takes never does (what becomes of it is HIL-446);
+    - the slave that asked took the verdict carrying those refusals without dropping its link.
+
+    Nothing is said about ram: the fleet costs none. Freeing a slot and asking again is the unit
+    tests' to prove; this proves the ceiling and why it refuses. The stand is put back by a full
+    restart on its own compose file, which drops the overrides and the extra members together:
+    recreating the slaves alone would have the leader place the extra members again.
+    """
+    views = wait_converge(ALL_NODES)
+    leader = leaders(views)[0]
+    asker = SLAVES[0]
+    extras = []
+    refused = None
+    try:
+        for slave in SLAVES:
+            declared = [CAPABILITY_WORKER, f"{RESOURCE_SLOTS}={COSTLESS_SLOTS}"]
+            if slave in SLAVE_RAM:
+                declared.append(f"{RESOURCE_RAM}={SLAVE_RAM[slave]}")
+            assignment = f"CLUSTER_NODE_CAPABILITIES={','.join(declared)}"
+            print(f"    recreating {slave} with {assignment}")
+            outcome = control.execute(STAND, "own-env", slave, assignment)
+            assert outcome.code == 0, f"could not give {slave} slots of its own: {outcome.err}"
+
+            def ready(v, node=slave):
+                return (converged(ALL_NODES)(v)
+                        and f"{RESOURCE_SLOTS}={COSTLESS_SLOTS}" in declared_capabilities(v, node))
+
+            wait_until(ready, CONVERGE_TIMEOUT, f"{slave} back online declaring {COSTLESS_SLOTS} slots")
+
+        # The demo's own placed agents come back on the policy's sweep rather than all at once, so
+        # the placements are read only once they have held still for two of its intervals.
+        steady = {"rows": None, "since": 0.0}
+
+        def settled(v):
+            rows = {row["agentId"]: (row.get("nodeId"), row.get("state")) for row in leader_placements(v)
+                    if row.get("state") in LIVE_PLACEMENT_STATES}
+            if rows != steady["rows"]:
+                steady["rows"], steady["since"] = rows, time.time()
+                return False
+            return (fleet_started(v) and all(state == "started" for _node, state in rows.values())
+                    and time.time() - steady["since"] >= POLICY_PLACEMENT_RETRY_SEC * 2)
+
+        views = wait_until(settled, CONVERGE_TIMEOUT, "the fleet started and every live placement still")
+        free = {slave: COSTLESS_SLOTS - live_on(views, slave) for slave in SLAVES}
+        assert all(slots >= 0 for slots in free.values()), \
+            f"a slave holds more placements than its {COSTLESS_SLOTS} slots before anything was asked: {free}"
+        assert sum(free.values()) > 0, \
+            f"the slaves have no free slot to fill before anything was asked ({free}), so the ceiling would prove nothing"
+
+        def runs(v, agent_id):
+            """Started by the leader's table, and writing its row on the node the table names."""
+            row = placement_row(v, agent_id)
+            return row.get("state") == "started" and agent_id.split(":", 1)[1] in rt_rows(v, row.get("nodeId"))
+
+        mark = {node: node_log_mark(node) for node in (leader, asker)}
+        print(f"    asking {asker} for more of {WORKER_AGENT_TYPE} than the {sum(free.values())} free slots of {free}")
+        for index in EXTRA_FLEET_INDEXES:
+            agent_id = f"{WORKER_AGENT_TYPE}:{index}"
+            assert client(asker, "test:cluster:agent:place", WORKER_AGENT_TYPE, str(index)), \
+                f"could not ask {asker} to place {agent_id}"
+
+            def answered(v, agent_id=agent_id):
+                return runs(v, agent_id) or placement_refusal(v, agent_id) is not None
+
+            views = wait_until(answered, CONVERGE_TIMEOUT, f"{agent_id} running, or the leader's refusal of it")
+            held = {slave: live_on(views, slave) for slave in SLAVES}
+            assert all(count <= COSTLESS_SLOTS for count in held.values()), \
+                f"a slave holds more live placements than its {COSTLESS_SLOTS} slots after {agent_id}: {held}"
+            if runs(views, agent_id):
+                extras.append(agent_id)
+                continue
+            refused = agent_id
+            break
+        assert refused is not None, \
+            f"all {len(EXTRA_FLEET_INDEXES)} extra fleet members were placed: the slots capped nothing"
+        assert extras, f"{refused}, the first one asked, was refused although {free} slots were free"
+
+        # Refused where the slots ran out, and for that alone: each slave short of one slot, the
+        # master turned down by the first gate, for the tag the fleet requires.
+        expected = [node_refusal(node, REFUSAL_MISSING_CAPABILITIES, missing=[CAPABILITY_WORKER]) if node in MASTERS
+                    else node_refusal(node, REFUSAL_INSUFFICIENT_CAPACITY, shortfalls={RESOURCE_SLOTS: (1, 0)})
+                    for node in sorted(ALL_NODES)]
+        refusal = placement_refusal(views, refused)
+        assert refusal.get("refusals") == expected, \
+            f"{leader} refused {refused} for {refusal.get('refusals')}, not {expected}"
+        assert placement_row(views, refused) == {}, \
+            f"{refused} was refused yet has a record: {placement_row(views, refused)}"
+        held = {slave: live_on(views, slave) for slave in SLAVES}
+        assert all(count == COSTLESS_SLOTS for count in held.values()), \
+            f"{refused} was refused for want of a slot while the slaves hold {held} of {COSTLESS_SLOTS}"
+        stopped = [agent_id for agent_id in extras if not runs(views, agent_id)]
+        assert not stopped, f"extra fleet members stopped running once the slots ran out: {stopped}"
+
+        assert ANSWERING_ASK_LINE.format(refused, "unplaced") in node_log_since(leader, mark[leader]), \
+            f"{leader} never answered {asker}'s ask for {refused}"
+        dropped = [line for line in node_log_since(asker, mark[asker]).splitlines() if PEER_LINK_DROPPED_LINE in line]
+        assert not dropped, f"{asker} dropped a peer link while it was answered: {dropped}"
+        assert node_online(views, asker), f"{asker} fell out of the cluster while it was answered"
+    finally:
+        print("    restarting the stand on its own compose file")
+        code = control.restart(STAND, f"{sys.argv[0]} {STAND.compose}")
+        assert code == 0, f"the stand did not come back up after scenario 37 (exit {code})"
+        wait_converge(ALL_NODES)
+
+        def restored(v):
+            return (fleet_started(v)
+                    and not any(f"{RESOURCE_SLOTS}={COSTLESS_SLOTS}" in declared_capabilities(v, slave)
+                                for slave in SLAVES))
+
+        wait_until(restored, CONVERGE_TIMEOUT, "the stand back on its own room with only its own fleet")
+
+    return (f"{asker} asked for {len(extras)} more fleet member(s) and all ran ({held} live of "
+            f"{COSTLESS_SLOTS} slots); {refused} was refused for want of a slot on {', '.join(SLAVES)}, "
+            "without a record")
 
 
 def scenario_19_worker_death_on_live_node():
@@ -2783,12 +3028,18 @@ def placed_on_node_at(text, agent_id):
     return [(log_time(stamp), node) for stamp, node in pattern.findall(text)]
 
 
-def assert_leader_took_no_new_member(views):
-    """The leader carries no fleet member it did not hold before it won its term (HIL-445, rule 3).
+def assert_leader_last_among_equals(views):
+    """The leader took fleet members only while its share was the lowest (HIL-445, rule 3).
 
-    Last among equals is a rule about NEW work: a master that carried members and then won a term
-    keeps them, and a stand raised a moment ago can re-elect on its own (P-459). So a member on
-    the leader is a failure only when the leader started it after its own last won term.
+    Every placed agent takes one slot (HIL-447) and equal masters declare the same slots, so a
+    master's share is the number of agents placed on it. The leader takes an agent only when its
+    share after placement is lower than every other master's - an equal share goes to a master
+    that does not lead - so a leader that took any runs no more placed agents than any other
+    master. Last among equals is a rule about NEW work: a master that carried members and then
+    won a term keeps them, and a stand raised a moment ago can re-elect on its own (P-459), so
+    only members the leader started after its own last won term were taken by it; and a master
+    that runs no placed agent at all was not there for the first placement, which the others
+    shared between them.
     """
     leader = leaders(views)[0]
     on_leader = hosted_by(views, leader)
@@ -2799,10 +3050,16 @@ def assert_leader_took_no_new_member(views):
     assert won, f"{leader} leads, but its log has no won-term line (read {node_log_path(leader)})"
     won_at = log_time(won[-1])
     taken = sorted(member for member in on_leader if any(t > won_at for t in started_on_worker_at(log, member)))
-    assert not taken, (f"leader {leader} took fleet member(s) {taken} after it won its term while "
-                       f"{[n for n in MASTERS if n != leader]} could carry them: the leader is last among "
-                       "equal masters (HIL-445)")
-    print(f"    leader {leader} carries {len(on_leader)} member(s) it held before it won its term (P-459)")
+    if not taken:
+        print(f"    leader {leader} carries {len(on_leader)} member(s) it held before it won its term (P-459)")
+        return
+    live = {node: live_on(views, node) for node in MASTERS}
+    fewer = {node: count for node, count in live.items() if node != leader and 0 < count < live[leader]}
+    assert not fewer, (f"leader {leader} took fleet member(s) {taken} after it won its term and runs "
+                       f"{live[leader]} placed agent(s), more than {fewer}: the leader takes work only while "
+                       "its share is the lowest, last among equal masters (HIL-445, HIL-447)")
+    print(f"    leader {leader} took {len(taken)} member(s) in its term, last among equal shares: "
+          f"placed agents by master {live}")
 
 
 def spread_fleet_over(carriers, views):
@@ -2810,7 +3067,7 @@ def spread_fleet_over(carriers, views):
 
     One of them carries none only when it was not there for the first placement. One worker of the
     other is killed, and the leader places the members it hosted again - on the empty master,
-    which runs the fewest agents, and the leader stays last.
+    which runs the fewest agents and so holds the lowest share.
     """
     empty = [node for node in carriers if not hosted_by(views, node)]
     if not empty:
@@ -2830,12 +3087,14 @@ def spread_fleet_over(carriers, views):
 def scenario_24_cut_off_leader_stops_its_work():
     """A leader that carries work and is cut off stops it before the majority runs it (HIL-1217).
 
-    On a stand of equal masters that carry the work themselves the leader takes none while another
-    master can (HIL-445, rule 3), so it holds work only by inheritance: the leader dies and a
-    master carrying members wins the next term, keeping them, while its neighbours' members keep
-    writing past the fence window of the leader that placed them (as in scenario 5). One worker is
-    killed first when only one of the masters that do not lead carries any, so whichever of the
-    two wins carries members.
+    On a stand of equal masters that carry the work themselves every placed agent takes a slot
+    (HIL-447), so the leader takes its share of the fleet too, last only among equal shares
+    (HIL-445, rule 3) - asserted first, on the fleet as the first placement laid it. The leader
+    cut off below carries work it inherited as well: the first leader dies and a master carrying
+    members wins the next term, keeping them, while its neighbours' members keep writing past the
+    fence window of the leader that placed them (as in scenario 5). One worker is killed first
+    when only one of the masters that do not lead carries any, so whichever of the two wins
+    carries members.
 
     That leader is then cut off. Without a quorum it leads nobody and nobody can take its work
     over, so it fences the work itself; and the majority's fresh leader places nothing it has no
@@ -2849,7 +3108,7 @@ def scenario_24_cut_off_leader_stops_its_work():
     scenario 8.
     """
     views = wait_until(fleet_started, CONVERGE_TIMEOUT, "the fleet is placed before the leader moves")
-    assert_leader_took_no_new_member(views)
+    assert_leader_last_among_equals(views)
     old_leader = leaders(views)[0]
     carriers = [n for n in MASTERS if n != old_leader]
     spread_fleet_over(carriers, views)
@@ -3571,6 +3830,9 @@ SCENARIOS = [
              Need(database_members=3)),
     Scenario("28 database member comes back and catches up", scenario_28_database_member_comes_back_and_catches_up,
              Need(database_members=3)),
+    # Right before 18: it fills both slaves to slots of its own and leaves by a full restart of the
+    # stand, so 18 meets the room the compose file declares, and nothing it placed on the way.
+    Scenario("37 costless agents consume slots", scenario_37_costless_agents_consume_slots, Need(slaves=2)),
     Scenario("18 capacity is consumed", scenario_18_capacity_is_consumed,
              Need(masters=1, slaves=1, slave_ram=True)),
     # Both recreate or stop a slave and restore it before the freeze pair stops every master's agents.

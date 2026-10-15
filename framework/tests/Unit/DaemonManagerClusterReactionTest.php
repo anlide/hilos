@@ -74,7 +74,8 @@ final class DaemonManagerClusterReactionTest extends TestCase
         $logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-quorum-fence-log');
         Logger::setLogFile($logFile);
         $executor = new FakePlacementExecutor(workerId: 5);
-        $placement = new ClusterPlacement('master', new FakePlacementMesh([], linked: ['leader']), $executor, null, slaveWorkGraceMs: 500);
+        $mesh = new FakePlacementMesh(['master' => ['slots=10']], linked: ['leader']);
+        $placement = new ClusterPlacement('master', $mesh, $executor, null, slaveWorkGraceMs: 500);
         $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
         $context = new ClusterContext();
         $context->registerPlacement($placement);

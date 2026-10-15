@@ -2569,8 +2569,8 @@ abstract class WorkerServer extends AbstractServer implements
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
-     * @return ResourceProfile Resource cost; empty when the agent consumes nothing
-     * @throws LogicException When the agent declares a negative cost
+     * @return ResourceProfile Project cost; empty when the agent adds nothing to its slot
+     * @throws LogicException When the agent declares a negative cost or the reserved slot
      * @throws AgentDaemonCreationFailedException If the agent daemon cannot be built
      * @throws HilosException Whatever the project's agent-daemon factory raises
      */

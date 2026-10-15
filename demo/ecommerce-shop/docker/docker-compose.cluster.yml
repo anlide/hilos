@@ -25,7 +25,7 @@ name: hilos-ecommerce-shop-cluster
 # below; the nodes, their addresses, roles, room and log directories it takes from the services.
 x-hilos-cluster:
   cli: ecommerce-shop-cluster-cli
-  scenarios: [3, 4, 6, 9, 12, 14, 16, 18, 19]
+  scenarios: [3, 4, 6, 9, 12, 14, 16, 18, 19, 37]
 
 x-node-base: &node-base
   build: .
@@ -169,12 +169,15 @@ services:
       CLUSTER_TLS_CERT_FILE: /app/docker/tls/s1.pem
       CLUSTER_NODE_ROLE: slave
       # `worker` is the tag the probe fleet asks of its host. The ram is the room scenario 18
-      # fills with the ballast (ram=2 apiece), and what makes the node take placed work at all:
-      # a node that declares no key=value accepts none (HIL-445, rule 4). s2 declares less on
-      # purpose - unequal room shows that the ballast goes by the declared room, not by the head
-      # count. Nothing but the ballast spends ram on this stand: the demo's own agents cost
-      # nothing.
-      CLUSTER_NODE_CAPABILITIES: "worker,ram=10"
+      # fills with the ballast (ram=2 apiece). The slots are what makes the node take placed
+      # work at all: every placed agent, ballast and fleet alike, takes one (HIL-447), and 64
+      # is far more than the stand places, so the ram stays the room the ballast runs out of;
+      # a node that declares no key=value accepts none (HIL-445, rule 4). s2 declares less ram
+      # on purpose - unequal room shows that the ballast goes by the declared room, not by the
+      # head count. Nothing but the ballast spends ram on this stand: the demo's own agents
+      # cost their slot and nothing more. Scenario 37 recreates both slaves with slots=16 of
+      # their own for its run, few enough to fill, and restarts the stand on this file after.
+      CLUSTER_NODE_CAPABILITIES: "worker,ram=10,slots=64"
       CLUSTER_PEER_ADVERTISE: "10.222.0.14:8095"
       CLUSTER_SEEDS: "10.222.0.11:8095,10.222.0.15:8095"
       # Fleet members share these regular workers. A member's synthetic job blocks its
@@ -200,8 +203,8 @@ services:
       CLUSTER_NODE_ID: s2
       CLUSTER_TLS_CERT_FILE: /app/docker/tls/s2.pem
       CLUSTER_NODE_ROLE: slave
-      # Less room than s1 on purpose; see the comment there.
-      CLUSTER_NODE_CAPABILITIES: "worker,ram=4"
+      # Less ram than s1 on purpose, the same slots; see the comment there.
+      CLUSTER_NODE_CAPABILITIES: "worker,ram=4,slots=64"
       CLUSTER_PEER_ADVERTISE: "10.222.0.15:8095"
       CLUSTER_SEEDS: "10.222.0.11:8095,10.222.0.14:8095"
       # Regular workers the fleet members share on this node; see s1.

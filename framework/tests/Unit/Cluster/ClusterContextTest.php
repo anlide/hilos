@@ -11,6 +11,7 @@ use Hilos\Cluster\Consensus\ConsensusInspection;
 use Hilos\Cluster\Consensus\ConsensusRole;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\Exception\ClusterDisabledException;
+use Hilos\Cluster\Exception\PlacementCapabilityException;
 use Hilos\Cluster\Leadership;
 use Hilos\Cluster\LocalNodeAnnouncer;
 use Hilos\Cluster\MembershipObserver;
@@ -18,10 +19,15 @@ use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeLifecycleState;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\ConnectionPolicy;
+use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacedAgentEntry;
+use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\FullMeshConnectionPolicy;
 use Hilos\Cluster\Placement\BestFitPlacementPolicy;
+use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementCandidate;
 use Hilos\Cluster\Placement\PlacementPolicy;
+use Hilos\Cluster\Placement\PlacementRefusal;
 use Hilos\Cluster\Placement\ResourceProfile;
 use Hilos\Cluster\PendingLeadership;
 use Hilos\Cluster\StandaloneLeadership;
@@ -30,11 +36,14 @@ use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime as StateAdminViewModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Tests\Unit\Cluster\Placement\FakePlacementExecutor;
+use Hilos\Tests\Unit\Cluster\Placement\FakePlacementMesh;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for the cluster facade context: mode gating and identity access (HIL-177).
+ * Unit tests for the cluster facade context: mode gating and identity access (HIL-177), and the
+ * inspect reply, why placed work does not run included (HIL-447).
  */
 final class ClusterContextTest extends TestCase
 {
@@ -337,6 +346,7 @@ final class ClusterContextTest extends TestCase
         $this->assertNull($inspection[ClusterCommandConstants::FIELD_CONSENSUS_ROLE]);
         $this->assertFalse($inspection[ClusterCommandConstants::FIELD_HAS_QUORUM]);
         $this->assertSame([], $inspection[ClusterCommandConstants::FIELD_PLACEMENTS]);
+        $this->assertSame([], $inspection[ClusterCommandConstants::FIELD_PLACEMENT_REFUSALS_SNAPSHOT]);
         $this->assertFalse($inspection[ClusterCommandConstants::FIELD_ADMIN_VIEW_MODE]);
 
         $nodes = $inspection[ClusterCommandConstants::FIELD_NODES];
@@ -433,6 +443,150 @@ final class ClusterContextTest extends TestCase
         $this->assertSame(7, $inspection[ClusterCommandConstants::FIELD_TERM]);
         $this->assertSame('leader', $inspection[ClusterCommandConstants::FIELD_CONSENSUS_ROLE]);
         $this->assertTrue($inspection[ClusterCommandConstants::FIELD_HAS_QUORUM]);
+    }
+
+    /**
+     * A failed record says why in its row, a running one says nothing, and every other field of
+     * the row is what it was (HIL-447).
+     */
+    public function testInspectCarriesTheReasonAndRefusalsBesideTheRecord(): void
+    {
+        $this->enableClusterNode();
+        [$context, $placement] = $this->contextWithALeader();
+        $refusal = PlacementRefusal::insufficientCapacity('node-b', ['slots' => ['cost' => 1.0, 'free' => 0.0]]);
+        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '1')]));
+        $placement->placeAgentOnNode('render', '9', 'node-b');
+        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::failed('render', '9', 'node-b is full', [$refusal]));
+
+        $rows = [];
+        foreach ($context->inspect()[ClusterCommandConstants::FIELD_PLACEMENTS] as $row) {
+            $rows[$row[ClusterCommandConstants::FIELD_PLACEMENT_AGENT_ID]] = $row;
+        }
+
+        $this->assertSame([
+            ClusterCommandConstants::FIELD_PLACEMENT_AGENT_TYPE => 'render',
+            ClusterCommandConstants::FIELD_PLACEMENT_AGENT_INDEX => '1',
+            ClusterCommandConstants::FIELD_PLACEMENT_AGENT_ID => 'render:1',
+            ClusterCommandConstants::FIELD_NODE_ID => 'node-c',
+            ClusterCommandConstants::FIELD_PLACEMENT_STATE => 'started',
+            ClusterCommandConstants::FIELD_PLACEMENT_REASON => null,
+            ClusterCommandConstants::FIELD_PLACEMENT_REFUSALS => [],
+        ], $rows['render:1']);
+        $this->assertSame(
+            '{"agentType":"render","agentIndex":"9","agentId":"render:9","nodeId":"node-b","state":"failed",'
+            . '"reason":"node-b is full","refusals":[{"nodeId":"node-b","reasonCode":"insufficient_capacity",'
+            . '"missingCapabilities":[],"shortfalls":{"slots":{"cost":1,"free":0}}}]}',
+            json_encode($rows['render:9']),
+        );
+    }
+
+    /**
+     * New work no node takes has no record; the leader's snapshot is the one place it shows, with
+     * every node's refusal on the wire form (HIL-447).
+     */
+    public function testInspectListsALastRefusalThatHasNoRecord(): void
+    {
+        $this->enableClusterNode();
+        [$context, $placement] = $this->contextWithALeader(nodeB: ['worker']);
+        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '1')]));
+
+        $this->assertNull($placement->placeAgentOnBestNode('render', '9'));
+        $inspection = $context->inspect();
+
+        $this->assertSame(
+            ['render:1'],
+            array_column($inspection[ClusterCommandConstants::FIELD_PLACEMENTS], ClusterCommandConstants::FIELD_PLACEMENT_AGENT_ID),
+            'The refused agent has no row',
+        );
+        $this->assertSame(
+            '[{"agentType":"render","agentIndex":"9","agentId":"render:9",'
+            . '"reason":"no capable and online node fits the agent","refusals":['
+            . '{"nodeId":"node-a","reasonCode":"missing_capabilities","missingCapabilities":["worker"],"shortfalls":{}},'
+            . '{"nodeId":"node-b","reasonCode":"no_declared_capacity","missingCapabilities":[],"shortfalls":{}},'
+            . '{"nodeId":"node-c","reasonCode":"insufficient_capacity","missingCapabilities":[],'
+            . '"shortfalls":{"slots":{"cost":1,"free":0}}}]}]',
+            json_encode($inspection[ClusterCommandConstants::FIELD_PLACEMENT_REFUSALS_SNAPSHOT]),
+        );
+    }
+
+    /**
+     * A refused move keeps the agent's record running and its row clean, while the snapshot shows
+     * the attempt (HIL-447).
+     */
+    public function testInspectShowsARefusedMoveBesideTheRecordThatStillRuns(): void
+    {
+        $this->enableClusterNode();
+        [$context, $placement] = $this->contextWithALeader(nodeB: ['worker']);
+        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+
+        try {
+            $placement->placeAgentOnNode('render', '9', 'node-b');
+            $this->fail('node-b declares no capacity');
+        } catch (PlacementCapabilityException) {
+            // expected
+        }
+        $inspection = $context->inspect();
+
+        $row = $inspection[ClusterCommandConstants::FIELD_PLACEMENTS][0];
+        $this->assertSame('node-c', $row[ClusterCommandConstants::FIELD_NODE_ID]);
+        $this->assertSame('started', $row[ClusterCommandConstants::FIELD_PLACEMENT_STATE]);
+        $this->assertNull($row[ClusterCommandConstants::FIELD_PLACEMENT_REASON]);
+        $this->assertSame([], $row[ClusterCommandConstants::FIELD_PLACEMENT_REFUSALS]);
+
+        $snapshots = $inspection[ClusterCommandConstants::FIELD_PLACEMENT_REFUSALS_SNAPSHOT];
+        $this->assertCount(1, $snapshots);
+        $this->assertSame('render:9', $snapshots[0][ClusterCommandConstants::FIELD_PLACEMENT_AGENT_ID]);
+        $this->assertSame(
+            'no_declared_capacity',
+            $snapshots[0][ClusterCommandConstants::FIELD_PLACEMENT_REFUSALS][0][PlacementRefusal::FIELD_REASON_CODE],
+        );
+    }
+
+    public function testInspectOfANodeThatDoesNotLeadListsNoRefusals(): void
+    {
+        $this->enableClusterNode();
+        [$context, $placement] = $this->contextWithALeader(nodeB: ['worker']);
+        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '1')]));
+        $this->assertNull($placement->placeAgentOnBestNode('render', '9'));
+        $this->assertCount(1, $context->inspect()[ClusterCommandConstants::FIELD_PLACEMENT_REFUSALS_SNAPSHOT]);
+
+        $placement->onLostLeadership();
+
+        $this->assertSame([], $context->inspect()[ClusterCommandConstants::FIELD_PLACEMENT_REFUSALS_SNAPSHOT]);
+    }
+
+    /**
+     * Turns cluster mode on for this node, the way the inspect cases need it.
+     */
+    private function enableClusterNode(): void
+    {
+        putenv('CLUSTER_ENABLED=true');
+        putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_ROLE=master');
+    }
+
+    /**
+     * Builds a context whose placement coordinator leads a settled term over node-a (itself, with
+     * no tags at all), node-b and node-c (one slot), all online and hosting nothing yet.
+     *
+     * @param list<string> $nodeB Capability tags node-b advertises
+     * @return array{0: ClusterContext, 1: ClusterPlacement} Context and the coordinator it inspects
+     */
+    private function contextWithALeader(array $nodeB = ['worker', 'slots=4']): array
+    {
+        $mesh = new FakePlacementMesh(
+            capabilities: ['node-b' => $nodeB, 'node-c' => ['worker', 'slots=1']],
+            linked: ['node-b', 'node-c'],
+            online: ['node-a', 'node-b', 'node-c'],
+        );
+        $placement = new ClusterPlacement('node-a', $mesh, new FakePlacementExecutor(['worker']));
+        $placement->onBecameLeader(1000.0);
+        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([]));
+        $context = new ClusterContext();
+        $context->registerPlacement($placement);
+
+        return [$context, $placement];
     }
 
     public function testPlacementPolicyDefaultsToBestFitWhenNoneIsRegistered(): void

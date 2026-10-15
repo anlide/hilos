@@ -16,12 +16,14 @@ use Throwable;
  * ProbeFleetSupervisor - the leader's keeper of the cluster probe fleet ({@see FleetProbeAgent}).
  *
  * While this node leads, it hands every fleet member to the framework's best-fit policy (HIL-182,
- * HIL-448). A member declares the worker capability and no cost at all, so the policy gates on
- * the tag and on a node having declared some capacity, and then spreads the fleet by head count:
- * the strongest node is a tie-breaker far down that list, not the target. Failover defaults
- * (HIL-183) re-place the lost node's share when a node dies. Placement is idempotent per member -
- * a tracked record, in any state, suppresses re-placing - so the leader never double-runs a
- * member, and a fresh leader re-derives the fleet from the mesh.
+ * HIL-448). A member declares the worker capability and no project cost, so placement charges it
+ * its one mandatory slot (HIL-447): the policy gates on the tag, on a node having declared some
+ * capacity and on a free slot, and then spreads the fleet by each node's share of the slots it
+ * declares, the leader last among equal shares; the strongest node is a tie-breaker far down that
+ * list, not the target. Failover defaults (HIL-183) re-place the lost node's share when a node
+ * dies. Placement is idempotent per member - a tracked record, in any state, suppresses
+ * re-placing - so the leader never double-runs a member, and a fresh leader re-derives the fleet
+ * from the mesh.
  *
  * Its own pass beside the framework's policy sweep because that sweep leaves indexed pools alone:
  * how many members a pool has is known only to whoever declared it, and this pool is the
