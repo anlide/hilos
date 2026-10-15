@@ -91,7 +91,7 @@ patterns even inside backticks. The provisioning script validates names and the
 64-character limit and performs that escaping. It never clears a database.
 
 The backend registers all three journal pages and their table bindings.
-The Angular views follow in HIL-1463.
+The Angular views follow in HIL-1556.
 
 ## First run
 

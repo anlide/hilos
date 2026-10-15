@@ -5,6 +5,7 @@ narrow the history to one record; the receipt modal reads through the Change
 Log's own reading action. Bootstrap classes only. -->
 <script setup lang="ts">
 import {
+  CHANGE_LOG_ON_BEHALF_OF_TEXT,
   CHANGE_LOG_RECORD_ROUTE_PARAM,
   CHANGE_LOG_TABLE_COPY as copy,
   CHANGE_LOG_TABLE_ROUTE_PARAM,
@@ -21,8 +22,7 @@ import {
   formatChangeLogMutation,
   formatChangeLogOnBehalfOf,
   formatChangeLogRecordKey,
-  formatChangeLogTableChanges,
-  formatChangeLogTableLastChange,
+  formatChangeLogTableActivity,
   formatChangeLogTableOwner,
   formatChangeLogTime,
   formatChangeLogTrigger,
@@ -182,9 +182,7 @@ onUnmounted(() => {
           {{ CHANGE_LOG_TABLES_UNTRACKED_NOTE }}
         </span>
         <div v-if="table.journaled" class="w-100 small text-body-secondary">
-          Last 24 hours: {{ formatChangeLogTableChanges(table.changesLast24h) }}
-          · Last change:
-          {{ formatChangeLogTableLastChange(table.lastChangeAt) }}
+          {{ formatChangeLogTableActivity(table) }}
         </div>
       </div>
 
@@ -434,7 +432,7 @@ onUnmounted(() => {
                 v-if="row.subjectId !== null"
                 class="small text-body-secondary"
               >
-                on behalf of
+                {{ CHANGE_LOG_ON_BEHALF_OF_TEXT }}
                 <template v-if="isHiddenValue(formatChangeLogOnBehalfOf(row))">
                   <HilosHiddenMark /> (#{{ row.subjectId }})
                 </template>

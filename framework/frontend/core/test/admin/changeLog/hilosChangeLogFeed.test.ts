@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   createHilosChangeLogFeedTable,
+  formatChangeLogFeedOpenLabel,
   resolveHilosChangeLogFeedRow,
 } from '../../../src/admin/changeLog/hilosChangeLogFeed.js'
 import { type HilosChangeLogContext } from '../../../src/admin/changeLog/hilosChangeLog.js'
@@ -113,6 +114,17 @@ describe('change-log feed row', () => {
     expect(row.receiptId).toBeNull()
     expect(row.entryId).toBe(8)
     expect(row.touched).toEqual([])
+  })
+
+  it('labels the open button by the receipt or by the bare entry', () => {
+    const receipt = resolveHilosChangeLogFeedRow(
+      rawRow('receipt:7', { kind: 'receipt', receiptId: 7, entryId: null }),
+    )
+    const bare = resolveHilosChangeLogFeedRow(
+      rawRow('entry:8', { kind: 'entry', receiptId: null, entryId: 8 }),
+    )
+    expect(formatChangeLogFeedOpenLabel(receipt)).toBe('View receipt #7')
+    expect(formatChangeLogFeedOpenLabel(bare)).toBe('View change #8')
   })
 })
 

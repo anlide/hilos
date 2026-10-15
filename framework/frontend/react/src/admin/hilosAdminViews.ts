@@ -7,10 +7,11 @@
 // bootHilos projectViews. HILOS_UNBUILT_PAGES hides pages the layer has not built:
 // the router answers 404 and no card links to them.
 //
-// The users / user / settings / backup / maintenance, communications hub / channel
-// and the log pages that read live data are intentionally absent: they are real framework pages
+// The users / user / settings / backup / maintenance, communications hub / channel,
+// Change Log and the log pages that read live data are intentionally absent: they are real framework pages
 // (HilosUsersPage / HilosUserPage / HilosSettingsPage / HilosBackupPage / HilosMaintenancePage /
-// HilosCommunicationsPage / HilosCommunicationsChannelPage / HilosLogsPage /
+// HilosCommunicationsPage / HilosCommunicationsChannelPage / HilosChangeLogPage /
+// HilosChangeLogTablesPage / HilosChangeLogTablePage / HilosLogsPage /
 // HilosLogsKeysPage / HilosLogsWorkersPage / HilosLogsRotationsPage /
 // HilosLogsViewPage / HilosLogsSettingsPage) that require a project-supplied context,
 // so a project mounts them directly rather than through this default map. The
@@ -49,9 +50,6 @@ import { HilosBillingPaymentsPage } from './billing/HilosBillingPaymentsPage.js'
 import { HilosBillingRefundsPage } from './billing/HilosBillingRefundsPage.js'
 import { HilosOperationsPage } from './operations/HilosOperationsPage.js'
 import { HilosDaemonWebsocketsPage } from './daemon/HilosDaemonWebsocketsPage.js'
-import { HilosChangeLogPage } from './changeLog/HilosChangeLogPage.js'
-import { HilosChangeLogTablesPage } from './changeLog/HilosChangeLogTablesPage.js'
-import { HilosChangeLogTablePage } from './changeLog/HilosChangeLogTablePage.js'
 import { HilosAnalyticsPage } from './analytics/HilosAnalyticsPage.js'
 import { HilosMcpSkillsPage } from './mcpSkills/HilosMcpSkillsPage.js'
 import { HilosMcpSkillsMcpPage } from './mcpSkills/HilosMcpSkillsMcpPage.js'
@@ -124,9 +122,10 @@ export function hilosAdminViews(): Record<string, ComponentType> {
     // drawn from. So a project mounts HilosLogsPage, HilosLogsKeysPage,
     // HilosLogsWorkersPage, HilosLogsRotationsPage, HilosLogsSettingsPage and
     // HilosLogsViewPage directly with its own context.
-    [HilosPages.CHANGE_LOG]: HilosChangeLogPage,
-    [HilosPages.CHANGE_LOG_TABLES]: HilosChangeLogTablesPage,
-    [HilosPages.CHANGE_LOG_TABLE]: HilosChangeLogTablePage,
+    // The three pages of the change-log section are mounted with context too:
+    // CHANGE_LOG, CHANGE_LOG_TABLES and CHANGE_LOG_TABLE read a live connection
+    // and page scope, so a project mounts HilosChangeLogPage,
+    // HilosChangeLogTablesPage and HilosChangeLogTablePage directly.
     [HilosPages.ANALYTICS]: HilosAnalyticsPage,
     [HilosPages.MCP_SKILLS]: HilosMcpSkillsPage,
     [HilosPages.MCP_SKILLS_MCP]: HilosMcpSkillsMcpPage,

@@ -176,6 +176,19 @@ export function resolveHilosChangeLogFeedRow(
 }
 
 /**
+ * Label the button opening a feed row's receipt or bare journal entry.
+ *
+ * @param row Feed row the button opens.
+ */
+export function formatChangeLogFeedOpenLabel(
+  row: HilosChangeLogFeedRow,
+): string {
+  return row.kind === 'receipt'
+    ? `View receipt #${row.receiptId}`
+    : `View change #${row.entryId}`
+}
+
+/**
  * Build the feed viewport over the change-log dashboard page.
  *
  * @param context Connection and page scope.

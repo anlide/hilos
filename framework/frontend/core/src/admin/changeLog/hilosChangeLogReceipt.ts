@@ -186,7 +186,24 @@ export const CHANGE_LOG_RECEIPT_COPY = {
   omitted: 'Value omitted',
   migrationRunner: 'Migration runner',
   unknown: '—',
+  unknownPerson: 'Unknown',
 } as const
+
+/**
+ * Title the dialog after the receipt or the bare journal entry it reads.
+ *
+ * @param dialog The current lazy snapshot, or null when closed.
+ */
+export function formatChangeLogReceiptTitle(
+  dialog: HilosChangeLogReceiptDialog | null,
+): string {
+  if (dialog === null) {
+    return ''
+  }
+  return dialog.kind === 'receipt'
+    ? `Receipt #${dialog.receiptId}`
+    : `Change #${dialog.entryId} past the application`
+}
 
 /**
  * Keep only the first occurrence of each entry, preserving journal order.

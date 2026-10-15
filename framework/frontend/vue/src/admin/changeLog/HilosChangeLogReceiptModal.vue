@@ -12,6 +12,7 @@ import {
   changeLogReceiptAttribution,
   changeLogReceiptPagination,
   changeLogRecordRouteParam,
+  formatChangeLogReceiptTitle,
   formatChangeLogTime,
   HilosPages,
   isHiddenValue,
@@ -37,13 +38,7 @@ const props = defineProps<{
 
 const router = inject(hilosRouterKey, undefined)
 
-const title = computed(() =>
-  props.dialog?.kind === 'receipt'
-    ? `Receipt #${props.dialog.receiptId}`
-    : props.dialog?.kind === 'entry'
-      ? `Change #${props.dialog.entryId} past the application`
-      : '',
-)
+const title = computed(() => formatChangeLogReceiptTitle(props.dialog))
 const attribution = computed(() =>
   props.dialog?.header
     ? changeLogReceiptAttribution(props.dialog.header)
@@ -205,7 +200,7 @@ async function hide(): Promise<void> {
         </dd>
         <dt class="col-sm-4">{{ copy.who }}</dt>
         <dd class="col-sm-8">
-          Unknown
+          {{ copy.unknownPerson }}
           <div class="small text-body-secondary">{{ copy.noReceipt }}</div>
         </dd>
       </dl>

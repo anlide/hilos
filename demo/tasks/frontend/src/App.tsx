@@ -36,6 +36,9 @@ import { currentUserName } from './bootstrap/session'
 import { PAGE_MAIN } from './pages/keys'
 import About from './views/About/About'
 import HilosBackup from './views/Hilos/Backup/Backup'
+import HilosChangeLog from './views/Hilos/ChangeLog/ChangeLog.js'
+import HilosChangeLogTables from './views/Hilos/ChangeLog/ChangeLogTables.js'
+import HilosChangeLogTable from './views/Hilos/ChangeLog/ChangeLogTable.js'
 import HilosDaemon from './views/Hilos/Daemon/Daemon.js'
 import HilosDaemonWorkers from './views/Hilos/Daemon/Workers.js'
 import HilosDaemonCron from './views/Hilos/Daemon/Cron.js'
@@ -90,6 +93,12 @@ const pages: Record<string, ComponentType> = {
   // the pages it implements itself; the rest render the framework default, never
   // recopied per project (page-module-structure.md).
   ...hilosAdminViews(),
+  // The framework Change Log section: the framework owns the feed, the tables
+  // viewport, the history and the receipt reader; the project binds its
+  // connection, page scope and action lifecycle (views/Hilos/ChangeLog).
+  [HilosPages.CHANGE_LOG]: HilosChangeLog,
+  [HilosPages.CHANGE_LOG_TABLES]: HilosChangeLogTables,
+  [HilosPages.CHANGE_LOG_TABLE]: HilosChangeLogTable,
   [HilosPages.I18N_LANGUAGES]: HilosI18nLanguages,
   [HilosPages.I18N_LANGUAGE]: HilosI18nLanguage,
   [HilosPages.I18N_LANGUAGE_NAMES]: HilosI18nLanguageNames,

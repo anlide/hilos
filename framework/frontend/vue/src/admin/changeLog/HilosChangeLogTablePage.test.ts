@@ -12,6 +12,7 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createSignal,
+  formatChangeLogTableActivity,
   hilosAdminAccess,
   type ActionErrorSignal,
   type ActionLifecycleSource,
@@ -385,7 +386,7 @@ describe('HilosChangeLogTablePage', () => {
     expect(header.text()).toContain(CHANGE_LOG_TABLE_COPY.journaled)
     expect(header.text()).not.toContain(CHANGE_LOG_TABLES_UNTRACKED_NOTE)
     expect(header.text().replace(/\s+/g, ' ')).toContain(
-      'Last 24 hours: 3 · Last change: —',
+      formatChangeLogTableActivity({ changesLast24h: 3, lastChangeAt: null }),
     )
 
     const columns = wrapper.get('[data-id="hilos-change-log-table-columns"]')

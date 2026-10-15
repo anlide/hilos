@@ -198,6 +198,18 @@ export {
   type HilosCommunicationsDeliveriesPageProps,
 } from './admin/communications/HilosCommunicationsDeliveriesPage.js'
 export {
+  HilosChangeLogPage,
+  type HilosChangeLogPageProps,
+} from './admin/changeLog/HilosChangeLogPage.js'
+export {
+  HilosChangeLogTablesPage,
+  type HilosChangeLogTablesPageProps,
+} from './admin/changeLog/HilosChangeLogTablesPage.js'
+export {
+  HilosChangeLogTablePage,
+  type HilosChangeLogTablePageProps,
+} from './admin/changeLog/HilosChangeLogTablePage.js'
+export {
   HilosLogsPage,
   type HilosLogsPageProps,
 } from './admin/logs/HilosLogsPage.js'

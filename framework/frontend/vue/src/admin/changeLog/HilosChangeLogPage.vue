@@ -5,6 +5,7 @@ This view draws them inside the admin shell. Bootstrap classes only. -->
 <script setup lang="ts">
 import {
   CHANGE_LOG_NO_RECEIPT_TEXT,
+  CHANGE_LOG_ON_BEHALF_OF_TEXT,
   CHANGE_LOG_OPEN_TABLES_LABEL,
   CHANGE_LOG_OVERVIEW_SECTION,
   CHANGE_LOG_SECTION_NOTE,
@@ -19,6 +20,7 @@ import {
   createHilosChangeLogReceiptReader,
   formatChangeLogCoverage,
   formatChangeLogEntries,
+  formatChangeLogFeedOpenLabel,
   formatChangeLogOnBehalfOf,
   formatChangeLogTime,
   formatChangeLogTouched,
@@ -138,7 +140,7 @@ onUnmounted(() => {
           <template v-else>{{ formatChangeLogWho(row) }}</template>
         </span>
         <div v-if="row.subjectId !== null" class="small text-body-secondary">
-          on behalf of
+          {{ CHANGE_LOG_ON_BEHALF_OF_TEXT }}
           <template v-if="isHiddenValue(formatChangeLogOnBehalfOf(row))">
             <HilosHiddenMark /> (#{{ row.subjectId }})
           </template>
@@ -178,11 +180,7 @@ onUnmounted(() => {
           :data-id="`hilos-change-log-open-${row.rowKey}`"
           @click="openDetails(row)"
         >
-          {{
-            row.kind === 'receipt'
-              ? `View receipt #${row.receiptId}`
-              : `View change #${row.entryId}`
-          }}
+          {{ formatChangeLogFeedOpenLabel(row) }}
         </button>
       </template>
       <template #empty>

@@ -123,6 +123,9 @@ export function formatChangeLogWho(
   return row.channel === 'web' ? 'Guest' : 'System'
 }
 
+/** Words that lead the person for whom the actor acted. */
+export const CHANGE_LOG_ON_BEHALF_OF_TEXT = 'on behalf of'
+
 /**
  * Name the person for whom the actor acted, when present.
  *

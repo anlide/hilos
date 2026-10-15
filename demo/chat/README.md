@@ -155,7 +155,8 @@ patterns even inside backticks. The provisioning script validates names and the
 The backend registers all three journal pages and their table bindings.
 The Vue views mount all three: the dashboard at `/hilos/change-log`, Tracked
 tables at `/hilos/change-log/tables`, and one table with its history at
-`/hilos/change-log/tables/{tableId}/{record?}`. React/Angular parity is HIL-1463.
+`/hilos/change-log/tables/{tableId}/{record?}`. Angular parity follows in
+HIL-1556.
 
 ## Running modes
 

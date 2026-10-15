@@ -17,6 +17,9 @@ import {
   HilosI18nCountriesPage,
   HilosI18nCountryPage,
   HilosI18nCountryNamesPage,
+  HilosChangeLogPage,
+  HilosChangeLogTablesPage,
+  HilosChangeLogTablePage,
   hilosAdminViews,
   HilosPageHeadingIdContext,
   HilosRouterContext,
@@ -38,6 +41,9 @@ import type {
   HilosI18nCountriesPageProps,
   HilosI18nCountryPageProps,
   HilosI18nCountryNamesPageProps,
+  HilosChangeLogPageProps,
+  HilosChangeLogTablesPageProps,
+  HilosChangeLogTablePageProps,
 } from '../src/index.js'
 
 it('exports the @hilos/react public surface', () => {
@@ -91,4 +97,22 @@ it('exports the props of all seven context-bound i18n pages', () => {
   expectTypeOf<
     Parameters<typeof HilosI18nCountryNamesPage>[0]
   >().toEqualTypeOf<HilosI18nCountryNamesPageProps>()
+})
+
+it('exports the three Change Log pages and leaves them out of the default map', () => {
+  expect(HilosChangeLogPage).toBeTypeOf('function')
+  expect(HilosChangeLogTablesPage).toBeTypeOf('function')
+  expect(HilosChangeLogTablePage).toBeTypeOf('function')
+  expect(hilosAdminViews()).not.toHaveProperty(HilosPages.CHANGE_LOG)
+  expect(hilosAdminViews()).not.toHaveProperty(HilosPages.CHANGE_LOG_TABLES)
+  expect(hilosAdminViews()).not.toHaveProperty(HilosPages.CHANGE_LOG_TABLE)
+  expectTypeOf<
+    Parameters<typeof HilosChangeLogPage>[0]
+  >().toEqualTypeOf<HilosChangeLogPageProps>()
+  expectTypeOf<
+    Parameters<typeof HilosChangeLogTablesPage>[0]
+  >().toEqualTypeOf<HilosChangeLogTablesPageProps>()
+  expectTypeOf<
+    Parameters<typeof HilosChangeLogTablePage>[0]
+  >().toEqualTypeOf<HilosChangeLogTablePageProps>()
 })

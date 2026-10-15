@@ -57,6 +57,11 @@ const CHANGE_LOG_COLUMNS_SECRET_FIELD = 'secret'
 /** Row payload key of the noise-mode column count. */
 const CHANGE_LOG_COLUMNS_NOISE_FIELD = 'noise'
 
+/** Label of the recent writes, shared by the column and the activity line. */
+const CHANGES_LABEL = 'Last 24 hours'
+/** Label of the last write, shared by the column and the activity line. */
+const LAST_CHANGE_LABEL = 'Last change'
+
 /** Explanation shown below the name of an untracked table. */
 export const CHANGE_LOG_TABLES_UNTRACKED_NOTE = 'No journal label — not written'
 
@@ -183,6 +188,18 @@ export function formatChangeLogTableLastChange(at: string | null): string {
 }
 
 /**
+ * Line one table's activity under the column labels of Tracked tables.
+ *
+ * @param table Table carrying its recent write count and last write instant.
+ */
+export function formatChangeLogTableActivity(table: {
+  readonly changesLast24h: number | null
+  readonly lastChangeAt: string | null
+}): string {
+  return `${CHANGES_LABEL}: ${formatChangeLogTableChanges(table.changesLast24h)} · ${LAST_CHANGE_LABEL}: ${formatChangeLogTableLastChange(table.lastChangeAt)}`
+}
+
+/**
  * Build the tables viewport over the Tracked tables page.
  *
  * @param context Connection and page scope.
@@ -206,14 +223,14 @@ export function createHilosChangeLogTablesTable(
     },
     {
       key: CHANGE_LOG_TABLES_CHANGES_FIELD,
-      label: 'Last 24 hours',
+      label: CHANGES_LABEL,
       sortable: true,
       headerClass: 'text-end',
       cellClass: 'text-end',
     },
     {
       key: CHANGE_LOG_TABLES_LAST_CHANGE_FIELD,
-      label: 'Last change',
+      label: LAST_CHANGE_LABEL,
       sortable: true,
       cellClass: 'text-nowrap',
     },

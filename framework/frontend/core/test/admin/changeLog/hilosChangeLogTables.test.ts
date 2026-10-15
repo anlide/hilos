@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import { type HilosChangeLogContext } from '../../../src/admin/changeLog/hilosChangeLog.js'
+import {
+  formatChangeLogTime,
+  type HilosChangeLogContext,
+} from '../../../src/admin/changeLog/hilosChangeLog.js'
 import {
   CHANGE_LOG_TABLES_UNTRACKED_NOTE,
   createHilosChangeLogTablesTable,
   formatChangeLogColumnCounts,
+  formatChangeLogTableActivity,
   formatChangeLogTableChanges,
   formatChangeLogTableLastChange,
   formatChangeLogTableOwner,
@@ -256,6 +260,19 @@ describe('change-log table labels', () => {
         timeStyle: 'medium',
       }),
     )
+  })
+
+  it('lines the activity under the column labels, keeping a zero', () => {
+    expect(
+      formatChangeLogTableActivity({ changesLast24h: 3, lastChangeAt: null }),
+    ).toBe('Last 24 hours: 3 · Last change: —')
+    expect(
+      formatChangeLogTableActivity({ changesLast24h: 0, lastChangeAt: null }),
+    ).toBe('Last 24 hours: 0 · Last change: —')
+    const at = '2026-10-09T10:11:12.123Z'
+    expect(
+      formatChangeLogTableActivity({ changesLast24h: 37, lastChangeAt: at }),
+    ).toBe(`Last 24 hours: 37 · Last change: ${formatChangeLogTime(at)}`)
   })
 })
 

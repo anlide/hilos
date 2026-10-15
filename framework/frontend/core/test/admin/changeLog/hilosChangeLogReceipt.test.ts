@@ -10,7 +10,9 @@ import {
   changeLogReceiptPagination,
   changeLogReceiptReadReplySchema,
   createHilosChangeLogReceiptReader,
+  formatChangeLogReceiptTitle,
   type HilosChangeLogEntry,
+  type HilosChangeLogReceiptDialog,
   type HilosChangeLogReceiptHeader,
   type HilosChangeLogReceiptReadReply,
 } from '../../../src/admin/changeLog/hilosChangeLogReceipt.js'
@@ -972,5 +974,33 @@ describe('change-log detail copy and projections', () => {
     })
     expect(HILOS_CHANGE_LOG_RECEIPT_READ).toBe('hilos_change_log_receipt_read')
     expect(HILOS_CHANGE_LOG_ENTRY_READ).toBe('hilos_change_log_entry_read')
+  })
+
+  it('titles the dialog by its receipt or bare entry, and leaves a closed one blank', () => {
+    const reading = {
+      busyInitial: true,
+      busyMore: false,
+      refusal: null,
+      outcome: null,
+      header: null,
+      entries: [],
+      nextAfterEntryId: null,
+      expanded: false,
+    }
+    const receipt: HilosChangeLogReceiptDialog = {
+      kind: 'receipt',
+      receiptId: 7,
+      ...reading,
+    }
+    const bare: HilosChangeLogReceiptDialog = {
+      kind: 'entry',
+      entryId: 11,
+      ...reading,
+    }
+    expect(formatChangeLogReceiptTitle(receipt)).toBe('Receipt #7')
+    expect(formatChangeLogReceiptTitle(bare)).toBe(
+      'Change #11 past the application',
+    )
+    expect(formatChangeLogReceiptTitle(null)).toBe('')
   })
 })
