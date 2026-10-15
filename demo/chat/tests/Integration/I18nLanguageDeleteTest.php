@@ -487,7 +487,9 @@ final class I18nLanguageDeleteTest extends IntegrationTestCase
     public function testDeletePageHandlerReturnsNull(bool $fromList): void
     {
         $page = $fromList ? new LanguagesListPage($this->agent) : new LanguageDetailPage($this->agent);
-        $dto = $fromList ? new HilosI18nLanguageRowDeleteActionDTO('fr') : new HilosI18nLanguageDeleteActionDTO('fr');
+        $dto = $fromList
+            ? new HilosI18nLanguageRowDeleteActionDTO(Hilos::$db->languages['fr']->id)
+            : new HilosI18nLanguageDeleteActionDTO(Hilos::$db->languages['fr']->id);
         $this->underAgent($this->agent, static function () use ($page, $dto): void {
             self::assertNull($page->onAction('delete-ak', $dto->getAction(), $dto));
         });
@@ -504,7 +506,7 @@ final class I18nLanguageDeleteTest extends IntegrationTestCase
                 'named' => "Language 'fr' cannot be deleted: manual names reference it.",
                 'writing' => "Language 'fr' cannot be deleted: manual names reference it.",
                 'country' => "Language 'fr' cannot be deleted: manual names reference it.",
-                'missing' => 'Unknown language: zz',
+                'missing' => 'Unknown language: 999999',
             ] as $scenario => $message) {
                 yield $door . ' ' . $scenario => [$fromList, $scenario, $message];
             }
@@ -581,7 +583,9 @@ final class I18nLanguageDeleteTest extends IntegrationTestCase
     {
         $page = $fromList ? new LanguagesListPage($this->agent) : new LanguageDetailPage($this->agent);
         $action = $fromList ? HilosSignalConstants::HILOS_I18N_LANGUAGE_ROW_DELETE : HilosSignalConstants::HILOS_I18N_LANGUAGE_DELETE;
-        $dto = $fromList ? new HilosI18nLanguageDeleteActionDTO('fr') : new HilosI18nLanguageRowDeleteActionDTO('fr');
+        $dto = $fromList
+            ? new HilosI18nLanguageDeleteActionDTO(Hilos::$db->languages['fr']->id)
+            : new HilosI18nLanguageRowDeleteActionDTO(Hilos::$db->languages['fr']->id);
         $this->expectException(InvalidActionPayloadException::class);
         $page->onAction('delete-ak', $action, $dto);
     }
@@ -602,7 +606,7 @@ final class I18nLanguageDeleteTest extends IntegrationTestCase
         $action = $fromList ? HilosSignalConstants::HILOS_I18N_LANGUAGE_ROW_DELETE : HilosSignalConstants::HILOS_I18N_LANGUAGE_DELETE;
         $router = new PageSignalRouter(new HilosPageFactory($this->agent, Hilos::class), new ActionRouteConfig([$action => $page]));
         $this->underAgent($this->agent, static fn () => $router->dispatchAction(
-            new WebSocketActionSignalDTO('delete-ak', $action, ['languageCode' => $code], 'delete-tracked'),
+            new WebSocketActionSignalDTO('delete-ak', $action, ['languageId' => Hilos::$db->languages[$code]?->id ?? 999999], 'delete-tracked'),
             'websocket',
         ));
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {

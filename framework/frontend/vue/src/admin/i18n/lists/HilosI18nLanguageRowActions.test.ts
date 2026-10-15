@@ -6,6 +6,8 @@ import { defineComponent, h } from 'vue'
 import HilosI18nLanguageRowActions from './HilosI18nLanguageRowActions.vue'
 
 const row: HilosI18nLanguageRow = {
+  languageId: 15,
+  rowKey: '15',
   code: 'es',
   nativeName: 'Español',
   rtl: false,

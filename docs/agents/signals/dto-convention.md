@@ -2,6 +2,11 @@
 
 Every signal carries a payload object implementing `SignalDataInterface`.
 
+Internal entity references and action targets follow
+[entity references](../orm/entity-references.md). Resolve external codes at the
+entry boundary, then serialize the captured primary ID and check its coordinates
+before writing.
+
 ## Base types
 
 | Class | Use |

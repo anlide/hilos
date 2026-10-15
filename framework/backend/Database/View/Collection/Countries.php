@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\View\Collection;
 
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Actions\Collection\CountriesActions;
 use Hilos\Database\DatabaseException;
@@ -38,6 +39,7 @@ class Countries extends DbCollection
      * @throws LogicException When collection classes are not configured
      * @throws EnvException When the default language setting is absent
      * @throws EnvInvalidValueException When its configured code is unknown
+     * @throws InvalidFormatException When a projected ID is not positive
      */
     public function cardSummary(int $countryId): CountryCardSummary
     {
@@ -51,6 +53,7 @@ class Countries extends DbCollection
         $locales = $country->locales;
         $defaultLocale = $country->defaultLocale;
         $choices = array_values($locales->map(static fn (Locale $locale): CountryLocaleChoice => new CountryLocaleChoice(
+            $locale->id,
             $locale->code,
             $locale->enabled,
         )));
@@ -59,6 +62,7 @@ class Countries extends DbCollection
         return new CountryCardSummary(
             name: $name === '' ? null : $name,
             isOwn: BuiltInI18nCatalog::country($country->code) === null,
+            defaultLocaleId: $country->defaultLocaleId,
             defaultLocaleCode: $defaultLocale?->code,
             defaultLocaleEnabled: $defaultLocale?->enabled,
             localeCount: count($locales),

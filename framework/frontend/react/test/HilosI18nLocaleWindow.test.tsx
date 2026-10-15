@@ -75,6 +75,18 @@ function busyClose(): void {
 }
 
 describe('React locale window forms', () => {
+  it('keeps the draft when a new locale takes the same parent pair', () => {
+    const h = setup()
+    change('i18n-locale-field-date', 'YYYY-MM-DD')
+    act(() => h.focused.set({ ...localeRow, localeId: 999 }))
+    expect(el<HTMLSelectElement>('i18n-locale-field-date').value).toBe(
+      'YYYY-MM-DD',
+    )
+    expect(el<HTMLButtonElement>('i18n-locale-submit').disabled).toBe(true)
+    expect(el('i18n-locale-submit').textContent).toBe('Deleted')
+    expect(h.calls).toHaveLength(0)
+  })
+
   it('prefills all seven closed selects from the focused catalog and sends fixed coordinates', async () => {
     const h = setup(absentLocale)
     const selects = document.querySelectorAll('select')
@@ -91,7 +103,7 @@ describe('React locale window forms', () => {
     expect(h.calls).toHaveLength(1)
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_locale_add',
-      payload: { languageCode: 'uk', countryCode: 'gb', formats },
+      payload: { languageId: 19, countryId: 101, formats },
     })
     busyClose()
     expect(el('i18n-locale-window')).not.toBeNull()
@@ -155,9 +167,10 @@ describe('React locale window forms', () => {
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_locale_update',
       payload: {
-        languageCode: 'uk',
-        countryCode: 'gb',
+        languageId: 19,
+        countryId: 101,
         formats: { ...formats, date: 'YYYY-MM-DD', measurement: 'imperial' },
+        localeId: 19101,
       },
     })
     await settle(() => h.refuse())
@@ -323,7 +336,11 @@ describe('React locale confirmations', () => {
       expect(h.calls).toHaveLength(1)
       expect(h.calls[0]).toMatchObject({
         action: `hilos_i18n_locale_switch_${direction}`,
-        payload: { languageCode: 'uk', countryCode: country },
+        payload: {
+          languageId: 19,
+          countryId: country === null ? null : 101,
+          localeId: country === null ? 19000 : 19101,
+        },
       })
       act(() => h.focused.set({ ...row, enabled: direction === 'on' }))
       expect(el('i18n-locale-notice-slot').textContent).not.toContain(

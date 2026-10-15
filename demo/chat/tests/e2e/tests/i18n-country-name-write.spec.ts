@@ -4,6 +4,7 @@ import {
   shownByTestId,
   sidewaysOverflow,
   watchHeight,
+  i18nNameRow,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import { setAdminViewMode } from '../helpers/adminViewMode.js'
@@ -34,7 +35,9 @@ async function openNames(page: Page): Promise<void> {
 
 /** Expand the writing language through the table's native chevron. */
 async function expandCorrections(page: Page): Promise<void> {
-  await clickSubmit(shownByTestId(page, 'hilos-table-expand-qk'))
+  await clickSubmit(
+    i18nNameRow(page, 'country', 'qk').getByTestId(/^hilos-table-expand-/),
+  )
   await expect(shownByTestId(page, 'i18n-names-inherit-qk-FR')).toHaveText(
     'as in “HIL-1501 writing”',
   )
@@ -67,7 +70,7 @@ async function expectName(
   const correction = key.includes('-')
   const surface = correction
     ? shownByTestId(page, `i18n-names-correction-${key}`)
-    : shownByTestId(page, new RegExp(`^hilos-table-(row|card)-${key}$`))
+    : i18nNameRow(page, 'country', key)
   await expect(surface).toContainText(value)
   await expect(
     shownByTestId(

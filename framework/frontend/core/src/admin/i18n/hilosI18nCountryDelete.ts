@@ -14,6 +14,7 @@ export const HILOS_I18N_COUNTRY_ROW_DELETE_ACTION =
 
 /** A dialog's frozen target and the same projection of its live source. */
 export interface HilosI18nCountryDeleteTarget {
+  readonly countryId: number
   readonly code: string
   readonly name: string | null
   readonly canDelete: boolean
@@ -65,6 +66,7 @@ export function hilosI18nCountryDeleteFromRow(
 ): HilosI18nCountryDeleteTarget | null {
   if (row == null) return null
   return {
+    countryId: row.countryId,
     code: row.code,
     name: row.name,
     canDelete: row.canDelete,
@@ -78,6 +80,7 @@ export function hilosI18nCountryDeleteFromCard(
 ): HilosI18nCountryDeleteTarget | null {
   if (card === null) return null
   return {
+    countryId: card.countryId,
     code: card.code,
     name: card.summary.name,
     canDelete: card.summary.canDelete,
@@ -88,11 +91,11 @@ export function hilosI18nCountryDeleteFromCard(
 /** Bind the card's deletion door to the project's tracked action lifecycle. */
 export function createHilosI18nCountryDelete(
   context: HilosI18nCountryContext,
-): { deleteCountry(countryCode: string): ActionHandle } {
+): { deleteCountry(countryId: number): ActionHandle } {
   return {
-    deleteCountry: (countryCode) =>
+    deleteCountry: (countryId) =>
       context.actions.dispatch(HILOS_I18N_COUNTRY_DELETE_ACTION, {
-        countryCode,
+        countryId,
       }),
   }
 }
@@ -100,11 +103,11 @@ export function createHilosI18nCountryDelete(
 /** Bind the list's deletion door to the project's tracked action lifecycle. */
 export function createHilosI18nCountryRowDelete(
   context: HilosI18nCountryContext,
-): { deleteCountry(countryCode: string): ActionHandle } {
+): { deleteCountry(countryId: number): ActionHandle } {
   return {
-    deleteCountry: (countryCode) =>
+    deleteCountry: (countryId) =>
       context.actions.dispatch(HILOS_I18N_COUNTRY_ROW_DELETE_ACTION, {
-        countryCode,
+        countryId,
       }),
   }
 }

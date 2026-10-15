@@ -1,4 +1,4 @@
 interface:
   display_name: "Hilos Signals"
   short_description: "Routing, page topology, DTOs, subscriptions, and delivery"
-  default_prompt: "Use $hilos-signals to add or trace a Hilos signal or page subscription route, or to decide which frame carries data a page needs to render."
+  default_prompt: "Use $hilos-signals to add or trace a Hilos signal or page subscription route, or to decide which frame carries data a page needs to render, following docs/agents/orm/entity-references.md for captured entity IDs and external code boundaries."

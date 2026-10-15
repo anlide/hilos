@@ -6,25 +6,16 @@ namespace Hilos\Tables\I18n;
 
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\Row\AbstractTableRow;
-use Hilos\Database\Object\Item\Locale as ObjectLocale;
 use Hilos\I18n\DTO\LocaleFormats;
 
-/**
- * Backend row payload of the locales table of one language (HIL-1476).
- *
- * One row is a pair of the language the window is opened on and one country of the system, or the
- * language alone — not a stored locale. The pair is a row whether a locale of it exists or not, and
- * what the locale says, when there is one, rides along: its code and whether it is on.
- *
- * The row key is the pair written the way the code of its locale is written
- * ({@see ObjectLocale::codeFor()}): `ru` for the language alone, `ru-UA` for a country. It rides
- * the payload under {@see self::rowKey}, never `id`: a slot carrying `id` is taken by the frontend
- * normalizer for an entity fragment.
- */
+/** One parent-ID pair, with a nullable locale ID when no locale exists. */
 final class HilosI18nLanguageLocalesTableRow extends AbstractTableRow
 {
-    /** Payload key of the row identity — the pair, written as the code of its locale. */
+    /** Payload key of the row identity — the pair of parent IDs. */
     public const string rowKey = 'rowKey';
+    public const string languageId = 'languageId';
+    public const string countryId = 'countryId';
+    public const string localeId = 'localeId';
 
     /** Payload key of the country's code as stored, null on the row of the language alone. */
     public const string countryCode = 'countryCode';
@@ -48,7 +39,10 @@ final class HilosI18nLanguageLocalesTableRow extends AbstractTableRow
     public const string catalogFormats = 'catalogFormats';
 
     /**
-     * @param string $rowKey The pair, written as the code of its locale
+     * @param string $rowKey Parent-ID pair
+     * @param int $languageId Language primary ID
+     * @param ?int $countryId Country primary ID, or null
+     * @param ?int $localeId Existing locale primary ID, or null
      * @param ?string $countryCode Country's code as stored, null on the row of the language alone
      * @param ?string $countryName Country's base name in the window's language, null when none is written
      * @param ?string $localeCode Code of the pair's locale, null when the pair has no locale
@@ -59,6 +53,9 @@ final class HilosI18nLanguageLocalesTableRow extends AbstractTableRow
      */
     public function __construct(
         public string $rowKey,
+        public int $languageId,
+        public ?int $countryId,
+        public ?int $localeId,
         public ?string $countryCode,
         public ?string $countryName,
         public ?string $localeCode,
@@ -70,7 +67,7 @@ final class HilosI18nLanguageLocalesTableRow extends AbstractTableRow
     }
 
     /**
-     * @return string The pair, written as the code of its locale
+     * @return string The pair of parent IDs
      */
     public function getRowKey(): string
     {
@@ -94,6 +91,9 @@ final class HilosI18nLanguageLocalesTableRow extends AbstractTableRow
     {
         return [
             self::rowKey => $this->rowKey,
+            self::languageId => $this->languageId,
+            self::countryId => $this->countryId,
+            self::localeId => $this->localeId,
             self::countryCode => $this->countryCode,
             self::countryName => $this->countryName,
             self::localeCode => $this->localeCode,
@@ -113,11 +113,23 @@ final class HilosI18nLanguageLocalesTableRow extends AbstractTableRow
      */
     public static function fromArray(array $data): static
     {
+        foreach ([self::countryId, self::localeId] as $field) {
+            if (!array_key_exists($field, $data)
+                || ($data[$field] !== null && (!is_int($data[$field]) || $data[$field] <= 0))) {
+                throw new InvalidFormatException('Invalid nullable ID: ' . $field);
+            }
+        }
+        if (self::requireInt($data, self::languageId) <= 0) {
+            throw new InvalidFormatException('Invalid language ID');
+        }
         $formats = self::optionalArray($data, self::formats);
         $catalogFormats = self::optionalArray($data, self::catalogFormats);
 
         return new static(
             rowKey: self::requireString($data, self::rowKey),
+            languageId: self::requireInt($data, self::languageId),
+            countryId: $data[self::countryId],
+            localeId: $data[self::localeId],
             countryCode: self::optionalString($data, self::countryCode),
             countryName: self::optionalString($data, self::countryName),
             localeCode: self::optionalString($data, self::localeCode),

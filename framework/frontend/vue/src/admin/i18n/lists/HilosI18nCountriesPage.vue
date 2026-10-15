@@ -66,7 +66,7 @@ const deleteOpen = ref(false)
 const deleteTarget = ref<HilosI18nCountryDeleteTarget | null>(null)
 const focusedRow = useSignal(countries.controller.focusedRow)
 const deleteSource = computed(() =>
-  focusedRow.value?.code === deleteTarget.value?.code
+  focusedRow.value?.countryId === deleteTarget.value?.countryId
     ? hilosI18nCountryDeleteFromRow(focusedRow.value)
     : null,
 )
@@ -208,7 +208,7 @@ const countryPath = (row: HilosI18nCountryRow): string | undefined =>
             :title="row.enabled ? copy.open.view : copy.open.edit"
             :aria-label="row.enabled ? copy.open.view : copy.open.edit"
             :data-id="`i18n-countries-${row.enabled ? 'view' : 'edit'}-${row.code}`"
-            @click="window.open(row.enabled ? 'view' : 'edit', row.code)"
+            @click="window.open(row.enabled ? 'view' : 'edit', row.rowKey)"
           >
             <i
               class="bi"
@@ -218,7 +218,7 @@ const countryPath = (row: HilosI18nCountryRow): string | undefined =>
           </button>
           <HilosI18nCountryRowActions
             :row="row"
-            @delete="openDelete(row.code)"
+            @delete="openDelete(row.rowKey)"
           />
         </div>
       </template>

@@ -35,6 +35,8 @@ import { HILOS_ROUTER } from '../../src/hilosRouterToken.js'
 
 /** A switched-off language from the built-in catalog, free to delete. */
 export const language: HilosI18nLanguageRow = {
+  languageId: 19,
+  rowKey: '19',
   code: 'uk',
   nativeName: 'Українська',
   rtl: false,
@@ -47,6 +49,7 @@ export const language: HilosI18nLanguageRow = {
 
 /** The main card of {@link language}. */
 export const languageCard: HilosI18nLanguageCard = {
+  languageId: 19,
   code: 'uk',
   nativeName: 'Українська',
   rtl: false,
@@ -64,18 +67,35 @@ export const languageCard: HilosI18nLanguageCard = {
 
 /** How the names of Українська are written in English: a base with three corrections. */
 export const englishName: HilosI18nNameRow = {
+  inLanguageId: 11,
+  nameId: 301,
+  rowKey: '11',
   code: 'en',
   nativeName: 'English',
   name: 'Ukrainian',
   corrections: [
     {
+      localeId: 501,
+      nameId: 401,
+      countryId: 101,
       localeCode: 'en-GB',
       countryCode: 'gb',
       countryName: 'United Kingdom',
       name: 'Ukrainian (UK)',
     },
-    { localeCode: 'en-US', countryCode: 'us', countryName: null, name: '' },
     {
+      localeId: 502,
+      nameId: 402,
+      countryId: 102,
+      localeCode: 'en-US',
+      countryCode: 'us',
+      countryName: null,
+      name: '',
+    },
+    {
+      localeId: 503,
+      nameId: null,
+      countryId: 103,
       localeCode: 'en-CA',
       countryCode: 'ca',
       countryName: 'Canada',
@@ -86,6 +106,9 @@ export const englishName: HilosI18nNameRow = {
 
 /** A stored empty name in Spanish, with nothing under it. */
 export const spanishName: HilosI18nNameRow = {
+  inLanguageId: 15,
+  nameId: 301,
+  rowKey: '15',
   code: 'es',
   nativeName: 'Español',
   name: '',
@@ -94,6 +117,9 @@ export const spanishName: HilosI18nNameRow = {
 
 /** No name in French at all. */
 export const frenchName: HilosI18nNameRow = {
+  inLanguageId: 13,
+  nameId: null,
+  rowKey: '13',
   code: 'fr',
   nativeName: 'Français',
   name: null,
@@ -124,7 +150,10 @@ export const localeTemplates: HilosI18nLocaleTemplates = {
 
 /** The language's own pair: a switched-on locale without a country. */
 export const countrylessLocale: HilosI18nLocaleRow = {
-  rowKey: 'uk',
+  languageId: 19,
+  countryId: null,
+  localeId: 19000,
+  rowKey: '19:null',
   countryCode: null,
   countryName: null,
   localeCode: 'uk',
@@ -136,7 +165,10 @@ export const countrylessLocale: HilosI18nLocaleRow = {
 
 /** A switched-off locale of a country the catalog knows. */
 export const ukraineLocale: HilosI18nLocaleRow = {
-  rowKey: 'uk-UA',
+  languageId: 19,
+  countryId: 108,
+  localeId: 19108,
+  rowKey: '19:108',
   countryCode: 'ua',
   countryName: 'Україна',
   localeCode: 'uk-UA',
@@ -148,7 +180,10 @@ export const ukraineLocale: HilosI18nLocaleRow = {
 
 /** A pair without a locale that the catalog does not know. */
 export const polandPair: HilosI18nLocaleRow = {
-  rowKey: 'uk-PL',
+  languageId: 19,
+  countryId: 146,
+  localeId: null,
+  rowKey: '19:146',
   countryCode: 'pl',
   countryName: null,
   localeCode: null,
@@ -160,16 +195,19 @@ export const polandPair: HilosI18nLocaleRow = {
 
 /** A switched-off country from the built-in catalog, kept by its own locale. */
 export const country: HilosI18nCountryRow = {
+  countryId: 102,
+  rowKey: '102',
   code: 'us',
   name: 'United States',
   currencySymbol: '$',
   currencyCode: 'USD',
+  defaultLocaleId: null,
   defaultLocaleCode: null,
   enabled: false,
   isOwn: false,
   locales: [
-    { code: 'en-US', enabled: true },
-    { code: 'es-US', enabled: false },
+    { localeId: 11102, code: 'en-US', enabled: true },
+    { localeId: 15102, code: 'es-US', enabled: false },
   ],
   catalogDefaultLocaleCode: 'en-US',
   canDelete: false,
@@ -178,6 +216,7 @@ export const country: HilosI18nCountryRow = {
 
 /** The main card of {@link country}. */
 export const countryCard: HilosI18nCountryCard = {
+  countryId: 102,
   code: 'us',
   currencySymbol: '$',
   currencyCode: 'USD',
@@ -185,13 +224,14 @@ export const countryCard: HilosI18nCountryCard = {
   summary: {
     name: 'United States',
     isOwn: false,
+    defaultLocaleId: null,
     defaultLocaleCode: null,
     defaultLocale: 'missing',
     localeCount: 2,
     nameCount: 3,
     locales: [
-      { code: 'en-US', enabled: true },
-      { code: 'es-US', enabled: false },
+      { localeId: 11102, code: 'en-US', enabled: true },
+      { localeId: 15102, code: 'es-US', enabled: false },
     ],
     catalogDefaultLocaleCode: 'en-US',
     canDelete: false,
@@ -201,18 +241,35 @@ export const countryCard: HilosI18nCountryCard = {
 
 /** How United States is written in English: a base with three corrections. */
 export const usInEnglish: HilosI18nNameRow = {
+  inLanguageId: 11,
+  nameId: 301,
+  rowKey: '11',
   code: 'en',
   nativeName: 'English',
   name: 'United States',
   corrections: [
     {
+      localeId: 501,
+      nameId: 401,
+      countryId: 101,
       localeCode: 'en-GB',
       countryCode: 'gb',
       countryName: 'United Kingdom',
       name: 'USA',
     },
-    { localeCode: 'en-US', countryCode: 'us', countryName: null, name: '' },
     {
+      localeId: 502,
+      nameId: 402,
+      countryId: 102,
+      localeCode: 'en-US',
+      countryCode: 'us',
+      countryName: null,
+      name: '',
+    },
+    {
+      localeId: 503,
+      nameId: null,
+      countryId: 103,
       localeCode: 'en-CA',
       countryCode: 'ca',
       countryName: 'Canada',
@@ -223,6 +280,9 @@ export const usInEnglish: HilosI18nNameRow = {
 
 /** A stored empty name of United States in Spanish, with nothing under it. */
 export const usInSpanish: HilosI18nNameRow = {
+  inLanguageId: 15,
+  nameId: 301,
+  rowKey: '15',
   code: 'es',
   nativeName: 'Español',
   name: '',
@@ -231,6 +291,9 @@ export const usInSpanish: HilosI18nNameRow = {
 
 /** No name of United States in French at all. */
 export const usInFrench: HilosI18nNameRow = {
+  inLanguageId: 13,
+  nameId: null,
+  rowKey: '13',
   code: 'fr',
   nativeName: 'Français',
   name: null,
@@ -285,7 +348,7 @@ const LANGUAGES_TABLE = { tableKey: 'hilosI18nLanguages', slot: 'language' }
  * @param row The row.
  */
 function benchRowKey(row: BenchRow): string {
-  return 'rowKey' in row ? row.rowKey : row.code
+  return row.rowKey
 }
 
 const releases: (() => void)[] = []

@@ -29,6 +29,7 @@ afterEach(() => {
 })
 
 const russianCard: HilosI18nLanguageCard = {
+  languageId: 12,
   code: 'ru',
   nativeName: 'Русский',
   rtl: false,
@@ -186,8 +187,15 @@ function pair(
   countryName: string | null,
   enabled: boolean | null,
 ): Record<string, unknown> {
+  const countryId =
+    countryCode === null
+      ? null
+      : ({ ad: 142, by: 149, ua: 108 } as Record<string, number>)[countryCode]!
   return {
-    rowKey,
+    languageId: 12,
+    countryId,
+    localeId: enabled === null ? null : 12000 + (countryId ?? 0),
+    rowKey: `12:${countryId ?? 'null'}`,
     countryCode,
     countryName,
     localeCode: enabled === null ? null : rowKey,
@@ -332,7 +340,7 @@ describe('HilosI18nLanguageLocalesPage', () => {
   })
 
   it('asks for the window of another language when the address moves to it', async () => {
-    const { filters, route } = await mountPage()
+    const { filters, route, scope } = await mountPage()
 
     route.set({
       page: HilosPages.I18N_LANGUAGE_LOCALES,
@@ -341,7 +349,13 @@ describe('HilosI18nLanguageLocalesPage', () => {
     })
     await nextTick()
 
-    expect(filters.at(-1)).toEqual({ language: 'en' })
+    scope.data.set(LANGUAGE_CARD_DATA, {
+      ...russianCard,
+      languageId: 11,
+      code: 'en',
+    })
+    await nextTick()
+    expect(filters.at(-1)).toEqual({ language: 11 })
   })
 
   it('says "— no country" on the row of the language alone', async () => {
@@ -437,7 +451,7 @@ describe('HilosI18nLanguageLocalesPage', () => {
     const opener = s.wrapper.get('[data-id="i18n-locales-delete-ru-UA"]')
     s.delta(pair('ru-UA', 'ua', 'Fresh country', false))
     await opener.trigger('click')
-    expect(s.focused).toEqual(['ru-UA'])
+    expect(s.focused).toEqual(['12:108'])
     expect(document.body.textContent).toContain(
       'Delete locale · Русский in Fresh country',
     )
@@ -458,10 +472,10 @@ describe('HilosI18nLanguageLocalesPage', () => {
       .click()
     await nextTick()
     await nextTick()
-    expect(s.focused).toEqual(['ru-UA', ''])
+    expect(s.focused).toEqual(['12:108', ''])
     await opener.trigger('click')
     s.wrapper.unmount()
-    expect(s.focused).toEqual(['ru-UA', '', 'ru-UA', ''])
+    expect(s.focused).toEqual(['12:108', '', '12:108', ''])
   })
 
   it('does not open a stale trash control when the pair has already lost its locale', async () => {
@@ -472,7 +486,7 @@ describe('HilosI18nLanguageLocalesPage', () => {
     expect(
       document.querySelector('[data-id="i18n-locale-delete-window"]'),
     ).toBeNull()
-    expect(s.focused).toEqual(['ru-UA', ''])
+    expect(s.focused).toEqual(['12:108', ''])
     expect(s.wrapper.find('[data-id="i18n-locales-add-ru-UA"]').exists()).toBe(
       true,
     )
@@ -490,7 +504,11 @@ describe('HilosI18nLanguageLocalesPage', () => {
         s.delta({ ...pair('ru-UA', 'ua', 'Украина', false), formats: null })
       if (gone === 'language') s.scope.data.set(LANGUAGE_CARD_DATA, [])
       if (gone === 'other-language')
-        s.scope.data.set(LANGUAGE_CARD_DATA, { ...russianCard, code: 'en' })
+        s.scope.data.set(LANGUAGE_CARD_DATA, {
+          ...russianCard,
+          languageId: 11,
+          code: 'en',
+        })
       await nextTick()
       expect(
         document.querySelector('[data-id="i18n-locale-delete-window"]'),
@@ -501,7 +519,11 @@ describe('HilosI18nLanguageLocalesPage', () => {
           '[data-id="i18n-locale-delete-confirm"]',
         )!.disabled,
       ).toBe(true)
-      expect(s.focused).toEqual(['ru-UA'])
+      expect(s.focused).toEqual(
+        gone === 'language' || gone === 'other-language'
+          ? ['12:108', '']
+          : ['12:108'],
+      )
     },
   )
 
@@ -538,8 +560,9 @@ describe('HilosI18nLanguageLocalesPage', () => {
       )!
       .click()
     expect(dispatch).toHaveBeenCalledWith('hilos_i18n_locale_delete', {
-      languageCode: 'ru',
-      countryCode: null,
+      languageId: 12,
+      countryId: null,
+      localeId: 12000,
     })
     s.delta(pair('ru', null, null, null))
     s.scope.data.set(LANGUAGE_CARD_DATA, {
@@ -567,7 +590,7 @@ describe('HilosI18nLanguageLocalesPage', () => {
       document.querySelector('[data-id="i18n-locale-delete-window"]'),
     ).not.toBeNull()
     expect(document.body.textContent).not.toContain('Deleted elsewhere.')
-    expect(s.focused).toEqual(['ru'])
+    expect(s.focused).toEqual(['12:null', ''])
     settle({ message: 'Locale deleted.' })
     await nextTick()
     await nextTick()
@@ -575,6 +598,6 @@ describe('HilosI18nLanguageLocalesPage', () => {
     expect(
       document.querySelector('[data-id="i18n-locale-delete-window"]'),
     ).toBeNull()
-    expect(s.focused).toEqual(['ru', ''])
+    expect(s.focused).toEqual(['12:null', ''])
   })
 })

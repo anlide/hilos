@@ -168,7 +168,13 @@ const FOOTER = 'modal-footer hilos-button-row p-0 m-0 border-0 align-self-end'
           </div>
           <div>
             <span class="text-body-secondary">{{ copy.codeLabel }}</span>
-            <code data-id="i18n-locale-code">{{ row()?.rowKey }}</code>
+            <code data-id="i18n-locale-code">{{
+              row()?.localeCode ??
+                card()?.code +
+                  (row()?.countryCode
+                    ? '-' + row()!.countryCode!.toUpperCase()
+                    : '')
+            }}</code>
           </div>
         </div>
         <div [class]="mode() !== 'add' ? 'hilos-stack' : ''">
@@ -608,7 +614,7 @@ export class HilosI18nLocaleWindow {
 
   // The language the window was opened under: every action of this opening
   // addresses it, whatever the card says later.
-  private readonly address = createSignal('')
+  private readonly address = createSignal<number | null>(null)
 
   /** The creation and edit sessions and the switch dispatches of one binding. */
   protected readonly session = computed(() => {
@@ -617,9 +623,9 @@ export class HilosI18nLocaleWindow {
 
     return {
       controller,
-      editor: createHilosI18nLocaleEdit(controller, context, this.address),
-      creator: createHilosI18nLocaleAdd(controller, context, this.address),
-      switcher: createHilosI18nLocaleSwitchOn(context, this.address),
+      editor: createHilosI18nLocaleEdit(controller, context),
+      creator: createHilosI18nLocaleAdd(controller, context),
+      switcher: createHilosI18nLocaleSwitchOn(context),
       offSwitcher: createHilosI18nLocaleSwitchOff(context),
     }
   })
@@ -675,7 +681,10 @@ export class HilosI18nLocaleWindow {
   protected readonly liveRow = computed(() => {
     const focused = this.focusedRow()
 
-    return focused?.rowKey === this.row()?.rowKey ? focused : undefined
+    return focused?.rowKey === this.row()?.rowKey &&
+      (this.mode() === 'add' || focused?.localeId === this.row()?.localeId)
+      ? focused
+      : undefined
   })
   private readonly shownRow = computed(() =>
     this.mode() === 'view'
@@ -867,7 +876,7 @@ export class HilosI18nLocaleWindow {
     const { controller, editor, creator } = this.session()
     const card = this.card()
     this.openedName.set(card?.nativeName ?? '')
-    this.address.set(card?.code ?? '')
+    this.address.set(card?.languageId ?? null)
     for (const action of [
       this.addAction,
       this.editAction,
@@ -939,7 +948,9 @@ export class HilosI18nLocaleWindow {
       return
     const { switcher } = this.session()
     if (
-      (await this.switchAction.run(switcher.switchOn(row.countryCode))) &&
+      (await this.switchAction.run(
+        switcher.switchOn(row.languageId, row.countryId, row.localeId!),
+      )) &&
       !this.destroyRef.destroyed
     ) {
       this.closeWindow()
@@ -959,7 +970,7 @@ export class HilosI18nLocaleWindow {
     const { offSwitcher } = this.session()
     if (
       (await this.offAction.run(
-        offSwitcher.switchOff(this.address.get(), live.countryCode),
+        offSwitcher.switchOff(live.languageId, live.countryId, live.localeId!),
       )) &&
       !this.destroyRef.destroyed
     ) {

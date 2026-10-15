@@ -258,13 +258,13 @@ final class I18nCountryDeleteTest extends IntegrationTestCase
     public function testUnknownCountryAndMalformedPayloadAreTrackedFailures(bool $fromList): void
     {
         $this->createFixture();
-        foreach ([['countryCode' => 'zz'], ['countryCode' => 'QX'], ['countryCode' => 42], []] as $payload) {
+        foreach ([['countryId' => 999999], ['countryId' => 'QX'], ['countryId' => 0], ['countryCode' => 'qx'], []] as $payload) {
             $reply = $this->dispatchDelete($fromList, $payload);
             self::assertInstanceOf(PageActionErrorSignalData::class, $reply);
             self::assertSame('fail', $reply->getEnvelopeOutcome());
             self::assertSame('delete-tracked', $reply->requestId);
-            if ($payload === ['countryCode' => 'zz']) {
-                self::assertSame('Unknown country: zz', $reply->reason);
+            if ($payload === ['countryId' => 999999]) {
+                self::assertSame('Unknown country: 999999', $reply->reason);
             }
             self::assertNotNull(Hilos::$db->countries['qx']);
             self::assertNotNull(Hilos::$db->countries['us']);
@@ -280,7 +280,9 @@ final class I18nCountryDeleteTest extends IntegrationTestCase
     {
         $this->createFixture();
         $page = $fromList ? new CountriesListPage($this->agent) : new CountryDetailPage($this->agent);
-        $dto = $fromList ? new HilosI18nCountryDeleteActionDTO('qx') : new HilosI18nCountryRowDeleteActionDTO('qx');
+        $dto = $fromList
+            ? new HilosI18nCountryDeleteActionDTO(Hilos::$db->countries['qx']?->id ?? 999999)
+            : new HilosI18nCountryRowDeleteActionDTO(Hilos::$db->countries['qx']?->id ?? 999999);
         try {
             $page->onAction('delete-ak', $this->action($fromList), $dto);
             self::fail('The other page DTO must be refused');
@@ -387,7 +389,7 @@ final class I18nCountryDeleteTest extends IntegrationTestCase
             }
             return;
         }
-        $reply = $this->dispatchDelete($door === 'list', ['countryCode' => $code]);
+        $reply = $this->dispatchDelete($door === 'list', ['countryId' => Hilos::$db->countries[$code]?->id ?? 999999]);
         if ($refusal !== null) {
             self::assertInstanceOf(PageActionErrorSignalData::class, $reply);
             self::assertSame('fail', $reply->getEnvelopeOutcome());

@@ -55,7 +55,7 @@ type CountryWindowPlate = ReturnType<CountryWindow['plate']['get']>
 const NO_FIELDS: HilosI18nCountryEditFields = {
   currencySymbol: '',
   currencyCode: '',
-  defaultLocaleCode: null,
+  defaultLocaleId: null,
 }
 
 /** The shared view/edit window over one country. */
@@ -101,13 +101,13 @@ const NO_FIELDS: HilosI18nCountryEditFields = {
             [code]="row()?.code ?? ''"
             [currencySymbol]="form().currencySymbol"
             [currencyCode]="form().currencyCode"
-            [defaultLocaleCode]="form().defaultLocaleCode"
+            [defaultLocaleId]="form().defaultLocaleId"
             [localeOptions]="options()"
             [localeHint]="localeHint()"
             describedBy="i18n-country-plate"
             (currencySymbolChange)="window().setSymbol($event)"
             (currencyCodeChange)="window().setCurrencyCode($event)"
-            (defaultLocaleCodeChange)="window().setDefaultLocale($event)"
+            (defaultLocaleIdChange)="window().setDefaultLocale($event)"
           />
         </form>
         <div class="mt-3">

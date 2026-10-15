@@ -9,14 +9,25 @@ export const HILOS_I18N_LANGUAGE_NAME_OVERRIDE_DELETE_ACTION =
 
 /** The coordinates and literal value confirmed when the window opens. */
 export type HilosI18nLanguageNameDeleteTarget = {
+  readonly languageId: number
+  readonly inLanguageId: number
+  readonly nameId: number
   readonly languageCode: string
   readonly languageNativeName: string
   readonly inLanguageCode: string
   readonly inLanguageNativeName: string
   readonly expectedName: string
 } & (
-  | { readonly kind: 'base'; readonly localeCode?: never }
-  | { readonly kind: 'override'; readonly localeCode: string }
+  | {
+      readonly kind: 'base'
+      readonly localeCode?: never
+      readonly localeId?: never
+    }
+  | {
+      readonly kind: 'override'
+      readonly localeCode: string
+      readonly localeId: number
+    }
 )
 
 /** Shared English copy for the controls and the two confirmation views. */
@@ -53,8 +64,9 @@ export function createHilosI18nLanguageNameDelete(
   return {
     deleteName: (target) => {
       const payload = {
-        languageCode: target.languageCode,
-        inLanguageCode: target.inLanguageCode,
+        languageId: target.languageId,
+        inLanguageId: target.inLanguageId,
+        nameId: target.nameId,
         expectedName: target.expectedName,
       }
       return target.kind === 'base'
@@ -66,7 +78,7 @@ export function createHilosI18nLanguageNameDelete(
             HILOS_I18N_LANGUAGE_NAME_OVERRIDE_DELETE_ACTION,
             {
               ...payload,
-              localeCode: target.localeCode,
+              localeId: target.localeId,
             },
           )
     },

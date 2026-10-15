@@ -71,6 +71,37 @@ final class I18nCountriesTableTest extends IntegrationTestCase
     /** @var list<string> Country codes this test created and must remove */
     private array $createdCountries = [];
 
+    /** Old primary keys stay removed when a new row takes the same code. */
+    public function testRemovedCountryKeysDoNotFollowASameCodeReplacement(): void
+    {
+        $this->underAgent($this->agent, function (): void {
+            $first = $this->country('qx', '¤', 'XXX');
+            $oldId = $first->id;
+            $oldRow = $first->toArray();
+            $first->actions->delete();
+            $replacement = Hilos::$db->countries->actions->create('qx', 'new', 'XXX');
+            $table = new HilosI18nCountriesTable();
+            self::assertNotSame($oldId, $replacement->id);
+            self::assertFalse($table->containsRow((string) $oldId, new TableQueryDTO()));
+            self::assertNull($table->findRow((string) $oldId));
+            self::assertTrue($table->containsRow((string) $replacement->id, new TableQueryDTO()));
+            foreach (['qx', '0' . $replacement->id, $replacement->id . '.0', '0', '-1'] as $invalidKey) {
+                self::assertFalse($table->containsRow($invalidKey, new TableQueryDTO()));
+            }
+            $removed = $table->buildMutationForSourceEvent(SourceChange::dbDeleted(
+                HilosDbContext::countries, (string) $oldId, $oldRow,
+            ));
+            self::assertSame((string) $oldId, $removed->rowKey);
+            self::assertNull($removed->row);
+            $created = $table->buildMutationForSourceEvent(SourceChange::dbCreated(
+                HilosDbContext::countries, (string) $replacement->id, $replacement->toArray(),
+            ));
+            self::assertSame((string) $replacement->id, $created->rowKey);
+            self::assertSame($replacement->id, $created->row->toArray()[HilosI18nCountriesTableRow::countryId]);
+            self::assertArrayNotHasKey('id', $created->row->toArray());
+        });
+    }
+
     /** @var list<string> Language codes this test created and must remove */
     private array $createdLanguages = [];
 
@@ -160,31 +191,46 @@ final class I18nCountriesTableTest extends IntegrationTestCase
         self::assertTrue($named->isOwn);
         self::assertFalse($known->isOwn);
         self::assertSame([
-            ['code' => 'de-US', 'enabled' => false],
-            ['code' => 'en-US', 'enabled' => true],
+            ['localeId' => Hilos::$db->locales['de-US']->id, 'code' => 'de-US', 'enabled' => false],
+            ['localeId' => Hilos::$db->locales['en-US']->id, 'code' => 'en-US', 'enabled' => true],
         ], $known->toArray()[HilosI18nCountriesTableRow::locales]);
         self::assertSame('en-US', $known->catalogDefaultLocaleCode);
-        self::assertSame([['code' => 'en-QX', 'enabled' => false]], $own->toArray()[HilosI18nCountriesTableRow::locales]);
+        self::assertSame([
+            ['localeId' => Hilos::$db->locales['en-QX']->id, 'code' => 'en-QX', 'enabled' => false],
+        ], $own->toArray()[HilosI18nCountriesTableRow::locales]);
         self::assertNull($own->catalogDefaultLocaleCode);
         self::assertSame([], $named->locales);
         self::assertNull($named->catalogDefaultLocaleCode);
         self::assertSame($known->toArray(), HilosI18nCountriesTableRow::fromArray($known->toArray())->toArray());
         self::assertSame([
+            'rowKey' => (string) Hilos::$db->countries['qx']->id,
+            'countryId' => Hilos::$db->countries['qx']->id,
             'code' => 'qx', 'name' => null, 'currencySymbol' => '¤', 'currencyCode' => 'XQX',
+            'defaultLocaleId' => Hilos::$db->locales['en-QX']->id,
             'defaultLocaleCode' => 'en-QX', 'enabled' => false, 'isOwn' => true,
-            'locales' => [['code' => 'en-QX', 'enabled' => false]], 'catalogDefaultLocaleCode' => null,
+            'locales' => [['localeId' => Hilos::$db->locales['en-QX']->id, 'code' => 'en-QX', 'enabled' => false]],
+            'catalogDefaultLocaleCode' => null,
             'canDelete' => false, 'deleteReason' => CountryCardSummary::DELETE_LOCALES,
         ], $own->toArray());
         self::assertSame([
+            'rowKey' => (string) Hilos::$db->countries['qy']->id,
+            'countryId' => Hilos::$db->countries['qy']->id,
             'code' => 'qy', 'name' => 'Qy Land', 'currencySymbol' => '¤', 'currencyCode' => 'XQY',
+            'defaultLocaleId' => null,
             'defaultLocaleCode' => null, 'enabled' => true, 'isOwn' => true,
             'locales' => [], 'catalogDefaultLocaleCode' => null,
             'canDelete' => false, 'deleteReason' => CountryCardSummary::DELETE_NAMES,
         ], $named->toArray());
         self::assertSame([
+            'rowKey' => (string) Hilos::$db->countries['us']->id,
+            'countryId' => Hilos::$db->countries['us']->id,
             'code' => 'us', 'name' => null, 'currencySymbol' => '$', 'currencyCode' => 'USD',
+            'defaultLocaleId' => null,
             'defaultLocaleCode' => null, 'enabled' => false, 'isOwn' => false,
-            'locales' => [['code' => 'de-US', 'enabled' => false], ['code' => 'en-US', 'enabled' => true]],
+            'locales' => [
+                ['localeId' => Hilos::$db->locales['de-US']->id, 'code' => 'de-US', 'enabled' => false],
+                ['localeId' => Hilos::$db->locales['en-US']->id, 'code' => 'en-US', 'enabled' => true],
+            ],
             'catalogDefaultLocaleCode' => 'en-US',
             'canDelete' => false, 'deleteReason' => CountryCardSummary::DELETE_KNOWN,
         ], $known->toArray());
@@ -207,8 +253,8 @@ final class I18nCountriesTableTest extends IntegrationTestCase
         self::assertSame(['qy'], $this->picked($this->codes($table->getPage(new TableQueryDTO(search: 'XQY'))->rows), ['qx', 'qy']));
         self::assertSame(['qx'], $this->picked($this->codes($table->getPage(new TableQueryDTO(search: 'qx'))->rows), ['qx', 'qy']));
         self::assertSame([], $this->picked($this->codes($table->getPage(new TableQueryDTO(search: 'zzzz-absent'))->rows), ['qx', 'qy']));
-        self::assertTrue($table->containsRow('qx', new TableQueryDTO(search: 'qx')));
-        self::assertFalse($table->containsRow('qx', new TableQueryDTO(search: 'zzzz-absent')));
+        self::assertTrue($table->containsRow((string) Hilos::$db->countries['qx']->id, new TableQueryDTO(search: 'qx')));
+        self::assertFalse($table->containsRow((string) Hilos::$db->countries['qx']->id, new TableQueryDTO(search: 'zzzz-absent')));
         self::assertFalse($table->containsRow('missing', new TableQueryDTO()));
 
         $first = $table->getPage(new TableQueryDTO(sort: $sort, limit: $table->windowSize()));
@@ -250,7 +296,7 @@ final class I18nCountriesTableTest extends IntegrationTestCase
         ));
         self::assertInstanceOf(TableRowMutationDTO::class, $create);
         self::assertSame(TableMutationType::Create, $create->type);
-        self::assertSame('qx', $create->rowKey);
+        self::assertSame((string) Hilos::$db->countries['qx']->id, $create->rowKey);
         $createdRow = $create->row;
         self::assertInstanceOf(HilosI18nCountriesTableRow::class, $createdRow);
         self::assertSame('After', $createdRow->name);
@@ -264,7 +310,7 @@ final class I18nCountriesTableTest extends IntegrationTestCase
         ));
         self::assertInstanceOf(TableRowMutationDTO::class, $update);
         self::assertSame(TableMutationType::Update, $update->type);
-        self::assertSame('qx', $update->rowKey);
+        self::assertSame((string) Hilos::$db->countries['qx']->id, $update->rowKey);
 
         $nameUpdate = $table->buildMutationForSourceEvent(SourceChange::dbUpdated(
             HilosDbContext::countryNames,
@@ -273,7 +319,7 @@ final class I18nCountriesTableTest extends IntegrationTestCase
         ));
         self::assertInstanceOf(TableRowMutationDTO::class, $nameUpdate);
         self::assertSame(TableMutationType::Update, $nameUpdate->type);
-        self::assertSame('qx', $nameUpdate->rowKey);
+        self::assertSame((string) Hilos::$db->countries['qx']->id, $nameUpdate->rowKey);
         $namedRow = $nameUpdate->row;
         self::assertInstanceOf(HilosI18nCountriesTableRow::class, $namedRow);
         self::assertSame('After', $namedRow->name);
@@ -307,7 +353,7 @@ final class I18nCountriesTableTest extends IntegrationTestCase
         ));
         self::assertInstanceOf(TableRowMutationDTO::class, $foreignUpdate);
         self::assertSame(TableMutationType::Update, $foreignUpdate->type);
-        self::assertSame('qx', $foreignUpdate->rowKey);
+        self::assertSame((string) Hilos::$db->countries['qx']->id, $foreignUpdate->rowKey);
         self::assertFalse($foreignUpdate->row->canDelete);
         self::assertSame(CountryCardSummary::DELETE_NAMES, $foreignUpdate->row->deleteReason);
         self::assertNull($table->buildMutationForSourceEvent(SourceChange::dbUpdated(
@@ -328,13 +374,13 @@ final class I18nCountriesTableTest extends IntegrationTestCase
         ));
         self::assertInstanceOf(TableRowMutationDTO::class, $delete);
         self::assertSame(TableMutationType::Delete, $delete->type);
-        self::assertSame('qx', $delete->rowKey);
+        self::assertSame((string) Hilos::$db->countries['qx']->id, $delete->rowKey);
         self::assertNull($delete->row);
-        self::assertNull($table->buildMutationForSourceEvent(SourceChange::dbDeleted(
+        self::assertSame('1', $table->buildMutationForSourceEvent(SourceChange::dbDeleted(
             HilosDbContext::countries,
             '1',
             [],
-        )));
+        ))->rowKey);
         self::assertNull($table->buildMutationForSourceEvent(SourceChange::dbUpdated(
             HilosDbContext::countries,
             '999999',
@@ -418,22 +464,26 @@ final class I18nCountriesTableTest extends IntegrationTestCase
         $created = $table->buildMutationForSourceEvent(SourceChange::dbCreated(HilosDbContext::locales, (string) $localeId, []));
         self::assertInstanceOf(TableRowMutationDTO::class, $created);
         self::assertSame(TableMutationType::Update, $created->type);
-        self::assertSame('qx', $created->rowKey);
-        self::assertSame([['code' => 'en-QX', 'enabled' => false]], $created->row->toArray()[HilosI18nCountriesTableRow::locales]);
+        self::assertSame((string) Hilos::$db->countries['qx']->id, $created->rowKey);
+        self::assertSame([
+            ['localeId' => Hilos::$db->locales['en-QX']->id, 'code' => 'en-QX', 'enabled' => false],
+        ], $created->row->toArray()[HilosI18nCountriesTableRow::locales]);
         $this->assertChoicesForBoth(
             SourceChange::dbCreated(HilosDbContext::locales, (string) $localeId, [ObjectLocale::countryId => $countryId]),
-            [['code' => 'en-QX', 'enabled' => false]],
+            [['localeId' => Hilos::$db->locales['en-QX']->id, 'code' => 'en-QX', 'enabled' => false]],
         );
 
         $this->underAgent($this->agent, static fn () => Hilos::$db->locales[$localeId]->actions->switchOn());
         $switched = $table->buildMutationForSourceEvent(SourceChange::dbUpdated(HilosDbContext::locales, (string) $localeId, []));
         self::assertInstanceOf(TableRowMutationDTO::class, $switched);
         self::assertSame(TableMutationType::Update, $switched->type);
-        self::assertSame('qx', $switched->rowKey);
-        self::assertSame([['code' => 'en-QX', 'enabled' => true]], $switched->row->toArray()[HilosI18nCountriesTableRow::locales]);
+        self::assertSame((string) Hilos::$db->countries['qx']->id, $switched->rowKey);
+        self::assertSame([
+            ['localeId' => Hilos::$db->locales['en-QX']->id, 'code' => 'en-QX', 'enabled' => true],
+        ], $switched->row->toArray()[HilosI18nCountriesTableRow::locales]);
         $this->assertChoicesForBoth(
             SourceChange::dbUpdated(HilosDbContext::locales, (string) $localeId, [ObjectLocale::enabled => true]),
-            [['code' => 'en-QX', 'enabled' => true]],
+            [['localeId' => Hilos::$db->locales['en-QX']->id, 'code' => 'en-QX', 'enabled' => true]],
         );
 
         $this->underAgent($this->agent, static fn () => Hilos::$db->locales[$localeId]->actions->switchOff());
@@ -443,7 +493,7 @@ final class I18nCountriesTableTest extends IntegrationTestCase
         ));
         self::assertInstanceOf(TableRowMutationDTO::class, $deleted);
         self::assertSame(TableMutationType::Update, $deleted->type);
-        self::assertSame('qx', $deleted->rowKey);
+        self::assertSame((string) Hilos::$db->countries['qx']->id, $deleted->rowKey);
         self::assertSame([], $deleted->row->toArray()[HilosI18nCountriesTableRow::locales]);
         $this->assertChoicesForBoth(
             SourceChange::dbDeleted(HilosDbContext::locales, (string) $localeId, [ObjectLocale::countryId => $countryId]),
@@ -524,10 +574,13 @@ final class I18nCountriesTableTest extends IntegrationTestCase
             foreach ($rows as $row) {
                 $country = $row[PagePayload::slots][HilosI18nCountriesTable::ROW_SLOT];
                 foreach ([
+                    HilosI18nCountriesTableRow::rowKey,
+                    HilosI18nCountriesTableRow::countryId,
                     HilosI18nCountriesTableRow::code,
                     HilosI18nCountriesTableRow::name,
                     HilosI18nCountriesTableRow::currencySymbol,
                     HilosI18nCountriesTableRow::currencyCode,
+                    HilosI18nCountriesTableRow::defaultLocaleId,
                     HilosI18nCountriesTableRow::defaultLocaleCode,
                     HilosI18nCountriesTableRow::enabled,
                     HilosI18nCountriesTableRow::isOwn,
@@ -539,7 +592,9 @@ final class I18nCountriesTableTest extends IntegrationTestCase
                     self::assertFalse(HiddenValue::isMark($country[$field]), $field);
                 }
                 if ($country[HilosI18nCountriesTableRow::code] === 'qx') {
-                    self::assertSame([['code' => 'en-QX', 'enabled' => false]], $country[HilosI18nCountriesTableRow::locales]);
+                    self::assertSame([
+                        ['localeId' => Hilos::$db->locales['en-QX']->id, 'code' => 'en-QX', 'enabled' => false],
+                    ], $country[HilosI18nCountriesTableRow::locales]);
                 }
             }
             self::assertStringNotContainsString(HiddenValue::KEY, json_encode($rows, JSON_THROW_ON_ERROR));
@@ -559,7 +614,10 @@ final class I18nCountriesTableTest extends IntegrationTestCase
         $table = new HilosI18nCountriesTable();
         $payload = $this->rowByCode($table->getPage(new TableQueryDTO(search: 'qx'))->rows, 'qx')->toArray();
         self::assertSame([
+            'rowKey' => (string) Hilos::$db->countries['qx']->id,
+            'countryId' => Hilos::$db->countries['qx']->id,
             'code' => 'qx', 'name' => null, 'currencySymbol' => '¤', 'currencyCode' => 'XQX',
+            'defaultLocaleId' => null,
             'defaultLocaleCode' => null, 'enabled' => false, 'isOwn' => true,
             'locales' => [], 'catalogDefaultLocaleCode' => null,
             'canDelete' => true, 'deleteReason' => null,
@@ -684,7 +742,7 @@ final class I18nCountriesTableTest extends IntegrationTestCase
     {
         $mutation = new HilosI18nCountriesTable()->buildMutationForSourceEvent($change);
         self::assertSame(TableMutationType::Update, $mutation->type);
-        self::assertSame('qx', $mutation->rowKey);
+        self::assertSame((string) Hilos::$db->countries['qx']->id, $mutation->rowKey);
         self::assertSame($canDelete, $mutation->row->canDelete);
         self::assertSame($reason, $mutation->row->deleteReason);
         Hilos::$browser->record($change);
@@ -770,7 +828,7 @@ final class I18nCountriesTableTest extends IntegrationTestCase
                 continue;
             }
             self::assertSame(TableViewportDeltaDTO::KIND_ROW_UPDATED, $signal['data']->kind);
-            self::assertSame('qx', $signal['data']->rowKey);
+            self::assertSame((string) Hilos::$db->countries['qx']->id, $signal['data']->rowKey);
             $row = $signal['data']->row[PagePayload::slots][HilosI18nCountriesTable::ROW_SLOT];
             self::assertSame($choices, $row[HilosI18nCountriesTableRow::locales]);
             $targets[] = $signal['accept'];
@@ -864,10 +922,10 @@ final class I18nCountriesTableTest extends IntegrationTestCase
                 continue;
             }
             $data = $signal['data'];
-            if ($data instanceof TableViewportAnnounceDTO && $data->rowKey === $code) {
+            if ($data instanceof TableViewportAnnounceDTO && $data->rowKey === (string) Hilos::$db->countries[$code]->id) {
                 return true;
             }
-            if ($data instanceof TableViewportAppendDTO && ($data->row[PagePayload::rowKey] ?? null) === $code) {
+            if ($data instanceof TableViewportAppendDTO && ($data->row[PagePayload::rowKey] ?? null) === (string) Hilos::$db->countries[$code]->id) {
                 return true;
             }
         }

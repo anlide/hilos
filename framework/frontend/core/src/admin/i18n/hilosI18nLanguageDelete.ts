@@ -54,9 +54,9 @@ export function createHilosI18nLanguageDelete(
   action:
     | typeof HILOS_I18N_LANGUAGE_DELETE_ACTION
     | typeof HILOS_I18N_LANGUAGE_ROW_DELETE_ACTION,
-): { deleteLanguage(languageCode: string): ActionHandle } {
+): { deleteLanguage(languageId: number): ActionHandle } {
   return {
-    deleteLanguage: (languageCode) =>
-      context.actions.dispatch(action, { languageCode }),
+    deleteLanguage: (languageId) =>
+      context.actions.dispatch(action, { languageId }),
   }
 }

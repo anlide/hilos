@@ -19,11 +19,14 @@ import { createSignal } from '../../../src/state/signal.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
 
 /** A names row as the backend sends it, its slot keyed `language`. */
-function nameRow(code: string, slot: Record<string, unknown>): TableRow {
-  return { rowKey: code, slots: { language: slot } }
+function nameRow(_code: string, slot: Record<string, unknown>): TableRow {
+  return { rowKey: String(slot.inLanguageId), slots: { language: slot } }
 }
 
 const BRITISH = {
+  localeId: 501,
+  nameId: 401,
+  countryId: 101,
   localeCode: 'en-GB',
   countryCode: 'gb',
   countryName: 'United Kingdom',
@@ -53,10 +56,31 @@ function recordingContext(
 }
 
 describe('resolveHilosI18nNameRow', () => {
+  it('waits for a subject ID and resets its window after that subject disappears', () => {
+    const sent: TableViewportDescriptor[] = []
+    const subject = createSignal<number | null>(null)
+    const table = createHilosI18nNamesTable(
+      recordingContext(sent),
+      HILOS_I18N_LANGUAGE_NAMES,
+      subject,
+    )
+    table.start()
+    table.controller.ingestWindow([], 0, true, null, null, 100)
+    expect(sent).toEqual([])
+    subject.set(12)
+    expect(sent.at(-1)?.filter).toEqual({ language: 12 })
+    subject.set(null)
+    expect(sent.at(-1)?.filter).toEqual({})
+    expect(sent).toHaveLength(2)
+    table.dispose()
+  })
+
   it('reads the language, its base name and the corrections under it', () => {
     const row = resolveHilosI18nNameRow(
       nameRow('en', {
-        rowKey: 'en',
+        inLanguageId: 11,
+        nameId: 301,
+        rowKey: '11',
         code: 'en',
         nativeName: 'English',
         name: 'German',
@@ -65,6 +89,9 @@ describe('resolveHilosI18nNameRow', () => {
     )
 
     expect(row).toEqual({
+      inLanguageId: 11,
+      nameId: 301,
+      rowKey: '11',
       code: 'en',
       nativeName: 'English',
       name: 'German',
@@ -75,6 +102,9 @@ describe('resolveHilosI18nNameRow', () => {
   it('keeps "no name" apart from a stored empty name, and an inherited correction as null', () => {
     const none = resolveHilosI18nNameRow(
       nameRow('fr', {
+        inLanguageId: 13,
+        nameId: null,
+        rowKey: '13',
         code: 'fr',
         nativeName: 'Français',
         name: null,
@@ -83,6 +113,9 @@ describe('resolveHilosI18nNameRow', () => {
     )
     const empty = resolveHilosI18nNameRow(
       nameRow('es', {
+        inLanguageId: 15,
+        nameId: 301,
+        rowKey: '15',
         code: 'es',
         nativeName: 'Español',
         name: '',
@@ -99,6 +132,9 @@ describe('resolveHilosI18nNameRow', () => {
   it('retains a stored empty correction under a stored empty base', () => {
     const row = resolveHilosI18nNameRow(
       nameRow('en', {
+        inLanguageId: 11,
+        nameId: 301,
+        rowKey: '11',
         code: 'en',
         nativeName: 'English',
         name: '',
@@ -111,19 +147,51 @@ describe('resolveHilosI18nNameRow', () => {
     expect(hilosI18nNameRowExpandable(row)).toBe(true)
   })
 
-  it('shows a row it cannot read by its key with nothing written, rather than dropping it', () => {
-    expect(resolveHilosI18nNameRow({ rowKey: 'de', slots: {} })).toEqual({
-      code: 'de',
-      nativeName: 'de',
-      name: null,
-      corrections: [],
-    })
+  it.each([undefined, '31', true, false, 0, -1, 1.5])(
+    'rejects a malformed child or parent ID %s',
+    (invalid) => {
+      const row = {
+        rowKey: '11',
+        inLanguageId: 11,
+        nameId: 301,
+        code: 'en',
+        nativeName: 'English',
+        name: 'Name',
+        corrections: [BRITISH],
+      }
+      for (const key of ['inLanguageId', 'nameId']) {
+        expect(() =>
+          resolveHilosI18nNameRow(nameRow('en', { ...row, [key]: invalid })),
+        ).toThrow()
+      }
+      for (const key of ['localeId', 'countryId', 'nameId']) {
+        expect(() =>
+          resolveHilosI18nNameRow(
+            nameRow('en', {
+              ...row,
+              corrections: [{ ...BRITISH, [key]: invalid }],
+            }),
+          ),
+        ).toThrow()
+      }
+    },
+  )
+
+  it('rejects a row without its writing-language ID', () => {
+    expect(() => resolveHilosI18nNameRow({ rowKey: '14', slots: {} })).toThrow()
   })
 })
 
 describe('hilosI18nNameRowExpandable', () => {
   it('opens only a row with corrections to show', () => {
-    const base = { code: 'en', nativeName: 'English', name: 'German' }
+    const base = {
+      inLanguageId: 11,
+      nameId: 301,
+      rowKey: '11',
+      code: 'en',
+      nativeName: 'English',
+      name: 'German',
+    }
 
     expect(
       hilosI18nNameRowExpandable({ ...base, corrections: [BRITISH] }),
@@ -137,7 +205,7 @@ describe('createHilosI18nNamesTable', () => {
     const table = createHilosI18nNamesTable(
       recordingContext([]),
       HILOS_I18N_LANGUAGE_NAMES,
-      createSignal('de'),
+      createSignal(14),
     )
     const declaration = table.controller.frame.declaration
 
@@ -166,17 +234,23 @@ describe('createHilosI18nNamesTable', () => {
     const table = createHilosI18nNamesTable(
       recordingContext([]),
       HILOS_I18N_LANGUAGE_NAMES,
-      createSignal('de'),
+      createSignal(14),
     )
     table.controller.ingestWindow(
       [
         nameRow('en', {
+          inLanguageId: 11,
+          nameId: 301,
+          rowKey: '11',
           code: 'en',
           nativeName: 'English',
           name: 'German',
           corrections: [BRITISH],
         }),
         nameRow('fr', {
+          inLanguageId: 13,
+          nameId: null,
+          rowKey: '13',
           code: 'fr',
           nativeName: 'Français',
           name: null,
@@ -198,19 +272,19 @@ describe('createHilosI18nNamesTable', () => {
 
   it('presets the subject as the filter and follows the address to another subject', () => {
     const sent: TableViewportDescriptor[] = []
-    const subject = createSignal('de')
+    const subject = createSignal(14)
     const table = createHilosI18nNamesTable(
       recordingContext(sent),
       HILOS_I18N_COUNTRY_NAMES,
       subject,
     )
 
-    expect(table.controller.filter.get()).toEqual({ country: 'de' })
+    expect(table.controller.filter.get()).toEqual({ country: 14 })
 
     table.start()
-    subject.set('gb')
+    subject.set(55)
 
-    expect(sent.at(-1)?.filter).toEqual({ country: 'gb' })
+    expect(sent.at(-1)?.filter).toEqual({ country: 55 })
     table.dispose()
   })
 })
@@ -230,7 +304,14 @@ describe('names table actions and focus', () => {
         {
           key: 'actions',
           label: 'Actions',
-          reads: ['code', 'nativeName', 'name', 'corrections'],
+          reads: [
+            'inLanguageId',
+            'nameId',
+            'code',
+            'nativeName',
+            'name',
+            'corrections',
+          ],
         },
       ])
     },
@@ -246,31 +327,34 @@ describe('names table actions and focus', () => {
       const { controller } = createHilosI18nNamesTable(
         context,
         target,
-        createSignal('de'),
+        createSignal(14),
       )
       const slot = {
+        inLanguageId: 11,
+        nameId: 301,
+        rowKey: '11',
         code: 'en',
         nativeName: 'English',
         name: '',
         corrections: [BRITISH],
       }
       controller.ingestWindow([nameRow('en', slot)], 1, true, null, null, 100)
-      expect(controller.focusRow('en')?.name).toBe('')
+      expect(controller.focusRow('11')?.name).toBe('')
       expect(sendFocus).toHaveBeenLastCalledWith(
         target.page,
         target.tableKey,
-        'en',
+        '11',
       )
       controller.ingestDelta({
         kind: 'row_updated',
-        rowKey: 'en',
+        rowKey: '11',
         row: nameRow('en', { ...slot, name: null, corrections: [] }),
       })
       expect(controller.focusedRow.get()?.name).toBeNull()
       expect(controller.rows.get()).toHaveLength(1)
       controller.ingestDelta({
         kind: 'row_removed',
-        rowKey: 'en',
+        rowKey: '11',
         reason: 'left_set',
         row: nameRow('en', { ...slot, name: 'Live outside the filter' }),
       })

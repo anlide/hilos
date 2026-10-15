@@ -9,22 +9,22 @@ use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 
-/** Request to delete one country by its two-letter code. */
+/** Request to delete one country by its persisted ID. */
 final class HilosI18nCountryRowDeleteActionDTO extends ActionPayloadDTO
 {
-    /** Payload key: country code. */
-    public const string countryCode = 'countryCode';
+    /** Payload key: country ID. */
+    public const string countryId = 'countryId';
 
     public const array SECRET_FIELDS = [];
 
     /**
-     * @param string $countryCode Two lowercase Latin letters
-     * @throws InvalidFormatException When the country code has an invalid format
+     * @param int $countryId Persisted country ID
+     * @throws InvalidFormatException When the country ID has an invalid format
      */
-    public function __construct(public readonly string $countryCode)
+    public function __construct(public readonly int $countryId)
     {
-        if (preg_match('/^[a-z]{2}$/D', $countryCode) !== 1) {
-            throw new InvalidFormatException('Invalid country code: ' . $countryCode);
+        if ($countryId <= 0) {
+            throw new InvalidFormatException('Invalid country ID: ' . $countryId);
         }
     }
 
@@ -37,7 +37,7 @@ final class HilosI18nCountryRowDeleteActionDTO extends ActionPayloadDTO
     /**
      * @param array<string, mixed> $data Raw or action-envelope payload
      * @return static Typed deletion request
-     * @throws InvalidFormatException When countryCode is missing or invalid
+     * @throws InvalidFormatException When countryId is missing or invalid
      */
     public static function fromArray(array $data): static
     {
@@ -46,12 +46,12 @@ final class HilosI18nCountryRowDeleteActionDTO extends ActionPayloadDTO
             $inner = [];
         }
 
-        return new static(self::requireString($inner, self::countryCode));
+        return new static(self::requireInt($inner, self::countryId));
     }
 
-    /** @return array<string, string> Country address */
+    /** @return array<string, int> Country address */
     public function toArray(): array
     {
-        return [self::countryCode => $this->countryCode];
+        return [self::countryId => $this->countryId];
     }
 }

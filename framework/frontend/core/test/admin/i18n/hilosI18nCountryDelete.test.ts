@@ -13,10 +13,13 @@ import { type HilosI18nCountryContext } from '../../../src/admin/i18n/hilosI18nC
 import { createSignal } from '../../../src/state/signal.js'
 
 const slot = {
+  countryId: 141,
+  rowKey: '141',
   code: 'qx',
   name: null,
   currencySymbol: '¤',
   currencyCode: 'XQX',
+  defaultLocaleId: null,
   defaultLocaleCode: null,
   enabled: true,
   isOwn: true,
@@ -37,15 +40,15 @@ describe('country deletion', () => {
     const context = {
       actions: { dispatch },
     } as unknown as HilosI18nCountryContext
-    expect(createHilosI18nCountryDelete(context).deleteCountry('qx')).toBe(
+    expect(createHilosI18nCountryDelete(context).deleteCountry(141)).toBe(
       handle,
     )
-    expect(createHilosI18nCountryRowDelete(context).deleteCountry('qy')).toBe(
+    expect(createHilosI18nCountryRowDelete(context).deleteCountry(147)).toBe(
       handle,
     )
     expect(dispatch.mock.calls).toEqual([
-      ['hilos_i18n_country_delete', { countryCode: 'qx' }],
-      ['hilos_i18n_country_row_delete', { countryCode: 'qy' }],
+      ['hilos_i18n_country_delete', { countryId: 141 }],
+      ['hilos_i18n_country_row_delete', { countryId: 147 }],
     ])
   })
 
@@ -55,6 +58,7 @@ describe('country deletion', () => {
       slots: { country: slot },
     })
     const target = {
+      countryId: 141,
       code: 'qx',
       name: null,
       canDelete: true,
@@ -63,6 +67,7 @@ describe('country deletion', () => {
     expect(hilosI18nCountryDeleteFromRow(row)).toEqual(target)
     expect(
       hilosI18nCountryDeleteFromCard({
+        countryId: 141,
         code: 'qx',
         currencySymbol: '¤',
         currencyCode: 'XQX',
@@ -70,6 +75,7 @@ describe('country deletion', () => {
         summary: {
           ...target,
           isOwn: true,
+          defaultLocaleId: null,
           defaultLocaleCode: null,
           defaultLocale: 'missing',
           localeCount: 0,
@@ -114,15 +120,8 @@ describe('country deletion', () => {
     { ...slot, deleteReason: undefined },
     { ...slot, deleteReason: 'other' },
   ])('never authorizes a missing or malformed slot', (country) => {
-    const row = resolveHilosI18nCountryRow({ rowKey: 'qx', slots: { country } })
-    expect(hilosI18nCountryDeleteFromRow(row)).toEqual({
-      code: 'qx',
-      name: null,
-      canDelete: false,
-      deleteReason: null,
-    })
-    expect(hilosI18nCountryDeleteReason(row)).toBe(
-      'Cannot delete: country details are unavailable',
-    )
+    expect(() =>
+      resolveHilosI18nCountryRow({ rowKey: '141', slots: { country } }),
+    ).toThrow()
   })
 })

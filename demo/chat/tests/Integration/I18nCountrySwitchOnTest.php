@@ -92,7 +92,7 @@ final class I18nCountrySwitchOnTest extends IntegrationTestCase
             self::assertNull($page->onAction(
                 'country-ak',
                 HilosSignalConstants::HILOS_I18N_COUNTRY_SWITCH_ON,
-                new HilosI18nCountrySwitchOnActionDTO('ca'),
+                new HilosI18nCountrySwitchOnActionDTO(Hilos::$db->countries['ca']?->id ?? 999999),
             ));
         });
         self::assertTrue(Hilos::$db->countries['ca']->enabled);
@@ -111,7 +111,7 @@ final class I18nCountrySwitchOnTest extends IntegrationTestCase
             self::assertNull($page->onAction(
                 'country-ak',
                 HilosSignalConstants::HILOS_I18N_COUNTRY_SWITCH_ON,
-                new HilosI18nCountrySwitchOnActionDTO('ca'),
+                new HilosI18nCountrySwitchOnActionDTO(Hilos::$db->countries['ca']?->id ?? 999999),
             ));
         });
         self::assertTrue(Hilos::$db->countries['ca']->enabled);
@@ -138,7 +138,7 @@ final class I18nCountrySwitchOnTest extends IntegrationTestCase
             self::assertNull($page->onAction(
                 'country-ak',
                 HilosSignalConstants::HILOS_I18N_COUNTRY_SWITCH_ON,
-                new HilosI18nCountrySwitchOnActionDTO('ca'),
+                new HilosI18nCountrySwitchOnActionDTO(Hilos::$db->countries['ca']?->id ?? 999999),
             ));
         });
         self::assertTrue(Hilos::$db->countries['ca']->enabled);
@@ -147,7 +147,7 @@ final class I18nCountrySwitchOnTest extends IntegrationTestCase
         $page->onAction(
             'country-ak',
             HilosSignalConstants::HILOS_I18N_COUNTRY_SWITCH_ON,
-            new HilosI18nCountrySwitchOnActionDTO('zz'),
+            new HilosI18nCountrySwitchOnActionDTO(Hilos::$db->countries['zz']?->id ?? 999999),
         );
     }
 
@@ -176,7 +176,7 @@ final class I18nCountrySwitchOnTest extends IntegrationTestCase
             new CountryDetailPage($this->agent)->onAction(
                 'switch-card-one',
                 HilosSignalConstants::HILOS_I18N_COUNTRY_SWITCH_ON,
-                new HilosI18nCountrySwitchOnActionDTO('ca'),
+                new HilosI18nCountrySwitchOnActionDTO(Hilos::$db->countries['ca']?->id ?? 999999),
             );
         });
         Hilos::$browser->record(SourceChange::dbUpdated(

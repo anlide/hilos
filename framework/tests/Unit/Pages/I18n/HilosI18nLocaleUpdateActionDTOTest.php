@@ -26,8 +26,9 @@ final class HilosI18nLocaleUpdateActionDTOTest extends TestCase
     ];
 
     private const array PAYLOAD = [
-        HilosI18nLocaleUpdateActionDTO::languageCode => 'en',
-        HilosI18nLocaleUpdateActionDTO::countryCode => 'gb',
+        HilosI18nLocaleUpdateActionDTO::languageId => 11,
+        HilosI18nLocaleUpdateActionDTO::countryId => 101,
+        HilosI18nLocaleUpdateActionDTO::localeId => 11101,
         HilosI18nLocaleUpdateActionDTO::formats => self::FORMATS,
     ];
 
@@ -42,23 +43,34 @@ final class HilosI18nLocaleUpdateActionDTOTest extends TestCase
             HilosI18nLocaleUpdateActionDTO::fromArray(self::PAYLOAD)->getAction(),
         );
         $countryless = self::PAYLOAD;
-        $countryless[HilosI18nLocaleUpdateActionDTO::countryCode] = null;
+        $countryless[HilosI18nLocaleUpdateActionDTO::countryId] = null;
         self::assertSame($countryless, HilosI18nLocaleUpdateActionDTO::fromArray($countryless)->toArray());
     }
 
     /** @return iterable<string, array{array<string, mixed>}> Invalid request shapes */
     public static function invalidPayloads(): iterable
     {
-        foreach (['EN', 'eng', '', 42] as $invalid) {
+        yield 'legacy codes' => [['languageCode' => 'en', 'countryCode' => 'gb']];
+
+        foreach (['11101', 0, -1, 11101.0, null, true, false] as $invalidId) {
+            yield 'locale ID ' . var_export($invalidId, true) => [array_replace(self::PAYLOAD, [
+                HilosI18nLocaleUpdateActionDTO::localeId => $invalidId,
+            ])];
+        }
+        $missingLocale = self::PAYLOAD;
+        unset($missingLocale[HilosI18nLocaleUpdateActionDTO::localeId]);
+        yield 'missing locale ID' => [$missingLocale];
+
+        foreach (['11', 'EN', 0, -1, 11.0, '', true, false] as $invalid) {
             yield 'language ' . var_export($invalid, true) => [array_replace(self::PAYLOAD, [
-                HilosI18nLocaleUpdateActionDTO::languageCode => $invalid,
+                HilosI18nLocaleUpdateActionDTO::languageId => $invalid,
             ])];
             yield 'country ' . var_export($invalid, true) => [array_replace(self::PAYLOAD, [
-                HilosI18nLocaleUpdateActionDTO::countryCode => $invalid,
+                HilosI18nLocaleUpdateActionDTO::countryId => $invalid,
             ])];
         }
         $missingCountry = self::PAYLOAD;
-        unset($missingCountry[HilosI18nLocaleUpdateActionDTO::countryCode]);
+        unset($missingCountry[HilosI18nLocaleUpdateActionDTO::countryId]);
         yield 'missing country' => [$missingCountry];
         $missingFormats = self::PAYLOAD;
         unset($missingFormats[HilosI18nLocaleUpdateActionDTO::formats]);

@@ -159,8 +159,8 @@ import { HilosI18nMarksLegend } from './HilosI18nMarksLegend.js'
           <ng-template hilosTableCell="actions" let-row>
             <hilos-i18n-language-row-actions
               [row]="row"
-              (edit)="subject.window.open(row.code)"
-              (remove)="openDelete(row.code)"
+              (edit)="subject.window.open(row.rowKey)"
+              (remove)="openDelete(row.rowKey)"
             />
           </ng-template>
         </hilos-viewport-table>
@@ -175,7 +175,7 @@ import { HilosI18nMarksLegend } from './HilosI18nMarksLegend.js'
         />
         <hilos-i18n-language-window [window]="subject.window" />
         <hilos-i18n-language-delete
-          [open]="deleteCode() !== null"
+          [open]="deleteKey() !== null"
           [context]="subject.context"
           [source]="deleteSource()"
           [actionName]="deleteAction"
@@ -225,11 +225,11 @@ export class HilosI18nLanguagesPage {
   private readonly focusedRow = signal<HilosI18nLanguageRow | undefined>(
     undefined,
   )
-  protected readonly deleteCode = signal<string | null>(null)
+  protected readonly deleteKey = signal<string | null>(null)
   protected readonly deleteSource = computed(() => {
     const row = this.focusedRow()
 
-    return row !== undefined && row.code === this.deleteCode() ? row : null
+    return row !== undefined && row.rowKey === this.deleteKey() ? row : null
   })
 
   constructor() {
@@ -248,7 +248,7 @@ export class HilosI18nLanguagesPage {
       binding.languages.start()
       onCleanup(() => {
         for (const stop of stops) stop()
-        this.deleteCode.set(null)
+        this.deleteKey.set(null)
         binding.languages.controller.releaseFocus()
         binding.languages.dispose()
         binding.add.dispose()
@@ -272,16 +272,16 @@ export class HilosI18nLanguagesPage {
   protected openDelete(code: string): void {
     const controller = this.binding().languages.controller
     const fresh = controller.focusRow(code)
-    if (fresh?.code !== code || hilosI18nLanguageDelete(fresh).disabled) {
+    if (fresh?.rowKey !== code || hilosI18nLanguageDelete(fresh).disabled) {
       controller.releaseFocus()
       return
     }
-    this.deleteCode.set(fresh.code)
+    this.deleteKey.set(fresh.rowKey)
   }
 
   // Closing lets the row go at once, so a window opened next keeps its own.
   protected closeDelete(): void {
-    this.deleteCode.set(null)
+    this.deleteKey.set(null)
     this.binding().languages.controller.releaseFocus()
   }
 }

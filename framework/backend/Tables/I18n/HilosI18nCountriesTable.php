@@ -11,6 +11,7 @@ use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
@@ -70,12 +71,14 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
         BrowserTableConfigKey::ROWS => [
             [
                 BrowserTableFieldKey::SOURCE => self::COUNTRIES_SOURCE,
-                BrowserTableFieldKey::ROW_KEY => ObjectCountry::code,
+                BrowserTableFieldKey::ROW_KEY => ObjectCountry::id,
                 BrowserTableFieldKey::FIELDS => [
+                    ObjectCountry::id => HilosI18nCountriesTableRow::countryId,
                     ObjectCountry::code => HilosI18nCountriesTableRow::code,
                     ObjectCountry::currencySymbol => HilosI18nCountriesTableRow::currencySymbol,
                     ObjectCountry::currencyCode => HilosI18nCountriesTableRow::currencyCode,
                     ObjectCountry::enabled => HilosI18nCountriesTableRow::enabled,
+                    ObjectCountry::defaultLocaleId => HilosI18nCountriesTableRow::defaultLocaleId,
                 ],
                 BrowserTableFieldKey::COMPUTED => [
                     HilosI18nCountriesTableRow::name,
@@ -149,7 +152,7 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
      * Language changes are ignored: the default language changes with the environment
      * and a restart.
      *
-     * A deletion of a country names the code the removed row published. A create or an update
+     * A deletion of a country names the removed row's primary ID. A create or an update
      * is read back by the row's id, and a row that is already gone is ignored.
      *
      * @param SourceChange $change Source change that may affect this table
@@ -159,6 +162,7 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
      * @throws InvalidArgumentException When a loaded row has the wrong type
      * @throws EnvException When the default language setting is absent
      * @throws EnvInvalidValueException When its configured code is unknown
+     * @throws InvalidFormatException When a projected ID is not positive
      */
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
@@ -201,6 +205,8 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
     public function wireFields(): array
     {
         return [
+            HilosI18nCountriesTableRow::rowKey => WireField::column(HilosDbContext::countries, ObjectCountry::id),
+            HilosI18nCountriesTableRow::countryId => WireField::column(HilosDbContext::countries, ObjectCountry::id),
             HilosI18nCountriesTableRow::code => WireField::column(HilosDbContext::countries, ObjectCountry::code),
             HilosI18nCountriesTableRow::currencySymbol => WireField::column(
                 HilosDbContext::countries,
@@ -212,12 +218,14 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
             ),
             HilosI18nCountriesTableRow::enabled => WireField::column(HilosDbContext::countries, ObjectCountry::enabled),
             HilosI18nCountriesTableRow::name => WireField::column(HilosDbContext::countryNames, ObjectCountryName::name),
+            HilosI18nCountriesTableRow::defaultLocaleId => WireField::column(HilosDbContext::countries, ObjectCountry::defaultLocaleId),
             HilosI18nCountriesTableRow::defaultLocaleCode => WireField::column(
                 HilosDbContext::locales,
                 ObjectLocale::code,
             ),
             HilosI18nCountriesTableRow::isOwn => WireField::notPersonal(),
             HilosI18nCountriesTableRow::locales => WireField::each([
+                CountryLocaleChoice::localeId => WireField::column(HilosDbContext::locales, ObjectLocale::id),
                 CountryLocaleChoice::code => WireField::column(HilosDbContext::locales, ObjectLocale::code),
                 CountryLocaleChoice::enabled => WireField::column(HilosDbContext::locales, ObjectLocale::enabled),
             ]),
@@ -233,7 +241,7 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
      * The set is one row, searched the same way the window is, so a new country under an
      * active search is announced only when the search would keep it.
      *
-     * @param string|int $rowKey Country code
+     * @param string|int $rowKey Decimal country ID
      * @param TableQueryDTO $query Window query whose search describes the set
      * @return ?bool Whether the country is in the set; this table always knows
      * @throws DatabaseException When a country, a name or a locale cannot be read
@@ -243,17 +251,22 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
      * @throws EnvInvalidValueException When its configured code is unknown
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws InvalidFormatException When a projected ID is not positive
      */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
     {
-        $country = Hilos::$db->countries[(string) $rowKey];
+        $id = filter_var($rowKey, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($id === false || (string) $id !== (string) $rowKey) {
+            return false;
+        }
+        $country = Hilos::$db->countries[$id];
         if ($country === null) {
             return false;
         }
 
         return $this->containsRowInMemory(
             [$this->rowForCountry($country, $this->defaultLanguageId())->toArray()],
-            $country->code,
+            (string) $country->id,
             $this->scopeSearch($query),
         );
     }
@@ -275,6 +288,7 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
      * @throws CollectionNotManualException When a name collection refuses a matched item
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws InvalidFormatException When a projected ID is not positive
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
@@ -333,13 +347,12 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
      * @throws InvalidArgumentException When a loaded row has the wrong type
      * @throws EnvException When the default language setting is absent
      * @throws EnvInvalidValueException When its configured code is unknown
+     * @throws InvalidFormatException When a projected ID is not positive
      */
     private function mutationForCountry(SourceChange $change): ?TableRowMutationDTO
     {
         if ($change->mutationType === TableMutationType::Delete) {
-            $code = $change->row[ObjectCountry::code] ?? null;
-
-            return is_string($code) ? $this->mutation(TableMutationType::Delete, $code) : null;
+            return $this->mutation(TableMutationType::Delete, (string) $change->sourceId);
         }
 
         $country = Hilos::$db->countries[(int) $change->sourceId];
@@ -349,7 +362,7 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
 
         return $this->mutation(
             $change->mutationType,
-            $country->code,
+            (string) $country->id,
             $this->rowForCountry($country, $this->defaultLanguageId()),
         );
     }
@@ -365,6 +378,7 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
      * @throws InvalidArgumentException When a loaded row has the wrong type
      * @throws EnvException When the default language setting is absent
      * @throws EnvInvalidValueException When its configured code is unknown
+     * @throws InvalidFormatException When a projected ID is not positive
      */
     private function mutationForCountryName(SourceChange $change): ?TableRowMutationDTO
     {
@@ -378,7 +392,7 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
 
         return $this->mutation(
             TableMutationType::Update,
-            $country->code,
+            (string) $country->id,
             $this->rowForCountry($country, $this->defaultLanguageId()),
         );
     }
@@ -394,6 +408,7 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
      * @throws InvalidArgumentException When a loaded row has the wrong type
      * @throws EnvException When the default language setting is absent
      * @throws EnvInvalidValueException When its configured code is unknown
+     * @throws InvalidFormatException When a projected ID is not positive
      */
     private function mutationForLocale(SourceChange $change): ?TableRowMutationDTO
     {
@@ -407,7 +422,7 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
 
         return $this->mutation(
             TableMutationType::Update,
-            $country->code,
+            (string) $country->id,
             $this->rowForCountry($country, $this->defaultLanguageId()),
         );
     }
@@ -420,6 +435,7 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
      * @throws DatabaseException When a name or a locale cannot be read
      * @throws LogicException When a collection is not configured
      * @throws InvalidArgumentException When a loaded row has the wrong type
+     * @throws InvalidFormatException When a projected ID is not positive
      */
     private function rowForCountry(
         Country $country,
@@ -427,6 +443,7 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
         ?array $baseNames = null,
     ): HilosI18nCountriesTableRow {
         $choices = array_values($country->locales->map(static fn (Locale $locale): CountryLocaleChoice => new CountryLocaleChoice(
+            $locale->id,
             $locale->code,
             $locale->enabled,
         )));
@@ -434,10 +451,12 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
         $deleteReason = $country->deleteReason();
 
         return new HilosI18nCountriesTableRow(
+            countryId: $country->id,
             code: $country->code,
             name: $this->nameOf($country, $defaultLanguageId, $baseNames),
             currencySymbol: $country->currencySymbol,
             currencyCode: $country->currencyCode,
+            defaultLocaleId: $country->defaultLocaleId,
             defaultLocaleCode: $country->defaultLocale?->code,
             enabled: $country->enabled,
             isOwn: BuiltInI18nCatalog::country($country->code) === null,

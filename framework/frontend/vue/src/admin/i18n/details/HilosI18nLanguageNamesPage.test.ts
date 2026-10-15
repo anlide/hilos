@@ -22,6 +22,7 @@ import HilosI18nNamesTable from './HilosI18nNamesTable.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
 
 const testCard: HilosI18nLanguageCard = {
+  languageId: 46,
   code: 'qx',
   nativeName: 'Test language',
   rtl: false,
@@ -204,18 +205,35 @@ function deletionPage(viewer = false) {
     .getComponent(HilosI18nNamesTable)
     .props('controller')
   const slot = {
+    inLanguageId: 47,
+    nameId: 301,
+    rowKey: '47',
     code: 'qw',
     nativeName: 'Writing',
     name: 'Original',
     corrections: [
       {
+        localeId: 501,
+        nameId: 401,
+        countryId: 101,
         localeCode: 'qw-GB',
         countryCode: 'gb',
         countryName: 'UK',
         name: 'Correction',
       },
-      { localeCode: 'qw-US', countryCode: 'us', countryName: 'US', name: '' },
       {
+        localeId: 502,
+        nameId: 402,
+        countryId: 102,
+        localeCode: 'qw-US',
+        countryCode: 'us',
+        countryName: 'US',
+        name: '',
+      },
+      {
+        localeId: 503,
+        nameId: null,
+        countryId: 103,
         localeCode: 'qw-CA',
         countryCode: 'ca',
         countryName: 'Canada',
@@ -225,11 +243,14 @@ function deletionPage(viewer = false) {
   }
   controller.ingestWindow(
     [
-      { rowKey: 'qw', slots: { language: slot } },
+      { rowKey: '47', slots: { language: slot } },
       {
-        rowKey: 'fr',
+        rowKey: '13',
         slots: {
           language: {
+            inLanguageId: 13,
+            nameId: null,
+            rowKey: '13',
             code: 'fr',
             nativeName: 'French',
             name: null,
@@ -238,9 +259,12 @@ function deletionPage(viewer = false) {
         },
       },
       {
-        rowKey: 'es',
+        rowKey: '15',
         slots: {
           language: {
+            inLanguageId: 15,
+            nameId: 301,
+            rowKey: '15',
             code: 'es',
             nativeName: 'Spanish',
             name: '',
@@ -268,7 +292,7 @@ async function settlePage(): Promise<void> {
 describe('language name deletion from the page', () => {
   it('owns both slots, includes saved empty names, and omits absent values', async () => {
     const s = deletionPage()
-    s.controller.expandRow('qw', true)
+    s.controller.expandRow('47', true)
     await settlePage()
     for (const key of ['qw', 'qw-GB', 'qw-US', 'es']) {
       expect(
@@ -299,16 +323,19 @@ describe('language name deletion from the page', () => {
     const focus = vi.spyOn(s.controller, 'focusRow')
     const button = s.wrapper.get('tr [data-id="i18n-names-delete-qw"]')
     ;(button.element as HTMLButtonElement).click()
-    expect(focus).toHaveBeenCalledWith('qw')
+    expect(focus).toHaveBeenCalledWith('47')
     expect(s.modal().props('modelValue')).toBe(false)
     // The fresh focus can change between the click and the awaited continuation.
     s.controller.ingestDelta({
       kind: 'row_updated',
-      rowKey: 'qw',
-      row: { rowKey: 'qw', slots: { language: { ...s.slot, name: 'Fresh' } } },
+      rowKey: '47',
+      row: { rowKey: '47', slots: { language: { ...s.slot, name: 'Fresh' } } },
     })
     await settlePage()
     expect(s.modal().props('target')).toMatchObject({
+      inLanguageId: 47,
+      nameId: 301,
+      languageId: 46,
       languageCode: 'qx',
       inLanguageCode: 'qw',
       expectedName: 'Fresh',
@@ -316,8 +343,8 @@ describe('language name deletion from the page', () => {
     })
     s.controller.ingestDelta({
       kind: 'row_updated',
-      rowKey: 'qw',
-      row: { rowKey: 'qw', slots: { language: { ...s.slot, name: 'Newer' } } },
+      rowKey: '47',
+      row: { rowKey: '47', slots: { language: { ...s.slot, name: 'Newer' } } },
     })
     await settlePage()
     expect(s.modal().props('target')?.expectedName).toBe('Fresh')
@@ -344,7 +371,7 @@ describe('language name deletion from the page', () => {
 
   it('takes the empty correction from the fresh focused row', async () => {
     const s = deletionPage()
-    s.controller.expandRow('qw', true)
+    s.controller.expandRow('47', true)
     await settlePage()
     await s.wrapper
       .get('tr [data-id="i18n-names-delete-qw-US"]')
@@ -352,6 +379,8 @@ describe('language name deletion from the page', () => {
     await settlePage()
     expect(s.modal().props('target')).toMatchObject({
       kind: 'override',
+      localeId: 502,
+      nameId: 402,
       localeCode: 'qw-US',
       expectedName: '',
     })
@@ -403,7 +432,7 @@ describe('language name deletion from the page', () => {
 
   it('disables every trash for the viewer through the admin shell', async () => {
     const s = deletionPage(true)
-    s.controller.expandRow('qw', true)
+    s.controller.expandRow('47', true)
     await settlePage()
     for (const button of s.wrapper.findAll('[data-id^="i18n-names-delete-"]')) {
       expect((button.element as HTMLButtonElement).disabled).toBe(true)
@@ -416,7 +445,7 @@ describe('language name deletion from the page', () => {
 describe('language name add/edit from the page', () => {
   it('draws plus/pencil by null in both base and correction slots, preserving the trash', async () => {
     const s = deletionPage()
-    s.controller.expandRow('qw', true)
+    s.controller.expandRow('47', true)
     await settlePage()
     for (const surface of ['table', '[data-id="hilos-table-cards"]']) {
       for (const suffix of [
@@ -461,10 +490,10 @@ describe('language name add/edit from the page', () => {
     const s = deletionPage()
     s.controller.ingestDelta({
       kind: 'row_updated',
-      rowKey: 'qw',
-      row: { rowKey: 'qw', slots: { language: { ...s.slot, name: '' } } },
+      rowKey: '47',
+      row: { rowKey: '47', slots: { language: { ...s.slot, name: '' } } },
     })
-    s.controller.expandRow('qw', true)
+    s.controller.expandRow('47', true)
     await settlePage()
     await s.wrapper
       .get('tr [data-id="i18n-language-name-locale-add-qw-CA"]')
@@ -560,7 +589,7 @@ describe('language name add/edit from the page', () => {
     expect(s.controller.focusedRow.get()).toBeUndefined()
     s.scope.data.set(LANGUAGE_CARD_DATA, { ...testCard, code: 'qz' })
     s.controller.ingestWindow(
-      [{ rowKey: 'qw', slots: { language: s.slot } }],
+      [{ rowKey: '47', slots: { language: s.slot } }],
       1,
       true,
       null,
@@ -581,7 +610,7 @@ describe('language name add/edit from the page', () => {
 
   it('lets the viewer open a form through either slot while its submit stays locked', async () => {
     const s = deletionPage(true)
-    s.controller.expandRow('qw', true)
+    s.controller.expandRow('47', true)
     await settlePage()
     for (const suffix of [
       'add-fr',

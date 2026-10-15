@@ -29,7 +29,7 @@ export function HilosI18nLanguageDelete({
   context: HilosI18nLanguageContext
   source: Pick<
     HilosI18nLanguageRow,
-    'code' | 'nativeName' | 'canDelete' | 'deleteReason'
+    'languageId' | 'code' | 'nativeName' | 'canDelete' | 'deleteReason'
   > | null
   actionName:
     | typeof HILOS_I18N_LANGUAGE_DELETE_ACTION
@@ -39,7 +39,7 @@ export function HilosI18nLanguageDelete({
   const action = useTrackedAction()
   const { locked } = useLookOnly()
   const [target, setTarget] = useState({
-    code: '',
+    languageId: null as number | null,
     name: '',
     action: actionName,
   })
@@ -56,7 +56,7 @@ export function HilosI18nLanguageDelete({
   useEffect(() => {
     if (open && !wasOpen.current && source) {
       setTarget({
-        code: source.code,
+        languageId: source.languageId,
         name: source.nativeName,
         action: actionName,
       })
@@ -64,12 +64,20 @@ export function HilosI18nLanguageDelete({
     }
     wasOpen.current = open
   }, [open, source, actionName, clearError])
-  const elsewhere = open && !action.busy && source?.code !== target.code
+  const elsewhere =
+    open && !action.busy && source?.languageId !== target.languageId
   function close(): void {
     if (!sending.current) onClose()
   }
   async function confirm(): Promise<void> {
-    if (!open || sending.current || locked || elsewhere) return
+    if (
+      !open ||
+      sending.current ||
+      locked ||
+      elsewhere ||
+      target.languageId === null
+    )
+      return
     // A dependency appearing after opening is judged by the server's live write door.
     sending.current = true
     const { deleteLanguage } = createHilosI18nLanguageDelete(
@@ -77,7 +85,10 @@ export function HilosI18nLanguageDelete({
       target.action,
     )
     try {
-      if ((await action.run(deleteLanguage(target.code))) && mounted.current) {
+      if (
+        (await action.run(deleteLanguage(target.languageId))) &&
+        mounted.current
+      ) {
         onClose()
         onDeleted?.()
       }

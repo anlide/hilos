@@ -133,7 +133,7 @@ import { HilosI18nNamesTable } from './HilosI18nNamesTable.js'
                   '-' +
                   correction.localeCode
                 "
-                (click)="openName(row, correction.localeCode)"
+                (click)="openName(row, correction.localeId)"
               >
                 <i
                   [class]="
@@ -150,7 +150,7 @@ import { HilosI18nNamesTable } from './HilosI18nNamesTable.js'
                 class="btn-sm btn-outline-danger"
                 [attr.aria-label]="copy.overrideLabel(correction.localeCode)"
                 [attr.data-id]="'i18n-names-delete-' + correction.localeCode"
-                (click)="openDelete(row, correction.localeCode)"
+                (click)="openDelete(row, correction.localeId)"
               >
                 <i class="bi bi-trash" aria-hidden="true"></i>
               </button>
@@ -208,14 +208,19 @@ export class HilosI18nLanguageNamesPage {
   /** The card and the names table, bound to one context. */
   protected readonly binding = computed(() => {
     const context = this.context()
+    const card = createHilosI18nLanguageCard(context)
 
     return {
       context,
-      card: createHilosI18nLanguageCard(context),
+      card,
       names: createHilosI18nNamesTable(
         context,
         HILOS_I18N_LANGUAGE_NAMES,
-        this.language,
+        computedSignal(() =>
+          card.get()?.code === this.language.get()
+            ? (card.get()?.languageId ?? null)
+            : null,
+        ),
       ),
     }
   })
@@ -247,9 +252,9 @@ export class HilosI18nLanguageNamesPage {
     const row = this.focusedRow()
 
     return target !== null &&
-      this.card()?.code === target.languageCode &&
+      this.card()?.languageId === target.languageId &&
       this.languageCode() === target.languageCode &&
-      row?.code === target.inLanguageCode
+      row?.inLanguageId === target.inLanguageId
       ? row
       : null
   })
@@ -291,25 +296,25 @@ export class HilosI18nLanguageNamesPage {
   // the focus the confirmation let go and keeps it.
   protected openName(
     row: HilosI18nNameRow,
-    localeCode: string | null = null,
+    localeId: number | null = null,
   ): void {
     const { window } = this.windows()
     if (window.saving.get()) return
     this.closeDelete()
-    window.open(row.code, localeCode)
+    window.open(row.rowKey, localeId)
   }
 
   // Take the row into focus — applying what waits on it first — and open the
   // confirmation only over a fresh row of the language the address still
   // names, fixing the value it removes from that row.
-  protected openDelete(row: HilosI18nNameRow, localeCode?: string): void {
+  protected openDelete(row: HilosI18nNameRow, localeId?: number): void {
     const binding = this.binding()
     const { window } = this.windows()
     if (this.deleteOpen() || window.saving.get()) return
     window.close()
     const attempt = ++this.opening
     const languageCode = this.language.get()
-    const resolved = binding.names.controller.focusRow(row.code)
+    const resolved = binding.names.controller.focusRow(row.rowKey)
     if (attempt !== this.opening) return
     const fresh = binding.names.controller.focusedRow.get()
     const subject = binding.card.get()
@@ -317,21 +322,26 @@ export class HilosI18nLanguageNamesPage {
       resolved === null ||
       this.language.get() !== languageCode ||
       subject?.code !== languageCode ||
-      fresh?.code !== row.code ||
+      fresh?.inLanguageId !== row.inLanguageId ||
       fresh.name === null
     ) {
       this.closeDelete()
       return
     }
-    const expectedName =
-      localeCode === undefined
-        ? fresh.name
-        : fresh.corrections.find((item) => item.localeCode === localeCode)?.name
-    if (expectedName == null) {
+    const correction =
+      localeId === undefined
+        ? null
+        : fresh.corrections.find((item) => item.localeId === localeId)
+    const expectedName = localeId === undefined ? fresh.name : correction?.name
+    const nameId = localeId === undefined ? fresh.nameId : correction?.nameId
+    if (expectedName == null || nameId == null) {
       this.closeDelete()
       return
     }
     const coordinates = {
+      languageId: subject.languageId,
+      inLanguageId: fresh.inLanguageId,
+      nameId,
       languageCode,
       languageNativeName: subject.nativeName,
       inLanguageCode: fresh.code,
@@ -339,9 +349,14 @@ export class HilosI18nLanguageNamesPage {
       expectedName,
     }
     this.target.set(
-      localeCode === undefined
+      localeId === undefined
         ? { ...coordinates, kind: 'base' }
-        : { ...coordinates, kind: 'override', localeCode },
+        : {
+            ...coordinates,
+            kind: 'override',
+            localeId,
+            localeCode: correction!.localeCode,
+          },
     )
     this.deleteOpen.set(true)
   }

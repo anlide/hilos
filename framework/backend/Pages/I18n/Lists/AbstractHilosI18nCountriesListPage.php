@@ -142,8 +142,8 @@ abstract class AbstractHilosI18nCountriesListPage extends AbstractHilosPage
      */
     private function handleCountryRowDelete(HilosI18nCountryRowDeleteActionDTO $dto): void
     {
-        $country = Hilos::$db->countries[$dto->countryCode]
-            ?? throw new TableActionException('Unknown country: ' . $dto->countryCode);
+        $country = Hilos::$db->countries[$dto->countryId]
+            ?? throw new TableActionException('Unknown country: ' . $dto->countryId);
         $country->actions->delete();
         $this->setActionSuccessMessage('Country deleted.');
     }

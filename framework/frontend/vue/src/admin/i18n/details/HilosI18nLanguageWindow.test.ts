@@ -18,6 +18,8 @@ import { hilosAdminViewModeKey } from '../../../hilosAdminViewMode.js'
 import HilosI18nLanguageWindow from './HilosI18nLanguageWindow.vue'
 
 const known: HilosI18nLanguageRow = {
+  languageId: 19,
+  rowKey: '19',
   code: 'uk',
   nativeName: 'Українська',
   rtl: false,
@@ -44,7 +46,7 @@ function harness(row = known, viewMode = false) {
   const focused = createSignal<HilosI18nLanguageRow | undefined>(undefined)
   const controller = {
     focusRow: (key: string) => {
-      if (key !== row.code) return null
+      if (key !== row.rowKey) return null
       focused.set(row)
       return row
     },
@@ -77,7 +79,7 @@ function harness(row = known, viewMode = false) {
     global: { provide: { [hilosAdminViewModeKey as symbol]: ref(viewMode) } },
   })
   mounted.push(view)
-  window.open(row.code)
+  window.open(row.rowKey)
   return { view, window, focused, dispatched }
 }
 
@@ -102,6 +104,18 @@ async function settled(): Promise<void> {
 }
 
 describe('HilosI18nLanguageWindow', () => {
+  it('keeps the draft when focus reports a new ID with the same code', async () => {
+    const h = harness()
+    await nextTick()
+    await name('Unsaved draft')
+    h.focused.set({ ...known, languageId: 20, rowKey: '20' })
+    await nextTick()
+    expect(input('native-name').value).toBe('Unsaved draft')
+    expect(button('submit')!.disabled).toBe(true)
+    expect(button('submit')!.textContent).toContain('Deleted')
+    expect(h.dispatched).toHaveLength(0)
+  })
+
   it('shows a known language, focuses the dialog, and saves the edited fields on success', async () => {
     const h = harness()
     await settled()
@@ -129,7 +143,7 @@ describe('HilosI18nLanguageWindow', () => {
     await nextTick()
     expect(h.dispatched[0]).toMatchObject({
       name: HILOS_I18N_LANGUAGE_ROW_UPDATE_ACTION,
-      payload: { languageCode: 'uk', nativeName: 'My name', rtl: true },
+      payload: { languageId: 19, nativeName: 'My name', rtl: true },
     })
     expect(button('cancel')?.disabled).toBe(true)
     expect(button('submit')?.disabled).toBe(true)
@@ -173,7 +187,7 @@ describe('HilosI18nLanguageWindow', () => {
     expect(h.window.opened.get()).toBe(true)
     h.window.close()
     await nextTick()
-    h.window.open('uk')
+    h.window.open('19')
     await nextTick()
     expect(el('i18n-language-edit-error')?.textContent).not.toContain(
       "Language 'uk' is switched on",

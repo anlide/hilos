@@ -21,7 +21,7 @@ const props = defineProps<{
   context: HilosI18nLanguageContext
   source: Pick<
     HilosI18nLanguageRow,
-    'code' | 'nativeName' | 'canDelete' | 'deleteReason'
+    'languageId' | 'code' | 'nativeName' | 'canDelete' | 'deleteReason'
   > | null
   actionName:
     | typeof HILOS_I18N_LANGUAGE_DELETE_ACTION
@@ -35,7 +35,7 @@ const emit = defineEmits<{
 const copy = HILOS_I18N_LANGUAGE_DELETE_COPY
 const action = useTrackedAction()
 const { locked } = useLookOnly()
-const openedCode = ref('')
+const openedId = ref<number | null>(null)
 const openedName = ref('')
 const openedAction = ref(props.actionName)
 const modalOpen = computed({
@@ -48,14 +48,14 @@ const elsewhere = computed(
   () =>
     props.modelValue &&
     !action.busy.value &&
-    props.source?.code !== openedCode.value,
+    props.source?.languageId !== openedId.value,
 )
 
 watch(
   () => props.modelValue,
   (open) => {
     if (open && props.source !== null) {
-      openedCode.value = props.source.code
+      openedId.value = props.source.languageId
       openedName.value = props.source.nativeName
       openedAction.value = props.actionName
       action.clearError()
@@ -67,6 +67,7 @@ watch(
 async function confirm(): Promise<void> {
   if (
     !props.modelValue ||
+    openedId.value === null ||
     action.busy.value ||
     locked.value ||
     elsewhere.value
@@ -78,7 +79,7 @@ async function confirm(): Promise<void> {
     props.context,
     openedAction.value,
   )
-  if (await action.run(deleteLanguage(openedCode.value))) {
+  if (await action.run(deleteLanguage(openedId.value))) {
     emit('update:modelValue', false)
     emit('deleted')
   }

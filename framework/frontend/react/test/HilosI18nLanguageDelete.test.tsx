@@ -60,7 +60,7 @@ describe('React language deletion', () => {
       expect(h.calls).toHaveLength(1)
       expect(h.calls[0]).toMatchObject({
         action: actionName,
-        payload: { languageCode: 'uk' },
+        payload: { languageId: 19 },
       })
       expect(
         el<HTMLButtonElement>('i18n-language-delete-cancel').disabled,

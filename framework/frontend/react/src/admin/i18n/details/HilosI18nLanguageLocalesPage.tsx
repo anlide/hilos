@@ -80,8 +80,16 @@ function LanguageLocales({
     templates = useSignal(liveTemplates),
     loading = useSignal(router.pageLoading)
   const locales = useMemo(
-    () => createHilosI18nLanguageLocalesTable(context, language),
-    [context, language],
+    () =>
+      createHilosI18nLanguageLocalesTable(
+        context,
+        computedSignal(() =>
+          liveCard.get()?.code === language.get()
+            ? (liveCard.get()?.languageId ?? null)
+            : null,
+        ),
+      ),
+    [context, language, liveCard],
   )
   const { deleteLocale } = useMemo(
     () => createHilosI18nLocaleDelete(context),
@@ -108,11 +116,14 @@ function LanguageLocales({
   }, [locales])
   const deleteSource: HilosI18nLocaleDeleteTarget | null =
     deleteTarget &&
-    card?.code === deleteTarget.languageCode &&
-    focused?.rowKey === deleteTarget.localeCode &&
+    card?.languageId === deleteTarget.languageId &&
+    focused?.localeId === deleteTarget.localeId &&
     focused.localeCode !== null &&
     focused.formats !== null
       ? {
+          languageId: focused.languageId,
+          countryId: focused.countryId,
+          localeId: focused.localeId!,
           languageCode: card.code,
           countryCode: focused.countryCode,
           localeCode: focused.localeCode,
@@ -120,6 +131,13 @@ function LanguageLocales({
           countryLabel: hilosI18nLocaleCountryLabel(focused),
         }
       : null
+  function pairCode(row: HilosI18nLocaleRow): string {
+    return (
+      row.localeCode ??
+      `${card?.code ?? ''}${row.countryCode === null ? '' : '-' + row.countryCode.toUpperCase()}`
+    )
+  }
+
   function openWindow(row: HilosI18nLocaleRow): void {
     if (opened || deleteTarget || liveCard.get()?.code !== code) return
     const fresh = locales.controller.focusRow(row.rowKey)
@@ -143,6 +161,9 @@ function LanguageLocales({
       return
     }
     setDeleteTarget({
+      languageId: fresh.languageId,
+      countryId: fresh.countryId,
+      localeId: fresh.localeId!,
       languageCode: code,
       countryCode: fresh.countryCode,
       localeCode: fresh.localeCode,
@@ -165,7 +186,7 @@ function LanguageLocales({
                 row.countryCode === null ? (
                   <span
                     className="fst-italic text-body-secondary"
-                    data-id={`i18n-locales-country-${row.rowKey}`}
+                    data-id={`i18n-locales-country-${pairCode(row)}`}
                   >
                     — no country
                   </span>
@@ -174,7 +195,7 @@ function LanguageLocales({
                     className={
                       row.enabled === false ? 'text-body-secondary' : undefined
                     }
-                    data-id={`i18n-locales-country-${row.rowKey}`}
+                    data-id={`i18n-locales-country-${pairCode(row)}`}
                   >
                     <span className="text-uppercase text-body-secondary me-1">
                       {row.countryCode}
@@ -186,7 +207,7 @@ function LanguageLocales({
                 row.localeCode === null ? (
                   <span
                     className={PLATE}
-                    data-id={`i18n-locales-none-${row.rowKey}`}
+                    data-id={`i18n-locales-none-${pairCode(row)}`}
                   >
                     <i className="bi bi-dash-circle me-1" aria-hidden="true" />
                     No locale
@@ -196,7 +217,7 @@ function LanguageLocales({
                     className={
                       row.enabled === false ? 'text-body-secondary' : undefined
                     }
-                    data-id={`i18n-locales-code-${row.rowKey}`}
+                    data-id={`i18n-locales-code-${pairCode(row)}`}
                   >
                     {row.localeCode}
                   </span>
@@ -209,7 +230,7 @@ function LanguageLocales({
                     disabled
                     checked={row.enabled === true}
                     aria-label="Enabled"
-                    data-id={`i18n-locales-enabled-${row.rowKey}`}
+                    data-id={`i18n-locales-enabled-${pairCode(row)}`}
                   />
                 ) : null,
               actions: (row) => {
@@ -223,7 +244,7 @@ function LanguageLocales({
                         className="btn btn-sm btn-primary"
                         title={label}
                         aria-label={label}
-                        data-id={`i18n-locales-add-${row.rowKey}`}
+                        data-id={`i18n-locales-add-${pairCode(row)}`}
                         onClick={() => openWindow(row)}
                       >
                         <i className="bi bi-plus-lg" aria-hidden="true" />
@@ -234,7 +255,7 @@ function LanguageLocales({
                         className="btn btn-sm btn-outline-primary"
                         title={label}
                         aria-label={label}
-                        data-id={`i18n-locales-edit-${row.rowKey}`}
+                        data-id={`i18n-locales-edit-${pairCode(row)}`}
                         onClick={() => openWindow(row)}
                       >
                         <i className="bi bi-pencil" aria-hidden="true" />
@@ -245,7 +266,7 @@ function LanguageLocales({
                         className="btn btn-sm btn-outline-secondary"
                         title={label}
                         aria-label={label}
-                        data-id={`i18n-locales-view-${row.rowKey}`}
+                        data-id={`i18n-locales-view-${pairCode(row)}`}
                         onClick={() => openWindow(row)}
                       >
                         <i className="bi bi-eye" aria-hidden="true" />
@@ -257,7 +278,7 @@ function LanguageLocales({
                         className="btn btn-sm btn-outline-danger"
                         title={`Delete locale ${row.localeCode}`}
                         aria-label={`Delete locale ${row.localeCode}`}
-                        data-id={`i18n-locales-delete-${row.rowKey}`}
+                        data-id={`i18n-locales-delete-${pairCode(row)}`}
                         onClick={() => openDelete(row)}
                       >
                         <i className="bi bi-trash" aria-hidden="true" />

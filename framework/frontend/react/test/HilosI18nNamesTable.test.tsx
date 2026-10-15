@@ -19,11 +19,27 @@ function setup(country = false, actions = false) {
   const target = country ? HILOS_I18N_COUNTRY_NAMES : HILOS_I18N_LANGUAGE_NAMES
   const rows = [
     nameRow,
-    { code: 'fr', nativeName: 'Français', name: null, corrections: [] },
-    { code: 'es', nativeName: 'Español', name: '', corrections: [] },
+    {
+      inLanguageId: 13,
+      nameId: null,
+      rowKey: '13',
+      code: 'fr',
+      nativeName: 'Français',
+      name: null,
+      corrections: [],
+    },
+    {
+      inLanguageId: 15,
+      nameId: 301,
+      rowKey: '15',
+      code: 'es',
+      nativeName: 'Español',
+      name: '',
+      corrections: [],
+    },
   ]
   const h = harness(target.page, rows)
-  const table = createHilosI18nNamesTable(h.context, target, createSignal('uk'))
+  const table = createHilosI18nNamesTable(h.context, target, createSignal(19))
   table.start()
   disposers.push(table.dispose)
   const view = h.mount(
@@ -55,26 +71,26 @@ function setup(country = false, actions = false) {
 describe('React shared names table', () => {
   it('labels absent and saved empty base values differently and exposes only populated panels', () => {
     setup()
-    expect(el('hilos-table-row-en').textContent).toContain('English')
+    expect(el('hilos-table-row-11').textContent).toContain('English')
     expect(
-      el('hilos-table-row-en').querySelector('.text-uppercase')?.textContent,
+      el('hilos-table-row-11').querySelector('.text-uppercase')?.textContent,
     ).toBe('en')
     expect(el('i18n-names-none-fr').textContent).toBe('No name')
     expect(el('i18n-names-none-es')).toBeNull()
     expect(el('i18n-names-none-en')).toBeNull()
-    expect(el('hilos-table-expand-en').getAttribute('aria-expanded')).toBe(
+    expect(el('hilos-table-expand-11').getAttribute('aria-expanded')).toBe(
       'false',
     )
-    expect(el('hilos-table-expand-fr')).toBeNull()
-    expect(el('hilos-table-expand-es')).toBeNull()
+    expect(el('hilos-table-expand-13')).toBeNull()
+    expect(el('hilos-table-expand-15')).toBeNull()
   })
   it.each([false, true])(
     'draws null, empty and nonempty corrections in table and cards (country %s)',
     (country) => {
       setup(country, true)
-      click('hilos-table-expand-en')
+      click('hilos-table-expand-11')
       const panels = document.querySelectorAll(
-        '[data-id="hilos-table-row-detail-en"]',
+        '[data-id="hilos-table-row-detail-11"]',
       )
       expect(panels).toHaveLength(2)
       for (const panel of panels) {
@@ -101,7 +117,7 @@ describe('React shared names table', () => {
   )
   it('leaves optional actions empty and applies a saved empty value live in both projections', () => {
     const h = setup(true)
-    click('hilos-table-expand-en')
+    click('hilos-table-expand-11')
     expect(el('test-base-en')).toBeNull()
     act(() =>
       h.delta({
@@ -113,7 +129,7 @@ describe('React shared names table', () => {
     expect(el('i18n-names-none-en')).toBeNull()
     expect(el('i18n-names-inherit-en-CA')).toBeNull()
     expect(
-      document.querySelectorAll('[data-id="hilos-table-row-detail-en"]'),
+      document.querySelectorAll('[data-id="hilos-table-row-detail-11"]'),
     ).toHaveLength(2)
     h.view.unmount()
     h.table.dispose()

@@ -1,5 +1,8 @@
 import { expect, test } from '@playwright/test'
-import { shownByTestId } from '../../../../../framework/frontend/e2e/index.js'
+import {
+  shownByTestId,
+  i18nNameRow,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import { gotoPage, PAGE_READY } from '../helpers/page.js'
 
@@ -43,11 +46,15 @@ test('opens the names of a reflowed country directly with the shared header, tab
   const mainTab = page.getByTestId('country-card-tab-hilos_i18n_country')
   await expect(mainTab).toHaveAttribute('href', '/hilos/i18n/countries/us')
 
-  const enRow = page.getByTestId('hilos-table-row-en')
+  const enRow = i18nNameRow(page, 'country', 'en')
   await expect(enRow).toContainText('English')
   await expect(enRow).toContainText('United States')
   await expect(page.getByTestId('i18n-names-none-en')).toHaveCount(0)
 
+  const enKey = (await enRow.getAttribute('data-id'))!.replace(
+    /^hilos-table-(row|card)-/,
+    '',
+  )
   const section = page.getByTestId('country-names')
   const inlineForms = section.locator(
     'input, select, textarea, form, [contenteditable="true"]',
@@ -67,7 +74,9 @@ test('opens the names of a reflowed country directly with the shared header, tab
 
   // Every country locale of English may offer an inherited correction, including
   // en-QZ left by the country deletion scenario. A fresh stand has none.
-  const expand = shownByTestId(section, 'hilos-table-expand-en')
+  const expand = i18nNameRow(page, 'country', 'en').getByTestId(
+    /^hilos-table-expand-/,
+  )
   const hasCorrections = (await expand.count()) > 0
   let correctionTexts: string[] = []
   if (hasCorrections) {
@@ -78,7 +87,7 @@ test('opens the names of a reflowed country directly with the shared header, tab
     await expand.focus()
     await expand.click()
     await expect(expand).toHaveAttribute('aria-expanded', 'true')
-    const detail = shownByTestId(section, 'hilos-table-row-detail-en')
+    const detail = shownByTestId(section, `hilos-table-row-detail-${enKey}`)
     await expect(detail).toBeVisible()
     const corrections = shownByTestId(detail, /^i18n-names-correction-/)
     expect(await corrections.count()).toBeGreaterThan(0)
@@ -99,7 +108,9 @@ test('opens the names of a reflowed country directly with the shared header, tab
 
     await expand.click()
     await expect(expand).toHaveAttribute('aria-expanded', 'false')
-    await expect(page.getByTestId('hilos-table-row-detail-en')).toHaveCount(0)
+    await expect(
+      page.getByTestId(`hilos-table-row-detail-${enKey}`),
+    ).toHaveCount(0)
   }
 
   await gotoPage(page, '/hilos/i18n/countries/us/names', PAGE_READY)
@@ -119,7 +130,9 @@ test('opens the names of a reflowed country directly with the shared header, tab
     ).toEqual(correctionTexts)
     await expect(inlineForms).toHaveCount(0)
   } else {
-    await expect(page.getByTestId('hilos-table-expand-en')).toHaveCount(0)
+    await expect(
+      i18nNameRow(page, 'country', 'en').getByTestId(/^hilos-table-expand-/),
+    ).toHaveCount(0)
     await expect(page.getByTestId('i18n-names-correction-en-QZ')).toHaveCount(0)
   }
   expect(actionRequests).toBe(0)

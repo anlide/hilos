@@ -86,7 +86,7 @@ describe('HilosI18nCountryNamesPage', () => {
 
   it('draws the plus by null and the pencil by "" in rows, corrections and cards, with a trash on every stored value', () => {
     const h = setup()
-    h.click('hilos-table-expand-en')
+    h.click('hilos-table-expand-11')
     for (const surface of ['table', '[data-id="hilos-table-cards"]']) {
       const one = (id: string) =>
         document.querySelector(`${surface} [data-id="${id}"]`)
@@ -130,20 +130,21 @@ describe('HilosI18nCountryNamesPage', () => {
   it('opens a correction under an empty base and takes its parent row into focus', () => {
     const h = setup()
     h.act(() => h.delta({ ...usInEnglish, name: '' }))
-    h.click('hilos-table-expand-en')
+    h.click('hilos-table-expand-11')
     h.click('i18n-country-name-locale-add-en-CA')
     expect(h.el('i18n-country-name-title')?.textContent).toContain(
       'Add locale correction · United States',
     )
     expect(h.el('i18n-country-name-window')?.textContent).toContain('en-CA')
-    expect(h.focuses.at(-1)).toBe('en')
+    expect(h.focuses.at(-1)).toBe('11')
     h.click('i18n-country-name-submit')
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_country_name_add',
       payload: {
-        countryCode: 'us',
-        inLanguageCode: 'en',
-        localeCode: 'en-CA',
+        countryId: 102,
+        inLanguageId: 11,
+        baseNameId: 301,
+        localeId: 503,
         name: '',
       },
     })
@@ -153,7 +154,7 @@ describe('HilosI18nCountryNamesPage', () => {
     const h = setup()
     h.act(() => h.delta({ ...usInEnglish, name: 'Fresh' }))
     h.click('i18n-names-delete-en')
-    expect(h.focuses.at(-1)).toBe('en')
+    expect(h.focuses.at(-1)).toBe('11')
     expect(deleteInputs(h).open()).toBe(true)
     expect(deleteInputs(h).target()).toMatchObject({
       kind: 'base',
@@ -173,7 +174,7 @@ describe('HilosI18nCountryNamesPage', () => {
 
   it('takes a saved empty correction from the fresh row and removes only it', async () => {
     const h = setup()
-    h.click('hilos-table-expand-en')
+    h.click('hilos-table-expand-11')
     h.click('i18n-names-delete-en-US')
     expect(deleteInputs(h).target()).toMatchObject({
       kind: 'override',
@@ -183,9 +184,10 @@ describe('HilosI18nCountryNamesPage', () => {
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_country_name_override_delete',
       payload: {
-        countryCode: 'us',
-        inLanguageCode: 'en',
-        localeCode: 'en-US',
+        countryId: 102,
+        inLanguageId: 11,
+        nameId: 402,
+        localeId: 502,
         expectedName: '',
       },
     })
@@ -202,8 +204,9 @@ describe('HilosI18nCountryNamesPage', () => {
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_country_name_delete',
       payload: {
-        countryCode: 'us',
-        inLanguageCode: 'en',
+        countryId: 102,
+        inLanguageId: 11,
+        nameId: 301,
         expectedName: 'My States',
       },
     })
@@ -215,7 +218,7 @@ describe('HilosI18nCountryNamesPage', () => {
     await h.settle(() => h.succeed(0, 'Name deleted.'))
     expect(h.el('modal')).toBeNull()
     expect(h.focuses.at(-1)).toBe('')
-    expect(h.el('hilos-table-row-en')?.textContent).toContain('United States')
+    expect(h.el('hilos-table-row-11')?.textContent).toContain('United States')
   })
 
   it('shares one row in focus: each window lets the other go before it takes its own', () => {
@@ -225,11 +228,11 @@ describe('HilosI18nCountryNamesPage', () => {
     h.click('i18n-country-name-edit-es')
     expect(deleteInputs(h).open()).toBe(false)
     expect(h.el('i18n-country-name-window')).not.toBeNull()
-    expect(h.focuses.slice(-2)).toEqual(['', 'es'])
+    expect(h.focuses.slice(-2)).toEqual(['', '15'])
     h.click('i18n-names-delete-en')
     expect(h.el('i18n-country-name-window')).toBeNull()
     expect(deleteInputs(h).open()).toBe(true)
-    expect(h.focuses.at(-1)).toBe('en')
+    expect(h.focuses.at(-1)).toBe('11')
   })
 
   it("lets neither window take the row from under the other's write in flight", async () => {
@@ -239,7 +242,7 @@ describe('HilosI18nCountryNamesPage', () => {
     h.click('i18n-country-name-edit-es')
     expect(deleteInputs(h).open()).toBe(true)
     expect(h.el('i18n-country-name-window')).toBeNull()
-    expect(h.focuses.at(-1)).toBe('en')
+    expect(h.focuses.at(-1)).toBe('11')
     await h.settle(() => h.succeed())
     expect(h.el('modal')).toBeNull()
     h.click('i18n-country-name-edit-es')
@@ -248,7 +251,7 @@ describe('HilosI18nCountryNamesPage', () => {
     h.click('i18n-names-delete-en')
     expect(deleteInputs(h).open()).toBe(false)
     expect(h.el('i18n-country-name-window')).not.toBeNull()
-    expect(h.focuses.at(-1)).toBe('es')
+    expect(h.focuses.at(-1)).toBe('15')
   })
 
   it('closes both windows on a route change and lets their row go', () => {
@@ -287,7 +290,7 @@ describe('HilosI18nCountryNamesPage', () => {
 
   it('locks every trash for a viewer while the name windows open and read', () => {
     const h = setup(true)
-    h.click('hilos-table-expand-en')
+    h.click('hilos-table-expand-11')
     const trashes = [
       ...document.querySelectorAll<HTMLButtonElement>(
         '[data-id^="i18n-names-delete-"]',

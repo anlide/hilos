@@ -11,23 +11,23 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 /** Shared payload for saving a switched-off language through either page. */
 abstract class AbstractHilosI18nLanguageUpdateActionDTO extends ActionPayloadDTO
 {
-    public const string languageCode = 'languageCode';
+    public const string languageId = 'languageId';
     public const string nativeName = 'nativeName';
     public const string rtl = 'rtl';
 
     /**
-     * @param string $languageCode Two lowercase Latin letters
+     * @param int $languageId Persisted language ID
      * @param string $nativeName Name in the language itself
      * @param bool $rtl Whether writing runs right to left
-     * @throws InvalidFormatException When the language code has an invalid format
+     * @throws InvalidFormatException When the language ID has an invalid format
      */
     public function __construct(
-        public readonly string $languageCode,
+        public readonly int $languageId,
         public readonly string $nativeName,
         public readonly bool $rtl,
     ) {
-        if (preg_match('/^[a-z]{2}$/D', $languageCode) !== 1) {
-            throw new InvalidFormatException('Invalid language code: ' . $languageCode);
+        if ($languageId <= 0) {
+            throw new InvalidFormatException('Invalid language ID: ' . $languageId);
         }
     }
 
@@ -44,7 +44,7 @@ abstract class AbstractHilosI18nLanguageUpdateActionDTO extends ActionPayloadDTO
         }
 
         return new static(
-            self::requireString($inner, self::languageCode),
+            self::requireInt($inner, self::languageId),
             self::requireString($inner, self::nativeName),
             self::requireBool($inner, self::rtl),
         );
@@ -54,7 +54,7 @@ abstract class AbstractHilosI18nLanguageUpdateActionDTO extends ActionPayloadDTO
     public function toArray(): array
     {
         return [
-            self::languageCode => $this->languageCode,
+            self::languageId => $this->languageId,
             self::nativeName => $this->nativeName,
             self::rtl => $this->rtl,
         ];

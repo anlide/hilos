@@ -1,6 +1,6 @@
 // The countries table (HIL-1475): every country of the system on one page.
-// The code is the row key and the link into the country card. The name and the
-// default locale arrive empty when none is written; the view draws the code
+// The decimal country ID is the row key; the code links to the country card.
+// The name and default locale arrive empty when none is written; the view draws the code
 // and the "Not chosen" badge. Framework-agnostic: the views render from what
 // this module resolves.
 import { z } from 'zod'
@@ -26,10 +26,13 @@ const COUNTRY_SLOT = 'country'
 
 /** Payload keys of a country row (mirrors HilosI18nCountriesTableRow). */
 export const HilosI18nCountryRowKey = {
+  rowKey: 'rowKey',
+  countryId: 'countryId',
   code: 'code',
   name: 'name',
   currencySymbol: 'currencySymbol',
   currencyCode: 'currencyCode',
+  defaultLocaleId: 'defaultLocaleId',
   defaultLocaleCode: 'defaultLocaleCode',
   enabled: 'enabled',
   isOwn: 'isOwn',
@@ -40,15 +43,26 @@ export const HilosI18nCountryRowKey = {
 } as const
 
 const countrySlotSchema = z.object({
+  [HilosI18nCountryRowKey.rowKey]: z.string(),
+  [HilosI18nCountryRowKey.countryId]: z.number().int().positive(),
   [HilosI18nCountryRowKey.code]: z.string(),
   [HilosI18nCountryRowKey.name]: z.string().nullable(),
   [HilosI18nCountryRowKey.currencySymbol]: z.string(),
   [HilosI18nCountryRowKey.currencyCode]: z.string(),
+  [HilosI18nCountryRowKey.defaultLocaleId]: z
+    .number()
+    .int()
+    .positive()
+    .nullable(),
   [HilosI18nCountryRowKey.defaultLocaleCode]: z.string().nullable(),
   [HilosI18nCountryRowKey.enabled]: z.boolean(),
   [HilosI18nCountryRowKey.isOwn]: z.boolean(),
   [HilosI18nCountryRowKey.locales]: z.array(
-    z.strictObject({ code: z.string(), enabled: z.boolean() }),
+    z.strictObject({
+      localeId: z.number().int().positive(),
+      code: z.string(),
+      enabled: z.boolean(),
+    }),
   ),
   [HilosI18nCountryRowKey.catalogDefaultLocaleCode]: z.string().nullable(),
   [HilosI18nCountryRowKey.canDelete]: z.boolean(),
@@ -59,13 +73,16 @@ const countrySlotSchema = z.object({
 
 /** One locale belonging to a country, whether switched on or off. */
 export interface HilosI18nCountryLocaleChoice {
+  readonly localeId: number
   readonly code: string
   readonly enabled: boolean
 }
 
 /** One row of the countries table. */
 export interface HilosI18nCountryRow {
-  /** Country code; also the row key and the card address. */
+  readonly rowKey: string
+  readonly countryId: number
+  /** Display code and external card address. */
   readonly code: string
   /** Base name in the default language, or null when none is written. */
   readonly name: string | null
@@ -73,7 +90,9 @@ export interface HilosI18nCountryRow {
   readonly currencySymbol: string
   /** Three-letter currency code. */
   readonly currencyCode: string
-  /** Code of the default locale, or null when none is chosen. */
+  /** Selected locale ID, or null when none is chosen. */
+  readonly defaultLocaleId: number | null
+  /** Display code of the selected locale. */
   readonly defaultLocaleCode: string | null
   /** Whether the country is switched on. */
   readonly enabled: boolean
@@ -90,31 +109,12 @@ export interface HilosI18nCountryRow {
 }
 
 /**
- * Resolve one raw country row into its view-model. A slot the schema refuses
- * shows the country by its key, switched off, rather than dropping the row.
+ * Resolve the typed country projection, refusing absent or malformed IDs.
  *
  * @param row The raw table row from the page-scoped table store.
  */
 export function resolveHilosI18nCountryRow(row: TableRow): HilosI18nCountryRow {
-  const parsed = countrySlotSchema.safeParse(row.slots[COUNTRY_SLOT])
-  if (parsed.success) {
-    return parsed.data
-  }
-  const code = String(row.rowKey)
-
-  return {
-    code,
-    name: null,
-    currencySymbol: '',
-    currencyCode: '',
-    defaultLocaleCode: null,
-    enabled: false,
-    isOwn: false,
-    locales: [],
-    catalogDefaultLocaleCode: null,
-    canDelete: false,
-    deleteReason: null,
-  }
+  return countrySlotSchema.parse(row.slots[COUNTRY_SLOT])
 }
 
 /** The columns of the countries table, in display order. */
@@ -170,6 +170,7 @@ export const HILOS_I18N_COUNTRIES_COLUMNS: readonly HilosTableColumnOf<HilosI18n
         HilosI18nCountryRowKey.currencyCode,
         HilosI18nCountryRowKey.defaultLocaleCode,
         HilosI18nCountryRowKey.isOwn,
+        HilosI18nCountryRowKey.defaultLocaleId,
         HilosI18nCountryRowKey.locales,
         HilosI18nCountryRowKey.catalogDefaultLocaleCode,
       ],

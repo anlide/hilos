@@ -44,7 +44,7 @@ import { createHilosTrackedAction } from '../../../hilosTrackedAction.js'
 /** What the confirmation reads of the language it deletes. */
 export type HilosI18nLanguageDeleteSource = Pick<
   HilosI18nLanguageRow,
-  'code' | 'nativeName' | 'canDelete' | 'deleteReason'
+  'languageId' | 'code' | 'nativeName' | 'canDelete' | 'deleteReason'
 >
 
 /** The delete action of the page that opens the confirmation. */
@@ -124,17 +124,21 @@ export class HilosI18nLanguageDelete {
 
   protected readonly copy = HILOS_I18N_LANGUAGE_DELETE_COPY
   protected readonly action = createHilosTrackedAction()
-  /** The code, the name and the action fixed when the window opened. */
+  /** The ID, name and action fixed when the window opened. */
   protected readonly target = signal<{
-    code: string
+    languageId: number | null
     name: string
     action: LanguageDeleteAction
-  }>({ code: '', name: '', action: HILOS_I18N_LANGUAGE_ROW_DELETE_ACTION })
+  }>({
+    languageId: null,
+    name: '',
+    action: HILOS_I18N_LANGUAGE_ROW_DELETE_ACTION,
+  })
   protected readonly elsewhere = computed(
     () =>
       this.open() &&
       !this.action.busy() &&
-      this.source()?.code !== this.target().code,
+      this.source()?.languageId !== this.target().languageId,
   )
   private readonly lookOnly = injectLookOnly()
   private readonly destroyRef = inject(DestroyRef)
@@ -149,7 +153,7 @@ export class HilosI18nLanguageDelete {
         const source = this.source()
         if (open && !wasOpen && source !== null) {
           this.target.set({
-            code: source.code,
+            languageId: source.languageId,
             name: source.nativeName,
             action: this.actionName(),
           })
@@ -177,12 +181,13 @@ export class HilosI18nLanguageDelete {
     }
     // The opening hint may have changed; the server's live verdict decides.
     const target = this.target()
+    if (target.languageId === null) return
     const { deleteLanguage } = createHilosI18nLanguageDelete(
       this.context(),
       target.action,
     )
     if (
-      (await this.action.run(deleteLanguage(target.code))) &&
+      (await this.action.run(deleteLanguage(target.languageId))) &&
       !this.destroyRef.destroyed
     ) {
       this.closed.emit()

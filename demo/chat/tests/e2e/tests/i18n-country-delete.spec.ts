@@ -3,6 +3,7 @@ import {
   dismissToasts,
   shownByTestId,
   sidewaysOverflow,
+  i18nLocaleRow,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import { gotoPage, PAGE_READY } from '../helpers/page.js'
@@ -137,7 +138,11 @@ test('deletes a custom country from State and returns to the list after success'
   const search = page.getByTestId('hilos-table-search')
   await search.fill('')
   await search.pressSequentially('qy', { delay: 10 })
-  await expect(page.getByTestId('hilos-table-row-qy')).toHaveCount(0)
+  await expect(
+    page
+      .getByTestId(/^hilos-table-row-/)
+      .filter({ has: page.getByTestId('i18n-countries-link-qy') }),
+  ).toHaveCount(0)
 })
 
 test('shows accessible blocked deletion for a custom country with a locale and a known country', async ({
@@ -147,7 +152,7 @@ test('shows accessible blocked deletion for a custom country with a locale and a
   await addCountry(page, 'qz')
   await gotoPage(page, '/hilos/i18n/languages/en/locales', PAGE_READY)
   // The locales table shows every pair in one window and declares no search.
-  await expect(page.getByTestId('hilos-table-row-en-QZ')).toBeVisible()
+  await expect(i18nLocaleRow(page, 'en-QZ')).toBeVisible()
   const add = shownByTestId(page, 'i18n-locales-add-en-QZ')
   await add.scrollIntoViewIfNeeded()
   await expect(add).toBeVisible()

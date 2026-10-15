@@ -39,6 +39,7 @@ const deleteSource = computed(() =>
   card.value === null
     ? null
     : {
+        languageId: card.value.languageId,
         code: card.value.code,
         nativeName: card.value.nativeName,
         canDelete: card.value.summary.canDelete,

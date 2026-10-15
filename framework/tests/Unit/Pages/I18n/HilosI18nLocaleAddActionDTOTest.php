@@ -26,8 +26,8 @@ final class HilosI18nLocaleAddActionDTOTest extends TestCase
     ];
 
     private const array PAYLOAD = [
-        HilosI18nLocaleAddActionDTO::languageCode => 'en',
-        HilosI18nLocaleAddActionDTO::countryCode => 'gb',
+        HilosI18nLocaleAddActionDTO::languageId => 11,
+        HilosI18nLocaleAddActionDTO::countryId => 101,
         HilosI18nLocaleAddActionDTO::formats => self::FORMATS,
     ];
 
@@ -42,23 +42,25 @@ final class HilosI18nLocaleAddActionDTOTest extends TestCase
             HilosI18nLocaleAddActionDTO::fromArray(self::PAYLOAD)->getAction(),
         );
         $countryless = self::PAYLOAD;
-        $countryless[HilosI18nLocaleAddActionDTO::countryCode] = null;
+        $countryless[HilosI18nLocaleAddActionDTO::countryId] = null;
         self::assertSame($countryless, HilosI18nLocaleAddActionDTO::fromArray($countryless)->toArray());
     }
 
     /** @return iterable<string, array{array<string, mixed>}> Invalid request shapes */
     public static function invalidPayloads(): iterable
     {
-        foreach (['EN', 'eng', '', 42] as $invalid) {
+        yield 'legacy codes' => [['languageCode' => 'en', 'countryCode' => 'gb']];
+
+        foreach (['11', 'EN', 0, -1, 11.0, '', true, false] as $invalid) {
             yield 'language ' . var_export($invalid, true) => [array_replace(self::PAYLOAD, [
-                HilosI18nLocaleAddActionDTO::languageCode => $invalid,
+                HilosI18nLocaleAddActionDTO::languageId => $invalid,
             ])];
             yield 'country ' . var_export($invalid, true) => [array_replace(self::PAYLOAD, [
-                HilosI18nLocaleAddActionDTO::countryCode => $invalid,
+                HilosI18nLocaleAddActionDTO::countryId => $invalid,
             ])];
         }
         $missingCountry = self::PAYLOAD;
-        unset($missingCountry[HilosI18nLocaleAddActionDTO::countryCode]);
+        unset($missingCountry[HilosI18nLocaleAddActionDTO::countryId]);
         yield 'missing country' => [$missingCountry];
         $missingFormats = self::PAYLOAD;
         unset($missingFormats[HilosI18nLocaleAddActionDTO::formats]);

@@ -18,11 +18,17 @@ import { createSignal } from '../../../src/state/signal.js'
 import { TableViewportController } from '../../../src/table/TableViewportController.js'
 
 const original: HilosI18nNameRow = {
+  inLanguageId: 47,
+  nameId: 301,
+  rowKey: '47',
   code: 'qw',
   nativeName: 'Writing',
   name: 'Original',
   corrections: [
     {
+      localeId: 501,
+      nameId: 401,
+      countryId: 101,
       localeCode: 'qw-GB',
       countryCode: 'gb',
       countryName: 'UK',
@@ -31,6 +37,7 @@ const original: HilosI18nNameRow = {
   ],
 }
 const originalCard: HilosI18nCountryCard = {
+  countryId: 141,
   code: 'qx',
   currencySymbol: '$',
   currencyCode: 'USD',
@@ -40,6 +47,7 @@ const originalCard: HilosI18nCountryCard = {
     isOwn: true,
     localeCount: 0,
     nameCount: 1,
+    defaultLocaleId: null,
     defaultLocaleCode: null,
     defaultLocale: 'missing',
     locales: [],
@@ -57,7 +65,7 @@ function harness(row = original) {
     frame: HILOS_I18N_COUNTRY_NAMES.frame,
   })
   controller.ingestWindow(
-    [{ rowKey: row.code, slots: { language: row } }],
+    [{ rowKey: row.rowKey, slots: { language: row } }],
     1,
     true,
     null,
@@ -80,8 +88,8 @@ function harness(row = original) {
   function update(next: HilosI18nNameRow) {
     controller.ingestDelta({
       kind: 'row_updated',
-      rowKey: next.code,
-      row: { rowKey: next.code, slots: { language: next } },
+      rowKey: next.rowKey,
+      row: { rowKey: next.rowKey, slots: { language: next } },
     })
   }
   return { window, controller, sendFocus, card, country, dispatch, update }
@@ -97,17 +105,67 @@ function pending() {
 }
 
 describe('country name window', () => {
+  it.each(['base', 'correction', 'base-for-add', 'locale', 'subject'])(
+    'keeps the draft and refuses a replacement of %s with the same labels',
+    async (changed) => {
+      const creating = changed === 'base-for-add'
+      const initial = creating
+        ? {
+            ...original,
+            corrections: [
+              { ...original.corrections[0]!, nameId: null, name: null },
+            ],
+          }
+        : original
+      const h = harness(initial)
+      h.window.open(
+        '47',
+        changed === 'base' || changed === 'subject' ? null : 501,
+      )
+      h.window.patchForm({ name: 'Keep my draft' })
+      if (changed === 'subject') {
+        h.card.set({ ...originalCard, countryId: originalCard.countryId + 1 })
+      } else if (changed === 'base' || changed === 'base-for-add') {
+        h.update({ ...initial, nameId: 999 })
+      } else {
+        h.update({
+          ...initial,
+          corrections: [
+            {
+              ...initial.corrections[0]!,
+              ...(changed === 'locale' ? { localeId: 999 } : { nameId: 999 }),
+            },
+          ],
+        })
+      }
+      expect(h.window.saveLabel.get()).toBe('Deleted')
+      expect(h.window.form.get().name).toBe('Keep my draft')
+      expect(h.window.target.get()?.countryId).toBe(originalCard.countryId)
+      await h.window.save(() => Promise.resolve(true))
+      expect(h.dispatch).not.toHaveBeenCalled()
+      h.window.dispose()
+    },
+  )
+
   it.each([null, '', 'Stored'])(
     'takes a fresh base name %s and fixes its coordinates and mode',
     (name) => {
       const h = harness()
-      h.update({ ...original, name, nativeName: 'Fresh writing name' })
+      h.update({
+        ...original,
+        nameId: name === null ? null : 301,
+        name,
+        nativeName: 'Fresh writing name',
+      })
       expect(h.window.open('missing')).toBe(false)
-      expect(h.window.open('qw')).toBe(true)
-      expect(h.sendFocus).toHaveBeenLastCalledWith('qw')
+      expect(h.window.open('47')).toBe(true)
+      expect(h.sendFocus).toHaveBeenLastCalledWith('47')
       expect(h.window.mode.get()).toBe(name === null ? 'add' : 'edit')
       expect(h.window.form.get()).toEqual({ name: name ?? '' })
       expect(h.window.target.get()).toMatchObject({
+        inLanguageId: 47,
+        nameId: name === null ? null : 301,
+        countryId: 141,
         countryCode: 'qx',
         countryName: 'Subject country',
         inLanguageCode: 'qw',
@@ -118,7 +176,12 @@ describe('country name window', () => {
         ...originalCard,
         summary: { ...originalCard.summary, name: 'Renamed country' },
       })
-      h.update({ ...original, name, nativeName: 'Renamed writing language' })
+      h.update({
+        ...original,
+        nameId: name === null ? null : 301,
+        name,
+        nativeName: 'Renamed writing language',
+      })
       expect(h.window.target.get()?.countryName).toBe('Subject country')
       expect(h.window.target.get()?.inLanguageNativeName).toBe(
         'Fresh writing name',
@@ -141,7 +204,7 @@ describe('country name window', () => {
         ...originalCard,
         summary: { ...originalCard.summary, name },
       })
-      expect(h.window.open('qw')).toBe(true)
+      expect(h.window.open('47')).toBe(true)
       expect(h.window.target.get()?.countryName).toBe(name ?? 'QX')
       h.window.dispose()
     },
@@ -150,10 +213,14 @@ describe('country name window', () => {
   it.each([null, 'Original'])(
     'allows the country and writing language to share a code (%s)',
     async (name) => {
-      const h = harness({ ...original, name })
+      const h = harness({
+        ...original,
+        nameId: name === null ? null : 301,
+        name,
+      })
       h.country.set('qw')
       h.card.set({ ...originalCard, code: 'qw', enabled: false })
-      expect(h.window.open('qw')).toBe(true)
+      expect(h.window.open('47')).toBe(true)
       h.window.patchForm({ name: 'Same code, separate catalogs' })
       await h.window.save(() => Promise.resolve(true))
       expect(h.dispatch).toHaveBeenCalledWith(
@@ -161,9 +228,10 @@ describe('country name window', () => {
           ? 'hilos_i18n_country_name_add'
           : 'hilos_i18n_country_name_update',
         {
-          countryCode: 'qw',
-          inLanguageCode: 'qw',
-          localeCode: null,
+          countryId: 141,
+          inLanguageId: 47,
+          ...(name === null ? { baseNameId: null } : { nameId: 301 }),
+          localeId: null,
           name: 'Same code, separate catalogs',
           ...(name === null ? {} : { expectedName: name }),
         },
@@ -178,9 +246,15 @@ describe('country name window', () => {
       const h = harness({
         ...original,
         name: '',
-        corrections: [{ ...original.corrections[0]!, name }],
+        corrections: [
+          {
+            ...original.corrections[0]!,
+            nameId: name === null ? null : 401,
+            name,
+          },
+        ],
       })
-      expect(h.window.open('qw', 'qw-GB')).toBe(true)
+      expect(h.window.open('47', 501)).toBe(true)
       expect(h.window.mode.get()).toBe(name === null ? 'add' : 'edit')
       expect(h.window.form.get().name).toBe(name ?? '')
       expect(h.window.target.get()?.localeCode).toBe('qw-GB')
@@ -189,15 +263,15 @@ describe('country name window', () => {
   )
 
   it('refuses missing coordinates without leaving focus held', () => {
-    const h = harness({ ...original, name: null })
-    expect(h.window.open('qw', 'qw-GB')).toBe(false)
+    const h = harness({ ...original, nameId: null, name: null })
+    expect(h.window.open('47', 501)).toBe(false)
     h.update(original)
-    for (const locale of ['qw', '', 'qw-US'])
-      expect(h.window.open('qw', locale)).toBe(false)
+    for (const locale of [0, -1, 502])
+      expect(h.window.open('47', locale)).toBe(false)
     h.card.set(null)
-    expect(h.window.open('qw')).toBe(false)
+    expect(h.window.open('47')).toBe(false)
     h.card.set({ ...originalCard, code: 'other' })
-    expect(h.window.open('qw')).toBe(false)
+    expect(h.window.open('47')).toBe(false)
     expect(h.controller.focusedRow.get()).toBeUndefined()
     h.window.dispose()
   })
@@ -207,16 +281,25 @@ describe('country name window', () => {
     async (localeCode) => {
       const h = harness({
         ...original,
+        nameId: localeCode === null ? null : 301,
         name: localeCode === null ? null : '',
-        corrections: [{ ...original.corrections[0]!, name: null }],
+        corrections: [
+          { ...original.corrections[0]!, nameId: null, name: null },
+        ],
       })
-      h.window.open('qw', localeCode)
+      h.window.open('47', localeCode === null ? null : 501)
       expect(h.window.canSubmit.get()).toBe(true)
       expect(h.window.dirty.get()).toBe(false)
       await h.window.save(() => Promise.resolve(false))
       expect(h.dispatch).toHaveBeenLastCalledWith(
         'hilos_i18n_country_name_add',
-        { countryCode: 'qx', inLanguageCode: 'qw', localeCode, name: '' },
+        {
+          countryId: 141,
+          inLanguageId: 47,
+          baseNameId: localeCode === null ? null : 301,
+          localeId: localeCode === null ? null : 501,
+          name: '',
+        },
       )
       h.window.patchForm({ name: '  My value  ' })
       h.update(original)
@@ -228,9 +311,10 @@ describe('country name window', () => {
       expect(h.dispatch).toHaveBeenLastCalledWith(
         'hilos_i18n_country_name_add',
         {
-          countryCode: 'qx',
-          inLanguageCode: 'qw',
-          localeCode,
+          countryId: 141,
+          inLanguageId: 47,
+          baseNameId: localeCode === null ? null : 301,
+          localeId: localeCode === null ? null : 501,
           name: '  My value  ',
         },
       )
@@ -250,7 +334,7 @@ describe('country name window', () => {
         name: '',
         corrections: [{ ...original.corrections[0]!, name: '' }],
       })
-      h.window.open('qw', localeCode)
+      h.window.open('47', localeCode === null ? null : 501)
       expect(h.window.canSave.get()).toBe(false)
       await h.window.save(vi.fn())
       expect(h.dispatch).not.toHaveBeenCalled()
@@ -261,9 +345,10 @@ describe('country name window', () => {
       expect(h.dispatch).toHaveBeenCalledWith(
         'hilos_i18n_country_name_update',
         {
-          countryCode: 'qx',
-          inLanguageCode: 'qw',
-          localeCode,
+          countryId: 141,
+          inLanguageId: 47,
+          nameId: localeCode === null ? 301 : 401,
+          localeId: localeCode === null ? null : 501,
           name: '   ',
           expectedName: '',
         },
@@ -283,10 +368,16 @@ describe('country name window', () => {
             ? { ...original, name }
             : {
                 ...original,
-                corrections: [{ ...original.corrections[0]!, name }],
+                corrections: [
+                  {
+                    ...original.corrections[0]!,
+                    nameId: name === null ? null : 401,
+                    name,
+                  },
+                ],
               },
         )
-      h.window.open('qw', localeCode)
+      h.window.open('47', localeCode === null ? null : 501)
       change('Server only')
       expect(h.window.form.get().name).toBe('Server only')
       expect(h.window.noticeKind.get()).toBe('updated')
@@ -295,9 +386,10 @@ describe('country name window', () => {
       expect(h.dispatch).toHaveBeenLastCalledWith(
         'hilos_i18n_country_name_update',
         {
-          countryCode: 'qx',
-          inLanguageCode: 'qw',
-          localeCode,
+          countryId: 141,
+          inLanguageId: 47,
+          nameId: localeCode === null ? 301 : 401,
+          localeId: localeCode === null ? null : 501,
           name: 'Mine',
           expectedName: 'Server only',
         },
@@ -315,9 +407,10 @@ describe('country name window', () => {
       expect(h.dispatch).toHaveBeenLastCalledWith(
         'hilos_i18n_country_name_update',
         {
-          countryCode: 'qx',
-          inLanguageCode: 'qw',
-          localeCode,
+          countryId: 141,
+          inLanguageId: 47,
+          nameId: localeCode === null ? 301 : 401,
+          localeId: localeCode === null ? null : 501,
           name: 'Mine',
           expectedName: 'Theirs',
         },
@@ -331,9 +424,10 @@ describe('country name window', () => {
       expect(h.dispatch).toHaveBeenLastCalledWith(
         'hilos_i18n_country_name_update',
         {
-          countryCode: 'qx',
-          inLanguageCode: 'qw',
-          localeCode,
+          countryId: 141,
+          inLanguageId: 47,
+          nameId: localeCode === null ? 301 : 401,
+          localeId: localeCode === null ? null : 501,
           name: '',
           expectedName: 'Another',
         },
@@ -347,7 +441,7 @@ describe('country name window', () => {
     'sends an empty expectedName after accounting for it through %s',
     async (choice) => {
       const h = harness()
-      h.window.open('qw')
+      h.window.open('47')
       if (choice !== 'merge') h.window.patchForm({ name: 'Mine' })
       h.update({ ...original, name: '' })
       if (choice === 'keep') h.window.keepMine()
@@ -358,9 +452,10 @@ describe('country name window', () => {
       expect(h.dispatch).toHaveBeenCalledWith(
         'hilos_i18n_country_name_update',
         {
-          countryCode: 'qx',
-          inLanguageCode: 'qw',
-          localeCode: null,
+          countryId: 141,
+          inLanguageId: 47,
+          nameId: 301,
+          localeId: null,
           name: 'Mine',
           expectedName: '',
         },
@@ -369,12 +464,12 @@ describe('country name window', () => {
     },
   )
 
-  it('keeps an equal-text replacement live without a synthetic version', async () => {
+  it('keeps a repeated snapshot of the same ID live', async () => {
     const h = harness()
-    h.window.open('qw')
+    h.window.open('47')
     h.window.patchForm({ name: 'Mine' })
     h.controller.ingestWindow(
-      [{ rowKey: 'qw', slots: { language: { ...original } } }],
+      [{ rowKey: '47', slots: { language: { ...original } } }],
       1,
       true,
       null,
@@ -385,9 +480,10 @@ describe('country name window', () => {
     expect(h.window.noticeKind.get()).toBeNull()
     await h.window.save(() => Promise.resolve(true))
     expect(h.dispatch).toHaveBeenCalledWith('hilos_i18n_country_name_update', {
-      countryCode: 'qx',
-      inLanguageCode: 'qw',
-      localeCode: null,
+      countryId: 141,
+      inLanguageId: 47,
+      nameId: 301,
+      localeId: null,
       name: 'Mine',
       expectedName: 'Original',
     })
@@ -398,19 +494,21 @@ describe('country name window', () => {
     'keeps the draft with Deleted after losing %s',
     async (lost) => {
       const h = harness()
-      h.window.open('qw', 'qw-GB')
+      h.window.open('47', 501)
       h.window.patchForm({ name: 'Copy this' })
       if (lost === 'name')
         h.update({
           ...original,
-          corrections: [{ ...original.corrections[0]!, name: null }],
+          corrections: [
+            { ...original.corrections[0]!, nameId: null, name: null },
+          ],
         })
-      if (lost === 'base') h.update({ ...original, name: null })
+      if (lost === 'base') h.update({ ...original, nameId: null, name: null })
       if (lost === 'locale') h.update({ ...original, corrections: [] })
       if (lost === 'row')
         h.controller.ingestDelta({
           kind: 'row_removed',
-          rowKey: 'qw',
+          rowKey: '47',
           reason: 'deleted',
         })
       if (lost === 'subject') h.card.set(null)
@@ -433,16 +531,18 @@ describe('country name window', () => {
     async (lost) => {
       const h = harness({
         ...original,
-        corrections: [{ ...original.corrections[0]!, name: null }],
+        corrections: [
+          { ...original.corrections[0]!, nameId: null, name: null },
+        ],
       })
-      h.window.open('qw', 'qw-GB')
+      h.window.open('47', 501)
       h.window.patchForm({ name: 'Copy add' })
-      if (lost === 'base') h.update({ ...original, name: null })
+      if (lost === 'base') h.update({ ...original, nameId: null, name: null })
       if (lost === 'locale') h.update({ ...original, corrections: [] })
       if (lost === 'row')
         h.controller.ingestDelta({
           kind: 'row_removed',
-          rowKey: 'qw',
+          rowKey: '47',
           reason: 'deleted',
         })
       if (lost === 'subject') h.card.set(null)
@@ -462,16 +562,20 @@ describe('country name window', () => {
   it.each([null, 'Original'])(
     'keeps a base draft when its country or language disappears (%s)',
     async (name) => {
-      const h = harness({ ...original, name })
-      h.window.open('qw')
+      const h = harness({
+        ...original,
+        nameId: name === null ? null : 301,
+        name,
+      })
+      h.window.open('47')
       h.window.patchForm({ name: 'Copy base' })
-      h.card.set({ ...originalCard, code: 'qz' })
+      h.card.set({ ...originalCard, countryId: 150, code: 'qz' })
       expect(h.window.saveLabel.get()).toBe('Deleted')
       await h.window.save(vi.fn())
       h.card.set(originalCard)
       h.controller.ingestDelta({
         kind: 'row_removed',
-        rowKey: 'qw',
+        rowKey: '47',
         reason: 'deleted',
       })
       expect(h.window.saveLabel.get()).toBe('Deleted')
@@ -487,9 +591,9 @@ describe('country name window', () => {
 
   it('keeps an edited base draft when only the base name is removed', async () => {
     const h = harness()
-    h.window.open('qw')
+    h.window.open('47')
     h.window.patchForm({ name: 'Copy base' })
-    h.update({ ...original, name: null, corrections: [] })
+    h.update({ ...original, nameId: null, name: null, corrections: [] })
     expect(h.window.saveLabel.get()).toBe('Deleted')
     expect(h.window.form.get().name).toBe('Copy base')
     await h.window.save(vi.fn())
@@ -500,8 +604,12 @@ describe('country name window', () => {
   it.each([null, 'Original'])(
     'preserves the draft and releases busy after a rejected runner (%s)',
     async (name) => {
-      const h = harness({ ...original, name })
-      h.window.open('qw')
+      const h = harness({
+        ...original,
+        nameId: name === null ? null : 301,
+        name,
+      })
+      h.window.open('47')
       h.window.patchForm({ name: 'Retry this' })
       await expect(
         h.window.save(() => Promise.reject(new Error('Lost connection'))),
@@ -517,22 +625,26 @@ describe('country name window', () => {
   it.each([null, 'Original'])(
     'guards busy close/reentry and ignores an old route ack (%s)',
     async (name) => {
-      const h = harness({ ...original, name })
-      h.window.open('qw')
+      const h = harness({
+        ...original,
+        nameId: name === null ? null : 301,
+        name,
+      })
+      h.window.open('47')
       h.window.patchForm({ name: 'Mine' })
       const p = pending()
       const saved = h.window.save(p.run)
       expect(h.window.saving.get()).toBe(true)
       h.window.close()
       expect(h.window.opened.get()).toBe(true)
-      expect(h.window.open('qw')).toBe(false)
+      expect(h.window.open('47')).toBe(false)
       await h.window.save(vi.fn())
       expect(h.dispatch).toHaveBeenCalledOnce()
       h.country.set('qz')
       expect(h.window.opened.get()).toBe(false)
       expect(h.controller.focusedRow.get()).toBeUndefined()
-      h.card.set({ ...originalCard, code: 'qz' })
-      h.window.open('qw')
+      h.card.set({ ...originalCard, countryId: 150, code: 'qz' })
+      h.window.open('47')
       h.window.patchForm({ name: 'New draft' })
       const next = pending()
       const newSave = h.window.save(next.run)
@@ -553,17 +665,21 @@ describe('country name window', () => {
   it.each([null, 'Original'])(
     'disposes a busy window and ignores its late reply (%s)',
     async (name) => {
-      const h = harness({ ...original, name })
+      const h = harness({
+        ...original,
+        nameId: name === null ? null : 301,
+        name,
+      })
       h.window.start()
-      h.window.open('qw')
+      h.window.open('47')
       h.window.patchForm({ name: 'Mine' })
       const p = pending()
       const saved = h.window.save(p.run)
       h.window.dispose()
       expect(h.window.opened.get()).toBe(false)
       expect(h.window.saving.get()).toBe(false)
-      expect(h.sendFocus.mock.calls).toEqual([['qw'], ['']])
-      h.controller.focusRow('qw')
+      expect(h.sendFocus.mock.calls).toEqual([['47'], ['']])
+      h.controller.focusRow('47')
       h.country.set('qz')
       p.finish(true)
       await saved
@@ -575,9 +691,9 @@ describe('country name window', () => {
 
   it('does not release another dialog focus when the already closed window disposes', () => {
     const h = harness()
-    h.window.open('qw')
+    h.window.open('47')
     h.window.close()
-    h.controller.focusRow('qw')
+    h.controller.focusRow('47')
     h.window.dispose()
     expect(h.controller.focusedRow.get()?.code).toBe('qw')
   })

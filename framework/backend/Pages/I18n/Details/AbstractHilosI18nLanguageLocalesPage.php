@@ -16,7 +16,6 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Table\Exception\TableActionException;
-use Hilos\Database\Object\Item\Locale as ObjectLocale;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\I18n\Exception\DefaultLocaleProtectedException;
@@ -70,10 +69,10 @@ abstract class AbstractHilosI18nLanguageLocalesPage extends AbstractHilosI18nLan
                 if (!$dto instanceof HilosI18nLocaleAddActionDTO) {
                     throw new InvalidActionPayloadException($action, HilosI18nLocaleAddActionDTO::class, $dto);
                 }
-                $language = Hilos::$db->languages[$dto->languageCode]
-                    ?? throw new TableActionException('Unknown language: ' . $dto->languageCode);
-                $country = $dto->countryCode === null ? null : (Hilos::$db->countries[$dto->countryCode]
-                    ?? throw new TableActionException('Unknown country: ' . $dto->countryCode));
+                $language = Hilos::$db->languages[$dto->languageId]
+                    ?? throw new TableActionException('Unknown language: ' . $dto->languageId);
+                $country = $dto->countryId === null ? null : (Hilos::$db->countries[$dto->countryId]
+                    ?? throw new TableActionException('Unknown country: ' . $dto->countryId));
                 $formats = $dto->formats;
                 Hilos::$db->locales->actions->create(
                     $language, $country, $formats->date, $formats->time, $formats->number,
@@ -87,9 +86,11 @@ abstract class AbstractHilosI18nLanguageLocalesPage extends AbstractHilosI18nLan
                 if (!$dto instanceof HilosI18nLocaleUpdateActionDTO) {
                     throw new InvalidActionPayloadException($action, HilosI18nLocaleUpdateActionDTO::class, $dto);
                 }
-                $code = ObjectLocale::codeFor($dto->languageCode, $dto->countryCode);
-                $locale = Hilos::$db->locales[$code]
-                    ?? throw new TableActionException('Unknown locale: ' . $code);
+                $locale = Hilos::$db->locales[$dto->localeId]
+                    ?? throw new TableActionException('Unknown locale: ' . $dto->localeId);
+                if ($locale->languageId !== $dto->languageId || $locale->countryId !== $dto->countryId) {
+                    throw new TableActionException('The locale no longer belongs to this language and country.');
+                }
                 $formats = $dto->formats;
                 $locale->actions->update(
                     $formats->date, $formats->time, $formats->number, $formats->phone,
@@ -103,9 +104,11 @@ abstract class AbstractHilosI18nLanguageLocalesPage extends AbstractHilosI18nLan
                 if (!$dto instanceof HilosI18nLocaleSwitchOnActionDTO) {
                     throw new InvalidActionPayloadException($action, HilosI18nLocaleSwitchOnActionDTO::class, $dto);
                 }
-                $code = ObjectLocale::codeFor($dto->languageCode, $dto->countryCode);
-                $locale = Hilos::$db->locales[$code]
-                    ?? throw new TableActionException('Unknown locale: ' . $code);
+                $locale = Hilos::$db->locales[$dto->localeId]
+                    ?? throw new TableActionException('Unknown locale: ' . $dto->localeId);
+                if ($locale->languageId !== $dto->languageId || $locale->countryId !== $dto->countryId) {
+                    throw new TableActionException('The locale no longer belongs to this language and country.');
+                }
                 $locale->actions->switchOn();
                 $this->setActionSuccessMessage('Locale switched on.');
 
@@ -155,9 +158,11 @@ abstract class AbstractHilosI18nLanguageLocalesPage extends AbstractHilosI18nLan
      */
     private function handleLocaleSwitchOff(HilosI18nLocaleSwitchOffActionDTO $dto): ?ActionReplyDTO
     {
-        $code = ObjectLocale::codeFor($dto->languageCode, $dto->countryCode);
-        $locale = Hilos::$db->locales[$code]
-            ?? throw new TableActionException('Unknown locale: ' . $code);
+        $locale = Hilos::$db->locales[$dto->localeId]
+            ?? throw new TableActionException('Unknown locale: ' . $dto->localeId);
+        if ($locale->languageId !== $dto->languageId || $locale->countryId !== $dto->countryId) {
+            throw new TableActionException('The locale no longer belongs to this language and country.');
+        }
         $locale->actions->switchOff();
         $this->setActionSuccessMessage('Locale switched off.');
 
@@ -174,9 +179,11 @@ abstract class AbstractHilosI18nLanguageLocalesPage extends AbstractHilosI18nLan
      */
     private function handleLocaleDelete(HilosI18nLocaleDeleteActionDTO $dto): ?ActionReplyDTO
     {
-        $code = ObjectLocale::codeFor($dto->languageCode, $dto->countryCode);
-        $locale = Hilos::$db->locales[$code]
-            ?? throw new TableActionException('Unknown locale: ' . $code);
+        $locale = Hilos::$db->locales[$dto->localeId]
+            ?? throw new TableActionException('Unknown locale: ' . $dto->localeId);
+        if ($locale->languageId !== $dto->languageId || $locale->countryId !== $dto->countryId) {
+            throw new TableActionException('The locale no longer belongs to this language and country.');
+        }
         $locale->actions->delete();
         $this->setActionSuccessMessage('Locale deleted.');
 

@@ -18,6 +18,7 @@ import {
 import { type ActionLifecycle } from '../../../src/connection/actionLifecycle.js'
 
 const card: HilosI18nLanguageCard = {
+  languageId: 13,
   code: 'fr',
   nativeName: 'Français',
   rtl: false,
@@ -67,13 +68,11 @@ describe('language switch-off', () => {
     } as unknown as ActionLifecycle
     const context = { actions } as HilosI18nLanguageContext
 
-    expect(createHilosI18nLanguageSwitchOff(context).switchOff('fr')).toBe(
-      handle,
-    )
+    expect(createHilosI18nLanguageSwitchOff(context).switchOff(13)).toBe(handle)
     expect(sent).toEqual([
       {
         action: HILOS_I18N_LANGUAGE_SWITCH_OFF_ACTION,
-        payload: { languageCode: 'fr' },
+        payload: { languageId: 13 },
       },
     ])
   })
@@ -141,11 +140,11 @@ describe('language switch-on', () => {
     } as unknown as ActionLifecycle
     const context = { actions } as HilosI18nLanguageContext
 
-    expect(createHilosI18nLanguageSwitchOn(context).switchOn('fr')).toBe(handle)
+    expect(createHilosI18nLanguageSwitchOn(context).switchOn(13)).toBe(handle)
     expect(sent).toEqual([
       {
         action: HILOS_I18N_LANGUAGE_SWITCH_ON_ACTION,
-        payload: { languageCode: 'fr' },
+        payload: { languageId: 13 },
       },
     ])
   })

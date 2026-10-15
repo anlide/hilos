@@ -4,6 +4,7 @@ import {
   shownByTestId,
   sidewaysOverflow,
   watchHeight,
+  i18nNameRow,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import {
@@ -51,7 +52,9 @@ async function saveName(page: Page): Promise<void> {
 
 /** Expand the writing language's country locale through the native chevron. */
 async function expandCorrections(page: Page): Promise<void> {
-  await clickSubmit(shownByTestId(page, 'hilos-table-expand-qv'))
+  await clickSubmit(
+    i18nNameRow(page, 'language', 'qv').getByTestId(/^hilos-table-expand-/),
+  )
   await expect(shownByTestId(page, 'i18n-names-inherit-qv-GB')).toHaveText(
     'as in “HIL-1490 target”',
   )
@@ -65,7 +68,7 @@ async function expectName(
 ): Promise<void> {
   const surface = correction
     ? shownByTestId(page, 'i18n-names-correction-qv-GB')
-    : shownByTestId(page, /^(hilos-table-row-qv|hilos-table-card-qv)$/)
+    : i18nNameRow(page, 'language', 'qv')
   await expect(surface).toContainText(value)
   await expect(
     shownByTestId(page, correction ? CORRECTION_EDIT : BASE_EDIT),
@@ -331,3 +334,92 @@ for (const correction of [false, true]) {
     }
   })
 }
+
+test('sends captured name IDs and refuses an old ID after recreating the same text', async ({
+  page,
+}) => {
+  // Creation, deletion, recreation and two edits exercise the full stale-target wire path.
+  test.slow()
+  const writes: Array<{ action: string; data: Record<string, unknown> }> = []
+  let staleNameId: number | null = null
+  await page.routeWebSocket(/.*/, (socket) => {
+    const server = socket.connectToServer()
+    socket.onMessage((message) => {
+      if (typeof message !== 'string') {
+        server.send(message)
+        return
+      }
+      const frame = JSON.parse(message)
+      if (
+        frame.type === 'action' &&
+        frame.action.startsWith('hilos_i18n_language_name_')
+      ) {
+        writes.push({ action: frame.action, data: { ...frame.data } })
+        if (
+          frame.action === 'hilos_i18n_language_name_update' &&
+          staleNameId !== null
+        ) {
+          frame.data.nameId = staleNameId
+        }
+        server.send(JSON.stringify(frame))
+        return
+      }
+      server.send(message)
+    })
+  })
+  await clearLanguageNamesFixture()
+  try {
+    await seedLanguageNamesFixture()
+    await signUpAdmin(page)
+    await openNames(page)
+    await openName(page, BASE_ADD)
+    await typeInto(page.getByTestId(INPUT), 'Same text')
+    await saveName(page)
+    expect(writes[0].data).toEqual({
+      languageId: expect.any(Number),
+      inLanguageId: expect.any(Number),
+      localeId: null,
+      baseNameId: null,
+      name: 'Same text',
+    })
+    expect(Number.isInteger(writes[0].data.languageId)).toBe(true)
+    expect(writes[0].data.languageId).toBeGreaterThan(0)
+    expect(Number.isInteger(writes[0].data.inLanguageId)).toBe(true)
+    expect(writes[0].data.inLanguageId).toBeGreaterThan(0)
+    await dismissToasts(page)
+    await clickSubmit(shownByTestId(page, 'i18n-names-delete-qv'))
+    await clickSubmit(page.getByTestId('i18n-language-name-delete-confirm'))
+    await expect(
+      page.getByTestId('i18n-language-name-delete-window'),
+    ).toHaveCount(0)
+    await expect(shownByTestId(page, BASE_ADD)).toBeVisible()
+    staleNameId = writes[1].data.nameId as number
+    expect(Number.isInteger(staleNameId)).toBe(true)
+    expect(staleNameId).toBeGreaterThan(0)
+    await openName(page, BASE_ADD)
+    await typeInto(page.getByTestId(INPUT), 'Same text')
+    await saveName(page)
+    await openName(page, BASE_EDIT)
+    await typeInto(page.getByTestId(INPUT), 'New text')
+    await clickSubmit(page.getByTestId(SUBMIT))
+    await expect(page.getByTestId('i18n-language-name-error')).toContainText(
+      'The name no longer exists.',
+    )
+    await expect(page.getByTestId(SUBMIT)).toBeEnabled()
+    await expectName(page, false, 'Same text')
+    expect(writes[3].data).toEqual({
+      languageId: writes[0].data.languageId,
+      inLanguageId: writes[0].data.inLanguageId,
+      localeId: null,
+      nameId: expect.any(Number),
+      name: 'New text',
+      expectedName: 'Same text',
+    })
+    expect(writes[3].data.nameId).not.toBe(staleNameId)
+    staleNameId = null
+    await saveName(page)
+    await expectName(page, false, 'New text')
+  } finally {
+    await clearNames(page)
+  }
+})

@@ -24,6 +24,7 @@ const verdict = computed(() => hilosI18nLanguageSwitchOff(props.card))
 const action = useTrackedAction()
 const { switchOff } = createHilosI18nLanguageSwitchOff(props.context)
 const open = ref(false)
+const openedId = ref<number | null>(null)
 const openedName = ref('')
 const modalOpen = computed({
   get: () => open.value,
@@ -40,7 +41,7 @@ const elsewhere = computed(
 watch(
   () => props.card,
   (card) => {
-    if (card === null) {
+    if (card === null || (open.value && card.languageId !== openedId.value)) {
       open.value = false
     }
   },
@@ -51,6 +52,7 @@ function openWindow(): void {
     return
   }
   action.clearError()
+  openedId.value = props.card.languageId
   openedName.value = props.card.nativeName
   open.value = true
 }
@@ -66,11 +68,12 @@ async function confirm(): Promise<void> {
     action.busy.value ||
     elsewhere.value ||
     props.card === null ||
+    openedId.value === null ||
     verdict.value.disabled
   ) {
     return
   }
-  if (await action.run(switchOff(props.card.code))) {
+  if (await action.run(switchOff(openedId.value))) {
     open.value = false
   }
 }

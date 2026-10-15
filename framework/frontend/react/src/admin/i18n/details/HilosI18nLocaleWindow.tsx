@@ -80,18 +80,18 @@ function LocaleWindow({
   opened,
   onClose,
 }: LocaleWindowProps & { opened: NonNullable<LocaleWindowProps['opened']> }) {
-  const [address] = useState(() => createSignal(card?.code ?? ''))
+  const [address] = useState(() => createSignal(card?.languageId ?? null))
   const [openedName] = useState(card?.nativeName ?? '')
   const editor = useMemo(
-    () => createHilosI18nLocaleEdit(controller, context, address),
+    () => createHilosI18nLocaleEdit(controller, context),
     [controller, context, address],
   )
   const creator = useMemo(
-    () => createHilosI18nLocaleAdd(controller, context, address),
+    () => createHilosI18nLocaleAdd(controller, context),
     [controller, context, address],
   )
   const switcher = useMemo(
-    () => createHilosI18nLocaleSwitchOn(context, address),
+    () => createHilosI18nLocaleSwitchOn(context),
     [context, address],
   )
   const offSwitcher = useMemo(
@@ -151,7 +151,11 @@ function LocaleWindow({
     if (dialog) focusInitial(dialog, 'dialog')
   }, [step])
   const row = mode === 'add' ? addRow : mode === 'edit' ? editRow : viewSnapshot
-  const liveRow = focused?.rowKey === row?.rowKey ? focused : undefined
+  const liveRow =
+    focused?.rowKey === row?.rowKey &&
+    (mode === 'add' || focused?.localeId === row?.localeId)
+      ? focused
+      : undefined
   const shownRow = mode === 'view' ? (liveRow ?? viewSnapshot) : row
   const form =
     mode === 'add'
@@ -162,7 +166,7 @@ function LocaleWindow({
   const country = row ? hilosI18nLocaleCountryLabel(row) : null
   const busy =
     addAction.busy || editAction.busy || switchAction.busy || offAction.busy
-  const subjectGone = card?.code !== address.get()
+  const subjectGone = card?.languageId !== address.get()
   const editGone = editState.gone || subjectGone,
     addGone = pairGone || subjectGone
   const viewGone =
@@ -279,7 +283,9 @@ function LocaleWindow({
     sending.current = true
     try {
       if (
-        (await switchAction.run(switcher.switchOn(row.countryCode))) &&
+        (await switchAction.run(
+          switcher.switchOn(row.languageId, row.countryId, row.localeId!),
+        )) &&
         mounted.current
       )
         onClose()
@@ -294,7 +300,11 @@ function LocaleWindow({
     try {
       if (
         (await offAction.run(
-          offSwitcher.switchOff(address.get(), liveRow.countryCode),
+          offSwitcher.switchOff(
+            row!.languageId,
+            row!.countryId,
+            row!.localeId!,
+          ),
         )) &&
         mounted.current
       )
@@ -527,7 +537,11 @@ function LocaleWindow({
           </div>
           <div>
             <span className="text-body-secondary">{copy.codeLabel}</span>
-            <code data-id="i18n-locale-code">{row?.rowKey}</code>
+            <code data-id="i18n-locale-code">
+              {row?.localeCode ??
+                card?.code +
+                  (row?.countryCode ? '-' + row.countryCode.toUpperCase() : '')}
+            </code>
           </div>
         </div>
         <div className={mode !== 'add' ? 'hilos-stack' : undefined}>

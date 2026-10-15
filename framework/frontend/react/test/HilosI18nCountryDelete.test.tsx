@@ -66,7 +66,7 @@ describe('React country deletion', () => {
       expect(h.calls).toHaveLength(1)
       expect(h.calls[0]).toMatchObject({
         action: actionName,
-        payload: { countryCode: 'gg' },
+        payload: { countryId: 143 },
       })
       expect(el<HTMLButtonElement>('i18n-country-delete-cancel').disabled).toBe(
         true,

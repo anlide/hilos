@@ -130,6 +130,7 @@ final class I18nLanguageCardTest extends IntegrationTestCase
             new PageRouteParams(['languageCode' => 'qx']),
         )->toArray();
         self::assertSame([
+            'languageId' => Hilos::$db->languages['qx']->id,
             'code' => 'qx',
             'nativeName' => 'Own language',
             'rtl' => true,
@@ -294,6 +295,7 @@ final class I18nLanguageCardTest extends IntegrationTestCase
             self::assertCount(1, $responses);
             $card = $this->cardOf($responses[0]);
             self::assertSame([
+                'languageId' => Hilos::$db->languages['qx']->id,
                 'code' => 'qx',
                 'nativeName' => 'Viewer language',
                 'rtl' => true,

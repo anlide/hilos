@@ -27,6 +27,25 @@ function setup(viewer = false) {
 const enabledCard = { ...languageCard, enabled: true }
 
 describe('HilosI18nLanguagePage', () => {
+  it('preserves a draft without retargeting a same-code replacement', () => {
+    const h = setup()
+    h.act(() => h.card())
+    h.click('language-card-edit')
+    h.type('i18n-language-edit-native-name', 'Unsaved draft')
+    h.act(() =>
+      h.card({ ...languageCard, languageId: languageCard.languageId + 1 }),
+    )
+    expect(
+      h.el<HTMLInputElement>('i18n-language-edit-native-name')!.value,
+    ).toBe('Unsaved draft')
+    expect(h.el<HTMLButtonElement>('i18n-language-edit-submit')!.disabled).toBe(
+      true,
+    )
+    expect(h.el('i18n-language-edit-submit')!.textContent).toContain('Deleted')
+    h.submit()
+    expect(h.calls).toHaveLength(0)
+  })
+
   it('tells loading from a card that is gone and draws the live fields, marks, counts and tabs', () => {
     const h = setup()
     expect(
@@ -116,7 +135,7 @@ describe('HilosI18nLanguagePage', () => {
     h.click('i18n-language-edit-submit')
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_language_update',
-      payload: { languageCode: 'uk', nativeName: 'Mine', rtl: false },
+      payload: { languageId: 19, nativeName: 'Mine', rtl: false },
     })
     h.act(() => h.card({ ...languageCard, nativeName: 'Mine' }))
     expect(h.el('modal')).not.toBeNull()
@@ -188,7 +207,7 @@ describe('HilosI18nLanguagePage', () => {
     expect(h.calls).toHaveLength(1)
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_language_switch_off',
-      payload: { languageCode: 'uk' },
+      payload: { languageId: 19 },
     })
     expect(
       h.el<HTMLButtonElement>('language-card-switch-off-cancel')?.disabled,
@@ -265,7 +284,7 @@ describe('HilosI18nLanguagePage', () => {
     h.click('language-card-switch-on-confirm')
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_language_switch_on',
-      payload: { languageCode: 'uk' },
+      payload: { languageId: 19 },
     })
     h.act(() => h.card(enabledCard))
     expect(h.el('modal')).not.toBeNull()
@@ -280,7 +299,7 @@ describe('HilosI18nLanguagePage', () => {
     h.click('i18n-language-delete-confirm')
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_language_delete',
-      payload: { languageCode: 'uk' },
+      payload: { languageId: 19 },
     })
     h.act(() => h.card([]))
     expect(h.el('modal')).not.toBeNull()
@@ -331,7 +350,12 @@ describe('HilosI18nLanguagePage', () => {
         params: { languageCode: 'fr' },
         admin: true,
       })
-      h.card({ ...languageCard, code: 'fr', nativeName: 'Français' })
+      h.card({
+        ...languageCard,
+        languageId: 13,
+        code: 'fr',
+        nativeName: 'Français',
+      })
     })
     expect(h.el('i18n-language-edit-window')).toBeNull()
     expect(h.el('language-card-code')?.textContent?.trim()).toBe('fr')
@@ -343,7 +367,12 @@ describe('HilosI18nLanguagePage', () => {
         params: { languageCode: 'ar' },
         admin: true,
       })
-      h.card({ ...languageCard, code: 'ar', nativeName: 'العربية' })
+      h.card({
+        ...languageCard,
+        languageId: 16,
+        code: 'ar',
+        nativeName: 'العربية',
+      })
     })
     expect(h.el('modal')).toBeNull()
     h.click('language-card-delete')
@@ -360,7 +389,12 @@ describe('HilosI18nLanguagePage', () => {
     h.act(() => h.card())
     h.click('language-card-edit')
     const next = i18nBench()
-    next.card({ ...languageCard, code: 'fr', nativeName: 'Français' })
+    next.card({
+      ...languageCard,
+      languageId: 13,
+      code: 'fr',
+      nativeName: 'Français',
+    })
     h.fixture.componentRef.setInput('context', next.context)
     h.detect()
     expect(h.el('i18n-language-edit-window')).toBeNull()

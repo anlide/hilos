@@ -190,7 +190,7 @@ import { HilosI18nMarksLegend } from './HilosI18nMarksLegend.js'
                   row.code
                 "
                 (click)="
-                  subject.window.open(row.enabled ? 'view' : 'edit', row.code)
+                  subject.window.open(row.enabled ? 'view' : 'edit', row.rowKey)
                 "
               >
                 <i
@@ -200,7 +200,7 @@ import { HilosI18nMarksLegend } from './HilosI18nMarksLegend.js'
               </button>
               <hilos-i18n-country-row-actions
                 [row]="row"
-                (remove)="openDelete(row.code)"
+                (remove)="openDelete(row.rowKey)"
               />
             </span>
           </ng-template>
@@ -269,7 +269,7 @@ export class HilosI18nCountriesPage {
   protected readonly deleteSource = computed(() => {
     const row = this.focusedRow()
 
-    return row !== undefined && row.code === this.deleteTarget()?.code
+    return row !== undefined && row.countryId === this.deleteTarget()?.countryId
       ? hilosI18nCountryDeleteFromRow(row)
       : null
   })
@@ -313,7 +313,7 @@ export class HilosI18nCountriesPage {
   protected openDelete(code: string): void {
     const controller = this.binding().countries.controller
     const fresh = controller.focusRow(code)
-    if (fresh?.code !== code || !fresh.canDelete) {
+    if (fresh?.rowKey !== code || !fresh.canDelete) {
       controller.releaseFocus()
       return
     }

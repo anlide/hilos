@@ -9,9 +9,12 @@ import { type HilosI18nLanguageContext } from '../../../src/admin/i18n/hilosI18n
 import { createSignal } from '../../../src/state/signal.js'
 
 describe('locale deletion', () => {
-  it.each(['ua', null])(
-    'dispatches exactly the two codes, including countryCode=%s, and returns the original handle',
-    (countryCode) => {
+  it.each([
+    [108, 12108],
+    [null, 12000],
+  ] as const)(
+    'dispatches the captured locale and parent IDs, including countryId=%s',
+    (countryId, localeId) => {
       const handle = {
         requestId: 'delete-locale',
         loading: createSignal(false),
@@ -22,11 +25,15 @@ describe('locale deletion', () => {
         actions: { dispatch },
       } as unknown as HilosI18nLanguageContext
       expect(
-        createHilosI18nLocaleDelete(context).deleteLocale('ru', countryCode),
+        createHilosI18nLocaleDelete(context).deleteLocale(
+          12,
+          countryId,
+          localeId,
+        ),
       ).toBe(handle)
       expect(HILOS_I18N_LOCALE_DELETE_ACTION).toBe('hilos_i18n_locale_delete')
       expect(dispatch.mock.calls).toEqual([
-        ['hilos_i18n_locale_delete', { languageCode: 'ru', countryCode }],
+        ['hilos_i18n_locale_delete', { languageId: 12, countryId, localeId }],
       ])
     },
   )

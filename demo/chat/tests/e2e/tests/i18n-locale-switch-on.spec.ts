@@ -4,6 +4,7 @@ import {
   watchHeight,
   watchLeft,
   watchTop,
+  i18nLocaleRow,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import { gotoPage, PAGE_READY } from '../helpers/page.js'
@@ -14,7 +15,7 @@ test('switches on a known locale with a still window on wide and narrow screens'
   await signUpAdmin(page)
   await gotoPage(page, '/hilos/i18n/languages/en/locales', PAGE_READY)
 
-  const australianRow = page.getByTestId('hilos-table-row-en-AU')
+  const australianRow = i18nLocaleRow(page, 'en-AU')
   const add = australianRow.getByTestId('i18n-locales-add-en-AU')
   await add.scrollIntoViewIfNeeded()
   await expect(add).toBeVisible()

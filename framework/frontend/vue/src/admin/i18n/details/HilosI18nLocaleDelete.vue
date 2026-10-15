@@ -21,8 +21,9 @@ const props = defineProps<{
   /** Current locale and language, or null when either disappeared. */
   source: HilosI18nLocaleDeleteTarget | null
   deleteLocale: (
-    languageCode: string,
-    countryCode: string | null,
+    languageId: number,
+    countryId: number | null,
+    localeId: number,
   ) => ActionHandle
 }>()
 const emit = defineEmits<{ 'update:modelValue': [open: boolean] }>()
@@ -41,9 +42,9 @@ const elsewhere = computed(
     props.modelValue &&
     !action.busy.value &&
     (props.source === null ||
-      props.source.languageCode !== props.target?.languageCode ||
-      props.source.countryCode !== props.target?.countryCode ||
-      props.source.localeCode !== props.target?.localeCode),
+      props.source.languageId !== props.target?.languageId ||
+      props.source.countryId !== props.target?.countryId ||
+      props.source.localeId !== props.target?.localeId),
 )
 
 watch(
@@ -65,7 +66,11 @@ async function confirm(): Promise<void> {
   }
   if (
     await action.run(
-      props.deleteLocale(props.target.languageCode, props.target.countryCode),
+      props.deleteLocale(
+        props.target.languageId,
+        props.target.countryId,
+        props.target.localeId,
+      ),
     )
   ) {
     emit('update:modelValue', false)

@@ -20,6 +20,8 @@ import { createSignal } from '../../../src/state/signal.js'
 import { type TableViewportController } from '../../../src/table/TableViewportController.js'
 
 const original: HilosI18nLanguageRow = {
+  languageId: 19,
+  rowKey: '19',
   code: 'uk',
   nativeName: 'Українська',
   rtl: false,
@@ -30,6 +32,7 @@ const original: HilosI18nLanguageRow = {
   deleteReason: null,
 }
 const originalCard: HilosI18nLanguageCard = {
+  languageId: original.languageId,
   code: original.code,
   nativeName: original.nativeName,
   rtl: original.rtl,
@@ -50,7 +53,7 @@ function setup(row = original) {
   const releaseFocus = vi.fn(() => focused.set(undefined))
   const controller = {
     focusRow: (key: string) => {
-      if (key !== row.code) return null
+      if (key !== row.rowKey) return null
       focused.set(row)
       return row
     },
@@ -67,11 +70,27 @@ function setup(row = original) {
 }
 
 describe('language window core', () => {
+  it('keeps the draft and refuses save when a card is replaced under the same code', async () => {
+    const h = setup()
+    const card = createSignal<HilosI18nLanguageCard | null>(originalCard)
+    const window = createHilosI18nLanguageCardWindow(card, h.context)
+    window.start()
+    expect(window.open()).toBe(true)
+    window.patchForm({ nativeName: 'My draft' })
+    card.set({ ...originalCard, languageId: originalCard.languageId + 1 })
+    expect(window.state.get().gone).toBe(true)
+    expect(window.form.get().nativeName).toBe('My draft')
+    expect(window.canSave.get()).toBe(false)
+    await window.save(async () => true)
+    expect(h.dispatch).not.toHaveBeenCalled()
+    window.dispose()
+  })
+
   it('opens from the fresh row, fixes its mode, and clears the mode on close', () => {
     const h = setup()
     expect(h.window.mode.get()).toBeNull()
     expect(h.window.open('missing')).toBe(false)
-    expect(h.window.open('uk')).toBe(true)
+    expect(h.window.open('19')).toBe(true)
     expect(h.window.mode.get()).toBe('edit')
     expect(h.window.plate.get()).toBe('known')
     h.focused.set({ ...original, enabled: true })
@@ -83,7 +102,7 @@ describe('language window core', () => {
     h.window.dispose()
 
     const on = setup({ ...original, enabled: true })
-    on.window.open('uk')
+    on.window.open('19')
     expect(on.window.mode.get()).toBe('view')
     expect(on.window.frozen.get()).toBe(true)
     expect(on.window.plate.get()).toBe('on')
@@ -101,14 +120,14 @@ describe('language window core', () => {
 
   it('sends trimmed fields through the row action and closes only on success', async () => {
     const h = setup()
-    h.window.open('uk')
+    h.window.open('19')
     expect(h.window.canSave.get()).toBe(false)
     h.window.patchForm({ nativeName: '  My name  ', rtl: true })
     expect(h.window.canSave.get()).toBe(true)
     await h.window.save(() => Promise.resolve(false))
     expect(h.dispatch).toHaveBeenCalledWith(
       HILOS_I18N_LANGUAGE_ROW_UPDATE_ACTION,
-      { languageCode: 'uk', nativeName: 'My name', rtl: true },
+      { languageId: 19, nativeName: 'My name', rtl: true },
     )
     expect(h.window.opened.get()).toBe(true)
     await h.window.save(() => Promise.resolve(true))
@@ -124,6 +143,7 @@ describe('language window core', () => {
     window.start()
     expect(window.open()).toBe(true)
     expect(window.row.get()).toEqual({
+      languageId: 19,
       code: 'uk',
       nativeName: 'Українська',
       rtl: false,
@@ -134,7 +154,7 @@ describe('language window core', () => {
     window.patchForm({ nativeName: '  Own name  ', rtl: true })
     await window.save(() => Promise.resolve(true))
     expect(h.dispatch).toHaveBeenCalledWith(HILOS_I18N_LANGUAGE_UPDATE_ACTION, {
-      languageCode: 'uk',
+      languageId: 19,
       nativeName: 'Own name',
       rtl: true,
     })
@@ -147,11 +167,11 @@ describe('language window core', () => {
 
   it('blocks blanks and overlong names, and closes an untouched form without dispatch', async () => {
     const h = setup()
-    h.window.open('uk')
+    h.window.open('19')
     await h.window.save(vi.fn())
     expect(h.window.opened.get()).toBe(false)
     expect(h.dispatch).not.toHaveBeenCalled()
-    h.window.open('uk')
+    h.window.open('19')
     for (const nativeName of ['   ', 'a'.repeat(65)]) {
       h.window.patchForm({ nativeName })
       expect(h.window.canSave.get()).toBe(false)
@@ -166,7 +186,7 @@ describe('language window core', () => {
 
   it('freezes an edit switched on elsewhere and keeps the draft after deletion', () => {
     const h = setup()
-    h.window.open('uk')
+    h.window.open('19')
     h.window.patchForm({ nativeName: 'My draft' })
     h.focused.set({ ...original, enabled: true })
     expect(h.window.frozen.get()).toBe(true)
@@ -190,7 +210,7 @@ describe('language window core', () => {
 
   it('names the incoming conflicts, keeps mine or takes theirs, and merges matching edits silently', () => {
     const h = setup()
-    h.window.open('uk')
+    h.window.open('19')
     h.window.patchForm({ nativeName: 'Mine' })
     h.focused.set({ ...original, nativeName: 'Theirs', rtl: true })
     expect(h.window.notice.get()).toEqual({
@@ -219,7 +239,7 @@ describe('language window core', () => {
 
   it('does not mistake its save echo for a switch elsewhere or dispatch twice', async () => {
     const h = setup()
-    h.window.open('uk')
+    h.window.open('19')
     h.window.patchForm({ nativeName: 'Mine' })
     let finish: (saved: boolean) => void = () => {}
     const pending = h.window.save(
@@ -230,7 +250,7 @@ describe('language window core', () => {
     )
     expect(h.window.saving.get()).toBe(true)
     expect(h.window.canSave.get()).toBe(false)
-    expect(h.window.open('uk')).toBe(false)
+    expect(h.window.open('19')).toBe(false)
     h.focused.set({ ...original, nativeName: 'Mine', enabled: true })
     expect(h.window.frozen.get()).toBe(false)
     expect(h.window.notice.get()?.text).not.toBe(

@@ -21,7 +21,7 @@ const props = defineProps<{
   target: HilosI18nCountryDeleteTarget | null
   /** The current source, separate from the chosen target and window lifetime. */
   source: HilosI18nCountryDeleteTarget | null
-  deleteCountry: (countryCode: string) => ActionHandle
+  deleteCountry: (countryId: number) => ActionHandle
 }>()
 const emit = defineEmits<{
   'update:modelValue': [open: boolean]
@@ -44,7 +44,7 @@ const elsewhere = computed(
   () =>
     props.modelValue &&
     !action.busy.value &&
-    props.source?.code !== props.target?.code,
+    props.source?.countryId !== props.target?.countryId,
 )
 
 watch(
@@ -65,7 +65,7 @@ async function confirm(): Promise<void> {
     return
   }
   // A later dependency hint leaves this door open for the server's verdict.
-  if (await action.run(props.deleteCountry(props.target.code))) {
+  if (await action.run(props.deleteCountry(props.target.countryId))) {
     emit('update:modelValue', false)
     emit('deleted')
   }

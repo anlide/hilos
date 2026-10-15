@@ -79,7 +79,7 @@ const PLATE = 'badge bg-body-tertiary text-body-secondary border fw-normal'
       </ng-template>
       <ng-template [hilosTableDetail]="keys.corrections" let-row>
         <ul class="list-unstyled mb-0">
-          @for (correction of row.corrections; track correction.localeCode) {
+          @for (correction of row.corrections; track correction.localeId) {
             <li
               class="d-flex flex-wrap align-items-center gap-2 py-1"
               [attr.data-id]="'i18n-names-correction-' + correction.localeCode"

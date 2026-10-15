@@ -19,6 +19,9 @@ import { HILOS_ADMIN_VIEW_MODE } from '../src/hilosLookOnly.js'
 import { i18nBench, mountOver, usInEnglish } from './helpers/hilosI18n.js'
 
 const coordinates = {
+  inLanguageId: 11,
+  nameId: 301,
+  countryId: 102,
   countryCode: 'us',
   countryName: 'United States',
   inLanguageCode: 'en',
@@ -32,6 +35,8 @@ const base: HilosI18nCountryNameDeleteTarget = {
 const emptyCorrection: HilosI18nCountryNameDeleteTarget = {
   ...coordinates,
   kind: 'override',
+  localeId: 502,
+  nameId: 402,
   localeCode: 'en-US',
   expectedName: '',
 }
@@ -84,8 +89,9 @@ describe('HilosI18nCountryNameDelete', () => {
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_country_name_delete',
       payload: {
-        countryCode: 'us',
-        inLanguageCode: 'en',
+        countryId: 102,
+        inLanguageId: 11,
+        nameId: 301,
         expectedName: 'United States',
       },
     })
@@ -124,9 +130,10 @@ describe('HilosI18nCountryNameDelete', () => {
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_country_name_override_delete',
       payload: {
-        countryCode: 'us',
-        inLanguageCode: 'en',
-        localeCode: 'en-US',
+        countryId: 102,
+        inLanguageId: 11,
+        nameId: 402,
+        localeId: 502,
         expectedName: '',
       },
     })
@@ -162,7 +169,11 @@ describe('HilosI18nCountryNameDelete', () => {
 
   it.each([
     ['base', base, null],
-    ['row', base, { ...usInEnglish, code: 'es' }],
+    [
+      'row',
+      base,
+      { ...usInEnglish, inLanguageId: 15, rowKey: '15', code: 'es' },
+    ],
     [
       'correction',
       emptyCorrection,
@@ -170,6 +181,7 @@ describe('HilosI18nCountryNameDelete', () => {
         ...usInEnglish,
         corrections: usInEnglish.corrections.map((item) => ({
           ...item,
+          nameId: null,
           name: null,
         })),
       },

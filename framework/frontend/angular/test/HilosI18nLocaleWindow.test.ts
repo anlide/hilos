@@ -37,7 +37,10 @@ import {
 /** A pair without a locale that the built-in catalog knows. */
 const moldovaPair: HilosI18nLocaleRow = {
   ...polandPair,
-  rowKey: 'uk-MD',
+  languageId: 19,
+  countryId: 145,
+  localeId: null,
+  rowKey: '19:145',
   countryCode: 'md',
   countryName: 'Молдова',
   catalogFormats,
@@ -45,6 +48,7 @@ const moldovaPair: HilosI18nLocaleRow = {
 /** The language's own pair before it has a locale. */
 const countrylessPair: HilosI18nLocaleRow = {
   ...countrylessLocale,
+  localeId: null,
   localeCode: null,
   enabled: null,
   formats: null,
@@ -62,9 +66,7 @@ function setup(
     polandPair,
     moldovaPair,
   ])
-  const language = computedSignal(() =>
-    String(bench.route.get().params['languageCode'] ?? ''),
-  )
+  const language = computedSignal(() => options.card?.languageId ?? 19)
   const locales = createHilosI18nLanguageLocalesTable(bench.context, language)
   locales.start()
   const view = mountOver(
@@ -127,8 +129,8 @@ const FIELDS = [
 describe('HilosI18nLocaleWindow — add', () => {
   it('asks for all seven closed choices of an unknown pair before Add, then sends them', async () => {
     const h = setup()
-    h.open('uk-PL', 'add')
-    expect(h.focuses.at(-1)).toBe('uk-PL')
+    h.open('19:146', 'add')
+    expect(h.focuses.at(-1)).toBe('19:146')
     expect(h.el('i18n-locale-title')?.textContent).toContain(
       'Add locale · Українська in PL',
     )
@@ -160,8 +162,8 @@ describe('HilosI18nLocaleWindow — add', () => {
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_locale_add',
       payload: {
-        languageCode: 'uk',
-        countryCode: 'pl',
+        languageId: 19,
+        countryId: 146,
         formats: {
           date: 'yyyy-MM-dd',
           time: 'h:mm a',
@@ -182,8 +184,8 @@ describe('HilosI18nLocaleWindow — add', () => {
   })
 
   it.each([
-    ['uk-MD', 'md'],
-    ['uk', null],
+    ['19:145', 'md'],
+    ['19:null', null],
   ] as const)(
     'prefills the catalog formats of %s and sends its country as %s',
     async (rowKey, countryCode) => {
@@ -198,7 +200,11 @@ describe('HilosI18nLocaleWindow — add', () => {
       h.submit()
       expect(h.calls[0]).toMatchObject({
         action: 'hilos_i18n_locale_add',
-        payload: { languageCode: 'uk', countryCode, formats: catalogFormats },
+        payload: {
+          languageId: 19,
+          countryId: countryCode === null ? null : 145,
+          formats: catalogFormats,
+        },
       })
       await h.settle(() => h.refuse(0, 'A locale of this pair exists.'))
       expect(h.el('modal')).not.toBeNull()
@@ -210,11 +216,12 @@ describe('HilosI18nLocaleWindow — add', () => {
 
   it('keeps the draft when the pair gains a locale elsewhere and draws no twins', () => {
     const h = setup()
-    h.open('uk-PL', 'add')
+    h.open('19:146', 'add')
     h.choose('date', 'yyyy-MM-dd')
     h.act(() =>
       h.delta({
         ...polandPair,
+        localeId: 19146,
         localeCode: 'uk-PL',
         enabled: false,
         formats: catalogFormats,
@@ -230,9 +237,21 @@ describe('HilosI18nLocaleWindow — add', () => {
 })
 
 describe('HilosI18nLocaleWindow — edit and switch on', () => {
+  it('keeps the draft when a new locale takes the same parent pair', () => {
+    const h = setup()
+    h.open(ukraineLocale.rowKey, 'edit')
+    h.choose('date', 'yyyy-MM-dd')
+    h.act(() => h.delta({ ...ukraineLocale, localeId: 999 }))
+    expect(h.select('date').value).toBe('yyyy-MM-dd')
+    expect(h.button('i18n-locale-submit').disabled).toBe(true)
+    expect(h.button('i18n-locale-submit').textContent?.trim()).toBe('Deleted')
+    h.submit()
+    expect(h.calls).toHaveLength(0)
+  })
+
   it('saves the chosen formats and closes only on the ack', async () => {
     const h = setup()
-    h.open('uk-UA', 'edit')
+    h.open('19:108', 'edit')
     expect(h.select('date').value).toBe(catalogFormats.date)
     expect(h.button('i18n-locale-submit').disabled).toBe(true)
     h.choose('date', 'yyyy-MM-dd')
@@ -240,9 +259,10 @@ describe('HilosI18nLocaleWindow — edit and switch on', () => {
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_locale_update',
       payload: {
-        languageCode: 'uk',
-        countryCode: 'ua',
+        languageId: 19,
+        countryId: 108,
         formats: { ...catalogFormats, date: 'yyyy-MM-dd' },
+        localeId: 19108,
       },
     })
     await h.settle(() => h.succeed())
@@ -251,7 +271,7 @@ describe('HilosI18nLocaleWindow — edit and switch on', () => {
 
   it('opens the switch-on step inside the window, goes Back without sending, and switches on through the ack', async () => {
     const h = setup()
-    h.open('uk-UA', 'edit')
+    h.open('19:108', 'edit')
     h.click('i18n-locale-switch-on')
     expect(document.activeElement?.getAttribute('role')).toBe('dialog')
     expect(h.el('i18n-locale-title')?.textContent).toContain(
@@ -269,7 +289,7 @@ describe('HilosI18nLocaleWindow — edit and switch on', () => {
     expect(h.calls).toHaveLength(1)
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_locale_switch_on',
-      payload: { languageCode: 'uk', countryCode: 'ua' },
+      payload: { languageId: 19, countryId: 108, localeId: 19108 },
     })
     expect(h.button('i18n-locale-switch-on-back').disabled).toBe(true)
     expect(h.button('modal-close').disabled).toBe(true)
@@ -283,7 +303,7 @@ describe('HilosI18nLocaleWindow — edit and switch on', () => {
 
   it('asks to save a dirty draft or an open conflict before switching on', async () => {
     const h = setup()
-    h.open('uk-UA', 'edit')
+    h.open('19:108', 'edit')
     h.choose('date', 'yyyy-MM-dd')
     h.click('i18n-locale-switch-on')
     expect(h.el('i18n-locale-switch-on-unsaved')).not.toBeNull()
@@ -305,7 +325,7 @@ describe('HilosI18nLocaleWindow — edit and switch on', () => {
 
   it('merges a change elsewhere and offers Keep mine and Take theirs', () => {
     const h = setup()
-    h.open('uk-UA', 'edit')
+    h.open('19:108', 'edit')
     h.choose('date', 'yyyy-MM-dd')
     h.act(() =>
       h.delta({
@@ -335,7 +355,7 @@ describe('HilosI18nLocaleWindow — edit and switch on', () => {
 
   it('keeps the draft of a locale deleted or switched on elsewhere and sends nothing from it', () => {
     const h = setup()
-    h.open('uk-UA', 'edit')
+    h.open('19:108', 'edit')
     h.choose('date', 'yyyy-MM-dd')
     h.act(() => h.delta({ ...ukraineLocale, enabled: true }))
     expect(h.el('i18n-locale-notice')?.textContent).toContain(
@@ -346,6 +366,7 @@ describe('HilosI18nLocaleWindow — edit and switch on', () => {
     h.act(() =>
       h.delta({
         ...ukraineLocale,
+        localeId: null,
         localeCode: null,
         enabled: null,
         formats: null,
@@ -362,7 +383,7 @@ describe('HilosI18nLocaleWindow — edit and switch on', () => {
 describe('HilosI18nLocaleWindow — view and switch off', () => {
   it('reads a switched-on locale and switches it off through its own step and ack', async () => {
     const h = setup({ card: { ...languageCard, enabled: false } })
-    h.open('uk', 'view')
+    h.open('19:null', 'view')
     for (const field of FIELDS) expect(h.select(field).disabled).toBe(true)
     expect(h.el('i18n-locale-plate')?.textContent).toContain(
       'This locale is switched on, so there is nothing to edit.',
@@ -379,7 +400,7 @@ describe('HilosI18nLocaleWindow — view and switch off', () => {
     h.click('i18n-locale-switch-off-confirm')
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_locale_switch_off',
-      payload: { languageCode: 'uk', countryCode: null },
+      payload: { languageId: 19, countryId: null, localeId: 19000 },
     })
     await h.settle(() => h.refuse(0, 'The locale is in use.'))
     expect(h.el('i18n-locale-switch-off-error')?.textContent).toContain(
@@ -399,7 +420,7 @@ describe('HilosI18nLocaleWindow — view and switch off', () => {
         summary: { ...languageCard.summary, isDefault: true },
       },
     })
-    h.open('uk', 'view')
+    h.open('19:null', 'view')
     h.click('i18n-locale-switch-off')
     expect(h.el('i18n-locale-switch-off-reason')?.textContent).toContain(
       'cannot be switched off',
@@ -410,8 +431,8 @@ describe('HilosI18nLocaleWindow — view and switch off', () => {
   })
 
   it.each([
-    ['uk', 'This language is switched on.'],
-    ['uk-UA', "This is the country's default locale."],
+    ['19:null', 'This language is switched on.'],
+    ['19:108', "This is the country's default locale."],
   ] as const)('warns before switching off %s', (rowKey, warning) => {
     const h = setup({ card: { ...languageCard, enabled: true } })
     h.act(() =>
@@ -427,7 +448,7 @@ describe('HilosI18nLocaleWindow — view and switch off', () => {
 
   it('says a locale switched off elsewhere and stays a view', () => {
     const h = setup()
-    h.open('uk', 'view')
+    h.open('19:null', 'view')
     h.act(() => h.delta({ ...countrylessLocale, enabled: false }))
     expect(h.el('i18n-locale-notice')?.textContent).toContain(
       'Switched off elsewhere just now.',
@@ -442,7 +463,7 @@ describe('HilosI18nLocaleWindow — room, viewer and teardown', () => {
     'holds every step of %s in invisible twins that carry no form, control, locator or focus',
     (mode) => {
       const h = setup()
-      h.open(mode === 'edit' ? 'uk-UA' : 'uk', mode)
+      h.open(mode === 'edit' ? '19:108' : '19:null', mode)
       const twins = [
         ...document.querySelectorAll<HTMLElement>('.hilos-stack.invisible'),
       ]
@@ -463,7 +484,7 @@ describe('HilosI18nLocaleWindow — room, viewer and teardown', () => {
 
   it('lets a viewer change the draft, open the step and go Back, while Save, Enter and the confirms send nothing', () => {
     const h = setup({ viewer: true })
-    h.open('uk-UA', 'edit')
+    h.open('19:108', 'edit')
     h.choose('date', 'yyyy-MM-dd')
     expect(h.select('date').value).toBe('yyyy-MM-dd')
     expect(h.button('i18n-locale-submit').disabled).toBe(true)
@@ -479,13 +500,13 @@ describe('HilosI18nLocaleWindow — room, viewer and teardown', () => {
 
   it('lets the pair go on Cancel and when the view ends', () => {
     const h = setup()
-    h.open('uk-UA', 'edit')
-    expect(h.focuses.at(-1)).toBe('uk-UA')
+    h.open('19:108', 'edit')
+    expect(h.focuses.at(-1)).toBe('19:108')
     h.click('i18n-locale-cancel')
     expect(h.closed()).toBe(1)
     expect(h.focuses.at(-1)).toBe('')
-    h.open('uk', 'view')
-    expect(h.focuses.at(-1)).toBe('uk')
+    h.open('19:null', 'view')
+    expect(h.focuses.at(-1)).toBe('19:null')
     h.fixture.destroy()
     expect(h.focuses.at(-1)).toBe('')
   })

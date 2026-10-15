@@ -24,6 +24,7 @@ final class LanguageCardBrowserData
 {
     public const string DATA = 'languageCard';
     public const string FIELD_SUMMARY = 'summary';
+    public const string languageId = 'languageId';
 
     public const array BINDING = [
         BrowserParamKey::PARAMS => [
@@ -74,7 +75,10 @@ final class LanguageCardBrowserData
                         BrowserRefKey::KEY => HilosPageRouteParams::HILOS_I18N_LANGUAGE_CODE,
                     ],
                 ],
-                BrowserDataFieldKey::FIELDS => [Language::code, Language::nativeName, Language::rtl, Language::enabled],
+                BrowserDataFieldKey::FIELDS => [
+                    Language::id => self::languageId,
+                    Language::code, Language::nativeName, Language::rtl, Language::enabled,
+                ],
                 BrowserDataFieldKey::COMPUTED => [self::FIELD_SUMMARY],
                 BrowserDataFieldKey::NOT_PERSONAL => [self::FIELD_SUMMARY],
             ],

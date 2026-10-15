@@ -74,8 +74,8 @@ abstract class AbstractHilosI18nCountryPage extends AbstractHilosI18nCountryCode
                     throw new InvalidActionPayloadException($action, HilosI18nCountrySwitchOnActionDTO::class, $dto);
                 }
 
-                $country = Hilos::$db->countries[$dto->countryCode]
-                    ?? throw new TableActionException('Unknown country: ' . $dto->countryCode);
+                $country = Hilos::$db->countries[$dto->countryId]
+                    ?? throw new TableActionException('Unknown country: ' . $dto->countryId);
                 $country->actions->switchOn();
                 $this->setActionSuccessMessage('Country switched on.');
 
@@ -86,8 +86,8 @@ abstract class AbstractHilosI18nCountryPage extends AbstractHilosI18nCountryCode
                     throw new InvalidActionPayloadException($action, HilosI18nCountrySwitchOffActionDTO::class, $dto);
                 }
 
-                $country = Hilos::$db->countries[$dto->countryCode]
-                    ?? throw new TableActionException('Unknown country: ' . $dto->countryCode);
+                $country = Hilos::$db->countries[$dto->countryId]
+                    ?? throw new TableActionException('Unknown country: ' . $dto->countryId);
                 $country->actions->switchOff();
                 $this->setActionSuccessMessage('Country switched off.');
 
@@ -135,8 +135,8 @@ abstract class AbstractHilosI18nCountryPage extends AbstractHilosI18nCountryCode
      */
     private function handleCountryDelete(HilosI18nCountryDeleteActionDTO $dto): void
     {
-        $country = Hilos::$db->countries[$dto->countryCode]
-            ?? throw new TableActionException('Unknown country: ' . $dto->countryCode);
+        $country = Hilos::$db->countries[$dto->countryId]
+            ?? throw new TableActionException('Unknown country: ' . $dto->countryId);
         $country->actions->delete();
         $this->setActionSuccessMessage('Country deleted.');
     }

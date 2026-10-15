@@ -69,11 +69,11 @@ export function hilosI18nLanguageSwitchOff(
 /** The tracked switch-off operation bound to the project action lifecycle. */
 export function createHilosI18nLanguageSwitchOff(
   context: HilosI18nLanguageContext,
-): { switchOff(languageCode: string): ActionHandle } {
+): { switchOff(languageId: number): ActionHandle } {
   return {
-    switchOff: (languageCode) =>
+    switchOff: (languageId) =>
       context.actions.dispatch(HILOS_I18N_LANGUAGE_SWITCH_OFF_ACTION, {
-        languageCode,
+        languageId,
       }),
   }
 }
@@ -107,11 +107,11 @@ export function hilosI18nLanguageSwitchOn(card: HilosI18nLanguageCard | null): {
 /** The tracked switch-on operation bound to the project action lifecycle. */
 export function createHilosI18nLanguageSwitchOn(
   context: HilosI18nLanguageContext,
-): { switchOn(languageCode: string): ActionHandle } {
+): { switchOn(languageId: number): ActionHandle } {
   return {
-    switchOn: (languageCode) =>
+    switchOn: (languageId) =>
       context.actions.dispatch(HILOS_I18N_LANGUAGE_SWITCH_ON_ACTION, {
-        languageCode,
+        languageId,
       }),
   }
 }

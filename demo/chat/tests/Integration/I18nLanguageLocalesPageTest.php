@@ -118,7 +118,7 @@ final class I18nLanguageLocalesPageTest extends IntegrationTestCase
         $window = $payload[PagePayload::windows][ChatTableContext::hilosI18nLanguageLocales];
         $wireRows = $window[TableWindowSignalData::rows];
         self::assertNotEmpty($wireRows);
-        self::assertSame('qx', $wireRows[0][BrowserPageSignalData::rowKey]);
+        self::assertSame(Hilos::$db->languages['qx']->id . ':null', $wireRows[0][BrowserPageSignalData::rowKey]);
     }
 
     public function testBothMainAndLocalesSubscribersReceiveCardUpdateWhenLocaleIsCreated(): void
@@ -219,7 +219,7 @@ final class I18nLanguageLocalesPageTest extends IntegrationTestCase
         $params = ['languageCode' => $code];
         $windows = [
             ChatTableContext::hilosI18nLanguageLocales => new TableWindowDescriptorDTO(
-                filter: [HilosI18nLanguageLocalesTable::FILTER_LANGUAGE => $code],
+                filter: [HilosI18nLanguageLocalesTable::FILTER_LANGUAGE => Hilos::$db->languages[$code]?->id ?? 999999],
             ),
         ];
         Hilos::$sr->subscribeToPage(

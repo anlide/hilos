@@ -1,7 +1,6 @@
 import { type RowEditNoticeKind } from '../../conflict/rowEdit.js'
 import {
   createHilosRowEdit,
-  hilosSignalRowEditSource,
   hilosTableRowEditSource,
   type HilosRowEditSource,
   type HilosTrackedRowEdit,
@@ -59,7 +58,7 @@ export const HILOS_I18N_LANGUAGE_WINDOW_COPY = {
       lead: 'The language is switched on, so there is nothing to edit here.',
       text: 'A switched-on language is live for everyone, and nobody changes it — neither you nor the reflow. To change it, switch it off, edit it and switch it back on.',
     },
-    code: 'The code stays grey here too: the env and everything built on languages refer to a language by its code, so it never changes.',
+    code: 'The code stays grey here too: URLs and the default-language environment value refer to this code, so it never changes.',
   },
   conflict: {
     nativeName: (value: string) =>
@@ -79,6 +78,7 @@ export const HILOS_I18N_LANGUAGE_WINDOW_COPY = {
 
 /** The shared projection of a language card and a languages-table row. */
 export interface HilosI18nLanguageEditable {
+  languageId: number
   code: string
   nativeName: string
   rtl: boolean
@@ -120,7 +120,7 @@ export function createHilosI18nLanguageRowWindow(
   context: HilosI18nLanguageContext,
 ): HilosI18nLanguageWindow {
   return createHilosI18nLanguageWindow(
-    hilosTableRowEditSource(controller, (row) => row.code),
+    hilosTableRowEditSource(controller, (row) => row.rowKey),
     context,
     HILOS_I18N_LANGUAGE_ROW_UPDATE_ACTION,
   )
@@ -136,11 +136,13 @@ export function createHilosI18nLanguageCardWindow(
   card: ReadonlySignal<HilosI18nLanguageCard | null>,
   context: HilosI18nLanguageContext,
 ): HilosI18nLanguageWindow {
+  const heldId = createSignal<number | null>(null)
   const row = computedSignal(() => {
     const current = card.get()
     return current === null
       ? undefined
       : {
+          languageId: current.languageId,
           code: current.code,
           nativeName: current.nativeName,
           rtl: current.rtl,
@@ -149,7 +151,19 @@ export function createHilosI18nLanguageCardWindow(
         }
   })
   return createHilosI18nLanguageWindow(
-    hilosSignalRowEditSource(row),
+    {
+      open() {
+        const current = row.get()
+        heldId.set(current?.languageId ?? null)
+        return current ?? null
+      },
+      live: computedSignal(() =>
+        row.get()?.languageId === heldId.get() ? row.get() : undefined,
+      ),
+      close() {
+        heldId.set(null)
+      },
+    },
     context,
     HILOS_I18N_LANGUAGE_UPDATE_ACTION,
   )
@@ -236,7 +250,7 @@ function createHilosI18nLanguageWindow(
       edit.save((draft, row) =>
         run(
           context.actions.dispatch(action, {
-            languageCode: row.code,
+            languageId: row.languageId,
             nativeName: draft.nativeName,
             rtl: draft.rtl,
           }),

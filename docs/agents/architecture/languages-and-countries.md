@@ -29,7 +29,9 @@ agent, not a dictionary of values.
 The reference belongs to the framework: one library owns the five `hilos_*`
 tables, and a project activates the section without supplying its contents.
 
-A language, country or locale is addressed by its code, which never changes.
+A public address resolves a language, country or locale by its immutable code.
+Internal references and action targets carry the captured primary ID, under
+[entity references](../orm/entity-references.md).
 A switched-on row is frozen for everyone, both a person and the reflow. The
 editing sequence is **switch off → edit → switch on**. A name has a lock,
 not an on-switch. The rules and their implementing leaves are below.
@@ -59,9 +61,10 @@ The seven locale formats are chosen from the closed lists in `LocaleTemplates`
 (ported from hleb). The create and update write doors refuse any other template,
 including writes made by reflow.
 
-The code is both an address and a reference: env and section addresses refer to
-a language code, and translation strings will do so in Phase 2. Renaming it
-would move three subsystems, so it stays immutable in every row state.
+Environment values and section URLs use language codes as external addresses.
+Catalog lookups use codes as definition keys. The entry boundary resolves these
+values; internal relationships use primary IDs. Codes remain immutable in every
+row state; this distinction introduces no rename operation.
 
 For each pair of *what is named × the language it is written in*, allow one
 base name and at most one override per locale. Both tables store a generated
@@ -231,7 +234,7 @@ one line; no extra column protects that gap (owner's decision, 2026-09-12).
 - A switched-on locale is switched off from its view window: Switch off next
   to Close turns the same modal into a confirmation step, and Back returns to
   the view without a request. The tracked `hilos_i18n_locale_switch_off` action
-  takes `languageCode` and the required nullable `countryCode`, keeps formats
+  takes `languageId`, required nullable `countryId` and `localeId`, keeps formats
   and names, and closes the window on success with `Locale switched off.`.
   The table removes Enabled and replaces the eye with the edit control in
   every open tab without a reload; reopening the edit window unlocks the seven
@@ -288,8 +291,10 @@ a name back to the catalog, delete it:
   disappears and does not return.
 
 The ADMIN language names page offers `hilos_i18n_language_name_add` and
-`hilos_i18n_language_name_update`. Both carry `languageCode`, `inLanguageCode`,
-nullable `localeCode` (`null` for the base), and the literal `name`. Creation
+`hilos_i18n_language_name_update`. Both carry `languageId`, `inLanguageId`, required nullable `localeId`
+(`null` for the base), and the literal `name`. ADD also carries required nullable
+`baseNameId`: null for a new base, the captured base ID for a correction.
+UPDATE carries the existing row's `nameId`. Creation
 and editing save `locked = true`, preserving empty strings and whitespace.
 A saved empty base permits a locale correction; a saved empty correction is
 its own value, not inheritance. The Vue table shows a pencil for either saved
@@ -298,8 +303,8 @@ value and a plus only for `null`. Clearing the field never deletes a name.
 Update also carries `expectedName`: the latest committed text acknowledged by
 the row-edit session, including after Keep mine or Take theirs. The i18n library
 compares it and writes in one synchronous handler, refusing a missing or changed
-name; ADD refuses an existing base or correction. An equal-text replacement is
-accepted: there is no separate version or protection against an ABA change.
+name; ADD refuses an existing base or correction. A replacement with equal text is refused when its ID differs. The expected text
+protects changes to the same row; the captured ID protects delete/recreate.
 
 The Vue window takes the parent row into focus and fixes its base/correction
 coordinates and ADD/EDIT mode on opening. A late creation leaves ADD open with
@@ -311,8 +316,9 @@ success closes the window, and committed names reach other open tabs without
 Apply or reload. The language and locale switches do not gate these name writes.
 
 The ADMIN country names page offers `hilos_i18n_country_name_add` and
-`hilos_i18n_country_name_update`, with `countryCode`, `inLanguageCode`, nullable
-`localeCode`, and literal `name`. They follow the same creation, editing and
+`hilos_i18n_country_name_update`, with `countryId`, `inLanguageId`, required nullable
+`localeId`, and literal `name`. ADD carries `baseNameId` and UPDATE `nameId`,
+with the same contracts as language names. They follow the same creation, editing and
 locked-value rules, including empty strings and whitespace. UPDATE carries the
 latest `expectedName` acknowledged by the row-edit session; ADD refuses an
 existing name. The country, language and locale switches do not gate these
@@ -321,19 +327,19 @@ draft on refusal or disappearance, and shares one table focus with deletion.
 Committed names and the country header reach both open tabs without Apply.
 
 The ADMIN language names page offers `hilos_i18n_language_name_delete` and
-`hilos_i18n_language_name_override_delete`. Both carry `languageCode`,
-`inLanguageCode` and the literal `expectedName` captured after focusing the row;
-the override also carries `localeCode`. The library refuses a missing or changed
+`hilos_i18n_language_name_override_delete`. Both carry `languageId`,
+`inLanguageId`, `nameId` and the literal `expectedName` captured after focusing the row;
+the override also carries a positive `localeId`. The library refuses a missing or changed
 name before writing. An empty string is a saved value, while `null` means no
 name or inheritance. Names have no `enabled` field: neither the language nor
 the locale needs switching off, and `locked` does not forbid manual deletion.
 
 The ADMIN country names page offers `hilos_i18n_country_name_delete` and
-`hilos_i18n_country_name_override_delete`, with `countryCode`, `inLanguageCode`,
-the literal `expectedName`, and `localeCode` for the override. Its confirmation
+`hilos_i18n_country_name_override_delete`, with `countryId`, `inLanguageId`,
+`nameId`, the literal `expectedName`, and `localeId` for the override. Its confirmation
 freezes the fresh focused value, while the live source blocks confirmation if
 the country, base name or correction disappears. A changed name is refused by
-the library; an equal-text replacement is accepted. The base confirmation warns
+the library; an equal-text replacement with another ID is refused too. The base confirmation warns
 that all current corrections go, including those added after it opened.
 
 `CountryNameActions::deleteAndRestoreCatalog()` deletes the base and its
@@ -472,7 +478,7 @@ will give those refusals their user-facing text.
 - The language item action refuses deleting the default language and checks
   every dependency again inside that transaction. Both page actions —
   `hilos_i18n_language_delete` on the card and
-  `hilos_i18n_language_row_delete` on the list — take only `languageCode` and
+  `hilos_i18n_language_row_delete` on the list — take only `languageId` and
   call that item action. They acknowledge success with `Language deleted.`
 - Deleting a locale is refused while it is switched on or selected as any
   country's default locale, even when that country is switched off. Any language
@@ -481,7 +487,7 @@ will give those refusals their user-facing text.
   deletion never cascades into names.
 - The locale item action checks those three reasons again at write time, in
   that order. The ADMIN page action `hilos_i18n_locale_delete` takes only
-  `languageCode` and the required nullable `countryCode`, calls that item action,
+  `languageId`, required nullable `countryId` and `localeId`, calls that item action,
   and acknowledges success with `Locale deleted.`
 - Deleting a locale removes its seven formats and leaves its language/country
   pair in the table. The intended Phase-2 fallback for that pair is the language's
@@ -496,7 +502,7 @@ will give those refusals their user-facing text.
   again at write time; it removes no referencing rows. A refusal leaves the
   country and its cached data intact, and foreign keys protect a late reference.
   Both page actions — `hilos_i18n_country_delete` on the card and
-  `hilos_i18n_country_row_delete` on the list — take only `countryCode` and
+  `hilos_i18n_country_row_delete` on the list — take only `countryId` and
   call that item action. Success acknowledges `Country deleted.`
 - The Vue list's last actions column and the card's State section open one
   shared confirmation dialog. The list focuses the fresh row on open and
@@ -516,7 +522,7 @@ by someone or referenced by a translation string belong to HIL-1424.
 
 ## Addresses
 
-A language or country is addressed by code, not row number. A code never
+A public language or country URL is addressed by code. A code never
 changes; a row number can change on a reload of the data, and a URL can be sent
 by mail. Code addresses and the three new names/locales page keys are registered
 together (HIL-1473). The Vue main language card is built (HIL-1478) and opens by
@@ -526,7 +532,8 @@ names page of a language is built too (HIL-1477): the names table opened on the
 language the address names, standing under the card's shared header and tabs fed
 by the same `languageCard` datum (HIL-1479). So is its Vue locales page
 (HIL-1476): the locales table opened on that language, a row for the language
-alone and one for every country, keyed by the pair written as its locale's code,
+alone and one for every country, keyed by `<languageId>:<countryId>` or
+`<languageId>:null`,
 whether the pair has a locale or not, standing under the card's shared header
 and tabs fed by the same `languageCard` datum. The Vue section root is built
 (HIL-1474) and shows the Languages card; the Vue languages list is built whole
@@ -558,6 +565,31 @@ self-contained default shell showing both cards.
 
 See the [page registry](../frontend/page-registry.md). The
 `/hilos/i18n/translate/**` branch goes away with HIL-1424.
+
+## Internal IDs On The Wire
+
+IDs are positive integer JSON numbers, with required `null` for an absent
+optional child; numeric strings, booleans, floats, zero and omitted nullable
+keys are refused. Language and country ADD keep their code attributes. Their
+other actions use `languageId` or `countryId`. Country UPDATE carries
+`defaultLocaleId`, and each locale choice carries `localeId` beside its code
+label. The catalog suggestion selects that existing choice's ID on opening.
+Locale ADD carries the parent IDs; UPDATE, DELETE and both switches also carry
+the captured `localeId` and check the parent pair before the item action.
+
+The first page response carries `languageCard.languageId` or
+`countryCard.countryId`. Names and locales windows take their numeric parent
+filters from that card; no invented zero or code is sent before it arrives.
+Lists use decimal ID row keys. Names rows use `String(inLanguageId)` and carry
+`nameId: null` for a missing base. Corrections carry `localeId`, `countryId`
+and their own nullable `nameId`. ID and text come from the same typed View row.
+All these fields retain their column-backed admin-view policies.
+
+Open windows capture those identities after focus. Live text on the same name
+merges normally; a different name, locale or subject ID leaves the draft
+available and blocks the stale operation. There is no fallback to the code,
+parent pair or equal text of a replacement. Vue, React and Angular share that
+contract and preserve the code labels and public URLs.
 
 ## Switching The Section On
 
@@ -594,7 +626,7 @@ same edit or view control (HIL-1485), with a trash button beside it. The card
 summary and live table fields `canDelete` / `deleteReason` are hints: the
 opening controls explain default, locales, then manual names with visible
 text, while the server judges again after the window opens.
-Both Vue entries open the same delete modal, fixing the code and native name
+Both Vue entries open the same delete modal, fixing the primary ID, code and native name
 on open; the list first takes the fresh row into focus and follows it live.
 A dependency appearing under the open window leaves confirmation available
 for a server refusal, drawn in the modal's reserved error row. Busy blocks
@@ -607,7 +639,7 @@ The Vue locales page adds a locale from a pair without one, edits a switched-off
 locale, and shows a switched-on locale in the same window (HIL-1491). The server
 actions serve all six demos. Each existing locale also has a trash button,
 including a switched-on or country-default locale. Its separate confirmation
-focuses the fresh row, freezes the codes and labels, and releases focus on close
+focuses the fresh row, freezes the parent IDs, locale ID, codes and labels, and releases focus on close
 or unmount. A late switch or default selection leaves Delete available for the
 server's refusal. An idle missing locale, country or language says
 `Deleted elsewhere.`; the window stays open with Delete disabled. During its own request it retains
@@ -695,8 +727,9 @@ These keys are pointers to later work, not implementation markers:
   built-in catalog instead.
 - **Wrong:** add a “pin” button or put a lock on a language, country or locale;
   editing locks names automatically, while the three root tables use `enabled`.
-- **Wrong:** put a row number in a language or country address; use its stable
-  code so the address survives a reload of the data.
+- **Wrong:** target an internal mutation by code after capturing a row. Carry
+  its primary ID and refuse if it disappeared. Public URLs keep their stable
+  code and resolve it only at entry.
 - **Wrong:** put reflow on a timer; compare fingerprints at startup when the
   framework version changes.
 - **Wrong:** remove a name by saving an empty string; that saves a locked value.

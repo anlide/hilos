@@ -11,6 +11,9 @@ that match the affected subsystem.
 
 ## Read First
 
+- Internal entity references, action targets, external code boundaries and
+  delete/recreate review: `docs/agents/orm/entity-references.md`.
+
 - Framework development rules: `docs/agents/framework-development.md`
 - Writing SQL past `Hilos::$db`, or choosing a static or instance field for
   state instead of `Hilos::$rt`: `docs/agents/framework-first.md`

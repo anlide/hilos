@@ -1,5 +1,5 @@
 // The languages table (HIL-1474): every language of the system on one page.
-// The code is the row key and the link into the language card. Default and
+// The decimal language ID is the row key; the code links to the language card. Default and
 // custom are marks the server computes; this module only resolves them.
 // Framework-agnostic: the views render from what this module resolves.
 import { z } from 'zod'
@@ -26,6 +26,8 @@ const LANGUAGE_SLOT = 'language'
 
 /** Payload keys of a language row (mirrors HilosI18nLanguagesTableRow). */
 export const HilosI18nLanguageRowKey = {
+  rowKey: 'rowKey',
+  languageId: 'languageId',
   code: 'code',
   nativeName: 'nativeName',
   rtl: 'rtl',
@@ -37,6 +39,8 @@ export const HilosI18nLanguageRowKey = {
 } as const
 
 const languageSlotSchema = z.object({
+  [HilosI18nLanguageRowKey.rowKey]: z.string(),
+  [HilosI18nLanguageRowKey.languageId]: z.number().int().positive(),
   [HilosI18nLanguageRowKey.code]: z.string(),
   [HilosI18nLanguageRowKey.nativeName]: z.string(),
   [HilosI18nLanguageRowKey.rtl]: z.boolean(),
@@ -51,7 +55,9 @@ const languageSlotSchema = z.object({
 
 /** One row of the languages table. */
 export interface HilosI18nLanguageRow {
-  /** Language code; also the row key and the card address. */
+  readonly rowKey: string
+  readonly languageId: number
+  /** Display code and external card address. */
   readonly code: string
   /** The name the language calls itself. */
   readonly nativeName: string
@@ -70,30 +76,14 @@ export interface HilosI18nLanguageRow {
 }
 
 /**
- * Resolve one raw language row into its view-model. A slot the schema refuses
- * shows the language by its key, switched off, rather than dropping the row.
+ * Resolve the typed language projection, refusing absent or malformed IDs.
  *
  * @param row The raw table row from the page-scoped table store.
  */
 export function resolveHilosI18nLanguageRow(
   row: TableRow,
 ): HilosI18nLanguageRow {
-  const parsed = languageSlotSchema.safeParse(row.slots[LANGUAGE_SLOT])
-  if (parsed.success) {
-    return parsed.data
-  }
-  const code = String(row.rowKey)
-
-  return {
-    code,
-    nativeName: code,
-    rtl: false,
-    enabled: false,
-    isDefault: false,
-    isOwn: false,
-    canDelete: false,
-    deleteReason: null,
-  }
+  return languageSlotSchema.parse(row.slots[LANGUAGE_SLOT])
 }
 
 /** The columns of the languages table, in display order. */

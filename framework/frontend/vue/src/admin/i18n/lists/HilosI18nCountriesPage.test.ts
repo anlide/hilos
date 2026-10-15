@@ -25,6 +25,9 @@ enableAutoUnmount(afterEach)
 afterEach(() => hilosToasts.clear())
 
 interface CountrySlot {
+  rowKey: string
+  countryId: number
+  defaultLocaleId: number | null
   code: string
   name: string | null
   currencySymbol: string
@@ -39,10 +42,13 @@ interface CountrySlot {
 }
 
 const UNITED_STATES: CountrySlot = {
+  countryId: 102,
+  rowKey: '102',
   code: 'us',
   name: 'United States',
   currencySymbol: '$',
   currencyCode: 'USD',
+  defaultLocaleId: null,
   defaultLocaleCode: null,
   enabled: false,
   isOwn: false,
@@ -53,10 +59,13 @@ const UNITED_STATES: CountrySlot = {
 }
 
 const OWN: CountrySlot = {
+  countryId: 141,
+  rowKey: '141',
   code: 'qx',
   name: null,
   currencySymbol: '¤',
   currencyCode: 'XQX',
+  defaultLocaleId: 11141,
   defaultLocaleCode: 'en-QX',
   enabled: true,
   isOwn: true,
@@ -110,7 +119,7 @@ function context(
   const deltaListeners = new Set<Listener>()
   const focused: string[] = []
   const tableRows = rows.map((country) => ({
-    rowKey: country.code,
+    rowKey: country.rowKey,
     slots: { country },
   }))
   const serveWindow = (): void => {
@@ -177,10 +186,10 @@ function context(
             page: HilosPages.I18N_COUNTRIES,
             tableKey: HILOS_I18N_COUNTRIES_TABLE,
             kind: removed ? 'row_removed' : 'row_updated',
-            rowKey: country.code,
+            rowKey: country.rowKey,
             ...(removed
               ? { reason: 'deleted' }
-              : { row: { rowKey: country.code, slots: { country } } }),
+              : { row: { rowKey: country.rowKey, slots: { country } } }),
           },
         })
     },
@@ -341,7 +350,7 @@ describe('HilosI18nCountriesPage', () => {
     expect((pencil.element as HTMLButtonElement).disabled).toBe(false)
     expect(pencil.find('.bi-pencil').exists()).toBe(true)
     await pencil.trigger('click')
-    expect(c.focused).toContain('us')
+    expect(c.focused).toContain('102')
     expect(
       document.querySelector('[data-id="i18n-country-title"]')?.textContent,
     ).toContain('Edit country · United States')
@@ -452,7 +461,7 @@ describe('HilosI18nCountriesPage', () => {
     const opener = view.get('[data-id="i18n-countries-delete-qx"]')
     c.delta({ ...OWN, name: 'Fresh name' })
     await opener.trigger('click')
-    expect(c.focused).toEqual(['qx'])
+    expect(c.focused).toEqual(['141'])
     expect(document.body.textContent).toContain('Delete country · Fresh name')
     document
       .querySelector<HTMLButtonElement>(
@@ -461,7 +470,7 @@ describe('HilosI18nCountriesPage', () => {
       .click()
     await nextTick()
     expect(dispatch).toHaveBeenCalledWith('hilos_i18n_country_row_delete', {
-      countryCode: 'qx',
+      countryId: 141,
     })
     c.delta(OWN, true)
     await nextTick()
@@ -469,7 +478,7 @@ describe('HilosI18nCountriesPage', () => {
       document.querySelector('[data-id="i18n-country-delete-window"]'),
     ).not.toBeNull()
     expect(document.body.textContent).not.toContain('Deleted elsewhere.')
-    expect(c.focused).toEqual(['qx'])
+    expect(c.focused).toEqual(['141'])
     settle({ message: 'Country deleted.' })
     await nextTick()
     await nextTick()
@@ -477,7 +486,7 @@ describe('HilosI18nCountriesPage', () => {
     expect(
       document.querySelector('[data-id="i18n-country-delete-window"]'),
     ).toBeNull()
-    expect(c.focused).toEqual(['qx', ''])
+    expect(c.focused).toEqual(['141', ''])
     expect(navigate).not.toHaveBeenCalled()
     expect(
       hilosToasts.toasts
@@ -504,7 +513,7 @@ describe('HilosI18nCountriesPage', () => {
     expect(
       document.querySelector('[data-id="i18n-country-delete-window"]'),
     ).toBeNull()
-    expect(c.focused).toEqual(['qx', ''])
+    expect(c.focused).toEqual(['141', ''])
     c.delta(OWN)
     await nextTick()
     await opener.trigger('click')
@@ -515,10 +524,10 @@ describe('HilosI18nCountriesPage', () => {
       .click()
     await nextTick()
     await nextTick()
-    expect(c.focused).toEqual(['qx', '', 'qx', ''])
+    expect(c.focused).toEqual(['141', '', '141', ''])
     await opener.trigger('click')
     view.unmount()
-    expect(c.focused).toEqual(['qx', '', 'qx', '', 'qx', ''])
+    expect(c.focused).toEqual(['141', '', '141', '', '141', ''])
 
     const c2 = context([OWN])
     const view2 = mount(HilosI18nCountriesPage, {
@@ -566,6 +575,6 @@ describe('HilosI18nCountriesPage', () => {
       .click()
     await nextTick()
     await nextTick()
-    expect(c.focused).toEqual(['qx', ''])
+    expect(c.focused).toEqual(['141', ''])
   })
 })

@@ -45,9 +45,9 @@ describe('language deletion', () => {
       } as unknown as ActionLifecycle
       const context = { actions } as HilosI18nLanguageContext
       expect(
-        createHilosI18nLanguageDelete(context, action).deleteLanguage('fr'),
+        createHilosI18nLanguageDelete(context, action).deleteLanguage(13),
       ).toBe(handle)
-      expect(sent).toEqual([{ action, payload: { languageCode: 'fr' } }])
+      expect(sent).toEqual([{ action, payload: { languageId: 13 } }])
     },
   )
 })

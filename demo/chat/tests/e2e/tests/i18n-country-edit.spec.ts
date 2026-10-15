@@ -1,3 +1,4 @@
+import { i18nLocaleRow } from '../../../../../framework/frontend/e2e/index.js'
 import { expect, test } from '@playwright/test'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import { switchCountryOn } from '../helpers/i18n.js'
@@ -6,12 +7,26 @@ import { gotoPage, PAGE_READY } from '../helpers/page.js'
 test('edits a switched-off country and saves its suggested default locale', async ({
   page,
 }) => {
+  const writes: Array<{
+    countryId: number
+    currencySymbol: string
+    currencyCode: string
+    defaultLocaleId: number | null
+  }> = []
+  page.on('websocket', (socket) =>
+    socket.on('framesent', ({ payload }) => {
+      const frame = JSON.parse(payload.toString())
+      if (
+        frame.type === 'action' &&
+        frame.action === 'hilos_i18n_country_row_update'
+      )
+        writes.push(frame.data)
+    }),
+  )
   await signUpAdmin(page)
   await gotoPage(page, '/hilos/i18n/languages/en/locales', PAGE_READY)
 
-  const add = page
-    .getByTestId('hilos-table-row-en-IE')
-    .getByTestId('i18n-locales-add-en-IE')
+  const add = i18nLocaleRow(page, 'en-IE').getByTestId('i18n-locales-add-en-IE')
   await add.scrollIntoViewIfNeeded()
   await expect(add).toBeVisible()
   await expect(add).toBeEnabled()
@@ -35,7 +50,9 @@ test('edits a switched-off country and saves its suggested default locale', asyn
   const search = page.getByTestId('hilos-table-search')
   await search.fill('')
   await search.pressSequentially('ie', { delay: 10 })
-  const row = page.getByTestId('hilos-table-row-ie')
+  const row = page
+    .getByTestId(/^hilos-table-row-/)
+    .filter({ has: page.getByTestId('i18n-countries-link-ie') })
   const edit = row.getByTestId('i18n-countries-edit-ie')
   await edit.scrollIntoViewIfNeeded()
   await expect(edit).toBeVisible()
@@ -46,9 +63,12 @@ test('edits a switched-off country and saves its suggested default locale', asyn
   await expect(page.getByTestId('i18n-country-title')).toHaveText(
     'Edit country · Ireland',
   )
-  await expect(
-    page.getByTestId('i18n-country-edit-default-locale'),
-  ).toHaveValue('en-IE')
+  const defaultLocale = page.getByTestId('i18n-country-edit-default-locale')
+  await expect(defaultLocale).toHaveValue(/^[1-9][0-9]*$/)
+  await expect(defaultLocale.locator('option:checked')).toHaveText(
+    'en-IE — switched off',
+  )
+  const selectedLocaleId = Number(await defaultLocale.inputValue())
   await expect(
     page.getByTestId('i18n-country-edit-default-locale-hint'),
   ).toContainText('Suggested by the built-in catalog — save to keep it.')
@@ -77,6 +97,19 @@ test('edits a switched-off country and saves its suggested default locale', asyn
   await expect(row).toContainText('IE€')
   await expect(row).toContainText('EUR')
   await expect(row).toContainText('en-IE')
+  const countryId = Number(
+    (await row.getAttribute('data-id'))!.replace('hilos-table-row-', ''),
+  )
+  expect(Number.isInteger(countryId)).toBe(true)
+  expect(countryId).toBeGreaterThan(0)
+  expect(writes).toEqual([
+    {
+      countryId,
+      currencySymbol: 'IE€',
+      currencyCode: 'EUR',
+      defaultLocaleId: selectedLocaleId,
+    },
+  ])
 })
 
 test('opens a switched-on country from its card only to view its fields', async ({

@@ -107,7 +107,7 @@ final class I18nCountrySwitchOffTest extends IntegrationTestCase
             self::assertNull($page->onAction(
                 'country-ak',
                 HilosSignalConstants::HILOS_I18N_COUNTRY_SWITCH_OFF,
-                new HilosI18nCountrySwitchOffActionDTO('it'),
+                new HilosI18nCountrySwitchOffActionDTO(Hilos::$db->countries['it']?->id ?? 999999),
             ));
         });
         self::assertFalse(Hilos::$db->countries['it']->enabled);
@@ -131,7 +131,7 @@ final class I18nCountrySwitchOffTest extends IntegrationTestCase
             self::assertNull($page->onAction(
                 'country-ak',
                 HilosSignalConstants::HILOS_I18N_COUNTRY_SWITCH_OFF,
-                new HilosI18nCountrySwitchOffActionDTO('it'),
+                new HilosI18nCountrySwitchOffActionDTO(Hilos::$db->countries['it']?->id ?? 999999),
             ));
         });
         self::assertFalse(Hilos::$db->countries['it']->enabled);
@@ -140,7 +140,7 @@ final class I18nCountrySwitchOffTest extends IntegrationTestCase
         $page->onAction(
             'country-ak',
             HilosSignalConstants::HILOS_I18N_COUNTRY_SWITCH_OFF,
-            new HilosI18nCountrySwitchOffActionDTO('zz'),
+            new HilosI18nCountrySwitchOffActionDTO(Hilos::$db->countries['zz']?->id ?? 999999),
         );
     }
 
@@ -170,7 +170,7 @@ final class I18nCountrySwitchOffTest extends IntegrationTestCase
             new CountryDetailPage($this->agent)->onAction(
                 'switch-card-one',
                 HilosSignalConstants::HILOS_I18N_COUNTRY_SWITCH_OFF,
-                new HilosI18nCountrySwitchOffActionDTO('it'),
+                new HilosI18nCountrySwitchOffActionDTO(Hilos::$db->countries['it']?->id ?? 999999),
             );
         });
         Hilos::$browser->record(SourceChange::dbUpdated(

@@ -99,3 +99,5 @@ export {
   withStoppedRestartWorker,
   type RestartWorker,
 } from './daemonRestart.js'
+
+export { i18nNameRow, i18nLocaleRow } from './i18n.js'

@@ -26,7 +26,9 @@ describe('resolveHilosI18nLanguageRow', () => {
   it('maps every slot field onto the view-model', () => {
     expect(
       resolveHilosI18nLanguageRow(
-        languageRow('en', {
+        languageRow('11', {
+          languageId: 11,
+          rowKey: '11',
           code: 'en',
           nativeName: 'English',
           rtl: false,
@@ -38,6 +40,8 @@ describe('resolveHilosI18nLanguageRow', () => {
         }),
       ),
     ).toEqual({
+      languageId: 11,
+      rowKey: '11',
       code: 'en',
       nativeName: 'English',
       rtl: false,
@@ -53,7 +57,9 @@ describe('resolveHilosI18nLanguageRow', () => {
     'reads deletion verdict %s without adding a sortable column',
     (deleteReason) => {
       const resolved = resolveHilosI18nLanguageRow(
-        languageRow('uk', {
+        languageRow('19', {
+          languageId: 19,
+          rowKey: '19',
           code: 'uk',
           nativeName: 'Українська',
           rtl: false,
@@ -69,39 +75,46 @@ describe('resolveHilosI18nLanguageRow', () => {
     },
   )
 
-  it('refuses a malformed or missing verdict with the safe fallback', () => {
-    for (const verdict of [
-      { canDelete: true, deleteReason: 'unknown' },
-      { canDelete: 'true', deleteReason: null },
-      {},
-    ]) {
-      const resolved = resolveHilosI18nLanguageRow(
-        languageRow('uk', {
-          code: 'uk',
-          nativeName: 'Українська',
-          rtl: false,
-          enabled: false,
-          isDefault: false,
-          isOwn: false,
-          ...verdict,
-        }),
-      )
-      expect(resolved.canDelete).toBe(false)
-      expect(resolved.deleteReason).toBeNull()
-    }
-  })
-
-  it('keeps a row whose slot the schema refuses, named by its key', () => {
-    expect(resolveHilosI18nLanguageRow(languageRow('qx', undefined))).toEqual({
-      code: 'qx',
-      nativeName: 'qx',
+  it('rejects malformed identities and code-only rows', () => {
+    const payload = {
+      rowKey: '19',
+      languageId: 19,
+      code: 'uk',
+      nativeName: 'Українська',
       rtl: false,
       enabled: false,
       isDefault: false,
       isOwn: false,
-      canDelete: false,
+      canDelete: true,
       deleteReason: null,
-    })
+    }
+    for (const languageId of ['19', 0, -1, 1.5, true, null, undefined]) {
+      expect(() =>
+        resolveHilosI18nLanguageRow(
+          languageRow('19', {
+            ...payload,
+            languageId,
+          }),
+        ),
+      ).toThrow()
+    }
+    expect(() =>
+      resolveHilosI18nLanguageRow(languageRow('19', undefined)),
+    ).toThrow()
+    for (const verdict of [
+      { canDelete: true, deleteReason: 'unknown' },
+      { canDelete: 'true', deleteReason: null },
+      { canDelete: undefined, deleteReason: undefined },
+    ]) {
+      expect(() =>
+        resolveHilosI18nLanguageRow(
+          languageRow('19', {
+            ...payload,
+            ...verdict,
+          }),
+        ),
+      ).toThrow()
+    }
   })
 })
 
@@ -145,7 +158,9 @@ describe('HILOS_I18N_LANGUAGES_FRAME', () => {
     const table = createHilosI18nLanguagesTable(context, { openAdd: vi.fn() })
     table.controller.ingestWindow(
       [
-        languageRow('uk', {
+        languageRow('19', {
+          languageId: 19,
+          rowKey: '19',
           code: 'uk',
           nativeName: 'Українська',
           rtl: false,
@@ -162,11 +177,11 @@ describe('HILOS_I18N_LANGUAGES_FRAME', () => {
       null,
       100,
     )
-    expect(table.controller.focusRow('uk')?.code).toBe('uk')
+    expect(table.controller.focusRow('19')?.code).toBe('uk')
     expect(sendTableRowFocus).toHaveBeenCalledWith(
       HilosPages.I18N_LANGUAGES,
       HILOS_I18N_LANGUAGES_TABLE,
-      'uk',
+      '19',
     )
     table.controller.releaseFocus()
     expect(sendTableRowFocus).toHaveBeenLastCalledWith(

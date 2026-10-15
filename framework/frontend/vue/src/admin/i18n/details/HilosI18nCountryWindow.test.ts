@@ -24,6 +24,7 @@ afterEach(() => {
 })
 
 const country: HilosI18nCountryCard = {
+  countryId: 140,
   code: 'ie',
   currencySymbol: '€',
   currencyCode: 'EUR',
@@ -31,11 +32,12 @@ const country: HilosI18nCountryCard = {
   summary: {
     name: 'Ireland',
     isOwn: false,
+    defaultLocaleId: null,
     defaultLocaleCode: null,
     defaultLocale: 'missing',
     localeCount: 1,
     nameCount: 1,
-    locales: [{ code: 'en-IE', enabled: false }],
+    locales: [{ localeId: 11140, code: 'en-IE', enabled: false }],
     catalogDefaultLocaleCode: 'en-IE',
     canDelete: false,
     deleteReason: 'known',
@@ -99,6 +101,26 @@ async function input(id: string, value: string): Promise<void> {
 }
 
 describe('HilosI18nCountryWindow', () => {
+  it('keeps a draft without retargeting a same-code country replacement', async () => {
+    const h = harness()
+    await nextTick()
+    await input('currency-symbol', 'draft')
+    h.source.set({ ...country, countryId: country.countryId + 1 })
+    await nextTick()
+    expect(
+      document.querySelector<HTMLInputElement>(
+        '[data-id="i18n-country-edit-currency-symbol"]',
+      )!.value,
+    ).toBe('draft')
+    expect(button('i18n-country-save').disabled).toBe(true)
+    expect(button('i18n-country-save').textContent).toContain('Deleted')
+    document
+      .getElementById('i18n-country-edit-form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await settle()
+    expect(h.sent).toHaveLength(0)
+  })
+
   it('prefills, focuses currency, waits for valid input and closes only on success', async () => {
     const h = harness()
     await settle()
@@ -107,7 +129,7 @@ describe('HilosI18nCountryWindow', () => {
     )
     expect(
       element<HTMLSelectElement>('i18n-country-edit-default-locale').value,
-    ).toBe('en-IE')
+    ).toBe('11140')
     expect(
       element('i18n-country-edit-default-locale-hint').textContent,
     ).toContain('Suggested by the built-in catalog — save to keep it.')
@@ -127,10 +149,10 @@ describe('HilosI18nCountryWindow', () => {
     expect(h.sent[0]).toMatchObject({
       action: 'hilos_i18n_country_update',
       payload: {
-        countryCode: 'ie',
+        countryId: 140,
         currencySymbol: 'IE€',
         currencyCode: 'EUR',
-        defaultLocaleCode: 'en-IE',
+        defaultLocaleId: 11140,
       },
     })
     expect(h.window.opened.get()).toBe(true)
@@ -229,7 +251,11 @@ describe('HilosI18nCountryWindow', () => {
     h.source.set({
       ...country,
       currencySymbol: 'IE€',
-      summary: { ...country.summary, defaultLocaleCode: 'en-IE' },
+      summary: {
+        ...country.summary,
+        defaultLocaleId: 11140,
+        defaultLocaleCode: 'en-IE',
+      },
     })
     await settle()
     expect(document.querySelector('[data-id="i18n-country-notice"]')).toBeNull()
@@ -331,14 +357,14 @@ describe('HilosI18nCountryWindow', () => {
       ...country,
       summary: {
         ...country.summary,
-        locales: [{ code: 'ga-IE', enabled: true }],
+        locales: [{ localeId: 46140, code: 'ga-IE', enabled: true }],
       },
     })
     await settle()
     const select = element<HTMLSelectElement>(
       'i18n-country-edit-default-locale',
     )
-    expect(select.value).toBe('en-IE')
+    expect(select.value).toBe('11140')
     expect([...select.options].map((option) => option.textContent)).toEqual([
       'ga-IE',
       'en-IE — no longer exists',
@@ -348,7 +374,7 @@ describe('HilosI18nCountryWindow', () => {
     select.value = ''
     select.dispatchEvent(new Event('change', { bubbles: true }))
     await settle()
-    expect(h.window.form.get().defaultLocaleCode).toBeNull()
+    expect(h.window.form.get().defaultLocaleId).toBeNull()
     expect(h.window.touched.get()).toBe(true)
   })
 

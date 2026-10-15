@@ -144,16 +144,22 @@ export const HILOS_I18N_LOCALE_COPY = {
   },
 } as const
 
-/** The tracked switch-on operation bound to the language's current address. */
+/** The tracked switch-on operation for a captured locale and parent pair. */
 export function createHilosI18nLocaleSwitchOn(
   context: HilosI18nLanguageContext,
-  languageCode: ReadonlySignal<string>,
-): { switchOn(countryCode: string | null): ActionHandle } {
+): {
+  switchOn(
+    languageId: number,
+    countryId: number | null,
+    localeId: number,
+  ): ActionHandle
+} {
   return {
-    switchOn: (countryCode) =>
+    switchOn: (languageId, countryId, localeId) =>
       context.actions.dispatch(HILOS_I18N_LOCALE_SWITCH_ON_ACTION, {
-        languageCode: languageCode.get(),
-        countryCode,
+        languageId,
+        countryId,
+        localeId,
       }),
   }
 }
@@ -162,13 +168,18 @@ export function createHilosI18nLocaleSwitchOn(
 export function createHilosI18nLocaleSwitchOff(
   context: HilosI18nLanguageContext,
 ): {
-  switchOff(languageCode: string, countryCode: string | null): ActionHandle
+  switchOff(
+    languageId: number,
+    countryId: number | null,
+    localeId: number,
+  ): ActionHandle
 } {
   return {
-    switchOff: (languageCode, countryCode) =>
+    switchOff: (languageId, countryId, localeId) =>
       context.actions.dispatch(HILOS_I18N_LOCALE_SWITCH_OFF_ACTION, {
-        languageCode,
-        countryCode,
+        languageId,
+        countryId,
+        localeId,
       }),
   }
 }
@@ -234,21 +245,24 @@ export function hilosI18nLocaleCountryLabel(
 export function createHilosI18nLocaleEdit(
   controller: TableViewportController<HilosI18nLocaleRow>,
   context: HilosI18nLanguageContext,
-  languageCode: ReadonlySignal<string>,
 ): HilosTrackedRowEdit<HilosI18nLocaleRow, HilosI18nLocaleFormats> {
   const tableSource = hilosTableRowEditSource(controller, (row) => row.rowKey)
+  const heldLocaleId = createSignal<number | null>(null)
   const source = {
     open(key?: string) {
       const row = tableSource.open(key)
-      if (row?.formats === null) {
+      if (row?.formats === null || row?.localeId === null) {
         tableSource.close()
         return null
       }
+      heldLocaleId.set(row?.localeId ?? null)
       return row
     },
     live: computedSignal(() => {
       const row = tableSource.live.get()
-      return row?.formats === null ? undefined : row
+      return row?.formats === null || row?.localeId !== heldLocaleId.get()
+        ? undefined
+        : row
     }),
     close: () => tableSource.close(),
   }
@@ -284,8 +298,9 @@ export function createHilosI18nLocaleEdit(
       edit.save((draft, row) =>
         run(
           context.actions.dispatch(HILOS_I18N_LOCALE_UPDATE_ACTION, {
-            languageCode: languageCode.get(),
-            countryCode: row.countryCode,
+            languageId: row.languageId,
+            countryId: row.countryId,
+            localeId: row.localeId,
             formats: draft,
           }),
         ),
@@ -320,7 +335,6 @@ export interface HilosI18nLocaleAdd {
 export function createHilosI18nLocaleAdd(
   controller: TableViewportController<HilosI18nLocaleRow>,
   context: HilosI18nLanguageContext,
-  languageCode: ReadonlySignal<string>,
 ): HilosI18nLocaleAdd {
   const opened = createSignal(false)
   const row = createSignal<HilosI18nLocaleRow | null>(null)
@@ -401,14 +415,15 @@ export function createHilosI18nLocaleAdd(
     async add(run) {
       if (!canAdd.get()) return
       const formats = hilosI18nLocaleFormatsSchema.parse(form.get())
-      const countryCode = row.get()?.countryCode ?? null
+      const target = row.get()
+      if (target === null) return
       saving.set(true)
       try {
         if (
           await run(
             context.actions.dispatch(HILOS_I18N_LOCALE_ADD_ACTION, {
-              languageCode: languageCode.get(),
-              countryCode,
+              languageId: target.languageId,
+              countryId: target.countryId,
               formats,
             }),
           )

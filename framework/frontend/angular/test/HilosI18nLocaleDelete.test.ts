@@ -15,6 +15,9 @@ import { HILOS_ADMIN_VIEW_MODE } from '../src/hilosLookOnly.js'
 import { i18nBench, mountOver } from './helpers/hilosI18n.js'
 
 const ukraine: HilosI18nLocaleDeleteTarget = {
+  languageId: 19,
+  countryId: 108,
+  localeId: 19108,
   languageCode: 'uk',
   countryCode: 'ua',
   localeCode: 'uk-UA',
@@ -23,7 +26,9 @@ const ukraine: HilosI18nLocaleDeleteTarget = {
 }
 const countryless: HilosI18nLocaleDeleteTarget = {
   ...ukraine,
+  countryId: null,
   countryCode: null,
+  localeId: 19000,
   localeCode: 'uk',
   countryLabel: null,
 }
@@ -67,7 +72,7 @@ describe('HilosI18nLocaleDelete', () => {
     expect(h.calls).toHaveLength(1)
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_locale_delete',
-      payload: { languageCode: 'uk', countryCode: 'ua' },
+      payload: { languageId: 19, countryId: 108, localeId: 19108 },
     })
     expect(h.el<HTMLButtonElement>('i18n-locale-delete-cancel')?.disabled).toBe(
       true,
@@ -90,8 +95,9 @@ describe('HilosI18nLocaleDelete', () => {
     )
     h.click('i18n-locale-delete-confirm')
     expect(h.calls[0]?.payload).toEqual({
-      languageCode: 'uk',
-      countryCode: null,
+      languageId: 19,
+      countryId: null,
+      localeId: 19000,
     })
   })
 
@@ -116,7 +122,10 @@ describe('HilosI18nLocaleDelete', () => {
 
   it.each([
     ['gone', null],
-    ['another pair', { ...ukraine, localeCode: 'uk-PL', countryCode: 'pl' }],
+    [
+      'another pair',
+      { ...ukraine, localeId: 19146, localeCode: 'uk-PL', countryCode: 'pl' },
+    ],
   ] as const)(
     'stays open over a locale %s elsewhere, saying so and blocking the confirm',
     (_, source) => {

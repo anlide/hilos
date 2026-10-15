@@ -2,7 +2,6 @@
 import { type ActionHandle } from '../../connection/actionLifecycle.js'
 import {
   createHilosRowEdit,
-  hilosSignalRowEditSource,
   hilosTableRowEditSource,
   type HilosActionRun,
   type HilosRowEditSource,
@@ -10,6 +9,7 @@ import {
 import {
   computedSignal,
   createSignal,
+  subscribeSignal,
   type ReadonlySignal,
 } from '../../state/signal.js'
 import { type TableViewportController } from '../../table/TableViewportController.js'
@@ -35,10 +35,12 @@ export type HilosI18nCountryWindowMode = 'edit' | 'view'
 
 /** The country values shared by the card and the focused table row. */
 export interface HilosI18nCountryEditable {
+  readonly countryId: number
   readonly code: string
   readonly name: string | null
   readonly currencySymbol: string
   readonly currencyCode: string
+  readonly defaultLocaleId: number | null
   readonly defaultLocaleCode: string | null
   readonly enabled: boolean
   readonly isOwn: boolean
@@ -49,7 +51,7 @@ export interface HilosI18nCountryEditable {
 export interface HilosI18nCountryEditFields {
   readonly currencySymbol: string
   readonly currencyCode: string
-  readonly defaultLocaleCode: string | null
+  readonly defaultLocaleId: number | null
 }
 
 export interface HilosI18nCountryLocaleOption {
@@ -62,7 +64,8 @@ export const HILOS_I18N_COUNTRY_WINDOW_COPY = {
   open: { edit: 'Edit country', view: 'View country: nothing to edit' },
   title: (mode: HilosI18nCountryWindowMode, label: string) =>
     `${mode === 'edit' ? 'Edit country' : 'Country'} · ${label}`,
-  codeHint: 'The country code never changes: locales and names refer to it.',
+  codeHint:
+    'The country code never changes: its URL and the external catalog use it.',
   hints: {
     none: "This country has no locales yet: add one on a language's Locales page.",
     suggested: 'Suggested by the built-in catalog — save to keep it.',
@@ -102,10 +105,12 @@ export function hilosI18nCountryEditableFromRow(
   row: HilosI18nCountryRow,
 ): HilosI18nCountryEditable {
   return {
+    countryId: row.countryId,
     code: row.code,
     name: row.name,
     currencySymbol: row.currencySymbol,
     currencyCode: row.currencyCode,
+    defaultLocaleId: row.defaultLocaleId,
     defaultLocaleCode: row.defaultLocaleCode,
     enabled: row.enabled,
     isOwn: row.isOwn,
@@ -119,10 +124,12 @@ export function hilosI18nCountryEditableFromCard(
   card: HilosI18nCountryCard,
 ): HilosI18nCountryEditable {
   return {
+    countryId: card.countryId,
     code: card.code,
     name: card.summary.name,
     currencySymbol: card.currencySymbol,
     currencyCode: card.currencyCode,
+    defaultLocaleId: card.summary.defaultLocaleId,
     defaultLocaleCode: card.summary.defaultLocaleCode,
     enabled: card.enabled,
     isOwn: card.summary.isOwn,
@@ -148,30 +155,35 @@ export function hilosI18nCountryWindowLabel(
 /** Suggest only an existing locale when no default is already chosen. */
 export function hilosI18nCountrySuggestedLocale(
   row: HilosI18nCountryEditable,
-): string | null {
-  return row.defaultLocaleCode === null &&
-    row.locales.some((locale) => locale.code === row.catalogDefaultLocaleCode)
-    ? row.catalogDefaultLocaleCode
+): number | null {
+  return row.defaultLocaleId === null
+    ? (row.locales.find(
+        (locale) => locale.code === row.catalogDefaultLocaleCode,
+      )?.localeId ?? null)
     : null
 }
 
 /** Keep a vanished selection visible, with Not chosen always last. */
 export function hilosI18nCountryLocaleOptions(
   row: HilosI18nCountryEditable,
-  chosen: string | null,
+  chosen: number | null,
+  known: ReadonlyMap<number, string> = new Map(),
 ): readonly HilosI18nCountryLocaleOption[] {
   const copy = HILOS_I18N_COUNTRY_WINDOW_COPY
   const options = [...row.locales]
     .sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0))
     .map((locale) => ({
-      value: locale.code,
+      value: String(locale.localeId),
       label: locale.code + (locale.enabled ? '' : copy.off),
     }))
   if (
     chosen !== null &&
-    !row.locales.some((locale) => locale.code === chosen)
+    !row.locales.some((locale) => locale.localeId === chosen)
   ) {
-    options.push({ value: chosen, label: chosen + copy.gone })
+    options.push({
+      value: String(chosen),
+      label: (known.get(chosen) ?? String(chosen)) + copy.gone,
+    })
   }
   options.push({ value: '', label: copy.notChosen })
   return options
@@ -181,7 +193,7 @@ function fields(row: HilosI18nCountryEditable): HilosI18nCountryEditFields {
   return {
     currencySymbol: row.currencySymbol,
     currencyCode: row.currencyCode,
-    defaultLocaleCode: row.defaultLocaleCode,
+    defaultLocaleId: row.defaultLocaleId,
   }
 }
 
@@ -192,7 +204,7 @@ function same(
   return (
     a.currencySymbol === b.currencySymbol &&
     a.currencyCode === b.currencyCode &&
-    a.defaultLocaleCode === b.defaultLocaleCode
+    a.defaultLocaleId === b.defaultLocaleId
   )
 }
 
@@ -209,13 +221,15 @@ export function createHilosI18nCountryWindow(
   const initial: HilosI18nCountryEditFields = {
     currencySymbol: '',
     currencyCode: '',
-    defaultLocaleCode: null,
+    defaultLocaleId: null,
   }
   const opening = createSignal(initial)
   // Only the person's input counts toward discarding: catalog prefill and
   // fields merged from the server are not changes made by the person.
   const personal = createSignal(initial)
-  const suggestion = createSignal<string | null>(null)
+  const suggestion = createSignal<number | null>(null)
+  const knownLocaleLabels = createSignal<ReadonlyMap<number, string>>(new Map())
+  let stopLocales: (() => void) | undefined
   const edit = createHilosRowEdit<
     HilosI18nCountryEditable,
     HilosI18nCountryEditFields
@@ -233,8 +247,8 @@ export function createHilosI18nCountryWindow(
       fields,
       form: (row) => ({
         ...fields(row),
-        defaultLocaleCode:
-          row.defaultLocaleCode ??
+        defaultLocaleId:
+          row.defaultLocaleId ??
           (mode.get() === 'edit' ? hilosI18nCountrySuggestedLocale(row) : null),
       }),
       draft: (form) => ({
@@ -254,10 +268,19 @@ export function createHilosI18nCountryWindow(
               const labels = {
                 currencySymbol: HILOS_I18N_COUNTRY_ADD_COPY.currencySymbolLabel,
                 currencyCode: HILOS_I18N_COUNTRY_ADD_COPY.currencyCodeLabel,
-                defaultLocaleCode:
-                  HILOS_I18N_COUNTRY_ADD_COPY.defaultLocaleLabel,
+                defaultLocaleId: HILOS_I18N_COUNTRY_ADD_COPY.defaultLocaleLabel,
               }
-              return `${labels[field]} changed elsewhere to "${state.fields[field].incoming ?? copy.notChosen}"; your choice stays selected.`
+              const incoming = state.fields[field].incoming
+              const label =
+                field === 'defaultLocaleId' && incoming !== null
+                  ? (source.live
+                      .get()
+                      ?.locales.find((locale) => locale.localeId === incoming)
+                      ?.code ??
+                    knownLocaleLabels.get().get(Number(incoming)) ??
+                    String(incoming))
+                  : (incoming ?? copy.notChosen)
+              return `${labels[field]} changed elsewhere to "${label}"; your choice stays selected.`
             })
             .join(' '),
       },
@@ -337,16 +360,17 @@ export function createHilosI18nCountryWindow(
       shown.get()
         ? hilosI18nCountryLocaleOptions(
             shown.get()!,
-            form.get().defaultLocaleCode,
+            form.get().defaultLocaleId,
+            knownLocaleLabels.get(),
           )
         : [],
     ),
     localeHint: computedSignal(() => {
       const row = shown.get()
       if (!row || row.locales.length === 0) return copy.hints.none
-      return row.defaultLocaleCode === null &&
+      return row.defaultLocaleId === null &&
         suggestion.get() !== null &&
-        form.get().defaultLocaleCode === suggestion.get()
+        form.get().defaultLocaleId === suggestion.get()
         ? copy.hints.suggested
         : copy.hints.plain
     }),
@@ -357,6 +381,17 @@ export function createHilosI18nCountryWindow(
       if (edit.saving.get()) return false
       mode.set(requestedMode)
       if (!edit.open(key)) return false
+      const opened = edit.row.get()!
+      const labels = new Map(
+        opened.locales.map((locale) => [locale.localeId, locale.code]),
+      )
+      if (
+        opened.defaultLocaleId !== null &&
+        opened.defaultLocaleCode !== null
+      ) {
+        labels.set(opened.defaultLocaleId, opened.defaultLocaleCode)
+      }
+      knownLocaleLabels.set(labels)
       opening.set(edit.form.get())
       personal.set(edit.form.get())
       suggestion.set(
@@ -371,8 +406,14 @@ export function createHilosI18nCountryWindow(
       patch({ currencyCode: hilosI18nCurrencyCode(value) }),
     setDefaultLocale(value: string | null) {
       if (mode.get() !== 'edit' || edit.saving.get()) return
+      const id = value === '' || value === null ? null : Number(value)
+      if (
+        id !== null &&
+        (!Number.isSafeInteger(id) || id <= 0 || String(id) !== value)
+      )
+        return
       suggestion.set(null)
-      patch({ defaultLocaleCode: value === '' ? null : value })
+      patch({ defaultLocaleId: id })
     },
     keepMine: edit.keepMine,
     takeTheirs() {
@@ -385,8 +426,25 @@ export function createHilosI18nCountryWindow(
     close() {
       if (!edit.saving.get()) edit.close()
     },
-    start: edit.start,
-    dispose: edit.dispose,
+    start() {
+      edit.start()
+      stopLocales?.()
+      stopLocales = subscribeSignal(source.live, (row) => {
+        if (!edit.opened.get() || row === undefined) return
+        const labels = new Map(knownLocaleLabels.get())
+        for (const locale of row.locales)
+          labels.set(locale.localeId, locale.code)
+        if (row.defaultLocaleId !== null && row.defaultLocaleCode !== null) {
+          labels.set(row.defaultLocaleId, row.defaultLocaleCode)
+        }
+        knownLocaleLabels.set(labels)
+      })
+    },
+    dispose() {
+      stopLocales?.()
+      stopLocales = undefined
+      edit.dispose()
+    },
   }
 }
 
@@ -399,7 +457,7 @@ export function createHilosI18nCountryRowWindow(
   controller: TableViewportController<HilosI18nCountryRow>,
   context: HilosI18nCountryContext,
 ): HilosI18nCountryWindow {
-  const table = hilosTableRowEditSource(controller, (row) => row.code)
+  const table = hilosTableRowEditSource(controller, (row) => row.rowKey)
   return createHilosI18nCountryWindow(
     {
       open(key) {
@@ -416,7 +474,7 @@ export function createHilosI18nCountryRowWindow(
     },
     (draft, row) =>
       context.actions.dispatch(HILOS_I18N_COUNTRY_ROW_UPDATE_ACTION, {
-        countryCode: row.code,
+        countryId: row.countryId,
         ...draft,
       }),
   )
@@ -427,6 +485,7 @@ export function createHilosI18nCountryCardWindow(
   card: ReadonlySignal<HilosI18nCountryCard | null>,
   context: HilosI18nCountryContext,
 ): HilosI18nCountryWindow {
+  const heldId = createSignal<number | null>(null)
   const row = computedSignal(() => {
     const current = card.get()
     return current === null
@@ -434,10 +493,22 @@ export function createHilosI18nCountryCardWindow(
       : hilosI18nCountryEditableFromCard(current)
   })
   return createHilosI18nCountryWindow(
-    hilosSignalRowEditSource(row),
+    {
+      open() {
+        const current = row.get()
+        heldId.set(current?.countryId ?? null)
+        return current ?? null
+      },
+      live: computedSignal(() =>
+        row.get()?.countryId === heldId.get() ? row.get() : undefined,
+      ),
+      close() {
+        heldId.set(null)
+      },
+    },
     (draft, country) =>
       context.actions.dispatch(HILOS_I18N_COUNTRY_UPDATE_ACTION, {
-        countryCode: country.code,
+        countryId: country.countryId,
         ...draft,
       }),
   )

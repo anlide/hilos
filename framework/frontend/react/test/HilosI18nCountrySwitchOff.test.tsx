@@ -57,7 +57,7 @@ describe('React country switch-off', () => {
     expect(h.calls).toHaveLength(1)
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_country_switch_off',
-      payload: { countryCode: 'gg' },
+      payload: { countryId: 143 },
     })
     expect(
       el<HTMLButtonElement>('country-card-switch-off-cancel').disabled,
@@ -141,7 +141,7 @@ describe('React country switch-off', () => {
     })
     click('country-card-switch-off')
     expect(el('modal').textContent).toContain('GG')
-    act(() => h.card.set({ ...countryCard, code: 'us' }))
+    act(() => h.card.set({ ...countryCard, countryId: 102, code: 'us' }))
     expect(el('modal')).toBeNull()
   })
 })

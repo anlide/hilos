@@ -127,7 +127,11 @@ final class I18nLocaleDeleteTest extends IntegrationTestCase
     {
         $code = ObjectLocale::codeFor('en', $countryCode);
         $id = Hilos::$db->locales[$code]->id;
-        $payload = ['languageCode' => 'en', 'countryCode' => $countryCode];
+        $payload = [
+            'languageId' => Hilos::$db->languages['en']->id,
+            'countryId' => Hilos::$db->countries[$countryCode]?->id,
+            'localeId' => $id,
+        ];
         $this->assertSuccess($this->dispatch($payload));
         self::assertNull(Hilos::$db->locales[$code]);
         self::assertNull(Hilos::$db->locales[$id]);
@@ -137,7 +141,7 @@ final class I18nLocaleDeleteTest extends IntegrationTestCase
         $before = $this->referenceRows();
         $failure = $this->dispatch($payload);
         self::assertInstanceOf(PageActionErrorSignalData::class, $failure);
-        self::assertSame('Unknown locale: ' . $code, $failure->reason);
+        self::assertSame('Unknown locale: ' . $id, $failure->reason);
         self::assertSame($before, $this->referenceRows());
     }
 
@@ -183,7 +187,11 @@ final class I18nLocaleDeleteTest extends IntegrationTestCase
         });
         $before = $this->referenceRows();
         $locale = Hilos::$db->locales['en-GB'];
-        $failure = $this->dispatch(['languageCode' => 'en', 'countryCode' => 'gb']);
+        $failure = $this->dispatch([
+            'languageId' => Hilos::$db->languages['en']->id,
+            'countryId' => Hilos::$db->countries['gb']->id,
+            'localeId' => Hilos::$db->locales['en-GB']->id,
+        ]);
         self::assertInstanceOf(PageActionErrorSignalData::class, $failure);
         self::assertSame($reason, $failure->reason);
         self::assertSame($before, $this->referenceRows());
@@ -195,8 +203,8 @@ final class I18nLocaleDeleteTest extends IntegrationTestCase
     public function testUnknownAndMalformedPayloadsAreTrackedFailures(): void
     {
         foreach ([
-            ['languageCode' => 'zz', 'countryCode' => 'gb'],
-            ['languageCode' => 'en', 'countryCode' => 'zz'],
+            ['languageId' => 999999, 'countryId' => Hilos::$db->countries['gb']->id, 'localeId' => 999999],
+            ['languageId' => Hilos::$db->languages['en']->id, 'countryId' => 999999, 'localeId' => 999999],
             ['languageCode' => 'en'],
             ['languageCode' => 'EN', 'countryCode' => 'gb'],
             ['languageCode' => 'en', 'countryCode' => 42],
@@ -216,7 +224,11 @@ final class I18nLocaleDeleteTest extends IntegrationTestCase
         $before = $this->referenceRows();
         try {
             new LanguageLocalesPage($this->agent)->onAction(
-                'delete-ak', HilosSignalConstants::HILOS_I18N_LOCALE_DELETE, new HilosI18nLocaleSwitchOffActionDTO('en', 'gb'),
+                'delete-ak', HilosSignalConstants::HILOS_I18N_LOCALE_DELETE, new HilosI18nLocaleSwitchOffActionDTO(
+                    Hilos::$db->languages['en']?->id ?? 999999,
+                    Hilos::$db->countries['gb']?->id ?? 999999,
+                    Hilos::$db->locales['en-GB']?->id ?? 999999,
+                ),
             );
             self::fail('The deletion branch must reject a different DTO');
         } catch (InvalidActionPayloadException) {
@@ -253,7 +265,11 @@ final class I18nLocaleDeleteTest extends IntegrationTestCase
             self::assertNotEmpty($payload[PagePayload::windows][ChatTableContext::hilosI18nLanguageLocales][TableWindowSignalData::rows]);
         }
         $before = $this->referenceRows();
-        $failure = $this->dispatch(['languageCode' => 'en', 'countryCode' => 'gb'], 'viewer');
+        $failure = $this->dispatch([
+            'languageId' => Hilos::$db->languages['en']->id,
+            'countryId' => Hilos::$db->countries['gb']->id,
+            'localeId' => Hilos::$db->locales['en-GB']->id,
+        ], 'viewer');
         self::assertInstanceOf(PageActionErrorSignalData::class, $failure);
         self::assertSame($viewMode ? 'view_mode' : ($signedIn ? 'forbidden' : 'unauthorized'), $failure->errorCode);
         self::assertNull($failure->errorType);
@@ -285,7 +301,11 @@ final class I18nLocaleDeleteTest extends IntegrationTestCase
         $changes = new I18nLocaleDeletionChanges();
         SourceChangeBus::subscribe($changes);
         try {
-            $this->assertSuccess($this->dispatch(['languageCode' => 'en', 'countryCode' => 'gb']));
+            $this->assertSuccess($this->dispatch([
+            'languageId' => Hilos::$db->languages['en']->id,
+            'countryId' => Hilos::$db->countries['gb']->id,
+            'localeId' => Hilos::$db->locales['en-GB']->id,
+        ]));
         } finally {
             $changes->active = false;
         }
@@ -312,7 +332,7 @@ final class I18nLocaleDeleteTest extends IntegrationTestCase
             }
             self::assertCount(1, $deltas);
             self::assertSame(TableViewportDeltaDTO::KIND_ROW_UPDATED, $deltas[0]->kind);
-            self::assertSame('en-GB', $deltas[0]->rowKey);
+            self::assertSame(Hilos::$db->languages['en']->id . ':' . Hilos::$db->countries['gb']->id, $deltas[0]->rowKey);
             $row = $deltas[0]->row[PagePayload::slots][HilosI18nLanguageLocalesTable::ROW_SLOT];
             self::assertSame('gb', $row['countryCode']);
             self::assertNull($row['localeCode']);
@@ -388,7 +408,7 @@ final class I18nLocaleDeleteTest extends IntegrationTestCase
         $params = ['languageCode' => 'en'];
         $windows = [
             ChatTableContext::hilosI18nLanguageLocales => new TableWindowDescriptorDTO(
-                filter: [HilosI18nLanguageLocalesTable::FILTER_LANGUAGE => 'en'],
+                filter: [HilosI18nLanguageLocalesTable::FILTER_LANGUAGE => Hilos::$db->languages['en']?->id ?? 999999],
             ),
         ];
         Hilos::$sr->subscribeToPage(LanguageLocalesPage::PAGE,

@@ -26,7 +26,7 @@ export function HilosI18nCountryDelete({
   onDeleted?: () => void
   target: HilosI18nCountryDeleteTarget | null
   source: HilosI18nCountryDeleteTarget | null
-  deleteCountry: (countryCode: string) => ActionHandle
+  deleteCountry: (countryId: number) => ActionHandle
 }) {
   const copy = HILOS_I18N_COUNTRY_DELETE_COPY,
     action = useTrackedAction(),
@@ -43,7 +43,8 @@ export function HilosI18nCountryDelete({
   useEffect(() => {
     if (open) clearError()
   }, [open, clearError])
-  const elsewhere = open && !action.busy && source?.code !== target?.code
+  const elsewhere =
+    open && !action.busy && source?.countryId !== target?.countryId
   function close(): void {
     if (!sending.current) onClose()
   }
@@ -51,7 +52,10 @@ export function HilosI18nCountryDelete({
     if (!open || !target || sending.current || locked || elsewhere) return
     sending.current = true
     try {
-      if ((await action.run(deleteCountry(target.code))) && mounted.current) {
+      if (
+        (await action.run(deleteCountry(target.countryId))) &&
+        mounted.current
+      ) {
         onClose()
         onDeleted?.()
       }

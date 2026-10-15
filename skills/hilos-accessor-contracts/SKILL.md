@@ -40,6 +40,9 @@ result, or collection value. Start with `agents.md`, then read
 
 ## Workflow
 
+Before choosing the accessor, read `docs/agents/orm/entity-references.md` for
+internal targets, external code boundaries and the delete/recreate review.
+
 1. Identify the key or value the caller has: primary id, collection key,
    business key, composite criteria, or a value already present on a result.
 2. Inspect the View collection and item PHPDoc/methods for `offsetGet()`,

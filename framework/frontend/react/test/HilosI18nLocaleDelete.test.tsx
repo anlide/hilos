@@ -11,6 +11,9 @@ import { HilosAdminViewModeContext } from '../src/hilosLookOnly.js'
 import { harness, el, click, settle } from './hilosI18nHarness.js'
 
 const target: HilosI18nLocaleDeleteTarget = {
+  languageId: 19,
+  countryId: 101,
+  localeId: 19101,
   languageCode: 'uk',
   countryCode: 'gb',
   localeCode: 'uk-GB',
@@ -20,7 +23,14 @@ const target: HilosI18nLocaleDeleteTarget = {
 function setup(viewer = false, countryless = false) {
   const h = harness(),
     selected = countryless
-      ? { ...target, countryCode: null, localeCode: 'uk', countryLabel: null }
+      ? {
+          ...target,
+          countryId: null,
+          countryCode: null,
+          localeId: 19000,
+          localeCode: 'uk',
+          countryLabel: null,
+        }
       : target
   let setSource: (row: HilosI18nLocaleDeleteTarget | null) => void = () => {},
     setViewer: (viewer: boolean) => void = () => {}
@@ -74,7 +84,11 @@ describe('React locale deletion', () => {
       expect(h.calls).toHaveLength(1)
       expect(h.calls[0]).toMatchObject({
         action: 'hilos_i18n_locale_delete',
-        payload: { languageCode: 'uk', countryCode: countryless ? null : 'gb' },
+        payload: {
+          languageId: 19,
+          countryId: countryless ? null : 101,
+          localeId: countryless ? 19000 : 19101,
+        },
       })
       h.source(null)
       click('modal-close')
@@ -123,10 +137,10 @@ describe('React locale deletion', () => {
           : {
               ...target,
               ...(gone === 'language'
-                ? { languageCode: 'fr' }
+                ? { languageId: 13 }
                 : gone === 'country'
-                  ? { countryCode: 'us' }
-                  : { localeCode: 'uk-US' }),
+                  ? { countryId: 102 }
+                  : { localeId: 19102 }),
             },
       )
       expect(el('i18n-locale-delete-notice').textContent).toContain(

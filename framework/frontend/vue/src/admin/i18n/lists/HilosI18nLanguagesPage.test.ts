@@ -23,6 +23,8 @@ import { hilosRouterKey } from '../../../hilosRouterKey.js'
 import { hilosAdminViewModeKey } from '../../../hilosAdminViewMode.js'
 
 interface LanguageSlot {
+  rowKey: string
+  languageId: number
   code: string
   nativeName: string
   rtl: boolean
@@ -34,6 +36,8 @@ interface LanguageSlot {
 }
 
 const ENGLISH: LanguageSlot = {
+  languageId: 11,
+  rowKey: '11',
   code: 'en',
   nativeName: 'English',
   rtl: false,
@@ -45,6 +49,8 @@ const ENGLISH: LanguageSlot = {
 }
 
 const OWN: LanguageSlot = {
+  languageId: 46,
+  rowKey: '46',
   code: 'qx',
   nativeName: 'Qx own tongue',
   rtl: true,
@@ -95,7 +101,7 @@ function context(
   const deltaListeners = new Set<Listener>()
   const focused: string[] = []
   const tableRows = rows.map((language) => ({
-    rowKey: language.code,
+    rowKey: language.rowKey,
     slots: { language },
   }))
   const serveWindow = (): void => {
@@ -162,10 +168,10 @@ function context(
           page: HilosPages.I18N_LANGUAGES,
           tableKey: HILOS_I18N_LANGUAGES_TABLE,
           kind: removed ? 'row_removed' : 'row_updated',
-          rowKey: language.code,
+          rowKey: language.rowKey,
           ...(removed
             ? { reason: 'deleted' }
-            : { row: { rowKey: language.code, slots: { language } } }),
+            : { row: { rowKey: language.rowKey, slots: { language } } }),
         },
       })
   }
@@ -233,7 +239,7 @@ describe('HilosI18nLanguagesPage', () => {
     c.delta({ ...OWN, nativeName: 'Fresh name' })
     await opener.trigger('click')
     await nextTick()
-    expect(c.focused).toEqual(['qx'])
+    expect(c.focused).toEqual(['46'])
     expect(document.body.textContent).toContain('Delete language · Fresh name')
     document
       .querySelector<HTMLButtonElement>(
@@ -242,9 +248,9 @@ describe('HilosI18nLanguagesPage', () => {
       .click()
     expect(dispatch).toHaveBeenCalledWith(
       HILOS_I18N_LANGUAGE_ROW_DELETE_ACTION,
-      { languageCode: 'qx' },
+      { languageId: 46 },
     )
-    expect(view.find('[data-id="hilos-table-row-qx"]').exists()).toBe(true)
+    expect(view.find('[data-id="hilos-table-row-46"]').exists()).toBe(true)
     c.delta(OWN, true)
     await nextTick()
     expect(
@@ -258,7 +264,7 @@ describe('HilosI18nLanguagesPage', () => {
     expect(
       document.querySelector('[data-id="i18n-language-delete-confirm"]'),
     ).toBeNull()
-    expect(c.focused).toEqual(['qx', ''])
+    expect(c.focused).toEqual(['46', ''])
     expect(navigate).not.toHaveBeenCalled()
     view.unmount()
   })

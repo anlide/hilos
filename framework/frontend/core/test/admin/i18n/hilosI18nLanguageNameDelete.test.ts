@@ -8,6 +8,9 @@ import { type HilosI18nLanguageContext } from '../../../src/admin/i18n/hilosI18n
 import { type ActionLifecycle } from '../../../src/connection/actionLifecycle.js'
 
 const coordinates = {
+  inLanguageId: 47,
+  nameId: 301,
+  languageId: 54,
   languageCode: 'qv',
   languageNativeName: 'Target',
   inLanguageCode: 'qw',
@@ -32,7 +35,13 @@ describe('language name deletion', () => {
       const target: HilosI18nLanguageNameDeleteTarget =
         kind === 'base'
           ? { ...coordinates, kind }
-          : { ...coordinates, kind, localeCode: 'qw-US' }
+          : {
+              ...coordinates,
+              kind,
+              localeId: 502,
+              nameId: 402,
+              localeCode: 'qw-US',
+            }
       const before = { ...target }
       expect(
         createHilosI18nLanguageNameDelete(context).deleteName(target),
@@ -44,10 +53,11 @@ describe('language name deletion', () => {
               ? 'hilos_i18n_language_name_delete'
               : 'hilos_i18n_language_name_override_delete',
           payload: {
-            languageCode: 'qv',
-            inLanguageCode: 'qw',
+            languageId: 54,
+            inLanguageId: 47,
+            nameId: kind === 'override' ? 402 : 301,
             expectedName: '',
-            ...(kind === 'override' ? { localeCode: 'qw-US' } : {}),
+            ...(kind === 'override' ? { localeId: 502 } : {}),
           },
         },
       ])

@@ -104,7 +104,11 @@ export class HilosI18nLocaleDelete {
   /** The page's tracked deletion dispatch (createHilosI18nLocaleDelete). */
   readonly deleteLocale =
     input.required<
-      (languageCode: string, countryCode: string | null) => ActionHandle
+      (
+        languageId: number,
+        countryId: number | null,
+        localeId: number,
+      ) => ActionHandle
     >()
   /** The window asks to close: Cancel, Esc, the backdrop, or its own success. */
   readonly closed = output<void>()
@@ -119,9 +123,9 @@ export class HilosI18nLocaleDelete {
       this.open() &&
       !this.action.busy() &&
       (source === null ||
-        source.languageCode !== target?.languageCode ||
-        source.countryCode !== target.countryCode ||
-        source.localeCode !== target.localeCode)
+        source.languageId !== target?.languageId ||
+        source.countryId !== target?.countryId ||
+        source.localeId !== target?.localeId)
     )
   })
   private readonly lookOnly = injectLookOnly()
@@ -153,7 +157,11 @@ export class HilosI18nLocaleDelete {
     }
     if (
       (await this.action.run(
-        this.deleteLocale()(target.languageCode, target.countryCode),
+        this.deleteLocale()(
+          target.languageId,
+          target?.countryId,
+          target?.localeId,
+        ),
       )) &&
       !this.destroyRef.destroyed
     ) {

@@ -13,28 +13,34 @@ use Hilos\I18n\DTO\LocaleFormats;
 /** Request to update one locale addressed by its language and optional country. */
 final class HilosI18nLocaleUpdateActionDTO extends ActionPayloadDTO
 {
-    public const string languageCode = 'languageCode';
-    public const string countryCode = 'countryCode';
+    public const string languageId = 'languageId';
+    public const string countryId = 'countryId';
+    public const string localeId = 'localeId';
     public const string formats = 'formats';
 
     public const array SECRET_FIELDS = [];
 
     /**
-     * @param string $languageCode Two lowercase Latin letters
-     * @param ?string $countryCode Two lowercase Latin letters, or null for the language alone
+     * @param int $languageId Persisted language ID
+     * @param ?int $countryId Persisted country ID, or null for the language alone
+     * @param int $localeId Persisted locale ID
      * @param LocaleFormats $formats Seven display formats
-     * @throws InvalidFormatException When either code has an invalid format
+     * @throws InvalidFormatException When a parent ID is not positive
      */
     public function __construct(
-        public readonly string $languageCode,
-        public readonly ?string $countryCode,
+        public readonly int $languageId,
+        public readonly ?int $countryId,
+        public readonly int $localeId,
         public readonly LocaleFormats $formats,
     ) {
-        if (preg_match('/^[a-z]{2}$/D', $languageCode) !== 1) {
-            throw new InvalidFormatException('Invalid language code: ' . $languageCode);
+        if ($localeId <= 0) {
+            throw new InvalidFormatException('Invalid locale ID: ' . $localeId);
         }
-        if ($countryCode !== null && preg_match('/^[a-z]{2}$/D', $countryCode) !== 1) {
-            throw new InvalidFormatException('Invalid country code: ' . $countryCode);
+        if ($languageId <= 0) {
+            throw new InvalidFormatException('Invalid language ID: ' . $languageId);
+        }
+        if ($countryId !== null && $countryId <= 0) {
+            throw new InvalidFormatException('Invalid country ID: ' . $countryId);
         }
     }
 
@@ -47,7 +53,7 @@ final class HilosI18nLocaleUpdateActionDTO extends ActionPayloadDTO
     /**
      * @param array<string, mixed> $data Raw or action-envelope payload
      * @return static Typed locale update request
-     * @throws InvalidFormatException When a code or the formats are absent or malformed
+     * @throws InvalidFormatException When an ID or the formats are absent or malformed
      */
     public static function fromArray(array $data): static
     {
@@ -56,14 +62,15 @@ final class HilosI18nLocaleUpdateActionDTO extends ActionPayloadDTO
             $inner = [];
         }
 
-        if (!array_key_exists(self::countryCode, $inner)
-            || ($inner[self::countryCode] !== null && !is_string($inner[self::countryCode]))) {
-            throw new InvalidFormatException('Payload carries no string or null under key ' . self::countryCode);
+        if (!array_key_exists(self::countryId, $inner)
+            || ($inner[self::countryId] !== null && !is_int($inner[self::countryId]))) {
+            throw new InvalidFormatException('Payload carries no integer or null under key ' . self::countryId);
         }
 
         return new static(
-            self::requireString($inner, self::languageCode),
-            $inner[self::countryCode],
+            self::requireInt($inner, self::languageId),
+            $inner[self::countryId],
+            self::requireInt($inner, self::localeId),
             LocaleFormats::fromArray(self::requireArray($inner, self::formats)),
         );
     }
@@ -72,8 +79,9 @@ final class HilosI18nLocaleUpdateActionDTO extends ActionPayloadDTO
     public function toArray(): array
     {
         return [
-            self::languageCode => $this->languageCode,
-            self::countryCode => $this->countryCode,
+            self::languageId => $this->languageId,
+            self::countryId => $this->countryId,
+            self::localeId => $this->localeId,
             self::formats => $this->formats->toArray(),
         ];
     }

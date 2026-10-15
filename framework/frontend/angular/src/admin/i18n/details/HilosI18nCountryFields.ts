@@ -130,7 +130,10 @@ import type { HilosI18nCountryLocaleOption } from '@hilos/core'
             @for (option of localeOptions(); track option.value) {
               <option
                 [value]="option.value"
-                [selected]="option.value === (defaultLocaleCode() ?? '')"
+                [selected]="
+                  option.value ===
+                  (defaultLocaleId() === null ? '' : '' + defaultLocaleId())
+                "
               >
                 {{ option.label }}
               </option>
@@ -177,7 +180,7 @@ export class HilosI18nCountryFields {
   /** The ISO 4217 currency code. */
   readonly currencyCode = input.required<string>()
   /** The chosen default locale; null while none is chosen. */
-  readonly defaultLocaleCode = input<string | null>(null)
+  readonly defaultLocaleId = input<number | null>(null)
   /** The default-locale options the core window resolves. */
   readonly localeOptions = input<readonly HilosI18nCountryLocaleOption[]>([])
   /** The default-locale hint the core window resolves. */
@@ -191,7 +194,7 @@ export class HilosI18nCountryFields {
   /** The currency code typed. */
   readonly currencyCodeChange = output<string>()
   /** The default locale chosen; null for "Not chosen". */
-  readonly defaultLocaleCodeChange = output<string | null>()
+  readonly defaultLocaleIdChange = output<string | null>()
 
   protected readonly copy = HILOS_I18N_COUNTRY_ADD_COPY
   protected readonly windowCopy = HILOS_I18N_COUNTRY_WINDOW_COPY
@@ -226,7 +229,7 @@ export class HilosI18nCountryFields {
 
   protected changeDefaultLocale(event: Event): void {
     if (event.target instanceof HTMLSelectElement) {
-      this.defaultLocaleCodeChange.emit(event.target.value || null)
+      this.defaultLocaleIdChange.emit(event.target.value || null)
     }
   }
 }

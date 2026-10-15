@@ -106,9 +106,9 @@ describe('HilosI18nLanguageLocalesPage', () => {
   })
 
   it.each([
-    ['i18n-locales-add-uk-PL', 'uk-PL', 'Add locale'],
-    ['i18n-locales-edit-uk-UA', 'uk-UA', 'Edit locale'],
-    ['i18n-locales-view-uk', 'uk', 'Locale'],
+    ['i18n-locales-add-uk-PL', '19:146', 'Add locale'],
+    ['i18n-locales-edit-uk-UA', '19:108', 'Edit locale'],
+    ['i18n-locales-view-uk', '19:null', 'Locale'],
   ] as const)(
     '%s opens the window in its mode over the pair in focus, with the page lists',
     (opener, rowKey, title) => {
@@ -121,11 +121,11 @@ describe('HilosI18nLanguageLocalesPage', () => {
           (option) => option.value,
         ),
       ).toEqual(
-        rowKey === 'uk-PL'
+        rowKey === '19:146'
           ? ['', ...localeTemplates.date]
           : [...localeTemplates.date],
       )
-      h.click(rowKey === 'uk' ? 'i18n-locale-close' : 'i18n-locale-cancel')
+      h.click(rowKey === '19:null' ? 'i18n-locale-close' : 'i18n-locale-cancel')
       expect(h.el('modal')).toBeNull()
       expect(h.focuses.at(-1)).toBe('')
     },
@@ -134,14 +134,14 @@ describe('HilosI18nLanguageLocalesPage', () => {
   it('deletes a locale through its own echo, closes on the ack and keeps the pair as a row', async () => {
     const h = setup()
     h.click('i18n-locales-delete-uk-UA')
-    expect(h.focuses.at(-1)).toBe('uk-UA')
+    expect(h.focuses.at(-1)).toBe('19:108')
     expect(
       document.querySelector('[role="dialog"]')?.getAttribute('aria-label'),
     ).toBe('Delete locale · Українська in Україна')
     h.click('i18n-locale-delete-confirm')
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_locale_delete',
-      payload: { languageCode: 'uk', countryCode: 'ua' },
+      payload: { languageId: 19, countryId: 108, localeId: 19108 },
     })
     const pair = {
       ...ukraineLocale,

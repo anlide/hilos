@@ -35,8 +35,11 @@ test('creates a free language and deletes it from the languages table', async ({
     await create.focus()
     await create.click()
     await expect(create).toHaveCount(0)
-    const row = page.getByTestId('hilos-table-row-uk')
-    await expect(row).toBeVisible()
+    const freshRow = page
+      .getByTestId(/^hilos-table-row-/)
+      .filter({ has: page.getByTestId('i18n-languages-link-uk') })
+    await expect(freshRow).toBeVisible()
+    const row = page.getByTestId((await freshRow.getAttribute('data-id'))!)
 
     const opener = row.getByTestId('i18n-languages-delete-uk')
     await opener.scrollIntoViewIfNeeded()
@@ -80,7 +83,11 @@ test('creates a free language and deletes it from the languages table', async ({
     await deleteLanguage('uk')
     // A fresh snapshot proves cleanup for the names-table empty-state spec that follows.
     await gotoPage(page, '/hilos/i18n/languages', PAGE_READY)
-    await expect(page.getByTestId('hilos-table-row-uk')).toHaveCount(0)
+    await expect(
+      page
+        .getByTestId(/^hilos-table-row-/)
+        .filter({ has: page.getByTestId('i18n-languages-link-uk') }),
+    ).toHaveCount(0)
   }
 })
 
@@ -118,6 +125,10 @@ test('shows a disabled trash and a visible reason for a language with a locale',
     await deleteLocale('es')
     await deleteLanguage('es')
     await gotoPage(page, '/hilos/i18n/languages', PAGE_READY)
-    await expect(page.getByTestId('hilos-table-row-es')).toHaveCount(0)
+    await expect(
+      page
+        .getByTestId(/^hilos-table-row-/)
+        .filter({ has: page.getByTestId('i18n-languages-link-es') }),
+    ).toHaveCount(0)
   }
 })

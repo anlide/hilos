@@ -14,6 +14,9 @@ import { nameRow } from './hilosI18nDetailsHarness.js'
 
 const base: HilosI18nCountryNameDeleteTarget = {
   kind: 'base',
+  inLanguageId: 11,
+  nameId: 301,
+  countryId: 143,
   countryCode: 'gg',
   countryName: 'Guernsey',
   inLanguageCode: 'en',
@@ -32,6 +35,8 @@ function setup(
       : {
           ...base,
           kind,
+          localeId: empty ? 502 : 501,
+          nameId: empty ? 402 : 401,
           localeCode: empty ? 'en-US' : 'en-GB',
           expectedName: empty ? '' : 'Correction',
         }
@@ -94,10 +99,11 @@ describe('React country name deletion', () => {
             ? 'hilos_i18n_country_name_delete'
             : 'hilos_i18n_country_name_override_delete',
         payload: {
-          countryCode: 'gg',
-          inLanguageCode: 'en',
+          countryId: 143,
+          inLanguageId: 11,
+          nameId: kind === 'override' ? 401 : 301,
           expectedName: h.initial.expectedName,
-          ...(kind === 'override' ? { localeCode: 'en-GB' } : {}),
+          ...(kind === 'override' ? { localeId: 501 } : {}),
         },
       })
       h.source(null)
@@ -137,9 +143,9 @@ describe('React country name deletion', () => {
         gone === 'row'
           ? null
           : gone === 'base'
-            ? { ...nameRow, name: null }
+            ? { ...nameRow, nameId: null, name: null }
             : gone === 'coordinate'
-              ? { ...nameRow, code: 'fr' }
+              ? { ...nameRow, inLanguageId: 13, rowKey: '13', code: 'fr' }
               : { ...nameRow, corrections: [] },
       )
       expect(el('i18n-country-name-delete-notice').textContent).toContain(

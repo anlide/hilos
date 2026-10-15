@@ -83,7 +83,7 @@ function CountriesList({ context }: HilosI18nCountriesPageProps) {
   const copy = HILOS_I18N_COUNTRY_WINDOW_COPY
   const focused = useSignal(countries.controller.focusedRow)
   const deleteSource =
-    focused?.code === target?.code
+    focused?.countryId === target?.countryId
       ? hilosI18nCountryDeleteFromRow(focused)
       : null
   useEffect(() => {
@@ -100,7 +100,7 @@ function CountriesList({ context }: HilosI18nCountriesPageProps) {
   }
   function openDelete(code: string): void {
     const fresh = countries.controller.focusRow(code)
-    if (!fresh || fresh.code !== code || !fresh.canDelete) {
+    if (!fresh || fresh.rowKey !== code || !fresh.canDelete) {
       countries.controller.releaseFocus()
       return
     }
@@ -216,7 +216,7 @@ function CountriesList({ context }: HilosI18nCountriesPageProps) {
                 aria-label={row.enabled ? copy.open.view : copy.open.edit}
                 data-id={`i18n-countries-${row.enabled ? 'view' : 'edit'}-${row.code}`}
                 onClick={() =>
-                  countryWindow.open(row.enabled ? 'view' : 'edit', row.code)
+                  countryWindow.open(row.enabled ? 'view' : 'edit', row.rowKey)
                 }
               >
                 <i
@@ -226,7 +226,7 @@ function CountriesList({ context }: HilosI18nCountriesPageProps) {
               </button>
               <HilosI18nCountryRowActions
                 row={row}
-                onDelete={() => openDelete(row.code)}
+                onDelete={() => openDelete(row.rowKey)}
               />
             </div>
           ),

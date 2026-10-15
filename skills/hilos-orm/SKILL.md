@@ -1,6 +1,6 @@
 ---
 name: hilos-orm
-description: Work with Hilos ORM entities, object layers, DbCollection queries, collection actions, migrations, seeds, schema consistency, Hilos::$db usage, accessor contracts, and database-backed features. Use when creating or modifying Entity classes, Object classes, migrations, DB actions, schema checks, collection access, or persistence behavior. Use it too when a new Entity has to say which column cuts its table into sets — the same declaration decides which rows an agent may own as its set, so ask who will own them before naming the column. Use it too when a project needs its own column on a framework table or subclasses any framework ORM class — the whole chain is subclassed and mounted under the framework key. Use it too when you open a database transaction or need something to happen only once a write commits — the framework never nests a transaction, a transaction ends inside the handler that opened it, and its announcements leave at the commit. Use it too when an Entity declares its table journaled or a write has to run under a change-log receipt — the database writes the journal, and the Entity says what goes in.
+description: Work with Hilos ORM entities, Object/View layers, DbCollection queries and actions, migrations, seeds, schema consistency, persistence, Hilos::$db and accessor contracts. Use when changing an Entity, Object, collection lookup or DB action; declaring which column partitions an entity into owner sets; extending a framework table through its whole subclass chain and mounting it under the framework key; opening a transaction or scheduling work after commit; declaring a journaled Entity or writing under a change-log receipt. Transactions never nest, end inside their opening handler, and release announcements at commit.
 ---
 
 # Hilos ORM
@@ -11,6 +11,9 @@ writes through `Hilos::$db`. Start with `agents.md`, then read
 touched ORM surfaces.
 
 ## Read First
+
+- Internal entity references, action targets, external code boundaries and
+  delete/recreate review: `docs/agents/orm/entity-references.md`.
 
 - ORM document index and mandatory follow-up matrix:
   `docs/agents/orm/README.md`

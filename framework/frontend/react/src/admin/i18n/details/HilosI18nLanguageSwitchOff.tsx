@@ -29,9 +29,10 @@ export function HilosI18nLanguageSwitchOff({
   )
   const action = useTrackedAction()
   const { locked } = useLookOnly()
-  const [target, setTarget] = useState<{ code: string; name: string } | null>(
-    null,
-  )
+  const [target, setTarget] = useState<{
+    languageId: number
+    name: string
+  } | null>(null)
   const mounted = useRef(false),
     sending = useRef(false)
   useEffect(() => {
@@ -41,13 +42,14 @@ export function HilosI18nLanguageSwitchOff({
     }
   }, [])
   useEffect(() => {
-    if (card === null || (target && card.code !== target.code)) setTarget(null)
+    if (card === null || (target && card.languageId !== target.languageId))
+      setTarget(null)
   }, [card, target])
   const elsewhere = target !== null && !action.busy && card?.enabled === false
   function open(): void {
     if (!card) return
     action.clearError()
-    setTarget({ code: card.code, name: card.nativeName })
+    setTarget({ languageId: card.languageId, name: card.nativeName })
   }
   function close(): void {
     if (!sending.current) setTarget(null)
@@ -64,7 +66,10 @@ export function HilosI18nLanguageSwitchOff({
       return
     sending.current = true
     try {
-      if ((await action.run(command.switchOff(target.code))) && mounted.current)
+      if (
+        (await action.run(command.switchOff(target.languageId))) &&
+        mounted.current
+      )
         setTarget(null)
     } finally {
       sending.current = false

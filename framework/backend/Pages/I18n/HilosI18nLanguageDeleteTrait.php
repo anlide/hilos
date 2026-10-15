@@ -23,8 +23,8 @@ trait HilosI18nLanguageDeleteTrait
      */
     protected function deleteLanguage(AbstractHilosI18nLanguageDeleteActionDTO $dto): void
     {
-        $language = Hilos::$db->languages[$dto->languageCode]
-            ?? throw new TableActionException('Unknown language: ' . $dto->languageCode);
+        $language = Hilos::$db->languages[$dto->languageId]
+            ?? throw new TableActionException('Unknown language: ' . $dto->languageId);
         $language->actions->delete();
         $this->setActionSuccessMessage('Language deleted.');
     }

@@ -44,6 +44,8 @@ use Hilos\Database\View\Item\LanguageName;
 use Hilos\I18n\Browser\LanguageCardBrowserData;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\HilosException;
+use Hilos\Pages\I18n\Details\DTO\HilosI18nLanguageNameUpdateActionDTO;
+use Hilos\Pages\I18n\Details\DTO\HilosI18nLanguageNameAddActionDTO;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLanguageNameDeleteActionDTO;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLanguageNameOverrideDeleteActionDTO;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
@@ -146,7 +148,10 @@ final class I18nLanguageNameDeleteTest extends IntegrationTestCase
             }
         });
         self::assertTrue($this->base()->locked);
-        $this->assertSuccess($this->dispatch(new HilosI18nLanguageNameDeleteActionDTO('qv', 'qw', $expectedName)), false);
+        $this->assertSuccess($this->dispatch($this->nameRequest(
+            HilosI18nLanguageNameDeleteActionDTO::class,
+            'qv', 'qw', null, $expectedName)
+        ), false);
         self::assertNull($this->base());
         self::assertNull($this->correction('qw-GB'));
         self::assertNull($this->correction('qw-US'));
@@ -183,7 +188,10 @@ final class I18nLanguageNameDeleteTest extends IntegrationTestCase
             }
         });
         self::assertTrue($this->correction('qw-GB')->locked);
-        $this->assertSuccess($this->dispatch(new HilosI18nLanguageNameOverrideDeleteActionDTO('qv', 'qw', 'qw-GB', $expectedName)), true);
+        $this->assertSuccess($this->dispatch($this->nameRequest(
+            HilosI18nLanguageNameOverrideDeleteActionDTO::class,
+            'qv', 'qw', 'qw-GB', $expectedName)
+        ), true);
         self::assertSame('Fixture base', $this->base()->name);
         self::assertNull($this->correction('qw-GB'));
         self::assertSame('', $this->correction('qw-US')->name);
@@ -224,10 +232,11 @@ final class I18nLanguageNameDeleteTest extends IntegrationTestCase
         $language = $scenario === 'missing-language' ? 'zz' : 'qv';
         $writing = $scenario === 'missing-writing-language' ? 'zz' : 'qw';
         $dto = $override
-            ? new HilosI18nLanguageNameOverrideDeleteActionDTO(
-                $language, $writing, $writing . ($scenario === 'missing-locale' ? '-FR' : '-GB'), 'Fixture correction',
-            )
-            : new HilosI18nLanguageNameDeleteActionDTO($language, $writing, 'Fixture base');
+            ? $this->nameRequest(
+                HilosI18nLanguageNameOverrideDeleteActionDTO::class,
+                $language, $writing, $writing . ($scenario === 'missing-locale' ? '-FR' : '-GB'
+            ), 'Fixture correction')
+            : $this->nameRequest(HilosI18nLanguageNameDeleteActionDTO::class, $language, $writing, null, 'Fixture base');
         $failure = $this->dispatch($dto);
         self::assertInstanceOf(PageActionErrorSignalData::class, $failure);
         self::assertSame('delete-tracked', $failure->requestId);
@@ -235,9 +244,9 @@ final class I18nLanguageNameDeleteTest extends IntegrationTestCase
         self::assertSame('fail', $failure->getEnvelopeOutcome());
         self::assertSame(match ($scenario) {
             'changed' => 'The name changed. Close this window and confirm again.',
-            'missing-language' => 'Unknown language: zz',
-            'missing-writing-language' => 'Unknown writing language: zz',
-            'missing-locale' => 'Unknown locale: qw-FR',
+            'missing-language' => 'Unknown language: ' . PHP_INT_MAX,
+            'missing-writing-language' => 'Unknown writing language: ' . PHP_INT_MAX,
+            'missing-locale' => 'Unknown locale: ' . PHP_INT_MAX,
             default => 'The name no longer exists.',
         }, $failure->reason);
         self::assertSame($before, $this->nameSnapshot());
@@ -469,7 +478,7 @@ final class I18nLanguageNameDeleteTest extends IntegrationTestCase
                 }
             }
             self::assertCount(1, $deltas);
-            self::assertSame('qw', $deltas[0]->rowKey);
+            self::assertSame((string) Hilos::$db->languages['qw']->id, $deltas[0]->rowKey);
             $row = $deltas[0]->row[PagePayload::slots][HilosI18nLanguageNamesTable::ROW_SLOT];
             self::assertSame($override ? 'Fixture base' : null, $row['name']);
             if ($override) {
@@ -583,8 +592,8 @@ final class I18nLanguageNameDeleteTest extends IntegrationTestCase
     private function request(bool $override): ActionPayloadDTO
     {
         return $override
-            ? new HilosI18nLanguageNameOverrideDeleteActionDTO('qv', 'qw', 'qw-GB', 'Fixture correction')
-            : new HilosI18nLanguageNameDeleteActionDTO('qv', 'qw', 'Fixture base');
+            ? $this->nameRequest(HilosI18nLanguageNameOverrideDeleteActionDTO::class, 'qv', 'qw', 'qw-GB', 'Fixture correction')
+            : $this->nameRequest(HilosI18nLanguageNameDeleteActionDTO::class, 'qv', 'qw', null, 'Fixture base');
     }
 
     /**
@@ -684,7 +693,7 @@ final class I18nLanguageNameDeleteTest extends IntegrationTestCase
     {
         $params = ['languageCode' => 'qv'];
         $windows = [ChatTableContext::hilosI18nLanguageNames => new TableWindowDescriptorDTO(
-            filter: [HilosI18nLanguageNamesTable::FILTER_LANGUAGE => 'qv'],
+            filter: [HilosI18nLanguageNamesTable::FILTER_LANGUAGE => Hilos::$db->languages['qv']?->id ?? 999999],
         )];
         Hilos::$sr->subscribeToPage(LanguageNamesPage::PAGE, new WebSocketPageSubscribeSignalDTO(
             $acceptKey, LanguageNamesPage::PAGE, $params, $windows,
@@ -775,6 +784,46 @@ final class I18nLanguageNameDeleteTest extends IntegrationTestCase
             }
         });
     }
+    /**
+     * Capture fixture IDs at the point the client builds its request.
+     *
+     * @param class-string<ActionPayloadDTO> $class Action payload class
+     * @param string $subjectCode Fixture subject code
+     * @param string $writingCode Fixture writing language code
+     * @param ?string $localeCode Fixture correction locale, or base
+     * @param string $text New or confirmed text
+     * @param ?string $expectedName Latest committed text for update
+     * @return ActionPayloadDTO Request carrying captured primary IDs
+     * @throws HilosException When fixture lookup or payload validation fails
+     */
+    private function nameRequest(
+        string $class,
+        string $subjectCode,
+        string $writingCode,
+        ?string $localeCode,
+        string $text,
+        ?string $expectedName = null,
+    ): ActionPayloadDTO {
+        $subjectId = Hilos::$db->languages[$subjectCode]?->id ?? PHP_INT_MAX;
+        $writingId = Hilos::$db->languages[$writingCode]?->id ?? PHP_INT_MAX;
+        $localeId = $localeCode === null ? null : (Hilos::$db->locales[$localeCode]?->id ?? PHP_INT_MAX);
+        $base = Hilos::$db->languageNames->findBase($subjectId, $writingId);
+        if ($class === HilosI18nLanguageNameAddActionDTO::class) {
+            return new HilosI18nLanguageNameAddActionDTO(
+                $subjectId, $writingId, $localeId, $localeId === null ? null : ($base?->id ?? PHP_INT_MAX), $text,
+            );
+        }
+        $nameId = ($localeId === null ? $base : Hilos::$db->languageNames->findOverride($subjectId, $writingId, $localeId))?->id
+            ?? PHP_INT_MAX;
+        if ($class === HilosI18nLanguageNameDeleteActionDTO::class) {
+            return new HilosI18nLanguageNameDeleteActionDTO($subjectId, $writingId, $nameId, $text);
+        }
+        if ($class === HilosI18nLanguageNameOverrideDeleteActionDTO::class) {
+            return new HilosI18nLanguageNameOverrideDeleteActionDTO($subjectId, $writingId, $localeId, $nameId, $text);
+        }
+
+        return new HilosI18nLanguageNameUpdateActionDTO($subjectId, $writingId, $localeId, $nameId, $text, $expectedName);
+    }
 }
 
 /** Captures real committed name facts; the test hands them to the browser at the worker's flush boundary. */
@@ -795,4 +844,5 @@ final class I18nNameDeletionChanges implements SourceChangeSubscriberInterface
             $this->changes[] = $change;
         }
     }
+
 }

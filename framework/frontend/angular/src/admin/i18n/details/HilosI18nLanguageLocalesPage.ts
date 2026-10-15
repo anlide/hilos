@@ -86,13 +86,13 @@ const PLATE = 'badge bg-body-tertiary text-body-secondary border fw-normal'
               @if (row.countryCode === null) {
                 <span
                   class="fst-italic text-body-secondary"
-                  [attr.data-id]="'i18n-locales-country-' + row.rowKey"
+                  [attr.data-id]="'i18n-locales-country-' + pairCode(row)"
                   >— no country</span
                 >
               } @else {
                 <span
                   [class.text-body-secondary]="row.enabled === false"
-                  [attr.data-id]="'i18n-locales-country-' + row.rowKey"
+                  [attr.data-id]="'i18n-locales-country-' + pairCode(row)"
                   ><span class="text-uppercase text-body-secondary me-1">{{
                     row.countryCode
                   }}</span
@@ -104,14 +104,14 @@ const PLATE = 'badge bg-body-tertiary text-body-secondary border fw-normal'
               @if (row.localeCode === null) {
                 <span
                   [class]="plate"
-                  [attr.data-id]="'i18n-locales-none-' + row.rowKey"
+                  [attr.data-id]="'i18n-locales-none-' + pairCode(row)"
                   ><i class="bi bi-dash-circle me-1" aria-hidden="true"></i>No
                   locale</span
                 >
               } @else {
                 <span
                   [class.text-body-secondary]="row.enabled === false"
-                  [attr.data-id]="'i18n-locales-code-' + row.rowKey"
+                  [attr.data-id]="'i18n-locales-code-' + pairCode(row)"
                   >{{ row.localeCode }}</span
                 >
               }
@@ -124,7 +124,7 @@ const PLATE = 'badge bg-body-tertiary text-body-secondary border fw-normal'
                   disabled
                   [checked]="row.enabled === true"
                   aria-label="Enabled"
-                  [attr.data-id]="'i18n-locales-enabled-' + row.rowKey"
+                  [attr.data-id]="'i18n-locales-enabled-' + pairCode(row)"
                 />
               }
             </ng-template>
@@ -137,7 +137,7 @@ const PLATE = 'badge bg-body-tertiary text-body-secondary border fw-normal'
                       class="btn btn-sm btn-primary"
                       [title]="copy.open.add"
                       [attr.aria-label]="copy.open.add"
-                      [attr.data-id]="'i18n-locales-add-' + row.rowKey"
+                      [attr.data-id]="'i18n-locales-add-' + pairCode(row)"
                       (click)="openWindow(row)"
                     >
                       <i class="bi bi-plus-lg" aria-hidden="true"></i>
@@ -149,7 +149,7 @@ const PLATE = 'badge bg-body-tertiary text-body-secondary border fw-normal'
                       class="btn btn-sm btn-outline-primary"
                       [title]="copy.open.edit"
                       [attr.aria-label]="copy.open.edit"
-                      [attr.data-id]="'i18n-locales-edit-' + row.rowKey"
+                      [attr.data-id]="'i18n-locales-edit-' + pairCode(row)"
                       (click)="openWindow(row)"
                     >
                       <i class="bi bi-pencil" aria-hidden="true"></i>
@@ -161,7 +161,7 @@ const PLATE = 'badge bg-body-tertiary text-body-secondary border fw-normal'
                       class="btn btn-sm btn-outline-secondary"
                       [title]="copy.open.view"
                       [attr.aria-label]="copy.open.view"
-                      [attr.data-id]="'i18n-locales-view-' + row.rowKey"
+                      [attr.data-id]="'i18n-locales-view-' + pairCode(row)"
                       (click)="openWindow(row)"
                     >
                       <i class="bi bi-eye" aria-hidden="true"></i>
@@ -174,7 +174,7 @@ const PLATE = 'badge bg-body-tertiary text-body-secondary border fw-normal'
                     class="btn btn-sm btn-outline-danger"
                     [title]="'Delete locale ' + row.localeCode"
                     [attr.aria-label]="'Delete locale ' + row.localeCode"
-                    [attr.data-id]="'i18n-locales-delete-' + row.rowKey"
+                    [attr.data-id]="'i18n-locales-delete-' + pairCode(row)"
                     (click)="openDelete(row)"
                   >
                     <i class="bi bi-trash" aria-hidden="true"></i>
@@ -245,12 +245,20 @@ export class HilosI18nLanguageLocalesPage {
   /** The card, the format lists and the locales table, bound to one context. */
   protected readonly binding = computed(() => {
     const context = this.context()
+    const card = createHilosI18nLanguageCard(context)
 
     return {
       context,
-      card: createHilosI18nLanguageCard(context),
+      card,
       templates: createHilosI18nLocaleTemplates(context),
-      locales: createHilosI18nLanguageLocalesTable(context, this.language),
+      locales: createHilosI18nLanguageLocalesTable(
+        context,
+        computedSignal(() =>
+          card.get()?.code === this.language.get()
+            ? (card.get()?.languageId ?? null)
+            : null,
+        ),
+      ),
     }
   })
   /** The windows' deletion dispatch, bound to that context and to one language. */
@@ -281,8 +289,8 @@ export class HilosI18nLanguageLocalesPage {
       const row = this.focusedRow()
       if (
         target === null ||
-        card?.code !== target.languageCode ||
-        row?.rowKey !== target.localeCode ||
+        card?.languageId !== target.languageId ||
+        row?.localeId !== target.localeId ||
         row.localeCode === null ||
         row.formats === null
       ) {
@@ -290,6 +298,9 @@ export class HilosI18nLanguageLocalesPage {
       }
 
       return {
+        languageId: row.languageId,
+        countryId: row.countryId,
+        localeId: row.localeId!,
         languageCode: card.code,
         countryCode: row.countryCode,
         localeCode: row.localeCode,
@@ -334,6 +345,13 @@ export class HilosI18nLanguageLocalesPage {
 
   // One window at a time, and only over the language the address still names;
   // the window takes the pair into focus through the session of its mode.
+  protected pairCode(row: HilosI18nLocaleRow): string {
+    return (
+      row.localeCode ??
+      `${this.card()?.code ?? ''}${row.countryCode === null ? '' : '-' + row.countryCode.toUpperCase()}`
+    )
+  }
+
   protected openWindow(row: HilosI18nLocaleRow): void {
     if (
       this.opened() !== null ||
@@ -365,6 +383,9 @@ export class HilosI18nLanguageLocalesPage {
       return
     }
     this.deleteTarget.set({
+      languageId: fresh.languageId,
+      countryId: fresh.countryId,
+      localeId: fresh.localeId!,
       languageCode: subject.code,
       countryCode: fresh.countryCode,
       localeCode: fresh.localeCode,

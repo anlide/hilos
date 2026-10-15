@@ -17,6 +17,7 @@ import { hilosAdminViewModeKey } from '../../../hilosAdminViewMode.js'
 import HilosI18nCountrySwitchOff from './HilosI18nCountrySwitchOff.vue'
 
 const card: HilosI18nCountryCard = {
+  countryId: 106,
   code: 'ca',
   currencySymbol: '$',
   currencyCode: 'CAD',
@@ -24,11 +25,12 @@ const card: HilosI18nCountryCard = {
   summary: {
     name: 'Canada',
     isOwn: false,
+    defaultLocaleId: null,
     defaultLocaleCode: null,
     defaultLocale: 'missing',
     localeCount: 1,
     nameCount: 50,
-    locales: [{ code: 'en-CA', enabled: false }],
+    locales: [{ localeId: 11106, code: 'en-CA', enabled: false }],
     catalogDefaultLocaleCode: 'en-CA',
     canDelete: true,
     deleteReason: null,
@@ -157,6 +159,7 @@ describe('HilosI18nCountrySwitchOff', () => {
     // Without localized name: uses uppercase code
     harness({
       ...card,
+      countryId: 141,
       code: 'qx',
       summary: { ...card.summary, name: null },
     })
@@ -175,7 +178,7 @@ describe('HilosI18nCountrySwitchOff', () => {
     expect(h.dispatched).toHaveLength(1)
     expect(h.dispatched[0]).toMatchObject({
       action: HILOS_I18N_COUNTRY_SWITCH_OFF_ACTION,
-      payload: { countryCode: 'ca' },
+      payload: { countryId: 106 },
     })
     await nextTick()
     expect(control('country-card-switch-off-cancel')?.disabled).toBe(true)

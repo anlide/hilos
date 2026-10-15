@@ -28,9 +28,10 @@ export function HilosI18nCountrySwitchOff({
   )
   const action = useTrackedAction()
   const { locked } = useLookOnly()
-  const [target, setTarget] = useState<{ code: string; name: string } | null>(
-    null,
-  )
+  const [target, setTarget] = useState<{
+    countryId: number
+    name: string
+  } | null>(null)
   const mounted = useRef(false),
     sending = useRef(false)
   useEffect(() => {
@@ -40,13 +41,14 @@ export function HilosI18nCountrySwitchOff({
     }
   }, [])
   useEffect(() => {
-    if (card === null || (target && card.code !== target.code)) setTarget(null)
+    if (card === null || (target && card.countryId !== target.countryId))
+      setTarget(null)
   }, [card, target])
   const elsewhere = target !== null && !action.busy && card?.enabled === false
   function open(): void {
     if (!card) return
     action.clearError()
-    setTarget({ code: card.code, name: hilosI18nCountryLabel(card) })
+    setTarget({ countryId: card.countryId, name: hilosI18nCountryLabel(card) })
   }
   function close(): void {
     if (!sending.current) setTarget(null)
@@ -55,7 +57,10 @@ export function HilosI18nCountrySwitchOff({
     if (sending.current || locked || elsewhere || !card || !target) return
     sending.current = true
     try {
-      if ((await action.run(command.switchOff(target.code))) && mounted.current)
+      if (
+        (await action.run(command.switchOff(target.countryId))) &&
+        mounted.current
+      )
         setTarget(null)
     } finally {
       sending.current = false

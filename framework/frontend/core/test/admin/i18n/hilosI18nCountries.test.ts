@@ -23,10 +23,13 @@ describe('resolveHilosI18nCountryRow', () => {
     expect(
       resolveHilosI18nCountryRow(
         countryRow('us', {
+          countryId: 102,
+          rowKey: '102',
           code: 'us',
           name: null,
           currencySymbol: '$',
           currencyCode: 'USD',
+          defaultLocaleId: null,
           defaultLocaleCode: null,
           enabled: false,
           isOwn: false,
@@ -37,10 +40,13 @@ describe('resolveHilosI18nCountryRow', () => {
         }),
       ),
     ).toEqual({
+      countryId: 102,
+      rowKey: '102',
       code: 'us',
       name: null,
       currencySymbol: '$',
       currencyCode: 'USD',
+      defaultLocaleId: null,
       defaultLocaleCode: null,
       enabled: false,
       isOwn: false,
@@ -51,20 +57,10 @@ describe('resolveHilosI18nCountryRow', () => {
     })
   })
 
-  it('keeps a row whose slot the schema refuses, named by its key', () => {
-    expect(resolveHilosI18nCountryRow(countryRow('qx', undefined))).toEqual({
-      code: 'qx',
-      name: null,
-      currencySymbol: '',
-      currencyCode: '',
-      defaultLocaleCode: null,
-      enabled: false,
-      isOwn: false,
-      locales: [],
-      catalogDefaultLocaleCode: null,
-      canDelete: false,
-      deleteReason: null,
-    })
+  it('rejects a row with no typed identity', () => {
+    expect(() =>
+      resolveHilosI18nCountryRow(countryRow('141', undefined)),
+    ).toThrow()
   })
 })
 
@@ -103,6 +99,7 @@ describe('HILOS_I18N_COUNTRIES_FRAME', () => {
         'currencyCode',
         'defaultLocaleCode',
         'isOwn',
+        'defaultLocaleId',
         'locales',
         'catalogDefaultLocaleCode',
       ],

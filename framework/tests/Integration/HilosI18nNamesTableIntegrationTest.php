@@ -127,12 +127,28 @@ final class HilosI18nNamesTableIntegrationTest extends FrameworkIntegrationTestC
         parent::tearDown();
     }
 
+    /** @throws HilosException When fixture writes or table reads fail */
+    public function testAnOldCountryFilterDoesNotFollowItsSameCodeReplacement(): void
+    {
+        $country = Hilos::$db->countries->actions->create('qx', '¤', 'XXX');
+        $oldId = $country->id;
+        $country->actions->delete();
+        $replacement = Hilos::$db->countries->actions->create('qx', '¤', 'XXX');
+        $table = new HilosI18nCountryNamesTable();
+        $this->assertNotSame($oldId, $replacement->id);
+        $this->assertSame([], $table->getPage(self::window($table, $oldId))->rows);
+        $this->assertCount(3, $table->getPage(self::window($table, $replacement->id))->rows);
+        $this->assertSame([], $table->getPage(new TableQueryDTO(filter: [
+            HilosI18nCountryNamesTable::FILTER_COUNTRY => 'qx',
+        ]))->rows);
+    }
+
     /** @throws HilosException When the window cannot be read */
     public function testTheWindowOfALanguageHoldsEveryOtherLanguageByCode(): void
     {
-        $this->assertSame(['en', 'fr'], array_keys($this->rows(new HilosI18nLanguageNamesTable(), 'de')));
-        $this->assertSame(['de', 'fr'], array_keys($this->rows(new HilosI18nLanguageNamesTable(), 'en')));
-        $this->assertSame(['de', 'en', 'fr'], array_keys($this->rows(new HilosI18nCountryNamesTable(), 'gb')));
+        $this->assertSame([1, 3], array_keys($this->rows(new HilosI18nLanguageNamesTable(), 2)));
+        $this->assertSame([2, 3], array_keys($this->rows(new HilosI18nLanguageNamesTable(), 1)));
+        $this->assertSame([2, 1, 3], array_keys($this->rows(new HilosI18nCountryNamesTable(), 1)));
     }
 
     /** @throws HilosException When the window cannot be read */
@@ -141,8 +157,8 @@ final class HilosI18nNamesTableIntegrationTest extends FrameworkIntegrationTestC
         $table = new HilosI18nLanguageNamesTable();
 
         $this->assertSame([], $table->getPage(new TableQueryDTO())->rows);
-        $this->assertSame([], $this->rows($table, 'xx'));
-        $this->assertSame([], $this->rows(new HilosI18nCountryNamesTable(), 'zz'));
+        $this->assertSame([], $this->rows($table, 999999));
+        $this->assertSame([], $this->rows(new HilosI18nCountryNamesTable(), 999999));
     }
 
     /** @throws HilosException When a name cannot be written or the window read */
@@ -151,12 +167,12 @@ final class HilosI18nNamesTableIntegrationTest extends FrameworkIntegrationTestC
         Hilos::$db->languageNames->actions->createManual($this->german, $this->english, null, 'German');
         Hilos::$db->languageNames->actions->createManual($this->german, $this->french, null, '');
 
-        $rows = $this->rows(new HilosI18nLanguageNamesTable(), 'de');
+        $rows = $this->rows(new HilosI18nLanguageNamesTable(), 2);
 
-        $this->assertSame('German', $rows['en'][HilosI18nNameTableRow::name]);
-        $this->assertSame('', $rows['fr'][HilosI18nNameTableRow::name]);
-        $this->assertSame('English', $rows['en'][HilosI18nNameTableRow::nativeName]);
-        $this->assertNull($this->rows(new HilosI18nLanguageNamesTable(), 'fr')['en'][HilosI18nNameTableRow::name]);
+        $this->assertSame('German', $rows[1][HilosI18nNameTableRow::name]);
+        $this->assertSame('', $rows[3][HilosI18nNameTableRow::name]);
+        $this->assertSame('English', $rows[1][HilosI18nNameTableRow::nativeName]);
+        $this->assertNull($this->rows(new HilosI18nLanguageNamesTable(), 3)[1][HilosI18nNameTableRow::name]);
     }
 
     /**
@@ -167,25 +183,33 @@ final class HilosI18nNamesTableIntegrationTest extends FrameworkIntegrationTestC
      */
     public function testCorrectionsStandUnderABaseForTheLocalesOfACountryOnly(): void
     {
-        $this->assertSame([], $this->rows(new HilosI18nLanguageNamesTable(), 'de')['en'][HilosI18nNameTableRow::corrections]);
+        $this->assertSame([], $this->rows(new HilosI18nLanguageNamesTable(), 2)[1][HilosI18nNameTableRow::corrections]);
 
         Hilos::$db->languageNames->actions->createManual($this->german, $this->english, null, 'German');
-        Hilos::$db->languageNames->actions->createManual($this->german, $this->english, $this->britishEnglish, 'German (UK)');
+        $correction = Hilos::$db->languageNames->actions->createManual(
+            $this->german, $this->english, $this->britishEnglish, 'German (UK)',
+        );
 
         $this->assertSame([
             [
+                HilosI18nNameTableRow::localeId => 2,
+                HilosI18nNameTableRow::countryId => 1,
+                HilosI18nNameTableRow::nameId => $correction->id,
                 HilosI18nNameTableRow::localeCode => 'en-GB',
                 HilosI18nNameTableRow::countryCode => 'gb',
                 HilosI18nNameTableRow::countryName => 'United Kingdom',
                 HilosI18nNameTableRow::name => 'German (UK)',
             ],
             [
+                HilosI18nNameTableRow::localeId => 3,
+                HilosI18nNameTableRow::countryId => 2,
+                HilosI18nNameTableRow::nameId => null,
                 HilosI18nNameTableRow::localeCode => 'en-US',
                 HilosI18nNameTableRow::countryCode => 'us',
                 HilosI18nNameTableRow::countryName => null,
                 HilosI18nNameTableRow::name => null,
             ],
-        ], $this->rows(new HilosI18nLanguageNamesTable(), 'de')['en'][HilosI18nNameTableRow::corrections]);
+        ], $this->rows(new HilosI18nLanguageNamesTable(), 2)[1][HilosI18nNameTableRow::corrections]);
     }
 
     /** @throws HilosException When a name cannot be written or the window read */
@@ -193,13 +217,44 @@ final class HilosI18nNamesTableIntegrationTest extends FrameworkIntegrationTestC
     {
         Hilos::$db->countryNames->actions->createManual($this->britain, $this->english, $this->britishEnglish, 'Britain');
 
-        $rows = $this->rows(new HilosI18nCountryNamesTable(), 'gb');
+        $rows = $this->rows(new HilosI18nCountryNamesTable(), 1);
 
-        $this->assertSame('United Kingdom', $rows['en'][HilosI18nNameTableRow::name]);
-        $this->assertSame('Britain', $rows['en'][HilosI18nNameTableRow::corrections][0][HilosI18nNameTableRow::name]);
-        $this->assertNull($rows['de'][HilosI18nNameTableRow::name]);
-        $this->assertSame([], $rows['de'][HilosI18nNameTableRow::corrections]);
-        $this->assertNull($this->rows(new HilosI18nCountryNamesTable(), 'us')['en'][HilosI18nNameTableRow::name]);
+        $this->assertSame('United Kingdom', $rows[1][HilosI18nNameTableRow::name]);
+        $this->assertSame('Britain', $rows[1][HilosI18nNameTableRow::corrections][0][HilosI18nNameTableRow::name]);
+        $this->assertNull($rows[2][HilosI18nNameTableRow::name]);
+        $this->assertSame([], $rows[2][HilosI18nNameTableRow::corrections]);
+        $this->assertNull($this->rows(new HilosI18nCountryNamesTable(), 2)[1][HilosI18nNameTableRow::name]);
+    }
+
+    /** @throws HilosException When a name cannot be written or its window rebuilt */
+    public function testRecreatedNamesPublishNewIdsWithTheSameTextInOnlyTheirSubjectWindow(): void
+    {
+        foreach ([new HilosI18nLanguageNamesTable(), new HilosI18nCountryNamesTable()] as $table) {
+            $isLanguage = $table instanceof HilosI18nLanguageNamesTable;
+            $base = $isLanguage
+                ? Hilos::$db->languageNames->actions->createManual($this->german, $this->english, null, 'Same')
+                : Hilos::$db->countryNames->actions->createManual($this->unitedStates, $this->french, null, 'Same');
+            $writingId = $isLanguage ? 1 : 3;
+            $oldId = $base->id;
+            self::assertSame($oldId, $this->rows($table, 2)[$writingId][HilosI18nNameTableRow::nameId]);
+            $this->changes->taken = [];
+            $base->actions->delete();
+            $removed = $this->built($table, 2);
+            self::assertCount(1, $removed);
+            self::assertNull($removed[0]->row->toArray()[HilosI18nNameTableRow::nameId]);
+            self::assertNull($removed[0]->row->toArray()[HilosI18nNameTableRow::name]);
+            $this->changes->taken = [];
+            $replacement = $isLanguage
+                ? Hilos::$db->languageNames->actions->createManual($this->german, $this->english, null, 'Same')
+                : Hilos::$db->countryNames->actions->createManual($this->unitedStates, $this->french, null, 'Same');
+            $created = $this->built($table, 2);
+            self::assertCount(1, $created);
+            self::assertNotSame($oldId, $replacement->id);
+            self::assertSame($replacement->id, $created[0]->row->toArray()[HilosI18nNameTableRow::nameId]);
+            self::assertSame('Same', $created[0]->row->toArray()[HilosI18nNameTableRow::name]);
+            self::assertSame((string) $writingId, $created[0]->row->getRowKey());
+            self::assertSame([], $this->built($table, $isLanguage ? 3 : 1));
+        }
     }
 
     /**
@@ -211,47 +266,47 @@ final class HilosI18nNamesTableIntegrationTest extends FrameworkIntegrationTestC
     public function testANameAndACorrectionUpdateTheRowOfTheirLanguageInTheirSubjectsWindowOnly(): void
     {
         $base = Hilos::$db->languageNames->actions->createManual($this->german, $this->english, null, 'German');
-        $this->assertSame([['update', 'en', 'German']], $this->mutations(new HilosI18nLanguageNamesTable(), 'de'));
-        $this->assertSame([], $this->mutations(new HilosI18nLanguageNamesTable(), 'fr'));
+        $this->assertSame([['update', '1', 'German']], $this->mutations(new HilosI18nLanguageNamesTable(), 2));
+        $this->assertSame([], $this->mutations(new HilosI18nLanguageNamesTable(), 3));
 
         $this->changes->taken = [];
         $base->actions->edit('Germanic');
-        $this->assertSame([['update', 'en', 'Germanic']], $this->mutations(new HilosI18nLanguageNamesTable(), 'de'));
+        $this->assertSame([['update', '1', 'Germanic']], $this->mutations(new HilosI18nLanguageNamesTable(), 2));
 
         $this->changes->taken = [];
         $override = Hilos::$db->languageNames->actions->createManual($this->german, $this->english, $this->britishEnglish, 'UK');
-        $mutations = $this->built(new HilosI18nLanguageNamesTable(), 'de');
+        $mutations = $this->built(new HilosI18nLanguageNamesTable(), 2);
         $this->assertCount(1, $mutations);
         $this->assertSame('UK', $mutations[0]->row?->toArray()[HilosI18nNameTableRow::corrections][0][HilosI18nNameTableRow::name]);
 
         $this->changes->taken = [];
         $override->actions->delete();
-        $mutations = $this->built(new HilosI18nLanguageNamesTable(), 'de');
+        $mutations = $this->built(new HilosI18nLanguageNamesTable(), 2);
         $this->assertCount(1, $mutations);
         $this->assertNull($mutations[0]->row?->toArray()[HilosI18nNameTableRow::corrections][0][HilosI18nNameTableRow::name]);
 
         $this->changes->taken = [];
         $base->actions->delete();
-        $this->assertSame([['update', 'en', null]], $this->mutations(new HilosI18nLanguageNamesTable(), 'de'));
+        $this->assertSame([['update', '1', null]], $this->mutations(new HilosI18nLanguageNamesTable(), 2));
     }
 
     /** @throws HilosException When a language cannot be written or a change built */
     public function testALanguageAddsUpdatesAndRemovesItsRow(): void
     {
         $spanish = Hilos::$db->languages->actions->create('es', 'Español', false);
-        $this->assertSame([['create', 'es', null]], $this->mutations(new HilosI18nLanguageNamesTable(), 'de'));
-        $this->assertSame([], $this->mutations(new HilosI18nLanguageNamesTable(), 'es'));
+        $this->assertSame([['create', '4', null]], $this->mutations(new HilosI18nLanguageNamesTable(), 2));
+        $this->assertSame([], $this->mutations(new HilosI18nLanguageNamesTable(), 4));
 
         $this->changes->taken = [];
         $spanish->actions->update('Castellano', false);
-        $built = $this->built(new HilosI18nCountryNamesTable(), 'gb');
+        $built = $this->built(new HilosI18nCountryNamesTable(), 1);
         $this->assertCount(1, $built);
         $this->assertSame(TableMutationType::Update, $built[0]->type);
         $this->assertSame('Castellano', $built[0]->row?->toArray()[HilosI18nNameTableRow::nativeName]);
 
         $this->changes->taken = [];
         $spanish->actions->delete();
-        $this->assertSame([['delete', 'es', null]], $this->mutations(new HilosI18nLanguageNamesTable(), 'de'));
+        $this->assertSame([['delete', '4', null]], $this->mutations(new HilosI18nLanguageNamesTable(), 2));
     }
 
     /** @throws HilosException When a locale cannot be written or a change built */
@@ -261,8 +316,8 @@ final class HilosI18nNamesTableIntegrationTest extends FrameworkIntegrationTestC
         $this->changes->taken = [];
         $american = self::locale($this->french, $this->unitedStates);
 
-        $built = $this->built(new HilosI18nLanguageNamesTable(), 'de');
-        $this->assertSame(['fr'], array_map(static fn(TableRowMutationDTO $mutation): string => (string) $mutation->rowKey, $built));
+        $built = $this->built(new HilosI18nLanguageNamesTable(), 2);
+        $this->assertSame(['3'], array_map(static fn(TableRowMutationDTO $mutation): string => (string) $mutation->rowKey, $built));
         $this->assertSame(
             'fr-US',
             $built[0]->row?->toArray()[HilosI18nNameTableRow::corrections][0][HilosI18nNameTableRow::localeCode],
@@ -270,7 +325,7 @@ final class HilosI18nNamesTableIntegrationTest extends FrameworkIntegrationTestC
 
         $this->changes->taken = [];
         $american->actions->delete();
-        $built = $this->built(new HilosI18nLanguageNamesTable(), 'de');
+        $built = $this->built(new HilosI18nLanguageNamesTable(), 2);
         $this->assertCount(1, $built);
         $this->assertSame([], $built[0]->row?->toArray()[HilosI18nNameTableRow::corrections]);
     }
@@ -288,8 +343,8 @@ final class HilosI18nNamesTableIntegrationTest extends FrameworkIntegrationTestC
 
         Hilos::$db->countryNames->findBase((int) $this->britain->id, (int) $this->english->id)?->actions->edit('UK');
 
-        $built = $this->built(new HilosI18nLanguageNamesTable(), 'fr');
-        $this->assertSame(['en', 'de'], array_map(static fn(TableRowMutationDTO $mutation): string => (string) $mutation->rowKey, $built));
+        $built = $this->built(new HilosI18nLanguageNamesTable(), 3);
+        $this->assertSame(['1', '2'], array_map(static fn(TableRowMutationDTO $mutation): string => (string) $mutation->rowKey, $built));
         foreach ($built as $mutation) {
             $this->assertSame(
                 'UK',
@@ -299,8 +354,8 @@ final class HilosI18nNamesTableIntegrationTest extends FrameworkIntegrationTestC
 
         $this->changes->taken = [];
         Hilos::$db->countryNames->actions->createManual($this->britain, $this->german, null, 'Großbritannien');
-        $this->assertSame([], $this->mutations(new HilosI18nLanguageNamesTable(), 'fr'));
-        $this->assertSame([['update', 'de', 'Großbritannien']], $this->mutations(new HilosI18nCountryNamesTable(), 'gb'));
+        $this->assertSame([], $this->mutations(new HilosI18nLanguageNamesTable(), 3));
+        $this->assertSame([['update', '2', 'Großbritannien']], $this->mutations(new HilosI18nCountryNamesTable(), 1));
     }
 
     /** @throws HilosException When the subject cannot be removed or a change built */
@@ -311,10 +366,10 @@ final class HilosI18nNamesTableIntegrationTest extends FrameworkIntegrationTestC
         $customCountry->actions->delete();
 
         $this->assertSame(
-            [['delete', 'de', null], ['delete', 'en', null], ['delete', 'fr', null]],
-            $this->mutations(new HilosI18nCountryNamesTable(), 'qx'),
+            [['delete', '2', null], ['delete', '1', null], ['delete', '3', null]],
+            $this->mutations(new HilosI18nCountryNamesTable(), $customCountry->id),
         );
-        $this->assertSame([], $this->mutations(new HilosI18nCountryNamesTable(), 'gb'));
+        $this->assertSame([], $this->mutations(new HilosI18nCountryNamesTable(), 1));
     }
 
     /**
@@ -340,7 +395,7 @@ final class HilosI18nNamesTableIntegrationTest extends FrameworkIntegrationTestC
             true,
         );
 
-        foreach ([[new HilosI18nLanguageNamesTable(), 'de'], [new HilosI18nCountryNamesTable(), 'gb']] as [$table, $subject]) {
+        foreach ([[new HilosI18nLanguageNamesTable(), 2], [new HilosI18nCountryNamesTable(), 1]] as [$table, $subject]) {
             foreach ($this->rows($table, $subject) as $row) {
                 $this->assertSame($row, ViewerFields::hide($row, $table->wireFields(), $columnShown));
             }
@@ -351,11 +406,11 @@ final class HilosI18nNamesTableIntegrationTest extends FrameworkIntegrationTestC
      * The rows of a subject's window, by row key.
      *
      * @param AbstractHilosI18nNamesTable $table Table the window is on
-     * @param string $subject Code of the subject
+     * @param int $subject Code of the subject
      * @return array<string, array<string, mixed>> Row payloads by row key, in window order
      * @throws HilosException When the window cannot be read
      */
-    private function rows(AbstractHilosI18nNamesTable $table, string $subject): array
+    private function rows(AbstractHilosI18nNamesTable $table, int $subject): array
     {
         $rows = [];
         foreach ($table->getPage(self::window($table, $subject))->rows as $row) {
@@ -369,11 +424,11 @@ final class HilosI18nNamesTableIntegrationTest extends FrameworkIntegrationTestC
      * The mutations the changes taken off the bus make in a subject's window.
      *
      * @param AbstractHilosI18nNamesTable $table Table the window is on
-     * @param string $subject Code of the subject
+     * @param int $subject Code of the subject
      * @return list<TableRowMutationDTO> Mutations in the order the changes were announced
      * @throws HilosException When a change cannot be built
      */
-    private function built(AbstractHilosI18nNamesTable $table, string $subject): array
+    private function built(AbstractHilosI18nNamesTable $table, int $subject): array
     {
         $mutations = [];
         foreach ($this->changes->taken as $change) {
@@ -387,11 +442,11 @@ final class HilosI18nNamesTableIntegrationTest extends FrameworkIntegrationTestC
      * The same mutations, each told by its type, row key and base name.
      *
      * @param AbstractHilosI18nNamesTable $table Table the window is on
-     * @param string $subject Code of the subject
+     * @param int $subject Code of the subject
      * @return list<array{0: string, 1: string, 2: ?string}> Type, row key and the base name the row carries
      * @throws HilosException When a change cannot be built
      */
-    private function mutations(AbstractHilosI18nNamesTable $table, string $subject): array
+    private function mutations(AbstractHilosI18nNamesTable $table, int $subject): array
     {
         return array_map(
             static fn(TableRowMutationDTO $mutation): array => [
@@ -405,10 +460,10 @@ final class HilosI18nNamesTableIntegrationTest extends FrameworkIntegrationTestC
 
     /**
      * @param AbstractHilosI18nNamesTable $table Table the window is on
-     * @param string $subject Code of the subject
+     * @param int $subject Code of the subject
      * @return TableQueryDTO Window opened on the subject
      */
-    private static function window(AbstractHilosI18nNamesTable $table, string $subject): TableQueryDTO
+    private static function window(AbstractHilosI18nNamesTable $table, int $subject): TableQueryDTO
     {
         $key = $table instanceof HilosI18nLanguageNamesTable
             ? HilosI18nLanguageNamesTable::FILTER_LANGUAGE

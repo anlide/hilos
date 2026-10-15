@@ -42,6 +42,7 @@ const templates: HilosI18nLocaleTemplates = {
   collation: ['und'],
 }
 const card: HilosI18nLanguageCard = {
+  languageId: 11,
   code: 'en',
   nativeName: 'English',
   rtl: false,
@@ -57,7 +58,10 @@ const card: HilosI18nLanguageCard = {
   },
 }
 const known: HilosI18nLocaleRow = {
-  rowKey: 'en-GB',
+  languageId: 11,
+  countryId: 101,
+  localeId: null,
+  rowKey: '11:101',
   countryCode: 'gb',
   countryName: 'United Kingdom',
   localeCode: null,
@@ -67,7 +71,10 @@ const known: HilosI18nLocaleRow = {
   catalogFormats: formats,
 }
 const own: HilosI18nLocaleRow = {
-  rowKey: 'en-AD',
+  languageId: 11,
+  countryId: 142,
+  localeId: null,
+  rowKey: '11:142',
   countryCode: 'ad',
   countryName: null,
   localeCode: null,
@@ -78,13 +85,17 @@ const own: HilosI18nLocaleRow = {
 }
 const editable: HilosI18nLocaleRow = {
   ...known,
+  localeId: 11101,
   localeCode: 'en-GB',
   enabled: false,
   formats,
 }
 const visible: HilosI18nLocaleRow = {
   ...editable,
-  rowKey: 'en',
+  languageId: 11,
+  countryId: null,
+  localeId: 11000,
+  rowKey: '11:null',
   countryCode: null,
   countryName: null,
   localeCode: 'en',
@@ -295,7 +306,10 @@ describe('HilosI18nLocaleWindow switch-off', () => {
   })
 
   it('omits the catalog note for an own pair and falls back to its country code', async () => {
-    harness({ ...own, localeCode: own.rowKey, enabled: true, formats }, 'view')
+    harness(
+      { ...own, localeId: 11142, localeCode: 'en-AD', enabled: true, formats },
+      'view',
+    )
     await nextTick()
     el('i18n-locale-switch-off')?.click()
     await nextTick()
@@ -349,7 +363,11 @@ describe('HilosI18nLocaleWindow switch-off', () => {
         expect(h.dispatched).toHaveLength(1)
         expect(h.dispatched[0]).toMatchObject({
           name: 'hilos_i18n_locale_switch_off',
-          payload: { languageCode: 'en', countryCode },
+          payload: {
+            languageId: 11,
+            countryId: countryCode === null ? null : 101,
+            localeId: countryCode === null ? 11000 : 11101,
+          },
         })
         h.focused.set({ ...locale, enabled: false })
         await nextTick()
@@ -519,6 +537,26 @@ describe('HilosI18nLocaleWindow switch-off', () => {
 })
 
 describe('HilosI18nLocaleWindow', () => {
+  it('keeps the draft when a new locale takes the same parent pair', async () => {
+    const h = harness(editable, 'edit')
+    await nextTick()
+    const input = document.querySelector<HTMLSelectElement>(
+      '[data-id="i18n-locale-field-date"]',
+    )!
+    input.value = 'YYYY-MM-DD'
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    await nextTick()
+    h.focused.set({ ...editable, localeId: 999 })
+    await nextTick()
+    expect(input.value).toBe('YYYY-MM-DD')
+    const submit = document.querySelector<HTMLButtonElement>(
+      '[data-id="i18n-locale-submit"]',
+    )!
+    expect(submit.disabled).toBe(true)
+    expect(submit.textContent).toContain('Deleted')
+    expect(h.dispatched).toHaveLength(0)
+  })
+
   it('keeps step twins outside locators, forms and the focus trap', async () => {
     harness(editable, 'edit')
     await nextTick()
@@ -584,7 +622,10 @@ describe('HilosI18nLocaleWindow', () => {
   })
 
   it('omits the catalog note for an own pair and uses its country code', async () => {
-    harness({ ...own, localeCode: own.rowKey, formats, enabled: false }, 'edit')
+    harness(
+      { ...own, localeId: 11142, localeCode: 'en-AD', formats, enabled: false },
+      'edit',
+    )
     await nextTick()
     el('i18n-locale-switch-on')?.click()
     await nextTick()
@@ -661,7 +702,11 @@ describe('HilosI18nLocaleWindow', () => {
         expect(h.dispatched).toHaveLength(1)
         expect(h.dispatched[0]).toMatchObject({
           name: HILOS_I18N_LOCALE_SWITCH_ON_ACTION,
-          payload: { languageCode: 'en', countryCode },
+          payload: {
+            languageId: 11,
+            countryId: countryCode === null ? null : 101,
+            localeId: countryCode === null ? 11000 : 11101,
+          },
         })
         h.focused.set({ ...locale, enabled: true })
         await nextTick()
@@ -857,7 +902,7 @@ describe('HilosI18nLocaleWindow', () => {
     el('i18n-locale-submit')?.click()
     expect(knownWindow.dispatched[0]).toMatchObject({
       name: HILOS_I18N_LOCALE_ADD_ACTION,
-      payload: { languageCode: 'en', countryCode: 'gb', formats },
+      payload: { languageId: 11, countryId: 101, formats },
     })
     await nextTick()
     expect((el('i18n-locale-cancel') as HTMLButtonElement).disabled).toBe(true)
@@ -888,9 +933,10 @@ describe('HilosI18nLocaleWindow', () => {
     expect(h.dispatched[0]).toMatchObject({
       name: HILOS_I18N_LOCALE_UPDATE_ACTION,
       payload: {
-        languageCode: 'en',
-        countryCode: 'gb',
+        languageId: 11,
+        countryId: 101,
         formats: { ...formats, date: 'YYYY-MM-DD' },
+        localeId: 11101,
       },
     })
     await nextTick()

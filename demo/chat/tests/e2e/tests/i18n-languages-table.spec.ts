@@ -23,7 +23,9 @@ test('opens the languages list with the default language and searches it', async
 
   // The same cells are also drawn in the narrow-screen card, which stays in the
   // document. The wide table is the one this viewport shows.
-  const row = page.getByTestId('hilos-table-row-en')
+  const row = page
+    .getByTestId(/^hilos-table-row-/)
+    .filter({ has: page.getByTestId('i18n-languages-link-en') })
   const link = row.getByTestId('i18n-languages-link-en')
   await expect(link).toBeVisible()
   await expect(link).toHaveAttribute('href', '/hilos/i18n/languages/en')

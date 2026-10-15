@@ -40,7 +40,7 @@ function setup(row: HilosI18nLanguageRow = language, viewer = false) {
     { provide: HILOS_ADMIN_VIEW_MODE, useValue: signal(viewer).asReadonly() },
   ])
   opener.focus()
-  view.act(() => window.open(row.code))
+  view.act(() => window.open(row.rowKey))
 
   return { ...bench, ...view, window, focused, releases: () => releases }
 }
@@ -61,7 +61,7 @@ describe('HilosI18nLanguageWindow', () => {
     h.submit()
     expect(h.calls).toHaveLength(0)
     expect(h.el('modal')).toBeNull()
-    h.act(() => h.window.open('uk'))
+    h.act(() => h.window.open('19'))
     h.type('i18n-language-edit-native-name', '  Mine  ')
     h.toggle('i18n-language-edit-rtl')
     h.submit()
@@ -69,7 +69,7 @@ describe('HilosI18nLanguageWindow', () => {
     expect(h.calls).toHaveLength(1)
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_language_row_update',
-      payload: { languageCode: 'uk', nativeName: 'Mine', rtl: true },
+      payload: { languageId: 19, nativeName: 'Mine', rtl: true },
     })
     h.act(() => h.focused.set({ ...language, nativeName: 'Mine', rtl: true }))
     expect(h.el<HTMLButtonElement>('modal-close')?.disabled).toBe(true)
@@ -100,7 +100,7 @@ describe('HilosI18nLanguageWindow', () => {
       'Server refused the language',
     )
     h.act(() => h.window.close())
-    h.act(() => h.window.open('uk'))
+    h.act(() => h.window.open('19'))
     expect(h.el('i18n-language-edit-error')?.textContent).not.toContain(
       'Server refused',
     )

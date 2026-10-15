@@ -16,6 +16,8 @@ import { i18nBench, language, mountOver } from './helpers/hilosI18n.js'
 
 const english = {
   ...language,
+  languageId: 11,
+  rowKey: '11',
   code: 'en',
   nativeName: 'English',
   enabled: true,
@@ -25,6 +27,8 @@ const english = {
 }
 const own = {
   ...language,
+  languageId: 46,
+  rowKey: '46',
   code: 'qx',
   nativeName: 'Own tongue',
   isOwn: true,
@@ -216,13 +220,13 @@ describe('HilosI18nLanguagesPage', () => {
     h.act(() => h.delta({ ...own, nativeName: 'Fresh name' }))
     h.click('i18n-languages-delete-qx')
     expect(h.el('modal')?.textContent).toContain('Delete language · Fresh name')
-    expect(h.focuses).toEqual(['qx'])
+    expect(h.focuses).toEqual(['46'])
     h.click('i18n-language-delete-confirm')
     h.click('i18n-language-delete-confirm')
     expect(h.calls).toHaveLength(1)
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_language_row_delete',
-      payload: { languageCode: 'qx' },
+      payload: { languageId: 46 },
     })
     expect(
       h.el<HTMLButtonElement>('i18n-language-delete-cancel')?.disabled,
@@ -231,7 +235,7 @@ describe('HilosI18nLanguagesPage', () => {
     h.act(() => h.delta(own, 'row_removed'))
     expect(h.el('modal')).not.toBeNull()
     expect(h.el('i18n-language-delete-notice')).toBeNull()
-    expect(h.el('hilos-table-row-qx')).not.toBeNull()
+    expect(h.el('hilos-table-row-46')).not.toBeNull()
     await h.settle(() => h.succeed())
     expect(h.el('modal')).toBeNull()
     expect(h.focuses.at(-1)).toBe('')
@@ -275,7 +279,7 @@ describe('HilosI18nLanguagesPage', () => {
   it('opens the row window, releases its focus on cancel and on a new context', () => {
     const h = setup([own])
     h.click('i18n-languages-edit-qx')
-    expect(h.focuses).toEqual(['qx'])
+    expect(h.focuses).toEqual(['46'])
     expect(h.el<HTMLInputElement>('i18n-language-edit-code')?.value).toBe('qx')
     expect(h.el<HTMLInputElement>('i18n-language-edit-code')?.disabled).toBe(
       true,

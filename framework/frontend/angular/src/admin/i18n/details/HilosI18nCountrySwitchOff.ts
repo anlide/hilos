@@ -125,9 +125,10 @@ export class HilosI18nCountrySwitchOff {
   protected readonly copy = HILOS_I18N_COUNTRY_SWITCH_OFF_COPY
   protected readonly action = createHilosTrackedAction()
   /** The country the window opened on; null while it is closed. */
-  protected readonly target = signal<{ code: string; label: string } | null>(
-    null,
-  )
+  protected readonly target = signal<{
+    countryId: number
+    label: string
+  } | null>(null)
   protected readonly elsewhere = computed(
     () =>
       this.target() !== null &&
@@ -145,7 +146,10 @@ export class HilosI18nCountrySwitchOff {
     effect(() => {
       const card = this.card()
       const target = this.target()
-      if (target !== null && (card === null || card.code !== target.code)) {
+      if (
+        target !== null &&
+        (card === null || card.countryId !== target.countryId)
+      ) {
         this.target.set(null)
       }
     })
@@ -157,7 +161,10 @@ export class HilosI18nCountrySwitchOff {
       return
     }
     this.action.clearError()
-    this.target.set({ code: card.code, label: hilosI18nCountryLabel(card) })
+    this.target.set({
+      countryId: card.countryId,
+      label: hilosI18nCountryLabel(card),
+    })
   }
 
   protected closeWindow(): void {
@@ -177,7 +184,7 @@ export class HilosI18nCountrySwitchOff {
       return
     }
     if (
-      (await this.action.run(this.command().switchOff(target.code))) &&
+      (await this.action.run(this.command().switchOff(target.countryId))) &&
       !this.destroyRef.destroyed
     ) {
       this.target.set(null)

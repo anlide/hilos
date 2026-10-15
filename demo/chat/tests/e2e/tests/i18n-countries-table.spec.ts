@@ -38,7 +38,9 @@ test('opens the countries list after reflow, pages it and searches it', async ({
   const search = page.getByTestId('hilos-table-search')
   await search.fill('')
   await search.pressSequentially('united', { delay: 10 })
-  const row = page.getByTestId('hilos-table-row-us')
+  const row = page
+    .getByTestId(/^hilos-table-row-/)
+    .filter({ has: page.getByTestId('i18n-countries-link-us') })
   const link = row.getByTestId('i18n-countries-link-us')
   await expect(link).toBeVisible()
   await expect(link).toHaveAttribute('href', '/hilos/i18n/countries/us')

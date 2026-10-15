@@ -18,11 +18,17 @@ import { hilosAdminViewModeKey } from '../../../hilosAdminViewMode.js'
 import HilosI18nLanguageNameWindow from './HilosI18nLanguageNameWindow.vue'
 
 const original: HilosI18nNameRow = {
+  inLanguageId: 47,
+  nameId: 301,
+  rowKey: '47',
   code: 'qw',
   nativeName: 'Writing',
   name: 'Original',
   corrections: [
     {
+      localeId: 501,
+      nameId: 401,
+      countryId: 101,
       localeCode: 'qw-GB',
       countryCode: 'gb',
       countryName: 'UK',
@@ -31,6 +37,7 @@ const original: HilosI18nNameRow = {
   ],
 }
 const originalCard: HilosI18nLanguageCard = {
+  languageId: 46,
   code: 'qx',
   nativeName: 'Subject',
   rtl: false,
@@ -63,8 +70,11 @@ function harness(
 ) {
   const row = {
     ...original,
+    nameId: localeCode === null && name === null ? null : 301,
     name: localeCode === null ? name : '',
-    corrections: [{ ...original.corrections[0]!, name }],
+    corrections: [
+      { ...original.corrections[0]!, nameId: name === null ? null : 401, name },
+    ],
   }
   const focused = createSignal<HilosI18nNameRow | undefined>(undefined)
   const controller = {
@@ -108,7 +118,7 @@ function harness(
     global: { provide: { [hilosAdminViewModeKey as symbol]: ref(viewer) } },
   })
   mounted.push(view)
-  window.open('qw', localeCode)
+  window.open('47', localeCode === null ? null : 501)
   return { view, window, focused, dispatched, card, language }
 }
 function el(id: string): HTMLElement | null {
@@ -137,6 +147,31 @@ function enter(): void {
 }
 
 describe('language name modal', () => {
+  it.each([null, 'qw-GB'])(
+    'keeps the draft and blocks a same-text replacement at %s',
+    async (localeCode) => {
+      const h = harness('Original', localeCode)
+      await settled()
+      await fill('Keep my draft')
+      h.focused.set({
+        ...original,
+        ...(localeCode === null
+          ? { nameId: 999 }
+          : {
+              corrections: [
+                { ...original.corrections[0]!, nameId: 999, name: 'Original' },
+              ],
+            }),
+      })
+      await settled()
+      expect(input().value).toBe('Keep my draft')
+      expect(button('submit').disabled).toBe(true)
+      expect(button('submit').textContent).toContain('Deleted')
+      await h.window.save(() => Promise.resolve(true))
+      expect(h.dispatched).toEqual([])
+    },
+  )
+
   it.each([
     [null, null, 'Add name', 'value'],
     ['', null, 'Edit name', 'value'],
@@ -191,9 +226,10 @@ describe('language name modal', () => {
       expect(h.dispatched[0]).toMatchObject({
         name: 'hilos_i18n_language_name_add',
         payload: {
-          languageCode: 'qx',
-          inLanguageCode: 'qw',
-          localeCode,
+          languageId: 46,
+          inLanguageId: 47,
+          baseNameId: localeCode === null ? null : 301,
+          localeId: localeCode === null ? null : 501,
           name: '',
         },
       })
@@ -215,9 +251,10 @@ describe('language name modal', () => {
       button('submit').click()
       expect(h.dispatched[1]).toMatchObject({
         payload: {
-          languageCode: 'qx',
-          inLanguageCode: 'qw',
-          localeCode,
+          languageId: 46,
+          inLanguageId: 47,
+          baseNameId: localeCode === null ? null : 301,
+          localeId: localeCode === null ? null : 501,
           name: '  My value  ',
         },
       })
@@ -241,9 +278,10 @@ describe('language name modal', () => {
       expect(h.dispatched[0]).toMatchObject({
         name: 'hilos_i18n_language_name_update',
         payload: {
-          languageCode: 'qx',
-          inLanguageCode: 'qw',
-          localeCode,
+          languageId: 46,
+          inLanguageId: 47,
+          nameId: localeCode === null ? 301 : 401,
+          localeId: localeCode === null ? null : 501,
           name: '   ',
           expectedName: '',
         },
@@ -303,7 +341,7 @@ describe('language name modal', () => {
       'Could not save.',
     )
     h.window.close()
-    h.window.open('qw')
+    h.window.open('47')
     await settled()
     expect(el('i18n-language-name-error')?.textContent).not.toContain(
       'Could not save.',
@@ -395,7 +433,7 @@ describe('language name modal', () => {
       h.language.set('qz')
       h.card.set({ ...originalCard, code: 'qz' })
       await settled()
-      h.window.open('qw')
+      h.window.open('47')
       await settled()
       await fill('New draft')
       button('submit').click()

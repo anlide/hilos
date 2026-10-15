@@ -19,6 +19,23 @@ function setup(viewer = false) {
 }
 
 describe('React country card', () => {
+  it('keeps a draft without retargeting a same-code country replacement', () => {
+    const h = setup()
+    act(() => h.card())
+    click('country-card-edit')
+    change('i18n-country-edit-currency-symbol', 'draft')
+    act(() => h.card({ ...countryCard, countryId: countryCard.countryId + 1 }))
+    expect(
+      el<HTMLInputElement>('i18n-country-edit-currency-symbol').value,
+    ).toBe('draft')
+    expect(el<HTMLButtonElement>('i18n-country-save').disabled).toBe(true)
+    expect(el('i18n-country-save').textContent).toContain('Deleted')
+    fireEvent.submit(
+      el<HTMLInputElement>('i18n-country-edit-currency-symbol').form!,
+    )
+    expect(h.calls).toHaveLength(0)
+  })
+
   it('distinguishes loading from a deleted card and renders live fields, marks, counts and code-addressed tabs', () => {
     const h = setup()
     expect(
@@ -47,6 +64,7 @@ describe('React country card', () => {
         summary: {
           ...countryCard.summary,
           name: 'Changed',
+          defaultLocaleId: 11143,
           defaultLocaleCode: 'en-GG',
           isOwn: true,
           localeCount: 4,
@@ -103,7 +121,7 @@ describe('React country card', () => {
     fireEvent.submit(document.querySelector('form')!)
     expect(h.calls).toEqual([])
   })
-  it('saves through the card action without sending an id', async () => {
+  it('saves through the card action with its captured country ID', async () => {
     const h = setup()
     act(() => h.card())
     click('country-card-edit')
@@ -112,10 +130,10 @@ describe('React country card', () => {
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_country_update',
       payload: {
-        countryCode: 'gg',
+        countryId: 143,
         currencySymbol: 'Mine',
         currencyCode: 'GBP',
-        defaultLocaleCode: null,
+        defaultLocaleId: null,
       },
     })
     act(() => h.card({ ...countryCard, currencySymbol: 'Mine' }))
@@ -162,6 +180,7 @@ describe('React country card', () => {
       })
       h.card({
         ...countryCard,
+        countryId: 103,
         code: 'fr',
         summary: { ...countryCard.summary, name: 'Français' },
       })
@@ -178,6 +197,7 @@ describe('React country card', () => {
       })
       h.card({
         ...countryCard,
+        countryId: 148,
         code: 'ar',
         summary: { ...countryCard.summary, name: 'العربية' },
       })
@@ -205,7 +225,7 @@ describe('React country card', () => {
     act(() => h.card())
     click('country-card-edit')
     const next = harness(HilosPages.I18N_COUNTRY)
-    next.card({ ...countryCard, code: 'fr' })
+    next.card({ ...countryCard, countryId: 103, code: 'fr' })
     h.view.rerender(
       <HilosRouterContext.Provider value={h.navigation}>
         <HilosI18nCountryPage context={next.context} />
@@ -221,6 +241,7 @@ describe('React country card', () => {
     const next = harness(HilosPages.I18N_COUNTRY)
     next.card({
       ...countryCard,
+      countryId: 103,
       code: 'fr',
       summary: { ...countryCard.summary, name: 'Français' },
     })

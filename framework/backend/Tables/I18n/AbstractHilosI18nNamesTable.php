@@ -10,11 +10,11 @@ use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
-use Hilos\Core\Table\Definition\TableDefinition;
-use Hilos\Core\Table\Definition\WindowScopedViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\Definition\TableDefinition;
+use Hilos\Core\Table\Definition\WindowScopedViewportTable;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
@@ -25,8 +25,11 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Object\Item\Country as ObjectCountry;
 use Hilos\Database\Object\Item\CountryName as ObjectCountryName;
 use Hilos\Database\Object\Item\Language as ObjectLanguage;
+use Hilos\Database\Object\Item\LanguageName as ObjectLanguageName;
 use Hilos\Database\Object\Item\Locale as ObjectLocale;
+use Hilos\Database\View\Item\CountryName;
 use Hilos\Database\View\Item\Language as DbLanguage;
+use Hilos\Database\View\Item\LanguageName;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\I18n\DefaultLanguage;
@@ -82,11 +85,13 @@ abstract class AbstractHilosI18nNamesTable extends TableDefinition implements Wi
         BrowserSourceKey::KEY => HilosDbContext::countries,
     ];
 
-    /** Row of the anchor: one row per language, keyed by its code. */
+    /** Row of the anchor: one row per language, keyed by its primary ID. */
     protected const array LANGUAGES_ROW = [
         BrowserTableFieldKey::SOURCE => self::LANGUAGES_SOURCE,
-        BrowserTableFieldKey::ROW_KEY => ObjectLanguage::code,
-        BrowserTableFieldKey::FIELDS => [ObjectLanguage::code, ObjectLanguage::nativeName],
+        BrowserTableFieldKey::ROW_KEY => ObjectLanguage::id,
+        BrowserTableFieldKey::FIELDS => [
+            ObjectLanguage::id => HilosI18nNameTableRow::inLanguageId, ObjectLanguage::code, ObjectLanguage::nativeName,
+        ],
     ];
 
     /** Locales joined to the row of their language. */
@@ -139,9 +144,12 @@ abstract class AbstractHilosI18nNamesTable extends TableDefinition implements Wi
         $subjectId = $this->subjectIdOf($window);
         if ($subjectId === null) {
             // The subject left: nothing of the window stands on anything any more. Asked only for a
-            // change of the subject's own collection, so a window opened on a code that never
+            // change of the subject's own collection, so a window opened on an ID that never
             // existed is not sent a removal of every row on every write.
-            return $change->sourceKey === $this->subjectCollection() ? $this->removeEveryRow() : [];
+            return $change->sourceKey === $this->subjectCollection()
+                && $change->mutationType === TableMutationType::Delete
+                && (int) $change->sourceId === ($window->filter[$this->filterKey()] ?? null)
+                ? $this->removeEveryRow() : [];
         }
 
         if ($change->sourceKey === HilosDbContext::languages) {
@@ -189,7 +197,7 @@ abstract class AbstractHilosI18nNamesTable extends TableDefinition implements Wi
     /**
      * Answers whether the window of a subject holds the row of one language.
      *
-     * @param string|int $rowKey Code of the row's language
+     * @param string|int $rowKey Decimal primary ID of the row's language
      * @param TableQueryDTO $query Window query whose filter names the subject
      * @return bool Whether the row is in the subject's set
      * @throws HilosException When an i18n collection cannot be read
@@ -198,13 +206,17 @@ abstract class AbstractHilosI18nNamesTable extends TableDefinition implements Wi
     public function containsRow(string|int $rowKey, TableQueryDTO $query): bool
     {
         $subjectId = $this->subjectIdOf($query);
-        $language = Hilos::$db->languages[(string) $rowKey];
+        $id = filter_var($rowKey, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($id === false || (string) $id !== (string) $rowKey) {
+            return false;
+        }
+        $language = Hilos::$db->languages[$id];
         if ($subjectId === null || $language === null || $this->excludesRowLanguage($subjectId, (int) $language->id)) {
             return false;
         }
 
         return $this->containsRowInMemory(
-            [[HilosI18nNameTableRow::rowKey => $language->code]],
+            [[HilosI18nNameTableRow::rowKey => (string) $language->id]],
             $rowKey,
             $this->scopeSearch($query),
         );
@@ -221,13 +233,19 @@ abstract class AbstractHilosI18nNamesTable extends TableDefinition implements Wi
     public function wireFields(): array
     {
         $name = $this->nameWireField();
+        $nameId = WireField::column($this->namesCollection(), ObjectLanguageName::id);
 
         return [
-            HilosI18nNameTableRow::rowKey => WireField::column(HilosDbContext::languages, ObjectLanguage::code),
+            HilosI18nNameTableRow::rowKey => WireField::column(HilosDbContext::languages, ObjectLanguage::id),
+            HilosI18nNameTableRow::inLanguageId => WireField::column(HilosDbContext::languages, ObjectLanguage::id),
             HilosI18nNameTableRow::code => WireField::column(HilosDbContext::languages, ObjectLanguage::code),
             HilosI18nNameTableRow::nativeName => WireField::column(HilosDbContext::languages, ObjectLanguage::nativeName),
+            HilosI18nNameTableRow::nameId => $nameId,
             HilosI18nNameTableRow::name => $name,
             HilosI18nNameTableRow::corrections => WireField::each([
+                HilosI18nNameTableRow::nameId => $nameId,
+                HilosI18nNameTableRow::localeId => WireField::column(HilosDbContext::locales, ObjectLocale::id),
+                HilosI18nNameTableRow::countryId => WireField::column(HilosDbContext::countries, ObjectCountry::id),
                 HilosI18nNameTableRow::localeCode => WireField::column(HilosDbContext::locales, ObjectLocale::code),
                 HilosI18nNameTableRow::countryCode => WireField::column(HilosDbContext::countries, ObjectCountry::code),
                 HilosI18nNameTableRow::countryName => WireField::column(HilosDbContext::countryNames, ObjectCountryName::name),
@@ -239,7 +257,7 @@ abstract class AbstractHilosI18nNamesTable extends TableDefinition implements Wi
     /**
      * Names the filter key the window's subject travels under.
      *
-     * @return string Filter-map key holding the subject's code
+     * @return string Filter-map key holding the subject's ID
      */
     abstract protected function filterKey(): string;
 
@@ -265,30 +283,30 @@ abstract class AbstractHilosI18nNamesTable extends TableDefinition implements Wi
     abstract protected function nameWireField(): WireField;
 
     /**
-     * Finds the subject a code names.
+     * Checks that the exact subject still exists.
      *
-     * @param string $code Code of the subject
-     * @return ?int Primary id of the subject, or null when no subject has that code
+     * @param int $id Primary ID of the subject
+     * @return ?int Primary id of the subject, or null when that subject is gone
      * @throws HilosException When the subjects cannot be read
      */
-    abstract protected function subjectId(string $code): ?int;
+    abstract protected function subjectId(int $id): ?int;
 
     /**
      * Reads the base name of the subject written in one language.
      *
      * @param int $subjectId Primary id of the subject
      * @param int $languageId Language the name is written in
-     * @return ?string Base name, '' for a stored empty one, or null when none is written
+     * @return LanguageName|CountryName|null Base name row, or null when none is written
      * @throws HilosException When the names cannot be read
      */
-    abstract protected function baseName(int $subjectId, int $languageId): ?string;
+    abstract protected function baseName(int $subjectId, int $languageId): LanguageName|CountryName|null;
 
     /**
      * Reads the locale corrections of the subject's base name in one language.
      *
      * @param int $subjectId Primary id of the subject
      * @param int $languageId Language the base name is written in
-     * @return array<int, string> Correction by the primary id of its locale
+     * @return array<int, LanguageName|CountryName> Correction row by the primary id of its locale
      * @throws HilosException When the names cannot be read
      */
     abstract protected function overrideNames(int $subjectId, int $languageId): array;
@@ -377,9 +395,9 @@ abstract class AbstractHilosI18nNamesTable extends TableDefinition implements Wi
      */
     private function subjectIdOf(TableQueryDTO $query): ?int
     {
-        $code = $query->filter[$this->filterKey()] ?? null;
+        $id = $query->filter[$this->filterKey()] ?? null;
 
-        return is_string($code) && $code !== '' ? $this->subjectId($code) : null;
+        return is_int($id) && $id > 0 ? $this->subjectId($id) : null;
     }
 
     /**
@@ -398,9 +416,7 @@ abstract class AbstractHilosI18nNamesTable extends TableDefinition implements Wi
         }
 
         if ($change->mutationType === TableMutationType::Delete) {
-            $code = $change->row[ObjectLanguage::code] ?? null;
-
-            return is_string($code) ? [$this->mutation(TableMutationType::Delete, $code)] : [];
+            return [$this->mutation(TableMutationType::Delete, (string) $change->sourceId)];
         }
 
         $language = Hilos::$db->languages[$languageId];
@@ -410,7 +426,7 @@ abstract class AbstractHilosI18nNamesTable extends TableDefinition implements Wi
 
         $type = $change->mutationType === TableMutationType::Create ? TableMutationType::Create : TableMutationType::Update;
 
-        return [$this->mutation($type, $language->code, $this->rowFor($subjectId, $language, $this->defaultLanguageId()))];
+        return [$this->mutation($type, (string) $language->id, $this->rowFor($subjectId, $language, $this->defaultLanguageId()))];
     }
 
     /**
@@ -430,7 +446,7 @@ abstract class AbstractHilosI18nNamesTable extends TableDefinition implements Wi
             if ($language !== null && !$this->excludesRowLanguage($subjectId, $languageId)) {
                 $mutations[] = $this->mutation(
                     TableMutationType::Update,
-                    $language->code,
+                    (string) $language->id,
                     $this->rowFor($subjectId, $language, $defaultLanguageId),
                 );
             }
@@ -476,7 +492,7 @@ abstract class AbstractHilosI18nNamesTable extends TableDefinition implements Wi
     private function removeEveryRow(): array
     {
         return array_map(
-            fn(DbLanguage $language): TableRowMutationDTO => $this->mutation(TableMutationType::Delete, $language->code),
+            fn(DbLanguage $language): TableRowMutationDTO => $this->mutation(TableMutationType::Delete, (string) $language->id),
             $this->languagesByCode(),
         );
     }
@@ -496,9 +512,11 @@ abstract class AbstractHilosI18nNamesTable extends TableDefinition implements Wi
         $name = $this->baseName($subjectId, $languageId);
 
         return new HilosI18nNameTableRow(
+            inLanguageId: $languageId,
             code: $language->code,
             nativeName: $language->nativeName,
-            name: $name,
+            nameId: $name?->id,
+            name: $name?->name,
             corrections: $name === null ? [] : $this->corrections($subjectId, $languageId, $defaultLanguageId),
         );
     }
@@ -509,7 +527,8 @@ abstract class AbstractHilosI18nNamesTable extends TableDefinition implements Wi
      * @param int $subjectId Primary id of the subject
      * @param int $languageId Language the base name is written in
      * @param ?int $defaultLanguageId Primary id of the default language, null when it is not stored
-     * @return list<array{localeCode: string, countryCode: string, countryName: ?string, name: ?string}> Corrections
+     * @return list<array{localeId: int, countryId: int, nameId: ?int, localeCode: string,
+     *     countryCode: string, countryName: ?string, name: ?string}> Corrections
      *     by locale code, the name null where the locale inherits the base
      * @throws HilosException When an i18n collection cannot be read
      */
@@ -523,13 +542,17 @@ abstract class AbstractHilosI18nNamesTable extends TableDefinition implements Wi
                 continue;
             }
 
+            $override = $overrides[$locale->id] ?? null;
             $corrections[] = [
+                HilosI18nNameTableRow::localeId => $locale->id,
+                HilosI18nNameTableRow::countryId => $country->id,
+                HilosI18nNameTableRow::nameId => $override?->id,
                 HilosI18nNameTableRow::localeCode => $locale->code,
                 HilosI18nNameTableRow::countryCode => $country->code,
                 HilosI18nNameTableRow::countryName => $defaultLanguageId === null
                     ? null
                     : Hilos::$db->countryNames->findBase((int) $country->id, $defaultLanguageId)?->name,
-                HilosI18nNameTableRow::name => $overrides[(int) $locale->id] ?? null,
+                HilosI18nNameTableRow::name => $override?->name,
             ];
         }
         usort(

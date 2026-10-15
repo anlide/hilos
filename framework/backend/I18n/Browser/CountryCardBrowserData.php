@@ -23,6 +23,7 @@ final class CountryCardBrowserData
 {
     public const string DATA = 'countryCard';
     public const string FIELD_SUMMARY = 'summary';
+    public const string countryId = 'countryId';
 
     public const array BINDING = [
         BrowserParamKey::PARAMS => [
@@ -68,7 +69,10 @@ final class CountryCardBrowserData
                         BrowserRefKey::KEY => HilosPageRouteParams::HILOS_I18N_COUNTRY_CODE,
                     ],
                 ],
-                BrowserDataFieldKey::FIELDS => [Country::code, Country::currencySymbol, Country::currencyCode, Country::enabled],
+                BrowserDataFieldKey::FIELDS => [
+                    Country::id => self::countryId,
+                    Country::code, Country::currencySymbol, Country::currencyCode, Country::enabled,
+                ],
                 BrowserDataFieldKey::COMPUTED => [self::FIELD_SUMMARY],
                 BrowserDataFieldKey::NOT_PERSONAL => [self::FIELD_SUMMARY],
             ],

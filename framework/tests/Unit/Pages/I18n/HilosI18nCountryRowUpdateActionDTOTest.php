@@ -15,17 +15,17 @@ use PHPUnit\Framework\TestCase;
 final class HilosI18nCountryRowUpdateActionDTOTest extends TestCase
 {
     private const array PAYLOAD = [
-        HilosI18nCountryRowUpdateActionDTO::countryCode => 'ie',
+        HilosI18nCountryRowUpdateActionDTO::countryId => 140,
         HilosI18nCountryRowUpdateActionDTO::currencySymbol => 'IE€',
         HilosI18nCountryRowUpdateActionDTO::currencyCode => 'EUR',
-        HilosI18nCountryRowUpdateActionDTO::defaultLocaleCode => 'en-IE',
+        HilosI18nCountryRowUpdateActionDTO::defaultLocaleId => 11140,
     ];
 
     /** Keeps the explicit null key and the inherited factory's concrete row action. */
     public function testReadsRawWrappedAndNullLocalePayloads(): void
     {
-        foreach (['en-IE', 'en', null] as $code) {
-            $payload = array_replace(self::PAYLOAD, [HilosI18nCountryRowUpdateActionDTO::defaultLocaleCode => $code]);
+        foreach ([11140, 11000, null] as $code) {
+            $payload = array_replace(self::PAYLOAD, [HilosI18nCountryRowUpdateActionDTO::defaultLocaleId => $code]);
             foreach ([$payload, [SignalPayloadConstants::FIELD_DATA => $payload]] as $input) {
                 $dto = HilosI18nCountryRowUpdateActionDTO::fromArray($input);
                 self::assertSame($payload, $dto->toArray());
@@ -37,14 +37,14 @@ final class HilosI18nCountryRowUpdateActionDTOTest extends TestCase
     /** @return iterable<string, array{array<string, mixed>}> Invalid request shapes */
     public static function invalidPayloads(): iterable
     {
-        foreach (['IE', 'iee', '', "ie\n", 42] as $invalid) {
+        foreach (['140', 0, -1, 140.0, '', null, true, false] as $invalid) {
             yield 'country ' . var_export($invalid, true) => [array_replace(self::PAYLOAD, [
-                HilosI18nCountryRowUpdateActionDTO::countryCode => $invalid,
+                HilosI18nCountryRowUpdateActionDTO::countryId => $invalid,
             ])];
         }
-        foreach (['en_IE', 'EN-IE', 'en-ie', '', "en-IE\n", 42, false] as $invalid) {
+        foreach (['11140', 0, -1, 11140.0, '', true, false] as $invalid) {
             yield 'locale ' . var_export($invalid, true) => [array_replace(self::PAYLOAD, [
-                HilosI18nCountryRowUpdateActionDTO::defaultLocaleCode => $invalid,
+                HilosI18nCountryRowUpdateActionDTO::defaultLocaleId => $invalid,
             ])];
         }
         foreach ([HilosI18nCountryRowUpdateActionDTO::currencySymbol, HilosI18nCountryRowUpdateActionDTO::currencyCode] as $key) {
@@ -57,6 +57,9 @@ final class HilosI18nCountryRowUpdateActionDTOTest extends TestCase
             unset($missing[$key]);
             yield 'missing ' . $key => [$missing];
         }
+        yield 'legacy code target' => [[
+            'countryCode' => 'ie', 'currencySymbol' => '€', 'currencyCode' => 'EUR', 'defaultLocaleCode' => 'en-IE',
+        ]];
         yield 'malformed envelope' => [[SignalPayloadConstants::FIELD_DATA => 'bad']];
     }
 

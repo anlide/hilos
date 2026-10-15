@@ -18,6 +18,9 @@ import { HILOS_ADMIN_VIEW_MODE } from '../src/hilosLookOnly.js'
 import { englishName, i18nBench, mountOver } from './helpers/hilosI18n.js'
 
 const coordinates = {
+  inLanguageId: 11,
+  nameId: 301,
+  languageId: 19,
   languageCode: 'uk',
   languageNativeName: 'Українська',
   inLanguageCode: 'en',
@@ -31,6 +34,8 @@ const base: HilosI18nLanguageNameDeleteTarget = {
 const emptyCorrection: HilosI18nLanguageNameDeleteTarget = {
   ...coordinates,
   kind: 'override',
+  localeId: 502,
+  nameId: 402,
   localeCode: 'en-US',
   expectedName: '',
 }
@@ -74,8 +79,9 @@ describe('HilosI18nLanguageNameDelete', () => {
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_language_name_delete',
       payload: {
-        languageCode: 'uk',
-        inLanguageCode: 'en',
+        languageId: 19,
+        inLanguageId: 11,
+        nameId: 301,
         expectedName: 'Ukrainian',
       },
     })
@@ -84,7 +90,12 @@ describe('HilosI18nLanguageNameDelete', () => {
     ).toBe(true)
     expect(h.el<HTMLButtonElement>('modal-close')?.disabled).toBe(true)
     h.escape()
-    h.set('source', { ...englishName, name: null, corrections: [] })
+    h.set('source', {
+      ...englishName,
+      nameId: null,
+      name: null,
+      corrections: [],
+    })
     expect(h.el('modal')).not.toBeNull()
     expect(h.el('i18n-language-name-delete-window')?.textContent).not.toContain(
       'The name no longer exists.',
@@ -109,9 +120,10 @@ describe('HilosI18nLanguageNameDelete', () => {
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_language_name_override_delete',
       payload: {
-        languageCode: 'uk',
-        inLanguageCode: 'en',
-        localeCode: 'en-US',
+        languageId: 19,
+        inLanguageId: 11,
+        nameId: 402,
+        localeId: 502,
         expectedName: '',
       },
     })
@@ -136,7 +148,11 @@ describe('HilosI18nLanguageNameDelete', () => {
 
   it.each([
     ['base', base, null],
-    ['row', base, { ...englishName, code: 'es' }],
+    [
+      'row',
+      base,
+      { ...englishName, inLanguageId: 15, rowKey: '15', code: 'es' },
+    ],
     [
       'correction',
       emptyCorrection,
@@ -144,6 +160,7 @@ describe('HilosI18nLanguageNameDelete', () => {
         ...englishName,
         corrections: englishName.corrections.map((item) => ({
           ...item,
+          nameId: null,
           name: null,
         })),
       },

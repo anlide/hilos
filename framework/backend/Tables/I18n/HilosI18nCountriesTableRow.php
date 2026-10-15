@@ -9,20 +9,16 @@ use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\I18n\DTO\CountryCardSummary;
 use Hilos\I18n\DTO\CountryLocaleChoice;
 
-/**
- * Backend row of the countries table (HIL-1475).
- *
- * One row is one country of the system, switched on or off. The row key is the country code
- * and rides the payload under {@see self::code}, never `id`: a slot carrying `id` is taken by
- * the frontend normalizer for an entity fragment. An absent base name and an absent default
- * locale stay null here; the view is what draws the code and the "Not chosen" badge.
- */
+/** One country, keyed by its decimal primary ID without an entity-fragment id field. */
 final class HilosI18nCountriesTableRow extends AbstractTableRow
 {
+    public const string rowKey = 'rowKey';
+    public const string countryId = 'countryId';
     public const string code = 'code';
     public const string name = 'name';
     public const string currencySymbol = 'currencySymbol';
     public const string currencyCode = 'currencyCode';
+    public const string defaultLocaleId = 'defaultLocaleId';
     public const string defaultLocaleCode = 'defaultLocaleCode';
     public const string enabled = 'enabled';
     public const string isOwn = 'isOwn';
@@ -32,10 +28,12 @@ final class HilosI18nCountriesTableRow extends AbstractTableRow
     public const string deleteReason = 'deleteReason';
 
     /**
-     * @param string $code Country code, which is also the row key
+     * @param int $countryId Persisted country ID
+     * @param string $code Country code
      * @param ?string $name Non-empty base name in the default language, or null when none is written
      * @param string $currencySymbol Symbol displayed with an amount
      * @param string $currencyCode Three-letter currency code
+     * @param ?int $defaultLocaleId Selected locale ID, or null
      * @param ?string $defaultLocaleCode Code of the country's default locale, or null when none is chosen
      * @param bool $enabled Whether the country is switched on
      * @param bool $isOwn Whether the code is absent from the built-in catalog
@@ -43,12 +41,15 @@ final class HilosI18nCountriesTableRow extends AbstractTableRow
      * @param ?string $catalogDefaultLocaleCode Built-in catalog suggestion, whether created or not
      * @param bool $canDelete Whether the country rule permits deletion
      * @param ?string $deleteReason Catalog or dependency refusal, or null when deletion is permitted
+     * @throws InvalidFormatException When a row ID is not positive
      */
     public function __construct(
+        public int $countryId,
         public string $code,
         public ?string $name,
         public string $currencySymbol,
         public string $currencyCode,
+        public ?int $defaultLocaleId,
         public ?string $defaultLocaleCode,
         public bool $enabled,
         public bool $isOwn,
@@ -57,14 +58,17 @@ final class HilosI18nCountriesTableRow extends AbstractTableRow
         public bool $canDelete,
         public ?string $deleteReason,
     ) {
+        if ($countryId <= 0 || ($defaultLocaleId !== null && $defaultLocaleId <= 0)) {
+            throw new InvalidFormatException('Invalid country ID');
+        }
     }
 
     /**
-     * @return string Country code
+     * @return string Decimal country ID
      */
     public function getRowKey(): string
     {
-        return $this->code;
+        return (string) $this->countryId;
     }
 
     /**
@@ -72,7 +76,7 @@ final class HilosI18nCountriesTableRow extends AbstractTableRow
      */
     public static function keyField(): string
     {
-        return self::code;
+        return self::rowKey;
     }
 
     /**
@@ -81,10 +85,13 @@ final class HilosI18nCountriesTableRow extends AbstractTableRow
     public function toArray(): array
     {
         return [
+            self::rowKey => $this->getRowKey(),
+            self::countryId => $this->countryId,
             self::code => $this->code,
             self::name => $this->name,
             self::currencySymbol => $this->currencySymbol,
             self::currencyCode => $this->currencyCode,
+            self::defaultLocaleId => $this->defaultLocaleId,
             self::defaultLocaleCode => $this->defaultLocaleCode,
             self::enabled => $this->enabled,
             self::isOwn => $this->isOwn,
@@ -102,12 +109,21 @@ final class HilosI18nCountriesTableRow extends AbstractTableRow
      */
     public static function fromArray(array $data): static
     {
+        if (self::requireString($data, self::rowKey) !== (string) self::requireInt($data, self::countryId)) {
+            throw new InvalidFormatException('Row key does not match the country ID');
+        }
+        if (!array_key_exists(self::defaultLocaleId, $data)
+            || ($data[self::defaultLocaleId] !== null
+                && (!is_int($data[self::defaultLocaleId]) || $data[self::defaultLocaleId] <= 0))) {
+            throw new InvalidFormatException('Invalid default locale ID');
+        }
         $locales = [];
         foreach (self::requireArray($data, self::locales) as $locale) {
             if (!is_array($locale)) {
                 throw new InvalidFormatException('Country locale choice must be an object');
             }
             $locales[] = new CountryLocaleChoice(
+                self::requireInt($locale, CountryLocaleChoice::localeId),
                 self::requireString($locale, CountryLocaleChoice::code),
                 self::requireBool($locale, CountryLocaleChoice::enabled),
             );
@@ -126,10 +142,12 @@ final class HilosI18nCountriesTableRow extends AbstractTableRow
         }
 
         return new static(
+            countryId: self::requireInt($data, self::countryId),
             code: self::requireString($data, self::code),
             name: self::optionalString($data, self::name),
             currencySymbol: self::requireString($data, self::currencySymbol),
             currencyCode: self::requireString($data, self::currencyCode),
+            defaultLocaleId: $data[self::defaultLocaleId],
             defaultLocaleCode: self::optionalString($data, self::defaultLocaleCode),
             enabled: self::requireBool($data, self::enabled),
             isOwn: self::requireBool($data, self::isOwn),

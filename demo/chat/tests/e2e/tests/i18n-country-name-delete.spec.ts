@@ -3,6 +3,7 @@ import {
   dismissToasts,
   shownByTestId,
   sidewaysOverflow,
+  i18nNameRow,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import {
@@ -21,10 +22,10 @@ const CANCEL = 'i18n-country-name-delete-cancel'
 async function openNames(page: Page): Promise<void> {
   await gotoPage(page, NAMES_PATH, PAGE_READY)
   await expect(page.getByTestId('country-card-title')).toHaveText('qj')
-  await expect(
-    shownByTestId(page, /^hilos-table-(row|card)-qk$/),
-  ).toContainText('Fixture base')
-  await clickSubmit(shownByTestId(page, 'hilos-table-expand-qk'))
+  await expect(i18nNameRow(page, 'country', 'qk')).toContainText('Fixture base')
+  await clickSubmit(
+    i18nNameRow(page, 'country', 'qk').getByTestId(/^hilos-table-expand-/),
+  )
   await expect(
     shownByTestId(page, 'i18n-names-correction-qk-GB'),
   ).toContainText('Fixture correction')
@@ -86,9 +87,9 @@ test('removes country name corrections and their base live in two windows, inclu
       await expect(shownByTestId(tab, 'i18n-names-inherit-qk-GB')).toHaveText(
         'as in “HIL-1501 writing”',
       )
-      await expect(
-        shownByTestId(tab, /^hilos-table-(row|card)-qk$/),
-      ).toContainText('Fixture base')
+      await expect(i18nNameRow(tab, 'country', 'qk')).toContainText(
+        'Fixture base',
+      )
       await expect(shownByTestId(tab, 'i18n-names-delete-qk-US')).toBeVisible()
       await expect(tab.getByTestId('hilos-table-apply')).toHaveCount(0)
     }
@@ -104,9 +105,9 @@ test('removes country name corrections and their base live in two windows, inclu
       await expect(shownByTestId(tab, 'i18n-names-inherit-qk-US')).toHaveText(
         'as in “HIL-1501 writing”',
       )
-      await expect(
-        shownByTestId(tab, /^hilos-table-(row|card)-qk$/),
-      ).toContainText('Fixture base')
+      await expect(i18nNameRow(tab, 'country', 'qk')).toContainText(
+        'Fixture base',
+      )
     }
 
     await dismissToasts(page)
@@ -127,9 +128,9 @@ test('removes country name corrections and their base live in two windows, inclu
     await expect(page.getByTestId(WINDOW)).toHaveCount(0)
     await expect(baseTrash).toBeFocused()
     for (const tab of [page, observer]) {
-      await expect(
-        shownByTestId(tab, /^hilos-table-(row|card)-qk$/),
-      ).toContainText('Fixture base')
+      await expect(i18nNameRow(tab, 'country', 'qk')).toContainText(
+        'Fixture base',
+      )
       await expect(shownByTestId(tab, 'i18n-names-inherit-qk-GB')).toBeVisible()
     }
 
@@ -141,9 +142,7 @@ test('removes country name corrections and their base live in two windows, inclu
       await expect(shownByTestId(tab, 'i18n-names-none-qk')).toHaveText(
         'No name',
       )
-      await expect(
-        shownByTestId(tab, /^hilos-table-(row|card)-qk$/),
-      ).toBeVisible()
+      await expect(i18nNameRow(tab, 'country', 'qk')).toBeVisible()
       await expect(tab.getByTestId('i18n-names-correction-qk-GB')).toHaveCount(
         0,
       )

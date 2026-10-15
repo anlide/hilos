@@ -23,6 +23,7 @@ const copy = HILOS_I18N_COUNTRY_SWITCH_OFF_COPY
 const action = useTrackedAction()
 const { switchOff } = createHilosI18nCountrySwitchOff(props.context)
 const open = ref(false)
+const openedId = ref<number | null>(null)
 const openedLabel = ref('')
 const modalOpen = computed({
   get: () => open.value,
@@ -39,7 +40,7 @@ const elsewhere = computed(
 watch(
   () => props.card,
   (card) => {
-    if (card === null) {
+    if (card === null || (open.value && card.countryId !== openedId.value)) {
       open.value = false
     }
   },
@@ -50,6 +51,7 @@ function openWindow(): void {
     return
   }
   action.clearError()
+  openedId.value = props.card.countryId
   openedLabel.value = hilosI18nCountryLabel(props.card)
   open.value = true
 }
@@ -61,10 +63,15 @@ function closeWindow(): void {
 }
 
 async function confirm(): Promise<void> {
-  if (action.busy.value || elsewhere.value || props.card === null) {
+  if (
+    action.busy.value ||
+    elsewhere.value ||
+    props.card === null ||
+    openedId.value === null
+  ) {
     return
   }
-  if (await action.run(switchOff(props.card.code))) {
+  if (await action.run(switchOff(openedId.value))) {
     open.value = false
   }
 }

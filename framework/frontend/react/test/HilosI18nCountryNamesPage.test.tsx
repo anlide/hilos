@@ -16,8 +16,24 @@ import { nameRow } from './hilosI18nDetailsHarness.js'
 function setup(viewer = false) {
   const rows = [
     nameRow,
-    { ...nameRow, code: 'fr', name: null, corrections: [] },
-    { ...nameRow, code: 'es', name: '', corrections: [] },
+    {
+      ...nameRow,
+      inLanguageId: 13,
+      nameId: null,
+      rowKey: '13',
+      code: 'fr',
+      name: null,
+      corrections: [],
+    },
+    {
+      ...nameRow,
+      inLanguageId: 15,
+      nameId: 301,
+      rowKey: '15',
+      code: 'es',
+      name: '',
+      corrections: [],
+    },
   ]
   const h = harness(HilosPages.I18N_COUNTRY_NAMES, rows, viewer)
   const view = h.mount(<HilosI18nCountryNamesPage context={h.context} />)
@@ -49,6 +65,7 @@ describe('React country names page', () => {
         summary: {
           ...countryCard.summary,
           name: 'Live country',
+          defaultLocaleId: 11143,
           defaultLocaleCode: 'en-GG',
           nameCount: 5,
         },
@@ -65,7 +82,7 @@ describe('React country names page', () => {
   it('renders add/edit/delete by null for bases and corrections in both projections', () => {
     const h = setup()
     act(() => h.card())
-    click('hilos-table-expand-en')
+    click('hilos-table-expand-11')
     for (const projection of [
       document.querySelector('table')!,
       el('hilos-table-cards'),
@@ -89,25 +106,49 @@ describe('React country names page', () => {
       ).toBeNull()
     }
   })
+  it('adds an absent base through the page with null name coordinates', async () => {
+    const h = setup()
+    act(() => h.card())
+    click('i18n-country-name-add-fr')
+    expect(el('i18n-country-name-title').textContent).toContain('Add name')
+    expect(h.focuses.at(-1)).toBe('13')
+    change('i18n-country-name-input', 'Guernesey')
+    click('i18n-country-name-submit')
+    expect(h.calls).toEqual([
+      {
+        action: 'hilos_i18n_country_name_add',
+        payload: {
+          countryId: 143,
+          inLanguageId: 13,
+          localeId: null,
+          baseNameId: null,
+          name: 'Guernesey',
+        },
+        requestId: expect.any(String),
+      },
+    ])
+    await settle(() => h.succeed())
+    expect(el('i18n-country-name-window')).toBeNull()
+  })
   it('opens a correction beneath an empty base and coordinates its shared focus with deletion', async () => {
     const h = setup()
     act(() => {
       h.card()
       h.delta({ ...nameRow, name: '' })
     })
-    click('hilos-table-expand-en')
+    click('hilos-table-expand-11')
     click('i18n-country-name-locale-edit-en-US')
     expect(el('i18n-country-name-title').textContent).toContain(
       'Edit locale correction',
     )
-    expect(h.focuses).toContain('en')
+    expect(h.focuses).toContain('11')
     await settle(() => click('i18n-names-delete-en'))
     expect(el('i18n-country-name-window')).toBeNull()
     expect(el('i18n-country-name-delete-window')).not.toBeNull()
     click('i18n-country-name-edit-es')
     expect(el('i18n-country-name-delete-window')).toBeNull()
     expect(el('i18n-country-name-window')).not.toBeNull()
-    expect(h.focuses.at(-1)).toBe('es')
+    expect(h.focuses.at(-1)).toBe('15')
   })
   it('freezes the fresh focused text after await and keeps newer values for the server refusal', async () => {
     const h = setup()
@@ -136,7 +177,7 @@ describe('React country names page', () => {
     })
     expect(el('i18n-country-name-delete-window')).toBeNull()
     expect(el('i18n-country-name-window')).not.toBeNull()
-    expect(h.focuses.at(-1)).toBe('es')
+    expect(h.focuses.at(-1)).toBe('15')
   })
   it.each(['idle', 'pending'] as const)(
     'keeps a %s draft or confirmation through card deletion and cleans up on subject change',
@@ -166,14 +207,14 @@ describe('React country names page', () => {
           params: { countryCode: 'fr' },
           admin: true,
         })
-        h.card({ ...countryCard, code: 'fr' })
+        h.card({ ...countryCard, countryId: 103, code: 'fr' })
       })
       expect(el('modal')).toBeNull()
       expect(h.unregister).toHaveBeenCalled()
       expect(h.sendViewport).toHaveBeenLastCalledWith(
         HilosPages.I18N_COUNTRY_NAMES,
         'hilosI18nCountryNames',
-        expect.objectContaining({ filter: { country: 'fr' } }),
+        expect.objectContaining({ filter: { country: 103 } }),
       )
       click('i18n-country-name-edit-en')
       if (mode === 'pending') await settle(() => h.succeed())
@@ -194,17 +235,17 @@ describe('React country names page', () => {
         params: { countryCode: 'fr' },
         admin: true,
       })
-      h.card({ ...countryCard, code: 'fr' })
+      h.card({ ...countryCard, countryId: 103, code: 'fr' })
     })
     expect(el('i18n-country-name-delete-window')).toBeNull()
     click('i18n-country-name-edit-en')
     change('i18n-country-name-input', 'New subject')
     click('i18n-country-name-submit')
     expect(h.calls[0]?.payload).toMatchObject({
-      countryCode: 'fr',
+      countryId: 103,
       name: 'New subject',
     })
-    expect(h.focuses.at(-1)).toBe('en')
+    expect(h.focuses.at(-1)).toBe('11')
     await settle(() => h.succeed())
     expect(el('modal')).toBeNull()
   })
@@ -235,7 +276,7 @@ describe('React country names page', () => {
     const h = setup(true)
     act(() => h.card())
     expect(el<HTMLButtonElement>('i18n-names-delete-en').disabled).toBe(true)
-    click('hilos-table-expand-en')
+    click('hilos-table-expand-11')
     click('i18n-country-name-locale-edit-en-US')
     change('i18n-country-name-input', 'Viewer')
     click('i18n-country-name-submit')
@@ -248,10 +289,10 @@ describe('React country names page', () => {
     const h = setup()
     act(() => h.card())
     act(() => h.delta(nameRow, 'row_removed'))
-    expect(el('hilos-table-row-en').textContent).toContain('English')
+    expect(el('hilos-table-row-11').textContent).toContain('English')
     expect(el('hilos-table-apply')).not.toBeNull()
     click('hilos-table-apply')
-    expect(el('hilos-table-row-en').textContent).toContain('Removed')
+    expect(el('hilos-table-row-11').textContent).toContain('Removed')
     act(() =>
       h.emit('tableWindowRefused', {
         data: {
@@ -265,29 +306,30 @@ describe('React country names page', () => {
   })
   it('draws the immediate catalog base return, removes corrections and waits for the deletion ack', async () => {
     const h = setup()
-    act(() => h.card({ ...countryCard, code: 'gg' }))
+    act(() => h.card({ ...countryCard, countryId: 143, code: 'gg' }))
     await settle(() => click('i18n-names-delete-en'))
     expect(el('i18n-country-name-delete-window').textContent).toContain(
       'returns immediately as an unlocked name',
     )
     click('i18n-country-name-delete-confirm')
     act(() => h.delta({ ...nameRow, name: 'Catalog base', corrections: [] }))
-    expect(el('hilos-table-row-en').textContent).toContain('Catalog base')
+    expect(el('hilos-table-row-11').textContent).toContain('Catalog base')
     expect(el('i18n-country-name-delete-window')).not.toBeNull()
     expect(h.calls[0]?.payload).toEqual({
-      countryCode: 'gg',
-      inLanguageCode: 'en',
+      countryId: 143,
+      inLanguageId: 11,
+      nameId: 301,
       expectedName: 'Ukrainian',
     })
     await settle(() => h.succeed())
     expect(el('modal')).toBeNull()
     expect(el('i18n-country-name-edit-en')).not.toBeNull()
-    expect(el('hilos-table-expand-en')).toBeNull()
+    expect(el('hilos-table-expand-11')).toBeNull()
   })
   it('shows an absent custom base after deletion and inherits the base after removing a correction', async () => {
     const h = setup()
     act(() => h.card())
-    click('hilos-table-expand-en')
+    click('hilos-table-expand-11')
     await settle(() => click('i18n-names-delete-en-US'))
     click('i18n-country-name-delete-confirm')
     act(() =>
@@ -301,10 +343,12 @@ describe('React country names page', () => {
     await settle(() => h.succeed())
     expect(el('i18n-country-name-locale-add-en-US')).not.toBeNull()
     expect(el('i18n-names-delete-en-US')).toBeNull()
-    expect(el('hilos-table-row-en').textContent).toContain('Ukrainian')
+    expect(el('hilos-table-row-11').textContent).toContain('Ukrainian')
     await settle(() => click('i18n-names-delete-en'))
     click('i18n-country-name-delete-confirm')
-    act(() => h.delta({ ...nameRow, name: null, corrections: [] }))
+    act(() =>
+      h.delta({ ...nameRow, nameId: null, name: null, corrections: [] }),
+    )
     await settle(() => h.succeed(1))
     expect(el('i18n-country-name-add-en')).not.toBeNull()
     expect(el('i18n-names-delete-en')).toBeNull()

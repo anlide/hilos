@@ -30,9 +30,9 @@ final class HilosI18nLanguageDeleteActionDTOTest extends TestCase
     #[DataProvider('actions')]
     public function testRawEnvelopeAndJsonRoundtrip(string $dtoClass, string $action): void
     {
-        $payload = ['languageCode' => 'uk'];
+        $payload = ['languageId' => 19];
         $dto = $dtoClass::fromArray($payload);
-        self::assertSame('uk', $dto->languageCode);
+        self::assertSame(19, $dto->languageId);
         self::assertSame($action, $dto->getAction());
         self::assertSame($payload, $dto->toArray());
         self::assertSame($payload, $dtoClass::fromJson($dto->toJson())->toArray());
@@ -44,10 +44,11 @@ final class HilosI18nLanguageDeleteActionDTOTest extends TestCase
     public static function invalidPayloads(): iterable
     {
         foreach (self::actions() as $door => [$dtoClass]) {
-            foreach (['EN', 'eng', 'e', '', "en\n", 'éñ', 42, null, true] as $code) {
-                yield $door . ' ' . var_export($code, true) => [$dtoClass, ['languageCode' => $code]];
+            foreach (['EN', 'eng', 'e', '', "en\n", 'éñ', '19', 0, -1, 19.0, null, true, false] as $code) {
+                yield $door . ' ' . var_export($code, true) => [$dtoClass, ['languageId' => $code]];
             }
             yield $door . ' missing' => [$dtoClass, []];
+            yield $door . ' legacy code' => [$dtoClass, ['languageCode' => 'uk', 'nativeName' => 'Name', 'rtl' => false]];
             yield $door . ' malformed envelope' => [$dtoClass, [SignalPayloadConstants::FIELD_DATA => 'invalid']];
         }
     }

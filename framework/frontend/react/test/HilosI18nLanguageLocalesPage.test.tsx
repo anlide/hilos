@@ -22,7 +22,15 @@ function setup(viewer = false) {
   const rows = [
     countryless,
     { ...localeRow, enabled: true },
-    { ...absentLocale, rowKey: 'uk-US', countryCode: 'us', countryName: null },
+    {
+      ...absentLocale,
+      languageId: 19,
+      countryId: 102,
+      localeId: null,
+      rowKey: '19:102',
+      countryCode: 'us',
+      countryName: null,
+    },
   ]
   const h = harness(HilosPages.I18N_LANGUAGE_LOCALES, rows, viewer)
   h.scope.data.set('localeTemplates', templates)
@@ -112,11 +120,12 @@ describe('React language locales page', () => {
     click('i18n-locale-delete-confirm')
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_locale_delete',
-      payload: { languageCode: 'uk', countryCode: null },
+      payload: { languageId: 19, countryId: null, localeId: 19000 },
     })
     act(() => {
       h.delta({
         ...countryless,
+        localeId: null,
         localeCode: null,
         formats: null,
         enabled: null,
@@ -142,7 +151,13 @@ describe('React language locales page', () => {
     act(() => h.card())
     const stale = el('i18n-locales-delete-uk-GB')
     act(() => {
-      h.delta({ ...localeRow, enabled: null, localeCode: null, formats: null })
+      h.delta({
+        ...localeRow,
+        enabled: null,
+        localeId: null,
+        localeCode: null,
+        formats: null,
+      })
       stale.click()
     })
     expect(el('i18n-locale-delete-window')).toBeNull()
@@ -210,6 +225,10 @@ describe('React language locales page', () => {
     )
     expect(el('i18n-locale-submit').textContent).toBe('Deleted')
     act(() => h.card())
+    expect(el('i18n-locale-submit').textContent).toBe('Deleted')
+    click('i18n-locale-cancel')
+    click('i18n-locales-edit-uk')
+    change('i18n-locale-field-date', 'YYYY-MM-DD')
     click('i18n-locale-submit')
     act(() => {
       h.route.set({
@@ -217,14 +236,14 @@ describe('React language locales page', () => {
         params: { languageCode: 'fr' },
         admin: true,
       })
-      h.card({ ...languageCard, code: 'fr' })
+      h.card({ ...languageCard, languageId: 13, code: 'fr' })
     })
     expect(el('modal')).toBeNull()
     expect(h.unregister).toHaveBeenCalled()
     expect(h.sendViewport).toHaveBeenLastCalledWith(
       HilosPages.I18N_LANGUAGE_LOCALES,
       'hilosI18nLanguageLocales',
-      expect.objectContaining({ filter: { language: 'fr' } }),
+      expect.objectContaining({ filter: { language: 13 } }),
     )
     click('i18n-locales-edit-uk')
     await settle(() => h.succeed())
@@ -263,9 +282,9 @@ describe('React language locales page', () => {
     expect(el('i18n-locales-edit-uk-GB')).not.toBeNull()
     expect(el('hilos-table-apply')).toBeNull()
     act(() => h.delta(localeRow, 'row_removed'))
-    expect(el('hilos-table-row-uk-GB').textContent).toContain('United Kingdom')
+    expect(el('hilos-table-row-19:101').textContent).toContain('United Kingdom')
     click('hilos-table-apply')
-    expect(el('hilos-table-row-uk-GB').textContent).toContain('Removed')
+    expect(el('hilos-table-row-19:101').textContent).toContain('Removed')
     act(() =>
       h.emit('tableWindowRefused', {
         data: {

@@ -10,6 +10,7 @@ import { computedSignal, type ReadonlySignal } from '../../state/signal.js'
 export const LANGUAGE_CARD_DATA = 'languageCard'
 
 export const languageCardSchema = z.strictObject({
+  languageId: z.number().int().positive(),
   code: z.string(),
   nativeName: z.string(),
   rtl: z.boolean(),

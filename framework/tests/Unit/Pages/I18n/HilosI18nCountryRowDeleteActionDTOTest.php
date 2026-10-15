@@ -17,15 +17,15 @@ final class HilosI18nCountryRowDeleteActionDTOTest extends TestCase
     /** @throws InvalidFormatException When a valid fixture cannot be parsed */
     public function testReadsRawAndWrappedPayload(): void
     {
-        $raw = [HilosI18nCountryRowDeleteActionDTO::countryCode => 'it'];
+        $raw = [HilosI18nCountryRowDeleteActionDTO::countryId => 141];
         $dto = HilosI18nCountryRowDeleteActionDTO::fromArray($raw);
         self::assertSame($raw, HilosI18nCountryRowDeleteActionDTO::fromArray($dto->toArray())->toArray());
         self::assertSame($raw, HilosI18nCountryRowDeleteActionDTO::fromJson($dto->toJson())->toArray());
         self::assertSame($raw, HilosI18nCountryRowDeleteActionDTO::fromArray([SignalPayloadConstants::FIELD_DATA => $dto->toArray()])->toArray());
         self::assertSame([], HilosI18nCountryRowDeleteActionDTO::SECRET_FIELDS);
-        self::assertSame('it', HilosI18nCountryRowDeleteActionDTO::fromArray([
+        self::assertSame(141, HilosI18nCountryRowDeleteActionDTO::fromArray([
             SignalPayloadConstants::FIELD_DATA => $raw,
-        ])->countryCode);
+        ])->countryId);
         self::assertSame(
             HilosSignalConstants::HILOS_I18N_COUNTRY_ROW_DELETE,
             HilosI18nCountryRowDeleteActionDTO::fromArray($raw)->getAction(),
@@ -35,16 +35,20 @@ final class HilosI18nCountryRowDeleteActionDTOTest extends TestCase
     /** @return iterable<string, array{array<string, mixed>}> Invalid request shapes */
     public static function invalidPayloads(): iterable
     {
-        yield 'uppercase' => [[HilosI18nCountryRowDeleteActionDTO::countryCode => 'US']];
-        yield 'three letters' => [[HilosI18nCountryRowDeleteActionDTO::countryCode => 'usa']];
-        yield 'empty' => [[HilosI18nCountryRowDeleteActionDTO::countryCode => '']];
-        yield 'not a string' => [[HilosI18nCountryRowDeleteActionDTO::countryCode => 42]];
+        yield 'uppercase' => [[HilosI18nCountryRowDeleteActionDTO::countryId => 'US']];
+        yield 'three letters' => [[HilosI18nCountryRowDeleteActionDTO::countryId => 'usa']];
+        yield 'empty' => [[HilosI18nCountryRowDeleteActionDTO::countryId => '']];
+        yield 'zero ID' => [[HilosI18nCountryRowDeleteActionDTO::countryId => 0]];
         yield 'missing' => [[]];
-        yield 'newline' => [[HilosI18nCountryRowDeleteActionDTO::countryCode => "it\n"]];
-        yield 'one letter' => [[HilosI18nCountryRowDeleteActionDTO::countryCode => 'i']];
-        yield 'non-Latin' => [[HilosI18nCountryRowDeleteActionDTO::countryCode => 'éñ']];
-        yield 'null' => [[HilosI18nCountryRowDeleteActionDTO::countryCode => null]];
-        yield 'boolean' => [[HilosI18nCountryRowDeleteActionDTO::countryCode => true]];
+        yield 'legacy code' => [['countryCode' => 'ca']];
+        foreach (['106', -1, 106.0, null, true, false] as $id) {
+            yield 'invalid ID ' . var_export($id, true) => [['countryId' => $id]];
+        }
+        yield 'newline' => [[HilosI18nCountryRowDeleteActionDTO::countryId => "it\n"]];
+        yield 'one letter' => [[HilosI18nCountryRowDeleteActionDTO::countryId => 'i']];
+        yield 'non-Latin' => [[HilosI18nCountryRowDeleteActionDTO::countryId => 'éñ']];
+        yield 'null' => [[HilosI18nCountryRowDeleteActionDTO::countryId => null]];
+        yield 'boolean' => [[HilosI18nCountryRowDeleteActionDTO::countryId => true]];
         yield 'bad envelope' => [[SignalPayloadConstants::FIELD_DATA => 'it']];
     }
 

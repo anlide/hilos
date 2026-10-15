@@ -79,13 +79,13 @@ async function submit(): Promise<void> {
           :code="row?.code ?? ''"
           :currency-symbol="form.currencySymbol"
           :currency-code="form.currencyCode"
-          :default-locale-code="form.defaultLocaleCode"
+          :default-locale-id="form.defaultLocaleId"
           :locale-options="options"
           :locale-hint="localeHint"
           described-by="i18n-country-plate"
           @update:currency-symbol="window.setSymbol"
           @update:currency-code="window.setCurrencyCode"
-          @update:default-locale-code="window.setDefaultLocale"
+          @update:default-locale-id="window.setDefaultLocale"
         />
       </form>
       <div class="mt-3">

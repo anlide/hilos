@@ -124,9 +124,10 @@ export class HilosI18nLanguageSwitchOff {
   )
   protected readonly action = createHilosTrackedAction()
   /** The language the window opened on; null while it is closed. */
-  protected readonly target = signal<{ code: string; name: string } | null>(
-    null,
-  )
+  protected readonly target = signal<{
+    languageId: number
+    name: string
+  } | null>(null)
   protected readonly elsewhere = computed(
     () =>
       this.target() !== null &&
@@ -144,7 +145,10 @@ export class HilosI18nLanguageSwitchOff {
     effect(() => {
       const card = this.card()
       const target = this.target()
-      if (target !== null && (card === null || card.code !== target.code)) {
+      if (
+        target !== null &&
+        (card === null || card.languageId !== target.languageId)
+      ) {
         this.target.set(null)
       }
     })
@@ -156,7 +160,7 @@ export class HilosI18nLanguageSwitchOff {
       return
     }
     this.action.clearError()
-    this.target.set({ code: card.code, name: card.nativeName })
+    this.target.set({ languageId: card.languageId, name: card.nativeName })
   }
 
   protected closeWindow(): void {
@@ -177,7 +181,7 @@ export class HilosI18nLanguageSwitchOff {
       return
     }
     if (
-      (await this.action.run(this.command().switchOff(target.code))) &&
+      (await this.action.run(this.command().switchOff(target.languageId))) &&
       !this.destroyRef.destroyed
     ) {
       this.target.set(null)

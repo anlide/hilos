@@ -20,17 +20,26 @@ import { hilosAdminViewModeKey } from '../../../hilosAdminViewMode.js'
 import HilosI18nLanguageNameDelete from './HilosI18nLanguageNameDelete.vue'
 
 const row: HilosI18nNameRow = {
+  inLanguageId: 47,
+  nameId: 301,
+  rowKey: '47',
   code: 'qw',
   nativeName: 'Writing',
   name: 'Base name',
   corrections: [
     {
+      localeId: 501,
+      nameId: 401,
+      countryId: 101,
       localeCode: 'qw-GB',
       countryCode: 'gb',
       countryName: 'United Kingdom',
       name: 'Correction',
     },
     {
+      localeId: 502,
+      nameId: 402,
+      countryId: 102,
       localeCode: 'qw-US',
       countryCode: 'us',
       countryName: 'United States',
@@ -40,6 +49,9 @@ const row: HilosI18nNameRow = {
 }
 const baseTarget: HilosI18nLanguageNameDeleteTarget = {
   kind: 'base',
+  inLanguageId: 47,
+  nameId: 301,
+  languageId: 54,
   languageCode: 'qv',
   languageNativeName: 'Target',
   inLanguageCode: 'qw',
@@ -138,6 +150,8 @@ describe('HilosI18nLanguageNameDelete', () => {
           : {
               ...baseTarget,
               kind,
+              localeId: 501,
+              nameId: 401,
               localeCode: 'qw-GB',
               expectedName: 'Correction',
             }
@@ -169,10 +183,11 @@ describe('HilosI18nLanguageNameDelete', () => {
             ? HILOS_I18N_LANGUAGE_NAME_DELETE_ACTION
             : HILOS_I18N_LANGUAGE_NAME_OVERRIDE_DELETE_ACTION,
         payload: {
-          languageCode: 'qv',
-          inLanguageCode: 'qw',
+          languageId: 54,
+          inLanguageId: 47,
+          nameId: target.nameId,
           expectedName: target.expectedName,
-          ...(kind === 'override' ? { localeCode: 'qw-GB' } : {}),
+          ...(kind === 'override' ? { localeId: 501 } : {}),
         },
       })
       expect(control('confirm').disabled).toBe(true)
@@ -213,7 +228,14 @@ describe('HilosI18nLanguageNameDelete', () => {
       const target: HilosI18nLanguageNameDeleteTarget =
         kind === 'base'
           ? { ...baseTarget, expectedName: '' }
-          : { ...baseTarget, kind, localeCode: 'qw-US', expectedName: '' }
+          : {
+              ...baseTarget,
+              kind,
+              localeId: 502,
+              nameId: 402,
+              localeCode: 'qw-US',
+              expectedName: '',
+            }
       const s = harness(target)
       s.source.value = { ...row, name: '' }
       await settled()
@@ -272,6 +294,8 @@ describe('HilosI18nLanguageNameDelete', () => {
       const s = harness({
         ...baseTarget,
         kind: 'override',
+        localeId: 501,
+        nameId: 401,
         localeCode: 'qw-GB',
         expectedName: 'Correction',
       })
@@ -280,9 +304,9 @@ describe('HilosI18nLanguageNameDelete', () => {
         missing === 'row'
           ? null
           : missing === 'base'
-            ? { ...row, name: null }
+            ? { ...row, nameId: null, name: null }
             : missing === 'coordinate'
-              ? { ...row, code: 'en' }
+              ? { ...row, inLanguageId: 11, rowKey: '11', code: 'en' }
               : { ...row, corrections: [] }
       await settled()
       expect(s.open.value).toBe(true)

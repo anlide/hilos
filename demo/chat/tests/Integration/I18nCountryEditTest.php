@@ -33,6 +33,11 @@ use Hilos\Pages\I18n\Details\DTO\HilosI18nCountryUpdateActionDTO;
 use Hilos\Pages\I18n\Lists\DTO\HilosI18nCountryRowUpdateActionDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Pages\I18n\Details\DTO\HilosI18nCountryDeleteActionDTO;
+use Hilos\Pages\I18n\Details\DTO\HilosI18nCountrySwitchOnActionDTO;
+use Hilos\Pages\I18n\Details\DTO\HilosI18nCountrySwitchOffActionDTO;
+use Hilos\Pages\I18n\Lists\DTO\HilosI18nCountryRowDeleteActionDTO;
 use PHPUnit\Framework\Attributes\DataProvider;
 
 /** Both country edit entrances use the same owned write door and tracked acknowledgements. */
@@ -140,6 +145,93 @@ final class I18nCountryEditTest extends IntegrationTestCase
         parent::tearDown();
     }
 
+    /** @return iterable<string, array{class-string<ActionPayloadDTO>, bool}> Existing-country mutation doors */
+    public static function idActions(): iterable
+    {
+        yield 'card update' => [HilosI18nCountryUpdateActionDTO::class, false];
+        yield 'row update' => [HilosI18nCountryRowUpdateActionDTO::class, true];
+        yield 'switch on' => [HilosI18nCountrySwitchOnActionDTO::class, false];
+        yield 'switch off' => [HilosI18nCountrySwitchOffActionDTO::class, false];
+        yield 'card delete' => [HilosI18nCountryDeleteActionDTO::class, false];
+        yield 'row delete' => [HilosI18nCountryRowDeleteActionDTO::class, true];
+    }
+
+    /**
+     * @param class-string<ActionPayloadDTO> $dtoClass Action parser
+     * @param bool $fromList Whether the action belongs to the list
+     */
+    #[DataProvider('idActions')]
+    public function testOldCountryIdCannotMutateASameCodeReplacement(string $dtoClass, bool $fromList): void
+    {
+        $this->underAgent($this->agent, function () use ($dtoClass, $fromList): void {
+            $this->createdCountries[] = 'qx';
+            $oldId = Hilos::$db->countries->actions->create('qx', 'first', 'XXX')->id;
+            Hilos::$db->countries[$oldId]->actions->delete();
+            $replacement = Hilos::$db->countries->actions->create('qx', 'next', 'XXX');
+            self::assertNotSame($oldId, $replacement->id);
+            $page = $fromList ? new CountriesListPage($this->agent) : new CountryDetailPage($this->agent);
+            $payload = ['countryId' => $oldId, 'currencySymbol' => 'edited', 'currencyCode' => 'EUR', 'defaultLocaleId' => null];
+            $stale = $dtoClass::fromArray($payload);
+            try {
+                $page->onAction('stale-country', $stale->getAction(), $stale);
+                self::fail('A deleted ID must not find a replacement by code');
+            } catch (TableActionException $error) {
+                self::assertSame('Unknown country: ' . $oldId, $error->getMessage());
+            }
+            self::assertSame('next', $replacement->currencySymbol);
+            self::assertSame('XXX', $replacement->currencyCode);
+            self::assertFalse($replacement->enabled);
+            self::assertNull($replacement->defaultLocaleId);
+            self::assertSame($replacement->id, Hilos::$db->countries['qx']->id);
+
+            $fresh = $dtoClass::fromArray(array_replace($payload, ['countryId' => $replacement->id]));
+            $page->onAction('fresh-country', $fresh->getAction(), $fresh);
+            if ($fresh instanceof HilosI18nCountryDeleteActionDTO || $fresh instanceof HilosI18nCountryRowDeleteActionDTO) {
+                self::assertNull(Hilos::$db->countries[$replacement->id]);
+            } elseif ($fresh instanceof HilosI18nCountryUpdateActionDTO || $fresh instanceof HilosI18nCountryRowUpdateActionDTO) {
+                self::assertSame('edited', $replacement->currencySymbol);
+                self::assertSame('EUR', $replacement->currencyCode);
+            } else {
+                self::assertSame($fresh instanceof HilosI18nCountrySwitchOnActionDTO, $replacement->enabled);
+            }
+        });
+    }
+
+    /** @param bool $fromList Whether to use the table update door */
+    #[DataProvider('doors')]
+    public function testStaleDefaultLocaleIdDoesNotSelectItsSameCodeReplacement(bool $fromList): void
+    {
+        $this->underAgent($this->agent, function () use ($fromList): void {
+            $this->createdCountries[] = 'qx';
+            $country = Hilos::$db->countries->actions->create('qx', '¤', 'XXX');
+            $create = static fn () => Hilos::$db->locales->actions->create(
+                Hilos::$db->languages['en'], $country, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+            );
+            $old = $create();
+            $oldId = $old->id;
+            $old->actions->delete();
+            $replacement = $create();
+            $this->createdLocales[] = 'en-QX';
+            self::assertNotSame($oldId, $replacement->id);
+            $page = $fromList ? new CountriesListPage($this->agent) : new CountryDetailPage($this->agent);
+            $dtoClass = $fromList ? HilosI18nCountryRowUpdateActionDTO::class : HilosI18nCountryUpdateActionDTO::class;
+            $stale = new $dtoClass($country->id, 'edited', 'EUR', $oldId);
+            try {
+                $page->onAction('stale-default', $stale->getAction(), $stale);
+                self::fail('A stale default locale must not select its same-code replacement');
+            } catch (ValidationException $error) {
+                self::assertSame('Country default locale must belong to this country', $error->getMessage());
+            }
+            self::assertNull($country->defaultLocaleId);
+            self::assertSame('¤', $country->currencySymbol);
+            $fresh = new $dtoClass($country->id, 'edited', 'EUR', $replacement->id);
+            $page->onAction('fresh-default', $fresh->getAction(), $fresh);
+            self::assertSame($replacement->id, $country->defaultLocaleId);
+            $country->actions->update('¤', 'XXX', null);
+        });
+    }
+
     /** Saves through the card, then clears the same default locale through its table row. */
     public function testCardSavesCurrencyAndLocaleAndListClearsTheLocale(): void
     {
@@ -181,7 +273,7 @@ final class I18nCountryEditTest extends IntegrationTestCase
             yield $door . ' long symbol' => [$fromList, '€€€€€€€€€', 'EUR', null, 'Country currency symbol must have 1..8 characters'];
             yield $door . ' currency' => [$fromList, 'IE€', 'EU', null, 'Country currency code must have three uppercase letters'];
             yield $door . ' foreign locale' => [$fromList, 'IE€', 'EUR', 'en-QZ', 'Country default locale must belong to this country'];
-            yield $door . ' removed locale' => [$fromList, 'IE€', 'EUR', 'en-ZZ', "Locale 'en-ZZ' no longer exists."];
+            yield $door . ' removed locale' => [$fromList, 'IE€', 'EUR', 'en-ZZ', "Country default locale must belong to this country"];
         }
     }
 
@@ -209,7 +301,7 @@ final class I18nCountryEditTest extends IntegrationTestCase
     public function testUnknownCountryIsRefused(bool $fromList): void
     {
         $this->expectException(TableActionException::class);
-        $this->expectExceptionMessage('Unknown country: zz');
+        $this->expectExceptionMessage('Unknown country: 999999');
         $this->save($fromList, 'zz', '€', 'EUR', null);
     }
 
@@ -219,8 +311,9 @@ final class I18nCountryEditTest extends IntegrationTestCase
     {
         $page = $fromList ? new CountriesListPage($this->agent) : new CountryDetailPage($this->agent);
         $action = $fromList ? HilosSignalConstants::HILOS_I18N_COUNTRY_ROW_UPDATE : HilosSignalConstants::HILOS_I18N_COUNTRY_UPDATE;
-        $dto = $fromList ? new HilosI18nCountryUpdateActionDTO('ie', 'IE€', 'EUR', 'en-IE')
-            : new HilosI18nCountryRowUpdateActionDTO('ie', 'IE€', 'EUR', 'en-IE');
+        $dto = $fromList
+            ? new HilosI18nCountryUpdateActionDTO(Hilos::$db->countries['ie']->id, 'IE€', 'EUR', Hilos::$db->locales['en-IE']?->id ?? 999999)
+            : new HilosI18nCountryRowUpdateActionDTO(Hilos::$db->countries['ie']->id, 'IE€', 'EUR', Hilos::$db->locales['en-IE']?->id ?? 999999);
         try {
             $this->underAgent($this->agent, static fn () => $page->onAction(self::ACCEPT_KEY, $action, $dto));
             self::fail('The entrance must refuse the other DTO');
@@ -238,7 +331,7 @@ final class I18nCountryEditTest extends IntegrationTestCase
         $session->actions->bindUser((int) $admin->id);
         Hilos::$rt->connections->actions->register(self::ACCEPT_KEY, (int) $admin->id, $session->token, (int) $session->id);
         $router = new PageSignalRouter(new HilosPageFactory($this->agent, Hilos::class), new ActionRouteConfig(Hilos::getPageActionRoutes()));
-        $dto = new HilosI18nCountryUpdateActionDTO('ie', 'IE€', 'EUR', 'en-IE');
+        $dto = new HilosI18nCountryUpdateActionDTO(Hilos::$db->countries['ie']->id, 'IE€', 'EUR', Hilos::$db->locales['en-IE']?->id ?? 999999);
         $this->underAgent($this->agent, static fn () => $router->dispatchAction(
             new WebSocketActionSignalDTO(self::ACCEPT_KEY, $dto->getAction(), $dto->toArray(), 'country-save'), 'websocket',
         ));
@@ -249,7 +342,7 @@ final class I18nCountryEditTest extends IntegrationTestCase
         self::assertSame('Country saved.', $success->message);
         self::assertNull($success->reply);
 
-        $invalid = new HilosI18nCountryUpdateActionDTO('ie', '$', 'USD', 'en-ZZ');
+        $invalid = new HilosI18nCountryUpdateActionDTO(Hilos::$db->countries['ie']->id, '$', 'USD', Hilos::$db->locales['en-ZZ']?->id ?? 999999);
         $this->underAgent($this->agent, static fn () => $router->dispatchAction(
             new WebSocketActionSignalDTO(self::ACCEPT_KEY, $invalid->getAction(), $invalid->toArray(), 'country-fail'), 'websocket',
         ));
@@ -257,7 +350,7 @@ final class I18nCountryEditTest extends IntegrationTestCase
         self::assertInstanceOf(PageActionErrorSignalData::class, $failed);
         self::assertSame('country-fail', $failed->requestId);
         self::assertSame($invalid->getAction(), $failed->action);
-        self::assertSame("Locale 'en-ZZ' no longer exists.", $failed->reason);
+        self::assertSame("Country default locale must belong to this country", $failed->reason);
         self::assertNull($failed->errorType);
         self::assertNull($failed->errorDetail);
         self::assertSame('IE€', Hilos::$db->countries['ie']->currencySymbol);
@@ -275,8 +368,16 @@ final class I18nCountryEditTest extends IntegrationTestCase
     private function save(bool $fromList, string $code, string $symbol, string $currency, ?string $locale): void
     {
         $page = $fromList ? new CountriesListPage($this->agent) : new CountryDetailPage($this->agent);
-        $dto = $fromList ? new HilosI18nCountryRowUpdateActionDTO($code, $symbol, $currency, $locale)
-            : new HilosI18nCountryUpdateActionDTO($code, $symbol, $currency, $locale);
+        $dto = $fromList
+            ? new HilosI18nCountryRowUpdateActionDTO(
+                Hilos::$db->countries[$code]?->id ?? 999999, $symbol, $currency,
+                $locale === null ? null : (Hilos::$db->locales[$locale]?->id ?? 999999),
+            )
+
+            : new HilosI18nCountryUpdateActionDTO(
+                Hilos::$db->countries[$code]?->id ?? 999999, $symbol, $currency,
+                $locale === null ? null : (Hilos::$db->locales[$locale]?->id ?? 999999),
+            );
         $this->underAgent($this->agent, static fn () => self::assertNull($page->onAction(self::ACCEPT_KEY, $dto->getAction(), $dto)));
     }
 

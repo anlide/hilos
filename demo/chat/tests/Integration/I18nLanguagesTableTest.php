@@ -143,9 +143,40 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
             [],
             $this->picked($this->codes($table->getPage(new TableQueryDTO(search: 'zzzz-absent'))->rows), ['en', 'qx']),
         );
-        self::assertTrue($table->containsRow('qx', new TableQueryDTO(search: 'qx')));
-        self::assertFalse($table->containsRow('qx', new TableQueryDTO(search: 'zzzz-absent')));
+        self::assertTrue($table->containsRow((string) Hilos::$db->languages['qx']->id, new TableQueryDTO(search: 'qx')));
+        self::assertFalse($table->containsRow((string) Hilos::$db->languages['qx']->id, new TableQueryDTO(search: 'zzzz-absent')));
         self::assertFalse($table->containsRow('missing', new TableQueryDTO()));
+    }
+
+    /** Old primary keys stay removed when a new row takes the same code. */
+    public function testRowKeysNeverResolveASameCodeReplacement(): void
+    {
+        $this->underAgent($this->agent, function (): void {
+            $first = Hilos::$db->languages->actions->create('qx', 'First', false);
+            $oldId = $first->id;
+            $oldRow = $first->toArray();
+            $first->actions->delete();
+            $replacement = Hilos::$db->languages->actions->create('qx', 'Replacement', false);
+            $table = new HilosI18nLanguagesTable();
+            self::assertNotSame($oldId, $replacement->id);
+            self::assertFalse($table->containsRow((string) $oldId, new TableQueryDTO()));
+            self::assertNull($table->findRow((string) $oldId));
+            self::assertTrue($table->containsRow((string) $replacement->id, new TableQueryDTO()));
+            foreach (['qx', '0' . $replacement->id, $replacement->id . '.0', '0', '-1'] as $invalidKey) {
+                self::assertFalse($table->containsRow($invalidKey, new TableQueryDTO()));
+            }
+            $removed = $table->buildMutationForSourceEvent(SourceChange::dbDeleted(
+                HilosDbContext::languages, (string) $oldId, $oldRow,
+            ));
+            self::assertSame((string) $oldId, $removed->rowKey);
+            self::assertNull($removed->row);
+            $created = $table->buildMutationForSourceEvent(SourceChange::dbCreated(
+                HilosDbContext::languages, (string) $replacement->id, $replacement->toArray(),
+            ));
+            self::assertSame((string) $replacement->id, $created->rowKey);
+            self::assertSame($replacement->id, $created->row->toArray()[HilosI18nLanguagesTableRow::languageId]);
+            self::assertArrayNotHasKey('id', $created->row->toArray());
+        });
     }
 
     public function testALanguageChangeBecomesTheSameKindOfRowMutation(): void
@@ -166,7 +197,7 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
         ));
         self::assertInstanceOf(TableRowMutationDTO::class, $create);
         self::assertSame(TableMutationType::Create, $create->type);
-        self::assertSame('qx', $create->rowKey);
+        self::assertSame((string) $created['qx'], $create->rowKey);
         $createdRow = $create->row;
         self::assertInstanceOf(HilosI18nLanguagesTableRow::class, $createdRow);
         self::assertSame('After', $createdRow->nativeName);
@@ -180,7 +211,7 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
         ));
         self::assertInstanceOf(TableRowMutationDTO::class, $update);
         self::assertSame(TableMutationType::Update, $update->type);
-        self::assertSame('en', $update->rowKey);
+        self::assertSame((string) $created['en'], $update->rowKey);
         $updatedRow = $update->row;
         self::assertInstanceOf(HilosI18nLanguagesTableRow::class, $updatedRow);
         self::assertTrue($updatedRow->isDefault);
@@ -192,7 +223,7 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
         ));
         self::assertInstanceOf(TableRowMutationDTO::class, $delete);
         self::assertSame(TableMutationType::Delete, $delete->type);
-        self::assertSame('qx', $delete->rowKey);
+        self::assertSame((string) $created['qx'], $delete->rowKey);
         self::assertNull($delete->row);
 
         self::assertNull($table->buildMutationForSourceEvent(SourceChange::dbUpdated(
@@ -200,11 +231,11 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
             '999999',
             [],
         )));
-        self::assertNull($table->buildMutationForSourceEvent(SourceChange::dbDeleted(
+        self::assertSame('1', $table->buildMutationForSourceEvent(SourceChange::dbDeleted(
             HilosDbContext::languages,
             '1',
             [],
-        )));
+        ))->rowKey);
         self::assertNull($table->buildMutationForSourceEvent(SourceChange::dbUpdated(
             HilosDbContext::countries,
             '1',
@@ -318,6 +349,8 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
             foreach ($rows as $row) {
                 $language = $row[PagePayload::slots][HilosI18nLanguagesTable::ROW_SLOT];
                 foreach ([
+                    HilosI18nLanguagesTableRow::rowKey,
+                    HilosI18nLanguagesTableRow::languageId,
                     HilosI18nLanguagesTableRow::code,
                     HilosI18nLanguagesTableRow::nativeName,
                     HilosI18nLanguagesTableRow::rtl,
@@ -411,7 +444,7 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
         foreach ([self::OPEN, self::SEARCH_HIT] as $acceptKey) {
             $deltas = $this->deltasOf($signals, $acceptKey);
             self::assertCount(1, $deltas);
-            self::assertSame('qx', $deltas[0]->rowKey);
+            self::assertSame((string) $languageId, $deltas[0]->rowKey);
             self::assertSame(TableViewportDeltaDTO::KIND_ROW_REMOVED, $deltas[0]->kind);
             self::assertSame(TableViewportDeltaDTO::REASON_DELETED, $deltas[0]->reason);
         }
@@ -430,11 +463,11 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
             HilosDbContext::languageNames, '999999', [EntityLanguageName::language_id => $qx],
             previous: [EntityLanguageName::in_language_id => $zz],
         ));
-        self::assertSame(['qx', 'zz'], array_map(static fn ($mutation) => $mutation->rowKey, $mutations));
+        self::assertSame([(string) $qx, (string) $zz], array_map(static fn ($mutation) => $mutation->rowKey, $mutations));
         $mutations = $table->buildMutationsForSourceEvent(SourceChange::dbDeleted(
             HilosDbContext::languageNames, '999999', [EntityLanguageName::language_id => $qx, EntityLanguageName::in_language_id => $zz],
         ));
-        self::assertSame(['qx', 'zz'], array_map(static fn ($mutation) => $mutation->rowKey, $mutations));
+        self::assertSame([(string) $qx, (string) $zz], array_map(static fn ($mutation) => $mutation->rowKey, $mutations));
 
         $name = $this->underAgent($this->agent, static fn () => Hilos::$db->languageNames->actions->createManual(
             Hilos::$db->languages['qx'], Hilos::$db->languages['zz'], null, 'Live name',
@@ -442,7 +475,7 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
         $mutations = $table->buildMutationsForSourceEvent(SourceChange::dbUpdated(
             HilosDbContext::languageNames, (string) $name->id, [EntityLanguageName::name => 'Live name'],
         ));
-        self::assertSame(['qx', 'zz'], array_map(static fn ($mutation) => $mutation->rowKey, $mutations));
+        self::assertSame([(string) $qx, (string) $zz], array_map(static fn ($mutation) => $mutation->rowKey, $mutations));
         self::assertSame([], $table->buildMutationsForSourceEvent(SourceChange::rtUpdated(HilosDbContext::languageNames, '1', [])));
     }
 
@@ -482,7 +515,10 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
             foreach ($deltas as $delta) {
                 self::assertSame(TableViewportDeltaDTO::KIND_ROW_UPDATED, $delta->kind);
                 $row = $delta->row[PagePayload::slots][HilosI18nLanguagesTable::ROW_SLOT];
-                $actual[$delta->rowKey] = [$row[HilosI18nLanguagesTableRow::canDelete], $row[HilosI18nLanguagesTableRow::deleteReason]];
+                self::assertSame((string) $row[HilosI18nLanguagesTableRow::languageId], $delta->rowKey);
+                $actual[$row[HilosI18nLanguagesTableRow::code]] = [
+                    $row[HilosI18nLanguagesTableRow::canDelete], $row[HilosI18nLanguagesTableRow::deleteReason],
+                ];
             }
             self::assertSame($expected, $actual);
         }
@@ -591,10 +627,10 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
                 continue;
             }
             $data = $signal['data'];
-            if ($data instanceof TableViewportAnnounceDTO && $data->rowKey === $code) {
+            if ($data instanceof TableViewportAnnounceDTO && $data->rowKey === (string) Hilos::$db->languages[$code]->id) {
                 return true;
             }
-            if ($data instanceof TableViewportAppendDTO && ($data->row[PagePayload::rowKey] ?? null) === $code) {
+            if ($data instanceof TableViewportAppendDTO && ($data->row[PagePayload::rowKey] ?? null) === (string) Hilos::$db->languages[$code]->id) {
                 return true;
             }
         }

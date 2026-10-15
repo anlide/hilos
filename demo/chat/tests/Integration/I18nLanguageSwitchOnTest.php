@@ -89,7 +89,7 @@ final class I18nLanguageSwitchOnTest extends IntegrationTestCase
         $page = new LanguageDetailPage($this->agent);
         $this->underAgent($this->agent, static function () use ($page): void {
             self::assertNull($page->onAction('language-ak', HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_ON,
-                new HilosI18nLanguageSwitchOnActionDTO('fr')));
+                new HilosI18nLanguageSwitchOnActionDTO(Hilos::$db->languages['fr']?->id ?? 999999)));
         });
         self::assertTrue(Hilos::$db->languages['fr']->enabled);
         $page->sendActionSuccess('language-ak', HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_ON, 'switch-on-request');
@@ -106,13 +106,13 @@ final class I18nLanguageSwitchOnTest extends IntegrationTestCase
         )->countrylessLocale);
         $this->underAgent($this->agent, static function () use ($page): void {
             self::assertNull($page->onAction('language-ak', HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_ON,
-                new HilosI18nLanguageSwitchOnActionDTO('fr')));
+                new HilosI18nLanguageSwitchOnActionDTO(Hilos::$db->languages['fr']?->id ?? 999999)));
         });
         self::assertTrue(Hilos::$db->languages['fr']->enabled);
 
         $this->expectException(TableActionException::class);
         $page->onAction('language-ak', HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_ON,
-            new HilosI18nLanguageSwitchOnActionDTO('zz'));
+            new HilosI18nLanguageSwitchOnActionDTO(Hilos::$db->languages['zz']?->id ?? 999999));
     }
 
     public function testBothOpenCardsReceiveEnabledAndCountrylessLocaleStates(): void
@@ -137,7 +137,7 @@ final class I18nLanguageSwitchOnTest extends IntegrationTestCase
         $language = Hilos::$db->languages['fr'];
         $this->underAgent($this->agent, function (): void {
             new LanguageDetailPage($this->agent)->onAction('switch-on-one', HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_ON,
-                new HilosI18nLanguageSwitchOnActionDTO('fr'));
+                new HilosI18nLanguageSwitchOnActionDTO(Hilos::$db->languages['fr']?->id ?? 999999));
         });
         Hilos::$browser->record(SourceChange::dbUpdated(
             HilosDbContext::languages, (string)$language->id, [EntityLanguage::enabled => true],

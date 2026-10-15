@@ -9,22 +9,22 @@ use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 
-/** Request to switch off one language by its two-letter code. */
+/** Request to switch off one language by its persisted ID. */
 final class HilosI18nLanguageSwitchOffActionDTO extends ActionPayloadDTO
 {
-    /** Payload key: language code. */
-    public const string languageCode = 'languageCode';
+    /** Payload key: language ID. */
+    public const string languageId = 'languageId';
 
     public const array SECRET_FIELDS = [];
 
     /**
-     * @param string $languageCode Two lowercase Latin letters
-     * @throws InvalidFormatException When the language code has an invalid format
+     * @param int $languageId Persisted language ID
+     * @throws InvalidFormatException When the language ID has an invalid format
      */
-    public function __construct(public readonly string $languageCode)
+    public function __construct(public readonly int $languageId)
     {
-        if (preg_match('/^[a-z]{2}$/D', $languageCode) !== 1) {
-            throw new InvalidFormatException('Invalid language code: ' . $languageCode);
+        if ($languageId <= 0) {
+            throw new InvalidFormatException('Invalid language ID: ' . $languageId);
         }
     }
 
@@ -37,7 +37,7 @@ final class HilosI18nLanguageSwitchOffActionDTO extends ActionPayloadDTO
     /**
      * @param array<string, mixed> $data Raw or action-envelope payload
      * @return static Typed switch-off request
-     * @throws InvalidFormatException When languageCode is missing or invalid
+     * @throws InvalidFormatException When languageId is missing or invalid
      */
     public static function fromArray(array $data): static
     {
@@ -46,12 +46,12 @@ final class HilosI18nLanguageSwitchOffActionDTO extends ActionPayloadDTO
             $inner = [];
         }
 
-        return new static(self::requireString($inner, self::languageCode));
+        return new static(self::requireInt($inner, self::languageId));
     }
 
-    /** @return array<string, string> Language address */
+    /** @return array<string, int> Language address */
     public function toArray(): array
     {
-        return [self::languageCode => $this->languageCode];
+        return [self::languageId => $this->languageId];
     }
 }

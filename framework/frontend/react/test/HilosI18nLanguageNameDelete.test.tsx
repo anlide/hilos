@@ -13,6 +13,9 @@ import { nameRow } from './hilosI18nDetailsHarness.js'
 
 const base: HilosI18nLanguageNameDeleteTarget = {
   kind: 'base',
+  inLanguageId: 11,
+  nameId: 301,
+  languageId: 19,
   languageCode: 'uk',
   languageNativeName: 'Українська',
   inLanguageCode: 'en',
@@ -31,6 +34,8 @@ function setup(
       : {
           ...base,
           kind,
+          localeId: empty ? 502 : 501,
+          nameId: empty ? 402 : 401,
           localeCode: empty ? 'en-US' : 'en-GB',
           expectedName: empty ? '' : 'Correction',
         }
@@ -93,10 +98,11 @@ describe('React language name deletion', () => {
             ? 'hilos_i18n_language_name_delete'
             : 'hilos_i18n_language_name_override_delete',
         payload: {
-          languageCode: 'uk',
-          inLanguageCode: 'en',
+          languageId: 19,
+          inLanguageId: 11,
+          nameId: kind === 'override' ? 401 : 301,
           expectedName: h.initial.expectedName,
-          ...(kind === 'override' ? { localeCode: 'en-GB' } : {}),
+          ...(kind === 'override' ? { localeId: 501 } : {}),
         },
       })
       h.source(null)
@@ -136,9 +142,9 @@ describe('React language name deletion', () => {
         gone === 'row'
           ? null
           : gone === 'base'
-            ? { ...nameRow, name: null }
+            ? { ...nameRow, nameId: null, name: null }
             : gone === 'coordinate'
-              ? { ...nameRow, code: 'fr' }
+              ? { ...nameRow, inLanguageId: 13, rowKey: '13', code: 'fr' }
               : { ...nameRow, corrections: [] },
       )
       expect(el('i18n-language-name-delete-notice').textContent).toContain(

@@ -19,6 +19,25 @@ function setup(viewer = false) {
 }
 
 describe('React language card', () => {
+  it('preserves a draft without retargeting a same-code replacement', () => {
+    const h = setup()
+    act(() => h.card())
+    click('language-card-edit')
+    change('i18n-language-edit-native-name', 'Unsaved draft')
+    act(() =>
+      h.card({ ...languageCard, languageId: languageCard.languageId + 1 }),
+    )
+    expect(el<HTMLInputElement>('i18n-language-edit-native-name').value).toBe(
+      'Unsaved draft',
+    )
+    expect(el<HTMLButtonElement>('i18n-language-edit-submit').disabled).toBe(
+      true,
+    )
+    expect(el('i18n-language-edit-submit').textContent).toContain('Deleted')
+    fireEvent.submit(el('i18n-language-edit-window').querySelector('form')!)
+    expect(h.calls).toHaveLength(0)
+  })
+
   it('distinguishes loading from a deleted card and renders live fields, marks, counts and code-addressed tabs', () => {
     const h = setup()
     expect(
@@ -94,7 +113,7 @@ describe('React language card', () => {
     fireEvent.submit(document.querySelector('form')!)
     expect(h.calls).toEqual([])
   })
-  it('saves through the card action without sending an id', async () => {
+  it('saves through the card action with its captured language ID', async () => {
     const h = setup()
     act(() => h.card())
     click('language-card-edit')
@@ -102,7 +121,7 @@ describe('React language card', () => {
     click('i18n-language-edit-submit')
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_language_update',
-      payload: { languageCode: 'uk', nativeName: 'Mine', rtl: false },
+      payload: { languageId: 19, nativeName: 'Mine', rtl: false },
     })
     act(() => h.card({ ...languageCard, nativeName: 'Mine' }))
     expect(el('modal')).not.toBeNull()
@@ -146,7 +165,12 @@ describe('React language card', () => {
         params: { languageCode: 'fr' },
         admin: true,
       })
-      h.card({ ...languageCard, code: 'fr', nativeName: 'Français' })
+      h.card({
+        ...languageCard,
+        languageId: 13,
+        code: 'fr',
+        nativeName: 'Français',
+      })
     })
     expect(el('i18n-language-edit-window')).toBeNull()
     expect(el('language-card-code').textContent).toBe('fr')
@@ -158,7 +182,12 @@ describe('React language card', () => {
         params: { languageCode: 'ar' },
         admin: true,
       })
-      h.card({ ...languageCard, code: 'ar', nativeName: 'العربية' })
+      h.card({
+        ...languageCard,
+        languageId: 16,
+        code: 'ar',
+        nativeName: 'العربية',
+      })
     })
     click('language-card-delete')
     await settle(() => h.succeed())
@@ -185,7 +214,7 @@ describe('React language card', () => {
     act(() => h.card())
     click('language-card-edit')
     const next = harness()
-    next.card({ ...languageCard, code: 'fr' })
+    next.card({ ...languageCard, languageId: 13, code: 'fr' })
     h.view.rerender(
       <HilosRouterContext.Provider value={h.navigation}>
         <HilosI18nLanguagePage context={next.context} />
@@ -199,7 +228,12 @@ describe('React language card', () => {
     click('language-card-delete')
     click('i18n-language-delete-confirm')
     const next = harness()
-    next.card({ ...languageCard, code: 'fr', nativeName: 'Français' })
+    next.card({
+      ...languageCard,
+      languageId: 13,
+      code: 'fr',
+      nativeName: 'Français',
+    })
     h.view.rerender(
       <HilosRouterContext.Provider value={h.navigation}>
         <HilosI18nLanguagePage context={next.context} />

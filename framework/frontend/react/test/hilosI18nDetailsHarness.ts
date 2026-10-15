@@ -8,18 +8,35 @@ import {
 import { vi } from 'vitest'
 
 export const nameRow: HilosI18nNameRow = {
+  inLanguageId: 11,
+  nameId: 301,
+  rowKey: '11',
   code: 'en',
   nativeName: 'English',
   name: 'Ukrainian',
   corrections: [
     {
+      localeId: 501,
+      nameId: 401,
+      countryId: 101,
       localeCode: 'en-GB',
       countryCode: 'gb',
       countryName: 'United Kingdom',
       name: 'Correction',
     },
-    { localeCode: 'en-US', countryCode: 'us', countryName: null, name: '' },
     {
+      localeId: 502,
+      nameId: 402,
+      countryId: 102,
+      localeCode: 'en-US',
+      countryCode: 'us',
+      countryName: null,
+      name: '',
+    },
+    {
+      localeId: 503,
+      nameId: null,
+      countryId: 103,
       localeCode: 'en-CA',
       countryCode: 'ca',
       countryName: 'Canada',
@@ -46,7 +63,10 @@ export const templates: HilosI18nLocaleTemplates = {
   collation: ['und'],
 }
 export const localeRow: HilosI18nLocaleRow = {
-  rowKey: 'uk-GB',
+  languageId: 19,
+  countryId: 101,
+  localeId: 19101,
+  rowKey: '19:101',
   countryCode: 'gb',
   countryName: 'United Kingdom',
   localeCode: 'uk-GB',
@@ -57,13 +77,17 @@ export const localeRow: HilosI18nLocaleRow = {
 }
 export const countryless: HilosI18nLocaleRow = {
   ...localeRow,
-  rowKey: 'uk',
+  languageId: 19,
+  countryId: null,
+  localeId: 19000,
+  rowKey: '19:null',
   countryCode: null,
   countryName: null,
   localeCode: 'uk',
 }
 export const absentLocale: HilosI18nLocaleRow = {
   ...localeRow,
+  localeId: null,
   localeCode: null,
   formats: null,
   enabled: null,

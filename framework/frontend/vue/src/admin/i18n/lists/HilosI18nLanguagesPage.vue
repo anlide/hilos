@@ -57,20 +57,20 @@ const languageWindow = createHilosI18nLanguageRowWindow(
   props.context,
 )
 const deleteOpen = ref(false)
-const deleteCode = ref('')
+const deleteKey = ref('')
 const focusedRow = useSignal(languages.controller.focusedRow)
 const deleteSource = computed(() =>
-  focusedRow.value?.code === deleteCode.value ? focusedRow.value : null,
+  focusedRow.value?.rowKey === deleteKey.value ? focusedRow.value : null,
 )
 
 async function openDelete(code: string): Promise<void> {
   await languages.controller.focusRow(code)
   const fresh = languages.controller.focusedRow.get()
-  if (fresh?.code !== code || hilosI18nLanguageDelete(fresh).disabled) {
+  if (fresh?.rowKey !== code || hilosI18nLanguageDelete(fresh).disabled) {
     languages.controller.releaseFocus()
     return
   }
-  deleteCode.value = fresh.code
+  deleteKey.value = fresh.rowKey
   deleteOpen.value = true
 }
 
@@ -186,8 +186,8 @@ const languagePath = (row: HilosI18nLanguageRow): string | undefined =>
       <template #cell-actions="{ row }">
         <HilosI18nLanguageRowActions
           :row="row"
-          @edit="languageWindow.open(row.code)"
-          @delete="openDelete(row.code)"
+          @edit="languageWindow.open(row.rowKey)"
+          @delete="openDelete(row.rowKey)"
         />
       </template>
     </HilosViewportTable>

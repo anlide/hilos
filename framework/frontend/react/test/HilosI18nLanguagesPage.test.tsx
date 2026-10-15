@@ -14,6 +14,8 @@ import {
 
 const english = {
   ...language,
+  languageId: 11,
+  rowKey: '11',
   code: 'en',
   nativeName: 'English',
   enabled: true,
@@ -23,6 +25,8 @@ const english = {
 }
 const own = {
   ...language,
+  languageId: 46,
+  rowKey: '46',
   code: 'qx',
   nativeName: 'Own tongue',
   isOwn: true,
@@ -124,15 +128,15 @@ describe('React languages list', () => {
     act(() => h.delta({ ...own, nativeName: 'Fresh name' }))
     click('i18n-languages-delete-qx')
     expect(el('modal').textContent).toContain('Delete language · Fresh name')
-    expect(h.focuses).toEqual(['qx'])
+    expect(h.focuses).toEqual(['46'])
     click('i18n-language-delete-confirm')
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_language_row_delete',
-      payload: { languageCode: 'qx' },
+      payload: { languageId: 46 },
     })
     act(() => h.delta(own, 'row_removed'))
     expect(el('modal')).not.toBeNull()
-    expect(el('hilos-table-row-qx')).not.toBeNull()
+    expect(el('hilos-table-row-46')).not.toBeNull()
     await settle(() => h.succeed())
     expect(el('modal')).toBeNull()
     expect(h.focuses.at(-1)).toBe('')

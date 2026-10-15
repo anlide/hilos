@@ -51,7 +51,7 @@ export function HilosI18nNamesTable({
           <ul className="list-unstyled mb-0">
             {row.corrections.map((correction) => (
               <li
-                key={correction.localeCode}
+                key={correction.localeId}
                 className="d-flex flex-wrap align-items-center gap-2 py-1"
                 data-id={`i18n-names-correction-${correction.localeCode}`}
               >

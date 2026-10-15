@@ -23,8 +23,8 @@ trait HilosI18nLanguageUpdateTrait
      */
     private function updateLanguage(AbstractHilosI18nLanguageUpdateActionDTO $dto): void
     {
-        $language = Hilos::$db->languages[$dto->languageCode]
-            ?? throw new TableActionException('Unknown language: ' . $dto->languageCode);
+        $language = Hilos::$db->languages[$dto->languageId]
+            ?? throw new TableActionException('Unknown language: ' . $dto->languageId);
         $language->actions->update($dto->nativeName, $dto->rtl);
         $this->setActionSuccessMessage('Language saved.');
     }

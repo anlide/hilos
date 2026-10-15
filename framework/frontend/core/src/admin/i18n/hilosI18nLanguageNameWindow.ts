@@ -68,6 +68,11 @@ interface NameFields {
 
 /** Coordinates and display names frozen after taking the parent row into focus. */
 export interface HilosI18nLanguageNameTarget {
+  readonly languageId: number
+  readonly inLanguageId: number
+  readonly localeId: number | null
+  readonly nameId: number | null
+  readonly baseNameId: number | null
   readonly languageCode: string
   readonly languageNativeName: string
   readonly inLanguageCode: string
@@ -90,7 +95,7 @@ export interface HilosI18nLanguageNameWindow extends Omit<
     text: string
   } | null>
   /** Open from the fresh parent row; a missing locale or base refuses a correction. */
-  open(rowKey: string, localeCode?: string | null): boolean
+  open(rowKey: string, localeId?: number | null): boolean
 }
 
 /**
@@ -109,7 +114,7 @@ export function createHilosI18nLanguageNameWindow(
   language: ReadonlySignal<string>,
   context: HilosI18nLanguageContext,
 ): HilosI18nLanguageNameWindow {
-  const parent = hilosTableRowEditSource(controller, (row) => row.code)
+  const parent = hilosTableRowEditSource(controller, (row) => row.rowKey)
   const target = createSignal<HilosI18nLanguageNameTarget | null>(null)
   const form = createSignal<NameFields>({ name: '' })
   const adding = createSignal(false)
@@ -121,14 +126,22 @@ export function createHilosI18nLanguageNameWindow(
     const row = parent.live.get()
     if (
       held === null ||
-      row?.code !== held.inLanguageCode ||
-      card.get()?.code !== held.languageCode ||
+      row?.inLanguageId !== held.inLanguageId ||
+      card.get()?.languageId !== held.languageId ||
       language.get() !== held.languageCode
     )
       return undefined
-    if (held.localeCode === null) return { name: row.name }
-    if (row.name === null) return undefined
-    return row.corrections.find((item) => item.localeCode === held.localeCode)
+    if (held.localeId === null) {
+      if (held.mode === 'edit' && row.nameId !== held.nameId) return undefined
+      return { name: row.name }
+    }
+    if (row.nameId !== held.baseNameId) return undefined
+    const correction = row.corrections.find(
+      (item) => item.localeId === held.localeId,
+    )
+    if (held.mode === 'edit' && correction?.nameId !== held.nameId)
+      return undefined
+    return correction
   })
   const source: HilosRowEditSource<NameFields> = {
     open: () => source.live.get() ?? null,
@@ -172,9 +185,9 @@ export function createHilosI18nLanguageNameWindow(
     const held = target.get()
     if (held === null) return
     const coordinates = {
-      languageCode: held.languageCode,
-      inLanguageCode: held.inLanguageCode,
-      localeCode: held.localeCode,
+      languageId: held.languageId,
+      inLanguageId: held.inLanguageId,
+      localeId: held.localeId,
     }
     if (mode.get() === 'edit') {
       if (!edit.canSave.get()) return
@@ -182,6 +195,7 @@ export function createHilosI18nLanguageNameWindow(
         run(
           context.actions.dispatch(HILOS_I18N_LANGUAGE_NAME_UPDATE_ACTION, {
             ...coordinates,
+            nameId: held.nameId,
             name: draft.name,
             expectedName: source.live.get()!.name,
           }),
@@ -196,6 +210,7 @@ export function createHilosI18nLanguageNameWindow(
       const saved = await run(
         context.actions.dispatch(HILOS_I18N_LANGUAGE_NAME_ADD_ACTION, {
           ...coordinates,
+          baseNameId: held.baseNameId,
           name: form.get().name,
         }),
       )
@@ -231,7 +246,7 @@ export function createHilosI18nLanguageNameWindow(
         ? { kind: notice.kind, text: edit.noticeText.get() }
         : null
     }),
-    open(rowKey, localeCode = null) {
+    open(rowKey, localeId = null) {
       if (saving.get()) return false
       close()
       const subjectCode = language.get()
@@ -240,29 +255,37 @@ export function createHilosI18nLanguageNameWindow(
       if (
         fresh === null ||
         subject?.code !== subjectCode ||
-        fresh.code === subjectCode
+        fresh.inLanguageId === subject.languageId
       ) {
         parent.close()
         return false
       }
-      const name =
-        localeCode === null
-          ? fresh.name
-          : fresh.corrections.find((item) => item.localeCode === localeCode)
-              ?.name
-      if (name === undefined || (localeCode !== null && fresh.name === null)) {
+      const correction =
+        localeId === null
+          ? null
+          : fresh.corrections.find((item) => item.localeId === localeId)
+      const nameId = localeId === null ? fresh.nameId : correction?.nameId
+      if (
+        nameId === undefined ||
+        (localeId !== null && fresh.nameId === null)
+      ) {
         parent.close()
         return false
       }
       target.set({
+        languageId: subject.languageId,
+        inLanguageId: fresh.inLanguageId,
         languageCode: subjectCode,
         languageNativeName: subject.nativeName,
         inLanguageCode: fresh.code,
         inLanguageNativeName: fresh.nativeName,
-        localeCode,
-        mode: name === null ? 'add' : 'edit',
+        localeId,
+        localeCode: correction?.localeCode ?? null,
+        nameId,
+        baseNameId: localeId === null ? null : fresh.nameId,
+        mode: nameId === null ? 'add' : 'edit',
       })
-      if (name === null) {
+      if (nameId === null) {
         form.set({ name: '' })
         adding.set(true)
         return true

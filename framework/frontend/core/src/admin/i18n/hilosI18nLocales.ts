@@ -23,7 +23,7 @@ import { type HilosI18nLanguageContext } from './hilosI18nLanguage.js'
 /** Table key of the locales of one language, as the backend registers it. */
 export const HILOS_I18N_LANGUAGE_LOCALES_TABLE = 'hilosI18nLanguageLocales'
 
-/** Filter key carrying the code of the language the locales table is opened on. */
+/** Filter key carrying the ID of the language the locales table is opened on. */
 export const HILOS_I18N_LANGUAGE_LOCALES_FILTER = 'language'
 
 /** The row slot a locales row rides under (mirrors the backend ROW_SLOT). */
@@ -32,6 +32,9 @@ const LOCALES_SLOT = 'locale'
 /** Payload keys of a locales row (mirrors the backend HilosI18nLanguageLocalesTableRow). */
 export const HilosI18nLocaleRowKey = {
   rowKey: 'rowKey',
+  localeId: 'localeId',
+  countryId: 'countryId',
+  languageId: 'languageId',
   countryCode: 'countryCode',
   countryName: 'countryName',
   localeCode: 'localeCode',
@@ -58,6 +61,9 @@ export type HilosI18nLocaleFormats = z.infer<
 
 const localeSlotSchema = z.object({
   [HilosI18nLocaleRowKey.rowKey]: z.string(),
+  [HilosI18nLocaleRowKey.localeId]: z.number().int().positive().nullable(),
+  [HilosI18nLocaleRowKey.countryId]: z.number().int().positive().nullable(),
+  [HilosI18nLocaleRowKey.languageId]: z.number().int().positive(),
   [HilosI18nLocaleRowKey.countryCode]: z.string().nullable(),
   [HilosI18nLocaleRowKey.countryName]: z.string().nullable(),
   [HilosI18nLocaleRowKey.localeCode]: z.string().nullable(),
@@ -70,7 +76,10 @@ const localeSlotSchema = z.object({
 
 /** One row of the locales table — a pair of the language and a country, or the language alone. */
 export interface HilosI18nLocaleRow {
-  /** The pair, written as the code of its locale (`ru`, `ru-UA`); also the row key. */
+  readonly localeId: number | null
+  readonly countryId: number | null
+  readonly languageId: number
+  /** The parent-ID pair, with a literal null country slot when countryless. */
   readonly rowKey: string
   /** Code of the row's country, as stored (the view writes it in capitals); null on the language's own row. */
   readonly countryCode: string | null
@@ -89,28 +98,12 @@ export interface HilosI18nLocaleRow {
 }
 
 /**
- * Resolve one raw locales row into its view-model. A slot the schema refuses —
- * which only a server of another version can send — shows the pair by its key with
- * no locale, rather than dropping the row.
+ * Resolve the typed row, rejecting absent or malformed IDs.
  *
  * @param row The raw table row from the page-scoped table store.
  */
 export function resolveHilosI18nLocaleRow(row: TableRow): HilosI18nLocaleRow {
-  const parsed = localeSlotSchema.safeParse(row.slots[LOCALES_SLOT])
-  if (parsed.success) {
-    return parsed.data
-  }
-
-  return {
-    rowKey: String(row.rowKey),
-    countryCode: null,
-    countryName: null,
-    localeCode: null,
-    enabled: null,
-    isCountryDefault: false,
-    formats: null,
-    catalogFormats: null,
-  }
+  return localeSlotSchema.parse(row.slots[LOCALES_SLOT])
 }
 
 /** The columns of the locales table, in display order. */
@@ -137,6 +130,9 @@ export const HILOS_I18N_LANGUAGE_LOCALES_COLUMNS: readonly HilosTableColumnOf<Hi
       key: HILOS_TABLE_ACTIONS_KEY,
       label: '',
       reads: [
+        HilosI18nLocaleRowKey.languageId,
+        HilosI18nLocaleRowKey.countryId,
+        HilosI18nLocaleRowKey.localeId,
         HilosI18nLocaleRowKey.localeCode,
         HilosI18nLocaleRowKey.enabled,
         HilosI18nLocaleRowKey.formats,
@@ -168,23 +164,25 @@ export interface HilosI18nLanguageLocalesTable {
 }
 
 /**
- * The locales table of one language. The language's code is a preset of the
+ * The locales table of one language. The language's ID is a preset of the
  * filter map, so a cold window built without it is not drawn and the table asks for
  * its own; moving to another language on the same page sets the filter again, which
  * takes a new window.
  *
  * @param context The project's connection and page scopes.
- * @param language The code of the language the address names.
+ * @param language The ID of the language the address names.
  */
 export function createHilosI18nLanguageLocalesTable(
   context: HilosI18nLanguageContext,
-  language: ReadonlySignal<string>,
+  language: ReadonlySignal<number | null>,
 ): HilosI18nLanguageLocalesTable {
   const page = HilosPages.I18N_LANGUAGE_LOCALES
   const tableKey = HILOS_I18N_LANGUAGE_LOCALES_TABLE
+  let hasSubject = language.get() !== null
   const controller = new TableViewportController<HilosI18nLocaleRow>({
     resolve: resolveHilosI18nLocaleRow,
     sendViewport: (descriptor) =>
+      hasSubject &&
       context.connection.sendTableViewport(page, tableKey, descriptor),
     sendRendered: (rendered) =>
       context.connection.sendTableRendered(page, tableKey, rendered),
@@ -205,9 +203,11 @@ export function createHilosI18nLanguageLocalesTable(
           { page, tableKey },
           controller,
         ),
-        subscribeSignal(language, (value) =>
-          controller.setFilter(HILOS_I18N_LANGUAGE_LOCALES_FILTER, value),
-        ),
+        subscribeSignal(language, (value) => {
+          controller.releaseFocus()
+          if (value !== null) hasSubject = true
+          controller.setFilter(HILOS_I18N_LANGUAGE_LOCALES_FILTER, value)
+        }),
       ]
     },
     dispose() {

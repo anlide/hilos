@@ -107,19 +107,19 @@ abstract class AbstractHilosI18nCountryNamesPage extends AbstractHilosI18nCountr
      */
     private function addName(HilosI18nCountryNameAddActionDTO $dto): void
     {
-        $country = Hilos::$db->countries[$dto->countryCode]
-            ?? throw new TableActionException('Unknown country: ' . $dto->countryCode);
-        $inLanguage = Hilos::$db->languages[$dto->inLanguageCode]
-            ?? throw new TableActionException('Unknown writing language: ' . $dto->inLanguageCode);
+        $country = Hilos::$db->countries[$dto->countryId]
+            ?? throw new TableActionException('Unknown country: ' . $dto->countryId);
+        $inLanguage = Hilos::$db->languages[$dto->inLanguageId]
+            ?? throw new TableActionException('Unknown writing language: ' . $dto->inLanguageId);
         $locale = null;
         $name = Hilos::$db->countryNames->findBase($country->id, $inLanguage->id);
-        if ($dto->localeCode !== null) {
-            $locale = Hilos::$db->locales[$dto->localeCode]
-                ?? throw new TableActionException('Unknown locale: ' . $dto->localeCode);
+        if ($dto->localeId !== null) {
+            $locale = Hilos::$db->locales[$dto->localeId]
+                ?? throw new TableActionException('Unknown locale: ' . $dto->localeId);
             if ($locale->countryId === null || $locale->languageId !== $inLanguage->id) {
                 throw new TableActionException('The correction must belong to a country locale of the writing language.');
             }
-            if ($name === null) {
+            if ($name === null || $name->id !== $dto->baseNameId) {
                 throw new TableActionException('The name no longer exists.');
             }
             $name = Hilos::$db->countryNames->findOverride($country->id, $inLanguage->id, $locale->id);
@@ -143,27 +143,32 @@ abstract class AbstractHilosI18nCountryNamesPage extends AbstractHilosI18nCountr
      */
     private function updateName(HilosI18nCountryNameUpdateActionDTO $dto): void
     {
-        $country = Hilos::$db->countries[$dto->countryCode]
-            ?? throw new TableActionException('Unknown country: ' . $dto->countryCode);
-        $inLanguage = Hilos::$db->languages[$dto->inLanguageCode]
-            ?? throw new TableActionException('Unknown writing language: ' . $dto->inLanguageCode);
-        $name = Hilos::$db->countryNames->findBase($country->id, $inLanguage->id)
-            ?? throw new TableActionException('The name no longer exists.');
-        if ($dto->localeCode !== null) {
-            $locale = Hilos::$db->locales[$dto->localeCode]
-                ?? throw new TableActionException('Unknown locale: ' . $dto->localeCode);
+        $country = Hilos::$db->countries[$dto->countryId]
+            ?? throw new TableActionException('Unknown country: ' . $dto->countryId);
+        $inLanguage = Hilos::$db->languages[$dto->inLanguageId]
+            ?? throw new TableActionException('Unknown writing language: ' . $dto->inLanguageId);
+        if ($dto->localeId !== null) {
+            $locale = Hilos::$db->locales[$dto->localeId]
+                ?? throw new TableActionException('Unknown locale: ' . $dto->localeId);
             if ($locale->countryId === null || $locale->languageId !== $inLanguage->id) {
                 throw new TableActionException('The correction must belong to a country locale of the writing language.');
             }
-            $name = Hilos::$db->countryNames->findOverride($country->id, $inLanguage->id, $locale->id)
-                ?? throw new TableActionException('The name no longer exists.');
+            if (Hilos::$db->countryNames->findBase($country->id, $inLanguage->id) === null) {
+                throw new TableActionException('The name no longer exists.');
+            }
+        }
+        $name = Hilos::$db->countryNames[$dto->nameId]
+            ?? throw new TableActionException('The name no longer exists.');
+        if ($name->countryId !== $dto->countryId || $name->languageId !== $dto->inLanguageId
+            || $name->localeId !== $dto->localeId) {
+            throw new TableActionException('The name no longer exists at these coordinates.');
         }
         if ($name->name !== $dto->expectedName) {
             throw new TableActionException('The name changed elsewhere. Review the current value and save again.');
         }
 
         $name->actions->edit($dto->name);
-        $this->setActionSuccessMessage($dto->localeCode === null ? 'Country name saved.' : 'Locale correction saved.');
+        $this->setActionSuccessMessage($dto->localeId === null ? 'Country name saved.' : 'Locale correction saved.');
     }
 
     /**
@@ -173,12 +178,16 @@ abstract class AbstractHilosI18nCountryNamesPage extends AbstractHilosI18nCountr
      */
     private function deleteName(HilosI18nCountryNameDeleteActionDTO $dto): void
     {
-        $country = Hilos::$db->countries[$dto->countryCode]
-            ?? throw new TableActionException('Unknown country: ' . $dto->countryCode);
-        $inLanguage = Hilos::$db->languages[$dto->inLanguageCode]
-            ?? throw new TableActionException('Unknown writing language: ' . $dto->inLanguageCode);
-        $name = Hilos::$db->countryNames->findBase($country->id, $inLanguage->id)
+        $country = Hilos::$db->countries[$dto->countryId]
+            ?? throw new TableActionException('Unknown country: ' . $dto->countryId);
+        $inLanguage = Hilos::$db->languages[$dto->inLanguageId]
+            ?? throw new TableActionException('Unknown writing language: ' . $dto->inLanguageId);
+        $name = Hilos::$db->countryNames[$dto->nameId]
             ?? throw new TableActionException('The name no longer exists.');
+        if ($name->countryId !== $dto->countryId || $name->languageId !== $dto->inLanguageId
+            || $name->localeId !== null) {
+            throw new TableActionException('The name no longer exists at these coordinates.');
+        }
         if ($name->name !== $dto->expectedName) {
             throw new TableActionException('The name changed. Close this window and confirm again.');
         }
@@ -194,20 +203,24 @@ abstract class AbstractHilosI18nCountryNamesPage extends AbstractHilosI18nCountr
      */
     private function deleteOverride(HilosI18nCountryNameOverrideDeleteActionDTO $dto): void
     {
-        $country = Hilos::$db->countries[$dto->countryCode]
-            ?? throw new TableActionException('Unknown country: ' . $dto->countryCode);
-        $inLanguage = Hilos::$db->languages[$dto->inLanguageCode]
-            ?? throw new TableActionException('Unknown writing language: ' . $dto->inLanguageCode);
-        $locale = Hilos::$db->locales[$dto->localeCode]
-            ?? throw new TableActionException('Unknown locale: ' . $dto->localeCode);
+        $country = Hilos::$db->countries[$dto->countryId]
+            ?? throw new TableActionException('Unknown country: ' . $dto->countryId);
+        $inLanguage = Hilos::$db->languages[$dto->inLanguageId]
+            ?? throw new TableActionException('Unknown writing language: ' . $dto->inLanguageId);
+        $locale = Hilos::$db->locales[$dto->localeId]
+            ?? throw new TableActionException('Unknown locale: ' . $dto->localeId);
         if ($locale->countryId === null || $locale->languageId !== $inLanguage->id) {
             throw new TableActionException('The correction must belong to a country locale of the writing language.');
         }
         if (Hilos::$db->countryNames->findBase($country->id, $inLanguage->id) === null) {
             throw new TableActionException('The name no longer exists.');
         }
-        $name = Hilos::$db->countryNames->findOverride($country->id, $inLanguage->id, $locale->id)
+        $name = Hilos::$db->countryNames[$dto->nameId]
             ?? throw new TableActionException('The name no longer exists.');
+        if ($name->countryId !== $dto->countryId || $name->languageId !== $dto->inLanguageId
+            || $name->localeId !== $dto->localeId) {
+            throw new TableActionException('The name no longer exists at these coordinates.');
+        }
         if ($name->name !== $dto->expectedName) {
             throw new TableActionException('The name changed. Close this window and confirm again.');
         }

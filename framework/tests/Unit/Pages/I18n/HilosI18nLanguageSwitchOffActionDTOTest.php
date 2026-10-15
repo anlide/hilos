@@ -16,11 +16,11 @@ final class HilosI18nLanguageSwitchOffActionDTOTest extends TestCase
 {
     public function testReadsRawAndWrappedPayload(): void
     {
-        $raw = [HilosI18nLanguageSwitchOffActionDTO::languageCode => 'fr'];
+        $raw = [HilosI18nLanguageSwitchOffActionDTO::languageId => 13];
         self::assertSame($raw, HilosI18nLanguageSwitchOffActionDTO::fromArray($raw)->toArray());
-        self::assertSame('fr', HilosI18nLanguageSwitchOffActionDTO::fromArray([
+        self::assertSame(13, HilosI18nLanguageSwitchOffActionDTO::fromArray([
             SignalPayloadConstants::FIELD_DATA => $raw,
-        ])->languageCode);
+        ])->languageId);
         self::assertSame(
             HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_OFF,
             HilosI18nLanguageSwitchOffActionDTO::fromArray($raw)->getAction(),
@@ -30,11 +30,15 @@ final class HilosI18nLanguageSwitchOffActionDTOTest extends TestCase
     /** @return iterable<string, array{array<string, mixed>}> Invalid request shapes */
     public static function invalidPayloads(): iterable
     {
-        yield 'uppercase' => [[HilosI18nLanguageSwitchOffActionDTO::languageCode => 'EN']];
-        yield 'three letters' => [[HilosI18nLanguageSwitchOffActionDTO::languageCode => 'eng']];
-        yield 'empty' => [[HilosI18nLanguageSwitchOffActionDTO::languageCode => '']];
-        yield 'not a string' => [[HilosI18nLanguageSwitchOffActionDTO::languageCode => 42]];
+        yield 'uppercase' => [[HilosI18nLanguageSwitchOffActionDTO::languageId => 'EN']];
+        yield 'three letters' => [[HilosI18nLanguageSwitchOffActionDTO::languageId => 'eng']];
+        yield 'empty' => [[HilosI18nLanguageSwitchOffActionDTO::languageId => '']];
+        yield 'zero' => [[HilosI18nLanguageSwitchOffActionDTO::languageId => 0]];
         yield 'missing' => [[]];
+        yield 'legacy code' => [['languageCode' => 'fr']];
+        foreach (['13', -1, 13.0, null, true, false] as $id) {
+            yield 'invalid ID ' . var_export($id, true) => [['languageId' => $id]];
+        }
     }
 
     /** @param array<string, mixed> $payload Invalid request */

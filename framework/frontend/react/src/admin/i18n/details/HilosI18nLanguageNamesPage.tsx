@@ -73,8 +73,16 @@ function LanguageNames({
     loading = useSignal(router.pageLoading)
   const names = useMemo(
     () =>
-      createHilosI18nNamesTable(context, HILOS_I18N_LANGUAGE_NAMES, language),
-    [context, language],
+      createHilosI18nNamesTable(
+        context,
+        HILOS_I18N_LANGUAGE_NAMES,
+        computedSignal(() =>
+          liveCard.get()?.code === language.get()
+            ? (liveCard.get()?.languageId ?? null)
+            : null,
+        ),
+      ),
+    [context, language, liveCard],
   )
   const nameWindow = useMemo(
     () =>
@@ -102,8 +110,8 @@ function LanguageNames({
     }
   }, [names])
   const source =
-    card?.code === target?.languageCode &&
-    focused?.code === target?.inLanguageCode
+    card?.languageId === target?.languageId &&
+    focused?.inLanguageId === target?.inLanguageId
       ? (focused ?? null)
       : null
   const nameCopy = HILOS_I18N_LANGUAGE_NAME_COPY,
@@ -115,41 +123,46 @@ function LanguageNames({
   }
   function openName(
     row: HilosI18nNameRow,
-    localeCode: string | null = null,
+    localeId: number | null = null,
   ): void {
     if (nameWindow.saving.get()) return
     closeDelete()
-    nameWindow.open(row.code, localeCode)
+    nameWindow.open(row.rowKey, localeId)
   }
   async function openDelete(
     row: HilosI18nNameRow,
-    localeCode?: string,
+    localeId?: number,
   ): Promise<void> {
     if (target || nameWindow.saving.get()) return
     nameWindow.close()
     const attempt = ++opening.current
-    const resolved = await names.controller.focusRow(row.code)
+    const resolved = await names.controller.focusRow(row.rowKey)
     if (!mounted.current || attempt !== opening.current) return
     const fresh = names.controller.focusedRow.get(),
       subject = liveCard.get()
     if (
       resolved === null ||
       subject?.code !== code ||
-      fresh?.code !== row.code ||
+      fresh?.inLanguageId !== row.inLanguageId ||
       fresh.name === null
     ) {
       closeDelete()
       return
     }
-    const expectedName =
-      localeCode === undefined
-        ? fresh.name
-        : fresh.corrections.find((item) => item.localeCode === localeCode)?.name
-    if (expectedName == null) {
+    const correction =
+      localeId === undefined
+        ? null
+        : fresh.corrections.find((item) => item.localeId === localeId)
+    const expectedName = localeId === undefined ? fresh.name : correction?.name
+    const nameId = localeId === undefined ? fresh.nameId : correction?.nameId
+    if (expectedName == null || nameId == null) {
       closeDelete()
       return
     }
     const coordinates = {
+      languageId: subject.languageId,
+      inLanguageId: fresh.inLanguageId,
+      nameId,
       languageCode: code,
       languageNativeName: subject.nativeName,
       inLanguageCode: fresh.code,
@@ -157,9 +170,14 @@ function LanguageNames({
       expectedName,
     }
     setTarget(
-      localeCode === undefined
+      localeId === undefined
         ? { ...coordinates, kind: 'base' }
-        : { ...coordinates, kind: 'override', localeCode },
+        : {
+            ...coordinates,
+            kind: 'override',
+            localeId,
+            localeCode: correction!.localeCode,
+          },
     )
   }
   return (
@@ -215,7 +233,7 @@ function LanguageNames({
                       correction.localeCode,
                     )}
                     data-id={`i18n-language-name-locale-${correction.name === null ? 'add' : 'edit'}-${correction.localeCode}`}
-                    onClick={() => openName(row, correction.localeCode)}
+                    onClick={() => openName(row, correction.localeId)}
                   >
                     <i
                       className={`bi ${correction.name === null ? 'bi-plus-lg' : 'bi-pencil'}`}
@@ -228,7 +246,7 @@ function LanguageNames({
                     className="btn-sm btn-outline-danger"
                     aria-label={copy.overrideLabel(correction.localeCode)}
                     data-id={`i18n-names-delete-${correction.localeCode}`}
-                    onClick={() => void openDelete(row, correction.localeCode)}
+                    onClick={() => void openDelete(row, correction.localeId)}
                   >
                     <i className="bi bi-trash" aria-hidden="true" />
                   </LoadingButton>

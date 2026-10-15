@@ -3,6 +3,7 @@ import {
   dismissToasts,
   shownByTestId,
   sidewaysOverflow,
+  i18nNameRow,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import {
@@ -23,10 +24,12 @@ async function openNames(page: Page): Promise<void> {
   await expect(page.getByTestId('language-card-counts')).toHaveText(
     'Locales: 1 · Names: 1',
   )
-  await expect(shownByTestId(page, 'hilos-table-row-qw')).toContainText(
+  await expect(i18nNameRow(page, 'language', 'qw')).toContainText(
     'Fixture base',
   )
-  await clickSubmit(shownByTestId(page, 'hilos-table-expand-qw'))
+  await clickSubmit(
+    i18nNameRow(page, 'language', 'qw').getByTestId(/^hilos-table-expand-/),
+  )
   await expect(
     shownByTestId(page, 'i18n-names-correction-qw-GB'),
   ).toContainText('Fixture correction')
@@ -75,7 +78,7 @@ test('cancels then deletes a base name and all corrections live in both windows'
     await clickSubmit(page.getByTestId(CANCEL))
     await expect(page.getByTestId(WINDOW)).toHaveCount(0)
     await expect(trash).toBeFocused()
-    await expect(shownByTestId(page, 'hilos-table-row-qw')).toContainText(
+    await expect(i18nNameRow(page, 'language', 'qw')).toContainText(
       'Fixture base',
     )
     await expect(
@@ -90,7 +93,7 @@ test('cancels then deletes a base name and all corrections live in both windows'
       await expect(shownByTestId(tab, 'i18n-names-none-qw')).toHaveText(
         'No name',
       )
-      await expect(shownByTestId(tab, 'hilos-table-row-qw')).toBeVisible()
+      await expect(i18nNameRow(tab, 'language', 'qw')).toBeVisible()
       await expect(tab.getByTestId('language-card-counts')).toHaveText(
         'Locales: 1 · Names: 0',
       )

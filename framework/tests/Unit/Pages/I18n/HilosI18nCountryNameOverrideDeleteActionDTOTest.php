@@ -7,34 +7,42 @@ namespace Hilos\Tests\Unit\Pages\I18n;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Core\Exception\InvalidFormatException;
-use Hilos\Database\Entity\Item\CountryName as EntityCountryName;
 use Hilos\HilosException;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nCountryNameOverrideDeleteActionDTO;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-/** The removal request preserves literal text and refuses malformed coordinates. */
+/** Exact ID coordinates and literal text survive every serialization boundary. */
 final class HilosI18nCountryNameOverrideDeleteActionDTOTest extends TestCase
 {
-    /** @return iterable<string, array{string}> Literal values accepted by the name column */
-    public static function names(): iterable
+    /** @return iterable<string, array{array<string, mixed>}> Valid base and correction payloads */
+    public static function payloads(): iterable
     {
-        yield 'ordinary' => ['Fixture name'];
-        yield 'empty' => [''];
-        yield 'whitespace' => ["  name \n"];
-        yield 'maximum character width' => [str_repeat('é', EntityCountryName::NAME_MAX_CHARS)];
+        foreach (['ordinary', '', "  \n", str_repeat('é', 255)] as $index => $name) {
+            $payload = [
+                'countryId' => 11,
+                'inLanguageId' => 12,
+                'localeId' => 21,
+                'nameId' => 31,
+                'expectedName' => $name,
+            ];
+            yield 'base ' . $index => [$payload];
+        }
     }
 
     /**
-     * @param string $name Expected text, without trimming
-     * @throws HilosException When serialization or validation unexpectedly fails
+     * @param array<string, mixed> $payload Exact wire contract
+     * @throws HilosException When serialization or validation fails
      */
-    #[DataProvider('names')]
-    public function testRawEnvelopeAndJsonRoundtrip(string $name): void
+    #[DataProvider('payloads')]
+    public function testRawEnvelopeAndJsonRoundtrip(array $payload): void
     {
-        $payload = ['countryCode' => 'qv', 'inLanguageCode' => 'qw', 'localeCode' => 'qw-GB', 'expectedName' => $name];
         $dto = HilosI18nCountryNameOverrideDeleteActionDTO::fromArray([...$payload, 'extra' => 'ignored']);
-        self::assertSame($name, $dto->expectedName);
+        self::assertSame($payload['countryId'], $dto->countryId);
+        self::assertSame($payload['inLanguageId'], $dto->inLanguageId);
+        self::assertSame($payload['localeId'], $dto->localeId);
+        self::assertSame($payload['nameId'], $dto->nameId);
+        self::assertSame($payload['expectedName'], $dto->expectedName);
         self::assertSame($payload, $dto->toArray());
         self::assertSame(HilosSignalConstants::HILOS_I18N_COUNTRY_NAME_OVERRIDE_DELETE, $dto->getAction());
         self::assertSame([], HilosI18nCountryNameOverrideDeleteActionDTO::SECRET_FIELDS);
@@ -44,43 +52,58 @@ final class HilosI18nCountryNameOverrideDeleteActionDTOTest extends TestCase
         ])->toArray());
     }
 
-    /** @throws InvalidFormatException When equal codes are unexpectedly refused */
-    public function testCountryAndWritingLanguageMayHaveTheSameCode(): void
+    /** @throws HilosException When equal IDs from distinct models are incorrectly refused */
+    public function testCountryAndWritingLanguageMayHaveTheSameId(): void
     {
-        $dto = new HilosI18nCountryNameOverrideDeleteActionDTO('us', 'us', 'us-GB', '');
-        self::assertSame($dto->countryCode, $dto->inLanguageCode);
+        $name = '';
+        $payload = [
+            'countryId' => 11,
+            'inLanguageId' => 12,
+            'localeId' => 21,
+            'nameId' => 31,
+            'expectedName' => $name,
+        ];
+        $payload['inLanguageId'] = $payload['countryId'];
+        $dto = HilosI18nCountryNameOverrideDeleteActionDTO::fromArray($payload);
+        self::assertSame($dto->countryId, $dto->inLanguageId);
     }
 
-    /** @return iterable<string, array{array<string, mixed>}> Invalid coordinates and text */
+    /** @return iterable<string, array{array<string, mixed>}> Missing, mistyped and malformed fields */
     public static function invalidPayloads(): iterable
     {
-        $valid = ['countryCode' => 'qv', 'inLanguageCode' => 'qw', 'localeCode' => 'qw-GB', 'expectedName' => 'Fixture name'];
+        $name = 'Name';
+        $valid = [
+            'countryId' => 11,
+            'inLanguageId' => 12,
+            'localeId' => 21,
+            'nameId' => 31,
+            'expectedName' => $name,
+        ];
         foreach (array_keys($valid) as $key) {
             $missing = $valid;
             unset($missing[$key]);
             yield 'missing ' . $key => [$missing];
-            foreach ([null, 0, true, []] as $value) {
+            $ids = ['countryId', 'inLanguageId', 'localeId', 'nameId'];
+            $invalid = in_array($key, $ids, true) ? ['12', false, true, 1.5, 12.0, 0, -1, '', []] : [null, 0, true, []];
+            foreach ($invalid as $value) {
                 yield $key . ' ' . var_export($value, true) => [[...$valid, $key => $value]];
             }
         }
-        foreach (['countryCode', 'inLanguageCode'] as $key) {
-            foreach (['', 'QW', 'q', 'qww', "qw\n", 'éñ', ' qw'] as $code) {
-                yield $key . ' format ' . $code => [[...$valid, $key => $code]];
-            }
-        }
-        yield 'name too wide' => [[...$valid, 'expectedName' => str_repeat('é', EntityCountryName::NAME_MAX_CHARS + 1)]];
+        yield 'null countryId' => [[...$valid, 'countryId' => null]];
+        yield 'null inLanguageId' => [[...$valid, 'inLanguageId' => null]];
+        yield 'null localeId' => [[...$valid, 'localeId' => null]];
+        yield 'null nameId' => [[...$valid, 'nameId' => null]];
+        yield 'expected text too long' => [[...$valid, 'expectedName' => str_repeat('é', 256)]];
+        yield 'legacy codes' => [['countryCode' => 'qv', 'inLanguageCode' => 'qw', 'localeCode' => null, 'name' => 'Name']];
         yield 'empty payload' => [[]];
         foreach ([null, 'invalid', 42, []] as $envelope) {
             yield 'envelope ' . var_export($envelope, true) => [[SignalPayloadConstants::FIELD_DATA => $envelope]];
-        }
-        foreach (['qw', 'qw-gb', 'QW-GB', 'qw-USA', 'qw-GB\n', 'en-GB', 'qw-1B', ' qw-GB'] as $locale) {
-            yield 'locale ' . $locale => [[...$valid, 'localeCode' => $locale]];
         }
     }
 
     /**
      * @param array<string, mixed> $payload Rejected payload
-     * @throws InvalidFormatException The expected payload refusal
+     * @throws InvalidFormatException Expected payload refusal
      */
     #[DataProvider('invalidPayloads')]
     public function testRejectsInvalidPayload(array $payload): void

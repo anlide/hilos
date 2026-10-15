@@ -55,7 +55,9 @@ test('adds a custom country after confirming its upkeep', async ({ page }) => {
   const search = page.getByTestId('hilos-table-search')
   await search.fill('')
   await search.pressSequentially('gg', { delay: 10 })
-  const row = page.getByTestId('hilos-table-row-gg')
+  const row = page
+    .getByTestId(/^hilos-table-row-/)
+    .filter({ has: page.getByTestId('i18n-countries-link-gg') })
   await expect(row).toBeVisible()
   await expect(row.getByTestId('i18n-countries-own-gg')).toBeVisible()
   await expect(row.getByTestId('i18n-countries-enabled-gg')).not.toBeChecked()

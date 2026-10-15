@@ -236,6 +236,7 @@ export class HilosI18nLanguagePage {
       return card === null
         ? null
         : {
+            languageId: card.languageId,
             code: card.code,
             nativeName: card.nativeName,
             canDelete: card.summary.canDelete,

@@ -14,6 +14,8 @@ import {
 
 const english = {
   ...country,
+  countryId: 144,
+  rowKey: '144',
   code: 'en',
   name: null,
   enabled: true,
@@ -22,6 +24,8 @@ const english = {
 }
 const own = {
   ...country,
+  countryId: 141,
+  rowKey: '141',
   code: 'qx',
   name: 'Own country',
   isOwn: true,
@@ -40,7 +44,7 @@ describe('React countries list', () => {
       el<HTMLAnchorElement>('i18n-countries-link-en').getAttribute('href'),
     ).toBe('/hilos/i18n/countries/en')
     expect(el('i18n-countries-own-qx').textContent).toContain('Custom')
-    expect(el('hilos-table-row-en').textContent).toContain('EN')
+    expect(el('hilos-table-row-144').textContent).toContain('EN')
     expect(el('i18n-countries-locale-none-en').textContent).toContain(
       'Not chosen',
     )
@@ -120,15 +124,15 @@ describe('React countries list', () => {
     act(() => h.delta({ ...own, name: 'Fresh name' }))
     click('i18n-countries-delete-qx')
     expect(el('modal').textContent).toContain('Delete country · Fresh name')
-    expect(h.focuses).toEqual(['qx'])
+    expect(h.focuses).toEqual(['141'])
     click('i18n-country-delete-confirm')
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_country_row_delete',
-      payload: { countryCode: 'qx' },
+      payload: { countryId: 141 },
     })
     act(() => h.delta(own, 'row_removed'))
     expect(el('modal')).not.toBeNull()
-    expect(el('hilos-table-row-qx')).not.toBeNull()
+    expect(el('hilos-table-row-141')).not.toBeNull()
     await settle(() => h.succeed())
     expect(el('modal')).toBeNull()
     expect(h.focuses.at(-1)).toBe('')

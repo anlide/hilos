@@ -6,6 +6,9 @@ export const HILOS_I18N_LOCALE_DELETE_ACTION = 'hilos_i18n_locale_delete'
 
 /** The identity and labels frozen when a locale's confirmation opens. */
 export interface HilosI18nLocaleDeleteTarget {
+  readonly languageId: number
+  readonly countryId: number | null
+  readonly localeId: number
   readonly languageCode: string
   readonly countryCode: string | null
   readonly localeCode: string
@@ -30,17 +33,22 @@ export const HILOS_I18N_LOCALE_DELETE_COPY = {
   elsewhere: 'Deleted elsewhere.',
 } as const
 
-/** Dispatch only the two codes, preserving null for the countryless locale. */
+/** Dispatch the captured locale and parent IDs, preserving the countryless null. */
 export function createHilosI18nLocaleDelete(
   context: HilosI18nLanguageContext,
 ): {
-  deleteLocale(languageCode: string, countryCode: string | null): ActionHandle
+  deleteLocale(
+    languageId: number,
+    countryId: number | null,
+    localeId: number,
+  ): ActionHandle
 } {
   return {
-    deleteLocale: (languageCode, countryCode) =>
+    deleteLocale: (languageId, countryId, localeId) =>
       context.actions.dispatch(HILOS_I18N_LOCALE_DELETE_ACTION, {
-        languageCode,
-        countryCode,
+        languageId,
+        countryId,
+        localeId,
       }),
   }
 }

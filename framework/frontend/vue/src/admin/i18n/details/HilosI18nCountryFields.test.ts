@@ -5,12 +5,14 @@ import HilosI18nCountryFields from './HilosI18nCountryFields.vue'
 enableAutoUnmount(afterEach)
 const values = {
   idPrefix: 'country',
+  countryId: 140,
   code: 'ie',
   currencySymbol: '€',
   currencyCode: 'EUR',
+  defaultLocaleId: 11140,
   defaultLocaleCode: 'en-IE',
   localeOptions: [
-    { value: 'en-IE', label: 'en-IE — switched off' },
+    { value: '11140', label: 'en-IE — switched off' },
     { value: '', label: 'Not chosen' },
   ],
   localeHint: 'Suggested by the built-in catalog — save to keep it.',
@@ -53,7 +55,7 @@ describe('HilosI18nCountryFields', () => {
         expect(view.get('[data-id="country-code-hint"]').text()).toBe(
           mode === 'add'
             ? 'ISO 3166-1 alpha-2.'
-            : 'The country code never changes: locales and names refer to it.',
+            : 'The country code never changes: its URL and the external catalog use it.',
         )
       }
       if (mode === 'add')
@@ -79,6 +81,6 @@ describe('HilosI18nCountryFields', () => {
     expect(view.emitted('update:currencyCode')).toEqual([['GBP']])
     await view.setProps({ mode: 'edit' })
     await view.get('select').setValue('')
-    expect(view.emitted('update:defaultLocaleCode')).toEqual([[null]])
+    expect(view.emitted('update:defaultLocaleId')).toEqual([[null]])
   })
 })

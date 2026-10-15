@@ -18,6 +18,8 @@ import { country, i18nBench, mountOver } from './helpers/hilosI18n.js'
 
 const own = {
   ...country,
+  countryId: 105,
+  rowKey: '105',
   code: 'zz',
   name: null,
   currencySymbol: 'Z',
@@ -30,13 +32,16 @@ const own = {
 }
 const france = {
   ...country,
+  countryId: 103,
+  rowKey: '103',
   code: 'fr',
   name: 'France',
   currencySymbol: '€',
   currencyCode: 'EUR',
+  defaultLocaleId: 13103,
   defaultLocaleCode: 'fr-FR',
   enabled: true,
-  locales: [{ code: 'fr-FR', enabled: true }],
+  locales: [{ localeId: 13103, code: 'fr-FR', enabled: true }],
   catalogDefaultLocaleCode: 'fr-FR',
 }
 
@@ -67,7 +72,7 @@ describe('HilosI18nCountriesPage', () => {
     expect(h.el('i18n-countries-link-fr')?.className).not.toContain(
       'link-secondary',
     )
-    expect(h.el('hilos-table-row-zz')?.textContent).toContain('ZZ')
+    expect(h.el('hilos-table-row-105')?.textContent).toContain('ZZ')
     expect(h.el('i18n-countries-own-zz')?.textContent).toContain(
       'Custom country',
     )
@@ -76,8 +81,8 @@ describe('HilosI18nCountriesPage', () => {
       'Not chosen',
     )
     expect(h.el('i18n-countries-locale-none-fr')).toBeNull()
-    expect(h.el('hilos-table-row-fr')?.textContent).toContain('fr-FR')
-    expect(h.el('hilos-table-row-fr')?.textContent).toContain('EUR')
+    expect(h.el('hilos-table-row-103')?.textContent).toContain('fr-FR')
+    expect(h.el('hilos-table-row-103')?.textContent).toContain('EUR')
     expect(h.el<HTMLInputElement>('i18n-countries-enabled-fr')?.checked).toBe(
       true,
     )
@@ -232,7 +237,7 @@ describe('HilosI18nCountriesPage', () => {
   it("edits a switched-off row over its own locales, suggests the catalog's default, and closes only on the ack after its own echo", async () => {
     const h = setup()
     h.click('i18n-countries-edit-us')
-    expect(h.focuses).toEqual(['us'])
+    expect(h.focuses).toEqual(['102'])
     expect(h.el<HTMLInputElement>('i18n-country-edit-code')?.value).toBe('us')
     expect(h.el<HTMLInputElement>('i18n-country-edit-code')?.disabled).toBe(
       true,
@@ -246,7 +251,7 @@ describe('HilosI18nCountriesPage', () => {
       'es-US — switched off',
       'Not chosen',
     ])
-    expect(select?.value).toBe('en-US')
+    expect(select?.value).toBe('11102')
     expect(
       h.el('i18n-country-edit-default-locale-hint')?.textContent,
     ).toContain('Suggested by the built-in catalog')
@@ -265,10 +270,10 @@ describe('HilosI18nCountriesPage', () => {
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_country_row_update',
       payload: {
-        countryCode: 'us',
+        countryId: 102,
         currencySymbol: 'US$',
         currencyCode: 'USD',
-        defaultLocaleCode: 'en-US',
+        defaultLocaleId: 11102,
       },
     })
     expect(h.el<HTMLButtonElement>('i18n-country-cancel')?.disabled).toBe(true)
@@ -278,7 +283,7 @@ describe('HilosI18nCountriesPage', () => {
       h.delta({
         ...country,
         currencySymbol: 'US$',
-        defaultLocaleCode: 'en-US',
+        defaultLocaleId: 11102,
       }),
     )
     expect(h.el('modal')).not.toBeNull()
@@ -341,13 +346,13 @@ describe('HilosI18nCountriesPage', () => {
     h.act(() => h.delta({ ...own, name: 'Fresh land' }))
     h.click('i18n-countries-delete-zz')
     expect(h.el('modal')?.textContent).toContain('Delete country · Fresh land')
-    expect(h.focuses).toEqual(['zz'])
+    expect(h.focuses).toEqual(['105'])
     h.click('i18n-country-delete-confirm')
     h.click('i18n-country-delete-confirm')
     expect(h.calls).toHaveLength(1)
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_country_row_delete',
-      payload: { countryCode: 'zz' },
+      payload: { countryId: 105 },
     })
     expect(
       h.el<HTMLButtonElement>('i18n-country-delete-cancel')?.disabled,

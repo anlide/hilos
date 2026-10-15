@@ -20,6 +20,9 @@ import LoadingButton from '../../../LoadingButton.vue'
 import HilosI18nLocaleDelete from './HilosI18nLocaleDelete.vue'
 
 const locale: HilosI18nLocaleDeleteTarget = {
+  languageId: 12,
+  countryId: 108,
+  localeId: 12108,
   languageCode: 'ru',
   countryCode: 'ua',
   localeCode: 'ru-UA',
@@ -121,7 +124,7 @@ describe('HilosI18nLocaleDelete', () => {
     expect(s.dispatched).toHaveLength(1)
     expect(s.dispatched[0]).toMatchObject({
       action: 'hilos_i18n_locale_delete',
-      payload: { languageCode: 'ru', countryCode: 'ua' },
+      payload: { languageId: 12, countryId: 108, localeId: 12108 },
     })
     expect(control('cancel').disabled).toBe(true)
     expect(control('confirm').disabled).toBe(true)
@@ -270,9 +273,9 @@ describe('HilosI18nLocaleDelete', () => {
   )
 
   it.each([
-    { ...locale, languageCode: 'en' },
-    { ...locale, countryCode: 'gb' },
-    { ...locale, localeCode: 'ru-GB' },
+    { ...locale, languageId: 11 },
+    { ...locale, countryId: 101 },
+    { ...locale, localeId: 12101, localeCode: 'ru-GB' },
   ])(
     'never substitutes another source identity for the frozen target',
     async (source) => {

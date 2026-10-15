@@ -23,6 +23,8 @@ import {
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
 export const language: HilosI18nLanguageRow = {
+  languageId: 19,
+  rowKey: '19',
   code: 'uk',
   nativeName: 'Українська',
   rtl: false,
@@ -33,6 +35,7 @@ export const language: HilosI18nLanguageRow = {
   deleteReason: null,
 }
 export const languageCard: HilosI18nLanguageCard = {
+  languageId: 19,
   code: 'uk',
   nativeName: 'Українська',
   rtl: false,
@@ -48,10 +51,13 @@ export const languageCard: HilosI18nLanguageCard = {
   },
 }
 export const country: HilosI18nCountryRow = {
+  countryId: 143,
+  rowKey: '143',
   code: 'gg',
   name: 'Guernsey',
   currencySymbol: '£',
   currencyCode: 'GBP',
+  defaultLocaleId: null,
   defaultLocaleCode: null,
   enabled: false,
   isOwn: true,
@@ -61,6 +67,7 @@ export const country: HilosI18nCountryRow = {
   deleteReason: null,
 }
 export const countryCard: HilosI18nCountryCard = {
+  countryId: 143,
   code: 'gg',
   currencySymbol: '£',
   currencyCode: 'GBP',
@@ -68,6 +75,7 @@ export const countryCard: HilosI18nCountryCard = {
   summary: {
     name: 'Guernsey',
     isOwn: true,
+    defaultLocaleId: null,
     defaultLocaleCode: null,
     defaultLocale: 'missing',
     localeCount: 2,
@@ -132,7 +140,7 @@ export function harness(
     HilosPages.I18N_COUNTRY_NAMES,
   ].some((key) => key === page)
   function rowKey(row: (typeof rows)[number]): string {
-    return 'rowKey' in row ? row.rowKey : row.code
+    return row.rowKey
   }
   function pushWindow(next = rows): void {
     emit('tableWindow', {

@@ -72,7 +72,7 @@ describe('React language switch-on', () => {
     expect(h.calls).toHaveLength(1)
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_language_switch_on',
-      payload: { languageCode: 'uk' },
+      payload: { languageId: 19 },
     })
     expect(
       el<HTMLButtonElement>('language-card-switch-on-cancel').disabled,

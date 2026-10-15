@@ -7,15 +7,11 @@ namespace Hilos\Tables\I18n;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 
-/**
- * Backend row of the languages table (HIL-1474).
- *
- * One row is one language of the system, switched on or off. The row key is the language code
- * and rides the payload under {@see self::code}, never `id`: a slot carrying `id` is taken by
- * the frontend normalizer for an entity fragment.
- */
+/** One language, keyed by its decimal primary ID without an entity-fragment id field. */
 final class HilosI18nLanguagesTableRow extends AbstractTableRow
 {
+    public const string rowKey = 'rowKey';
+    public const string languageId = 'languageId';
     public const string code = 'code';
     public const string nativeName = 'nativeName';
     public const string rtl = 'rtl';
@@ -26,7 +22,8 @@ final class HilosI18nLanguagesTableRow extends AbstractTableRow
     public const string deleteReason = 'deleteReason';
 
     /**
-     * @param string $code Language code, which is also the row key
+     * @param int $languageId Persisted language ID
+     * @param string $code Language code
      * @param string $nativeName Name the language calls itself
      * @param bool $rtl Whether writing runs right to left
      * @param bool $enabled Whether the language is switched on
@@ -34,8 +31,10 @@ final class HilosI18nLanguagesTableRow extends AbstractTableRow
      * @param bool $isOwn Whether the code is absent from the built-in catalog
      * @param bool $canDelete Whether the current deletion verdict permits removal
      * @param ?string $deleteReason Default, locales or names; null when deletion is allowed
+     * @throws InvalidFormatException When a row ID is not positive
      */
     public function __construct(
+        public int $languageId,
         public string $code,
         public string $nativeName,
         public bool $rtl,
@@ -45,14 +44,17 @@ final class HilosI18nLanguagesTableRow extends AbstractTableRow
         public bool $canDelete,
         public ?string $deleteReason,
     ) {
+        if ($languageId <= 0) {
+            throw new InvalidFormatException('Invalid language ID');
+        }
     }
 
     /**
-     * @return string Language code
+     * @return string Decimal language ID
      */
     public function getRowKey(): string
     {
-        return $this->code;
+        return (string) $this->languageId;
     }
 
     /**
@@ -60,7 +62,7 @@ final class HilosI18nLanguagesTableRow extends AbstractTableRow
      */
     public static function keyField(): string
     {
-        return self::code;
+        return self::rowKey;
     }
 
     /**
@@ -69,6 +71,8 @@ final class HilosI18nLanguagesTableRow extends AbstractTableRow
     public function toArray(): array
     {
         return [
+            self::rowKey => $this->getRowKey(),
+            self::languageId => $this->languageId,
             self::code => $this->code,
             self::nativeName => $this->nativeName,
             self::rtl => $this->rtl,
@@ -87,7 +91,11 @@ final class HilosI18nLanguagesTableRow extends AbstractTableRow
      */
     public static function fromArray(array $data): static
     {
+        if (self::requireString($data, self::rowKey) !== (string) self::requireInt($data, self::languageId)) {
+            throw new InvalidFormatException('Row key does not match the language ID');
+        }
         return new static(
+            languageId: self::requireInt($data, self::languageId),
             code: self::requireString($data, self::code),
             nativeName: self::requireString($data, self::nativeName),
             rtl: self::requireBool($data, self::rtl),

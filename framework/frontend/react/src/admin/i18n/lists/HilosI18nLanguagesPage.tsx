@@ -72,9 +72,9 @@ function LanguagesList({ context }: HilosI18nLanguagesPageProps) {
     () => createHilosI18nLanguageRowWindow(languages.controller, context),
     [languages, context],
   )
-  const [deleteCode, setDeleteCode] = useState<string | null>(null)
+  const [deleteKey, setDeleteKey] = useState<string | null>(null)
   const focused = useSignal(languages.controller.focusedRow)
-  const deleteSource = focused?.code === deleteCode ? focused : null
+  const deleteSource = focused?.rowKey === deleteKey ? focused : null
   useEffect(() => {
     languages.start()
     return () => {
@@ -84,20 +84,20 @@ function LanguagesList({ context }: HilosI18nLanguagesPageProps) {
     }
   }, [languages, add])
   function closeDelete(): void {
-    setDeleteCode(null)
+    setDeleteKey(null)
     languages.controller.releaseFocus()
   }
   function openDelete(code: string): void {
     const fresh = languages.controller.focusRow(code)
     if (
       !fresh ||
-      fresh.code !== code ||
+      fresh.rowKey !== code ||
       hilosI18nLanguageDelete(fresh).disabled
     ) {
       languages.controller.releaseFocus()
       return
     }
-    setDeleteCode(fresh.code)
+    setDeleteKey(fresh.rowKey)
   }
   return (
     <>
@@ -199,8 +199,8 @@ function LanguagesList({ context }: HilosI18nLanguagesPageProps) {
           [HILOS_TABLE_ACTIONS_KEY]: (row) => (
             <HilosI18nLanguageRowActions
               row={row}
-              onEdit={() => languageWindow.open(row.code)}
-              onDelete={() => openDelete(row.code)}
+              onEdit={() => languageWindow.open(row.rowKey)}
+              onDelete={() => openDelete(row.rowKey)}
             />
           ),
         }}
@@ -213,7 +213,7 @@ function LanguagesList({ context }: HilosI18nLanguagesPageProps) {
       <HilosI18nLanguageAdd add={add} context={context} />
       <HilosI18nLanguageWindow window={languageWindow} />
       <HilosI18nLanguageDelete
-        open={deleteCode !== null}
+        open={deleteKey !== null}
         onClose={closeDelete}
         context={context}
         source={deleteSource}

@@ -11,29 +11,29 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 /** The card and table row share one country's editable fields. */
 abstract class AbstractHilosI18nCountryUpdateActionDTO extends ActionPayloadDTO
 {
-    public const string countryCode = 'countryCode';
+    public const string countryId = 'countryId';
     public const string currencySymbol = 'currencySymbol';
     public const string currencyCode = 'currencyCode';
-    public const string defaultLocaleCode = 'defaultLocaleCode';
+    public const string defaultLocaleId = 'defaultLocaleId';
 
     /**
-     * @param string $countryCode Two lowercase Latin letters
+     * @param int $countryId Persisted country ID
      * @param string $currencySymbol Symbol displayed with an amount
      * @param string $currencyCode Currency code, validated by the country write door
-     * @param ?string $defaultLocaleCode Locale code, or null to clear the default
-     * @throws InvalidFormatException When a country or locale code has an invalid format
+     * @param ?int $defaultLocaleId Persisted locale ID, or null to clear the default
+     * @throws InvalidFormatException When a country or locale ID has an invalid format
      */
     public function __construct(
-        public readonly string $countryCode,
+        public readonly int $countryId,
         public readonly string $currencySymbol,
         public readonly string $currencyCode,
-        public readonly ?string $defaultLocaleCode,
+        public readonly ?int $defaultLocaleId,
     ) {
-        if (preg_match('/^[a-z]{2}$/D', $countryCode) !== 1) {
-            throw new InvalidFormatException('Invalid country code: ' . $countryCode);
+        if ($countryId <= 0) {
+            throw new InvalidFormatException('Invalid country ID: ' . $countryId);
         }
-        if ($defaultLocaleCode !== null && preg_match('/^[a-z]{2}(-[A-Z]{2})?$/D', $defaultLocaleCode) !== 1) {
-            throw new InvalidFormatException('Invalid locale code: ' . $defaultLocaleCode);
+        if ($defaultLocaleId !== null && $defaultLocaleId <= 0) {
+            throw new InvalidFormatException('Invalid locale ID: ' . $defaultLocaleId);
         }
     }
 
@@ -48,27 +48,27 @@ abstract class AbstractHilosI18nCountryUpdateActionDTO extends ActionPayloadDTO
         if (!is_array($inner)) {
             $inner = [];
         }
-        if (!array_key_exists(self::defaultLocaleCode, $inner)
-            || ($inner[self::defaultLocaleCode] !== null && !is_string($inner[self::defaultLocaleCode]))) {
-            throw new InvalidFormatException('Payload carries no string or null under key ' . self::defaultLocaleCode);
+        if (!array_key_exists(self::defaultLocaleId, $inner)
+            || ($inner[self::defaultLocaleId] !== null && !is_int($inner[self::defaultLocaleId]))) {
+            throw new InvalidFormatException('Payload carries no integer or null under key ' . self::defaultLocaleId);
         }
 
         return new static(
-            self::requireString($inner, self::countryCode),
+            self::requireInt($inner, self::countryId),
             self::requireString($inner, self::currencySymbol),
             self::requireString($inner, self::currencyCode),
-            $inner[self::defaultLocaleCode],
+            $inner[self::defaultLocaleId],
         );
     }
 
-    /** @return array<string, string|null> Country address, currency and default locale */
+    /** @return array<string, int|string|null> Country address, currency and default locale */
     public function toArray(): array
     {
         return [
-            self::countryCode => $this->countryCode,
+            self::countryId => $this->countryId,
             self::currencySymbol => $this->currencySymbol,
             self::currencyCode => $this->currencyCode,
-            self::defaultLocaleCode => $this->defaultLocaleCode,
+            self::defaultLocaleId => $this->defaultLocaleId,
         ];
     }
 }

@@ -15,33 +15,41 @@ final class HilosI18nLanguageNameOverrideDeleteActionDTO extends ActionPayloadDT
 {
     public const array SECRET_FIELDS = [];
 
-    public const string languageCode = 'languageCode';
-    public const string inLanguageCode = 'inLanguageCode';
-    public const string localeCode = 'localeCode';
+    public const string languageId = 'languageId';
+    public const string inLanguageId = 'inLanguageId';
+    public const string localeId = 'localeId';
+    public const string nameId = 'nameId';
     public const string expectedName = 'expectedName';
 
     /**
-     * @param string $languageCode Named language code
-     * @param string $inLanguageCode Writing language code
-     * @param string $localeCode Regional locale code of the writing language
+     * @param int $languageId Named language ID
+     * @param int $inLanguageId Writing language ID
+     * @param int $localeId Regional locale ID of the writing language
+     * @param int $nameId Captured primary ID of the name to change
      * @param string $expectedName Literal text seen when confirmation opened, including empty text
      * @throws InvalidFormatException When coordinates or the expected name violate the wire contract
      */
     public function __construct(
-        public readonly string $languageCode,
-        public readonly string $inLanguageCode,
-        public readonly string $localeCode,
+        public readonly int $languageId,
+        public readonly int $inLanguageId,
+        public readonly int $localeId,
+        public readonly int $nameId,
         public readonly string $expectedName,
     ) {
-        if (preg_match('/^[a-z]{2}$/D', $languageCode) !== 1) {
-            throw new InvalidFormatException('Invalid language code: ' . $languageCode);
+        if ($languageId <= 0) {
+            throw new InvalidFormatException('Invalid languageId: ' . $languageId);
         }
-        if (preg_match('/^[a-z]{2}$/D', $inLanguageCode) !== 1 || $languageCode === $inLanguageCode) {
-            throw new InvalidFormatException('The writing language must be another two-letter language code.');
+        if ($inLanguageId <= 0) {
+            throw new InvalidFormatException('Invalid inLanguageId: ' . $inLanguageId);
         }
-        if (preg_match('/^[a-z]{2}-[A-Z]{2}$/D', $localeCode) !== 1
-            || !str_starts_with($localeCode, $inLanguageCode . '-')) {
-            throw new InvalidFormatException('Invalid correction locale: ' . $localeCode);
+        if ($localeId <= 0) {
+            throw new InvalidFormatException('Invalid localeId: ' . $localeId);
+        }
+        if ($nameId <= 0) {
+            throw new InvalidFormatException('Invalid nameId: ' . $nameId);
+        }
+        if ($languageId === $inLanguageId) {
+            throw new InvalidFormatException('The writing language must be another language.');
         }
         if (mb_strlen($expectedName) > EntityLanguageName::NAME_MAX_CHARS) {
             throw new InvalidFormatException('The expected name exceeds its column width.');
@@ -66,20 +74,22 @@ final class HilosI18nLanguageNameOverrideDeleteActionDTO extends ActionPayloadDT
             : $data;
 
         return new static(
-            self::requireString($inner, self::languageCode),
-            self::requireString($inner, self::inLanguageCode),
-            self::requireString($inner, self::localeCode),
+            self::requireInt($inner, self::languageId),
+            self::requireInt($inner, self::inLanguageId),
+            self::requireInt($inner, self::localeId),
+            self::requireInt($inner, self::nameId),
             self::requireString($inner, self::expectedName),
         );
     }
 
-    /** @return array<string, string> Coordinates and the exact expected text */
+    /** @return array<string, int|string> Coordinates and the exact expected text */
     public function toArray(): array
     {
         return [
-            self::languageCode => $this->languageCode,
-            self::inLanguageCode => $this->inLanguageCode,
-            self::localeCode => $this->localeCode,
+            self::languageId => $this->languageId,
+            self::inLanguageId => $this->inLanguageId,
+            self::localeId => $this->localeId,
+            self::nameId => $this->nameId,
             self::expectedName => $this->expectedName,
         ];
     }

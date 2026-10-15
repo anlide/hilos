@@ -68,7 +68,7 @@ describe('HilosI18nCountryWindow', () => {
       'es-US — switched off',
       'Not chosen',
     ])
-    expect(h.select().value).toBe('en-US')
+    expect(h.select().value).toBe('11102')
     expect(h.el('i18n-country-plate')?.className).toContain('alert-info')
     h.type('i18n-country-edit-currency-code', 'us')
     expect(h.button('i18n-country-save').disabled).toBe(true)
@@ -81,10 +81,10 @@ describe('HilosI18nCountryWindow', () => {
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_country_update',
       payload: {
-        countryCode: 'us',
+        countryId: 102,
         currencySymbol: 'US$',
         currencyCode: 'USN',
-        defaultLocaleCode: 'en-US',
+        defaultLocaleId: 11102,
       },
     })
     await h.settle(() => h.refuse(0, 'The currency code is unknown.'))
@@ -138,7 +138,11 @@ describe('HilosI18nCountryWindow', () => {
       h.countryCard({
         ...countryCard,
         currencySymbol: 'US$',
-        summary: { ...countryCard.summary, defaultLocaleCode: 'en-US' },
+        summary: {
+          ...countryCard.summary,
+          defaultLocaleId: 11102,
+          defaultLocaleCode: 'en-US',
+        },
       }),
     )
     expect(h.el('i18n-country-notice')?.textContent?.trim() ?? '').toBe('')
@@ -154,11 +158,11 @@ describe('HilosI18nCountryWindow', () => {
         ...countryCard,
         summary: {
           ...countryCard.summary,
-          locales: [{ code: 'haw-US', enabled: true }],
+          locales: [{ localeId: 53102, code: 'haw-US', enabled: true }],
         },
       }),
     )
-    expect(h.select().value).toBe('en-US')
+    expect(h.select().value).toBe('11102')
     expect(labels(h.select())).toEqual([
       'haw-US',
       'en-US — no longer exists',
@@ -166,7 +170,7 @@ describe('HilosI18nCountryWindow', () => {
     ])
     expect(h.button('i18n-country-save').disabled).toBe(false)
     h.choose('')
-    expect(h.window.form.get().defaultLocaleCode).toBeNull()
+    expect(h.window.form.get().defaultLocaleId).toBeNull()
     expect(h.window.touched.get()).toBe(true)
     expect(
       h.el('i18n-country-edit-default-locale-hint')?.textContent,
@@ -198,7 +202,11 @@ describe('HilosI18nCountryWindow', () => {
       h.countryCard({
         ...countryCard,
         enabled: true,
-        summary: { ...countryCard.summary, defaultLocaleCode: 'es-US' },
+        summary: {
+          ...countryCard.summary,
+          defaultLocaleId: 15102,
+          defaultLocaleCode: 'es-US',
+        },
       }),
     )
     h.act(() => h.window.open('view'))
@@ -216,7 +224,7 @@ describe('HilosI18nCountryWindow', () => {
         'i18n-country-plate',
       )
     }
-    expect(h.select().value).toBe('es-US')
+    expect(h.select().value).toBe('15102')
     expect(h.el('i18n-country-plate')?.className).toContain('alert-warning')
     expect(h.el('i18n-country-save')).toBeNull()
     expect(h.el('i18n-country-error')).toBeNull()

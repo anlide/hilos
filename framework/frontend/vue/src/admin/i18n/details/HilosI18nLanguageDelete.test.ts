@@ -19,6 +19,8 @@ import { hilosAdminViewModeKey } from '../../../hilosAdminViewMode.js'
 import HilosI18nLanguageDelete from './HilosI18nLanguageDelete.vue'
 
 const language: HilosI18nLanguageRow = {
+  languageId: 13,
+  rowKey: '13',
   code: 'fr',
   nativeName: 'Français',
   rtl: false,
@@ -126,7 +128,7 @@ describe('HilosI18nLanguageDelete', () => {
       expect(s.dispatched).toHaveLength(1)
       expect(s.dispatched[0]).toMatchObject({
         action,
-        payload: { languageCode: 'fr' },
+        payload: { languageId: 13 },
       })
       expect(control('cancel').disabled).toBe(true)
       expect(control('confirm').disabled).toBe(true)

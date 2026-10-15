@@ -20,8 +20,8 @@ import { createSignal } from '../../../src/state/signal.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
 
 /** A locales row as the backend sends it, its slot keyed `locale`. */
-function localeRow(rowKey: string, slot: Record<string, unknown>): TableRow {
-  return { rowKey, slots: { locale: slot } }
+function localeRow(_rowKey: string, slot: Record<string, unknown>): TableRow {
+  return { rowKey: String(slot.rowKey), slots: { locale: slot } }
 }
 
 const formats = {
@@ -63,10 +63,31 @@ function recordingContext(
 }
 
 describe('resolveHilosI18nLocaleRow', () => {
+  it('waits for a subject ID and resets its window after that subject disappears', () => {
+    const sent: TableViewportDescriptor[] = []
+    const subject = createSignal<number | null>(null)
+    const table = createHilosI18nLanguageLocalesTable(
+      recordingContext(sent),
+      subject,
+    )
+    table.start()
+    table.controller.ingestWindow([], 0, true, null, null, 100)
+    expect(sent).toEqual([])
+    subject.set(12)
+    expect(sent.at(-1)?.filter).toEqual({ language: 12 })
+    subject.set(null)
+    expect(sent.at(-1)?.filter).toEqual({})
+    expect(sent).toHaveLength(2)
+    table.dispose()
+  })
+
   it('reads the pair, the country and the locale with its switch', () => {
     const row = resolveHilosI18nLocaleRow(
       localeRow('ru-UA', {
-        rowKey: 'ru-UA',
+        languageId: 12,
+        countryId: 108,
+        localeId: 12108,
+        rowKey: '12:108',
         countryCode: 'ua',
         countryName: 'Украина',
         localeCode: 'ru-UA',
@@ -78,7 +99,10 @@ describe('resolveHilosI18nLocaleRow', () => {
     )
 
     expect(row).toEqual({
-      rowKey: 'ru-UA',
+      languageId: 12,
+      countryId: 108,
+      localeId: 12108,
+      rowKey: '12:108',
       countryCode: 'ua',
       countryName: 'Украина',
       localeCode: 'ru-UA',
@@ -92,7 +116,10 @@ describe('resolveHilosI18nLocaleRow', () => {
   it('reads the language alone and a pair without a locale as nulls', () => {
     const own = resolveHilosI18nLocaleRow(
       localeRow('ru', {
-        rowKey: 'ru',
+        languageId: 12,
+        countryId: null,
+        localeId: 12000,
+        rowKey: '12:null',
         countryCode: null,
         countryName: null,
         localeCode: 'ru',
@@ -104,7 +131,10 @@ describe('resolveHilosI18nLocaleRow', () => {
     )
     const none = resolveHilosI18nLocaleRow(
       localeRow('ru-AD', {
-        rowKey: 'ru-AD',
+        languageId: 12,
+        countryId: 142,
+        localeId: null,
+        rowKey: '12:142',
         countryCode: 'ad',
         countryName: null,
         localeCode: null,
@@ -131,7 +161,10 @@ describe('resolveHilosI18nLocaleRow', () => {
     'refuses a missing or non-boolean isCountryDefault (%s)',
     (isCountryDefault) => {
       const slot = {
-        rowKey: 'ru-UA',
+        languageId: 12,
+        countryId: 108,
+        localeId: 12108,
+        rowKey: '12:108',
         countryCode: 'ua',
         countryName: 'Украина',
         localeCode: 'ru-UA',
@@ -140,23 +173,16 @@ describe('resolveHilosI18nLocaleRow', () => {
         catalogFormats: null,
         ...(isCountryDefault === undefined ? {} : { isCountryDefault }),
       }
-      const resolved = resolveHilosI18nLocaleRow(localeRow('ru-UA', slot))
-      expect(resolved.localeCode).toBeNull()
-      expect(resolved.isCountryDefault).toBe(false)
+      expect(() =>
+        resolveHilosI18nLocaleRow(localeRow('12:108', slot)),
+      ).toThrow()
     },
   )
 
-  it('shows a row it cannot read by its key with no locale, rather than dropping it', () => {
-    expect(resolveHilosI18nLocaleRow({ rowKey: 'ru-UA', slots: {} })).toEqual({
-      rowKey: 'ru-UA',
-      countryCode: null,
-      countryName: null,
-      localeCode: null,
-      enabled: null,
-      isCountryDefault: false,
-      formats: null,
-      catalogFormats: null,
-    })
+  it('rejects a row without its typed IDs', () => {
+    expect(() =>
+      resolveHilosI18nLocaleRow({ rowKey: '12:108', slots: {} }),
+    ).toThrow()
   })
 })
 
@@ -164,10 +190,13 @@ describe('createHilosI18nLanguageLocalesTable', () => {
   it('keeps the country-default verdict live in a focused locale across row updates', () => {
     const table = createHilosI18nLanguageLocalesTable(
       recordingContext([]),
-      createSignal('ru'),
+      createSignal(12),
     )
     const slot = {
-      rowKey: 'ru-UA',
+      languageId: 12,
+      countryId: 108,
+      localeId: 12108,
+      rowKey: '12:108',
       countryCode: 'ua',
       countryName: 'Украина',
       localeCode: 'ru-UA',
@@ -184,11 +213,11 @@ describe('createHilosI18nLanguageLocalesTable', () => {
       null,
       20,
     )
-    expect(table.controller.focusRow('ru-UA')?.isCountryDefault).toBe(false)
+    expect(table.controller.focusRow('12:108')?.isCountryDefault).toBe(false)
     for (const isCountryDefault of [true, false]) {
       table.controller.ingestDelta({
         kind: 'row_updated',
-        rowKey: 'ru-UA',
+        rowKey: '12:108',
         row: localeRow('ru-UA', { ...slot, isCountryDefault }),
       })
       expect(table.controller.focusedRow.get()?.isCountryDefault).toBe(
@@ -203,7 +232,7 @@ describe('createHilosI18nLanguageLocalesTable', () => {
   it('declares the country, code, enabled and action columns', () => {
     const table = createHilosI18nLanguageLocalesTable(
       recordingContext([]),
-      createSignal('ru'),
+      createSignal(12),
     )
     const declaration = table.controller.frame.declaration
 
@@ -228,6 +257,9 @@ describe('createHilosI18nLanguageLocalesTable', () => {
     })
     expect(HILOS_I18N_LANGUAGE_LOCALES_COLUMNS[1]?.reads).toEqual(['enabled'])
     expect(HILOS_I18N_LANGUAGE_LOCALES_COLUMNS[3]?.reads).toEqual([
+      HilosI18nLocaleRowKey.languageId,
+      HilosI18nLocaleRowKey.countryId,
+      HilosI18nLocaleRowKey.localeId,
       HilosI18nLocaleRowKey.localeCode,
       HilosI18nLocaleRowKey.enabled,
       HilosI18nLocaleRowKey.formats,
@@ -239,18 +271,18 @@ describe('createHilosI18nLanguageLocalesTable', () => {
   it('presets the language as the filter and follows the address to another language', () => {
     const sent: TableViewportDescriptor[] = []
     const targets: string[] = []
-    const language = createSignal('ru')
+    const language = createSignal(12)
     const table = createHilosI18nLanguageLocalesTable(
       recordingContext(sent, targets),
       language,
     )
 
-    expect(table.controller.filter.get()).toEqual({ language: 'ru' })
+    expect(table.controller.filter.get()).toEqual({ language: 12 })
 
     table.start()
-    language.set('en')
+    language.set(11)
 
-    expect(sent.at(-1)?.filter).toEqual({ language: 'en' })
+    expect(sent.at(-1)?.filter).toEqual({ language: 11 })
     expect(targets.at(-1)).toBe(
       `${HilosPages.I18N_LANGUAGE_LOCALES}/${HILOS_I18N_LANGUAGE_LOCALES_TABLE}`,
     )

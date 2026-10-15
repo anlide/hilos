@@ -12,6 +12,9 @@ switch to the focused data-layer skill first.
 
 ## Read First
 
+- Internal entity references, action targets, external code boundaries and
+  delete/recreate review: `docs/agents/orm/entity-references.md`.
+
 - About to write a query of your own past `Hilos::$db`, or to hold state on a
   static or an instance field instead of `Hilos::$rt`: find the framework's
   mechanism first, `docs/agents/framework-first.md`.

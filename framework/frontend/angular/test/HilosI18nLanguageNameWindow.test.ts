@@ -41,7 +41,7 @@ function setup(viewer = false) {
   const names = createHilosI18nNamesTable(
     bench.context,
     HILOS_I18N_LANGUAGE_NAMES,
-    language,
+    computedSignal(() => card.get()?.languageId ?? null),
   )
   names.start()
   const window = createHilosI18nLanguageNameWindow(
@@ -61,16 +61,49 @@ function setup(viewer = false) {
 }
 
 describe('HilosI18nLanguageNameWindow', () => {
+  it.each([null, 501])(
+    'keeps the draft and blocks a same-text replacement at %s',
+    (localeId) => {
+      const h = setup()
+      h.act(() => h.window.open('11', localeId))
+      h.type('i18n-language-name-input', 'Keep my draft')
+      h.act(() =>
+        h.delta({
+          ...englishName,
+          ...(localeId === null
+            ? { nameId: 999 }
+            : {
+                corrections: [{ ...englishName.corrections[0]!, nameId: 999 }],
+              }),
+        }),
+      )
+      expect(h.input().value).toBe('Keep my draft')
+      expect(h.button('submit').disabled).toBe(true)
+      expect(h.button('submit').textContent).toContain('Deleted')
+      h.submit()
+      expect(h.calls).toEqual([])
+    },
+  )
+
   it.each([
-    ['fr', null, 'Add name', 'value', null],
-    ['es', null, 'Edit name', 'value', ''],
-    ['en', 'en-CA', 'Add locale correction', 'correction', null],
-    ['en', 'en-US', 'Edit locale correction', 'correction', ''],
+    ['13', null, 'Add name', 'value', null],
+    ['15', null, 'Edit name', 'value', ''],
+    ['11', 'en-CA', 'Add locale correction', 'correction', null],
+    ['11', 'en-US', 'Edit locale correction', 'correction', ''],
   ] as const)(
     'opens %s at %s by null against "" with its empty-value hint',
     (code, localeCode, title, kind, stored) => {
       const h = setup()
-      h.act(() => h.window.open(code, localeCode))
+      h.act(() =>
+        h.window.open(
+          code,
+          localeCode === null
+            ? null
+            : ({ 'en-CA': 503, 'en-US': 502 } as Record<string, number>)[
+                localeCode
+              ],
+        ),
+      )
       expect(h.window.mode.get()).toBe(stored === null ? 'add' : 'edit')
       expect(h.el('i18n-language-name-title')?.textContent).toContain(
         `${title} · Українська`,
@@ -104,14 +137,15 @@ describe('HilosI18nLanguageNameWindow', () => {
 
   it('sends an empty add, keeps the refusal, and closes only on the ack of the literal text', async () => {
     const h = setup()
-    h.act(() => h.window.open('fr'))
+    h.act(() => h.window.open('13'))
     h.submit()
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_language_name_add',
       payload: {
-        languageCode: 'uk',
-        inLanguageCode: 'fr',
-        localeCode: null,
+        languageId: 19,
+        inLanguageId: 13,
+        baseNameId: null,
+        localeId: null,
         name: '',
       },
     })
@@ -129,7 +163,7 @@ describe('HilosI18nLanguageNameWindow', () => {
 
   it('sends a correction edit with its expected value and holds every close while busy', async () => {
     const h = setup()
-    h.act(() => h.window.open('en', 'en-US'))
+    h.act(() => h.window.open('11', 502))
     h.submit()
     expect(h.calls).toHaveLength(0)
     h.type('i18n-language-name-input', '   ')
@@ -140,9 +174,10 @@ describe('HilosI18nLanguageNameWindow', () => {
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_language_name_update',
       payload: {
-        languageCode: 'uk',
-        inLanguageCode: 'en',
-        localeCode: 'en-US',
+        languageId: 19,
+        inLanguageId: 11,
+        nameId: 402,
+        localeId: 502,
         name: '   ',
         expectedName: '',
       },
@@ -158,7 +193,7 @@ describe('HilosI18nLanguageNameWindow', () => {
 
   it('offers the conflict choices and sends the accepted incoming value as the expected one', async () => {
     const h = setup()
-    h.act(() => h.window.open('en'))
+    h.act(() => h.window.open('11'))
     h.type('i18n-language-name-input', 'Mine')
     h.act(() => h.delta({ ...englishName, name: 'Theirs' }))
     expect(h.el('i18n-language-name-notice')?.textContent).toContain(
@@ -188,7 +223,7 @@ describe('HilosI18nLanguageNameWindow', () => {
     'keeps the %s draft to copy after its row disappears and sends nothing from it',
     (code) => {
       const h = setup()
-      h.act(() => h.window.open(code))
+      h.act(() => h.window.open(code === 'fr' ? '13' : '11'))
       h.type('i18n-language-name-input', 'Copy me')
       h.act(() =>
         h.delta(code === 'fr' ? frenchName : englishName, 'row_removed'),
@@ -207,7 +242,7 @@ describe('HilosI18nLanguageNameWindow', () => {
 
   it('paints nothing of a late failure from the opening before a route change', async () => {
     const h = setup()
-    h.act(() => h.window.open('fr'))
+    h.act(() => h.window.open('13'))
     h.type('i18n-language-name-input', 'Old draft')
     h.submit()
     h.act(() => {
@@ -215,7 +250,7 @@ describe('HilosI18nLanguageNameWindow', () => {
       h.route.set({ ...h.route.get(), params: { languageCode: 'uk' } })
     })
     expect(h.window.opened.get()).toBe(false)
-    h.act(() => h.window.open('es'))
+    h.act(() => h.window.open('15'))
     h.type('i18n-language-name-input', 'New draft')
     await h.settle(() => h.refuse(0, 'Old failure'))
     expect(h.window.opened.get()).toBe(true)
@@ -228,7 +263,7 @@ describe('HilosI18nLanguageNameWindow', () => {
 
   it('lets a viewer fill the draft and cancel, while Save and Enter send nothing', () => {
     const h = setup(true)
-    h.act(() => h.window.open('es'))
+    h.act(() => h.window.open('15'))
     h.type('i18n-language-name-input', 'Viewer draft')
     expect(h.input().disabled).toBe(false)
     expect(h.button('submit').disabled).toBe(true)
@@ -244,7 +279,7 @@ describe('HilosI18nLanguageNameWindow', () => {
 
   it('lets the row go when the view ends', () => {
     const h = setup()
-    h.act(() => h.window.open('en'))
+    h.act(() => h.window.open('11'))
     expect(h.names.controller.focusedRow.get()?.code).toBe('en')
     h.fixture.destroy()
     expect(h.window.opened.get()).toBe(false)

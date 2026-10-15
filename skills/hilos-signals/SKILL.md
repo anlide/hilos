@@ -9,6 +9,9 @@ Use this skill for every change that affects signal shape, route, subscription, 
 
 ## Read First
 
+- Internal entity references, action targets, external code boundaries and
+  delete/recreate review: `docs/agents/orm/entity-references.md`.
+
 - Routing rules and tracing signal paths: `docs/agents/signals/routing.md`
 - A page served by the agent of ONE entity, and what that changes about the
   subscription's whole life: `docs/agents/signals/routing.md`

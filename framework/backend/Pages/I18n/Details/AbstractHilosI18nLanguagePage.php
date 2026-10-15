@@ -80,8 +80,8 @@ abstract class AbstractHilosI18nLanguagePage extends AbstractHilosI18nLanguageCo
                     throw new InvalidActionPayloadException($action, HilosI18nLanguageSwitchOffActionDTO::class, $dto);
                 }
 
-                $language = Hilos::$db->languages[$dto->languageCode]
-                    ?? throw new TableActionException('Unknown language: ' . $dto->languageCode);
+                $language = Hilos::$db->languages[$dto->languageId]
+                    ?? throw new TableActionException('Unknown language: ' . $dto->languageId);
                 $language->actions->switchOff();
                 $this->setActionSuccessMessage('Language switched off.');
 
@@ -92,8 +92,8 @@ abstract class AbstractHilosI18nLanguagePage extends AbstractHilosI18nLanguageCo
                     throw new InvalidActionPayloadException($action, HilosI18nLanguageSwitchOnActionDTO::class, $dto);
                 }
 
-                $language = Hilos::$db->languages[$dto->languageCode]
-                    ?? throw new TableActionException('Unknown language: ' . $dto->languageCode);
+                $language = Hilos::$db->languages[$dto->languageId]
+                    ?? throw new TableActionException('Unknown language: ' . $dto->languageId);
                 $language->actions->switchOn();
                 $this->setActionSuccessMessage('Language switched on.');
 

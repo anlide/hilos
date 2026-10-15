@@ -11,7 +11,7 @@ defineProps<{
   code: string
   currencySymbol: string
   currencyCode: string
-  defaultLocaleCode?: string | null
+  defaultLocaleId?: number | null
   localeOptions?: readonly HilosI18nCountryLocaleOption[]
   localeHint?: string
   describedBy?: string
@@ -20,7 +20,7 @@ const emit = defineEmits<{
   'update:code': [value: string]
   'update:currencySymbol': [value: string]
   'update:currencyCode': [value: string]
-  'update:defaultLocaleCode': [value: string | null]
+  'update:defaultLocaleId': [value: string | null]
 }>()
 const copy = HILOS_I18N_COUNTRY_ADD_COPY
 const windowCopy = HILOS_I18N_COUNTRY_WINDOW_COPY
@@ -39,7 +39,7 @@ function changeCurrencyCode(event: Event): void {
 }
 function changeDefaultLocale(event: Event): void {
   if (event.target instanceof HTMLSelectElement)
-    emit('update:defaultLocaleCode', event.target.value || null)
+    emit('update:defaultLocaleId', event.target.value || null)
 }
 </script>
 
@@ -145,7 +145,7 @@ function changeDefaultLocale(event: Event): void {
         :id="`${idPrefix}-default-locale`"
         class="form-select form-select-sm"
         :disabled="mode !== 'edit'"
-        :value="defaultLocaleCode ?? ''"
+        :value="defaultLocaleId == null ? '' : String(defaultLocaleId)"
         :aria-describedby="
           mode === 'view' ? describedBy : `${idPrefix}-default-locale-hint`
         "

@@ -9,14 +9,25 @@ export const HILOS_I18N_COUNTRY_NAME_OVERRIDE_DELETE_ACTION =
 
 /** The coordinates and literal value confirmed when the window opens. */
 export type HilosI18nCountryNameDeleteTarget = {
+  readonly countryId: number
+  readonly inLanguageId: number
+  readonly nameId: number
   readonly countryCode: string
   readonly countryName: string
   readonly inLanguageCode: string
   readonly inLanguageNativeName: string
   readonly expectedName: string
 } & (
-  | { readonly kind: 'base'; readonly localeCode?: never }
-  | { readonly kind: 'override'; readonly localeCode: string }
+  | {
+      readonly kind: 'base'
+      readonly localeCode?: never
+      readonly localeId?: never
+    }
+  | {
+      readonly kind: 'override'
+      readonly localeCode: string
+      readonly localeId: number
+    }
 )
 
 /** Shared English copy for the controls and the two confirmation views. */
@@ -55,8 +66,9 @@ export function createHilosI18nCountryNameDelete(
   return {
     deleteName: (target) => {
       const payload = {
-        countryCode: target.countryCode,
-        inLanguageCode: target.inLanguageCode,
+        countryId: target.countryId,
+        inLanguageId: target.inLanguageId,
+        nameId: target.nameId,
         expectedName: target.expectedName,
       }
       return target.kind === 'base'
@@ -68,7 +80,7 @@ export function createHilosI18nCountryNameDelete(
             HILOS_I18N_COUNTRY_NAME_OVERRIDE_DELETE_ACTION,
             {
               ...payload,
-              localeCode: target.localeCode,
+              localeId: target.localeId,
             },
           )
     },

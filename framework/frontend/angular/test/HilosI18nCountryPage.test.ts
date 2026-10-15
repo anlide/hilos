@@ -28,6 +28,7 @@ function setup(viewer = false) {
 const enabledCard = { ...countryCard, enabled: true }
 const ownCard = {
   ...countryCard,
+  countryId: 147,
   code: 'qy',
   summary: {
     ...countryCard.summary,
@@ -43,6 +44,23 @@ const ownCard = {
 }
 
 describe('HilosI18nCountryPage', () => {
+  it('keeps a draft without retargeting a same-code country replacement', () => {
+    const h = setup()
+    h.act(() => h.countryCard())
+    h.click('country-card-edit')
+    h.type('i18n-country-edit-currency-symbol', 'draft')
+    h.act(() =>
+      h.countryCard({ ...countryCard, countryId: countryCard.countryId + 1 }),
+    )
+    expect(
+      h.el<HTMLInputElement>('i18n-country-edit-currency-symbol')!.value,
+    ).toBe('draft')
+    expect(h.el<HTMLButtonElement>('i18n-country-save')!.disabled).toBe(true)
+    expect(h.el('i18n-country-save')!.textContent).toContain('Deleted')
+    h.submit()
+    expect(h.calls).toHaveLength(0)
+  })
+
   it('tells loading from a card that is gone and draws the live fields, header and tabs', () => {
     const h = setup()
     expect(
@@ -88,6 +106,7 @@ describe('HilosI18nCountryPage', () => {
         summary: {
           ...countryCard.summary,
           name: 'Renamed',
+          defaultLocaleId: 11102,
           defaultLocaleCode: 'en-US',
         },
       }),
@@ -152,7 +171,11 @@ describe('HilosI18nCountryPage', () => {
     h.act(() =>
       h.countryCard({
         ...countryCard,
-        summary: { ...countryCard.summary, defaultLocaleCode: 'gone-US' },
+        summary: {
+          ...countryCard.summary,
+          defaultLocaleId: 52102,
+          defaultLocaleCode: 'gone-US',
+        },
       }),
     )
     h.click('country-card-edit')
@@ -166,8 +189,8 @@ describe('HilosI18nCountryPage', () => {
       'gone-US — no longer exists',
       'Not chosen',
     ])
-    expect(select.value).toBe('gone-US')
-    select.value = 'es-US'
+    expect(select.value).toBe('52102')
+    select.value = '15102'
     select.dispatchEvent(new Event('change', { bubbles: true }))
     h.detect()
     h.submit()
@@ -176,10 +199,10 @@ describe('HilosI18nCountryPage', () => {
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_country_update',
       payload: {
-        countryCode: 'us',
+        countryId: 102,
         currencySymbol: '$',
         currencyCode: 'USD',
-        defaultLocaleCode: 'es-US',
+        defaultLocaleId: 15102,
       },
     })
     h.escape()
@@ -193,7 +216,11 @@ describe('HilosI18nCountryPage', () => {
     h.act(() =>
       h.countryCard({
         ...countryCard,
-        summary: { ...countryCard.summary, defaultLocaleCode: 'es-US' },
+        summary: {
+          ...countryCard.summary,
+          defaultLocaleId: 15102,
+          defaultLocaleCode: 'es-US',
+        },
       }),
     )
     expect(h.el('modal')).not.toBeNull()
@@ -248,6 +275,7 @@ describe('HilosI18nCountryPage', () => {
         ...countryCard,
         summary: {
           ...countryCard.summary,
+          defaultLocaleId: 15102,
           defaultLocaleCode: 'es-US',
           defaultLocale: 'off',
         },
@@ -264,6 +292,7 @@ describe('HilosI18nCountryPage', () => {
         ...countryCard,
         summary: {
           ...countryCard.summary,
+          defaultLocaleId: 11102,
           defaultLocaleCode: 'en-US',
           defaultLocale: 'on',
         },
@@ -275,7 +304,7 @@ describe('HilosI18nCountryPage', () => {
     expect(h.calls).toHaveLength(1)
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_country_switch_on',
-      payload: { countryCode: 'us' },
+      payload: { countryId: 102 },
     })
     h.act(() => h.countryCard(enabledCard))
     expect(h.el('modal')).not.toBeNull()
@@ -322,7 +351,7 @@ describe('HilosI18nCountryPage', () => {
     h.click('country-card-switch-off-confirm')
     expect(h.calls[2]).toMatchObject({
       action: 'hilos_i18n_country_switch_off',
-      payload: { countryCode: 'us' },
+      payload: { countryId: 102 },
     })
     h.act(() => h.countryCard())
     expect(
@@ -348,7 +377,7 @@ describe('HilosI18nCountryPage', () => {
     h.click('i18n-country-delete-confirm')
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_country_delete',
-      payload: { countryCode: 'qy' },
+      payload: { countryId: 147 },
     })
     h.act(() => h.countryCard([]))
     expect(h.el('country-card-unavailable')).not.toBeNull()

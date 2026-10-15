@@ -38,7 +38,7 @@ function setup(row = language, viewer = false) {
       <button
         type="button"
         data-id="open-edit"
-        onClick={() => window.open(row.code)}
+        onClick={() => window.open(row.rowKey)}
       >
         Open language
       </button>
@@ -46,7 +46,7 @@ function setup(row = language, viewer = false) {
     </HilosAdminViewModeContext.Provider>,
   )
   el('open-edit').focus()
-  act(() => window.open(row.code))
+  act(() => window.open(row.rowKey))
   return { ...h, window, focused, view, releases: () => releases }
 }
 
@@ -63,7 +63,7 @@ describe('React language edit/view window', () => {
     )
     fireEvent.submit(document.querySelector('form')!)
     expect(h.calls).toHaveLength(0)
-    act(() => h.window.open('uk'))
+    act(() => h.window.open('19'))
     change('i18n-language-edit-native-name', '  Mine  ')
     fireEvent.click(el('i18n-language-edit-rtl'))
     fireEvent.submit(document.querySelector('form')!)
@@ -71,7 +71,7 @@ describe('React language edit/view window', () => {
     expect(h.calls).toHaveLength(1)
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_language_row_update',
-      payload: { languageCode: 'uk', nativeName: 'Mine', rtl: true },
+      payload: { languageId: 19, nativeName: 'Mine', rtl: true },
     })
     act(() => h.focused.set({ ...language, nativeName: 'Mine', rtl: true }))
     click('modal-close')
@@ -98,7 +98,7 @@ describe('React language edit/view window', () => {
       'Server refused',
     )
     act(() => h.window.close())
-    act(() => h.window.open('uk'))
+    act(() => h.window.open('19'))
     expect(el('i18n-language-edit-error').textContent).not.toContain(
       'Server refused',
     )

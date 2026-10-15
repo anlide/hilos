@@ -41,12 +41,13 @@ const modalOpen = computed({
 const missing = computed(() => {
   const target = opened.value
   const row = props.source
-  if (!target || row?.code !== target.inLanguageCode || row.name === null)
+  if (!target || row?.inLanguageId !== target.inLanguageId || row.name === null)
     return true
   return (
-    target.kind === 'override' &&
-    row.corrections.find((item) => item.localeCode === target.localeCode)
-      ?.name == null
+    (target.kind === 'base' && row.nameId !== target.nameId) ||
+    (target.kind === 'override' &&
+      row.corrections.find((item) => item.localeId === target.localeId)
+        ?.nameId !== target.nameId)
   )
 })
 watch(

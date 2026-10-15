@@ -9,6 +9,7 @@ use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Object\Item\CountryName as ObjectCountryName;
+use Hilos\Database\View\Item\CountryName;
 use Hilos\Hilos;
 use Hilos\HilosException;
 
@@ -26,7 +27,7 @@ final class HilosI18nCountryNamesTable extends AbstractHilosI18nNamesTable
     /** Canonical table key under which a project registers this table in its TableContext. */
     public const string TABLE = 'hilosI18nCountryNames';
 
-    /** Filter-map key: the code of the country the window is opened on. */
+    /** Filter-map key: the primary ID of the country the window is opened on. */
     public const string FILTER_COUNTRY = 'country';
 
     public const array BROWSER = [
@@ -45,7 +46,7 @@ final class HilosI18nCountryNamesTable extends AbstractHilosI18nNamesTable
     ];
 
     /**
-     * @return string Filter-map key holding the country's code
+     * @return string Filter-map key holding the country's ID
      */
     protected function filterKey(): string
     {
@@ -77,30 +78,30 @@ final class HilosI18nCountryNamesTable extends AbstractHilosI18nNamesTable
     }
 
     /**
-     * @param string $code Country code
-     * @return ?int Primary id of the country, or null when no country has that code
+     * @param int $id Country primary ID
+     * @return ?int Primary id of the country, or null when no country has that ID
      * @throws HilosException When the countries cannot be read
      */
-    protected function subjectId(string $code): ?int
+    protected function subjectId(int $id): ?int
     {
-        return Hilos::$db->countries[$code]?->id;
+        return Hilos::$db->countries[$id]?->id;
     }
 
     /**
      * @param int $subjectId The named country
      * @param int $languageId Language the name is written in
-     * @return ?string Base name, or null when none is written
+     * @return ?CountryName Base name row, or null when none is written
      * @throws HilosException When the names cannot be read
      */
-    protected function baseName(int $subjectId, int $languageId): ?string
+    protected function baseName(int $subjectId, int $languageId): ?CountryName
     {
-        return Hilos::$db->countryNames->findBase($subjectId, $languageId)?->name;
+        return Hilos::$db->countryNames->findBase($subjectId, $languageId);
     }
 
     /**
      * @param int $subjectId The named country
      * @param int $languageId Language the base name is written in
-     * @return array<int, string> Correction by the primary id of its locale
+     * @return array<int, CountryName> Correction row by the primary id of its locale
      * @throws HilosException When the names cannot be read
      */
     protected function overrideNames(int $subjectId, int $languageId): array
@@ -108,7 +109,7 @@ final class HilosI18nCountryNamesTable extends AbstractHilosI18nNamesTable
         $names = [];
         foreach (Hilos::$db->countryNames->overridesFor($subjectId, $languageId) as $override) {
             if ($override->localeId !== null) {
-                $names[$override->localeId] = $override->name;
+                $names[$override->localeId] = $override;
             }
         }
 

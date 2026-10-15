@@ -47,11 +47,12 @@ function NameDelete({
     }
   }, [])
   const missing =
-    source?.code !== target.inLanguageCode ||
+    source?.inLanguageId !== target.inLanguageId ||
     source.name === null ||
+    (target.kind === 'base' && source.nameId !== target.nameId) ||
     (target.kind === 'override' &&
-      source.corrections.find((item) => item.localeCode === target.localeCode)
-        ?.name == null)
+      source.corrections.find((item) => item.localeId === target.localeId)
+        ?.nameId !== target.nameId)
   function close(): void {
     if (!sending.current) onClose()
   }

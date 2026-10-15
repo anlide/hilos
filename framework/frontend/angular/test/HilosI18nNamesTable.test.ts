@@ -64,7 +64,7 @@ class NamesHost {
  * @param row The view-model the slot carries.
  */
 function nameRow(row: HilosI18nNameRow): TableRow {
-  return { rowKey: row.code, slots: { language: row } }
+  return { rowKey: row.rowKey, slots: { language: row } }
 }
 
 /**
@@ -84,7 +84,7 @@ function mountNames(
       actions: {} as ActionLifecycle,
     },
     target,
-    createSignal('uk'),
+    createSignal(19),
   )
   table.controller.ingestWindow(
     [nameRow(englishName), nameRow(spanishName), nameRow(frenchName)],
@@ -116,7 +116,7 @@ afterEach(() => {
 describe('HilosI18nNamesTable', () => {
   it('shows the language by its code in capitals with its native name', () => {
     const h = mountNames()
-    const row = h.one('tr[data-id="hilos-table-row-en"]')!
+    const row = h.one('tr[data-id="hilos-table-row-11"]')!
     expect(row.querySelector('.text-uppercase')?.textContent?.trim()).toBe('en')
     expect(row.textContent).toContain('English')
   })
@@ -128,24 +128,24 @@ describe('HilosI18nNamesTable', () => {
     ).toBe('No name')
     expect(h.one('[data-id="i18n-names-none-es"]')).toBeNull()
     expect(h.one('[data-id="i18n-names-none-en"]')).toBeNull()
-    expect(h.one('tr[data-id="hilos-table-row-en"]')?.textContent).toContain(
+    expect(h.one('tr[data-id="hilos-table-row-11"]')?.textContent).toContain(
       'Ukrainian',
     )
   })
 
   it('offers the chevron only on a row with corrections', () => {
     const h = mountNames()
-    expect(h.one('tr [data-id="hilos-table-expand-en"]')).not.toBeNull()
-    expect(h.one('[data-id="hilos-table-expand-es"]')).toBeNull()
-    expect(h.one('[data-id="hilos-table-expand-fr"]')).toBeNull()
+    expect(h.one('tr [data-id="hilos-table-expand-11"]')).not.toBeNull()
+    expect(h.one('[data-id="hilos-table-expand-15"]')).toBeNull()
+    expect(h.one('[data-id="hilos-table-expand-13"]')).toBeNull()
   })
 
   it('lists the corrections inside the row panel and the card, an inherited one as "as in" the native name', () => {
     const h = mountNames()
-    h.controller.expandRow('en', true)
+    h.controller.expandRow('11', true)
     h.detect()
     for (const surface of [
-      'tr[data-id="hilos-table-row-detail-en"]',
+      'tr[data-id="hilos-table-row-detail-11"]',
       '[data-id="hilos-table-cards"]',
     ]) {
       const panel = h.one(surface)!
@@ -173,13 +173,13 @@ describe('HilosI18nNamesTable', () => {
     }
     // The panel is the table's own, under the row: no second section after it.
     expect(
-      h.one('tr[data-id="hilos-table-row-detail-en"] dl > div')?.className,
+      h.one('tr[data-id="hilos-table-row-detail-11"] dl > div')?.className,
     ).toContain('col-md-12')
   })
 
   it('leaves the action cell empty when the page hands no templates', () => {
     const h = mountNames(HILOS_I18N_COUNTRY_NAMES)
-    h.controller.expandRow('en', true)
+    h.controller.expandRow('11', true)
     h.detect()
     expect(
       [...h.root.querySelectorAll('button')].every((button) =>
@@ -197,7 +197,7 @@ describe('HilosI18nNamesTable', () => {
     'stamps the row and the correction into both projections for $page',
     (target) => {
       const h = mountNames(target, true)
-      h.controller.expandRow('en', true)
+      h.controller.expandRow('11', true)
       h.detect()
       for (const surface of ['table', '[data-id="hilos-table-cards"]']) {
         const text = (id: string) =>
@@ -214,16 +214,16 @@ describe('HilosI18nNamesTable', () => {
 
   it('keeps both projections in step when an absent value becomes a stored empty one', () => {
     const h = mountNames(HILOS_I18N_COUNTRY_NAMES, true)
-    h.controller.expandRow('en', true)
+    h.controller.expandRow('11', true)
     h.detect()
     h.controller.ingestDelta({
       kind: 'row_updated',
-      rowKey: 'fr',
+      rowKey: '13',
       row: nameRow({ ...frenchName, name: '' }),
     })
     h.controller.ingestDelta({
       kind: 'row_updated',
-      rowKey: 'en',
+      rowKey: '11',
       row: nameRow({
         ...englishName,
         corrections: englishName.corrections.map((correction) => ({

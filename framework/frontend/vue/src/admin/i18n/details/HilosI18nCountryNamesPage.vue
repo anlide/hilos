@@ -55,7 +55,11 @@ const country = computedSignal(
 const names = createHilosI18nNamesTable(
   props.context,
   HILOS_I18N_COUNTRY_NAMES,
-  country,
+  computedSignal(() =>
+    liveCard.get()?.code === country.get()
+      ? (liveCard.get()?.countryId ?? null)
+      : null,
+  ),
 )
 const nameWindow = createHilosI18nCountryNameWindow(
   names.controller,
@@ -73,9 +77,9 @@ const target = shallowRef<HilosI18nCountryNameDeleteTarget | null>(null)
 const focused = useSignal(names.controller.focusedRow)
 const currentCountry = useSignal(country)
 const source = computed(() =>
-  card.value?.code === target.value?.countryCode &&
+  card.value?.countryId === target.value?.countryId &&
   currentCountry.value === target.value?.countryCode &&
-  focused.value?.code === target.value?.inLanguageCode
+  focused.value?.inLanguageId === target.value?.inLanguageId
     ? (focused.value ?? null)
     : null,
 )
@@ -87,24 +91,21 @@ function closeDelete(): void {
   names.controller.releaseFocus()
 }
 
-function openName(
-  row: HilosI18nNameRow,
-  localeCode: string | null = null,
-): void {
+function openName(row: HilosI18nNameRow, localeId: number | null = null): void {
   if (nameWindow.saving.get() || deleteWindow.value?.busy) return
   closeDelete()
-  nameWindow.open(row.code, localeCode)
+  nameWindow.open(row.rowKey, localeId)
 }
 
 async function openDelete(
   row: HilosI18nNameRow,
-  localeCode?: string,
+  localeId?: number,
 ): Promise<void> {
   if (deleteOpen.value || nameWindow.saving.get()) return
   nameWindow.close()
   const attempt = ++opening
   const countryCode = country.get()
-  const resolved = await names.controller.focusRow(row.code)
+  const resolved = await names.controller.focusRow(row.rowKey)
   if (attempt !== opening) return
   const fresh = names.controller.focusedRow.get()
   const subject = card.value
@@ -112,21 +113,26 @@ async function openDelete(
     resolved === null ||
     country.get() !== countryCode ||
     subject?.code !== countryCode ||
-    fresh?.code !== row.code ||
+    fresh?.inLanguageId !== row.inLanguageId ||
     fresh.name === null
   ) {
     closeDelete()
     return
   }
-  const expectedName =
-    localeCode === undefined
-      ? fresh.name
-      : fresh.corrections.find((item) => item.localeCode === localeCode)?.name
-  if (expectedName == null) {
+  const correction =
+    localeId === undefined
+      ? null
+      : fresh.corrections.find((item) => item.localeId === localeId)
+  const expectedName = localeId === undefined ? fresh.name : correction?.name
+  const nameId = localeId === undefined ? fresh.nameId : correction?.nameId
+  if (expectedName == null || nameId == null) {
     closeDelete()
     return
   }
   const coordinates = {
+    countryId: subject.countryId,
+    inLanguageId: fresh.inLanguageId,
+    nameId,
     countryCode,
     countryName: subject.summary.name || subject.code.toUpperCase(),
     inLanguageCode: fresh.code,
@@ -134,9 +140,14 @@ async function openDelete(
     expectedName,
   }
   target.value =
-    localeCode === undefined
+    localeId === undefined
       ? { ...coordinates, kind: 'base' }
-      : { ...coordinates, kind: 'override', localeCode }
+      : {
+          ...coordinates,
+          kind: 'override',
+          localeId,
+          localeCode: correction!.localeCode,
+        }
   deleteOpen.value = true
 }
 
@@ -214,7 +225,7 @@ onUnmounted(() => {
                 )
               "
               :data-id="`i18n-country-name-locale-${correction.name === null ? 'add' : 'edit'}-${correction.localeCode}`"
-              @click="openName(row, correction.localeCode)"
+              @click="openName(row, correction.localeId)"
             >
               <i
                 class="bi"
@@ -227,7 +238,7 @@ onUnmounted(() => {
               class="btn-sm btn-outline-danger"
               :aria-label="copy.overrideLabel(correction.localeCode)"
               :data-id="`i18n-names-delete-${correction.localeCode}`"
-              @click="openDelete(row, correction.localeCode)"
+              @click="openDelete(row, correction.localeId)"
               ><i class="bi bi-trash" aria-hidden="true"></i
             ></LoadingButton>
           </template>

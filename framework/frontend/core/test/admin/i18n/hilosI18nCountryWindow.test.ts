@@ -25,16 +25,18 @@ import { createSignal } from '../../../src/state/signal.js'
 import { type TableViewportController } from '../../../src/table/TableViewportController.js'
 
 const country: HilosI18nCountryEditable = {
+  countryId: 140,
   code: 'ie',
   name: 'Ireland',
   currencySymbol: '€',
   currencyCode: 'EUR',
+  defaultLocaleId: null,
   defaultLocaleCode: null,
   enabled: false,
   isOwn: false,
   locales: [
-    { code: 'ga-IE', enabled: true },
-    { code: 'en-IE', enabled: false },
+    { localeId: 46140, code: 'ga-IE', enabled: true },
+    { localeId: 11140, code: 'en-IE', enabled: false },
   ],
   catalogDefaultLocaleCode: 'en-IE',
 }
@@ -61,6 +63,7 @@ function harness(overrides: Partial<HilosI18nCountryEditable> = {}) {
 
 function card(row = country): HilosI18nCountryCard {
   return {
+    countryId: row.countryId,
     code: row.code,
     currencySymbol: row.currencySymbol,
     currencyCode: row.currencyCode,
@@ -68,7 +71,8 @@ function card(row = country): HilosI18nCountryCard {
     summary: {
       name: row.name,
       isOwn: row.isOwn,
-      defaultLocaleCode: row.defaultLocaleCode,
+      defaultLocaleId: row.defaultLocaleId,
+      defaultLocaleCode: null,
       defaultLocale: 'missing',
       localeCount: row.locales.length,
       nameCount: 1,
@@ -81,10 +85,68 @@ function card(row = country): HilosI18nCountryCard {
 }
 
 function row(): HilosI18nCountryRow {
-  return { ...country, canDelete: false, deleteReason: 'known' }
+  return {
+    ...country,
+    rowKey: '140',
+    defaultLocaleCode: null,
+    canDelete: false,
+    deleteReason: 'known',
+  }
 }
 
 describe('country window', () => {
+  it('parses only a decimal locale ID at the select boundary', () => {
+    const h = harness()
+    for (const invalid of ['en-IE', '0', '-1', '1.5', ' 11140', '011140']) {
+      h.window.setDefaultLocale(invalid)
+      expect(h.window.form.get().defaultLocaleId).toBe(11140)
+    }
+    h.window.setDefaultLocale('46140')
+    expect(h.window.form.get().defaultLocaleId).toBe(46140)
+    h.window.setDefaultLocale('')
+    expect(h.window.form.get().defaultLocaleId).toBeNull()
+    h.window.dispose()
+  })
+
+  it('keeps a selected locale ID when the same code is recreated', async () => {
+    const h = harness()
+    h.source.set({
+      ...country,
+      locales: [{ localeId: 999, code: 'en-IE', enabled: false }],
+    })
+    expect(h.window.form.get().defaultLocaleId).toBe(11140)
+    expect(h.window.options.get()).toEqual([
+      { value: '999', label: 'en-IE — switched off' },
+      { value: '11140', label: 'en-IE — no longer exists' },
+      { value: '', label: 'Not chosen' },
+    ])
+    await h.window.save(async () => false)
+    expect(h.send.mock.calls[0]?.[0]).toMatchObject({ defaultLocaleId: 11140 })
+    h.window.setDefaultLocale('999')
+    await h.window.save(async () => true)
+    expect(h.send.mock.calls[1]?.[0]).toMatchObject({ defaultLocaleId: 999 })
+    h.window.dispose()
+  })
+
+  it('blocks a card draft when its country ID changes under the same code', async () => {
+    const dispatch = vi.fn(() => ({}) as ActionHandle)
+    const context = {
+      actions: { dispatch },
+    } as unknown as HilosI18nCountryContext
+    const source = createSignal<HilosI18nCountryCard | null>(card())
+    const window = createHilosI18nCountryCardWindow(source, context)
+    window.start()
+    window.open('edit')
+    window.setSymbol('draft')
+    source.set({ ...card(), countryId: country.countryId + 1 })
+    expect(window.state.get().gone).toBe(true)
+    expect(window.form.get().currencySymbol).toBe('draft')
+    expect(window.canSave.get()).toBe(false)
+    await window.save(async () => true)
+    expect(dispatch).not.toHaveBeenCalled()
+    window.dispose()
+  })
+
   it('projects the card and table onto the same country', () => {
     expect(hilosI18nCountryEditableFromCard(card())).toEqual(country)
     expect(hilosI18nCountryEditableFromRow(row())).toEqual(country)
@@ -107,12 +169,12 @@ describe('country window', () => {
   })
 
   it.each([
-    [{}, 'en-IE'],
-    [{ defaultLocaleCode: 'ga-IE' }, null],
+    [{}, 11140],
+    [{ defaultLocaleId: 46140 }, null],
     [{ catalogDefaultLocaleCode: null }, null],
     [{ locales: [] }, null],
-    [{ locales: [{ code: 'en-IE', enabled: true }] }, 'en-IE'],
-    [{ locales: [{ code: 'en-IE', enabled: false }] }, 'en-IE'],
+    [{ locales: [{ localeId: 11140, code: 'en-IE', enabled: true }] }, 11140],
+    [{ locales: [{ localeId: 11140, code: 'en-IE', enabled: false }] }, 11140],
   ] as const)(
     'suggests only an existing catalog locale without a chosen default: %j',
     (changes, expected) => {
@@ -123,10 +185,16 @@ describe('country window', () => {
   )
 
   it('orders locales, annotates disabled and vanished values, and puts Not chosen last', () => {
-    expect(hilosI18nCountryLocaleOptions(country, 'fr-IE')).toEqual([
-      { value: 'en-IE', label: 'en-IE — switched off' },
-      { value: 'ga-IE', label: 'ga-IE' },
-      { value: 'fr-IE', label: 'fr-IE — no longer exists' },
+    expect(
+      hilosI18nCountryLocaleOptions(
+        country,
+        13140,
+        new Map([[13140, 'fr-IE']]),
+      ),
+    ).toEqual([
+      { value: '11140', label: 'en-IE — switched off' },
+      { value: '46140', label: 'ga-IE' },
+      { value: '13140', label: 'fr-IE — no longer exists' },
       { value: '', label: 'Not chosen' },
     ])
     expect(
@@ -136,18 +204,18 @@ describe('country window', () => {
 
   it('makes a suggestion saveable without asking to discard it', () => {
     const h = harness()
-    expect(h.window.form.get().defaultLocaleCode).toBe('en-IE')
+    expect(h.window.form.get().defaultLocaleId).toBe(11140)
     expect(h.window.localeHint.get()).toBe(
       'Suggested by the built-in catalog — save to keep it.',
     )
     expect(h.window.canSave.get()).toBe(true)
     expect(h.window.touched.get()).toBe(false)
-    h.window.setDefaultLocale('ga-IE')
+    h.window.setDefaultLocale('46140')
     expect(h.window.touched.get()).toBe(true)
     expect(h.window.localeHint.get()).toBe(
       "Only this country's locales. Not chosen — formats come from the language.",
     )
-    h.window.setDefaultLocale('en-IE')
+    h.window.setDefaultLocale('11140')
     expect(h.window.touched.get()).toBe(false)
     expect(h.window.localeHint.get()).not.toContain('Suggested')
     h.window.dispose()
@@ -159,7 +227,7 @@ describe('country window', () => {
       "This country has no locales yet: add one on a language's Locales page.",
     )
     h.window.setDefaultLocale('')
-    expect(h.window.form.get().defaultLocaleCode).toBeNull()
+    expect(h.window.form.get().defaultLocaleId).toBeNull()
     h.window.dispose()
   })
 
@@ -193,7 +261,7 @@ describe('country window', () => {
   })
 
   it('closes an unchanged form without dispatching', async () => {
-    const h = harness({ defaultLocaleCode: 'en-IE' })
+    const h = harness({ defaultLocaleId: 11140 })
     expect(h.window.canSave.get()).toBe(false)
     await h.window.save(vi.fn())
     expect(h.window.opened.get()).toBe(false)
@@ -220,7 +288,7 @@ describe('country window', () => {
     const h = harness({ enabled: true })
     expect(h.window.mode.get()).toBe('view')
     expect(h.window.title.get()).toBe('Country · Ireland')
-    expect(h.window.form.get().defaultLocaleCode).toBeNull()
+    expect(h.window.form.get().defaultLocaleId).toBeNull()
     h.source.set({ ...country, currencySymbol: 'IE€' })
     expect(h.window.mode.get()).toBe('view')
     expect(h.window.form.get().currencySymbol).toBe('IE€')
@@ -234,10 +302,10 @@ describe('country window', () => {
   })
 
   it('merges server-only changes without marking personal input, and resolves same-field conflicts', () => {
-    const h = harness({ defaultLocaleCode: 'en-IE' })
+    const h = harness({ defaultLocaleId: 11140 })
     h.source.set({
       ...country,
-      defaultLocaleCode: 'en-IE',
+      defaultLocaleId: 11140,
       currencyCode: 'GBP',
     })
     expect(h.window.form.get().currencyCode).toBe('GBP')
@@ -245,7 +313,7 @@ describe('country window', () => {
     h.window.setSymbol('mine')
     h.source.set({
       ...country,
-      defaultLocaleCode: 'en-IE',
+      defaultLocaleId: 11140,
       currencyCode: 'GBP',
       currencySymbol: 'theirs',
     })
@@ -259,7 +327,7 @@ describe('country window', () => {
     expect(h.window.canSave.get()).toBe(true)
     h.source.set({
       ...country,
-      defaultLocaleCode: 'en-IE',
+      defaultLocaleId: 11140,
       currencyCode: 'GBP',
       currencySymbol: 'new',
     })
@@ -272,16 +340,19 @@ describe('country window', () => {
 
   it('updates locale options without replacing a deleted selection and sends that choice for refusal', async () => {
     const h = harness()
-    h.source.set({ ...country, locales: [{ code: 'fr-IE', enabled: true }] })
-    expect(h.window.form.get().defaultLocaleCode).toBe('en-IE')
+    h.source.set({
+      ...country,
+      locales: [{ localeId: 13140, code: 'fr-IE', enabled: true }],
+    })
+    expect(h.window.form.get().defaultLocaleId).toBe(11140)
     expect(h.window.options.get()).toEqual([
-      { value: 'fr-IE', label: 'fr-IE' },
-      { value: 'en-IE', label: 'en-IE — no longer exists' },
+      { value: '13140', label: 'fr-IE' },
+      { value: '11140', label: 'en-IE — no longer exists' },
       { value: '', label: 'Not chosen' },
     ])
     await h.window.save(async () => false)
     expect(h.send.mock.calls[0]?.[0]).toMatchObject({
-      defaultLocaleCode: 'en-IE',
+      defaultLocaleId: 11140,
     })
     expect(h.window.opened.get()).toBe(true)
     h.window.dispose()
@@ -324,7 +395,7 @@ describe('country window', () => {
     h.source.set({
       ...country,
       currencySymbol: 'IE€',
-      defaultLocaleCode: 'en-IE',
+      defaultLocaleId: 11140,
     })
     expect(h.window.noticeKind.get()).toBeNull()
     expect(h.window.noticeText.get()).toBe('')
@@ -354,16 +425,16 @@ describe('country window', () => {
     const rowWindow = createHilosI18nCountryRowWindow(controller, context)
     for (const window of [cardWindow, rowWindow]) {
       window.start()
-      window.open('edit', 'ie')
+      window.open('edit', '140')
       window.setSymbol(' IE€ ')
       await window.save(async () => true)
       window.dispose()
     }
     const payload = {
-      countryCode: 'ie',
+      countryId: 140,
       currencySymbol: 'IE€',
       currencyCode: 'EUR',
-      defaultLocaleCode: 'en-IE',
+      defaultLocaleId: 11140,
     }
     expect(dispatch.mock.calls).toEqual([
       ['hilos_i18n_country_update', payload],

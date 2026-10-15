@@ -12,31 +12,40 @@ use Hilos\Pages\I18n\Details\DTO\HilosI18nCountryNameAddActionDTO;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-/** Literal name text and optional country-locale coordinates survive the wire boundary. */
+/** Exact ID coordinates and literal text survive every serialization boundary. */
 final class HilosI18nCountryNameAddActionDTOTest extends TestCase
 {
-    /** @return iterable<string, array{string, ?string}> Literal names for both coordinate forms */
-    public static function names(): iterable
+    /** @return iterable<string, array{array<string, mixed>}> Valid base and correction payloads */
+    public static function payloads(): iterable
     {
-        foreach ([null, 'qw-GB'] as $locale) {
-            foreach (['ordinary', '', "  \n", str_repeat('é', 255)] as $index => $name) {
-                yield ($locale ?? 'base') . ' ' . $index => [$name, $locale];
-            }
+        foreach (['ordinary', '', "  \n", str_repeat('é', 255)] as $index => $name) {
+            $payload = [
+                'countryId' => 11,
+                'inLanguageId' => 12,
+                'localeId' => null,
+                'baseNameId' => null,
+                'name' => $name,
+            ];
+            yield 'base ' . $index => [$payload];
+            $payload['localeId'] = 21;
+            $payload['baseNameId'] = 31;
+            yield 'correction ' . $index => [$payload];
         }
     }
 
     /**
-     * @param string $name Literal name
-     * @param ?string $locale Country locale, or base
+     * @param array<string, mixed> $payload Exact wire contract
      * @throws HilosException When serialization or validation fails
      */
-    #[DataProvider('names')]
-    public function testRawEnvelopeAndJsonRoundtrip(string $name, ?string $locale): void
+    #[DataProvider('payloads')]
+    public function testRawEnvelopeAndJsonRoundtrip(array $payload): void
     {
-        $payload = ['countryCode' => 'qv', 'inLanguageCode' => 'qw', 'localeCode' => $locale, 'name' => $name];
         $dto = HilosI18nCountryNameAddActionDTO::fromArray([...$payload, 'extra' => 'ignored']);
-        self::assertSame($name, $dto->name);
-        self::assertSame($locale, $dto->localeCode);
+        self::assertSame($payload['countryId'], $dto->countryId);
+        self::assertSame($payload['inLanguageId'], $dto->inLanguageId);
+        self::assertSame($payload['localeId'], $dto->localeId);
+        self::assertSame($payload['baseNameId'], $dto->baseNameId);
+        self::assertSame($payload['name'], $dto->name);
         self::assertSame($payload, $dto->toArray());
         self::assertSame(HilosSignalConstants::HILOS_I18N_COUNTRY_NAME_ADD, $dto->getAction());
         self::assertSame([], HilosI18nCountryNameAddActionDTO::SECRET_FIELDS);
@@ -44,51 +53,66 @@ final class HilosI18nCountryNameAddActionDTOTest extends TestCase
         self::assertSame($payload, HilosI18nCountryNameAddActionDTO::fromArray([
             SignalPayloadConstants::FIELD_DATA => $payload,
         ])->toArray());
-        if ($locale === null) {
-            unset($payload['localeCode']);
-            self::assertSame($dto->toArray(), HilosI18nCountryNameAddActionDTO::fromArray($payload)->toArray());
-        }
     }
 
-    /** @throws InvalidFormatException When valid coordinates are refused */
-    public function testCountryAndWritingLanguageMayHaveTheSameCode(): void
+    /** @throws HilosException When equal IDs from distinct models are incorrectly refused */
+    public function testCountryAndWritingLanguageMayHaveTheSameId(): void
     {
-        $payload = ['countryCode' => 'de', 'inLanguageCode' => 'de', 'name' => 'Deutschland'];
+        $name = '';
+        $payload = [
+            'countryId' => 11,
+            'inLanguageId' => 12,
+            'localeId' => null,
+            'baseNameId' => null,
+            'name' => $name,
+        ];
+        $payload['inLanguageId'] = $payload['countryId'];
         $dto = HilosI18nCountryNameAddActionDTO::fromArray($payload);
-        self::assertSame('de', $dto->countryCode);
-        self::assertSame('de', $dto->inLanguageCode);
+        self::assertSame($dto->countryId, $dto->inLanguageId);
     }
 
     /** @throws InvalidFormatException When a name reserved for ORM validation is refused */
     public function testNameWidthIsLeftToTheWriteAction(): void
     {
-        $dto = HilosI18nCountryNameAddActionDTO::fromArray([
-            'countryCode' => 'de', 'inLanguageCode' => 'de', 'name' => str_repeat('é', 256),
-        ]);
-        self::assertSame(256, mb_strlen($dto->name));
+        $name = str_repeat('é', 256);
+        $payload = [
+            'countryId' => 11,
+            'inLanguageId' => 12,
+            'localeId' => null,
+            'baseNameId' => null,
+            'name' => $name,
+        ];
+        $dto = HilosI18nCountryNameAddActionDTO::fromArray($payload);
+        self::assertSame($name, $dto->name);
+        self::assertSame($payload, $dto->toArray());
     }
 
     /** @return iterable<string, array{array<string, mixed>}> Missing, mistyped and malformed fields */
     public static function invalidPayloads(): iterable
     {
         $name = 'Name';
-        $valid = ['countryCode' => 'qv', 'inLanguageCode' => 'qw', 'name' => $name];
+        $valid = [
+            'countryId' => 11,
+            'inLanguageId' => 12,
+            'localeId' => null,
+            'baseNameId' => null,
+            'name' => $name,
+        ];
         foreach (array_keys($valid) as $key) {
             $missing = $valid;
             unset($missing[$key]);
             yield 'missing ' . $key => [$missing];
-            foreach ([null, 0, true, []] as $value) {
+            $ids = ['countryId', 'inLanguageId', 'localeId', 'baseNameId'];
+            $invalid = in_array($key, $ids, true) ? ['12', false, true, 1.5, 12.0, 0, -1, '', []] : [null, 0, true, []];
+            foreach ($invalid as $value) {
                 yield $key . ' ' . var_export($value, true) => [[...$valid, $key => $value]];
             }
         }
-        foreach (['countryCode', 'inLanguageCode'] as $key) {
-            foreach (['', 'QW', 'q', 'qww', "qw\n", 'éñ', ' qw'] as $code) {
-                yield $key . ' format ' . $code => [[...$valid, $key => $code]];
-            }
-        }
-        foreach (['', 'qw', 'qv-GB', 'qw-gb', 'QW-GB', 'qw-GB-extra', "qw-GB\n", 0, true, []] as $locale) {
-            yield 'locale ' . var_export($locale, true) => [[...$valid, 'localeCode' => $locale]];
-        }
+        yield 'null countryId' => [[...$valid, 'countryId' => null]];
+        yield 'null inLanguageId' => [[...$valid, 'inLanguageId' => null]];
+        yield 'locale without base' => [[...$valid, 'localeId' => 21]];
+        yield 'base without locale' => [[...$valid, 'baseNameId' => 31]];
+        yield 'legacy codes' => [['countryCode' => 'qv', 'inLanguageCode' => 'qw', 'localeCode' => null, 'name' => 'Name']];
         yield 'empty payload' => [[]];
         foreach ([null, 'invalid', 42, []] as $envelope) {
             yield 'envelope ' . var_export($envelope, true) => [[SignalPayloadConstants::FIELD_DATA => $envelope]];

@@ -188,13 +188,18 @@ export class HilosI18nLanguageNameDelete {
   protected readonly missing = computed(() => {
     const held = this.opened()
     const row = this.source()
-    if (held === null || row?.code !== held.inLanguageCode || row.name === null)
+    if (
+      held === null ||
+      row?.inLanguageId !== held.inLanguageId ||
+      row.name === null
+    )
       return true
 
     return (
-      held.kind === 'override' &&
-      row.corrections.find((item) => item.localeCode === held.localeCode)
-        ?.name == null
+      (held.kind === 'base' && row.nameId !== held.nameId) ||
+      (held.kind === 'override' &&
+        row.corrections.find((item) => item.localeId === held.localeId)
+          ?.nameId !== held.nameId)
     )
   })
   private readonly lookOnly = injectLookOnly()

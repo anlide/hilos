@@ -12,6 +12,7 @@ import { ScopeManager } from '../../../src/state/ScopeManager.js'
 
 /** The complete country payload, including locale choices and deletion hints. */
 const card = {
+  countryId: 140,
   code: 'ie',
   currencySymbol: '€',
   currencyCode: 'EUR',
@@ -19,13 +20,14 @@ const card = {
   summary: {
     name: 'Ireland',
     isOwn: false,
+    defaultLocaleId: null,
     defaultLocaleCode: null,
     defaultLocale: 'missing',
     localeCount: 2,
     nameCount: 1,
     locales: [
-      { code: 'en-IE', enabled: false },
-      { code: 'ga-IE', enabled: true },
+      { localeId: 11140, code: 'en-IE', enabled: false },
+      { localeId: 46140, code: 'ga-IE', enabled: true },
     ],
     catalogDefaultLocaleCode: 'en-IE',
     canDelete: false,
@@ -40,12 +42,15 @@ describe('country locale payloads', () => {
 
   it('preserves both fields in a country table row', () => {
     const slot = {
+      countryId: card.countryId,
+      rowKey: String(card.countryId),
       code: card.code,
       currencySymbol: card.currencySymbol,
       currencyCode: card.currencyCode,
       enabled: card.enabled,
       name: card.summary.name,
       isOwn: card.summary.isOwn,
+      defaultLocaleId: card.summary.defaultLocaleId,
       defaultLocaleCode: card.summary.defaultLocaleCode,
       locales: card.summary.locales,
       catalogDefaultLocaleCode: card.summary.catalogDefaultLocaleCode,
@@ -63,6 +68,7 @@ describe('country locale payloads', () => {
   it('accepts an own country with no locales and no catalog suggestion', () => {
     const own = {
       ...card,
+      countryId: 141,
       code: 'qx',
       summary: {
         ...card.summary,
@@ -92,7 +98,7 @@ describe('country locale payloads', () => {
 
   it.each([
     { locales: null },
-    { locales: [{ code: 'en-IE', enabled: 'false' }] },
+    { locales: [{ localeId: 11140, code: 'en-IE', enabled: 'false' }] },
     { locales: [{ code: 'en-IE' }] },
     { locales: [{ code: 1, enabled: false }] },
     { locales: [{ code: 'en-IE', enabled: false, extra: true }] },
@@ -121,7 +127,7 @@ describe('country locale payloads', () => {
       summary: {
         ...card.summary,
         localeCount: 1,
-        locales: [{ code: 'en-IE', enabled: true }],
+        locales: [{ localeId: 11140, code: 'en-IE', enabled: true }],
       },
     }
     scope.data.set(COUNTRY_CARD_DATA, updated)

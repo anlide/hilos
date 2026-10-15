@@ -97,8 +97,7 @@ export class HilosI18nCountryDelete {
   /** The live country the window follows, or null once it is gone. */
   readonly source = input.required<HilosI18nCountryDeleteTarget | null>()
   /** The delete action of the page that opens the window. */
-  readonly deleteCountry =
-    input.required<(countryCode: string) => ActionHandle>()
+  readonly deleteCountry = input.required<(countryId: number) => ActionHandle>()
   /** The window asks to close: Cancel, Esc, the backdrop, or its own success. */
   readonly closed = output<void>()
   /** The country was deleted by this window's action. */
@@ -115,7 +114,7 @@ export class HilosI18nCountryDelete {
     () =>
       this.open() &&
       !this.action.busy() &&
-      this.source()?.code !== this.target()?.code,
+      this.source()?.countryId !== this.target()?.countryId,
   )
   private readonly lookOnly = injectLookOnly()
   private readonly destroyRef = inject(DestroyRef)
@@ -148,7 +147,7 @@ export class HilosI18nCountryDelete {
     }
     // The opening hint may have changed; the server's live verdict decides.
     if (
-      (await this.action.run(this.deleteCountry()(target.code))) &&
+      (await this.action.run(this.deleteCountry()(target.countryId))) &&
       !this.destroyRef.destroyed
     ) {
       this.closed.emit()

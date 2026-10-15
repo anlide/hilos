@@ -52,6 +52,9 @@ use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\LocaleTemplates;
 use Hilos\I18n\MeasurementSystem;
 use Hilos\HilosException;
+use Hilos\I18n\DTO\LocaleFormats;
+use Hilos\Pages\I18n\Details\DTO\HilosI18nCountryNameOverrideDeleteActionDTO;
+use Hilos\Pages\I18n\Details\DTO\HilosI18nCountryNameDeleteActionDTO;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nCountryNameAddActionDTO;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nCountryNameUpdateActionDTO;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
@@ -148,18 +151,18 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
                 Hilos::$db->locales['qk-GB']->actions->switchOn();
             });
         }
-        $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('qj', 'qk', null, $name), 'Country name added.');
+        $this->assertSuccess($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', null, $name), 'Country name added.');
         self::assertSame($name, $this->base()->name);
         self::assertTrue($this->base()->locked);
         $baseId = $this->base()->id;
-        $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('qj', 'qk', 'qk-GB', $name), 'Locale correction added.');
+        $this->assertSuccess($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', 'qk-GB', $name), 'Locale correction added.');
         self::assertSame($name, $this->correction('qk-GB')->name);
         self::assertTrue($this->correction('qk-GB')->locked);
         $correctionId = $this->correction('qk-GB')->id;
         foreach ([null, 'qk-GB'] as $locale) {
             $message = $locale === null ? 'Country name saved.' : 'Locale correction saved.';
-            $this->assertSuccess(new HilosI18nCountryNameUpdateActionDTO('qj', 'qk', $locale, 'Temporary', $name), $message);
-            $this->assertSuccess(new HilosI18nCountryNameUpdateActionDTO('qj', 'qk', $locale, $name, 'Temporary'), $message);
+            $this->assertSuccess($this->nameRequest(HilosI18nCountryNameUpdateActionDTO::class, 'qj', 'qk', $locale, 'Temporary', $name), $message);
+            $this->assertSuccess($this->nameRequest(HilosI18nCountryNameUpdateActionDTO::class, 'qj', 'qk', $locale, $name, 'Temporary'), $message);
         }
         self::assertSame($baseId, $this->base()->id);
         self::assertSame($correctionId, $this->correction('qk-GB')->id);
@@ -190,33 +193,38 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
     #[DataProvider('storedNames')]
     public function testDuplicateAndStaleWritesAreRefusedWhileEqualExpectedTextSaves(?string $locale, string $name): void
     {
-        $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('qj', 'qk', null, $name), 'Country name added.');
+        $this->assertSuccess($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', null, $name), 'Country name added.');
         if ($locale !== null) {
-            $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('qj', 'qk', $locale, $name), 'Locale correction added.');
+            $this->assertSuccess($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', $locale, $name), 'Locale correction added.');
         }
         $this->assertRefusal(
-            new HilosI18nCountryNameAddActionDTO('qj', 'qk', $locale, 'Overwrite'),
+            $this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', $locale, 'Overwrite'),
             'A name already exists for this language or locale.',
         );
         $this->assertRefusal(
-            new HilosI18nCountryNameUpdateActionDTO('qj', 'qk', $locale, 'Overwrite', 'Stale'),
+            $this->nameRequest(HilosI18nCountryNameUpdateActionDTO::class, 'qj', 'qk', $locale, 'Overwrite', 'Stale'),
             'The name changed elsewhere. Review the current value and save again.',
         );
         $this->assertSuccess(
-            new HilosI18nCountryNameUpdateActionDTO('qj', 'qk', $locale, 'Saved', $name),
+            $this->nameRequest(HilosI18nCountryNameUpdateActionDTO::class, 'qj', 'qk', $locale, 'Saved', $name),
             $locale === null ? 'Country name saved.' : 'Locale correction saved.',
         );
     }
 
     /** @throws HilosException When setup, dispatch or persistence fails */
-    public function testEqualTextReplacementIsAcceptedWithoutAnAbaVersion(): void
+    public function testEqualTextReplacementRefusesCapturedIdAndAcceptsNewId(): void
     {
-        $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('qj', 'qk', null, 'Name'), 'Country name added.');
+        $this->assertSuccess($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', null, 'Name'), 'Country name added.');
         $oldId = $this->base()->id;
+        $captured = $this->nameRequest(HilosI18nCountryNameUpdateActionDTO::class, 'qj', 'qk', null, 'New', 'Name');
         $this->underAgent($this->agent, fn () => $this->base()->actions->delete());
-        $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('qj', 'qk', null, 'Name'), 'Country name added.');
+        $this->assertSuccess($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', null, 'Name'), 'Country name added.');
         self::assertNotSame($oldId, $this->base()->id);
-        $this->assertSuccess(new HilosI18nCountryNameUpdateActionDTO('qj', 'qk', null, 'New', 'Name'), 'Country name saved.');
+        $newId = $this->base()->id;
+        $this->assertRefusal($captured, 'The name no longer exists.');
+        self::assertSame($newId, $this->base()->id);
+        self::assertSame('Name', $this->base()->name);
+        $this->assertSuccess($this->nameRequest(HilosI18nCountryNameUpdateActionDTO::class, 'qj', 'qk', null, 'New', 'Name'), 'Country name saved.');
     }
 
     /** @throws HilosException When setup, dispatch or persistence fails */
@@ -224,8 +232,11 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
     {
         $this->underAgent($this->agent, static fn () => Hilos::$db->countries->actions->create('qk', 'Q', 'QKK'));
         try {
-            $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('qk', 'qk', null, ''), 'Country name added.');
-            $this->assertSuccess(new HilosI18nCountryNameUpdateActionDTO('qk', 'qk', null, 'Saved', ''), 'Country name saved.');
+            $this->assertSuccess($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qk', 'qk', null, ''), 'Country name added.');
+            $this->assertSuccess($this->nameRequest(
+                HilosI18nCountryNameUpdateActionDTO::class,
+                'qk', 'qk', null, 'Saved', ''
+            ), 'Country name saved.');
             self::assertSame('Saved', Hilos::$db->countryNames->findBase(
                 Hilos::$db->countries['qk']->id, Hilos::$db->languages['qk']->id,
             )->name);
@@ -249,9 +260,12 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
             );
         });
         try {
-            $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('us', 'en', null, ''), 'Country name added.');
-            $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('us', 'en', 'en-GB', '  '), 'Locale correction added.');
-            $this->assertSuccess(new HilosI18nCountryNameUpdateActionDTO('us', 'en', 'en-GB', '', '  '), 'Locale correction saved.');
+            $this->assertSuccess($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'us', 'en', null, ''), 'Country name added.');
+            $this->assertSuccess($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'us', 'en', 'en-GB', '  '), 'Locale correction added.');
+            $this->assertSuccess($this->nameRequest(
+                HilosI18nCountryNameUpdateActionDTO::class,
+                'us', 'en', 'en-GB', '', '  '
+            ), 'Locale correction saved.');
             $name = Hilos::$db->countryNames->findOverride(
                 Hilos::$db->countries['us']->id, Hilos::$db->languages['en']->id, Hilos::$db->locales['en-GB']->id,
             );
@@ -293,7 +307,7 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
         $property->setValue($collection, $refusedActions);
         try {
             $before = $this->nameSnapshot();
-            $failure = $this->dispatch(new HilosI18nCountryNameAddActionDTO('qj', 'qk', null, 'New'));
+            $failure = $this->dispatch($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', null, 'New'));
             self::assertInstanceOf(PageActionErrorSignalData::class, $failure);
             self::assertSame('write-tracked', $failure->requestId);
             self::assertSame(HilosSignalConstants::HILOS_I18N_COUNTRY_NAME_ADD, $failure->action);
@@ -304,6 +318,110 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
         } finally {
             $property->setValue($collection, $actions);
         }
+    }
+
+    /** @throws HilosException When fixture recreation or dispatch fails */
+    public function testCapturedSubjectDoesNotResolveItsCodeAfterRecreation(): void
+    {
+        $captured = $this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', null, 'Name');
+        $oldId = $captured->toArray()['countryId'];
+        $this->clearTestRows();
+        $this->seed();
+        $this->underAgent($this->agent, fn () => $this->base()->actions->delete());
+        $fresh = $this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', null, 'Name');
+        self::assertNotSame($oldId, $fresh->toArray()['countryId']);
+        $this->assertRefusal($captured, 'Unknown country: ' . $oldId);
+        self::assertNull($this->base());
+        $this->assertSuccess($fresh, 'Country name added.');
+        self::assertSame('Name', $this->base()->name);
+    }
+
+    /** @throws HilosException When setup, dispatch or persistence fails */
+    public function testCorrectionRequestsRefuseRecreatedBaseAndLocale(): void
+    {
+        $this->assertSuccess(
+            $this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', null, 'Name'),
+            'Country name added.',
+        );
+        $add = $this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', 'qk-GB', 'Correction');
+        $this->assertSuccess($add, 'Locale correction added.');
+        $edit = $this->nameRequest(HilosI18nCountryNameUpdateActionDTO::class, 'qj', 'qk', 'qk-GB', 'New', 'Correction');
+        $remove = $this->nameRequest(HilosI18nCountryNameOverrideDeleteActionDTO::class, 'qj', 'qk', 'qk-GB', 'Correction');
+        $removeBase = $this->nameRequest(HilosI18nCountryNameDeleteActionDTO::class, 'qj', 'qk', null, 'Name');
+        $this->underAgent($this->agent, fn () => $this->base()->actions->delete());
+        $this->assertSuccess(
+            $this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', null, 'Name'),
+            'Country name added.',
+        );
+        $this->assertRefusal($add, 'The name no longer exists.');
+        $this->assertSuccess(
+            $this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', 'qk-GB', 'Correction'),
+            'Locale correction added.',
+        );
+        $before = $this->nameSnapshot();
+        $this->assertRefusal($edit, 'The name no longer exists.');
+        $this->assertRefusal($remove, 'The name no longer exists.');
+        $this->assertRefusal($removeBase, 'The name no longer exists.');
+        self::assertSame($before, $this->nameSnapshot());
+        $this->underAgent($this->agent, fn () => $this->correction('qk-GB')->actions->delete());
+        $add = $this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', 'qk-GB', 'Correction');
+        $oldLocaleId = Hilos::$db->locales['qk-GB']->id;
+        $this->underAgent($this->agent, static function (): void {
+            $formats = LocaleFormats::ofLocale(Hilos::$db->locales['qk-GB']);
+            Hilos::$db->locales['qk-GB']->actions->delete();
+            Hilos::$db->locales->actions->create(
+                Hilos::$db->languages['qk'], Hilos::$db->countries['gb'],
+                $formats->date, $formats->time, $formats->number, $formats->phone,
+                $formats->address, $formats->measurement, $formats->collation,
+            );
+        });
+        self::assertNotSame($oldLocaleId, Hilos::$db->locales['qk-GB']->id);
+        $this->assertRefusal($add, 'Unknown locale: ' . $oldLocaleId);
+        self::assertNull($this->correction('qk-GB'));
+        $this->assertSuccess(
+            $this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', 'qk-GB', 'Correction'),
+            'Locale correction added.',
+        );
+    }
+
+    /** @throws HilosException When setup, dispatch or persistence fails */
+    public function testNameIdsCannotCrossBaseCorrectionOrWritingLanguageCoordinates(): void
+    {
+        $this->assertSuccess(
+            $this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', null, 'Name'),
+            'Country name added.',
+        );
+        $this->assertSuccess(
+            $this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', 'qk-GB', 'Name'),
+            'Locale correction added.',
+        );
+        $foreign = $this->underAgent($this->agent, static fn () => Hilos::$db->countryNames->actions->createManual(
+            Hilos::$db->countries['qj'], Hilos::$db->languages['en'], null, 'Name',
+        ));
+        $baseEdit = $this->nameRequest(HilosI18nCountryNameUpdateActionDTO::class, 'qj', 'qk', null, 'New', 'Name');
+        $baseDelete = $this->nameRequest(HilosI18nCountryNameDeleteActionDTO::class, 'qj', 'qk', null, 'Name');
+        $overrideDelete = $this->nameRequest(
+            HilosI18nCountryNameOverrideDeleteActionDTO::class, 'qj', 'qk', 'qk-GB', 'Name',
+        );
+        $before = $this->nameSnapshot();
+        foreach ([$baseEdit, $baseDelete] as $request) {
+            foreach ([$foreign->id, $this->correction('qk-GB')->id] as $nameId) {
+                $this->assertRefusal(
+                    $request::fromArray([...$request->toArray(), 'nameId' => $nameId]),
+                    'The name no longer exists at these coordinates.',
+                );
+            }
+        }
+        $this->assertRefusal(
+            $overrideDelete::fromArray([...$overrideDelete->toArray(), 'nameId' => $this->base()->id]),
+            'The name no longer exists at these coordinates.',
+        );
+        $add = $this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', 'qk-GB', 'New');
+        $this->assertRefusal(
+            $add::fromArray([...$add->toArray(), 'baseNameId' => $foreign->id]),
+            'The name no longer exists.',
+        );
+        self::assertSame($before, $this->nameSnapshot());
     }
 
     /** @return iterable<string, array{bool, ?string}> Both actions and both row kinds */
@@ -325,14 +443,14 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
     public function testUnicodeWidthRefusalDoesNotMutate(bool $update, ?string $locale): void
     {
         if ($update || $locale !== null) {
-            $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('qj', 'qk', null, ''), 'Country name added.');
+            $this->assertSuccess($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', null, ''), 'Country name added.');
         }
         if ($update && $locale !== null) {
-            $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('qj', 'qk', $locale, ''), 'Locale correction added.');
+            $this->assertSuccess($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', $locale, ''), 'Locale correction added.');
         }
         $dto = $update
-            ? new HilosI18nCountryNameUpdateActionDTO('qj', 'qk', $locale, str_repeat('é', 256), '')
-            : new HilosI18nCountryNameAddActionDTO('qj', 'qk', $locale, str_repeat('é', 256));
+            ? $this->nameRequest(HilosI18nCountryNameUpdateActionDTO::class, 'qj', 'qk', $locale, str_repeat('é', 256), '')
+            : $this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', $locale, str_repeat('é', 256));
         $this->assertRefusal($dto, 'Name exceeds its column width');
     }
 
@@ -357,7 +475,7 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
     public function testMissingCoordinatesNeverCreateOnUpdate(bool $update, string $scenario): void
     {
         if ($scenario !== 'base' && $scenario !== 'base-row') {
-            $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('qj', 'qk', null, ''), 'Country name added.');
+            $this->assertSuccess($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', null, ''), 'Country name added.');
         }
         $country = $scenario === 'country' ? 'zz' : 'qj';
         $writing = $scenario === 'writing-language' ? 'zz' : 'qk';
@@ -367,12 +485,12 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
             default => null,
         };
         $dto = $update
-            ? new HilosI18nCountryNameUpdateActionDTO($country, $writing, $locale, 'Write', '')
-            : new HilosI18nCountryNameAddActionDTO($country, $writing, $locale, 'Write');
+            ? $this->nameRequest(HilosI18nCountryNameUpdateActionDTO::class, $country, $writing, $locale, 'Write', '')
+            : $this->nameRequest(HilosI18nCountryNameAddActionDTO::class, $country, $writing, $locale, 'Write');
         $this->assertRefusal($dto, match ($scenario) {
-            'country' => 'Unknown country: zz',
-            'writing-language' => 'Unknown writing language: zz',
-            'locale' => 'Unknown locale: qk-DE',
+            'country' => 'Unknown country: ' . PHP_INT_MAX,
+            'writing-language' => 'Unknown writing language: ' . PHP_INT_MAX,
+            'locale' => 'Unknown locale: ' . PHP_INT_MAX,
             default => 'The name no longer exists.',
         });
     }
@@ -398,9 +516,9 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
     #[DataProvider('invalidLocaleRelations')]
     public function testBothActionsRecheckStoredLocaleRelations(bool $update, bool $countryless): void
     {
-        $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('qj', 'qk', null, ''), 'Country name added.');
+        $this->assertSuccess($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', null, ''), 'Country name added.');
         if ($update) {
-            $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('qj', 'qk', 'qk-GB', ''), 'Locale correction added.');
+            $this->assertSuccess($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', 'qk-GB', ''), 'Locale correction added.');
         }
         $localeId = Hilos::$db->locales['qk-GB']->id;
         $writingId = Hilos::$db->languages['qk']->id;
@@ -456,10 +574,10 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
     public function testEveryWriteRequiresTheOwner(bool $update, ?string $locale): void
     {
         if ($update || $locale !== null) {
-            $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('qj', 'qk', null, ''), 'Country name added.');
+            $this->assertSuccess($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', null, ''), 'Country name added.');
         }
         if ($update && $locale !== null) {
-            $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('qj', 'qk', $locale, ''), 'Locale correction added.');
+            $this->assertSuccess($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', $locale, ''), 'Locale correction added.');
         }
         $before = $this->nameSnapshot();
         $dto = $this->request($update, $locale);
@@ -497,10 +615,10 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
     public function testNonAdminsCannotWriteThroughDispatcher(bool $update, ?string $locale, bool $signedIn, bool $viewMode): void
     {
         if ($update || $locale !== null) {
-            $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('qj', 'qk', null, ''), 'Country name added.');
+            $this->assertSuccess($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', null, ''), 'Country name added.');
         }
         if ($update && $locale !== null) {
-            $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('qj', 'qk', $locale, ''), 'Locale correction added.');
+            $this->assertSuccess($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', $locale, ''), 'Locale correction added.');
         }
         $this->connect('viewer', $signedIn ? false : null);
         Hilos::$rt->hilosAdminViewModeRuntime?->actions->set($viewMode);
@@ -533,10 +651,13 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
     public function testBothNamesWindowsReceiveUpdatedValuesAndCard(bool $update, ?string $locale, string $name): void
     {
         if ($update || $locale !== null) {
-            $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('qj', 'qk', null, 'Before'), 'Country name added.');
+            $this->assertSuccess($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', null, 'Before'), 'Country name added.');
         }
         if ($update && $locale !== null) {
-            $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('qj', 'qk', $locale, 'Before'), 'Locale correction added.');
+            $this->assertSuccess($this->nameRequest(
+                HilosI18nCountryNameAddActionDTO::class,
+                'qj', 'qk', $locale, 'Before'
+            ), 'Locale correction added.');
         }
         $this->connect('other-tab', true);
         foreach (['write-ak', 'other-tab'] as $acceptKey) {
@@ -546,8 +667,8 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
         $changes = new I18nCountryNameWriteChanges();
         SourceChangeBus::subscribe($changes);
         $dto = $update
-            ? new HilosI18nCountryNameUpdateActionDTO('qj', 'qk', $locale, $name, 'Before')
-            : new HilosI18nCountryNameAddActionDTO('qj', 'qk', $locale, $name);
+            ? $this->nameRequest(HilosI18nCountryNameUpdateActionDTO::class, 'qj', 'qk', $locale, $name, 'Before')
+            : $this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', $locale, $name);
         try {
             $this->assertSuccess($dto, ($locale === null ? 'Country name' : 'Locale correction') . ($update ? ' saved.' : ' added.'));
         } finally {
@@ -576,7 +697,7 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
                 }
             }
             self::assertCount(1, $deltas);
-            self::assertSame('qk', $deltas[0]->rowKey);
+            self::assertSame((string) Hilos::$db->languages['qk']->id, $deltas[0]->rowKey);
             $row = $deltas[0]->row[PagePayload::slots][HilosI18nCountryNamesTable::ROW_SLOT];
             self::assertSame($locale === null ? $name : 'Before', $row['name']);
             self::assertCount(3, $row['corrections']);
@@ -608,7 +729,7 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
     public function testDefaultLanguageNameUpdatesBothHeadersWithoutApply(bool $update, string $name): void
     {
         if ($update) {
-            $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('qj', 'en', null, 'Before'), 'Country name added.');
+            $this->assertSuccess($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'en', null, 'Before'), 'Country name added.');
         }
         $this->connect('other-tab', true);
         foreach (['write-ak', 'other-tab'] as $acceptKey) {
@@ -619,8 +740,8 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
         SourceChangeBus::subscribe($changes);
         try {
             $this->assertSuccess($update
-                ? new HilosI18nCountryNameUpdateActionDTO('qj', 'en', null, $name, 'Before')
-                : new HilosI18nCountryNameAddActionDTO('qj', 'en', null, $name),
+                ? $this->nameRequest(HilosI18nCountryNameUpdateActionDTO::class, 'qj', 'en', null, $name, 'Before')
+                : $this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'en', null, $name),
                 $update ? 'Country name saved.' : 'Country name added.',
             );
         } finally {
@@ -649,7 +770,7 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
                 }
             }
             self::assertCount(1, $deltas);
-            self::assertSame('en', $deltas[0]->rowKey);
+            self::assertSame((string) Hilos::$db->languages['en']->id, $deltas[0]->rowKey);
             self::assertSame($name, $deltas[0]->row[PagePayload::slots][HilosI18nCountryNamesTable::ROW_SLOT]['name']);
             self::assertCount(1, $cards);
             self::assertSame($name === '' ? null : $name, $cards[0][CountryCardBrowserData::FIELD_SUMMARY]['name']);
@@ -672,8 +793,8 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
         self::assertSame($countryIds['fr'], Hilos::$db->locales['qk-FR']->countryId);
         self::assertNull($this->correction('qk-FR'));
         self::assertNull(Hilos::$db->countryNames->findBase(Hilos::$db->countries['qj']->id, $englishId));
-        $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('qj', 'en', null, ''), 'Country name added.');
-        $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('qj', 'qk', 'qk-FR', ''), 'Locale correction added.');
+        $this->assertSuccess($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'en', null, ''), 'Country name added.');
+        $this->assertSuccess($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', 'qk-FR', ''), 'Locale correction added.');
         for ($attempt = 0; $attempt < 2; $attempt++) {
             self::assertTrue($this->command(CliCommands::I18N_TEST_COUNTRY_NAMES_CLEAR)->isOk());
             self::assertNull(Hilos::$db->countries['qj']);
@@ -707,9 +828,9 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
     #[DataProvider('foreignMarkers')]
     public function testForeignMarkerPreservesAddedNames(string $command, string $code): void
     {
-        $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('qj', 'en', null, ''), 'Country name added.');
-        $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('qj', 'qk', null, ''), 'Country name added.');
-        $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('qj', 'qk', 'qk-FR', ''), 'Locale correction added.');
+        $this->assertSuccess($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'en', null, ''), 'Country name added.');
+        $this->assertSuccess($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', null, ''), 'Country name added.');
+        $this->assertSuccess($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', 'qk-FR', ''), 'Locale correction added.');
         $this->underAgent($this->agent, static function () use ($code): void {
             if ($code === 'qj') {
                 Hilos::$db->countries['qj']->actions->update('Foreign', 'QJJ', null);
@@ -733,7 +854,7 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
     /** @throws HilosException When setup, dispatch or persistence fails */
     public function testClearResumesAfterUnexpectedReferenceAndPreservesOtherRows(): void
     {
-        $this->assertSuccess(new HilosI18nCountryNameAddActionDTO('qj', 'en', null, ''), 'Country name added.');
+        $this->assertSuccess($this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'en', null, ''), 'Country name added.');
         $other = $this->underAgent($this->agent, static fn () => Hilos::$db->countryNames->actions->createManual(
             Hilos::$db->countries['qx'], Hilos::$db->languages['qk'], null, 'Foreign name',
         ));
@@ -757,8 +878,8 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
     private function request(bool $update, ?string $locale): ActionPayloadDTO
     {
         return $update
-            ? new HilosI18nCountryNameUpdateActionDTO('qj', 'qk', $locale, 'Written', '')
-            : new HilosI18nCountryNameAddActionDTO('qj', 'qk', $locale, 'Written');
+            ? $this->nameRequest(HilosI18nCountryNameUpdateActionDTO::class, 'qj', 'qk', $locale, 'Written', '')
+            : $this->nameRequest(HilosI18nCountryNameAddActionDTO::class, 'qj', 'qk', $locale, 'Written');
     }
 
     /**
@@ -876,7 +997,7 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
     {
         $params = ['countryCode' => 'qj'];
         $windows = [ChatTableContext::hilosI18nCountryNames => new TableWindowDescriptorDTO(
-            filter: [HilosI18nCountryNamesTable::FILTER_COUNTRY => 'qj'],
+            filter: [HilosI18nCountryNamesTable::FILTER_COUNTRY => Hilos::$db->countries['qj']?->id ?? 999999],
         )];
         Hilos::$sr->subscribeToPage(CountryNamesPage::PAGE, new WebSocketPageSubscribeSignalDTO(
             $acceptKey, CountryNamesPage::PAGE, $params, $windows,
@@ -964,6 +1085,46 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
             }
         });
     }
+    /**
+     * Capture fixture IDs at the point the client builds its request.
+     *
+     * @param class-string<ActionPayloadDTO> $class Action payload class
+     * @param string $subjectCode Fixture subject code
+     * @param string $writingCode Fixture writing language code
+     * @param ?string $localeCode Fixture correction locale, or base
+     * @param string $text New or confirmed text
+     * @param ?string $expectedName Latest committed text for update
+     * @return ActionPayloadDTO Request carrying captured primary IDs
+     * @throws HilosException When fixture lookup or payload validation fails
+     */
+    private function nameRequest(
+        string $class,
+        string $subjectCode,
+        string $writingCode,
+        ?string $localeCode,
+        string $text,
+        ?string $expectedName = null,
+    ): ActionPayloadDTO {
+        $subjectId = Hilos::$db->countries[$subjectCode]?->id ?? PHP_INT_MAX;
+        $writingId = Hilos::$db->languages[$writingCode]?->id ?? PHP_INT_MAX;
+        $localeId = $localeCode === null ? null : (Hilos::$db->locales[$localeCode]?->id ?? PHP_INT_MAX);
+        $base = Hilos::$db->countryNames->findBase($subjectId, $writingId);
+        if ($class === HilosI18nCountryNameAddActionDTO::class) {
+            return new HilosI18nCountryNameAddActionDTO(
+                $subjectId, $writingId, $localeId, $localeId === null ? null : ($base?->id ?? PHP_INT_MAX), $text,
+            );
+        }
+        $nameId = ($localeId === null ? $base : Hilos::$db->countryNames->findOverride($subjectId, $writingId, $localeId))?->id
+            ?? PHP_INT_MAX;
+        if ($class === HilosI18nCountryNameDeleteActionDTO::class) {
+            return new HilosI18nCountryNameDeleteActionDTO($subjectId, $writingId, $nameId, $text);
+        }
+        if ($class === HilosI18nCountryNameOverrideDeleteActionDTO::class) {
+            return new HilosI18nCountryNameOverrideDeleteActionDTO($subjectId, $writingId, $localeId, $nameId, $text);
+        }
+
+        return new HilosI18nCountryNameUpdateActionDTO($subjectId, $writingId, $localeId, $nameId, $text, $expectedName);
+    }
 }
 
 /** Captures real committed name facts; the test hands them to the browser at the worker's flush boundary. */
@@ -984,4 +1145,5 @@ final class I18nCountryNameWriteChanges implements SourceChangeSubscriberInterfa
             $this->changes[] = $change;
         }
     }
+
 }

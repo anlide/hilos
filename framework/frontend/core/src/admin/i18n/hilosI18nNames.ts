@@ -28,10 +28,10 @@ export const HILOS_I18N_LANGUAGE_NAMES_TABLE = 'hilosI18nLanguageNames'
 /** Table key of the names of one country, as the backend registers it. */
 export const HILOS_I18N_COUNTRY_NAMES_TABLE = 'hilosI18nCountryNames'
 
-/** Filter key carrying the code of the language the names table is opened on. */
+/** Filter key carrying the ID of the language the names table is opened on. */
 export const HILOS_I18N_LANGUAGE_NAMES_FILTER = 'language'
 
-/** Filter key carrying the code of the country the names table is opened on. */
+/** Filter key carrying the ID of the country the names table is opened on. */
 export const HILOS_I18N_COUNTRY_NAMES_FILTER = 'country'
 
 /** The row slot a names row rides under (mirrors the backend ROW_SLOT). */
@@ -39,6 +39,9 @@ const NAMES_SLOT = 'language'
 
 /** Payload keys of a names row (mirrors the backend HilosI18nNameTableRow). */
 export const HilosI18nNameRowKey = {
+  rowKey: 'rowKey',
+  inLanguageId: 'inLanguageId',
+  nameId: 'nameId',
   code: 'code',
   nativeName: 'nativeName',
   name: 'name',
@@ -47,6 +50,9 @@ export const HilosI18nNameRowKey = {
 
 /** Payload keys of one locale correction inside a names row. */
 export const HilosI18nNameCorrectionKey = {
+  localeId: 'localeId',
+  countryId: 'countryId',
+  nameId: 'nameId',
   localeCode: 'localeCode',
   countryCode: 'countryCode',
   countryName: 'countryName',
@@ -54,6 +60,9 @@ export const HilosI18nNameCorrectionKey = {
 } as const
 
 const correctionSchema = z.object({
+  [HilosI18nNameCorrectionKey.localeId]: z.number().int().positive(),
+  [HilosI18nNameCorrectionKey.countryId]: z.number().int().positive(),
+  [HilosI18nNameCorrectionKey.nameId]: z.number().int().positive().nullable(),
   [HilosI18nNameCorrectionKey.localeCode]: z.string(),
   [HilosI18nNameCorrectionKey.countryCode]: z.string(),
   [HilosI18nNameCorrectionKey.countryName]: z.string().nullable(),
@@ -61,6 +70,9 @@ const correctionSchema = z.object({
 })
 
 const nameSlotSchema = z.object({
+  [HilosI18nNameRowKey.rowKey]: z.string(),
+  [HilosI18nNameRowKey.inLanguageId]: z.number().int().positive(),
+  [HilosI18nNameRowKey.nameId]: z.number().int().positive().nullable(),
   [HilosI18nNameRowKey.code]: z.string(),
   [HilosI18nNameRowKey.nativeName]: z.string(),
   [HilosI18nNameRowKey.name]: z.string().nullable(),
@@ -69,6 +81,9 @@ const nameSlotSchema = z.object({
 
 /** One locale correction of a base name. */
 export interface HilosI18nNameCorrection {
+  readonly localeId: number
+  readonly countryId: number
+  readonly nameId: number | null
   /** Code of the locale, e.g. `en-GB`. */
   readonly localeCode: string
   /** Code of the locale's country, as stored (the view writes it in capitals). */
@@ -81,7 +96,10 @@ export interface HilosI18nNameCorrection {
 
 /** One row of a names table — a language of the system. */
 export interface HilosI18nNameRow {
-  /** Code of the row's language; also the row key. */
+  readonly nameId: number | null
+  readonly inLanguageId: number
+  readonly rowKey: string
+  /** Display code of the row's language. */
   readonly code: string
   /** The name the row's language calls itself. */
   readonly nativeName: string
@@ -92,20 +110,12 @@ export interface HilosI18nNameRow {
 }
 
 /**
- * Resolve one raw names row into its view-model. A slot the schema refuses —
- * which only a server of another version can send — shows the language by its key
- * with nothing written, rather than dropping the row.
+ * Resolve the typed row, rejecting absent or malformed IDs.
  *
  * @param row The raw table row from the page-scoped table store.
  */
 export function resolveHilosI18nNameRow(row: TableRow): HilosI18nNameRow {
-  const parsed = nameSlotSchema.safeParse(row.slots[NAMES_SLOT])
-  if (parsed.success) {
-    return parsed.data
-  }
-  const code = String(row.rowKey)
-
-  return { code, nativeName: code, name: null, corrections: [] }
+  return nameSlotSchema.parse(row.slots[NAMES_SLOT])
 }
 
 /** Whether a names row has corrections to show under its chevron. */
@@ -139,7 +149,7 @@ export interface HilosI18nNamesTarget {
   readonly page: HilosPageKey
   /** The table key the backend registers the table under. */
   readonly tableKey: string
-  /** The filter key the subject's code travels under. */
+  /** The filter key the subject's ID travels under. */
   readonly filterKey: string
   /** The frame the table declares: the names columns and its own empty state. */
   readonly frame: HilosTableFrame
@@ -157,6 +167,8 @@ export const HILOS_I18N_LANGUAGE_NAMES: HilosI18nNamesTarget = {
         key: HILOS_TABLE_ACTIONS_KEY,
         label: 'Actions',
         reads: [
+          HilosI18nNameRowKey.inLanguageId,
+          HilosI18nNameRowKey.nameId,
           HilosI18nNameRowKey.code,
           HilosI18nNameRowKey.nativeName,
           HilosI18nNameRowKey.name,
@@ -183,6 +195,8 @@ export const HILOS_I18N_COUNTRY_NAMES: HilosI18nNamesTarget = {
         key: HILOS_TABLE_ACTIONS_KEY,
         label: 'Actions',
         reads: [
+          HilosI18nNameRowKey.inLanguageId,
+          HilosI18nNameRowKey.nameId,
           HilosI18nNameRowKey.code,
           HilosI18nNameRowKey.nativeName,
           HilosI18nNameRowKey.name,
@@ -205,24 +219,26 @@ export interface HilosI18nNamesTable {
 }
 
 /**
- * The names table of one subject. The subject's code is a preset of the filter
+ * The names table of one subject. The subject's ID is a preset of the filter
  * map, so a cold window built without it is not drawn and the table asks for its
  * own; moving to another subject on the same page sets the filter again, which
  * takes a new window and closes every open row.
  *
  * @param context The project's connection and page scopes.
  * @param target Which of the two names tables this is.
- * @param subject The code of the language or country the address names.
+ * @param subject The primary ID from the subject card, or null before the card arrives.
  */
 export function createHilosI18nNamesTable(
   context: HilosI18nLanguageContext,
   target: HilosI18nNamesTarget,
-  subject: ReadonlySignal<string>,
+  subject: ReadonlySignal<number | null>,
 ): HilosI18nNamesTable {
+  let hasSubject = subject.get() !== null
   const controller = new TableViewportController<HilosI18nNameRow>({
     resolve: resolveHilosI18nNameRow,
     expandable: hilosI18nNameRowExpandable,
     sendViewport: (descriptor) =>
+      hasSubject &&
       context.connection.sendTableViewport(
         target.page,
         target.tableKey,
@@ -255,9 +271,11 @@ export function createHilosI18nNamesTable(
           { page: target.page, tableKey: target.tableKey },
           controller,
         ),
-        subscribeSignal(subject, (value) =>
-          controller.setFilter(target.filterKey, value),
-        ),
+        subscribeSignal(subject, (value) => {
+          controller.releaseFocus()
+          if (value !== null) hasSubject = true
+          controller.setFilter(target.filterKey, value)
+        }),
       ]
     },
     dispose() {

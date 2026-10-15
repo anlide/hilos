@@ -125,10 +125,10 @@ final class I18nCountriesLocaleChoiceReadTest extends TestCase
         }
         self::assertCount(4, $rows);
         self::assertSame([
-            ['code' => 'de-US', 'enabled' => false],
-            ['code' => 'en-US', 'enabled' => true],
+            ['localeId' => 11, 'code' => 'de-US', 'enabled' => false],
+            ['localeId' => 10, 'code' => 'en-US', 'enabled' => true],
         ], $rows['us']->toArray()[HilosI18nCountriesTableRow::locales]);
-        self::assertEquals([new CountryLocaleChoice('en-QX', false)], $rows['qx']->locales);
+        self::assertEquals([new CountryLocaleChoice(12, 'en-QX', false)], $rows['qx']->locales);
         self::assertSame([], $rows['qy']->locales);
         self::assertSame([], $rows['qz']->locales);
         self::assertSame(CountryCardSummary::DELETE_KNOWN, $rows['us']->deleteReason);
@@ -147,10 +147,10 @@ final class I18nCountriesLocaleChoiceReadTest extends TestCase
         $mutation = new HilosI18nCountriesTable()->buildMutationForSourceEvent($change);
 
         self::assertNotNull($mutation);
-        self::assertSame('qx', $mutation->rowKey);
+        self::assertSame('2', $mutation->rowKey);
         self::assertSame(TableMutationType::Update, $mutation->type);
         self::assertInstanceOf(HilosI18nCountriesTableRow::class, $mutation->row);
-        self::assertEquals([new CountryLocaleChoice('en-QX', false)], $mutation->row->locales);
+        self::assertEquals([new CountryLocaleChoice(12, 'en-QX', false)], $mutation->row->locales);
     }
 
     /** @return array<string, array{SourceChange}> Country and locale source paths */
@@ -176,22 +176,22 @@ final class I18nCountriesLocaleChoiceReadTest extends TestCase
     public function testADirectCardReadsFreshChoicesOnEveryCall(): void
     {
         self::assertSame([
-            ['code' => 'de-US', 'enabled' => false],
-            ['code' => 'en-US', 'enabled' => true],
+            ['localeId' => 11, 'code' => 'de-US', 'enabled' => false],
+            ['localeId' => 10, 'code' => 'en-US', 'enabled' => true],
         ], Hilos::$db->countries->cardSummary(1)->toArray()['locales']);
         self::assertSame(CountryCardSummary::DEFAULT_LOCALE_ON, Hilos::$db->countries->cardSummary(1)->defaultLocale);
         $this->locales[10]->getObject()->enabled = false;
         $this->locales[11]->getObject()->enabled = true;
         self::assertSame([
-            ['code' => 'de-US', 'enabled' => true],
-            ['code' => 'en-US', 'enabled' => false],
+            ['localeId' => 11, 'code' => 'de-US', 'enabled' => true],
+            ['localeId' => 10, 'code' => 'en-US', 'enabled' => false],
         ], Hilos::$db->countries->cardSummary(1)->toArray()['locales']);
         self::assertSame(CountryCardSummary::DEFAULT_LOCALE_OFF, Hilos::$db->countries->cardSummary(1)->defaultLocale);
         $this->locales[11]->getObject()->countryId = null;
         $this->locales->add($this->locale(14, 1, 'fr-US', true));
         self::assertSame([
-            ['code' => 'en-US', 'enabled' => false],
-            ['code' => 'fr-US', 'enabled' => true],
+            ['localeId' => 10, 'code' => 'en-US', 'enabled' => false],
+            ['localeId' => 14, 'code' => 'fr-US', 'enabled' => true],
         ], Hilos::$db->countries->cardSummary(1)->toArray()['locales']);
     }
 

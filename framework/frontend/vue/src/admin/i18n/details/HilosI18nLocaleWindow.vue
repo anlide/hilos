@@ -45,18 +45,9 @@ const fields = [
   'measurement',
   'collation',
 ] as const
-const address = { get: () => props.card?.code ?? '' }
-const editor = createHilosI18nLocaleEdit(
-  props.controller,
-  props.context,
-  address,
-)
-const creator = createHilosI18nLocaleAdd(
-  props.controller,
-  props.context,
-  address,
-)
-const switcher = createHilosI18nLocaleSwitchOn(props.context, address)
+const editor = createHilosI18nLocaleEdit(props.controller, props.context)
+const creator = createHilosI18nLocaleAdd(props.controller, props.context)
+const switcher = createHilosI18nLocaleSwitchOn(props.context)
 const offSwitcher = createHilosI18nLocaleSwitchOff(props.context)
 const editOpened = useSignal(editor.opened)
 const editRow = useSignal(editor.row)
@@ -89,7 +80,10 @@ const row = computed(() =>
       : viewSnapshot.value,
 )
 const liveRow = computed(() =>
-  focusedRow.value?.rowKey === row.value?.rowKey ? focusedRow.value : undefined,
+  focusedRow.value?.rowKey === row.value?.rowKey &&
+  (mode.value === 'add' || focusedRow.value?.localeId === row.value?.localeId)
+    ? focusedRow.value
+    : undefined,
 )
 const shownRow = computed(() =>
   mode.value === 'view' ? (liveRow.value ?? viewSnapshot.value) : row.value,
@@ -275,7 +269,11 @@ async function confirmSwitchOff(): Promise<void> {
     return
   if (
     await offAction.run(
-      offSwitcher.switchOff(props.card.code, liveRow.value.countryCode),
+      offSwitcher.switchOff(
+        row.value!.languageId,
+        row.value!.countryId,
+        row.value!.localeId!,
+      ),
     )
   ) {
     closeWindow()
@@ -291,7 +289,15 @@ async function confirm(): Promise<void> {
     !row.value
   )
     return
-  if (await switchAction.run(switcher.switchOn(row.value.countryCode))) {
+  if (
+    await switchAction.run(
+      switcher.switchOn(
+        row.value.languageId,
+        row.value.countryId,
+        row.value.localeId!,
+      ),
+    )
+  ) {
     closeWindow()
   }
 }
@@ -372,7 +378,11 @@ async function submit(): Promise<void> {
         </div>
         <div>
           <span class="text-body-secondary">{{ copy.codeLabel }}</span>
-          <code data-id="i18n-locale-code">{{ row?.rowKey }}</code>
+          <code data-id="i18n-locale-code">{{
+            row?.localeCode ??
+            props.card?.code +
+              (row?.countryCode ? '-' + row.countryCode.toUpperCase() : '')
+          }}</code>
         </div>
       </div>
       <div :class="mode !== 'add' ? 'hilos-stack' : undefined">

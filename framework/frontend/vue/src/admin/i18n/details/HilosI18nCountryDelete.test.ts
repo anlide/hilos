@@ -21,6 +21,7 @@ import { hilosAdminViewModeKey } from '../../../hilosAdminViewMode.js'
 import HilosI18nCountryDelete from './HilosI18nCountryDelete.vue'
 
 const country: HilosI18nCountryDeleteTarget = {
+  countryId: 141,
   code: 'qx',
   name: 'Custom country',
   canDelete: true,
@@ -129,7 +130,7 @@ describe('HilosI18nCountryDelete', () => {
       expect(s.dispatched).toHaveLength(1)
       expect(s.dispatched[0]).toMatchObject({
         action,
-        payload: { countryCode: 'qx' },
+        payload: { countryId: 141 },
       })
       expect(control('cancel').disabled).toBe(true)
       expect(control('confirm').disabled).toBe(true)

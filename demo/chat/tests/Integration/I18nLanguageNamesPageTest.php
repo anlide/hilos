@@ -112,7 +112,7 @@ final class I18nLanguageNamesPageTest extends IntegrationTestCase
         $window = $payload[PagePayload::windows][ChatTableContext::hilosI18nLanguageNames];
         $wireRows = $window[TableWindowSignalData::rows];
         self::assertNotEmpty($wireRows);
-        self::assertSame('en', $wireRows[0][BrowserPageSignalData::rowKey]);
+        self::assertSame((string) Hilos::$db->languages['en']->id, $wireRows[0][BrowserPageSignalData::rowKey]);
     }
 
     public function testBothMainAndNamesSubscribersReceiveCardUpdateWhenManualNameIsCreated(): void
@@ -213,7 +213,7 @@ final class I18nLanguageNamesPageTest extends IntegrationTestCase
         $params = ['languageCode' => $code];
         $windows = [
             ChatTableContext::hilosI18nLanguageNames => new TableWindowDescriptorDTO(
-                filter: [HilosI18nLanguageNamesTable::FILTER_LANGUAGE => $code],
+                filter: [HilosI18nLanguageNamesTable::FILTER_LANGUAGE => Hilos::$db->languages[$code]?->id ?? 999999],
             ),
         ];
         Hilos::$sr->subscribeToPage(

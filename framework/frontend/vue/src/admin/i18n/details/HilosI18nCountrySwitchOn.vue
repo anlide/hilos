@@ -25,6 +25,7 @@ const verdict = computed(() => hilosI18nCountrySwitchOn(props.card))
 const action = useTrackedAction()
 const { switchOn } = createHilosI18nCountrySwitchOn(props.context)
 const open = ref(false)
+const openedId = ref<number | null>(null)
 const openedLabel = ref('')
 const modalOpen = computed({
   get: () => open.value,
@@ -41,7 +42,7 @@ const elsewhere = computed(
 watch(
   () => props.card,
   (card) => {
-    if (card === null) {
+    if (card === null || (open.value && card.countryId !== openedId.value)) {
       open.value = false
     }
   },
@@ -52,6 +53,7 @@ function openWindow(): void {
     return
   }
   action.clearError()
+  openedId.value = props.card.countryId
   openedLabel.value = hilosI18nCountryLabel(props.card)
   open.value = true
 }
@@ -63,10 +65,15 @@ function closeWindow(): void {
 }
 
 async function confirm(): Promise<void> {
-  if (action.busy.value || elsewhere.value || props.card === null) {
+  if (
+    action.busy.value ||
+    elsewhere.value ||
+    props.card === null ||
+    openedId.value === null
+  ) {
     return
   }
-  if (await action.run(switchOn(props.card.code))) {
+  if (await action.run(switchOn(openedId.value))) {
     open.value = false
   }
 }

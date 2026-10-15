@@ -95,11 +95,11 @@ export function hilosI18nCountrySwitchOn(card: HilosI18nCountryCard | null): {
  */
 export function createHilosI18nCountrySwitchOff(
   context: HilosI18nCountryContext,
-): { switchOff(countryCode: string): ActionHandle } {
+): { switchOff(countryId: number): ActionHandle } {
   return {
-    switchOff: (countryCode) =>
+    switchOff: (countryId) =>
       context.actions.dispatch(HILOS_I18N_COUNTRY_SWITCH_OFF_ACTION, {
-        countryCode,
+        countryId,
       }),
   }
 }
@@ -111,11 +111,11 @@ export function createHilosI18nCountrySwitchOff(
  */
 export function createHilosI18nCountrySwitchOn(
   context: HilosI18nCountryContext,
-): { switchOn(countryCode: string): ActionHandle } {
+): { switchOn(countryId: number): ActionHandle } {
   return {
-    switchOn: (countryCode) =>
+    switchOn: (countryId) =>
       context.actions.dispatch(HILOS_I18N_COUNTRY_SWITCH_ON_ACTION, {
-        countryCode,
+        countryId,
       }),
   }
 }

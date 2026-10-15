@@ -38,7 +38,8 @@ import HilosI18nLocaleDelete from './HilosI18nLocaleDelete.vue'
 import HilosI18nLocaleWindow from './HilosI18nLocaleWindow.vue'
 
 const props = defineProps<{ context: HilosI18nLanguageContext }>()
-const card = useSignal(createHilosI18nLanguageCard(props.context))
+const liveCard = createHilosI18nLanguageCard(props.context)
+const card = useSignal(liveCard)
 const templates = useSignal(createHilosI18nLocaleTemplates(props.context))
 const opened = ref<{ rowKey: string; mode: HilosI18nLocaleWindowMode } | null>(
   null,
@@ -56,20 +57,30 @@ const language = computedSignal(
   () =>
     (router.currentRoute.get().params.languageCode as string | undefined) ?? '',
 )
-const locales = createHilosI18nLanguageLocalesTable(props.context, language)
+const locales = createHilosI18nLanguageLocalesTable(
+  props.context,
+  computedSignal(() =>
+    liveCard.get()?.code === language.get()
+      ? (liveCard.get()?.languageId ?? null)
+      : null,
+  ),
+)
 const focusedRow = useSignal(locales.controller.focusedRow)
 const deleteSource = computed<HilosI18nLocaleDeleteTarget | null>(() => {
   const row = focusedRow.value
   if (
     deleteTarget.value === null ||
-    card.value?.code !== deleteTarget.value.languageCode ||
-    row?.rowKey !== deleteTarget.value.localeCode ||
+    card.value?.languageId !== deleteTarget.value.languageId ||
+    row?.localeId !== deleteTarget.value.localeId ||
     row.localeCode === null ||
     row.formats === null
   ) {
     return null
   }
   return {
+    languageId: row.languageId,
+    countryId: row.countryId,
+    localeId: row.localeId!,
     languageCode: card.value.code,
     countryCode: row.countryCode,
     localeCode: row.localeCode,
@@ -82,6 +93,13 @@ onUnmounted(() => {
   locales.controller.releaseFocus()
   locales.dispose()
 })
+
+function pairCode(row: HilosI18nLocaleRow): string {
+  return (
+    row.localeCode ??
+    `${card.value?.code ?? ''}${row.countryCode === null ? '' : '-' + row.countryCode.toUpperCase()}`
+  )
+}
 
 /** A plate standing where there is no value of its own, in both themes. */
 const PLATE = 'badge bg-body-tertiary text-body-secondary border fw-normal'
@@ -112,6 +130,9 @@ function openDelete(row: HilosI18nLocaleRow): void {
     return
   }
   deleteTarget.value = {
+    languageId: fresh.languageId,
+    countryId: fresh.countryId,
+    localeId: fresh.localeId!,
     languageCode: card.value.code,
     countryCode: fresh.countryCode,
     localeCode: fresh.localeCode,
@@ -139,13 +160,13 @@ function closeDelete(open: boolean): void {
           <span
             v-if="row.countryCode === null"
             class="fst-italic text-body-secondary"
-            :data-id="`i18n-locales-country-${row.rowKey}`"
+            :data-id="`i18n-locales-country-${pairCode(row)}`"
             >— no country</span
           >
           <span
             v-else
             :class="{ 'text-body-secondary': switchedOff(row) }"
-            :data-id="`i18n-locales-country-${row.rowKey}`"
+            :data-id="`i18n-locales-country-${pairCode(row)}`"
             ><span class="text-uppercase text-body-secondary me-1">{{
               row.countryCode
             }}</span
@@ -156,14 +177,14 @@ function closeDelete(open: boolean): void {
           <span
             v-if="row.localeCode === null"
             :class="PLATE"
-            :data-id="`i18n-locales-none-${row.rowKey}`"
+            :data-id="`i18n-locales-none-${pairCode(row)}`"
             ><i class="bi bi-dash-circle me-1" aria-hidden="true"></i>No
             locale</span
           >
           <span
             v-else
             :class="{ 'text-body-secondary': switchedOff(row) }"
-            :data-id="`i18n-locales-code-${row.rowKey}`"
+            :data-id="`i18n-locales-code-${pairCode(row)}`"
             >{{ row.localeCode }}</span
           >
         </template>
@@ -175,7 +196,7 @@ function closeDelete(open: boolean): void {
             disabled
             :checked="row.enabled === true"
             aria-label="Enabled"
-            :data-id="`i18n-locales-enabled-${row.rowKey}`"
+            :data-id="`i18n-locales-enabled-${pairCode(row)}`"
           />
         </template>
         <template #cell-actions="{ row }">
@@ -186,7 +207,7 @@ function closeDelete(open: boolean): void {
               class="btn btn-sm btn-primary"
               :title="HILOS_I18N_LOCALE_COPY.open.add"
               :aria-label="HILOS_I18N_LOCALE_COPY.open.add"
-              :data-id="`i18n-locales-add-${row.rowKey}`"
+              :data-id="`i18n-locales-add-${pairCode(row)}`"
               @click="openWindow(row, 'add')"
             >
               <i class="bi bi-plus-lg" aria-hidden="true"></i>
@@ -197,7 +218,7 @@ function closeDelete(open: boolean): void {
               class="btn btn-sm btn-outline-primary"
               :title="HILOS_I18N_LOCALE_COPY.open.edit"
               :aria-label="HILOS_I18N_LOCALE_COPY.open.edit"
-              :data-id="`i18n-locales-edit-${row.rowKey}`"
+              :data-id="`i18n-locales-edit-${pairCode(row)}`"
               @click="openWindow(row, 'edit')"
             >
               <i class="bi bi-pencil" aria-hidden="true"></i>
@@ -208,7 +229,7 @@ function closeDelete(open: boolean): void {
               class="btn btn-sm btn-outline-secondary"
               :title="HILOS_I18N_LOCALE_COPY.open.view"
               :aria-label="HILOS_I18N_LOCALE_COPY.open.view"
-              :data-id="`i18n-locales-view-${row.rowKey}`"
+              :data-id="`i18n-locales-view-${pairCode(row)}`"
               @click="openWindow(row, 'view')"
             >
               <i class="bi bi-eye" aria-hidden="true"></i>
@@ -219,7 +240,7 @@ function closeDelete(open: boolean): void {
               class="btn btn-sm btn-outline-danger"
               :title="`Delete locale ${row.localeCode}`"
               :aria-label="`Delete locale ${row.localeCode}`"
-              :data-id="`i18n-locales-delete-${row.rowKey}`"
+              :data-id="`i18n-locales-delete-${pairCode(row)}`"
               @click="openDelete(row)"
             >
               <i class="bi bi-trash" aria-hidden="true"></i>

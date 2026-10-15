@@ -3,6 +3,11 @@
 Use existing Hilos collection, item, magic, array, and result accessors before
 adding new `findBy*()` methods or caller-local helper methods.
 
+Before choosing an accessor, choose the reference itself with
+[entity references](entity-references.md): a captured internal target carries its
+declared primary key. A collection accepting codes does not make codes internal
+mutation targets.
+
 ## Rule
 
 Accessor shape is part of the owning collection or item contract. Prefer the

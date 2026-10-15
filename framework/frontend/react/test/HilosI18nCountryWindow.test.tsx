@@ -21,7 +21,7 @@ function setup(row = country, viewer = false) {
     <HilosAdminViewModeContext.Provider value={viewer}>
       <button
         data-id="open-country"
-        onClick={() => window.open('edit', row.code)}
+        onClick={() => window.open('edit', row.rowKey)}
       >
         Open
       </button>
@@ -29,7 +29,7 @@ function setup(row = country, viewer = false) {
     </HilosAdminViewModeContext.Provider>,
   )
   el('open-country').focus()
-  act(() => window.open(row.enabled ? 'view' : 'edit', row.code))
+  act(() => window.open(row.enabled ? 'view' : 'edit', row.rowKey))
   return { ...h, ...focus, window, view }
 }
 function enter() {
@@ -53,7 +53,7 @@ describe('React country edit/view window', () => {
     expect(el<HTMLButtonElement>('i18n-country-save').disabled).toBe(true)
     enter()
     expect(h.calls).toEqual([])
-    act(() => h.window.open('edit', country.code))
+    act(() => h.window.open('edit', country.rowKey))
     change('i18n-country-edit-currency-code', 'ab')
     enter()
     expect(h.calls).toEqual([])
@@ -66,10 +66,10 @@ describe('React country edit/view window', () => {
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_country_row_update',
       payload: {
-        countryCode: 'gg',
+        countryId: 143,
         currencySymbol: '$',
         currencyCode: 'USD',
-        defaultLocaleCode: null,
+        defaultLocaleId: null,
       },
     })
     act(() =>
@@ -88,12 +88,12 @@ describe('React country edit/view window', () => {
   it('suggests only an existing catalog locale, saves it explicitly, and does not ask to discard the suggestion', () => {
     const h = setup({
       ...country,
-      locales: [{ code: 'en-GG', enabled: false }],
+      locales: [{ localeId: 11143, code: 'en-GG', enabled: false }],
       catalogDefaultLocaleCode: 'en-GG',
     })
     expect(
       el<HTMLSelectElement>('i18n-country-edit-default-locale').value,
-    ).toBe('en-GG')
+    ).toBe('11143')
     expect(el('i18n-country-edit-default-locale-hint').textContent).toContain(
       'save to keep it',
     )
@@ -101,19 +101,20 @@ describe('React country edit/view window', () => {
     expect(h.calls).toEqual([])
     click('i18n-country-cancel')
     expect(el('modal')).toBeNull()
-    act(() => h.window.open('edit', 'gg'))
+    act(() => h.window.open('edit', '143'))
     click('i18n-country-save')
-    expect(h.calls[0]?.payload).toMatchObject({ defaultLocaleCode: 'en-GG' })
+    expect(h.calls[0]?.payload).toMatchObject({ defaultLocaleId: 11143 })
   })
   it('does not suggest a missing catalog locale and retains a vanished selected option until a person clears it', () => {
     const h = setup({
       ...country,
+      defaultLocaleId: 11143,
       defaultLocaleCode: 'en-GG',
       catalogDefaultLocaleCode: 'fr-GG',
     })
     expect(
       el<HTMLSelectElement>('i18n-country-edit-default-locale').value,
-    ).toBe('en-GG')
+    ).toBe('11143')
     expect(el('i18n-country-edit-default-locale').textContent).toContain(
       'en-GG — no longer exists',
     )
@@ -123,16 +124,17 @@ describe('React country edit/view window', () => {
     act(() =>
       h.focused.set({
         ...country,
+        defaultLocaleId: 11143,
         defaultLocaleCode: 'en-GG',
-        locales: [{ code: 'fr-GG', enabled: true }],
+        locales: [{ localeId: 13143, code: 'fr-GG', enabled: true }],
       }),
     )
     expect(
       el<HTMLSelectElement>('i18n-country-edit-default-locale').value,
-    ).toBe('en-GG')
+    ).toBe('11143')
     change('i18n-country-edit-default-locale', '')
     click('i18n-country-save')
-    expect(h.calls[0]?.payload).toMatchObject({ defaultLocaleCode: null })
+    expect(h.calls[0]?.payload).toMatchObject({ defaultLocaleId: null })
   })
   it('merges per field and offers Keep mine and Take theirs with a fixed opening title', () => {
     const h = setup()
@@ -230,7 +232,7 @@ describe('React country edit/view window', () => {
     fireEvent.keyDown(el('modal'), { key: 'Escape' })
     click('modal-confirm-discard')
     expect(document.activeElement).toBe(el('open-country'))
-    act(() => h.window.open('edit', 'gg'))
+    act(() => h.window.open('edit', '143'))
     h.view.unmount()
     expect(h.focused.get()).toBeUndefined()
   })

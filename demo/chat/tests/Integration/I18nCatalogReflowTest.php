@@ -194,7 +194,11 @@ final class I18nCatalogReflowTest extends IntegrationTestCase
     {
         $this->startLibrary();
         $this->underAgent($this->agent, function () use ($name): void {
-            $dto = new HilosI18nCountryNameUpdateActionDTO('us', 'en', null, $name, 'United States');
+            $dto = new HilosI18nCountryNameUpdateActionDTO(
+                Hilos::$db->countries['us']->id, Hilos::$db->languages['en']->id, null,
+                Hilos::$db->countryNames->findBase(Hilos::$db->countries['us']->id, Hilos::$db->languages['en']->id)->id,
+                $name, 'United States',
+            );
             self::assertNull(new CountryNamesPage($this->agent)->onAction('reflow-editor', $dto->getAction(), $dto));
             Hilos::$db->countryNames->findBase(
                 Hilos::$db->countries['de']->id, Hilos::$db->languages['en']->id,

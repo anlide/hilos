@@ -17,6 +17,7 @@ import {
 import { type ActionLifecycle } from '../../../src/connection/actionLifecycle.js'
 
 const card: HilosI18nCountryCard = {
+  countryId: 106,
   code: 'ca',
   currencySymbol: '$',
   currencyCode: 'CAD',
@@ -24,6 +25,7 @@ const card: HilosI18nCountryCard = {
   summary: {
     name: 'Canada',
     isOwn: false,
+    defaultLocaleId: null,
     defaultLocaleCode: null,
     defaultLocale: 'missing',
     localeCount: 0,
@@ -41,6 +43,7 @@ describe('country label', () => {
     expect(
       hilosI18nCountryLabel({
         ...card,
+        countryId: 106,
         code: 'ca',
         summary: { ...card.summary, name: null },
       }),
@@ -78,6 +81,7 @@ describe('country switch-on', () => {
         summary: {
           ...card.summary,
           defaultLocale: 'off',
+          defaultLocaleId: 11106,
           defaultLocaleCode: 'en-CA',
         },
       }),
@@ -93,6 +97,7 @@ describe('country switch-on', () => {
         summary: {
           ...card.summary,
           defaultLocale: 'on',
+          defaultLocaleId: 11106,
           defaultLocaleCode: 'en-CA',
         },
       }),
@@ -124,11 +129,11 @@ describe('country switch-on', () => {
     } as unknown as ActionLifecycle
     const context = { actions } as HilosI18nCountryContext
 
-    expect(createHilosI18nCountrySwitchOn(context).switchOn('ca')).toBe(handle)
+    expect(createHilosI18nCountrySwitchOn(context).switchOn(106)).toBe(handle)
     expect(sent).toEqual([
       {
         action: HILOS_I18N_COUNTRY_SWITCH_ON_ACTION,
-        payload: { countryCode: 'ca' },
+        payload: { countryId: 106 },
       },
     ])
   })
@@ -146,13 +151,11 @@ describe('country switch-off', () => {
     } as unknown as ActionLifecycle
     const context = { actions } as HilosI18nCountryContext
 
-    expect(createHilosI18nCountrySwitchOff(context).switchOff('ca')).toBe(
-      handle,
-    )
+    expect(createHilosI18nCountrySwitchOff(context).switchOff(106)).toBe(handle)
     expect(sent).toEqual([
       {
         action: HILOS_I18N_COUNTRY_SWITCH_OFF_ACTION,
-        payload: { countryCode: 'ca' },
+        payload: { countryId: 106 },
       },
     ])
   })

@@ -16,6 +16,7 @@ import { hilosAdminViewModeKey } from '../../../hilosAdminViewMode.js'
 import HilosI18nLanguageSwitchOn from './HilosI18nLanguageSwitchOn.vue'
 
 const card: HilosI18nLanguageCard = {
+  languageId: 13,
   code: 'fr',
   nativeName: 'Français',
   rtl: false,
@@ -167,7 +168,7 @@ describe('HilosI18nLanguageSwitchOn', () => {
     expect(h.dispatched).toHaveLength(1)
     expect(h.dispatched[0]).toMatchObject({
       action: HILOS_I18N_LANGUAGE_SWITCH_ON_ACTION,
-      payload: { languageCode: 'fr' },
+      payload: { languageId: 13 },
     })
     await nextTick()
     expect(control('language-card-switch-on-cancel')?.disabled).toBe(true)

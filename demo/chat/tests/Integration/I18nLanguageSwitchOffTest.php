@@ -94,7 +94,7 @@ final class I18nLanguageSwitchOffTest extends IntegrationTestCase
             self::assertNull($page->onAction(
                 'language-ak',
                 HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_OFF,
-                new HilosI18nLanguageSwitchOffActionDTO('fr'),
+                new HilosI18nLanguageSwitchOffActionDTO(Hilos::$db->languages['fr']?->id ?? 999999),
             ));
         });
         self::assertFalse(Hilos::$db->languages['fr']->enabled);
@@ -106,7 +106,7 @@ final class I18nLanguageSwitchOffTest extends IntegrationTestCase
 
         $this->underAgent($this->agent, static function () use ($page): void {
             $page->onAction('language-ak', HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_OFF,
-                new HilosI18nLanguageSwitchOffActionDTO('fr'));
+                new HilosI18nLanguageSwitchOffActionDTO(Hilos::$db->languages['fr']?->id ?? 999999));
         });
         self::assertFalse(Hilos::$db->languages['fr']->enabled);
     }
@@ -120,7 +120,7 @@ final class I18nLanguageSwitchOffTest extends IntegrationTestCase
         try {
             $this->underAgent($this->agent, static function () use ($page): void {
                 $page->onAction('language-ak', HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_OFF,
-                    new HilosI18nLanguageSwitchOffActionDTO('en'));
+                    new HilosI18nLanguageSwitchOffActionDTO(Hilos::$db->languages['en']?->id ?? 999999));
             });
             self::fail('The default language must be protected');
         } catch (DefaultLanguageProtectedException) {
@@ -129,7 +129,7 @@ final class I18nLanguageSwitchOffTest extends IntegrationTestCase
 
         $this->expectException(TableActionException::class);
         $page->onAction('language-ak', HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_OFF,
-            new HilosI18nLanguageSwitchOffActionDTO('zz'));
+            new HilosI18nLanguageSwitchOffActionDTO(Hilos::$db->languages['zz']?->id ?? 999999));
     }
 
     public function testBothOpenCardsReceiveTheDisabledState(): void
@@ -157,7 +157,7 @@ final class I18nLanguageSwitchOffTest extends IntegrationTestCase
             new LanguageDetailPage($this->agent)->onAction(
                 'switch-card-one',
                 HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_OFF,
-                new HilosI18nLanguageSwitchOffActionDTO('fr'),
+                new HilosI18nLanguageSwitchOffActionDTO(Hilos::$db->languages['fr']?->id ?? 999999),
             );
         });
         Hilos::$browser->record(SourceChange::dbUpdated(

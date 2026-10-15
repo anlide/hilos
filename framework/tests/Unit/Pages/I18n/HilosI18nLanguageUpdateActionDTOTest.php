@@ -17,7 +17,7 @@ use PHPUnit\Framework\TestCase;
 final class HilosI18nLanguageUpdateActionDTOTest extends TestCase
 {
     private const array PAYLOAD = [
-        AbstractHilosI18nLanguageUpdateActionDTO::languageCode => 'uk',
+        AbstractHilosI18nLanguageUpdateActionDTO::languageId => 19,
         AbstractHilosI18nLanguageUpdateActionDTO::nativeName => 'Українська',
         AbstractHilosI18nLanguageUpdateActionDTO::rtl => false,
     ];
@@ -52,9 +52,9 @@ final class HilosI18nLanguageUpdateActionDTOTest extends TestCase
     public static function invalidPayloads(): iterable
     {
         foreach (self::actions() as $door => [$dtoClass]) {
-            foreach (['EN', 'eng', '', "en\n", 42] as $invalidCode) {
+            foreach (['EN', 'eng', '', "en\n", '19', 0, -1, 19.0, null, true, false] as $invalidCode) {
                 yield $door . ' code ' . var_export($invalidCode, true) => [$dtoClass, array_replace(self::PAYLOAD, [
-                    AbstractHilosI18nLanguageUpdateActionDTO::languageCode => $invalidCode,
+                    AbstractHilosI18nLanguageUpdateActionDTO::languageId => $invalidCode,
                 ])];
             }
             foreach ([
@@ -68,6 +68,7 @@ final class HilosI18nLanguageUpdateActionDTOTest extends TestCase
                 unset($missing[$key]);
                 yield $door . ' missing ' . $key => [$dtoClass, $missing];
             }
+            yield $door . ' legacy code' => [$dtoClass, ['languageCode' => 'uk', 'nativeName' => 'Name', 'rtl' => false]];
             yield $door . ' malformed envelope' => [$dtoClass, [SignalPayloadConstants::FIELD_DATA => 'invalid']];
         }
     }
@@ -91,7 +92,7 @@ final class HilosI18nLanguageUpdateActionDTOTest extends TestCase
     public function testLeavesNativeNameValidationToTheWriteDoor(string $dtoClass, string $action): void
     {
         foreach (['   ', str_repeat('ї', 65)] as $nativeName) {
-            $dto = new $dtoClass('uk', $nativeName, false);
+            $dto = new $dtoClass(19, $nativeName, false);
             self::assertSame($nativeName, $dto->nativeName);
             self::assertSame($action, $dto->getAction());
         }

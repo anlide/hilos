@@ -37,7 +37,9 @@ test('adds a known language switched off from the built-in catalog', async ({
   await expect(page.getByTestId('hilos-toast-success')).toContainText(
     'Language added and switched off for now.',
   )
-  const row = page.getByTestId('hilos-table-row-pt')
+  const row = page
+    .getByTestId(/^hilos-table-row-/)
+    .filter({ has: page.getByTestId('i18n-languages-link-pt') })
   await expect(row).toBeVisible()
   await expect(row.getByTestId('i18n-languages-enabled-pt')).not.toBeChecked()
 })
@@ -95,7 +97,9 @@ test('adds a custom language switched off after confirmation', async ({
   await expect(page.getByTestId('hilos-toast-success')).toContainText(
     'Custom language cy added and switched off for now.',
   )
-  const row = page.getByTestId('hilos-table-row-cy')
+  const row = page
+    .getByTestId(/^hilos-table-row-/)
+    .filter({ has: page.getByTestId('i18n-languages-link-cy') })
   await expect(row).toBeVisible()
   await expect(row.getByTestId('i18n-languages-own-cy')).toBeVisible()
 })

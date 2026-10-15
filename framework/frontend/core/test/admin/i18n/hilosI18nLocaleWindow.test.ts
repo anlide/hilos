@@ -55,7 +55,18 @@ function row(
   catalogFormats: typeof formats | null,
 ): HilosI18nLocaleRow {
   return {
-    rowKey,
+    languageId: 11,
+    countryId: rowKey === 'en' ? null : rowKey === 'en-GB' ? 101 : 142,
+    localeId:
+      formatsOfRow === null
+        ? null
+        : rowKey === 'en'
+          ? 11000
+          : rowKey === 'en-GB'
+            ? 11101
+            : 11142,
+    rowKey:
+      rowKey === 'en' ? '11:null' : rowKey === 'en-GB' ? '11:101' : '11:142',
     countryCode: rowKey === 'en' ? null : rowKey.slice(3).toLowerCase(),
     countryName: rowKey === 'en-GB' ? 'United Kingdom' : null,
     localeCode: formatsOfRow === null ? null : rowKey,
@@ -96,6 +107,7 @@ function setup(rows: HilosI18nLocaleRow[]) {
 }
 
 const card: HilosI18nLanguageCard = {
+  languageId: 11,
   code: 'en',
   nativeName: 'English',
   rtl: false,
@@ -112,6 +124,22 @@ const card: HilosI18nLanguageCard = {
 }
 
 describe('locale window core', () => {
+  it('keeps a draft when a locale is recreated under the same pair and code', async () => {
+    const original = row('en-GB', formats, formats)
+    const h = setup([original])
+    const edit = createHilosI18nLocaleEdit(h.controller, h.context)
+    edit.start()
+    expect(edit.open(original.rowKey)).toBe(true)
+    edit.patchForm({ date: 'YYYY-MM-DD' })
+    h.focused.set({ ...original, localeId: 999 })
+    expect(edit.state.get().gone).toBe(true)
+    expect(edit.form.get().date).toBe('YYYY-MM-DD')
+    expect(edit.canSave.get()).toBe(false)
+    await edit.save(async () => true)
+    expect(h.sent).toEqual([])
+    edit.dispose()
+  })
+
   it('names the switch-off step with the shared pair suffix', () => {
     expect(HILOS_I18N_LOCALE_COPY.switchOff.title('English', 'Australia')).toBe(
       'Switch off locale · English in Australia',
@@ -124,16 +152,16 @@ describe('locale window core', () => {
   it('dispatches switch-off with only the language and mandatory nullable country', () => {
     const { context, sent } = setup([])
     const switcher = createHilosI18nLocaleSwitchOff(context)
-    switcher.switchOff('en', 'au')
-    switcher.switchOff('uk', null)
+    switcher.switchOff(11, 107, 11107)
+    switcher.switchOff(19, null, 19000)
     expect(sent).toEqual([
       [
         'hilos_i18n_locale_switch_off',
-        { languageCode: 'en', countryCode: 'au' },
+        { languageId: 11, countryId: 107, localeId: 11107 },
       ],
       [
         'hilos_i18n_locale_switch_off',
-        { languageCode: 'uk', countryCode: null },
+        { languageId: 19, countryId: null, localeId: 19000 },
       ],
     ])
     expect(HILOS_I18N_LOCALE_SWITCH_OFF_ACTION).toBe(
@@ -202,7 +230,7 @@ describe('locale window core', () => {
     for (const live of [
       undefined,
       null,
-      { ...country, localeCode: null },
+      { ...country, localeId: null, localeCode: null },
       { ...country, formats: null },
       { ...country, enabled: false },
       row('en-GB', null, formats),
@@ -222,19 +250,17 @@ describe('locale window core', () => {
 
   it('dispatches switch-on for the current language and either country address', () => {
     const { context, sent } = setup([])
-    const languageCode = createSignal('en')
-    const switcher = createHilosI18nLocaleSwitchOn(context, languageCode)
-    switcher.switchOn('au')
-    languageCode.set('uk')
-    switcher.switchOn(null)
+    const switcher = createHilosI18nLocaleSwitchOn(context)
+    switcher.switchOn(11, 107, 11107)
+    switcher.switchOn(19, null, 19000)
     expect(sent).toEqual([
       [
         HILOS_I18N_LOCALE_SWITCH_ON_ACTION,
-        { languageCode: 'en', countryCode: 'au' },
+        { languageId: 11, countryId: 107, localeId: 11107 },
       ],
       [
         HILOS_I18N_LOCALE_SWITCH_ON_ACTION,
-        { languageCode: 'uk', countryCode: null },
+        { languageId: 19, countryId: null, localeId: 19000 },
       ],
     ])
   })
@@ -268,13 +294,9 @@ describe('locale window core', () => {
   it('edits the seven formats and blocks save when switched on or removed', async () => {
     const original = row('en-GB', formats, formats)
     const { controller, focused, context, sent } = setup([original])
-    const edit = createHilosI18nLocaleEdit(
-      controller,
-      context,
-      createSignal('en'),
-    )
+    const edit = createHilosI18nLocaleEdit(controller, context)
     edit.start()
-    expect(edit.open('en-GB')).toBe(true)
+    expect(edit.open('11:101')).toBe(true)
     edit.patchForm({ date: 'YYYY-MM-DD' })
     expect(edit.canSave.get()).toBe(true)
     await edit.save(vi.fn(() => Promise.resolve(false)))
@@ -282,15 +304,21 @@ describe('locale window core', () => {
       [
         HILOS_I18N_LOCALE_UPDATE_ACTION,
         {
-          languageCode: 'en',
-          countryCode: 'gb',
+          localeId: 11101,
+          languageId: 11,
+          countryId: 101,
           formats: { ...formats, date: 'YYYY-MM-DD' },
         },
       ],
     ])
     focused.set({ ...original, enabled: true })
     expect(edit.canSave.get()).toBe(false)
-    focused.set({ ...original, formats: null, localeCode: null })
+    focused.set({
+      ...original,
+      formats: null,
+      localeId: null,
+      localeCode: null,
+    })
     expect(edit.state.get().gone).toBe(true)
     expect(edit.saveLabel.get()).toBe('Deleted')
     edit.dispose()
@@ -300,12 +328,8 @@ describe('locale window core', () => {
     const known = row('en-GB', null, formats)
     const own = row('en-AD', null, null)
     const { controller, focused, context, sent } = setup([known, own])
-    const add = createHilosI18nLocaleAdd(
-      controller,
-      context,
-      createSignal('en'),
-    )
-    expect(add.open('en-GB')).toBe(true)
+    const add = createHilosI18nLocaleAdd(controller, context)
+    expect(add.open('11:101')).toBe(true)
     expect(add.form.get()).toEqual(formats)
     expect(add.canAdd.get()).toBe(true)
     let finish: (success: boolean) => void = () => {}
@@ -315,7 +339,7 @@ describe('locale window core', () => {
           finish = resolve
         }),
     )
-    focused.set({ ...known, localeCode: 'en-GB', formats })
+    focused.set({ ...known, localeId: 11101, localeCode: 'en-GB', formats })
     expect(add.elsewhere.get()).toBe(false)
     finish(true)
     await running
@@ -323,21 +347,21 @@ describe('locale window core', () => {
       [
         HILOS_I18N_LOCALE_ADD_ACTION,
         {
-          languageCode: 'en',
-          countryCode: 'gb',
+          languageId: 11,
+          countryId: 101,
           formats,
         },
       ],
     ])
     expect(add.opened.get()).toBe(false)
 
-    expect(add.open('en-AD')).toBe(true)
+    expect(add.open('11:142')).toBe(true)
     expect(add.canAdd.get()).toBe(false)
     for (const [field, value] of Object.entries(formats)) {
       add.setField(field as keyof typeof formats, value)
     }
     expect(add.canAdd.get()).toBe(true)
-    focused.set({ ...own, localeCode: 'en-AD', formats })
+    focused.set({ ...own, localeId: 11142, localeCode: 'en-AD', formats })
     expect(add.elsewhere.get()).toBe(true)
     expect(add.canAdd.get()).toBe(false)
     add.dispose()
@@ -346,13 +370,9 @@ describe('locale window core', () => {
   it('names each conflicting format and its incoming value before a choice', () => {
     const original = row('en-GB', formats, formats)
     const { controller, focused, context } = setup([original])
-    const edit = createHilosI18nLocaleEdit(
-      controller,
-      context,
-      createSignal('en'),
-    )
+    const edit = createHilosI18nLocaleEdit(controller, context)
     edit.start()
-    edit.open('en-GB')
+    edit.open('11:101')
     edit.patchForm({ date: 'YYYY-MM-DD' })
     focused.set({ ...original, formats: { ...formats, date: 'DD.MM.YYYY' } })
     expect(edit.state.get().conflict).toBe(true)

@@ -21,6 +21,7 @@ import { hilosRouterKey } from '../../../hilosRouterKey.js'
 import { hilosAdminViewModeKey } from '../../../hilosAdminViewMode.js'
 
 const initialCard: HilosI18nLanguageCard = {
+  languageId: 46,
   code: 'qx',
   nativeName: 'First name',
   rtl: false,
@@ -174,7 +175,7 @@ describe('HilosI18nLanguagePage', () => {
       )!
       .click()
     expect(dispatch).toHaveBeenCalledWith(HILOS_I18N_LANGUAGE_DELETE_ACTION, {
-      languageCode: 'qx',
+      languageId: 46,
     })
     h.scope.data.set(LANGUAGE_CARD_DATA, [])
     await nextTick()

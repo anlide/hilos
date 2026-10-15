@@ -14,33 +14,41 @@ final class HilosI18nCountryNameAddActionDTO extends ActionPayloadDTO
 {
     public const array SECRET_FIELDS = [];
 
-    public const string countryCode = 'countryCode';
-    public const string inLanguageCode = 'inLanguageCode';
-    public const string localeCode = 'localeCode';
+    public const string countryId = 'countryId';
+    public const string inLanguageId = 'inLanguageId';
+    public const string localeId = 'localeId';
+    public const string baseNameId = 'baseNameId';
     public const string name = 'name';
 
     /**
-     * @param string $countryCode Named country code
-     * @param string $inLanguageCode Writing language code
-     * @param ?string $localeCode Country locale of the writing language, or null for the base
+     * @param int $countryId Named country ID
+     * @param int $inLanguageId Writing language ID
+     * @param ?int $localeId Country locale of the writing language, or null for the base
+     * @param ?int $baseNameId Captured primary ID of the base name, null for a new base
      * @param string $name Literal name, including empty text and whitespace
      * @throws InvalidFormatException When coordinates violate the wire contract
      */
     public function __construct(
-        public readonly string $countryCode,
-        public readonly string $inLanguageCode,
-        public readonly ?string $localeCode,
+        public readonly int $countryId,
+        public readonly int $inLanguageId,
+        public readonly ?int $localeId,
+        public readonly ?int $baseNameId,
         public readonly string $name,
     ) {
-        if (preg_match('/^[a-z]{2}$/D', $countryCode) !== 1) {
-            throw new InvalidFormatException('Invalid country code: ' . $countryCode);
+        if ($countryId <= 0) {
+            throw new InvalidFormatException('Invalid countryId: ' . $countryId);
         }
-        if (preg_match('/^[a-z]{2}$/D', $inLanguageCode) !== 1) {
-            throw new InvalidFormatException('The writing language must be a two-letter language code.');
+        if ($inLanguageId <= 0) {
+            throw new InvalidFormatException('Invalid inLanguageId: ' . $inLanguageId);
         }
-        if ($localeCode !== null
-            && (preg_match('/^[a-z]{2}-[A-Z]{2}$/D', $localeCode) !== 1 || !str_starts_with($localeCode, $inLanguageCode . '-'))) {
-            throw new InvalidFormatException('The correction must name a country locale of the writing language.');
+        if ($localeId !== null && $localeId <= 0) {
+            throw new InvalidFormatException('Invalid localeId: ' . $localeId);
+        }
+        if ($baseNameId !== null && $baseNameId <= 0) {
+            throw new InvalidFormatException('Invalid baseNameId: ' . $baseNameId);
+        }
+        if (($localeId === null) !== ($baseNameId === null)) {
+            throw new InvalidFormatException('A correction requires both localeId and baseNameId.');
         }
     }
 
@@ -61,21 +69,32 @@ final class HilosI18nCountryNameAddActionDTO extends ActionPayloadDTO
             ? self::requireArray($data, SignalPayloadConstants::FIELD_DATA)
             : $data;
 
+        if (!array_key_exists(self::localeId, $inner)
+            || ($inner[self::localeId] !== null && !is_int($inner[self::localeId]))) {
+            throw new InvalidFormatException('Payload carries no integer or null under key ' . self::localeId);
+        }
+        if (!array_key_exists(self::baseNameId, $inner)
+            || ($inner[self::baseNameId] !== null && !is_int($inner[self::baseNameId]))) {
+            throw new InvalidFormatException('Payload carries no integer or null under key ' . self::baseNameId);
+        }
+
         return new static(
-            self::requireString($inner, self::countryCode),
-            self::requireString($inner, self::inLanguageCode),
-            self::optionalString($inner, self::localeCode),
+            self::requireInt($inner, self::countryId),
+            self::requireInt($inner, self::inLanguageId),
+            $inner[self::localeId],
+            $inner[self::baseNameId],
             self::requireString($inner, self::name),
         );
     }
 
-    /** @return array<string, ?string> Coordinates and literal name text */
+    /** @return array<string, int|string|null> Coordinates and literal name text */
     public function toArray(): array
     {
         return [
-            self::countryCode => $this->countryCode,
-            self::inLanguageCode => $this->inLanguageCode,
-            self::localeCode => $this->localeCode,
+            self::countryId => $this->countryId,
+            self::inLanguageId => $this->inLanguageId,
+            self::localeId => $this->localeId,
+            self::baseNameId => $this->baseNameId,
             self::name => $this->name,
         ];
     }

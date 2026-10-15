@@ -1,3 +1,4 @@
+import { i18nLocaleRow } from '../../../../../framework/frontend/e2e/index.js'
 import { expect, test } from '@playwright/test'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import { gotoPage, PAGE_READY } from '../helpers/page.js'
@@ -8,7 +9,7 @@ test('adds a known locale and edits its formats from the language table', async 
   await signUpAdmin(page)
   await gotoPage(page, '/hilos/i18n/languages/en/locales', PAGE_READY)
 
-  const britishRow = page.getByTestId('hilos-table-row-en-GB')
+  const britishRow = i18nLocaleRow(page, 'en-GB')
   const add = britishRow.getByTestId('i18n-locales-add-en-GB')
   await add.scrollIntoViewIfNeeded()
   await expect(add).toBeVisible()
@@ -77,9 +78,7 @@ test('opens a switched-on countryless locale only to view its formats', async ({
   await signUpAdmin(page)
   await gotoPage(page, '/hilos/i18n/languages/en/locales', PAGE_READY)
 
-  const view = page
-    .getByTestId('hilos-table-row-en')
-    .getByTestId('i18n-locales-view-en')
+  const view = i18nLocaleRow(page, 'en').getByTestId('i18n-locales-view-en')
   await view.scrollIntoViewIfNeeded()
   await expect(view).toBeVisible()
   await expect(view).toBeEnabled()

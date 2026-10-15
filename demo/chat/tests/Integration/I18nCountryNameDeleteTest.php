@@ -47,6 +47,8 @@ use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\LocaleTemplates;
 use Hilos\I18n\MeasurementSystem;
 use Hilos\HilosException;
+use Hilos\Pages\I18n\Details\DTO\HilosI18nCountryNameUpdateActionDTO;
+use Hilos\Pages\I18n\Details\DTO\HilosI18nCountryNameAddActionDTO;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nCountryNameDeleteActionDTO;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nCountryNameOverrideDeleteActionDTO;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
@@ -154,7 +156,7 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
             }
         });
         self::assertTrue($this->base()->locked);
-        $this->assertSuccess($this->dispatch(new HilosI18nCountryNameDeleteActionDTO('qj', 'qk', $expectedName)), false);
+        $this->assertSuccess($this->dispatch($this->nameRequest(HilosI18nCountryNameDeleteActionDTO::class, 'qj', 'qk', null, $expectedName)), false);
         self::assertNull($this->base());
         self::assertNull($this->correction('qk-GB'));
         self::assertNull($this->correction('qk-US'));
@@ -190,7 +192,10 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
             }
         });
         self::assertTrue($this->correction('qk-GB')->locked);
-        $this->assertSuccess($this->dispatch(new HilosI18nCountryNameOverrideDeleteActionDTO('qj', 'qk', 'qk-GB', $expectedName)), true);
+        $this->assertSuccess($this->dispatch($this->nameRequest(
+            HilosI18nCountryNameOverrideDeleteActionDTO::class,
+            'qj', 'qk', 'qk-GB', $expectedName)
+        ), true);
         self::assertSame('Fixture base', $this->base()->name);
         self::assertNull($this->correction('qk-GB'));
         self::assertSame('', $this->correction('qk-US')->name);
@@ -231,10 +236,11 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
         $country = $scenario === 'missing-country' ? 'zz' : 'qj';
         $writing = $scenario === 'missing-writing-language' ? 'zz' : 'qk';
         $dto = $override
-            ? new HilosI18nCountryNameOverrideDeleteActionDTO(
-                $country, $writing, $writing . ($scenario === 'missing-locale' ? '-DE' : '-GB'), 'Fixture correction',
-            )
-            : new HilosI18nCountryNameDeleteActionDTO($country, $writing, 'Fixture base');
+            ? $this->nameRequest(
+                HilosI18nCountryNameOverrideDeleteActionDTO::class,
+                $country, $writing, $writing . ($scenario === 'missing-locale' ? '-DE' : '-GB'
+            ), 'Fixture correction')
+            : $this->nameRequest(HilosI18nCountryNameDeleteActionDTO::class, $country, $writing, null, 'Fixture base');
         $failure = $this->dispatch($dto);
         self::assertInstanceOf(PageActionErrorSignalData::class, $failure);
         self::assertSame('delete-tracked', $failure->requestId);
@@ -242,9 +248,9 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
         self::assertSame('fail', $failure->getEnvelopeOutcome());
         self::assertSame(match ($scenario) {
             'changed' => 'The name changed. Close this window and confirm again.',
-            'missing-country' => 'Unknown country: zz',
-            'missing-writing-language' => 'Unknown writing language: zz',
-            'missing-locale' => 'Unknown locale: qk-DE',
+            'missing-country' => 'Unknown country: ' . PHP_INT_MAX,
+            'missing-writing-language' => 'Unknown writing language: ' . PHP_INT_MAX,
+            'missing-locale' => 'Unknown locale: ' . PHP_INT_MAX,
             default => 'The name no longer exists.',
         }, $failure->reason);
         self::assertSame($before, $this->nameSnapshot());
@@ -476,7 +482,7 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
                 }
             }
             self::assertCount(1, $deltas);
-            self::assertSame('qk', $deltas[0]->rowKey);
+            self::assertSame((string) Hilos::$db->languages['qk']->id, $deltas[0]->rowKey);
             $row = $deltas[0]->row[PagePayload::slots][HilosI18nCountryNamesTable::ROW_SLOT];
             self::assertSame($override ? 'Fixture base' : null, $row['name']);
             if ($override) {
@@ -594,7 +600,7 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
     }
 
     /** @throws HilosException When setup, dispatch or a data read fails */
-    public function testEqualTextReplacementIsAccepted(): void
+    public function testEqualTextReplacementRefusesCapturedIdAndAcceptsNewId(): void
     {
         $this->seed();
         $confirmed = $this->request(false);
@@ -606,7 +612,13 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
             );
         });
         self::assertNotSame($oldId, $this->base()->id);
-        $this->assertSuccess($this->dispatch($confirmed), false);
+        $newId = $this->base()->id;
+        $failure = $this->dispatch($confirmed);
+        self::assertInstanceOf(PageActionErrorSignalData::class, $failure);
+        self::assertSame('The name no longer exists.', $failure->reason);
+        self::assertSame($newId, $this->base()->id);
+        self::assertSame('Fixture base', $this->base()->name);
+        $this->assertSuccess($this->dispatch($this->request(false)), false);
         self::assertNull($this->base());
     }
 
@@ -645,8 +657,8 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
                 SourceChangeBus::subscribe($changes);
                 try {
                     $dto = $override
-                        ? new HilosI18nCountryNameOverrideDeleteActionDTO('us', 'en', 'en-GB', 'British US')
-                        : new HilosI18nCountryNameDeleteActionDTO('us', 'en', 'Manual US');
+                        ? $this->nameRequest(HilosI18nCountryNameOverrideDeleteActionDTO::class, 'us', 'en', 'en-GB', 'British US')
+                        : $this->nameRequest(HilosI18nCountryNameDeleteActionDTO::class, 'us', 'en', null, 'Manual US');
                     $this->assertSuccess($this->dispatch($dto), $override);
                 } finally {
                     $changes->active = false;
@@ -678,7 +690,7 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
                         }
                     }
                     self::assertCount(1, $deltas);
-                    self::assertSame('en', $deltas[0]->rowKey);
+                    self::assertSame((string) Hilos::$db->languages['en']->id, $deltas[0]->rowKey);
                     $row = $deltas[0]->row[PagePayload::slots][HilosI18nCountryNamesTable::ROW_SLOT];
                     self::assertSame($expected, $row['name']);
                     self::assertCount(1, $row['corrections']);
@@ -740,8 +752,8 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
     private function request(bool $override): ActionPayloadDTO
     {
         return $override
-            ? new HilosI18nCountryNameOverrideDeleteActionDTO('qj', 'qk', 'qk-GB', 'Fixture correction')
-            : new HilosI18nCountryNameDeleteActionDTO('qj', 'qk', 'Fixture base');
+            ? $this->nameRequest(HilosI18nCountryNameOverrideDeleteActionDTO::class, 'qj', 'qk', 'qk-GB', 'Fixture correction')
+            : $this->nameRequest(HilosI18nCountryNameDeleteActionDTO::class, 'qj', 'qk', null, 'Fixture base');
     }
 
     /**
@@ -843,7 +855,7 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
     {
         $params = ['countryCode' => $countryCode];
         $windows = [ChatTableContext::hilosI18nCountryNames => new TableWindowDescriptorDTO(
-            filter: [HilosI18nCountryNamesTable::FILTER_COUNTRY => $countryCode],
+            filter: [HilosI18nCountryNamesTable::FILTER_COUNTRY => Hilos::$db->countries[$countryCode]?->id ?? 999999],
         )];
         Hilos::$sr->subscribeToPage(CountryNamesPage::PAGE, new WebSocketPageSubscribeSignalDTO(
             $acceptKey, CountryNamesPage::PAGE, $params, $windows,
@@ -932,6 +944,46 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
         });
     }
 
+    /**
+     * Capture fixture IDs at the point the client builds its request.
+     *
+     * @param class-string<ActionPayloadDTO> $class Action payload class
+     * @param string $subjectCode Fixture subject code
+     * @param string $writingCode Fixture writing language code
+     * @param ?string $localeCode Fixture correction locale, or base
+     * @param string $text New or confirmed text
+     * @param ?string $expectedName Latest committed text for update
+     * @return ActionPayloadDTO Request carrying captured primary IDs
+     * @throws HilosException When fixture lookup or payload validation fails
+     */
+    private function nameRequest(
+        string $class,
+        string $subjectCode,
+        string $writingCode,
+        ?string $localeCode,
+        string $text,
+        ?string $expectedName = null,
+    ): ActionPayloadDTO {
+        $subjectId = Hilos::$db->countries[$subjectCode]?->id ?? PHP_INT_MAX;
+        $writingId = Hilos::$db->languages[$writingCode]?->id ?? PHP_INT_MAX;
+        $localeId = $localeCode === null ? null : (Hilos::$db->locales[$localeCode]?->id ?? PHP_INT_MAX);
+        $base = Hilos::$db->countryNames->findBase($subjectId, $writingId);
+        if ($class === HilosI18nCountryNameAddActionDTO::class) {
+            return new HilosI18nCountryNameAddActionDTO(
+                $subjectId, $writingId, $localeId, $localeId === null ? null : ($base?->id ?? PHP_INT_MAX), $text,
+            );
+        }
+        $nameId = ($localeId === null ? $base : Hilos::$db->countryNames->findOverride($subjectId, $writingId, $localeId))?->id
+            ?? PHP_INT_MAX;
+        if ($class === HilosI18nCountryNameDeleteActionDTO::class) {
+            return new HilosI18nCountryNameDeleteActionDTO($subjectId, $writingId, $nameId, $text);
+        }
+        if ($class === HilosI18nCountryNameOverrideDeleteActionDTO::class) {
+            return new HilosI18nCountryNameOverrideDeleteActionDTO($subjectId, $writingId, $localeId, $nameId, $text);
+        }
+
+        return new HilosI18nCountryNameUpdateActionDTO($subjectId, $writingId, $localeId, $nameId, $text, $expectedName);
+    }
 }
 
 /** Captures real committed name facts; the test hands them to the browser at the worker's flush boundary. */
@@ -952,4 +1004,5 @@ final class I18nCountryNameDeletionChanges implements SourceChangeSubscriberInte
             $this->changes[] = $change;
         }
     }
+
 }

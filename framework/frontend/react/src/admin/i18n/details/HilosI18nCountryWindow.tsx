@@ -122,7 +122,7 @@ export function HilosI18nCountryWindow({ window }: { window: CountryWindow }) {
             code={row?.code ?? ''}
             currencySymbol={form.currencySymbol}
             currencyCode={form.currencyCode}
-            defaultLocaleCode={form.defaultLocaleCode}
+            defaultLocaleId={form.defaultLocaleId}
             localeOptions={options}
             localeHint={localeHint}
             describedBy="i18n-country-plate"

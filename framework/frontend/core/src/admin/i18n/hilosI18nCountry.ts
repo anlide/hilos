@@ -10,6 +10,7 @@ import { computedSignal, type ReadonlySignal } from '../../state/signal.js'
 export const COUNTRY_CARD_DATA = 'countryCard'
 
 export const countryCardSchema = z.strictObject({
+  countryId: z.number().int().positive(),
   code: z.string(),
   currencySymbol: z.string(),
   currencyCode: z.string(),
@@ -17,12 +18,17 @@ export const countryCardSchema = z.strictObject({
   summary: z.strictObject({
     name: z.string().nullable(),
     isOwn: z.boolean(),
+    defaultLocaleId: z.number().int().positive().nullable(),
     defaultLocaleCode: z.string().nullable(),
     defaultLocale: z.enum(['missing', 'off', 'on']),
     localeCount: z.number().int().nonnegative(),
     nameCount: z.number().int().nonnegative(),
     locales: z.array(
-      z.strictObject({ code: z.string(), enabled: z.boolean() }),
+      z.strictObject({
+        localeId: z.number().int().positive(),
+        code: z.string(),
+        enabled: z.boolean(),
+      }),
     ),
     catalogDefaultLocaleCode: z.string().nullable(),
     canDelete: z.boolean(),

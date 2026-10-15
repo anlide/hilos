@@ -26,8 +26,11 @@ function setup(
   const h = harness()
   const row = {
     ...nameRow,
+    nameId: localeCode === null && name === null ? null : 301,
     name: localeCode === null ? name : '',
-    corrections: [{ ...nameRow.corrections[0]!, name }],
+    corrections: [
+      { ...nameRow.corrections[0]!, nameId: name === null ? null : 401, name },
+    ],
   }
   const focus = focusSource<HilosI18nNameRow>(row),
     card = createSignal<HilosI18nLanguageCard | null>(languageCard),
@@ -43,7 +46,7 @@ function setup(
       <button
         type="button"
         data-id="name-opener"
-        onClick={() => window.open('en', localeCode)}
+        onClick={() => window.open('11', localeCode === null ? null : 501)}
       >
         Open
       </button>
@@ -51,7 +54,7 @@ function setup(
     </HilosAdminViewModeContext.Provider>,
   )
   el('name-opener').focus()
-  act(() => window.open('en', localeCode))
+  act(() => window.open('11', localeCode === null ? null : 501))
   return { ...h, ...focus, card, subject, window, view, row }
 }
 function enter(): void {
@@ -59,6 +62,33 @@ function enter(): void {
 }
 
 describe('React language name window', () => {
+  it.each([null, 'en-GB'])(
+    'keeps the draft and blocks a same-text replacement at %s',
+    (localeCode) => {
+      const h = setup('Original', localeCode)
+      change('i18n-language-name-input', 'Keep my draft')
+      act(() =>
+        h.focused.set({
+          ...h.row,
+          ...(localeCode === null
+            ? { nameId: 999 }
+            : {
+                corrections: [{ ...h.row.corrections[0]!, nameId: 999 }],
+              }),
+        }),
+      )
+      expect(el<HTMLInputElement>('i18n-language-name-input').value).toBe(
+        'Keep my draft',
+      )
+      expect(el<HTMLButtonElement>('i18n-language-name-submit').disabled).toBe(
+        true,
+      )
+      expect(el('i18n-language-name-submit').textContent).toContain('Deleted')
+      enter()
+      expect(h.calls).toEqual([])
+    },
+  )
+
   it.each([
     [null, null, 'Add name'],
     ['', null, 'Edit name'],
@@ -97,9 +127,10 @@ describe('React language name window', () => {
       expect(h.calls[0]).toMatchObject({
         action: 'hilos_i18n_language_name_add',
         payload: {
-          languageCode: 'uk',
-          inLanguageCode: 'en',
-          localeCode,
+          languageId: 19,
+          inLanguageId: 11,
+          baseNameId: localeCode === null ? null : 301,
+          localeId: localeCode === null ? null : 501,
           name: '',
         },
       })
@@ -130,9 +161,10 @@ describe('React language name window', () => {
       expect(h.calls[0]).toMatchObject({
         action: 'hilos_i18n_language_name_update',
         payload: {
-          languageCode: 'uk',
-          inLanguageCode: 'en',
-          localeCode,
+          languageId: 19,
+          inLanguageId: 11,
+          nameId: localeCode === null ? 301 : 401,
+          localeId: localeCode === null ? null : 501,
           name: '   ',
           expectedName: '',
         },
@@ -192,7 +224,7 @@ describe('React language name window', () => {
     )
     act(() => {
       h.window.close()
-      h.window.open('en')
+      h.window.open('11')
     })
     expect(el('i18n-language-name-error').textContent).not.toContain(
       'Try again',
@@ -234,9 +266,9 @@ describe('React language name window', () => {
       enter()
       act(() => {
         h.subject.set('fr')
-        h.card.set({ ...languageCard, code: 'fr' })
+        h.card.set({ ...languageCard, languageId: 13, code: 'fr' })
       })
-      act(() => h.window.open('en'))
+      act(() => h.window.open('11'))
       change('i18n-language-name-input', 'New')
       enter()
       await settle(() => h.refuse(0, 'Old failure'))
@@ -257,7 +289,7 @@ describe('React language name window', () => {
     fireEvent.keyDown(el('modal'), { key: 'Escape' })
     click('modal-confirm-discard')
     expect(document.activeElement).toBe(el('name-opener'))
-    act(() => h.window.open('en'))
+    act(() => h.window.open('11'))
     h.view.unmount()
     expect(h.window.opened.get()).toBe(false)
     expect(h.focused.get()).toBeUndefined()

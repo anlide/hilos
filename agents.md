@@ -130,6 +130,10 @@ Start with [orm/README.md](docs/agents/orm/README.md) for any ORM change; it
 routes to the mandatory entity, object, collection, bridge, accessor, and
 migration documents.
 
+For internal references and action targets, read
+[orm/entity-references.md](docs/agents/orm/entity-references.md): declared primary
+keys, external code boundaries, and stale targets after delete/recreate.
+
 Minimum ORM rules before editing:
 
 - Do not add Repository or Service layers over `DbCollection`; use typed

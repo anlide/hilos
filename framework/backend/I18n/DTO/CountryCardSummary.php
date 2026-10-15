@@ -23,6 +23,7 @@ final readonly class CountryCardSummary
     /**
      * @param ?string $name Nonempty base name in the default language, or null when there is none
      * @param bool $isOwn Whether the code is absent from the built-in catalog
+     * @param ?int $defaultLocaleId Selected locale ID, or null
      * @param ?string $defaultLocaleCode Code of the chosen default locale, or null when none is chosen
      * @param ?bool $defaultLocaleEnabled Whether the chosen default locale is switched on; null when none is chosen
      * @param int $localeCount All locales of the country, enabled or not
@@ -34,6 +35,7 @@ final readonly class CountryCardSummary
     public function __construct(
         public ?string $name,
         public bool $isOwn,
+        public ?int $defaultLocaleId,
         public ?string $defaultLocaleCode,
         ?bool $defaultLocaleEnabled,
         public int $localeCount,
@@ -56,6 +58,7 @@ final readonly class CountryCardSummary
         return [
             'name' => $this->name,
             'isOwn' => $this->isOwn,
+            'defaultLocaleId' => $this->defaultLocaleId,
             'defaultLocaleCode' => $this->defaultLocaleCode,
             'defaultLocale' => $this->defaultLocale,
             'localeCount' => $this->localeCount,

@@ -22,11 +22,24 @@ function nameRow(
   code: string,
   nativeName: string,
   name: string | null,
-  corrections: readonly Record<string, string | null>[] = [],
+  corrections: readonly Record<string, string | number | null>[] = [],
 ): TableRow {
+  const inLanguageId = ({ en: 11, fr: 13, es: 15 } as Record<string, number>)[
+    code
+  ]!
   return {
-    rowKey: code,
-    slots: { language: { code, nativeName, name, corrections } },
+    rowKey: String(inLanguageId),
+    slots: {
+      language: {
+        rowKey: String(inLanguageId),
+        inLanguageId,
+        nameId: name === null ? null : 301,
+        code,
+        nativeName,
+        name,
+        corrections,
+      },
+    },
   }
 }
 
@@ -45,24 +58,33 @@ function mountNames(
       actions: {} as ActionLifecycle,
     },
     target,
-    createSignal('de'),
+    createSignal(14),
   )
   table.controller.ingestWindow(
     [
       nameRow('en', 'English', 'German', [
         {
+          localeId: 501,
+          nameId: 401,
+          countryId: 101,
           localeCode: 'en-GB',
           countryCode: 'gb',
           countryName: 'United Kingdom',
           name: 'German (UK)',
         },
         {
+          localeId: 502,
+          nameId: null,
+          countryId: 102,
           localeCode: 'en-US',
           countryCode: 'us',
           countryName: null,
           name: null,
         },
         {
+          localeId: 503,
+          nameId: 403,
+          countryId: 103,
           localeCode: 'en-CA',
           countryCode: 'ca',
           countryName: 'Canada',
@@ -110,7 +132,7 @@ function mountNames(
 describe('HilosI18nNamesTable', () => {
   it('shows the language by its code in capitals with its native name', () => {
     const { wrapper } = mountNames()
-    const row = wrapper.find('tr[data-id="hilos-table-row-en"]')
+    const row = wrapper.find('tr[data-id="hilos-table-row-11"]')
 
     expect(row.find('.text-uppercase').text()).toBe('en')
     expect(row.text()).toContain('English')
@@ -124,7 +146,7 @@ describe('HilosI18nNamesTable', () => {
     )
     expect(wrapper.find('[data-id="i18n-names-none-es"]').exists()).toBe(false)
     expect(wrapper.find('[data-id="i18n-names-none-en"]').exists()).toBe(false)
-    expect(wrapper.find('tr[data-id="hilos-table-row-en"]').text()).toContain(
+    expect(wrapper.find('tr[data-id="hilos-table-row-11"]').text()).toContain(
       'German',
     )
   })
@@ -132,23 +154,23 @@ describe('HilosI18nNamesTable', () => {
   it('offers the chevron only on a row with corrections', () => {
     const { wrapper } = mountNames()
 
-    expect(wrapper.find('tr [data-id="hilos-table-expand-en"]').exists()).toBe(
+    expect(wrapper.find('tr [data-id="hilos-table-expand-11"]').exists()).toBe(
       true,
     )
-    expect(wrapper.find('[data-id="hilos-table-expand-es"]').exists()).toBe(
+    expect(wrapper.find('[data-id="hilos-table-expand-15"]').exists()).toBe(
       false,
     )
-    expect(wrapper.find('[data-id="hilos-table-expand-fr"]').exists()).toBe(
+    expect(wrapper.find('[data-id="hilos-table-expand-13"]').exists()).toBe(
       false,
     )
   })
 
   it('lists the corrections across the panel, an inherited one as "as in" the native name', async () => {
     const { controller, wrapper } = mountNames()
-    controller.expandRow('en', true)
+    controller.expandRow('11', true)
     await nextTick()
 
-    const panel = wrapper.find('tr[data-id="hilos-table-row-detail-en"]')
+    const panel = wrapper.find('tr[data-id="hilos-table-row-detail-11"]')
     expect(panel.find('dl > div').classes()).toContain('col-md-12')
     const british = panel.find('[data-id="i18n-names-correction-en-GB"]')
     expect(british.text()).toContain('United Kingdom')
@@ -168,10 +190,10 @@ describe('HilosI18nNamesTable', () => {
 describe('optional names actions', () => {
   it('leaves optional action slots empty in both country table and cards', async () => {
     const { wrapper, controller } = mountNames(HILOS_I18N_COUNTRY_NAMES)
-    controller.expandRow('en', true)
+    controller.expandRow('11', true)
     await nextTick()
     expect(
-      wrapper.get('tr[data-id="hilos-table-row-en"] .d-inline-flex').text(),
+      wrapper.get('tr[data-id="hilos-table-row-11"] .d-inline-flex').text(),
     ).toBe('')
     expect(
       wrapper
@@ -190,7 +212,7 @@ describe('shared names action slots', () => {
     'passes the row and correction through both projections for $page',
     async (target) => {
       const { wrapper, controller } = mountNames(target, true)
-      controller.expandRow('en', true)
+      controller.expandRow('11', true)
       await nextTick()
       for (const surface of ['table', '[data-id="hilos-table-cards"]']) {
         expect(wrapper.get(`${surface} [data-id="test-base-en"]`).text()).toBe(
@@ -220,18 +242,21 @@ describe('shared names action slots', () => {
 describe('country names action slots after a live write', () => {
   it('keeps both projections in step when absent values become saved empty strings', async () => {
     const { wrapper, controller } = mountNames(HILOS_I18N_COUNTRY_NAMES, true)
-    controller.expandRow('en', true)
+    controller.expandRow('11', true)
     await nextTick()
     controller.ingestDelta({
       kind: 'row_updated',
-      rowKey: 'fr',
+      rowKey: '13',
       row: nameRow('fr', 'Français', ''),
     })
     controller.ingestDelta({
       kind: 'row_updated',
-      rowKey: 'en',
+      rowKey: '11',
       row: nameRow('en', 'English', 'German', [
         {
+          localeId: 502,
+          nameId: 402,
+          countryId: 102,
           localeCode: 'en-US',
           countryCode: 'us',
           countryName: null,

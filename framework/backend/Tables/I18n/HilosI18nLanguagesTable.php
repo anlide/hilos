@@ -11,6 +11,7 @@ use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
@@ -74,8 +75,9 @@ final class HilosI18nLanguagesTable extends TableDefinition implements MultiRowV
         BrowserTableConfigKey::ROWS => [
             [
                 BrowserTableFieldKey::SOURCE => self::LANGUAGES_SOURCE,
-                BrowserTableFieldKey::ROW_KEY => ObjectLanguage::code,
+                BrowserTableFieldKey::ROW_KEY => ObjectLanguage::id,
                 BrowserTableFieldKey::FIELDS => [
+                    ObjectLanguage::id => HilosI18nLanguagesTableRow::languageId,
                     ObjectLanguage::code => HilosI18nLanguagesTableRow::code,
                     ObjectLanguage::nativeName => HilosI18nLanguagesTableRow::nativeName,
                     ObjectLanguage::rtl => HilosI18nLanguagesTableRow::rtl,
@@ -115,7 +117,7 @@ final class HilosI18nLanguagesTable extends TableDefinition implements MultiRowV
     /**
      * A change of the languages collection redraws that language; anything else is ignored.
      *
-     * A deletion names the code the removed row published. A create or an update is read
+     * A deletion names the removed row's primary ID. A create or an update is read
      * back by the row's id, and a row that is already gone is ignored.
      *
      * @param SourceChange $change Source change that may affect this table
@@ -125,6 +127,7 @@ final class HilosI18nLanguagesTable extends TableDefinition implements MultiRowV
      * @throws InvalidArgumentException When a loaded language has the wrong type
      * @throws EnvException When the default language setting is absent
      * @throws EnvInvalidValueException When its configured code is unknown
+     * @throws InvalidFormatException When a projected language ID is not positive
      */
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
@@ -133,9 +136,7 @@ final class HilosI18nLanguagesTable extends TableDefinition implements MultiRowV
         }
 
         if ($change->mutationType === TableMutationType::Delete) {
-            $code = $change->row[ObjectLanguage::code] ?? null;
-
-            return is_string($code) ? $this->mutation(TableMutationType::Delete, $code) : null;
+            return $this->mutation(TableMutationType::Delete, (string) $change->sourceId);
         }
 
         $language = Hilos::$db->languages[(int) $change->sourceId];
@@ -145,7 +146,7 @@ final class HilosI18nLanguagesTable extends TableDefinition implements MultiRowV
 
         return $this->mutation(
             $change->mutationType,
-            $language->code,
+            (string) $language->id,
             $this->rowForLanguage($language, DefaultLanguage::code()),
         );
     }
@@ -161,6 +162,7 @@ final class HilosI18nLanguagesTable extends TableDefinition implements MultiRowV
      * @throws InvalidArgumentException When a loaded item has the wrong type
      * @throws EnvException When the default language setting is absent
      * @throws EnvInvalidValueException When its configured code is unknown
+     * @throws InvalidFormatException When a projected language ID is not positive
      */
     public function buildMutationsForSourceEvent(SourceChange $change): array
     {
@@ -207,7 +209,7 @@ final class HilosI18nLanguagesTable extends TableDefinition implements MultiRowV
             if ($language !== null) {
                 $mutations[] = $this->mutation(
                     TableMutationType::Update,
-                    $language->code,
+                    (string) $language->id,
                     $this->rowForLanguage($language, DefaultLanguage::code()),
                 );
             }
@@ -240,6 +242,8 @@ final class HilosI18nLanguagesTable extends TableDefinition implements MultiRowV
     public function wireFields(): array
     {
         return [
+            HilosI18nLanguagesTableRow::rowKey => WireField::column(HilosDbContext::languages, ObjectLanguage::id),
+            HilosI18nLanguagesTableRow::languageId => WireField::column(HilosDbContext::languages, ObjectLanguage::id),
             HilosI18nLanguagesTableRow::code => WireField::column(HilosDbContext::languages, ObjectLanguage::code),
             HilosI18nLanguagesTableRow::nativeName => WireField::column(
                 HilosDbContext::languages,
@@ -260,7 +264,7 @@ final class HilosI18nLanguagesTable extends TableDefinition implements MultiRowV
      * The set is one row, searched the same way the window is, so a new language under an
      * active search is announced only when the search would keep it.
      *
-     * @param string|int $rowKey Language code
+     * @param string|int $rowKey Decimal language ID
      * @param TableQueryDTO $query Window query whose search describes the set
      * @return ?bool Whether the language is in the set; this table always knows
      * @throws DatabaseException When a language cannot be read
@@ -268,19 +272,24 @@ final class HilosI18nLanguagesTable extends TableDefinition implements MultiRowV
      * @throws InvalidArgumentException When a loaded language has the wrong type
      * @throws EnvException When the default language setting is absent
      * @throws EnvInvalidValueException When its configured code is unknown
+     * @throws InvalidFormatException When a projected language ID is not positive
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
      */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
     {
-        $language = Hilos::$db->languages[(string) $rowKey];
+        $id = filter_var($rowKey, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($id === false || (string) $id !== (string) $rowKey) {
+            return false;
+        }
+        $language = Hilos::$db->languages[$id];
         if ($language === null) {
             return false;
         }
 
         return $this->containsRowInMemory(
             [$this->rowForLanguage($language, DefaultLanguage::code())->toArray()],
-            $language->code,
+            (string) $language->id,
             $this->scopeSearch($query),
         );
     }
@@ -297,6 +306,7 @@ final class HilosI18nLanguagesTable extends TableDefinition implements MultiRowV
      * @throws InvalidArgumentException When a loaded language has the wrong type
      * @throws EnvException When the default language setting is absent
      * @throws EnvInvalidValueException When its configured code is unknown
+     * @throws InvalidFormatException When a projected language ID is not positive
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
      */
@@ -355,12 +365,14 @@ final class HilosI18nLanguagesTable extends TableDefinition implements MultiRowV
      * @throws InvalidArgumentException When the language no longer exists
      * @throws EnvException When the default language setting is absent
      * @throws EnvInvalidValueException When its configured code is unknown
+     * @throws InvalidFormatException When a projected language ID is not positive
      */
     private function rowForLanguage(Language $language, string $defaultCode): HilosI18nLanguagesTableRow
     {
         $summary = Hilos::$db->languages->cardSummary($language->id);
 
         return new HilosI18nLanguagesTableRow(
+            languageId: $language->id,
             code: $language->code,
             nativeName: $language->nativeName,
             rtl: $language->rtl,

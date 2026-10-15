@@ -48,7 +48,7 @@ const PLATE = 'badge bg-body-tertiary text-body-secondary border fw-normal'
       <ul class="list-unstyled mb-0">
         <li
           v-for="correction in row.corrections"
-          :key="correction.localeCode"
+          :key="correction.localeId"
           class="d-flex flex-wrap align-items-center gap-2 py-1"
           :data-id="`i18n-names-correction-${correction.localeCode}`"
         >

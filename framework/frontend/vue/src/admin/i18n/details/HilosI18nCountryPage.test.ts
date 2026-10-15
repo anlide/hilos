@@ -25,6 +25,7 @@ enableAutoUnmount(afterEach)
 afterEach(() => hilosToasts.clear())
 
 const initialCard: HilosI18nCountryCard = {
+  countryId: 102,
   code: 'us',
   currencySymbol: '$',
   currencyCode: 'USD',
@@ -32,6 +33,7 @@ const initialCard: HilosI18nCountryCard = {
   summary: {
     name: 'United States',
     isOwn: false,
+    defaultLocaleId: null,
     defaultLocaleCode: null,
     defaultLocale: 'missing',
     localeCount: 0,
@@ -191,6 +193,7 @@ describe('HilosI18nCountryPage', () => {
       summary: {
         name: null,
         isOwn: true,
+        defaultLocaleId: null,
         defaultLocaleCode: null,
         defaultLocale: 'missing',
         localeCount: 0,
@@ -229,6 +232,7 @@ describe('HilosI18nCountryPage', () => {
       summary: {
         ...initialCard.summary,
         name: 'Renamed',
+        defaultLocaleId: 11102,
         defaultLocaleCode: 'en-US',
       },
     })
@@ -309,6 +313,7 @@ describe('HilosI18nCountryPage', () => {
     h.pageLoading.set(false)
     h.scope.data.set(COUNTRY_CARD_DATA, {
       ...initialCard,
+      countryId: 147,
       code: 'qy',
       summary: {
         ...initialCard.summary,
@@ -328,7 +333,7 @@ describe('HilosI18nCountryPage', () => {
       .click()
     await nextTick()
     expect(dispatch).toHaveBeenCalledWith('hilos_i18n_country_delete', {
-      countryCode: 'qy',
+      countryId: 147,
     })
     h.scope.data.set(COUNTRY_CARD_DATA, [])
     await nextTick()
@@ -364,6 +369,7 @@ describe('HilosI18nCountryPage', () => {
     const navigate = vi.spyOn(h.navigation, 'navigate')
     const own = {
       ...initialCard,
+      countryId: 147,
       code: 'qy',
       summary: { ...initialCard.summary, canDelete: true, deleteReason: null },
     }
@@ -406,6 +412,7 @@ describe('HilosI18nCountryPage', () => {
     h.pageLoading.set(false)
     h.scope.data.set(COUNTRY_CARD_DATA, {
       ...initialCard,
+      countryId: 147,
       code: 'qy',
       summary: { ...initialCard.summary, canDelete: true, deleteReason: null },
     })

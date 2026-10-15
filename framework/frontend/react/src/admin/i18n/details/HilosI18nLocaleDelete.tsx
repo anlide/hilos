@@ -17,8 +17,9 @@ interface LocaleDeleteProps {
   target: HilosI18nLocaleDeleteTarget | null
   source: HilosI18nLocaleDeleteTarget | null
   deleteLocale: (
-    languageCode: string,
-    countryCode: string | null,
+    languageId: number,
+    countryId: number | null,
+    localeId: number,
   ) => ActionHandle
 }
 
@@ -50,9 +51,9 @@ function LocaleDelete({
   const elsewhere =
     !action.busy &&
     (source === null ||
-      source.languageCode !== target.languageCode ||
-      source.countryCode !== target.countryCode ||
-      source.localeCode !== target.localeCode)
+      source.languageId !== target.languageId ||
+      source.countryId !== target.countryId ||
+      source.localeId !== target.localeId)
   function close(): void {
     if (!sending.current) onClose()
   }
@@ -62,7 +63,7 @@ function LocaleDelete({
     try {
       if (
         (await action.run(
-          deleteLocale(target.languageCode, target.countryCode),
+          deleteLocale(target.languageId, target.countryId, target.localeId),
         )) &&
         mounted.current
       )

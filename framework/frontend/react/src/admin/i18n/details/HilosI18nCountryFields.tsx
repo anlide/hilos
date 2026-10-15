@@ -11,7 +11,7 @@ export function HilosI18nCountryFields({
   code,
   currencySymbol,
   currencyCode,
-  defaultLocaleCode,
+  defaultLocaleId,
   localeOptions = [],
   localeHint,
   describedBy,
@@ -26,7 +26,7 @@ export function HilosI18nCountryFields({
   code: string
   currencySymbol: string
   currencyCode: string
-  defaultLocaleCode?: string | null
+  defaultLocaleId?: number | null
   localeOptions?: readonly HilosI18nCountryLocaleOption[]
   localeHint?: string
   describedBy?: string
@@ -138,7 +138,7 @@ export function HilosI18nCountryFields({
           id={`${idPrefix}-default-locale`}
           className="form-select form-select-sm"
           disabled={mode !== 'edit' || busy}
-          value={defaultLocaleCode ?? ''}
+          value={defaultLocaleId == null ? '' : String(defaultLocaleId)}
           aria-describedby={
             mode === 'view' ? describedBy : `${idPrefix}-default-locale-hint`
           }
