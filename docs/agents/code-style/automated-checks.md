@@ -8,6 +8,7 @@ rule.
 
 | Rule id | Enforces | Canonical rule |
 |---|---|---|
+| `COLLECTION-OBJECT-LIST` | Raw object lists in named method `@param`/`@return` tags under `Database/{Object,View}/Collection/` in `framework/backend` and `demo/*/backend`, all visibilities, static and abstract included. Only `fromArray` parameters and `toArray` returns are exempt (exact names, case-insensitive). One hit per violating tag, bound to a real parameter for `@param`. Reads raw list/array generics and array suffixes with direct object elements, nullable/union/intersection wrappers and local object-bounded templates; keys and scalar pseudo-types are not elements. Lexical only: no body inference, structured array shapes, inter-file aliases, class-level `@method` or other layers. | [internal-backend-api.md](internal-backend-api.md) |
 | `CODE-FQN` | Executable code names a class by its imported short name, and a short name written there resolves to a class. Two halves under one id: a `T_NAME_FULLY_QUALIFIED` token anywhere in code, and a short name that resolves nowhere — judged in the positions where a miss is silent or distant: `catch`, `new`, `instanceof`, `extends`, `implements`, a static access, and a parameter, property or return type. A name resolves when it is imported, declared in this file, declared by a neighbour of the same directory, or known to the autoloader under this file's namespace. A backslash inside a string or a comment is out of scope by construction: neither tokenizes as a name. | [qualified-names.md](qualified-names.md) |
 | `PHPDOC-FQN` | A docblock names a class by an imported short name. Three classes of message under one id: a leading-backslash fully qualified name, a name partially qualified against the current namespace, and a short name that is neither imported nor declared in this namespace. The first covers the type position of `@throws`, `@param`, `@return`, `@var`, `@property`, `@property-read`, `@method`, `@extends`, `@implements` (generic arguments and array shapes included, read whole), and the `{@see ...}` / `{@link ...}` cross-references; the other two are read in the cross-references only, where a head is unambiguously a symbol rather than a type expression. A file's own constants and enum cases, a neighbour of its namespace, and a constant of the global namespace resolve without an import. | [phpdoc.md](phpdoc.md) rules 9 and 12 |
 | `RT-STATE-REACH` | `getStateCollection()`, `getStateItem()`, and `$this->stateCollection` are used only in files under `Database/` or `Runtime/`, whatever the caller's role. | [rt-state.md](../runtime/rt-state.md) |
@@ -473,6 +474,16 @@ RT-STATE-REACH framework/backend/Core/Daemon/DaemonManager.php 1 # HIL-508
   fewer hits left, and asks you to delete a record with nothing left to cover.
   The update mode below writes the same way round: it lowers counts and drops
   records, and it never raises or adds one.
+
+For `COLLECTION-OBJECT-LIST`, the owner authorized a one-time initial freeze of
+the full detector report in HIL-1531. Its records carry `# HIL-1531` as the
+source of that freeze, not a promise that this leaf rewrites the collections.
+The next leaf changing a recorded collection file pays off its debt and lowers
+or removes the record. The count is violating annotations, not methods or
+lines, and the legal conversion directions are never frozen. Subsequent
+updates remain shrink-only. Replacing one violation with another in the same
+file at the same count is invisible to this baseline; review must refuse that
+substitution and enforce payoff when a file is touched.
 
 Regenerate it after paying debt off — the update mode rewrites the file and then
 fails on purpose, so the diff is reviewed rather than committed blind. Pressing

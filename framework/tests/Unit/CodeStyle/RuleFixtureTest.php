@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\CodeStyle;
 
+use Hilos\Tests\CodeStyle\Baseline;
 use Hilos\Tests\CodeStyle\CodeStyleRule;
 use Hilos\Tests\CodeStyle\Rule\BlockingResolutionRule;
 use Hilos\Tests\CodeStyle\Rule\CodeFqnRule;
+use Hilos\Tests\CodeStyle\Rule\CollectionObjectListRule;
 use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
 use Hilos\Tests\CodeStyle\Rule\FrameworkOrmChainRule;
@@ -139,6 +141,80 @@ final class RuleFixtureTest extends TestCase
                 'EMPTY-STRING-SENTINEL Bad/Core/Router/TernaryBranch.php:24 — a ternary branch hands back '
                     . '\'\' where the value is missing; keep it null or make the field required '
                     . '(see docs/agents/code-style/method-contracts.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:16 — choices @param '
+                    . '$choices list<CountryLocaleChoice>: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:17 — choices @return '
+                    . 'non-empty-list<CountryLocaleChoice>: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:24 — suffix @return '
+                    . 'CountryLocaleChoice[]: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:30 — keyed @return '
+                    . 'array<string, CountryLocaleChoice|null>: use a typed collection (see '
+                    . 'docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:36 — nullable @return '
+                    . '?list<CountryLocaleChoice>: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:39 — union @return '
+                    . 'list<CountryLocaleChoice>|null: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:43 — attributed @return '
+                    . 'array< int, CountryLocaleChoice|string|null >: use a typed collection (see '
+                    . 'docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:51 — intersection @return '
+                    . '(CountryLocaleChoice&object)[]: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:54 — genericArray @return '
+                    . 'array<CountryLocaleChoice>: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:57 — nonemptyArray @return '
+                    . 'non-empty-array<int, CountryLocaleChoice>: use a typed collection (see '
+                    . 'docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:60 — genericObject @return '
+                    . 'list<CountryLocaleChoice<int>>: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:63 — bounded @return '
+                    . 'list<T>: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:68 — localBound @return '
+                    . 'list<U>: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:72 — objects @return '
+                    . 'list<object>: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:75 — selves @return '
+                    . 'self[]: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:78 — statics @return '
+                    . 'list<static>: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:81 — instances @return '
+                    . 'array<$this>: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:84 — lowercase @return '
+                    . 'list<countryLocaleChoice>: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:89 — fromArray @return '
+                    . 'list<CountryLocaleChoice>: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:94 — toArray @param '
+                    . '$choices list<CountryLocaleChoice>: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:99 — toArrayLike @return '
+                    . 'list<CountryLocaleChoice>: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:102 — fromArrayLike @param '
+                    . '$choices list<CountryLocaleChoice>: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:105 — parentheses @return '
+                    . '(list<CountryLocaleChoice> | null): use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:108 — listIntersection '
+                    . '@return list<CountryLocaleChoice> & iterable: use a typed collection (see '
+                    . 'docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:111 — reference @param '
+                    . '$choices CountryLocaleChoice[]: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:114 — variadic @param '
+                    . '$choices list<$this>: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:118 — continued @param '
+                    . '$choices array<int, CountryLocaleChoice>: use a typed collection (see '
+                    . 'docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:121 — continued @return '
+                    . 'list<CountryLocaleChoice>: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:126 — branches @return '
+                    . '(list<int>)|(list<CountryLocaleChoice>): use a typed collection (see '
+                    . 'docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/View/Collection/CollectionObjectListSamples.php:12 — accept @param $choices '
+                    . 'array<int, ChoiceDTO>: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/View/Collection/CollectionObjectListSamples.php:15 — choices @return '
+                    . 'list<ChoiceDTO>: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/View/Collection/CollectionObjectListSamples.php:21 — choices @return '
+                    . 'ChoiceDTO[]: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/View/Collection/CollectionObjectListSamples.php:28 — collect @param $choices '
+                    . 'non-empty-array<string, ChoiceDTO>: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-OBJECT-LIST Bad/Database/View/Collection/CollectionObjectListSamples.php:29 — collect @return '
+                    . '(ChoiceDTO|null)[]: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
                 'PAYLOAD-SENTINEL Bad/DiffReaderSentinelSamples.php:30 — ?? \'\' mints a stub where the diff '
                     . 'does not carry the key; an absent key means the field did not change, so read it with '
                     . 'patch* (see docs/agents/code-style/method-contracts.md)',
@@ -486,6 +562,8 @@ final class RuleFixtureTest extends TestCase
                 'DB-OBJECT-MUTATE Database/Object/Collection/ObjectStoreMutate.php:31 — $this->objects is '
                     . 'written directly outside Objects; go through $this[$id] = $object for a new row, or '
                     . 'hydrate() for a row read out of storage (see docs/agents/orm/object.md)',
+                'COLLECTION-OBJECT-LIST Database/Object/Collection/ObjectStoreMutateLookAlikes.php:55 — localNamedLikeTheStore '
+                    . '@return array<int, Object_>: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
                 'CODE-FQN Database/Object/Collection/OrmChainSamples.php:44 — '
                     . '\Hilos\Database\Object\Item\AccountDeletion is written out in code; import it and use the '
                     . 'short name (see docs/agents/code-style/qualified-names.md)',
@@ -667,6 +745,78 @@ final class RuleFixtureTest extends TestCase
         $this->assertSame([], $suite);
     }
 
+    /** The same tokens earn a verdict from their root and whole path segments alone. */
+    public function testCollectionObjectListsAreJudgedOnlyInProductionCollectionLayers(): void
+    {
+        $tokens = token_get_all((string)file_get_contents(
+            $this->fixtureRoot() . '/Bad/Database/Object/Collection/CollectionObjectListSamples.php',
+        ));
+        $lines = [16, 17, 24, 30, 36, 39, 43, 51, 54, 57, 60, 63, 68, 72, 75, 78, 81, 84, 89, 94, 99, 102, 105, 108, 111, 114, 118, 121, 126];
+        foreach (['framework/backend', 'demo/example/backend', 'framework/tests', 'demo/example/tests', 'scripts'] as $root) {
+            $rule = new CollectionObjectListRule($root);
+            foreach (['Database/Object/Collection/Sample.php', 'Nested/Database/View/Collection/Sample.php'] as $path) {
+                $hits = iterator_to_array($rule->check($path, $tokens), false);
+                $this->assertSame(
+                    in_array($root, ['framework/backend', 'demo/example/backend'], true) ? $lines : [],
+                    array_map(static fn(Violation $hit): int => $hit->line, $hits),
+                    $root . '/' . $path,
+                );
+            }
+            foreach ([
+                'Database/Object/CollectionExtra/Sample.php',
+                'Database/View/CollectionExtra/Sample.php',
+                'OtherDatabase/Object/Collection/Sample.php',
+                'Tables/Sample.php',
+            ] as $path) {
+                $this->assertSame([], iterator_to_array($rule->check($path, $tokens), false), $root . '/' . $path);
+            }
+        }
+    }
+
+    /** A real extra annotation must cross the frozen count through the detector and the shared baseline. */
+    public function testCollectionObjectListBaselineRefusesAnAdditionalRealAnnotation(): void
+    {
+        $path = 'Database/View/Collection/Sample.php';
+        $source = (string)file_get_contents($this->fixtureRoot() . '/Good/Tables/CollectionObjectListOutsideLayer.php');
+        $reported = $this->collectionObjectListReport($source, $path);
+        $key = 'COLLECTION-OBJECT-LIST framework/backend/' . $path;
+        $baseline = Baseline::fromText($key . ' 2 # HIL-1531');
+
+        $this->assertCount(2, $reported[$key]);
+        $this->assertSame([], $baseline->reconcile($reported));
+
+        $extra = str_replace(
+            'public function choices(array $choices): array;',
+            "public function choices(array \$choices): array;\n\n"
+                . "    /** @return list<ChoiceDTO> A new raw list */\n    public function extra(): array;",
+            $source,
+        );
+        $grown = $this->collectionObjectListReport($extra, $path);
+        $this->assertCount(3, $grown[$key]);
+        $this->assertSame(
+            ['COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/Sample.php:17 — '
+                . 'extra @return list<ChoiceDTO>: use a typed collection '
+                . '(see docs/agents/code-style/internal-backend-api.md)'],
+            $baseline->reconcile($grown),
+        );
+    }
+
+    /**
+     * @param string $source PHP source to scan without loading its declarations
+     * @param string $path File path relative to the production root
+     * @return array<string, list<string>> Real detector output in the guard's baseline format
+     */
+    private function collectionObjectListReport(string $source, string $path): array
+    {
+        $rule = new CollectionObjectListRule('framework/backend');
+        $reported = [];
+        foreach ($rule->check($path, token_get_all($source)) as $hit) {
+            $reported[$rule->id() . ' framework/backend/' . $path][] = $hit->withPathPrefix('framework/backend')->describe($rule->doc());
+        }
+
+        return $reported;
+    }
+
     /**
      * Scans the fixture tree with the same scanner and rules the guard test uses.
      * The whole-root mode of the empty-string rule needs a root where nothing is
@@ -732,6 +882,7 @@ final class RuleFixtureTest extends TestCase
         return [
             new CodeFqnRule($this->fixtureRoot()),
             new PhpDocFqnRule($this->fixtureRoot()),
+            new CollectionObjectListRule('framework/backend'),
             new RtStateReachRule(),
             new RtStateMutationRule(),
             new ObjectStoreMutationRule(),

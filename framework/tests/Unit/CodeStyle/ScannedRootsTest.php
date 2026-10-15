@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\CodeStyle;
 use Hilos\Tests\CodeStyle\RootKind;
 use Hilos\Tests\CodeStyle\Rule\BlockingResolutionRule;
 use Hilos\Tests\CodeStyle\Rule\CodeFqnRule;
+use Hilos\Tests\CodeStyle\Rule\CollectionObjectListRule;
 use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
 use Hilos\Tests\CodeStyle\Rule\FsSeamRule;
@@ -45,6 +46,7 @@ final class ScannedRootsTest extends TestCase
      * @var array<int, string>
      */
     private const array PRODUCTION_ONLY_RULE_IDS = [
+        CollectionObjectListRule::ID,
         ErrorSuppressionRule::ID,
         FsSeamRule::ID,
         RandomSourceRule::ID,
@@ -99,7 +101,7 @@ final class ScannedRootsTest extends TestCase
         }
     }
 
-    public function testASuiteIsJudgedByEveryRuleButTheFiveItIsAllowed(): void
+    public function testASuiteIsJudgedByEveryRuleExceptProductionOnlyRules(): void
     {
         foreach (self::PRODUCTION_ONLY_RULE_IDS as $ruleId) {
             $this->assertFalse(RootKind::Suite->allows($ruleId), $ruleId . ' judges production code only');

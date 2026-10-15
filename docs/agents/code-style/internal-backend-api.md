@@ -120,3 +120,59 @@ public function activeBots(): Bots;
 
 Use `list<T>` only for boundary payloads or small infrastructure helpers where
 there is no meaningful collection type.
+
+### Object and View collection methods
+
+In `Database/Object/Collection/` and `Database/View/Collection/` under
+`framework/backend` and `demo/*/backend`, use a typed collection for every
+list of objects passed into or returned by a named method. This includes
+private, protected, static and abstract methods, and methods in traits and
+interfaces. The element may be any class, interface, enum, DTO or value object,
+not just the collection's own item. Reuse an existing collection when it
+expresses the result; preserve ordering through that typed result.
+
+```php
+use Hilos\Database\Object\Collection\Countries as ObjectCountries;
+
+// Wrong: a DTO list is an object list too.
+/** @return list<CountryLocaleChoice> Ordered locale choices */
+public function localeChoices(): array;
+
+// Good: use the existing typed collection for a set of country rows.
+public function countries(): ObjectCountries;
+```
+
+The only array conversion exceptions in this layer are the `@param` of
+`fromArray()` and the `@return` of `toArray()`. Match the whole method name,
+case-insensitively. The opposite directions are still judged, as are names
+such as `fromArrayLike()`. `ObjectCollection::fromArray()` and
+`ObjectCollection::toArray()` are existing examples of the legal directions.
+Small size, infrastructure work, a promised order or a comment do not grant
+an exception here. The small-infrastructure-helper allowance above applies
+outside this layer.
+
+Checked automatically: `COLLECTION-OBJECT-LIST`, see
+[automated-checks.md](automated-checks.md). The lexical check reads method
+`@param` and `@return` tags, one hit per violating tag, at the tag's line;
+`@param` must name a real method parameter. It recognizes `list<X>`,
+`non-empty-list<X>`, `array<X>`, `array<K, X>`, `non-empty-array<K, X>` and
+`X[]` with a direct object element, including nullable, union and intersection
+wrappers and object/scalar unions inside the element. The key `K` is not an
+element. Named non-builtin types are objects regardless of capitalization;
+generic objects, `object`, `self`, `static`, `$this` and locally declared
+object-bounded templates count too. Scalar types, `mixed`, `array-key`,
+`class-string<X>`, `key-of<X>`, `value-of<X>` and unconstrained templates do not
+become objects because a class name appears in their text. A typed
+`Collection<X>` is not a raw container.
+
+The check does not load production classes or infer types from method bodies.
+Bare native `array`, structured array shapes, inter-file PHPDoc aliases,
+class-level `@method` tags and other layers remain outside it. A green guard
+is not proof that all internal arrays satisfy this document.
+
+HIL-1531 freezes the existing violations once, without rewriting production
+collections. A later leaf that changes a collection file must pay off this
+rule's debt in that file and lower or remove its baseline record. The baseline
+counts tags per rule and file: growth and new files fail, but replacing a hit
+with another at the same count is invisible to it. Do not substitute new debt
+for old debt; review enforces that ban and the payoff on touching a file.

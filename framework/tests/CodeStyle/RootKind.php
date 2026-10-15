@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\CodeStyle;
 
+use Hilos\Tests\CodeStyle\Rule\CollectionObjectListRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
 use Hilos\Tests\CodeStyle\Rule\FsSeamRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
@@ -35,7 +36,7 @@ enum RootKind
     /** Code that runs in production, or that decides a run of it, judged by every rule. */
     case Production;
 
-    /** A test suite, judged by every rule but the six a suite is allowed to break. */
+    /** A test suite, judged by every rule except those declared production-only below. */
     case Suite;
 
     /**
@@ -56,6 +57,7 @@ enum RootKind
      * @var array<int, string>
      */
     private const array PRODUCTION_ONLY_RULES = [
+        CollectionObjectListRule::ID,
         ErrorSuppressionRule::ID,
         FsSeamRule::ID,
         RandomSourceRule::ID,
