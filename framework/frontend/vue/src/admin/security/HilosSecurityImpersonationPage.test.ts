@@ -399,7 +399,9 @@ describe('HilosSecurityImpersonationPage scope modal', () => {
   it('opens on the value in force with Save locked and the row in focus', async () => {
     const { context, focus } = seededContext()
     await openScope(context)
+    await settle()
 
+    expect(document.activeElement).toBe(scopeRadio('act'))
     expect(scopeRadio('act').checked).toBe(true)
     expect(scopeRadio('view').checked).toBe(false)
     expect(saveButton().disabled).toBe(true)

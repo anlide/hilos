@@ -450,10 +450,12 @@ describe('HilosSecurityImpersonationPage', () => {
 })
 
 describe('HilosSecurityImpersonationPage scope modal', () => {
-  it('opens on the value in force with Save locked and the row in focus', () => {
+  it('opens on the value in force with Save locked and the row in focus', async () => {
     const { context, focus } = seededContext()
     const fixture = openScope(context)
+    await settle(fixture)
 
+    expect(document.activeElement).toBe(scopeRadio(fixture, 'act'))
     expect(scopeRadio(fixture, 'act').checked).toBe(true)
     expect(scopeRadio(fixture, 'view').checked).toBe(false)
     expect(saveButton(fixture).disabled).toBe(true)

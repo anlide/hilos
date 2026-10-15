@@ -11,7 +11,10 @@ const FOCUSABLE_SELECTOR =
 
 /**
  * Where {@link focusInitial} puts keyboard focus when a dialog opens.
- * `'marked'` reads the first `[data-autofocus]` and, finding none, the root;
+ * `'marked'` reads the first `[data-autofocus]`. When that element is a radio
+ * button, focus goes to the checked and enabled radio of that group under
+ * `root` (matching native radio group behavior), falling back to the marked
+ * radio; finding no mark, it focuses `root`.
  * `'dialog'` focuses the root without looking.
  */
 export type FocusPlacement = 'marked' | 'dialog'
@@ -22,8 +25,44 @@ export function focusableElements(root: HTMLElement): HTMLElement[] {
 }
 
 /**
+ * Find the checked and enabled radio button belonging to the same radio group
+ * as `mark` within `root`.
+ *
+ * @param root The dialog element to search for sibling radios.
+ * @param mark The autofocus-marked element.
+ * @returns The checked, enabled radio of the same group, or null if none or not a radio.
+ */
+function checkedRadioOf(
+  root: HTMLElement,
+  mark: HTMLElement,
+): HTMLInputElement | null {
+  if (!mark.matches('input[type="radio"]')) {
+    return null
+  }
+  const name = (mark as HTMLInputElement).name
+  if (!name) {
+    return null
+  }
+  for (const radio of root.querySelectorAll<HTMLInputElement>(
+    'input[type="radio"]',
+  )) {
+    if (radio.name === name && radio.checked && !radio.disabled) {
+      return radio
+    }
+  }
+
+  return null
+}
+
+/**
  * Focus the initial element: a `[data-autofocus]` under `'marked'`, else
- * `root`. `'dialog'` focuses `root` without looking.
+ * `root`. When the marked element is a radio button, focus goes to the
+ * checked and enabled radio of that group under `root` (matching native radio
+ * group behavior), falling back to the marked radio. `'dialog'` focuses `root`
+ * without looking.
+ *
+ * @param root The dialog element whose initial element is focused.
+ * @param placement Whether to look for a marked element or focus `root`.
  */
 export function focusInitial(
   root: HTMLElement,
@@ -35,7 +74,13 @@ export function focusInitial(
     return
   }
   const autofocus = root.querySelector<HTMLElement>('[data-autofocus]')
-  ;(autofocus ?? root).focus()
+  if (!autofocus) {
+    root.focus()
+
+    return
+  }
+  const target = checkedRadioOf(root, autofocus) ?? autofocus
+  target.focus()
 }
 
 /**

@@ -50,6 +50,64 @@ describe('focusInitial', () => {
     focusInitial(root, 'dialog')
     expect(document.activeElement).toBe(root)
   })
+
+  it('focuses the checked radio when three sibling radios are marked', () => {
+    const root = mountRoot(
+      '<input type="radio" name="group" value="one" data-autofocus data-id="r1" />' +
+        '<input type="radio" name="group" value="two" checked data-autofocus data-id="r2" />' +
+        '<input type="radio" name="group" value="three" data-autofocus data-id="r3" />',
+    )
+    focusInitial(root)
+    expect(document.activeElement).toBe(root.querySelector('[data-id="r2"]'))
+  })
+
+  it('focuses the third radio when it is the checked one in the marked group', () => {
+    const root = mountRoot(
+      '<input type="radio" name="group" value="one" data-autofocus data-id="r1" />' +
+        '<input type="radio" name="group" value="two" data-autofocus data-id="r2" />' +
+        '<input type="radio" name="group" value="three" checked data-autofocus data-id="r3" />',
+    )
+    focusInitial(root)
+    expect(document.activeElement).toBe(root.querySelector('[data-id="r3"]'))
+  })
+
+  it('focuses the first marked radio when no radio in the group is checked', () => {
+    const root = mountRoot(
+      '<input type="radio" name="group" value="one" data-autofocus data-id="r1" />' +
+        '<input type="radio" name="group" value="two" data-autofocus data-id="r2" />' +
+        '<input type="radio" name="group" value="three" data-autofocus data-id="r3" />',
+    )
+    focusInitial(root)
+    expect(document.activeElement).toBe(root.querySelector('[data-id="r1"]'))
+  })
+
+  it('focuses the first marked radio when the checked radio is disabled', () => {
+    const root = mountRoot(
+      '<input type="radio" name="group" value="one" data-autofocus data-id="r1" />' +
+        '<input type="radio" name="group" value="two" checked disabled data-autofocus data-id="r2" />' +
+        '<input type="radio" name="group" value="three" data-autofocus data-id="r3" />',
+    )
+    focusInitial(root)
+    expect(document.activeElement).toBe(root.querySelector('[data-id="r1"]'))
+  })
+
+  it('focuses the marked radio when the checked radio belongs to another group', () => {
+    const root = mountRoot(
+      '<input type="radio" name="groupA" value="a1" data-autofocus data-id="rA" />' +
+        '<input type="radio" name="groupB" value="b1" checked data-id="rB" />',
+    )
+    focusInitial(root)
+    expect(document.activeElement).toBe(root.querySelector('[data-id="rA"]'))
+  })
+
+  it('focuses the marked non-radio field even when a checked radio follows', () => {
+    const root = mountRoot(
+      '<input type="text" data-autofocus data-id="field" />' +
+        '<input type="radio" name="group" value="r1" checked data-id="radio" />',
+    )
+    focusInitial(root)
+    expect(document.activeElement).toBe(root.querySelector('[data-id="field"]'))
+  })
 })
 
 describe('FocusTrap', () => {

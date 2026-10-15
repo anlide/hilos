@@ -485,6 +485,7 @@ describe('Appearance default theme window', () => {
     async (position) => {
       const h = harness()
       await openDefaultThemeEdit(h, position)
+      expect(document.activeElement).toBe(themeRadio(position))
       const modal = document.querySelector('[data-id="modal"]')!
       expect(modal.textContent).toContain('Edit · Default theme')
       expect(modal.querySelector('legend')?.textContent).toBe('Default theme')
