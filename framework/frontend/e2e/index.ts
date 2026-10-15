@@ -14,7 +14,8 @@
 // of Playwright, and loading a second one from this folder's node_modules is
 // refused by the runner itself ("Requiring @playwright/test second time"). A
 // type import is erased before any of that happens; everything a helper needs at
-// runtime arrives through the `Page` it is handed.
+// runtime arrives through the `Page` it is handed, and a check's `expect` through
+// its first parameter.
 // ESLint holds the rule: eslint.config.mjs refuses a value import or re-export
 // of @playwright/test anywhere under e2e/, so `npm run lint` goes red before
 // any demo runner does.
@@ -94,7 +95,27 @@ export {
 } from './analytics.js'
 
 export {
+  DAEMON_ROOT_PATH,
+  DAEMON_WORKERS_PATH,
+  DAEMON_WORKERS_CHILD,
+  DAEMON_ROOT_CRUMB,
+  DAEMON_PLACEMENT_TYPE,
+  DAEMON_PLACEMENT_LONG_TYPE,
+  DAEMON_PLACEMENT_CELL,
+  DAEMON_PLACEMENT_TOTALS,
+  expectDaemonPage,
+  expectStandaloneOverview,
+  expectStandalonePlacement,
+  expectUnfilteredTotals,
+  expectStandaloneWorkers,
+  expectStandaloneCron,
+  expectStandaloneHttp,
+  expectStandaloneEnvironment,
+  expectStandaloneMismatch,
+} from './daemon.js'
+export {
   RESTART_AGENT,
+  RESTART_MARK_TIMEOUT_MS,
   readRestartWorker,
   withStoppedRestartWorker,
   type RestartWorker,

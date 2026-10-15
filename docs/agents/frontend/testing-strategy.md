@@ -174,6 +174,11 @@ tasks switched on Ways to sign in (`/profile/sign-in`) to carry them (HIL-1324);
 polls switched on Ways to sign in, Sessions and Agreements of the profile, and its
 Terms gained a substantial and an editorial revision, to carry them (HIL-1325).
 
+The Daemon section did not move: each kit keeps one spec where its view is
+mounted — binance-btc-tracker (Vue), tasks (React), polls (Angular).
+online-testing enables the feature without a view; ecommerce-shop does not
+enable it (HIL-1400).
+
 **What stays in chat:** its product (the specs marked `demo`), the stand's own
 specs (marked `stand`), the shell (`a11y`, `about`, `navigation`, `layout`,
 `page-error`, `unbuilt-page`, `prerender`, `license`, `smoke`, `connection`,
@@ -306,7 +311,8 @@ Two rules keep it working:
   else.** The demo suite carries its own installed Playwright, and pulling a
   second copy out of this folder is refused by the runner itself — *Requiring
   @playwright/test second time*. A type import is erased before that can happen;
-  everything a helper needs at runtime arrives through the `Page` it is handed.
+  everything a helper needs at runtime arrives through the `Page` it is handed,
+  and a section check receives the spec's `expect` as its first parameter.
   ESLint holds the rule: `framework/frontend/eslint.config.mjs` refuses a value
   import of `@playwright/test` under `e2e/`, so the `fe-checks` lint goes red
   before any demo runner does.
@@ -314,6 +320,15 @@ Two rules keep it working:
   reach `framework/frontend/scripts/timeout-scale.mjs`. The runner mounts the
   whole repository, so no package boundary stands in between, and no install step
   is added to a suite.
+
+Section checks all three kits must meet alike — what a page shows, its totals,
+the node's page — live here as `expect…(expect, page, …)` functions. Tests stay
+in the demo's spec: the scenario, its order and navigation, and which checks it
+calls. Playwright reports a test under that demo spec's path; the Tests tab and
+flake accounting use that path. Three copies of the Daemon checks drifted:
+placement totals were fixed in only two of them. Sharing the checks keeps that
+contract in one place. Driving helpers such as the settings form and verifier
+circle below still take no `expect`; their assertions stay in the demo.
 
 Node-side shared e2e mechanics do not move into this folder merely because an
 e2e spec calls them. A helper that drives the browser belongs here under the
@@ -433,6 +448,18 @@ page already on `/hilos/communications` — navigation is the demo's. It is
 idempotent: the channel's switch is a setting of the whole stand, so a channel
 another test switched on is left alone. The emit that makes a notification exist
 and the sign-in that makes its recipient are the demo's; so are the assertions.
+
+### The Daemon section — names and checks
+
+`daemon.ts` owns the `DAEMON_*` paths, child and breadcrumb ids, placement types,
+cell id and totals. `expectDaemonPage`, `expectStandaloneOverview`,
+`expectStandalonePlacement` and `expectUnfilteredTotals` check the root;
+`expectStandaloneWorkers`, `expectStandaloneCron`, `expectStandaloneHttp`,
+`expectStandaloneEnvironment` and `expectStandaloneMismatch` check its children.
+Every check takes the spec's `expect` first, then its `Page`.
+`daemonRestart.ts` owns `RESTART_MARK_TIMEOUT_MS`, the observation budget for
+the shared restart mark. Each kit keeps one section spec. Test titles match across
+kits; only Vue carries the forged restart request, a server check.
 
 ### Geometry — take a bookmark and ask whether it moved
 

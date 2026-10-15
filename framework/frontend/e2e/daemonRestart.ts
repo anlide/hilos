@@ -6,6 +6,13 @@ import type { Page, WebSocket } from '@playwright/test'
 export const RESTART_AGENT = 'hilos_settings_library'
 const WATCHDOG_MS = 10_000
 
+// The roster needs up to 0.5s (DaemonManager::PROCESS_ROSTER_COALESCE_SECONDS),
+// then 5s (DaemonNodeAgent::CHANGE_INTERVAL_SECONDS) and 0.5s
+// (DaemonCollectorAgent::FANOUT_WINDOW_SECONDS), plus ticks and delivery.
+// Seeing the mark is still bounded by the WATCHDOG_MS pause: a missed mark
+// cannot turn green by waiting past the worker's resumption (HIL-1542).
+export const RESTART_MARK_TIMEOUT_MS = 10_000
+
 export interface RestartWorker {
   readonly index: number
   readonly pid: number

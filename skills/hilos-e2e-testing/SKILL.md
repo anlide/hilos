@@ -43,8 +43,9 @@ chosen command use `$hilos-testing-cli`. This skill is how a spec is *written*.
    what reads the same in any demo; a demo's own `tests/e2e/helpers/` holds what
    belongs to that demo alone.
 4. When the spec needs a wait, a sweep or a round trip another demo would need in
-   the same words, **put it in the toolbox** rather than in a fourth local copy —
-   that is how the folder grows.
+   the same words, or a check all three kits must meet, **put it in the toolbox**.
+   A check takes the spec's `expect` as its first parameter; the test's scenario,
+   order and navigation stay in the demo spec.
 5. Select interactive elements only by **stable `data-id`** — never by text or
    position.
 6. Enter a value with `fill('')` to clear, then
@@ -94,5 +95,6 @@ chosen command use `$hilos-testing-cli`. This skill is how a spec is *written*.
   one test.
 - A file in `framework/frontend/e2e/` imports from `@playwright/test` with
   `import type` and nothing else — a value import loads a second Playwright and
-  the runner refuses the run.
+  the runner refuses the run. A shared section check takes the spec's `expect`
+  as its first parameter, just as it receives the `Page`.
 - Never run `git commit` or `git push`.

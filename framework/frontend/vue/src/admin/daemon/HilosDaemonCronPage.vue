@@ -103,19 +103,19 @@ onUnmounted(() => cron.dispose())
     </div>
     <HilosViewportTable :controller="cron.controller">
       <template #cell-name="{ row }">
-        <code class="fw-semibold">{{ row.name }}</code>
+        <code class="fw-semibold text-break">{{ row.name }}</code>
       </template>
       <template #cell-agentId="{ row }">
         <span
           v-if="row.agentId === null"
-          class="badge bg-body-tertiary text-body border"
+          class="badge bg-body-tertiary text-body border text-wrap text-break"
           :data-id="`hilos-daemon-cron-executor-${row.rowKey}`"
           ><i class="bi bi-cpu me-1" aria-hidden="true"></i
           >{{ formatDaemonCronExecutor(row, clustered) }}</span
         >
         <span
           v-else
-          class="badge bg-body-tertiary text-body border font-monospace"
+          class="badge bg-body-tertiary text-body border font-monospace text-wrap text-break"
           :data-id="`hilos-daemon-cron-executor-${row.rowKey}`"
           >{{ formatDaemonCronExecutor(row, clustered) }}</span
         >

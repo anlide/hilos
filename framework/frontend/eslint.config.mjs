@@ -43,6 +43,8 @@ export default tseslint.config(
   // here resolves this workspace's copy instead, a second one, and the runner
   // refuses it for every demo at once. `import type` is erased before that and
   // stays allowed (docs/agents/frontend/testing-strategy.md, "The shared toolbox").
+  // Runtime needs arrive through the Page, and a check's expect through its
+  // first parameter from the spec.
   {
     files: ['e2e/**'],
     rules: {
@@ -54,7 +56,7 @@ export default tseslint.config(
               name: '@playwright/test',
               allowTypeImports: true,
               message:
-                'Only `import type` here: each demo suite runs its own installed Playwright, a value import loads a second copy from the SDK workspace, and the runner refuses it (Requiring @playwright/test second time) for the e2e of every demo at once. Take runtime needs from the Page the helper is handed.',
+                'Only `import type` here: each demo suite runs its own installed Playwright, a value import loads a second copy from the SDK workspace, and the runner refuses it (Requiring @playwright/test second time) for the e2e of every demo at once. Take runtime needs from the Page — or the expect — the helper is handed.',
             },
           ],
         },

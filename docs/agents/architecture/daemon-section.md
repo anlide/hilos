@@ -515,3 +515,8 @@ at delivery, keep the last slot, and mark the silent node.
 Run `composer run test:framework:unit`; `AgentDocGuardTest` checks this page's
 links. Each implementation leaf brings its mechanism's tests and clears the
 markers that its code makes true in that same commit.
+The section's e2e live in one spec per kit
+(`demo/binance-btc-tracker/tests/e2e/tests/daemon.spec.ts`,
+`demo/tasks/tests/e2e/tests/daemon.spec.ts`,
+`demo/polls/tests/e2e/tests/daemon.spec.ts`), with shared checks in
+`framework/frontend/e2e/daemon.ts`.

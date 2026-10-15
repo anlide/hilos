@@ -109,19 +109,19 @@ import {
       }
       <hilos-viewport-table [controller]="cron.controller">
         <ng-template [hilosTableCell]="DAEMON_CRON_NAME_FIELD" let-row>
-          <code class="fw-semibold">{{ row.name }}</code>
+          <code class="fw-semibold text-break">{{ row.name }}</code>
         </ng-template>
         <ng-template [hilosTableCell]="DAEMON_CRON_AGENT_FIELD" let-row>
           @if (row.agentId === null) {
             <span
-              class="badge bg-body-tertiary text-body border"
+              class="badge bg-body-tertiary text-body border text-wrap text-break"
               [attr.data-id]="'hilos-daemon-cron-executor-' + row.rowKey"
               ><i class="bi bi-cpu me-1" aria-hidden="true"></i
               >{{ formatDaemonCronExecutor(row, clustered) }}</span
             >
           } @else {
             <span
-              class="badge bg-body-tertiary text-body border font-monospace"
+              class="badge bg-body-tertiary text-body border font-monospace text-wrap text-break"
               [attr.data-id]="'hilos-daemon-cron-executor-' + row.rowKey"
               >{{ formatDaemonCronExecutor(row, clustered) }}</span
             >

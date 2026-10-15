@@ -414,7 +414,10 @@ onUnmounted(() => {
       </template>
     </HilosViewportTable>
 
-    <h2 class="h6 text-uppercase text-body-secondary mb-2 mt-4">
+    <h2
+      id="hilos-daemon-env-ladder-heading"
+      class="h6 text-uppercase text-body-secondary mb-2 mt-4"
+    >
       Reading ladder
     </h2>
     <div
@@ -422,7 +425,10 @@ onUnmounted(() => {
       data-id="hilos-daemon-env-ladder"
     >
       <div class="table-responsive">
-        <table class="table table-sm align-middle mb-0">
+        <table
+          class="table table-sm align-middle mb-0"
+          aria-labelledby="hilos-daemon-env-ladder-heading"
+        >
           <tbody>
             <tr v-for="(source, ix) in DAEMON_ENV_LADDER" :key="source">
               <td
