@@ -250,7 +250,14 @@ its first navigation. Browsers, including the protected-mode operator, start
 on a follower master. In `tests/e2e/cluster/live`, backup checks a completed
 archive, logs checks the overview and a slave's live file, protected-mode checks
 the stub, the verifier circle and admission across masters, and sessions checks
-sign-in, sign-out and access re-decisions across masters. The backup spec asks
+sign-in, sign-out and access re-decisions across masters. Manual maintenance closes
+through the UI on follower F; another administrator enters by code and opens it on
+master T. Visitors on every master see the closure, while the operator and circle
+member keep their documents. All six pages reload themselves on opening. Actual
+WebSocket upgrades prove each master's address, and inspect snapshots plus marked
+daemon log tails prove there was no freeze. Point that case with
+`composer run test:cluster:e2e -- --grep 'cluster manual maintenance:'`.
+The backup spec asks
 the harness to stop the slave holding its archive; after placement moves,
 `cluster/after-loss` checks the archive's out-of-reach row and offline log refusal.
 The stand remains up after this command, as it does after `test:cluster:scenarios`.

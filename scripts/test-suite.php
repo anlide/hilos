@@ -266,7 +266,9 @@ $steps = array_merge($steps, [
         'deps' => ['binance-btc-tracker-e2e'],
         'group' => 'binance-btc-tracker-cluster',
         'tags' => ['cluster', 'e2e'],
-        'seconds' => 84,
+        // 2026-10-16, HIL-1368: full fresh-stand browser command, cached images,
+        // one worker, timeout scale 1; 10 live + 2 after-loss passed, 2 existing skips, no retries.
+        'seconds' => 95,
         'downsStand' => true,
     ],
     // The fleet of ecommerce-shop (HIL-1216): one master and two slaves of unequal room, the

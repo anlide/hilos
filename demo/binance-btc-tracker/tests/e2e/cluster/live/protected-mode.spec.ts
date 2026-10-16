@@ -2,10 +2,26 @@ import { expect, test, type Page } from '@playwright/test'
 
 import {
   CIRCLE_ONLINE,
+  MAINTENANCE_PATH,
+  MANUAL_MAINTENANCE_OPERATION,
   addToMaintenanceCircle,
   clearMaintenanceCircle,
+  dismissToasts,
+  expectAdmittedToManualMaintenance,
+  expectHeldByManualMaintenance,
+  expectMaintenanceCodeIssued,
+  expectMaintenanceOpen,
+  expectManualMaintenanceOn,
+  expectNoProtectedModeAgentStops,
+  issueMaintenanceCode,
   maintenanceCircleOnline,
   maintenanceCircleRow,
+  markClusterNodeLogs,
+  presentMaintenanceCode,
+  readClusterBrowserStand,
+  turnOffMaintenance,
+  turnOnMaintenance,
+  watchClusterMasterUpgrades,
 } from '../../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf, sessionToken } from '../../helpers/adminGrant.js'
 import {
@@ -42,6 +58,13 @@ const BANNER_MESSAGE = 'Maintenance has finished and is being verified.'
 
 test.afterEach(async () => {
   await openProtectedModeIfAny()
+  for (const node of CLUSTER_MASTERS) {
+    await expect
+      .poll(() => inspectProtectedMode(undefined, nodeHost(node)), {
+        message: `Protected mode cleared on ${node}`,
+      })
+      .toMatchObject({ phase: 'inactive', passCount: 0 })
+  }
 })
 
 /** @param page A circle member's tab that the verification window admitted. */
@@ -219,5 +242,231 @@ test('a minted code lets a tab on a follower master in, it stays in after a relo
     await verifier.context().close()
     await bystander.context().close()
     await expectLeaderUnmoved(before)
+  }
+})
+
+test('cluster manual maintenance: every master closes, another admitted admin opens, and every page reloads', async ({
+  browser,
+}) => {
+  // Six independent sessions, real codes through two masters and six self-reloads.
+  test.slow()
+  const stand = readClusterBrowserStand()
+  const before = await clusterInspect(CLUSTER_FOLLOWER)
+  await expectLeaderUnmoved(before)
+  const otherMaster = CLUSTER_MASTERS.find(
+    (node) => node !== CLUSTER_LEADER && node !== CLUSTER_FOLLOWER,
+  )
+  if (!otherMaster)
+    throw new Error('The cluster browser stand needs a third master')
+
+  const pages: Page[] = []
+  const upgrades: Awaited<ReturnType<typeof watchClusterMasterUpgrades>>[] = []
+  const sessionUsers = new Map<Page, number | null>()
+  const frameErrors: unknown[] = []
+  let circlePrepared = false
+  try {
+    for (const node of [
+      CLUSTER_FOLLOWER,
+      otherMaster,
+      CLUSTER_LEADER,
+      ...CLUSTER_MASTERS,
+    ]) {
+      const page = await newMasterPage(browser, node)
+      pages.push(page)
+      upgrades.push(await watchClusterMasterUpgrades(expect, page, stand, node))
+      // The admin section has no self-user-id element: read its actual session
+      // identity from the handshake, including the one after the final reload.
+      page.on('websocket', (socket) => {
+        socket.on('framereceived', ({ payload }) => {
+          if (typeof payload !== 'string') return
+          try {
+            const frame = JSON.parse(payload) as {
+              type?: string
+              data?: { entities?: { currentUser?: { id: number } | null } }
+            }
+            if (frame.type === 'handshake_response') {
+              sessionUsers.set(
+                page,
+                frame.data?.entities?.currentUser?.id ?? null,
+              )
+            }
+          } catch (error) {
+            frameErrors.push(error)
+          }
+        })
+      })
+    }
+    const [operator, otherAdmin, member, ...visitors] = pages
+    const operatorId = await grantAdminToSelf(operator)
+    const otherAdminId = await grantAdminToSelf(otherAdmin)
+    expect(otherAdminId).not.toBe(operatorId)
+    for (const admin of [operator, otherAdmin]) {
+      await gotoPage(admin, MAINTENANCE_PATH)
+      await expectMaintenanceOpen(expect, admin)
+    }
+    await clearMaintenanceCircle(operator)
+    circlePrepared = true
+    const memberEmail = await signUp(member)
+    await gotoPage(member, '/')
+    const memberName = await member.getByTestId('self-user').innerText()
+    const memberId = await member.getByTestId('self-user-id').innerText()
+    await addToMaintenanceCircle(operator, memberEmail)
+    await expect(maintenanceCircleRow(operator, memberEmail)).toBeVisible()
+    await expect(maintenanceCircleOnline(operator, memberEmail)).toHaveText(
+      CIRCLE_ONLINE,
+    )
+    for (const visitor of visitors) await gotoPage(visitor, '/')
+    for (const page of pages) {
+      await expect(page.getByTestId('conn-state')).toHaveText('connected')
+    }
+    await expect.poll(() => sessionUsers.get(operator)).toBe(operatorId)
+    await expect.poll(() => sessionUsers.get(otherAdmin)).toBe(otherAdminId)
+    for (const watcher of upgrades) await watcher.assert()
+
+    const navigations = new Map<Page, number>()
+    for (const page of [operator, member]) {
+      await markDocument(page)
+      navigations.set(page, 0)
+      page.on('framenavigated', (frame) => {
+        if (frame === page.mainFrame()) {
+          navigations.set(page, (navigations.get(page) ?? 0) + 1)
+        }
+      })
+    }
+    const marks = markClusterNodeLogs(stand, CLUSTER_MASTERS)
+    await turnOnMaintenance(operator)
+    await expectManualMaintenanceOn(expect, operator)
+    await expectPageReady(member)
+    await expect(member.getByTestId('self-user')).toHaveText(memberName)
+    await expect(member.getByTestId('self-user-id')).toHaveText(memberId)
+    await expect(member.getByTestId('conn-state')).toHaveText('connected')
+    await expect(member.getByTestId('maintenance')).toHaveCount(0)
+    await expect(member.getByTestId('protected-mode-banner')).toHaveText(
+      'Manual maintenance is on: the system is closed to visitors.' +
+        ' Turn it off in the Maintenance section.',
+    )
+    for (const outsider of [otherAdmin, ...visitors]) {
+      await expectHeldByManualMaintenance(expect, outsider)
+    }
+
+    const expectWindow = async (passCount: number): Promise<void> => {
+      for (const node of CLUSTER_MASTERS) {
+        await expect
+          .poll(() => inspectProtectedMode(undefined, nodeHost(node)), {
+            message: `Manual window with ${passCount} codes on ${node}`,
+          })
+          .toMatchObject({
+            phase: 'verifying',
+            operation: MANUAL_MAINTENANCE_OPERATION,
+            stoppedAgents: [],
+            agentStartGateClosed: false,
+            passCount,
+            circleSize: 1,
+            circleAdmitted: 1,
+          })
+      }
+    }
+    await expectWindow(0)
+    for (const watcher of upgrades) await watcher.assert()
+    await dismissToasts(operator)
+    const firstCode = await issueMaintenanceCode(operator)
+    await expectMaintenanceCodeIssued(expect, operator, firstCode, 1)
+    await expectWindow(1)
+    await presentMaintenanceCode(otherAdmin, firstCode)
+    await expectAdmittedToManualMaintenance(expect, otherAdmin, 1)
+    await expect(otherAdmin.getByTestId('conn-state')).toHaveText('connected')
+    await expect.poll(() => sessionUsers.get(otherAdmin)).toBe(otherAdminId)
+    await expect(otherAdmin.getByTestId('hilos-maintenance-pass')).toBeEnabled()
+    await expect(
+      otherAdmin.getByTestId('hilos-maintenance-disable'),
+    ).toBeEnabled()
+    await dismissToasts(otherAdmin)
+    const secondCode = await issueMaintenanceCode(otherAdmin)
+    await expectMaintenanceCodeIssued(expect, otherAdmin, secondCode, 2)
+    await expectWindow(2)
+    await expectAdmittedToManualMaintenance(expect, operator, 2)
+    for (const visitor of visitors) {
+      await expectHeldByManualMaintenance(expect, visitor)
+    }
+    for (const watcher of upgrades) await watcher.assert()
+    for (const page of [operator, member]) {
+      expect(
+        navigations.get(page),
+        'The admitted document never navigated',
+      ).toBe(0)
+    }
+    for (const page of pages) await markDocument(page)
+    sessionUsers.clear()
+    await dismissToasts(otherAdmin)
+    await turnOffMaintenance(otherAdmin)
+    for (const page of pages) {
+      await expectSelfReload(page)
+      await expectPageReady(page)
+      await expect(page.getByTestId('conn-state')).toHaveText('connected')
+      await expect(page.getByTestId('maintenance')).toHaveCount(0)
+      await expect(page.getByTestId('protected-mode-banner')).toHaveCount(0)
+    }
+    for (const admin of [operator, otherAdmin]) {
+      await expect(admin).toHaveURL(
+        new URL(MAINTENANCE_PATH, stand.baseURL).href,
+      )
+      await expectMaintenanceOpen(expect, admin)
+    }
+    await expect.poll(() => sessionUsers.get(operator)).toBe(operatorId)
+    await expect.poll(() => sessionUsers.get(otherAdmin)).toBe(otherAdminId)
+    expect(frameErrors).toEqual([])
+    await expect(member.getByTestId('self-user')).toHaveText(memberName)
+    await expect(member.getByTestId('self-user-id')).toHaveText(memberId)
+    for (const node of CLUSTER_MASTERS) {
+      await expect
+        .poll(() => inspectProtectedMode(undefined, nodeHost(node)), {
+          message: `Manual window lifted on ${node}`,
+        })
+        .toMatchObject({
+          phase: 'inactive',
+          passCount: 0,
+          stoppedAgents: [],
+          agentStartGateClosed: false,
+        })
+    }
+    expectNoProtectedModeAgentStops(expect, marks)
+    for (const watcher of upgrades) await watcher.assert()
+    await expectLeaderUnmoved(before)
+  } finally {
+    // Soft cleanup failures remain visible alongside the original assertion.
+    // Every resource is closed even when opening or clearing the circle fails.
+    const cleanup = await Promise.allSettled([
+      (async () => {
+        await openProtectedModeIfAny()
+        for (const node of CLUSTER_MASTERS) {
+          await expect
+            .poll(() => inspectProtectedMode(undefined, nodeHost(node)))
+            .toMatchObject({
+              phase: 'inactive',
+              passCount: 0,
+            })
+        }
+        if (circlePrepared) {
+          await gotoPage(pages[0], MAINTENANCE_PATH)
+          await dismissToasts(pages[0])
+          await clearMaintenanceCircle(pages[0])
+        }
+        await expectLeaderUnmoved(before)
+      })(),
+    ])
+    const stopped = await Promise.allSettled(
+      upgrades.map((watcher) => watcher.stop()),
+    )
+    const closed = await Promise.allSettled(
+      pages.map((page) => page.context().close()),
+    )
+    for (const result of [...cleanup, ...stopped, ...closed]) {
+      expect
+        .soft(
+          result.status === 'fulfilled' ? null : String(result.reason),
+          'Manual maintenance cleanup',
+        )
+        .toBeNull()
+    }
   }
 })

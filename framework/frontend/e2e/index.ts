@@ -183,3 +183,12 @@ export {
 export { pickThemeBeforeLoad } from './theme.js'
 
 export { expectHilosUserBlockSettled } from './hilosUserLifecycle.js'
+
+export {
+  readClusterBrowserStand,
+  watchClusterMasterUpgrades,
+  markClusterNodeLogs,
+  expectNoProtectedModeAgentStops,
+  type ClusterBrowserStand,
+  type ClusterNodeLogMark,
+} from './cluster.js'

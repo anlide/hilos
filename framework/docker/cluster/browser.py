@@ -16,6 +16,11 @@ def _environment(stand, leader, follower, phase, stopped=None):
         "CLUSTER_MASTERS": ",".join(stand.masters),
         "CLUSTER_SLAVES": ",".join(stand.slaves),
         "CLUSTER_NODE_HOSTS": ",".join(f"{node}={member.container}" for node, member in stand.members.items()),
+        "CLUSTER_NODE_IPS": ",".join(f"{node}={member.ip}" for node, member in stand.members.items()),
+        "CLUSTER_NODE_LOGS": json.dumps({
+            node: "/hilos/" + control.node_log_path(member).relative_to(stand.demo_dir.parent.parent).as_posix()
+            for node, member in stand.members.items()
+        }),
         "CLUSTER_FAULT_FILE": f"/hilos/demo/{stand.demo_dir.name}/data/cluster-e2e-fault.json",
         "CLUSTER_E2E_PHASE": phase,
     }
