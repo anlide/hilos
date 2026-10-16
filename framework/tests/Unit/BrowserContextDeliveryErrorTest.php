@@ -8,6 +8,7 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserGuardKey;
+use Hilos\Core\Browser\Config\BrowserGuardType;
 use Hilos\Core\Browser\Config\BrowserPageBindings;
 use Hilos\Core\Browser\Config\BrowserPageConfig;
 use Hilos\Core\Browser\Config\BrowserSourceConfig;
@@ -61,10 +62,14 @@ use PHPUnit\Framework\TestCase;
  * therefore present on every flush — ten frames a second for as long as it lasts. And when
  * delivery resumes it must be handed the whole page rather than a delta, because being told
  * cost it its page scope: the client wipes what it was holding so that a stale verdict cannot
- * outlive the error, and a delta would land on nothing.
+ * outlive the error, and a delta would land on nothing. The database coming back tries that
+ * page once as well, with no change in the flush (HIL-1352).
  */
 final class BrowserContextDeliveryErrorTest extends TestCase
 {
+    /** A page the browser context draws no part for, served by its agent alone */
+    private const string PAGE_WITHOUT_BROWSER_PART = 'delivery_error_plain_page';
+
     protected function setUp(): void
     {
         Hilos::$sr = new SignalRouter();
@@ -272,6 +277,121 @@ final class BrowserContextDeliveryErrorTest extends TestCase
         $this->assertSame(['1'], $this->rowKeysOf($signal->data->data));
     }
 
+    public function testTheDatabaseFactReSendsAnOwedPageWhole(): void
+    {
+        $this->flush(broken: true);
+        $this->drain();
+        $resender = new DeliveryErrorRecordingResender(PageResendOutcome::Answered);
+
+        $this->flushTheDatabaseFact($resender);
+
+        $this->assertSame([[DeliveryErrorContext::PAGE, 'ak-1', []]], $resender->calls);
+        $this->assertSame([SignalTypeConstants::PAGE_RESPONSE], $this->drain());
+        $this->assertFalse(Hilos::$sr?->hasPageDeliveryFailure('ak-1'));
+    }
+
+    /**
+     * The line and the error frame were sent when the debt was set; a try that fails, by a failure
+     * or by a refused verdict, sends neither again, and the debt waits for the next fact.
+     */
+    public function testTheDatabaseFactWhoseReSendFailsSaysNothing(): void
+    {
+        $this->flush(broken: true);
+        $this->drain();
+        $failed = new DeliveryErrorRecordingResender(PageResendOutcome::Failed);
+        $refused = new DeliveryErrorRecordingResender(PageResendOutcome::Refused);
+
+        ob_start();
+        $this->flushTheDatabaseFact($failed);
+        $this->flushTheDatabaseFact($refused);
+        $logged = (string) ob_get_clean();
+
+        $this->assertCount(1, $failed->calls);
+        $this->assertCount(1, $refused->calls);
+        $this->assertSame([], $this->drain());
+        $this->assertSame('', $logged);
+        $this->assertTrue(Hilos::$sr?->hasPageDeliveryFailure('ak-1'));
+    }
+
+    /**
+     * A page that failed its first answer for want of the database may draw nothing in the browser;
+     * with no browser guards to ask, the fact goes straight to its agent, whose verdict decides.
+     */
+    public function testAPageWithoutABrowserPartIsTriedByTheDatabaseFact(): void
+    {
+        Hilos::$sr?->subscribeToPage(
+            self::PAGE_WITHOUT_BROWSER_PART,
+            new WebSocketPageSubscribeSignalDTO('ak-2', self::PAGE_WITHOUT_BROWSER_PART),
+        );
+        Hilos::$sr?->markPageDeliveryFailure('ak-2');
+        $resender = new DeliveryErrorRecordingResender(PageResendOutcome::Answered);
+
+        $this->flushTheDatabaseFact($resender);
+
+        $this->assertSame([[self::PAGE_WITHOUT_BROWSER_PART, 'ak-2', []]], $resender->calls);
+        $this->assertFalse(Hilos::$sr?->hasPageDeliveryFailure('ak-2'));
+    }
+
+    /**
+     * A page a change already tried whole in this flush is set aside until it ends: the fact of the
+     * same flush does not ask its agent a second time.
+     */
+    public function testAPageTheChangeAlreadyTriedIsNotTriedAgainByTheFact(): void
+    {
+        $this->flush(broken: true);
+        $this->drain();
+        $resender = new DeliveryErrorRecordingResender(PageResendOutcome::Failed);
+
+        $context = new DeliveryErrorContext();
+        $context->bindPageResender($resender);
+        $context->record(SourceChange::rtUpdated(DeliveryErrorRtContext::ROWS, '1', ['name' => 'Ada']));
+        $context->recordDatabaseBack();
+        $context->flushToSignalRouter();
+
+        $this->assertCount(1, $resender->calls);
+        $this->assertSame([], $this->drain());
+    }
+
+    /**
+     * The fact asks the page guards before it asks the page's agent, by the rule a change follows:
+     * a guard that refuses this connection stops the try in silence, and the debt waits.
+     */
+    public function testTheDatabaseFactAsksThePageGuardsFirst(): void
+    {
+        $this->flush(broken: true);
+        $this->drain();
+        $resender = new DeliveryErrorRecordingResender(PageResendOutcome::Answered);
+        $context = new DeliveryErrorContext(signedInOnly: true);
+        $context->bindPageResender($resender);
+        $context->recordDatabaseBack();
+
+        ob_start();
+        $failures = $context->flushToSignalRouter();
+        $logged = (string) ob_get_clean();
+
+        $this->assertSame([], $resender->calls);
+        $this->assertSame([], $failures);
+        $this->assertSame([], $this->drain());
+        $this->assertSame('', $logged);
+        $this->assertTrue(Hilos::$sr?->hasPageDeliveryFailure('ak-1'));
+    }
+
+    /**
+     * A throw outside a window is caught per subscription by the trap a change is caught with: the
+     * first one is handed to the tick, the page is told, and the page is owed whole from then on.
+     */
+    public function testAThrowDuringTheDatabaseFactFailsTheSubscriptionOnce(): void
+    {
+        $context = new DeliveryErrorContext(broken: true);
+        $context->recordDatabaseBack();
+
+        $failures = $context->flushToSignalRouter();
+
+        $this->assertCount(1, $failures);
+        $this->assertSame([SignalConstants::SUBSCRIPTION_PAGE_ERROR], $this->drain());
+        $this->assertTrue(Hilos::$sr?->hasPageDeliveryFailure('ak-1'));
+    }
+
     /**
      * Records one change to row 1 and flushes it through a context in the requested state.
      *
@@ -289,6 +409,19 @@ final class BrowserContextDeliveryErrorTest extends TestCase
             $context->bindPageResender($resender);
         }
         $context->record(SourceChange::rtUpdated(DeliveryErrorRtContext::ROWS, '1', ['name' => 'Ada']));
+        $context->flushToSignalRouter();
+    }
+
+    /**
+     * Flushes a fresh healthy context that holds the database fact and no change.
+     *
+     * @param PageResender $resender Who re-sends the page whole
+     */
+    private function flushTheDatabaseFact(PageResender $resender): void
+    {
+        $context = new DeliveryErrorContext();
+        $context->bindPageResender($resender);
+        $context->recordDatabaseBack();
         $context->flushToSignalRouter();
     }
 
@@ -333,7 +466,7 @@ final class BrowserContextDeliveryErrorTest extends TestCase
 }
 
 /**
- * Serves one page off one runtime collection, with its page guard broken on demand.
+ * Serves one page off one runtime collection, with its page guard broken or closed to guests on demand.
  */
 final class DeliveryErrorContext extends BrowserContext
 {
@@ -344,8 +477,9 @@ final class DeliveryErrorContext extends BrowserContext
 
     /**
      * @param bool $broken Whether the page's guard declaration names a type nothing implements
+     * @param bool $signedInOnly Whether the page lets in only a signed-in person, which nobody here is
      */
-    public function __construct(private readonly bool $broken = false)
+    public function __construct(private readonly bool $broken = false, private readonly bool $signedInOnly = false)
     {
         parent::__construct();
     }
@@ -363,9 +497,11 @@ final class DeliveryErrorContext extends BrowserContext
 
         return BrowserPageConfig::fromArray([
             BrowserConfigKey::SIGNAL => self::SIGNAL,
-            BrowserConfigKey::GUARDS => $this->broken
-                ? [[BrowserGuardKey::TYPE => 'no_such_guard_type']]
-                : [],
+            BrowserConfigKey::GUARDS => match (true) {
+                $this->broken => [[BrowserGuardKey::TYPE => 'no_such_guard_type']],
+                $this->signedInOnly => [[BrowserGuardKey::TYPE => BrowserGuardType::AUTHENTICATED]],
+                default => [],
+            },
         ]);
     }
 

@@ -252,10 +252,10 @@ drops these frames; that is a defense, not the rule's enforcement.
    page even when the failed first answer left it without any viewport.
 2. The database came back: the worker's first successful query after it lost
    its database connection tries all that worker's debts — windows and pages
-   — once each, in the next flush (not in the code yet — HIL-1352). The fact
+   — once each, in the next flush. The fact
    stays inside the worker that saw it; it is not announced to other
    processes, each of which has its own connection and debts (owner's
-   decision, 2026-10-04) (not in the code yet — HIL-1352).
+   decision, 2026-10-04).
    The table that needs this fact is step-up on `/hilos/security/2fa`: it has
    no sort, search, or filter, and its live source — the step-up setting keys
    — almost never changes. After a database failure, it used to have only F5.
@@ -283,8 +283,7 @@ on its own.
 ### The Two Cases That Still Wait
 
 Both cases were accepted by the owner on 2026-10-04 and are recorded here;
-they are also recorded in the database fact's docblock
-(not in the code yet — HIL-1352).
+they are also recorded in the database fact's docblock.
 
 1. A worker on which nothing happens after the database comes back learns of
    it only on its first query. Its debts wait until then. No timer probes the

@@ -67,7 +67,7 @@ use RuntimeException;
  * connection must be told, it must be told once, and the recovery must be whole. A frozen
  * window is also left alone for the rest of the flush that froze it — a delivery built in the
  * same flush as the failure is no proof the road is back. The window's debt is one for a freeze
- * and a refusal alike (HIL-1350).
+ * and a refusal alike (HIL-1350), and the database coming back tries it once too (HIL-1352).
  */
 final class BrowserContextTableFreezeTest extends TestCase
 {
@@ -618,6 +618,148 @@ final class BrowserContextTableFreezeTest extends TestCase
     }
 
     /**
+     * The database coming back is a fact of its own: with no change in the flush, the refused window
+     * comes back whole, with the counts beside its filters, and nothing live goes beside it.
+     */
+    public function testTheDatabaseFactBringsARefusedWindowBackWhole(): void
+    {
+        $table = $this->boot();
+        Hilos::$sr?->setTableFacets('ak-1', $table::TABLE, [FreezeUnitTable::FILTER_LABEL => ['Alpha', 'Beta']]);
+        $this->refuseTheWindow($table);
+
+        $table->failQuery = false;
+        $this->flushTheDatabaseFact();
+
+        $this->assertSame(
+            [SignalTypeConstants::TABLE_WINDOW, SignalTypeConstants::TABLE_FACET_COUNTS],
+            $this->tableFrameNames(),
+        );
+        $window = $this->payloadsNamed(SignalTypeConstants::TABLE_WINDOW)[0];
+        $this->assertInstanceOf(TableWindowSignalData::class, $window);
+        $this->assertSame($table::TABLE, $window->tableKey);
+        $this->assertSame(['a', 'b'], array_map(static fn(array $row): string => (string) $row[PagePayload::rowKey], $window->rows));
+        $this->assertFalse(Hilos::$sr?->isTableWindowOwed('ak-1', $table::TABLE));
+    }
+
+    public function testTheDatabaseFactBringsAFrozenWindowBackWhole(): void
+    {
+        $table = $this->boot(failOn: ['a']);
+        $this->flushChange('a');
+        $this->drain();
+
+        $table->failOn = [];
+        $this->flushTheDatabaseFact();
+
+        $this->assertSame([SignalTypeConstants::TABLE_WINDOW], $this->tableFrameNames());
+        $this->assertFalse(Hilos::$sr?->isTableWindowOwed('ak-1', $table::TABLE));
+    }
+
+    /**
+     * A fact tries a debt once: the try that fails says nothing and writes nothing, and the fact is
+     * spent on it — the next flush, with the table healthy again, has nothing to try the debt with.
+     */
+    public function testTheDatabaseFactWhoseWindowStillCannotBeBuiltSendsNothing(): void
+    {
+        $table = $this->boot();
+        $this->refuseTheWindow($table);
+        $logged = $this->writtenLog();
+
+        $context = new FreezeUnitContext();
+        $context->recordDatabaseBack();
+        $context->flushToSignalRouter();
+
+        $this->assertSame([], $this->tableFrameNames());
+        $this->assertSame($logged, $this->writtenLog());
+        $this->assertTrue(Hilos::$sr?->isTableWindowOwed('ak-1', $table::TABLE));
+
+        $table->failQuery = false;
+        $context->flushToSignalRouter();
+
+        $this->assertSame([], $this->tableFrameNames());
+        $this->assertTrue(Hilos::$sr?->isTableWindowOwed('ak-1', $table::TABLE));
+    }
+
+    /**
+     * A table that came back is not itself a fact: a flush with no change and no database fact
+     * leaves the owed window alone.
+     */
+    public function testAFlushWithoutTheDatabaseFactLeavesAnOwedWindowAlone(): void
+    {
+        $table = $this->boot();
+        $this->refuseTheWindow($table);
+
+        $table->failQuery = false;
+        (new FreezeUnitContext())->flushToSignalRouter();
+
+        $this->assertSame([], $this->tableFrameNames());
+        $this->assertTrue(Hilos::$sr?->isTableWindowOwed('ak-1', $table::TABLE));
+    }
+
+    /**
+     * The try comes after the changes of its flush: the window a change caught up holds that change
+     * already and owes nothing, so it goes once, and no delta of the same change follows it.
+     */
+    public function testAWindowAChangeCaughtUpIsNotTriedAgainByTheFact(): void
+    {
+        $table = $this->boot();
+        $this->refuseTheWindow($table);
+
+        $table->failQuery = false;
+        $context = new FreezeUnitContext();
+        $context->record(SourceChange::rtUpdated(FreezeUnitRtContext::ROWS, 'a', ['name' => 'Alpha renamed']));
+        $context->recordDatabaseBack();
+        $context->flushToSignalRouter();
+
+        $this->assertSame([SignalTypeConstants::TABLE_WINDOW], $this->tableFrameNames());
+        $this->assertFalse(Hilos::$sr?->isTableWindowOwed('ak-1', $table::TABLE));
+    }
+
+    /**
+     * A window whose catch-up could not be built in this flush is set aside until it ends; the fact
+     * does not ask the table for it a second time.
+     */
+    public function testAWindowWhoseCatchUpFailedInThisFlushIsNotTriedAgainByTheFact(): void
+    {
+        $table = $this->boot();
+        $this->refuseTheWindow($table);
+        $logged = $this->writtenLog();
+        $queries = $table->queries;
+
+        $context = new FreezeUnitContext();
+        $context->record(SourceChange::rtUpdated(FreezeUnitRtContext::ROWS, 'a', ['name' => 'Alpha renamed']));
+        $context->recordDatabaseBack();
+        $context->flushToSignalRouter();
+
+        $this->assertSame(1, $table->queries - $queries, 'the change asked for the window, the fact did not');
+        $this->assertSame([], $this->tableFrameNames());
+        $this->assertSame($logged, $this->writtenLog());
+        $this->assertTrue(Hilos::$sr?->isTableWindowOwed('ak-1', $table::TABLE));
+    }
+
+    public function testTheDatabaseFactLeavesAHealthyNeighborAlone(): void
+    {
+        $table = $this->boot(withNeighbor: true);
+        $this->refuseTheWindow($table);
+
+        $table->failQuery = false;
+        $this->flushTheDatabaseFact();
+
+        $this->assertSame([SignalTypeConstants::TABLE_WINDOW], $this->tableFrameNames());
+        $window = $this->payloadsNamed(SignalTypeConstants::TABLE_WINDOW)[0];
+        $this->assertInstanceOf(TableWindowSignalData::class, $window);
+        $this->assertSame($table::TABLE, $window->tableKey);
+    }
+
+    public function testTheDatabaseFactWithNoDebtSendsNothing(): void
+    {
+        $this->boot(withNeighbor: true);
+
+        $this->flushTheDatabaseFact();
+
+        $this->assertSame([], $this->queued());
+    }
+
+    /**
      * Boots the table registry and the connection's window over rows a and b.
      *
      * @param list<string> $failOn Row keys whose mutation build throws
@@ -670,6 +812,22 @@ final class BrowserContextTableFreezeTest extends TestCase
     }
 
     /**
+     * Refuses the connection's window and empties the queue of the refusal.
+     *
+     * The table is left refusing its window, so the test decides when it comes back.
+     *
+     * @param FreezeUnitTable $table Table whose window is refused
+     */
+    private function refuseTheWindow(FreezeUnitTable $table): void
+    {
+        $table->failQuery = true;
+        $viewport = Hilos::$sr?->getTableViewport('ak-1', $table::TABLE);
+        $this->assertNotNull($viewport);
+        $this->assertFalse((new FreezeUnitContext())->sendTableWindow(FreezeUnitContext::PAGE, 'ak-1', $viewport));
+        $this->drain();
+    }
+
+    /**
      * Records one edit of a row and flushes it through a fresh browser context.
      *
      * @param string $rowKey Row the edit is about
@@ -680,6 +838,29 @@ final class BrowserContextTableFreezeTest extends TestCase
         $context = new FreezeUnitContext();
         $context->record(SourceChange::rtUpdated(FreezeUnitRtContext::ROWS, $rowKey, ['name' => $name]));
         $context->flushToSignalRouter();
+    }
+
+    /**
+     * Flushes a fresh browser context that holds the database fact and no change.
+     */
+    private function flushTheDatabaseFact(): void
+    {
+        $context = new FreezeUnitContext();
+        $context->recordDatabaseBack();
+        $context->flushToSignalRouter();
+    }
+
+    /**
+     * The names of the table frames queued since the last drain.
+     *
+     * @return list<string> Names that start with table_, in the order they were queued
+     */
+    private function tableFrameNames(): array
+    {
+        return array_values(array_filter(
+            array_column($this->queued(), 0),
+            static fn(string $name): bool => str_starts_with($name, 'table_'),
+        ));
     }
 
     /**
@@ -844,6 +1025,9 @@ final class FreezeUnitTable extends TableDefinition implements SelfSnapshotTable
 
     public bool $failQuery = false;
 
+    /** How many times the window's rows were asked for, served or refused */
+    public int $queries = 0;
+
     /**
      * @param list<FreezeUnitRow> $rows Rows the window is taken from
      * @param list<string> $failOn Row keys whose mutation build throws
@@ -946,6 +1130,7 @@ final class FreezeUnitTable extends TableDefinition implements SelfSnapshotTable
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
+        $this->queries++;
         if ($this->failQuery) {
             throw new RuntimeException('the project row source gave up');
         }

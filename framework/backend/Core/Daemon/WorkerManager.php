@@ -217,6 +217,13 @@ abstract class WorkerManager extends BaseManager implements PageResender
     /** Loop timestamp of the last parent-process check. */
     private float $lastParentCheckAt = 0.0;
 
+    /**
+     * Last Database::returnsAfterLoss() this worker saw.
+     *
+     * A worker is a process of its own (proc_open): the count in it starts from zero, and so does this mark.
+     */
+    private int $databaseReturnsSeen = 0;
+
     /** Worker leaves because the master requested SIGTERM or SIGINT. */
     private bool $leavingOnStopSignal = false;
 
@@ -3468,6 +3475,10 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * DB/RT sync signals are broadcast at worker level. Other signals are sent
      * as agent messages. Browser flushes run between two queue drains so
      * addressed WS_USER deliveries are sent in the same tick.
+     *
+     * Before the flush the worker hands its browser context the fact that the database came back
+     * when a connection of this process returned after a loss since the last flush; the fact
+     * reaches no other process (owner's decision, 2026-10-04, HIL-1352).
      */
     private function dispatchSignals(): void
     {
@@ -3479,6 +3490,11 @@ abstract class WorkerManager extends BaseManager implements PageResender
         // browser state. Phase 2 sends the WS_USER signals produced by flushes
         // in the same tick, instead of waiting for the next loop.
         $this->dispatchQueuedSignalsToDaemon();
+        $databaseReturns = Database::returnsAfterLoss();
+        if ($databaseReturns !== $this->databaseReturnsSeen) {
+            $this->databaseReturnsSeen = $databaseReturns;
+            Hilos::$browser?->recordDatabaseBack();
+        }
         $containedByFanout = Hilos::$browser?->flushToSignalRouter() ?? [];
         $this->dispatchQueuedSignalsToDaemon();
 

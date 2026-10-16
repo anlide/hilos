@@ -273,6 +273,125 @@ final class DatabaseReconnectIntegrationTest extends FrameworkIntegrationTestCas
     }
 
     /**
+     * The first statement after a lost connection is one return; the statements after it are none.
+     *
+     * @throws DatabaseException On SQL or connection errors from the database layer.
+     * @throws EnvException When DB env variables are missing or invalid.
+     */
+    public function testAQueryAfterALostConnectionCountsOneReturn(): void
+    {
+        $before = $this->settledReturnCount();
+        $this->killConnection($this->currentConnectionId());
+
+        Database::sql('SELECT 1');
+        $this->assertSame($before + 1, Database::returnsAfterLoss());
+
+        Database::sql('SELECT 1');
+        $this->assertSame($before + 1, Database::returnsAfterLoss(), 'Only the first statement after the loss is a return');
+    }
+
+    /**
+     * @throws DatabaseException On SQL or connection errors from the database layer.
+     */
+    public function testQueriesWithoutALossCountNoReturn(): void
+    {
+        $before = $this->settledReturnCount();
+
+        Database::sql('SELECT 1');
+        Database::sql('SELECT 1');
+        $this->assertSame($before, Database::returnsAfterLoss());
+    }
+
+    /**
+     * A statement the server answered with an error is not the return: the loss waits for one that succeeds.
+     *
+     * @throws DatabaseException On SQL or connection errors from the database layer.
+     * @throws EnvException When DB env variables are missing or invalid.
+     */
+    public function testAStatementTheServerRefusedDoesNotCountTheReturn(): void
+    {
+        $before = $this->settledReturnCount();
+        $this->killConnection($this->currentConnectionId());
+
+        try {
+            Database::sql('SELECT * FROM `' . self::MISSING_TABLE . '`');
+            self::fail('The missing table must refuse the statement');
+        } catch (TableNotFoundException) {
+            // The reconnect reached the server, and the server refused the statement.
+        }
+        $this->assertSame($before, Database::returnsAfterLoss());
+
+        Database::sql('SELECT 1');
+        $this->assertSame($before + 1, Database::returnsAfterLoss());
+    }
+
+    /**
+     * An open that did not reach the server is a loss too, and the first statement through the slot pays it.
+     *
+     * @throws DatabaseException When the connection or query fails unexpectedly
+     * @throws EnvException When DB env variables are unavailable
+     */
+    public function testAFailedOpenThenAQueryCountsOneReturn(): void
+    {
+        $before = $this->settledReturnCount();
+        Database::close();
+        Database::configure(
+            host: Hilos::$env[EnvConstants::DB_HOST]->string(),
+            user: Hilos::$env[EnvConstants::DB_USERNAME]->string(),
+            password: Hilos::$env[EnvConstants::DB_PASSWORD]->string(),
+            database: Hilos::$env[EnvConstants::DB_DATABASE]->string(),
+            port: self::CLOSED_PORT,
+        );
+
+        try {
+            Database::sql('SELECT 1');
+            self::fail('The closed port must refuse the first statement');
+        } catch (CantConnectToMysqlServerException) {
+            // The open never reached a server: the slot is marked, and nothing is counted yet.
+        }
+        $this->assertSame($before, Database::returnsAfterLoss());
+
+        Database::configure(
+            host: Hilos::$env[EnvConstants::DB_HOST]->string(),
+            user: Hilos::$env[EnvConstants::DB_USERNAME]->string(),
+            password: Hilos::$env[EnvConstants::DB_PASSWORD]->string(),
+            database: Hilos::$env[EnvConstants::DB_DATABASE]->string(),
+            port: Hilos::$env[EnvConstants::DB_PORT]->int(),
+        );
+        Database::sql('SELECT 1');
+        $this->assertSame($before + 1, Database::returnsAfterLoss());
+    }
+
+    /**
+     * @throws DatabaseException When the connection or query fails
+     */
+    public function testAConnectionClosedByHandIsNotALoss(): void
+    {
+        $before = $this->settledReturnCount();
+
+        Database::close();
+        Database::connect();
+        Database::sql('SELECT 1');
+        $this->assertSame($before, Database::returnsAfterLoss());
+    }
+
+    /**
+     * Pays a loss an earlier case left unpaid, so the count read here moves only by what this case does.
+     *
+     * The marks and the count belong to the process, not to the case: a case that ends on a lost or
+     * refused connection leaves its mark for the next statement, and that statement may be this case's.
+     *
+     * @return int Returns counted in this process so far
+     * @throws DatabaseException On SQL or connection errors from the database layer.
+     */
+    private function settledReturnCount(): int
+    {
+        Database::sql('SELECT 1');
+
+        return Database::returnsAfterLoss();
+    }
+
+    /**
      * @return int Thread id of the connection Database is currently using
      * @throws DatabaseException On SQL or connection errors from the database layer.
      */

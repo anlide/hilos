@@ -77,6 +77,12 @@ class Database
     /** @var array<int, true> Connection indices explicitly closed by a caller */
     private static array $closedByHand = [];
 
+    /** @var array<int, true> Connection indices whose last statement or connect did not reach the server */
+    private static array $unreachable = [];
+
+    /** How many times in this process a connection that did not reach the server then ran a statement; only grows */
+    private static int $returnsAfterLoss = 0;
+
     /** Receipt installed on the primary link and on any replacement for it. */
     private static ?int $journalReceiptId = null;
 
@@ -271,6 +277,7 @@ class Database
                         $config->socket,
                     );
                 } catch (mysqli_sql_exception $e) {
+                    self::markUnreachable($index, $e->getCode());
                     $errno = $e->getCode();
                     $error = $e->getMessage();
 
@@ -290,6 +297,7 @@ class Database
                         mysqli_query($mysqli, DatabaseConnectionDefaults::setNamesSql());
                     }
                 } catch (mysqli_sql_exception $e) {
+                    self::markUnreachable($index, $e->getCode());
                     $errno = $e->getCode();
                     $error = $e->getMessage();
                     mysqli_close($mysqli);
@@ -302,6 +310,7 @@ class Database
                     try {
                         mysqli_query($mysqli, self::journalReceiptSql(self::$journalReceiptId));
                     } catch (mysqli_sql_exception $e) {
+                        self::markUnreachable($index, $e->getCode());
                         $errno = $e->getCode();
                         $error = $e->getMessage();
                         mysqli_close($mysqli);
@@ -443,6 +452,34 @@ class Database
     }
 
     /**
+     * Notes that a statement or a connect on the connection did not reach the server.
+     *
+     * Only the codes a reconnect waits out count; any other failure means the server answered.
+     *
+     * @param int $index Connection index
+     * @param int $errno MySQL error code of the failure
+     */
+    private static function markUnreachable(int $index, int $errno): void
+    {
+        if (MysqlClientErrorCode::isRetriedOnReconnect($errno)) {
+            self::$unreachable[$index] = true;
+        }
+    }
+
+    /**
+     * Counts a return when the connection had not reached the server before this statement succeeded.
+     *
+     * @param int $index Connection index
+     */
+    private static function countReturn(int $index): void
+    {
+        if (isset(self::$unreachable[$index])) {
+            unset(self::$unreachable[$index]);
+            self::$returnsAfterLoss++;
+        }
+    }
+
+    /**
      * @param ?int $index Connection index (defaults to current)
      * @return bool Whether connection is active
      */
@@ -450,6 +487,23 @@ class Database
     {
         $index = $index ?? self::$currentIndex;
         return isset(self::$connections[$index]) && self::$connections[$index] !== null;
+    }
+
+    /**
+     * How many times in this process a connection came back after a loss; only reads, resets nothing.
+     *
+     * A loss is a statement or a connect that did not reach the server - the codes a reconnect waits
+     * out ({@see MysqlClientErrorCode::isRetriedOnReconnect()}). A return is the first statement
+     * through sql() that succeeds on that connection afterwards. A timeout, an SQL error, "too many
+     * connections" and a close by hand are not a loss: the server answered, or the caller closed it.
+     * One count per process, over every connection. The norm it serves:
+     * docs/agents/architecture/browser-source-fanout.md, "The Facts That Try A Debt", fact 2.
+     *
+     * @return int Returns counted since the process started
+     */
+    public static function returnsAfterLoss(): int
+    {
+        return self::$returnsAfterLoss;
     }
 
     /**
@@ -476,6 +530,7 @@ class Database
             }
             mysqli_query($mysqli, $sql);
         } catch (mysqli_sql_exception $e) {
+            self::markUnreachable($index, $e->getCode());
             self::dropLink($index);
             MysqlExceptionMapper::runtimeException($e->getCode(), $e->getMessage(), $sql);
         }
@@ -565,6 +620,7 @@ class Database
             try {
                 mysqli_multi_query($mysqli, $parsedSql);
             } catch (mysqli_sql_exception $e) {
+                self::markUnreachable($index, $e->getCode());
                 $errno = $e->getCode();
                 $error = $e->getMessage();
 
@@ -614,9 +670,11 @@ class Database
         try {
             $result = mysqli_store_result($mysqli);
         } catch (mysqli_sql_exception $e) {
+            self::markUnreachable($index, $e->getCode());
             MysqlExceptionMapper::runtimeException($e->getCode(), $e->getMessage(), $sql);
         }
         $mysqliResult = $result !== false ? $result : null;
+        self::countReturn($index);
 
         // Create/cache ResultSet for this result (reuse same instance to preserve pointer position)
         if ($mysqliResult !== null) {
@@ -721,6 +779,7 @@ class Database
                 return true;
             }
         } catch (mysqli_sql_exception $e) {
+            self::markUnreachable($index, $e->getCode());
             self::$resultSets[$index] = null;
             MysqlExceptionMapper::runtimeException($e->getCode(), $e->getMessage(), self::$lastSql[$index]);
         }
@@ -918,6 +977,7 @@ class Database
                     mysqli_release_savepoint($mysqli, $level->savepoint);
                 }
             } catch (mysqli_sql_exception $e) {
+                self::markUnreachable($index, $e->getCode());
                 self::rollBackFailedCommit($mysqli, $index, $depth, $level);
                 MysqlExceptionMapper::runtimeException(
                     $e->getCode(),
@@ -987,6 +1047,7 @@ class Database
                     mysqli_release_savepoint($mysqli, $level->savepoint);
                 }
             } catch (mysqli_sql_exception $e) {
+                self::markUnreachable($index, $e->getCode());
                 MysqlExceptionMapper::runtimeException(
                     $e->getCode(),
                     $e->getMessage(),
@@ -1256,6 +1317,7 @@ class Database
                     mysqli_savepoint($mysqli, $level->savepoint);
                 }
             } catch (mysqli_sql_exception $e) {
+                self::markUnreachable($index, $e->getCode());
                 MysqlExceptionMapper::runtimeException(
                     $e->getCode(),
                     $e->getMessage(),
@@ -1365,6 +1427,7 @@ class Database
                 try {
                     mysqli_rollback($mysqli);
                 } catch (mysqli_sql_exception $e) {
+                    self::markUnreachable($index, $e->getCode());
                     try {
                         MysqlExceptionMapper::runtimeException($e->getCode(), $e->getMessage(), DatabaseSql::ROLLBACK);
                     } catch (DatabaseRuntimeException $mapped) {

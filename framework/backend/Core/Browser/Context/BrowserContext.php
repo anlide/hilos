@@ -204,6 +204,9 @@ abstract class BrowserContext
      */
     private array $setAsideThisFlush = [];
 
+    /** Fact 2, the database came back, is recorded and waits for the flush; cleared the moment it is tried. */
+    private bool $databaseBack = false;
+
     /**
      * Facet counts the test-only table lag is holding back, in the order they were asked for (HIL-1020).
      *
@@ -269,6 +272,26 @@ abstract class BrowserContext
     public function record(SourceChange $change): void
     {
         $this->changes->add($change);
+    }
+
+    /**
+     * Records that the database came back to this worker: fact 2 of the HIL-1151 rule.
+     *
+     * The next flush tries every debt of this worker - each window and each page owed whole - once.
+     * The fact is not announced to other processes: each has its own connection and its own debts.
+     *
+     * The two cases that still wait (owner's decision, 2026-10-04):
+     * 1. A worker on which nothing happens after the database comes back learns of it only with its
+     *    first query. No timer probes the database: that would be a clock, not a fact.
+     * 2. A query that timed out on a live, overloaded database is not a lost connection and brings no
+     *    fact; such a table waits for a change of its source or for the reader. A timeout caused by
+     *    a lock is paid by the lock holder's commit: that commit is a source change, fact 1.
+     *
+     * The norm: docs/agents/architecture/browser-source-fanout.md, "Coming Back Without A Reload".
+     */
+    public function recordDatabaseBack(): void
+    {
+        $this->databaseBack = true;
     }
 
     /**
@@ -1515,12 +1538,15 @@ abstract class BrowserContext
      * one that offers it to the project; a record kept in two places under two sets of
      * rules is what let the master's two readers disagree about the same line.
      *
+     * The database coming back ({@see self::recordDatabaseBack()}) runs the flush on its own,
+     * with no change and no freshness move beside it: the fact is what tries the debts.
+     *
      * @return list<ContainedFailure> Subscriptions whose fan-out failed, in the order they failed
      * @throws InvalidArgumentException When a fanned-out signal cannot be named
      */
     public function flushToSignalRouter(): array
     {
-        if ($this->changes->isEmpty() && $this->staleness === []) {
+        if ($this->changes->isEmpty() && $this->staleness === [] && !$this->databaseBack) {
             return [];
         }
 
@@ -1650,6 +1676,11 @@ abstract class BrowserContext
      * mutations) are recalculated after the freshness loop and before page response payloads are
      * emitted ({@see self::recountMarkedWindows()}).
      *
+     * The database coming back tries every debt after the changes and the freshness moves, not
+     * before them ({@see self::tryEveryDebt()}): a window the try builds already holds every change
+     * recorded for this flush, and a delta of those same changes sent over it would move its count
+     * twice. What a change already tried in this flush is not tried a second time.
+     *
      * @return list<ContainedFailure> Subscriptions whose fan-out failed, in the order they failed
      * @throws InvalidArgumentException When a fanned-out signal cannot be named
      */
@@ -1736,6 +1767,11 @@ abstract class BrowserContext
                     $failedSubscriptions[$acceptKey] = true;
                 }
             }
+        }
+
+        if ($this->databaseBack) {
+            $this->databaseBack = false;
+            $this->tryEveryDebt($signalTables, $guardAllows, $failedSubscriptions, $contained);
         }
 
         $this->recountMarkedWindows($failedSubscriptions);
@@ -3664,7 +3700,7 @@ abstract class BrowserContext
 
     /**
      * Replaces a window owed whole — frozen on the live road or refused — with the whole of it,
-     * on the first delivery that reached it without a throw.
+     * on the first delivery that reached it without a throw or when the database came back (fact 2).
      *
      * The client lays this frame down the way it lays down a window after a broken socket: rows,
      * counts and anchors are replaced, the changes it was holding for Apply are dropped, and the
@@ -3702,6 +3738,106 @@ abstract class BrowserContext
         $this->queueTableWindow($page, $acceptKey, $browserKey, $window);
         Hilos::$sr?->clearTableWindowDebt($acceptKey, $browserKey);
         $this->sendTableFacetCounts($page, $acceptKey, $viewport);
+    }
+
+    /**
+     * Tries every debt of this worker once, because the database came back: fact 2 of the HIL-1151 rule.
+     *
+     * A try that succeeds sends the whole of what is owed and pays the debt: a window is caught up
+     * the way a change catches it up ({@see self::catchUpOwedWindow()}), a page is re-sent whole on
+     * its serving agent ({@see self::resendWholePage()}). A try that fails sends nothing and writes
+     * no line — not a refusal, not a frozen frame, not a page error: the line was written when the
+     * debt was set, and the debt waits for the next fact.
+     *
+     * A subscription is tried once its page guards allow it, by the rule a change follows; a page
+     * this context draws no browser part for has no guards here and goes straight to its agent,
+     * whose verdict decides. A page owed whole is re-sent and its windows are not tried on their
+     * own: its answer settles each of their debts. What this flush already set aside is left alone
+     * — a subscription that failed or whose guard refused, a page a change already tried, a window
+     * that froze or whose catch-up could not be built. A window of a table this worker does not
+     * serve waits for the fact that its holder came up.
+     *
+     * A window that throws is set aside alone. A throw outside a window is caught per subscription
+     * by the trap the changes are caught with in {@see self::emitBrowserSignals()}.
+     *
+     * @param array<string, array<string, array<string, array<string, mixed>>>> $signalTables Collected
+     *     rows, keyed by accept key, page and browser key; a page re-sent whole drops its own
+     * @param array<string, bool> $guardAllows Memoized page-guard result per accept key; false once tried whole
+     * @param array<string, true> $failedSubscriptions Subscriptions whose fan-out failed during this flush
+     * @param list<ContainedFailure> $contained Failures to hand to the worker's tick, in the order they failed
+     */
+    private function tryEveryDebt(
+        array &$signalTables,
+        array &$guardAllows,
+        array &$failedSubscriptions,
+        array &$contained,
+    ): void {
+        if (Hilos::$sr === null) {
+            return;
+        }
+
+        foreach (Hilos::$sr->getPageSubscriptions() as $acceptKey => $subscription) {
+            if (isset($failedSubscriptions[$acceptKey]) || ($guardAllows[$acceptKey] ?? null) === false) {
+                continue;
+            }
+
+            $page = (string) $subscription[SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY];
+            $subscriber = (string) $acceptKey;
+            try {
+                $pageConfig = $this->pageConfig($page);
+                if ($pageConfig !== null && $pageConfig->signalName !== null) {
+                    $guardAllows[$acceptKey] ??= $this->pageGuardsAllow(
+                        $page,
+                        $pageConfig,
+                        $subscriber,
+                        $subscription[SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY],
+                    );
+                    if (!$guardAllows[$acceptKey]) {
+                        continue;
+                    }
+                }
+
+                if (Hilos::$sr->hasPageDeliveryFailure($subscriber)) {
+                    $contained = [...$contained, ...$this->resendWholePage($page, $subscriber)];
+                    $guardAllows[$acceptKey] = false;
+                    unset($signalTables[$acceptKey]);
+
+                    continue;
+                }
+
+                foreach (Hilos::$sr->getTableViewports($subscriber) as $tableKey => $viewport) {
+                    $browserKey = (string) $tableKey;
+                    if (!Hilos::$sr->isTableWindowOwed($subscriber, $browserKey)
+                        || isset($this->setAsideThisFlush[$subscriber][$browserKey])
+                    ) {
+                        continue;
+                    }
+
+                    $table = $this->viewportTable($browserKey);
+                    if ($table === null) {
+                        continue;
+                    }
+
+                    try {
+                        $this->catchUpOwedWindow($table, $viewport, $page, $subscriber, $browserKey);
+                    } catch (Throwable) {
+                        $this->setAsideThisFlush[$subscriber][$browserKey] = true;
+                    }
+                }
+            } catch (Throwable $failure) {
+                // The trap of the change loop in emitBrowserSignals(), and for its reason: nothing
+                // stands between a throw here and the worker's exit.
+                if (!Hilos::$sr->hasPageDeliveryFailure($subscriber)) {
+                    $contained[] = new ContainedFailure(
+                        WorkerTickUnit::BROWSER_SUBSCRIPTION,
+                        "page={$page} acceptKey={$acceptKey}",
+                        $failure,
+                    );
+                }
+                $this->tellPageDeliveryFailed($page, $subscriber);
+                $failedSubscriptions[$acceptKey] = true;
+            }
+        }
     }
 
     /**
