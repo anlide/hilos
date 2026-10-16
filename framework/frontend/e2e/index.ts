@@ -100,8 +100,28 @@ export {
   isRotateCookie,
 } from './sessionCookie.js'
 export {
+  ANALYTICS_PASSWORD_ACTION,
+  ANALYTICS_SIGN_UP_LAST_ACTION,
+  ANALYTICS_WRITER_TIMEOUT_MS,
+  analyticsSessionCell,
+  analyticsSessionLink,
+  expectAnalyticsActionRows,
+  expectAnalyticsActionsInOrder,
+  expectAnalyticsDashboardCard,
+  expectAnalyticsOverview,
+  expectAnalyticsPersonSession,
+  expectAnalyticsSessionFrames,
+  expectAnalyticsSessionHeader,
+  expectNoAnalyticsBodies,
+  expectNoAnalyticsPersonSession,
+  expectOtherAnalyticsSession,
+  readAnalyticsActionRows,
   readAnalyticsBrowserSession,
+  watchAnalyticsFrames,
+  type AnalyticsActionRow,
   type AnalyticsBrowserSession,
+  type AnalyticsFrame,
+  type AnalyticsFrameLog,
 } from './analytics.js'
 
 export {

@@ -441,7 +441,9 @@ positive integer `userId`, it returns `browserSessionId` (null until loaded)
 and `actionNames`: at most 50 names from that user's latest browser session,
 through the same bounded reader. It writes nothing and exposes no browser
 endpoint; e2e polls it to observe journal rotation and writer loading before
-opening the page.
+opening the page. The section's e2e is two identical specs in chat, tasks and
+polls; their checks live in `framework/frontend/e2e/analytics.ts`
+(HIL-1422).
 
 `browser` is a short browser/version and operating-system label, not a raw
 User-Agent excerpt of 160 characters. An unrecognized User-Agent falls back to

@@ -179,6 +179,13 @@ mounted — binance-btc-tracker (Vue), tasks (React), polls (Angular).
 online-testing enables the feature without a view; ecommerce-shop does not
 enable it (HIL-1400).
 
+The Analytics section did not move either: chat (Vue), tasks (React) and polls
+(Angular) each carry `analytics.spec.ts` and `analytics-browser-session.spec.ts`
+with the same test titles. The actions the specs look at are the registration of
+the person and of the administrator, because tasks and polls declare no actions
+of their own; no demo's product takes part in them, and they carry no
+`spec-owner` line (HIL-1422).
+
 **What stays in chat:** its product (the specs marked `demo`), the stand's own
 specs (marked `stand`), the shell (`a11y`, `about`, `navigation`, `layout`,
 `page-error`, `unbuilt-page`, `prerender`, `license`, `smoke`, `connection`,
@@ -471,6 +478,23 @@ Every check takes the spec's `expect` first, then its `Page`.
 `daemonRestart.ts` owns `RESTART_MARK_TIMEOUT_MS`, the observation budget for
 the shared restart mark. Each kit keeps one section spec. Test titles match across
 kits; only Vue carries the forged restart request, a server check.
+
+### The Analytics section — names and checks
+
+`analytics.ts` owns `ANALYTICS_WRITER_TIMEOUT_MS`,
+`ANALYTICS_SIGN_UP_LAST_ACTION` and `ANALYTICS_PASSWORD_ACTION`, the frame
+observer `watchAnalyticsFrames` (called before the page signs in), the row
+reader `readAnalyticsActionRows` (the no-value sign reads as a null page name,
+as the frames carry it) and the cell locator `analyticsSessionLink`.
+`expectAnalyticsDashboardCard` and `expectAnalyticsOverview` check the way in;
+the `expectAnalytics…`, `expectNoAnalytics…` and
+`expectOtherAnalyticsSession` checks cover the person page and the session
+page. Every check takes the spec's `expect` first, then its `Page`. A spec
+waits for the journal writer by polling the `test:analytics:browser-session`
+probe until the last registration action of both tabs — the person's and the
+administrator's — has landed, then opens the section. The three kits' specs
+are the same text; the one difference is the stand address of the command
+channel.
 
 ### Geometry — take a bookmark and ask whether it moved
 
