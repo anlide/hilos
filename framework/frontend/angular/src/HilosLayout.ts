@@ -2,10 +2,12 @@
 // app frame a project fills rather than re-implements. The brand and nav
 // regions are projected content and the routed page content is the default
 // slot. It renders the top navigation bar carrying the brand and nav, the
-// framework admin entry (the gear linking to the Hilos dashboard, drawn for an
-// admin and, in the admin view mode, for a viewer), the live connection
-// indicator the SDK owns (core-and-connection.md), and, last,
-// its tracked sign-out control while a person stands behind the session;
+// shell's theme icon first in the right-hand group (it disappears when
+// switching is off and under maintenance), the framework admin entry (the gear
+// linking to the Hilos dashboard, drawn for an admin and, in the admin view
+// mode, for a viewer), the live connection indicator the SDK owns
+// (core-and-connection.md), and, last, its tracked sign-out control while a
+// person stands behind the session;
 // a full-width banner region below the nav carrying, in this order, the
 // framework's own protected-mode strip, its impersonation strip (drawn from the
 // session, with a Stop that waits for the server's answer, colored by the
@@ -115,6 +117,7 @@ import { HilosModal } from './HilosModal.js'
 import { HilosLegalReconsent } from './legal/HilosLegalReconsent.js'
 import { HILOS_ROUTER } from './hilosRouterToken.js'
 import { HILOS_TAKEOVER_VIEW_ONLY } from './hilosLookOnly.js'
+import { HilosThemeMenu } from './HilosThemeMenu.js'
 import { hilosSignal } from './hilosSignal.js'
 import { createHilosTrackedAction } from './hilosTrackedAction.js'
 
@@ -159,6 +162,7 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
     HilosMaintenance,
     HilosModal,
     HilosOAuthWaitModal,
+    HilosThemeMenu,
     HilosToastHost,
     LoadingButton,
   ],
@@ -207,6 +211,7 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
             </div>
             <div class="d-flex align-items-center gap-3">
               @if (!underMaintenance()) {
+                <hilos-theme-menu />
                 <ng-content select="[user]" />
                 @if (reconsentDue() !== null) {
                   <button
@@ -321,14 +326,15 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
                     <i class="bi bi-people-fill me-1" aria-hidden="true"></i>
                     {{ stripCopy.lead }} <strong>{{ strip.userName }}</strong>
                     @if (strip.viewOnly) {
-                      <span class="badge text-bg-dark ms-1">{{
+                      <span class="badge text-bg-secondary ms-1">{{
                         stripCopy.viewOnly
                       }}</span>
                     }
                   </span>
                   <button
                     hilosLoadingButton
-                    class="btn-sm btn-outline-dark"
+                    class="btn-sm"
+                    [class]="'btn-' + strip.tone"
                     data-id="impersonation-stop"
                     [loading]="impersonationStop.busy()"
                     (click)="onImpersonationStop()"
@@ -353,7 +359,7 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
                 </span>
                 <button
                   hilosLoadingButton
-                  class="btn-sm btn-outline-dark"
+                  class="btn-sm btn-warning"
                   data-id="account-deletion-strip-keep"
                   [loading]="keepAccount.busy()"
                   (click)="onKeepAccount()"

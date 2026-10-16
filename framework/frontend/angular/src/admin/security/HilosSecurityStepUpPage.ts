@@ -61,7 +61,7 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
           >
         </ng-template>
         <ng-template hilosTableCell="owner" let-row>
-          <span class="badge text-bg-light border">
+          <span class="badge bg-body-tertiary text-body-emphasis border">
             {{
               row.owner === 'framework'
                 ? stepUpCopy.framework

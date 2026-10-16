@@ -303,7 +303,7 @@ import { HilosLink } from '../../HilosLink.js'
                   </span>
                   @if (entry.traceFrames !== null) {
                     <span
-                      class="badge text-bg-light border flex-shrink-0"
+                      class="badge bg-body-tertiary text-body-emphasis border flex-shrink-0"
                       title="This entry carries a stack trace"
                       data-id="hilos-logs-recent-row-trace"
                     >
@@ -382,7 +382,9 @@ import { HilosLink } from '../../HilosLink.js'
               @for (node of nodes(); track node.nodeId) {
                 <tr [attr.data-id]="'hilos-logs-node-' + node.nodeId">
                   <td>
-                    <span class="badge text-bg-light border">
+                    <span
+                      class="badge bg-body-tertiary text-body-emphasis border"
+                    >
                       {{ node.nodeId }}
                     </span>
                     <!-- The sub-line carries whatever the hidden columns were

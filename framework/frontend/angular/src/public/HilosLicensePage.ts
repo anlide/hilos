@@ -125,10 +125,12 @@ const DOWNLOAD_MIME_TYPE = 'text/csv;charset=utf-8'
               {{ entry.name }}
               <span class="text-body-secondary">{{ entry.version }}</span>
             </span>
-            <span class="badge text-bg-light border">
+            <span class="badge bg-body-tertiary text-body-emphasis border">
               {{ languageLabel(entry.language) }}
             </span>
-            <span class="badge text-bg-light border">{{ entry.license }}</span>
+            <span class="badge bg-body-tertiary text-body-emphasis border">{{
+              entry.license
+            }}</span>
           </button>
         }
         @if (visible().length === 0) {

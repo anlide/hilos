@@ -54,8 +54,8 @@ test('removes country name corrections and their base live in two windows, inclu
     await signUpAdmin(page)
     await openNames(page)
     await openNames(observer)
-    // The Vue kit picks the theme through the header menu; React and Angular
-    // have none yet (HIL-1440, HIL-1441) and pick it before the page loads.
+    // Picked through the header menu here; the same spec in the React and
+    // Angular demos sets the browser's pick before the page loads instead.
     await page.getByTestId('nav-theme').click()
     await page.getByTestId('nav-theme-option-dark').click()
     await expect(page.locator('html')).toHaveAttribute('data-bs-theme', 'dark')

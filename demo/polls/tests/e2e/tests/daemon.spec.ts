@@ -251,8 +251,8 @@ test.describe('daemon overview', () => {
       // Each size follows every child and its breadcrumb over live subscriptions.
       test.slow()
       await page.emulateMedia({ colorScheme: theme })
-      // The Angular theme menu is pending HIL-1441. The existing browser pick
-      // is adopted by the account during registration.
+      // The test needs the theme, not the menu: the browser's pick is set
+      // before the page loads, and registration adopts it into the account.
       await page.addInitScript((pick) => {
         localStorage.setItem('hilos.theme.pick', pick)
       }, theme)

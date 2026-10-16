@@ -37,6 +37,7 @@ import { LogWorkers } from './views/hilos/logs/workers.js'
 import { LogsOverview } from './views/hilos/logs/overview.js'
 import { Maintenance } from './views/hilos/maintenance/maintenance.js'
 import { Settings } from './views/hilos/settings/settings.js'
+import { Appearance } from './views/hilos/appearance/appearance.js'
 import { AnalyticsBrowserSession } from './views/hilos/analytics/browser-session.js'
 import { AnalyticsPerson } from './views/hilos/analytics/person.js'
 import { ChangeLog } from './views/hilos/change-log/change-log.js'
@@ -128,6 +129,7 @@ export class App {
     // the defaults.
     ...hilosAdminViews(),
     [HilosPages.SETTINGS]: Settings,
+    [HilosPages.APPEARANCE]: Appearance,
     [HilosPages.USERS]: Users,
     [HilosPages.USER]: User,
     // The framework Analytics pages of one browser session and of one person: the

@@ -176,8 +176,8 @@ test('refuses concurrent base and correction ADD without overwriting at 375px in
     await signUpAdmin(page)
     for (const tab of [page, observer]) {
       await openNames(tab)
-      // The Vue kit picks the theme through the header menu; React and Angular
-      // have none yet (HIL-1440, HIL-1441) and pick it before the page loads.
+      // Picked through the header menu here; the same spec in the React and
+      // Angular demos sets the browser's pick before the page loads instead.
       await clickSubmit(tab.getByTestId('nav-theme'))
       await clickSubmit(tab.getByTestId('nav-theme-option-dark'))
       await expect(tab.locator('html')).toHaveAttribute('data-bs-theme', 'dark')

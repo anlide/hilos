@@ -8,6 +8,7 @@ import {
   ErrorPage,
   HILOS_AUTH_GATE,
   HilosAnalyticsBrowserSessionPage,
+  HilosAppearancePage,
   HilosAnalyticsPersonPage,
   HilosChangeLogPage,
   HilosChangeLogTablePage,
@@ -31,6 +32,7 @@ import {
   HilosMaintenance,
   HilosModal,
   HilosOAuthCallbackPage,
+  HilosProfileTheme,
   HilosSettingsPage,
   HilosSkeleton,
   HilosAvatar,
@@ -44,6 +46,7 @@ import {
   HilosI18nLanguagePage,
   HilosI18nLanguagesPage,
   HilosSwitch,
+  HilosThemeMenu,
   HilosUserPage,
   HilosUsersPage,
   HilosView,
@@ -71,6 +74,8 @@ it('exports the @hilos/angular public surface', () => {
   expect(HilosSwitch).toBeTypeOf('function')
   expect(ErrorPage).toBeTypeOf('function')
   expect(HilosLayout).toBeTypeOf('function')
+  expect(HilosThemeMenu).toBeTypeOf('function')
+  expect(HilosProfileTheme).toBeTypeOf('function')
   expect(HilosMaintenance).toBeTypeOf('function')
   expect(LoadingButton).toBeTypeOf('function')
   expect(HilosBreadcrumb).toBeTypeOf('function')
@@ -90,6 +95,8 @@ it('exports the @hilos/angular public surface', () => {
   expect(HilosViewportTable).toBeTypeOf('function')
   expect(HilosDropdown).toBeTypeOf('function')
   expect(HilosSettingsPage).toBeTypeOf('function')
+  expect(HilosAppearancePage).toBeTypeOf('function')
+  expect(hilosAdminViews()).not.toHaveProperty(HilosPages.APPEARANCE)
   expect(HilosUsersPage).toBeTypeOf('function')
   expect(HilosUserPage).toBeTypeOf('function')
   expect(createHilosTrackedAction).toBeTypeOf('function')

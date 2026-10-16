@@ -6,6 +6,7 @@ import {
   inject,
   input,
   signal,
+  untracked,
 } from '@angular/core'
 import {
   createHilosProfileEmailChangeFlow,
@@ -14,8 +15,10 @@ import {
   createHilosProfileRootStore,
   hilosChildLinks,
   HilosPages,
+  HILOS_IMPERSONATION_STRIP_TEXT_ID,
   HILOS_PROFILE_ROOT_COPY,
   HILOS_PROFILE_PHOTO_COPY,
+  hilosImpersonation,
   hilosProfileSectionIcon,
   hilosProfileSectionId,
   subscribeSignal,
@@ -32,10 +35,12 @@ import { HilosAccountDeletion } from './HilosAccountDeletion.js'
 import { HilosProfileEmailChange } from './HilosProfileEmailChange.js'
 import { HilosProfileRename } from './HilosProfileRename.js'
 import { HilosProfilePhoto } from './HilosProfilePhoto.js'
+import { HilosProfileTheme } from './HilosProfileTheme.js'
 
 /**
- * The profile root (HIL-1169): the person's own line, the Account rows, a row
- * per catalog section with its live summary, and the danger zone.
+ * The profile root (HIL-1169): the person's own line, the Account rows (Name,
+ * Email, Theme), a row per catalog section with its live summary, and the
+ * danger zone.
  */
 @Component({
   selector: 'hilos-profile-page',
@@ -48,6 +53,7 @@ import { HilosProfilePhoto } from './HilosProfilePhoto.js'
     HilosProfileEmailChange,
     HilosProfileRename,
     HilosProfilePhoto,
+    HilosProfileTheme,
     LoadingButton,
   ],
   template: `
@@ -147,6 +153,33 @@ import { HilosProfilePhoto } from './HilosProfilePhoto.js'
                 </button>
               </div>
             }
+            @if (theme() !== null) {
+              <div class="d-flex align-items-center gap-3 py-3 border-bottom">
+                <i
+                  class="bi bi-circle-half fs-5 text-body-secondary"
+                  aria-hidden="true"
+                ></i>
+                <div class="flex-grow-1 text-break">
+                  <div class="fw-semibold small">{{ copy.theme }}</div>
+                  <div
+                    class="small text-body-secondary"
+                    data-id="profile-theme"
+                  >
+                    {{ theme() }}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  class="btn btn-outline-secondary btn-sm"
+                  [disabled]="impersonation() !== null"
+                  [attr.aria-describedby]="impersonation() ? stripTextId : null"
+                  data-id="profile-theme-change"
+                  (click)="themeOpen.set(true)"
+                >
+                  {{ copy.change }}
+                </button>
+              </div>
+            }
           </div>
         } @else {
           <p class="text-body-secondary" data-id="profile-loading">
@@ -208,6 +241,7 @@ import { HilosProfilePhoto } from './HilosProfilePhoto.js'
           <hilos-profile-photo [flow]="photoFlow()" />
         }
         <hilos-profile-email-change [flow]="email()" />
+        <hilos-profile-theme [(open)]="themeOpen" />
       </section>
     } @else {
       <!-- Nobody signed in, or the session is not known yet: a placeholder,
@@ -262,6 +296,10 @@ export class HilosProfilePage {
   protected readonly summaries = signal<Readonly<Record<string, string>>>({})
   protected readonly verifiedEmail = signal<string | null>(null)
   protected readonly passkeyOnly = signal(false)
+  protected readonly theme = signal<string | null>(null)
+  protected readonly impersonation = hilosSignal(hilosImpersonation)
+  protected readonly stripTextId = HILOS_IMPERSONATION_STRIP_TEXT_ID
+  protected readonly themeOpen = signal(false)
   protected readonly signInPage = HilosPages.PROFILE_SIGN_IN
   protected readonly renameOpening = signal(false)
   protected readonly emailOpening = signal(false)
@@ -279,6 +317,7 @@ export class HilosProfilePage {
       this.summaries.set(root.summaries.get())
       this.verifiedEmail.set(root.verifiedEmail.get())
       this.passkeyOnly.set(root.passkeyOnly.get())
+      this.theme.set(root.theme.get())
       const off = [
         subscribeSignal(root.signedIn, (value) => this.signedIn.set(value)),
         subscribeSignal(root.photoEnabled, (value) =>
@@ -292,11 +331,17 @@ export class HilosProfilePage {
         subscribeSignal(root.passkeyOnly, (value) =>
           this.passkeyOnly.set(value),
         ),
+        subscribeSignal(root.theme, (value) => this.theme.set(value)),
       ]
       onCleanup(() => {
         off.forEach((stop) => stop())
         root.dispose()
       })
+    })
+    // A sign-out takes the Theme window away with the page; it must not come
+    // back by itself with the next sign-in.
+    effect(() => {
+      if (!this.signedIn()) untracked(() => this.themeOpen.set(false))
     })
     effect((onCleanup) => {
       const name = this.binding().name

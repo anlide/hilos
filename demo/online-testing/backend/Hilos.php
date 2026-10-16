@@ -53,6 +53,7 @@ use Demo\OnlineTesting\Pages\Hilos\Logs\LogsViewPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\OnlineTesting\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\OnlineTesting\Pages\Hilos\PrivacyPage;
+use Demo\OnlineTesting\Pages\Hilos\AppearancePage;
 use Demo\OnlineTesting\Pages\Hilos\SettingsPage;
 use Demo\OnlineTesting\Pages\Hilos\I18nPage;
 use Demo\OnlineTesting\Pages\Hilos\I18n\Lists\LanguagesListPage;
@@ -131,6 +132,7 @@ use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
+use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Demo\OnlineTesting\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
@@ -201,6 +203,7 @@ final class Hilos extends HilosFacade
         BrowserSessionPage::PAGE => BrowserSessionPage::class,
         PersonPage::PAGE => PersonPage::class,
         SettingsPage::PAGE => SettingsPage::class,
+        AppearancePage::PAGE => AppearancePage::class,
         I18nPage::PAGE => I18nPage::class,
         LanguagesListPage::PAGE => LanguagesListPage::class,
         CountriesListPage::PAGE => CountriesListPage::class,
@@ -358,6 +361,7 @@ final class Hilos extends HilosFacade
         OnlineTestingTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
         OnlineTestingTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
         OnlineTestingTableContext::settings => HilosSettingsTable::class,
+        OnlineTestingTableContext::hilosAppearanceSettings => HilosAppearanceSettingsTable::class,
         OnlineTestingTableContext::hilosUsers => HilosUsersTable::class,
         OnlineTestingTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
         OnlineTestingTableContext::hilosLogKeys => HilosLogKeysTable::class,
@@ -426,6 +430,9 @@ final class Hilos extends HilosFacade
         ],
         SettingsPage::PAGE => [
             OnlineTestingTableContext::settings => [],
+        ],
+        AppearancePage::PAGE => [
+            OnlineTestingTableContext::hilosAppearanceSettings => [],
         ],
         MaintenancePage::PAGE => [
             OnlineTestingTableContext::hilosVerifierCircle => [],

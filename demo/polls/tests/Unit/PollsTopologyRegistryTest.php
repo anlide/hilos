@@ -87,6 +87,7 @@ use Demo\Polls\Pages\Hilos\Logs\LogsViewPage;
 use Demo\Polls\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\Polls\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\Polls\Pages\Hilos\SettingsPage;
+use Demo\Polls\Pages\Hilos\AppearancePage;
 use Demo\Polls\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityOAuthProviderPage;
 use Demo\Polls\Pages\Hilos\Security\SecuritySignInMethodsPage;
@@ -151,6 +152,11 @@ use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
 use Hilos\Tables\Security\HilosSecurityStepUpTable;
 use Hilos\Tables\Security\HilosSecurityImpersonationTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
+use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
+use Hilos\Core\Page\PageAccessLevel;
+use Hilos\Pages\Appearance\DTO\HilosAppearanceDefaultThemeSetActionDTO;
+use Hilos\Pages\Appearance\DTO\HilosAppearanceThemeSwitchingSetActionDTO;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Hilos\HilosException;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
@@ -765,6 +771,7 @@ final class PollsTopologyRegistryTest extends TestCase
             PollsTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
             PollsTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
             PollsTableContext::settings => HilosSettingsTable::class,
+            PollsTableContext::hilosAppearanceSettings => HilosAppearanceSettingsTable::class,
             PollsTableContext::hilosUsers => HilosUsersTable::class,
             PollsTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
             PollsTableContext::hilosLogKeys => HilosLogKeysTable::class,
@@ -813,6 +820,7 @@ final class PollsTopologyRegistryTest extends TestCase
                 ChangeLogTablesPage::PAGE,
                 ChangeLogTablePage::PAGE,
                 SettingsPage::PAGE,
+                AppearancePage::PAGE,
                 MaintenancePage::PAGE,
                 LogsKeysPage::PAGE,
                 LogsRotationsPage::PAGE,
@@ -880,6 +888,62 @@ final class PollsTopologyRegistryTest extends TestCase
             UserPage::PAGE,
             Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL]
                 [HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET_DONE],
+        );
+    }
+
+    /** Appearance reuses the index agent; its actions, answer and admin level come from the framework page. */
+    public function testAppearanceAdminFeatureIsActivated(): void
+    {
+        $this->assertSame(AppearancePage::class, Hilos::PAGES[AppearancePage::PAGE]);
+        $this->assertSame(AgentType::HILOS_INDEX, AppearancePage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[AppearancePage::PAGE]);
+        $this->assertSame(PageAccessLevel::ADMIN, AppearancePage::ACCESS_LEVEL);
+        $this->assertSame(
+            HilosPageConstants::HILOS_APPEARANCE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::APPEARANCE_THEME_SWITCHING_SET],
+        );
+        $this->assertSame(
+            HilosPageConstants::HILOS_APPEARANCE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::APPEARANCE_DEFAULT_THEME_SET],
+        );
+        $this->assertSame(
+            AgentType::HILOS_INDEX,
+            Hilos::getActionAgentRoutes()[HilosSignalConstants::APPEARANCE_THEME_SWITCHING_SET],
+        );
+        $this->assertSame(
+            AgentType::HILOS_INDEX,
+            Hilos::getActionAgentRoutes()[HilosSignalConstants::APPEARANCE_DEFAULT_THEME_SET],
+        );
+        $this->assertSame(
+            HilosAppearanceThemeSwitchingSetActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::APPEARANCE_THEME_SWITCHING_SET],
+        );
+        $this->assertSame(
+            HilosAppearanceDefaultThemeSetActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::APPEARANCE_DEFAULT_THEME_SET],
+        );
+        $this->assertSame(
+            HilosPageConstants::HILOS_APPEARANCE,
+            Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL]
+                [HilosSignalConstants::HILOS_APPEARANCE_SETTING_WRITE_DONE],
+        );
+        $this->assertSame(
+            HandoverAnswerSignalData::class,
+            Hilos::getPageSignalDtoRoutes()[SignalTypeConstants::AGENT_SIGNAL]
+                [HilosSignalConstants::HILOS_APPEARANCE_SETTING_WRITE_DONE],
+        );
+        $this->assertSame(
+            AgentType::HILOS_INDEX,
+            Hilos::getPageSignalAgentRoutes()[SignalTypeConstants::AGENT_SIGNAL]
+                [HilosSignalConstants::HILOS_APPEARANCE_SETTING_WRITE_DONE],
+        );
+        $this->assertSame(
+            HilosAppearanceSettingsTable::class,
+            Hilos::TABLES[PollsTableContext::hilosAppearanceSettings],
+        );
+        $this->assertSame(
+            [PollsTableContext::hilosAppearanceSettings => []],
+            Hilos::PAGE_TABLES[AppearancePage::PAGE],
         );
     }
 

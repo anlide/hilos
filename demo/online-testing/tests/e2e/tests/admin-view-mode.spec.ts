@@ -22,6 +22,7 @@ const VIEW_MODE_STRIP_TEXT =
  */
 const OPERATIONS_SCREENS = [
   '/hilos/settings',
+  '/hilos/appearance',
   '/hilos/users',
   '/hilos/maintenance',
   '/hilos/logs',

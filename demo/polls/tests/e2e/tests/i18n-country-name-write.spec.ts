@@ -196,8 +196,8 @@ test('refuses a concurrent correction ADD and keeps its draft at 375px in dark',
   const observer = await context.newPage()
   try {
     await seedCountryNamesFixture()
-    // Angular has no theme menu yet (HIL-1441): the browser's pick is set before
-    // any page loads, and registration carries it into the account.
+    // The spec needs the dark theme, not the menu: the browser's pick is set
+    // before any page loads, and registration carries it into the account.
     await pickThemeBeforeLoad(context, 'dark')
     await signUpAdmin(page)
     for (const tab of [page, observer]) {

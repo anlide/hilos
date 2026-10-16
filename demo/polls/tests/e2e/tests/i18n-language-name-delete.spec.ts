@@ -130,8 +130,8 @@ test('removes one correction and then the saved empty correction at 375px, with 
   await seedLanguageNamesFixture()
   const observer = await context.newPage()
   try {
-    // Angular has no theme menu yet (HIL-1441): the browser's pick is set before
-    // any page loads, and registration carries it into the account.
+    // The spec needs the dark theme, not the menu: the browser's pick is set
+    // before any page loads, and registration carries it into the account.
     await pickThemeBeforeLoad(context, 'dark')
     await signUpAdmin(page)
     await openNames(page)

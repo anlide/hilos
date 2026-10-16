@@ -2,10 +2,6 @@
 #     <RULE-ID> <path from repository root> <count> # <HIL-nnn>
 # The ticket is mandatory: it names the leaf that removes the record.
 # Regenerate with CODESTYLE_BASELINE_UPDATE=1 on the frontend unit run.
-SHELL-PARITY framework/frontend/vue/src/HilosThemeMenu.vue 5 # HIL-1441
-SHELL-PARITY framework/frontend/vue/src/index.ts 1 # HIL-1441
-SHELL-PARITY framework/frontend/vue/src/profile/HilosProfilePage.vue 2 # HIL-1441
-SHELL-PARITY framework/frontend/vue/src/profile/HilosProfileTheme.vue 6 # HIL-1441
 STYLE-INLINE demo/chat/frontend/src/views/AdminBots/AdminBots.vue 1 # HIL-449
 STYLE-INLINE demo/chat/frontend/src/views/Main/Main.vue 3 # HIL-449
 STYLE-INLINE framework/frontend/angular/src/HilosMaintenance.ts 1 # HIL-449
@@ -32,14 +28,3 @@ STYLE-INLINE framework/frontend/vue/src/admin/settings/HilosSettingsPage.vue 1 #
 STYLE-INLINE framework/frontend/vue/src/auth/HilosAuthSurface.vue 1 # HIL-449
 STYLE-INLINE framework/frontend/vue/src/auth/HilosMagicLinkPage.vue 1 # HIL-449
 STYLE-INLINE framework/frontend/vue/src/auth/HilosOAuthCallbackPage.vue 1 # HIL-449
-STYLE-THEME-PINNED framework/frontend/angular/src/HilosLayout.ts 3 # HIL-1441
-STYLE-THEME-PINNED framework/frontend/angular/src/HilosToastHost.ts 1 # HIL-1441
-STYLE-THEME-PINNED framework/frontend/angular/src/admin/logs/HilosLogsKeysPage.ts 3 # HIL-1441
-STYLE-THEME-PINNED framework/frontend/angular/src/admin/logs/HilosLogsPage.ts 2 # HIL-1441
-STYLE-THEME-PINNED framework/frontend/angular/src/admin/logs/HilosLogsRotationsPage.ts 1 # HIL-1441
-STYLE-THEME-PINNED framework/frontend/angular/src/admin/logs/HilosLogsViewPage.ts 2 # HIL-1441
-STYLE-THEME-PINNED framework/frontend/angular/src/admin/logs/HilosLogsWorkersPage.ts 2 # HIL-1441
-STYLE-THEME-PINNED framework/frontend/angular/src/admin/security/HilosSecurityStepUpPage.ts 1 # HIL-1441
-STYLE-THEME-PINNED framework/frontend/angular/src/legal/HilosLegalChanges.ts 2 # HIL-1441
-STYLE-THEME-PINNED framework/frontend/angular/src/legal/HilosLegalReconsent.ts 1 # HIL-1441
-STYLE-THEME-PINNED framework/frontend/angular/src/public/HilosLicensePage.ts 2 # HIL-1441

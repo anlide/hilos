@@ -231,13 +231,15 @@ export class HilosLogsWorkersPage {
   protected typeClass(row: HilosLogWorkerRow): string {
     return row.type === HILOS_LOG_WORKER_TYPE_MONOPOLISTIC
       ? 'text-bg-info-subtle text-info-emphasis border border-info-subtle'
-      : 'text-bg-light border'
+      : 'bg-body-tertiary text-body-emphasis border'
   }
 
   // A stream still being written is the live one; one left only in the archive is
   // quiet, and the two are told apart by weight of color rather than by wording alone.
   protected stateClass(row: HilosLogWorkerRow): string {
-    return row.live ? 'text-bg-success' : 'text-bg-light border'
+    return row.live
+      ? 'text-bg-success'
+      : 'bg-body-tertiary text-body-emphasis border'
   }
 
   protected clearFilters(): void {

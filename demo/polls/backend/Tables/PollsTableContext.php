@@ -34,6 +34,7 @@ use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
+use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
 use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
@@ -70,6 +71,7 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
  * @property-read HilosUsersTable $hilosUsers
  * @property-read HilosVerifierCircleTable $hilosVerifierCircle
  * @property-read HilosSettingsTable $settings
+ * @property-read HilosAppearanceSettingsTable $hilosAppearanceSettings
  * @property-read HilosSecurityOAuthProvidersTable $hilosSecurityOauthProviders
  * @property-read HilosSecurityOAuthProviderFieldsTable $hilosSecurityOauthProviderFields
  * @property-read HilosSecurityOAuthRedirectTable $hilosSecurityOauthRedirect
@@ -110,6 +112,7 @@ final class PollsTableContext extends TableContext
     public const string hilosUsers = 'hilosUsers';
     public const string hilosVerifierCircle = HilosVerifierCircleTable::TABLE;
     public const string settings = HilosSettingsTable::TABLE;
+    public const string hilosAppearanceSettings = HilosAppearanceSettingsTable::TABLE;
     public const string hilosSecurityOauthProviders = HilosSecurityOAuthProvidersTable::TABLE;
     public const string hilosSecurityOauthProviderFields = HilosSecurityOAuthProviderFieldsTable::TABLE;
     public const string hilosSecurityOauthRedirect = HilosSecurityOAuthRedirectTable::TABLE;

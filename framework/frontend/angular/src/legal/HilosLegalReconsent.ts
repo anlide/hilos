@@ -168,7 +168,7 @@ let nextHeadingId = 0
                     <div class="small fw-semibold">
                       {{ change.statement }}
                       <span
-                        class="badge text-bg-light border ms-1"
+                        class="badge bg-body-tertiary text-body-emphasis border ms-1"
                         data-id="legal-reconsent-change-kind"
                         >{{ change.kind }}</span
                       >

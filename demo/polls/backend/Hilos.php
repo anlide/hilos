@@ -76,6 +76,7 @@ use Demo\Polls\Pages\Hilos\Logs\LogsViewPage;
 use Demo\Polls\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\Polls\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\Polls\Pages\Hilos\PrivacyPage;
+use Demo\Polls\Pages\Hilos\AppearancePage;
 use Demo\Polls\Pages\Hilos\SettingsPage;
 use Demo\Polls\Pages\Hilos\I18nPage;
 use Demo\Polls\Pages\Hilos\I18n\Lists\LanguagesListPage;
@@ -177,6 +178,7 @@ use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
 use Hilos\Tables\Security\HilosSecurityStepUpTable;
 use Hilos\Tables\Security\HilosSecurityImpersonationTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
+use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Demo\Polls\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\Polls\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
@@ -249,6 +251,7 @@ final class Hilos extends HilosFacade
         BrowserSessionPage::PAGE => BrowserSessionPage::class,
         PersonPage::PAGE => PersonPage::class,
         SettingsPage::PAGE => SettingsPage::class,
+        AppearancePage::PAGE => AppearancePage::class,
         I18nPage::PAGE => I18nPage::class,
         LanguagesListPage::PAGE => LanguagesListPage::class,
         CountriesListPage::PAGE => CountriesListPage::class,
@@ -437,6 +440,7 @@ final class Hilos extends HilosFacade
         PollsTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
         PollsTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
         PollsTableContext::settings => HilosSettingsTable::class,
+        PollsTableContext::hilosAppearanceSettings => HilosAppearanceSettingsTable::class,
         PollsTableContext::hilosUsers => HilosUsersTable::class,
         PollsTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
         PollsTableContext::hilosLogKeys => HilosLogKeysTable::class,
@@ -558,6 +562,9 @@ final class Hilos extends HilosFacade
         ],
         SettingsPage::PAGE => [
             PollsTableContext::settings => [],
+        ],
+        AppearancePage::PAGE => [
+            PollsTableContext::hilosAppearanceSettings => [],
         ],
         MaintenancePage::PAGE => [
             PollsTableContext::hilosVerifierCircle => [],

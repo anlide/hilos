@@ -174,8 +174,8 @@ test('refuses concurrent base and correction ADD without overwriting at 375px in
   const observer = await context.newPage()
   try {
     await seedLanguageNamesFixture()
-    // Angular has no theme menu yet (HIL-1441): the browser's pick is set before
-    // any page loads, and registration carries it into the account.
+    // The spec needs the dark theme, not the menu: the browser's pick is set
+    // before any page loads, and registration carries it into the account.
     await pickThemeBeforeLoad(context, 'dark')
     await signUpAdmin(page)
     for (const tab of [page, observer]) {

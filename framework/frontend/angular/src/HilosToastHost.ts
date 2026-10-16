@@ -202,7 +202,7 @@ function occupiedHeight(element: HTMLElement): number {
                 </div>
                 @if (toast.repeats > 1) {
                   <span
-                    class="badge text-bg-light border"
+                    class="badge bg-body-tertiary text-body-emphasis border"
                     data-id="hilos-toast-repeats"
                     >×{{ toast.repeats }}</span
                   >

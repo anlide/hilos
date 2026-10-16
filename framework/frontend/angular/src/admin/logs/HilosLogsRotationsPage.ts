@@ -609,7 +609,10 @@ export class HilosLogsRotationsPage {
   }
 
   protected retentionClass(row: HilosLogRotationRow): string {
-    return RETENTION_CLASS[row.retentionState] ?? 'text-bg-light border'
+    return (
+      RETENTION_CLASS[row.retentionState] ??
+      'bg-body-tertiary text-body-emphasis border'
+    )
   }
 
   protected offersTakeout(row: HilosLogRotationRow): boolean {

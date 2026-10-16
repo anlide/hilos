@@ -62,6 +62,7 @@ use Demo\OnlineTesting\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\OnlineTesting\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\OnlineTesting\Pages\Hilos\PrivacyPage;
 use Demo\OnlineTesting\Pages\Hilos\SettingsPage;
+use Demo\OnlineTesting\Pages\Hilos\AppearancePage;
 use Demo\OnlineTesting\Pages\Hilos\TermsPage;
 use Demo\OnlineTesting\Pages\Hilos\Users\UserPage;
 use Demo\OnlineTesting\Pages\Hilos\Users\UsersPage;
@@ -124,6 +125,12 @@ use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
+use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
+use Hilos\Core\Page\PageAccessLevel;
+use Hilos\Pages\Appearance\DTO\HilosAppearanceDefaultThemeSetActionDTO;
+use Hilos\Pages\Appearance\DTO\HilosAppearanceThemeSwitchingSetActionDTO;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Demo\OnlineTesting\Pages\Hilos\I18nPage;
 use Demo\OnlineTesting\Pages\Hilos\I18n\Lists\LanguagesListPage;
@@ -207,6 +214,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             BrowserSessionPage::PAGE => BrowserSessionPage::class,
             PersonPage::PAGE => PersonPage::class,
             SettingsPage::PAGE => SettingsPage::class,
+            AppearancePage::PAGE => AppearancePage::class,
             I18nPage::PAGE => I18nPage::class,
             LanguagesListPage::PAGE => LanguagesListPage::class,
             CountriesListPage::PAGE => CountriesListPage::class,
@@ -749,6 +757,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             OnlineTestingTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
             OnlineTestingTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
             OnlineTestingTableContext::settings => HilosSettingsTable::class,
+            OnlineTestingTableContext::hilosAppearanceSettings => HilosAppearanceSettingsTable::class,
             OnlineTestingTableContext::hilosUsers => HilosUsersTable::class,
             OnlineTestingTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
             OnlineTestingTableContext::hilosLogKeys => HilosLogKeysTable::class,
@@ -782,6 +791,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             ChangeLogTablesPage::PAGE,
             ChangeLogTablePage::PAGE,
             SettingsPage::PAGE,
+            AppearancePage::PAGE,
             MaintenancePage::PAGE,
             LogsKeysPage::PAGE,
             LogsRotationsPage::PAGE,
@@ -825,6 +835,62 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             $this->assertSame(ThemeSettingsCatalog::getCatalog()[$key], $catalog[$key]);
         }
         $this->assertSame(UserPage::PAGE, Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_USER_UPDATE]);
+    }
+
+    /** Appearance reuses the index agent; its actions, answer and admin level come from the framework page. */
+    public function testAppearanceAdminFeatureIsActivated(): void
+    {
+        $this->assertSame(AppearancePage::class, Hilos::PAGES[AppearancePage::PAGE]);
+        $this->assertSame(AgentType::HILOS_INDEX, AppearancePage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[AppearancePage::PAGE]);
+        $this->assertSame(PageAccessLevel::ADMIN, AppearancePage::ACCESS_LEVEL);
+        $this->assertSame(
+            HilosPageConstants::HILOS_APPEARANCE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::APPEARANCE_THEME_SWITCHING_SET],
+        );
+        $this->assertSame(
+            HilosPageConstants::HILOS_APPEARANCE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::APPEARANCE_DEFAULT_THEME_SET],
+        );
+        $this->assertSame(
+            AgentType::HILOS_INDEX,
+            Hilos::getActionAgentRoutes()[HilosSignalConstants::APPEARANCE_THEME_SWITCHING_SET],
+        );
+        $this->assertSame(
+            AgentType::HILOS_INDEX,
+            Hilos::getActionAgentRoutes()[HilosSignalConstants::APPEARANCE_DEFAULT_THEME_SET],
+        );
+        $this->assertSame(
+            HilosAppearanceThemeSwitchingSetActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::APPEARANCE_THEME_SWITCHING_SET],
+        );
+        $this->assertSame(
+            HilosAppearanceDefaultThemeSetActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::APPEARANCE_DEFAULT_THEME_SET],
+        );
+        $this->assertSame(
+            HilosPageConstants::HILOS_APPEARANCE,
+            Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL]
+                [HilosSignalConstants::HILOS_APPEARANCE_SETTING_WRITE_DONE],
+        );
+        $this->assertSame(
+            HandoverAnswerSignalData::class,
+            Hilos::getPageSignalDtoRoutes()[SignalTypeConstants::AGENT_SIGNAL]
+                [HilosSignalConstants::HILOS_APPEARANCE_SETTING_WRITE_DONE],
+        );
+        $this->assertSame(
+            AgentType::HILOS_INDEX,
+            Hilos::getPageSignalAgentRoutes()[SignalTypeConstants::AGENT_SIGNAL]
+                [HilosSignalConstants::HILOS_APPEARANCE_SETTING_WRITE_DONE],
+        );
+        $this->assertSame(
+            HilosAppearanceSettingsTable::class,
+            Hilos::TABLES[OnlineTestingTableContext::hilosAppearanceSettings],
+        );
+        $this->assertSame(
+            [OnlineTestingTableContext::hilosAppearanceSettings => []],
+            Hilos::PAGE_TABLES[AppearancePage::PAGE],
+        );
     }
 
     /** Maintenance has no feature switch; its page and verifier table activate it. */

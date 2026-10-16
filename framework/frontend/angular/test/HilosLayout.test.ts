@@ -27,6 +27,11 @@
 // and before the project's, none off an admin route, for an admin, without the
 // mode or under maintenance, and live across a grant and a revoke.
 //
+// The last is the shell's theme icon (HIL-1441), under the React shell's case
+// names: first in the right-hand group before the project's user region, none
+// under maintenance, in the held first frame or with switching off, and closed
+// to writes in a takeover.
+//
 // Order is read off the shell's child order rather than off heights: jsdom does
 // not lay out, so every height there is zero and a measurement would pass on a
 // broken region too.
@@ -51,6 +56,7 @@ import {
   HilosPages,
   bindSessionScope,
   bindSignOut,
+  bindThemeState,
   hilosToasts,
   IMPERSONATION_ACTION_STOP,
   PROTECTED_MODE_INACTIVE,
@@ -69,6 +75,7 @@ import {
 } from '@hilos/core'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { THEME_SETTINGS_STORAGE_KEY } from '../../core/src/theme/themeBrowser.js'
 import { HilosLayout } from '../src/HilosLayout.js'
 import { LoadingButton } from '../src/LoadingButton.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
@@ -847,12 +854,12 @@ describe('HilosLayout account standing (HIL-945)', () => {
   })
 
   it.each([
-    ['none', 'alert-warning'],
-    ['blocked', 'alert-danger'],
-    ['frozen', 'alert-info'],
+    ['none', 'alert-warning', 'btn-warning'],
+    ['blocked', 'alert-danger', 'btn-danger'],
+    ['frozen', 'alert-info', 'btn-info'],
   ])(
     'colors the impersonation strip of a %s person %s',
-    (shown, alertClass) => {
+    (shown, alertClass, stopClass) => {
       const session = bindSession()
       unbind = session.unbind
       session.handshake(standingHandshake(shown, true))
@@ -863,6 +870,11 @@ describe('HilosLayout account standing (HIL-945)', () => {
       expect(strip?.classList.contains(alertClass)).toBe(true)
       expect(strip?.classList.contains('alert')).toBe(true)
       expect(strip?.querySelector('strong')?.textContent).toBe('Bob')
+      // Stop takes the strip's tone on top of the loading button's own classes.
+      const stop = strip?.querySelector('[data-id="impersonation-stop"]')
+      expect([...(stop?.classList ?? [])]).toEqual(
+        expect.arrayContaining(['btn', 'btn-sm', stopClass]),
+      )
     },
   )
 })
@@ -1641,5 +1653,177 @@ describe('HilosLayout view-mode strip (HIL-1260)', () => {
     session.handshake(viewerHandshake(false, true))
     fixture.detectChanges()
     expect(strip(fixture)).not.toBeNull()
+  })
+})
+
+/**
+ * A host for the theme icon's place: the shell with a project's user region
+ * projected, so the icon can be seen standing before it.
+ */
+@Component({
+  selector: 'test-themed-host',
+  imports: [HilosLayout],
+  template: `
+    <hilos-layout [connection]="connection">
+      <span user data-id="user-slot">Ada</span>
+      <p data-id="page-body">Page</p>
+    </hilos-layout>
+  `,
+})
+class ThemedHost {
+  connection = fakeConnection()
+}
+
+describe('HilosLayout theme icon (HIL-1441)', () => {
+  let unbind: (() => void) | undefined
+  let releaseTheme: (() => void) | undefined
+  const themeActions = new ActionLifecycle(new ReplyingSource())
+
+  function dummyConnection(): HilosConnection {
+    return { on: () => () => {} } as unknown as HilosConnection
+  }
+
+  // Filled by construction, not by a storage write in this file: a setItem
+  // call here is a browser value the file does not declare.
+  function memoryStorage(raw: string): Storage {
+    const store = new Map<string, string>([[THEME_SETTINGS_STORAGE_KEY, raw]])
+
+    return {
+      get length() {
+        return store.size
+      },
+      clear() {
+        store.clear()
+      },
+      getItem(key: string) {
+        return store.get(key) ?? null
+      },
+      key(index: number) {
+        return [...store.keys()][index] ?? null
+      },
+      removeItem(key: string) {
+        store.delete(key)
+      },
+      setItem(key: string, value: string) {
+        store.set(key, value)
+      },
+    }
+  }
+
+  function bindSnapshot(switchingEnabled: boolean): void {
+    releaseTheme?.()
+    vi.stubGlobal(
+      'localStorage',
+      memoryStorage(
+        JSON.stringify({ switchingEnabled, defaultTheme: 'light' }),
+      ),
+    )
+    releaseTheme = bindThemeState(
+      dummyConnection(),
+      new ScopeManager(),
+      themeActions,
+    )
+  }
+
+  /**
+   * Mount the shell around a projected user region.
+   *
+   * @param connection The connection double the shell reads.
+   * @returns The host's root element, already checked once.
+   */
+  function renderThemed(connection: HilosConnection = fakeConnection()) {
+    const fixture = TestBed.createComponent(ThemedHost)
+    fixture.componentInstance.connection = connection
+    fixture.detectChanges()
+
+    return fixture.nativeElement as HTMLElement
+  }
+
+  function surface(container: Element, id: string): Element | null {
+    return container.querySelector(`[data-id="${id}"]`)
+  }
+
+  afterEach(() => {
+    unbind?.()
+    unbind = undefined
+    releaseTheme?.()
+    releaseTheme = undefined
+    vi.unstubAllGlobals()
+    const restore = bindThemeState(
+      dummyConnection(),
+      new ScopeManager(),
+      themeActions,
+    )
+    restore()
+  })
+
+  it.each([
+    ['guest', null],
+    ['signed-in person', { id: 7, name: 'Ada' }],
+  ] as const)(
+    'draws the theme icon first in the right-hand group for a %s',
+    (_label, user) => {
+      const session = bindSession()
+      unbind = session.unbind
+      session.handshake({ entities: { currentUser: user } })
+      const container = renderThemed()
+      const group = container.querySelector(
+        'nav .d-flex.align-items-center.gap-3',
+      ) as HTMLElement
+      const theme = surface(group, 'nav-theme') as HTMLElement
+
+      expect(group.firstElementChild?.contains(theme)).toBe(true)
+      expect(group.firstElementChild?.tagName).toBe('HILOS-THEME-MENU')
+      expect(
+        theme.compareDocumentPosition(
+          surface(group, 'user-slot') as HTMLElement,
+        ) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).not.toBe(0)
+      expect(theme.getAttribute('aria-label')).toBe('Theme: System')
+    },
+  )
+
+  it('draws no theme icon under maintenance', () => {
+    const container = renderThemed(fakeConnection(FROZEN))
+
+    expect(surface(container, 'maintenance')).not.toBeNull()
+    expect(surface(container, 'nav-theme')).toBeNull()
+    expect(container.querySelector('hilos-theme-menu')).toBeNull()
+    expect(surface(container, 'conn-state')).not.toBeNull()
+  })
+
+  it('draws no theme icon during the held first frame', () => {
+    const connection = fakeConnection()
+    Object.defineProperty(connection, 'firstFrameHeld', { value: true })
+    const container = renderThemed(connection)
+
+    expect(surface(container, 'nav-theme')).toBeNull()
+    expect(
+      surface(container, 'hilos-boot-state')?.getAttribute('data-state'),
+    ).toBe('held')
+  })
+
+  it('draws no theme icon when switching is off, and holds no room for it', () => {
+    bindSnapshot(false)
+    const container = renderThemed()
+
+    expect(surface(container, 'nav-brand')).not.toBeNull()
+    expect(surface(container, 'nav-theme')).toBeNull()
+    expect(container.querySelector('hilos-theme-menu')?.classList).toContain(
+      'd-none',
+    )
+  })
+
+  it('keeps the icon in a takeover but closes it to writes', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(TAKEOVER)
+    const container = renderThemed()
+    const theme = surface(container, 'nav-theme') as HTMLButtonElement
+
+    expect(theme.disabled).toBe(true)
+    expect(theme.getAttribute('aria-describedby')).toBe(
+      HILOS_IMPERSONATION_STRIP_TEXT_ID,
+    )
   })
 })

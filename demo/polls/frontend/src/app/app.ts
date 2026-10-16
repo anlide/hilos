@@ -78,6 +78,7 @@ import { ProfileAgreements } from './views/profile/profile-agreements.js'
 import { ProfileAgreementsHistory } from './views/profile/profile-agreements-history.js'
 import { ProfileData } from './views/profile/profile-data.js'
 import { Settings } from './views/hilos/settings/settings'
+import { Appearance } from './views/hilos/appearance/appearance.js'
 import { Terms } from './views/terms/terms'
 import { AnalyticsBrowserSession } from './views/hilos/analytics/browser-session.js'
 import { AnalyticsPerson } from './views/hilos/analytics/person.js'
@@ -203,6 +204,10 @@ export class App {
     // owns the table and the add/update/delete lifecycle; the project binds only its
     // scope stores + action lifecycle (views/hilos/settings) and its catalog on the backend.
     [HilosPages.SETTINGS]: Settings,
+    // The framework Appearance page: the framework owns the table, both windows
+    // and the writes; the project binds its scope stores and action lifecycle
+    // (views/hilos/appearance) and its theme catalog on the backend.
+    [HilosPages.APPEARANCE]: Appearance,
     // The framework users/user admin pages: the framework owns the table, the
     // detail, and the rename round-trip; the project binds its scope stores,
     // connection, and typed user collection (views/hilos/users) and supplies its user

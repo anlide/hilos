@@ -305,9 +305,8 @@ Topic documents are referenced by filename; several are still being authored.
   [styling-rules.md](styling-rules.md) — and a color written by hand on a surface
   are a **violation**; a QR code and the pixels of a drawn picture are the named
   exception. `data-bs-theme` is written by the framework alone, on `<html>`.
-  Checked automatically: `STYLE-THEME-PINNED`. The Vue and React SDKs and the
-  demos carry no pinned classes; the Angular port still carries them, recorded
-  in the baseline (not in the code yet — HIL-1441). See
+  Checked automatically: `STYLE-THEME-PINNED`. The Vue, React and Angular SDKs
+  and the demos carry no pinned classes. See
   [styling-rules.md](styling-rules.md) and [theme.md](../architecture/theme.md).
 - **A live message never moves what sits under it.** A surface that has live
   messages — a refusal, a strip about work running, a bar about rows that
