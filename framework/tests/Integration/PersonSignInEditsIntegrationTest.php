@@ -7,6 +7,7 @@ namespace Hilos\Tests\Integration;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\Command\AuthMessages;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
+use Hilos\Auth\SecurityNotice\SecurityNotificationType;
 use Hilos\Auth\WebAuthn\PasskeyAlgorithm;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\HandoverAskInterface;
@@ -14,6 +15,7 @@ use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
@@ -27,6 +29,8 @@ use Hilos\Database\Object\Item\Identity as ObjectIdentity;
 use Hilos\Database\Object\Item\PasskeyCredential;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Notification\DTO\NotificationEmitSignalData;
+use Hilos\Notification\HilosNotifier;
 use Hilos\Users\DTO\UserAddressVerifyDoneSignalData;
 use Hilos\Users\DTO\UserAddressVerifySignalData;
 use Hilos\Users\DTO\UserEmailChangeDoneSignalData;
@@ -37,6 +41,8 @@ use Hilos\Users\DTO\UserPasskeyUseDoneSignalData;
 use Hilos\Users\DTO\UserPasskeyUseSignalData;
 use Hilos\Users\DTO\UserPasswordChangeDoneSignalData;
 use Hilos\Users\DTO\UserPasswordChangeSignalData;
+use Hilos\Users\DTO\UserPasswordResetDoneSignalData;
+use Hilos\Users\DTO\UserPasswordResetSignalData;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
@@ -81,6 +87,12 @@ final class PersonSignInEditsIntegrationTest extends HilosSessionIntegrationTest
 
     private ?SignalRouter $previousRouter = null;
 
+    /** @var ?HilosNotifier Notifier the suite had, put back so this file does not decide the next one */
+    private ?HilosNotifier $previousNotify = null;
+
+    /** @var list<SignalDTO> Signals the last carried frame queued before its answer */
+    private array $passed = [];
+
     /**
      * @throws HilosException When the schema reset, the passkey table or the context build fails
      */
@@ -91,7 +103,9 @@ final class PersonSignInEditsIntegrationTest extends HilosSessionIntegrationTest
         self::runPasskeyStub(down: false);
 
         $this->previousRouter = Hilos::$sr;
+        $this->previousNotify = Hilos::$notify;
         Hilos::$sr = new SignalRouter();
+        Hilos::$notify = new HilosNotifier();
         $this->users = new SignInEditsTestUsersLibrary();
         OwnershipDeclaration::claimDb($this->users::class, $this->users->getId());
         OwnershipDeclaration::claimDb(AbstractOAuthAgent::class, self::OAUTH_AGENT_ID);
@@ -107,6 +121,7 @@ final class PersonSignInEditsIntegrationTest extends HilosSessionIntegrationTest
             TruthSourceRegistry::unregisterAgent($agentId);
             SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($agentId));
         }
+        Hilos::$notify = $this->previousNotify;
         Hilos::$sr = $this->previousRouter;
         self::runPasskeyStub(down: true);
 
@@ -197,6 +212,36 @@ final class PersonSignInEditsIntegrationTest extends HilosSessionIntegrationTest
         $password = Hilos::$db->identities->findPasswordByUser($userId);
         self::assertTrue($password?->verifyPassword(self::NEW_PASSWORD));
         self::assertFalse($password?->verifyPassword(self::PASSWORD));
+        self::assertSame([SecurityNotificationType::PASSWORD_CHANGED], $this->announcedTypes($userId));
+    }
+
+    /**
+     * A recovered password is written by the person's agent and announced to the person (HIL-294).
+     *
+     * @throws HilosException When a fixture row cannot be written or a frame fails
+     */
+    public function testThePersonsAgentAnnouncesARecoveredPassword(): void
+    {
+        $userId = self::seedPerson();
+        $passwordId = self::seedPassword($userId, self::EMAIL);
+
+        $answer = $this->carry(HilosSignalConstants::HILOS_USER_PASSWORD_RESET, new UserPasswordResetSignalData(
+            userId: $userId,
+            identityId: $passwordId,
+            passwordHash: ObjectIdentity::hashPassword(self::NEW_PASSWORD),
+            email: self::EMAIL,
+            keepSessionId: 0,
+            replySignal: HilosSignalConstants::HILOS_USER_PASSWORD_RESET_DONE,
+            acceptKey: self::ACCEPT_KEY,
+            requestId: 'req-1',
+            action: HilosSignalConstants::HILOS_COMPLETE_PASSWORD_RESET,
+            successMessage: null,
+        ));
+
+        self::assertInstanceOf(UserPasswordResetDoneSignalData::class, $answer);
+        self::assertNull($answer->error);
+        self::assertTrue(Hilos::$db->identities->findPasswordByUser($userId)?->verifyPassword(self::NEW_PASSWORD));
+        self::assertSame([SecurityNotificationType::PASSWORD_RESET], $this->announcedTypes($userId));
     }
 
     /**
@@ -369,6 +414,7 @@ final class PersonSignInEditsIntegrationTest extends HilosSessionIntegrationTest
         // What the fixtures announced on the way in is nobody's business here.
         while (Hilos::$sr->getNextQueuedSignal() !== null) {
         }
+        $this->passed = [];
         $this->users->sendToAgent($name, $ask);
         $signal = Hilos::$sr->getNextQueuedSignal();
         self::assertNotNull($signal);
@@ -380,9 +426,28 @@ final class PersonSignInEditsIntegrationTest extends HilosSessionIntegrationTest
 
                 return $answer->data->data;
             }
+            $this->passed[] = $answer;
         }
 
         self::fail("Nothing was sent under {$ask->replySignal}");
+    }
+
+    /**
+     * @param int $userId Person the announcements are addressed to
+     * @return list<string> Types of the notifications the last carried frame announced to the person, in order
+     */
+    private function announcedTypes(int $userId): array
+    {
+        $types = [];
+        foreach ($this->passed as $signal) {
+            $payload = $signal->data;
+            if ($payload instanceof AgentSignalData && $payload->data instanceof NotificationEmitSignalData
+                && $payload->data->userId === $userId) {
+                $types[] = $payload->data->type;
+            }
+        }
+
+        return $types;
     }
 
     /**

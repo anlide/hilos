@@ -9,6 +9,7 @@ use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\Command\AuthMessages;
 use Hilos\Auth\SecondFactor\SecondFactorPersonEdits;
+use Hilos\Auth\SecurityNotice\SecurityNotifier;
 use Hilos\Auth\StepUp\StepUpConfirmations;
 use Hilos\Auth\WebAuthn\Exception\WebAuthnVerificationException;
 use Hilos\Constants\HilosAgentType;
@@ -530,10 +531,10 @@ abstract class AbstractUserAgent extends AbstractAgent
                 $this->refuseAnotherPerson($reset->userId, $name);
                 $this->sendToAgent($reset->replySignal, UserPasswordResetDoneSignalData::to(
                     $reset,
-                    $this->flagRefusal(
-                        fn () => $this->writeNewPassword($reset->identityId, $reset->passwordHash, $reset->keepSessionId),
-                        'Password recovery',
-                    ),
+                    $this->flagRefusal(function () use ($reset): void {
+                        $this->writeNewPassword($reset->identityId, $reset->passwordHash, $reset->keepSessionId);
+                        $this->announceSecurity(fn () => SecurityNotifier::passwordReset($this->userId), 'Password recovery');
+                    }, 'Password recovery'),
                 ));
 
                 return;
@@ -547,10 +548,10 @@ abstract class AbstractUserAgent extends AbstractAgent
                 $this->refuseAnotherPerson($change->userId, $name);
                 $this->sendToAgent($change->replySignal, UserPasswordChangeDoneSignalData::to(
                     $change,
-                    $this->flagRefusal(
-                        fn () => $this->writeNewPassword($change->identityId, $change->passwordHash, $change->keepSessionId),
-                        'Password change',
-                    ),
+                    $this->flagRefusal(function () use ($change): void {
+                        $this->writeNewPassword($change->identityId, $change->passwordHash, $change->keepSessionId);
+                        $this->announceSecurity(fn () => SecurityNotifier::passwordChanged($this->userId), 'Password change');
+                    }, 'Password change'),
                 ));
 
                 return;
@@ -967,6 +968,10 @@ abstract class AbstractUserAgent extends AbstractAgent
      * again everywhere, and a block the trust survived did not happen whole. Lifting the block
      * writes the flag alone. Not final, for the reason {@see self::renamePerson()} gives.
      *
+     * A flag that really changed is announced to the person (HIL-294) - a block once the
+     * transaction committed, a lift once the flag is written; blocking a blocked account says
+     * nothing. A notice that cannot be queued does not undo the write ({@see self::announceSecurity()}).
+     *
      * @param bool $block New block flag
      * @throws ItemNotFoundForUpdateException When there is no such person
      * @throws ValidationException When the account was merged into another one
@@ -978,8 +983,12 @@ abstract class AbstractUserAgent extends AbstractAgent
     protected function writeBlockFlag(bool $block): void
     {
         $user = $this->personToWrite();
+        $wasBlocked = $user->block;
         if (!$block) {
             $user->actions->setBlock(false);
+            if ($wasBlocked) {
+                $this->announceSecurity(fn () => SecurityNotifier::accountUnblocked($this->userId), 'Account unblock');
+            }
 
             return;
         }
@@ -993,6 +1002,10 @@ abstract class AbstractUserAgent extends AbstractAgent
             $this->rollBack();
 
             throw $failure;
+        }
+
+        if (!$wasBlocked) {
+            $this->announceSecurity(fn () => SecurityNotifier::accountBlocked($this->userId), 'Account block');
         }
     }
 
@@ -1554,6 +1567,25 @@ abstract class AbstractUserAgent extends AbstractAgent
         }
 
         return null;
+    }
+
+    /**
+     * Hands one security announcement of the person's to the notifier (HIL-294).
+     *
+     * It follows a write that already went through - the password is new, the block is in place -
+     * so a notice that cannot be queued is written to this agent's log and is not a refusal: the
+     * write keeps its answer, the way the letter about a moved address does.
+     *
+     * @param Closure(): void $notice The announcement, one of {@see SecurityNotifier}'s
+     * @param string $what Which write the notice follows, for the log line
+     */
+    private function announceSecurity(Closure $notice, string $what): void
+    {
+        try {
+            $notice();
+        } catch (HilosException $e) {
+            $this->logAgentError("{$what} notice for #{$this->userId} failed: {$e->getMessage()}");
+        }
     }
 
     /**

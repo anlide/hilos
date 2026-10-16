@@ -7,6 +7,7 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\Chat\Hilos;
 use Demo\Chat\Notification\ChatDeliveryChannelRegistry;
+use Hilos\Auth\SecurityNotice\SecurityNotificationType;
 use Hilos\Backup\BackupNotificationType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
@@ -189,6 +190,25 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
         $this->setChannel(self::RECIPIENT_ID, self::EMAIL, false);
 
         $notificationId = $this->emit(self::RECIPIENT_ID, type: BackupNotificationType::RESTORE_SUCCEEDED);
+
+        self::assertSame([self::EMAIL, self::SMS], array_keys($this->rowsFor($notificationId)));
+        $signals = $this->takeSignals();
+        $this->assertDeliveryFrame($signals, self::EMAIL, HilosSignalConstants::HILOS_MAIL_DELIVER, $notificationId, self::RECIPIENT_ID);
+        $this->assertDeliveryFrame($signals, self::SMS, HilosSignalConstants::HILOS_SMS_DELIVER, $notificationId, self::RECIPIENT_ID);
+    }
+
+    /**
+     * A sign-in notice reaches the person on every delivery channel, a muted one included (HIL-294).
+     */
+    public function testASignInNoticePassesAMuteOnEveryChannel(): void
+    {
+        $this->enableChannel(self::EMAIL, true);
+        $this->enableChannel(self::SMS, true);
+        $this->giveEmail(self::RECIPIENT_ID);
+        $this->giveSms(self::RECIPIENT_ID);
+        $this->setChannel(self::RECIPIENT_ID, self::EMAIL, false);
+
+        $notificationId = $this->emit(self::RECIPIENT_ID, type: SecurityNotificationType::SIGNED_IN);
 
         self::assertSame([self::EMAIL, self::SMS], array_keys($this->rowsFor($notificationId)));
         $signals = $this->takeSignals();

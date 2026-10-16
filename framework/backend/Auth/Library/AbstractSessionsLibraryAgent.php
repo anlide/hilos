@@ -67,6 +67,7 @@ use Hilos\Auth\SecondFactor\SecondFactorGate;
 use Hilos\Auth\SecondFactor\SecondFactorPendingMode;
 use Hilos\Auth\SecondFactor\SecondFactorPolicy;
 use Hilos\Auth\SecondFactor\SecondFactorSettings;
+use Hilos\Auth\SecurityNotice\SecurityNotifier;
 use Hilos\Auth\Session\DTO\AccountBlockChangedSignalData;
 use Hilos\Auth\Session\DTO\BrowserEraseActionDTO;
 use Hilos\Auth\Session\DTO\DeferredSessionCarryoverHandoverSignalData;
@@ -1958,7 +1959,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 );
             } else {
                 $userId = $this->mintAdminUser();
-                $this->authenticateSession($session->token, $userId, null);
+                // A new account, like a registration, is not a sign-in the person is told about (HIL-294).
+                $this->authenticateSession($session->token, $userId, null, announceSignIn: false);
             }
         } catch (WiringRefusal $refusal) {
             // Answered rather than raised: the command socket parks its caller until a reply
@@ -2522,6 +2524,13 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * The access log gets its sign-in row here, once the session holds the person ({@see logSignIn()}).
      *
+     * The person is told of the sign-in here too, once the writes commit (HIL-294,
+     * {@see announceSignIn()}), and not in the access log, which the privacy text can switch
+     * off. Told only of a sign-in: not of a takeover rebind or an impersonation, not of a session
+     * that already held this person, not of an ending that created the account (`auth_registered`)
+     * or recovered it (`auth_password_changed`), and not when the caller signs the browser in by
+     * itself and says so with `$announceSignIn`.
+     *
      * @param string $sessionToken Session cookie token to authenticate
      * @param int $userId Durable user id to bind the session to
      * @param ?string $initiatorAcceptKey Accept key of the connection that logged in, or null when there is none
@@ -2530,6 +2539,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @param ?string $action Action name the state frame answers, or null when it answers none
      * @param ?array<string, mixed> $outcome Reply the answer carries, or null for no domain reply
      * @param bool $recordPersonSignIn Whether this is a sign-in rather than a takeover rebind
+     * @param bool $announceSignIn Whether the person is told of the sign-in; false when no person signed in -
+     *     a new account an operator minted, a browser let back in after a block was lifted
      * @return ?string Token the session answers to now, or null when the token named no session
      * @throws InvalidArgumentException When the state frame cannot be named
      * @throws HilosException On database or runtime failure
@@ -2545,11 +2556,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         ?string $action = null,
         ?array $outcome = null,
         bool $recordPersonSignIn = true,
+        bool $announceSignIn = true,
     ): ?string {
         $session = Hilos::$db->sessions->findByToken($sessionToken);
         if ($session === null) {
             return null;
         }
+        // Read before the bind below: a session that already held this person is not signed in now.
+        $heldThisPerson = $session->userId === $userId;
 
         // Told before the rotation, and with the token the attempts were counted under: the
         // throttle knows this session by what the browser presented, not by what it is about
@@ -2594,6 +2608,17 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // later - is answered by the session rather than by a socket that no longer exists.
         if ($ack !== null) {
             $session->actions->holdPendingAck($ack);
+        }
+
+        if (
+            $announceSignIn
+            && $recordPersonSignIn
+            && $session->impersonatorUserId === null
+            && !$heldThisPerson
+            && $ack !== SessionAck::REGISTERED
+            && $ack !== SessionAck::PASSWORD_CHANGED
+        ) {
+            $this->announceSignIn($session, $userId);
         }
 
         if ($rotated !== null) {
@@ -2686,6 +2711,29 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $session->ipAddress,
             TimeHelper::getSqlDateTime(),
         );
+    }
+
+    /**
+     * Tells the person a browser was signed in to the account, once the writes commit (HIL-294).
+     *
+     * Kept apart from {@see logSignIn()}: the access log is switched off by the privacy text, and
+     * the notice is not. The device and the address are the ones the session has at that moment. A
+     * notice that cannot be queued is written to this agent's log; the sign-in stands.
+     *
+     * @param Session $session Session that got the person
+     * @param int $userId Person the session is bound to now
+     */
+    private function announceSignIn(Session $session, int $userId): void
+    {
+        $deviceName = $session->deviceName;
+        $address = $session->ipAddress;
+        Database::afterCommit(function () use ($userId, $deviceName, $address): void {
+            try {
+                SecurityNotifier::signedIn($userId, $deviceName, $address);
+            } catch (HilosException $e) {
+                $this->logAgentError("Sign-in notice for #{$userId} failed: {$e->getMessage()}");
+            }
+        });
     }
 
     /**
@@ -5779,7 +5827,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 }
 
                 try {
-                    $this->authenticateSession($session->token, $userId, $liveKeys[0]);
+                    // The browser comes back on its own, not by the person signing in (HIL-294).
+                    $this->authenticateSession($session->token, $userId, $liveKeys[0], announceSignIn: false);
                     $returned[] = $session->id;
                 } catch (SessionTokenExhaustedException | RandomException $e) {
                     $this->logAgentError('Unblock kept the Access closed card on a session: ' . $e->getMessage());

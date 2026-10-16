@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Notification;
 
 use Hilos\Auth\SecondFactor\SecondFactorNotificationType;
+use Hilos\Auth\SecurityNotice\SecurityNotificationType;
 use Hilos\Backup\BackupNotificationType;
 use Hilos\Hilos;
 
@@ -46,6 +47,10 @@ abstract class NotificationTypeRegistry
      * So is the lock wrong app codes put on the second factor (HIL-1285): the person learns of
      * the guessing whatever channels the guesser, who knows the password, has switched off.
      *
+     * The security events of an account (HIL-294) - the password changed or reset, a sign-in, the
+     * account blocked or unblocked - are mandatory for the same reason as the second-factor removal:
+     * whoever took the account over would mute them first.
+     *
      * @return array<string, NotificationTypeDescriptor> Type descriptors keyed by type
      */
     protected static function types(): array
@@ -58,6 +63,11 @@ abstract class NotificationTypeRegistry
             SecondFactorNotificationType::RESET_CANCELED => new NotificationTypeDescriptor(mandatory: true),
             SecondFactorNotificationType::RESET_COMPLETED => new NotificationTypeDescriptor(mandatory: true),
             SecondFactorNotificationType::APP_CODES_LOCKED => new NotificationTypeDescriptor(mandatory: true),
+            SecurityNotificationType::PASSWORD_CHANGED => new NotificationTypeDescriptor(mandatory: true),
+            SecurityNotificationType::PASSWORD_RESET => new NotificationTypeDescriptor(mandatory: true),
+            SecurityNotificationType::SIGNED_IN => new NotificationTypeDescriptor(mandatory: true),
+            SecurityNotificationType::ACCOUNT_BLOCKED => new NotificationTypeDescriptor(mandatory: true),
+            SecurityNotificationType::ACCOUNT_UNBLOCKED => new NotificationTypeDescriptor(mandatory: true),
         ];
     }
 

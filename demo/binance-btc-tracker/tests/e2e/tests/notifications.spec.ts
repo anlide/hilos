@@ -12,7 +12,7 @@ import { grantAdminToSelf, setAdmin } from '../helpers/adminGrant'
 import { waitForMailTo } from '../helpers/mail'
 import { emitNotification, signUpJoined } from '../helpers/notifications'
 import { gotoPage } from '../helpers/page'
-import { login, openSignIn, typeInto } from '../helpers/session'
+import { login, logout, openSignIn, typeInto } from '../helpers/session'
 import { tableRowKeys } from '../helpers/table'
 
 // Notification-center e2e (HIL-558), moved here from chat with the communications
@@ -42,7 +42,10 @@ test('the seeded recipient sees the bounded menu and full unread badge', async (
   await openSignIn(page)
   await login(page, 'seed-001@example.test')
 
-  await expect(unreadBadge(page)).toHaveText(/^22\b/)
+  // 22 seeded unread rows plus the one the sign-in itself raises
+  // (security.signed_in, HIL-294); the badge assertion polls, so the extra row is
+  // waited for rather than raced.
+  await expect(unreadBadge(page)).toHaveText(/^23\b/)
 
   await openBell(page)
   const menu = page.getByTestId('hilos-notification-menu')
@@ -323,6 +326,28 @@ test('an emitted notification is mailed out and journaled as sent', async ({
   // subject and the body the text).
   const mail = await waitForMailTo(email, title)
   expect(mail.text).toContain(body)
+})
+
+test('a sign-in is mailed to the person', async ({ page }) => {
+  // The administrator who switches the channel on is the person signing in: the
+  // hub is one setting for the whole stand, and the account signInAddressableAdmin
+  // registers already has the proven address the mail channel writes to.
+  const { email } = await signInAddressableAdmin(page)
+  await gotoPage(page, '/hilos/communications')
+  await enableEmailChannel(page)
+
+  // Registration announces no sign-in, so a letter under this subject can only
+  // come from the password sign-in below.
+  await gotoPage(page, '/')
+  await logout(page)
+  await openSignIn(page)
+  await login(page, email)
+
+  // GenericNotificationMailTemplate makes the notification's title the subject
+  // and its body the text; the body points at the way out of a stranger's
+  // sign-in.
+  const mail = await waitForMailTo(email, 'New sign-in to your account')
+  expect(mail.text).toContain('Forgot password?')
 })
 
 test('the journal keeps the reason of a delivery in a panel the row expands into', async ({

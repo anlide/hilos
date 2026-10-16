@@ -65,7 +65,10 @@ ask (HIL-1427). The libraries judge those edits and do what follows them;
 creation, including the guest's submitted theme choice, stays with the
 users library, and the sessions library keeps three set operations on the row:
 minting the first administrator, the loser's block inside a merge, and the
-erased person's row.
+erased person's row. After a successful write of the password (changed or
+recovered) or of a block flag that really changed, the person's agent sends the
+mandatory security notice (`SecurityNotifier`, HIL-294); a notice that cannot be
+queued goes to the agent's log and does not undo the write.
 
 ## What The Framework Does For A Person
 
@@ -77,7 +80,7 @@ where it is today — a hook the project implements.
 |---|---|
 | Creating a person, the name shown for one, "an administrator is not deleted" (`assertAdministratorMayDelete()`) | HIL-1194 |
 | Renaming a person — the write, the journal row, the notification (`AbstractUserAgent::renamePerson()`, `askRename()`, `afterUserRenamed()`) | HIL-1195, HIL-1404 |
-| Creating the first administrator (`mintAdminUser()`), granting and removing rights (`AbstractUserAgent::writeAdminFlag()`), blocking (`AbstractUserAgent::writeBlockFlag()`), whether one person may take another over (`assertImpersonationAllowed()`) | HIL-1197, HIL-1404 |
+| Creating the first administrator (`mintAdminUser()`), granting and removing rights (`AbstractUserAgent::writeAdminFlag()`), blocking (`AbstractUserAgent::writeBlockFlag()`, with its notice), whether one person may take another over (`assertImpersonationAllowed()`) | HIL-1197, HIL-1404, HIL-294 |
 | The `ADMIN` gate (`BrowserContext::isAdmin()`), reading `block` (the column itself, wherever a guard stands), the circle of administrators (`AdminAudience`, behind `ADMIN_AUDIENCE`), the "me" the handshake answers with (`AbstractAgent::handshakeIdentity()`) | HIL-1198 |
 | The tombstone of a merged account and "is this account already folded" (`assertMergeable()`, the merge table `hilos_user_merge`), the refusals to a folded account | HIL-1199 |
 | Erasing a person — the framework deletes the person's rename journal and row after the project's rows, along with accounts folded into that person ([account-deletion.md](account-deletion.md)) | HIL-1200 |

@@ -6,6 +6,7 @@ namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
+use Hilos\Auth\SecurityNotice\SecurityNotificationType;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosSignalConstants;
@@ -26,6 +27,8 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Notification\DTO\NotificationEmitSignalData;
+use Hilos\Notification\HilosNotifier;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Users\AdminCommandConstants;
@@ -66,6 +69,9 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
 
     private ?SignalRouter $previousRouter = null;
 
+    /** @var ?HilosNotifier Notifier the suite had, put back so this file does not decide the next one */
+    private ?HilosNotifier $previousNotify = null;
+
     /**
      * @throws HilosException When the schema reset or the context build fails
      */
@@ -74,7 +80,9 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
         parent::setUp();
 
         $this->previousRouter = Hilos::$sr;
+        $this->previousNotify = Hilos::$notify;
         Hilos::$sr = new SignalRouter();
+        Hilos::$notify = new HilosNotifier();
         $this->users = new PersonEditsTestUsersLibrary();
         $this->sessions = new PersonEditsTestSessionsLibrary();
         OwnershipDeclaration::claimDb($this->users::class, $this->users->getId());
@@ -91,6 +99,7 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
             TruthSourceRegistry::unregisterAgent($agentId);
             SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($agentId));
         }
+        Hilos::$notify = $this->previousNotify;
         Hilos::$sr = $this->previousRouter;
 
         parent::tearDown();
@@ -415,6 +424,24 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
     }
 
     /**
+     * A block and its lift are announced to the person once each, when the flag really changes;
+     * blocking a blocked account and lifting a lifted block say nothing (HIL-294).
+     *
+     * @throws HilosException When a fixture row cannot be written or a frame fails
+     */
+    public function testABlockFlagThatChangesIsAnnouncedAndARepeatIsNot(): void
+    {
+        $userId = self::seedPerson('Ada', admin: false);
+
+        self::assertSame([SecurityNotificationType::ACCOUNT_BLOCKED], $this->blockAnnouncements($userId, true));
+        self::assertSame([], $this->blockAnnouncements($userId, true));
+        self::assertSame(1, (int)self::personRow($userId)['block']);
+        self::assertSame([SecurityNotificationType::ACCOUNT_UNBLOCKED], $this->blockAnnouncements($userId, false));
+        self::assertSame([], $this->blockAnnouncements($userId, false));
+        self::assertSame(0, (int)self::personRow($userId)['block']);
+    }
+
+    /**
      * Two administrators, two revokes crossing each other: the second sees the first as done.
      *
      * @throws HilosException When a fixture row cannot be written or a frame fails
@@ -506,6 +533,47 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
         $restate = $this->answer(HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE);
         self::assertInstanceOf(UserSessionsRestateSignalData::class, $restate);
         self::assertSame($userId, $restate->userId);
+    }
+
+    /**
+     * Writes the person's block flag through the agent and reads what the person was told on the way.
+     *
+     * @param int $userId Person whose flag is written
+     * @param bool $block New block flag
+     * @return list<string> Types of the notifications announced to the person before the answer, in order
+     * @throws HilosException When the frame cannot be queued or the agent fails
+     */
+    private function blockAnnouncements(int $userId, bool $block): array
+    {
+        $this->deliverToPerson($this->frame(HilosSignalConstants::HILOS_USER_BLOCK_WRITE, new UserBlockWriteSignalData(
+            userId: $userId,
+            block: $block,
+            by: 1,
+            replySignal: HilosSignalConstants::HILOS_USER_BLOCK_WRITE_DONE,
+            acceptKey: self::ACCEPT_KEY,
+            requestId: 'req-block',
+            action: HilosSignalConstants::HILOS_USER_BLOCK_SET,
+            successMessage: null,
+            answerSignal: HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET_DONE,
+        )));
+
+        $types = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            $payload = $signal->data;
+            if ($signal->signalName->getName() === HilosSignalConstants::HILOS_USER_BLOCK_WRITE_DONE) {
+                self::assertInstanceOf(AgentSignalData::class, $payload);
+                self::assertInstanceOf(UserBlockWriteDoneSignalData::class, $payload->data);
+                self::assertNull($payload->data->error);
+
+                return $types;
+            }
+            if ($payload instanceof AgentSignalData && $payload->data instanceof NotificationEmitSignalData
+                && $payload->data->userId === $userId) {
+                $types[] = $payload->data->type;
+            }
+        }
+
+        self::fail('Nothing was sent under ' . HilosSignalConstants::HILOS_USER_BLOCK_WRITE_DONE);
     }
 
     /**

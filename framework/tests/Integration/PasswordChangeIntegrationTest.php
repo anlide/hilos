@@ -541,11 +541,7 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
         self::assertSame([[self::ACCEPT_KEY, 'changed'], [self::OTHER_ACCEPT_KEY, 'changed']], $updates);
         self::assertSame(
             $signOutOthers
-                ? [[
-                    'userId' => self::USER_ID,
-                    'sessionToken' => self::SESSION_TOKEN,
-                    'keepSessionId' => Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)?->id,
-                ]]
+                ? [['userId' => self::USER_ID, 'sessionToken' => self::SESSION_TOKEN]]
                 : [],
             $ends,
         );

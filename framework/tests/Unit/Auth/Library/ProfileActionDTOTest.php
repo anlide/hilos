@@ -189,8 +189,8 @@ final class ProfileActionDTOTest extends TestCase
     /** The session holder receives the person and token to preserve without losing either. */
     public function testOtherSessionsEndFrameRoundTrips(): void
     {
-        $dto = new AuthOtherSessionsEndSignalData(300, 'acting-session', 41);
-        self::assertSame(['userId' => 300, 'sessionToken' => 'acting-session', 'keepSessionId' => 41], $dto->toArray());
+        $dto = new AuthOtherSessionsEndSignalData(300, 'acting-session');
+        self::assertSame(['userId' => 300, 'sessionToken' => 'acting-session'], $dto->toArray());
         self::assertSame($dto->toArray(), AuthOtherSessionsEndSignalData::fromJson($dto->toJson())->toArray());
         $this->expectException(InvalidFormatException::class);
         AuthOtherSessionsEndSignalData::fromArray(['userId' => 300]);

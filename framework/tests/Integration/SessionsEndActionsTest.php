@@ -195,7 +195,7 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
         Hilos::$db->secondFactorTrusts->actions->trust($other->id, self::USER_ID, $until);
 
         new SessionsEndActionsAgent()->onSignalAgent(
-            new AgentSignalData(new AuthOtherSessionsEndSignalData(self::USER_ID, self::CURRENT_TOKEN, $current->id)),
+            new AgentSignalData(new AuthOtherSessionsEndSignalData(self::USER_ID, self::CURRENT_TOKEN)),
             'users-library',
             HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END,
         );

@@ -17,7 +17,8 @@ the table whole:
   administrator's return from a takeover. Every road binds the session in
   `authenticateSession()` or in the return at the handshake, and both call
   `logSignIn()`. The address is the session's at that moment - the handshake of
-  the tab signing in left it there.
+  the tab signing in left it there. The person's notice of a sign-in (HIL-294) is
+  sent beside the log, not by it, and does not depend on the log's switch.
 - `new_address` - a signed-in session connected from an address it did not have
   yet (`keepConnectionAddress()`, on every handshake). A session signed in before
   addresses were kept gives one on its first handshake. A session that stays on
