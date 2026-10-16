@@ -34,6 +34,8 @@ use Demo\OnlineTesting\Legal\OnlineTestingLegalCatalog;
 use Demo\OnlineTesting\Pages\Hilos\AboutPage;
 use Demo\OnlineTesting\Pages\Hilos\DashboardPage;
 use Demo\OnlineTesting\Pages\Hilos\AnalyticsPage;
+use Demo\OnlineTesting\Pages\Hilos\Analytics\BrowserSessionPage;
+use Demo\OnlineTesting\Pages\Hilos\Analytics\PersonPage;
 use Demo\OnlineTesting\Pages\Hilos\LicensePage;
 use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonPage;
 use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonWorkersPage;
@@ -196,6 +198,8 @@ final class Hilos extends HilosFacade
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
+        BrowserSessionPage::PAGE => BrowserSessionPage::class,
+        PersonPage::PAGE => PersonPage::class,
         SettingsPage::PAGE => SettingsPage::class,
         I18nPage::PAGE => I18nPage::class,
         LanguagesListPage::PAGE => LanguagesListPage::class,
@@ -405,6 +409,12 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGE_TABLES = [
+        BrowserSessionPage::PAGE => [
+            OnlineTestingTableContext::hilosAnalyticsActions => [],
+        ],
+        PersonPage::PAGE => [
+            OnlineTestingTableContext::hilosAnalyticsBrowserSessions => [],
+        ],
         ChangeLogDashboardPage::PAGE => [
             OnlineTestingTableContext::hilosChangeLogFeed => [],
         ],

@@ -7,6 +7,8 @@ import {
   ConflictHeader,
   ErrorPage,
   HILOS_AUTH_GATE,
+  HilosAnalyticsBrowserSessionPage,
+  HilosAnalyticsPersonPage,
   HILOS_PAGE_HEADING_ID,
   HILOS_ROUTER,
   HILOS_TAKEOVER_VIEW_ONLY,
@@ -103,4 +105,14 @@ it('exports the @hilos/angular public surface', () => {
   expect(hilosAdminViews()).not.toHaveProperty(HilosPages.I18N_COUNTRIES)
   expect(hilosAdminViews()).not.toHaveProperty(HilosPages.I18N_COUNTRY)
   expect(hilosAdminViews()).not.toHaveProperty(HilosPages.I18N_COUNTRY_NAMES)
+})
+
+it('exports the two Analytics context pages and leaves them out of the default map', () => {
+  expect(HilosAnalyticsBrowserSessionPage).toBeTypeOf('function')
+  expect(HilosAnalyticsPersonPage).toBeTypeOf('function')
+  expect(hilosAdminViews()).toHaveProperty(HilosPages.ANALYTICS)
+  expect(hilosAdminViews()).not.toHaveProperty(
+    HilosPages.ANALYTICS_BROWSER_SESSION,
+  )
+  expect(hilosAdminViews()).not.toHaveProperty(HilosPages.ANALYTICS_PERSON)
 })

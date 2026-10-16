@@ -25,7 +25,14 @@
 // and the strip rises. The buttons that only open a window stay live in a
 // takeover that only looks; the confirmation in the window does not.
 // Bootstrap classes only (styling-rules.md).
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Fragment,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import {
   ACCOUNT_DELETION_TICK_MS,
   createHilosImpersonate,
@@ -34,10 +41,13 @@ import {
   focusInitial,
   HILOS_STEP_UP_COPY,
   createHilosUserStanding,
+  HILOS_USER_ANALYTICS_LINK_LABEL,
   HILOS_USER_IMPERSONATION_COPY,
   HILOS_USER_MERGED_COPY,
   HILOS_USER_LIFECYCLE_COPY,
   hilosStandingBadge,
+  hilosUserAnalyticsEnabled,
+  hilosUserAnalyticsPath,
   hilosUserImpersonationSection,
   hilosUserFrozenRow,
   hilosUserMergedNotice,
@@ -88,6 +98,7 @@ import { HilosHideable } from '../../HilosHideable.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
+import { HilosRouterContext } from '../../hilosRouterContext.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
@@ -135,6 +146,21 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   }, [detail])
   const photo = useSignal(userPhoto)
   const error = useSignal(rename.renameError)
+
+  const router = useContext(HilosRouterContext)
+  if (!router) {
+    throw new Error('HilosUserPage requires a provided Hilos router.')
+  }
+  // The way to the person's browser sessions in Analytics (HIL-1420): navigation,
+  // not an action, so a merged card keeps it.
+  const analyticsEnabled = useSignal(
+    useMemo(() => hilosUserAnalyticsEnabled(context.scopes), [context.scopes]),
+  )
+  const analyticsPath = hilosUserAnalyticsPath(
+    analyticsEnabled,
+    detail?.id,
+    router.resolvePath,
+  )
   const lifecycle = useMemo(() => createHilosUserLifecycle(context), [context])
   const lifecycleAction = useTrackedAction()
   const [lifecyclePrompt, setLifecyclePrompt] =
@@ -656,7 +682,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
       {detail ? (
         <>
           <div className="card" data-id="hilos-user-detail">
-            <div className="card-header d-flex align-items-center gap-2">
+            <div className="card-header d-flex flex-wrap align-items-center gap-2">
               <HilosAvatar
                 name={isHiddenValue(detail.name) ? '' : detail.name}
                 photo={photo}
@@ -678,16 +704,27 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
                   {standingBadge.label}
                 </span>
               )}
-              {mergedNotice === null ? (
-                <button
-                  type="button"
-                  className="btn btn-outline-primary btn-sm ms-auto"
-                  data-id="hilos-user-edit"
-                  onClick={openEdit}
-                >
-                  Edit
-                </button>
-              ) : null}
+              <div className="d-flex flex-wrap align-items-center gap-2 ms-auto">
+                {analyticsPath !== null ? (
+                  <HilosLink
+                    to={analyticsPath}
+                    className="btn btn-outline-secondary btn-sm"
+                    data-id="hilos-user-analytics-link"
+                  >
+                    {HILOS_USER_ANALYTICS_LINK_LABEL}
+                  </HilosLink>
+                ) : null}
+                {mergedNotice === null ? (
+                  <button
+                    type="button"
+                    className="btn btn-outline-primary btn-sm"
+                    data-id="hilos-user-edit"
+                    onClick={openEdit}
+                  >
+                    Edit
+                  </button>
+                ) : null}
+              </div>
             </div>
             <div className="card-body">
               <dl className="row mb-0">

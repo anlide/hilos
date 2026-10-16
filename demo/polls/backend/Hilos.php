@@ -57,6 +57,8 @@ use Demo\Polls\Legal\PollsLegalCatalog;
 use Demo\Polls\Pages\Hilos\AboutPage;
 use Demo\Polls\Pages\Hilos\DashboardPage;
 use Demo\Polls\Pages\Hilos\AnalyticsPage;
+use Demo\Polls\Pages\Hilos\Analytics\BrowserSessionPage;
+use Demo\Polls\Pages\Hilos\Analytics\PersonPage;
 use Demo\Polls\Pages\Hilos\LicensePage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonPage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonWorkersPage;
@@ -244,6 +246,8 @@ final class Hilos extends HilosFacade
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
+        BrowserSessionPage::PAGE => BrowserSessionPage::class,
+        PersonPage::PAGE => PersonPage::class,
         SettingsPage::PAGE => SettingsPage::class,
         I18nPage::PAGE => I18nPage::class,
         LanguagesListPage::PAGE => LanguagesListPage::class,
@@ -537,6 +541,12 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGE_TABLES = [
+        BrowserSessionPage::PAGE => [
+            PollsTableContext::hilosAnalyticsActions => [],
+        ],
+        PersonPage::PAGE => [
+            PollsTableContext::hilosAnalyticsBrowserSessions => [],
+        ],
         ChangeLogDashboardPage::PAGE => [
             PollsTableContext::hilosChangeLogFeed => [],
         ],

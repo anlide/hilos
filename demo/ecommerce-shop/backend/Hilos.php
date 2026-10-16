@@ -37,6 +37,8 @@ use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTablePage;
 use Demo\EcommerceShop\Pages\Hilos\DashboardPage;
 use Demo\EcommerceShop\Pages\Hilos\AnalyticsPage;
+use Demo\EcommerceShop\Pages\Hilos\Analytics\BrowserSessionPage;
+use Demo\EcommerceShop\Pages\Hilos\Analytics\PersonPage;
 use Demo\EcommerceShop\Pages\Hilos\LicensePage;
 use Demo\EcommerceShop\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\EcommerceShop\Pages\Hilos\PrivacyPage;
@@ -167,6 +169,8 @@ final class Hilos extends HilosFacade
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
+        BrowserSessionPage::PAGE => BrowserSessionPage::class,
+        PersonPage::PAGE => PersonPage::class,
         BackupPage::PAGE => BackupPage::class,
         ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
         ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
@@ -343,6 +347,12 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGE_TABLES = [
+        BrowserSessionPage::PAGE => [
+            EcommerceShopTableContext::hilosAnalyticsActions => [],
+        ],
+        PersonPage::PAGE => [
+            EcommerceShopTableContext::hilosAnalyticsBrowserSessions => [],
+        ],
         ChangeLogDashboardPage::PAGE => [
             EcommerceShopTableContext::hilosChangeLogFeed => [],
         ],

@@ -79,6 +79,8 @@ import { ProfileAgreementsHistory } from './views/profile/profile-agreements-his
 import { ProfileData } from './views/profile/profile-data.js'
 import { Settings } from './views/hilos/settings/settings'
 import { Terms } from './views/terms/terms'
+import { AnalyticsBrowserSession } from './views/hilos/analytics/browser-session.js'
+import { AnalyticsPerson } from './views/hilos/analytics/person.js'
 import { User } from './views/hilos/users/user'
 import { Users } from './views/hilos/users/users'
 
@@ -204,6 +206,12 @@ export class App {
     // entity + presence sources on the backend.
     [HilosPages.USERS]: Users,
     [HilosPages.USER]: User,
+    // The framework Analytics pages of one browser session and of one person: the
+    // framework owns the header, the tables and every word; the project binds its
+    // connection and page scope (views/hilos/analytics). The overview comes from
+    // hilosAdminViews.
+    [HilosPages.ANALYTICS_BROWSER_SESSION]: AnalyticsBrowserSession,
+    [HilosPages.ANALYTICS_PERSON]: AnalyticsPerson,
     // The framework OAuth admin pages (HIL-286): the framework owns the providers,
     // fields and return-address tables and their set / reset round-trips; the
     // project binds its connection, scope stores and action lifecycle

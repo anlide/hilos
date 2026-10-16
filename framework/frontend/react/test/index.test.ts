@@ -20,6 +20,8 @@ import {
   HilosChangeLogPage,
   HilosChangeLogTablesPage,
   HilosChangeLogTablePage,
+  HilosAnalyticsBrowserSessionPage,
+  HilosAnalyticsPersonPage,
   hilosAdminViews,
   HilosPageHeadingIdContext,
   HilosRouterContext,
@@ -44,6 +46,8 @@ import type {
   HilosChangeLogPageProps,
   HilosChangeLogTablesPageProps,
   HilosChangeLogTablePageProps,
+  HilosAnalyticsBrowserSessionPageProps,
+  HilosAnalyticsPersonPageProps,
 } from '../src/index.js'
 
 it('exports the @hilos/react public surface', () => {
@@ -115,4 +119,20 @@ it('exports the three Change Log pages and leaves them out of the default map', 
   expectTypeOf<
     Parameters<typeof HilosChangeLogTablePage>[0]
   >().toEqualTypeOf<HilosChangeLogTablePageProps>()
+})
+
+it('exports the two Analytics context pages and leaves them out of the default map', () => {
+  expect(HilosAnalyticsBrowserSessionPage).toBeTypeOf('function')
+  expect(HilosAnalyticsPersonPage).toBeTypeOf('function')
+  expect(hilosAdminViews()).toHaveProperty(HilosPages.ANALYTICS)
+  expect(hilosAdminViews()).not.toHaveProperty(
+    HilosPages.ANALYTICS_BROWSER_SESSION,
+  )
+  expect(hilosAdminViews()).not.toHaveProperty(HilosPages.ANALYTICS_PERSON)
+  expectTypeOf<
+    Parameters<typeof HilosAnalyticsBrowserSessionPage>[0]
+  >().toEqualTypeOf<HilosAnalyticsBrowserSessionPageProps>()
+  expectTypeOf<
+    Parameters<typeof HilosAnalyticsPersonPage>[0]
+  >().toEqualTypeOf<HilosAnalyticsPersonPageProps>()
 })

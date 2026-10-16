@@ -59,6 +59,8 @@ use Demo\Tasks\Pages\Hilos\AboutPage;
 use Demo\Tasks\Pages\Hilos\Backup\BackupPage;
 use Demo\Tasks\Pages\Hilos\DashboardPage;
 use Demo\Tasks\Pages\Hilos\AnalyticsPage;
+use Demo\Tasks\Pages\Hilos\Analytics\BrowserSessionPage;
+use Demo\Tasks\Pages\Hilos\Analytics\PersonPage;
 use Demo\Tasks\Pages\Hilos\LicensePage;
 use Demo\Tasks\Pages\Hilos\Daemon\DaemonPage;
 use Demo\Tasks\Pages\Hilos\Daemon\DaemonWorkersPage;
@@ -242,6 +244,8 @@ final class Hilos extends HilosFacade
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
+        BrowserSessionPage::PAGE => BrowserSessionPage::class,
+        PersonPage::PAGE => PersonPage::class,
         SettingsPage::PAGE => SettingsPage::class,
         I18nPage::PAGE => I18nPage::class,
         LanguagesListPage::PAGE => LanguagesListPage::class,
@@ -511,6 +515,12 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGE_TABLES = [
+        BrowserSessionPage::PAGE => [
+            TasksTableContext::hilosAnalyticsActions => [],
+        ],
+        PersonPage::PAGE => [
+            TasksTableContext::hilosAnalyticsBrowserSessions => [],
+        ],
         ChangeLogDashboardPage::PAGE => [
             TasksTableContext::hilosChangeLogFeed => [],
         ],

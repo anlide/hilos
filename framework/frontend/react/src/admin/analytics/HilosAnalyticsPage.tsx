@@ -1,13 +1,45 @@
-// HilosAnalyticsPage — the Analytics admin page (HilosPages.ANALYTICS). A framework default: a
-// thin binding of the page key to the shared admin shell HilosAdminPage, which
-// resolves the heading, lead, breadcrumb, and any sub-section cards from the
-// @hilos/core admin tree. Implement the page by replacing the shell's default
-// body through its children. Bootstrap classes only (styling-rules.md).
-import { HilosPages } from '@hilos/core'
+// HilosAnalyticsPage — the Analytics section overview. In Phase-1 it shows an
+// empty state with a line and a link to the admin users list; overview content
+// follows in HIL-1402. The core owns the shared words and the admin shell draws
+// the page identity. Bootstrap classes only (styling-rules.md).
+import { useContext } from 'react'
+import {
+  ANALYTICS_OVERVIEW_EMPTY_TEXT,
+  ANALYTICS_OVERVIEW_OPEN_USERS_LABEL,
+  HilosPages,
+} from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosLink } from '../../HilosLink.js'
+import { HilosRouterContext } from '../../hilosRouterContext.js'
 
-/** The Analytics admin page: the framework default shell for its key. */
+/** The Analytics section overview: the empty state and the way to the users list. */
 export function HilosAnalyticsPage() {
-  return <HilosAdminPage page={HilosPages.ANALYTICS} />
+  const router = useContext(HilosRouterContext)
+  if (!router) {
+    throw new Error('HilosAnalyticsPage requires a provided Hilos router.')
+  }
+
+  const usersPath = router.resolvePath(HilosPages.USERS, {})
+
+  return (
+    <HilosAdminPage page={HilosPages.ANALYTICS}>
+      <div
+        className="border rounded p-4 text-center text-body-secondary"
+        data-id="hilos-analytics-overview-empty"
+      >
+        <i className="bi bi-inbox fs-2 d-block mb-2" aria-hidden="true"></i>
+        <p>{ANALYTICS_OVERVIEW_EMPTY_TEXT}</p>
+        {usersPath !== undefined ? (
+          <HilosLink
+            to={usersPath}
+            className="btn btn-sm btn-outline-secondary"
+            data-id="hilos-analytics-overview-open-users"
+          >
+            {ANALYTICS_OVERVIEW_OPEN_USERS_LABEL}
+          </HilosLink>
+        ) : null}
+      </div>
+    </HilosAdminPage>
+  )
 }

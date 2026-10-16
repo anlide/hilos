@@ -94,8 +94,8 @@ starts ([legal-documents.md](legal-documents.md)); the project states what it
 collects, how long it keeps it, and what remains after account deletion.
 
 The admin analytics section comes with this same case, with no case of its own;
-see [The Admin Section](#the-admin-section). Its overview opens in Vue; the React
-and Angular views follow in HIL-1421.
+see [The Admin Section](#the-admin-section). The section opens in Vue, React and
+Angular.
 All six demos with accounts — chat, binance-btc-tracker, ecommerce-shop, tasks,
 online-testing and polls — declare it. The owner, 04.10.2026: «Аналитику включить
 во всех 6 demo» — "Turn analytics on in all six demos".
@@ -377,15 +377,16 @@ its pages; chat's subclass only binds that base. The section has no feature case
 of its own. `HilosFeature::ANALYTICS` requires the section agent and page, and
 activation refuses either artifact without the feature. The dashboard's served
 page list controls card availability; the overview card is visible in a view
-layer that has built the section, currently Vue.
+layer that has built the section, which all three layers have.
 
-- The Vue overview is empty apart from one line explaining that a person's actions
-  open from their admin page, with an "Open users" link when the users-list path
-  resolves. It carries no values, so an admin-view-mode viewer sees the same line.
+- The overview — the SDK view `HilosAnalyticsPage` in Vue, React and Angular — is
+  empty apart from one line explaining that a person's actions open from their
+  admin page, with an "Open users" link when the users-list path resolves. It
+  carries no values, so an admin-view-mode viewer sees the same line.
 - A browser-session page shows its actions in order — when, on which page, and
   the action's name. Its key is `hilos_analytics_browser_session`, its route is
-  `/hilos/analytics/browser-sessions/{browserSessionId}`, and its Vue SDK view is
-  `HilosAnalyticsBrowserSessionPage`. The opening `page_response` carries the
+  `/hilos/analytics/browser-sessions/{browserSessionId}`, and its SDK view is
+  `HilosAnalyticsBrowserSessionPage` in Vue, React and Angular. The opening `page_response` carries the
   short browser description and last signed-in person in `data.browserSession`,
   with `data.pageLabel` naming the session. A view-mode viewer receives a hidden
   header and the catalog label `Browser session`, without the personal number.
@@ -393,7 +394,7 @@ layer that has built the section, currently Vue.
   sign in — first and last seen, browser and the number of actions — each
   session number linking to its session page. Its key is
   `hilos_analytics_person`, its route is `/hilos/analytics/people/{userId}`, and
-  its Vue SDK view is `HilosAnalyticsPersonPage`. The entry is the admin user
+  its SDK view is `HilosAnalyticsPersonPage` in Vue, React and Angular. The entry is the admin user
   card: its `analyticsEnabled` is true while the feature is on and the project
   registers the person page, and the card then links here, on a merged card
   too. The opening `page_response` carries only `data.pageLabel`, the person's
@@ -401,8 +402,6 @@ layer that has built the section, currently Vue.
   subscription, without live updates. A view-mode viewer receives the catalog
   label `Person` and the session numbers, with Hidden in place of every other
   value.
-- React and Angular provide the same screens as Vue
-  (not in the code yet — HIL-1421).
 
 Everything beyond that — visits, lists of people and visits, reports, cubes,
 retention, live updates and content for the overview — belongs to Phase-2,
@@ -431,10 +430,10 @@ The numeric identity belongs to the fragment's `rowKey`, never an `id` in the
 slot. A missing preset gives an empty window without SQL; a value other than a
 positive integer refuses the window. These tables have no search, mutations or
 live source-change frames. The frontend core supplies their controllers,
-column declarations, row readers and local-time labels. The Vue browser-session
-page opens the actions table with its route's session number as the preset;
-the Vue person page opens the browser-sessions table with its route's `userId`
-as the preset.
+column declarations, row readers and local-time labels. In all three view
+layers the browser-session page opens the actions table with its route's
+session number as the preset, and the person page opens the browser-sessions
+table with its route's `userId` as the preset.
 
 The section agent also answers the read-only `test:analytics:browser-session`
 command through the existing non-production command-channel gate. Given a

@@ -82,6 +82,8 @@ export { HilosSecurity2faPage } from './admin/security/HilosSecurity2faPage.js'
 export { HilosSecurityStepUpPage } from './admin/security/HilosSecurityStepUpPage.js'
 export { HilosSecurityImpersonationPage } from './admin/security/HilosSecurityImpersonationPage.js'
 export { HilosCommunicationsDeliveriesPage } from './admin/communications/HilosCommunicationsDeliveriesPage.js'
+export { HilosAnalyticsBrowserSessionPage } from './admin/analytics/HilosAnalyticsBrowserSessionPage.js'
+export { HilosAnalyticsPersonPage } from './admin/analytics/HilosAnalyticsPersonPage.js'
 export {
   HilosUsersPage,
   type UsersRowActionsContext,

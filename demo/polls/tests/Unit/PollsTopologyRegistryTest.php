@@ -7,6 +7,8 @@ namespace Demo\Polls\Tests\Unit;
 use Demo\Polls\Agents\Hilos\DemoHilosAnalyticsAgent;
 use Demo\Polls\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
 use Demo\Polls\Pages\Hilos\AnalyticsPage;
+use Demo\Polls\Pages\Hilos\Analytics\BrowserSessionPage;
+use Demo\Polls\Pages\Hilos\Analytics\PersonPage;
 use Hilos\Core\Analytics\AnalyticsJournalAgent;
 use Hilos\Core\Analytics\AnalyticsJournalAgentDaemon;
 use Hilos\Core\Analytics\AnalyticsWriterAgent;
@@ -805,6 +807,8 @@ final class PollsTopologyRegistryTest extends TestCase
 
         $this->assertSame(
             [
+                BrowserSessionPage::PAGE,
+                PersonPage::PAGE,
                 ChangeLogDashboardPage::PAGE,
                 ChangeLogTablesPage::PAGE,
                 ChangeLogTablePage::PAGE,
@@ -1174,6 +1178,22 @@ final class PollsTopologyRegistryTest extends TestCase
         $nodeFields = Hilos::getAgentSignalNodeFields();
         $this->assertSame(AnalyticsJournalReadSignalData::nodeId, $nodeFields[HilosSignalConstants::ANALYTICS_JOURNAL_READ]);
         $this->assertSame(AnalyticsJournalLoadedSignalData::nodeId, $nodeFields[HilosSignalConstants::ANALYTICS_JOURNAL_LOADED]);
+    }
+
+    /** The numeric browser-session page uses the Analytics owner and its existing action table. */
+    public function testAnalyticsBrowserSessionPageIsWired(): void
+    {
+        self::assertSame(BrowserSessionPage::class, Hilos::PAGES[BrowserSessionPage::PAGE]);
+        self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[BrowserSessionPage::PAGE]);
+        self::assertSame([PollsTableContext::hilosAnalyticsActions => []], Hilos::PAGE_TABLES[BrowserSessionPage::PAGE]);
+    }
+
+    /** The person's sessions page uses the Analytics owner and its existing sessions table. */
+    public function testAnalyticsPersonPageIsWired(): void
+    {
+        self::assertSame(PersonPage::class, Hilos::PAGES[PersonPage::PAGE]);
+        self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[PersonPage::PAGE]);
+        self::assertSame([PollsTableContext::hilosAnalyticsBrowserSessions => []], Hilos::PAGE_TABLES[PersonPage::PAGE]);
     }
 
     public function testDeclaredFeaturesAreFullyActivated(): void

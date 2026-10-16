@@ -106,7 +106,7 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     )
   })
 
-  it('addresses a browser session by its numeric id and stages the other view layers', () => {
+  it('addresses a browser session by its numeric id and opens it in every view layer', () => {
     const router = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
       fallback: HilosPages.DASHBOARD,
     })
@@ -126,11 +126,11 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     })
     expect(router.match('/hilos/analytics').page).toBe(HilosPages.ANALYTICS)
     expect(hilosUnbuiltPages('vue').has(page)).toBe(false)
-    expect(hilosUnbuiltPages('react').has(page)).toBe(true)
-    expect(hilosUnbuiltPages('angular').has(page)).toBe(true)
+    expect(hilosUnbuiltPages('react').has(page)).toBe(false)
+    expect(hilosUnbuiltPages('angular').has(page)).toBe(false)
   })
 
-  it('addresses a person in Analytics by their account id and stages the other view layers', () => {
+  it('addresses a person in Analytics by their account id and opens it in every view layer', () => {
     const router = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
       fallback: HilosPages.DASHBOARD,
     })
@@ -155,6 +155,9 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       HilosPages.ANALYTICS_BROWSER_SESSION,
     )
     expect(router.match('/hilos/user/7').page).toBe(HilosPages.USER)
+    expect(hilosUnbuiltPages('vue').has(page)).toBe(false)
+    expect(hilosUnbuiltPages('react').has(page)).toBe(false)
+    expect(hilosUnbuiltPages('angular').has(page)).toBe(false)
   })
 
   it('declares a route for every Hilos page key', () => {

@@ -210,6 +210,14 @@ export {
   type HilosChangeLogTablePageProps,
 } from './admin/changeLog/HilosChangeLogTablePage.js'
 export {
+  HilosAnalyticsBrowserSessionPage,
+  type HilosAnalyticsBrowserSessionPageProps,
+} from './admin/analytics/HilosAnalyticsBrowserSessionPage.js'
+export {
+  HilosAnalyticsPersonPage,
+  type HilosAnalyticsPersonPageProps,
+} from './admin/analytics/HilosAnalyticsPersonPage.js'
+export {
   HilosLogsPage,
   type HilosLogsPageProps,
 } from './admin/logs/HilosLogsPage.js'

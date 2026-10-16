@@ -11,6 +11,7 @@ import {
   formatAnalyticsTime,
   hilosAnalyticsBrowserSession,
   HilosPages,
+  readAnalyticsRouteId,
   type HilosAnalyticsActionsTable,
   type HilosAnalyticsContext,
 } from '@hilos/core'
@@ -32,11 +33,11 @@ if (!router) {
 }
 
 const route = useSignal(router.currentRoute)
-const browserSessionId = computed(() => {
-  const raw = route.value.params[ANALYTICS_BROWSER_SESSION_ROUTE_PARAM] ?? ''
-  const id = Number(raw)
-  return /^\+?\d+$/.test(raw) && Number.isSafeInteger(id) && id > 0 ? id : null
-})
+const browserSessionId = computed(() =>
+  readAnalyticsRouteId(
+    route.value.params[ANALYTICS_BROWSER_SESSION_ROUTE_PARAM],
+  ),
+)
 const header = useSignal(hilosAnalyticsBrowserSession(props.context.scopes))
 const actions = shallowRef<HilosAnalyticsActionsTable | null>(null)
 

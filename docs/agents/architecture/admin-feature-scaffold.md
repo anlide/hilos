@@ -579,19 +579,19 @@ Register both framework tables in `TABLES` and the project's `TableContext`:
 and `Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable` under
 `hilosAnalyticsBrowserSessions`. The feature requires both registrations.
 The backend reader supplies typed, bounded SQL results, and the frontend core
-supplies the controllers and column declarations. Both Vue demos, chat and
-binance-btc-tracker, register a thin `AbstractHilosAnalyticsBrowserSessionPage`
-subclass in `PAGES`, bind `hilosAnalyticsActions` under that page in `PAGE_TABLES`,
-and mount the SDK's `HilosAnalyticsBrowserSessionPage` with the project's
-connection and scopes. Its route supplies the `browserSession` table preset.
-The same two demos register a thin `AbstractHilosAnalyticsPersonPage` subclass
-in `PAGES`, bind `hilosAnalyticsBrowserSessions` under that page in
-`PAGE_TABLES`, and mount the SDK's `HilosAnalyticsPersonPage` through a thin
-wrapper with the same context; its route's `userId` supplies the `user` table
-preset. The admin user card links to that page by itself once the feature is
-on and the person page is in `PAGES`; the project binds nothing for the link.
-The remaining SDK views and demo bindings follow in HIL-1421; do not fabricate
-those bindings while activating this backend section.
+supplies the controllers and column declarations. Every demo with the feature
+registers a thin `AbstractHilosAnalyticsBrowserSessionPage` subclass in `PAGES`
+and binds `hilosAnalyticsActions` under that page in `PAGE_TABLES`; its route
+supplies the `browserSession` table preset. It also registers a thin
+`AbstractHilosAnalyticsPersonPage` subclass in `PAGES` and binds
+`hilosAnalyticsBrowserSessions` under that page in `PAGE_TABLES`; its route's
+`userId` supplies the `user` table preset. On its frontend the demo mounts its
+own view layer's SDK views — `HilosAnalyticsBrowserSessionPage` and
+`HilosAnalyticsPersonPage` in Vue, React or Angular — through thin wrappers that
+pass the project's connection and scopes; the overview comes from the layer's
+default admin views. The admin user card links to the person page by itself
+once the feature is on and the person page is in `PAGES`; the project binds
+nothing for the link.
 For its data and privacy boundaries, read
 [analytics.md](analytics.md#the-admin-section), *The Admin Section*.
 

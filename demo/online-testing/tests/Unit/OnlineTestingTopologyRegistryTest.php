@@ -7,6 +7,8 @@ namespace Demo\OnlineTesting\Tests\Unit;
 use Demo\OnlineTesting\Agents\Hilos\DemoHilosAnalyticsAgent;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
 use Demo\OnlineTesting\Pages\Hilos\AnalyticsPage;
+use Demo\OnlineTesting\Pages\Hilos\Analytics\BrowserSessionPage;
+use Demo\OnlineTesting\Pages\Hilos\Analytics\PersonPage;
 use Hilos\Core\Analytics\AnalyticsJournalAgent;
 use Hilos\Core\Analytics\AnalyticsJournalAgentDaemon;
 use Hilos\Core\Analytics\AnalyticsWriterAgent;
@@ -202,6 +204,8 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             MainPage::PAGE => MainPage::class,
             DashboardPage::PAGE => DashboardPage::class,
             AnalyticsPage::PAGE => AnalyticsPage::class,
+            BrowserSessionPage::PAGE => BrowserSessionPage::class,
+            PersonPage::PAGE => PersonPage::class,
             SettingsPage::PAGE => SettingsPage::class,
             I18nPage::PAGE => I18nPage::class,
             LanguagesListPage::PAGE => LanguagesListPage::class,
@@ -772,6 +776,8 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             Hilos::BROWSER_TABLES,
         );
         $this->assertSame([
+            BrowserSessionPage::PAGE,
+            PersonPage::PAGE,
             ChangeLogDashboardPage::PAGE,
             ChangeLogTablesPage::PAGE,
             ChangeLogTablePage::PAGE,
@@ -1008,6 +1014,22 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         $nodeFields = Hilos::getAgentSignalNodeFields();
         $this->assertSame(AnalyticsJournalReadSignalData::nodeId, $nodeFields[HilosSignalConstants::ANALYTICS_JOURNAL_READ]);
         $this->assertSame(AnalyticsJournalLoadedSignalData::nodeId, $nodeFields[HilosSignalConstants::ANALYTICS_JOURNAL_LOADED]);
+    }
+
+    /** The numeric browser-session page uses the Analytics owner and its existing action table. */
+    public function testAnalyticsBrowserSessionPageIsWired(): void
+    {
+        self::assertSame(BrowserSessionPage::class, Hilos::PAGES[BrowserSessionPage::PAGE]);
+        self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[BrowserSessionPage::PAGE]);
+        self::assertSame([OnlineTestingTableContext::hilosAnalyticsActions => []], Hilos::PAGE_TABLES[BrowserSessionPage::PAGE]);
+    }
+
+    /** The person's sessions page uses the Analytics owner and its existing sessions table. */
+    public function testAnalyticsPersonPageIsWired(): void
+    {
+        self::assertSame(PersonPage::class, Hilos::PAGES[PersonPage::PAGE]);
+        self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[PersonPage::PAGE]);
+        self::assertSame([OnlineTestingTableContext::hilosAnalyticsBrowserSessions => []], Hilos::PAGE_TABLES[PersonPage::PAGE]);
     }
 
     public function testDeclaredFeaturesAreFullyActivated(): void

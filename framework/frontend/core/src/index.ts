@@ -2311,6 +2311,7 @@ export {
 export {
   ANALYTICS_NO_VALUE,
   formatAnalyticsTime,
+  readAnalyticsRouteId,
   type HilosAnalyticsContext,
 } from './admin/analytics/hilosAnalytics.js'
 export {

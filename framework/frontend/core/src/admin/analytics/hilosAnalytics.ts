@@ -21,3 +21,15 @@ export function formatAnalyticsTime(ms: number): string {
     timeStyle: 'medium',
   })
 }
+
+/**
+ * Read the number an Analytics address names — a browser session or a person:
+ * a positive safe integer, or null for anything else.
+ *
+ * @param raw Route parameter as the router decoded it, if present.
+ */
+export function readAnalyticsRouteId(raw: string | undefined): number | null {
+  if (raw === undefined || !/^\+?\d+$/.test(raw)) return null
+  const id = Number(raw)
+  return Number.isSafeInteger(id) && id > 0 ? id : null
+}

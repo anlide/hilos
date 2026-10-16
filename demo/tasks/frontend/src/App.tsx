@@ -75,6 +75,8 @@ import Profile from './views/Profile/Profile.js'
 import ProfileSignIn from './views/Profile/ProfileSignIn.js'
 import ProfileSecurity from './views/Profile/ProfileSecurity'
 import ProfileData from './views/Profile/ProfileData.js'
+import HilosAnalyticsBrowserSession from './views/Hilos/Analytics/BrowserSession.js'
+import HilosAnalyticsPerson from './views/Hilos/Analytics/Person.js'
 import HilosUser from './views/Hilos/Users/User'
 import HilosUsers from './views/Hilos/Users/Users'
 import License from './views/License/License'
@@ -123,6 +125,12 @@ const pages: Record<string, ComponentType> = {
   // user entity + presence sources on the backend.
   [HilosPages.USERS]: HilosUsers,
   [HilosPages.USER]: HilosUser,
+  // The framework Analytics pages of one browser session and of one person: the
+  // framework owns the header, the tables and every word; the project binds its
+  // connection and page scope (views/Hilos/Analytics). The overview comes from
+  // hilosAdminViews.
+  [HilosPages.ANALYTICS_BROWSER_SESSION]: HilosAnalyticsBrowserSession,
+  [HilosPages.ANALYTICS_PERSON]: HilosAnalyticsPerson,
   // The framework backup page, activated configure-only: the framework owns the
   // archive and verifier-circle tables, the create / delete / keep / reopen
   // round-trips and the monopoly agent; the project binds its context

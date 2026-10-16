@@ -37,6 +37,8 @@ import { LogWorkers } from './views/hilos/logs/workers.js'
 import { LogsOverview } from './views/hilos/logs/overview.js'
 import { Maintenance } from './views/hilos/maintenance/maintenance.js'
 import { Settings } from './views/hilos/settings/settings.js'
+import { AnalyticsBrowserSession } from './views/hilos/analytics/browser-session.js'
+import { AnalyticsPerson } from './views/hilos/analytics/person.js'
 import { User } from './views/hilos/users/user.js'
 import { Users } from './views/hilos/users/users.js'
 import { Main } from './views/main/main.js'
@@ -125,6 +127,12 @@ export class App {
     [HilosPages.SETTINGS]: Settings,
     [HilosPages.USERS]: Users,
     [HilosPages.USER]: User,
+    // The framework Analytics pages of one browser session and of one person: the
+    // framework owns the header, the tables and every word; the project binds its
+    // connection and page scope (views/hilos/analytics). The overview comes from
+    // hilosAdminViews.
+    [HilosPages.ANALYTICS_BROWSER_SESSION]: AnalyticsBrowserSession,
+    [HilosPages.ANALYTICS_PERSON]: AnalyticsPerson,
     [HilosPages.LOGS]: LogsOverview,
     [HilosPages.LOGS_KEYS]: LogKeys,
     [HilosPages.LOGS_WORKERS]: LogWorkers,

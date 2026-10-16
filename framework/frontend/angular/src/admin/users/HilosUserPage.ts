@@ -28,7 +28,9 @@
 // takeover that only looks; the confirmation in the window does not. A viewer of
 // the admin view mode opens every window at once, without the confirmation
 // step, and the confirmation in the window stands disabled by the mode
-// (HIL-1263). Bootstrap classes only (styling-rules.md).
+// (HIL-1263). Beside the header a link opens the person's browser sessions in
+// Analytics when the project serves that page (HIL-1420). Bootstrap classes
+// only (styling-rules.md).
 import {
   afterRenderEffect,
   ChangeDetectionStrategy,
@@ -36,6 +38,7 @@ import {
   computed,
   effect,
   ElementRef,
+  inject,
   input,
   signal,
   untracked,
@@ -49,10 +52,13 @@ import {
   focusInitial,
   HILOS_STEP_UP_COPY,
   createHilosUserStanding,
+  HILOS_USER_ANALYTICS_LINK_LABEL,
   HILOS_USER_IMPERSONATION_COPY,
   HILOS_USER_MERGED_COPY,
   HILOS_USER_LIFECYCLE_COPY,
   hilosStandingBadge,
+  hilosUserAnalyticsEnabled,
+  hilosUserAnalyticsPath,
   hilosUserImpersonationSection,
   hilosUserFrozenRow,
   hilosUserMergedNotice,
@@ -119,6 +125,7 @@ import { HilosModal } from '../../HilosModal.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
+import { HILOS_ROUTER } from '../../hilosRouterToken.js'
 import { mirrorHilosSignal } from '../../hilosSignal.js'
 import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
 
@@ -159,7 +166,7 @@ function focusWindow(body: HTMLElement | undefined): void {
     <hilos-admin-page [page]="page">
       @if (detail(); as detail) {
         <div class="card" data-id="hilos-user-detail">
-          <div class="card-header d-flex align-items-center gap-2">
+          <div class="card-header d-flex flex-wrap align-items-center gap-2">
             <hilos-avatar [name]="avatarName()" [photo]="photo()" size="md" />
             <span class="h5 mb-0" data-id="hilos-user-name"
               ><hilos-hideable [value]="detail.name"
@@ -175,16 +182,26 @@ function focusWindow(body: HTMLElement | undefined): void {
                 >{{ badge.label }}
               </span>
             }
-            @if (mergedNotice() === null) {
-              <button
-                type="button"
-                class="btn btn-outline-primary btn-sm ms-auto"
-                data-id="hilos-user-edit"
-                (click)="openEdit()"
-              >
-                Edit
-              </button>
-            }
+            <div class="d-flex flex-wrap align-items-center gap-2 ms-auto">
+              @if (analyticsPath(); as path) {
+                <a
+                  [hilosLink]="path"
+                  class="btn btn-outline-secondary btn-sm"
+                  data-id="hilos-user-analytics-link"
+                  >{{ analyticsLinkLabel }}</a
+                >
+              }
+              @if (mergedNotice() === null) {
+                <button
+                  type="button"
+                  class="btn btn-outline-primary btn-sm"
+                  data-id="hilos-user-edit"
+                  (click)="openEdit()"
+                >
+                  Edit
+                </button>
+              }
+            </div>
           </div>
           <div class="card-body">
             <dl class="row mb-0">
@@ -975,6 +992,18 @@ export class HilosUserPage {
   protected readonly detail = signal<HilosUserDetailRow | undefined>(undefined)
   protected readonly photo = signal<string | null>(null)
   protected readonly renameError = signal<string | null>(null)
+  private readonly router = inject(HILOS_ROUTER)
+  // The way to the person's browser sessions in Analytics (HIL-1420): navigation,
+  // not an action, so a merged card keeps it.
+  private readonly analyticsEnabled = signal(false)
+  protected readonly analyticsPath = computed(() =>
+    hilosUserAnalyticsPath(
+      this.analyticsEnabled(),
+      this.detail()?.id,
+      this.router.resolvePath,
+    ),
+  )
+  protected readonly analyticsLinkLabel = HILOS_USER_ANALYTICS_LINK_LABEL
   private lifecycle: HilosUserLifecycle | undefined
   protected readonly lifecycleAction = createHilosTrackedAction()
   protected readonly lifecyclePrompt = signal<HilosUserLifecyclePrompt | null>(
@@ -1296,6 +1325,10 @@ export class HilosUserPage {
         ),
         subscribeSignal(currentUserId, (value) =>
           this.currentUserId.set(value),
+        ),
+        mirrorHilosSignal(
+          hilosUserAnalyticsEnabled(context.scopes),
+          this.analyticsEnabled,
         ),
       ]
       const tick = setInterval(

@@ -19,6 +19,7 @@ import {
   formatAnalyticsSessionNumber,
   formatAnalyticsTime,
   HilosPages,
+  readAnalyticsRouteId,
   type HilosAnalyticsBrowserSessionsTable,
   type HilosAnalyticsContext,
 } from '@hilos/core'
@@ -38,11 +39,9 @@ if (!router) {
 }
 
 const route = useSignal(router.currentRoute)
-const userId = computed(() => {
-  const raw = route.value.params[ANALYTICS_PERSON_ROUTE_PARAM] ?? ''
-  const id = Number(raw)
-  return /^\+?\d+$/.test(raw) && Number.isSafeInteger(id) && id > 0 ? id : null
-})
+const userId = computed(() =>
+  readAnalyticsRouteId(route.value.params[ANALYTICS_PERSON_ROUTE_PARAM]),
+)
 const sessions = shallowRef<HilosAnalyticsBrowserSessionsTable | null>(null)
 
 // A session's page, or nothing when the application has no address for it.
