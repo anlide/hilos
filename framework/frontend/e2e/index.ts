@@ -81,6 +81,7 @@ export {
   settleRemovedRow,
   shownByTestId,
   sidewaysOverflow,
+  tableRowKeyByText,
 } from './table.js'
 export {
   abandonConsent,
@@ -124,6 +125,27 @@ export {
   type AnalyticsFrame,
   type AnalyticsFrameLog,
 } from './analytics.js'
+
+export {
+  CHANGE_LOG_PATH,
+  CHANGE_LOG_TABLES_PATH,
+  CHANGE_LOG_LEAD,
+  CHANGE_LOG_TABLES_LEAD,
+  CHANGE_LOG_BLOCK_ACTION,
+  chooseChangeLogFeedTable,
+  expectChangeLogDashboardCard,
+  expectChangeLogOverview,
+  expectChangeLogFeedRow,
+  expectChangeLogReceiptOpen,
+  expectChangeLogValues,
+  expectChangeLogReceiptFits,
+  expectRegistrationReceiptFacts,
+  expectTrackedTablesPage,
+  expectChangeLogReference,
+  expectTrackedTableRecord,
+  expectTrackedTableWhole,
+  expectNarrowColumns,
+} from './changeLog.js'
 
 export {
   DAEMON_ROOT_PATH,

@@ -3,6 +3,7 @@ import {
   ROW_PREFIX,
   ROWS,
   TABLE,
+  tableRowKeyByText as sharedTableRowKeyByText,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 // What a spec reads off a live viewport table (HilosViewportTable) and how it
@@ -10,10 +11,8 @@ import {
 // (docs/agents/frontend/table-subscription.md, "Stable selectors"), and every
 // wait is on state that arrived over the socket rather than on a timeout.
 //
-// It lives with the demo rather than in framework/frontend/e2e/: each function
-// here asserts with `expect`, a value import from @playwright/test that the
-// shared folder refuses (its index.ts), and a helper that drives Playwright stays
-// with the demo that runs it (HIL-954).
+// The demo assertions use its own Playwright expect. The shared row-key reader
+// receives that expect through the wrapper below.
 
 /** The footer's count: `${start} – ${end} of ${total}` (or `${total}+` at the ceiling). */
 const COUNT = 'hilos-table-count'
@@ -86,25 +85,12 @@ export async function tableRowKeys(page: Page): Promise<string[]> {
   return ids.map((id) => id.slice(ROW_PREFIX.length))
 }
 
-/**
- * Wait until exactly one row of the window shows this text, and read its key.
- *
- * The one place a spec finds a row by what it shows, and a forced one: the key of
- * a row a test has just created is minted by the server, so its text is all the
- * test knows until the row is on screen. Everything after goes by the key.
- *
- * @param page The Playwright page showing the table.
- * @param text Text only the wanted row carries, such as a stamped name.
- * @returns The row key.
- */
+/** Read a row key through the shared toolbox. */
 export async function tableRowKeyByText(
   page: Page,
   text: string,
 ): Promise<string> {
-  const row = rows(page).filter({ hasText: text })
-  await expect(row).toHaveCount(1)
-
-  return ((await row.getAttribute('data-id')) ?? '').slice(ROW_PREFIX.length)
+  return sharedTableRowKeyByText(expect, page, text)
 }
 
 /**

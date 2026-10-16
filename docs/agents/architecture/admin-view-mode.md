@@ -708,8 +708,9 @@ both routed reading actions under admin and viewer verdicts, including name
 masking in the reply before acknowledgement, deleted people, full value sides,
 cursor refusals and receipt portions. The Vue detail rendering is covered by
 `framework/frontend/vue/src/admin/changeLog/HilosChangeLogReceiptModal.test.ts`;
-`demo/chat/tests/e2e/tests/change-log.spec.ts` opens the reader's own bot-update
-receipt and registration receipt through the built Vue page.
+`demo/{chat,tasks,polls}/tests/e2e/tests/change-log.spec.ts` opens a block
+receipt and a registration receipt through the built Vue, React and Angular
+pages. Chat's `change-log-bot.spec.ts` checks full long-text values.
 
 The Tracked tables page carries its complete noisy-column snapshot and opening
 table window under both verdicts in
@@ -717,9 +718,10 @@ table window under both verdicts in
 column names and noise reasons are schema metadata, not personal values. Its Vue
 unit, `framework/frontend/vue/src/admin/changeLog/HilosChangeLogTablesPage.test.ts`,
 draws the same metadata and column-mode reference for admins and viewers, with
-no mutation controls. `demo/chat/tests/e2e/tests/change-log-tables.spec.ts` follows
-the section card, journal-label filtering, `Open` into one table and
-narrow-screen reference cards.
+no mutation controls.
+`demo/{chat,tasks,polls}/tests/e2e/tests/change-log-tables.spec.ts` follows the
+section card, journal-label filtering, `Open` into one table and narrow-screen
+reference cards.
 
 The Tracked table page carries its one-table section under both verdicts in
 `demo/chat/tests/Integration/ChangeLogTablePageIntegrationTest.php`: a viewer
@@ -729,9 +731,9 @@ found, and an address change re-reads the section. Its Vue unit,
 `framework/frontend/vue/src/admin/changeLog/HilosChangeLogTablePage.test.ts`,
 draws the same header, columns and triggers for admins and viewers, hides people
 in the history beside their numbers, and offers no mutation control — only the
-receipt each history row opens. `demo/chat/tests/e2e/tests/change-log-table.spec.ts`
-follows a bot-update receipt to the history of its record and back to the whole
-table.
+receipt each history row opens.
+`demo/{chat,tasks,polls}/tests/e2e/tests/change-log-table.spec.ts` follows a
+block receipt to the history of its record and back to the whole table.
 
 The backup section carries the viewer cases of its keep toggle and of its
 restore and reopen dialogs as a unit of its page

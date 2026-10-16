@@ -512,6 +512,11 @@ In the receipt modal — on the Change Log and on this page alike — the `table
 closes the modal. The link is drawn only when the router gives the page an
 address and no part of the key is masked; otherwise the label stays text.
 
+The section's e2e coverage is three identical specs in chat (Vue), tasks (React)
+and polls (Angular), using a person's block receipt and checks from
+`framework/frontend/e2e/changeLog.ts`; chat's `change-log-bot.spec.ts` checks
+full long-text values (HIL-1464).
+
 ## Triggers Are Files
 
 As with procedures in hleb's `main/App/Routines`, each trigger has its own file

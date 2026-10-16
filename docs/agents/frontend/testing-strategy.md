@@ -187,6 +187,16 @@ the person and of the administrator, because tasks and polls declare no actions
 of their own; no demo's product takes part in them, and they carry no
 `spec-owner` line (HIL-1422).
 
+The Change Log section did not move: chat (Vue), tasks (React) and polls
+(Angular) carry `change-log.spec.ts`, `change-log-tables.spec.ts` and
+`change-log-table.spec.ts` with the same test titles. They read the action of
+an administrator blocking a person from that person's card: the column's value
+is journaled in every demo, and the signed-in person is the author (a
+registration receipt has no author because it comes from a guest). Only chat
+carries `change-log-bot.spec.ts` (`spec-owner: demo`): a bot's description is
+the only long text under the journal. binance-btc-tracker, ecommerce-shop and
+online-testing mount the section without specs (HIL-1464).
+
 The languages and countries section is proved on every kit by the same 25
 `i18n-*.spec.ts` files with the same test titles: binance-btc-tracker (Vue),
 tasks (React) and polls (Angular). The Vue kit moved from chat to
@@ -516,6 +526,16 @@ removed row out through the table's Apply gate, `countSentFrames` (`socket.ts`)
 counts the frames a page sends that carry a text, armed before the socket opens,
 and `pickThemeBeforeLoad` (`theme.ts`) sets the browser's theme pick before any
 page loads, while React (HIL-1440) and Angular (HIL-1441) have no theme menu.
+
+### The Change Log section — names and checks
+
+`changeLog.ts` owns `CHANGE_LOG_PATH`, `CHANGE_LOG_TABLES_PATH`, `CHANGE_LOG_LEAD`,
+`CHANGE_LOG_TABLES_LEAD` and `CHANGE_LOG_BLOCK_ACTION`.
+`chooseChangeLogFeedTable` takes no `expect` and chooses by text, since option numbers belong to each demo.
+`expectChangeLog…`, `expectRegistrationReceiptFacts`, `expectTracked…` and
+`expectNarrowColumns` take the spec's `expect` first, then its `Page`.
+The shared row reader is `tableRowKeyByText(expect, page, text)` in `table.ts`; chat keeps a wrapper.
+The three kits' section specs are the same text, with no differences.
 
 ### Geometry — take a bookmark and ask whether it moved
 

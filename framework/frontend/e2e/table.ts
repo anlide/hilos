@@ -96,3 +96,26 @@ export async function settleRemovedRow(
   }
   await expect(control).toHaveCount(0)
 }
+
+/**
+ * Wait until exactly one row of the window shows this text, and read its key.
+ *
+ * The one place a spec finds a row by what it shows, and a forced one: the key of
+ * a row a test has just created is minted by the server, so its text is all the
+ * test knows until the row is on screen. Everything after goes by the key.
+ *
+ * @param expect The spec's expect.
+ * @param page The Playwright page showing the table.
+ * @param text Text only the wanted row carries, such as a stamped name.
+ * @returns The row key.
+ */
+export async function tableRowKeyByText(
+  expect: Expect,
+  page: Page,
+  text: string,
+): Promise<string> {
+  const row = page.getByTestId(TABLE).locator(ROWS).filter({ hasText: text })
+  await expect(row).toHaveCount(1)
+
+  return ((await row.getAttribute('data-id')) ?? '').slice(ROW_PREFIX.length)
+}
