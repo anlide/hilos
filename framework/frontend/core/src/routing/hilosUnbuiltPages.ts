@@ -13,7 +13,7 @@ export type HilosViewLayer = 'vue' | 'react' | 'angular'
 export const HILOS_UNBUILT_PAGES: Readonly<
   Partial<Record<HilosPageKey, readonly HilosViewLayer[]>>
 > = {
-  [HilosPages.APPEARANCE]: ['react', 'angular'],
+  [HilosPages.APPEARANCE]: ['angular'],
   [HilosPages.ROLES]: ['vue', 'react', 'angular'],
   [HilosPages.OPERATIONS]: ['vue', 'react', 'angular'],
   [HilosPages.GUARDIAN]: ['vue', 'react', 'angular'],

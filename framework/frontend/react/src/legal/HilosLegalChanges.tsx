@@ -61,7 +61,7 @@ export function HilosLegalChanges({
                 <div className="col-12 px-3 pt-2 small fw-semibold">
                   {change.title}
                   <span
-                    className="badge text-bg-light border ms-1 text-capitalize"
+                    className="badge bg-body-tertiary text-body-emphasis border ms-1 text-capitalize"
                     data-id="legal-change-kind"
                   >
                     {change.kind}
@@ -89,7 +89,7 @@ export function HilosLegalChanges({
                 <div className="px-3 py-2 border-bottom small fw-semibold bg-body-tertiary">
                   {change.title}
                   <span
-                    className="badge text-bg-light border ms-1 text-capitalize"
+                    className="badge bg-body-tertiary text-body-emphasis border ms-1 text-capitalize"
                     data-id="legal-change-kind"
                   >
                     {change.kind}

@@ -525,7 +525,7 @@ stay in the demo spec. Beside them, `settleRemovedRow` (`table.ts`) waits a
 removed row out through the table's Apply gate, `countSentFrames` (`socket.ts`)
 counts the frames a page sends that carry a text, armed before the socket opens,
 and `pickThemeBeforeLoad` (`theme.ts`) sets the browser's theme pick before any
-page loads, while React (HIL-1440) and Angular (HIL-1441) have no theme menu.
+page loads, while Angular (HIL-1441) has no theme menu.
 
 ### The Change Log section — names and checks
 

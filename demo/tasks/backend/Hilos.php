@@ -13,6 +13,7 @@ use Demo\Tasks\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Tasks\Tables\HilosLegal\HilosLegalAcceptancesTable;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
+use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\I18n\HilosI18nCountriesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
@@ -56,6 +57,7 @@ use Demo\Tasks\Environment\TasksEnvCatalog;
 use Demo\Tasks\Fs\TasksFsContext;
 use Demo\Tasks\Legal\TasksLegalCatalog;
 use Demo\Tasks\Pages\Hilos\AboutPage;
+use Demo\Tasks\Pages\Hilos\AppearancePage;
 use Demo\Tasks\Pages\Hilos\Backup\BackupPage;
 use Demo\Tasks\Pages\Hilos\DashboardPage;
 use Demo\Tasks\Pages\Hilos\AnalyticsPage;
@@ -247,6 +249,7 @@ final class Hilos extends HilosFacade
         BrowserSessionPage::PAGE => BrowserSessionPage::class,
         PersonPage::PAGE => PersonPage::class,
         SettingsPage::PAGE => SettingsPage::class,
+        AppearancePage::PAGE => AppearancePage::class,
         I18nPage::PAGE => I18nPage::class,
         LanguagesListPage::PAGE => LanguagesListPage::class,
         CountriesListPage::PAGE => CountriesListPage::class,
@@ -438,6 +441,7 @@ final class Hilos extends HilosFacade
         TasksTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
         TasksTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
         TasksTableContext::settings => HilosSettingsTable::class,
+        TasksTableContext::hilosAppearanceSettings => HilosAppearanceSettingsTable::class,
         TasksTableContext::hilosUsers => HilosUsersTable::class,
         TasksTableContext::hilosBackups => HilosBackupHistoryTable::class,
         TasksTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
@@ -532,6 +536,9 @@ final class Hilos extends HilosFacade
         ],
         SettingsPage::PAGE => [
             TasksTableContext::settings => [],
+        ],
+        AppearancePage::PAGE => [
+            TasksTableContext::hilosAppearanceSettings => [],
         ],
         BackupPage::PAGE => [
             TasksTableContext::hilosBackups => [],

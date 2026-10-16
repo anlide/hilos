@@ -459,7 +459,7 @@ export function HilosToastHost({ store, corner }: HilosToastHostProps) {
                   </div>
                   {toast.repeats > 1 && (
                     <span
-                      className="badge text-bg-light border"
+                      className="badge bg-body-tertiary text-body-emphasis border"
                       data-id="hilos-toast-repeats"
                     >
                       ×{toast.repeats}

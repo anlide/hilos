@@ -50,6 +50,7 @@ use Demo\EcommerceShop\Pages\Hilos\LicensePage;
 use Demo\EcommerceShop\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\EcommerceShop\Pages\Hilos\PrivacyPage;
 use Demo\EcommerceShop\Pages\Hilos\SettingsPage;
+use Demo\EcommerceShop\Pages\Hilos\AppearancePage;
 use Demo\EcommerceShop\Pages\Hilos\TermsPage;
 use Demo\EcommerceShop\Pages\Hilos\Users\UserPage;
 use Demo\EcommerceShop\Pages\Hilos\Users\UsersPage;
@@ -96,6 +97,12 @@ use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
+use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
+use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
+use Hilos\Core\Page\PageAccessLevel;
+use Hilos\Pages\Appearance\DTO\HilosAppearanceDefaultThemeSetActionDTO;
+use Hilos\Pages\Appearance\DTO\HilosAppearanceThemeSwitchingSetActionDTO;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Demo\EcommerceShop\Pages\Hilos\I18nPage;
 use Demo\EcommerceShop\Pages\Hilos\I18n\Lists\LanguagesListPage;
@@ -118,7 +125,7 @@ use PHPUnit\Framework\TestCase;
  * Guards the project-level ecommerce-shop topology registry.
  *
  * The smallest complete shape: an app agent with its home page, the Hilos index agent with the
- * dashboard, Maintenance, Backup, Settings, Users and the four footer pages, sign-in on the
+ * dashboard, Maintenance, Backup, Settings, Appearance, Users and the four footer pages, sign-in on the
  * framework libraries, and notifications without delivery. The snapshots below say so. The
  * agent registry closes on the framework's fleet, claimer and ballast probes, which only its
  * cluster stand runs (HIL-1216).
@@ -179,6 +186,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
             MaintenancePage::PAGE => MaintenancePage::class,
             SettingsPage::PAGE => SettingsPage::class,
+            AppearancePage::PAGE => AppearancePage::class,
             I18nPage::PAGE => I18nPage::class,
             LanguagesListPage::PAGE => LanguagesListPage::class,
             CountriesListPage::PAGE => CountriesListPage::class,
@@ -799,6 +807,61 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         foreach (ThemeSettingsCatalog::KEYS as $key) {
             $this->assertSame(ThemeSettingsCatalog::getCatalog()[$key], $catalog[$key]);
         }
+    }
+
+    /** Appearance reuses the index agent; its actions, answer and admin level come from the framework page. */
+    public function testAppearanceAdminFeatureIsActivated(): void
+    {
+        $this->assertSame(AppearancePage::class, Hilos::PAGES[AppearancePage::PAGE]);
+        $this->assertSame(AgentType::HILOS_INDEX, AppearancePage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(PageAccessLevel::ADMIN, AppearancePage::ACCESS_LEVEL);
+        $this->assertSame(
+            HilosPageConstants::HILOS_APPEARANCE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::APPEARANCE_THEME_SWITCHING_SET],
+        );
+        $this->assertSame(
+            HilosPageConstants::HILOS_APPEARANCE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::APPEARANCE_DEFAULT_THEME_SET],
+        );
+        $this->assertSame(
+            AgentType::HILOS_INDEX,
+            Hilos::getActionAgentRoutes()[HilosSignalConstants::APPEARANCE_THEME_SWITCHING_SET],
+        );
+        $this->assertSame(
+            AgentType::HILOS_INDEX,
+            Hilos::getActionAgentRoutes()[HilosSignalConstants::APPEARANCE_DEFAULT_THEME_SET],
+        );
+        $this->assertSame(
+            HilosAppearanceThemeSwitchingSetActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::APPEARANCE_THEME_SWITCHING_SET],
+        );
+        $this->assertSame(
+            HilosAppearanceDefaultThemeSetActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::APPEARANCE_DEFAULT_THEME_SET],
+        );
+        $this->assertSame(
+            HilosPageConstants::HILOS_APPEARANCE,
+            Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL]
+                [HilosSignalConstants::HILOS_APPEARANCE_SETTING_WRITE_DONE],
+        );
+        $this->assertSame(
+            HandoverAnswerSignalData::class,
+            Hilos::getPageSignalDtoRoutes()[SignalTypeConstants::AGENT_SIGNAL]
+                [HilosSignalConstants::HILOS_APPEARANCE_SETTING_WRITE_DONE],
+        );
+        $this->assertSame(
+            AgentType::HILOS_INDEX,
+            Hilos::getPageSignalAgentRoutes()[SignalTypeConstants::AGENT_SIGNAL]
+                [HilosSignalConstants::HILOS_APPEARANCE_SETTING_WRITE_DONE],
+        );
+        $this->assertSame(
+            HilosAppearanceSettingsTable::class,
+            Hilos::TABLES[EcommerceShopTableContext::hilosAppearanceSettings],
+        );
+        $this->assertSame(
+            [EcommerceShopTableContext::hilosAppearanceSettings => []],
+            Hilos::PAGE_TABLES[AppearancePage::PAGE],
+        );
     }
 
     /** The people are a bound framework feature: the demo binds its presence source and the card's table (HIL-1225). */

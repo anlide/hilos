@@ -228,7 +228,7 @@ export function HilosLegalReconsent({
                       <div className="small fw-semibold">
                         {change.statement}{' '}
                         <span
-                          className="badge text-bg-light border ms-1"
+                          className="badge bg-body-tertiary text-body-emphasis border ms-1"
                           data-id="legal-reconsent-change-kind"
                         >
                           {change.kind}

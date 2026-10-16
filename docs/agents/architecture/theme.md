@@ -65,9 +65,9 @@ off. `ThemePick` is `light | dark | system | null`; `ThemeMode` is
 `light | dark`. The header and the profile mark the **position**; a person who
 has no personal pick sees the default's position marked as the default, which
 the worn theme alone cannot tell. `HilosProfileRootStore.theme` reads `hilosThemeChoice`
-to supply the profile row line. The Vue header and the Vue profile row do this
-(HIL-1433, HIL-1434). The React and Angular headers and profile rows are not in
-the code yet — HIL-1440, HIL-1441.
+to supply the profile row line. The Vue and React headers and profile rows do this
+(HIL-1433, HIL-1434, HIL-1440). The Angular header and profile row are not in
+the code yet — HIL-1441.
 
 ## Who Sets It
 
@@ -206,8 +206,8 @@ a later opening or apply a local choice.
 Both account controls check current availability before sending: switching is
 on, the person is signed in and the session is not impersonating someone.
 Switching off, sign-out or impersonation closes an open surface. The server
-checks admission again. React and Angular controls remain to be built in
-HIL-1440 and HIL-1441.
+checks admission again. The Vue and React controls do this; the Angular
+controls are not in the code yet — HIL-1441.
 
 ## Before The App Loads
 
@@ -264,16 +264,16 @@ again with the server's current pair; the guest's erased choice stays absent.
 Switching off has three consequences everywhere at once:
 
 - the header's theme icon disappears
-  (Vue does; not in the code yet — HIL-1440, HIL-1441);
+  (Vue and React do; not in the code yet — HIL-1441);
 - the profile's Theme row disappears
-  (Vue does; not in the code yet — HIL-1440, HIL-1441);
+  (Vue and React do; not in the code yet — HIL-1441);
 - everyone wears the default, while people's picks in accounts and browsers are
   kept, not erased, and come back when switching is on again
   as soon as the settings frame arrives.
 
 Neither value is secret — every guest receives both. The admin view mode shows
 the Appearance section and its values and refuses changes
-in Vue (HIL-1435); React and Angular remain to be built in HIL-1440 and
+in Vue (HIL-1435) and React (HIL-1440); Angular is not in the code yet —
 HIL-1441. The Vue page edits switching through
 `appearance_theme_switching_set` (HIL-1438) and the default theme through
 `appearance_default_theme_set` (HIL-1439). Both open a row-edit modal; the

@@ -472,7 +472,7 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
           <span className="btn btn-sm invisible" aria-hidden="true">
             <i className="bi bi-arrow-down me-1" />
             Back to the tail{' '}
-            <span className="badge text-bg-light ms-1">
+            <span className="badge bg-body-tertiary text-body-emphasis ms-1">
               {LOG_VIEWER_PENDING_WIDEST_LABEL}
             </span>
           </span>
@@ -489,7 +489,7 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
                 <>
                   {' '}
                   <span
-                    className="badge text-bg-light ms-1"
+                    className="badge bg-body-tertiary text-body-emphasis ms-1"
                     data-id="hilos-log-back-to-tail-count"
                   >
                     {logViewerPendingLabel(pendingLines)}

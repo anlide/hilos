@@ -342,7 +342,7 @@ export function HilosLogsPage({ context }: HilosLogsPageProps) {
                     </span>
                     {entry.traceFrames === null ? null : (
                       <span
-                        className="badge text-bg-light border flex-shrink-0"
+                        className="badge bg-body-tertiary text-body-emphasis border flex-shrink-0"
                         title="This entry carries a stack trace"
                         data-id="hilos-logs-recent-row-trace"
                       >
@@ -429,7 +429,7 @@ export function HilosLogsPage({ context }: HilosLogsPageProps) {
                     data-id={`hilos-logs-node-${node.nodeId}`}
                   >
                     <td>
-                      <span className="badge text-bg-light border">
+                      <span className="badge bg-body-tertiary text-body-emphasis border">
                         {node.nodeId}
                       </span>
                       {/* The sub-line carries whatever the hidden columns were

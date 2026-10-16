@@ -2,10 +2,12 @@
 // app frame a project fills rather than re-implements. React has no named
 // slots, so the brand and nav regions are node props and the routed page
 // content is children. It renders the top navigation bar carrying the brand and
-// nav, the framework admin entry (the gear linking to the Hilos dashboard,
-// drawn for an admin and, in the admin view mode, for a viewer), the
-// live connection indicator the SDK owns (core-and-connection.md), and, last,
-// its tracked sign-out control while a person stands behind the session;
+// nav, the shell's theme icon first in the right-hand group (it disappears when
+// switching is off and under maintenance), the framework admin entry (the gear
+// linking to the Hilos dashboard, drawn for an admin and, in the admin view
+// mode, for a viewer), the live connection indicator the SDK owns
+// (core-and-connection.md), and, last, its tracked sign-out control while a
+// person stands behind the session;
 // a full-width banner region below the nav carrying, in this order, the
 // framework's own protected-mode strip, its impersonation strip (drawn from the
 // session, with a Stop that waits for the server's answer, colored by the
@@ -101,6 +103,7 @@ import { HilosModal } from './HilosModal.js'
 import { HilosLegalReconsent } from './legal/HilosLegalReconsent.js'
 import { HilosRouterContext } from './hilosRouterContext.js'
 import { HilosTakeoverViewOnlyContext } from './hilosLookOnly.js'
+import { HilosThemeMenu } from './HilosThemeMenu.js'
 import { useConnectionState } from './useConnectionState.js'
 import { useFirstFrameHold } from './useFirstFrameHold.js'
 import { useProtectedMode } from './useProtectedMode.js'
@@ -445,6 +448,7 @@ export function HilosLayout({
               <div className="d-flex align-items-center gap-3">
                 {!underMaintenance && (
                   <>
+                    <HilosThemeMenu />
                     {user}
                     {reconsentDue !== null && (
                       <button
@@ -558,13 +562,13 @@ export function HilosLayout({
                     {IMPERSONATION_STRIP_COPY.lead}{' '}
                     <strong>{impersonation.userName}</strong>
                     {impersonation.viewOnly ? (
-                      <span className="badge text-bg-dark ms-1">
+                      <span className="badge text-bg-secondary ms-1">
                         {IMPERSONATION_STRIP_COPY.viewOnly}
                       </span>
                     ) : null}
                   </span>
                   <LoadingButton
-                    className="btn-sm btn-outline-dark"
+                    className={`btn-sm btn-${impersonation.tone}`}
                     data-id="impersonation-stop"
                     loading={impersonationStop.busy}
                     onClick={onImpersonationStop}
@@ -585,7 +589,7 @@ export function HilosLayout({
                     {formatHilosDeletionStrip(deletionStrip, deletionNow)}
                   </span>
                   <LoadingButton
-                    className="btn-sm btn-outline-dark"
+                    className="btn-sm btn-warning"
                     data-id="account-deletion-strip-keep"
                     loading={keepAccount.busy}
                     onClick={onKeepAccount}

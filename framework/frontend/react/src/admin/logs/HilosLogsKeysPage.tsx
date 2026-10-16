@@ -208,7 +208,9 @@ export function HilosLogsKeysPage({ context }: HilosLogsKeysPageProps) {
                   className="bi bi-hdd-stack text-body-secondary"
                   aria-hidden="true"
                 ></i>
-                <span className="badge text-bg-light border">Daemon</span>
+                <span className="badge bg-body-tertiary text-body-emphasis border">
+                  Daemon
+                </span>
               </div>
               <div className="small mb-2">
                 <code>daemon.log</code>, <code>daemon-error.log</code> and the
@@ -231,7 +233,9 @@ export function HilosLogsKeysPage({ context }: HilosLogsKeysPageProps) {
                   className="bi bi-cpu text-body-secondary"
                   aria-hidden="true"
                 ></i>
-                <span className="badge text-bg-light border">Agents</span>
+                <span className="badge bg-body-tertiary text-body-emphasis border">
+                  Agents
+                </span>
               </div>
               <div className="small mb-2">
                 <code>agent-*.log</code>
@@ -248,7 +252,9 @@ export function HilosLogsKeysPage({ context }: HilosLogsKeysPageProps) {
                   className="bi bi-diagram-3 text-body-secondary"
                   aria-hidden="true"
                 ></i>
-                <span className="badge text-bg-light border">Workers</span>
+                <span className="badge bg-body-tertiary text-body-emphasis border">
+                  Workers
+                </span>
               </div>
               <div className="small mb-2">
                 <code>worker-*.log</code> and{' '}

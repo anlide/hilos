@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo } from 'react'
+import { useContext, useEffect, useMemo, useState } from 'react'
 import {
   computedSignal,
   createHilosProfileEmailChangeFlow,
@@ -7,8 +7,10 @@ import {
   createHilosProfileRootStore,
   hilosChildLinks,
   HilosPages,
+  HILOS_IMPERSONATION_STRIP_TEXT_ID,
   HILOS_PROFILE_ROOT_COPY as COPY,
   HILOS_PROFILE_PHOTO_COPY as PHOTO_COPY,
+  hilosImpersonation,
   hilosProfileSectionIcon,
   hilosProfileSectionId,
   type HilosProfileBinding,
@@ -24,6 +26,7 @@ import { HilosAccountDeletion } from './HilosAccountDeletion.js'
 import { HilosProfileEmailChange } from './HilosProfileEmailChange.js'
 import { HilosProfileRename } from './HilosProfileRename.js'
 import { HilosProfilePhoto } from './HilosProfilePhoto.js'
+import { HilosProfileTheme } from './HilosProfileTheme.js'
 
 /**
  * Pass the same two objects on every render — module constants or memoized: a
@@ -37,8 +40,9 @@ export interface HilosProfilePageProps {
 }
 
 /**
- * The profile root (HIL-1169): the person's own line, the Account rows, a row
- * per catalog section with its live summary, and the danger zone.
+ * The profile root (HIL-1169): the person's own line, the Account rows (Name,
+ * Email, Theme), a row per catalog section with its live summary, and the
+ * danger zone.
  */
 export function HilosProfilePage({ context, binding }: HilosProfilePageProps) {
   const router = useContext(HilosRouterContext)
@@ -91,6 +95,14 @@ export function HilosProfilePage({ context, binding }: HilosProfilePageProps) {
   const passkeyOnly = useSignal(root.passkeyOnly)
   const name = useSignal(binding.name)
   const emailOpening = useSignal(email.busy)
+  const theme = useSignal(root.theme)
+  const impersonation = useSignal(hilosImpersonation)
+  const [themeOpen, setThemeOpen] = useState(false)
+  // A sign-out takes the Theme window away with the page; it must not come
+  // back by itself with the next sign-in.
+  useEffect(() => {
+    if (!signedIn) setThemeOpen(false)
+  }, [signedIn])
 
   // Nobody signed in, or the session is not known yet: a placeholder, never page
   // content. The shell's auth gate mounts the sign-in surface in place once the
@@ -196,6 +208,35 @@ export function HilosProfilePage({ context, binding }: HilosProfilePageProps) {
               </LoadingButton>
             </div>
           ) : null}
+          {theme !== null ? (
+            <div className="d-flex align-items-center gap-3 py-3 border-bottom">
+              <i
+                className="bi bi-circle-half fs-5 text-body-secondary"
+                aria-hidden="true"
+              ></i>
+              <div className="flex-grow-1 text-break">
+                <div className="fw-semibold small">{COPY.theme}</div>
+                <div
+                  className="small text-body-secondary"
+                  data-id="profile-theme"
+                >
+                  {theme}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn btn-outline-secondary btn-sm"
+                disabled={impersonation !== null}
+                aria-describedby={
+                  impersonation ? HILOS_IMPERSONATION_STRIP_TEXT_ID : undefined
+                }
+                data-id="profile-theme-change"
+                onClick={() => setThemeOpen(true)}
+              >
+                {COPY.change}
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : (
         <p className="text-body-secondary" data-id="profile-loading">
@@ -254,6 +295,7 @@ export function HilosProfilePage({ context, binding }: HilosProfilePageProps) {
       {rename ? <HilosProfileRename flow={rename} /> : null}
       {photoEnabled ? <HilosProfilePhoto flow={photoFlow} /> : null}
       <HilosProfileEmailChange flow={email} />
+      <HilosProfileTheme open={themeOpen} onClose={() => setThemeOpen(false)} />
     </section>
   )
 }

@@ -36,7 +36,7 @@ export interface HilosLogsWorkersPageProps {
 function typeClass(row: HilosLogWorkerRow): string {
   return row.type === HILOS_LOG_WORKER_TYPE_MONOPOLISTIC
     ? 'text-bg-info-subtle text-info-emphasis border border-info-subtle'
-    : 'text-bg-light border'
+    : 'bg-body-tertiary text-body-emphasis border'
 }
 
 /**
@@ -46,7 +46,9 @@ function typeClass(row: HilosLogWorkerRow): string {
  * @param row The worker stream the badge speaks for.
  */
 function stateClass(row: HilosLogWorkerRow): string {
-  return row.live ? 'text-bg-success' : 'text-bg-light border'
+  return row.live
+    ? 'text-bg-success'
+    : 'bg-body-tertiary text-body-emphasis border'
 }
 
 /**

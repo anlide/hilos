@@ -169,10 +169,12 @@ export function HilosLicensePage({
               {entry.name}{' '}
               <span className="text-body-secondary">{entry.version}</span>
             </span>
-            <span className="badge text-bg-light border">
+            <span className="badge bg-body-tertiary text-body-emphasis border">
               {licenseLanguageLabel(entry.language)}
             </span>
-            <span className="badge text-bg-light border">{entry.license}</span>
+            <span className="badge bg-body-tertiary text-body-emphasis border">
+              {entry.license}
+            </span>
           </button>
         ))}
         {visible.length === 0 ? (

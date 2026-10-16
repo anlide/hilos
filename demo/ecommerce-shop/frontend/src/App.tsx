@@ -33,6 +33,7 @@ import HilosI18nCountry from './views/Hilos/I18n/Country/Country.js'
 import HilosI18nCountryNames from './views/Hilos/I18n/CountryNames/CountryNames.js'
 import HilosMaintenance from './views/Hilos/Maintenance/Maintenance.js'
 import Settings from './views/Hilos/Settings/Settings.js'
+import Appearance from './views/Hilos/Appearance/Appearance.js'
 import HilosAnalyticsBrowserSession from './views/Hilos/Analytics/BrowserSession.js'
 import HilosAnalyticsPerson from './views/Hilos/Analytics/Person.js'
 import HilosUser from './views/Hilos/Users/User.js'
@@ -70,6 +71,10 @@ const pages: Record<string, ComponentType> = {
   // owns the table and the add/update/delete lifecycle; the project binds only its
   // scope stores + action lifecycle (views/Hilos/Settings) and its catalog on the backend.
   [HilosPages.SETTINGS]: Settings,
+  // The framework Appearance admin page: the framework owns the table of the two
+  // theme settings and both edit windows; the project binds only its connection,
+  // scope stores + action lifecycle (views/Hilos/Appearance).
+  [HilosPages.APPEARANCE]: Appearance,
   // The framework users/user admin pages: the framework owns the table, the
   // detail, and the rename round-trip; the project binds its scope stores,
   // connection, and typed user collection (views/Hilos/Users) and supplies its

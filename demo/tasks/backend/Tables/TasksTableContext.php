@@ -7,6 +7,7 @@ namespace Demo\Tasks\Tables;
 use Demo\Tasks\Tables\HilosLegal\HilosLegalAcceptancesTable;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
+use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
@@ -71,6 +72,7 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
  * @property-read HilosDaemonPlacementTable $hilosDaemonPlacement
  * @property-read HilosUsersTable $hilosUsers
  * @property-read HilosSettingsTable $settings
+ * @property-read HilosAppearanceSettingsTable $hilosAppearanceSettings
  * @property-read HilosVerifierCircleTable $hilosVerifierCircle
  * @property-read HilosSecurityOAuthProvidersTable $hilosSecurityOauthProviders
  * @property-read HilosSecurityOAuthProviderFieldsTable $hilosSecurityOauthProviderFields
@@ -112,6 +114,7 @@ final class TasksTableContext extends TableContext
     public const string hilosDaemonPlacement = HilosDaemonPlacementTable::TABLE;
     public const string hilosUsers = 'hilosUsers';
     public const string settings = HilosSettingsTable::TABLE;
+    public const string hilosAppearanceSettings = HilosAppearanceSettingsTable::TABLE;
     public const string hilosVerifierCircle = HilosVerifierCircleTable::TABLE;
     public const string hilosSecurityOauthProviders = HilosSecurityOAuthProvidersTable::TABLE;
     public const string hilosSecurityOauthProviderFields = HilosSecurityOAuthProviderFieldsTable::TABLE;

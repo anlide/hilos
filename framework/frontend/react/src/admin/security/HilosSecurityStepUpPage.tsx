@@ -92,7 +92,7 @@ export function HilosSecurityStepUpPage({
             </span>
           ),
           owner: (row) => (
-            <span className="badge text-bg-light border">
+            <span className="badge bg-body-tertiary text-body-emphasis border">
               {row.owner === 'framework'
                 ? HILOS_STEP_UP_ADMIN_COPY.framework
                 : HILOS_STEP_UP_ADMIN_COPY.project}

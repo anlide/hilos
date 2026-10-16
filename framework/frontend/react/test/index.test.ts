@@ -22,6 +22,7 @@ import {
   HilosChangeLogTablePage,
   HilosAnalyticsBrowserSessionPage,
   HilosAnalyticsPersonPage,
+  HilosAppearancePage,
   hilosAdminViews,
   HilosPageHeadingIdContext,
   HilosRouterContext,
@@ -29,6 +30,7 @@ import {
   HilosAvatar,
   HilosSwitch,
   HilosTakeoverViewOnlyContext,
+  HilosThemeMenu,
   HilosView,
   useConnectionState,
   useLookOnly,
@@ -48,6 +50,7 @@ import type {
   HilosChangeLogTablePageProps,
   HilosAnalyticsBrowserSessionPageProps,
   HilosAnalyticsPersonPageProps,
+  HilosAppearancePageProps,
 } from '../src/index.js'
 
 it('exports the @hilos/react public surface', () => {
@@ -59,6 +62,7 @@ it('exports the @hilos/react public surface', () => {
   expect(HilosAvatar).toBeTypeOf('function')
   expect(HilosSwitch).toBeTypeOf('function')
   expect(HilosLayout).toBeTypeOf('function')
+  expect(HilosThemeMenu).toBeTypeOf('function')
   expect(HilosDropdown).toBeTypeOf('function')
   expect(HilosRouterContext).toBeTypeOf('object')
   expect(HilosPageHeadingIdContext).toBeTypeOf('object')
@@ -135,4 +139,12 @@ it('exports the two Analytics context pages and leaves them out of the default m
   expectTypeOf<
     Parameters<typeof HilosAnalyticsPersonPage>[0]
   >().toEqualTypeOf<HilosAnalyticsPersonPageProps>()
+})
+
+it('exports the Appearance context page and leaves it out of the default map', () => {
+  expect(HilosAppearancePage).toBeTypeOf('function')
+  expect(hilosAdminViews()).not.toHaveProperty(HilosPages.APPEARANCE)
+  expectTypeOf<
+    Parameters<typeof HilosAppearancePage>[0]
+  >().toEqualTypeOf<HilosAppearancePageProps>()
 })

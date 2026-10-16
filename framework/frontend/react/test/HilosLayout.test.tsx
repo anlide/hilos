@@ -17,6 +17,7 @@ import {
   HilosPages,
   bindSessionScope,
   bindSignOut,
+  bindThemeState,
   hilosToasts,
   IMPERSONATION_ACTION_STOP,
   PROTECTED_MODE_INACTIVE,
@@ -34,6 +35,7 @@ import type {
   ProtectedModeStatus,
 } from '@hilos/core'
 
+import { THEME_SETTINGS_STORAGE_KEY } from '../../core/src/theme/themeBrowser.js'
 import { HilosLayout } from '../src/HilosLayout.js'
 import { LoadingButton } from '../src/LoadingButton.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
@@ -1392,5 +1394,148 @@ describe('HilosLayout view-mode strip (HIL-1260)', () => {
       session.handshake(viewerHandshake(false, true))
     })
     expect(shown()).toBe(true)
+  })
+})
+
+describe('HilosLayout theme icon (HIL-1440)', () => {
+  let unbind: (() => void) | undefined
+  let releaseTheme: (() => void) | undefined
+  const themeActions = new ActionLifecycle(new ReplyingSource())
+
+  function dummyConnection(): HilosConnection {
+    return { on: () => () => {} } as unknown as HilosConnection
+  }
+
+  // Filled by construction, not by a storage write in this file: a setItem
+  // call here is a browser value the file does not declare.
+  function memoryStorage(raw: string): Storage {
+    const store = new Map<string, string>([[THEME_SETTINGS_STORAGE_KEY, raw]])
+
+    return {
+      get length() {
+        return store.size
+      },
+      clear() {
+        store.clear()
+      },
+      getItem(key: string) {
+        return store.get(key) ?? null
+      },
+      key(index: number) {
+        return [...store.keys()][index] ?? null
+      },
+      removeItem(key: string) {
+        store.delete(key)
+      },
+      setItem(key: string, value: string) {
+        store.set(key, value)
+      },
+    }
+  }
+
+  function bindSnapshot(switchingEnabled: boolean): void {
+    releaseTheme?.()
+    vi.stubGlobal(
+      'localStorage',
+      memoryStorage(
+        JSON.stringify({ switchingEnabled, defaultTheme: 'light' }),
+      ),
+    )
+    releaseTheme = bindThemeState(
+      dummyConnection(),
+      new ScopeManager(),
+      themeActions,
+    )
+  }
+
+  function renderThemed(connection: HilosConnection): HTMLElement {
+    return render(
+      <HilosLayout
+        connection={connection}
+        user={<span data-id="user-slot">Ada</span>}
+      >
+        <p data-id="page-body">Page</p>
+      </HilosLayout>,
+    ).container
+  }
+
+  afterEach(() => {
+    cleanup()
+    unbind?.()
+    unbind = undefined
+    releaseTheme?.()
+    releaseTheme = undefined
+    vi.unstubAllGlobals()
+    const restore = bindThemeState(
+      dummyConnection(),
+      new ScopeManager(),
+      themeActions,
+    )
+    restore()
+  })
+
+  it.each([
+    ['guest', null],
+    ['signed-in person', { id: 7, name: 'Ada' }],
+  ] as const)(
+    'draws the theme icon first in the right-hand group for a %s',
+    (_label, user) => {
+      const session = bindSession()
+      unbind = session.unbind
+      session.handshake({ entities: { currentUser: user } })
+      const container = renderThemed(shellConnection())
+      const group = container.querySelector(
+        'nav .d-flex.align-items-center.gap-3',
+      ) as HTMLElement
+      const theme = surface(group, 'nav-theme') as HTMLElement
+
+      expect(group.firstElementChild?.contains(theme)).toBe(true)
+      expect(
+        theme.compareDocumentPosition(
+          surface(group, 'user-slot') as HTMLElement,
+        ) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).not.toBe(0)
+      expect(theme.getAttribute('aria-label')).toBe('Theme: System')
+    },
+  )
+
+  it('draws no theme icon under maintenance', () => {
+    const container = renderThemed(shellConnection(FROZEN))
+
+    expect(surface(container, 'maintenance')).not.toBeNull()
+    expect(surface(container, 'nav-theme')).toBeNull()
+    expect(surface(container, 'conn-state')).not.toBeNull()
+  })
+
+  it('draws no theme icon during the held first frame', () => {
+    const connection = shellConnection()
+    Object.defineProperty(connection, 'firstFrameHeld', { value: true })
+    const container = renderThemed(connection)
+
+    expect(surface(container, 'nav-theme')).toBeNull()
+    expect(
+      surface(container, 'hilos-boot-state')?.getAttribute('data-state'),
+    ).toBe('held')
+  })
+
+  it('draws no theme icon when switching is off', () => {
+    bindSnapshot(false)
+    const container = renderThemed(shellConnection())
+
+    expect(surface(container, 'nav-brand')).not.toBeNull()
+    expect(surface(container, 'nav-theme')).toBeNull()
+  })
+
+  it('keeps the icon in a takeover but closes it to writes', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(TAKEOVER)
+    const container = renderThemed(shellConnection())
+    const theme = surface(container, 'nav-theme') as HTMLButtonElement
+
+    expect(theme.disabled).toBe(true)
+    expect(theme.getAttribute('aria-describedby')).toBe(
+      HILOS_IMPERSONATION_STRIP_TEXT_ID,
+    )
   })
 })

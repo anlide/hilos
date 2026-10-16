@@ -31,6 +31,7 @@ use Demo\EcommerceShop\Fs\EcommerceShopFsContext;
 use Demo\EcommerceShop\Groups\Hilos\NotificationsGroup;
 use Demo\EcommerceShop\Legal\EcommerceShopLegalCatalog;
 use Demo\EcommerceShop\Pages\Hilos\AboutPage;
+use Demo\EcommerceShop\Pages\Hilos\AppearancePage;
 use Demo\EcommerceShop\Pages\Hilos\Backup\BackupPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
@@ -97,6 +98,7 @@ use Hilos\Runtime\State\Item\HilosProbeFleetStatus;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
+use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\I18n\HilosI18nCountriesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
@@ -177,6 +179,7 @@ final class Hilos extends HilosFacade
         ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         SettingsPage::PAGE => SettingsPage::class,
+        AppearancePage::PAGE => AppearancePage::class,
         I18nPage::PAGE => I18nPage::class,
         LanguagesListPage::PAGE => LanguagesListPage::class,
         CountriesListPage::PAGE => CountriesListPage::class,
@@ -309,6 +312,7 @@ final class Hilos extends HilosFacade
         EcommerceShopTableContext::hilosBackups => HilosBackupHistoryTable::class,
         EcommerceShopTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
         EcommerceShopTableContext::settings => HilosSettingsTable::class,
+        EcommerceShopTableContext::hilosAppearanceSettings => HilosAppearanceSettingsTable::class,
         EcommerceShopTableContext::hilosUsers => HilosUsersTable::class,
         EcommerceShopTableContext::hilosI18nLanguageNames => HilosI18nLanguageNamesTable::class,
         EcommerceShopTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
@@ -370,6 +374,9 @@ final class Hilos extends HilosFacade
         ],
         SettingsPage::PAGE => [
             EcommerceShopTableContext::settings => [],
+        ],
+        AppearancePage::PAGE => [
+            EcommerceShopTableContext::hilosAppearanceSettings => [],
         ],
         UsersPage::PAGE => [
             EcommerceShopTableContext::hilosUsers => [],

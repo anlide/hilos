@@ -52,6 +52,7 @@ export {
   type HilosMaintenanceProps,
 } from './HilosMaintenance.js'
 export { HilosLayout, type HilosLayoutProps } from './HilosLayout.js'
+export { HilosThemeMenu } from './HilosThemeMenu.js'
 export {
   HilosStaticPage,
   type HilosStaticPageProps,
@@ -153,6 +154,10 @@ export {
   HilosSettingPresetsPage,
   type HilosSettingPresetsPageProps,
 } from './admin/settings/HilosSettingPresetsPage.js'
+export {
+  HilosAppearancePage,
+  type HilosAppearancePageProps,
+} from './admin/appearance/HilosAppearancePage.js'
 export {
   HilosBackupPage,
   type HilosBackupPageProps,

@@ -284,7 +284,7 @@ describe('HilosLogsWorkersPage', () => {
       container.querySelectorAll('[data-id^="hilos-table-row-"] .badge'),
     )
     expect(badges[0].textContent).toBe('Ordinary')
-    expect(badges[0].classList).toContain('text-bg-light')
+    expect(badges[0].classList).toContain('bg-body-tertiary')
     const monopolistic = badges.find(
       (badge) => badge.textContent === 'Monopolistic',
     )

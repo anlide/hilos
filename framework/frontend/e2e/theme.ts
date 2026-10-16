@@ -3,10 +3,9 @@ import type { BrowserContext } from '@playwright/test'
 // The theme a page wears comes from the account's pick once signed in, and before
 // that from the browser's own (docs/agents/architecture/theme.md). A kit whose
 // header draws the theme menu picks a theme through it; a kit that has no menu
-// yet — React until HIL-1440, Angular until HIL-1441 — can only set the
-// browser's pick before the page loads, and let registration carry it into the
-// account. The Vue kit keeps picking through its menu, as the spec of the
-// section does today.
+// yet — Angular until HIL-1441 — can only set the browser's pick before the
+// page loads, and let registration carry it into the account. The Vue and React
+// kits keep picking through their menus, as the specs of the section do today.
 
 /**
  * The storage key of the browser's theme pick, copied verbatim from

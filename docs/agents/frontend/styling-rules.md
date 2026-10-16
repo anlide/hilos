@@ -310,9 +310,9 @@ it; see [theme.md](../architecture/theme.md). A variable override for one mode
 is the framework's alone, lives in the Sass layer with its WHY, and states what
 the other mode wears.
 
-The Vue SDK and the demos carry no pinned classes.
-The tree does not hold this yet: the React and Angular ports still carry pinned
-classes, recorded in the baseline (not in the code yet — HIL-1440, HIL-1441).
+The Vue and React SDKs and the demos carry no pinned classes.
+The tree does not hold this yet: the Angular port still carries pinned
+classes, recorded in the baseline (not in the code yet — HIL-1441).
 
 Checked automatically: `STYLE-THEME-PINNED`.
 
