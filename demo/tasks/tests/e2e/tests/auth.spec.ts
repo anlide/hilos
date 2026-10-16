@@ -779,9 +779,10 @@ test('opens a fresh tab on the new-password step once the code is accepted', asy
   page,
   context,
 }) => {
-  // HIL-648. The recovery leg's own e2e is HIL-426; this case is here because the
-  // defect is here: a tab opened AFTER the code was accepted was drawing the code
-  // screen again, a step its session had already passed.
+  // HIL-648. The recovery leg's own case is the one that recovers a forgotten
+  // password (:159); this case is here because the defect is here: a tab opened
+  // AFTER the code was accepted was drawing the code screen again, a step its
+  // session had already passed.
   const email = uniqueEmail()
 
   await gotoPage(page, '/profile')
@@ -827,8 +828,9 @@ test('tells the tab that did not save the password that the flow succeeded', asy
   page,
   context,
 }) => {
-  // HIL-649. The recovery leg's own e2e is HIL-426; this case is here because the
-  // defect is here, and because the case above already stages the two tabs it needs.
+  // HIL-649. The recovery leg's own case is the one that recovers a forgotten
+  // password (:159); this case is here because the defect is here, and because the
+  // case above already stages the two tabs it needs.
   // Saving the password signs the session in, and a sign-in rotates the token and
   // drops every OTHER socket of that session (HIL-582). Tab A therefore came back on
   // the new cookie carrying nothing, the gate saw a session that was up and closed the

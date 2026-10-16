@@ -39,10 +39,12 @@ import {
 // own users table.
 //
 // It goes further than its twin (HIL-623) on purpose, and the reason is the view
-// framework rather than the demo: the Angular sign-in surface has no component
-// test of its own — `ng test` is blocked upstream — so HIL-425 could prove it
-// only by tsc, an AOT build and pinned exports, and wrote that its behavior would
-// be proved here. This file is that proof, so every method the stand can deliver
+// framework rather than the demo: when this file was written the Angular sign-in
+// surface had no component test of its own — `ng test` was blocked upstream — so
+// HIL-425 could prove it only by tsc, an AOT build and pinned exports, and wrote
+// that its behavior would be proved here. The surface has had a test since
+// (framework/frontend/angular/test/HilosAuthSurface.test.ts, vitest), and this
+// walk stays its end-to-end proof, so every method the stand can deliver
 // is walked and not just the five the activation needs: phone codes over SMS and
 // over Telegram, the sign-in link and the code that comes with it, and both OAuth
 // providers through the stand's OAuth emulator.
@@ -54,9 +56,12 @@ import {
 // named after the leg — the report still says which leg broke — and the setup
 // between them is paid once.
 //
-// The device key is the one method left out: no demo runs a virtual authenticator
-// today, and that belongs to the parity leaf HIL-426 along with the shared spec
-// the three demos will eventually run (HIL-774 collapses the set first).
+// The device key, a second tab and the resend pause are walked once, in the
+// React demo (demo/tasks/tests/e2e/tests/passkey.spec.ts and auth.spec.ts): a
+// screen one view framework already proves end to end is not walked again in
+// another (the owner, 2026-10-04), and no spec is shared across the demos —
+// a moved spec leaves no copy (docs/agents/frontend/testing-strategy.md,
+// "Which demo carries a spec").
 
 test('holds the address in a modal over the page, and signs the session in on the mailed code', async ({
   page,

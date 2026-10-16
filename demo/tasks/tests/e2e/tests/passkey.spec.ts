@@ -94,7 +94,7 @@ test('signs in usernameless with a discoverable passkey — no email', async ({
   // ceremony (HIL-284) mints one, so enroll a passkey first, then sign out.
   await addVirtualAuthenticator(page)
   await watchPasskeyCreation(page)
-  await signUp(page)
+  const user = await signUp(page)
   await gotoPage(page, '/profile/sign-in')
   await clickSubmit(page.getByTestId('profile-sign-in-add'))
   // Adding a way in asks the password first (HIL-1138).
@@ -126,6 +126,30 @@ test('signs in usernameless with a discoverable passkey — no email', async ({
   await logout(page)
   await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
+
+  // The row of the EMPTY field (HIL-423) carries what names no account — the
+  // key and both providers — and a typed address takes all three away. The
+  // rule is the core's and unit-tested there; this is a real browser typing it
+  // (HIL-426). The address typed is this account's own: a free one would carry
+  // the flow into a registration, and clearing the field does not bring it
+  // back, so the key below would start the ceremony of a NEW account instead.
+  const field = page.getByTestId('auth-identifier')
+  const emptyFieldRow = [
+    'auth-icon-passkey',
+    'auth-icon-oauth-github',
+    'auth-icon-oauth-google',
+  ]
+  for (const id of emptyFieldRow) {
+    await expect(page.getByTestId(id)).toBeVisible()
+  }
+  await typeInto(field, user.email)
+  for (const id of emptyFieldRow) {
+    await expect(page.getByTestId(id)).toHaveCount(0)
+  }
+  await field.fill('')
+  for (const id of emptyFieldRow) {
+    await expect(page.getByTestId(id)).toBeVisible()
+  }
 
   // DISCOVERABLE LOGIN (HIL-400): click the usernameless "Sign in with a passkey"
   // icon — no email is entered, which is exactly why it lives in the row that only

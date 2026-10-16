@@ -21,8 +21,9 @@
 //
 // The structure, the texts and every `data-id` are 1:1 with the Vue and React
 // peers, and deliberately so: HIL-427 and the i18n stage edit all three surfaces
-// with one feature, and HIL-426's parity specs are only parity specs while the
-// name set is shared.
+// with one feature, and the sign-in e2e, laid out over the demos of three view
+// frameworks (chat, tasks, polls), drives every surface by the same names: a
+// spec moves between those demos only while the name set is shared.
 //
 // The password screen of a registration offers a passkey ending the mockup does
 // not draw yet (HIL-1104): its place and its words are the owner's decision,
