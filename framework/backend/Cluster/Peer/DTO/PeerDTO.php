@@ -54,7 +54,7 @@ use Hilos\Cluster\Placement\PlacementRefusal;
  * protected-mode frames ({@see PeerProtectedModeEnableDTO}, {@see PeerProtectedModeReadyDTO},
  * {@see PeerProtectedModeDisableDTO}) carry the initiator↔leader freeze hand-off that the
  * agent-signal fabric cannot deliver to a leader daemon, and their cluster-wide mirror
- * ({@see PeerProtectedModeQuiesceDTO}, {@see PeerProtectedModeQuiescedDTO},
+ * ({@see PeerProtectedModeQuiesceDTO}, {@see PeerProtectedModeWindowDTO}, {@see PeerProtectedModeQuiescedDTO},
  * {@see PeerProtectedModeSettledDTO}, {@see PeerProtectedModeLiftDTO}) carries the
  * leader↔follower freeze the leader drives, and the verification frames
  * ({@see PeerProtectedModeVerifyDTO}, {@see PeerProtectedModePassDTO},
@@ -140,6 +140,7 @@ abstract class PeerDTO extends BaseDTO
             PeerProtectedModeRefusedDTO::MESSAGE_TYPE => PeerProtectedModeRefusedDTO::fromArray($data),
             PeerProtectedModeDisableDTO::MESSAGE_TYPE => PeerProtectedModeDisableDTO::fromArray($data),
             PeerProtectedModeQuiesceDTO::MESSAGE_TYPE => PeerProtectedModeQuiesceDTO::fromArray($data),
+            PeerProtectedModeWindowDTO::MESSAGE_TYPE => PeerProtectedModeWindowDTO::fromArray($data),
             PeerProtectedModeQuiescedDTO::MESSAGE_TYPE => PeerProtectedModeQuiescedDTO::fromArray($data),
             PeerProtectedModeSettledDTO::MESSAGE_TYPE => PeerProtectedModeSettledDTO::fromArray($data),
             PeerDbReHydrateDTO::MESSAGE_TYPE => PeerDbReHydrateDTO::fromArray($data),

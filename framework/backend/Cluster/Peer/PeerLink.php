@@ -49,6 +49,7 @@ use Hilos\Cluster\Peer\DTO\PeerProtectedModeRefusedDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeRefreezeDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeSettledDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeVerifyDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeWindowDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerReadyAckDTO;
 use Hilos\Cluster\Peer\DTO\PeerReadyDTO;
@@ -474,6 +475,7 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerProtectedModeRefusedDTO => $this->onProtectedModeRefused($frame),
             $frame instanceof PeerProtectedModeDisableDTO => $this->onProtectedModeDisable($frame),
             $frame instanceof PeerProtectedModeQuiesceDTO => $this->onProtectedModeQuiesce($frame),
+            $frame instanceof PeerProtectedModeWindowDTO => $this->onProtectedModeWindow($frame),
             $frame instanceof PeerProtectedModeQuiescedDTO => $this->onProtectedModeQuiesced($frame),
             $frame instanceof PeerProtectedModeSettledDTO => $this->onProtectedModeSettled($frame),
             $frame instanceof PeerDbReHydrateDTO => $this->onDbReHydrate($frame),
@@ -1103,6 +1105,21 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('protected-mode quiesce');
         $this->server->onProtectedModeQuiesceReceived($this, $frame);
+    }
+
+    /**
+     * Hands a direct verification-window order to this follower's server.
+     *
+     * @param PeerProtectedModeWindowDTO $frame Incoming protected-mode window frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws EnvException When the cluster-enabled flag value is invalid during leader lookup
+     */
+    private function onProtectedModeWindow(PeerProtectedModeWindowDTO $frame): void
+    {
+        $this->requireHandshaked('protected-mode window');
+        $this->server->onProtectedModeWindowReceived($this, $frame);
     }
 
     /**

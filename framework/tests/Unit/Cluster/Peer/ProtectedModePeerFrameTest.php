@@ -19,6 +19,7 @@ use Hilos\Cluster\Peer\DTO\PeerProtectedModeReadyDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeRefreezeDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeSettledDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeVerifyDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeWindowDTO;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\VerifierCircleSnapshot;
@@ -188,6 +189,87 @@ final class ProtectedModePeerFrameTest extends TestCase
 
         $this->assertNull($restored->data->initiatorAgentIndex);
         $this->assertNull($restored->data->initiatorSessionTokenHash);
+    }
+
+    public function testWindowFrameRoundTripsThroughTheWire(): void
+    {
+        foreach ([3, null] as $index) {
+            $frame = new PeerProtectedModeWindowDTO(new ProtectedModeQuiesceData(
+                operation: 'manual_maintenance',
+                initiatorAgentType: 'index',
+                initiatorAgentIndex: $index,
+                initiatorNodeId: 'node-a',
+                initiatorSessionTokenHash: 'operator-hash',
+            ));
+
+            $restored = PeerProtectedModeWindowDTO::fromJson($frame->toJson());
+
+            $this->assertSame('peer_protected_mode_window', $restored->getType());
+            $this->assertSame([
+                PeerDTO::TYPE => 'peer_protected_mode_window',
+                PeerProtectedModeWindowDTO::FIELD_PAYLOAD => $frame->data->toArray(),
+            ], $restored->toArray());
+            $this->assertSame('manual_maintenance', $restored->data->operation);
+            $this->assertSame('index', $restored->data->initiatorAgentType);
+            $this->assertSame($index, $restored->data->initiatorAgentIndex);
+            $this->assertSame('node-a', $restored->data->initiatorNodeId);
+            $this->assertSame('operator-hash', $restored->data->initiatorSessionTokenHash);
+        }
+    }
+
+    public function testWindowFrameKeepsANullOperatorSessionHash(): void
+    {
+        $frame = new PeerProtectedModeWindowDTO(new ProtectedModeQuiesceData(
+            'manual_maintenance', 'index', null, 'node-a', null,
+        ));
+
+        $restored = PeerProtectedModeWindowDTO::fromArray($frame->toArray());
+
+        $this->assertNull($restored->data->initiatorSessionTokenHash);
+    }
+
+    public function testWindowFrameRejectsNonObjectPayload(): void
+    {
+        $this->expectException(PeerTransportException::class);
+        $this->expectExceptionMessage('non-object payload');
+
+        PeerProtectedModeWindowDTO::fromArray([
+            PeerProtectedModeWindowDTO::FIELD_PAYLOAD => 'not-an-object',
+        ]);
+    }
+
+    public function testWindowFrameRejectsMissingPayload(): void
+    {
+        $this->expectException(PeerTransportException::class);
+        $this->expectExceptionMessage('window frame is malformed');
+
+        PeerProtectedModeWindowDTO::fromArray([]);
+    }
+
+    public function testWindowFrameRejectsIncompletePayload(): void
+    {
+        $this->expectException(PeerTransportException::class);
+        $this->expectExceptionMessage('window frame is malformed');
+
+        PeerProtectedModeWindowDTO::fromArray([
+            PeerProtectedModeWindowDTO::FIELD_PAYLOAD => [ProtectedModeQuiesceData::operation => 'manual_maintenance'],
+        ]);
+    }
+
+    public function testWindowFrameDispatchesThroughTheSharedWireParser(): void
+    {
+        $frame = new PeerProtectedModeWindowDTO(new ProtectedModeQuiesceData(
+            'manual_maintenance', 'index', 1, 'node-a', 'operator-hash',
+        ));
+
+        $parsed = PeerDTO::fromWire($frame->toJson());
+
+        $this->assertInstanceOf(PeerProtectedModeWindowDTO::class, $parsed);
+        $this->assertSame('manual_maintenance', $parsed->data->operation);
+        $this->assertSame('index', $parsed->data->initiatorAgentType);
+        $this->assertSame(1, $parsed->data->initiatorAgentIndex);
+        $this->assertSame('node-a', $parsed->data->initiatorNodeId);
+        $this->assertSame('operator-hash', $parsed->data->initiatorSessionTokenHash);
     }
 
     public function testAdmissionFrameRoundTripsAndDispatchesThroughTheWireParser(): void

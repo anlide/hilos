@@ -22,11 +22,12 @@ namespace Hilos\Cluster\Peer;
  * A leader that stops leading releases the nodes that answered to it as of HIL-1287.
  * 19 — peer_agent_restart (HIL-1380).
  * 20 — peer_agent_status and peer_placement_verdict carry the placement-gate refusals (HIL-447).
+ * 21 — peer_protected_mode_window opens the direct verification window on every master (HIL-1367).
  */
 final class PeerProtocol
 {
     /** @var int Current peer wire-protocol version */
-    public const int VERSION = 20;
+    public const int VERSION = 21;
 
     /**
      * Reports whether a remote-declared protocol version can share this channel.

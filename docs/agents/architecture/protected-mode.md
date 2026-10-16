@@ -62,11 +62,10 @@ Agent::requestProtectedModeEnable(operation, acceptKey, sessionHash, entryMode =
 
 The nested enable payload carries `entryMode`: `freeze` keeps the two-phase
 restore path, and `verification_window` enters `verifying` directly on a single
-node. Old payloads without the key mean `freeze`. A cluster refuses a direct
-window before any pending entry, RT write, file write or roster stop; both the
-local request and a peer enable are guarded. The worker envelope and route stay
-the same. The runtime row records `entryMode` while occupied and clears it on
-lift; an old version-one state file without it means `freeze` while occupied.
+node or on every master of a cluster. Old payloads without the key mean `freeze`.
+The worker envelope and route stay the same. The runtime row records `entryMode`
+while occupied and clears it on lift; an old version-one state file without it
+means `freeze` while occupied. See *Manual Maintenance* for the cluster round.
 
 A CLI command never enters the mode itself. It sends its request down the
 command channel to the agent that owns the operation — `backup:restore-request`
@@ -377,9 +376,8 @@ the leader once every node of the round, itself included, has reported
 carries weight: an initiator on a follower gets both over one link, writes
 `active` first, and only then relays the ready that photographs the verifier
 circle, so its `enterActive()` never clears a circle already on the row. A
-follower takes it only from the leader it follows and only on `activating` —
-the frame rides every link to the node, and a copy over the second link would
-otherwise clear that circle. The close owes nobody a ready: the switch remembers
+follower takes it only from the leader it follows and only on `activating`.
+The close owes nobody a ready: the switch remembers
 whether the walk in flight owes one (`readyOwed`), because the phase no longer
 tells the walks apart. So `protected-mode:close` answers only once the agents the
 window brought back have stopped again everywhere, a ready answered to an enable
@@ -413,7 +411,7 @@ makes no blocking call.
 |---|---|
 | `INITIATOR_LOST` | the initiator agent stopped; sticky, because the agent-start gate lets its type start again and a fresh instance would read as alive |
 | `RESTORED_FROM_DISK` | the freeze came back with the daemon, so nothing is running behind it; reported on the first tick — under a manual window only when `protected_mode.manual_maintenance.restart_is_normal` is off. Workers tell the master this key via `worker_protected_mode_settings`; until one reports it, the returned manual window gets neither a verdict nor a routine-restart line. The default is one warning line for the freeze, without mail |
-| `QUIESCE_OVERDUE` | phase `activating` past `HILOS_PROTECTED_MODE_QUIESCE_TIMEOUT`; the alert names the nodes that never confirmed |
+| `QUIESCE_OVERDUE` | phase `activating` past `HILOS_PROTECTED_MODE_QUIESCE_TIMEOUT`, or a direct `verification_window` on `verifying` past that threshold with follower masters still pending in the leader's roster; the alert names the nodes that never confirmed |
 | `SILENT` | any other non-inactive phase with no progress mark newer than `HILOS_PROTECTED_MODE_SILENCE_TIMEOUT` — except in a manual-maintenance window (operation `manual_maintenance` entered as `verification_window`), where no operation is behind the door to mark progress |
 
 **The progress mark is written by the operation, not by the framework.** What
@@ -1062,8 +1060,42 @@ the pass count for every admitted subscriber.
 Enable, disable and code issuance are disabled for a view-mode viewer,
 including their confirmation openers, in each of the three SDKs. There is no
 extra project wiring: the index agent already serves this page and owns manual entry.
-In a cluster all masters close; disable and code minting work from any node
-(not in the code yet — HIL-1367).
+
+In a cluster all masters close, and the three CLI commands work from any node,
+including a slave. The index agent asks through its own master and the leader
+drives the round. The leader enters its own direct window and sends
+`peer_protected_mode_window` with the existing `ProtectedModeQuiesceData` to the
+follower masters. Each follower enters `verifying` and answers `quiesced`,
+including on a repeat window frame. The leader and followers read `entryMode`
+from their own `runtimeView()` row; the descriptor carries no entry mode.
+
+The round waits only for follower masters: no agent roster stops, no agent-start
+gate closes, and no `active` or `peer_protected_mode_settled` follows. Ready goes
+to the initiator only after every follower has answered. A pending follower past
+the quiesce timeout raises `QUIESCE_OVERDUE` even though the leader already reads
+`verifying`; the watchdog names the pending nodes and never opens the system.
+
+The worker photographs the circle on ready. The leader accepts that photograph
+once and distributes it to the follower masters, including an empty photograph;
+each master finishes its window once. Repeat enable answers ready without
+starting a new round, replacing the circle or stopping agents. A freeze or
+refreeze cannot turn the direct window into a full freeze. Pass hashes reach
+every master. Disable sends the ordinary lift to the followers and calls
+`enterInactive()` plus `finishLift()` on both sides, with no `deactivating`
+phase or roster walk. Every master clears its passes and removes its state file.
+
+A successor leader adopts a direct `verifying` row as an established window,
+without a new ready or circle photograph; the recorded initiator may still mint
+and disable. A restarted master restores its own state file before opening its
+entrance. The ordinary restart rules above clear codes and admission, and the
+direct window's photograph is already spent, so a repeat enable cannot take a
+new one.
+
+Two late-master limits apply to every freeze, including manual maintenance
+(owner decision, 2026-10-16): a master joining during a window without a freeze
+file stays open; a master returning with an old freeze file after disable stays
+closed until that file is removed manually. There is no catch-up synchronization
+for either case.
 
 ## Reading The Runtime Row, And What Null Means
 
@@ -1165,3 +1197,7 @@ Refuse loudly and before any trace of entry, as above.
   The teardown turns a manual window off too: the test open refuses one.
 - `demo/binance-btc-tracker` cluster scenarios 23 and 25 — drive the freeze and
   verification window through the live peer mesh and repeated quiesce rounds.
+- `demo/binance-btc-tracker` cluster scenario 38 — enables manual maintenance on
+  one follower master, mints a pass from a slave and disables on another follower
+  master. Every master reads `verifying` with no stopped agents and an open
+  agent-start gate, then one pass, then `inactive` with no passes.

@@ -76,7 +76,7 @@ Description:
   maintenance:pass mints a pass into the maintenance window.
 
   Pass codes are stored only as hashes and printed exactly once when minted.
-  Entering manual maintenance on a cluster is currently refused (HIL-1367).
+  On a cluster every master closes, and this command works from any node.
   Database restore uses its own protected-mode:* operator ladder instead.
 
 Usage:

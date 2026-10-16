@@ -298,6 +298,16 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
         ) {
             return ProtectedModeStuckVerdict::QUIESCE_OVERDUE;
         }
+        if (
+            $view->phase === StateProtectedModeRuntime::PHASE_VERIFYING
+            && $view->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW
+            && $now - $this->freezeSeenAt > $this->quiesceTimeoutSeconds()
+        ) {
+            $switch = Hilos::$cluster?->protectedMode();
+            if ($switch instanceof ProtectedModeQuiesceRoster && $switch->pendingNodeIds() !== []) {
+                return ProtectedModeStuckVerdict::QUIESCE_OVERDUE;
+            }
+        }
         if (!$view->isManualMaintenanceWindow() && $now - $this->lastSignOfLife($view) > $this->silenceTimeoutSeconds()) {
             return ProtectedModeStuckVerdict::SILENT;
         }

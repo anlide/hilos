@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\ProtectedMode;
 
+use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\EnvConstants;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
@@ -14,8 +15,10 @@ use Hilos\Mail\HilosMailer;
 use Hilos\Mail\Template\MailTemplateCatalogConstants;
 use Hilos\Mail\Template\ProtectedModeClearedMailTemplate;
 use Hilos\Mail\Template\ProtectedModeStuckMailTemplate;
+use Hilos\ProtectedMode\ProtectedModeQuiesceRoster;
 use Hilos\ProtectedMode\ProtectedModeStuckVerdict;
 use Hilos\ProtectedMode\ProtectedModeSettingsCatalog;
+use Hilos\ProtectedMode\ProtectedModeSwitch;
 use Hilos\ProtectedMode\ProtectedModeWatchdog;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
@@ -79,6 +82,9 @@ final class ProtectedModeWatchdogTest extends TestCase
 
     private ?LogLevel $previousWriteLevel = null;
 
+    private ?ClusterContext $previousCluster = null;
+
+    /** Prepares isolated facade state and log streams for each verdict. */
     protected function setUp(): void
     {
         parent::setUp();
@@ -98,12 +104,15 @@ final class ProtectedModeWatchdogTest extends TestCase
 
         $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
         $this->previousMailer = Hilos::$mail;
+        $this->previousCluster = Hilos::$cluster;
+        Hilos::$cluster = new ClusterContext();
         Hilos::$env = new EnvAccessor();
         putenv(EnvConstants::HILOS_PROTECTED_MODE_SILENCE_TIMEOUT->name . '=' . self::SILENCE_TIMEOUT);
         putenv(EnvConstants::HILOS_PROTECTED_MODE_QUIESCE_TIMEOUT->name . '=' . self::QUIESCE_TIMEOUT);
         putenv(EnvConstants::HILOS_PROTECTED_MODE_ALERT_INTERVAL->name . '=' . self::ALERT_INTERVAL);
     }
 
+    /** Restores facade state and removes the logs each case owns. */
     protected function tearDown(): void
     {
         Logger::resetLogFile();
@@ -125,6 +134,7 @@ final class ProtectedModeWatchdogTest extends TestCase
         putenv(EnvConstants::MAIL_WORKER_COUNT->name);
         Hilos::$env = $this->previousEnv;
         Hilos::$mail = $this->previousMailer;
+        Hilos::$cluster = $this->previousCluster;
         Hilos::$rt = null;
 
         parent::tearDown();
@@ -216,6 +226,42 @@ final class ProtectedModeWatchdogTest extends TestCase
         $watchdog->tick(self::STARTED_AT + 10_000 + self::QUIESCE_TIMEOUT + 1);
 
         $this->assertVerdict(ProtectedModeStuckVerdict::QUIESCE_OVERDUE);
+    }
+
+    /** The direct window still owes every follower master's confirmation. */
+    public function testADirectWindowRoundThatNeverClosesNamesThePendingMaster(): void
+    {
+        $this->manualWindow();
+        $switch = $this->createMockForIntersectionOfInterfaces([ProtectedModeSwitch::class, ProtectedModeQuiesceRoster::class]);
+        $switch->method('pendingNodeIds')->willReturn(['node-b']);
+        Hilos::$cluster->registerProtectedMode($switch);
+        $watchdog = new ProtectedModeWatchdog();
+
+        $watchdog->tick(self::STARTED_AT);
+        $watchdog->tick(self::STARTED_AT + self::QUIESCE_TIMEOUT);
+        $this->assertSame('', $this->written());
+
+        $watchdog->tick(self::STARTED_AT + self::QUIESCE_TIMEOUT + 1);
+
+        $this->assertVerdict(ProtectedModeStuckVerdict::QUIESCE_OVERDUE);
+        $this->assertStringContainsString('these nodes never confirmed the freeze: node-b', $this->written());
+        $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, Hilos::$rt->hilosProtectedModeRuntime->phase);
+    }
+
+    /** A completed manual window owes neither quiesce nor operation progress. */
+    public function testADirectWindowWithAClosedRoundStaysQuiet(): void
+    {
+        $this->manualWindow();
+        $switch = $this->createMockForIntersectionOfInterfaces([ProtectedModeSwitch::class, ProtectedModeQuiesceRoster::class]);
+        $switch->method('pendingNodeIds')->willReturn([]);
+        Hilos::$cluster->registerProtectedMode($switch);
+        $watchdog = new ProtectedModeWatchdog();
+
+        $watchdog->tick(self::STARTED_AT);
+        $watchdog->tick(self::STARTED_AT + self::QUIESCE_TIMEOUT + 1);
+        $watchdog->tick(self::STARTED_AT + self::SILENCE_TIMEOUT + 1);
+
+        $this->assertSame('', $this->written());
     }
 
     public function testAStoppedInitiatorIsReportedWithoutWaitingOutAnyThreshold(): void

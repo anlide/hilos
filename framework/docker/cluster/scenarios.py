@@ -92,6 +92,8 @@ Plus scenarios beyond that matrix:
  37 costless agents consume    agents that declare no cost still take a slot each: the slaves hold
     slots                      no more than the slots they declare, and the next is refused for
                                want of a slot on every slave (HIL-447)
+ 38 manual maintenance from    enable and disable on different follower masters, mint on a slave:
+    any node                   every master holds the window without stopping agents (HIL-1367)
  31 replica keeps up with       a replica took every write the preceding scenarios made, stays
     the primary                read-only and is reached by nobody (HIL-1229)
 
@@ -2567,6 +2569,10 @@ def scenario_30_ready_copy_outlives_its_node():
     here past its owner is followed by a restart of the agent. On start the replacement agent
     removes a ready row if its file is missing, so the unchanged ready row after failover proves
     that the new host could see the shared file before it started work.
+
+    The old host returns without its export agent. It must still address the leader's index
+    agent: a pass request outside maintenance is answered with the index's refusal, rather than
+    lost because the idle slave never learned who leads (HIL-1367).
     """
     views = wait_converge(ALL_NODES)
 
@@ -2637,8 +2643,12 @@ def scenario_30_ready_copy_outlives_its_node():
             ctl("start", holder)
             wait_converge(ALL_NODES)
 
+    refusal = client_refusal(holder, "maintenance:pass")
+    assert refusal is not None and "the mode is 'inactive', not verifying" in refusal, \
+        f"returning idle slave {holder} did not reach the leader's index agent: {refusal!r}"
+
     return (f"{holder} built {stored_name[:8]}….zip; after {holder} died the agent started "
-            f"on {new_holder} and the copy was still ready there")
+            f"on {new_holder} and the copy was still ready there; the returning host reached the index agent")
 
 
 # The address scenario 23 names to the verifier circle. No user holds it, on purpose: the
@@ -2687,10 +2697,57 @@ def wait_protected_mode(predicate, desc, nodes=None):
         if all(reply is not None and predicate(reply) for reply in replies.values()):
             return replies
         time.sleep(POLL_INTERVAL)
-    wrong = {n: (None if r is None else {k: r.get(k) for k in ("phase", "circleSize", "circleAdmitted")})
+    wrong = {n: (None if r is None else {k: r.get(k) for k in
+                                       ("phase", "circleSize", "circleAdmitted", "passCount",
+                                        "stoppedAgents", "agentStartGateClosed")})
              for n, r in replies.items() if r is None or not predicate(r)}
     raise ScenarioTimeout(f"timed out after {CONVERGE_TIMEOUT:.0f}s waiting for: {desc}\n"
                           f"masters still not there: {wrong}")
+
+
+def scenario_38_manual_maintenance_from_any_node():
+    """Manual maintenance closes every master while its agents keep running (HIL-1367).
+
+    Three command entrances exercise the live command channel and peer mesh: enable from a
+    follower master, mint from a slave, disable from the other follower master. Each step reads
+    every master's own protected-mode row. No browser is driven here.
+    """
+    views = wait_converge(ALL_NODES)
+    leader = leaders(views)[0]
+    followers = [node for node in MASTERS if node != leader]
+    enable_node, disable_node = followers[:2]
+    pass_node = SLAVES[0]
+
+    try:
+        assert client(enable_node, "maintenance:enable"), \
+            f"maintenance:enable from follower {enable_node} refused or never answered"
+        opened = wait_protected_mode(lambda r: r.get("phase") == "verifying",
+                                     "every master in the manual maintenance window")
+        for node, reply in opened.items():
+            assert reply.get("stoppedAgents") == [], f"{node} stopped agents under manual maintenance: {reply}"
+            assert reply.get("agentStartGateClosed") is False, f"{node} closed its agent-start gate: {reply}"
+
+        assert client(pass_node, "maintenance:pass"), \
+            f"maintenance:pass from slave {pass_node} refused or never answered"
+        wait_protected_mode(lambda r: r.get("phase") == "verifying" and r.get("passCount") == 1,
+                            "every master holding one manual maintenance pass")
+
+        current = wait_converge(ALL_NODES)
+        assert disable_node not in leaders(current), f"{disable_node} became leader before maintenance:disable"
+        assert client(disable_node, "maintenance:disable"), \
+            f"maintenance:disable from other follower {disable_node} refused or never answered"
+        wait_protected_mode(lambda r: r.get("phase") == "inactive" and r.get("passCount") == 0,
+                            "every master open again, all manual maintenance passes cleared")
+    finally:
+        replies = {node: protected_mode(node) for node in MASTERS}
+        if any(reply is None or reply.get("phase") != "inactive" for reply in replies.values()):
+            assert client(enable_node, "maintenance:disable"), "could not clean up the manual maintenance window"
+            wait_protected_mode(lambda r: r.get("phase") == "inactive" and r.get("passCount") == 0,
+                                "manual maintenance cleaned up on every master")
+
+    return (f"enabled from follower {enable_node}, minted from slave {pass_node}, disabled from follower {disable_node}; "
+            f"all {in_words(len(MASTERS))} masters verified without stopped agents or a closed start gate, "
+            "held one pass and cleared it on lift")
 
 
 def scenario_23_verifier_circle_on_every_master():
@@ -3851,6 +3908,8 @@ SCENARIOS = [
              Need(masters=2, slaves=1, entry=True)),
     Scenario("34 a tab is the same on every master under protected mode", scenario_34_a_tab_is_the_same_on_every_master,
              Need(masters=3, slaves=1, entry=True)),
+    Scenario("38 manual maintenance from any node", scenario_38_manual_maintenance_from_any_node,
+             Need(masters=3, slaves=1)),
     # Last of all: each replica took the writes of every preceding scenario. This only reads,
     # so a freeze 23 or 25 may leave behind does not touch it.
     Scenario("31 replica keeps up with the primary", scenario_31_replica_keeps_up_with_the_primary,

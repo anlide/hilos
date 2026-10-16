@@ -55,6 +55,7 @@ use Hilos\Cluster\Peer\DTO\PeerProtectedModeRefusedDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeRefreezeDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeSettledDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeVerifyDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeWindowDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
@@ -1380,6 +1381,24 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
+     * Unwraps the direct verification-window order for this follower's coordinator.
+     * A no-op before the handler is registered.
+     *
+     * @param PeerLink $link Link the order arrived on
+     * @param PeerProtectedModeWindowDTO $frame Received protected-mode window frame
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws EnvException When the cluster-enabled flag value is invalid during leader lookup
+     */
+    public function onProtectedModeWindowReceived(PeerLink $link, PeerProtectedModeWindowDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from !== null) {
+            $this->protectedMode?->onWindow($from, $frame->data);
+        }
+    }
+
+    /**
      * Routes a received protected-mode quiesced report to the local handler for the leader to track.
      *
      * @param PeerLink $link Link the report arrived on
@@ -1685,6 +1704,16 @@ final class PeerServer extends AbstractTlsServer implements
     public function broadcastQuiesce(ProtectedModeQuiesceData $data): void
     {
         $this->broadcastToMasters(new PeerProtectedModeQuiesceDTO($data));
+    }
+
+    /**
+     * Opens a direct verification window on every follower master without stopping agents.
+     *
+     * @param ProtectedModeQuiesceData $data Operation and initiator identity the window protects
+     */
+    public function broadcastWindow(ProtectedModeQuiesceData $data): void
+    {
+        $this->broadcastToMasters(new PeerProtectedModeWindowDTO($data));
     }
 
     /**

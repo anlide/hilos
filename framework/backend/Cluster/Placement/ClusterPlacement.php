@@ -1923,6 +1923,10 @@ final class ClusterPlacement implements WorkerPlacement
      * thing the per-tick publish cannot do for it: the publish speaks only on CHANGE, so a node
      * that linked into a quiet cluster would learn nothing until something moved.
      *
+     * The leader also asks for the hosted set, taking over the node through the ordinary query
+     * handler. An idle slave missed the election query and receives no place frame, so the view
+     * alone leaves it unable to address leader-hosted agents (HIL-1367).
+     *
      * What the peer's loss armed here - the self-fence, the failover - is called off by
      * {@see noteNodeOnline()}, not here: a handshake after a lost link is always a return the
      * registry reports, because nothing but this node's own handshake puts a node back online
@@ -1933,6 +1937,7 @@ final class ClusterPlacement implements WorkerPlacement
     public function onPeerHandshaked(string $nodeId): void
     {
         if ($this->isLeader) {
+            $this->mesh->sendToNode($nodeId, new PeerPlacementQueryDTO());
             $this->mesh->sendToNode($nodeId, new PeerPlacementViewDTO($this->selfNodeId, $this->placementViewAgents()));
         }
 

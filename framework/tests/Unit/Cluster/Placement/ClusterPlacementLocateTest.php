@@ -9,6 +9,8 @@ use Hilos\Cluster\Leadership;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacedAgentEntry;
+use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
 use Hilos\Cluster\Placement\AgentLocationKind;
 use Hilos\Cluster\Placement\ClusterPlacement;
@@ -103,6 +105,40 @@ final class ClusterPlacementLocateTest extends TestCase
         $placement->onPlaceAgent('node-b', new PeerPlaceAgentDTO('library', null));
 
         $this->assertSame('node-b', $placement->locate('chat', null)->nodeId);
+    }
+
+    /**
+     * A restarted idle slave missed the leader's election query and receives no new placement.
+     * Its handshake must still teach it where leader-hosted agents run (HIL-1367).
+     */
+    public function testARejoiningIdleSlaveLearnsTheLeaderWithoutBeingPlacedWork(): void
+    {
+        $leaderMesh = new FakePlacementMesh([], linked: [self::SELF]);
+        $leader = new ClusterPlacement('node-b', $leaderMesh, new FakePlacementExecutor());
+        $leader->onBecameLeader(1000.0);
+        $leader->tick(1000.0);
+        $leaderMesh->sent = [];
+        $leaderMesh->broadcast = [];
+
+        $slave = $this->follower(leaderId: null);
+        Hilos::$cluster?->registerLeadership(new PendingLeadership());
+        $this->assertSame(AgentLocationKind::Unknown, $slave->locate('chat', null)->kind);
+
+        $leader->onPeerHandshaked(self::SELF);
+        foreach ($leaderMesh->sent as [$nodeId, $frame]) {
+            $this->assertSame(self::SELF, $nodeId);
+            match (true) {
+                $frame instanceof PeerPlacementQueryDTO => $slave->onPlacementQuery('node-b'),
+                $frame instanceof PeerPlacementViewDTO => $slave->onPlacementView('node-b', $frame),
+                $frame instanceof PeerPlacementReportDTO => $slave->onPlacementReport('node-b', $frame),
+                default => $this->fail('An idle handshake must not place work'),
+            };
+        }
+
+        $this->assertSame([], $leaderMesh->broadcast, 'No new term or placement change announces the leader');
+        $this->assertSame('node-b', $slave->knownLeaderId());
+        $this->assertSame(AgentLocationKind::Node, $slave->locate('chat', null)->kind);
+        $this->assertSame('node-b', $slave->locate('chat', null)->nodeId);
     }
 
     /**

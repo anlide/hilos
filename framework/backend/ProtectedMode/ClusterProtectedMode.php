@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
-use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Cluster\Placement\AgentLocationKind;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Environment\Exception\EnvException;
@@ -95,7 +94,7 @@ final class ClusterProtectedMode implements
 
     /**
      * @var array<string, true> Node ids the leader still awaits a quiesced report from - the followers,
-     *     and the leader itself until its own roster has stopped ({@see onRosterStopped()})
+     *     plus itself during a full freeze until its roster has stopped ({@see onRosterStopped()})
      */
     private array $pendingNodes = [];
 
@@ -104,10 +103,13 @@ final class ClusterProtectedMode implements
 
     /**
      * @var bool Whether the round in flight owes the initiator a ready - an entry does, the close
-     *     back from the window does not (HIL-1128); the round's end tells the followers first
-     *     ({@see onSettled()}) and the initiator only when owed
+     *     back from the window does not (HIL-1128); a full freeze tells the followers first
+     *     ({@see onSettled()}), while direct entry leaves their verifying rows in place
      */
     private bool $readyOwed = false;
+
+    /** @var bool Whether this leader has accepted the direct window's one circle photograph */
+    private bool $directCircleReceived = false;
 
     /** @var ?string Node id of the leader that ordered this node's freeze, or null when not frozen */
     private ?string $freezingLeaderId = null;
@@ -203,16 +205,6 @@ final class ClusterProtectedMode implements
      */
     public function requestEnable(ProtectedModeEnableSignalData $data): void
     {
-        if ($data->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW) {
-            Hilos::$cluster?->protectedModeInitiatorRelay()?->deliverProtectedModeRefused(
-                $data->initiatorAgentType,
-                $data->initiatorAgentIndex === null ? null : (string)$data->initiatorAgentIndex,
-                ProtectedModeRefusalCopy::DIRECT_WINDOW_ON_CLUSTER,
-            );
-
-            return;
-        }
-
         if ($this->isLeader) {
             $this->onEnable($this->selfNodeId, $data);
             return;
@@ -461,12 +453,6 @@ final class ClusterProtectedMode implements
      */
     public function onEnable(string $fromNodeId, ProtectedModeEnableSignalData $data): void
     {
-        if ($data->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW) {
-            $this->signalInitiatorRefused($fromNodeId, $data, ProtectedModeRefusalCopy::DIRECT_WINDOW_ON_CLUSTER);
-
-            return;
-        }
-
         if (!$this->isLeader) {
             Logger::warning("Protected mode: dropping enable from '{$fromNodeId}' — node '{$this->selfNodeId}' is not the leader");
             $this->signalInitiatorRefused($fromNodeId, $data, ProtectedModeRefusalCopy::NO_LEADER);
@@ -502,6 +488,11 @@ final class ClusterProtectedMode implements
             $data->initiatorSessionTokenHash,
         );
         $this->readyOwed = true;
+        if ($data->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW) {
+            $this->enterWindowRound($this->activeFreeze, $data->initiatorAcceptKey);
+            return;
+        }
+
         $this->enterRound($this->activeFreeze, $data->initiatorAcceptKey);
     }
 
@@ -535,9 +526,15 @@ final class ClusterProtectedMode implements
             return;
         }
 
-        $this->executor->enterDeactivating();
+        $directWindow = $this->runtimeView()?->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW;
+        if (!$directWindow) {
+            $this->executor->enterDeactivating();
+        }
         $this->mesh->broadcastLift();
         $this->executor->enterInactive();
+        if ($directWindow) {
+            $this->executor->finishLift();
+        }
         $this->resetLeaderState();
     }
 
@@ -552,7 +549,8 @@ final class ClusterProtectedMode implements
      * (HIL-1057): the window has returned the roster, so a second stop is safe, and that is how a
      * repeat entry from the window - and the close back from it (HIL-1128) - reaches a follower,
      * which does not tell the two apart. On activating or active the same frame is still dropped,
-     * because those phases hold a standing or unfinished stop list.
+     * because those phases hold a standing or unfinished stop list. A direct verification window
+     * rejects every quiesce so its agents keep running.
      *
      * A node that holds no runtime state refuses the quiesce and answers nothing, mirroring the
      * leader's entry guard: silence keeps the leader in activating, which is the safe half of the
@@ -566,6 +564,12 @@ final class ClusterProtectedMode implements
      */
     public function onQuiesce(string $fromNodeId, ProtectedModeQuiesceData $data): void
     {
+        if ($this->runtimeView()?->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW) {
+            Logger::warning("Protected mode: dropping quiesce from '{$fromNodeId}'"
+                . " — node '{$this->selfNodeId}' holds a direct verification window");
+            return;
+        }
+
         if ($this->underFreeze()) {
             $acceptedLeader = $this->obeysLeader($fromNodeId);
             if ($acceptedLeader) {
@@ -594,6 +598,50 @@ final class ClusterProtectedMode implements
         // may connect (HIL-1305). The accept key remains on the node of its socket. The quiesced
         // report waits for this roster to stop and leaves from onRosterStopped().
         $this->executor->enterActivating($data, null);
+    }
+
+    /**
+     * Opens a direct window without stopping agents; an accepted repeat only acknowledges it.
+     * A node holding no runtime state answers nothing, keeping the leader's round pending.
+     *
+     * @param string $fromNodeId Node id of the leader that ordered the window
+     * @param ProtectedModeQuiesceData $data Operation and initiator identity the window protects
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws EnvException When the cluster-enabled flag value is invalid during leader lookup
+     */
+    public function onWindow(string $fromNodeId, ProtectedModeQuiesceData $data): void
+    {
+        if ($this->underFreeze()) {
+            if (
+                $this->obeysLeader($fromNodeId)
+                && $this->runtimeView()?->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW
+                && $this->phaseIs(StateProtectedModeRuntime::PHASE_VERIFYING)
+                && $this->runtimeView()?->initiatorAgentType === $data->initiatorAgentType
+                && $this->runtimeView()?->initiatorAgentIndex === $data->initiatorAgentIndex
+            ) {
+                $this->followLeader($fromNodeId);
+                $this->mesh->sendQuiesced($fromNodeId);
+                return;
+            }
+
+            Logger::warning("Protected mode: dropping window from '{$fromNodeId}'"
+                . " — node '{$this->selfNodeId}' already holds another freeze or window");
+            return;
+        }
+
+        if ($this->runtimeView() === null) {
+            Logger::error(
+                "Protected mode: cannot open window for '{$data->operation}' ordered by '{$fromNodeId}' — "
+                . "node '{$this->selfNodeId}' holds no protected mode runtime state"
+            );
+            return;
+        }
+
+        $this->freezingLeaderId = $fromNodeId;
+        $this->readyRelayed = false;
+        $this->executor->enterVerificationWindow($data, null);
+        $this->mesh->sendQuiesced($fromNodeId);
     }
 
     /**
@@ -730,7 +778,11 @@ final class ClusterProtectedMode implements
         }
         $this->followLeader($fromNodeId);
 
+        $directWindow = $this->runtimeView()?->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW;
         $this->executor->enterInactive();
+        if ($directWindow) {
+            $this->executor->finishLift();
+        }
         $this->freezingLeaderId = null;
     }
 
@@ -739,10 +791,8 @@ final class ClusterProtectedMode implements
      *
      * The leader's word is all that active says on a follower (HIL-1128): this node's own walk ends
      * in a quiesced report, and only the round as a whole decides that the freeze holds. Taken only
-     * from the leader this node follows and only on activating, because the frame rides every
-     * link to the node ({@see PeerServer::broadcastToMasters()}): a copy over the second link
-     * arrives on active, with the circle photographed after the first copy already on the row, and
-     * writing active again would clear it.
+     * from the leader this node follows and only on activating: a late or repeated settled must
+     * not clear a circle already photographed or turn a verification window into a full freeze.
      *
      * @param string $fromNodeId Node id of the leader that closed the round
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
@@ -928,6 +978,8 @@ final class ClusterProtectedMode implements
      * frame, as {@see requestCircle()} says, and the leader has nothing a phase would add: the
      * photograph is taken at ready, the one moment it is both final and true, and
      * {@see leadsFreezeFor()} has already said that the freeze it belongs to is the one being led here.
+     * A direct window accepts only its first photograph on the leader, including an empty one;
+     * each master finishes verifying after applying that photograph.
      *
      * @param string $fromNodeId Node id the frame came from
      * @param string $agentType Initiator agent type
@@ -942,6 +994,9 @@ final class ClusterProtectedMode implements
         if ($this->obeysLeader($fromNodeId)) {
             $this->followLeader($fromNodeId);
             $this->runtimeView()?->actions->admitCircle($snapshot);
+            if ($this->runtimeView()?->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW) {
+                $this->executor->finishVerifying();
+            }
             return;
         }
 
@@ -949,8 +1004,18 @@ final class ClusterProtectedMode implements
             return;
         }
 
+        $directWindow = $this->runtimeView()?->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW;
+        if ($directWindow && $this->directCircleReceived) {
+            Logger::warning("Protected mode: dropping circle from '{$fromNodeId}' — the direct window already has its photograph");
+            return;
+        }
+
         $this->runtimeView()?->actions->admitCircle($snapshot);
         $this->mesh->broadcastCircle($this->activeFreeze->initiatorAgentType, $this->activeFreeze->initiatorAgentIndex, $snapshot);
+        if ($directWindow) {
+            $this->directCircleReceived = true;
+            $this->executor->finishVerifying();
+        }
     }
 
     /**
@@ -979,6 +1044,10 @@ final class ClusterProtectedMode implements
             Logger::warning("Protected mode: dropping refreeze from '{$fromNodeId}' — the mode is not verifying");
             return;
         }
+        if ($this->runtimeView()?->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW) {
+            Logger::warning("Protected mode: dropping refreeze from '{$fromNodeId}' — a direct verification window cannot be frozen");
+            return;
+        }
 
         // Both are already vouched for by the two guards above; the check is for the type system.
         $view = $this->runtimeView();
@@ -989,6 +1058,26 @@ final class ClusterProtectedMode implements
         $this->readyOwed = false;
         $this->activeFreeze = $this->activeFreeze->withInitiatorSessionTokenHash($view->initiatorSessionTokenHash);
         $this->enterRound($this->activeFreeze, $view->initiatorAcceptKey);
+    }
+
+    /**
+     * Opens the direct window locally and waits only for follower masters, without a roster walk.
+     *
+     * @param ProtectedModeQuiesceData $freeze Window this round is entering
+     * @param ?string $initiatorAcceptKey Initiating connection, or null for a remote initiator
+     * @throws EnvException When the cluster-enabled flag value is invalid during initiator placement lookup
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
+    private function enterWindowRound(ProtectedModeQuiesceData $freeze, ?string $initiatorAcceptKey): void
+    {
+        $this->pendingNodes = array_fill_keys($this->mesh->followerMasterNodeIds(), true);
+        $this->active = false;
+        $this->directCircleReceived = false;
+
+        $this->executor->enterVerificationWindow($freeze, $initiatorAcceptKey);
+        $this->mesh->broadcastWindow($freeze);
+        $this->activateWhenAllQuiesced();
     }
 
     /**
@@ -1063,6 +1152,22 @@ final class ClusterProtectedMode implements
             Logger::warning("Protected mode: dropping enable from '{$fromNodeId}'"
                 . " — a '{$freeze->operation}' freeze is already in flight");
             $this->signalInitiatorRefused($fromNodeId, $data, ProtectedModeRefusalCopy::FOREIGN_FREEZE);
+            return;
+        }
+
+        if ($this->runtimeView()?->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW) {
+            if (
+                $data->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW
+                && $data->operation === $freeze->operation
+            ) {
+                $this->signalInitiatorReady($freeze);
+            } else {
+                $this->signalInitiatorRefused($fromNodeId, $data, ProtectedModeRefusalCopy::ANOTHER_OPERATION);
+            }
+            return;
+        }
+        if ($data->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW) {
+            $this->signalInitiatorRefused($fromNodeId, $data, ProtectedModeRefusalCopy::ANOTHER_OPERATION);
             return;
         }
 
@@ -1228,8 +1333,8 @@ final class ClusterProtectedMode implements
     }
 
     /**
-     * Marks the freeze active once no node is still pending, tells every follower so, and signals
-     * the initiator when the round owes it a ready.
+     * Closes the round once every node has reported and sends any ready owed to the initiator.
+     * A direct window keeps its verifying row; a full freeze writes active and settles followers.
      */
     private function activateWhenAllQuiesced(): void
     {
@@ -1238,11 +1343,12 @@ final class ClusterProtectedMode implements
         }
 
         $this->active = true;
-        $this->executor->enterActive();
-        // Before the ready, and the order carries weight: an initiator on a follower gets both frames
-        // over one link, writes active first and only then relays the ready that photographs the
-        // circle, so the follower's enterActive() never clears a circle already on its row.
-        $this->mesh->broadcastSettled();
+        if ($this->runtimeView()?->entryMode !== StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW) {
+            $this->executor->enterActive();
+            // Before the ready: an initiator on a follower writes active first, then relays the ready
+            // that photographs the circle, so enterActive() cannot clear a circle already on its row.
+            $this->mesh->broadcastSettled();
+        }
         if (!$this->readyOwed) {
             return;
         }
@@ -1325,6 +1431,7 @@ final class ClusterProtectedMode implements
         $this->pendingNodes = $this->active
             ? []
             : array_fill_keys($this->mesh->followerMasterNodeIds(), true);
+        $this->directCircleReceived = $view->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW;
         $this->freezingLeaderId = null;
 
         Logger::warning(
@@ -1342,6 +1449,7 @@ final class ClusterProtectedMode implements
         $this->pendingNodes = [];
         $this->active = false;
         $this->readyOwed = false;
+        $this->directCircleReceived = false;
     }
 
     /**

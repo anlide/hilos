@@ -96,6 +96,18 @@ interface ProtectedModeCoordinator
     public function onQuiesce(string $fromNodeId, ProtectedModeQuiesceData $data): void;
 
     /**
+     * Opens this follower's direct verification window and immediately reports quiesced.
+     * Repeats from the accepted leader preserve the window's codes, admissions and circle.
+     *
+     * @param string $fromNodeId Node id of the leader that ordered the window
+     * @param ProtectedModeQuiesceData $data Operation and initiator identity the window protects
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws EnvException When the cluster-enabled flag value is invalid during leader lookup
+     */
+    public function onWindow(string $fromNodeId, ProtectedModeQuiesceData $data): void;
+
+    /**
      * Handles a follower's confirmation that it has quiesced.
      *
      * Arrives on the leader; the leader activates the mode once every follower has reported.

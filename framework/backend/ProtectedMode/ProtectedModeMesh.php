@@ -73,6 +73,13 @@ interface ProtectedModeMesh
     public function broadcastQuiesce(ProtectedModeQuiesceData $data): void;
 
     /**
+     * Opens a direct verification window on every follower master without stopping agents.
+     *
+     * @param ProtectedModeQuiesceData $data Operation and initiator identity the window protects
+     */
+    public function broadcastWindow(ProtectedModeQuiesceData $data): void;
+
+    /**
      * Signals the initiator that every node has quiesced and its operation may proceed.
      *
      * @param string $nodeId Node where the initiator agent currently runs

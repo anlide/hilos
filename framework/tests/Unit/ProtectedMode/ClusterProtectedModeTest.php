@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\ProtectedMode;
 
+use Closure;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Placement\AgentLocation;
 use Hilos\Hilos;
@@ -643,6 +644,159 @@ final class ClusterProtectedModeTest extends TestCase
         $this->assertSame([['sendQuiesced', 'node-x']], $this->mesh->calls);
     }
 
+    public function testFollowerOpensADirectWindowAndReportsQuiescedImmediately(): void
+    {
+        $window = new ProtectedModeQuiesceData('manual_maintenance', 'index', null, 'node-b', 'operator-hash');
+
+        $this->coordinator->onWindow('node-x', $window);
+
+        $this->assertSame(['enterVerificationWindow'], $this->executor->calls);
+        $this->assertSame($window, $this->executor->freeze);
+        $this->assertNull($this->executor->windowAcceptKey);
+        $this->assertSame([['sendQuiesced', 'node-x']], $this->mesh->calls);
+    }
+
+    public function testFollowerAcknowledgesRepeatedWindowWithoutReenteringOrClearingAdmission(): void
+    {
+        $window = new ProtectedModeQuiesceData('manual_maintenance', 'index', null, 'node-b', 'operator-hash');
+        $this->coordinator->onWindow('node-x', $window);
+        $this->writeDirectWindowOnRuntimeRow($window);
+        $this->coordinator->onReady('node-x');
+        $this->withDaemonTruthSource(static function (): void {
+            Hilos::$rt?->hilosProtectedModeRuntime?->actions->issuePass('pass-hash');
+            Hilos::$rt?->hilosProtectedModeRuntime?->actions->admitSession('admitted-hash');
+            Hilos::$rt?->hilosProtectedModeRuntime?->actions->admitCircle(new VerifierCircleSnapshot(2, ['circle-hash']));
+        });
+
+        $this->coordinator->onWindow('node-x', $window);
+        $this->coordinator->onWindow('node-x', $window);
+        $this->coordinator->onReady('node-x');
+
+        $this->assertSame(['enterVerificationWindow', 'notifyInitiatorReady'], $this->executor->calls);
+        $this->assertSame([
+            ['sendQuiesced', 'node-x'], ['sendQuiesced', 'node-x'], ['sendQuiesced', 'node-x'],
+        ], $this->mesh->calls);
+        $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, Hilos::$rt?->hilosProtectedModeRuntime?->phase);
+        $this->assertSame(['pass-hash'], Hilos::$rt?->hilosProtectedModeRuntime?->passHashes);
+        $this->assertSame(['admitted-hash'], Hilos::$rt?->hilosProtectedModeRuntime?->admittedSessionTokenHashes);
+        $this->assertSame(['circle-hash'], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
+        $this->assertSame(2, Hilos::$rt?->hilosProtectedModeRuntime?->circleNamedCount);
+        $this->assertSame('operator-hash', Hilos::$rt?->hilosProtectedModeRuntime?->initiatorSessionTokenHash);
+    }
+
+    public function testFollowerAcceptsRepeatedWindowFromTheCurrentNewLeader(): void
+    {
+        $window = new ProtectedModeQuiesceData('manual_maintenance', 'index', 0, 'node-b', null);
+        $this->coordinator->onWindow('node-x', $window);
+        $this->writeDirectWindowOnRuntimeRow($window);
+        $this->mesh->leader = 'node-y';
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onWindow('node-y', $window);
+        $this->coordinator->onLift('node-x');
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([['sendQuiesced', 'node-y']], $this->mesh->calls);
+
+        $this->coordinator->onLift('node-y');
+
+        $this->assertSame(['enterInactive', 'finishLift'], $this->executor->calls);
+    }
+
+    public function testFollowerDropsDirectWindowFromAnotherLeader(): void
+    {
+        $window = new ProtectedModeQuiesceData('manual_maintenance', 'index', null, 'node-b', null);
+        $this->coordinator->onWindow('node-x', $window);
+        $this->writeDirectWindowOnRuntimeRow($window);
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onWindow('node-other', $window);
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
+    public function testFollowerDropsDirectWindowForAnotherInitiatorTypeOrIndex(): void
+    {
+        $window = new ProtectedModeQuiesceData('manual_maintenance', 'index', 0, 'node-b', null);
+        $this->coordinator->onWindow('node-x', $window);
+        $this->writeDirectWindowOnRuntimeRow($window);
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        foreach ([['backup', 0], ['index', 1], ['index', null]] as [$agentType, $agentIndex]) {
+            $this->coordinator->onWindow('node-x', new ProtectedModeQuiesceData(
+                'manual_maintenance', $agentType, $agentIndex, 'node-b', null,
+            ));
+        }
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+        $this->assertSame('index', Hilos::$rt?->hilosProtectedModeRuntime?->initiatorAgentType);
+        $this->assertSame(0, Hilos::$rt?->hilosProtectedModeRuntime?->initiatorAgentIndex);
+    }
+
+    public function testFollowerCannotTurnAFullFreezeIntoADirectWindow(): void
+    {
+        $freeze = new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', null);
+        $this->coordinator->onQuiesce('node-x', $freeze);
+        $this->stopTheRoster();
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onWindow('node-x', $freeze);
+        $this->assertSame(StateProtectedModeRuntime::PHASE_ACTIVATING, Hilos::$rt?->hilosProtectedModeRuntime?->phase);
+
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->coordinator->onWindow('node-x', $freeze);
+        $this->assertSame(StateProtectedModeRuntime::PHASE_ACTIVE, Hilos::$rt?->hilosProtectedModeRuntime?->phase);
+
+        $this->openTheVerificationWindowOnTheRuntimeRow();
+        $this->coordinator->onWindow('node-x', $freeze);
+        $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, Hilos::$rt?->hilosProtectedModeRuntime?->phase);
+        $this->assertSame(StateProtectedModeRuntime::ENTRY_MODE_FREEZE, Hilos::$rt?->hilosProtectedModeRuntime?->entryMode);
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
+    public function testFollowerWithoutRuntimeStateDoesNotAcknowledgeADirectWindow(): void
+    {
+        Hilos::$rt = null;
+        $window = new ProtectedModeQuiesceData('manual_maintenance', 'index', null, 'node-b', null);
+
+        $this->coordinator->onWindow('node-x', $window);
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+
+        $this->mount();
+        $this->coordinator->onWindow('node-y', $window);
+
+        $this->assertSame(['enterVerificationWindow'], $this->executor->calls);
+        $this->assertSame([['sendQuiesced', 'node-y']], $this->mesh->calls);
+    }
+
+    public function testFollowerDropsQuiesceDuringADirectWindow(): void
+    {
+        $window = new ProtectedModeQuiesceData('manual_maintenance', 'index', null, 'node-b', null);
+        $this->coordinator->onWindow('node-x', $window);
+        $this->writeDirectWindowOnRuntimeRow($window);
+        $this->mesh->leader = 'node-y';
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onQuiesce('node-x', $window);
+        $this->coordinator->onQuiesce('node-y', $window);
+        $this->coordinator->onQuiesce('node-other', $window);
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+        $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, Hilos::$rt?->hilosProtectedModeRuntime?->phase);
+        $this->assertSame(StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW, Hilos::$rt?->hilosProtectedModeRuntime?->entryMode);
+    }
+
     public function testFollowerReleasesOnLift(): void
     {
         $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', null));
@@ -890,36 +1044,401 @@ final class ClusterProtectedModeTest extends TestCase
         $this->assertSame([['sendEnable', 'node-z']], $this->mesh->calls);
     }
 
-    public function testDirectWindowIsRefusedLocallyBeforeAnyClusterEntry(): void
+    public function testLeaderDirectWindowWaitsOnlyForEveryFollowerBeforeReady(): void
     {
-        $data = new ProtectedModeEnableSignalData(
-            'maintenance', null, null, 'index', null, self::SELF,
-            StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW,
-        );
+        $this->recordDirectWindowTransitions();
+        $this->mesh->followers = ['node-b', 'node-c'];
+        $this->coordinator->onBecameLeader();
 
-        $this->coordinator->requestEnable($data);
+        $this->coordinator->onEnable('node-b', $this->directWindowData());
 
-        $this->assertSame([], $this->executor->calls);
-        $this->assertSame([], $this->mesh->calls);
+        $this->assertSame(['enterVerificationWindow'], $this->executor->calls);
+        $this->assertSame('operator-accept', $this->executor->windowAcceptKey);
+        $this->assertSame('operator-hash', $this->executor->freeze?->initiatorSessionTokenHash);
+        $this->assertSame('node-b', $this->executor->freeze?->initiatorNodeId);
+        $this->assertSame([['broadcastWindow', 'manual_maintenance']], $this->mesh->calls);
+        $this->assertSame(['node-b', 'node-c'], $this->coordinator->pendingNodeIds());
+
+        $this->coordinator->onRosterStopped();
+        $this->coordinator->onQuiesced('node-other');
+        $this->coordinator->onQuiesced('node-b');
+        $this->coordinator->onQuiesced('node-b');
+
+        $this->assertSame(['node-c'], $this->coordinator->pendingNodeIds());
+        $this->assertSame(['enterVerificationWindow'], $this->executor->calls);
+        $this->assertSame([['broadcastWindow', 'manual_maintenance']], $this->mesh->calls);
+
+        $this->coordinator->onQuiesced('node-c');
+        $this->coordinator->onQuiesced('node-c');
+
+        $this->assertSame(['enterVerificationWindow'], $this->executor->calls);
+        $this->assertSame([['broadcastWindow', 'manual_maintenance'], ['sendReady', 'node-b']], $this->mesh->calls);
         $this->assertSame([], $this->coordinator->pendingNodeIds());
-        $this->assertSame(StateProtectedModeRuntime::PHASE_INACTIVE, Hilos::$rt?->hilosProtectedModeRuntime?->phase);
-        $this->assertSame(ProtectedModeRefusalCopy::DIRECT_WINDOW_ON_CLUSTER, $this->relay->refusedCalls[0]['reason']);
+        $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, Hilos::$rt?->hilosProtectedModeRuntime?->phase);
+        $this->assertSame(StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW, Hilos::$rt?->hilosProtectedModeRuntime?->entryMode);
     }
 
-    public function testPeerDirectWindowIsRefusedBeforeLeaderMutatesState(): void
+    public function testSingleNodeLeaderDirectWindowAnswersReadyWithoutARosterWalk(): void
     {
+        $this->recordDirectWindowTransitions();
+        $this->mesh->location = AgentLocation::here();
         $this->coordinator->onBecameLeader();
-        $data = new ProtectedModeEnableSignalData(
-            'maintenance', null, null, 'index', null, 'node-b',
-            StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW,
-        );
 
-        $this->coordinator->onEnable('node-b', $data);
+        $this->coordinator->requestEnable($this->directWindowData(initiatorNodeId: self::SELF));
+        $this->coordinator->onRosterStopped();
+
+        $this->assertSame(['enterVerificationWindow', 'notifyInitiatorReady'], $this->executor->calls);
+        $this->assertSame([['broadcastWindow', 'manual_maintenance']], $this->mesh->calls);
+        $this->assertSame([], $this->coordinator->pendingNodeIds());
+        $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, Hilos::$rt?->hilosProtectedModeRuntime?->phase);
+    }
+
+    public function testFollowerDirectWindowRequestForwardsAndRearmsTheReadyRelay(): void
+    {
+        $this->recordDirectWindowTransitions();
+        $this->mesh->leader = 'node-x';
+        $this->coordinator->requestEnable($this->directWindowData(initiatorNodeId: self::SELF));
+
+        $this->assertSame([['sendEnable', 'node-x']], $this->mesh->calls);
+        $this->assertSame([], $this->executor->calls);
+
+        $this->coordinator->onWindow('node-x', new ProtectedModeQuiesceData(
+            'manual_maintenance', 'index', null, self::SELF, 'operator-hash',
+        ));
+        $this->coordinator->onReady('node-x');
+        $this->coordinator->onReady('node-x');
+        $this->coordinator->requestEnable($this->directWindowData(initiatorNodeId: self::SELF));
+        $this->coordinator->onReady('node-x');
+        $this->coordinator->onReady('node-x');
+
+        $this->assertSame(['enterVerificationWindow', 'notifyInitiatorReady', 'notifyInitiatorReady'], $this->executor->calls);
+        $this->assertSame([
+            ['sendEnable', 'node-x'], ['sendQuiesced', 'node-x'], ['sendEnable', 'node-x'],
+        ], $this->mesh->calls);
+    }
+
+    public function testDirectWindowRepeatDuringItsRoundIsRefusedWithoutAnotherEntry(): void
+    {
+        $this->recordDirectWindowTransitions();
+        $this->mesh->followers = ['node-b'];
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', $this->directWindowData());
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onEnable('node-b', $this->directWindowData());
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame(['node-b'], $this->coordinator->pendingNodeIds());
+        $this->assertSame([
+            ['sendRefused', 'node-b', ProtectedModeRefusalCopy::ANOTHER_OPERATION],
+        ], $this->mesh->calls);
+    }
+
+    public function testDirectWindowRepeatAnswersCurrentPlacementAndKeepsAdmission(): void
+    {
+        $this->enterDirectWindowOnLeader();
+        $this->withDaemonTruthSource(static function (): void {
+            Hilos::$rt?->hilosProtectedModeRuntime?->actions->issuePass('pass-hash');
+            Hilos::$rt?->hilosProtectedModeRuntime?->actions->admitSession('admitted-hash');
+            Hilos::$rt?->hilosProtectedModeRuntime?->actions->admitCircle(new VerifierCircleSnapshot(2, ['circle-hash']));
+        });
+        $before = Hilos::$rt?->hilosProtectedModeRuntime?->toArray();
+        $this->mesh->location = AgentLocation::onNode('node-c');
+
+        $this->coordinator->onEnable('node-c', $this->directWindowData(initiatorNodeId: 'node-c'));
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([['sendReady', 'node-c']], $this->mesh->calls);
+        $this->assertSame($before, Hilos::$rt?->hilosProtectedModeRuntime?->toArray());
+    }
+
+    public function testDirectWindowRefusesAnotherOperationOrEntryMode(): void
+    {
+        $this->enterDirectWindowOnLeader();
+
+        $this->coordinator->onEnable('node-b', $this->directWindowData(operation: 'other-operation'));
+        $this->coordinator->onEnable('node-b', new ProtectedModeEnableSignalData(
+            'manual_maintenance', null, null, 'index', null, 'node-b',
+        ));
 
         $this->assertSame([], $this->executor->calls);
         $this->assertSame([
-            ['sendRefused', 'node-b', ProtectedModeRefusalCopy::DIRECT_WINDOW_ON_CLUSTER],
+            ['sendRefused', 'node-b', ProtectedModeRefusalCopy::ANOTHER_OPERATION],
+            ['sendRefused', 'node-b', ProtectedModeRefusalCopy::ANOTHER_OPERATION],
         ], $this->mesh->calls);
+        $this->assertSame('manual_maintenance', Hilos::$rt?->hilosProtectedModeRuntime?->operation);
+        $this->assertSame(StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW, Hilos::$rt?->hilosProtectedModeRuntime?->entryMode);
+    }
+
+    public function testDirectWindowRefusesForeignInitiatorTypeOrIndex(): void
+    {
+        $this->enterDirectWindowOnLeader();
+
+        $this->coordinator->onEnable('node-b', $this->directWindowData(agentType: 'backup'));
+        $this->coordinator->onEnable('node-b', $this->directWindowData(agentIndex: 0));
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([
+            ['sendRefused', 'node-b', ProtectedModeRefusalCopy::FOREIGN_FREEZE],
+            ['sendRefused', 'node-b', ProtectedModeRefusalCopy::FOREIGN_FREEZE],
+        ], $this->mesh->calls);
+    }
+
+    public function testFullFreezeRefusesDirectEntryOnActiveAndVerifying(): void
+    {
+        $this->mesh->followers = ['node-b'];
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->stopTheRoster();
+        $this->coordinator->onQuiesced('node-b');
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onEnable('node-b', $this->directWindowData('restore', 'backup', 0));
+        $this->openTheVerificationWindowOnTheRuntimeRow();
+        $this->coordinator->onEnable('node-b', $this->directWindowData('restore', 'backup', 0));
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([
+            ['sendRefused', 'node-b', ProtectedModeRefusalCopy::ANOTHER_OPERATION],
+            ['sendRefused', 'node-b', ProtectedModeRefusalCopy::ANOTHER_OPERATION],
+        ], $this->mesh->calls);
+        $this->assertSame(StateProtectedModeRuntime::ENTRY_MODE_FREEZE, Hilos::$rt?->hilosProtectedModeRuntime?->entryMode);
+    }
+
+    public function testLeaderDirectWindowStillRequiresLeadershipInitiatorNodeAndRuntime(): void
+    {
+        $this->coordinator->onEnable('node-b', $this->directWindowData());
+        $this->assertSame([['sendRefused', 'node-b', ProtectedModeRefusalCopy::NO_LEADER]], $this->mesh->calls);
+
+        $this->coordinator->onBecameLeader();
+        $this->mesh->calls = [];
+        $this->coordinator->onEnable('node-b', $this->directWindowData(initiatorNodeId: null));
+        $this->assertSame([['sendRefused', 'node-b', ProtectedModeRefusalCopy::ANOTHER_OPERATION]], $this->mesh->calls);
+
+        Hilos::$rt = null;
+        $this->mesh->calls = [];
+        $this->coordinator->onEnable('node-b', $this->directWindowData());
+
+        $this->assertSame([['sendRefused', 'node-b', ProtectedModeRefusalCopy::NO_RUNTIME_ROW]], $this->mesh->calls);
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->coordinator->pendingNodeIds());
+
+        $this->mount();
+        $this->recordDirectWindowTransitions();
+        $this->mesh->calls = [];
+        $this->coordinator->onEnable('node-b', $this->directWindowData());
+
+        $this->assertSame(['enterVerificationWindow'], $this->executor->calls);
+        $this->assertSame([['broadcastWindow', 'manual_maintenance'], ['sendReady', 'node-b']], $this->mesh->calls);
+    }
+
+    public function testLeaderDirectWindowAcceptsTheCircleOnceAndFinishesVerifying(): void
+    {
+        $this->enterDirectWindowOnLeader();
+
+        $this->withDaemonTruthSource(fn() => $this->coordinator->onCircle('node-b', 'index', null, $this->circleSnapshot()));
+        $this->coordinator->onCircle('node-b', 'index', null, new VerifierCircleSnapshot(0, []));
+
+        $this->assertSame(['finishVerifying'], $this->executor->calls);
+        $this->assertSame([['broadcastCircle', '1']], $this->mesh->calls);
+        $this->assertSame(['hash-a'], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
+        $this->assertSame(1, Hilos::$rt?->hilosProtectedModeRuntime?->circleNamedCount);
+    }
+
+    public function testAnEmptyDirectCirclePhotographAlsoFinishesAndCannotBeReplaced(): void
+    {
+        $this->enterDirectWindowOnLeader();
+
+        $this->withDaemonTruthSource(fn() => $this->coordinator->requestCircle(new ProtectedModeCircleSignalData(
+            'index', null, 0, [],
+        )));
+        $this->coordinator->onEnable('node-b', $this->directWindowData());
+        $this->coordinator->onCircle('node-b', 'index', null, $this->circleSnapshot());
+
+        $this->assertSame(['finishVerifying'], $this->executor->calls);
+        $this->assertSame([['broadcastCircle', '0'], ['sendReady', 'node-b']], $this->mesh->calls);
+        $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
+        $this->assertSame(0, Hilos::$rt?->hilosProtectedModeRuntime?->circleNamedCount);
+    }
+
+    public function testLeaderDirectWindowDropsForeignCircleDisableAndRefreeze(): void
+    {
+        $this->enterDirectWindowOnLeader();
+
+        $this->coordinator->onCircle('node-b', 'backup', null, $this->circleSnapshot());
+        $this->coordinator->onCircle('node-b', 'index', 0, $this->circleSnapshot());
+        $this->coordinator->onDisable('node-b', 'backup', null);
+        $this->coordinator->onDisable('node-b', 'index', 0);
+        $this->coordinator->onRefreeze('node-b', 'index', null);
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+        $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
+        $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, Hilos::$rt?->hilosProtectedModeRuntime?->phase);
+    }
+
+    public function testFollowerDirectWindowFinishesOnlyWhenTheLeadersCircleArrives(): void
+    {
+        $this->recordDirectWindowTransitions();
+        $this->mesh->leader = 'node-x';
+        $this->coordinator->onWindow('node-x', new ProtectedModeQuiesceData(
+            'manual_maintenance', 'index', null, self::SELF, 'operator-hash',
+        ));
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->withDaemonTruthSource(fn() => $this->coordinator->requestCircle(new ProtectedModeCircleSignalData(
+            'index', null, 1, ['hash-a'],
+        )));
+        $this->coordinator->onCircle('node-other', 'index', null, new VerifierCircleSnapshot(0, []));
+        $this->coordinator->onSettled('node-x');
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([['sendCircle', 'node-x']], $this->mesh->calls);
+        $this->assertSame(['hash-a'], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
+
+        $this->withDaemonTruthSource(fn() => $this->coordinator->onCircle('node-x', 'index', null, $this->circleSnapshot()));
+
+        $this->assertSame(['finishVerifying'], $this->executor->calls);
+        $this->assertSame([['sendCircle', 'node-x']], $this->mesh->calls);
+        $this->assertSame(['hash-a'], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
+    }
+
+    public function testFollowerDirectWindowFinishesOnAnEmptyLeadersCircleToo(): void
+    {
+        $this->recordDirectWindowTransitions();
+        $this->coordinator->onWindow('node-x', new ProtectedModeQuiesceData(
+            'manual_maintenance', 'index', null, 'node-b', null,
+        ));
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->withDaemonTruthSource(fn() => $this->coordinator->onCircle('node-x', 'index', null, new VerifierCircleSnapshot(0, [])));
+
+        $this->assertSame(['finishVerifying'], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+        $this->assertSame(0, Hilos::$rt?->hilosProtectedModeRuntime?->circleNamedCount);
+    }
+
+    public function testLeaderDirectWindowLiftsImmediatelyAndNextWindowTakesANewCircle(): void
+    {
+        $this->enterDirectWindowOnLeader();
+        $this->withDaemonTruthSource(fn() => $this->coordinator->onCircle('node-b', 'index', null, $this->circleSnapshot()));
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onDisable('node-b', 'index', null);
+
+        $this->assertSame(['enterInactive', 'finishLift'], $this->executor->calls);
+        $this->assertSame([['broadcastLift', null]], $this->mesh->calls);
+        $this->assertSame(StateProtectedModeRuntime::PHASE_INACTIVE, Hilos::$rt?->hilosProtectedModeRuntime?->phase);
+        $this->assertNull(Hilos::$rt?->hilosProtectedModeRuntime?->entryMode);
+        $this->assertSame([], $this->coordinator->pendingNodeIds());
+
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+        $this->coordinator->onEnable('node-b', $this->directWindowData());
+        $this->coordinator->onQuiesced('node-b');
+        $this->withDaemonTruthSource(fn() => $this->coordinator->onCircle('node-b', 'index', null, new VerifierCircleSnapshot(0, [])));
+
+        $this->assertSame(['enterVerificationWindow', 'finishVerifying'], $this->executor->calls);
+        $this->assertSame([
+            ['broadcastWindow', 'manual_maintenance'], ['sendReady', 'node-b'], ['broadcastCircle', '0'],
+        ], $this->mesh->calls);
+        $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
+    }
+
+    public function testFollowerDirectWindowLiftsImmediatelyOnlyForItsLeader(): void
+    {
+        $this->recordDirectWindowTransitions();
+        $this->coordinator->onWindow('node-x', new ProtectedModeQuiesceData(
+            'manual_maintenance', 'index', null, 'node-b', null,
+        ));
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onLift('node-other');
+        $this->assertSame([], $this->executor->calls);
+        $this->coordinator->onLift('node-x');
+        $this->coordinator->onLift('node-x');
+
+        $this->assertSame(['enterInactive', 'finishLift'], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+        $this->assertSame(StateProtectedModeRuntime::PHASE_INACTIVE, Hilos::$rt?->hilosProtectedModeRuntime?->phase);
+        $this->assertNull(Hilos::$rt?->hilosProtectedModeRuntime?->entryMode);
+    }
+
+    public function testPromotedLeaderAdoptsDirectWindowWithoutAnotherReadyOrPhotograph(): void
+    {
+        $this->recordDirectWindowTransitions();
+        $this->coordinator->onWindow('node-x', new ProtectedModeQuiesceData(
+            'manual_maintenance', 'index', null, 'node-b', 'operator-hash',
+        ));
+        $this->mesh->followers = ['node-b', 'node-c'];
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onQuiesced('node-b');
+        $this->coordinator->onCircle('node-b', 'index', null, $this->circleSnapshot());
+
+        $this->assertSame([], $this->coordinator->pendingNodeIds());
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+        $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
+
+        $this->coordinator->onEnable('node-b', $this->directWindowData());
+        $this->coordinator->onDisable('node-b', 'backup', null);
+        $this->coordinator->onRefreeze('node-b', 'index', null);
+        $this->assertSame([['sendReady', 'node-b']], $this->mesh->calls);
+        $this->assertSame([], $this->executor->calls);
+
+        $this->coordinator->onDisable('node-b', 'index', null);
+        $this->assertSame(['enterInactive', 'finishLift'], $this->executor->calls);
+        $this->assertSame([['sendReady', 'node-b'], ['broadcastLift', null]], $this->mesh->calls);
+    }
+
+    public function testRestartedLeaderAdoptsDirectWindowFromItsRuntimeRow(): void
+    {
+        $this->recordDirectWindowTransitions();
+        $this->writeDirectWindowOnRuntimeRow(new ProtectedModeQuiesceData(
+            'manual_maintenance', 'index', null, 'node-b', null,
+        ));
+        $this->mesh->followers = ['node-b'];
+
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onCircle('node-b', 'index', null, $this->circleSnapshot());
+        $this->coordinator->onEnable('node-b', $this->directWindowData());
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([['sendReady', 'node-b']], $this->mesh->calls);
+        $this->assertSame([], $this->coordinator->pendingNodeIds());
+        $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
+
+        $this->coordinator->onDisable('node-b', 'index', null);
+        $this->assertSame(['enterInactive', 'finishLift'], $this->executor->calls);
+    }
+
+    public function testDemotedDirectWindowLeaderAcceptsTheNewLeadersCircleAndLift(): void
+    {
+        $this->enterDirectWindowOnLeader();
+        $this->coordinator->onLostLeadership();
+        $this->mesh->leader = 'node-y';
+
+        $this->coordinator->onQuiesced('node-b');
+        $this->coordinator->onDisable('node-b', 'index', null);
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+        $this->assertSame([], $this->coordinator->pendingNodeIds());
+
+        $this->withDaemonTruthSource(fn() => $this->coordinator->onCircle('node-y', 'index', null, $this->circleSnapshot()));
+        $this->coordinator->onLift('node-y');
+
+        $this->assertSame(['finishVerifying', 'enterInactive', 'finishLift'], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
     }
 
     public function testInitiatorDropsEnableRequestWhenNoLeaderIsKnown(): void
@@ -1514,6 +2033,57 @@ final class ClusterProtectedModeTest extends TestCase
     }
 
     /**
+     * Mirrors the synchronous direct-window entry and lift while retaining the ordered call log.
+     * The coordinator reads entryMode within these calls, before an entry returns or a lift clears it.
+     */
+    private function recordDirectWindowTransitions(): void
+    {
+        $this->executor->writeWindow = function (ProtectedModeQuiesceData $freeze, ?string $acceptKey): void {
+            $this->withDaemonTruthSource(static function () use ($freeze, $acceptKey): void {
+                Hilos::$rt?->hilosProtectedModeRuntime?->actions->enterVerificationWindow($freeze, $acceptKey);
+            });
+        };
+        $this->executor->clearWindow = function (): void {
+            $this->withDaemonTruthSource(static function (): void {
+                Hilos::$rt?->hilosProtectedModeRuntime?->actions->enterInactive();
+            });
+        };
+    }
+
+    /**
+     * Establishes a direct window with one follower and clears the entry's recorded calls.
+     */
+    private function enterDirectWindowOnLeader(): void
+    {
+        $this->recordDirectWindowTransitions();
+        $this->mesh->followers = ['node-b'];
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', $this->directWindowData());
+        $this->coordinator->onQuiesced('node-b');
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+    }
+
+    /**
+     * @param string $operation Operation named by the window
+     * @param string $agentType Initiating agent type
+     * @param ?int $agentIndex Initiating agent index, or null for a singleton
+     * @param ?string $initiatorNodeId Entry node, or null for a malformed cluster request
+     * @return ProtectedModeEnableSignalData Direct-window request
+     */
+    private function directWindowData(
+        string $operation = 'manual_maintenance',
+        string $agentType = 'index',
+        ?int $agentIndex = null,
+        ?string $initiatorNodeId = 'node-b',
+    ): ProtectedModeEnableSignalData {
+        return new ProtectedModeEnableSignalData(
+            $operation, 'operator-accept', 'operator-hash', $agentType, $agentIndex, $initiatorNodeId,
+            StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW,
+        );
+    }
+
+    /**
      * Settles the freeze on the runtime row, standing in for the real executor's write.
      *
      * The fake port records transitions instead of writing any, so a case that turns on the phase
@@ -1596,6 +2166,19 @@ final class ClusterProtectedModeTest extends TestCase
         }
 
         $this->withDaemonTruthSource(static fn() => $view->actions->enterVerifying());
+    }
+
+    /**
+     * Mirrors the direct-window write the recording executor leaves to the test.
+     *
+     * @param ProtectedModeQuiesceData $window Window descriptor received from the leader
+     */
+    private function writeDirectWindowOnRuntimeRow(ProtectedModeQuiesceData $window): void
+    {
+        $this->assertNotNull(Hilos::$rt?->hilosProtectedModeRuntime);
+        $this->withDaemonTruthSource(static function () use ($window): void {
+            Hilos::$rt?->hilosProtectedModeRuntime?->actions->enterVerificationWindow($window, null);
+        });
     }
 
     /**
@@ -1761,6 +2344,14 @@ final class FakeProtectedModeMesh implements ProtectedModeMesh
         $this->calls[] = ['broadcastQuiesce', $data->operation];
     }
 
+    /**
+     * @param ProtectedModeQuiesceData $data Window descriptor to record
+     */
+    public function broadcastWindow(ProtectedModeQuiesceData $data): void
+    {
+        $this->calls[] = ['broadcastWindow', $data->operation];
+    }
+
     public function sendReady(string $initiatorNodeId): void
     {
         $this->calls[] = ['sendReady', $initiatorNodeId];
@@ -1851,6 +2442,15 @@ final class FakeProtectedModeExecutor implements ProtectedModeExecutor
     /** @var ?string Session token hash passed to the most recent enterActivating call */
     public ?string $activatingSessionTokenHash = null;
 
+    /** @var ?string Accept key passed to the most recent direct window call */
+    public ?string $windowAcceptKey = 'not-called';
+
+    /** @var ?Closure(ProtectedModeQuiesceData, ?string): void Optional synchronous window write */
+    public ?Closure $writeWindow = null;
+
+    /** @var ?Closure(): void Optional synchronous inactive write */
+    public ?Closure $clearWindow = null;
+
     public ?ProtectedModeQuiesceData $freeze = null;
 
     public function enterActivating(
@@ -1863,11 +2463,18 @@ final class FakeProtectedModeExecutor implements ProtectedModeExecutor
         $this->freeze = $freeze;
     }
 
+    /**
+     * @param ProtectedModeQuiesceData $freeze Window descriptor to record
+     * @param ?string $initiatorAcceptKey Initiating connection, or null on a follower
+     */
     public function enterVerificationWindow(
         ProtectedModeQuiesceData $freeze,
         ?string $initiatorAcceptKey,
     ): void {
         $this->calls[] = 'enterVerificationWindow';
+        $this->windowAcceptKey = $initiatorAcceptKey;
+        $this->freeze = $freeze;
+        $this->writeWindow?->__invoke($freeze, $initiatorAcceptKey);
     }
 
     public function enterActive(): void
@@ -1903,6 +2510,7 @@ final class FakeProtectedModeExecutor implements ProtectedModeExecutor
     public function enterInactive(): void
     {
         $this->calls[] = 'enterInactive';
+        $this->clearWindow?->__invoke();
     }
 
     public function finishLift(): void
