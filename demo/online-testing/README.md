@@ -204,9 +204,10 @@ down when they start.
 
 Nothing here drives the stand: the framework's shared cluster harness
 (`framework/docker/cluster/`) reads the nodes out of the compose file and runs
-the scenarios it names — 11 cross-node db fact, 15 db interest addressing,
-21 schema rolled out once, 22 other database refused, and 24 cut-off leader
-stops its work (skipped as flaky since 2026-10-10)
+the scenarios it names — 11 cross-node db fact, 15 db interest addressing
+(skipped as flaky since 2026-10-16), 21 schema rolled out once, 22 other
+database refused, and 24 cut-off leader stops its work (skipped as flaky since
+2026-10-10)
 (`docs/agents/testing.md`, "The cluster stands — three demos, three shapes"). The framework's probe fleet and
 database probe are in this demo's `AGENTS`, and they start only here: on one
 node, on the Playwright stand and in production the rows are carried and

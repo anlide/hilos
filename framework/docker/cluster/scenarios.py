@@ -3926,6 +3926,19 @@ FLAKY_SKIP = {
     # re-election of the stand's own - the startup link flap of P-459.
     "24 cut-off leader stops its work":
         "flake: a re-election of its own moves the fleet first, or m1 never starts a member (red 5/246, last 2026-10-10)",
+    # The one below was parked on the owner's word on 2026-10-16 (HOTFIX), without a
+    # diagnosis. It is paid off by finding the cause, its line removed, and `-- 15` green on
+    # the online-testing cluster stand.
+    #
+    # 15, on the online-testing cluster stand: red once in 420 runs (0005 to 1241), on HIL-1538
+    # in seven lanes (1240), green alone on the rerun of the same sha (1241). The red is a hard
+    # assertion, so it was not retried: m3 counted two database facts taken in where only the one
+    # about 'settings' was addressed to it. That counter moves for every database fact a node
+    # accepts from another, not only for the two the scenario announces, so a write of the
+    # stand's own landing in that window reads exactly like 'fileVariants' carried across the
+    # mesh - that is the first thing to rule out.
+    "15 db interest addressing":
+        "flake: m3 counts two facts taken in where one was addressed to it (red 1/420, last 2026-10-16)",
 }
 
 
