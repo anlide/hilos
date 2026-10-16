@@ -17,6 +17,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\I18n\MessageLabel;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLanguageNameAddActionDTO;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLanguageNameDeleteActionDTO;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLanguageNameOverrideDeleteActionDTO;
@@ -137,7 +138,10 @@ abstract class AbstractHilosI18nLanguageNamesPage extends AbstractHilosI18nLangu
         } catch (DuplicateEntryException) {
             throw new TableActionException(self::NAME_ALREADY_EXISTS_MESSAGE);
         }
-        $this->setActionSuccessMessage($locale === null ? 'Language name added.' : 'Locale correction added.');
+        $label = MessageLabel::language($language);
+        $this->setActionSuccessMessage($locale === null
+            ? 'Name of ' . $label . ' in ' . MessageLabel::language($inLanguage) . ' added.'
+            : "Correction {$locale->code} of the name of {$label} added.");
     }
 
     /**
@@ -154,6 +158,7 @@ abstract class AbstractHilosI18nLanguageNamesPage extends AbstractHilosI18nLangu
         if ($language->id === $inLanguage->id) {
             throw new TableActionException('A language name must be written in another language.');
         }
+        $locale = null;
         if ($dto->localeId !== null) {
             $locale = Hilos::$db->locales[$dto->localeId]
                 ?? throw new TableActionException('Unknown locale: ' . $dto->localeId);
@@ -175,7 +180,10 @@ abstract class AbstractHilosI18nLanguageNamesPage extends AbstractHilosI18nLangu
         }
 
         $name->actions->edit($dto->name);
-        $this->setActionSuccessMessage($dto->localeId === null ? 'Language name saved.' : 'Locale correction saved.');
+        $label = MessageLabel::language($language);
+        $this->setActionSuccessMessage($locale === null
+            ? 'Name of ' . $label . ' in ' . MessageLabel::language($inLanguage) . ' saved.'
+            : "Correction {$locale->code} of the name of {$label} saved.");
     }
 
     /**
@@ -203,7 +211,7 @@ abstract class AbstractHilosI18nLanguageNamesPage extends AbstractHilosI18nLangu
         }
 
         $name->actions->delete();
-        $this->setActionSuccessMessage('Language name deleted.');
+        $this->setActionSuccessMessage('Name of ' . MessageLabel::language($language) . ' in ' . MessageLabel::language($inLanguage) . ' deleted.');
     }
 
     /**
@@ -239,6 +247,6 @@ abstract class AbstractHilosI18nLanguageNamesPage extends AbstractHilosI18nLangu
         }
 
         $name->actions->delete();
-        $this->setActionSuccessMessage('Locale correction removed.');
+        $this->setActionSuccessMessage("Correction {$locale->code} of the name of " . MessageLabel::language($language) . ' removed.');
     }
 }

@@ -9,6 +9,7 @@ use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\I18n\Exception\I18nRowFrozenException;
+use Hilos\I18n\MessageLabel;
 use Hilos\Pages\I18n\Details\DTO\AbstractHilosI18nLanguageUpdateActionDTO;
 
 /** One save, two doors: the language card and a row of the languages table. */
@@ -26,6 +27,6 @@ trait HilosI18nLanguageUpdateTrait
         $language = Hilos::$db->languages[$dto->languageId]
             ?? throw new TableActionException('Unknown language: ' . $dto->languageId);
         $language->actions->update($dto->nativeName, $dto->rtl);
-        $this->setActionSuccessMessage('Language saved.');
+        $this->setActionSuccessMessage('Language ' . MessageLabel::language($language) . ' saved.');
     }
 }

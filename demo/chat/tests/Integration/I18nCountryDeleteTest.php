@@ -396,7 +396,7 @@ final class I18nCountryDeleteTest extends IntegrationTestCase
             self::assertSame($refusal, $reply->reason);
         } else {
             self::assertInstanceOf(PageActionSuccessSignalData::class, $reply);
-            self::assertSame('Country deleted.', $reply->message);
+            self::assertSame('Country qx deleted.', $reply->message);
             self::assertNull($reply->reply);
             self::assertArrayNotHasKey('reply', $reply->toArray());
         }

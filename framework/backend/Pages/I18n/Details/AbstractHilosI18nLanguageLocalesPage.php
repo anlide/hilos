@@ -74,11 +74,11 @@ abstract class AbstractHilosI18nLanguageLocalesPage extends AbstractHilosI18nLan
                 $country = $dto->countryId === null ? null : (Hilos::$db->countries[$dto->countryId]
                     ?? throw new TableActionException('Unknown country: ' . $dto->countryId));
                 $formats = $dto->formats;
-                Hilos::$db->locales->actions->create(
+                $locale = Hilos::$db->locales->actions->create(
                     $language, $country, $formats->date, $formats->time, $formats->number,
                     $formats->phone, $formats->address, $formats->measurement, $formats->collation,
                 );
-                $this->setActionSuccessMessage('Locale added.');
+                $this->setActionSuccessMessage("Locale {$locale->code} added.");
 
                 return null;
 
@@ -96,7 +96,7 @@ abstract class AbstractHilosI18nLanguageLocalesPage extends AbstractHilosI18nLan
                     $formats->date, $formats->time, $formats->number, $formats->phone,
                     $formats->address, $formats->measurement, $formats->collation,
                 );
-                $this->setActionSuccessMessage('Locale saved.');
+                $this->setActionSuccessMessage("Locale {$locale->code} saved.");
 
                 return null;
 
@@ -110,7 +110,7 @@ abstract class AbstractHilosI18nLanguageLocalesPage extends AbstractHilosI18nLan
                     throw new TableActionException('The locale no longer belongs to this language and country.');
                 }
                 $locale->actions->switchOn();
-                $this->setActionSuccessMessage('Locale switched on.');
+                $this->setActionSuccessMessage("Locale {$locale->code} switched on.");
 
                 return null;
 
@@ -164,7 +164,7 @@ abstract class AbstractHilosI18nLanguageLocalesPage extends AbstractHilosI18nLan
             throw new TableActionException('The locale no longer belongs to this language and country.');
         }
         $locale->actions->switchOff();
-        $this->setActionSuccessMessage('Locale switched off.');
+        $this->setActionSuccessMessage("Locale {$locale->code} switched off.");
 
         return null;
     }
@@ -184,8 +184,9 @@ abstract class AbstractHilosI18nLanguageLocalesPage extends AbstractHilosI18nLan
         if ($locale->languageId !== $dto->languageId || $locale->countryId !== $dto->countryId) {
             throw new TableActionException('The locale no longer belongs to this language and country.');
         }
+        $code = $locale->code;
         $locale->actions->delete();
-        $this->setActionSuccessMessage('Locale deleted.');
+        $this->setActionSuccessMessage("Locale {$code} deleted.");
 
         return null;
     }

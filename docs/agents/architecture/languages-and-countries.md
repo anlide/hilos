@@ -235,7 +235,7 @@ one line; no extra column protects that gap (owner's decision, 2026-09-12).
   to Close turns the same modal into a confirmation step, and Back returns to
   the view without a request. The tracked `hilos_i18n_locale_switch_off` action
   takes `languageId`, required nullable `countryId` and `localeId`, keeps formats
-  and names, and closes the window on success with `Locale switched off.`.
+  and names, and closes the window on success with `Locale <code> switched off.`.
   The table removes Enabled and replaces the eye with the edit control in
   every open tab without a reload; reopening the edit window unlocks the seven
   formats. Switching off an ordinary disabled locale succeeds without a write.
@@ -479,7 +479,7 @@ will give those refusals their user-facing text.
   every dependency again inside that transaction. Both page actions —
   `hilos_i18n_language_delete` on the card and
   `hilos_i18n_language_row_delete` on the list — take only `languageId` and
-  call that item action. They acknowledge success with `Language deleted.`
+  call that item action. They acknowledge success with `Language <native name> (<code>) deleted.`
 - Deleting a locale is refused while it is switched on or selected as any
   country's default locale, even when that country is switched off. Any language
   or country name override referring to the locale also refuses deletion,
@@ -488,7 +488,7 @@ will give those refusals their user-facing text.
 - The locale item action checks those three reasons again at write time, in
   that order. The ADMIN page action `hilos_i18n_locale_delete` takes only
   `languageId`, required nullable `countryId` and `localeId`, calls that item action,
-  and acknowledges success with `Locale deleted.`
+  and acknowledges success with `Locale <code> deleted.`
 - Deleting a locale removes its seven formats and leaves its language/country
   pair in the table. The intended Phase-2 fallback for that pair is the language's
   countryless locale; without that locale, it is the default language. This
@@ -503,7 +503,7 @@ will give those refusals their user-facing text.
   country and its cached data intact, and foreign keys protect a late reference.
   Both page actions — `hilos_i18n_country_delete` on the card and
   `hilos_i18n_country_row_delete` on the list — take only `countryId` and
-  call that item action. Success acknowledges `Country deleted.`
+  call that item action. Success acknowledges `Country <name> (<code>) deleted.`
 - The Vue list's last actions column and the card's State section open one
   shared confirmation dialog. The list focuses the fresh row on open and
   releases it on close or unmount. The row and card expose the live server
@@ -706,6 +706,10 @@ the whole section without allowing the viewer to change anything.
 The country list uses names in the default language and falls back to the
 code when no name exists (HIL-1475). The header of the
 country card follows the same rule (HIL-1482).
+Every success message of the section names its object the same way — a language
+by native name and code, a country by that name and code (the code alone without
+one), a name by whose and in which language, a correction and a locale by the
+locale code (HIL-1538).
 Names in the reader's language belong to HIL-1424.
 
 ## What This Page Does Not Decide

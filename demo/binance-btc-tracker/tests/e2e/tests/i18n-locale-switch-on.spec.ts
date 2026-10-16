@@ -26,7 +26,7 @@ test('switches on a known locale with a still window on wide and narrow screens'
   await expect(
     page
       .getByTestId('hilos-toast-success')
-      .filter({ hasText: 'Locale added.' }),
+      .filter({ hasText: 'Locale en-AU added.' }),
   ).toBeVisible()
 
   const edit = australianRow.getByTestId('i18n-locales-edit-en-AU')
@@ -106,7 +106,7 @@ test('switches on a known locale with a still window on wide and narrow screens'
   await expect(
     page
       .getByTestId('hilos-toast-success')
-      .filter({ hasText: 'Locale switched on.' }),
+      .filter({ hasText: 'Locale en-AU switched on.' }),
   ).toBeVisible()
   await expect(shownByTestId(page, 'i18n-locales-enabled-en-AU')).toBeChecked()
   await expect(shownByTestId(page, 'i18n-locales-view-en-AU')).toBeVisible()

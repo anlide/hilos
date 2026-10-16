@@ -25,6 +25,7 @@ use Hilos\I18n\CountryUpdate;
 use Hilos\I18n\DTO\BuiltInCatalogTally;
 use Hilos\I18n\DTO\BuiltInCountryCodes;
 use Hilos\I18n\Exception\I18nRowFrozenException;
+use Hilos\I18n\MessageLabel;
 use Hilos\Pages\I18n\Lists\DTO\HilosI18nCountryAddActionDTO;
 use Hilos\Pages\I18n\Lists\DTO\HilosI18nCountryRowDeleteActionDTO;
 use Hilos\Pages\I18n\Lists\DTO\HilosI18nCountryRowUpdateActionDTO;
@@ -69,10 +70,11 @@ abstract class AbstractHilosI18nCountriesListPage extends AbstractHilosPage
                 if (!$dto instanceof HilosI18nCountryAddActionDTO) {
                     throw new InvalidActionPayloadException($action, HilosI18nCountryAddActionDTO::class, $dto);
                 }
-                Hilos::$db->countries->actions->create($dto->countryCode, $dto->currencySymbol, $dto->currencyCode);
+                $country = Hilos::$db->countries->actions->create($dto->countryCode, $dto->currencySymbol, $dto->currencyCode);
+                $label = MessageLabel::country($country);
                 $this->setActionSuccessMessage(BuiltInI18nCatalog::country($dto->countryCode) === null
-                    ? "Custom country {$dto->countryCode} added and switched off for now."
-                    : 'Country added and switched off for now.');
+                    ? "Custom country {$label} added and switched off for now."
+                    : "Country {$label} added and switched off for now.");
 
                 return null;
 
@@ -130,8 +132,8 @@ abstract class AbstractHilosI18nCountriesListPage extends AbstractHilosPage
      */
     private function handleCountryUpdate(HilosI18nCountryRowUpdateActionDTO $dto): void
     {
-        CountryUpdate::apply($dto);
-        $this->setActionSuccessMessage('Country saved.');
+        $country = CountryUpdate::apply($dto);
+        $this->setActionSuccessMessage('Country ' . MessageLabel::country($country) . ' saved.');
     }
 
     /**
@@ -144,7 +146,8 @@ abstract class AbstractHilosI18nCountriesListPage extends AbstractHilosPage
     {
         $country = Hilos::$db->countries[$dto->countryId]
             ?? throw new TableActionException('Unknown country: ' . $dto->countryId);
+        $label = MessageLabel::country($country);
         $country->actions->delete();
-        $this->setActionSuccessMessage('Country deleted.');
+        $this->setActionSuccessMessage("Country {$label} deleted.");
     }
 }

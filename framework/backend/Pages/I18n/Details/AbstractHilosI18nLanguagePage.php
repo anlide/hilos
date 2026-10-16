@@ -19,6 +19,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\I18n\Exception\DefaultLanguageProtectedException;
 use Hilos\I18n\Exception\I18nRowFrozenException;
+use Hilos\I18n\MessageLabel;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLanguageSwitchOffActionDTO;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLanguageSwitchOnActionDTO;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLanguageUpdateActionDTO;
@@ -83,7 +84,7 @@ abstract class AbstractHilosI18nLanguagePage extends AbstractHilosI18nLanguageCo
                 $language = Hilos::$db->languages[$dto->languageId]
                     ?? throw new TableActionException('Unknown language: ' . $dto->languageId);
                 $language->actions->switchOff();
-                $this->setActionSuccessMessage('Language switched off.');
+                $this->setActionSuccessMessage('Language ' . MessageLabel::language($language) . ' switched off.');
 
                 return null;
 
@@ -95,7 +96,7 @@ abstract class AbstractHilosI18nLanguagePage extends AbstractHilosI18nLanguageCo
                 $language = Hilos::$db->languages[$dto->languageId]
                     ?? throw new TableActionException('Unknown language: ' . $dto->languageId);
                 $language->actions->switchOn();
-                $this->setActionSuccessMessage('Language switched on.');
+                $this->setActionSuccessMessage('Language ' . MessageLabel::language($language) . ' switched on.');
 
                 return null;
 

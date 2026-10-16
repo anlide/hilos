@@ -334,7 +334,7 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
             self::assertInstanceOf(PageActionSuccessSignalData::class, $success->data->data);
             self::assertSame(HilosSignalConstants::HILOS_I18N_LOCALE_SWITCH_OFF, $success->data->data->action);
             self::assertSame('switch-off-request', $success->data->data->requestId);
-            self::assertSame('Locale switched off.', $success->data->data->message);
+            self::assertSame('Locale en-GB switched off.', $success->data->data->message);
             self::assertNull($success->data->data->reply);
 
             $before = (int) Database::sql("SHOW SESSION STATUS LIKE 'Com_update'")->firstRow()['Value'];

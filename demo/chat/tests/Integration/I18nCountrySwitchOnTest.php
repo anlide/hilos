@@ -104,7 +104,7 @@ final class I18nCountrySwitchOnTest extends IntegrationTestCase
         self::assertSame(SignalConstants::ACTION_SUCCESS, $success?->signalName->getName());
         self::assertInstanceOf(WebSocketSignalData::class, $success->data);
         self::assertInstanceOf(PageActionSuccessSignalData::class, $success->data->data);
-        self::assertSame('Country switched on.', $success->data->data->message);
+        self::assertSame('Country ca switched on.', $success->data->data->message);
         self::assertNull($success->data->data->reply);
 
         $this->underAgent($this->agent, static function () use ($page): void {
@@ -119,6 +119,7 @@ final class I18nCountrySwitchOnTest extends IntegrationTestCase
         $this->underAgent($this->agent, static function (): void {
             Hilos::$db->countries['ca']->actions->switchOff();
             $english = Hilos::$db->languages->actions->create('en', 'English', false);
+            Hilos::$db->countryNames->actions->createManual(Hilos::$db->countries['ca'], $english, null, 'Canada');
             $locale = Hilos::$db->locales->actions->create(
                 $english,
                 Hilos::$db->countries['ca'],
@@ -142,6 +143,13 @@ final class I18nCountrySwitchOnTest extends IntegrationTestCase
             ));
         });
         self::assertTrue(Hilos::$db->countries['ca']->enabled);
+        $page->sendActionSuccess('country-ak', HilosSignalConstants::HILOS_I18N_COUNTRY_SWITCH_ON, 'switch-on-named');
+        do {
+            $namedSuccess = Hilos::$sr->getNextQueuedSignal();
+        } while ($namedSuccess !== null && $namedSuccess->signalName->getName() !== SignalConstants::ACTION_SUCCESS);
+        self::assertInstanceOf(WebSocketSignalData::class, $namedSuccess?->data);
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $namedSuccess->data->data);
+        self::assertSame('Country Canada (ca) switched on.', $namedSuccess->data->data->message);
 
         $this->expectException(TableActionException::class);
         $page->onAction(

@@ -475,7 +475,7 @@ final class I18nLanguageDeleteTest extends IntegrationTestCase
         self::assertSame($fromList ? HilosSignalConstants::HILOS_I18N_LANGUAGE_ROW_DELETE
             : HilosSignalConstants::HILOS_I18N_LANGUAGE_DELETE, $success->action);
         self::assertSame('delete-tracked', $success->requestId);
-        self::assertSame('Language deleted.', $success->message);
+        self::assertSame('Language Français (fr) deleted.', $success->message);
         self::assertNull($success->reply);
         self::assertArrayNotHasKey('reply', $success->toArray());
         self::assertNull(Hilos::$db->languages['fr']);

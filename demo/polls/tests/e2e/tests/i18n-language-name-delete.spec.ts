@@ -88,7 +88,10 @@ test('cancels then deletes a base name and all corrections live in both windows'
     // Both dialogs hold the same row before the first window deletes it.
     await clickSubmit(shownByTestId(observer, 'i18n-names-delete-qw'))
     await clickSubmit(trash)
-    await confirmDelete(page, 'Language name deleted.')
+    await confirmDelete(
+      page,
+      'Name of HIL-1490 target (qv) in HIL-1490 writing (qw) deleted.',
+    )
     for (const tab of [page, observer]) {
       await expect(shownByTestId(tab, 'i18n-names-none-qw')).toHaveText(
         'No name',
@@ -150,7 +153,10 @@ test('removes one correction and then the saved empty correction at 375px, with 
     await expect(page.getByTestId(WINDOW)).toHaveCount(0)
     await expect(trash).toBeFocused()
     await clickSubmit(trash)
-    await confirmDelete(page, 'Locale correction removed.')
+    await confirmDelete(
+      page,
+      'Correction qw-GB of the name of HIL-1490 target (qv) removed.',
+    )
     for (const tab of [page, observer]) {
       await expect(shownByTestId(tab, 'i18n-names-inherit-qw-GB')).toHaveText(
         'as in “HIL-1490 writing”',
@@ -168,7 +174,10 @@ test('removes one correction and then the saved empty correction at 375px, with 
       'A saved empty string, not an absent name.',
     )
     await clickSubmit(shownByTestId(observer, 'i18n-names-delete-qw-US'))
-    await confirmDelete(observer, 'Locale correction removed.')
+    await confirmDelete(
+      observer,
+      'Correction qw-US of the name of HIL-1490 target (qv) removed.',
+    )
     await expect(page.getByTestId(CONFIRM)).toBeDisabled()
     await expect(page.getByTestId(WINDOW)).toBeVisible()
     await expect(

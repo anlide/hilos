@@ -339,7 +339,7 @@ final class I18nCountryEditTest extends IntegrationTestCase
         self::assertInstanceOf(PageActionSuccessSignalData::class, $success);
         self::assertSame('country-save', $success->requestId);
         self::assertSame($dto->getAction(), $success->action);
-        self::assertSame('Country saved.', $success->message);
+        self::assertSame('Country ie saved.', $success->message);
         self::assertNull($success->reply);
 
         $invalid = new HilosI18nCountryUpdateActionDTO(Hilos::$db->countries['ie']->id, '$', 'USD', Hilos::$db->locales['en-ZZ']?->id ?? 999999);

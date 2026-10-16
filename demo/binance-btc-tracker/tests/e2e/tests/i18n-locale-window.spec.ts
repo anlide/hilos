@@ -26,7 +26,7 @@ test('adds a known locale and edits its formats from the language table', async 
   await expect(
     page
       .getByTestId('hilos-toast-success')
-      .filter({ hasText: 'Locale added.' }),
+      .filter({ hasText: 'Locale en-GB added.' }),
   ).toBeVisible()
   await expect(britishRow.getByTestId('i18n-locales-code-en-GB')).toHaveText(
     'en-GB',
@@ -44,7 +44,7 @@ test('adds a known locale and edits its formats from the language table', async 
   await expect(
     page
       .getByTestId('hilos-toast-success')
-      .filter({ hasText: 'Locale saved.' }),
+      .filter({ hasText: 'Locale en-GB saved.' }),
   ).toBeVisible()
 
   await clickSubmit(edit)

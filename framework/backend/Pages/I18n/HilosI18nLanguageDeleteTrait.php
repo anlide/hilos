@@ -9,6 +9,7 @@ use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\I18n\Exception\DefaultLanguageProtectedException;
+use Hilos\I18n\MessageLabel;
 use Hilos\Pages\I18n\Details\DTO\AbstractHilosI18nLanguageDeleteActionDTO;
 
 /** One transactional removal, entered through either language page. */
@@ -25,7 +26,8 @@ trait HilosI18nLanguageDeleteTrait
     {
         $language = Hilos::$db->languages[$dto->languageId]
             ?? throw new TableActionException('Unknown language: ' . $dto->languageId);
+        $label = MessageLabel::language($language);
         $language->actions->delete();
-        $this->setActionSuccessMessage('Language deleted.');
+        $this->setActionSuccessMessage("Language {$label} deleted.");
     }
 }

@@ -28,7 +28,7 @@ test('adds a known language switched off from the built-in catalog', async ({
   await expect(submit).toHaveCount(0)
 
   await expect(page.getByTestId('hilos-toast-success')).toContainText(
-    'Language added and switched off for now.',
+    'Language Português (pt) added and switched off for now.',
   )
   const row = page
     .getByTestId(/^hilos-table-row-/)
@@ -76,7 +76,7 @@ test('adds a custom language switched off after confirmation', async ({
   await expect(confirm).toHaveCount(0)
 
   await expect(page.getByTestId('hilos-toast-success')).toContainText(
-    'Custom language cy added and switched off for now.',
+    'Custom language Cymraeg (cy) added and switched off for now.',
   )
   const row = page
     .getByTestId(/^hilos-table-row-/)

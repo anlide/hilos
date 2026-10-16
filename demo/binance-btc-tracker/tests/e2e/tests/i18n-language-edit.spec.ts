@@ -82,7 +82,7 @@ test('edits a switched-off language from its card and from the languages table',
     await expect(
       page
         .getByTestId('hilos-toast-success')
-        .filter({ hasText: 'Language saved.' }),
+        .filter({ hasText: `Language ${cardName} (uk) saved.` }),
     ).toBeVisible()
     await expect(page.getByTestId('language-card-name')).toHaveText(cardName)
     await expect(page.getByTestId('language-card-native-name')).toHaveText(
@@ -108,7 +108,7 @@ test('edits a switched-off language from its card and from the languages table',
     await expect(
       page
         .getByTestId('hilos-toast-success')
-        .filter({ hasText: 'Language saved.' }),
+        .filter({ hasText: `Language ${tableName} (uk) saved.` }),
     ).toBeVisible()
     await expect(row).toContainText(tableName)
     expect(writes).toHaveLength(2)

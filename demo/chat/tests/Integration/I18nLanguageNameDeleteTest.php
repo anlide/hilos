@@ -664,7 +664,12 @@ final class I18nLanguageNameDeleteTest extends IntegrationTestCase
         self::assertInstanceOf(PageActionSuccessSignalData::class, $outcome);
         self::assertSame('delete-tracked', $outcome->requestId);
         self::assertSame($this->request($override)->getAction(), $outcome->action);
-        self::assertSame($override ? 'Locale correction removed.' : 'Language name deleted.', $outcome->message);
+        self::assertSame(
+            $override
+                ? 'Correction qw-GB of the name of HIL-1490 target (qv) removed.'
+                : 'Name of HIL-1490 target (qv) in HIL-1490 writing (qw) deleted.',
+            $outcome->message,
+        );
         self::assertNull($outcome->reply);
         self::assertArrayNotHasKey('reply', $outcome->toArray());
     }

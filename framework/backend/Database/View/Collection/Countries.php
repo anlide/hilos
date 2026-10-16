@@ -48,8 +48,6 @@ class Countries extends DbCollection
             throw new InvalidArgumentException("Country {$countryId} does not exist");
         }
 
-        $defaultLanguageId = Hilos::$db->languages[DefaultLanguage::code()]?->id;
-        $name = $defaultLanguageId === null ? null : Hilos::$db->countryNames->findBase($countryId, $defaultLanguageId)?->name;
         $locales = $country->locales;
         $defaultLocale = $country->defaultLocale;
         $choices = array_values($locales->map(static fn (Locale $locale): CountryLocaleChoice => new CountryLocaleChoice(
@@ -60,7 +58,7 @@ class Countries extends DbCollection
         usort($choices, static fn (CountryLocaleChoice $a, CountryLocaleChoice $b): int => strcmp($a->code, $b->code));
 
         return new CountryCardSummary(
-            name: $name === '' ? null : $name,
+            name: $this->nameInDefaultLanguage($countryId),
             isOwn: BuiltInI18nCatalog::country($country->code) === null,
             defaultLocaleId: $country->defaultLocaleId,
             defaultLocaleCode: $defaultLocale?->code,
@@ -71,6 +69,23 @@ class Countries extends DbCollection
             catalogDefaultLocaleCode: BuiltInI18nCatalog::defaultLocale($country->code),
             deleteReason: $country->deleteReason(),
         );
+    }
+
+    /**
+     * @param int $countryId Country primary id
+     * @return ?string Base name in the default language, or null when missing or empty
+     * @throws DatabaseException When the language or country name lookup fails
+     * @throws LogicException When collection classes are not configured
+     * @throws InvalidArgumentException When a loaded object has the wrong type
+     * @throws EnvException When the default language setting is absent
+     * @throws EnvInvalidValueException When its configured code is unknown
+     */
+    public function nameInDefaultLanguage(int $countryId): ?string
+    {
+        $defaultLanguageId = Hilos::$db->languages[DefaultLanguage::code()]?->id;
+        $name = $defaultLanguageId === null ? null : Hilos::$db->countryNames->findBase($countryId, $defaultLanguageId)?->name;
+
+        return $name === '' ? null : $name;
     }
 
     /**

@@ -21,6 +21,7 @@ use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
+use Hilos\I18n\MessageLabel;
 use Hilos\I18n\DTO\BuiltInCatalogTally;
 use Hilos\I18n\DTO\BuiltInLanguages;
 use Hilos\I18n\Exception\DefaultLanguageProtectedException;
@@ -76,10 +77,11 @@ abstract class AbstractHilosI18nLanguagesListPage extends AbstractHilosPage
                     throw new InvalidActionPayloadException($action, HilosI18nLanguageAddActionDTO::class, $dto);
                 }
 
-                Hilos::$db->languages->actions->add($dto->languageCode, $dto->nativeName, $dto->rtl);
+                $language = Hilos::$db->languages->actions->add($dto->languageCode, $dto->nativeName, $dto->rtl);
+                $label = MessageLabel::language($language);
                 $this->setActionSuccessMessage(BuiltInI18nCatalog::language($dto->languageCode) === null
-                    ? "Custom language {$dto->languageCode} added and switched off for now."
-                    : 'Language added and switched off for now.');
+                    ? "Custom language {$label} added and switched off for now."
+                    : "Language {$label} added and switched off for now.");
 
                 return null;
 

@@ -99,7 +99,7 @@ final class I18nLanguageSwitchOnTest extends IntegrationTestCase
         self::assertSame(SignalConstants::ACTION_SUCCESS, $success?->signalName->getName());
         self::assertInstanceOf(WebSocketSignalData::class, $success->data);
         self::assertInstanceOf(PageActionSuccessSignalData::class, $success->data->data);
-        self::assertSame('Language switched on.', $success->data->data->message);
+        self::assertSame('Language Français (fr) switched on.', $success->data->data->message);
         self::assertNull($success->data->data->reply);
         self::assertSame(LanguageCardSummary::COUNTRYLESS_MISSING, Hilos::$db->languages->cardSummary(
             Hilos::$db->languages['fr']->id,

@@ -124,7 +124,7 @@ final class I18nCountrySwitchOffTest extends IntegrationTestCase
         self::assertSame(SignalConstants::ACTION_SUCCESS, $success?->signalName->getName());
         self::assertInstanceOf(WebSocketSignalData::class, $success->data);
         self::assertInstanceOf(PageActionSuccessSignalData::class, $success->data->data);
-        self::assertSame('Country switched off.', $success->data->data->message);
+        self::assertSame('Country Italy (it) switched off.', $success->data->data->message);
         self::assertNull($success->data->data->reply);
 
         $this->underAgent($this->agent, static function () use ($page): void {

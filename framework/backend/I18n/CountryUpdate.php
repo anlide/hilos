@@ -10,6 +10,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\View\Item\Country;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\I18n\Exception\I18nRowFrozenException;
@@ -20,6 +21,7 @@ final class CountryUpdate
 {
     /**
      * @param AbstractHilosI18nCountryUpdateActionDTO $dto Country fields from the card or table row
+     * @return Country Updated country
      * @throws TableActionException When the country no longer exists
      * @throws ValidationException When the locale no longer exists or the currency or locale is invalid
      * @throws I18nRowFrozenException When the country is switched on
@@ -29,10 +31,12 @@ final class CountryUpdate
      * @throws InvalidArgumentException When a loaded row has the wrong type
      * @throws HilosException When ownership or persistence refuses the write
      */
-    public static function apply(AbstractHilosI18nCountryUpdateActionDTO $dto): void
+    public static function apply(AbstractHilosI18nCountryUpdateActionDTO $dto): Country
     {
         $country = Hilos::$db->countries[$dto->countryId]
             ?? throw new TableActionException('Unknown country: ' . $dto->countryId);
         $country->actions->update($dto->currencySymbol, $dto->currencyCode, $dto->defaultLocaleId);
+
+        return $country;
     }
 }

@@ -98,7 +98,7 @@ test('writes country names and corrections live in two tabs, including literal e
 
     await openName(page, 'add-en')
     await typeInto(page.getByTestId(INPUT), 'Country from UI')
-    await saveName(page, 'Country name added.')
+    await saveName(page, 'Name of Country from UI (qj) in English (en) added.')
     for (const tab of [page, observer]) {
       await expect(tab.getByTestId('country-card-title')).toHaveText(
         'Country from UI',
@@ -109,13 +109,19 @@ test('writes country names and corrections live in two tabs, including literal e
 
     await openName(page, 'edit-qk')
     await typeInto(page.getByTestId(INPUT), 'Edited base')
-    await saveName(page, 'Country name saved.')
+    await saveName(
+      page,
+      'Name of Country from UI (qj) in HIL-1501 writing (qk) saved.',
+    )
     for (const tab of [page, observer])
       await expectName(tab, 'qk', 'Edited base')
 
     await openName(page, 'locale-edit-qk-GB')
     await typeInto(page.getByTestId(INPUT), 'Edited British correction')
-    await saveName(page, 'Locale correction saved.')
+    await saveName(
+      page,
+      'Correction qk-GB of the name of Country from UI (qj) saved.',
+    )
     for (const tab of [page, observer])
       await expectName(tab, 'qk-GB', 'Edited British correction')
 
@@ -123,7 +129,10 @@ test('writes country names and corrections live in two tabs, including literal e
     await expect(page.getByTestId(INPUT)).toHaveValue('')
     await expect(page.getByTestId(SUBMIT)).toBeDisabled()
     await typeInto(page.getByTestId(INPUT), 'American correction')
-    await saveName(page, 'Locale correction saved.')
+    await saveName(
+      page,
+      'Correction qk-US of the name of Country from UI (qj) saved.',
+    )
     for (const tab of [page, observer])
       await expectName(tab, 'qk-US', 'American correction')
 
@@ -160,7 +169,10 @@ test('writes country names and corrections live in two tabs, including literal e
     // An empty base still admits a new, empty correction on a disabled locale.
     await openName(page, 'locale-add-qk-FR')
     await expect(page.getByTestId(INPUT)).toHaveValue('')
-    await saveName(page, 'Locale correction added.')
+    await saveName(
+      page,
+      'Correction qk-FR of the name of Country from UI (qj) added.',
+    )
     for (const tab of [page, observer]) {
       await expect(
         shownByTestId(tab, 'i18n-country-name-locale-edit-qk-FR'),
@@ -233,7 +245,7 @@ test('refuses a concurrent correction ADD and keeps its draft at 375px in dark',
       observer.getByTestId('i18n-country-name-error'),
     )
     const bodyRoom = await watchHeight(observer.getByTestId(WINDOW))
-    await saveName(page, 'Locale correction added.')
+    await saveName(page, 'Correction qk-FR of the name of qj added.')
     await expectName(observer, 'qk-FR', 'First writer')
     await expect(observer.getByTestId(TITLE)).toHaveText(
       'Add locale correction · QJ',
@@ -303,7 +315,9 @@ for (const correction of [false, true]) {
         await typeInto(page.getByTestId(INPUT), theirs)
         await saveName(
           page,
-          correction ? 'Locale correction saved.' : 'Country name saved.',
+          correction
+            ? 'Correction qk-GB of the name of qj saved.'
+            : 'Name of qj in HIL-1501 writing (qk) saved.',
         )
         await expect(observer.getByTestId(NOTICE)).toContainText(
           `Name changed elsewhere to "${theirs}".`,
@@ -327,7 +341,9 @@ for (const correction of [false, true]) {
         }
         await saveName(
           observer,
-          correction ? 'Locale correction saved.' : 'Country name saved.',
+          correction
+            ? 'Correction qk-GB of the name of qj saved.'
+            : 'Name of qj in HIL-1501 writing (qk) saved.',
         )
         for (const tab of [page, observer]) await expectName(tab, key, mine)
       }

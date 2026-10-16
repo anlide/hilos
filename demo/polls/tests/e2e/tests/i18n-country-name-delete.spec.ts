@@ -86,7 +86,7 @@ test('removes country name corrections and their base live in two windows, inclu
     ).toContainText('Fixture correction')
 
     await clickSubmit(correctionTrash)
-    await confirmDelete(page, 'Locale correction removed.')
+    await confirmDelete(page, 'Correction qk-GB of the name of qj removed.')
     for (const tab of [page, observer]) {
       await expect(shownByTestId(tab, 'i18n-names-inherit-qk-GB')).toHaveText(
         'as in “HIL-1501 writing”',
@@ -104,7 +104,7 @@ test('removes country name corrections and their base live in two windows, inclu
     await expect(page.getByTestId(WINDOW)).toContainText(
       'A saved empty string, not an absent name.',
     )
-    await confirmDelete(page, 'Locale correction removed.')
+    await confirmDelete(page, 'Correction qk-US of the name of qj removed.')
     for (const tab of [page, observer]) {
       await expect(shownByTestId(tab, 'i18n-names-inherit-qk-US')).toHaveText(
         'as in “HIL-1501 writing”',
@@ -138,7 +138,7 @@ test('removes country name corrections and their base live in two windows, inclu
     // The other window keeps its confirmation and explains the disappeared source.
     await clickSubmit(shownByTestId(observer, 'i18n-names-delete-qk'))
     await clickSubmit(baseTrash)
-    await confirmDelete(page, 'Country name removed.')
+    await confirmDelete(page, 'Name of qj in HIL-1501 writing (qk) removed.')
     for (const tab of [page, observer]) {
       await expect(shownByTestId(tab, 'i18n-names-none-qk')).toHaveText(
         'No name',

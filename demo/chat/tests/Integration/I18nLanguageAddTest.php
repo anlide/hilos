@@ -70,7 +70,7 @@ final class I18nLanguageAddTest extends IntegrationTestCase
     public function testKnownLanguageKeepsTypedValuesAndGetsUnlockedCatalogCountryNames(): void
     {
         $success = $this->addThroughPage('pt', 'Português editado', true);
-        self::assertSame('Language added and switched off for now.', $success->message);
+        self::assertSame('Language Português editado (pt) added and switched off for now.', $success->message);
         self::assertNotNull(Hilos::$db->languages['pt']);
         self::assertFalse(Hilos::$db->languages['pt']->enabled);
         self::assertSame('Português editado', Hilos::$db->languages['pt']->nativeName);
@@ -100,7 +100,7 @@ final class I18nLanguageAddTest extends IntegrationTestCase
     {
         self::assertNull(BuiltInI18nCatalog::language('cy'));
         $success = $this->addThroughPage('cy', 'Cymraeg', false);
-        self::assertSame('Custom language cy added and switched off for now.', $success->message);
+        self::assertSame('Custom language Cymraeg (cy) added and switched off for now.', $success->message);
         self::assertNotNull(Hilos::$db->languages['cy']);
         self::assertSame('Cymraeg', Hilos::$db->languages['cy']->nativeName);
         self::assertFalse(Hilos::$db->languages['cy']->rtl);
@@ -166,7 +166,7 @@ final class I18nLanguageAddTest extends IntegrationTestCase
             TruthSourceRegistry::register(HilosDbContext::countryNames, TruthSourceKeys::all(), $this->agent->getId());
         }
 
-        self::assertSame('Language added and switched off for now.', $this->addThroughPage('pt', 'Português', false)->message);
+        self::assertSame('Language Português (pt) added and switched off for now.', $this->addThroughPage('pt', 'Português', false)->message);
     }
 
     /**

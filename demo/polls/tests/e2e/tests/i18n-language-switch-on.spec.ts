@@ -27,7 +27,7 @@ test('switches on a language without a countryless locale', async ({
   await expect(confirm).toHaveCount(0)
 
   await expect(page.getByTestId('hilos-toast-success')).toContainText(
-    'Language switched on.',
+    'Language Deutsch (de) switched on.',
   )
   await expect(page.getByTestId('language-card-enabled')).toHaveText('Enabled')
   await expect(page.getByTestId('language-card-frozen')).toBeVisible()

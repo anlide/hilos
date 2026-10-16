@@ -40,7 +40,7 @@ test('switches off an ordinary locale and unlocks all seven formats', async ({
   await expect(
     page
       .getByTestId('hilos-toast-success')
-      .filter({ hasText: 'Locale switched off.' }),
+      .filter({ hasText: 'Locale pt switched off.' }),
   ).toBeVisible()
   await expect(shownByTestId(page, 'i18n-locales-enabled-pt')).not.toBeChecked()
   await expect(page.getByTestId('i18n-locales-view-pt')).toHaveCount(0)
@@ -97,7 +97,7 @@ test('warns for an enabled language and updates both tabs without reloading', as
   await expect(
     page
       .getByTestId('hilos-toast-success')
-      .filter({ hasText: 'Locale switched off.' }),
+      .filter({ hasText: 'Locale pt switched off.' }),
   ).toBeVisible()
 
   for (const tab of [page, second]) {

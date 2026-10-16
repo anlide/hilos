@@ -92,7 +92,7 @@ test('deletes a countryless locale at 375px and updates both subscribed pairs wi
   await clickSubmit(confirm)
   await expect(window).toHaveCount(0)
   await expect(page.getByTestId('hilos-toast-success')).toContainText(
-    'Locale deleted.',
+    'Locale pt deleted.',
   )
   for (const tab of [page, other]) {
     await expect(shownByTestId(tab, 'i18n-locales-none-pt')).toHaveText(

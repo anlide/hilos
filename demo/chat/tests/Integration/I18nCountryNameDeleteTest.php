@@ -156,7 +156,11 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
             }
         });
         self::assertTrue($this->base()->locked);
-        $this->assertSuccess($this->dispatch($this->nameRequest(HilosI18nCountryNameDeleteActionDTO::class, 'qj', 'qk', null, $expectedName)), false);
+        $this->assertSuccess(
+            $this->dispatch($this->nameRequest(HilosI18nCountryNameDeleteActionDTO::class, 'qj', 'qk', null, $expectedName)),
+            false,
+            'Other base (qj)',
+        );
         self::assertNull($this->base());
         self::assertNull($this->correction('qk-GB'));
         self::assertNull($this->correction('qk-US'));
@@ -659,7 +663,13 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
                     $dto = $override
                         ? $this->nameRequest(HilosI18nCountryNameOverrideDeleteActionDTO::class, 'us', 'en', 'en-GB', 'British US')
                         : $this->nameRequest(HilosI18nCountryNameDeleteActionDTO::class, 'us', 'en', null, 'Manual US');
-                    $this->assertSuccess($this->dispatch($dto), $override);
+                    $this->assertSuccess(
+                        $this->dispatch($dto),
+                        $override,
+                        $override ? 'Manual US (us)' : 'United States (us)',
+                        'English (en)',
+                        'en-GB',
+                    );
                 } finally {
                     $changes->active = false;
                 }
@@ -818,14 +828,27 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
     /**
      * @param PageActionSuccessSignalData|PageActionErrorSignalData $outcome Tracked result
      * @param bool $override Whether only a correction was removed
+     * @param string $country Expected country label after deletion
+     * @param string $writing Expected writing language label
+     * @param string $locale Expected locale code
      * @throws HilosException When fixture setup, dispatch or a data read fails
      */
-    private function assertSuccess(PageActionSuccessSignalData|PageActionErrorSignalData $outcome, bool $override): void
-    {
+    private function assertSuccess(
+        PageActionSuccessSignalData|PageActionErrorSignalData $outcome,
+        bool $override,
+        string $country = 'qj',
+        string $writing = 'HIL-1501 writing (qk)',
+        string $locale = 'qk-GB',
+    ): void {
         self::assertInstanceOf(PageActionSuccessSignalData::class, $outcome);
         self::assertSame('delete-tracked', $outcome->requestId);
         self::assertSame($this->request($override)->getAction(), $outcome->action);
-        self::assertSame($override ? 'Locale correction removed.' : 'Country name removed.', $outcome->message);
+        self::assertSame(
+            $override
+                ? "Correction {$locale} of the name of {$country} removed."
+                : "Name of {$country} in {$writing} removed.",
+            $outcome->message,
+        );
         self::assertNull($outcome->reply);
         self::assertArrayNotHasKey('reply', $outcome->toArray());
     }

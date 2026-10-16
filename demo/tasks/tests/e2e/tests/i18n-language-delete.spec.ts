@@ -51,7 +51,7 @@ test('creates a free language and deletes it from the languages table', async ({
     await expect(
       page
         .getByTestId('hilos-toast-success')
-        .filter({ hasText: 'Language deleted.' }),
+        .filter({ hasText: 'Language Українська (uk) deleted.' }),
     ).toBeVisible()
     await expect(page).toHaveURL(/\/hilos\/i18n\/languages$/)
     // Membership uses the table's existing removal gate; acknowledge it if this window owes Apply.

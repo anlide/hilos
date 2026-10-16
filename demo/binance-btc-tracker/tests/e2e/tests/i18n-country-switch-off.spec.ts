@@ -26,7 +26,7 @@ test('switches off a known country from its card', async ({ page }) => {
   await expect(confirm).toHaveCount(0)
 
   await expect(page.getByTestId('hilos-toast-success')).toContainText(
-    'Country switched off.',
+    'Country Italy (it) switched off.',
   )
   await expect(page.getByTestId('country-card-enabled')).toHaveText('Disabled')
   await expect(page.getByTestId('country-card-frozen')).toHaveCount(0)

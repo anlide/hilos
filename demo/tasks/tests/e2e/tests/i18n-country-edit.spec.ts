@@ -36,7 +36,7 @@ test('edits a switched-off country and saves its suggested default locale', asyn
   await expect(
     page
       .getByTestId('hilos-toast-success')
-      .filter({ hasText: 'Locale added.' }),
+      .filter({ hasText: 'Locale en-IE added.' }),
   ).toBeVisible()
 
   await gotoPage(page, '/hilos/i18n/countries', PAGE_READY)
@@ -77,7 +77,7 @@ test('edits a switched-off country and saves its suggested default locale', asyn
   await expect(
     page
       .getByTestId('hilos-toast-success')
-      .filter({ hasText: 'Country saved.' }),
+      .filter({ hasText: 'Country Ireland (ie) saved.' }),
   ).toBeVisible()
   await expect(row).toContainText('IE€')
   await expect(row).toContainText('EUR')

@@ -69,7 +69,7 @@ test('deletes a custom country from the list and updates a second subscribed car
   await clickSubmit(confirm)
   await expect(confirm).toHaveCount(0)
   await expect(page.getByTestId('hilos-toast-success')).toContainText(
-    'Country deleted.',
+    'Country qx deleted.',
   )
   await expect(page).toHaveURL(/\/hilos\/i18n\/countries$/)
   await expect(other.getByTestId('country-card-unavailable')).toHaveText(
@@ -96,7 +96,7 @@ test('deletes a custom country from State and returns to the list after success'
   await expect(confirm).toHaveCount(0)
   await expect(page).toHaveURL(/\/hilos\/i18n\/countries$/)
   await expect(page.getByTestId('hilos-toast-success')).toContainText(
-    'Country deleted.',
+    'Country qy deleted.',
   )
   const search = page.getByTestId('hilos-table-search')
   await search.fill('')
@@ -133,7 +133,7 @@ test('shows accessible blocked deletion for a custom country with a locale and a
   await clickSubmit(submit)
   await expect(submit).toHaveCount(0)
   await expect(page.getByTestId('hilos-toast-success')).toContainText(
-    'Locale added.',
+    'Locale en-QZ added.',
   )
   await dismissToasts(page)
 

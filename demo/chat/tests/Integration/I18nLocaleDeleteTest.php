@@ -132,7 +132,7 @@ final class I18nLocaleDeleteTest extends IntegrationTestCase
             'countryId' => Hilos::$db->countries[$countryCode]?->id,
             'localeId' => $id,
         ];
-        $this->assertSuccess($this->dispatch($payload));
+        $this->assertSuccess($this->dispatch($payload), $code);
         self::assertNull(Hilos::$db->locales[$code]);
         self::assertNull(Hilos::$db->locales[$id]);
         self::assertNotNull(Hilos::$db->locales[$countryCode === null ? 'en-GB' : 'en']);
@@ -374,11 +374,14 @@ final class I18nLocaleDeleteTest extends IntegrationTestCase
         return $outcomes[0];
     }
 
-    /** @param PageActionSuccessSignalData|PageActionErrorSignalData $reply Tracked outcome */
-    private function assertSuccess(PageActionSuccessSignalData|PageActionErrorSignalData $reply): void
+    /**
+     * @param PageActionSuccessSignalData|PageActionErrorSignalData $reply Tracked outcome
+     * @param string $code Deleted locale code
+     */
+    private function assertSuccess(PageActionSuccessSignalData|PageActionErrorSignalData $reply, string $code = 'en-GB'): void
     {
         self::assertInstanceOf(PageActionSuccessSignalData::class, $reply);
-        self::assertSame('Locale deleted.', $reply->message);
+        self::assertSame("Locale {$code} deleted.", $reply->message);
         self::assertNull($reply->reply);
         self::assertArrayNotHasKey('reply', $reply->toArray());
     }
