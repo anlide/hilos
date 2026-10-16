@@ -1,5 +1,12 @@
-import type { Locator, Page } from '@playwright/test'
+import type { Expect, Locator, Page } from '@playwright/test'
+
 import { shownByTestId } from './table.js'
+
+// The rows and checks of the languages and countries section that all three kits
+// perform alike, because the section's data-id controls match across the SDKs.
+// The tests themselves — their order, their steps and their navigation — stay in
+// each demo's spec; a check here takes the spec's `expect` first and reads the
+// page it is handed, never opening one.
 
 /**
  * Find the visible ID-keyed names row through its stable editing control.
@@ -35,4 +42,45 @@ export function i18nLocaleRow(page: Page, localeCode: string): Locator {
       new RegExp(`^i18n-locales-(add|edit|view)-${localeCode}$`),
     ),
   })
+}
+
+/**
+ * The shared card header of the default language, as its card, its names and its
+ * locales page all draw it: the code tile, the native name, the default mark and
+ * the counts line. The stand's default language is English from the environment.
+ *
+ * @param expect The spec's expect.
+ * @param page A page on the default language's card, names or locales.
+ */
+export async function expectDefaultLanguageHeader(
+  expect: Expect,
+  page: Page,
+): Promise<void> {
+  await expect(page.getByTestId('language-card-code-tile')).toHaveText('en')
+  await expect(page.getByTestId('language-card-native-name')).toHaveText(
+    'English',
+  )
+  await expect(page.getByTestId('language-card-default')).toHaveText(
+    'Default language',
+  )
+  await expect(page.getByTestId('language-card-counts')).toHaveText(
+    /Locales: \d+ · Names: \d+/,
+  )
+}
+
+/**
+ * The names table of a language on a stand that knows no other language: a
+ * language has no row of its own in its names table, so the table stands empty
+ * and says why. The spec opens the page itself; this reads what it shows.
+ *
+ * @param expect The spec's expect.
+ * @param page A page on a language's names table.
+ */
+export async function expectNoOtherLanguageNames(
+  expect: Expect,
+  page: Page,
+): Promise<void> {
+  await expect(
+    page.locator('table').getByTestId('hilos-table-empty-title'),
+  ).toHaveText('No other languages yet')
 }

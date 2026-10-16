@@ -56,3 +56,26 @@ export function dropSocket(page: Page): Promise<void> {
     ;(window as unknown as Record<string, () => void>)[hook]()
   }, DROP_SOCKET_HOOK)
 }
+
+/**
+ * Count the frames the page sends over its sockets whose payload carries a text —
+ * an action's name, or `"type":"action"` for any action at all — for a spec that
+ * asserts no request left the page. Call it before the page opens its socket
+ * (before signing up): a socket opened earlier is not listened to.
+ *
+ * @param page the page whose outgoing frames are counted.
+ * @param needle the text a counted frame's payload contains.
+ * @returns a reader of the count so far.
+ */
+export function countSentFrames(page: Page, needle: string): () => number {
+  let count = 0
+  page.on('websocket', (socket) => {
+    socket.on('framesent', ({ payload }) => {
+      if (payload.toString().includes(needle)) {
+        count += 1
+      }
+    })
+  })
+
+  return () => count
+}

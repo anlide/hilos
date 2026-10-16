@@ -109,10 +109,10 @@ require_once __DIR__ . '/framework-pieces.php';
 
 /** Demos carrying a tests/e2e suite, with their measured per-step durations. */
 $demos = [
-    'chat' => ['check' => 11, 'php' => 79, 'e2e' => 570],
-    'tasks' => ['check' => 9, 'php' => 17, 'e2e' => 360],
-    'polls' => ['check' => 15, 'php' => 17, 'e2e' => 389],
-    'binance-btc-tracker' => ['check' => 10, 'php' => 15, 'e2e' => 394],
+    'chat' => ['check' => 11, 'php' => 79, 'e2e' => 600],
+    'tasks' => ['check' => 9, 'php' => 17, 'e2e' => 642],
+    'polls' => ['check' => 15, 'php' => 17, 'e2e' => 792],
+    'binance-btc-tracker' => ['check' => 10, 'php' => 15, 'e2e' => 768],
     'ecommerce-shop' => ['check' => 9, 'php' => 15, 'e2e' => 102],
     'online-testing' => ['check' => 15, 'php' => 15, 'e2e' => 111],
 ];

@@ -169,6 +169,7 @@ polls (Angular) → online-testing (Angular).
 | Second factor | polls: second-factor | polls | HIL-1325 |
 | Legal | polls: legal-admin, legal-reconsent, legal-terms, legal-consent, legal-agreements | polls | HIL-1325 |
 | Data and privacy | polls: data-export, privacy-erase, impersonation-settings | polls | HIL-1325 |
+| Languages and countries — each kit | binance-btc-tracker, tasks, polls: the 25 i18n-* specs | binance-btc-tracker (Vue), tasks (React), polls (Angular) | HIL-1504 |
 
 tasks switched on Ways to sign in (`/profile/sign-in`) to carry them (HIL-1324);
 polls switched on Ways to sign in, Sessions and Agreements of the profile, and its
@@ -185,6 +186,14 @@ with the same test titles. The actions the specs look at are the registration of
 the person and of the administrator, because tasks and polls declare no actions
 of their own; no demo's product takes part in them, and they carry no
 `spec-owner` line (HIL-1422).
+
+The languages and countries section is proved on every kit by the same 25
+`i18n-*.spec.ts` files with the same test titles: binance-btc-tracker (Vue),
+tasks (React) and polls (Angular). The Vue kit moved from chat to
+binance-btc-tracker on the owner's word (2026-10-15), taking about 4.4 minutes
+off chat-e2e, the floor of the run; ecommerce-shop and online-testing mount the
+section without specs. The section's tests share the database state in file
+order, and each demo's `helpers/i18n.ts` is its test-command helper (HIL-1504).
 
 **What stays in chat:** its product (the specs marked `demo`), the stand's own
 specs (marked `stand`), the shell (`a11y`, `about`, `navigation`, `layout`,
@@ -495,6 +504,18 @@ probe until the last registration action of both tabs — the person's and the
 administrator's — has landed, then opens the section. The three kits' specs
 are the same text; the one difference is the stand address of the command
 channel.
+
+### The languages and countries section — rows and checks
+
+`i18n.ts` owns `i18nNameRow` and `i18nLocaleRow`, a names or locales row found
+through its stable control, and the checks the three kits meet alike:
+`expectDefaultLanguageHeader` and `expectNoOtherLanguageNames`, each taking the
+spec's `expect` first, then its `Page`; the tests, their order and navigation
+stay in the demo spec. Beside them, `settleRemovedRow` (`table.ts`) waits a
+removed row out through the table's Apply gate, `countSentFrames` (`socket.ts`)
+counts the frames a page sends that carry a text, armed before the socket opens,
+and `pickThemeBeforeLoad` (`theme.ts`) sets the browser's theme pick before any
+page loads, while React (HIL-1440) and Angular (HIL-1441) have no theme menu.
 
 ### Geometry — take a bookmark and ask whether it moved
 

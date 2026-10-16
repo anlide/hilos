@@ -32,7 +32,7 @@ export {
   watchTopWithin,
   Watched,
 } from './geometry.js'
-export { armSocketDrop, dropSocket } from './socket.js'
+export { armSocketDrop, countSentFrames, dropSocket } from './socket.js'
 export { openFirstFrame } from './firstFrame.js'
 export {
   PASSKEY_PLATFORMS,
@@ -78,6 +78,7 @@ export {
   ROW_PREFIX,
   ROWS,
   TABLE,
+  settleRemovedRow,
   shownByTestId,
   sidewaysOverflow,
 } from './table.js'
@@ -151,4 +152,10 @@ export {
   type RestartWorker,
 } from './daemonRestart.js'
 
-export { i18nNameRow, i18nLocaleRow } from './i18n.js'
+export {
+  expectDefaultLanguageHeader,
+  expectNoOtherLanguageNames,
+  i18nLocaleRow,
+  i18nNameRow,
+} from './i18n.js'
+export { pickThemeBeforeLoad } from './theme.js'

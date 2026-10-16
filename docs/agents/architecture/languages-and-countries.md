@@ -684,6 +684,10 @@ remains its default shell.
 
 Startup refuses a missing page or agent; the topology tests check that the
 six migration files are present after registration.
+The section's e2e are the same 25 `i18n-*.spec.ts` files in binance-btc-tracker
+(Vue), tasks (React) and polls (Angular); the checks the kits share are in
+`framework/frontend/e2e/i18n.ts`, and the state they start from is set by the
+`test:i18n:*` commands through each demo's `helpers/i18n.ts` (HIL-1504).
 Follow [Feature Declaration](../app-topology.md) and the
 [activation recipe](admin-feature-scaffold.md).
 The six demos are `chat`, `tasks`, `polls`, `ecommerce-shop`,

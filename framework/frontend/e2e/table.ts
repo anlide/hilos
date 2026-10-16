@@ -1,4 +1,4 @@
-import type { Locator, Page } from '@playwright/test'
+import type { Expect, Locator, Page } from '@playwright/test'
 
 // A declared table stands in the document twice: as a table for a wide screen and
 // as a list of cards for a narrow one, both mounted at once and one of them hidden
@@ -64,4 +64,35 @@ export function sidewaysOverflow(page: Page): Promise<number[]> {
       (element) => element.scrollWidth - element.clientWidth,
     )
   })
+}
+
+/**
+ * Settle a declared table after a row the page itself removed on the server: the
+ * ordinary removal gate of the table may leave this window owing an Apply, or may
+ * take the row out at once, so the step waits for either and presses Apply where
+ * it is offered. At the end the removed row's control is gone from both branches
+ * of the table — the plain lookup that `toHaveCount(0)` reads here.
+ *
+ * @param expect The spec's expect.
+ * @param page The page carrying the table.
+ * @param controlTestId The `data-id` of a control only the removed row carried.
+ */
+export async function settleRemovedRow(
+  expect: Expect,
+  page: Page,
+  controlTestId: string,
+): Promise<void> {
+  const apply = page.getByTestId('hilos-table-apply')
+  const control = page.getByTestId(controlTestId)
+  await expect
+    .poll(
+      async () => (await apply.count()) > 0 || (await control.count()) === 0,
+    )
+    .toBe(true)
+  if (await apply.isVisible()) {
+    await expect(apply).toBeVisible()
+    await expect(apply).toBeEnabled()
+    await apply.click()
+  }
+  await expect(control).toHaveCount(0)
 }
