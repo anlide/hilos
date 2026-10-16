@@ -346,6 +346,27 @@ function userContext(
   }
 }
 
+/**
+ * A standing as the wire carries it.
+ *
+ * @param facts The facts that differ from a plain account.
+ */
+function standing(
+  facts: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    shown: 'none',
+    blocked: false,
+    frozen: false,
+    deletionEffectiveAt: null,
+    lapsed: [],
+    window: [],
+    mergedInto: null,
+    mergedIntoName: null,
+    ...facts,
+  }
+}
+
 /** Mount the page and open the rename modal. */
 function openModal(
   context: HilosUsersContext,
@@ -839,6 +860,317 @@ describe('HilosUserPage lifecycle', () => {
     })
     expect(find('hilos-user-lifecycle-confirm')).toBeNull()
   })
+
+  it('closes idle confirmation modals when background data invalidates the choice across all three pairs in both directions', async () => {
+    TestBed.resetTestingModule()
+    const { context, standingFrame, renameElsewhere } = userContext()
+    context.scopes.session.data.set('currentUser', { type: 'user', id: 99 })
+    context.scopes.page()?.data.set('accountDeletionGraceDays', 30)
+    TestBed.configureTestingModule({
+      providers: [{ provide: HILOS_ROUTER, useValue: router() }],
+    })
+    const fixture = TestBed.createComponent(HilosUserPage)
+    fixture.componentRef.setInput('context', context)
+    fixture.detectChanges()
+    const find = (id: string) => el(fixture, id)
+    const change = async (fn: () => void) => {
+      fn()
+      await settle(fixture)
+    }
+    const click = async (id: string) => {
+      find(id)?.click()
+      await settle(fixture)
+    }
+    const initialDispatchCount = vi.spyOn(context.actions, 'dispatch')
+
+    // 1. Admin pair: grant -> admin becomes true
+    let dispatches: number
+    await click('hilos-user-admin-open')
+    expect(find('modal')).not.toBeNull()
+    dispatches = initialDispatchCount.mock.calls.length
+    await change(() => {
+      context.scopes
+        .page()
+        ?.entities.upsert({ type: 'user', id: 1 }, { admin: true })
+    })
+    expect(find('modal')).toBeNull()
+    expect(initialDispatchCount.mock.calls.length).toBe(dispatches)
+    expect(initialDispatchCount).not.toHaveBeenCalledWith(
+      'hilos_user_admin_set',
+      expect.anything(),
+    )
+
+    // 1b. Admin pair: revoke -> admin becomes false
+    await click('hilos-user-admin-open')
+    expect(find('modal')).not.toBeNull()
+    dispatches = initialDispatchCount.mock.calls.length
+    await change(() => {
+      context.scopes
+        .page()
+        ?.entities.upsert({ type: 'user', id: 1 }, { admin: false })
+    })
+    expect(find('modal')).toBeNull()
+    expect(initialDispatchCount.mock.calls.length).toBe(dispatches)
+    expect(initialDispatchCount).not.toHaveBeenCalledWith(
+      'hilos_user_admin_set',
+      expect.anything(),
+    )
+
+    // 2. Block pair: block -> standing becomes blocked
+    await click('hilos-user-block-open')
+    expect(find('modal')).not.toBeNull()
+    dispatches = initialDispatchCount.mock.calls.length
+    await change(() => {
+      standingFrame({
+        userId: 1,
+        accountStanding: standing({ shown: 'blocked', blocked: true }),
+      })
+    })
+    expect(find('modal')).toBeNull()
+    expect(initialDispatchCount.mock.calls.length).toBe(dispatches)
+    expect(initialDispatchCount).not.toHaveBeenCalledWith(
+      'hilos_user_block_set',
+      expect.anything(),
+    )
+
+    // 2b. Block pair: unblock -> standing becomes unblocked
+    await click('hilos-user-block-open')
+    expect(find('modal')).not.toBeNull()
+    dispatches = initialDispatchCount.mock.calls.length
+    await change(() => {
+      standingFrame({
+        userId: 1,
+        accountStanding: standing({ shown: 'none', blocked: false }),
+      })
+    })
+    expect(find('modal')).toBeNull()
+    expect(initialDispatchCount.mock.calls.length).toBe(dispatches)
+    expect(initialDispatchCount).not.toHaveBeenCalledWith(
+      'hilos_user_block_set',
+      expect.anything(),
+    )
+
+    // 3. Deletion pair: delete -> deletion scheduled
+    await click('hilos-user-deletion-open')
+    expect(find('modal')).not.toBeNull()
+    dispatches = initialDispatchCount.mock.calls.length
+    await change(() => {
+      standingFrame({
+        userId: 1,
+        accountStanding: standing({
+          shown: 'deletion_scheduled',
+          deletionEffectiveAt: 100_000_000,
+        }),
+      })
+    })
+    expect(find('modal')).toBeNull()
+    expect(initialDispatchCount.mock.calls.length).toBe(dispatches)
+    expect(initialDispatchCount).not.toHaveBeenCalledWith(
+      'hilos_user_deletion_set',
+      expect.anything(),
+    )
+
+    // 3b. Deletion pair: cancelDeletion -> deletion cleared
+    await click('hilos-user-deletion-open')
+    expect(find('modal')).not.toBeNull()
+    dispatches = initialDispatchCount.mock.calls.length
+    await change(() => {
+      standingFrame({
+        userId: 1,
+        accountStanding: standing({
+          shown: 'none',
+          deletionEffectiveAt: null,
+        }),
+      })
+    })
+    expect(find('modal')).toBeNull()
+    expect(initialDispatchCount.mock.calls.length).toBe(dispatches)
+    expect(initialDispatchCount).not.toHaveBeenCalledWith(
+      'hilos_user_deletion_set',
+      expect.anything(),
+    )
+
+    // Independent update (rename) keeps modal open
+    await click('hilos-user-block-open')
+    expect(find('modal')).not.toBeNull()
+    await change(() => {
+      renameElsewhere('Bob')
+    })
+    expect(find('modal')).not.toBeNull()
+    await click('hilos-user-lifecycle-cancel')
+    expect(find('modal')).toBeNull()
+  })
+
+  it('closes the modal if choice is invalidated during delayed step-up opening', async () => {
+    TestBed.resetTestingModule()
+    const { context, standingFrame } = userContext(false, 'ask')
+    context.scopes.session.data.set('currentUser', { type: 'user', id: 99 })
+    TestBed.configureTestingModule({
+      providers: [{ provide: HILOS_ROUTER, useValue: router() }],
+    })
+    const fixture = TestBed.createComponent(HilosUserPage)
+    fixture.componentRef.setInput('context', context)
+    fixture.detectChanges()
+    const find = (id: string) => el(fixture, id)
+    const change = async (fn: () => void) => {
+      fn()
+      await settle(fixture)
+    }
+    const click = async (id: string) => {
+      find(id)?.click()
+      await settle(fixture)
+    }
+
+    await click('hilos-user-block-open')
+    expect(find('hilos-user-lifecycle-step-up')).not.toBeNull()
+
+    // Standing changes while step-up prompt is open
+    await change(() => {
+      standingFrame({
+        userId: 1,
+        accountStanding: standing({ shown: 'blocked', blocked: true }),
+      })
+    })
+    expect(find('modal')).toBeNull()
+  })
+
+  it('closes the modal when user row disappears', async () => {
+    TestBed.resetTestingModule()
+    const { context, removeRow } = userContext()
+    context.scopes.session.data.set('currentUser', { type: 'user', id: 99 })
+    TestBed.configureTestingModule({
+      providers: [{ provide: HILOS_ROUTER, useValue: router() }],
+    })
+    const fixture = TestBed.createComponent(HilosUserPage)
+    fixture.componentRef.setInput('context', context)
+    fixture.detectChanges()
+    const find = (id: string) => el(fixture, id)
+    const change = async (fn: () => void) => {
+      fn()
+      await settle(fixture)
+    }
+    const click = async (id: string) => {
+      find(id)?.click()
+      await settle(fixture)
+    }
+
+    await click('hilos-user-block-open')
+    expect(find('modal')).not.toBeNull()
+
+    await change(() => {
+      removeRow()
+    })
+    expect(find('modal')).toBeNull()
+  })
+
+  it('does not dispatch an invalidated action if clicked between render and submit', async () => {
+    TestBed.resetTestingModule()
+    const { context, standingFrame } = userContext()
+    context.scopes.session.data.set('currentUser', { type: 'user', id: 99 })
+    TestBed.configureTestingModule({
+      providers: [{ provide: HILOS_ROUTER, useValue: router() }],
+    })
+    const fixture = TestBed.createComponent(HilosUserPage)
+    fixture.componentRef.setInput('context', context)
+    fixture.detectChanges()
+    const find = (id: string) => el(fixture, id)
+    const click = async (id: string) => {
+      find(id)?.click()
+      await settle(fixture)
+    }
+
+    await click('hilos-user-block-open')
+    expect(find('modal')).not.toBeNull()
+
+    const dispatch = vi.spyOn(context.actions, 'dispatch')
+    // Invalidate without settling the effect first
+    standingFrame({
+      userId: 1,
+      accountStanding: standing({ shown: 'blocked', blocked: true }),
+    })
+    await click('hilos-user-lifecycle-confirm')
+    expect(dispatch).not.toHaveBeenCalled()
+  })
+
+  it('keeps modal open when standing changes while action is in flight, preserving readable refusal with disabled confirm', async () => {
+    TestBed.resetTestingModule()
+    const { context, standingFrame, renameElsewhere } = userContext()
+    context.scopes.session.data.set('currentUser', { type: 'user', id: 99 })
+    TestBed.configureTestingModule({
+      providers: [{ provide: HILOS_ROUTER, useValue: router() }],
+    })
+    const fixture = TestBed.createComponent(HilosUserPage)
+    fixture.componentRef.setInput('context', context)
+    fixture.detectChanges()
+    const find = (id: string) => el(fixture, id)
+    const change = async (fn: () => void) => {
+      fn()
+      await settle(fixture)
+    }
+    const click = async (id: string) => {
+      find(id)?.click()
+      await settle(fixture)
+    }
+    let reject!: (reason: unknown) => void
+
+    await click('hilos-user-block-open')
+    expect(find('modal')).not.toBeNull()
+
+    vi.spyOn(context.actions, 'dispatch').mockImplementation(() => ({
+      requestId: 'test-req',
+      loading: createSignal(false),
+      done: new Promise<ActionResult>((_, no) => {
+        reject = no
+      }),
+    }))
+
+    await click('hilos-user-lifecycle-confirm')
+    // Standing changes while in flight
+    await change(() => {
+      standingFrame({
+        userId: 1,
+        accountStanding: standing({ shown: 'blocked', blocked: true }),
+      })
+    })
+    // Busy=true kept the modal open
+    expect(find('modal')).not.toBeNull()
+
+    // Reject with refusal
+    await change(() => {
+      reject(
+        new ActionError(
+          'hilos_user_block_set',
+          'fail',
+          'Operation refused by server',
+        ),
+      )
+    })
+
+    // Modal stays open, showing refusal
+    expect(find('modal')).not.toBeNull()
+    expect(find('hilos-user-lifecycle-error')?.textContent).toContain(
+      'Operation refused by server',
+    )
+    expect(
+      (find('hilos-user-lifecycle-confirm') as HTMLButtonElement).disabled,
+    ).toBe(true)
+
+    // Extra tick/render does not dismiss the refusal
+    await change(() => {
+      renameElsewhere('Bob')
+    })
+    expect(find('modal')).not.toBeNull()
+    expect(find('hilos-user-lifecycle-error')?.textContent).toContain(
+      'Operation refused by server',
+    )
+    expect(
+      (find('hilos-user-lifecycle-confirm') as HTMLButtonElement).disabled,
+    ).toBe(true)
+
+    // Cancel closes the refusal modal
+    await click('hilos-user-lifecycle-cancel')
+    expect(find('modal')).toBeNull()
+  })
 })
 
 describe('HilosUserPage confirmation step (HIL-1275)', () => {
@@ -1327,27 +1659,6 @@ describe('HilosUserPage impersonation (HIL-1170)', () => {
 })
 
 describe('HilosUserPage standing (HIL-945)', () => {
-  /**
-   * A standing as the wire carries it.
-   *
-   * @param facts The facts that differ from a plain account.
-   */
-  function standing(
-    facts: Record<string, unknown> = {},
-  ): Record<string, unknown> {
-    return {
-      shown: 'none',
-      blocked: false,
-      frozen: false,
-      deletionEffectiveAt: null,
-      lapsed: [],
-      window: [],
-      mergedInto: null,
-      mergedIntoName: null,
-      ...facts,
-    }
-  }
-
   /**
    * Mount the card on a context.
    *

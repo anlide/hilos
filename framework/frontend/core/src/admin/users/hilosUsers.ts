@@ -1743,6 +1743,27 @@ export function submitHilosUserLifecycle(
 }
 
 /**
+ * Whether the confirmed choice is still offered by the account card.
+ *
+ * @param prompt The open confirmation window's snapshot.
+ * @param detail The committed user row, absent until the table arrives.
+ * @param sections The current lifecycle sections offered by the card.
+ */
+export function hilosUserLifecyclePromptOffered(
+  prompt: HilosUserLifecyclePrompt,
+  detail: HilosUserDetailRow | undefined,
+  sections: readonly HilosUserLifecycleSection[],
+): boolean {
+  if (detail?.id !== prompt.userId) {
+    return false
+  }
+
+  return sections.some((section) =>
+    section.rows.some((row) => row.choice === prompt.choice && !row.disabled),
+  )
+}
+
+/**
  * The impersonation settings the card's takeover section is drawn from
  * (HIL-1170, PHP `ImpersonationCardSettings`): settings of the installation, not
  * facts about the person, so a viewer of the admin view mode is sent them too.

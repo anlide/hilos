@@ -24,6 +24,8 @@ import {
   hilosUserLifecycleSections,
   hilosUserMergedNotice,
   hilosUserLifecyclePrompt,
+  hilosUserLifecyclePromptOffered,
+  type HilosUserLifecycleChoice,
   resolveHilosMergeCandidateRow,
   resolveHilosUserRow,
   type HilosUserCardWindow,
@@ -677,6 +679,289 @@ describe('createHilosUserLifecycle', () => {
     expect(lifecycle.graceDays.get()).toBe(1)
     scopes.page()?.data.set('accountDeletionGraceDays', HIDDEN_VALUE)
     expect(lifecycle.graceDays.get()).toBe(HIDDEN_VALUE)
+  })
+})
+
+describe('hilosUserLifecyclePromptOffered', () => {
+  const baseDetail: HilosUserDetailRow = {
+    id: 5,
+    name: 'Maria',
+    lastActivity: null,
+    presence: 'online',
+    onlineSessionCount: 1,
+    hasPassword: true,
+    hasSecondFactor: false,
+    admin: false,
+    block: false,
+    deletionEffectiveAt: null,
+    unverifiedPasswordAddress: null,
+    merged: false,
+  }
+
+  it('checks the table of all six choices across matching and opposite states', () => {
+    const table: Array<{
+      choice: HilosUserLifecycleChoice
+      activeDetail: HilosUserDetailRow
+      oppositeDetail: HilosUserDetailRow
+    }> = [
+      {
+        choice: 'grant',
+        activeDetail: { ...baseDetail, admin: false },
+        oppositeDetail: { ...baseDetail, admin: true },
+      },
+      {
+        choice: 'revoke',
+        activeDetail: { ...baseDetail, admin: true },
+        oppositeDetail: { ...baseDetail, admin: false },
+      },
+      {
+        choice: 'block',
+        activeDetail: { ...baseDetail, block: false },
+        oppositeDetail: { ...baseDetail, block: true },
+      },
+      {
+        choice: 'unblock',
+        activeDetail: { ...baseDetail, block: true },
+        oppositeDetail: { ...baseDetail, block: false },
+      },
+      {
+        choice: 'delete',
+        activeDetail: { ...baseDetail, deletionEffectiveAt: null },
+        oppositeDetail: { ...baseDetail, deletionEffectiveAt: 1_000_000 },
+      },
+      {
+        choice: 'cancelDeletion',
+        activeDetail: { ...baseDetail, deletionEffectiveAt: 1_000_000 },
+        oppositeDetail: { ...baseDetail, deletionEffectiveAt: null },
+      },
+    ]
+
+    for (const { choice, activeDetail, oppositeDetail } of table) {
+      const prompt = hilosUserLifecyclePrompt(activeDetail, choice, 30)
+      const activeSections = hilosUserLifecycleSections(
+        activeDetail,
+        99,
+        30,
+        0,
+        null,
+      )
+      const oppositeSections = hilosUserLifecycleSections(
+        oppositeDetail,
+        99,
+        30,
+        0,
+        null,
+      )
+
+      expect(
+        hilosUserLifecyclePromptOffered(prompt, activeDetail, activeSections),
+      ).toBe(true)
+      expect(
+        hilosUserLifecyclePromptOffered(
+          prompt,
+          oppositeDetail,
+          oppositeSections,
+        ),
+      ).toBe(false)
+    }
+  })
+
+  it('returns false when a row is disabled, sections are empty or detail is missing or mismatched', () => {
+    const prompt = hilosUserLifecyclePrompt(baseDetail, 'block', 30)
+    const sections = hilosUserLifecycleSections(baseDetail, 99, 30, 0, null)
+
+    // Missing detail
+    expect(hilosUserLifecyclePromptOffered(prompt, undefined, sections)).toBe(
+      false,
+    )
+
+    // Other addressee
+    expect(
+      hilosUserLifecyclePromptOffered(
+        prompt,
+        { ...baseDetail, id: 6 },
+        hilosUserLifecycleSections({ ...baseDetail, id: 6 }, 99, 30, 0, null),
+      ),
+    ).toBe(false)
+
+    // Empty sections
+    expect(hilosUserLifecyclePromptOffered(prompt, baseDetail, [])).toBe(false)
+
+    // Own account disabled controls
+    const ownRevokePrompt = hilosUserLifecyclePrompt(
+      { ...baseDetail, admin: true },
+      'revoke',
+      30,
+    )
+    const ownRevokeSections = hilosUserLifecycleSections(
+      { ...baseDetail, admin: true },
+      5,
+      30,
+      0,
+      null,
+    )
+    expect(
+      hilosUserLifecyclePromptOffered(
+        ownRevokePrompt,
+        { ...baseDetail, admin: true },
+        ownRevokeSections,
+      ),
+    ).toBe(false)
+
+    const ownBlockPrompt = hilosUserLifecyclePrompt(baseDetail, 'block', 30)
+    const ownBlockSections = hilosUserLifecycleSections(
+      baseDetail,
+      5,
+      30,
+      0,
+      null,
+    )
+    expect(
+      hilosUserLifecyclePromptOffered(
+        ownBlockPrompt,
+        baseDetail,
+        ownBlockSections,
+      ),
+    ).toBe(false)
+
+    const ownDeletePrompt = hilosUserLifecyclePrompt(baseDetail, 'delete', 30)
+    const ownDeleteSections = hilosUserLifecycleSections(
+      baseDetail,
+      5,
+      30,
+      0,
+      null,
+    )
+    expect(
+      hilosUserLifecyclePromptOffered(
+        ownDeletePrompt,
+        baseDetail,
+        ownDeleteSections,
+      ),
+    ).toBe(false)
+
+    // Admin delete disabled
+    const adminDeletePrompt = hilosUserLifecyclePrompt(
+      { ...baseDetail, admin: true },
+      'delete',
+      30,
+    )
+    const adminDeleteSections = hilosUserLifecycleSections(
+      { ...baseDetail, admin: true },
+      99,
+      30,
+      0,
+      null,
+    )
+    expect(
+      hilosUserLifecyclePromptOffered(
+        adminDeletePrompt,
+        { ...baseDetail, admin: true },
+        adminDeleteSections,
+      ),
+    ).toBe(false)
+  })
+
+  it('returns false after account merge', () => {
+    const prompt = hilosUserLifecyclePrompt(baseDetail, 'block', 30)
+    const mergedSections = hilosUserLifecycleSections(
+      baseDetail,
+      99,
+      30,
+      0,
+      readStanding({ shown: 'merged', blocked: true, mergedInto: 9 }),
+    )
+    expect(mergedSections).toEqual([])
+    expect(
+      hilosUserLifecyclePromptOffered(prompt, baseDetail, mergedSections),
+    ).toBe(false)
+  })
+
+  it('gives priority to standing over stale detail for block and deletion', () => {
+    // Detail says unblocked, but standing says blocked
+    const blockPrompt = hilosUserLifecyclePrompt(baseDetail, 'block', 30)
+    const unblockPrompt = hilosUserLifecyclePrompt(baseDetail, 'unblock', 30)
+    const blockedSections = hilosUserLifecycleSections(
+      baseDetail,
+      99,
+      30,
+      0,
+      readStanding({ shown: 'blocked', blocked: true }),
+    )
+    expect(
+      hilosUserLifecyclePromptOffered(blockPrompt, baseDetail, blockedSections),
+    ).toBe(false)
+    expect(
+      hilosUserLifecyclePromptOffered(
+        unblockPrompt,
+        baseDetail,
+        blockedSections,
+      ),
+    ).toBe(true)
+
+    // Detail says unscheduled, but standing says scheduled
+    const deletePrompt = hilosUserLifecyclePrompt(baseDetail, 'delete', 30)
+    const cancelPrompt = hilosUserLifecyclePrompt(
+      baseDetail,
+      'cancelDeletion',
+      30,
+    )
+    const scheduledSections = hilosUserLifecycleSections(
+      baseDetail,
+      99,
+      30,
+      0,
+      readStanding({
+        shown: 'deletion_scheduled',
+        deletionEffectiveAt: 1_000_000,
+      }),
+    )
+    expect(
+      hilosUserLifecyclePromptOffered(
+        deletePrompt,
+        baseDetail,
+        scheduledSections,
+      ),
+    ).toBe(false)
+    expect(
+      hilosUserLifecyclePromptOffered(
+        cancelPrompt,
+        baseDetail,
+        scheduledSections,
+      ),
+    ).toBe(true)
+  })
+
+  it('does not change offered status on independent updates like name, presence, or day tick', () => {
+    const prompt = hilosUserLifecyclePrompt(baseDetail, 'block', 30)
+    const initialSections = hilosUserLifecycleSections(
+      baseDetail,
+      99,
+      30,
+      0,
+      null,
+    )
+    expect(
+      hilosUserLifecyclePromptOffered(prompt, baseDetail, initialSections),
+    ).toBe(true)
+
+    const updatedDetail: HilosUserDetailRow = {
+      ...baseDetail,
+      name: 'Anna',
+      presence: 'offline',
+      onlineSessionCount: 0,
+      unverifiedPasswordAddress: 'new@example.com',
+    }
+    const updatedSections = hilosUserLifecycleSections(
+      updatedDetail,
+      99,
+      30,
+      100_000_000,
+      null,
+    )
+    expect(
+      hilosUserLifecyclePromptOffered(prompt, updatedDetail, updatedSections),
+    ).toBe(true)
   })
 })
 

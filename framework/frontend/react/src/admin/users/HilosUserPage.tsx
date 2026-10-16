@@ -53,6 +53,7 @@ import {
   hilosUserMergedNotice,
   hilosUserLifecycleSections,
   hilosUserLifecyclePrompt,
+  hilosUserLifecyclePromptOffered,
   submitHilosUserLifecycle,
   type HilosStepUpOpenOutcome,
   type HilosUserImpersonationSection,
@@ -200,6 +201,9 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
     lifecycleNow,
     standing,
   )
+  const lifecycleOffered =
+    lifecyclePrompt === null ||
+    hilosUserLifecyclePromptOffered(lifecyclePrompt, detail, lifecycleSections)
   useEffect(() => {
     const tick = setInterval(
       () => setLifecycleNow(Date.now()),
@@ -248,6 +252,9 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
     const proof = await lifecycleStepUp.open(choice)
     lifecycleOpeningRef.current = false
     setLifecycleOpening(null)
+    if (!isLifecycleOffered(prompt)) {
+      return
+    }
     moveLifecycleProof(proof)
     setLifecyclePrompt(prompt)
   }
@@ -263,6 +270,28 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
     }
   }
 
+  function isLifecycleOffered(
+    prompt: HilosUserLifecyclePrompt | null,
+  ): boolean {
+    if (prompt === null) {
+      return true
+    }
+    const currentDetail = userDetail.get()
+    const currentStanding = userStanding.standing.get()
+    const currentSections = hilosUserLifecycleSections(
+      currentDetail,
+      lifecycle.currentUserId.get(),
+      lifecycle.graceDays.get(),
+      Date.now(),
+      currentStanding,
+    )
+    return hilosUserLifecyclePromptOffered(
+      prompt,
+      currentDetail,
+      currentSections,
+    )
+  }
+
   function closeLifecycle(): void {
     if (!lifecycleAction.busy) setLifecyclePrompt(null)
   }
@@ -271,7 +300,8 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
     if (
       !lifecyclePrompt ||
       lifecycleAction.busy ||
-      detail?.id !== lifecyclePrompt.userId
+      !lifecycleOffered ||
+      !isLifecycleOffered(lifecyclePrompt)
     )
       return
     if (
@@ -281,6 +311,16 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
     )
       closeLifecycle()
   }
+
+  useEffect(() => {
+    if (
+      lifecyclePrompt !== null &&
+      !lifecycleOffered &&
+      !lifecycleAction.busy
+    ) {
+      closeLifecycle()
+    }
+  }, [lifecyclePrompt, lifecycleOffered])
 
   // The takeover (HIL-1170): the section reads the installation's settings the
   // page's first answer carried, the person's live standing and admin flag, and
@@ -972,7 +1012,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
                 }
                 loading={lifecycleAction.loading}
                 disabled={
-                  lifecycleAction.busy || detail?.id !== lifecyclePrompt?.userId
+                  lifecycleAction.busy || !lifecyclePrompt || !lifecycleOffered
                 }
                 data-id="hilos-user-lifecycle-confirm"
                 onClick={() => void submitLifecycle()}

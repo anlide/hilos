@@ -1,7 +1,10 @@
 import { test, expect, type Page } from '@playwright/test'
 
-import { dismissToasts } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant'
+import {
+  dismissToasts,
+  expectHilosUserBlockSettled,
+} from '../../../../../framework/frontend/e2e/index.js'
+import { grantAdminToSelf, setAdmin, signUpAdmin } from '../helpers/adminGrant'
 import { setAdminViewMode } from '../helpers/adminViewMode'
 import { gotoPage } from '../helpers/page'
 import {
@@ -417,6 +420,51 @@ test("shows a person's standing on the card and in the takeover strip", async ({
     await expect(page.getByTestId('modal')).toBeHidden()
     await expect(badge).toHaveText('Deletion scheduled')
   } finally {
+    await personContext.close()
+  }
+})
+
+test('closes an idle block confirmation when another tab changes the block', async ({
+  page,
+  browser,
+}) => {
+  const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+  const personContext = await browser.newContext({
+    baseURL,
+    ignoreHTTPSErrors,
+  })
+  const personPage = await personContext.newPage()
+  const pageB = await page.context().newPage()
+
+  try {
+    await grantAdminToSelf(page)
+    const targetId = await grantAdminToSelf(personPage)
+    await setAdmin(targetId, false)
+
+    await gotoPage(page, `/hilos/user/${targetId}`)
+    await gotoPage(pageB, `/hilos/user/${targetId}`)
+
+    await clickSubmit(page.getByTestId('hilos-user-block-open'))
+    await expect(page.getByTestId('modal')).toBeVisible()
+    await clickSubmit(pageB.getByTestId('hilos-user-block-open'))
+    await expect(pageB.getByTestId('modal')).toBeVisible()
+
+    await clickSubmit(pageB.getByTestId('hilos-user-lifecycle-confirm'))
+    await expectHilosUserBlockSettled(expect, pageB, true)
+    await expectHilosUserBlockSettled(expect, page, true)
+
+    await dismissToasts(pageB)
+
+    await clickSubmit(page.getByTestId('hilos-user-block-open'))
+    await expect(page.getByTestId('modal')).toBeVisible()
+    await clickSubmit(pageB.getByTestId('hilos-user-block-open'))
+    await expect(pageB.getByTestId('modal')).toBeVisible()
+
+    await clickSubmit(pageB.getByTestId('hilos-user-lifecycle-confirm'))
+    await expectHilosUserBlockSettled(expect, pageB, false)
+    await expectHilosUserBlockSettled(expect, page, false)
+  } finally {
+    await pageB.close()
     await personContext.close()
   }
 })

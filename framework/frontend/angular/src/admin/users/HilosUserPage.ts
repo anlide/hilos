@@ -64,6 +64,7 @@ import {
   hilosUserMergedNotice,
   hilosUserLifecycleSections,
   hilosUserLifecyclePrompt,
+  hilosUserLifecyclePromptOffered,
   submitHilosUserLifecycle,
   type HilosUserLifecycle,
   type HilosUserLifecycleChoice,
@@ -573,7 +574,8 @@ function focusWindow(body: HTMLElement | undefined): void {
               [loading]="lifecycleAction.loading()"
               [disabled]="
                 lifecycleAction.busy() ||
-                detail()?.id !== lifecyclePrompt()?.userId
+                !lifecyclePrompt() ||
+                !lifecycleOffered()
               "
               data-id="hilos-user-lifecycle-confirm"
               (click)="submitLifecycle()"
@@ -1055,6 +1057,18 @@ export class HilosUserPage {
       this.standing(),
     ),
   )
+  protected readonly lifecycleOffered = computed(() => {
+    const prompt = this.lifecyclePrompt()
+    if (prompt === null) {
+      return true
+    }
+
+    return hilosUserLifecyclePromptOffered(
+      prompt,
+      this.detail(),
+      this.lifecycleSections(),
+    )
+  })
   // The takeover (HIL-1170): the section reads the installation's settings the
   // page's first answer carried, the person's live standing and admin flag, and
   // who stands behind this session. The window keeps the words it opened with.
@@ -1246,7 +1260,7 @@ export class HilosUserPage {
       !prompt ||
       !this.lifecycle ||
       this.lifecycleAction.busy() ||
-      this.detail()?.id !== prompt.userId
+      !this.lifecycleOffered()
     )
       return
     if (
@@ -1435,6 +1449,17 @@ export class HilosUserPage {
         if (!this.mergeAction.busy()) this.onMergeOpenChange(false)
         if (!this.lifecycleAction.busy()) this.lifecyclePrompt.set(null)
         if (!this.impersonateAction.busy()) this.impersonateTarget.set(null)
+      })
+    })
+
+    effect(() => {
+      if (this.lifecycleOffered()) {
+        return
+      }
+      untracked(() => {
+        if (!this.lifecycleAction.busy()) {
+          this.lifecyclePrompt.set(null)
+        }
       })
     })
 

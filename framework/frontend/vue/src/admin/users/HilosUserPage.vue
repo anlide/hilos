@@ -58,6 +58,7 @@ import {
   hilosUserMergedNotice,
   hilosUserLifecycleSections,
   hilosUserLifecyclePrompt,
+  hilosUserLifecyclePromptOffered,
   submitHilosUserLifecycle,
   type HilosStepUpOpenOutcome,
   type HilosUserImpersonationSection,
@@ -191,6 +192,20 @@ const lifecycleSections = computed(() =>
     standing.value,
   ),
 )
+const lifecycleOffered = computed(
+  () =>
+    lifecyclePrompt.value === null ||
+    hilosUserLifecyclePromptOffered(
+      lifecyclePrompt.value,
+      detail.value,
+      lifecycleSections.value,
+    ),
+)
+watch([lifecyclePrompt, lifecycleOffered], ([prompt, offered]) => {
+  if (prompt !== null && !offered && !lifecycleAction.busy.value) {
+    closeLifecycle()
+  }
+})
 const lifecycleOpen = computed({
   get: () => lifecyclePrompt.value !== null,
   set: (open: boolean) => {
@@ -245,7 +260,7 @@ async function submitLifecycle(): Promise<void> {
   if (
     !lifecyclePrompt.value ||
     lifecycleAction.busy.value ||
-    detail.value?.id !== lifecyclePrompt.value.userId
+    !lifecycleOffered.value
   )
     return
   if (
@@ -905,7 +920,7 @@ function submit(): void {
           :class="lifecyclePrompt?.danger ? 'btn-danger' : 'btn-primary'"
           :loading="lifecycleAction.loading.value"
           :disabled="
-            lifecycleAction.busy.value || detail?.id !== lifecyclePrompt?.userId
+            lifecycleAction.busy.value || !lifecyclePrompt || !lifecycleOffered
           "
           data-id="hilos-user-lifecycle-confirm"
           @click="submitLifecycle"

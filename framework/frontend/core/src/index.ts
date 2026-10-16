@@ -1418,6 +1418,7 @@ export {
   hilosUserAnalyticsPath,
   hilosUserLifecycleSections,
   hilosUserLifecyclePrompt,
+  hilosUserLifecyclePromptOffered,
   hilosUsersPath,
   readHilosUsersAddress,
   submitHilosUserLifecycle,

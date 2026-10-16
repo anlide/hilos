@@ -159,3 +159,5 @@ export {
   i18nNameRow,
 } from './i18n.js'
 export { pickThemeBeforeLoad } from './theme.js'
+
+export { expectHilosUserBlockSettled } from './hilosUserLifecycle.js'

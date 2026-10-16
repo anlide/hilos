@@ -1,4 +1,8 @@
 import { test, expect, type Browser, type Page } from '@playwright/test'
+import {
+  dismissToasts,
+  expectHilosUserBlockSettled,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf, setAdmin } from '../helpers/adminGrant'
 import { gotoPage, PAGE_REFUSED } from '../helpers/page'
 import { clickSubmit, typeInto } from '../helpers/session'
@@ -261,4 +265,49 @@ test('takes a person over from the framework card that is not your own', async (
   await clickSubmit(page.getByTestId('hilos-user-impersonate-confirm'))
 
   await expect(page.getByTestId('impersonation-banner')).toBeVisible()
+})
+
+test('closes an idle block confirmation when another tab changes the block', async ({
+  page,
+  browser,
+}) => {
+  const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+  const personContext = await browser.newContext({
+    baseURL,
+    ignoreHTTPSErrors,
+  })
+  const personPage = await personContext.newPage()
+  const pageB = await page.context().newPage()
+
+  try {
+    await grantAdminToSelf(page)
+    const targetId = await grantAdminToSelf(personPage)
+    await setAdmin(targetId, false)
+
+    await gotoPage(page, `/hilos/user/${targetId}`)
+    await gotoPage(pageB, `/hilos/user/${targetId}`)
+
+    await clickSubmit(page.getByTestId('hilos-user-block-open'))
+    await expect(page.getByTestId('modal')).toBeVisible()
+    await clickSubmit(pageB.getByTestId('hilos-user-block-open'))
+    await expect(pageB.getByTestId('modal')).toBeVisible()
+
+    await clickSubmit(pageB.getByTestId('hilos-user-lifecycle-confirm'))
+    await expectHilosUserBlockSettled(expect, pageB, true)
+    await expectHilosUserBlockSettled(expect, page, true)
+
+    await dismissToasts(pageB)
+
+    await clickSubmit(page.getByTestId('hilos-user-block-open'))
+    await expect(page.getByTestId('modal')).toBeVisible()
+    await clickSubmit(pageB.getByTestId('hilos-user-block-open'))
+    await expect(pageB.getByTestId('modal')).toBeVisible()
+
+    await clickSubmit(pageB.getByTestId('hilos-user-lifecycle-confirm'))
+    await expectHilosUserBlockSettled(expect, pageB, false)
+    await expectHilosUserBlockSettled(expect, page, false)
+  } finally {
+    await pageB.close()
+    await personContext.close()
+  }
 })
