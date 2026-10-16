@@ -45,7 +45,11 @@ describe('theme menu copy', () => {
       ['dark', 'bi-moon-stars', 'Dark'],
       ['system', 'bi-circle-half', 'System'],
     ])
-    expect(THEME_COPY).toEqual({ menu: 'Theme', default: 'default' })
+    expect(THEME_COPY).toEqual({
+      menu: 'Theme',
+      default: 'default',
+      siteDefault: 'Use site default',
+    })
   })
 
   it.each([

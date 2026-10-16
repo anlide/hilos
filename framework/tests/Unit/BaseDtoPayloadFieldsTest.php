@@ -107,6 +107,25 @@ final class BaseDtoPayloadFieldsTest extends TestCase
         PayloadFieldsProbeDTO::readRequiredArray(['payload' => 'hi'], 'payload');
     }
 
+    public function testRequiredNullableStringReadsNullStringsAndBlankInput(): void
+    {
+        foreach ([null, 'dark', ''] as $value) {
+            self::assertSame($value, PayloadFieldsProbeDTO::readRequiredNullableString(['themePick' => $value], 'themePick'));
+        }
+    }
+
+    public function testRequiredNullableStringRefusesMissingAndMistypedFields(): void
+    {
+        foreach ([[], ['themePick' => 1], ['themePick' => false], ['themePick' => []]] as $payload) {
+            try {
+                PayloadFieldsProbeDTO::readRequiredNullableString($payload, 'themePick');
+                self::fail('Missing or mistyped nullable string must be refused');
+            } catch (InvalidFormatException $failure) {
+                self::assertStringContainsString('themePick', $failure->getMessage());
+            }
+        }
+    }
+
     public function testRequiredNullableArrayTellsAnExplicitNullFromAnAbsentField(): void
     {
         self::assertNull(PayloadFieldsProbeDTO::readRequiredNullableArray(['payload' => null], 'payload'));
@@ -434,6 +453,17 @@ final class PayloadFieldsProbeDTO extends BaseDTO
     public static function readRequiredArray(array $data, string $key): array
     {
         return self::requireArray($data, $key);
+    }
+
+    /**
+     * @param array<string, mixed> $data Payload the DTO is being built from
+     * @param string $key Payload key holding the field
+     * @return ?string String value or explicitly supplied null
+     * @throws InvalidFormatException When the key is absent or holds neither a string nor null
+     */
+    public static function readRequiredNullableString(array $data, string $key): ?string
+    {
+        return self::requireNullableString($data, $key);
     }
 
     /**

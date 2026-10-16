@@ -1,9 +1,10 @@
 <!-- HilosThemeMenu — the shell's theme icon (HIL-1433). It reads hilosThemeChoice
 and draws nothing when that signal is null (switching is off). The icon is the
 current position — sun, moon-stars or circle-half — named "Theme: Light" and so
-on; the menu is Light · Dark · System, the current row checked, and a "default"
-badge only when the person never picked. Open/close, outside-click, Escape and
-arrow-roving mirror HilosNotificationBell. The panel is a menu of menuitemradio,
+on; the menu is Light · Dark · System, then Use site default. The current
+position is checked, with a "default" badge when there is no personal pick.
+Open/close, outside-click, Escape and arrow-roving mirror HilosNotificationBell.
+The positions are menuitemradio and the reset is menuitem,
 not a listbox: HilosDropdown is a full-width select with a caret, and this
 control is a bare icon. A guest's choice is applied and remembered immediately;
 an account choice waits for the server's handshake. Both close and return focus. The
@@ -19,7 +20,7 @@ import {
   setHilosThemePick,
   THEME_COPY,
   THEME_POSITIONS,
-  type ThemePosition,
+  type ThemePick,
 } from '@hilos/core'
 import {
   computed,
@@ -66,7 +67,7 @@ function itemButtons(): HTMLButtonElement[] {
   return menu.value
     ? Array.from(
         menu.value.querySelectorAll<HTMLButtonElement>(
-          '[role="menuitemradio"]',
+          '[role="menuitemradio"], [role="menuitem"]',
         ),
       )
     : []
@@ -142,7 +143,7 @@ function onMenuKeydown(event: KeyboardEvent): void {
   }
 }
 
-function choose(pick: ThemePosition): void {
+function choose(pick: ThemePick): void {
   if (
     action.busy.value ||
     hilosThemeChoice.get() === null ||
@@ -272,6 +273,17 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
           class="bi bi-check2"
           aria-hidden="true"
         ></i>
+      </button>
+      <hr class="dropdown-divider" role="separator" />
+      <button
+        type="button"
+        class="dropdown-item"
+        role="menuitem"
+        :disabled="busy"
+        data-id="nav-theme-default"
+        @click="choose(null)"
+      >
+        {{ THEME_COPY.siteDefault }}
       </button>
     </div>
   </div>

@@ -85,13 +85,24 @@ function bindAccount(
     actions,
   )
 
-  function handshake(themePick: ThemePick, userId: number | null = 1): void {
+  function handshake(
+    themePick: ThemePick,
+    userId: number | null = 1,
+    themePickInitialized = themePick !== null,
+  ): void {
     emit('projectSignal', {
       type: 'handshake_response',
       data: {
         entities: {
           currentUser:
-            userId === null ? null : { id: userId, name: 'Ada', themePick },
+            userId === null
+              ? null
+              : {
+                  id: userId,
+                  name: 'Ada',
+                  themePick,
+                  themePickInitialized,
+                },
         },
         data: { themeSettings: settings },
       },
@@ -308,7 +319,10 @@ describe('HilosThemeMenu', () => {
     const wrapper = mountAttached()
     const toggle = wrapper.get('[data-id="nav-theme"]')
     const menu = wrapper.get('[data-id="nav-theme-menu"]')
-    const buttons = optionButtons(wrapper)
+    const buttons = [
+      ...optionButtons(wrapper),
+      wrapper.get('[data-id="nav-theme-default"]').element,
+    ]
 
     await toggle.trigger('keydown', { key: 'ArrowDown' })
     await nextTick()
@@ -319,11 +333,15 @@ describe('HilosThemeMenu', () => {
     await menu.trigger('keydown', { key: 'ArrowUp' })
     expect(document.activeElement).toBe(buttons[0])
     await menu.trigger('keydown', { key: 'ArrowUp' })
+    expect(document.activeElement).toBe(buttons[3])
+    await menu.trigger('keydown', { key: 'ArrowUp' })
     expect(document.activeElement).toBe(buttons[2])
     await menu.trigger('keydown', { key: 'Home' })
     expect(document.activeElement).toBe(buttons[0])
     await menu.trigger('keydown', { key: 'End' })
-    expect(document.activeElement).toBe(buttons[2])
+    expect(document.activeElement).toBe(buttons[3])
+    await menu.trigger('keydown', { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(buttons[0])
 
     await menu.trigger('keydown', { key: 'Escape' })
     expect(toggle.attributes('aria-expanded')).toBe('false')
@@ -394,14 +412,46 @@ describe('HilosThemeMenu', () => {
     expect(light.find('.badge').exists()).toBe(false)
   })
 
-  it.each(['light', 'dark', 'system'] as const)(
+  it('always offers a separate guest reset, including when already following the default', async () => {
+    bindSnapshot({ switchingEnabled: true, defaultTheme: 'light' }, 'dark')
+    const wrapper = mountAttached()
+    const toggle = wrapper.get('[data-id="nav-theme"]')
+    const reset = wrapper.get('[data-id="nav-theme-default"]')
+    expect(optionButtons(wrapper)).toHaveLength(3)
+    expect(wrapper.findAll('[role="separator"]')).toHaveLength(1)
+    expect(reset.text()).toBe('Use site default')
+    expect(reset.attributes('role')).toBe('menuitem')
+    expect(reset.attributes('aria-checked')).toBeUndefined()
+    expect(reset.classes()).not.toContain('active')
+    expect(reset.find('.bi-check2').exists()).toBe(false)
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await toggle.trigger('click')
+      expect(reset.isVisible()).toBe(true)
+      await reset.trigger('click')
+      expect(hilosThemePick.get()).toBeNull()
+      expect(localStorage.getItem(THEME_PICK_STORAGE_KEY)).toBeNull()
+      expect(localStorage.getItem(THEME_SETTINGS_STORAGE_KEY)).not.toBeNull()
+      expect(toggle.attributes('data-position')).toBe('light')
+      expect(toggle.attributes('aria-expanded')).toBe('false')
+      expect(document.activeElement).toBe(toggle.element)
+      expect(
+        wrapper.get('[data-id="nav-theme-option-light"]').text(),
+      ).toContain('default')
+    }
+  })
+
+  it.each(['light', 'dark', 'system', null] as const)(
     'dispatches the signed-in choice %s, closes, and waits for the authoritative handshake',
     async (pick) => {
       const server = bindAccount()
       const wrapper = mountAttached()
       const toggle = wrapper.get('[data-id="nav-theme"]')
       await toggle.trigger('click')
-      await wrapper.get(`[data-id="nav-theme-option-${pick}"]`).trigger('click')
+      await wrapper
+        .get(
+          `[data-id="${pick === null ? 'nav-theme-default' : `nav-theme-option-${pick}`}"]`,
+        )
+        .trigger('click')
 
       expect(server.sendAction).toHaveBeenCalledExactlyOnceWith(
         'hilos_theme_pick',
@@ -427,9 +477,9 @@ describe('HilosThemeMenu', () => {
       expect((toggle.element as HTMLButtonElement).disabled).toBe(false)
       expect(focus).toHaveBeenCalledOnce()
       expect(document.activeElement).toBe(toggle.element)
-      server.handshake(pick)
+      server.handshake(pick, 1, true)
       await nextTick()
-      expect(toggle.attributes('data-position')).toBe(pick)
+      expect(toggle.attributes('data-position')).toBe(pick ?? 'light')
       expect(hilosThemePick.get()).toBe(pick)
       expect(localStorage.getItem(THEME_PICK_STORAGE_KEY)).toBe(pick)
       expect(hilosToasts.toasts.get()).toEqual([])
@@ -463,14 +513,25 @@ describe('HilosThemeMenu', () => {
     expect(server.sendAction).toHaveBeenCalledTimes(2)
   })
 
-  it.each(['fail', 'timeout', 'disconnected'] as const)(
-    'shows delayed loading and the normal %s toast, without changing the confirmed theme',
-    async (outcome) => {
+  it.each([
+    ['fail', 'dark'],
+    ['timeout', 'dark'],
+    ['disconnected', 'dark'],
+    ['fail', null],
+    ['timeout', null],
+    ['disconnected', null],
+  ] as const)(
+    'shows delayed loading and the normal %s toast for %s, without changing the confirmed theme',
+    async (outcome, pick) => {
       const server = bindAccount('light')
       const wrapper = mountAttached()
       const toggle = wrapper.get('[data-id="nav-theme"]')
       await toggle.trigger('click')
-      await wrapper.get('[data-id="nav-theme-option-dark"]').trigger('click')
+      await wrapper
+        .get(
+          `[data-id="${pick === null ? 'nav-theme-default' : `nav-theme-option-${pick}`}"]`,
+        )
+        .trigger('click')
       await vi.advanceTimersByTimeAsync(299)
       expect(wrapper.find('[data-id="nav-theme-loading"]').exists()).toBe(false)
       await vi.advanceTimersByTimeAsync(1)
@@ -596,6 +657,12 @@ describe('HilosThemeMenu', () => {
     const toggle = wrapper.get('[data-id="nav-theme"]')
     await toggle.trigger('keydown', { key: 'ArrowUp' })
     await nextTick()
+    expect(document.activeElement).toBe(
+      wrapper.get('[data-id="nav-theme-default"]').element,
+    )
+    await wrapper
+      .get('[data-id="nav-theme-menu"]')
+      .trigger('keydown', { key: 'ArrowUp' })
     expect(document.activeElement).toBe(
       wrapper.get('[data-id="nav-theme-option-system"]').element,
     )

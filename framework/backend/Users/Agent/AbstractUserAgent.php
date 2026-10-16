@@ -1015,7 +1015,7 @@ abstract class AbstractUserAgent extends AbstractAgent
      * A merged account is refused before the write. Not final, for the reason
      * {@see self::renamePerson()} gives.
      *
-     * @param string $themePick Light, dark or system
+     * @param ?string $themePick Light, dark or system; null for an explicit reset
      * @throws ItemNotFoundForUpdateException When there is no such person
      * @throws ValidationException When the account was merged or the choice is invalid
      * @throws LogicException When a collection's class constants are not configured
@@ -1023,7 +1023,7 @@ abstract class AbstractUserAgent extends AbstractAgent
      * @throws DatabaseException When the person or the merges cannot be loaded
      * @throws HilosException On database or truth-source failure while writing the choice
      */
-    protected function writeThemePick(string $themePick): void
+    protected function writeThemePick(?string $themePick): void
     {
         $this->personToWrite()->actions->setThemePick($themePick);
     }
@@ -1524,7 +1524,10 @@ abstract class AbstractUserAgent extends AbstractAgent
     private function handleThemePickWrite(UserThemePickWriteSignalData $ask): void
     {
         $refusal = $this->flagRefusal(function () use ($ask): void {
-            if (!$ask->adoptOnly || $this->personToWrite()->themePick === null) {
+            if (
+                !$ask->adoptOnly
+                || ($this->personToWrite()->themePick === null && !$this->personToWrite()->themePickInitialized)
+            ) {
                 $this->writeThemePick($ask->themePick);
             }
         }, 'Theme pick');

@@ -199,12 +199,14 @@ describe('explicit account theme choice', () => {
     expect(() => sendHilosThemePick('light')).toThrow('before bindThemeState')
   })
 
-  it.each(['light', 'dark', 'system'] as const)(
+  it.each(['light', 'dark', 'system', null] as const)(
     'dispatches only the exact %s payload and waits for the handshake',
     async (pick) => {
       const connection = start()
       connection.emit('handshake_response', {
-        entities: { currentUser: { id: 1, themePick: null } },
+        entities: {
+          currentUser: { id: 1, themePick: null, themePickInitialized: false },
+        },
         data: {
           themeSettings: { switchingEnabled: true, defaultTheme: 'light' },
         },
@@ -222,14 +224,20 @@ describe('explicit account theme choice', () => {
       expect(hilosThemeChoice.get()?.isDefault).toBe(true)
 
       connection.emit('handshake_response', {
-        entities: { currentUser: { id: 1, themePick: pick } },
+        entities: {
+          currentUser: {
+            id: 1,
+            themePick: pick,
+            themePickInitialized: true,
+          },
+        },
       })
       expect(hilosThemePick.get()).toBe(pick)
       expect(storage.getItem(THEME_PICK_STORAGE_KEY)).toBe(pick)
       expect(attributes.get('data-bs-theme')).toBe(
         pick === 'dark' ? 'dark' : 'light',
       )
-      expect(hilosThemeChoice.get()?.isDefault).toBe(false)
+      expect(hilosThemeChoice.get()?.isDefault).toBe(pick === null)
     },
   )
 
@@ -240,14 +248,20 @@ describe('explicit account theme choice', () => {
     })
     const connection = start(fakeActions(done))
     connection.emit('handshake_response', {
-      entities: { currentUser: { id: 1, themePick: 'light' } },
+      entities: {
+        currentUser: { id: 1, themePick: 'light', themePickInitialized: true },
+      },
     })
     const handle = sendHilosThemePick('dark')
     connection.emit('handshake_response', {
-      entities: { currentUser: { id: 1, themePick: 'dark' } },
+      entities: {
+        currentUser: { id: 1, themePick: 'dark', themePickInitialized: true },
+      },
     })
     connection.emit('handshake_response', {
-      entities: { currentUser: { id: 1, themePick: 'system' } },
+      entities: {
+        currentUser: { id: 1, themePick: 'system', themePickInitialized: true },
+      },
     })
     resolve({})
     await handle.done
@@ -273,7 +287,13 @@ describe('explicit account theme choice', () => {
         actions,
       )
       const frame = {
-        entities: { currentUser: { id: 1, themePick: 'light' } },
+        entities: {
+          currentUser: {
+            id: 1,
+            themePick: 'light',
+            themePickInitialized: true,
+          },
+        },
       }
       connection.emit('handshake_response', frame)
       const handle = sendHilosThemePick('dark')
@@ -303,7 +323,13 @@ describe('explicit account theme choice', () => {
         retry.requestId,
       )
       connection.emit('handshake_response', {
-        entities: { currentUser: { id: 1, themePick: 'system' } },
+        entities: {
+          currentUser: {
+            id: 1,
+            themePick: 'system',
+            themePickInitialized: true,
+          },
+        },
       })
       connection.reply('actionSuccess', retry.requestId)
       await retry.done
@@ -312,11 +338,33 @@ describe('explicit account theme choice', () => {
     },
   )
 
+  it('keeps an authoritative reset when an older Dark request completes', async () => {
+    let resolve!: (result: ActionResult) => void
+    const done = new Promise<ActionResult>((settle) => {
+      resolve = settle
+    })
+    const connection = start(fakeActions(done))
+    const handle = sendHilosThemePick('dark')
+    connection.emit('handshake_response', {
+      entities: {
+        currentUser: { id: 1, themePick: null, themePickInitialized: true },
+      },
+    })
+    resolve({})
+    await handle.done
+    expect(hilosThemePick.get()).toBeNull()
+    expect(storage.getItem(THEME_PICK_STORAGE_KEY)).toBeNull()
+    expect(hilosThemeChoice.get()?.isDefault).toBe(true)
+    expect(connection.actions.dispatch).toHaveBeenCalledOnce()
+  })
+
   it('keeps adoption separate from an explicit repeated choice', async () => {
     storage.setItem(THEME_PICK_STORAGE_KEY, 'dark')
     const connection = start()
     connection.emit('handshake_response', {
-      entities: { currentUser: { id: 1, themePick: null } },
+      entities: {
+        currentUser: { id: 1, themePick: null, themePickInitialized: false },
+      },
     })
     expect(connection.actions.dispatch).toHaveBeenCalledExactlyOnceWith(
       'hilos_theme_adopt',
@@ -328,7 +376,9 @@ describe('explicit account theme choice', () => {
       { themePick: 'dark' },
     )
     connection.emit('handshake_response', {
-      entities: { currentUser: { id: 1, themePick: null } },
+      entities: {
+        currentUser: { id: 1, themePick: null, themePickInitialized: false },
+      },
     })
     expect(connection.actions.dispatch).toHaveBeenCalledTimes(2)
   })
@@ -356,6 +406,29 @@ describe('theme binding', () => {
     picks.map((browser) => ({ account, browser })),
   )
 
+  it('clears an old browser choice after an authoritative account reset, including reconnect', () => {
+    storage.setItem(THEME_PICK_STORAGE_KEY, 'dark')
+    const connection = start()
+    const reset = {
+      entities: {
+        currentUser: { id: 1, themePick: null, themePickInitialized: true },
+      },
+    }
+    connection.emit('handshake_response', reset)
+    expect(hilosThemePick.get()).toBeNull()
+    expect(storage.getItem(THEME_PICK_STORAGE_KEY)).toBeNull()
+    expect(hilosThemeChoice.get()?.isDefault).toBe(true)
+    expect(connection.actions.dispatch).not.toHaveBeenCalled()
+
+    connection.emitState('reconnecting')
+    storage.setItem(THEME_PICK_STORAGE_KEY, 'dark')
+    connection.emitState('connected')
+    connection.emit('handshake_response', reset)
+    expect(hilosThemePick.get()).toBeNull()
+    expect(storage.getItem(THEME_PICK_STORAGE_KEY)).toBeNull()
+    expect(connection.actions.dispatch).not.toHaveBeenCalled()
+  })
+
   describe.each(['sign-in', 'resume', 'restate'])('%s', (entry) => {
     it.each(cases)(
       'account $account, browser $browser',
@@ -371,7 +444,13 @@ describe('theme binding', () => {
           })
         }
         const frame = {
-          entities: { currentUser: { id: 1, themePick: account } },
+          entities: {
+            currentUser: {
+              id: 1,
+              themePick: account,
+              themePickInitialized: account !== null,
+            },
+          },
           data: {
             themeSettings: { switchingEnabled: true, defaultTheme: 'light' },
           },
@@ -419,7 +498,9 @@ describe('theme binding', () => {
     storage.setItem(THEME_PICK_STORAGE_KEY, 'light')
     const connection = start()
     connection.emit('handshake_response', {
-      entities: { currentUser: { id: 1, themePick: 'dark' } },
+      entities: {
+        currentUser: { id: 1, themePick: 'dark', themePickInitialized: true },
+      },
     })
     storage.setItem(THEME_PICK_STORAGE_KEY, 'light')
     storageChange(THEME_PICK_STORAGE_KEY)
@@ -430,7 +511,9 @@ describe('theme binding', () => {
     expect(hilosThemeMode.get()).toBe('dark')
 
     connection.emit('handshake_response', {
-      entities: { currentUser: { id: 1, themePick: 'system' } },
+      entities: {
+        currentUser: { id: 1, themePick: 'system', themePickInitialized: true },
+      },
     })
     expect(hilosThemePick.get()).toBe('system')
     expect(storage.getItem(THEME_PICK_STORAGE_KEY)).toBe('system')
@@ -477,7 +560,9 @@ describe('theme binding', () => {
     const connection = start()
     setHilosThemePick('dark')
     connection.emit('handshake_response', {
-      entities: { currentUser: { id: 1, themePick: null } },
+      entities: {
+        currentUser: { id: 1, themePick: null, themePickInitialized: false },
+      },
     })
     expect(hilosThemePick.get()).toBe('dark')
     expect(connection.actions.dispatch).toHaveBeenCalledExactlyOnceWith(
@@ -485,7 +570,9 @@ describe('theme binding', () => {
       { themePick: 'dark' },
     )
     connection.emit('handshake_response', {
-      entities: { currentUser: { id: 1, themePick: 'light' } },
+      entities: {
+        currentUser: { id: 1, themePick: 'light', themePickInitialized: true },
+      },
     })
     expect(hilosThemePick.get()).toBe('light')
     expect(hilosThemeMode.get()).toBe('light')
@@ -500,6 +587,13 @@ describe('theme binding', () => {
     {},
     { entities: {} },
     { entities: { currentUser: { id: 1 } } },
+    { entities: { currentUser: { id: 1, themePick: null } } },
+    { entities: { currentUser: { id: 1, themePick: 'light' } } },
+    ...[null, 0, 'true', {}, []].flatMap((themePickInitialized) =>
+      [null, 'light'].map((themePick) => ({
+        entities: { currentUser: { id: 1, themePick, themePickInitialized } },
+      })),
+    ),
     ...['invalid', '', false, 0, {}, []].map((themePick) => ({
       entities: { currentUser: { id: 1, themePick } },
     })),
@@ -509,7 +603,9 @@ describe('theme binding', () => {
       storage.setItem(THEME_PICK_STORAGE_KEY, 'light')
       const connection = start()
       connection.emit('handshake_response', {
-        entities: { currentUser: { id: 1, themePick: 'dark' } },
+        entities: {
+          currentUser: { id: 1, themePick: 'dark', themePickInitialized: true },
+        },
       })
       connection.emit('handshake_response', frame)
       expect(storage.getItem(THEME_PICK_STORAGE_KEY)).toBe('dark')
@@ -525,7 +621,9 @@ describe('theme binding', () => {
     storage.setItem(THEME_PICK_STORAGE_KEY, 'dark')
     const connection = start()
     const frame = (id: string) => ({
-      entities: { currentUser: { id, themePick: null } },
+      entities: {
+        currentUser: { id, themePick: null, themePickInitialized: false },
+      },
     })
     connection.emit('handshake_response', frame('ada'))
     connection.emit('handshake_response', frame('bob'))
@@ -555,7 +653,9 @@ describe('theme binding', () => {
       const catchDone = vi.spyOn(done, 'catch')
       const connection = start(fakeActions(done))
       const frame = {
-        entities: { currentUser: { id: 1, themePick: null } },
+        entities: {
+          currentUser: { id: 1, themePick: null, themePickInitialized: false },
+        },
       }
       connection.emit('handshake_response', frame)
       await Promise.resolve()
@@ -577,7 +677,13 @@ describe('theme binding', () => {
       independent.emit('handshake_response', frame)
       expect(independent.actions.dispatch).toHaveBeenCalledOnce()
       independent.emit('handshake_response', {
-        entities: { currentUser: { id: 1, themePick: 'light' } },
+        entities: {
+          currentUser: {
+            id: 1,
+            themePick: 'light',
+            themePickInitialized: true,
+          },
+        },
       })
       expect(hilosThemePick.get()).toBe('light')
       expect(storage.getItem(THEME_PICK_STORAGE_KEY)).toBe('light')
@@ -595,14 +701,18 @@ describe('theme binding', () => {
     const second = start(fakeActions(), secondTheme.bindThemeState)
     try {
       const empty = {
-        entities: { currentUser: { id: 1, themePick: null } },
+        entities: {
+          currentUser: { id: 1, themePick: null, themePickInitialized: false },
+        },
       }
       first.emit('handshake_response', empty)
       second.emit('handshake_response', empty)
       expect(first.actions.dispatch).toHaveBeenCalledOnce()
       expect(second.actions.dispatch).toHaveBeenCalledOnce()
       const authoritative = {
-        entities: { currentUser: { id: 1, themePick: 'dark' } },
+        entities: {
+          currentUser: { id: 1, themePick: 'dark', themePickInitialized: true },
+        },
       }
       first.emit('handshake_response', authoritative)
       expect(hilosThemePick.get()).toBe('dark')
@@ -709,6 +819,21 @@ describe('theme binding', () => {
     expect(hilosThemePick.get()).toBeNull()
     expect(hilosThemeMode.get()).toBe('light')
     expect(storage.getItem(THEME_SETTINGS_STORAGE_KEY)).toBeNull()
+  })
+
+  it('clears a guest choice through the existing setter and storage event', () => {
+    const connection = start()
+    setHilosThemePick('dark')
+    setHilosThemePick(null)
+    expect(hilosThemePick.get()).toBeNull()
+    expect(storage.getItem(THEME_PICK_STORAGE_KEY)).toBeNull()
+
+    setHilosThemePick('dark')
+    storage.removeItem(THEME_PICK_STORAGE_KEY)
+    storageChange(THEME_PICK_STORAGE_KEY)
+    expect(hilosThemePick.get()).toBeNull()
+    expect(hilosThemeChoice.get()?.isDefault).toBe(true)
+    expect(connection.actions.dispatch).not.toHaveBeenCalled()
   })
 
   it('keeps the current tab live when storage refuses and releases prior listeners on rebind', () => {

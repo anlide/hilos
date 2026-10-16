@@ -1,14 +1,21 @@
 import { expect, test, type Page } from '@playwright/test'
 
 import {
+  armSocketDrop,
+  clearCustomSetting,
+  countSentFrames,
+  dropSocket,
   isSessionCookie,
   openFirstFrame,
+  setCustomSetting,
   sidewaysOverflow,
 } from '../../../../../framework/frontend/e2e/index.js'
+import { signUpAdmin } from '../helpers/adminGrant.js'
 import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
 import { clickSubmit, login, signUp } from '../helpers/session.js'
 
 const PICK_KEY = 'hilos.theme.pick'
+const DEFAULT_KEY = 'theme.default'
 const DARK_FRAME = { theme: 'dark', background: 'rgb(33, 37, 41)' }
 const POSITIONS = ['light', 'dark', 'system'] as const
 const LABELS = { light: 'Light', dark: 'Dark', system: 'System' } as const
@@ -21,19 +28,35 @@ async function openProfileTheme(page: Page): Promise<void> {
 }
 
 /** Choose in the profile and settle on success and returned focus. */
-async function chooseInProfile(page: Page, position: Position): Promise<void> {
+async function chooseInProfile(
+  page: Page,
+  position: Position | null,
+): Promise<void> {
   await openProfileTheme(page)
-  await clickSubmit(page.getByTestId(`profile-theme-option-${position}`))
+  await clickSubmit(
+    page.getByTestId(
+      position === null
+        ? 'profile-theme-default'
+        : `profile-theme-option-${position}`,
+    ),
+  )
   await expect(page.getByTestId('profile-theme-modal')).toBeHidden()
   await expect(page.getByTestId('profile-theme-change')).toBeFocused()
 }
 
 /** The header closes immediately; its enabled toggle says the reply settled. */
-async function chooseInHeader(page: Page, position: Position): Promise<void> {
+async function chooseInHeader(
+  page: Page,
+  position: Position | null,
+): Promise<void> {
   const toggle = page.getByTestId('nav-theme')
   await clickSubmit(toggle)
   await expect(page.getByTestId('nav-theme-menu')).toBeVisible()
-  await clickSubmit(page.getByTestId(`nav-theme-option-${position}`))
+  await clickSubmit(
+    page.getByTestId(
+      position === null ? 'nav-theme-default' : `nav-theme-option-${position}`,
+    ),
+  )
   await expect(page.getByTestId('nav-theme-menu')).toBeHidden()
   await expect(toggle).toBeEnabled()
   await expect(toggle).toBeFocused()
@@ -68,6 +91,12 @@ async function expectTheme(
       row === position && isDefault ? 1 : 0,
     )
   }
+  const reset = page.getByTestId('nav-theme-default')
+  await expect(reset).toBeVisible()
+  await expect(reset).toHaveRole('menuitem')
+  await expect(reset).toHaveText('Use site default')
+  await expect(reset).not.toHaveAttribute('aria-checked')
+  await expect(reset.locator('.bi-check2')).toHaveCount(0)
   await toggle.press('Escape')
   await expect(page.getByTestId('nav-theme-menu')).toBeHidden()
 }
@@ -78,7 +107,7 @@ test('independent account sessions synchronize profile and header choices and ke
   page,
   baseURL,
 }) => {
-  // Two registrations, a separate login and both directions of socket delivery
+  // Three registrations, a separate login, resets and live settings delivery
   // exceed the single-client cap even on an idle stand.
   test.slow()
   const secondContext = await browser.newContext({
@@ -89,6 +118,12 @@ test('independent account sessions synchronize profile and header choices and ke
     baseURL,
     ignoreHTTPSErrors: true,
   })
+  const adminContext = await browser.newContext({
+    baseURL,
+    ignoreHTTPSErrors: true,
+  })
+  const admin = await adminContext.newPage()
+  let adminReady = false
   try {
     await page.emulateMedia({ colorScheme: 'light' })
     const person = await signUp(page)
@@ -148,6 +183,74 @@ test('independent account sessions synchronize profile and header choices and ke
     await expectTheme(second, 'dark', 'dark')
     await expectTheme(stranger, 'light', 'light')
 
+    await signUpAdmin(admin)
+    await gotoPage(admin, '/hilos/settings', PAGE_READY)
+    const search = admin.getByTestId('hilos-table-search')
+    await search.fill('')
+    await search.pressSequentially(DEFAULT_KEY, { delay: 10 })
+    await expect(
+      admin.getByTestId(`hilos-table-row-${DEFAULT_KEY}`),
+    ).toBeVisible()
+    adminReady = true
+
+    // Reset through the header while the other session has its modal open.
+    await openProfileTheme(second)
+    await chooseInHeader(page, null)
+    await expect(
+      second.getByTestId('profile-theme-option-system'),
+    ).toHaveAttribute('aria-current', 'true')
+    await expect(
+      second.getByTestId('profile-theme-option-system').locator('.badge'),
+    ).toBeVisible()
+    await expect(
+      second.getByTestId('profile-theme-default'),
+    ).not.toHaveAttribute('aria-current')
+    await clickSubmit(second.getByTestId('profile-theme-close'))
+    await expect(second.getByTestId('profile-theme-modal')).toBeHidden()
+    await expectTheme(page, 'system', 'light', true)
+    await expectTheme(second, 'system', 'dark', true)
+    expect(
+      await page.evaluate((key) => localStorage.getItem(key), PICK_KEY),
+    ).toBeNull()
+    expect(
+      await second.evaluate((key) => localStorage.getItem(key), PICK_KEY),
+    ).toBeNull()
+    await setCustomSetting(admin, DEFAULT_KEY, 'light')
+    await expectTheme(page, 'light', 'light', true)
+    await expectTheme(second, 'light', 'light', true)
+    await expectTheme(stranger, 'light', 'light')
+
+    // Make Dark personal again, then reset from the independent profile.
+    await chooseInHeader(page, 'dark')
+    await expectTheme(second, 'dark', 'dark')
+    await openProfileTheme(page)
+    await chooseInProfile(second, null)
+    await expect(
+      page.getByTestId('profile-theme-option-light'),
+    ).toHaveAttribute('aria-current', 'true')
+    await expect(
+      page.getByTestId('profile-theme-option-light').locator('.badge'),
+    ).toBeVisible()
+    await clickSubmit(page.getByTestId('profile-theme-close'))
+    await expect(page.getByTestId('profile-theme-modal')).toBeHidden()
+    await expectTheme(page, 'light', 'light', true)
+    await expectTheme(second, 'light', 'light', true)
+    await setCustomSetting(admin, DEFAULT_KEY, 'dark')
+    await expectTheme(page, 'dark', 'dark', true)
+    await expectTheme(second, 'dark', 'dark', true)
+    await expectTheme(stranger, 'light', 'light')
+    await chooseInProfile(second, null)
+    await expectTheme(second, 'dark', 'dark', true)
+    expect(
+      await page.evaluate((key) => localStorage.getItem(key), PICK_KEY),
+    ).toBeNull()
+    expect(
+      await second.evaluate((key) => localStorage.getItem(key), PICK_KEY),
+    ).toBeNull()
+    await clearCustomSetting(admin, DEFAULT_KEY)
+    await expectTheme(page, 'system', 'light', true)
+    await expectTheme(second, 'system', 'dark', true)
+
     await chooseInHeader(second, 'light')
     await expectTheme(second, 'light', 'light')
     await expectTheme(page, 'light', 'light')
@@ -193,8 +296,120 @@ test('independent account sessions synchronize profile and header choices and ke
     expect(await openFirstFrame(second, '/profile')).toEqual(DARK_FRAME)
     await expectTheme(stranger, 'light', 'light')
   } finally {
+    try {
+      if (adminReady) await clearCustomSetting(admin, DEFAULT_KEY)
+    } finally {
+      await adminContext.close()
+      await secondContext.close()
+      await strangerContext.close()
+    }
+  }
+})
+
+test('a stale Dark browser reconnects after reset without adopting it again', async ({
+  browser,
+  page,
+  baseURL,
+}) => {
+  const secondContext = await browser.newContext({
+    baseURL,
+    ignoreHTTPSErrors: true,
+    colorScheme: 'light',
+  })
+  try {
+    await page.emulateMedia({ colorScheme: 'light' })
+    const person = await signUp(page)
+    await gotoPage(page, '/profile', PAGE_READY)
+    await chooseInHeader(page, 'dark')
+    const second = await secondContext.newPage()
+    await armSocketDrop(second)
+    const adoptions = countSentFrames(second, 'hilos_theme_adopt')
+    let accountTheme: unknown
+    second.on('websocket', (socket) => {
+      socket.on('framereceived', ({ payload }) => {
+        if (typeof payload !== 'string') return
+        const frame = JSON.parse(payload) as {
+          type?: string
+          data?: {
+            entities?: {
+              currentUser?: {
+                themePick: unknown
+                themePickInitialized: unknown
+              } | null
+            }
+          }
+        }
+        const user = frame.data?.entities?.currentUser
+        if (frame.type === 'handshake_response' && user) {
+          accountTheme = {
+            themePick: user.themePick,
+            themePickInitialized: user.themePickInitialized,
+          }
+        }
+      })
+    })
+    await gotoPage(second, '/profile')
+    await login(second, person.email)
+    await expectTheme(second, 'dark', 'dark')
+    await secondContext.setOffline(true)
+    await dropSocket(second)
+    await expect(second.getByTestId('conn-state')).not.toHaveText('connected')
+    await chooseInHeader(page, null)
+    await expectTheme(page, 'system', 'light', true)
+    expect(
+      await second.evaluate((key) => localStorage.getItem(key), PICK_KEY),
+    ).toBe('dark')
+
+    const reconnected = second.waitForEvent('websocket')
+    await secondContext.setOffline(false)
+    await reconnected
+    await expect(second.getByTestId('conn-state')).toHaveText('connected')
+    await expectPageReady(second)
+    await expect
+      .poll(() => accountTheme)
+      .toEqual({ themePick: null, themePickInitialized: true })
+    await expectTheme(second, 'system', 'light', true)
+    expect(
+      await second.evaluate((key) => localStorage.getItem(key), PICK_KEY),
+    ).toBeNull()
+    expect(adoptions()).toBe(0)
+    await expectTheme(page, 'system', 'light', true)
+    await second.reload()
+    await expectPageReady(second)
+    await expectTheme(second, 'system', 'light', true)
+    await expectTheme(page, 'system', 'light', true)
+    expect(adoptions()).toBe(0)
+  } finally {
     await secondContext.close()
-    await strangerContext.close()
+  }
+})
+
+test('a never-chosen account still adopts a guest Dark choice on first login', async ({
+  browser,
+  page,
+  baseURL,
+}) => {
+  const guestContext = await browser.newContext({
+    baseURL,
+    ignoreHTTPSErrors: true,
+  })
+  try {
+    await page.emulateMedia({ colorScheme: 'light' })
+    const person = await signUp(page)
+    await gotoPage(page, '/profile', PAGE_READY)
+    await expectTheme(page, 'system', 'light', true)
+    const guest = await guestContext.newPage()
+    await guest.emulateMedia({ colorScheme: 'light' })
+    const adoptions = countSentFrames(guest, 'hilos_theme_adopt')
+    await gotoPage(guest, '/')
+    await chooseInHeader(guest, 'dark')
+    await gotoPage(guest, '/profile')
+    await login(guest, person.email)
+    await expectTheme(guest, 'dark', 'dark')
+    await expectTheme(page, 'dark', 'dark')
+    expect(adoptions()).toBe(1)
+  } finally {
+    await guestContext.close()
   }
 })
 
@@ -250,6 +465,37 @@ test('profile modal and header work by keyboard at 375px and return focus', asyn
   await expect(light).toBeFocused()
   expect(await sidewaysOverflow(page)).toEqual([0, 0])
   await light.press('End')
+  const reset = page.getByTestId('nav-theme-default')
+  await expect(reset).toBeFocused()
+  await expect(reset).toBeEnabled()
+  await reset.press('Enter')
+  await expect(page.getByTestId('nav-theme-menu')).toBeHidden()
+  await expect(toggle).toBeEnabled()
+  await expect(toggle).toBeFocused()
+  await expectTheme(page, 'system', 'light', true)
+  expect(await sidewaysOverflow(page)).toEqual([0, 0])
+
+  await change.press('Enter')
+  await expect(page.getByTestId('profile-theme-modal')).toBeVisible()
+  await expect(dialog).toBeFocused()
+  const profileReset = page.getByTestId('profile-theme-default')
+  await dialog.press('Tab')
+  await page.getByTestId('modal-close').press('Tab')
+  await page.getByTestId('profile-theme-option-light').press('Tab')
+  await dark.press('Tab')
+  await page.getByTestId('profile-theme-option-system').press('Tab')
+  await expect(profileReset).toBeFocused()
+  await expect(profileReset).toBeVisible()
+  await expect(profileReset).toBeEnabled()
+  expect(await sidewaysOverflow(page)).toEqual([0, 0])
+  await profileReset.press('Enter')
+  await expect(page.getByTestId('profile-theme-modal')).toBeHidden()
+  await expect(change).toBeFocused()
+  await expectTheme(page, 'system', 'light', true)
+
+  await toggle.press('ArrowUp')
+  await expect(reset).toBeFocused()
+  await reset.press('ArrowUp')
   const system = page.getByTestId('nav-theme-option-system')
   await expect(system).toBeFocused()
   await expect(system).toBeEnabled()

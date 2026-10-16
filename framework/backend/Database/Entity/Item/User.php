@@ -24,6 +24,7 @@ class User extends Entity
     public const string block = 'block';
     public const string last_activity = 'last_activity';
     public const string theme_pick = 'theme_pick';
+    public const string theme_pick_initialized = 'theme_pick_initialized';
 
     // Table meta information
     public const string _table = 'hilos_user';
@@ -37,6 +38,7 @@ class User extends Entity
         self::block,
         self::last_activity,
         self::theme_pick,
+        self::theme_pick_initialized,
     ];
 
     // Column types
@@ -47,6 +49,7 @@ class User extends Entity
         self::block => PhpType::BOOLEAN->value,
         self::last_activity => PhpType::DATETIME->value,
         self::theme_pick => PhpType::STRING->value,
+        self::theme_pick_initialized => PhpType::BOOLEAN->value,
     ];
 
     // Indexes
@@ -69,6 +72,7 @@ class User extends Entity
         self::block,
         self::last_activity,
         self::theme_pick,
+        self::theme_pick_initialized,
     ];
 
     // Properties
@@ -78,4 +82,5 @@ class User extends Entity
     public bool $block = false;
     public ?string $last_activity = null;
     public ?string $theme_pick = null;
+    public bool $theme_pick_initialized;
 }

@@ -153,6 +153,32 @@ final class UserEditSignalDataTest extends TestCase
         self::assertFalse($restored->ask->adoptOnly);
     }
 
+    public function testAnExplicitThemeResetSurvivesTheAskAndNestedAnswer(): void
+    {
+        $ask = new UserThemePickWriteSignalData(7, null, 'theme_pick_done', 'key-1', 'req-1', 'theme_pick', null);
+        $done = UserThemePickWriteDoneSignalData::to($ask, null);
+
+        self::assertNull(UserThemePickWriteSignalData::fromArray($ask->toArray())->themePick);
+        self::assertEquals($done, UserThemePickWriteDoneSignalData::fromJson($done->toJson()));
+        self::assertArrayHasKey(UserThemePickWriteSignalData::themePick, $done->ask->toArray());
+    }
+
+    public function testThemeAdoptionCannotAskForAReset(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        new UserThemePickWriteSignalData(7, null, 'theme_pick_done', 'key-1', null, 'theme_pick', null, true);
+    }
+
+    public function testThemePickAskCannotOmitTheNullableChoice(): void
+    {
+        $payload = new UserThemePickWriteSignalData(7, null, 'theme_pick_done', 'key-1', null, 'theme_pick', null)->toArray();
+        unset($payload[UserThemePickWriteSignalData::themePick]);
+        $this->expectException(InvalidFormatException::class);
+
+        UserThemePickWriteSignalData::fromArray($payload);
+    }
+
     /** The adoption flag rides inside the ask and its answer in either state. */
     public function testThemeAdoptionFlagRoundTrips(): void
     {

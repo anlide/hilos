@@ -20,11 +20,7 @@ import {
   createSignal,
   type ReadonlySignal,
 } from '../state/signal.js'
-import {
-  resolveThemeChoice,
-  type ThemeChoice,
-  type ThemePosition,
-} from './themeChoice.js'
+import { resolveThemeChoice, type ThemeChoice } from './themeChoice.js'
 import {
   DEFAULT_THEME_SETTINGS,
   readThemePick,
@@ -41,7 +37,10 @@ import {
 
 const THEME_PICK_ACTION = 'hilos_theme_pick'
 const THEME_ADOPT_ACTION = 'hilos_theme_adopt'
-const themePickSchema = z.enum(['light', 'dark', 'system']).nullable()
+const accountThemeSchema = z.object({
+  themePick: z.enum(['light', 'dark', 'system']).nullable(),
+  themePickInitialized: z.boolean(),
+})
 const themeSessionSchema = z.object({
   entities: z.object({ currentUser: entityFragmentSchema.nullable() }),
 })
@@ -70,7 +69,7 @@ export const hilosThemeChoice: ReadonlySignal<ThemeChoice | null> =
 interface ThemeBinding {
   release(): void
   setPick(pick: ThemePick): void
-  sendPick(pick: ThemePosition): ActionHandle
+  sendPick(pick: ThemePick): ActionHandle
 }
 
 let activeBinding: ThemeBinding | null = null
@@ -79,11 +78,11 @@ let activeBinding: ThemeBinding | null = null
  * Ask to save an account's position on the application's bound lifecycle.
  * Only the authoritative handshake changes the tab, browser copy and DOM.
  *
- * @param pick The position to save, including a repeated current position.
+ * @param pick The position to save, or null to return to the site default.
  * @returns The tracked handle of the account write.
  * @throws Error When no theme binding exists — a programming error.
  */
-export function sendHilosThemePick(pick: ThemePosition): ActionHandle {
+export function sendHilosThemePick(pick: ThemePick): ActionHandle {
   if (activeBinding === null) {
     throw new Error(
       'sendHilosThemePick() before bindThemeState(): bootHilos binds the theme.',
@@ -244,11 +243,12 @@ export function bindThemeState(
         const user = session.data.entities.currentUser
         currentUserId = user?.id ?? null
         if (user !== null) {
-          const accountPick = themePickSchema.safeParse(user['themePick'])
-          if (accountPick.success) {
-            if (accountPick.data !== null) {
-              pickSignal.set(accountPick.data)
-              writeThemePick(accountPick.data)
+          const accountTheme = accountThemeSchema.safeParse(user)
+          if (accountTheme.success) {
+            const { themePick, themePickInitialized } = accountTheme.data
+            if (themePick !== null || themePickInitialized) {
+              pickSignal.set(themePick)
+              writeThemePick(themePick)
             } else {
               const pick = pickSignal.get()
               const attempted = adoptionAttempts.get(user.id) ?? new Set()

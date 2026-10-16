@@ -21,6 +21,7 @@ use Hilos\Database\Object\Collection\Users as ObjectUsers;
  * @property bool $block
  * @property ?string $lastActivity
  * @property ?string $themePick
+ * @property bool $themePickInitialized
  */
 class User extends Object_
 {
@@ -33,6 +34,7 @@ class User extends Object_
     public const string block = 'block';
     public const string lastActivity = 'lastActivity';
     public const string themePick = 'themePick';
+    public const string themePickInitialized = 'themePickInitialized';
 
     /**
      * Returns the value of a user object property by name.
@@ -50,6 +52,7 @@ class User extends Object_
             self::block => $this->entity->block,
             self::lastActivity => $this->entity->last_activity,
             self::themePick => $this->entity->theme_pick,
+            self::themePickInitialized => $this->entity->theme_pick_initialized,
             default => parent::__get($property),
         };
     }
@@ -69,6 +72,7 @@ class User extends Object_
             self::block => $this->entity->block = (bool)$value,
             self::lastActivity => $this->entity->last_activity = is_scalar($value) ? (string)$value : null,
             self::themePick => $this->entity->theme_pick = $value === null ? null : (string)$value,
+            self::themePickInitialized => $this->entity->theme_pick_initialized = (bool)$value,
             default => parent::__set($property, $value),
         };
     }
@@ -87,6 +91,7 @@ class User extends Object_
             self::block => $this->entity->block,
             self::lastActivity => $this->entity->last_activity,
             self::themePick => $this->entity->theme_pick,
+            self::themePickInitialized => $this->entity->theme_pick_initialized,
         ];
     }
 }

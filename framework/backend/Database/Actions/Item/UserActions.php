@@ -121,27 +121,28 @@ class UserActions extends DbActions
     }
 
     /**
-     * Persists the person's theme choice only when it changes, without changing activity time.
+     * Persists a choice or an explicit reset without changing activity time.
      *
-     * @param string $themePick Light, dark or system
+     * @param ?string $themePick Light, dark or system; null to return to the site default
      * @throws ItemNotFoundForUpdateException When the user has no persisted id
      * @throws ValidationException When the choice is outside the theme catalog
      * @throws HilosException On database or truth-source failure
      */
-    public function setThemePick(string $themePick): void
+    public function setThemePick(?string $themePick): void
     {
         $this->ensureCanWrite();
         if ($this->object->id === null) {
             throw new ItemNotFoundForUpdateException('User not found for setThemePick (id is null)');
         }
-        if (!in_array($themePick, ThemeSettingsCatalog::THEME_VALUES, true)) {
+        if ($themePick !== null && !in_array($themePick, ThemeSettingsCatalog::THEME_VALUES, true)) {
             throw new ValidationException(ThemeSettingsCatalog::THEME_VALUE_REFUSAL);
         }
-        if ($this->object->themePick === $themePick) {
+        if ($this->object->themePick === $themePick && $this->object->themePickInitialized) {
             return;
         }
 
         $this->object->themePick = $themePick;
+        $this->object->themePickInitialized = true;
         $this->object->sync();
     }
 

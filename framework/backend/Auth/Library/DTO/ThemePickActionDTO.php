@@ -17,12 +17,12 @@ final class ThemePickActionDTO extends ActionPayloadDTO
     public const array SECRET_FIELDS = [];
 
     /**
-     * @param string $themePick Light, dark or system
+     * @param ?string $themePick Light, dark or system; null to return to the site default
      * @throws InvalidFormatException When the choice is outside the theme vocabulary
      */
-    public function __construct(public readonly string $themePick)
+    public function __construct(public readonly ?string $themePick)
     {
-        if (!in_array($themePick, ThemeSettingsCatalog::THEME_VALUES, true)) {
+        if ($themePick !== null && !in_array($themePick, ThemeSettingsCatalog::THEME_VALUES, true)) {
             throw new InvalidFormatException(ThemeSettingsCatalog::THEME_VALUE_REFUSAL);
         }
     }
@@ -40,10 +40,10 @@ final class ThemePickActionDTO extends ActionPayloadDTO
      */
     public static function fromArray(array $data): static
     {
-        return new static(self::requireString($data, self::themePick));
+        return new static(self::requireNullableString($data, self::themePick));
     }
 
-    /** @return array<string, string> Transport payload */
+    /** @return array<string, ?string> Transport payload */
     public function toArray(): array
     {
         return [self::themePick => $this->themePick];

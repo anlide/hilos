@@ -255,7 +255,14 @@ function accountThemePage() {
   )
   setHilosThemePick(null)
   connection.emit('handshake_response', {
-    entities: { currentUser: { id: 1, name: 'Ann Lee', themePick: null } },
+    entities: {
+      currentUser: {
+        id: 1,
+        name: 'Ann Lee',
+        themePick: null,
+        themePickInitialized: false,
+      },
+    },
     data: { themeSettings: { switchingEnabled: true, defaultTheme: 'system' } },
   })
   const wrapper = mountPage(nameOnly(), scopes, {
@@ -515,7 +522,14 @@ describe('HilosProfilePage', () => {
     const { wrapper, connection, dispatch } = accountThemePage()
     await wrapper.get('[data-id="profile-theme-change"]').trigger('click')
     connection.emit('handshake_response', {
-      entities: { currentUser: { id: 1, name: 'Ann Lee', themePick: 'dark' } },
+      entities: {
+        currentUser: {
+          id: 1,
+          name: 'Ann Lee',
+          themePick: 'dark',
+          themePickInitialized: true,
+        },
+      },
     })
     await nextTick()
     expect(wrapper.get('[data-id="profile-theme"]').text()).toBe('Dark')
@@ -558,7 +572,12 @@ describe('HilosProfilePage', () => {
       scopes.session.data.set('impersonatedBy', null)
       connection.emit('handshake_response', {
         entities: {
-          currentUser: { id: 1, name: 'Ann Lee', themePick: 'light' },
+          currentUser: {
+            id: 1,
+            name: 'Ann Lee',
+            themePick: 'light',
+            themePickInitialized: true,
+          },
         },
         data: {
           themeSettings: { switchingEnabled: true, defaultTheme: 'light' },
@@ -592,7 +611,12 @@ describe('HilosProfilePage', () => {
     )
     connection.emit('handshake_response', {
       entities: {
-        currentUser: { id: 1, name: 'Ann Lee', themePick: 'system' },
+        currentUser: {
+          id: 1,
+          name: 'Ann Lee',
+          themePick: 'system',
+          themePickInitialized: true,
+        },
       },
     })
     await nextTick()

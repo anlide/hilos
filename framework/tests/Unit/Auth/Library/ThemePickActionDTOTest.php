@@ -15,10 +15,10 @@ use PHPUnit\Framework\TestCase;
 /** An explicit theme choice carries only a valid browser choice and requires a signed-in session. */
 final class ThemePickActionDTOTest extends TestCase
 {
-    /** All three positions round-trip without accepting a client-supplied person. */
+    /** All positions and an explicit reset round-trip without accepting a client-supplied person. */
     public function testThemeChoicesRoundTripWithoutIdentityFields(): void
     {
-        foreach (['light', 'dark', 'system'] as $pick) {
+        foreach (['light', 'dark', 'system', null] as $pick) {
             $dto = ThemePickActionDTO::fromArray(['themePick' => $pick, 'userId' => 99, 'accountId' => 88]);
 
             self::assertSame(['themePick' => $pick], $dto->toArray());
@@ -41,7 +41,6 @@ final class ThemePickActionDTOTest extends TestCase
     public static function invalidChoices(): iterable
     {
         yield 'missing' => [[]];
-        yield 'null' => [['themePick' => null]];
         yield 'auto' => [['themePick' => 'auto']];
         yield 'empty' => [['themePick' => '']];
         yield 'number' => [['themePick' => 1]];

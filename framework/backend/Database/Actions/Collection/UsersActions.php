@@ -54,6 +54,7 @@ class UsersActions extends DbActions
         $user->name = 'Admin' . RandomHelper::integer(self::NAME_SUFFIX_MIN, self::NAME_SUFFIX_MAX);
         $user->admin = true;
         $user->lastActivity = TimeHelper::getSqlDateTime();
+        $user->themePickInitialized = false;
         $user->sync();
 
         // A test db-reset can truncate the users table under the still-running monopolistic
@@ -104,6 +105,7 @@ class UsersActions extends DbActions
         $user->name = $displayName;
         $user->lastActivity = TimeHelper::getSqlDateTime();
         $user->themePick = $themePick;
+        $user->themePickInitialized = $themePick !== null;
         $user->sync();
 
         $this->addObjectToCollection($user);

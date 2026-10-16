@@ -5,14 +5,14 @@
 import { type ThemeSettings } from '../session/sessionScope.js'
 import { type ThemePick } from './themeRule.js'
 
-/** A menu position: the three choices, without "nothing picked". */
+/** A menu position: the three choices, without the absence of a personal position. */
 export type ThemePosition = 'light' | 'dark' | 'system'
 
 /** The mark the header and the profile row draw. Null means no control at all. */
 export interface ThemeChoice {
   /** The position the icon and the checked row show. */
   position: ThemePosition
-  /** True when the person never picked and the mark is the installation default. */
+  /** True when no personal position is set, including an explicit return to default. */
   isDefault: boolean
 }
 
@@ -27,8 +27,12 @@ export const THEME_POSITIONS: readonly {
   { value: 'system', icon: 'bi-circle-half', label: 'System' },
 ]
 
-/** Words the menu and the default badge share. */
-export const THEME_COPY = { menu: 'Theme', default: 'default' } as const
+/** Words the menu, reset command and default badge share. */
+export const THEME_COPY = {
+  menu: 'Theme',
+  default: 'default',
+  siteDefault: 'Use site default',
+} as const
 
 /**
  * The position to mark, or null when the installation has switching off.

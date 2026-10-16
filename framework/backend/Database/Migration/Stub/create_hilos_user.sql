@@ -10,6 +10,7 @@ CREATE TABLE `hilos_user` (
     `block` TINYINT(1) NOT NULL DEFAULT 0,
     `last_activity` TIMESTAMP NULL DEFAULT NULL,
     `theme_pick` ENUM('light', 'dark', 'system') NULL DEFAULT NULL,
+    `theme_pick_initialized` BOOLEAN NOT NULL DEFAULT 0,
     PRIMARY KEY (`id`),
     KEY `idx_user_admin` (`admin`),
     KEY `idx_user_block` (`block`),

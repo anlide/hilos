@@ -154,7 +154,9 @@ describe('bootHilos', () => {
       // The first response can arrive as soon as connect starts. Both bindings
       // must already exist, with the session settings ingested before theme.
       this.emitProjectSignal('handshake_response', {
-        entities: { currentUser: { id: 1, themePick: null } },
+        entities: {
+          currentUser: { id: 1, themePick: null, themePickInitialized: false },
+        },
         data: {
           themeSettings: { switchingEnabled: false, defaultTheme: 'light' },
         },

@@ -16,9 +16,13 @@ system" chooses one of the two themes; it is not a third theme.
 
 Wherever a pick is kept — in the account or the browser — distinguish four
 states: `light`, `dark`, `system`, and **not chosen**. "Not chosen" means the
-person never picked and follows the default theme. Picking the position the
-default already shows is a pick of one's own. Do not offer "not chosen" as a
-position a person can pick back.
+person has no personal position and follows the default theme, whether they
+never picked or explicitly returned to the site default. Picking the position
+the default already shows is a pick of one's own. **Use site default** is a
+separate reset command below the three positions, always visible when switching
+is available, including while already following the default. It has no check
+mark and is not a fourth position; the actual default position keeps its mark
+and default badge (HIL-1534).
 
 Keep one vocabulary through DB, PHP, the wire, TypeScript and the browser:
 `light`, `dark`, `system`. "Not chosen" is the absence of a pick — `null` on the
@@ -59,8 +63,8 @@ so a newer handshake cannot be overwritten by an older acknowledgement.
 row read: the position, its icon and its label, or no control when switching is
 off. `ThemePick` is `light | dark | system | null`; `ThemeMode` is
 `light | dark`. The header and the profile mark the **position**; a person who
-never picked sees the default's position marked as the default, which the worn
-theme alone cannot tell. `HilosProfileRootStore.theme` reads `hilosThemeChoice`
+has no personal pick sees the default's position marked as the default, which
+the worn theme alone cannot tell. `HilosProfileRootStore.theme` reads `hilosThemeChoice`
 to supply the profile row line. The Vue header and the Vue profile row do this
 (HIL-1433, HIL-1434). The React and Angular headers and profile rows are not in
 the code yet — HIL-1440, HIL-1441.
@@ -81,23 +85,35 @@ other element. A subtree pinned to one mode is a pinned color by another name.
   with `browserValue`; its value is exactly `light`, `dark` or `system`, and an
   absent key means no choice. The erase on `/privacy` removes it and informs the
   current tab; other tabs follow through the `storage` event (including a clear
-  event with no key). Follow "What this browser keeps" in
+  event with no key). Use site default calls `setHilosThemePick(null)`, removes
+  only this pick and applies the current default; other guest tabs follow the
+  same storage event. No Save, confirmation or success toast is involved.
+  Follow "What this browser keeps" in
   [core-and-connection.md](../frontend/core-and-connection.md).
 - **A signed-in person:** keep the pick in `hilos_user.theme_pick`, where null means
-  no choice. Only the person's own agent writes it through
+  no personal position. `hilos_user.theme_pick_initialized` distinguishes a
+  never-chosen null (`false`, adoption allowed) from an explicit return to the
+  default (`true`, adoption refused). Every explicit write, including null,
+  sets this bit to true; it never returns to false. Only the person's own agent
+  writes it through
   `hilos_user_theme_pick_write`, like every other edit of their own content; the
   truth source refuses a write from any other process (HIL-1427).
   After a successful write or a conditional skip, the owner asks for the existing
   `hilos_user_sessions_restate`. The sessions library publishes session state for
   every open session of that person on the current node; the project answers each
   local socket with `handshake_response`, whose `entities.currentUser.themePick`
-  reads the stored choice. A stranger's session receives nothing. Delivery to
+  and `themePickInitialized` read the stored pair. A stranger's session receives
+  nothing. Delivery to
   sessions on other nodes remains pending (not in the code yet — HIL-1443).
 - **The browser copy:** on every valid handshake, a non-null
-  `currentUser.themePick` becomes the tab's choice and is written under
+  `currentUser.themePick` paired with a boolean `themePickInitialized` becomes
+  the tab's choice and is written under
   `hilos.theme.pick`, so the page can wear it on its first frame. A null account
-  pick keeps the browser's existing choice while adoption is pending. An absent
-  or invalid field preserves the last valid choice. A refused storage write
+  pick with initialized=false keeps the browser's existing choice while adoption
+  is pending. A null pick with initialized=true authoritatively applies null,
+  removes the browser key and never attempts adoption, including after reconnect.
+  An absent or invalid field in the pair preserves the last valid choice and
+  sends no adoption. A refused storage write
   still lets the current tab apply the choice in memory.
 
 Use this table at sign-in:
@@ -105,21 +121,23 @@ Use this table at sign-in:
 | The account holds | The guest's pick in this browser | After sign-in the page wears |
 |---|---|---|
 | `light`, `dark` or `system` | any of the four states | the account's pick |
-| not chosen | `light`, `dark` or `system` | the guest's pick, written into the account |
-| not chosen | not chosen | not chosen, which follows the default theme |
+| null, initialized=false | `light`, `dark` or `system` | the guest's pick, written into the account |
+| null, initialized=false | not chosen | not chosen, which follows the default theme |
+| null, initialized=true | any of the four states | no personal pick; erase the browser pick and follow the default |
 
 Resuming a session and receiving a restate follow the same table. Apply "What
 The Page Wears" to the resulting pick: switching off still means the default,
 and `system` still resolves to one of the two themes.
 
-When the account pick is null and the browser has a choice, `bindThemeState`
-uses the action lifecycle supplied by `bootHilos` to send `hilos_theme_adopt`
+When the account pick is null, initialized=false and the browser has a choice,
+`bindThemeState` uses the action lifecycle supplied by `bootHilos` to send `hilos_theme_adopt`
 with `{themePick}` once per connection, person and choice. The server resolves
 the person from the live ordinary session belonging to the action's `acceptKey`,
 never from a client-supplied `userId`. Anonymous, expired, missing, impersonated
 and mismatched session/connection identities are refused. The people library
 asks the person's owner with `adoptOnly=true`: the owner writes only while
-`theme_pick` is null. The first choice to reach the owner's sequential queue
+`theme_pick` is null and `theme_pick_initialized` is false. A successful adoption
+sets initialized=true too. The first choice to reach the owner's sequential queue
 wins; a later proposal keeps that stored choice and restates it too. Closing
 the initiating socket after admission does not retarget or cancel the write.
 
@@ -131,7 +149,8 @@ account frame, so an older browser value cannot overwrite its account choice.
 
 The browser request that creates an account carries its current `themePick`.
 The people library inserts the person with that choice in the registration
-transaction; no guest pick means not chosen (HIL-1427). Sign-out's
+transaction; a non-null choice initializes the bit, while no guest pick means
+null with initialized=false (HIL-1534). Sign-out's
 `currentUser=null` keeps the tab's choice and browser copy, so the page keeps
 wearing the same theme.
 
@@ -145,10 +164,15 @@ The signed-in person's header and profile send `hilos_theme_pick` with only
 session belonging to `acceptKey`, with the same admission checks as adoption,
 then asks their owner through `hilos_user_theme_pick_write` with `adoptOnly=false`.
 Every explicit choice is a write, including the current position or the marked
-default: choosing the default makes it personal and removes the default badge.
+default: choosing one of Light/Dark/System makes it personal and removes the
+default badge. Use site default sends `{themePick:null}` and writes null with
+initialized=true, restoring the badge and following later administrator changes
+of `theme.default`. Repeated reset remains available and has the same result.
 The owner's sequential queue orders choices from different sessions; the last
 processed explicit write wins. Automatic `hilos_theme_adopt` remains conditional
-with `adoptOnly=true` and cannot replace a stored personal choice.
+with `adoptOnly=true` and cannot replace a personal choice or undo an explicit
+reset. A stale browser's Dark, even after reconnect, cannot be adopted over
+null with initialized=true. An explicit choice after reset is still allowed.
 
 After the owner answers through `hilos_user_theme_pick_done`, the library resumes
 the tracked browser action. The existing session restate and handshake delivery
@@ -157,6 +181,9 @@ copy in every local session of that person. There is no second theme lifecycle,
 polling or separate browser fan-out signal. Cross-node delivery remains HIL-1443.
 
 Vue's `HilosThemeMenu` closes on a choice and returns focus to its toggle.
+The reset is `role=menuitem` after a separator; the three positions stay
+`menuitemradio`. ArrowUp/Down and Home/End include all four controls; Escape
+closes and returns focus.
 `useTrackedAction` disables repeated submission while busy and shows delayed
 loading on the toggle. For an account action, a post-flush watcher returns focus
 after Vue removes the native disabled state, while the signed-in, switching and
@@ -167,7 +194,8 @@ Guests continue to use `setHilosThemePick`.
 
 The profile's Change control opens `HilosProfileTheme`, a focus-trapped
 `HilosModal` titled Theme. It marks the live position, including the default badge
-while no choice exists. Each click sends that position directly; there is no
+while no personal choice exists. Each click sends that position or the separate
+reset command directly; there is no
 draft or Save. Pending work disables repeat clicks and shows delayed loading on
 the submitted row. Success closes the modal and returns focus to Change;
 refusal leaves it open with `HilosActionError` and the usual toast. Close, Escape
@@ -282,10 +310,12 @@ answers with `Default theme saved.`; a refusal leaves the modal and its draft op
 DB and RT shapes and the `hilos_appearance` route stay unchanged.
 The browser-value keys are `hilos.theme.pick` and `hilos.theme.settings`
 (HIL-1430). The person's stored choice is `hilos_user.theme_pick`:
-`ENUM('light','dark','system') NULL DEFAULT NULL` (HIL-1427). The agent ask is
+`ENUM('light','dark','system') NULL DEFAULT NULL` (HIL-1427), with
+`theme_pick_initialized TINYINT(1) NOT NULL DEFAULT 0` (HIL-1534). The agent ask is
 `hilos_user_theme_pick_write` with `UserThemePickWriteSignalData`; `adoptOnly`
 is a boolean defaulting to false, and true means write only while the stored
-choice is null. Its answer is `UserThemePickWriteDoneSignalData` under the
+choice is null and initialized=false. Its answer is
+`UserThemePickWriteDoneSignalData` under the
 asking coordinator's `replySignal`, carrying the unchanged ask, including
 `adoptOnly`, and `error`, `errorType`, `errorDetail`.
 
@@ -293,6 +323,9 @@ asking coordinator's `replySignal`, carrying the unchanged ask, including
 signed-in person as `'light'|'dark'|'system'|null`; when `currentUser` is null
 there is no separate theme field. PHP carries it as
 `HandshakeResponseSignalData::themePick` and `?string $selfThemePick`.
+`currentUser.themePickInitialized` is a required boolean in the same account
+frame, carried by `HandshakeResponseSignalData::themePickInitialized` and
+`bool $selfThemePickInitialized` (HIL-1534).
 The browser action is `HilosSignalConstants::HILOS_THEME_ADOPT`, whose wire name
 is `hilos_theme_adopt`, with `ThemeAdoptActionDTO` carrying only
 `{themePick: 'light'|'dark'|'system'}`. The people library declares it in `AGENT_ACTIONS`
@@ -307,15 +340,17 @@ subscription is involved (HIL-1429).
 
 Explicit choice uses `HilosSignalConstants::HILOS_THEME_PICK`, wire name
 `hilos_theme_pick`, with `ThemePickActionDTO` carrying only
-`{themePick: 'light'|'dark'|'system'}`. The DTO requires a string in
-`ThemeSettingsCatalog::THEME_VALUES`; null, `auto`, a missing field or another
-type is refused. No client `userId` or `accountId` is accepted. The people
+`{themePick: 'light'|'dark'|'system'|null}`. The DTO requires the field and accepts
+null or a string in `ThemeSettingsCatalog::THEME_VALUES`; `auto`, a missing
+field or another type is refused. Adoption still requires a non-null position.
+No client `userId` or `accountId` is accepted. The people
 library declares the action in `AGENT_ACTIONS` and `AUTH_ACTIONS`, and its answer
 `HilosSignalConstants::HILOS_USER_THEME_PICK_DONE`, wire name
 `hilos_user_theme_pick_done`, in `AGENT_SIGNALS` with the existing
 `UserThemePickWriteDoneSignalData`. The declarations provide the browser-to-library
-action and owner-to-library answer routes. The owner ask and answer shapes,
-DB/RT rows, page routes and session fan-out remain unchanged.
+action and owner-to-library answer routes. The existing owner ask and nested
+answer carry nullable `themePick`; `adoptOnly=true` with null is refused.
+RT rows, signal names, page routes and session fan-out remain unchanged (HIL-1534).
 
 The optional `themePick` key travels on seven account-creating actions:
 `hilos_complete_registration`, `hilos_complete_registration_passwordless`,
@@ -333,7 +368,10 @@ its names into this file in the same commit that clears its marker.
 - Run chat's `theme-guest.spec.ts` for browser choices and `theme-account.spec.ts`
   for independent account sessions, both directions of delivery, a stranger's
   isolation, System media, reload/new tabs, the synchronized browser's first frame
-  with application JS blocked, and profile/modal/header keyboard use at 375px.
+  with application JS blocked, reset from both account controls, following later
+  site defaults, stale Dark reconnect without adoption, first guest adoption,
+  and profile/modal/header keyboard use at 375px. Guest reset covers storage
+  synchronization, repeated reset and reload in both palettes.
 - Run binance-btc-tracker's `theme-smoke.spec.ts` for its signed-in header and
   reload. The later redistribution of theme e2e remains HIL-1442; cross-node
   account delivery remains pending (not in the code yet — HIL-1443).

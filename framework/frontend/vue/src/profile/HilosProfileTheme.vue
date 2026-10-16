@@ -8,7 +8,7 @@ import {
   sendHilosThemePick,
   THEME_COPY,
   THEME_POSITIONS,
-  type ThemePosition,
+  type ThemePick,
 } from '@hilos/core'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import HilosActionError from '../HilosActionError.vue'
@@ -27,7 +27,7 @@ const available = computed(
 const action = useTrackedAction()
 const busy = computed(() => action.busy.value)
 const loading = computed(() => action.loading.value)
-const submitted = ref<ThemePosition | null>(null)
+const submitted = ref<ThemePick>(null)
 const open = computed({
   get: () => props.modelValue && available.value,
   set: (value: boolean) => emit('update:modelValue', value),
@@ -48,7 +48,7 @@ watch(
 )
 onBeforeUnmount(() => opening++)
 
-async function choose(pick: ThemePosition): Promise<void> {
+async function choose(pick: ThemePick): Promise<void> {
   if (
     !props.modelValue ||
     action.busy.value ||
@@ -112,6 +112,26 @@ async function choose(pick: ThemePosition): Promise<void> {
           >
         </button>
       </div>
+      <hr />
+      <button
+        type="button"
+        class="btn btn-outline-secondary w-100 position-relative"
+        :disabled="busy"
+        :aria-busy="busy && submitted === null ? true : undefined"
+        data-id="profile-theme-default"
+        @click="choose(null)"
+      >
+        <span :class="{ invisible: loading && submitted === null }">{{
+          THEME_COPY.siteDefault
+        }}</span>
+        <span
+          v-if="loading && submitted === null"
+          class="position-absolute top-50 start-50 translate-middle spinner-border spinner-border-sm"
+          role="status"
+          data-id="profile-theme-loading"
+          ><span class="visually-hidden">Loading…</span></span
+        >
+      </button>
     </div>
     <template #actions="{ requestClose }">
       <button

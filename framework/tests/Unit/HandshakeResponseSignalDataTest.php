@@ -110,6 +110,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                         'admin' => false,
                         'photo' => null,
                         'themePick' => null,
+                        'themePickInitialized' => false,
                     ],
                     'impersonatedBy' => null,
                 ],
@@ -148,7 +149,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
     public function testThemePickSurvivesRoundtripAndEveryResponseStamp(): void
     {
         foreach (['light', 'dark', 'system', null] as $pick) {
-            $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7', selfThemePick: $pick);
+            $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7', selfThemePick: $pick, selfThemePickInitialized: true);
             $stamped = $data
                 ->withPendingAck(null)
                 ->withAccountBlocked(null)
@@ -166,11 +167,45 @@ final class HandshakeResponseSignalDataTest extends TestCase
                 ->withThemeSettings(['switchingEnabled' => true, 'defaultTheme' => 'system'])
                 ->withSessionContext(123, null, ['email' => true, 'phone' => false], [], false);
 
+            self::assertTrue($stamped->selfThemePickInitialized);
+            self::assertTrue(HandshakeResponseSignalData::fromArray($stamped->toArray())->selfThemePickInitialized);
+            self::assertTrue($stamped->toArray()['entities']['currentUser']['themePickInitialized']);
             self::assertArrayHasKey('themePick', $stamped->toArray()['entities']['currentUser']);
             self::assertSame($pick, $stamped->toArray()['entities']['currentUser']['themePick']);
             self::assertSame($pick, HandshakeResponseSignalData::fromArray($stamped->toArray())->selfThemePick);
             self::assertSame($pick, HandshakeResponseSignalData::fromArray($data->toArray())->selfThemePick);
         }
+    }
+
+    public function testBothNullThemeStatesSurviveTheTransport(): void
+    {
+        foreach ([false, true] as $initialized) {
+            $data = new HandshakeResponseSignalData(selfId: 7, selfThemePick: null, selfThemePickInitialized: $initialized);
+            $restored = HandshakeResponseSignalData::fromArray($data->toArray());
+
+            self::assertNull($restored->selfThemePick);
+            self::assertSame($initialized, $restored->selfThemePickInitialized);
+            self::assertSame($data->toArray(), $restored->toArray());
+        }
+    }
+
+    public function testSignedInThemeInitializationFlagIsRequiredAndStrictlyBoolean(): void
+    {
+        foreach ([null, 0, 1, 'true', []] as $invalid) {
+            $payload = new HandshakeResponseSignalData(selfId: 7)->toArray();
+            $payload['entities']['currentUser']['themePickInitialized'] = $invalid;
+            try {
+                HandshakeResponseSignalData::fromArray($payload);
+                self::fail('Mistyped initialization flag must be refused');
+            } catch (InvalidFormatException $failure) {
+                self::assertStringContainsString('themePickInitialized', $failure->getMessage());
+            }
+        }
+
+        $payload = new HandshakeResponseSignalData(selfId: 7)->toArray();
+        unset($payload['entities']['currentUser']['themePickInitialized']);
+        $this->expectException(InvalidFormatException::class);
+        HandshakeResponseSignalData::fromArray($payload);
     }
 
     /** A guest has no current-user node to carry a theme choice. */
@@ -261,6 +296,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                         'admin' => false,
                         'photo' => null,
                         'themePick' => null,
+                        'themePickInitialized' => false,
                     ],
                     'impersonatedBy' => [
                         'id' => 3,

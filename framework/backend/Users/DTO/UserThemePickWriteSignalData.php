@@ -14,7 +14,7 @@ use Hilos\Theme\ThemeSettingsCatalog;
  * The coordinator → the person's agent: write the theme choice this person submitted (HIL-1427).
  *
  * What {@see HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE} carries. The agent writes the
- * choice only while it is absent when adoptOnly is true, and returns this ask whole inside
+ * choice only before the first account choice when adoptOnly is true, and returns this ask whole inside
  * {@see UserThemePickWriteDoneSignalData}. The owner restates the person's sessions on success,
  * including a conditional skip; the coordinator completes the browser action.
  */
@@ -31,18 +31,18 @@ final class UserThemePickWriteSignalData extends BaseDTO implements HandoverAskI
 
     /**
      * @param int $userId Person whose choice is written and the index of their agent
-     * @param string $themePick Light, dark or system
+     * @param ?string $themePick Light, dark or system; null for an explicit reset
      * @param string $replySignal Agent signal the coordinator receives the answer under
      * @param string $acceptKey Accept key of the connection that submitted the choice
      * @param ?string $requestId Client-minted request id, or null when untracked
      * @param string $action Browser action name the acknowledgement is addressed to
      * @param ?string $successMessage Sentence to speak on success
-     * @param bool $adoptOnly Whether to write only when the person has no stored choice
+     * @param bool $adoptOnly Whether to write only before the first account choice
      * @throws InvalidFormatException When the person id or theme choice is invalid
      */
     public function __construct(
         public readonly int $userId,
-        public readonly string $themePick,
+        public readonly ?string $themePick,
         public readonly string $replySignal,
         public readonly string $acceptKey,
         public readonly ?string $requestId,
@@ -53,8 +53,11 @@ final class UserThemePickWriteSignalData extends BaseDTO implements HandoverAskI
         if ($userId <= 0) {
             throw new InvalidFormatException('User id must be positive');
         }
-        if (!in_array($themePick, ThemeSettingsCatalog::THEME_VALUES, true)) {
+        if ($themePick !== null && !in_array($themePick, ThemeSettingsCatalog::THEME_VALUES, true)) {
             throw new InvalidFormatException(ThemeSettingsCatalog::THEME_VALUE_REFUSAL);
+        }
+        if ($adoptOnly && $themePick === null) {
+            throw new InvalidFormatException('Theme adoption requires a personal position');
         }
     }
 
@@ -67,7 +70,7 @@ final class UserThemePickWriteSignalData extends BaseDTO implements HandoverAskI
     {
         return new static(
             userId: self::requireInt($data, self::userId),
-            themePick: self::requireString($data, self::themePick),
+            themePick: self::requireNullableString($data, self::themePick),
             replySignal: self::requireString($data, self::replySignal),
             acceptKey: self::requireString($data, self::acceptKey),
             requestId: self::optionalString($data, self::requestId),

@@ -96,10 +96,10 @@ final class ThemePickWriteTestAgent extends AbstractUserAgent
     }
 
     /**
-     * @param string $themePick Requested choice
+     * @param ?string $themePick Requested choice or reset
      * @throws ValidationException When the write is refused by this case
      */
-    protected function writeThemePick(string $themePick): void
+    protected function writeThemePick(?string $themePick): void
     {
         if ($this->refuseWrite) {
             throw new ValidationException('Theme refused');

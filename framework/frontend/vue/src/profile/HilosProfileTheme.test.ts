@@ -82,13 +82,24 @@ function setup(
     bindThemeState(connection as unknown as HilosConnection, scopes, actions),
   )
 
-  function handshake(themePick: ThemePick, userId: number | null = 1): void {
+  function handshake(
+    themePick: ThemePick,
+    userId: number | null = 1,
+    themePickInitialized = themePick !== null,
+  ): void {
     emit('projectSignal', {
       type: 'handshake_response',
       data: {
         entities: {
           currentUser:
-            userId === null ? null : { id: userId, name: 'Ada', themePick },
+            userId === null
+              ? null
+              : {
+                  id: userId,
+                  name: 'Ada',
+                  themePick,
+                  themePickInitialized,
+                },
         },
         data: { themeSettings: settings },
       },
@@ -169,6 +180,15 @@ describe('HilosProfileTheme', () => {
     expect(byId('profile-theme-option-dark').hasAttribute('aria-current')).toBe(
       false,
     )
+    const reset = byId('profile-theme-default')
+    expect(reset.textContent?.trim()).toBe('Use site default')
+    expect(reset.hasAttribute('aria-current')).toBe(false)
+    expect(reset.hasAttribute('aria-busy')).toBe(false)
+    expect(reset.classList.contains('active')).toBe(false)
+    expect(reset.querySelector('.bi-check2')).toBeNull()
+    expect(
+      document.querySelector('[data-id="profile-theme-loading"]'),
+    ).toBeNull()
     const footer = dialog().querySelector('.modal-footer')
     expect(footer?.querySelectorAll('button')).toHaveLength(1)
     expect(footer?.textContent?.trim()).toBe('Close')
@@ -259,6 +279,76 @@ describe('HilosProfileTheme', () => {
     expect(hilosThemePick.get()).toBe('system')
     expect(localStorage.getItem(THEME_PICK_STORAGE_KEY)).toBe('system')
     expect(document.querySelector('[data-id="profile-theme-modal"]')).toBeNull()
+  })
+
+  it('resets only on the account frame, keeps the default mark live and allows repeated reset', async () => {
+    const server = setup('dark')
+    await server.open()
+    byId('profile-theme-default').click()
+    byId('profile-theme-option-light').click()
+    expect(server.sendAction).toHaveBeenCalledExactlyOnceWith(
+      'hilos_theme_pick',
+      { themePick: null },
+      '1',
+    )
+    expect(hilosThemePick.get()).toBe('dark')
+    expect(localStorage.getItem(THEME_PICK_STORAGE_KEY)).toBe('dark')
+    await nextTick()
+    expect(byId('profile-theme-default').disabled).toBe(true)
+    expect(byId('profile-theme-default').getAttribute('aria-busy')).toBe('true')
+    await vi.advanceTimersByTimeAsync(300)
+    expect(byId('profile-theme-loading').parentElement).toBe(
+      byId('profile-theme-default'),
+    )
+    server.handshake(null, 1, true)
+    await nextTick()
+    expect(
+      byId('profile-theme-option-light').getAttribute('aria-current'),
+    ).toBe('true')
+    expect(byId('profile-theme-option-light').textContent).toContain('default')
+    expect(server.shown.value).toBe(true)
+    expect(hilosThemePick.get()).toBeNull()
+    expect(localStorage.getItem(THEME_PICK_STORAGE_KEY)).toBeNull()
+    server.reply('success')
+    await flushPromises()
+    expect(server.shown.value).toBe(false)
+    expect(document.activeElement).toBe(byId('theme-opener'))
+    await server.open()
+    byId('profile-theme-default').click()
+    expect(server.sendAction).toHaveBeenCalledTimes(2)
+    server.handshake(null, 1, true)
+    server.reply('success')
+    await flushPromises()
+    expect(server.shown.value).toBe(false)
+    expect(hilosThemePick.get()).toBeNull()
+    expect(hilosToasts.toasts.get()).toEqual([])
+  })
+
+  it('keeps a refused reset retryable and does not close a later opening on its success', async () => {
+    const server = setup('dark')
+    await server.open()
+    byId('profile-theme-default').click()
+    server.reply('fail')
+    await flushPromises()
+    expect(server.shown.value).toBe(true)
+    expect(hilosThemePick.get()).toBe('dark')
+    expect(localStorage.getItem(THEME_PICK_STORAGE_KEY)).toBe('dark')
+    expect(byId('hilos-action-error').textContent).toContain(
+      'Theme switching is disabled.',
+    )
+    expect(byId('profile-theme-default').disabled).toBe(false)
+    byId('profile-theme-default').click()
+    byId('profile-theme-close').click()
+    await nextTick()
+    await server.open()
+    expect(byId('profile-theme-default').disabled).toBe(true)
+    server.handshake(null, 1, true)
+    server.reply('success')
+    await flushPromises()
+    expect(server.shown.value).toBe(true)
+    expect(byId('profile-theme-default').disabled).toBe(false)
+    expect(byId('profile-theme-option-light').textContent).toContain('default')
+    expect(hilosThemePick.get()).toBeNull()
   })
 
   it('blocks repeat clicks immediately and places deferred loading only on the submitted position', async () => {

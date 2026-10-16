@@ -181,6 +181,28 @@ abstract class BaseDTO
     }
 
     /**
+     * Reads a required string field whose value may explicitly be null.
+     *
+     * @param array<string, mixed> $data Payload the DTO is being built from
+     * @param string $key Payload key holding the field
+     * @return ?string String value, or the explicitly supplied null
+     * @throws InvalidFormatException When the key is absent or holds neither a string nor null
+     */
+    protected static function requireNullableString(array $data, string $key): ?string
+    {
+        if (!array_key_exists($key, $data)) {
+            throw new InvalidFormatException('Payload carries no string or null under key ' . $key);
+        }
+
+        $value = $data[$key];
+        if ($value !== null && !is_string($value)) {
+            throw new InvalidFormatException('Payload carries no string or null under key ' . $key);
+        }
+
+        return $value;
+    }
+
+    /**
      * Reads a required payload field whose value may explicitly be null.
      *
      * Absence is still a broken payload: null is one of the values the sender may choose,
