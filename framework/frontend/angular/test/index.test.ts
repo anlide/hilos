@@ -9,6 +9,9 @@ import {
   HILOS_AUTH_GATE,
   HilosAnalyticsBrowserSessionPage,
   HilosAnalyticsPersonPage,
+  HilosChangeLogPage,
+  HilosChangeLogTablePage,
+  HilosChangeLogTablesPage,
   HILOS_PAGE_HEADING_ID,
   HILOS_ROUTER,
   HILOS_TAKEOVER_VIEW_ONLY,
@@ -105,6 +108,15 @@ it('exports the @hilos/angular public surface', () => {
   expect(hilosAdminViews()).not.toHaveProperty(HilosPages.I18N_COUNTRIES)
   expect(hilosAdminViews()).not.toHaveProperty(HilosPages.I18N_COUNTRY)
   expect(hilosAdminViews()).not.toHaveProperty(HilosPages.I18N_COUNTRY_NAMES)
+})
+
+it('exports the three Change Log pages and leaves them out of the default map', () => {
+  expect(HilosChangeLogPage).toBeTypeOf('function')
+  expect(HilosChangeLogTablesPage).toBeTypeOf('function')
+  expect(HilosChangeLogTablePage).toBeTypeOf('function')
+  expect(hilosAdminViews()).not.toHaveProperty(HilosPages.CHANGE_LOG)
+  expect(hilosAdminViews()).not.toHaveProperty(HilosPages.CHANGE_LOG_TABLES)
+  expect(hilosAdminViews()).not.toHaveProperty(HilosPages.CHANGE_LOG_TABLE)
 })
 
 it('exports the two Analytics context pages and leaves them out of the default map', () => {

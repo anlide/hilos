@@ -430,8 +430,8 @@ time and id order, with full long values and distinct absent, NULL and empty
 sides. Creation is a fact, deletion is the saved snapshot, and personal fields
 carry a fact without a value; the current record is never read to rebuild it.
 
-The Vue and React feed's actions cell opens the wide read-only modal in both
-the table and its narrow-screen cards. A receipt larger than 50 shows `Shown N of M` and
+The Vue, React and Angular feed's actions cell opens the wide read-only modal
+in both the table and its narrow-screen cards. A receipt larger than 50 shows `Shown N of M` and
 `Show more` at the end of `What changed`. Each press appends at most 50 entries.
 After expansion, `Hide` restores the first portion, its count and cursor,
 clears a continuation refusal, and returns focus and scroll to the block's
@@ -476,17 +476,17 @@ an admin and a view-mode viewer receive the same list. A valid empty list means
 no noisy columns are declared; absent or malformed data is not an empty result.
 The snapshot is read again on subscription, never sent as a companion signal.
 
-Vue and React mount `HilosChangeLogTablesPage` with the project's
+Vue, React and Angular mount `HilosChangeLogTablesPage` with the project's
 `HilosChangeLogContext`, outside the context-free default admin view map. Each
 demo binds it through its own Change Log context: chat in Vue, ecommerce-shop
-and tasks in React. The view draws the framework viewport, the full noisy-column
-list as a table on wide screens and cards on narrow screens, and the core's
-column-mode reference. Viewport filters do not narrow the reference list. An
-untracked table carries its explicit no-label note and dashes for journal facts.
+and tasks in React, and online-testing and polls in Angular. The view draws the
+framework viewport, the full noisy-column list as a table on wide screens and
+cards on narrow screens, and the core's column-mode reference. Viewport filters
+do not narrow the reference list. An untracked table carries its explicit
+no-label note and dashes for journal facts.
 `Open` appears only for a journaled table whose detail route resolves through
-the router: Vue and React draw it, while a view layer that has not built the
-Tracked table page offers no link. The address uses the live table name, never a
-journal dictionary number.
+the router: Vue, React and Angular draw it. The address uses the live table
+name, never a journal dictionary number.
 
 The Tracked table page `hilos_change_log_table` lives at
 `/hilos/change-log/tables/{tableId}/{record?}`. `tableId` is the live table

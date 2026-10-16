@@ -84,6 +84,9 @@ export { HilosSecurityImpersonationPage } from './admin/security/HilosSecurityIm
 export { HilosCommunicationsDeliveriesPage } from './admin/communications/HilosCommunicationsDeliveriesPage.js'
 export { HilosAnalyticsBrowserSessionPage } from './admin/analytics/HilosAnalyticsBrowserSessionPage.js'
 export { HilosAnalyticsPersonPage } from './admin/analytics/HilosAnalyticsPersonPage.js'
+export { HilosChangeLogPage } from './admin/changeLog/HilosChangeLogPage.js'
+export { HilosChangeLogTablesPage } from './admin/changeLog/HilosChangeLogTablesPage.js'
+export { HilosChangeLogTablePage } from './admin/changeLog/HilosChangeLogTablePage.js'
 export {
   HilosUsersPage,
   type UsersRowActionsContext,

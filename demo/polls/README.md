@@ -89,7 +89,9 @@ patterns even inside backticks. The provisioning script validates names and the
 64-character limit and performs that escaping. It never clears a database.
 
 The backend registers all three journal pages and their table bindings.
-The Angular views follow in HIL-1556.
+The Angular views mount all three: the dashboard at `/hilos/change-log`, Tracked
+tables at `/hilos/change-log/tables`, and one table with its history at
+`/hilos/change-log/tables/{tableId}/{record?}`.
 
 ## First run
 

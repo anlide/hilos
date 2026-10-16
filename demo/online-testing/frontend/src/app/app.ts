@@ -39,6 +39,9 @@ import { Maintenance } from './views/hilos/maintenance/maintenance.js'
 import { Settings } from './views/hilos/settings/settings.js'
 import { AnalyticsBrowserSession } from './views/hilos/analytics/browser-session.js'
 import { AnalyticsPerson } from './views/hilos/analytics/person.js'
+import { ChangeLog } from './views/hilos/change-log/change-log.js'
+import { ChangeLogTable } from './views/hilos/change-log/change-log-table.js'
+import { ChangeLogTables } from './views/hilos/change-log/change-log-tables.js'
 import { User } from './views/hilos/users/user.js'
 import { Users } from './views/hilos/users/users.js'
 import { Main } from './views/main/main.js'
@@ -133,6 +136,13 @@ export class App {
     // hilosAdminViews.
     [HilosPages.ANALYTICS_BROWSER_SESSION]: AnalyticsBrowserSession,
     [HilosPages.ANALYTICS_PERSON]: AnalyticsPerson,
+    // The framework Change Log section: the framework owns the tiles, the feed,
+    // the tables viewport, the history, the receipt modal and every word; the
+    // project binds its connection, page scope and action lifecycle
+    // (views/hilos/change-log).
+    [HilosPages.CHANGE_LOG]: ChangeLog,
+    [HilosPages.CHANGE_LOG_TABLES]: ChangeLogTables,
+    [HilosPages.CHANGE_LOG_TABLE]: ChangeLogTable,
     [HilosPages.LOGS]: LogsOverview,
     [HilosPages.LOGS_KEYS]: LogKeys,
     [HilosPages.LOGS_WORKERS]: LogWorkers,

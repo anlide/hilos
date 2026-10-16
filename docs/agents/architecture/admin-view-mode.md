@@ -695,8 +695,9 @@ key, while the source and editability are shown — the edit and reset controls
 stand for a viewer the same as for an admin (HIL-1255).
 
 The Change Log section carries its viewer case as a unit of the dashboard page
-(`framework/frontend/vue/src/admin/changeLog/HilosChangeLogPage.test.ts` and
-`framework/frontend/react/test/HilosChangeLogPage.test.tsx`):
+(`framework/frontend/vue/src/admin/changeLog/HilosChangeLogPage.test.ts`,
+`framework/frontend/react/test/HilosChangeLogPage.test.tsx` and
+`framework/frontend/angular/test/HilosChangeLogPage.test.ts`):
 the tiles remain complete, while person names in the feed become a hidden mark
 beside the person's number. Its receipt modal also preserves hidden labels and
 numbers while reading, expanding and collapsing the non-personal snapshot.

@@ -81,6 +81,9 @@ import { Settings } from './views/hilos/settings/settings'
 import { Terms } from './views/terms/terms'
 import { AnalyticsBrowserSession } from './views/hilos/analytics/browser-session.js'
 import { AnalyticsPerson } from './views/hilos/analytics/person.js'
+import { ChangeLog } from './views/hilos/change-log/change-log.js'
+import { ChangeLogTable } from './views/hilos/change-log/change-log-table.js'
+import { ChangeLogTables } from './views/hilos/change-log/change-log-tables.js'
 import { User } from './views/hilos/users/user'
 import { Users } from './views/hilos/users/users'
 
@@ -212,6 +215,13 @@ export class App {
     // hilosAdminViews.
     [HilosPages.ANALYTICS_BROWSER_SESSION]: AnalyticsBrowserSession,
     [HilosPages.ANALYTICS_PERSON]: AnalyticsPerson,
+    // The framework Change Log section: the framework owns the tiles, the feed,
+    // the tables viewport, the history, the receipt modal and every word; the
+    // project binds its connection, page scope and action lifecycle
+    // (views/hilos/change-log).
+    [HilosPages.CHANGE_LOG]: ChangeLog,
+    [HilosPages.CHANGE_LOG_TABLES]: ChangeLogTables,
+    [HilosPages.CHANGE_LOG_TABLE]: ChangeLogTable,
     // The framework OAuth admin pages (HIL-286): the framework owns the providers,
     // fields and return-address tables and their set / reset round-trips; the
     // project binds its connection, scope stores and action lifecycle
