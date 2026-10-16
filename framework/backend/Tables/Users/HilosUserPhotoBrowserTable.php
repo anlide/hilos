@@ -15,13 +15,12 @@ use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Object\Item\UserPhoto as ObjectUserPhoto;
+use Hilos\Database\View\Item\UserPhoto as ViewUserPhoto;
 
 /** The published photo of the person on the admin user card, when one exists. */
 final class HilosUserPhotoBrowserTable
 {
     public const string TABLE = 'userPhoto';
-
-    public const string FIELD_PHOTO = 'photo';
 
     public const array BINDING = [
         BrowserParamKey::PARAMS => [
@@ -55,8 +54,7 @@ final class HilosUserPhotoBrowserTable
                         BrowserRefKey::KEY => HilosPageRouteParams::HILOS_USER_USER_ID,
                     ],
                 ],
-                BrowserTableFieldKey::FIELDS => [ObjectUserPhoto::userId, ObjectUserPhoto::fileId],
-                BrowserTableFieldKey::COMPUTED => [self::FIELD_PHOTO],
+                BrowserTableFieldKey::FIELDS => [ObjectUserPhoto::userId, ObjectUserPhoto::fileId, ViewUserPhoto::photo],
             ],
         ],
     ];

@@ -183,8 +183,14 @@ test('merges another account into the user on the admin card', async ({
       loserCardPage.getByTestId('hilos-user-merge-zone'),
     ).toHaveCount(0)
     // So does the guest's public page: the survivor by name and by the way to
-    // their page, and no sessions of its own any more.
+    // their page, the merge sign in place of a face (HIL-1300), and no sessions
+    // of its own any more.
     await expect(guestPage.getByTestId('user-merged-badge')).toBeVisible()
+    const guestCircle = guestPage
+      .getByTestId('user-detail')
+      .getByTestId('hilos-avatar')
+    await expect(guestCircle.getByTestId('hilos-avatar-icon')).toBeVisible()
+    await expect(guestCircle.getByTestId('hilos-avatar-photo')).toHaveCount(0)
     await expect(guestPage.getByTestId('user-merged-into-link')).toHaveText(
       survivor.name,
     )

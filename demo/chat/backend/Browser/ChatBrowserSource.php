@@ -24,6 +24,11 @@ final class ChatBrowserSource
         BrowserSourceKey::KEY => ChatDbContext::userMerges,
     ];
 
+    public const array DB_USER_PHOTOS = [
+        BrowserSourceKey::TYPE => BrowserSourceType::DB,
+        BrowserSourceKey::KEY => ChatDbContext::userPhotos,
+    ];
+
     public const array DB_EVENTS = [
         BrowserSourceKey::TYPE => BrowserSourceType::DB,
         BrowserSourceKey::KEY => ChatDbContext::events,

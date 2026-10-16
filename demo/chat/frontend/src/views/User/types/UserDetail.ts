@@ -1,7 +1,8 @@
 // The user detail page view-model: the referenced user's profile resolved for
-// display plus the runtime presence, and whether the account was folded into
-// another one (HIL-1292). A view-model, not an entity; the user detail selector
-// builds it from the profile entity, the presence slot and the merge slot.
+// display plus the runtime presence, whether the account was folded into
+// another one (HIL-1292), and the person's photo (HIL-1300). A view-model, not
+// an entity; the user detail selector builds it from the profile entity and the
+// presence, merge and photo slots.
 import { type Presence } from '../../../types/Presence'
 
 /** The chat user detail shown on the user page. */
@@ -20,4 +21,6 @@ export interface UserDetail {
   readonly mergedInto: number | null
   /** That account's name, or null when there is none to name. */
   readonly mergedIntoName: string | null
+  /** The address of the person's public avatar photo, or null without one. */
+  readonly photo: string | null
 }

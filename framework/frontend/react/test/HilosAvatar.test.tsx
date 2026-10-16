@@ -112,4 +112,26 @@ describe('HilosAvatar', () => {
     rerender(<HilosAvatar name="Ada Baranov" photo="/b.webp" />)
     expect(container.querySelector('img')?.getAttribute('src')).toBe('/b.webp')
   })
+
+  it('draws the icon instead of the photo and the initials', () => {
+    const { container, rerender } = render(
+      <HilosAvatar
+        name="Ada Baranov"
+        photo="/a.webp"
+        icon="bi-sign-merge-left"
+      />,
+    )
+    const circle = container.querySelector('[data-id="hilos-avatar"]')!
+    const icon = container.querySelector('[data-id="hilos-avatar-icon"]')!
+    expect(icon.classList.contains('bi')).toBe(true)
+    expect(icon.classList.contains('bi-sign-merge-left')).toBe(true)
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.querySelector('i.bi-person')).toBeNull()
+    expect(circle.textContent).toBe('')
+    expect(circle.getAttribute('aria-hidden')).toBe('true')
+
+    rerender(<HilosAvatar name="Ada Baranov" photo="/a.webp" icon={null} />)
+    expect(container.querySelector('[data-id="hilos-avatar-icon"]')).toBeNull()
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('/a.webp')
+  })
 })

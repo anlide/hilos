@@ -1,7 +1,9 @@
 // An event line of the main page stream and its attachment lines — the
 // view-model of one `mainEvents` list item: a message or a service notice, with
-// the acting party resolved and any published attachments. A view-model, not an
-// entity; the page event-stream selector builds it from the list item's slots.
+// the acting party resolved, its photo, whether the message opens a series of
+// one author's messages (HIL-1300), and any published attachments. A view-model,
+// not an entity; the page event-stream selector builds it from the list item's
+// slots.
 
 /** One published attachment shown under a message event line. */
 export interface EventAttachmentItem {
@@ -27,8 +29,14 @@ export interface EventItem {
   readonly timestamp: string
   /** The acting user or bot's name, or empty for a chat-lifecycle notice. */
   readonly authorName: string
-  /** True when the author is a bot, so the view can mark it. */
-  readonly authorIsBot: boolean
+  /** The address of the human author's public avatar photo; null for a bot, a notice or a person without one. */
+  readonly authorPhoto: string | null
+  /**
+   * True for a message that opens a series — the first of consecutive messages
+   * by one author (the same person or the same bot); false for a message that
+   * continues one and for a service notice, which wears no circle.
+   */
+  readonly seriesHead: boolean
   /** The message body for a `message_sent` event, otherwise empty. */
   readonly text: string
   /** A service notice line for a non-message event, otherwise empty. */

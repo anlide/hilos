@@ -10,6 +10,8 @@ import { HilosAvatar } from '../src/HilosAvatar.js'
  * @param name The person's name.
  * @param size The optional size override.
  * @param mark The optional standing mark.
+ * @param photo The optional photo URL.
+ * @param icon The optional icon class.
  * @returns The mounted fixture.
  */
 function mount(
@@ -17,12 +19,14 @@ function mount(
   size?: 'sm' | 'md' | 'lg',
   mark?: HilosAvatarMark | null,
   photo?: string | null,
+  icon?: string | null,
 ): ComponentFixture<HilosAvatar> {
   const fixture = TestBed.createComponent(HilosAvatar)
   fixture.componentRef.setInput('name', name)
   if (size !== undefined) fixture.componentRef.setInput('size', size)
   if (mark !== undefined) fixture.componentRef.setInput('mark', mark)
   if (photo !== undefined) fixture.componentRef.setInput('photo', photo)
+  if (icon !== undefined) fixture.componentRef.setInput('icon', icon)
   fixture.detectChanges()
 
   return fixture
@@ -146,6 +150,33 @@ describe('HilosAvatar', () => {
     fixture.detectChanges()
     expect(circle(fixture).querySelector('img')?.getAttribute('src')).toBe(
       '/b.webp',
+    )
+  })
+
+  it('draws the icon instead of the photo and the initials', () => {
+    const fixture = mount(
+      'Ada Baranov',
+      undefined,
+      undefined,
+      '/a.webp',
+      'bi-sign-merge-left',
+    )
+    const drawn = circle(fixture)
+    const icon = drawn.querySelector('[data-id="hilos-avatar-icon"]')!
+    expect(icon.classList.contains('bi')).toBe(true)
+    expect(icon.classList.contains('bi-sign-merge-left')).toBe(true)
+    expect(drawn.querySelector('img')).toBeNull()
+    expect(drawn.querySelector('i.bi-person')).toBeNull()
+    expect(drawn.textContent?.trim()).toBe('')
+    expect(drawn.getAttribute('aria-hidden')).toBe('true')
+
+    fixture.componentRef.setInput('icon', null)
+    fixture.detectChanges()
+    expect(
+      circle(fixture).querySelector('[data-id="hilos-avatar-icon"]'),
+    ).toBeNull()
+    expect(circle(fixture).querySelector('img')?.getAttribute('src')).toBe(
+      '/a.webp',
     )
   })
 })

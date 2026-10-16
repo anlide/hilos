@@ -102,4 +102,26 @@ describe('HilosAvatar', () => {
     await wrapper.setProps({ photo: '/b.webp' })
     expect(wrapper.find('img').attributes('src')).toBe('/b.webp')
   })
+
+  it('draws the icon instead of the photo and the initials', async () => {
+    const wrapper = mount(HilosAvatar, {
+      props: {
+        name: 'Ada Baranov',
+        photo: '/a.webp',
+        icon: 'bi-sign-merge-left',
+      },
+    })
+    const icon = wrapper.find('[data-id="hilos-avatar-icon"]')
+    expect(icon.classes()).toEqual(
+      expect.arrayContaining(['bi', 'bi-sign-merge-left']),
+    )
+    expect(wrapper.find('img').exists()).toBe(false)
+    expect(wrapper.find('i.bi-person').exists()).toBe(false)
+    expect(wrapper.text()).toBe('')
+    expect(wrapper.attributes('aria-hidden')).toBe('true')
+
+    await wrapper.setProps({ icon: null })
+    expect(wrapper.find('[data-id="hilos-avatar-icon"]').exists()).toBe(false)
+    expect(wrapper.find('img').attributes('src')).toBe('/a.webp')
+  })
 })

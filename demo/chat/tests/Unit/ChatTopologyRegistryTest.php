@@ -19,6 +19,7 @@ use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosLegalAgentDaemon;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonAgentsPage;
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\Data\UserMergeBrowserData;
+use Demo\Chat\Browser\Data\UserPhotoBrowserData;
 use Demo\Chat\Browser\Data\UserPresenceBrowserData;
 use Demo\Chat\Pages\DTO\UserPageSubscribeParams;
 use Demo\Chat\Pages\UserPage as ChatUserPage;
@@ -519,16 +520,16 @@ final class ChatTopologyRegistryTest extends TestCase
         );
     }
 
-    /** Legal administration is bound to its own worker, page routes and tables. */
     /**
-     * The chat user page is drawn from two data sources over the same person (HIL-1292): the
-     * runtime presence, and the merge the account may have gone into - the second bound to the
-     * page by the same route parameter as the first.
+     * The chat user page is drawn from three data sources over the same person: the runtime
+     * presence, the merge the account may have gone into (HIL-1292), and the person's photo
+     * (HIL-1300) - each bound to the page by the same route parameter as the first.
      */
-    public function testTheUserPageCarriesThePresenceAndTheMergeData(): void
+    public function testTheUserPageCarriesThePresenceTheMergeAndThePhotoData(): void
     {
         $this->assertSame(UserPresenceBrowserData::class, Hilos::BROWSER_DATA[UserPresenceBrowserData::DATA]);
         $this->assertSame(UserMergeBrowserData::class, Hilos::BROWSER_DATA[UserMergeBrowserData::DATA]);
+        $this->assertSame(UserPhotoBrowserData::class, Hilos::BROWSER_DATA[UserPhotoBrowserData::DATA]);
         $binding = [
             BrowserParamKey::PARAMS => [
                 UserPageSubscribeParams::USER_ID => ChatBrowserRef::USER_ID,
@@ -538,11 +539,13 @@ final class ChatTopologyRegistryTest extends TestCase
             [
                 UserPresenceBrowserData::DATA => $binding,
                 UserMergeBrowserData::DATA => $binding,
+                UserPhotoBrowserData::DATA => $binding,
             ],
             Hilos::PAGE_DATA[ChatUserPage::PAGE],
         );
     }
 
+    /** Legal administration is bound to its own worker, page routes and tables. */
     public function testLegalAdministrationUsesItsOwnMonopolisticAgentAndFrameworkTables(): void
     {
         $this->assertSame(DemoHilosLegalAgent::class, Hilos::AGENTS[AgentType::HILOS_LEGAL][AgentRegistryKey::WORKER]);

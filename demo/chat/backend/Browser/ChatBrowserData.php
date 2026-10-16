@@ -13,4 +13,5 @@ final class ChatBrowserData
     public const string BOT_STATUS = 'botStatus';
     public const string USER_PRESENCE = 'userPresence';
     public const string USER_MERGE = 'userMerge';
+    public const string USER_PHOTO = 'personPhoto';
 }

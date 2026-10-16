@@ -309,7 +309,10 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   hidden from screen readers; its surroundings carry the name, in the header
   as hidden text and a `title`. The project's header user area places it
   instead of the name (HIL-301). The optional `photo` prop fills the circle
-  with the public image variant; a failed image falls back to initials.
+  with the public image variant; a failed image falls back to initials. The
+  optional `icon` prop, a Bootstrap Icons class, draws that icon instead of
+  both — for a circle that stands for no face, such as a merged account
+  (HIL-1300); it is hidden from screen readers with the rest of the circle.
   `HilosProfilePhoto` in each view package draws the change-photo modal over
   `createHilosProfilePhotoFlow` from core (HIL-1205);
 - **`HilosHiddenMark`** and **`HilosHideable`** — the one mark of a value the

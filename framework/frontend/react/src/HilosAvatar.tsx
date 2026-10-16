@@ -1,6 +1,6 @@
-// HilosAvatar — one circle of a person's photo or initials in the header,
-// profile and admin card. The circle is decorative: its surroundings carry the
-// name, visibly or as hidden text, and any link or tooltip.
+// HilosAvatar — one circle of a person's photo, initials, or an icon standing in
+// for both, in the header, profile and admin card. The circle is decorative: its
+// surroundings carry the name, visibly or as hidden text, and any link or tooltip.
 // In the header it may carry the mark of the session's standing (HIL-945): a ring
 // in the standing's color and its icon in the corner, the pair of the strip that
 // says the same in words — so the mark is decorative too.
@@ -13,6 +13,8 @@ export interface HilosAvatarProps {
   name: string
   /** Published photo URL; initials return if it cannot be loaded. */
   photo?: string | null
+  /** Bootstrap Icons class drawn instead of the photo and the initials, or none. */
+  icon?: string | null
   /** Header (sm), admin card (md), or profile (lg). Defaults to sm. */
   size?: 'sm' | 'md' | 'lg'
   /** The standing mark by the header avatar, or none (`hilosSessionAvatarMark`). */
@@ -20,13 +22,14 @@ export interface HilosAvatarProps {
 }
 
 /**
- * Render a decorative circle with the person's initials or a person icon.
+ * Render a decorative circle with an icon, the person's photo or initials, or a person icon.
  *
- * @param props The person's name, the size of the circle, and its mark.
+ * @param props The person's name, photo and icon, the size of the circle, and its mark.
  */
 export function HilosAvatar({
   name,
   photo = null,
+  icon = null,
   size = 'sm',
   mark = null,
 }: HilosAvatarProps) {
@@ -45,7 +48,9 @@ export function HilosAvatar({
       data-id="hilos-avatar"
       aria-hidden="true"
     >
-      {shownPhoto !== null ? (
+      {icon !== null ? (
+        <i className={`bi ${icon}`} data-id="hilos-avatar-icon" />
+      ) : shownPhoto !== null ? (
         <img
           src={shownPhoto}
           alt=""

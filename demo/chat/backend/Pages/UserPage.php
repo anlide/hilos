@@ -39,14 +39,16 @@ use Hilos\Core\Page\PageRouteParams;
  * (the `userPresence` data source), so it stays out of the one-shot entity
  * payload. An account folded into another one keeps this page at its own address
  * (HIL-1292): the `userMerge` data source says so and names where it went, and
- * the page draws that in place of the sessions and the activity.
+ * the page draws that in place of the sessions and the activity. The person's
+ * photo rides the same snapshot as the `personPhoto` data source (HIL-1300): the
+ * address of its public avatar variant, and no data at all for a person without one.
  *
  * @property ChatAgent $agent
  */
 final class UserPage extends AbstractPage
 {
-    /** @var list<string> The person this page is about, and the merge table that may say they are gone */
-    public const array READS_DB = [ChatDbContext::users, ChatDbContext::userMerges];
+    /** @var list<string> The person this page is about, the merge table that may say they are gone, and the photo it shows */
+    public const array READS_DB = [ChatDbContext::users, ChatDbContext::userMerges, ChatDbContext::userPhotos];
 
     public const string PAGE = PageConstants::USER;
 

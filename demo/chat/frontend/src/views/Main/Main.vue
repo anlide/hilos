@@ -1,7 +1,13 @@
 <!-- The chat main page (PAGE_MAIN). Shows the session's identity line, the live
 event stream (messages plus registration/rename/lifecycle notices), the
 participant roster, and the active bots — each fed by a main page list, so a new
-message, registration, or presence flip appears without a refresh. The identity
+message, registration, or presence flip appears without a refresh. A person or a
+bot wears a circle (HIL-1300): a message opens a series of one author's messages
+with the circle and the name, the messages that continue it carry only their text
+under the head's, and their name as hidden text; a notice wears none. A roster
+row starts with the person's circle — the merge sign for a merged account, which
+has no presence dot — and a bot row with the circle of its initials. A new or
+removed photo and a merge redraw the circles without a refresh. The identity
 line has two branches (HIL-625): with an account it names the account, without
 one it says the visit is anonymous — Chat hands a guest no name, so the
 `self-user` marker is absent rather than carrying an empty one. The message
@@ -15,6 +21,7 @@ and the line of the last refusal. A feed image shows as its thumbnail and opens 
 import { computed, inject, nextTick, onUnmounted, ref, watch } from 'vue'
 import { createHilosUploadField } from '@hilos/core'
 import {
+  HilosAvatar,
   HilosUploadDrop,
   HilosUploadFiles,
   HilosUploadPicker,
@@ -26,6 +33,7 @@ import {
 import { connection } from '../../bootstrap/connection'
 import { currentUserId, currentUserName } from '../../bootstrap/session'
 import {
+  EVENT_MESSAGE_SENT,
   mainParticipants,
   mainBots,
   mainEvents,
@@ -41,6 +49,9 @@ defineOptions({ name: 'MainPage' })
 
 /** The chat's upload target (PHP `ChatAttachmentUploadTarget::NAME`). */
 const CHAT_ATTACHMENT_TARGET = 'chat_attachment'
+
+/** The Bootstrap Icons class a merged account's circle wears in place of a face. */
+const MERGED_ICON = 'bi-sign-merge-left'
 
 // The picker offers images, PDFs and text; drag/drop and paste bypass the
 // filter, and the server reads the type from the content and refuses the rest,
@@ -283,71 +294,97 @@ onUnmounted(() => {
               class="list-group-item"
               data-id="event"
             >
-              <div class="d-flex align-items-baseline gap-2">
+              <!-- A message: the head of a series wears the circle and the name;
+              a message that continues it keeps the same circle invisible, so its
+              text lines up under the head's, and its name for screen readers. -->
+              <div
+                v-if="event.type === EVENT_MESSAGE_SENT"
+                class="d-flex align-items-start gap-2"
+              >
+                <HilosAvatar
+                  :name="event.authorName"
+                  :photo="event.seriesHead ? event.authorPhoto : null"
+                  size="sm"
+                  :class="{ invisible: !event.seriesHead }"
+                />
+                <div class="flex-grow-1 min-w-0">
+                  <span
+                    :class="
+                      event.seriesHead ? 'fw-semibold' : 'visually-hidden'
+                    "
+                    data-id="event-author"
+                    >{{ event.authorName }}</span
+                  >
+                  <div
+                    v-if="event.text"
+                    :class="{ 'mt-1': event.seriesHead }"
+                    data-id="event-text"
+                  >
+                    {{ event.text }}
+                  </div>
+                  <div
+                    v-if="event.attachments.length > 0"
+                    class="d-flex flex-wrap gap-2 mt-2"
+                    data-id="event-attachments"
+                  >
+                    <template
+                      v-for="attachment in event.attachments"
+                      :key="attachment.key"
+                    >
+                      <!-- An image shows as its thumbnail (the chat_thumb copy the
+                      files library draws); a click opens the original. -->
+                      <a
+                        v-if="attachment.mimeType.startsWith('image/')"
+                        :href="attachment.url"
+                        target="_blank"
+                        rel="noopener"
+                        data-id="event-attachment"
+                      >
+                        <img
+                          :src="attachment.thumbUrl"
+                          :alt="attachment.filename"
+                          class="rounded border"
+                          style="
+                            max-height: 12rem;
+                            max-width: 100%;
+                            object-fit: contain;
+                          "
+                          loading="lazy"
+                          data-id="event-attachment-image"
+                        />
+                      </a>
+                      <!-- Everything else is a download link (Content-Disposition: attachment). -->
+                      <a
+                        v-else
+                        :href="attachment.url"
+                        :download="attachment.filename"
+                        class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1"
+                        data-id="event-attachment"
+                      >
+                        <i class="bi bi-paperclip" aria-hidden="true" />
+                        <span class="text-truncate" style="max-width: 16rem">{{
+                          attachment.filename
+                        }}</span>
+                      </a>
+                    </template>
+                  </div>
+                </div>
+              </div>
+              <!-- A notice — registered, renamed, the chat started, stopped or
+              cleared — wears no circle and breaks a series. -->
+              <div v-else class="d-flex align-items-baseline gap-2">
                 <span
                   v-if="event.authorName"
                   class="fw-semibold"
                   data-id="event-author"
+                  >{{ event.authorName }}</span
                 >
-                  <span v-if="event.authorIsBot" class="me-1" aria-hidden="true"
-                    >🤖</span
-                  >{{ event.authorName }}
-                </span>
                 <span
                   v-if="event.description"
                   class="text-muted"
                   data-id="event-notice"
                   >{{ event.description }}</span
                 >
-              </div>
-              <div v-if="event.text" class="mt-1" data-id="event-text">
-                {{ event.text }}
-              </div>
-              <div
-                v-if="event.attachments.length > 0"
-                class="d-flex flex-wrap gap-2 mt-2"
-                data-id="event-attachments"
-              >
-                <template
-                  v-for="attachment in event.attachments"
-                  :key="attachment.key"
-                >
-                  <!-- An image shows as its thumbnail (the chat_thumb copy the
-                  files library draws); a click opens the original. -->
-                  <a
-                    v-if="attachment.mimeType.startsWith('image/')"
-                    :href="attachment.url"
-                    target="_blank"
-                    rel="noopener"
-                    data-id="event-attachment"
-                  >
-                    <img
-                      :src="attachment.thumbUrl"
-                      :alt="attachment.filename"
-                      class="rounded border"
-                      style="
-                        max-height: 12rem;
-                        max-width: 100%;
-                        object-fit: contain;
-                      "
-                      loading="lazy"
-                      data-id="event-attachment-image"
-                    />
-                  </a>
-                  <!-- Everything else is a download link (Content-Disposition: attachment). -->
-                  <a
-                    v-else
-                    :href="attachment.url"
-                    :download="attachment.filename"
-                    class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1"
-                    data-id="event-attachment"
-                  >
-                    <i class="bi bi-paperclip" aria-hidden="true" />
-                    <span class="text-truncate" style="max-width: 16rem">{{
-                      attachment.filename
-                    }}</span>
-                  </a>
-                </template>
               </div>
             </div>
           </div>
@@ -381,7 +418,16 @@ onUnmounted(() => {
               class="list-group-item d-flex align-items-center gap-2"
               data-id="participant"
             >
+              <HilosAvatar
+                :name="participant.name"
+                :photo="participant.merged ? null : participant.photo"
+                :icon="participant.merged ? MERGED_ICON : null"
+                size="sm"
+              />
+              <span data-id="participant-name">{{ participant.name }}</span>
+              <!-- A merged account has no presence of its own any more. -->
               <span
+                v-if="!participant.merged"
                 class="rounded-circle flex-shrink-0"
                 :class="
                   participant.presence === 'online'
@@ -391,8 +437,9 @@ onUnmounted(() => {
                 style="width: 10px; height: 10px"
                 aria-hidden="true"
               />
-              <span data-id="participant-name">{{ participant.name }}</span>
-              <span class="visually-hidden">{{ participant.presence }}</span>
+              <span class="visually-hidden">{{
+                participant.merged ? 'merged' : participant.presence
+              }}</span>
             </div>
           </div>
         </div>
@@ -421,10 +468,9 @@ onUnmounted(() => {
               class="list-group-item"
               data-id="bot"
             >
-              <div
-                class="d-flex justify-content-between align-items-center gap-2"
-              >
-                <span class="fw-semibold" data-id="bot-name">{{
+              <div class="d-flex align-items-center gap-2">
+                <HilosAvatar :name="bot.name" size="sm" />
+                <span class="fw-semibold me-auto" data-id="bot-name">{{
                   bot.name
                 }}</span>
                 <span

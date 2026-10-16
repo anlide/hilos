@@ -1,6 +1,6 @@
-// HilosAvatar — one circle of a person's photo or initials in the header,
-// profile and admin card. The circle is decorative: its surroundings carry the
-// name, visibly or as hidden text, and any link or tooltip.
+// HilosAvatar — one circle of a person's photo, initials, or an icon standing in
+// for both, in the header, profile and admin card. The circle is decorative: its
+// surroundings carry the name, visibly or as hidden text, and any link or tooltip.
 // In the header it may carry the mark of the session's standing (HIL-945): a ring
 // in the standing's color and its icon in the corner, the pair of the strip that
 // says the same in words — so the mark is decorative too.
@@ -13,7 +13,7 @@ import {
 } from '@angular/core'
 import { formatInitials, type HilosAvatarMark } from '@hilos/core'
 
-/** A decorative circle with the person's initials or a person icon. */
+/** A decorative circle with an icon, the person's photo or initials, or a person icon. */
 @Component({
   selector: 'hilos-avatar',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -24,7 +24,9 @@ import { formatInitials, type HilosAvatarMark } from '@hilos/core'
       data-id="hilos-avatar"
       aria-hidden="true"
     >
-      @if (shownPhoto(); as src) {
+      @if (icon(); as shownIcon) {
+        <i class="bi" [class]="shownIcon" data-id="hilos-avatar-icon"></i>
+      } @else if (shownPhoto(); as src) {
         <img
           [src]="src"
           alt=""
@@ -52,6 +54,8 @@ export class HilosAvatar {
   readonly name = input.required<string>()
   /** Published photo URL; initials return if it cannot be loaded. */
   readonly photo = input<string | null>(null)
+  /** Bootstrap Icons class drawn instead of the photo and the initials, or none. */
+  readonly icon = input<string | null>(null)
   /** Header (sm), admin card (md), or profile (lg). */
   readonly size = input<'sm' | 'md' | 'lg'>('sm')
   /** The standing mark by the header avatar, or none (`hilosSessionAvatarMark`). */

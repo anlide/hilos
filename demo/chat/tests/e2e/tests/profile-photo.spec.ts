@@ -1,37 +1,12 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation.js'
 import { gotoPage } from '../helpers/page.js'
-import { PASSWORD, clickSubmit, signUp, typeInto } from '../helpers/session.js'
+import { nameForPhoto, picture, selectPhoto } from '../helpers/profilePhoto.js'
+import { clickSubmit, signUp } from '../helpers/session.js'
 
 const PHOTO_LIMIT_BYTES = 40 * 1024 * 1024
-
-/** Create a real, non-square picture in the browser without a binary fixture in the tree. */
-async function picture(
-  page: Page,
-  mimeType: 'image/jpeg' | 'image/png',
-): Promise<Buffer> {
-  const dataUrl = await page.evaluate((type) => {
-    const canvas = document.createElement('canvas')
-    canvas.width = 480
-    canvas.height = type === 'image/jpeg' ? 320 : 240
-    const drawing = canvas.getContext('2d')
-    if (!drawing) throw new Error('The browser has no 2D canvas')
-    if (type === 'image/jpeg') {
-      drawing.fillStyle = '#bc3024'
-      drawing.fillRect(0, 0, 240, 320)
-      drawing.fillStyle = '#246ac4'
-      drawing.fillRect(240, 0, 240, 320)
-    } else {
-      drawing.clearRect(0, 0, 480, 240)
-      drawing.fillStyle = 'rgba(36, 106, 196, 0.5)'
-      drawing.fillRect(240, 0, 240, 240)
-    }
-    return canvas.toDataURL(type)
-  }, mimeType)
-  return Buffer.from(dataUrl.split(',')[1] ?? '', 'base64')
-}
 
 /** Add EXIF orientation 6 (90° clockwise) before the JPEG's first segment. */
 function rotatedJpeg(jpeg: Buffer): Buffer {
@@ -40,37 +15,6 @@ function rotatedJpeg(jpeg: Buffer): Buffer {
     'hex',
   )
   return Buffer.concat([jpeg.subarray(0, 2), orientationSix, jpeg.subarray(2)])
-}
-
-/** Put the stand model key into the person's current name, which the photo prompt carries. */
-async function nameForPhoto(page: Page, key: string): Promise<string> {
-  await signUp(page)
-  await gotoPage(page, '/profile')
-  const name = `Photo ${key}`
-  await dictateModerationVerdict(key, true, 'ok')
-  await clickSubmit(page.getByTestId('profile-edit'))
-  await typeInto(page.getByTestId('step-up-password'), PASSWORD)
-  await clickSubmit(page.getByTestId('profile-name-step-up-confirm'))
-  await typeInto(page.getByTestId('profile-name-input'), name)
-  await clickSubmit(page.getByTestId('profile-rename-save'))
-  await expect(page.getByTestId('modal')).toBeHidden()
-  await expect(page.getByTestId('profile-name')).toHaveText(name)
-  return name
-}
-
-/** Select a picture and wait until the crop controls replace the file picker. */
-async function selectPhoto(
-  page: Page,
-  buffer: Buffer,
-  mimeType: string,
-): Promise<void> {
-  await clickSubmit(page.getByTestId('profile-photo-open'))
-  await page.getByTestId('profile-photo-input').setInputFiles({
-    name: mimeType === 'image/png' ? 'photo.png' : 'photo.jpg',
-    mimeType,
-    buffer,
-  })
-  await expect(page.getByTestId('profile-photo-preview')).toBeVisible()
 }
 
 test('an EXIF-rotated photo reaches both tabs and guests, then can be removed', async ({

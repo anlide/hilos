@@ -57,6 +57,15 @@ answering whether this project enabled the feature. The photo URL is built by
 a guest without a cookie. Failed image loading falls back to initials in the
 SDK avatar component.
 
+Showing a person's photo to others: the address is the `photo` property of the
+photo row's view item (`Hilos\Database\View\Item\UserPhoto::photo`), the one
+place that builds it. A project that shows somebody's photo joins `userPhotos`
+by `user_id` to its own list row or to its page's data and reads `photo` as a
+field there — chat does so for the roster of its main page and for
+`/user/{id}` (HIL-1300). It stays live by DB sync: a new photo or a removal
+reaches an open screen as a change of that row, with no frame of its own. The
+admin user card reads the same property.
+
 A rejected verdict sends an action error to the submitting connection.
 Content refusals additionally emit optional `user.photo_rejected`; a checker
 that is unavailable sends no notification. The rejection copy and reason map

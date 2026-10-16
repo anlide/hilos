@@ -279,6 +279,22 @@ final class ProfilePhotoIntegrationTest extends ProfileIntegrationTestCase
         self::assertSame(self::SECOND_FILE_ID, Hilos::$db->userPhotos[self::USER_ID]?->fileId);
     }
 
+    /**
+     * The photo row answers the public address of its avatar variant, the one others are shown.
+     *
+     * @throws HilosException When the file cannot be seeded or a frame fails
+     */
+    public function testThePhotoRowAnswersTheAvatarVariantAddress(): void
+    {
+        $this->seedFile(self::FIRST_FILE_ID);
+        $this->deliverPublished('u1', self::FIRST_FILE_ID);
+        $this->settleProfileFlows();
+
+        $photo = Hilos::$db->userPhotos[self::USER_ID]?->photo;
+        self::assertSame(HilosFiles::downloadPath(self::FIRST_FILE_ID, ProfilePhotoUploadTarget::VARIANT), $photo);
+        self::assertStringContainsString('variant=' . ProfilePhotoUploadTarget::VARIANT, $photo);
+    }
+
     /** A check on a connection that has gone is removed without publishing. */
     public function testClosedConnectionDropsItsCheck(): void
     {
