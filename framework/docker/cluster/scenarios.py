@@ -4263,6 +4263,19 @@ FLAKY_SKIP = {
     # mesh - that is the first thing to rule out.
     "15 db interest addressing":
         "flake: m3 counts two facts taken in where one was addressed to it (red 1/420, last 2026-10-16)",
+    # FIXME(F-015, 2026-10-17): the one below was parked on the owner's word (HOTFIX), without
+    # a diagnosis; its record is `flake show F-015` in hilos-ops. It is paid off by finding the
+    # cause, its line removed, and `-- 39` green on the ecommerce-shop cluster stand.
+    #
+    # 39, on the ecommerce-shop cluster stand since HIL-1412: red once in the 8 runs that carried
+    # it (1251 to 1257), on HIL-1353 in seven lanes (1257), green alone on the rerun of the same
+    # sha (1258). The wake phase lost second-factor:unlock: s2 refused the signal with "Agent
+    # 'hilos_user:1' does not exist after startAgent() call" and started that agent 70 ms later,
+    # so the command went unanswered for 15 s. WorkerServer::sendSignalToAgent() throws when the
+    # agent is not there right after startAgent(), so a signal that outruns a cold start may be
+    # dropped rather than held - that is the first thing to rule out.
+    "39 person agents across nodes":
+        "F-015: a cold person agent on s2 refused the unlock it started 70 ms later (red 1/8, last 2026-10-17)",
 }
 
 
