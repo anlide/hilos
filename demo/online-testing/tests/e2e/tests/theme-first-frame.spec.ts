@@ -1,38 +1,61 @@
 import { expect, test } from '@playwright/test'
-import { openFirstFrame } from '../../../../../framework/frontend/e2e/index.js'
 
-const DARK_FRAME = { theme: 'dark', background: 'rgb(33, 37, 41)' }
-const LIGHT_FRAME = { theme: 'light', background: 'rgb(255, 255, 255)' }
+import {
+  THEME_PICK_STORAGE_KEY,
+  THEME_SETTINGS_STORAGE_KEY,
+  emulateSystemTheme,
+  expectThemeFirstFrame,
+  expectThemeMode,
+} from '../../../../../framework/frontend/e2e/index.js'
+import { gotoPage, PAGE_READY } from '../helpers/page.js'
 
-test('remembered dark pick paints the shell and prerendered page', async ({
+test('remembered Dark paints the shell and prerendered page before application JS', async ({
   page,
 }) => {
-  await openFirstFrame(page, '/')
-  await page.evaluate(() => localStorage.setItem('hilos.theme.pick', 'dark'))
+  await emulateSystemTheme(page, 'light')
+  await expectThemeFirstFrame(expect, page, '/', 'light')
+  await page.evaluate(
+    (key) => localStorage.setItem(key, 'dark'),
+    THEME_PICK_STORAGE_KEY,
+  )
 
-  expect(await openFirstFrame(page, '/')).toEqual(DARK_FRAME)
-  expect(await openFirstFrame(page, '/about')).toEqual(DARK_FRAME)
+  await expectThemeFirstFrame(expect, page, '/', 'dark')
+  await expectThemeFirstFrame(expect, page, '/about', 'dark')
+  await gotoPage(page, '/', PAGE_READY)
+  await expectThemeMode(expect, page, 'dark')
 })
 
-test('system preference paints the first frame in a new browser', async ({
-  browser,
-}) => {
-  const { baseURL, ignoreHTTPSErrors } = test.info().project.use
-
-  for (const [colorScheme, expected] of [
-    ['dark', DARK_FRAME],
-    ['light', LIGHT_FRAME],
-  ] as const) {
+for (const palette of ['light', 'dark'] as const) {
+  test(`fresh System ${palette} paints both entrypoints without a browser pick or cache`, async ({
+    browser,
+  }) => {
+    const { baseURL, ignoreHTTPSErrors, viewport } = test.info().project.use
     const context = await browser.newContext({
-      colorScheme,
       baseURL,
       ignoreHTTPSErrors,
+      viewport,
+      colorScheme: palette,
     })
     try {
       const page = await context.newPage()
-      expect(await openFirstFrame(page, '/')).toEqual(expected)
+      let sockets = 0
+      page.on('websocket', () => {
+        sockets += 1
+      })
+      for (const path of ['/', '/about']) {
+        await expectThemeFirstFrame(expect, page, path, palette)
+        expect(
+          await page.evaluate(
+            (keys) => keys.map((key) => localStorage.getItem(key)),
+            [THEME_PICK_STORAGE_KEY, THEME_SETTINGS_STORAGE_KEY],
+          ),
+        ).toEqual([null, null])
+      }
+      expect(sockets).toBe(0)
+      await gotoPage(page, '/', PAGE_READY)
+      await expectThemeMode(expect, page, palette)
     } finally {
       await context.close()
     }
-  }
-})
+  })
+}

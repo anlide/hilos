@@ -2,81 +2,26 @@ import { expect, test, type Page } from '@playwright/test'
 
 import {
   clearCustomSetting,
-  openFirstFrame,
+  THEME_DEFAULT_KEY,
+  THEME_PICK_STORAGE_KEY,
+  chooseHeaderTheme,
+  emulateSystemTheme,
+  expectThemeHeader,
+  expectThemeMode,
   setCustomSetting,
   sidewaysOverflow,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit } from '../helpers/session.js'
 
-const PICK_KEY = 'hilos.theme.pick'
-const DEFAULT_KEY = 'theme.default'
-const DARK_FRAME = { theme: 'dark', background: 'rgb(33, 37, 41)' }
-const ICONS = {
-  light: 'bi-sun',
-  dark: 'bi-moon-stars',
-  system: 'bi-circle-half',
-} as const
-type Position = keyof typeof ICONS
-
-/** Choose through the header and wait for the menu to close and return focus. */
-async function choose(page: Page, position: Position | null): Promise<void> {
-  const toggle = page.getByTestId('nav-theme')
-  await clickSubmit(toggle)
-  await expect(page.getByTestId('nav-theme-menu')).toBeVisible()
-  await clickSubmit(
-    page.getByTestId(
-      position === null ? 'nav-theme-default' : `nav-theme-option-${position}`,
-    ),
-  )
-  await expect(page.getByTestId('nav-theme-menu')).toBeHidden()
-  await expect(toggle).toBeFocused()
-}
-
-/** Check the worn mode separately from the position the icon and rows mark. */
-async function expectTheme(
-  page: Page,
-  position: Position,
-  mode: 'light' | 'dark',
-  isDefault = false,
-): Promise<void> {
-  await expect(page.locator('html')).toHaveAttribute('data-bs-theme', mode)
-  const toggle = page.getByTestId('nav-theme')
-  await expect(toggle).toHaveAttribute('data-position', position)
-  await expect(toggle.locator('i')).toHaveClass(`bi ${ICONS[position]}`)
-  await toggle.click()
-  await expect(page.getByTestId('nav-theme-menu')).toBeVisible()
-  for (const row of ['light', 'dark', 'system'] as const) {
-    const option = page.getByTestId(`nav-theme-option-${row}`)
-    await expect(option).toHaveAttribute(
-      'aria-checked',
-      String(row === position),
-    )
-    await expect(option.locator('.bi-check2')).toHaveCount(
-      row === position ? 1 : 0,
-    )
-    await expect(option.locator('.badge')).toHaveCount(
-      row === position && isDefault ? 1 : 0,
-    )
-    if (row === position) {
-      await expect(option).toHaveClass(/\bactive\b/)
-    } else {
-      await expect(option).not.toHaveClass(/\bactive\b/)
-    }
-  }
-  await toggle.press('Escape')
-  await expect(page.getByTestId('nav-theme-menu')).toBeHidden()
-}
-
-test('guest choices synchronize both ways and survive reload from the first frame', async ({
+test('guest choices synchronize both ways and survive reload and a new tab', async ({
   context,
   page,
 }) => {
-  await page.emulateMedia({ colorScheme: 'light' })
+  await emulateSystemTheme(page, 'light')
   await gotoPage(page, '/', PAGE_READY)
   const other = await context.newPage()
-  await other.emulateMedia({ colorScheme: 'light' })
+  await emulateSystemTheme(other, 'light')
   await gotoPage(other, '/', PAGE_READY)
 
   // The fresh browser follows the catalog default. Choosing that same row is
@@ -97,7 +42,10 @@ test('guest choices synchronize both ways and survive reload from the first fram
   await expect(page.getByTestId('nav-theme-menu')).toBeHidden()
   await expect(toggle).toBeFocused()
   expect(
-    await page.evaluate((key) => localStorage.getItem(key), PICK_KEY),
+    await page.evaluate(
+      (key) => localStorage.getItem(key),
+      THEME_PICK_STORAGE_KEY,
+    ),
   ).toBe('system')
   await toggle.click()
   await expect(
@@ -105,33 +53,35 @@ test('guest choices synchronize both ways and survive reload from the first fram
   ).toHaveCount(0)
   await toggle.press('Escape')
 
-  await choose(page, 'dark')
-  await expectTheme(page, 'dark', 'dark')
-  await expectTheme(other, 'dark', 'dark')
+  await chooseHeaderTheme(expect, page, 'dark')
+  await expectThemeMode(expect, page, 'dark')
+  await expectThemeHeader(expect, page, 'dark')
+  await expectThemeMode(expect, other, 'dark')
+  await expectThemeHeader(expect, other, 'dark')
 
-  await choose(other, 'light')
-  await expectTheme(other, 'light', 'light')
-  await expectTheme(page, 'light', 'light')
+  await chooseHeaderTheme(expect, other, 'light')
+  await expectThemeMode(expect, other, 'light')
+  await expectThemeHeader(expect, other, 'light')
+  await expectThemeMode(expect, page, 'light')
+  await expectThemeHeader(expect, page, 'light')
 
-  await choose(page, 'dark')
+  await chooseHeaderTheme(expect, page, 'dark')
   expect(
-    await page.evaluate((key) => localStorage.getItem(key), PICK_KEY),
+    await page.evaluate(
+      (key) => localStorage.getItem(key),
+      THEME_PICK_STORAGE_KEY,
+    ),
   ).toBe('dark')
   await page.reload()
   await expectPageReady(page)
-  await expectTheme(page, 'dark', 'dark')
-
-  // This blocks application bundles and measures both the head attribute and
-  // painted background, including the prerendered About document.
-  expect(await openFirstFrame(page, '/')).toEqual(DARK_FRAME)
-  expect(await openFirstFrame(page, '/about')).toEqual(DARK_FRAME)
-  await gotoPage(page, '/', PAGE_READY)
-  await expectTheme(page, 'dark', 'dark')
+  await expectThemeMode(expect, page, 'dark')
+  await expectThemeHeader(expect, page, 'dark')
 
   const newlyOpened = await context.newPage()
-  await newlyOpened.emulateMedia({ colorScheme: 'light' })
+  await emulateSystemTheme(newlyOpened, 'light')
   await gotoPage(newlyOpened, '/', PAGE_READY)
-  await expectTheme(newlyOpened, 'dark', 'dark')
+  await expectThemeMode(expect, newlyOpened, 'dark')
+  await expectThemeHeader(expect, newlyOpened, 'dark')
 })
 
 test('guest reset clears both tabs and follows later site defaults across reload', async ({
@@ -144,23 +94,32 @@ test('guest reset clears both tabs and follows later site defaults across reload
     baseURL,
     ignoreHTTPSErrors: true,
   })
-  const admin = await adminContext.newPage()
-  const other = await context.newPage()
+  let admin: Page | undefined
   let adminReady = false
   try {
-    await page.emulateMedia({ colorScheme: 'light' })
-    await other.emulateMedia({ colorScheme: 'dark' })
+    admin = await adminContext.newPage()
+    await emulateSystemTheme(admin, 'light')
+    const other = await context.newPage()
+    await emulateSystemTheme(page, 'light')
+    await emulateSystemTheme(other, 'dark')
     await gotoPage(page, '/', PAGE_READY)
     await gotoPage(other, '/', PAGE_READY)
-    await choose(page, 'dark')
-    await expectTheme(page, 'dark', 'dark')
-    await expectTheme(other, 'dark', 'dark')
-    await choose(page, null)
-    await expectTheme(page, 'system', 'light', true)
-    await expectTheme(other, 'system', 'dark', true)
+    await chooseHeaderTheme(expect, page, 'dark')
+    await expectThemeMode(expect, page, 'dark')
+    await expectThemeHeader(expect, page, 'dark')
+    await expectThemeMode(expect, other, 'dark')
+    await expectThemeHeader(expect, other, 'dark')
+    await chooseHeaderTheme(expect, page, null)
+    await expectThemeMode(expect, page, 'light')
+    await expectThemeHeader(expect, page, 'system', true)
+    await expectThemeMode(expect, other, 'dark')
+    await expectThemeHeader(expect, other, 'system', true)
     for (const tab of [page, other]) {
       expect(
-        await tab.evaluate((key) => localStorage.getItem(key), PICK_KEY),
+        await tab.evaluate(
+          (key) => localStorage.getItem(key),
+          THEME_PICK_STORAGE_KEY,
+        ),
       ).toBeNull()
     }
 
@@ -168,33 +127,43 @@ test('guest reset clears both tabs and follows later site defaults across reload
     await gotoPage(admin, '/hilos/settings', PAGE_READY)
     const search = admin.getByTestId('hilos-table-search')
     await search.fill('')
-    await search.pressSequentially(DEFAULT_KEY, { delay: 10 })
+    await search.pressSequentially(THEME_DEFAULT_KEY, { delay: 10 })
     await expect(
-      admin.getByTestId(`hilos-table-row-${DEFAULT_KEY}`),
+      admin.getByTestId(`hilos-table-row-${THEME_DEFAULT_KEY}`),
     ).toBeVisible()
     adminReady = true
-    await setCustomSetting(admin, DEFAULT_KEY, 'dark')
-    await expectTheme(page, 'dark', 'dark', true)
-    await expectTheme(other, 'dark', 'dark', true)
+    await setCustomSetting(admin, THEME_DEFAULT_KEY, 'dark')
+    await expectThemeMode(expect, page, 'dark')
+    await expectThemeHeader(expect, page, 'dark', true)
+    await expectThemeMode(expect, other, 'dark')
+    await expectThemeHeader(expect, other, 'dark', true)
     await page.reload()
     await expectPageReady(page)
-    await expectTheme(page, 'dark', 'dark', true)
-    await choose(other, null)
-    await expectTheme(page, 'dark', 'dark', true)
-    await expectTheme(other, 'dark', 'dark', true)
-    await setCustomSetting(admin, DEFAULT_KEY, 'light')
-    await expectTheme(page, 'light', 'light', true)
-    await expectTheme(other, 'light', 'light', true)
+    await expectThemeMode(expect, page, 'dark')
+    await expectThemeHeader(expect, page, 'dark', true)
+    await chooseHeaderTheme(expect, other, null)
+    await expectThemeMode(expect, page, 'dark')
+    await expectThemeHeader(expect, page, 'dark', true)
+    await expectThemeMode(expect, other, 'dark')
+    await expectThemeHeader(expect, other, 'dark', true)
+    await setCustomSetting(admin, THEME_DEFAULT_KEY, 'light')
+    await expectThemeMode(expect, page, 'light')
+    await expectThemeHeader(expect, page, 'light', true)
+    await expectThemeMode(expect, other, 'light')
+    await expectThemeHeader(expect, other, 'light', true)
     for (const tab of [page, other]) {
       expect(
-        await tab.evaluate((key) => localStorage.getItem(key), PICK_KEY),
+        await tab.evaluate(
+          (key) => localStorage.getItem(key),
+          THEME_PICK_STORAGE_KEY,
+        ),
       ).toBeNull()
     }
   } finally {
     try {
-      if (adminReady) await clearCustomSetting(admin, DEFAULT_KEY)
+      if (adminReady && admin)
+        await clearCustomSetting(admin, THEME_DEFAULT_KEY)
     } finally {
-      await other.close()
       await adminContext.close()
     }
   }
@@ -204,58 +173,72 @@ test('System follows each guest tab media while explicit choices ignore it', asy
   context,
   page,
 }) => {
-  await page.emulateMedia({ colorScheme: 'light' })
+  await emulateSystemTheme(page, 'light')
   await gotoPage(page, '/', PAGE_READY)
   const other = await context.newPage()
-  await other.emulateMedia({ colorScheme: 'dark' })
+  await emulateSystemTheme(other, 'dark')
   await gotoPage(other, '/', PAGE_READY)
 
-  await choose(page, 'system')
-  await expectTheme(page, 'system', 'light')
-  await expectTheme(other, 'system', 'dark')
-  await page.emulateMedia({ colorScheme: 'dark' })
-  await expectTheme(page, 'system', 'dark')
-  await page.emulateMedia({ colorScheme: 'light' })
-  await expectTheme(page, 'system', 'light')
-  await expectTheme(other, 'system', 'dark')
+  await chooseHeaderTheme(expect, page, 'system')
+  await expectThemeMode(expect, page, 'light')
+  await expectThemeHeader(expect, page, 'system')
+  await expectThemeMode(expect, other, 'dark')
+  await expectThemeHeader(expect, other, 'system')
+  await emulateSystemTheme(page, 'dark')
+  await expectThemeMode(expect, page, 'dark')
+  await expectThemeHeader(expect, page, 'system')
+  await emulateSystemTheme(page, 'light')
+  await expectThemeMode(expect, page, 'light')
+  await expectThemeHeader(expect, page, 'system')
+  await expectThemeMode(expect, other, 'dark')
+  await expectThemeHeader(expect, other, 'system')
 
-  await choose(page, 'dark')
-  await page.emulateMedia({ colorScheme: 'dark' })
-  await page.emulateMedia({ colorScheme: 'light' })
-  await expectTheme(page, 'dark', 'dark')
-  await expectTheme(other, 'dark', 'dark')
+  await chooseHeaderTheme(expect, page, 'dark')
+  await emulateSystemTheme(page, 'dark')
+  await emulateSystemTheme(page, 'light')
+  await expectThemeMode(expect, page, 'dark')
+  await expectThemeHeader(expect, page, 'dark')
+  await expectThemeMode(expect, other, 'dark')
+  await expectThemeHeader(expect, other, 'dark')
 
-  await choose(other, 'light')
-  await other.emulateMedia({ colorScheme: 'light' })
-  await other.emulateMedia({ colorScheme: 'dark' })
-  await expectTheme(other, 'light', 'light')
-  await expectTheme(page, 'light', 'light')
+  await chooseHeaderTheme(expect, other, 'light')
+  await emulateSystemTheme(other, 'light')
+  await emulateSystemTheme(other, 'dark')
+  await expectThemeMode(expect, other, 'light')
+  await expectThemeHeader(expect, other, 'light')
+  await expectThemeMode(expect, page, 'light')
+  await expectThemeHeader(expect, page, 'light')
 })
 
-test('a guest can choose a theme at 375px without sideways overflow', async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 375, height: 812 })
-  await gotoPage(page, '/', PAGE_READY)
-  await page.getByTestId('nav-theme').click()
-  await expect(page.getByTestId('nav-theme-menu')).toBeVisible()
-  expect(await sidewaysOverflow(page)).toEqual([0, 0])
-  await page.getByTestId('nav-theme-option-dark').click()
-  await expect(page.getByTestId('nav-theme-menu')).toBeHidden()
-  await expectTheme(page, 'dark', 'dark')
-  expect(await sidewaysOverflow(page)).toEqual([0, 0])
-  const toggle = page.getByTestId('nav-theme')
-  await toggle.press('ArrowUp')
-  const reset = page.getByTestId('nav-theme-default')
-  await expect(reset).toBeFocused()
-  await expect(reset).toBeVisible()
-  await expect(reset).toBeEnabled()
-  await expect(reset).toHaveRole('menuitem')
-  await expect(reset).not.toHaveAttribute('aria-checked')
-  expect(await sidewaysOverflow(page)).toEqual([0, 0])
-  await reset.press('Enter')
-  await expect(page.getByTestId('nav-theme-menu')).toBeHidden()
-  await expect(toggle).toBeFocused()
-  await expectTheme(page, 'system', 'light', true)
-  expect(await sidewaysOverflow(page)).toEqual([0, 0])
-})
+for (const palette of ['light', 'dark'] as const) {
+  test(`at 375px in ${palette} a guest can choose and reset without sideways overflow`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 812 })
+    await emulateSystemTheme(page, palette)
+    await gotoPage(page, '/', PAGE_READY)
+    await page.getByTestId('nav-theme').click()
+    await expect(page.getByTestId('nav-theme-menu')).toBeVisible()
+    expect(await sidewaysOverflow(page)).toEqual([0, 0])
+    await page.getByTestId('nav-theme-option-dark').click()
+    await expect(page.getByTestId('nav-theme-menu')).toBeHidden()
+    await expectThemeMode(expect, page, 'dark')
+    await expectThemeHeader(expect, page, 'dark')
+    expect(await sidewaysOverflow(page)).toEqual([0, 0])
+    const toggle = page.getByTestId('nav-theme')
+    await toggle.press('ArrowUp')
+    const reset = page.getByTestId('nav-theme-default')
+    await expect(reset).toBeFocused()
+    await expect(reset).toBeVisible()
+    await expect(reset).toBeEnabled()
+    await expect(reset).toHaveRole('menuitem')
+    await expect(reset).not.toHaveAttribute('aria-checked')
+    expect(await sidewaysOverflow(page)).toEqual([0, 0])
+    await reset.press('Enter')
+    await expect(page.getByTestId('nav-theme-menu')).toBeHidden()
+    await expect(toggle).toBeFocused()
+    await expectThemeMode(expect, page, palette)
+    await expectThemeHeader(expect, page, 'system', true)
+    expect(await sidewaysOverflow(page)).toEqual([0, 0])
+  })
+}

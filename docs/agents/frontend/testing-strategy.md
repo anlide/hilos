@@ -187,6 +187,23 @@ the person and of the administrator, because tasks and polls declare no actions
 of their own; no demo's product takes part in them, and they carry no
 `spec-owner` line (HIL-1422).
 
+Theme coverage has one full UI owner per kit and separate build probes:
+
+| Proof | Specs | Lives in |
+|---|---|---|
+| Guest storage, choices, System media, reset and reload/new tabs; account header/profile delivery between independent sessions, another person's isolation, an open receiving modal, keyboard/focus and 375px in both palettes | theme-guest, theme-account | chat (Vue), tasks (React), polls (Angular) |
+| Stale Dark reconnect after explicit reset without adoption; first login adoption by a never-chosen account; synchronized account's cached first frame | theme-account | chat only |
+| Both Appearance editors, live viewer rows, Save/Enter refusal, default and Off/On delivery, discard, keyboard/focus and 375px in both palettes | appearance | binance-btc-tracker (Vue), tasks (React), polls (Angular) |
+| Built head: remembered Dark and fresh System light/dark on `/` and `/about`, HTML attribute and painted background with application JS blocked | theme-first-frame | chat (Vue/Vite), ecommerce-shop (React/Vite), online-testing (Angular build/SSG) |
+| Product shell account header/reload/reset; also guest choices and the Appearance card with its two live rows in the React and Angular shells | theme-smoke | binance-btc-tracker, ecommerce-shop, online-testing |
+
+Only the shell smoke carries `spec-owner: demo`. The guest/account, Appearance
+and first-frame specs are framework proofs. Profile Off/On stays within each
+installation: chat changes its existing settings page; tasks and polls use
+their own Appearance. The build probes cover a cached pick or a fresh browser's
+System fallback, not a server account choice that browser has never received.
+The full production build/head sweep already checks every emitted entrypoint.
+
 The Change Log section did not move: chat (Vue), tasks (React) and polls
 (Angular) carry `change-log.spec.ts`, `change-log-tables.spec.ts` and
 `change-log-table.spec.ts` with the same test titles. They read the action of
@@ -497,6 +514,45 @@ Every check takes the spec's `expect` first, then its `Page`.
 `daemonRestart.ts` owns `RESTART_MARK_TIMEOUT_MS`, the observation budget for
 the shared restart mark. Each kit keeps one section spec. Test titles match across
 kits; only Vue carries the forged restart request, a server check.
+
+### Theme and Appearance — choices, rows and the built first frame
+
+`theme.ts` owns the independent test vocabulary (`ThemeTestPosition`,
+`ThemeTestPick`, `THEME_TEST_POSITIONS`, `THEME_TEST_LABELS`, `THEME_TEST_ICONS`),
+the browser keys (`THEME_PICK_STORAGE_KEY`, `THEME_SETTINGS_STORAGE_KEY`) and
+the expected painted frames (`LIGHT_FRAME`, `DARK_FRAME`). Expected values do
+not come from the production theme resolver.
+
+`emulateSystemTheme(page, mode)` sets that tab's system preference without
+changing its pick. `chooseHeaderTheme(expect, page, pick)` and
+`chooseProfileTheme(expect, page, pick)` drive the real controls, including
+`null` for reset, and wait for the closed surface, end of busy and returned
+focus. `openProfileTheme(expect, page)` opens the live profile window.
+`expectThemeMode` checks the effective palette; `expectThemeHeader` and
+`expectProfileTheme` check the displayed position, default badge and reset
+command separately. Those checks take `expect` and `page` first; the profile
+check preserves a window the caller already opened.
+
+`expectThemeFirstFrame(expect, page, path, mode)` uses `openFirstFrame` to
+block application bundles and check both the HTML attribute and painted body.
+It removes only its own route handler. The spec sets media explicitly and
+uses fresh contexts with project URL, HTTPS and viewport options for System
+light/dark. After a probe, ordinary UI work starts with the demo's `gotoPage`.
+`pickThemeBeforeLoad(context, theme)` remains for other specs that only need a
+fixed palette; theme-choice scenarios use real controls, without an init
+script that would impose the pick again on reload.
+
+`appearance.ts` owns `APPEARANCE_PATH`, `THEME_SWITCHING_KEY`,
+`THEME_DEFAULT_KEY` and `appearanceSettingValue(page, key)`, which reads the
+visible table or card projection. `expectAppearanceRows(expect, page,
+switchingEnabled = true, defaultTheme = 'system')` checks both live values,
+catalog defaults, editor count and accessible table name.
+`openAppearanceSetting(expect, page, key)` opens an editor; the spec changes
+its fields. `saveAppearanceSwitching(expect, page, enabled)` and
+`saveAppearanceDefaultTheme(expect, page, position)` save that already edited
+window and wait for its close, success toast, live row and returned focus.
+Navigation, registration, scenario order, independent sessions and cleanup
+remain in the demo specs.
 
 ### The Analytics section — names and checks
 

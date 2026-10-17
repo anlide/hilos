@@ -361,13 +361,33 @@ its names into this file in the same commit that clears its marker.
 - Check the painting rule with `STYLE-THEME-PINNED`; see "Theming" in
   [styling-rules.md](../frontend/styling-rules.md) for the guard's scope and landing
   markers.
-- Run chat's `theme-guest.spec.ts` for browser choices and `theme-account.spec.ts`
-  for independent account sessions, both directions of delivery, a stranger's
-  isolation, System media, reload/new tabs, the synchronized browser's first frame
-  with application JS blocked, reset from both account controls, following later
-  site defaults, stale Dark reconnect without adoption, first guest adoption,
-  and profile/modal/header keyboard use at 375px. Guest reset covers storage
-  synchronization, repeated reset and reload in both palettes.
-- Run binance-btc-tracker's `theme-smoke.spec.ts` for its signed-in header and
-  reload. The later redistribution of theme e2e remains HIL-1442; cross-node
-  account delivery remains pending (not in the code yet — HIL-1443).
+- Run `theme-guest.spec.ts` and `theme-account.spec.ts` in chat (Vue), tasks
+  (React) and polls (Angular). Each kit proves guest storage synchronization,
+  System media, explicit choices, reload/new tabs and reset; account choices
+  reach independent sessions in both directions, update an open profile window
+  and leave another person's session alone. Header and profile controls retain
+  keyboard, focus and 375px checks in both palettes. Profile Off/On is proved
+  within the same installation: chat uses its settings page, tasks and polls
+  their Appearance page.
+- Chat alone keeps the two server regressions: stale Dark reconnect after an
+  explicit account reset sends no adoption, and a never-chosen account adopts
+  the guest choice on first login. It also checks the synchronized account's
+  cached first frame; a browser that never received that account choice cannot
+  know it before the handshake.
+- Run `appearance.spec.ts` in binance-btc-tracker (Vue), tasks (React) and polls
+  (Angular) for both editors, live settings delivery, viewer refusal through
+  Save and Enter, default changes and Off/On, discard, keyboard/focus and both
+  palettes at 375px. Every changed setting returns to its catalog default.
+- `theme-smoke.spec.ts` in binance-btc-tracker checks its account header,
+  reload and reset. Ecommerce-shop and online-testing keep guest and account
+  header smoke plus their Appearance card and two live rows. These product
+  shell specs carry `spec-owner: demo`; the full framework specs do not.
+- `theme-first-frame.spec.ts` in chat, ecommerce-shop and online-testing covers
+  Vue/Vite, React/Vite and Angular build/SSG respectively. With application JS
+  blocked, each checks both the HTML theme attribute and actual background on
+  `/` and `/about`: remembered Dark and fresh System in light and dark. Normal
+  UI navigation resumes through the demo's `gotoPage` after the probe.
+- Use the shared `theme.ts` and `appearance.ts` toolbox checks, with the spec's
+  `expect` first; scenarios and navigation stay in their demo specs. The API
+  and coverage map are in [testing-strategy.md](../frontend/testing-strategy.md).
+  Cross-node account delivery remains pending (not in the code yet — HIL-1443).

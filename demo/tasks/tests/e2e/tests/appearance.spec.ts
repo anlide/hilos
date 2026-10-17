@@ -1,16 +1,24 @@
-// The Appearance section in the React kit (HIL-1440): the two theme settings in
-// the standard table under the admin header, a window each to edit them, and
-// what a save does to every open tab — Off hides the menu and wears the default,
-// On brings the personal picks back, a new default moves whoever has not chosen.
-// A viewer of the admin view mode opens both windows and moves their fields, and
-// Save stays locked. The same scenarios as binance-btc-tracker's
-// appearance.spec.ts, on the React shell, plus the narrow screen in both
-// palettes from the keyboard.
-import { test, expect, type Browser, type Page } from '@playwright/test'
+import { test, expect, type BrowserContext, type Page } from '@playwright/test'
 
 import {
+  APPEARANCE_PATH,
+  THEME_DEFAULT_KEY,
+  THEME_PICK_STORAGE_KEY,
+  THEME_SWITCHING_KEY,
+  appearanceSettingValue,
+  chooseHeaderTheme,
   clearCustomSetting,
-  pickThemeBeforeLoad,
+  countSentFrames,
+  dismissToasts,
+  emulateSystemTheme,
+  expectAppearanceRows,
+  expectProfileTheme,
+  expectThemeHeader,
+  expectThemeMode,
+  openAppearanceSetting,
+  openProfileTheme,
+  saveAppearanceDefaultTheme,
+  saveAppearanceSwitching,
   shownByTestId,
   sidewaysOverflow,
 } from '../../../../../framework/frontend/e2e/index.js'
@@ -19,47 +27,7 @@ import { setAdminViewMode } from '../helpers/adminViewMode.js'
 import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
 import { signUp } from '../helpers/session.js'
 
-const SWITCHING_KEY = 'theme.switching_enabled'
-const DEFAULT_KEY = 'theme.default'
-const PICK_KEY = 'hilos.theme.pick'
-const APPEARANCE_PATH = '/hilos/appearance'
-const NARROW = { width: 375, height: 812 }
-
-/** A current value of the fixed two-row table, in the table or its narrow card. */
-function currentValue(page: Page, key: string) {
-  return shownByTestId(page, `appearance-setting-value-${key}`)
-}
-
-/**
- * Save the open window through its button and wait for the server's answer.
- *
- * @param page The administrator's page with the window open.
- * @param saveId The data-id of the window's Save button.
- * @param sentence The server's success sentence the toast carries.
- */
-async function saveWindow(
-  page: Page,
-  saveId: string,
-  sentence: string,
-): Promise<void> {
-  const save = page.getByTestId(saveId)
-  await save.scrollIntoViewIfNeeded()
-  await expect(save).toBeVisible()
-  await expect(save).toBeEnabled()
-  await save.focus()
-  await save.click()
-  await expect(page.getByTestId('modal')).toHaveCount(0)
-  await expect(
-    page.getByTestId('hilos-toasts').getByText(sentence),
-  ).toBeVisible()
-}
-
-/**
- * Put one theme setting back on its catalog default through the settings table.
- *
- * @param page A page of a signed-in administrator.
- * @param key The setting to clear.
- */
+/** Restore one theme setting through this installation's existing settings page. */
 async function restoreSetting(page: Page, key: string): Promise<void> {
   await gotoPage(page, '/hilos/settings', PAGE_READY)
   const search = page.getByTestId('hilos-table-search')
@@ -69,66 +37,54 @@ async function restoreSetting(page: Page, key: string): Promise<void> {
   await clearCustomSetting(page, key)
 }
 
-/**
- * Open a visitor tab whose browser already holds a theme pick.
- *
- * @param browser The test's browser.
- * @param pick The browser's pick, or null for none.
- */
-async function visitorWithPick(
-  browser: Browser,
-  pick: 'light' | 'dark' | null,
-): Promise<Page> {
-  const context = await browser.newContext({ colorScheme: 'light' })
-  if (pick !== null) await pickThemeBeforeLoad(context, pick)
-  const page = await context.newPage()
-  await gotoPage(page, '/', PAGE_READY)
-
-  return page
-}
-
 test.afterEach(() => setAdminViewMode(false))
 
-test('the Appearance card opens two typed settings a viewer may look at and not save', async ({
+test('Appearance card, typed settings and live value remain visible to a viewer', async ({
   page,
   browser,
+  baseURL,
 }) => {
+  await emulateSystemTheme(page, 'light')
   await signUpAdmin(page)
   await gotoPage(page, '/hilos', PAGE_READY)
+  await expect(
+    page.getByTestId('dashboard-card-hilos_appearance'),
+  ).toBeVisible()
   await page.getByTestId('dashboard-card-hilos_appearance').click()
   await expectPageReady(page)
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Appearance')
   expect(new URL(page.url()).pathname).toBe(APPEARANCE_PATH)
-  await expect(currentValue(page, SWITCHING_KEY)).toHaveText('On')
-  await expect(currentValue(page, DEFAULT_KEY)).toHaveText('System')
-  await expect(
-    shownByTestId(page, `appearance-setting-default-${SWITCHING_KEY}`),
-  ).toHaveText('On')
-  await expect(
-    shownByTestId(page, `appearance-setting-default-${DEFAULT_KEY}`),
-  ).toHaveText('System')
+  await expectAppearanceRows(expect, page)
 
-  await setAdminViewMode(true)
-  const viewerContext = await browser.newContext()
+  const contexts: BrowserContext[] = []
   try {
+    await setAdminViewMode(true)
+    const viewerContext = await browser.newContext({
+      baseURL,
+      ignoreHTTPSErrors: true,
+      colorScheme: 'light',
+      viewport: test.info().project.use.viewport,
+    })
+    contexts.push(viewerContext)
     const viewer = await viewerContext.newPage()
     let viewerLoads = 0
     viewer.on('load', () => {
       viewerLoads += 1
     })
-    await gotoPage(viewer, APPEARANCE_PATH, PAGE_READY)
-    await expect(viewer.getByTestId('view-mode-banner')).toBeVisible()
-    await expect(currentValue(viewer, SWITCHING_KEY)).toHaveText('On')
-    await expect(currentValue(viewer, DEFAULT_KEY)).toHaveText('System')
-
-    await shownByTestId(
+    const switchingWrites = countSentFrames(
       viewer,
-      `appearance-setting-edit-${SWITCHING_KEY}`,
-    ).click()
-    const switchingDialog = viewer.getByRole('dialog', {
-      name: 'Edit · Theme switching',
-    })
-    await expect(switchingDialog).toBeVisible()
+      'appearance_theme_switching_set',
+    )
+    const defaultWrites = countSentFrames(
+      viewer,
+      'appearance_default_theme_set',
+    )
+    await gotoPage(viewer, APPEARANCE_PATH, PAGE_READY)
+    await expectAppearanceRows(expect, viewer)
+    await expect(
+      viewer.getByTestId(`hilos-settings-edit-${THEME_DEFAULT_KEY}`),
+    ).toHaveCount(0)
+    await openAppearanceSetting(expect, viewer, THEME_SWITCHING_KEY)
+    const dialog = viewer.getByTestId('modal')
     const switching = viewer.getByTestId('appearance-switching-input')
     await expect(switching).toBeChecked()
     await expect(switching).toBeEnabled()
@@ -139,88 +95,110 @@ test('the Appearance card opens two typed settings a viewer may look at and not 
       'aria-describedby',
       /(^| )hilos-view-mode-strip-text( |$)/,
     )
+    await switching.press('Enter')
+    await expect(dialog).toBeVisible()
+    await expect(appearanceSettingValue(page, THEME_SWITCHING_KEY)).toHaveText(
+      'On',
+    )
+    expect(switchingWrites()).toBe(0)
     await switching.check()
     await viewer.getByTestId('appearance-switching-cancel').click()
-    await expect(switchingDialog).toBeHidden()
+    await expect(dialog).toBeHidden()
 
-    await shownByTestId(
-      viewer,
-      `appearance-setting-edit-${DEFAULT_KEY}`,
-    ).click()
-    const themeDialog = viewer.getByRole('dialog', {
-      name: 'Edit · Default theme',
-    })
-    await expect(themeDialog).toBeVisible()
+    await openAppearanceSetting(expect, viewer, THEME_DEFAULT_KEY)
     const system = viewer.getByTestId('appearance-default-theme-system')
     const dark = viewer.getByTestId('appearance-default-theme-dark')
+    for (const position of ['light', 'dark', 'system']) {
+      await expect(
+        viewer.getByTestId(`appearance-default-theme-${position}`),
+      ).toBeEnabled()
+    }
     await expect(system).toBeChecked()
     await dark.check()
     await expect(dark).toBeChecked()
+    await expect(system).not.toBeChecked()
     const themeSave = viewer.getByTestId('appearance-default-theme-save')
     await expect(themeSave).toBeDisabled()
     await expect(themeSave).toHaveAttribute(
       'aria-describedby',
       /(^| )hilos-view-mode-strip-text( |$)/,
     )
+    await expect(viewer.getByTestId('view-mode-banner')).toBeVisible()
+    await expect(viewer.locator('#hilos-view-mode-strip-text')).toBeVisible()
+    await dark.press('Enter')
+    await expect(dialog).toBeVisible()
+    await expect(appearanceSettingValue(page, THEME_DEFAULT_KEY)).toHaveText(
+      'System',
+    )
+    expect(defaultWrites()).toBe(0)
     await system.check()
     await viewer.getByTestId('appearance-default-theme-cancel').click()
-    await expect(themeDialog).toBeHidden()
+    await expect(dialog).toBeHidden()
     const loadsBeforeChange = viewerLoads
 
-    // The administrator's save reaches the viewer's open table without a reload.
-    await shownByTestId(page, `appearance-setting-edit-${DEFAULT_KEY}`).click()
+    await openAppearanceSetting(expect, page, THEME_DEFAULT_KEY)
     await page.getByTestId('appearance-default-theme-dark').check()
-    await saveWindow(
-      page,
-      'appearance-default-theme-save',
-      'Default theme saved.',
-    )
-    await expect(currentValue(page, DEFAULT_KEY)).toHaveText('Dark')
-    await expect(currentValue(viewer, DEFAULT_KEY)).toHaveText('Dark')
+    await saveAppearanceDefaultTheme(expect, page, 'dark')
+    await expectAppearanceRows(expect, viewer, true, 'dark')
+    expect(viewerLoads).toBe(loadsBeforeChange)
+    await restoreSetting(page, THEME_DEFAULT_KEY)
+    await expectAppearanceRows(expect, viewer)
     expect(viewerLoads).toBe(loadsBeforeChange)
   } finally {
     try {
-      await restoreSetting(page, DEFAULT_KEY)
+      await restoreSetting(page, THEME_DEFAULT_KEY)
     } finally {
-      await viewerContext.close()
+      await Promise.all(contexts.map((context) => context.close()))
     }
   }
 })
 
-test('a new default theme reaches guests and accounts and leaves a personal Light alone', async ({
+test('Appearance default theme reaches guests and accounts without overriding a personal Light choice', async ({
   browser,
+  page: admin,
+  baseURL,
 }) => {
-  const adminContext = await browser.newContext({ colorScheme: 'light' })
-  const admin = await adminContext.newPage()
-  const visitors: Page[] = []
-  let adminReady = false
+  // Two registrations plus three visitors and live setting delivery.
+  test.slow()
+  await emulateSystemTheme(admin, 'light')
+  await signUpAdmin(admin)
+  const contexts: BrowserContext[] = []
   try {
-    await signUpAdmin(admin)
     await gotoPage(admin, APPEARANCE_PATH, PAGE_READY)
-    await expect(currentValue(admin, DEFAULT_KEY)).toHaveText('System')
-    adminReady = true
-
-    const guest = await visitorWithPick(browser, null)
-    const person = await visitorWithPick(browser, null)
-    const lightGuest = await visitorWithPick(browser, 'light')
-    visitors.push(guest, person, lightGuest)
-    await signUp(person)
+    await expectAppearanceRows(expect, admin)
+    const visitors: Page[] = []
     const loads = new Map<Page, number>()
-    for (const visitor of visitors) {
+    for (let index = 0; index < 3; index += 1) {
+      const context = await browser.newContext({
+        baseURL,
+        ignoreHTTPSErrors: true,
+        colorScheme: 'light',
+        viewport: test.info().project.use.viewport,
+      })
+      contexts.push(context)
+      const visitor = await context.newPage()
+      visitors.push(visitor)
       loads.set(visitor, 0)
       visitor.on('load', () => {
         loads.set(visitor, (loads.get(visitor) ?? 0) + 1)
       })
-      await expect(visitor.locator('html')).toHaveAttribute(
-        'data-bs-theme',
-        'light',
-      )
+      await gotoPage(visitor, '/', PAGE_READY)
     }
+    const [, person, lightGuest] = visitors
+    await chooseHeaderTheme(expect, lightGuest, 'light')
+    await signUp(person)
+    for (const visitor of visitors) {
+      await expectThemeMode(expect, visitor, 'light')
+      expect(
+        await visitor.evaluate(
+          (key) => localStorage.getItem(key),
+          THEME_PICK_STORAGE_KEY,
+        ),
+      ).toBe(visitor === lightGuest ? 'light' : null)
+    }
+    const loadsBeforeChange = new Map(loads)
 
-    await shownByTestId(admin, `appearance-setting-edit-${DEFAULT_KEY}`).click()
-    await expect(
-      admin.getByRole('dialog', { name: 'Edit · Default theme' }),
-    ).toBeVisible()
+    await openAppearanceSetting(expect, admin, THEME_DEFAULT_KEY)
     await expect(
       admin.getByTestId('appearance-default-theme-system'),
     ).toBeChecked()
@@ -228,165 +206,193 @@ test('a new default theme reaches guests and accounts and leaves a personal Ligh
       admin.getByTestId('appearance-default-theme-save'),
     ).toBeDisabled()
     await admin.getByTestId('appearance-default-theme-dark').check()
-    await saveWindow(
-      admin,
-      'appearance-default-theme-save',
-      'Default theme saved.',
-    )
-    await expect(currentValue(admin, DEFAULT_KEY)).toHaveText('Dark')
-
+    await saveAppearanceDefaultTheme(expect, admin, 'dark')
+    await expectAppearanceRows(expect, admin, true, 'dark')
     for (const visitor of visitors) {
-      await expect(visitor.locator('html')).toHaveAttribute(
-        'data-bs-theme',
+      await expectThemeMode(
+        expect,
+        visitor,
         visitor === lightGuest ? 'light' : 'dark',
       )
-      expect(loads.get(visitor)).toBe(0)
+      await expectThemeHeader(
+        expect,
+        visitor,
+        visitor === lightGuest ? 'light' : 'dark',
+        visitor !== lightGuest,
+      )
+      expect(loads.get(visitor)).toBe(loadsBeforeChange.get(visitor))
     }
     expect(
-      await lightGuest.evaluate((key) => localStorage.getItem(key), PICK_KEY),
+      await lightGuest.evaluate(
+        (key) => localStorage.getItem(key),
+        THEME_PICK_STORAGE_KEY,
+      ),
     ).toBe('light')
   } finally {
     try {
-      if (adminReady) await restoreSetting(admin, DEFAULT_KEY)
+      await restoreSetting(admin, THEME_DEFAULT_KEY)
     } finally {
-      await Promise.all([
-        adminContext.close(),
-        ...visitors.map((visitor) => visitor.context().close()),
-      ])
+      await Promise.all(contexts.map((context) => context.close()))
     }
   }
 })
 
-test('Off hides the menu and wears the default, On brings the Dark picks back', async ({
+test('Appearance switching restores guest and account Dark choices without reload', async ({
   browser,
+  page: admin,
+  baseURL,
 }) => {
-  const adminContext = await browser.newContext({ colorScheme: 'light' })
-  const admin = await adminContext.newPage()
-  const visitors: Page[] = []
-  let adminReady = false
+  // Two registrations, two observers and both live switching transitions.
+  test.slow()
+  await emulateSystemTheme(admin, 'light')
+  await signUpAdmin(admin)
+  const contexts: BrowserContext[] = []
   try {
-    await signUpAdmin(admin)
     await gotoPage(admin, APPEARANCE_PATH, PAGE_READY)
-    await expect(currentValue(admin, SWITCHING_KEY)).toHaveText('On')
-    adminReady = true
-
-    const guest = await visitorWithPick(browser, 'dark')
-    const person = await visitorWithPick(browser, 'dark')
-    visitors.push(guest, person)
-    // Registration carries the browser's Dark pick into the account.
-    await signUp(person)
+    await expectAppearanceRows(expect, admin)
+    const visitors: Page[] = []
     const loads = new Map<Page, number>()
-    for (const visitor of visitors) {
+    for (let index = 0; index < 2; index += 1) {
+      const context = await browser.newContext({
+        baseURL,
+        ignoreHTTPSErrors: true,
+        colorScheme: 'light',
+        viewport: test.info().project.use.viewport,
+      })
+      contexts.push(context)
+      const visitor = await context.newPage()
+      visitors.push(visitor)
       loads.set(visitor, 0)
       visitor.on('load', () => {
         loads.set(visitor, (loads.get(visitor) ?? 0) + 1)
       })
-      await expect(visitor.locator('html')).toHaveAttribute(
-        'data-bs-theme',
-        'dark',
-      )
+      await gotoPage(visitor, '/', PAGE_READY)
+      await chooseHeaderTheme(expect, visitor, 'dark')
+    }
+    const [, person] = visitors
+    // Registration carries the real guest control's Dark pick into the account.
+    await signUp(person)
+    await gotoPage(person, '/profile', PAGE_READY)
+    await expectProfileTheme(expect, person, 'dark')
+    for (const visitor of visitors) {
+      await expectThemeMode(expect, visitor, 'dark')
       await expect(visitor.getByTestId('nav-theme')).toBeVisible()
     }
-
+    await openProfileTheme(expect, person)
+    const loadsBeforeChange = new Map(loads)
     for (const enabled of [false, true]) {
-      await shownByTestId(
-        admin,
-        `appearance-setting-edit-${SWITCHING_KEY}`,
-      ).click()
-      await expect(
-        admin.getByRole('dialog', { name: 'Edit · Theme switching' }),
-      ).toBeVisible()
+      await openAppearanceSetting(expect, admin, THEME_SWITCHING_KEY)
       const switching = admin.getByTestId('appearance-switching-input')
       await expect(switching).toBeChecked({ checked: !enabled })
       await expect(
         admin.getByTestId('appearance-switching-save'),
       ).toBeDisabled()
       await switching.setChecked(enabled)
-      await saveWindow(
-        admin,
-        'appearance-switching-save',
-        'Theme switching saved.',
-      )
-      await expect(currentValue(admin, SWITCHING_KEY)).toHaveText(
-        enabled ? 'On' : 'Off',
-      )
-
+      await saveAppearanceSwitching(expect, admin, enabled)
+      await expectAppearanceRows(expect, admin, enabled)
+      await expect(person.getByTestId('profile-theme-modal')).toBeHidden()
+      if (enabled) {
+        await expectProfileTheme(expect, person, 'dark')
+      } else {
+        await expect(person.getByTestId('profile-theme')).toHaveCount(0)
+        await expect(person.getByTestId('profile-theme-change')).toHaveCount(0)
+      }
       for (const visitor of visitors) {
-        await expect(visitor.locator('html')).toHaveAttribute(
-          'data-bs-theme',
-          enabled ? 'dark' : 'light',
-        )
-        await expect(visitor.getByTestId('nav-theme')).toHaveCount(
-          enabled ? 1 : 0,
-        )
+        await expectThemeMode(expect, visitor, enabled ? 'dark' : 'light')
+        if (enabled) {
+          await expectThemeHeader(expect, visitor, 'dark')
+        } else {
+          await expect(visitor.getByTestId('nav-theme')).toHaveCount(0)
+        }
         expect(
-          await visitor.evaluate((key) => localStorage.getItem(key), PICK_KEY),
+          await visitor.evaluate(
+            (key) => localStorage.getItem(key),
+            THEME_PICK_STORAGE_KEY,
+          ),
         ).toBe('dark')
-        expect(loads.get(visitor)).toBe(0)
+        expect(loads.get(visitor)).toBe(loadsBeforeChange.get(visitor))
       }
     }
   } finally {
     try {
-      if (adminReady) await restoreSetting(admin, SWITCHING_KEY)
+      await restoreSetting(admin, THEME_SWITCHING_KEY)
     } finally {
-      await Promise.all([
-        adminContext.close(),
-        ...visitors.map((visitor) => visitor.context().close()),
-      ])
+      await Promise.all(contexts.map((context) => context.close()))
     }
   }
 })
 
 for (const palette of ['light', 'dark'] as const) {
-  test(`at 375px in ${palette} the settings stand as cards and a window works from the keyboard`, async ({
-    browser,
+  test(`at 375px in ${palette} both Appearance windows support keyboard, focus and discard`, async ({
+    page,
   }) => {
-    const context = await browser.newContext({
-      viewport: NARROW,
-      colorScheme: 'light',
-    })
-    await pickThemeBeforeLoad(context, palette)
-    try {
-      const page = await context.newPage()
-      await signUpAdmin(page)
-      await gotoPage(page, APPEARANCE_PATH, PAGE_READY)
-      await expect(page.locator('html')).toHaveAttribute(
-        'data-bs-theme',
-        palette,
-      )
-      await expect(page.getByTestId('hilos-table-cards')).toBeVisible()
-      await expect(currentValue(page, SWITCHING_KEY)).toHaveText('On')
-      await expect(currentValue(page, DEFAULT_KEY)).toHaveText('System')
-      expect(await sidewaysOverflow(page)).toEqual([0, 0])
+    await page.setViewportSize({ width: 375, height: 812 })
+    await emulateSystemTheme(page, 'light')
+    await gotoPage(page, '/', PAGE_READY)
+    await chooseHeaderTheme(expect, page, palette)
+    await signUpAdmin(page)
+    await gotoPage(page, APPEARANCE_PATH, PAGE_READY)
+    await expectThemeMode(expect, page, palette)
+    await expect(page.getByTestId('hilos-table-cards')).toBeVisible()
+    await expectAppearanceRows(expect, page)
+    expect(await sidewaysOverflow(page)).toEqual([0, 0])
+    await dismissToasts(page)
 
-      const pencil = shownByTestId(
-        page,
-        `appearance-setting-edit-${SWITCHING_KEY}`,
-      )
-      await expect(pencil).toContainText('Edit')
-      await pencil.focus()
-      await page.keyboard.press('Enter')
-      const dialog = page.getByRole('dialog', {
-        name: 'Edit · Theme switching',
-      })
-      await expect(dialog).toBeVisible()
-      const switching = page.getByTestId('appearance-switching-input')
-      await expect(switching).toBeFocused()
-      await page.keyboard.press('Space')
-      await expect(switching).not.toBeChecked()
-      await expect(page.getByTestId('appearance-switching-save')).toBeEnabled()
-      expect(await sidewaysOverflow(page)).toEqual([0, 0])
+    const pencil = shownByTestId(
+      page,
+      `appearance-setting-edit-${THEME_SWITCHING_KEY}`,
+    )
+    await expect(pencil).toContainText('Edit')
+    await pencil.focus()
+    await pencil.press('Enter')
+    const dialog = page.getByTestId('modal')
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toHaveAccessibleName('Edit · Theme switching')
+    const switching = page.getByTestId('appearance-switching-input')
+    await expect(switching).toBeFocused()
+    await switching.press('Space')
+    await expect(switching).not.toBeChecked()
+    await expect(page.getByTestId('appearance-switching-save')).toBeEnabled()
+    expect(await sidewaysOverflow(page)).toEqual([0, 0])
+    await switching.press('Escape')
+    await expect(page.getByTestId('modal-confirm')).toContainText(
+      'Discard changes?',
+    )
+    await page.getByTestId('modal-confirm-discard').click()
+    await expect(dialog).toBeHidden()
+    await expect(pencil).toBeFocused()
+    await expect(appearanceSettingValue(page, THEME_SWITCHING_KEY)).toHaveText(
+      'On',
+    )
 
-      await page.keyboard.press('Escape')
-      await expect(page.getByTestId('modal-confirm')).toContainText(
-        'Discard changes?',
-      )
-      await page.getByTestId('modal-confirm-discard').click()
-      await expect(dialog).toBeHidden()
-      await expect(pencil).toBeFocused()
-      await expect(currentValue(page, SWITCHING_KEY)).toHaveText('On')
-    } finally {
-      await context.close()
-    }
+    const themePencil = shownByTestId(
+      page,
+      `appearance-setting-edit-${THEME_DEFAULT_KEY}`,
+    )
+    await themePencil.focus()
+    await themePencil.press('Enter')
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toHaveAccessibleName('Edit · Default theme')
+    const system = page.getByTestId('appearance-default-theme-system')
+    await expect(system).toBeChecked()
+    await system.focus()
+    await system.press('ArrowLeft')
+    await expect(
+      page.getByTestId('appearance-default-theme-dark'),
+    ).toBeChecked()
+    await expect(
+      page.getByTestId('appearance-default-theme-save'),
+    ).toBeEnabled()
+    expect(await sidewaysOverflow(page)).toEqual([0, 0])
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('modal-confirm')).toContainText(
+      'Discard changes?',
+    )
+    await page.getByTestId('modal-confirm-discard').click()
+    await expect(dialog).toBeHidden()
+    await expect(themePencil).toBeFocused()
+    await expectAppearanceRows(expect, page)
+    await expectThemeMode(expect, page, palette)
+    expect(await sidewaysOverflow(page)).toEqual([0, 0])
   })
 }

@@ -180,7 +180,36 @@ export {
   i18nLocaleRow,
   i18nNameRow,
 } from './i18n.js'
-export { pickThemeBeforeLoad } from './theme.js'
+export {
+  DARK_FRAME,
+  LIGHT_FRAME,
+  THEME_PICK_STORAGE_KEY,
+  THEME_SETTINGS_STORAGE_KEY,
+  THEME_TEST_ICONS,
+  THEME_TEST_LABELS,
+  THEME_TEST_POSITIONS,
+  chooseHeaderTheme,
+  chooseProfileTheme,
+  emulateSystemTheme,
+  expectProfileTheme,
+  expectThemeFirstFrame,
+  expectThemeHeader,
+  expectThemeMode,
+  openProfileTheme,
+  pickThemeBeforeLoad,
+  type ThemeTestPick,
+  type ThemeTestPosition,
+} from './theme.js'
+export {
+  APPEARANCE_PATH,
+  THEME_DEFAULT_KEY,
+  THEME_SWITCHING_KEY,
+  appearanceSettingValue,
+  expectAppearanceRows,
+  openAppearanceSetting,
+  saveAppearanceDefaultTheme,
+  saveAppearanceSwitching,
+} from './appearance.js'
 
 export { expectHilosUserBlockSettled } from './hilosUserLifecycle.js'
 

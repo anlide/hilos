@@ -1,71 +1,43 @@
 import { expect, test } from '@playwright/test'
 
+import {
+  THEME_PICK_STORAGE_KEY,
+  chooseHeaderTheme,
+  emulateSystemTheme,
+  expectThemeHeader,
+  expectThemeMode,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { expectPageReady } from '../helpers/page.js'
 import { signUp } from '../helpers/session.js'
 
 // spec-owner: demo — proves the BTC Tracker shell activates the shared account theme menu.
 
-test('the signed-in BTC Tracker header saves a theme and keeps it on reload', async ({
+test('the signed-in BTC Tracker header saves a theme, keeps it on reload and resets', async ({
   page,
 }) => {
-  await page.emulateMedia({ colorScheme: 'light' })
+  await emulateSystemTheme(page, 'light')
   await signUp(page)
-  const toggle = page.getByTestId('nav-theme')
-  await toggle.scrollIntoViewIfNeeded()
-  await expect(toggle).toBeVisible()
-  await expect(toggle).toBeEnabled()
-  await toggle.focus()
-  await toggle.click()
-  await expect(page.getByTestId('nav-theme-menu')).toBeVisible()
-  const dark = page.getByTestId('nav-theme-option-dark')
-  await dark.scrollIntoViewIfNeeded()
-  await expect(dark).toBeVisible()
-  await expect(dark).toBeEnabled()
-  await dark.focus()
-  await dark.click()
-  await expect(page.getByTestId('nav-theme-menu')).toBeHidden()
-  await expect(toggle).toBeEnabled()
-  await expect(toggle).toBeFocused()
-  await expect(toggle).toHaveAttribute('data-position', 'dark')
-  await expect(page.locator('html')).toHaveAttribute('data-bs-theme', 'dark')
+  await chooseHeaderTheme(expect, page, 'dark')
+  await expectThemeHeader(expect, page, 'dark')
+  await expectThemeMode(expect, page, 'dark')
 
   await page.reload()
   await expectPageReady(page)
   await expect(page.getByTestId('nav-profile-name')).toBeVisible()
-  await expect(toggle).toHaveAttribute('data-position', 'dark')
-  await expect(page.locator('html')).toHaveAttribute('data-bs-theme', 'dark')
-  await expect(toggle).toBeEnabled()
-  await toggle.focus()
-  await toggle.click()
-  await expect(dark).toHaveAttribute('aria-checked', 'true')
-  await expect(dark.locator('.badge')).toHaveCount(0)
-  await toggle.press('Escape')
-  await expect(page.getByTestId('nav-theme-menu')).toBeHidden()
-  await toggle.press('ArrowUp')
-  const reset = page.getByTestId('nav-theme-default')
-  await expect(reset).toBeFocused()
-  await expect(reset).toBeVisible()
-  await expect(reset).toBeEnabled()
-  await expect(reset).toHaveRole('menuitem')
-  await expect(reset).toHaveText('Use site default')
-  await reset.press('Enter')
-  await expect(page.getByTestId('nav-theme-menu')).toBeHidden()
-  await expect(toggle).toBeEnabled()
-  await expect(toggle).toBeFocused()
-  await expect(toggle).toHaveAttribute('data-position', 'system')
-  await expect(page.locator('html')).toHaveAttribute('data-bs-theme', 'light')
+  await expectThemeHeader(expect, page, 'dark')
+  await expectThemeMode(expect, page, 'dark')
+
+  await chooseHeaderTheme(expect, page, null)
+  await expectThemeHeader(expect, page, 'system', true)
+  await expectThemeMode(expect, page, 'light')
   expect(
-    await page.evaluate(() => localStorage.getItem('hilos.theme.pick')),
+    await page.evaluate(
+      (key) => localStorage.getItem(key),
+      THEME_PICK_STORAGE_KEY,
+    ),
   ).toBeNull()
   await page.reload()
   await expectPageReady(page)
-  await expect(toggle).toHaveAttribute('data-position', 'system')
-  await expect(page.locator('html')).toHaveAttribute('data-bs-theme', 'light')
-  await toggle.click()
-  const system = page.getByTestId('nav-theme-option-system')
-  await expect(system).toHaveAttribute('aria-checked', 'true')
-  await expect(system.locator('.badge')).toHaveText('default')
-  await expect(reset).toBeVisible()
-  await toggle.press('Escape')
-  await expect(page.getByTestId('nav-theme-menu')).toBeHidden()
+  await expectThemeHeader(expect, page, 'system', true)
+  await expectThemeMode(expect, page, 'light')
 })

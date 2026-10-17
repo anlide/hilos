@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test'
+import type { Page, Route } from '@playwright/test'
 
 /**
  * Read the theme and painted body before any application bundle can run.
@@ -10,7 +10,8 @@ export async function openFirstFrame(
   page: Page,
   path: string,
 ): Promise<{ theme: string | null; background: string }> {
-  await page.route('**/*.js', (route) => route.abort())
+  const abortScript = (route: Route) => route.abort()
+  await page.route('**/*.js', abortScript)
   try {
     await page.goto(path)
     return await page.evaluate(() => ({
@@ -18,6 +19,6 @@ export async function openFirstFrame(
       background: getComputedStyle(document.body).backgroundColor,
     }))
   } finally {
-    await page.unroute('**/*.js')
+    await page.unroute('**/*.js', abortScript)
   }
 }
