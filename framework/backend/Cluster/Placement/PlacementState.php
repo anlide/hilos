@@ -12,14 +12,16 @@ use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
  * {@see Placing}, {@see Unplaced} and {@see Refused} are leader-local: {@see Placing} means the
  * placement frame was sent to the target node but no status has come back yet — a wait that is
  * no longer open-ended, since `CLUSTER_PLACEMENT_ACK_TIMEOUT_MS` makes the leader ask the node
- * what it hosts (HIL-930) — {@see Unplaced}
- * means failover found no capable+online node to host the agent, so it is degraded and
- * awaiting a capable node to join, and {@see Refused} means the agent claimed the right to
- * write an RT collection another node already holds (HIL-696). None of the three travels the
- * wire. The other three are the states a node reports back in a {@see PeerAgentStatusDTO}:
+ * what it hosts (HIL-930) — {@see Unplaced} means no capable+online node could host new or lost
+ * work. Failed and Unplaced share the leader's bounded retry queue (HIL-446), with joins and
+ * released reservations waking only Unplaced. Refused means the agent claimed the right to
+ * write an RT collection another node already holds (HIL-696). These three are not node status
+ * reports. The other three are the states a node reports back in a {@see PeerAgentStatusDTO}:
  * {@see Started} when the local agent launched, {@see Failed} when it could not, and
  * {@see Stopped} when it was revoked. The value is string-backed for the wire and for logging;
- * placement tracking is soft-state and never persisted.
+ * placement tracking is soft-state and never persisted. Complete snapshots retain waiting
+ * intent and cancellation across terms; inherited Placing/Started without a confirmed host
+ * becomes Unplaced only after the rebuild/self-fence barrier.
  *
  * {@see Refused} is the one state nothing brings an agent out of. It is not a failure to retry:
  * the configuration declares two owners of one collection, and re-placing the loser somewhere
@@ -46,14 +48,14 @@ enum PlacementState: string
      *
      * The question every consumer of the view asks, and the reason it has a name: an agent
      * nothing hosts must not be addressed, must not be published as placed, and must not be
-     * failed over. Degraded and refused answer it alike while meaning opposite things — one is
-     * waiting for a node, the other for a person.
+     * failed over. Failed and stopped have released their host too. Refused is separately
+     * terminal: unlike a failed or unplaced agent, it waits for a person to fix the declaration.
      *
      * @return bool True when no node hosts the agent in this state
      */
     public function runsNowhere(): bool
     {
-        return $this === self::Unplaced || $this === self::Refused;
+        return !$this->hostsAgent();
     }
 
     /**

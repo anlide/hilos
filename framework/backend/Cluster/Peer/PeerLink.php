@@ -920,6 +920,7 @@ final class PeerLink extends AbstractClient
      *
      * @param PeerPlacementViewDTO $frame Incoming placement-view frame
      * @throws PeerTransportException When the frame arrives before the handshake
+     * @throws EnvException When placement source confirmation cannot read cluster mode
      */
     private function onPlacementView(PeerPlacementViewDTO $frame): void
     {

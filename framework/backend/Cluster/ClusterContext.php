@@ -9,6 +9,7 @@ use Hilos\Cluster\Consensus\ClusterCoordinator;
 use Hilos\Cluster\Consensus\ConsensusInspection;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\Exception\ClusterDisabledException;
+use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\Peer\ConnectionPolicy;
 use Hilos\Cluster\Peer\FullMeshConnectionPolicy;
 use Hilos\Cluster\Placement\BestFitPlacementPolicy;
@@ -21,6 +22,7 @@ use Hilos\Cluster\Placement\PlacementRefusal;
 use Hilos\Cluster\Placement\PlacementRefusalSnapshot;
 use Hilos\Cluster\Placement\PlacementRestartSink;
 use Hilos\Cluster\Placement\PlacementPolicy;
+use Hilos\Cluster\Placement\PlacementState;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\Module\PeerModule;
@@ -1074,11 +1076,14 @@ final class ClusterContext
      *
      * Why placed work does not run travels out as well (HIL-447): each placement row carries the
      * reason and the gate's refusals of a failed or unplaced record, and `placementRefusals` lists
-     * the leader's last failed attempt per agent — the only place a new agent that no node could
-     * take shows up, since it never got a record. Both are the leader's soft state, empty on any
-     * other node, and nothing of it is written to RT.
+     * the leader's last failed attempt per agent. Working rows include waiting work with a
+     * nullable host, excluding cancellation tombstones. The separate complete placementSnapshot
+     * exposes the leader's original after rebuild, or the node's retained immutable copy while
+     * following, rebuilding or without a leader. Null means no complete copy is known. Inspection
+     * consumes no state, and the retained copy is not a recovered leader registry.
      *
      * @return array<string, mixed> Inspection snapshot payload
+     * @throws PeerTransportException When the leader snapshot metadata is invalid
      * @throws ClusterConfigurationException When enabled but node config is missing or invalid
      * @throws EnvException When a cluster env value cannot be read
      * @throws ClusterDisabledException When cluster mode is disabled
@@ -1114,6 +1119,7 @@ final class ClusterContext
             ClusterCommandConstants::FIELD_HAS_QUORUM => $leadership->hasQuorum(),
             ClusterCommandConstants::FIELD_NODES => $nodes,
             ClusterCommandConstants::FIELD_PLACEMENTS => $this->inspectPlacements(),
+            ClusterCommandConstants::FIELD_PLACEMENT_SNAPSHOT => $this->placement()?->placementSnapshot()?->toArray(),
             ClusterCommandConstants::FIELD_PLACEMENT_REFUSALS_SNAPSHOT => array_map(
                 static fn(PlacementRefusalSnapshot $snapshot): array => $snapshot->toArray(),
                 $this->placement()?->placementRefusals() ?? [],
@@ -1143,6 +1149,7 @@ final class ClusterContext
      * Empty when this node has no placement coordinator (off-cluster) or is not the
      * leader, since the placement view is leader-owned soft-state. A row carries the record's
      * diagnosis (HIL-447): null and an empty list unless the placement failed or is unplaced.
+     * Explicit cancellation tombstones stay in the registry but are not work to inspect here.
      *
      * @return list<array<string, mixed>> Placement rows
      */
@@ -1155,6 +1162,9 @@ final class ClusterContext
 
         $rows = [];
         foreach ($placement->registry()->all() as $record) {
+            if ($record->state === PlacementState::Stopped) {
+                continue;
+            }
             $rows[] = [
                 ClusterCommandConstants::FIELD_PLACEMENT_AGENT_TYPE => $record->agentType,
                 ClusterCommandConstants::FIELD_PLACEMENT_AGENT_INDEX => $record->agentIndex,

@@ -68,7 +68,8 @@ final class ClusterPlacementRestartTest extends TestCase
 
         $placement->onAgentStatus(self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
 
-        self::assertNull($placement->registry()->get('chat:7'));
+        self::assertSame(PlacementState::Unplaced, $placement->registry()->get('chat:7')?->state);
+        self::assertNull($placement->registry()->get('chat:7')?->nodeId);
         self::assertSame([['chat', '7', 'no capable node is available']], $sink->notPlaced);
     }
 
@@ -177,6 +178,10 @@ final class ClusterPlacementRestartTest extends TestCase
         ]);
         $sink = new RestartTestSink();
         $placement = new ClusterPlacement('leader', $mesh, new RestartTestExecutor(), restartSink: $sink);
+        $placement->onBecameLeader(1000.0);
+        $placement->onPlacementReport(self::HOST, new PeerPlacementReportDTO([]));
+        $placement->onPlacementReport(self::TARGET, new PeerPlacementReportDTO([]));
+        $placement->tick(1000.0);
         $placement->registry()->put(new PlacementRecord('chat', '7', self::HOST, PlacementState::Started));
 
         return [$placement, $mesh, $sink];

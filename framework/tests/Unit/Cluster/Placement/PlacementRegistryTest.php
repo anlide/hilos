@@ -76,6 +76,64 @@ final class PlacementRegistryTest extends TestCase
         $this->assertSame($revision + 1, $registry->revision());
     }
 
+    /** A null node is part of value equality, distinct from a last attempted node. */
+    public function testNullableNodesCompareByValueAndReviseOnlyWhenTheRecordChanges(): void
+    {
+        $registry = new PlacementRegistry();
+        $first = new PlacementRecord('worker', '7', null, PlacementState::Unplaced, 'no nodes', [PlacementRefusal::noOnlineNodes()]);
+        $same = new PlacementRecord('worker', '7', null, PlacementState::Unplaced, 'no nodes', [PlacementRefusal::noOnlineNodes()]);
+        $registry->put($first);
+        $revision = $registry->revision();
+
+        $this->assertTrue($first->sameAs($same));
+        $registry->put($same);
+        $this->assertSame($revision, $registry->revision());
+        $this->assertSame($first, $registry->get('worker:7'));
+
+        $lastAttempt = new PlacementRecord('worker', '7', 's1', PlacementState::Unplaced, 'no nodes', [PlacementRefusal::noOnlineNodes()]);
+        $this->assertFalse($first->sameAs($lastAttempt));
+        $registry->put($lastAttempt);
+        $this->assertSame($revision + 1, $registry->revision());
+        $this->assertFalse($first->sameAs($first->withState(PlacementState::Failed)));
+        $registry->put($first);
+        $this->assertSame($revision + 2, $registry->revision());
+        $this->assertCount(1, $registry->all());
+    }
+
+    /** State changes preserve absence of a node while dropping diagnosis on stop. */
+    public function testWithStatePreservesANullNodeAndKeepsOnlyFailureDiagnosis(): void
+    {
+        $refusals = [PlacementRefusal::noOnlineNodes()];
+        $failed = new PlacementRecord('worker', '7', null, PlacementState::Failed, 'no nodes', $refusals);
+
+        foreach ([PlacementState::Failed, PlacementState::Unplaced] as $state) {
+            $changed = $failed->withState($state);
+            $this->assertNull($changed->nodeId);
+            $this->assertSame($state, $changed->state);
+            $this->assertSame('no nodes', $changed->reason);
+            $this->assertSame($refusals, $changed->refusals);
+        }
+
+        $stopped = $failed->withState(PlacementState::Stopped);
+        $this->assertNull($stopped->nodeId);
+        $this->assertSame(PlacementState::Stopped, $stopped->state);
+        $this->assertNull($stopped->reason);
+        $this->assertSame([], $stopped->refusals);
+    }
+
+    /** Every state answers the same host question in both predicates. */
+    public function testOnlyPlacingAndStartedHaveAHost(): void
+    {
+        foreach ([PlacementState::Placing, PlacementState::Started] as $state) {
+            $this->assertTrue($state->hostsAgent());
+            $this->assertFalse($state->runsNowhere());
+        }
+        foreach ([PlacementState::Failed, PlacementState::Unplaced, PlacementState::Stopped, PlacementState::Refused] as $state) {
+            $this->assertFalse($state->hostsAgent());
+            $this->assertTrue($state->runsNowhere());
+        }
+    }
+
     public function testWithStateKeepsTheDiagnosisOnlyWhileNothingRuns(): void
     {
         $refusals = [PlacementRefusal::noDeclaredCapacity('s1')];
@@ -90,6 +148,34 @@ final class PlacementRegistryTest extends TestCase
             $this->assertNull($moved->reason, "{$state->value} carries no reason");
             $this->assertSame([], $moved->refusals, "{$state->value} carries no refusals");
         }
+    }
+
+    public function testOnlyReleasingLiveReservationsChangesTheReleaseRevision(): void
+    {
+        $registry = new PlacementRegistry();
+        $registry->put(new PlacementRecord('worker', '1', 's1', PlacementState::Placing));
+        $this->assertSame(0, $registry->capacityReleaseRevision());
+        $registry->put(new PlacementRecord('worker', '1', 's1', PlacementState::Started));
+        $this->assertSame(0, $registry->capacityReleaseRevision());
+        $registry->put(new PlacementRecord('worker', '1', 's2', PlacementState::Started));
+        $this->assertSame(1, $registry->capacityReleaseRevision(), 'Moving frees the old host');
+        $registry->put(new PlacementRecord('worker', '1', 's2', PlacementState::Failed, 'no worker'));
+        $this->assertSame(2, $registry->capacityReleaseRevision());
+        $registry->put(new PlacementRecord('worker', '1', 's2', PlacementState::Failed, 'another reason'));
+        $registry->put(new PlacementRecord('worker', '1', null, PlacementState::Unplaced, 'no fit'));
+        $registry->forget('worker:1');
+        $this->assertSame(2, $registry->capacityReleaseRevision(), 'Diagnosis and non-host removal release nothing');
+        $registry->put(new PlacementRecord('worker', '2', 's1', PlacementState::Started));
+        $registry->forget('worker:2');
+        $this->assertSame(3, $registry->capacityReleaseRevision());
+        $registry->put(new PlacementRecord('worker', '3', null, PlacementState::Unplaced, 'no fit'));
+        $registry->clear();
+        $this->assertSame(3, $registry->capacityReleaseRevision());
+        $registry->put(new PlacementRecord('worker', '4', 's1', PlacementState::Placing));
+        $registry->clear();
+        $this->assertSame(4, $registry->capacityReleaseRevision());
+        $registry->clear();
+        $this->assertSame(4, $registry->capacityReleaseRevision());
     }
 
     /**

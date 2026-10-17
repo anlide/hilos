@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Placement;
 
+use Hilos\Cluster\Consensus\ConsensusInspection;
+use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\Exception\PlacementCapabilityException;
 use Hilos\Cluster\PlacementVerdictSink;
 use Hilos\Cluster\WorkerPlacement;
@@ -47,8 +49,8 @@ use Throwable;
  *   other node id sends a {@see PeerPlaceAgentDTO} over the mesh. Every placement passes the
  *   hard gate first — the target must advertise the required capability tags, declare a
  *   capacity, and have free room for the agent's cost — before anything is sent. Outcomes are
- *   tracked in the soft-state {@see PlacementRegistry}, which a fresh leader rebuilds from node reports on
- *   {@see onBecameLeader()}.
+ *   tracked in the soft-state {@see PlacementRegistry}, which a fresh leader rebuilds from
+ *   node reports and one retained complete snapshot on {@see onBecameLeader()}.
  * - Node side: an inbound place/stop frame runs the local execute/revoke and replies with
  *   a {@see PeerAgentStatusDTO}; a rebuild query is answered from the node's own hosted
  *   set. This is what a data-plane slave does with the placements a leader hands it. A place
@@ -87,7 +89,7 @@ use Throwable;
  * answered to (HIL-1217), and a node whose leader tells it that it stopped leading (HIL-1287),
  * self-fence those agents after `CLUSTER_SLAVE_WORK_GRACE_MS` (held at or below the failover
  * grace, so the old copy stops before the leader starts a new one). A fresh leader places
- * nothing it has no record of until its rebuild is settled — every node has reported or been
+ * nothing until its rebuild and snapshot inheritance settle — every node has reported or been
  * away for the failover grace — so a copy still running on a node it has not heard from is
  * adopted rather than started twice (HIL-1217). On rejoin a node reports what it still hosts
  * ({@see onPeerHandshaked()}) and the leader reconciles against its view (leader = truth),
@@ -99,12 +101,22 @@ use Throwable;
  * agent blind, and a status arriving from a node the record no longer names is refused instead
  * of written ({@see onAgentStatus()}).
  *
- * Why work is not running is kept in two shapes (HIL-447), both the leader's soft state and both
- * gone with the term. A failed or unplaced record carries the reason and the gate's refusals per
+ * Why work is not running is kept in two shapes (HIL-447), both the leader's soft state. The
+ * original clears with the term; full snapshots retain and recover waiting diagnoses. A waiting record carries the gate's refusals per
  * node ({@see PlacementRefusal}); and every agent keeps its last failed attempt as a
  * {@see PlacementRefusalSnapshot} ({@see placementRefusals()}), because a new agent no node could
- * take never gets a record at all. The refusals travel between nodes inside the failed status and
+ * take has an Unplaced record with no host. Failed and Unplaced share the leader's bounded retry
+ * pass: one attempt per tick, normally at least five seconds apart for each agent. The refusals
+ * travel between nodes inside the failed status and
  * the not-placed verdict, so the leader holds the node's own words, never a parse of its message.
+ * Explicit cancellation stays in the registry as a Stopped tombstone, outside the derived retry
+ * schedule and the working placements inspection. A real host must confirm its stop before newer
+ * explicit demand is released. Ordinary idle stops still forget the record. Full term/revision
+ * snapshots carry waiting intent and tombstones beside the address map. Followers retain confirmed
+ * immutable copies, and a departing leader retains its original before clearing it. After the
+ * rebuild/self-fence barrier, the freshest available complete copy restores missing intent and
+ * the local retry schedule. These are memory replicas, not a quorum-committed or durable log:
+ * an undelivered last edit or the loss of every copy can lose intent.
  */
 final class ClusterPlacement implements WorkerPlacement
 {
@@ -119,6 +131,17 @@ final class ClusterPlacement implements WorkerPlacement
 
     /** @var float Seconds one agent's placement ask silences the next one for */
     private const float PLACEMENT_ASK_INTERVAL_SEC = 5.0;
+
+    /** @var float Minimum seconds between ordinary attempts of one waiting agent */
+    private const float PLACEMENT_RETRY_INTERVAL_SEC = 5.0;
+
+    private const string RETRY_PERIODIC = 'periodic';
+    private const string RETRY_NODE_ONLINE = 'node_online';
+    private const string RETRY_CAPACITY_RELEASED = 'capacity_released';
+    private const string RETRY_REQUEST = 'request';
+    private const string RETRY_NEW_LEADER = 'new_leader';
+
+    private const string PLACEMENT_CANCELED_REASON = 'placement canceled';
 
     /** @var string Id of the node this coordinator runs on */
     private string $selfNodeId;
@@ -169,14 +192,14 @@ final class ClusterPlacement implements WorkerPlacement
     /**
      * The nodes a fresh leader's rebuild still waits for, by node id: null while it waits for the
      * node's placement report, a microtime while it waits out the failover grace of a node that
-     * went away. Empty when nothing is awaited, which is when the rebuild is settled and new work
-     * may be placed (HIL-1217).
+     * went away. An empty set permits settlement on tick; rebuildPending still holds new work
+     * until the winning complete snapshot has been imported (HIL-446).
      *
      * @var array<string, ?float>
      */
     private array $rebuildAwaited = [];
 
-    /** @var bool True from a term's first awaited node until the rebuild of that term settles */
+    /** @var bool True while reports, isolation grace or retained intent still await settlement */
     private bool $rebuildPending = false;
 
     /**
@@ -195,6 +218,12 @@ final class ClusterPlacement implements WorkerPlacement
      * @var array<string, array{agentType: string, agentIndex: ?string}>
      */
     private array $heldOnDemand = [];
+
+    /** @var array<string, PlacementRecord> Explicit named placements held until inheritance settles */
+    private array $heldNamedPlacements = [];
+
+    /** @var array<string, ?string> New explicit demand waiting for stop-ack; null lets policy choose */
+    private array $afterStopTargets = [];
 
     /**
      * Deadline per agent id awaiting a placement acknowledgement, with the node it was armed
@@ -216,8 +245,20 @@ final class ClusterPlacement implements WorkerPlacement
     /** @var array<string, string> Hosting node id per agent id, as the leader last published it; empty on the leader */
     private array $placementView = [];
 
-    /** @var ?string Fingerprint of the view this leader last published, or null when it has published none */
-    private ?string $publishedViewFingerprint = null;
+    /** @var ?int Registry revision this leader last published; null before its first complete publication */
+    private ?int $publishedViewRevision = null;
+
+    /** @var int Consensus term of this node's current leader-owned registry */
+    private int $leaderTerm = 0;
+
+    /** @var int Term-local offset keeping a restarted leader above its own previously accepted revision */
+    private int $snapshotRevisionOffset = 0;
+
+    /** @var ?PlacementSnapshot Last complete original or confirmed mirror, retained across leadership loss */
+    private ?PlacementSnapshot $retainedSnapshot = null;
+
+    /** @var ?PeerPlacementViewDTO Latest view awaiting confirmation by consensus or the slave's placing leader */
+    private ?PeerPlacementViewDTO $candidateView = null;
 
     /**
      * Node id of the leader this node answers to: the one that placed its hosted agents or took
@@ -260,12 +301,24 @@ final class ClusterPlacement implements WorkerPlacement
     /**
      * The last failed placement attempt of each agent, by agent id (HIL-447): one per agent,
      * replaced by its next failure and dropped by an accepted attempt, a start or a re-adoption,
-     * an explicit stop, and a change of leadership. A diagnosis for inspection, not a queue:
-     * nothing is retried from it, and a refused new agent it names is not retried at all (HIL-446).
+     * an explicit stop, and a change of leadership. Inheritance restores waiting diagnoses from
+     * the winning snapshot. This map serves inspection and negative request verdicts.
      *
      * @var array<string, PlacementRefusalSnapshot>
      */
     private array $lastPlacementRefusals = [];
+
+    /** @var array<string, float> Leader-local retry deadlines in round-robin order, derived from the registry */
+    private array $retryAt = [];
+
+    /** @var array<string, string> Event that made a waiting record eligible */
+    private array $retryTriggers = [];
+
+    /** @var int Last observed release of a live registry reservation */
+    private int $capacityReleaseRevision = 0;
+
+    /** @var ?float Supplied tick time for all work inside that pass; null outside a tick */
+    private ?float $tickNow = null;
 
     /**
      * @param string $selfNodeId Id of the node this coordinator runs on
@@ -309,6 +362,27 @@ final class ClusterPlacement implements WorkerPlacement
     public function registry(): PlacementRegistry
     {
         return $this->registry;
+    }
+
+    /**
+     * Reads the complete original after rebuild, or the retained copy while following or rebuilding.
+     * Reading neither consumes a mirror nor makes an incomplete rebuild authoritative.
+     *
+     * @return ?PlacementSnapshot Complete registry, or null before any complete snapshot is known
+     * @throws PeerTransportException When the leader's snapshot metadata is invalid
+     */
+    public function placementSnapshot(): ?PlacementSnapshot
+    {
+        if (!$this->isLeader || $this->rebuildPending) {
+            return $this->retainedSnapshot;
+        }
+
+        return new PlacementSnapshot(
+            $this->selfNodeId,
+            $this->leaderTerm,
+            $this->registry->revision() + $this->snapshotRevisionOffset,
+            $this->registry->all(),
+        );
     }
 
     /**
@@ -397,10 +471,11 @@ final class ClusterPlacement implements WorkerPlacement
      * and records the placement as pending until the node's status reply lands. To let the
      * policy choose the node instead of naming one, use {@see placeAgentOnBestNode()}.
      *
-     * A refusal of the gate is kept as the agent's last refusal and leaves its record as it was
-     * (HIL-447): a move the target refused does not turn a running placement into a failure. An
+     * A refusal of the gate is kept as the agent's last refusal. New work gets an Unplaced
+     * record with no host; a move the target refused leaves its live record as it was (HIL-447). An
      * accepted attempt drops the last refusal and calls off the failover the agent's loss armed;
      * one the mesh could not carry is a failure of its own.
+     * During rebuild the named intent is held until import, and a confirmed hosted copy is reused.
      *
      * @param string $agentType Agent type to launch
      * @param ?string $agentIndex Agent index, or null for a singleton agent
@@ -414,24 +489,61 @@ final class ClusterPlacement implements WorkerPlacement
      */
     public function placeAgentOnNode(string $agentType, ?string $agentIndex, string $nodeId): void
     {
-        $this->requirePlacementFit($agentType, $agentIndex, $nodeId);
+        $agentId = $this->agentId($agentType, $agentIndex);
+        if ($this->rebuildPending) {
+            $this->heldNamedPlacements[$agentId] = new PlacementRecord($agentType, $agentIndex, $nodeId, PlacementState::Placing);
+            return;
+        }
+        $previous = $this->registry->get($agentId);
+        if ($previous?->state === PlacementState::Stopped) {
+            if ($previous->nodeId !== null) {
+                $this->afterStopTargets[$agentId] = $nodeId;
+                return;
+            }
+            $this->registry->forget($agentId);
+            $previous = null;
+        }
+        try {
+            $this->requirePlacementFit($agentType, $agentIndex, $nodeId);
+        } catch (PlacementCapabilityException $e) {
+            throw $e;
+        } catch (Throwable $e) {
+            $failure = $this->failedAttempt($agentType, $agentIndex, $e);
+            if ($previous !== null && $previous->state->hostsAgent()) {
+                $this->rememberRefusal($failure);
+            } else {
+                $this->recordFailure(null, $failure);
+            }
+            throw $e;
+        }
 
         if ($nodeId === $this->selfNodeId) {
             $this->placeLocally($agentType, $agentIndex);
             return;
         }
 
-        $agentId = $this->agentId($agentType, $agentIndex);
-        $delivered = $this->mesh->sendToNode($nodeId, new PeerPlaceAgentDTO($agentType, $agentIndex));
+        try {
+            $delivered = $this->mesh->sendToNode($nodeId, new PeerPlaceAgentDTO($agentType, $agentIndex));
+        } catch (Throwable $e) {
+            $failure = $this->failedAttempt($agentType, $agentIndex, $e);
+            if ($previous !== null && $previous->state->hostsAgent()) {
+                $this->rememberRefusal($failure);
+            } else {
+                $this->recordFailure($nodeId, $failure);
+            }
+            throw $e;
+        }
         if ($delivered) {
             $this->registry->put(new PlacementRecord($agentType, $agentIndex, $nodeId, PlacementState::Placing));
             unset($this->lastPlacementRefusals[$agentId]);
             $this->callOffFailoverOf($agentId, $nodeId);
         } else {
-            $this->recordFailure(
-                $nodeId,
-                new PlacementRefusalSnapshot($agentType, $agentIndex, "node '{$nodeId}' is not linked", []),
-            );
+            $failure = new PlacementRefusalSnapshot($agentType, $agentIndex, "node '{$nodeId}' is not linked", []);
+            if ($previous !== null && $previous->state->hostsAgent()) {
+                $this->rememberRefusal($failure);
+            } else {
+                $this->recordFailure($nodeId, $failure);
+            }
         }
         // A re-placement routinely lands on the very node the agent left — best-fit reads the
         // emptied node as the least loaded one — so the fresh wait would inherit the old one's
@@ -447,18 +559,20 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * Reads the agent's required tags and resource cost, asks the {@see PlacementPolicy} to
      * rank the online nodes by fit, and places on the winner via {@see placeAgentOnNode()}.
-     * When no online node clears the hard gate nothing is placed and null is returned, so the
-     * caller can retry on the next capable join rather than fail. A heavy worker thus lands where
+     * When no online node clears the hard gate, null is returned and one Unplaced record keeps
+     * the work and its diagnosis for the leader's shared retry. A heavy worker thus lands where
      * it is the smaller share of the free capacity, a free one wherever fewest agents run.
      *
-     * A fresh leader whose rebuild is not settled yet places nothing it has no record of, and
+     * A fresh leader whose rebuild is not settled yet places nothing, and
      * answers null as if no node were a fit (HIL-1217): such an agent may still run on a node that
      * has not reported, and the policy pass, the fleet supervisor or a project's pool asks again
-     * on its next tick. An agent the leader does know - a record in any state - is not held.
+     * on its next tick. Explicit demand for a canceled agent waits for its old host's stop-ack;
+     * a confirmed tombstone is removed by this new intent. Automatic callers declare only absent
+     * records, so their periodic passes do not undo cancellation.
      *
      * @param string $agentType Agent type to launch
      * @param ?string $agentIndex Agent index, or null for a singleton agent
-     * @return ?string Chosen node id the agent was placed on, or null when no node is a fit or the rebuild holds it
+     * @return ?string Chosen node id, or null when no node fits, rebuild holds it or stop-ack is pending
      * @throws PlacementCapabilityException When the chosen node no longer clears the hard gate
      * @throws LogicException When the agent, or one already placed, declares a negative cost or the reserved slot
      * @throws AgentDaemonCreationFailedException When a local placement's daemon cannot be built
@@ -468,7 +582,19 @@ final class ClusterPlacement implements WorkerPlacement
      */
     public function placeAgentOnBestNode(string $agentType, ?string $agentIndex): ?string
     {
-        if ($this->rebuildHolds($agentType, $agentIndex)) {
+        if ($this->rebuildHolds()) {
+            return null;
+        }
+        $agentId = $this->agentId($agentType, $agentIndex);
+        $record = $this->registry->get($agentId);
+        if ($record?->state === PlacementState::Stopped) {
+            if ($record->nodeId !== null) {
+                $this->afterStopTargets[$agentId] = null;
+                return null;
+            }
+            $this->registry->forget($agentId);
+        }
+        if ($this->registry->get($this->agentId($agentType, $agentIndex))?->state === PlacementState::Refused) {
             return null;
         }
 
@@ -478,15 +604,13 @@ final class ClusterPlacement implements WorkerPlacement
     /**
      * Places an agent on the best-fit node, past the rebuild a fresh leader may still wait for.
      *
-     * The body of {@see placeAgentOnBestNode()}, called on its own where the leader knew the agent
-     * a line earlier: {@see reconcileMissingAgents()} forgets the record of an agent its node no
-     * longer hosts and places it again at once, and holding it there would leave it unplaced
-     * until that node's next report.
+     * The body of {@see placeAgentOnBestNode()}, also used by reconciliation after settlement:
+     * a node no longer hosts a known agent, so its emptied reservation is released before choosing.
      *
      * When no node is a fit, why is kept as the agent's last refusal (HIL-447): every online
      * node's own refusal, judged on the same set and at the same cost the policy saw
-     * ({@see noFittingNode()}). Nothing else is recorded, so a new agent no node takes still gets
-     * no record and is not retried.
+     * ({@see noFittingNode()}). New work gets an Unplaced record with null nodeId; a failure before
+     * choosing a host gets Failed with null nodeId. A live move keeps its working record.
      *
      * @param string $agentType Agent type to launch
      * @param ?string $agentIndex Agent index, or null for a singleton agent
@@ -500,19 +624,34 @@ final class ClusterPlacement implements WorkerPlacement
      */
     private function placeOnBestFitNode(string $agentType, ?string $agentIndex): ?string
     {
-        $required = $this->executor->requiredCapabilities($agentType, $agentIndex);
-        $cost = $this->placementCost($agentType, $agentIndex);
-        $target = $this->pickBestNode($agentType, $agentIndex, $required, $cost, '');
-        if ($target === null) {
-            $refusal = $this->noFittingNode($agentType, $agentIndex, $required, $cost, '');
-            $this->rememberRefusal($refusal);
-            Logger::info("No capable node to place agent '{$this->agentId($agentType, $agentIndex)}': {$refusal->reason}");
-            return null;
+        $agentId = $this->agentId($agentType, $agentIndex);
+        $previous = $this->registry->get($agentId);
+        $target = null;
+        try {
+            $required = $this->executor->requiredCapabilities($agentType, $agentIndex);
+            $cost = $this->placementCost($agentType, $agentIndex);
+            $target = $this->pickBestNode($agentType, $agentIndex, $required, $cost, '');
+            if ($target === null) {
+                $failure = $this->noFittingNode($agentType, $agentIndex, $required, $cost, '');
+                if ($previous !== null && $previous->state->hostsAgent()) {
+                    $this->rememberRefusal($failure);
+                } else {
+                    $this->writeWaiting($previous?->nodeId, PlacementState::Unplaced, $failure);
+                }
+                return null;
+            }
+
+            $this->placeAgentOnNode($agentType, $agentIndex, $target);
+
+            return $target;
+        } catch (Throwable $e) {
+            $current = $this->registry->get($agentId);
+            // The named-node path may already have recorded a more precise failure on its target.
+            if ($target === null && $current === $previous && !($previous?->state->hostsAgent() ?? false)) {
+                $this->recordFailure(null, $this->failedAttempt($agentType, $agentIndex, $e));
+            }
+            throw $e;
         }
-
-        $this->placeAgentOnNode($agentType, $agentIndex, $target);
-
-        return $target;
     }
 
     /**
@@ -564,7 +703,15 @@ final class ClusterPlacement implements WorkerPlacement
      */
     public function requirePlacement(string $agentType, ?string $agentIndex): void
     {
-        $now = microtime(true);
+        $now = $this->placementTime();
+        $agentId = $this->agentId($agentType, $agentIndex);
+        if ($this->isLeader) {
+            $this->rememberPlacementAsker($agentId, $this->selfNodeId);
+            $this->placeOnDemand($agentType, $agentIndex);
+
+            return;
+        }
+
         // Expiry is swept here rather than on a timer, which keeps the map to the asks of the
         // last few seconds: an instance agent per user would otherwise leave a row per user id
         // this node ever addressed.
@@ -574,19 +721,11 @@ final class ClusterPlacement implements WorkerPlacement
             }
         }
 
-        $agentId = $this->agentId($agentType, $agentIndex);
         if (isset($this->placementAsks[$agentId])) {
             return;
         }
 
         $this->placementAsks[$agentId] = $now + self::PLACEMENT_ASK_INTERVAL_SEC;
-
-        if ($this->isLeader) {
-            $this->rememberPlacementAsker($agentId, $this->selfNodeId);
-            $this->placeOnDemand($agentType, $agentIndex);
-
-            return;
-        }
 
         // Slaves have no consensus coordinator. Like locate(), they follow the leader that
         // placed their work; a master's real consensus verdict must never fall back to it.
@@ -604,23 +743,48 @@ final class ClusterPlacement implements WorkerPlacement
     }
 
     /**
-     * Stops a placed agent on a named node.
-     *
-     * A stop at this node runs the local revoke synchronously; any other node id sends a
-     * stop frame. Either way the agent is dropped from the placement view, its last refusal with
-     * it. A move or rebalance is a stop followed by a place; the rebalance policy is HIL-182 /
-     * HIL-183.
+     * Cancels the existing intent and answers its waiters before revoking a real host.
+     * A Stopped tombstone survives the acknowledgement; new explicit demand waits for it.
+     * Null cancels work with no addressee without sending a stop frame.
      *
      * @param string $agentType Agent type to stop
      * @param ?string $agentIndex Agent index, or null for a singleton agent
-     * @param string $nodeId Id of the node the agent is placed on
+     * @param ?string $nodeId Host to revoke, or null for work that runs nowhere
      */
-    public function stopAgentOnNode(string $agentType, ?string $agentIndex, string $nodeId): void
+    public function stopAgentOnNode(string $agentType, ?string $agentIndex, ?string $nodeId): void
     {
         $agentId = $this->agentId($agentType, $agentIndex);
-        $this->revokeOnNode($agentType, $agentIndex, $nodeId);
-        $this->registry->forget($agentId);
+        $existing = $this->registry->get($agentId);
+        // Repeating a cancellation cannot acknowledge a stop that is still in flight.
+        if ($existing?->state === PlacementState::Stopped && $existing->nodeId !== null) {
+            $nodeId = $existing->nodeId;
+        }
+        if ($existing?->state !== PlacementState::Refused) {
+            $this->registry->put(new PlacementRecord($agentType, $agentIndex, $nodeId, PlacementState::Stopped));
+        }
+        $restarting = isset($this->restartsElsewhere[$agentId]) || isset($this->restartsInPlace[$agentId]);
         unset($this->lastPlacementRefusals[$agentId]);
+        unset($this->retryAt[$agentId], $this->retryTriggers[$agentId]);
+        unset($this->placementAsks[$agentId], $this->heldOnDemand[$agentId], $this->afterStopTargets[$agentId]);
+        unset($this->heldNamedPlacements[$agentId]);
+        unset($this->placementAckDeadlines[$agentId], $this->failoverDeadlines[$agentId]);
+        unset($this->restartsElsewhere[$agentId], $this->restartsInPlace[$agentId]);
+        unset($this->deferredPlacementAnswers[$agentId]);
+        Logger::info("Placement canceled: '{$agentId}'");
+        $this->answerPlacementAskers(
+            $agentId,
+            PeerPlacementVerdictDTO::notPlaced($agentType, $agentIndex, PlacementState::Failed, self::PLACEMENT_CANCELED_REASON),
+        );
+        if ($restarting) {
+            $this->restartSink->onRestartNotPlaced($agentType, $agentIndex, self::PLACEMENT_CANCELED_REASON);
+        }
+        if ($nodeId === null) {
+            return;
+        }
+        $this->revokeOnNode($agentType, $agentIndex, $nodeId);
+        if ($nodeId === $this->selfNodeId) {
+            $this->confirmCanceledStop($agentId, $nodeId);
+        }
     }
 
     /**
@@ -696,11 +860,9 @@ final class ClusterPlacement implements WorkerPlacement
     /**
      * Stops an agent whose claim over an RT collection lost, and never puts it back (HIL-696).
      *
-     * {@see stopAgentOnNode()} with the opposite ending, and the ending is the whole point: a
-     * forgotten placement is put back by the very next reconciliation pass, so an agent stopped
-     * for a two-owner split would come up again seconds later — on the same node or another one,
-     * moving the split rather than ending it. The record stays behind in {@see
-     * PlacementState::Refused} so every path that could re-place it can see why it must not.
+     * Unlike an explicit cancellation, a refusal cannot be lifted by new placement demand: the
+     * configuration must be fixed first. The Refused record keeps reconciliation and the retry
+     * queue from moving the same two-owner split onto another node.
      *
      * The stop itself is the ordinary revoke, over the frame the leader already uses to take a
      * placement back. Nothing new brings an agent down.
@@ -718,6 +880,8 @@ final class ClusterPlacement implements WorkerPlacement
     {
         $this->revokeOnNode($agentType, $agentIndex, $nodeId);
         $this->registry->put(new PlacementRecord($agentType, $agentIndex, $nodeId, PlacementState::Refused));
+        $agentId = $this->agentId($agentType, $agentIndex);
+        unset($this->retryAt[$agentId], $this->retryTriggers[$agentId]);
     }
 
     /**
@@ -783,8 +947,13 @@ final class ClusterPlacement implements WorkerPlacement
         unset($this->hosted[$agentId]);
 
         if ($this->isLeader) {
+            if ($this->registry->get($agentId)?->state === PlacementState::Stopped) {
+                // A synchronous revoke callback must leave explicit cancellation in place.
+                return;
+            }
             $this->registry->forget($agentId);
             unset($this->lastPlacementRefusals[$agentId]);
+            unset($this->retryAt[$agentId], $this->retryTriggers[$agentId]);
 
             return;
         }
@@ -801,7 +970,8 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * The start report is the fact the wait was sitting on: the placing leader is told started, or
      * a placement the leader made on itself is marked Started. A start of an agent this node did
-     * not defer is not news here.
+     * not defer is not news here. After leadership loss only the hosted fact survives; the current
+     * placing leader, when known, receives it without this node writing the original.
      *
      * @param string $agentType Agent type that started
      * @param ?string $agentIndex Agent index, or null for a singleton agent
@@ -809,6 +979,10 @@ final class ClusterPlacement implements WorkerPlacement
     public function noteAgentStarted(string $agentType, ?string $agentIndex): void
     {
         $agentId = $this->agentId($agentType, $agentIndex);
+        if ($this->isLeader && $this->registry->get($agentId)?->state === PlacementState::Stopped) {
+            $this->revokeOnNode($agentType, $agentIndex, $this->selfNodeId);
+            return;
+        }
         $restart = $this->restartsElsewhere[$agentId] ?? null;
         $restartHere = $restart !== null && $restart['placing'] && $restart['target'] === $this->selfNodeId;
         $deferred = $this->deferredPlacementAnswers[$agentId] ?? null;
@@ -821,7 +995,7 @@ final class ClusterPlacement implements WorkerPlacement
         }
 
         unset($this->deferredPlacementAnswers[$agentId]);
-        $nodeId = $deferred['nodeId'];
+        $nodeId = $deferred['nodeId'] ?? ($this->isLeader ? null : $this->placingLeaderId);
         if ($nodeId !== null) {
             $workerId = $this->executor->placedWorkerId($agentType, $agentIndex);
             if ($workerId !== null) {
@@ -833,7 +1007,11 @@ final class ClusterPlacement implements WorkerPlacement
 
         $record = new PlacementRecord($agentType, $agentIndex, $this->selfNodeId, PlacementState::Started);
         $this->hosted[$agentId] = $record;
+        if (!$this->isLeader) {
+            return;
+        }
         $this->registry->put($record);
+        $this->placementStarted($agentId, $this->selfNodeId);
         unset($this->lastPlacementRefusals[$agentId]);
         unset($this->placementVerdictWaiters[$agentId]);
         if ($restartHere) {
@@ -850,6 +1028,8 @@ final class ClusterPlacement implements WorkerPlacement
      * or a placement the leader made on itself is marked Failed and the nodes that asked are
      * answered. A failure of an agent this node did not defer is not news here. It is not the
      * gate's: the record, the last refusal and the answers carry the reason with no refusals.
+     * After leadership loss the current placing leader receives the fact, when known; no original,
+     * diagnosis or retry is written on this follower.
      *
      * @param string $agentType Agent type whose start failed
      * @param ?string $agentIndex Agent index, or null for a singleton agent
@@ -858,11 +1038,16 @@ final class ClusterPlacement implements WorkerPlacement
     public function noteAgentStartFailed(string $agentType, ?string $agentIndex, string $reason): void
     {
         $agentId = $this->agentId($agentType, $agentIndex);
+        if ($this->isLeader && $this->registry->get($agentId)?->state === PlacementState::Stopped) {
+            return;
+        }
         $restart = $this->restartsElsewhere[$agentId] ?? null;
         if ($restart !== null && $restart['placing'] && $restart['target'] === $this->selfNodeId) {
             unset($this->restartsElsewhere[$agentId]);
             unset($this->hosted[$agentId]);
-            $this->recordFailure($this->selfNodeId, new PlacementRefusalSnapshot($agentType, $agentIndex, $reason, []));
+            if ($this->isLeader) {
+                $this->recordFailure($this->selfNodeId, new PlacementRefusalSnapshot($agentType, $agentIndex, $reason, []));
+            }
             $this->restartSink->onRestartNotPlaced($agentType, $agentIndex, $reason);
         }
         $deferred = $this->deferredPlacementAnswers[$agentId] ?? null;
@@ -872,10 +1057,13 @@ final class ClusterPlacement implements WorkerPlacement
 
         unset($this->deferredPlacementAnswers[$agentId]);
         Logger::warning("Placement of '{$agentId}' failed: {$reason}");
-        $nodeId = $deferred['nodeId'];
+        $nodeId = $deferred['nodeId'] ?? ($this->isLeader ? null : $this->placingLeaderId);
         if ($nodeId !== null) {
             $this->mesh->sendToNode($nodeId, PeerAgentStatusDTO::failed($agentType, $agentIndex, $reason));
 
+            return;
+        }
+        if (!$this->isLeader) {
             return;
         }
 
@@ -1005,8 +1193,14 @@ final class ClusterPlacement implements WorkerPlacement
     /**
      * Leader side: folds a node's placement status into the placement view.
      *
-     * A stopped status forgets the placement; a started or failed status records it
-     * against the reporting node so the view reflects where each agent actually landed.
+     * A stopped status from an online host forgets the placement. An explicit cancellation keeps
+     * its Stopped tombstone and clears only the acknowledged host; newer demand is released then.
+     * Late starts of canceled work repeat the stop, and late failures cannot restore its intent.
+     * Late stops cannot cancel Failed/Unplaced waiting intent. Followers ignore leader-side outcomes.
+     *
+     * Stops after a host's departure preserve its live placement until failover or a returning
+     * host's report reconciles it. Graceful shutdown reports the workers' stops after node_leaving;
+     * those stops end the hosted instances, not the work that must survive the node's restart.
      *
      * A failed status is recorded with its error and the node's refusals, kept as the agent's last
      * refusal, and handed on unchanged to the nodes waiting for a verdict (HIL-447); a started one
@@ -1024,9 +1218,24 @@ final class ClusterPlacement implements WorkerPlacement
      */
     public function onAgentStatus(string $fromNodeId, PeerAgentStatusDTO $frame): void
     {
+        if (!$this->isLeader) {
+            return;
+        }
+
         $agentId = $this->agentId($frame->agentType, $frame->agentIndex);
         $existing = $this->registry->get($agentId);
         $restart = $this->restartsElsewhere[$agentId] ?? null;
+        if ($existing?->state === PlacementState::Stopped) {
+            if ($frame->state === PlacementState::Stopped) {
+                $this->confirmCanceledStop($agentId, $fromNodeId);
+            } elseif ($frame->state === PlacementState::Started) {
+                $this->revokeOnNode($frame->agentType, $frame->agentIndex, $fromNodeId);
+                if ($fromNodeId === $this->selfNodeId) {
+                    $this->confirmCanceledStop($agentId, $fromNodeId);
+                }
+            }
+            return;
+        }
         if ($existing?->state === PlacementState::Refused) {
             // A truth-source refusal must not be undone by the stop of a restart in flight.
             if ($restart !== null) {
@@ -1076,9 +1285,9 @@ final class ClusterPlacement implements WorkerPlacement
                 $frame->error ?? 'the old host failed before stopping',
             );
         }
-        // Read exactly as in onPlacementReport(), runsNowhere() and all: an Unplaced record is
-        // meant to be adopted by whichever node reports the agent up.
-        if ($existing !== null && $existing->nodeId !== $fromNodeId && !$existing->state->runsNowhere()) {
+        // As in onPlacementReport(), only a current host can make another node's status stale.
+        if ($existing !== null && $existing->nodeId !== null
+            && $existing->state->hostsAgent() && $existing->nodeId !== $fromNodeId) {
             if ($frame->state === PlacementState::Started) {
                 $this->mesh->sendToNode($fromNodeId, new PeerStopAgentDTO($frame->agentType, $frame->agentIndex));
                 Logger::info("Telling node '{$fromNodeId}' to stop '{$agentId}': the leader places it on '{$existing->nodeId}'");
@@ -1088,9 +1297,17 @@ final class ClusterPlacement implements WorkerPlacement
         }
 
         if ($frame->state === PlacementState::Stopped) {
+            if ($existing !== null && $this->isWaiting($existing)) {
+                return;
+            }
+            if ($existing !== null && $existing->state->hostsAgent() && isset($this->offlineSince[$fromNodeId])) {
+                Logger::info("Placement retained: '{$agentId}' stopped on departed node '{$fromNodeId}'; awaiting host reconciliation");
+                return;
+            }
             $this->registry->forget($agentId);
             unset($this->lastPlacementRefusals[$agentId]);
             unset($this->placementVerdictWaiters[$agentId]);
+            unset($this->retryAt[$agentId], $this->retryTriggers[$agentId]);
             return;
         }
 
@@ -1105,6 +1322,7 @@ final class ClusterPlacement implements WorkerPlacement
         } else {
             $this->registry->put(new PlacementRecord($frame->agentType, $frame->agentIndex, $fromNodeId, $frame->state));
             if ($frame->state === PlacementState::Started) {
+                $this->placementStarted($agentId, $fromNodeId);
                 unset($this->lastPlacementRefusals[$agentId]);
             }
         }
@@ -1149,6 +1367,7 @@ final class ClusterPlacement implements WorkerPlacement
      * answering to its asker, because it owns its own placement view.
      *
      * @param string $fromNodeId Id of the leader node that asked
+     * @throws PeerTransportException When the leader's snapshot metadata is invalid
      */
     public function onPlacementQuery(string $fromNodeId): void
     {
@@ -1156,7 +1375,7 @@ final class ClusterPlacement implements WorkerPlacement
             $this->answerTo($fromNodeId);
         }
 
-        $this->mesh->sendToNode($fromNodeId, new PeerPlacementReportDTO($this->hostedEntries()));
+        $this->mesh->sendToNode($fromNodeId, new PeerPlacementReportDTO($this->hostedEntries(), $this->placementSnapshot()));
     }
 
     /**
@@ -1236,6 +1455,8 @@ final class ClusterPlacement implements WorkerPlacement
      * Any report, whichever of those sources sent it, also accounts for the node in a rebuild
      * the leader still waits on (HIL-1217): from here on what the node runs is in the registry.
      * An agent it adopts is running, so its last refusal is dropped (HIL-447).
+     * During rebuild the independent snapshot competes as one complete donor by term and by
+     * revision within the same leader/term. Records from different snapshots are never merged.
      *
      * @param string $fromNodeId Id of the node that reported
      * @param PeerPlacementReportDTO $frame Received placement report
@@ -1248,9 +1469,22 @@ final class ClusterPlacement implements WorkerPlacement
 
         unset($this->rebuildAwaited[$fromNodeId]);
 
+        if ($this->rebuildPending && $frame->placementSnapshot !== null) {
+            $snapshot = $frame->placementSnapshot;
+            if ($snapshot->term > $this->leaderTerm) {
+                Logger::warning("Ignoring placement donor from future term {$snapshot->term} while leading term {$this->leaderTerm}");
+            } elseif ($this->snapshotAdvances($snapshot, $this->retainedSnapshot)) {
+                $this->retainedSnapshot = $snapshot;
+            }
+        }
+
         foreach ($frame->agents as $entry) {
             $agentId = $this->agentId($entry->agentType, $entry->agentIndex);
             $existing = $this->registry->get($agentId);
+            if ($existing?->state === PlacementState::Stopped) {
+                $this->revokeOnNode($entry->agentType, $entry->agentIndex, $fromNodeId);
+                continue;
+            }
             if ($existing?->state === PlacementState::Refused) {
                 // Still running where its RT claim was refused (HIL-696), so the stop is repeated
                 // rather than the refusal forgotten: accepting the report would re-adopt the agent
@@ -1259,13 +1493,15 @@ final class ClusterPlacement implements WorkerPlacement
                 Logger::info("Reconcile: telling node '{$fromNodeId}' to stop '{$agentId}', refused an RT claim");
                 continue;
             }
-            if ($existing !== null && $existing->nodeId !== $fromNodeId && !$existing->state->runsNowhere()) {
+            if ($existing !== null && $existing->nodeId !== null
+                && $existing->state->hostsAgent() && $existing->nodeId !== $fromNodeId) {
                 $this->mesh->sendToNode($fromNodeId, new PeerStopAgentDTO($entry->agentType, $entry->agentIndex));
                 Logger::info("Reconcile: telling node '{$fromNodeId}' to stop '{$agentId}' already placed on '{$existing->nodeId}'");
                 continue;
             }
 
             $this->registry->put(new PlacementRecord($entry->agentType, $entry->agentIndex, $fromNodeId, PlacementState::Started));
+            $this->placementStarted($agentId, $fromNodeId);
             unset($this->lastPlacementRefusals[$agentId]);
         }
 
@@ -1283,23 +1519,23 @@ final class ClusterPlacement implements WorkerPlacement
      * leader, whose own view is the original this one is a copy of — the same rule
      * {@see onPlacementReport()} applies in the other direction.
      *
-     * A frame whose own leader id is not the node it arrived from is dropped: the only sender
-     * of a view is the leader stamping itself, so the two disagreeing means it was relayed, and
-     * a relayed picture is one hop older than whatever its sender has. What is NOT checked is
-     * that the sender is the CURRENT leader, because this coordinator cannot know — leadership
-     * is the consensus layer's fact. The copy is soft state a deposed leader could briefly keep
-     * alive, and it self-corrects: a fresh leader clears its registry and reseeds it on winning
-     * the term, so its own first publish follows within a tick.
+     * The sender, outer leader and snapshot leader must agree. Masters confirm leader and term
+     * against consensus; slaves confirm the placing leader without running consensus. A frame
+     * ahead of that knowledge stays a candidate and is checked again on ticks. Confirmed copies
+     * advance monotonically by term and, within one leader/term, revision. Conflicting leaders
+     * at one term are logged and cannot overwrite the accepted copy.
      *
      * A taken view is then checked against what this node hosts (HIL-976): a view that gives one
      * of its agents to ANOTHER node makes it report its complete hosted set to the leader
      * ({@see reportAgentsPlacedElsewhere()}). It reports rather than stops, because the view may
      * be older than the registry, and the one who holds the fresh registry is the one to judge.
-     * An agent the view does not name at all is no cause: a fresh leader publishes before the
-     * reports have come in, and an agent that runs nowhere is never in the view.
+     * An agent the address map does not name at all is no cause: waiting and canceled work
+     * belongs only to the full snapshot, not the address map.
      *
      * @param string $fromNodeId Id of the node the view arrived from
      * @param PeerPlacementViewDTO $frame Received placement-view frame
+     * @throws EnvException When cluster mode cannot be read while confirming the source
+     * @throws PeerTransportException When a retained report's snapshot metadata is invalid
      */
     public function onPlacementView(string $fromNodeId, PeerPlacementViewDTO $frame): void
     {
@@ -1307,13 +1543,112 @@ final class ClusterPlacement implements WorkerPlacement
             return;
         }
 
-        if ($frame->leaderNodeId !== $fromNodeId) {
+        if ($frame->leaderNodeId !== $fromNodeId || $frame->placementSnapshot->leaderNodeId !== $fromNodeId) {
             Logger::warning(
                 "Dropping placement view of leader '{$frame->leaderNodeId}' relayed by node '{$fromNodeId}'",
             );
             return;
         }
 
+        if (!$this->snapshotAdvances($frame->placementSnapshot, $this->retainedSnapshot)) {
+            return;
+        }
+
+        if ($this->isConfirmedPlacementView($frame)) {
+            $this->acceptPlacementView($frame);
+            return;
+        }
+        if (!$this->snapshotAdvances($frame->placementSnapshot, $this->candidateView?->placementSnapshot)) {
+            return;
+        }
+        $this->candidateView = $frame;
+        $this->confirmCandidateView();
+    }
+
+    /**
+     * @param PlacementSnapshot $snapshot Incoming complete version
+     * @param ?PlacementSnapshot $previous Version that must not be rolled back
+     * @return bool Whether the incoming version advances the previous version without a same-term leader conflict
+     */
+    private function snapshotAdvances(PlacementSnapshot $snapshot, ?PlacementSnapshot $previous): bool
+    {
+        if ($previous === null || $snapshot->term > $previous->term) {
+            return true;
+        }
+        if ($snapshot->term < $previous->term) {
+            return false;
+        }
+        if ($snapshot->leaderNodeId !== $previous->leaderNodeId) {
+            Logger::warning("Conflicting placement snapshot leaders '{$previous->leaderNodeId}' and '{$snapshot->leaderNodeId}'"
+                . " at term {$snapshot->term}; keeping the previous copy");
+            return false;
+        }
+
+        return $snapshot->revision > $previous->revision;
+    }
+
+    /**
+     * An early frame is kept whole until its leader/term is known. No follower writes the original.
+     *
+     * @throws EnvException When cluster mode cannot be read
+     * @throws PeerTransportException When a retained report's snapshot metadata is invalid
+     */
+    private function confirmCandidateView(): void
+    {
+        $frame = $this->candidateView;
+        if ($frame === null || $this->isLeader) {
+            return;
+        }
+
+        $leadership = Hilos::$cluster?->leadership();
+        if ($leadership instanceof ConsensusInspection) {
+            if ($frame->placementSnapshot->term < $leadership->term()
+                || ($frame->placementSnapshot->term === $leadership->term()
+                    && $leadership->leaderId() !== null && $leadership->leaderId() !== $frame->leaderNodeId)) {
+                $this->candidateView = null;
+                return;
+            }
+        }
+        if (!$this->isConfirmedPlacementView($frame)) {
+            return;
+        }
+
+        if ($this->snapshotAdvances($frame->placementSnapshot, $this->retainedSnapshot)) {
+            $this->acceptPlacementView($frame);
+        } else {
+            $this->candidateView = null;
+        }
+    }
+
+    /**
+     * @param PeerPlacementViewDTO $frame Candidate complete version
+     * @return bool Whether independent leadership knowledge confirms this frame's authority
+     * @throws EnvException When cluster mode cannot be read
+     */
+    private function isConfirmedPlacementView(PeerPlacementViewDTO $frame): bool
+    {
+        $leadership = Hilos::$cluster?->leadership();
+        if ($leadership instanceof ConsensusInspection) {
+            return $leadership->leaderId() === $frame->leaderNodeId && $leadership->term() === $frame->placementSnapshot->term;
+        }
+
+        return ($leadership instanceof PendingLeadership || $leadership === null
+            ? $this->placingLeaderId : $leadership->leaderId()) === $frame->leaderNodeId;
+    }
+
+    /**
+     * @param PeerPlacementViewDTO $frame Source-confirmed version newer than the retained copy
+     * @throws PeerTransportException When a retained report's snapshot metadata is invalid
+     */
+    private function acceptPlacementView(PeerPlacementViewDTO $frame): void
+    {
+        $candidate = $this->candidateView?->placementSnapshot;
+        if ($candidate !== null && ($candidate->term < $frame->placementSnapshot->term
+            || ($candidate->term === $frame->placementSnapshot->term
+                && ($candidate->leaderNodeId !== $frame->leaderNodeId || $candidate->revision <= $frame->placementSnapshot->revision)))) {
+            $this->candidateView = null;
+        }
+        $this->retainedSnapshot = $frame->placementSnapshot;
         $view = [];
         foreach ($frame->agents as $nodeId => $entries) {
             // Back to a string, because on the wire a node id spends a leg as an array KEY and
@@ -1327,7 +1662,7 @@ final class ClusterPlacement implements WorkerPlacement
         }
 
         $this->placementView = $view;
-        $this->reportAgentsPlacedElsewhere($fromNodeId);
+        $this->reportAgentsPlacedElsewhere($frame->leaderNodeId);
     }
 
     /**
@@ -1368,6 +1703,7 @@ final class ClusterPlacement implements WorkerPlacement
             return;
         }
 
+        unset($this->placementAsks[$agentId]);
         Hilos::$cluster?->placementVerdictSink()?->onAgentNotPlaced(
             $frame->agentType,
             $frame->agentIndex,
@@ -1394,6 +1730,7 @@ final class ClusterPlacement implements WorkerPlacement
      * speak — costs the leader a second stop, which is a no-op on a stopped agent.
      *
      * @param string $leaderNodeId Id of the leader whose view was just taken
+     * @throws PeerTransportException When the leader's snapshot metadata is invalid
      */
     private function reportAgentsPlacedElsewhere(string $leaderNodeId): void
     {
@@ -1412,36 +1749,38 @@ final class ClusterPlacement implements WorkerPlacement
         }
 
         if ($placedElsewhere) {
-            $this->mesh->sendToNode($leaderNodeId, new PeerPlacementReportDTO($this->hostedEntries()));
+            $this->mesh->sendToNode($leaderNodeId, new PeerPlacementReportDTO($this->hostedEntries(), $this->placementSnapshot()));
         }
     }
 
     /**
      * Leader side: rebuilds the placement view on winning a term.
      *
-     * Placement tracking is soft-state, so a fresh leader starts from nothing: it seeds
-     * the view with its own hosted agents, then broadcasts a rebuild query so every other
-     * node reports the placements it is running. Called from the leadership transition.
+     * A fresh leader seeds a new original with its own hosted agents and queries the mesh.
+     * Its retained copy competes with report snapshots; only the freshest complete donor is
+     * imported after all live reports and the existing offline/self-fence grace.
      *
      * A winning node answers to nobody. Any self-fence armed against its former leader, or by a
      * quorum it has since regained, is canceled before this method records the hosted agents as
      * started in the new registry.
      *
-     * Until the rebuild is settled the leader places nothing it has no record of (HIL-1217): it
+     * Until the rebuild is settled the leader places nothing (HIL-1217, HIL-446): it
      * waits for the report of every node online to it, and out the failover grace of every node
      * that went away less than that grace ago - a leader cut off from the majority stops its work
      * only that long after it lost its quorum, so a copy placed sooner would run beside the one it
-     * still runs. Failover and every other record the leader knows are not held
-     * ({@see placeAgentOnBestNode()}, {@see placeOnDemand()}).
+     * still runs. A known record and the final report cannot bypass snapshot import.
      *
-     * The last refusals start empty, whatever this node noted before: they are a term's diagnosis,
-     * and nothing rebuilds them from the reports (HIL-447).
+     * Waiting diagnoses and the local retry schedule are rebuilt from the winning copy.
      *
      * @param float $now Current microtime
+     * @param int $term Consensus term, defaulting to zero for older isolated fixtures
      */
-    public function onBecameLeader(float $now): void
+    public function onBecameLeader(float $now, int $term = 0): void
     {
         $this->isLeader = true;
+        $this->leaderTerm = $term;
+        $this->snapshotRevisionOffset = 0;
+        $this->candidateView = null;
         if ($this->selfFenceDeadline !== null) {
             Logger::info('Self-fence called off: this node leads now');
             $this->selfFenceDeadline = null;
@@ -1449,18 +1788,23 @@ final class ClusterPlacement implements WorkerPlacement
         }
         $this->placingLeaderId = null;
         $this->registry->clear();
-        // Refusals are this term's diagnosis; the new term notes its own (HIL-446 keeps them across).
+        $this->retryAt = [];
+        $this->retryTriggers = [];
+        $this->afterStopTargets = [];
+        $this->heldNamedPlacements = [];
+        $this->capacityReleaseRevision = $this->registry->capacityReleaseRevision();
+        // Only the winning complete copy restores waiting diagnoses at settlement.
         $this->lastPlacementRefusals = [];
         // The copy this node held as a follower is somebody else's answer to the question it
-        // now owns; from here the registry above is the original.
+        // now owns. Its retained snapshot survives while the original rebuilds.
         $this->placementView = [];
-        $this->publishedViewFingerprint = null;
+        $this->publishedViewRevision = null;
         foreach ($this->hosted as $record) {
             $this->registry->put($record);
         }
 
-        $this->mesh->broadcastToNodes(new PeerPlacementQueryDTO());
         $this->awaitRebuild($now);
+        $this->mesh->broadcastToNodes(new PeerPlacementQueryDTO());
     }
 
     /**
@@ -1486,8 +1830,8 @@ final class ClusterPlacement implements WorkerPlacement
             }
         }
 
-        $this->rebuildPending = $this->rebuildAwaited !== [];
-        if ($this->rebuildPending) {
+        $this->rebuildPending = $this->rebuildAwaited !== [] || $this->retainedSnapshot !== null;
+        if ($this->rebuildAwaited !== []) {
             Logger::info('Placement rebuild: ' . count($this->rebuildAwaited) . ' node(s) to account for their agents'
                 . ' before new work is placed: ' . implode(', ', array_keys($this->rebuildAwaited)));
         }
@@ -1507,10 +1851,17 @@ final class ClusterPlacement implements WorkerPlacement
      * A node that led tells every linked node it leads no more, so a node that answered to it - a
      * slave cut off with it from the majority knows nothing of a quorum - fences its placed work
      * instead of running it beside the copy the majority's leader starts (HIL-1287).
+     * The last complete original is retained before clearing; an unfinished rebuild does not
+     * replace the previously retained complete copy.
+     *
+     * @throws PeerTransportException When the leader's snapshot metadata is invalid
      */
     public function onLostLeadership(): void
     {
         $wasLeader = $this->isLeader;
+        if ($wasLeader) {
+            $this->retainedSnapshot = $this->placementSnapshot();
+        }
         $this->isLeader = false;
         $this->registry->clear();
         $this->restartsElsewhere = [];
@@ -1519,13 +1870,16 @@ final class ClusterPlacement implements WorkerPlacement
         $this->placementAckDeadlines = [];
         $this->placementVerdictWaiters = [];
         $this->lastPlacementRefusals = [];
+        $this->retryAt = [];
+        $this->retryTriggers = [];
         // The rebuild was this term's; the next leader lists its own.
         $this->rebuildAwaited = [];
         $this->rebuildPending = false;
         $this->heldOnDemand = [];
-        // Publishing is the leader's duty, so this node stops; what it published stays true
-        // until the next leader publishes its own, which it does within a tick of winning.
-        $this->publishedViewFingerprint = null;
+        $this->afterStopTargets = [];
+        $this->heldNamedPlacements = [];
+        // Publishing stops; the complete copy stays available to inspect and hosted reports.
+        $this->publishedViewRevision = null;
         if ($wasLeader) {
             Logger::info('Placement release: this node no longer leads, telling every linked node');
             $this->mesh->broadcastToNodes(new PeerPlacementReleaseDTO());
@@ -1574,7 +1928,7 @@ final class ClusterPlacement implements WorkerPlacement
         if ($this->isLeader) {
             foreach ($this->registry->all() as $record) {
                 if ($record->nodeId === $nodeId
-                    && $record->state !== PlacementState::Unplaced
+                    && $record->state->hostsAgent()
                     && !isset($this->failoverDeadlines[$record->agentId()])) {
                     $this->failoverDeadlines[$record->agentId()] = [
                         'nodeId' => $nodeId,
@@ -1610,9 +1964,13 @@ final class ClusterPlacement implements WorkerPlacement
      * A node hosting nothing arms nothing, and a deadline already armed is not moved.
      *
      * @param float $now Current microtime
+     * @throws PeerTransportException When the departing leader's snapshot metadata is invalid
      */
     public function noteQuorumLost(float $now): void
     {
+        if ($this->isLeader) {
+            $this->onLostLeadership();
+        }
         if (!$this->hostsPlacedWork()) {
             return;
         }
@@ -1649,12 +2007,13 @@ final class ClusterPlacement implements WorkerPlacement
     }
 
     /**
-     * Reacts to a node coming online: cancels a stale failover/self-fence, retries degraded.
+     * Reacts to a node coming online: cancels a stale failover/self-fence and wakes waiting work.
      *
      * Node side — if the returning node is the placing leader, the isolation is over, so the
      * self-fence is disarmed. Leader side — a flapped node back before its grace keeps its
      * agents, so its pending failover is canceled; and since a capable node may now be
-     * available, every agent failover had to leave {@see PlacementState::Unplaced} is retried.
+     * available, Unplaced records become eligible for the bounded retry in tick. This callback
+     * places nothing, and Failed records keep their five-second interval.
      * A node a fresh leader's rebuild waited out the grace of is waited for by its report again,
      * which it sends on the link that brought it back (HIL-1217).
      *
@@ -1671,7 +2030,7 @@ final class ClusterPlacement implements WorkerPlacement
         $this->callOffLossOf($nodeId);
 
         if ($this->isLeader) {
-            $this->retryUnplaced();
+            $this->wakeUnplaced($now, self::RETRY_NODE_ONLINE);
         }
     }
 
@@ -1716,10 +2075,9 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * The placement is the leader's answer to the loss that armed the deadline, so the deadline
      * speaks about it no more, whichever node the agent went to. Back on the very node it was lost
-     * from - a recreated node stops its agents on the way out, their records go with the stops,
-     * and its return finds nothing of theirs to call off - the deadline would fire at the fresh
-     * record, take the running agent for lost and, with no other node to take it, mark it
-     * unplaced, after which the leader counts that node's room short of what it holds. On another
+     * from, any deadline that outlived its return would fire at the fresh record, take the running
+     * agent for lost and, with no other node to take it, mark it unplaced, after which the leader
+     * counts that node's room short of what it holds. On another
      * node it would stand in the way of the deadline that node's own loss arms, and then drop
      * itself as stale. Nothing armed, nothing done.
      *
@@ -1765,23 +2123,45 @@ final class ClusterPlacement implements WorkerPlacement
     }
 
     /**
-     * Fires any failover, placement-ack timeout or self-fence whose grace has elapsed, and settles
-     * a fresh leader's rebuild once nothing is left to wait for. Driven each daemon tick.
+     * Advances failover, acknowledgement and self-fence timers, settles the rebuild, and retries
+     * at most one waiting record on the leader. Every deadline inside the pass uses the supplied
+     * time, including failures raised by synchronous callbacks.
      *
      * @param float $now Current microtime
+     * @throws EnvException When cluster mode cannot be read while confirming an early view
+     * @throws PeerTransportException When the leader's snapshot metadata is invalid
      */
     public function tick(float $now): void
     {
+        $this->tickNow = $now;
+        try {
+            $this->advancePlacement($now);
+        } finally {
+            $this->tickNow = null;
+        }
+    }
+
+    /**
+     * @param float $now Supplied time shared by timers and the bounded retry pass
+     * @throws EnvException When cluster mode cannot be read while confirming an early view
+     * @throws PeerTransportException When the leader's snapshot metadata is invalid
+     */
+    private function advancePlacement(float $now): void
+    {
+        $this->confirmCandidateView();
+        // Import first: no failover, request or automatic retry can outrun inherited cancellation.
+        $this->settleRebuild($now);
         foreach ($this->failoverDeadlines as $agentId => ['nodeId' => $lostNodeId, 'deadline' => $deadline]) {
+            if ($this->rebuildPending) {
+                break;
+            }
             if ($now >= $deadline) {
                 unset($this->failoverDeadlines[$agentId]);
                 $this->failOver($agentId, $lostNodeId);
             }
         }
 
-        // After failover, which the rebuild never held, and before the ack sweep, so a placement
-        // the settling makes is given its deadline in this same tick.
-        $this->settleRebuild($now);
+        $this->retryWaiting($now);
 
         // After failover, not before: a failover re-places a record out of `Placing` onto
         // another node, and arming on the far side of it means arming for the node the record
@@ -1818,8 +2198,22 @@ final class ClusterPlacement implements WorkerPlacement
             return;
         }
 
+        $this->inheritPlacementSnapshot($now);
         $this->rebuildPending = false;
         Logger::info('Placement rebuild settled: every node accounted for its agents');
+        $named = $this->heldNamedPlacements;
+        $this->heldNamedPlacements = [];
+        foreach ($named as $record) {
+            $existing = $this->registry->get($record->agentId());
+            if ($existing?->state->hostsAgent() || $existing?->state === PlacementState::Refused) {
+                continue;
+            }
+            try {
+                $this->placeAgentOnNode($record->agentType, $record->agentIndex, $record->nodeId);
+            } catch (Throwable $e) {
+                Logger::warning("Held placement of '{$record->agentId()}' failed: {$e->getMessage()}");
+            }
+        }
         $held = $this->heldOnDemand;
         $this->heldOnDemand = [];
         foreach ($held as ['agentType' => $agentType, 'agentIndex' => $agentIndex]) {
@@ -1828,24 +2222,92 @@ final class ClusterPlacement implements WorkerPlacement
     }
 
     /**
-     * Tells whether a fresh leader's unsettled rebuild holds back the placement of an agent.
+     * Imports intent from one complete donor only after real hosts and their isolation grace
+     * have been accounted for. Snapshot addresses never prove that an instance is alive.
      *
-     * It holds only an agent the leader has no record of: one with a record in any state is
-     * work the leader knows where it stands with, and failover, reconciliation and the retry of
-     * an unplaced agent act on exactly those (HIL-1217).
-     *
-     * @param string $agentType Agent type to place
-     * @param ?string $agentIndex Agent index, or null for a singleton agent
-     * @return bool True when the agent has to wait for the rebuild to settle
+     * @param float $now Settlement time, shared by the rebuilt retry schedule
      */
-    private function rebuildHolds(string $agentType, ?string $agentIndex): bool
+    private function inheritPlacementSnapshot(float $now): void
     {
-        return $this->rebuildAwaited !== [] && $this->registry->get($this->agentId($agentType, $agentIndex)) === null;
+        $snapshot = $this->retainedSnapshot;
+        if ($snapshot !== null) {
+            foreach ($snapshot->records as $record) {
+                $agentId = $record->agentId();
+                $live = $this->registry->get($agentId);
+                // A cancellation or truth-source verdict made in this rebuild remains final.
+                if ($live?->state === PlacementState::Stopped || $live?->state === PlacementState::Refused) {
+                    continue;
+                }
+                if ($record->state === PlacementState::Stopped) {
+                    $host = $live !== null && $live->state->hostsAgent() ? $live->nodeId : null;
+                    $this->registry->put(new PlacementRecord($record->agentType, $record->agentIndex, $host, PlacementState::Stopped));
+                    unset($this->lastPlacementRefusals[$agentId], $this->retryAt[$agentId], $this->retryTriggers[$agentId]);
+                    if ($host !== null) {
+                        $this->revokeOnNode($record->agentType, $record->agentIndex, $host);
+                        if ($host === $this->selfNodeId) {
+                            $this->confirmCanceledStop($agentId, $host);
+                        }
+                    }
+                    continue;
+                }
+                if ($record->state === PlacementState::Refused) {
+                    // A same-term restart retains the verdict; only a new term re-evaluates it.
+                    if ($snapshot->term === $this->leaderTerm) {
+                        $this->registry->put($record);
+                        unset($this->lastPlacementRefusals[$agentId]);
+                        if ($live !== null && $live->state->hostsAgent() && $live->nodeId !== null) {
+                            $this->revokeOnNode($record->agentType, $record->agentIndex, $live->nodeId);
+                        }
+                    }
+                    continue;
+                }
+                if ($live !== null) {
+                    continue;
+                }
+                $this->registry->put($record->state->hostsAgent() ? $record->withState(PlacementState::Unplaced) : $record);
+            }
+        }
+
+        $waiting = 0;
+        $this->retryAt = [];
+        $this->retryTriggers = [];
+        foreach ($this->registry->all() as $record) {
+            if (!$this->isWaiting($record)) {
+                continue;
+            }
+            $agentId = $record->agentId();
+            $this->lastPlacementRefusals[$agentId] = new PlacementRefusalSnapshot(
+                $record->agentType,
+                $record->agentIndex,
+                $record->reason ?? 'the last placement attempt did not succeed',
+                $record->refusals,
+            );
+            $this->retryAt[$agentId] = $record->state === PlacementState::Failed ? $now + self::PLACEMENT_RETRY_INTERVAL_SEC : $now;
+            $this->retryTriggers[$agentId] = self::RETRY_NEW_LEADER;
+            $waiting++;
+        }
+        $this->capacityReleaseRevision = $this->registry->capacityReleaseRevision();
+        if ($snapshot !== null && $snapshot->leaderNodeId === $this->selfNodeId && $snapshot->term === $this->leaderTerm) {
+            $this->snapshotRevisionOffset = max(0, $snapshot->revision + 1 - $this->registry->revision());
+        }
+        Logger::info("Placement queue recovered: {$waiting} waiting agent(s)");
     }
 
     /**
-     * Leader side: gives every {@see PlacementState::Placing} record a deadline and, when one
-     * elapses, asks the node what it actually hosts instead of re-placing the agent blind.
+     * Tells whether a fresh leader's unsettled rebuild holds back the placement of an agent.
+     *
+     * Even a known record or the final report must wait for the complete snapshot import.
+     *
+     * @return bool True when the agent has to wait for the rebuild to settle
+     */
+    private function rebuildHolds(): bool
+    {
+        return $this->rebuildPending;
+    }
+
+    /**
+     * Gives Placing records and unacknowledged explicit stops a deadline, then queries the host.
+     * A queried report omitting canceled work confirms the stop and releases only newer demand.
      *
      * A placement frame that never came back leaves the record waiting for a status that has no
      * other way out: the node may have been recreated before it answered, and a rejoin inside
@@ -1874,7 +2336,8 @@ final class ClusterPlacement implements WorkerPlacement
 
         $live = [];
         foreach ($this->registry->all() as $record) {
-            if ($record->state !== PlacementState::Placing) {
+            if (($record->state !== PlacementState::Placing && $record->state !== PlacementState::Stopped)
+                || $record->nodeId === null) {
                 continue;
             }
 
@@ -1898,7 +2361,8 @@ final class ClusterPlacement implements WorkerPlacement
             // Asked either way: an undelivered query means the link is gone, and a gone link is
             // closed by `CLUSTER_LINK_TIMEOUT_MS` into the failover that owns that case.
             $this->placementAckDeadlines[$agentId]['asked'] = true;
-            Logger::info("Placement ack of '{$agentId}' timed out on node '{$record->nodeId}'; asking what it hosts"
+            $ack = $record->state === PlacementState::Stopped ? 'Stop' : 'Placement';
+            Logger::info("{$ack} ack of '{$agentId}' timed out on node '{$record->nodeId}'; asking what it hosts"
                 . ($delivered ? '' : ' failed: node is not linked'));
         }
 
@@ -1933,15 +2397,19 @@ final class ClusterPlacement implements WorkerPlacement
      * (HIL-1059).
      *
      * @param string $nodeId Node id of the peer that just handshaked
+     * @throws PeerTransportException When the leader's snapshot metadata is invalid
      */
     public function onPeerHandshaked(string $nodeId): void
     {
+        $snapshot = $this->placementSnapshot();
         if ($this->isLeader) {
             $this->mesh->sendToNode($nodeId, new PeerPlacementQueryDTO());
-            $this->mesh->sendToNode($nodeId, new PeerPlacementViewDTO($this->selfNodeId, $this->placementViewAgents()));
+            if (!$this->rebuildPending && $snapshot !== null) {
+                $this->mesh->sendToNode($nodeId, new PeerPlacementViewDTO($this->selfNodeId, $this->placementViewAgents(), $snapshot));
+            }
         }
 
-        $this->mesh->sendToNode($nodeId, new PeerPlacementReportDTO($this->hostedEntries()));
+        $this->mesh->sendToNode($nodeId, new PeerPlacementReportDTO($this->hostedEntries(), $snapshot));
     }
 
     /**
@@ -1954,23 +2422,21 @@ final class ClusterPlacement implements WorkerPlacement
      * picture that is wrong forever, with nothing to correct it. A comparison cannot miss a
      * path because it never looks at them, and it turns a failover storm into one frame.
      *
-     * Silent when nothing moved, which is nearly every tick, and silent on a node that does not
-     * lead. The whole step costs one pass over a few dozen records.
+     * Registry revision includes diagnoses, waiting work, tombstones and deletions even when
+     * addresses stay identical. Silent on an unchanged revision, a follower, or an unfinished
+     * rebuild, so a new empty original cannot overwrite retained complete copies prematurely.
+     *
+     * @throws PeerTransportException When the leader's snapshot metadata is invalid
      */
     private function publishPlacementView(): void
     {
-        if (!$this->isLeader) {
+        if (!$this->isLeader || $this->rebuildPending || $this->registry->revision() === $this->publishedViewRevision) {
             return;
         }
 
-        $agents = $this->placementViewAgents();
-        $fingerprint = $this->viewFingerprint($agents);
-        if ($fingerprint === $this->publishedViewFingerprint) {
-            return;
-        }
-
-        $this->publishedViewFingerprint = $fingerprint;
-        $this->mesh->broadcastToNodes(new PeerPlacementViewDTO($this->selfNodeId, $agents));
+        $this->retainedSnapshot = $this->placementSnapshot();
+        $this->publishedViewRevision = $this->registry->revision();
+        $this->mesh->broadcastToNodes(new PeerPlacementViewDTO($this->selfNodeId, $this->placementViewAgents(), $this->retainedSnapshot));
     }
 
     /**
@@ -1987,7 +2453,7 @@ final class ClusterPlacement implements WorkerPlacement
     {
         $agents = [];
         foreach ($this->registry->all() as $record) {
-            if (!$record->state->hostsAgent()) {
+            if (!$record->state->hostsAgent() || $record->nodeId === null) {
                 continue;
             }
 
@@ -1995,29 +2461,6 @@ final class ClusterPlacement implements WorkerPlacement
         }
 
         return $agents;
-    }
-
-    /**
-     * Renders a view into a value that changes when, and only when, the view does.
-     *
-     * Sorted, so that the same placements read out in a different order — which the registry is
-     * free to do after any forget — are recognized as the same view and cost no frame.
-     *
-     * @param array<string|int, list<PeerPlacedAgentEntry>> $agents Hosted agent entries, by node id
-     * @return string Comparable rendering of the view
-     */
-    private function viewFingerprint(array $agents): string
-    {
-        $lines = [];
-        foreach ($agents as $nodeId => $entries) {
-            foreach ($entries as $entry) {
-                $lines[] = $nodeId . '/' . $this->agentId($entry->agentType, $entry->agentIndex);
-            }
-        }
-
-        sort($lines);
-
-        return implode(',', $lines);
     }
 
     /**
@@ -2040,8 +2483,8 @@ final class ClusterPlacement implements WorkerPlacement
     private function hostingNode(string $agentId): ?string
     {
         $record = $this->registry->get($agentId);
-        if ($record !== null && $record->state->hostsAgent()) {
-            return $record->nodeId;
+        if ($record !== null) {
+            return $record->state->hostsAgent() ? $record->nodeId : null;
         }
 
         return $this->placementView[$agentId] ?? null;
@@ -2091,7 +2534,7 @@ final class ClusterPlacement implements WorkerPlacement
     private function failOver(string $agentId, string $lostNodeId): void
     {
         $record = $this->registry->get($agentId);
-        if ($record === null || $record->state->runsNowhere()) {
+        if ($record === null || $record->state->runsNowhere() || $record->nodeId === null) {
             return;
         }
 
@@ -2137,8 +2580,8 @@ final class ClusterPlacement implements WorkerPlacement
      * before, because its frame may still be travelling and dropping the record would make the
      * copy that lands a second source of truth; {@see PlacementState::Refused} is
      * spared because the leader took that agent down on purpose (HIL-696);
-     * {@see PlacementState::Failed} is retried by whoever placed it; {@see PlacementState::Unplaced}
-     * is not about a node at all and belongs to {@see retryUnplaced()}.
+     * Failed and Unplaced belong to the shared bounded retry in {@see retryWaiting()}.
+     * A canceled Stopped record is only acknowledged, never re-created without newer demand.
      *
      * The record is forgotten BEFORE the re-placement, because {@see pickBestNode()} counts
      * occupancy from the registry: a record left standing would credit the emptied node with a
@@ -2158,6 +2601,16 @@ final class ClusterPlacement implements WorkerPlacement
                 || !$this->isJudgedByReport($record, $fromNodeId)
                 || in_array($agentId, $reportedIds, true)
             ) {
+                continue;
+            }
+
+            if ($record->state === PlacementState::Stopped) {
+                $this->confirmCanceledStop($agentId, $fromNodeId);
+                continue;
+            }
+
+            if ($this->rebuildPending) {
+                $this->registry->put($record->withState(PlacementState::Unplaced));
                 continue;
             }
 
@@ -2184,9 +2637,9 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * A {@see PlacementState::Started} record always is — the leader believes the agent runs
      * there, and a complete snapshot that leaves it out contradicts that belief. A
-     * {@see PlacementState::Placing} one only once the leader has ASKED this very node what it
-     * hosts ({@see sweepPlacementAcks()}): before the question the silence is ordinary travel
-     * time, after it the snapshot is the answer.
+     * Placing and unacknowledged Stopped records only once the leader has asked this very node
+     * what it hosts: before the question silence may be ordinary travel time, after it the
+     * snapshot is the answer. Stopped confirms cancellation rather than declaring missing work.
      *
      * @param PlacementRecord $record Record the report is being read against
      * @param string $fromNodeId Id of the node that reported
@@ -2200,49 +2653,128 @@ final class ClusterPlacement implements WorkerPlacement
 
         $armed = $this->placementAckDeadlines[$record->agentId()] ?? null;
 
-        return $record->state === PlacementState::Placing
+        return ($record->state === PlacementState::Placing || $record->state === PlacementState::Stopped)
             && $armed !== null
             && $armed['asked']
             && $armed['nodeId'] === $fromNodeId;
     }
 
+    /** @param float $now Supplied tick time; at most one actual attempt is made */
+    private function retryWaiting(float $now): void
+    {
+        if (!$this->isLeader || $this->rebuildPending) {
+            return;
+        }
+
+        foreach ($this->registry->all() as $record) {
+            if ($this->isWaiting($record)) {
+                $this->scheduleWaiting($record, $now);
+            }
+        }
+        $released = $this->registry->capacityReleaseRevision();
+        if ($released !== $this->capacityReleaseRevision) {
+            $this->capacityReleaseRevision = $released;
+            $this->wakeUnplaced($now, self::RETRY_CAPACITY_RELEASED);
+        }
+
+        foreach ($this->retryAt as $agentId => $deadline) {
+            $record = $this->registry->get($agentId);
+            if ($record === null || $record->state === PlacementState::Refused || $record->state === PlacementState::Stopped) {
+                unset($this->retryAt[$agentId], $this->retryTriggers[$agentId]);
+                continue;
+            }
+            if ($record->state === PlacementState::Started && $record->nodeId !== null) {
+                $this->placementStarted($agentId, $record->nodeId);
+                continue;
+            }
+            if (!$this->isWaiting($record) || $now < $deadline) {
+                continue;
+            }
+
+            $this->beginRetry($record, $now, $this->retryTriggers[$agentId] ?? self::RETRY_PERIODIC);
+            try {
+                $this->placeOnBestFitNode($record->agentType, $record->agentIndex);
+            } catch (Throwable $e) {
+                Logger::warning("Placement retry of '{$agentId}' failed: {$e->getMessage()}");
+            }
+            return;
+        }
+    }
+
     /**
-     * Retries every degraded agent, placing it if a capable node is now online.
+     * Events advance only Unplaced records; Failed always keeps its full retry interval.
      *
-     * Called when a node comes online (a new capability may have appeared). A still-uncoverable
-     * agent stays {@see PlacementState::Unplaced}, and its record says why as of this retry
-     * (HIL-447): the node that came online may refuse for a reason of its own. An error on one
-     * agent is caught so the rest are still tried; one the gate did not raise is kept as the last
-     * refusal and leaves the record to whatever the failed attempt wrote into it.
+     * @param float $now Time of the event
+     * @param string $trigger Event that freed a possible host
      */
-    private function retryUnplaced(): void
+    private function wakeUnplaced(float $now, string $trigger): void
     {
         foreach ($this->registry->all() as $record) {
             if ($record->state !== PlacementState::Unplaced) {
                 continue;
             }
-
-            try {
-                $required = $this->executor->requiredCapabilities($record->agentType, $record->agentIndex);
-                $cost = $this->placementCost($record->agentType, $record->agentIndex);
-                $target = $this->pickBestNode($record->agentType, $record->agentIndex, $required, $cost, '');
-                if ($target === null) {
-                    $this->keepUnplaced(
-                        $record,
-                        $this->noFittingNode($record->agentType, $record->agentIndex, $required, $cost, ''),
-                    );
-                    continue;
-                }
-                Logger::info("Failover retry: placing unplaced '{$record->agentId()}' onto '{$target}'");
-                $this->placeAgentOnNode($record->agentType, $record->agentIndex, $target);
-            } catch (PlacementCapabilityException $e) {
-                Logger::warning("Failover retry of '{$record->agentId()}' failed: {$e->getMessage()}");
-                $this->keepUnplaced($record, $this->failedAttempt($record->agentType, $record->agentIndex, $e));
-            } catch (Throwable $e) {
-                Logger::warning("Failover retry of '{$record->agentId()}' failed: {$e->getMessage()}");
-                $this->rememberRefusal($this->failedAttempt($record->agentType, $record->agentIndex, $e));
-            }
+            $agentId = $record->agentId();
+            $this->scheduleWaiting($record, $now);
+            $this->retryAt[$agentId] = min($this->retryAt[$agentId], $now);
+            $this->retryTriggers[$agentId] = $trigger;
         }
+    }
+
+    /**
+     * @param PlacementRecord $record Tracked record
+     * @return bool Whether the record belongs to the retry queue
+     */
+    private function isWaiting(PlacementRecord $record): bool
+    {
+        return $record->state === PlacementState::Failed || $record->state === PlacementState::Unplaced;
+    }
+
+    /**
+     * @param PlacementRecord $record Waiting record; an existing deadline is preserved
+     * @param float $now Time at which a previously unseen wait was observed
+     */
+    private function scheduleWaiting(PlacementRecord $record, float $now): void
+    {
+        $agentId = $record->agentId();
+        if (!isset($this->retryAt[$agentId])) {
+            $this->retryAt[$agentId] = $now + self::PLACEMENT_RETRY_INTERVAL_SEC;
+            $this->retryTriggers[$agentId] = self::RETRY_PERIODIC;
+            Logger::info("Placement waiting: '{$agentId}' state={$record->state->value}: {$record->reason}");
+        }
+    }
+
+    /**
+     * Moves the attempted record behind all its peers, including when this attempt throws.
+     *
+     * @param PlacementRecord $record Waiting agent being attempted
+     * @param float $now Actual attempt time
+     * @param string $trigger Reason the attempt became eligible
+     */
+    private function beginRetry(PlacementRecord $record, float $now, string $trigger): void
+    {
+        $agentId = $record->agentId();
+        unset($this->retryAt[$agentId]);
+        $this->retryAt[$agentId] = $now + self::PLACEMENT_RETRY_INTERVAL_SEC;
+        $this->retryTriggers[$agentId] = self::RETRY_PERIODIC;
+        Logger::info("Placement retry: '{$agentId}' trigger={$trigger}");
+    }
+
+    /**
+     * @param string $agentId Agent now running
+     * @param string $nodeId Confirmed host
+     */
+    private function placementStarted(string $agentId, string $nodeId): void
+    {
+        if (isset($this->retryAt[$agentId])) {
+            Logger::info("Placement resumed: '{$agentId}' on '{$nodeId}'");
+        }
+        unset($this->retryAt[$agentId], $this->retryTriggers[$agentId]);
+    }
+
+    /** @return float Tick's supplied time, or the time of an external placement event */
+    private function placementTime(): float
+    {
+        return $this->tickNow ?? microtime(true);
     }
 
     /**
@@ -2255,15 +2787,7 @@ final class ClusterPlacement implements WorkerPlacement
      */
     private function keepUnplaced(PlacementRecord $record, PlacementRefusalSnapshot $failure): void
     {
-        $this->registry->put(new PlacementRecord(
-            $record->agentType,
-            $record->agentIndex,
-            $record->nodeId,
-            PlacementState::Unplaced,
-            $failure->reason,
-            $failure->refusals,
-        ));
-        $this->rememberRefusal($failure);
+        $this->writeWaiting($record->nodeId, PlacementState::Unplaced, $failure);
     }
 
     /**
@@ -2277,15 +2801,7 @@ final class ClusterPlacement implements WorkerPlacement
      */
     private function degrade(PlacementRecord $record, PlacementRefusalSnapshot $failure): void
     {
-        $this->registry->put(new PlacementRecord(
-            $record->agentType,
-            $record->agentIndex,
-            $record->nodeId,
-            PlacementState::Unplaced,
-            $failure->reason,
-            $failure->refusals,
-        ));
-        $this->rememberRefusal($failure);
+        $this->keepUnplaced($record, $failure);
         Logger::warning("Failover: no capable+online node for '{$record->agentId()}'; marked unplaced: {$failure->reason}");
         $this->observer->onPlacementDegraded($record->agentType, $record->agentIndex);
     }
@@ -2453,20 +2969,37 @@ final class ClusterPlacement implements WorkerPlacement
      * Records a placement that failed on a node: a {@see PlacementState::Failed} record that says
      * why, kept as the agent's last refusal too (HIL-447).
      *
-     * @param string $nodeId Node the placement failed on
+     * @param ?string $nodeId Node the placement failed on, or null before a target was chosen
      * @param PlacementRefusalSnapshot $failure Why it failed
      */
-    private function recordFailure(string $nodeId, PlacementRefusalSnapshot $failure): void
+    private function recordFailure(?string $nodeId, PlacementRefusalSnapshot $failure): void
     {
-        $this->registry->put(new PlacementRecord(
+        $this->writeWaiting($nodeId, PlacementState::Failed, $failure);
+    }
+
+    /**
+     * Upserts the one waiting record and renews its diagnosis and deadline after an attempt.
+     *
+     * @param ?string $nodeId Last attempted host, or null when none was chosen
+     * @param PlacementState $state Failed or Unplaced outcome
+     * @param PlacementRefusalSnapshot $failure Actual attempt's diagnosis
+     */
+    private function writeWaiting(?string $nodeId, PlacementState $state, PlacementRefusalSnapshot $failure): void
+    {
+        $record = new PlacementRecord(
             $failure->agentType,
             $failure->agentIndex,
             $nodeId,
-            PlacementState::Failed,
+            $state,
             $failure->reason,
             $failure->refusals,
-        ));
+        );
+        $this->registry->put($record);
         $this->rememberRefusal($failure);
+        $now = $this->placementTime();
+        $this->scheduleWaiting($record, $now);
+        $this->retryAt[$record->agentId()] = $now + self::PLACEMENT_RETRY_INTERVAL_SEC;
+        $this->retryTriggers[$record->agentId()] = self::RETRY_PERIODIC;
     }
 
     /**
@@ -2488,9 +3021,10 @@ final class ClusterPlacement implements WorkerPlacement
     {
         $live = array_fill_keys($nodeIds, []);
         foreach ($this->registry->all() as $record) {
-            if (!isset($live[$record->nodeId])
-                || $record->agentId() === $placedAgentId
-                || ($record->state !== PlacementState::Placing && $record->state !== PlacementState::Started)) {
+            if (!$record->state->hostsAgent()
+                || $record->nodeId === null
+                || !isset($live[$record->nodeId])
+                || $record->agentId() === $placedAgentId) {
                 continue;
             }
 
@@ -2605,6 +3139,9 @@ final class ClusterPlacement implements WorkerPlacement
      * of the leader it answered to, and that leader may have adopted the work from this node's
      * report on the new link. Without the snapshot it would keep calling the stopped agents
      * started; with it, it places them again ({@see reconcileMissingAgents()}).
+     * The empty hosted set still carries this node's retained complete registry separately.
+     *
+     * @throws PeerTransportException When the leader's snapshot metadata is invalid
      */
     private function selfFence(): void
     {
@@ -2625,7 +3162,7 @@ final class ClusterPlacement implements WorkerPlacement
             $this->executor->revokePlacement($deferred['agentType'], $deferred['agentIndex']);
         }
 
-        $this->mesh->broadcastToNodes(new PeerPlacementReportDTO([]));
+        $this->mesh->broadcastToNodes(new PeerPlacementReportDTO([], $this->placementSnapshot()));
     }
 
     /**
@@ -2670,7 +3207,13 @@ final class ClusterPlacement implements WorkerPlacement
         try {
             $this->requireCandidateFit($candidates[$nodeId], $agentType, $agentIndex);
         } catch (PlacementCapabilityException $e) {
-            $this->rememberRefusal($this->failedAttempt($agentType, $agentIndex, $e));
+            $failure = $this->failedAttempt($agentType, $agentIndex, $e);
+            $record = $this->registry->get($failure->agentId());
+            if ($record !== null && $record->state->hostsAgent()) {
+                $this->rememberRefusal($failure);
+            } else {
+                $this->writeWaiting($record?->nodeId, PlacementState::Unplaced, $failure);
+            }
             throw $e;
         }
     }
@@ -2751,7 +3294,7 @@ final class ClusterPlacement implements WorkerPlacement
      * run is the same non-event as one no capable node fits. Either way the nodes that asked are
      * answered with a {@see PeerPlacementVerdictDTO} — immediately when the record is already
      * started or refused, when no node fits, or when the attempt throws; later when a placing
-     * record fails, or when a fresh leader's rebuild that held an agent it had no record of
+     * record fails, or when a fresh leader's rebuild that held demand before snapshot import
      * settles ({@see settleRebuild()}, HIL-1217).
      *
      * A not-placed verdict carries the refusals behind it (HIL-447): the gate's own when the node
@@ -2763,9 +3306,26 @@ final class ClusterPlacement implements WorkerPlacement
      */
     private function placeOnDemand(string $agentType, ?string $agentIndex): void
     {
+        if (!$this->isLeader) {
+            return;
+        }
         $agentId = $this->agentId($agentType, $agentIndex);
+        if ($this->rebuildHolds()) {
+            $this->heldOnDemand[$agentId] = ['agentType' => $agentType, 'agentIndex' => $agentIndex];
+            return;
+        }
         $record = $this->registry->get($agentId);
-        if ($record !== null && $record->state === PlacementState::Started) {
+        if ($record?->state === PlacementState::Stopped) {
+            if ($record->nodeId !== null) {
+                if (!array_key_exists($agentId, $this->afterStopTargets)) {
+                    $this->afterStopTargets[$agentId] = null;
+                }
+                return;
+            }
+            $this->registry->forget($agentId);
+            $record = null;
+        }
+        if ($record !== null && $record->state === PlacementState::Started && $record->nodeId !== null) {
             $this->answerPlacementAskers(
                 $agentId,
                 PeerPlacementVerdictDTO::placed($agentType, $agentIndex, $record->nodeId),
@@ -2786,29 +3346,39 @@ final class ClusterPlacement implements WorkerPlacement
 
             return;
         }
-        if ($record !== null && $record->state === PlacementState::Placing) {
+        if ($record !== null && $record->state === PlacementState::Placing && $record->nodeId !== null) {
             return;
         }
-        if ($this->rebuildHolds($agentType, $agentIndex)) {
-            // Held, not refused: the agent may still run on a node that has not reported, and a
-            // not-placed verdict now would fail the frame that addressed it (HIL-1217).
-            $this->heldOnDemand[$agentId] = ['agentType' => $agentType, 'agentIndex' => $agentIndex];
-
-            return;
+        if ($record !== null && $this->isWaiting($record)) {
+            $now = $this->placementTime();
+            $this->scheduleWaiting($record, $now);
+            if ($now < $this->retryAt[$agentId] || $this->rebuildAwaited !== []) {
+                $this->answerPlacementAskers(
+                    $agentId,
+                    PeerPlacementVerdictDTO::notPlaced(
+                        $agentType,
+                        $agentIndex,
+                        $record->state,
+                        $record->reason ?? 'the last placement attempt did not succeed',
+                        $record->refusals,
+                    ),
+                );
+                return;
+            }
+            $this->beginRetry($record, $now, self::RETRY_REQUEST);
         }
 
         try {
             $target = $this->placeAgentOnBestNode($agentType, $agentIndex);
         } catch (Throwable $e) {
             Logger::warning("On-demand placement of '{$agentId}' failed: {$e->getMessage()}");
-            $failure = $this->failedAttempt($agentType, $agentIndex, $e);
-            $this->rememberRefusal($failure);
+            $failure = $this->lastPlacementRefusals[$agentId] ?? $this->failedAttempt($agentType, $agentIndex, $e);
             $this->answerPlacementAskers(
                 $agentId,
                 PeerPlacementVerdictDTO::notPlaced(
                     $agentType,
                     $agentIndex,
-                    PlacementState::Failed,
+                    $this->registry->get($agentId)?->state ?? PlacementState::Failed,
                     $failure->reason,
                     $failure->refusals,
                 ),
@@ -2820,13 +3390,19 @@ final class ClusterPlacement implements WorkerPlacement
         if ($target === null) {
             // The rebuild is settled (checked above), so a null target is a placement no node took,
             // and the attempt has kept why as this agent's last refusal.
-            $failure = $this->lastPlacementRefusals[$agentId];
+            $waiting = $this->registry->get($agentId);
+            $failure = $this->lastPlacementRefusals[$agentId] ?? new PlacementRefusalSnapshot(
+                $agentType,
+                $agentIndex,
+                $waiting?->reason ?? 'the last placement attempt did not succeed',
+                $waiting?->refusals ?? [],
+            );
             $this->answerPlacementAskers(
                 $agentId,
                 PeerPlacementVerdictDTO::notPlaced(
                     $agentType,
                     $agentIndex,
-                    PlacementState::Unplaced,
+                    $waiting?->state ?? PlacementState::Unplaced,
                     $failure->reason,
                     $failure->refusals,
                 ),
@@ -2836,11 +3412,58 @@ final class ClusterPlacement implements WorkerPlacement
         }
 
         $placed = $this->registry->get($agentId);
-        if ($placed?->state === PlacementState::Started) {
+        if ($placed !== null && $this->isWaiting($placed)) {
+            $this->answerPlacementAskers(
+                $agentId,
+                PeerPlacementVerdictDTO::notPlaced(
+                    $agentType,
+                    $agentIndex,
+                    $placed->state,
+                    $placed->reason ?? 'the last placement attempt did not succeed',
+                    $placed->refusals,
+                ),
+            );
+            return;
+        }
+        if ($placed?->state === PlacementState::Started && $placed->nodeId !== null) {
             $this->answerPlacementAskers(
                 $agentId,
                 PeerPlacementVerdictDTO::placed($agentType, $agentIndex, $placed->nodeId),
             );
+        }
+    }
+
+    /**
+     * Keeps cancellation after the named host confirms, then releases only newer demand.
+     * An acknowledgement from another host cannot settle this stop or touch a fresh placement.
+     *
+     * @param string $agentId Canceled agent id
+     * @param string $nodeId Host confirming the stop
+     */
+    private function confirmCanceledStop(string $agentId, string $nodeId): void
+    {
+        $record = $this->registry->get($agentId);
+        if ($record?->state !== PlacementState::Stopped || $record->nodeId !== $nodeId) {
+            return;
+        }
+        $this->registry->put(new PlacementRecord($record->agentType, $record->agentIndex, null, PlacementState::Stopped));
+        unset($this->placementAckDeadlines[$agentId]);
+        if (!array_key_exists($agentId, $this->afterStopTargets)) {
+            return;
+        }
+        $target = $this->afterStopTargets[$agentId];
+        unset($this->afterStopTargets[$agentId]);
+        try {
+            if ($target === null) {
+                $this->placeAgentOnBestNode($record->agentType, $record->agentIndex);
+            } else {
+                $this->placeAgentOnNode($record->agentType, $record->agentIndex, $target);
+            }
+        } catch (Throwable $e) {
+            Logger::warning("Placement after cancellation of '{$agentId}' failed: {$e->getMessage()}");
+        }
+        if (isset($this->placementVerdictWaiters[$agentId])) {
+            $this->placeOnDemand($record->agentType, $record->agentIndex);
         }
     }
 
@@ -2914,6 +3537,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @throws AgentDaemonCreationFailedException When the agent daemon cannot be built
      * @throws NoSuitableWorkerException When no worker is available to host it
      * @throws AgentNotLinkedToWorkerException When the agent did not link to a worker
+     * @throws HilosException Whatever the project's agent-daemon factory raises
      */
     private function placeLocally(string $agentType, ?string $agentIndex): void
     {
@@ -2921,8 +3545,14 @@ final class ClusterPlacement implements WorkerPlacement
 
         try {
             $workerId = $this->executor->executePlacement($agentType, $agentIndex);
-        } catch (AgentDaemonCreationFailedException | NoSuitableWorkerException | AgentNotLinkedToWorkerException $e) {
-            $this->recordFailure($this->selfNodeId, $this->failedAttempt($agentType, $agentIndex, $e));
+        } catch (Throwable $e) {
+            $failure = $this->failedAttempt($agentType, $agentIndex, $e);
+            $previous = $this->registry->get($record->agentId());
+            if ($previous !== null && $previous->state->hostsAgent()) {
+                $this->rememberRefusal($failure);
+            } else {
+                $this->recordFailure($this->selfNodeId, $failure);
+            }
             throw $e;
         }
 
@@ -2937,6 +3567,7 @@ final class ClusterPlacement implements WorkerPlacement
 
         $this->hosted[$record->agentId()] = $record;
         $this->registry->put($record);
+        $this->placementStarted($record->agentId(), $this->selfNodeId);
     }
 
     /**

@@ -757,12 +757,14 @@ under-runs an agent (safe) rather than double-running a truth source (a correctn
 
 **Placing the policy agents.** `DaemonManager::ensurePolicyAgentsPlaced()` runs inside
 the leader gate, next to `ensureSingletonsStarted()`, and places every `CLUSTER`+`POLICY`
-agent the registry declares without an index. It reconciles on every tick rather than
-ensuring once, because `ClusterPlacement::placeAgentOnBestNode()` places nothing when no
-online node clears the hard gate; a record left `Failed` is retried no more often than
-`POLICY_PLACEMENT_RETRY_SEC`. Indexed pools stay with the project — only it knows their
-members. With cluster mode off the same pass hosts the agent locally: a single node is
-its own leader and its own data plane.
+agent the registry declares without an index. It declares only missing records: `Failed`
+and `Unplaced` remain tracked, and their retries belong to `ClusterPlacement`. Addressing
+any `CLUSTER`+`POLICY` agent, singleton or indexed, also asks that same placement door;
+`NODE` replicas and `LEADER` agents do not. A final negative verdict releases the held
+frame immediately (HIL-1041); the background queue does not retain it. Indexed pools
+keep their size with their caller — the probe supervisor declares only its own 0..9.
+With cluster mode off the same pass hosts the agent locally, waits for `workersReady`
+and keeps `POLICY_PLACEMENT_RETRY_SEC`: a single node is its own leader and data plane.
 
 On lost leadership only the `CLUSTER`+`LEADER` agents are stopped
 (`WorkerServer::onLostSingletonHost()`). A replica was never tied to the term, and a
@@ -773,17 +775,17 @@ Coordination state is **not** persisted (MySQL is kept out of coordination). A n
 leader rebuilds membership/placement by re-querying the mesh; singleton agents are
 launched fresh (the previous leader's were killed — see HIL-341 below).
 
-Until that rebuild is settled the new leader places nothing it has no record of
-(HIL-1217): new work waits until every node online to it has reported, and every node
+Until that rebuild and snapshot inheritance settle the new leader places nothing
+(HIL-1217, HIL-446): work waits until every node online to it has reported, and every node
 that went away less than `CLUSTER_FAILOVER_GRACE_MS` ago has been away for that grace —
 a leader cut off from the majority stops its work only a self-fence grace after it lost
 its quorum (*Quorum-loss reaction* below), so a copy started sooner would run beside the
 one it still runs. A node that goes away while awaited is waited out from that moment; one
 that comes back is waited for by its report again. The wait holds the policy pass, the
 probe fleet, a project's own pool and an addressed agent alike — the addressed one is
-held, not refused, and placed with its verdict once the rebuild settles. Failover and
-every record the leader knows are not held: a dead node's agents, a re-placement after a
-report, the retry of an unplaced agent. The leader logs `Placement rebuild: N node(s) to
+held, not refused, and placed with its verdict once the rebuild settles. Known records,
+failover and waiting retries also await import, so a newer donor's cancellation cannot
+be overtaken. The leader logs `Placement rebuild: N node(s) to
 account for their agents …` when it starts waiting and `Placement rebuild settled …`
 when it stops; on a stand whose leader has nothing to wait for it logs neither.
 
@@ -912,7 +914,8 @@ Placement is resource accounting, not a pick by labels and head count.
   with no project cost is ranked by its share of each node's slots, so a fleet of them
   fills the nodes in proportion to the `slots` they declare, and the head count only
   breaks a tie between equal shares. At unequal shares the leader can win the work.
-- **Release and a new leader need no code.** A stop forgets the record, a move rewrites it,
+- **Release and a new leader need no code.** An idle stop forgets the record, explicit
+  cancellation leaves a `Stopped` tombstone, a move rewrites the record,
   a node loss either moves it or degrades it to Unplaced — each frees the reservation by
   moving the record. A dead node is not online, so while its failover grace runs it is no
   candidate and its reservation stands in nobody's way. A fresh leader rebuilds the registry
@@ -920,11 +923,97 @@ Placement is resource accounting, not a pick by labels and head count.
 - **What spends no capacity.** `NODE`-scope replicas and `CLUSTER`+`LEADER` singletons are
   not in the placement registry — no node is chosen for them, and they take no slot. The
   operator declares a node's capacity net of what the node carries by itself.
-- **Not here.** What happens to work that fits nowhere — a record that waits for room, when
-  and why it is tried again (today `retryUnplaced()` runs only when a node comes online, and
-  a new agent no node takes is not retried at all), and keeping its refusals across a change
-  of leader — HIL-446. Moving running agents when a node appears or capacity frees — HIL-443;
-  drain — HIL-444.
+- **Waiting and retry (HIL-446).** New work that fits nowhere gets one `Unplaced` record
+  with `nodeId=null`, reason and refusals; an error before choosing a host gets `Failed`
+  with `nodeId=null`. Repeated requests upsert the same agent id. The active leader,
+  after its rebuild barrier, retries at most one waiting agent per tick in round-robin
+  order. Periodic attempts are at least five seconds apart per agent. A node joining or
+  a live reservation being released makes `Unplaced` eligible sooner, without placing
+  inside the event callback; `Failed` always keeps its five seconds. Diagnostic revisions
+  release no capacity and cannot wake the queue. The periodic pass also covers missed events.
+  On-demand asks share this interval across all asking nodes and get the last negative
+  verdict immediately while it holds. `Placing` waits for its outcome; `Started` is reused;
+  `Refused` is terminal. Started, refused and explicitly stopped work leaves the local retry
+  schedule, and leadership loss drops that schedule. Waiting/retry/resumed log lines describe
+  transitions and actual attempts; an identical failed retry does not repeat the waiting entry
+  or `onPlacementDegraded()`.
+- **Explicit cancellation and idle stops.** `stopAgentOnNode()` cancels the old intent,
+  removes its local retry schedule, last refusal, placement asks and held demand, and answers
+  its waiters through the existing verdict sink with `Failed`, `placement canceled` and no
+  refusals. Null is a legitimate addressee for `Failed`/`Unplaced` work that runs nowhere:
+  no stop frame is sent. The registry keeps a `Stopped` tombstone, with no diagnosis,
+  address, reservation or retry. With a real node it still awaits stop-ack; acknowledgement
+  replaces that node with null and preserves cancellation. New explicit placement or request
+  waits for this confirmation, then starts fresh intent; old waiters already answered by
+  cancellation are separate from the new demand. A lost stop-ack uses the existing timeout
+  query: an asked report omitting the agent confirms the stop. Late started statuses or hosted
+  reports repeat the stop, while unrelated stopped/failed statuses cannot acknowledge this
+  stop or erase a fresh placement on another host. A `Refused` truth-source verdict remains
+  terminal. Automatic POLICY/bootstrap and fleet passes declare only absent records and do
+  not lift tombstones. These records are hidden from `inspect`'s working `placements` rows.
+  `Placement canceled: '<agentId>'` logs the explicit transition. An ordinary idle stopped
+  status still forgets the record; the next addressed frame can start the instance again.
+- **Complete peer snapshots (HIL-446).** Peer protocol 22 extends the existing
+  `peer_placement_view` to `{leaderNodeId, agents, placementSnapshot}`. The required snapshot
+  is `{leaderNodeId, term, revision, records}` and names the same leader as the outer frame.
+  Its complete record list includes `Placing`, `Started`, `Failed`, `Unplaced`, `Refused`
+  and explicit `Stopped` tombstones, with each record's nullable host and diagnosis. The
+  `agents` map remains only addressable `Placing`/`Started` work, grouped by actual host;
+  waiting work and tombstones neither reserve capacity nor acquire an address from the copy.
+  The leader publishes once per changed registry revision, including diagnosis-only changes,
+  cancellations, deletion and an empty registry, and hands the same complete version to a
+  new link. Broadcast packing still encodes once for the mesh. An unsettled rebuild sends
+  no view, even after its final report, until the tick settles it; it cannot replace a
+  retained complete copy with a new partial or empty original.
+  A view is accepted only from its named leader on the authenticated peer link. Masters
+  confirm both leader and term against their existing consensus knowledge; slaves use the
+  leader that placed or queried them, without acquiring consensus. A frame that precedes
+  that knowledge remains a candidate and is confirmed on a later tick. Accepted versions
+  advance by term, then by revision within the same leader/term. Different leaders in one
+  term are a logged conflict, never a comparison of bare revisions.
+  Every node retains its last confirmed immutable copy without a current leader. A departing
+  leader saves its latest complete original before clearing the writable registry and local
+  retries; losing an unfinished rebuild preserves the previous complete copy instead. Query
+  and handshake reports carry `{agents, placementSnapshot}`: `agents` is always what the
+  sender actually hosts, independently of the saved records. The required snapshot key is
+  `null` until a complete copy is known; a snapshot with `records=[]` is an authoritative
+  empty version. `DaemonManager::onBecameLeader()` supplies the real consensus term to placement.
+  The new leader keeps its own retained copy as a donor and selects one freshest complete
+  snapshot from rebuild reports, ordering by term and by revision within one leader/term.
+  A donor may relay a retained snapshot stamped by another node. Same-term source conflicts
+  are logged and keep the accepted copy; revisions from different sources are never compared.
+  A newer empty copy or deletion replaces older waiting and canceled intent, rather than
+  unioning their records. Report snapshots from future terms are refused.
+  Only after every live report and the existing offline/self-fence grace does inheritance
+  add missing `Failed`/`Unplaced` records with their diagnosis. Snapshot `Placing`/`Started`
+  without a confirmed host becomes `Unplaced`; real hosted instances are adopted through
+  reconciliation without a second start. `Stopped` tombstones suppress stale hosted work:
+  repeat the stop, retain cancellation, and hold newer explicit demand for stop-ack. A host
+  absent after the barrier leaves a confirmed null-host tombstone. `Refused` is re-evaluated
+  through the existing new-term declaration path and never enters automatic retry.
+  Rebuild holds every placement door until actual import, including known records and the
+  gap between the last report and tick. Held named or addressed demand then uses the rebuilt
+  truth. The local retry schedule starts afresh: `Failed` waits five seconds from settlement,
+  `Unplaced` is ready then, with one automatic attempt per tick. Recovered waits restore
+  `placementRefusals`; `Placement queue recovered: <N> waiting agent(s)` names recovery,
+  and their first ordinary retry uses `trigger=new_leader` unless another event wakes it.
+  A restarted leader learning its own older snapshot in the same term publishes above that
+  revision, including an empty result and subsequent deletions. The revision offset is local
+  to that leader/term; new terms are ordered by term, not by carrying an old bare revision.
+  `inspect.placementSnapshot` reads that complete original or retained copy on any node,
+  including without a leader, without consuming it. It uses the exact peer object shape;
+  `placements` remains the leader's working rows with nullable `nodeId`, excluding tombstones,
+  and `placementRefusals` remains its separate last-attempt diagnosis.
+  These are coordination replicas in memory, not a quorum-committed or replicated log.
+  Inheritance recovers the latest snapshot delivered to a surviving node and available to
+  rebuild. A leader dying before its last edit is delivered can lose that edit; losing all
+  copies or stopping the whole cluster loses the live accounting. Term/revision are no
+  durable journal and cannot promise recovery after those losses. Live scenario 43 on
+  ecommerce-shop proves retry after a slave returns; scenario 44 on binance-btc-tracker
+  checks complete replicas before leader death, inheritance through re-election and quorum
+  loss, and automatic start when slots return. Both restore the original full stand.
+- **Not here.** Moving running agents when a node appears or capacity
+  frees — HIL-443; drain — HIL-444.
 
 ## Why placed work does not run (HIL-447)
 
@@ -971,18 +1060,19 @@ node that does take it and has no slot free, or declares other capacities and no
 - **The record says why.** A `PlacementRecord` in `Failed` or `Unplaced` carries the
   attempt's `reason` and `refusals`; a `Placing`, `Started` or `Refused` (HIL-696) record
   carries neither. A failover that finds no node degrades the agent to `Unplaced` with every
-  node's refusal, and a retry on a join that still places it nowhere rewrites them as of
+  node's refusal, and a real retry that still places it nowhere rewrites them as of
   that retry. A move the gate
   refuses leaves the agent's running record as it was. Two failures of one agent that say
   different things are two revisions of its record, compared by value.
 - **The last refusal is the leader's diagnosis, not a queue.** The leader keeps the last
   failed attempt of each agent, `PlacementRefusalSnapshot` — type, index, id, reason,
-  refusals — replaced by the next failure. It is the only place a new agent no node took
-  shows up: such an agent gets no record, and nothing retries it (HIL-446). Only a real
-  attempt writes it — choosing a node without placing (`bestNodeFor()`) writes nothing —
+  refusals — replaced by the next failure. New work no node takes also has one `Unplaced`
+  record with no host, from which the shared leader retry is derived (HIL-446). Only a real
+  attempt writes the diagnosis — choosing a node without placing (`bestNodeFor()`) writes nothing —
   and it is dropped by an accepted attempt, by the agent's start or its re-adoption from a
   node's report, by an explicit stop, and with leadership, won or lost. A node that does
-  not lead shows none, and a new leader starts with none.
+  not lead shows none. A new leader restores waiting diagnoses from the complete inherited
+  records after its rebuild barrier; other last-attempt history remains local to its term.
 - **Where to read it.** `test:cluster:inspect` on the leader. Each row of `placements`
   carries `reason` and `refusals` — `null` and `[]` unless its record failed or is
   unplaced — and `placementRefusals` lists the last refusal of each agent:
@@ -1169,7 +1259,9 @@ equal agents does not pile onto one node.
   against the dead one, stopping a fleet the new leader had just recorded as started.
 - **Degrade gracefully.** When re-placement finds no capable+online node, the agent is
   marked `PlacementState::Unplaced`, logged, and the project `onPlacementDegraded()` hook
-  fires; the leader retries automatically when a capable node joins (`onNodeJoined`). The
+  fires. A node joining (`onNodeJoined`) only wakes `Unplaced`; the leader's tick makes the
+  bounded attempt, and the same queue also retries periodically and after a live reservation
+  is released. Failed starts keep their five-second minimum through those events. The
   record says why — the reason and every online node's refusal, or the gate's when the node
   picked refused (HIL-447, *Why placed work does not run* above).
 - **Wiring.** `PlacementState::Unplaced` and the `peer_ping` / `peer_pong` frames raise the

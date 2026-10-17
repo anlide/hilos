@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Cluster\Probe;
 
 use Hilos\Cluster\Placement\ClusterPlacement;
-use Hilos\Cluster\Placement\PlacementState;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Hilos;
@@ -40,12 +39,6 @@ use Throwable;
  */
 final class ProbeFleetSupervisor
 {
-    /** @var float Seconds between attempts to re-place a fleet member whose start failed */
-    private const float FAILED_RETRY_INTERVAL_SEC = 5.0;
-
-    /** @var float Microtime a failed fleet member may be re-placed again */
-    private float $retryFailedAt = 0.0;
-
     /**
      * Leader per-tick pass: ensures the fleet is placed.
      *
@@ -66,11 +59,9 @@ final class ProbeFleetSupervisor
      *
      * Delegates node choice to the framework's best-fit policy (HIL-182) via
      * {@see ClusterPlacement::placeAgentOnBestNode()}: it ranks the online capable nodes and
-     * places on the winner, or does nothing when none is a fit yet. A record in any live
-     * state (including Unplaced, which the framework retries on the next capable join)
-     * suppresses placement, so this never fights failover or double-runs a member. A member
-     * whose start Failed is the exception: nothing else retries it, so this supervisor
-     * re-places it once per retry interval until it comes up.
+     * places on the winner, or records Unplaced when none is a fit yet. Every tracked record,
+     * including Failed and Unplaced, suppresses this declaration. ClusterPlacement owns retries;
+     * this supervisor declares only the missing indexes of its own 0..9 fleet, never extras.
      */
     private function ensureFleetPlaced(): void
     {
@@ -83,18 +74,9 @@ final class ProbeFleetSupervisor
                 return;
             }
 
-            $now = microtime(true);
-            $retryFailed = $now >= $this->retryFailedAt;
-            if ($retryFailed) {
-                $this->retryFailedAt = $now + self::FAILED_RETRY_INTERVAL_SEC;
-            }
-
             $tracked = [];
             foreach ($placement->registry()->all() as $record) {
                 if ($record->agentType !== HilosAgentType::HILOS_PROBE_FLEET || $record->agentIndex === null) {
-                    continue;
-                }
-                if ($retryFailed && $record->state === PlacementState::Failed) {
                     continue;
                 }
 

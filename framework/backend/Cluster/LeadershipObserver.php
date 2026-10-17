@@ -38,6 +38,8 @@ interface LeadershipObserver
 
     /**
      * Called when the local node loses its quorum of the master set.
+     *
+     * @throws HilosException When the observer's shutdown duties fail
      */
     public function onQuorumLost(): void;
 }

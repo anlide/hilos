@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Cluster\Peer\DTO;
 
 use Hilos\Cluster\Exception\PeerTransportException;
+use Hilos\Cluster\Placement\PlacementSnapshot;
 
 /**
  * Placement frame the leader hands every node so it can tell where an agent runs.
@@ -16,13 +17,15 @@ use Hilos\Cluster\Exception\PeerTransportException;
  * locally, into nothing.
  *
  * A full list rather than a delta, on the same grounds the roster is one: placements number in
- * the dozens, a full list is self-correcting after any missed frame, and there is no ordering
- * to get wrong. The wire groups agents BY NODE, which is what lets the entries stay ordinary
+ * the dozens and a full list is self-correcting after any missed frame. The wire groups agents BY NODE,
+ * which is what lets the entries stay ordinary
  * {@see PeerPlacedAgentEntry} objects meaning exactly what they mean in a report — the node is
  * one level up, as it is there too (where it is the sender).
  *
- * {@see $leaderNodeId} names the owner of this view, so a node can tell whose picture it is
- * holding and a stale one can be logged with the term it came from.
+ * The required complete snapshot carries all registry states, including waiting work and
+ * cancellation tombstones; the address map still carries only Placing/Started agents. Its leader
+ * matches the outer owner. Receivers confirm the peer source and leader knowledge, then fence by
+ * term and revision; storing this copy does not itself implement inheritance on a new term.
  */
 final class PeerPlacementViewDTO extends PeerDTO
 {
@@ -35,14 +38,23 @@ final class PeerPlacementViewDTO extends PeerDTO
     /** @var string Payload key: hosted agent entries, keyed by the node hosting them */
     public const string FIELD_AGENTS = 'agents';
 
+    /** @var string Payload key: complete leader-owned registry, including waiting work and tombstones */
+    public const string FIELD_PLACEMENT_SNAPSHOT = 'placementSnapshot';
+
     /**
      * @param string $leaderNodeId Id of the leader that owns this view
      * @param array<string|int, list<PeerPlacedAgentEntry>> $agents Agents each node hosts, by node id
+     * @param PlacementSnapshot $placementSnapshot Complete registry at the leader's term and revision
+     * @throws PeerTransportException When the nested snapshot names another leader
      */
     public function __construct(
         public readonly string $leaderNodeId,
         public readonly array $agents,
+        public readonly PlacementSnapshot $placementSnapshot,
     ) {
+        if ($placementSnapshot->leaderNodeId !== $leaderNodeId) {
+            throw new PeerTransportException('Peer placement view snapshot names another leader');
+        }
     }
 
     /**
@@ -74,6 +86,7 @@ final class PeerPlacementViewDTO extends PeerDTO
             self::TYPE => self::MESSAGE_TYPE,
             self::FIELD_LEADER_NODE_ID => $this->leaderNodeId,
             self::FIELD_AGENTS => $agents,
+            self::FIELD_PLACEMENT_SNAPSHOT => $this->placementSnapshot->toArray(),
         ];
     }
 
@@ -94,7 +107,7 @@ final class PeerPlacementViewDTO extends PeerDTO
      *
      * @param array<string, mixed> $data Frame payload
      * @return static Restored view
-     * @throws PeerTransportException When the leader id, a node id, or an entry is malformed
+     * @throws PeerTransportException When a leader, node, entry or required complete snapshot is malformed
      */
     public static function fromArray(array $data): static
     {
@@ -125,6 +138,11 @@ final class PeerPlacementViewDTO extends PeerDTO
             }
         }
 
-        return new static($leaderNodeId, $agents);
+        $rawSnapshot = $data[self::FIELD_PLACEMENT_SNAPSHOT] ?? null;
+        if (!is_array($rawSnapshot)) {
+            throw new PeerTransportException('Peer placement view is missing the placement snapshot');
+        }
+
+        return new static($leaderNodeId, $agents, PlacementSnapshot::fromArray($rawSnapshot));
     }
 }

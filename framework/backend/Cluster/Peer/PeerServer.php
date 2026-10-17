@@ -800,6 +800,7 @@ final class PeerServer extends AbstractTlsServer implements
      *
      * @param PeerLink $link Link that just completed its handshake
      * @param NodeIdentity $remote Remote node identity learned from the handshake
+     * @throws PeerTransportException When the placement snapshot metadata is invalid
      */
     public function onHandshakeComplete(PeerLink $link, NodeIdentity $remote): void
     {
@@ -1145,6 +1146,7 @@ final class PeerServer extends AbstractTlsServer implements
      * Routes a received placement query to the placement coordinator to answer.
      *
      * @param PeerLink $link Link the query arrived on
+     * @throws PeerTransportException When the placement snapshot metadata is invalid
      */
     public function onPlacementQueryReceived(PeerLink $link): void
     {
@@ -1221,6 +1223,8 @@ final class PeerServer extends AbstractTlsServer implements
      *
      * @param PeerLink $link Link the view arrived on
      * @param PeerPlacementViewDTO $frame Received placement-view frame
+     * @throws EnvException When placement source confirmation cannot read cluster mode
+     * @throws PeerTransportException When the placement snapshot metadata is invalid
      */
     public function onPlacementViewReceived(PeerLink $link, PeerPlacementViewDTO $frame): void
     {

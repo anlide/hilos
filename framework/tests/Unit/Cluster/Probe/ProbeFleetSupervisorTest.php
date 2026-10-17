@@ -24,7 +24,7 @@ use ReflectionProperty;
  *
  * The framework's policy sweep leaves indexed pools to whoever declared them, and this pool is
  * the framework's: on every tick of the leader the supervisor keeps every member placed, leaves a
- * tracked one alone, re-places a failed one once per interval, and does nothing at all where the
+ * tracked one alone, delegates every failed retry to ClusterPlacement, and does nothing where the
  * fleet is not listed or no probe may start. A fresh leader's wait for its rebuild is the
  * placement coordinator's (HIL-1217), so the supervisor holds no window of its own.
  */
@@ -92,6 +92,9 @@ final class ProbeFleetSupervisorTest extends TestCase
 
         $placement->onPlacementReport(self::PEER, new PeerPlacementReportDTO([]));
         $supervisor->tick();
+        $this->assertSame([], $executor->executed, 'The final report still waits for snapshot inheritance on tick');
+        $placement->tick(microtime(true));
+        $supervisor->tick();
         $this->assertSame(self::fleet(), $executor->executed, 'Every member is placed once every node has reported');
     }
 
@@ -106,7 +109,27 @@ final class ProbeFleetSupervisorTest extends TestCase
         $this->assertCount(ClusterProbe::FLEET_SIZE, $executor->executed, 'A record in a live state suppresses re-placing');
     }
 
-    public function testAFailedMemberIsRetriedOncePerInterval(): void
+    public function testExplicitlyCanceledMemberIsNotDeclaredMissing(): void
+    {
+        $executor = $this->installPlacement();
+        $supervisor = new ProbeFleetSupervisor();
+        $supervisor->tick();
+        $executor->executed = [];
+        $placement = Hilos::$cluster->placement();
+        $placement->stopAgentOnNode(HilosAgentType::HILOS_PROBE_FLEET, '3', self::SELF);
+
+        $supervisor->tick();
+        $supervisor->tick();
+
+        $this->assertSame([], $executor->executed);
+        $this->assertCount(10, $placement->registry()->all());
+        $this->assertEquals(
+            new PlacementRecord(HilosAgentType::HILOS_PROBE_FLEET, '3', null, PlacementState::Stopped),
+            $placement->registry()->get(HilosAgentType::HILOS_PROBE_FLEET . ':3'),
+        );
+    }
+
+    public function testAFailedMemberIsLeftToTheFrameworkRetry(): void
     {
         $executor = $this->installPlacement();
         $supervisor = new ProbeFleetSupervisor();
@@ -118,12 +141,31 @@ final class ProbeFleetSupervisorTest extends TestCase
         $this->assertSame(
             [],
             $executor->executed,
-            'The retry window armed by the first pass must hold until it elapses',
+            'The coordinator retains a tracked failed member',
         );
 
-        new ReflectionProperty(ProbeFleetSupervisor::class, 'retryFailedAt')->setValue($supervisor, 0.0);
         $supervisor->tick();
-        $this->assertSame([[HilosAgentType::HILOS_PROBE_FLEET, self::FAILED_INDEX]], $executor->executed);
+        $this->assertSame([], $executor->executed, 'The supervisor only declares absent members');
+        $this->assertNull(Hilos::$cluster->placement()->registry()->get(HilosAgentType::HILOS_PROBE_FLEET . ':10'));
+        $this->assertCount(10, Hilos::$cluster->placement()->registry()->all());
+    }
+
+    public function testExtraIndexesAreNeitherRetriedNorRecreatedByTheSupervisor(): void
+    {
+        $executor = $this->installPlacement();
+        $supervisor = new ProbeFleetSupervisor();
+        $supervisor->tick();
+        $executor->executed = [];
+        $placement = Hilos::$cluster->placement();
+        $placement->registry()->put(new PlacementRecord(HilosAgentType::HILOS_PROBE_FLEET, '99', null, PlacementState::Failed));
+        $supervisor->tick();
+        $this->assertCount(11, $placement->registry()->all());
+        $this->assertSame([], $executor->executed);
+        $placement->registry()->forget(HilosAgentType::HILOS_PROBE_FLEET . ':99');
+        $supervisor->tick();
+        $this->assertCount(10, $placement->registry()->all());
+        $this->assertNull($placement->registry()->get(HilosAgentType::HILOS_PROBE_FLEET . ':99'));
+        $this->assertSame([], $executor->executed);
     }
 
     public function testNothingIsPlacedWhereNoProbeMayStart(): void

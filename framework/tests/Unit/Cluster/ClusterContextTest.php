@@ -22,12 +22,16 @@ use Hilos\Cluster\Peer\ConnectionPolicy;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacedAgentEntry;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
 use Hilos\Cluster\Peer\FullMeshConnectionPolicy;
 use Hilos\Cluster\Placement\BestFitPlacementPolicy;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementCandidate;
 use Hilos\Cluster\Placement\PlacementPolicy;
+use Hilos\Cluster\Placement\PlacementRecord;
 use Hilos\Cluster\Placement\PlacementRefusal;
+use Hilos\Cluster\Placement\PlacementSnapshot;
+use Hilos\Cluster\Placement\PlacementState;
 use Hilos\Cluster\Placement\ResourceProfile;
 use Hilos\Cluster\PendingLeadership;
 use Hilos\Cluster\StandaloneLeadership;
@@ -346,6 +350,7 @@ final class ClusterContextTest extends TestCase
         $this->assertNull($inspection[ClusterCommandConstants::FIELD_CONSENSUS_ROLE]);
         $this->assertFalse($inspection[ClusterCommandConstants::FIELD_HAS_QUORUM]);
         $this->assertSame([], $inspection[ClusterCommandConstants::FIELD_PLACEMENTS]);
+        $this->assertNull($inspection[ClusterCommandConstants::FIELD_PLACEMENT_SNAPSHOT]);
         $this->assertSame([], $inspection[ClusterCommandConstants::FIELD_PLACEMENT_REFUSALS_SNAPSHOT]);
         $this->assertFalse($inspection[ClusterCommandConstants::FIELD_ADMIN_VIEW_MODE]);
 
@@ -480,11 +485,36 @@ final class ClusterContextTest extends TestCase
         );
     }
 
+    /** Inspection carries a literal null host alongside the unchanged diagnosis fields. */
+    public function testInspectPreservesNullNodesAndTheirFailureDiagnosis(): void
+    {
+        $this->enableClusterNode();
+        [$context, $placement] = $this->contextWithALeader();
+        $placement->registry()->put(new PlacementRecord(
+            'render', 'failed', null, PlacementState::Failed, 'no nodes', [PlacementRefusal::noOnlineNodes()],
+        ));
+        $placement->registry()->put(new PlacementRecord(
+            'render', 'waiting', null, PlacementState::Unplaced, 'no room', [PlacementRefusal::noDeclaredCapacity('node-b')],
+        ));
+        $placement->registry()->put(new PlacementRecord('render', 'stopped', null, PlacementState::Stopped));
+        $placement->registry()->put(new PlacementRecord('render', 'stopping', 'node-b', PlacementState::Stopped));
+
+        $this->assertSame(
+            '[{"agentType":"render","agentIndex":"failed","agentId":"render:failed","nodeId":null,"state":"failed",'
+            . '"reason":"no nodes","refusals":[{"nodeId":null,"reasonCode":"no_online_nodes",'
+            . '"missingCapabilities":[],"shortfalls":{}}]},'
+            . '{"agentType":"render","agentIndex":"waiting","agentId":"render:waiting","nodeId":null,"state":"unplaced",'
+            . '"reason":"no room","refusals":[{"nodeId":"node-b","reasonCode":"no_declared_capacity",'
+            . '"missingCapabilities":[],"shortfalls":{}}]}]',
+            json_encode($context->inspect()[ClusterCommandConstants::FIELD_PLACEMENTS]),
+        );
+    }
+
     /**
-     * New work no node takes has no record; the leader's snapshot is the one place it shows, with
-     * every node's refusal on the wire form (HIL-447).
+     * New work no node takes has one Unplaced record with no host, beside the leader's snapshot
+     * carrying every node's refusal in wire form (HIL-447, HIL-446).
      */
-    public function testInspectListsALastRefusalThatHasNoRecord(): void
+    public function testInspectListsAWaitingRecordAndItsLastRefusal(): void
     {
         $this->enableClusterNode();
         [$context, $placement] = $this->contextWithALeader(nodeB: ['worker']);
@@ -494,9 +524,19 @@ final class ClusterContextTest extends TestCase
         $inspection = $context->inspect();
 
         $this->assertSame(
-            ['render:1'],
+            ['render:1', 'render:9'],
             array_column($inspection[ClusterCommandConstants::FIELD_PLACEMENTS], ClusterCommandConstants::FIELD_PLACEMENT_AGENT_ID),
-            'The refused agent has no row',
+            'The waiting agent has exactly one row beside the hosted agent',
+        );
+        $waiting = $inspection[ClusterCommandConstants::FIELD_PLACEMENTS][1];
+        $this->assertNull($waiting[ClusterCommandConstants::FIELD_NODE_ID]);
+        $this->assertSame('unplaced', $waiting[ClusterCommandConstants::FIELD_PLACEMENT_STATE]);
+        $this->assertSame('no capable and online node fits the agent', $waiting[ClusterCommandConstants::FIELD_PLACEMENT_REASON]);
+        $this->assertSame(
+            json_encode(
+                $inspection[ClusterCommandConstants::FIELD_PLACEMENT_REFUSALS_SNAPSHOT][0][ClusterCommandConstants::FIELD_PLACEMENT_REFUSALS],
+            ),
+            json_encode($waiting[ClusterCommandConstants::FIELD_PLACEMENT_REFUSALS]),
         );
         $this->assertSame(
             '[{"agentType":"render","agentIndex":"9","agentId":"render:9",'
@@ -555,6 +595,51 @@ final class ClusterContextTest extends TestCase
         $this->assertSame([], $context->inspect()[ClusterCommandConstants::FIELD_PLACEMENT_REFUSALS_SNAPSHOT]);
     }
 
+    public function testInspectIncludesTheLeadersCompleteSnapshotBesideItsWorkingPlacements(): void
+    {
+        $this->enableClusterNode();
+        [$context, $placement] = $this->contextWithALeader();
+        $placement->registry()->put(new PlacementRecord('render', 'waiting', null, PlacementState::Failed, 'no room'));
+        $placement->registry()->put(new PlacementRecord('render', 'canceled', null, PlacementState::Stopped));
+        $inspection = $context->inspect();
+        $snapshot = $inspection[ClusterCommandConstants::FIELD_PLACEMENT_SNAPSHOT];
+        self::assertSame($placement->placementSnapshot()?->toArray(), $snapshot);
+        self::assertSame(['leaderNodeId', 'term', 'revision', 'records'], array_keys($snapshot));
+        self::assertCount(2, $snapshot[PlacementSnapshot::FIELD_RECORDS]);
+        self::assertSame('stopped', $snapshot[PlacementSnapshot::FIELD_RECORDS][1][PlacementRecord::FIELD_STATE]);
+        self::assertCount(1, $inspection[ClusterCommandConstants::FIELD_PLACEMENTS]);
+        self::assertNull($inspection[ClusterCommandConstants::FIELD_PLACEMENTS][0][ClusterCommandConstants::FIELD_NODE_ID]);
+        self::assertSame($inspection, $context->inspect(), 'Inspection consumes no state');
+    }
+
+    public function testInspectRetainsTheFollowersMirrorWithoutACurrentLeader(): void
+    {
+        $this->enableClusterNode();
+        $previousCluster = Hilos::$cluster;
+        try {
+            Hilos::$cluster = $context = new ClusterContext();
+            $placement = new ClusterPlacement('node-a', new FakePlacementMesh([]), new FakePlacementExecutor());
+            $context->registerPlacement($placement);
+            $placement->onPlacementQuery('leader');
+            $snapshot = new PlacementSnapshot('leader', 7, 19, [
+                new PlacementRecord('render', 'waiting', null, PlacementState::Unplaced, 'no room'),
+                new PlacementRecord('render', 'canceled', null, PlacementState::Stopped),
+            ]);
+            $placement->onPlacementView('leader', new PeerPlacementViewDTO('leader', [], $snapshot));
+            $before = $context->inspect();
+            $placement->onPlacementRelease('leader', 1000.0);
+            $after = $context->inspect();
+            self::assertNull($after[ClusterCommandConstants::FIELD_LEADER_ID]);
+            self::assertSame($snapshot->toArray(), $before[ClusterCommandConstants::FIELD_PLACEMENT_SNAPSHOT]);
+            self::assertSame($before, $after);
+            self::assertSame($after, $context->inspect());
+            self::assertSame([], $after[ClusterCommandConstants::FIELD_PLACEMENTS]);
+            self::assertSame([], $after[ClusterCommandConstants::FIELD_PLACEMENT_REFUSALS_SNAPSHOT]);
+        } finally {
+            Hilos::$cluster = $previousCluster;
+        }
+    }
+
     /**
      * Turns cluster mode on for this node, the way the inspect cases need it.
      */
@@ -583,6 +668,7 @@ final class ClusterContextTest extends TestCase
         $placement->onBecameLeader(1000.0);
         $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
         $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([]));
+        $placement->tick(1000.0);
         $context = new ClusterContext();
         $context->registerPlacement($placement);
 

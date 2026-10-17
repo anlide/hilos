@@ -227,7 +227,8 @@ lived on, 32 a node with another admin view mode refused on both ends,
 33 every master takes browsers, 34 a tab is the same on every master under
 protected mode, 35 rt row deleted while cut off is swept, and 36 a slave
 cut off with its leader stops its work (skipped as flaky since 2026-10-10;
-`docs/agents/testing.md`, "The cluster stands — three demos, three shapes"). The
+`docs/agents/testing.md`, "The cluster stands — three demos, three shapes"),
+and 44 waiting work survives leadership changes. The
 `entry-welcome <master> [<token>] [<pass>]` harness command reads the first
 WebSocket welcome through the stand entry and reports whether that browser is
 inside or on the maintenance stub.
@@ -243,6 +244,28 @@ production the rows are carried and nothing is run.
 | `composer run test:cluster:e2e` | the browser suite on a fresh stand in live and after-loss phases; `-- --grep circle` points it |
 | `composer run test:cluster:down-volumes` | take the stand down, database included |
 | `composer run test:cluster:down` | take the stand down the way the test runner does |
+
+Scenario 44 temporarily gives both slaves `worker,ram=10,slots=16`. Extra fleet
+indices 2000..2032 fill the slots until one stays `unplaced` with `nodeId=null`
+and exact slot refusals. At least one extra must really run and write its RT row;
+the ceiling counts every live placement, including the demo's agents. Before
+killing the leader, every surviving master must report a complete snapshot
+containing that waiting target at the leader's term and revision or later.
+The next leader must finish rebuilding and recover the queue; left as the only
+master, it must lose quorum and leadership while retaining that snapshot.
+Returning the masters must rebuild the queue again. Restoring the first slave's
+64 slots then starts the target without another placement ask, with one record
+and an advancing RT row on its real host. The supervisor declares only 0..9,
+so it cannot recreate this demand for the test. This proves recovery of delivered
+in-memory replicas; it does not promise a durable or quorum-committed queue.
+Cleanup always restarts the full original compose without deleting volumes,
+restores the mesh, stock capabilities and ordinary fleet, and removes every
+extra agent and queued record before the next scenario. Run it with its ordinary
+leadership neighbours on a fresh stand from the repository root:
+
+```bash
+composer -d demo/binance-btc-tracker run test:cluster:scenarios -- 5 7 8 44
+```
 
 The e2e profile adds Mailpit and a Playwright runner. The browser enters through
 one stand entry; every context selects a master with `hilos_stand_master` before

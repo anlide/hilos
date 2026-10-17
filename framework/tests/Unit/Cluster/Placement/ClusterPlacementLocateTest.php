@@ -14,6 +14,9 @@ use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
 use Hilos\Cluster\Placement\AgentLocationKind;
 use Hilos\Cluster\Placement\ClusterPlacement;
+use Hilos\Cluster\Placement\PlacementRecord;
+use Hilos\Cluster\Placement\PlacementState;
+use Hilos\Cluster\Placement\PlacementSnapshot;
 use Hilos\Cluster\PendingLeadership;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
@@ -219,6 +222,23 @@ final class ClusterPlacementLocateTest extends TestCase
         $this->assertNull($location->nodeId);
     }
 
+    /** A known no-host record takes precedence over an older published address. */
+    public function testARecordWithoutAHostCannotFallBackToAnOlderAddress(): void
+    {
+        $placement = $this->follower(leaderId: 'node-b');
+        $placement->onPlacementView('node-b', $this->view(['node-c' => [['library', null]]]));
+        foreach ([PlacementState::Failed, PlacementState::Unplaced, PlacementState::Stopped] as $state) {
+            foreach ([null, 'node-c'] as $nodeId) {
+                $placement->registry()->put(new PlacementRecord('library', null, $nodeId, $state));
+
+                $location = $placement->locate('library', null);
+
+                $this->assertSame(AgentLocationKind::Unknown, $location->kind);
+                $this->assertNull($location->nodeId);
+            }
+        }
+    }
+
     /**
      * An agent type the registry does not declare at all reads with the registry defaults —
      * cluster-wide and leader-hosted — rather than being treated as local. The default has to
@@ -280,7 +300,7 @@ final class ClusterPlacementLocateTest extends TestCase
             );
         }
 
-        return new PeerPlacementViewDTO('node-b', $entries);
+        return new PeerPlacementViewDTO('node-b', $entries, new PlacementSnapshot('node-b', 1, 1, []));
     }
 
     /**

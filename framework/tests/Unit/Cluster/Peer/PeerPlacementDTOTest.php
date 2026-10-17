@@ -17,6 +17,8 @@ use Hilos\Cluster\Peer\DTO\PeerPlacementVerdictDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Peer\PeerProtocol;
+use Hilos\Cluster\Placement\PlacementSnapshot;
+use Hilos\Cluster\Placement\PlacementRecord;
 use Hilos\Cluster\Placement\PlacementRefusal;
 use Hilos\Cluster\Placement\PlacementRefusalCode;
 use Hilos\Cluster\Placement\PlacementState;
@@ -436,7 +438,7 @@ final class PeerPlacementDTOTest extends TestCase
         $frame = new PeerPlacementViewDTO('leader', [
             'node-b' => [new PeerPlacedAgentEntry('chat', '1')],
             'node-c' => [new PeerPlacedAgentEntry('moderator', null), new PeerPlacedAgentEntry('render', '9')],
-        ]);
+        ], new PlacementSnapshot('leader', 7, 9, []));
         $parsed = PeerDTO::fromWire($frame->toJson());
 
         $this->assertInstanceOf(PeerPlacementViewDTO::class, $parsed);
@@ -453,7 +455,7 @@ final class PeerPlacementDTOTest extends TestCase
      */
     public function testAPlacementViewOfNothingRoundTrips(): void
     {
-        $parsed = PeerDTO::fromWire(new PeerPlacementViewDTO('leader', [])->toJson());
+        $parsed = PeerDTO::fromWire(new PeerPlacementViewDTO('leader', [], new PlacementSnapshot('leader', 7, 10, []))->toJson());
 
         $this->assertInstanceOf(PeerPlacementViewDTO::class, $parsed);
         $this->assertSame([], $parsed->agents);
@@ -485,7 +487,7 @@ final class PeerPlacementDTOTest extends TestCase
      */
     public function testAPlacementViewCarriesNodeIdsThatReadAsNumbers(): void
     {
-        $frame = new PeerPlacementViewDTO('1', ['2' => [new PeerPlacedAgentEntry('chat', '7')]]);
+        $frame = new PeerPlacementViewDTO('1', ['2' => [new PeerPlacedAgentEntry('chat', '7')]], new PlacementSnapshot('1', 7, 11, []));
         $parsed = PeerDTO::fromWire($frame->toJson());
 
         $this->assertInstanceOf(PeerPlacementViewDTO::class, $parsed);
@@ -502,6 +504,110 @@ final class PeerPlacementDTOTest extends TestCase
             PeerDTO::TYPE => PeerPlacementViewDTO::MESSAGE_TYPE,
             PeerPlacementViewDTO::FIELD_AGENTS => [],
         ]));
+    }
+
+    public function testCompleteSnapshotsRoundTripInBothPeerFramesBesideTheLiveProjection(): void
+    {
+        $snapshot = new PlacementSnapshot('leader', 7, 19, [
+            new PlacementRecord('render', 'placing', 'node-b', PlacementState::Placing),
+            new PlacementRecord('render', 'started', 'node-c', PlacementState::Started),
+            new PlacementRecord('render', 'failed', null, PlacementState::Failed, 'start failed'),
+            new PlacementRecord('render', 'waiting', null, PlacementState::Unplaced, 'no room', [
+                PlacementRefusal::noDeclaredCapacity('node-b'),
+            ]),
+            new PlacementRecord('render', 'canceled', null, PlacementState::Stopped),
+            new PlacementRecord('render', 'refused', 'node-b', PlacementState::Refused),
+        ]);
+        $view = new PeerPlacementViewDTO('leader', ['node-b' => [new PeerPlacedAgentEntry('render', 'placing')]], $snapshot);
+        $report = new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', 'actual')], $snapshot);
+        foreach ([$view, $report] as $frame) {
+            $parsed = PeerDTO::fromWire($frame->toJson());
+            self::assertInstanceOf($frame::class, $parsed);
+            self::assertEquals($frame->agents, $parsed->agents);
+            self::assertEquals($snapshot, $parsed->placementSnapshot);
+            self::assertSame(json_encode($snapshot->toArray()), json_encode($parsed->toArray()[$frame::FIELD_PLACEMENT_SNAPSHOT]));
+        }
+    }
+
+    public function testAReportAlwaysCarriesItsSnapshotKeyAndDistinguishesNullFromEmpty(): void
+    {
+        $noCopy = new PeerPlacementReportDTO([]);
+        self::assertArrayHasKey(PeerPlacementReportDTO::FIELD_PLACEMENT_SNAPSHOT, $noCopy->toArray());
+        self::assertNull(PeerDTO::fromWire($noCopy->toJson())->placementSnapshot);
+        $empty = new PlacementSnapshot('leader', 7, 20, []);
+        $parsed = PeerDTO::fromWire(new PeerPlacementReportDTO([], $empty)->toJson());
+        self::assertEquals($empty, $parsed->placementSnapshot);
+        self::assertSame([], $parsed->placementSnapshot->records);
+    }
+
+    #[DataProvider('placementFrameKinds')]
+    public function testBothPeerFramesRequireTheSnapshotKey(bool $report): void
+    {
+        $wire = $report ? new PeerPlacementReportDTO([])->toArray()
+            : new PeerPlacementViewDTO('leader', [], new PlacementSnapshot('leader', 7, 1, []))->toArray();
+        unset($wire[PeerPlacementViewDTO::FIELD_PLACEMENT_SNAPSHOT]);
+        $this->expectException(PeerTransportException::class);
+        PeerDTO::fromWire(json_encode($wire));
+    }
+
+    /** @return iterable<string, array{bool}> Existing frame directions */
+    public static function placementFrameKinds(): iterable
+    {
+        yield 'view' => [false];
+        yield 'report' => [true];
+    }
+
+    #[DataProvider('malformedSnapshotPayloads')]
+    public function testMalformedSnapshotsRejectTheEntireViewAndReport(mixed $rawSnapshot): void
+    {
+        foreach ([
+            new PeerPlacementViewDTO('leader', [], new PlacementSnapshot('leader', 7, 1, [])),
+            new PeerPlacementReportDTO([]),
+        ] as $frame) {
+            $wire = $frame->toArray();
+            $wire[PeerPlacementViewDTO::FIELD_PLACEMENT_SNAPSHOT] = $rawSnapshot;
+            try {
+                PeerDTO::fromWire(json_encode($wire));
+                self::fail('A malformed full snapshot must reject the entire frame');
+            } catch (PeerTransportException) {
+                self::addToAssertionCount(1);
+            }
+        }
+    }
+
+    /** @return iterable<string, array{mixed}> Invalid complete snapshot payloads */
+    public static function malformedSnapshotPayloads(): iterable
+    {
+        yield 'scalar' => [true];
+        yield 'missing metadata' => [[]];
+        yield 'negative term' => [['leaderNodeId' => 'leader', 'term' => -1, 'revision' => 1, 'records' => []]];
+        yield 'noninteger revision' => [['leaderNodeId' => 'leader', 'term' => 7, 'revision' => '1', 'records' => []]];
+        $snapshot = new PlacementSnapshot('leader', 7, 1, [new PlacementRecord('render', '9', null, PlacementState::Unplaced)]);
+        $malformed = $snapshot->toArray();
+        unset($malformed[PlacementSnapshot::FIELD_RECORDS][0][PlacementRecord::FIELD_NODE_ID]);
+        yield 'malformed record' => [$malformed];
+        $duplicate = $snapshot->toArray();
+        $duplicate[PlacementSnapshot::FIELD_RECORDS][] = $duplicate[PlacementSnapshot::FIELD_RECORDS][0];
+        yield 'duplicate record' => [$duplicate];
+        $partial = $snapshot->toArray();
+        $partial[PlacementSnapshot::FIELD_RECORDS][] = ['agentType' => 'broken'];
+        yield 'valid record followed by malformed one' => [$partial];
+    }
+
+    public function testAViewRejectsANullSnapshot(): void
+    {
+        $wire = new PeerPlacementViewDTO('leader', [], new PlacementSnapshot('leader', 7, 1, []))->toArray();
+        $wire[PeerPlacementViewDTO::FIELD_PLACEMENT_SNAPSHOT] = null;
+        $this->expectException(PeerTransportException::class);
+        PeerDTO::fromWire(json_encode($wire));
+    }
+
+    public function testAViewRejectsANestedLeaderMismatch(): void
+    {
+        $wire = new PeerPlacementViewDTO('leader', [], new PlacementSnapshot('leader', 7, 1, []))->toArray();
+        $wire[PeerPlacementViewDTO::FIELD_PLACEMENT_SNAPSHOT][PlacementSnapshot::FIELD_LEADER_NODE_ID] = 'other';
+        $this->expectException(PeerTransportException::class);
+        PeerDTO::fromWire(json_encode($wire));
     }
 
     /**

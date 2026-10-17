@@ -84,6 +84,24 @@ final class DaemonManagerPolicyPlacementTest extends TestCase
         $this->assertCount(1, $executor->executed, 'A record in a live state must suppress re-placing.');
     }
 
+    public function testExplicitCancellationIsNotDeclaredMissingByThePolicyPass(): void
+    {
+        $manager = new PolicyPlacementTestManager();
+        $executor = $this->installPlacement();
+        $placement = Hilos::$cluster->placement();
+        $placement->stopAgentOnNode(self::POLICY_TYPE, null, null);
+
+        $this->invokeEnsurePolicyAgentsPlaced($manager);
+        new ReflectionProperty(DaemonManager::class, 'policyPlacementRetryAt')->setValue($manager, 0.0);
+        $this->invokeEnsurePolicyAgentsPlaced($manager);
+
+        $this->assertSame([], $executor->executed);
+        $this->assertEquals(
+            new PlacementRecord(self::POLICY_TYPE, null, null, PlacementState::Stopped),
+            $placement->registry()->get(self::POLICY_TYPE),
+        );
+    }
+
     /** An indexed delivery pool without an idle window still starts on its first addressed frame. */
     public function testAddressingAnIndexedPolicyAgentPlacesItWithOrWithoutAnIdleWindow(): void
     {
@@ -99,8 +117,8 @@ final class DaemonManagerPolicyPlacementTest extends TestCase
         $this->assertSame([['mail', '1'], ['document', '7']], $executor->executed);
     }
 
-    /** Bootstrap agents and leader-hosted instances do not acquire policy placement on demand. */
-    public function testAddressingOtherAgentKindsDoesNotPlaceThem(): void
+    /** A singleton POLICY agent can be addressed; NODE and LEADER agents need no policy placement. */
+    public function testAddressingAPolicySingletonPlacesOnlyIt(): void
     {
         $manager = new PolicyPlacementTestManager();
         $executor = $this->installPlacement();
@@ -112,28 +130,36 @@ final class DaemonManagerPolicyPlacementTest extends TestCase
         $require->invoke($manager, 'presence', null);
         $require->invoke($manager, 'leader_instance', '1');
 
-        $this->assertSame([], $executor->executed);
+        $this->assertSame([['library', null]], $executor->executed);
     }
 
-    public function testAFailedPlacementIsRetriedOncePerInterval(): void
+    public function testAFailedClusterPlacementIsLeftToTheFrameworkRetry(): void
     {
         $manager = new PolicyPlacementTestManager();
         $executor = $this->installPlacement();
-        Hilos::$cluster?->placement()?->registry()->put(
+        Hilos::$cluster->placement()->registry()->put(
             new PlacementRecord(self::POLICY_TYPE, null, self::SELF, PlacementState::Failed),
         );
 
-        // Nothing else retries a failed placement, so the first pass through the open retry
-        // window re-places it - and re-arming the window is what keeps a node that cannot host
-        // it from being asked again on every iteration of the daemon loop.
         $this->invokeEnsurePolicyAgentsPlaced($manager);
-        $this->assertCount(1, $executor->executed);
+        new ReflectionProperty(DaemonManager::class, 'policyPlacementRetryAt')->setValue($manager, 0.0);
+        $this->invokeEnsurePolicyAgentsPlaced($manager);
+        $this->assertSame([], $executor->executed, 'The caller never retries a tracked cluster record');
+    }
 
-        Hilos::$cluster?->placement()?->registry()->put(
-            new PlacementRecord(self::POLICY_TYPE, null, self::SELF, PlacementState::Failed),
-        );
+    public function testStandalonePlacementStillRetriesAfterItsLocalInterval(): void
+    {
+        $manager = new PolicyPlacementTestManager();
+        $server = $this->registerRecordingWorkerServer($manager);
+        $this->setWorkersReady($manager, true);
+        Hilos::$cluster = null;
+
         $this->invokeEnsurePolicyAgentsPlaced($manager);
-        $this->assertCount(1, $executor->executed, 'The retry window must hold until it elapses.');
+        $this->invokeEnsurePolicyAgentsPlaced($manager);
+        $this->assertSame([[self::POLICY_TYPE, null]], $server->placed);
+        new ReflectionProperty(DaemonManager::class, 'policyPlacementRetryAt')->setValue($manager, 0.0);
+        $this->invokeEnsurePolicyAgentsPlaced($manager);
+        $this->assertSame([[self::POLICY_TYPE, null], [self::POLICY_TYPE, null]], $server->placed);
     }
 
     public function testWithClusterModeOffTheSingleNodeHostsItItself(): void
@@ -162,6 +188,16 @@ final class DaemonManagerPolicyPlacementTest extends TestCase
         $this->invokeEnsurePolicyAgentsPlaced($manager);
 
         $this->assertSame([], $server->placed, 'There is nothing to place until a worker can take it.');
+    }
+
+    public function testLeadershipHookPassesItsRealConsensusTermToPlacement(): void
+    {
+        $manager = new PolicyPlacementTestManager();
+        $this->installPlacement();
+        $manager->onBecameLeader(17);
+
+        self::assertSame(17, Hilos::$cluster->placement()->placementSnapshot()?->term);
+        self::assertSame(self::SELF, Hilos::$cluster->placement()->placementSnapshot()?->leaderNodeId);
     }
 
     /**
@@ -293,7 +329,7 @@ abstract class PolicyPlacementTestHilos extends Hilos
 {
     public const array AGENTS = [
         'chat' => [],
-        'presence' => [AgentRegistryKey::SCOPE => AgentScope::NODE],
+        'presence' => [AgentRegistryKey::SCOPE => AgentScope::NODE, AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY],
         'library' => [AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY],
         'mail' => [
             AgentRegistryKey::INDEXED => true,

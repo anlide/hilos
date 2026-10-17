@@ -26,6 +26,7 @@ use Hilos\Cluster\Consensus\ConsensusInspection;
 use Hilos\Cluster\Connections\ClusterClientLocation;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\Exception\ClusterDisabledException;
+use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\LeadershipObserver;
 use Hilos\Cluster\MembershipObserver;
 use Hilos\Cluster\NodeLifecycleState;
@@ -4993,10 +4994,9 @@ abstract class DaemonManager extends BaseManager implements
      * first address is answered before the agent exists anywhere, and without this the answer
      * would never change.
      *
-     * Indexed policy agents start on demand whether or not they declare an idle window: delivery
-     * pools have no window and live until stopped, but still need their first addressed frame to
-     * place them. Unindexed agents belong to the bootstrap pass; leader-hosted agents belong to
-     * the node holding leadership rather than to the placement policy.
+     * Both singleton and indexed CLUSTER+POLICY agents ask on an unknown address. Delivery pools
+     * need no idle window; a singleton whose bootstrap is waiting needs a final verdict for this
+     * frame too. NODE replicas and LEADER agents do not ask the placement policy.
      *
      * Protected rather than private so a subclass can observe the asks the release repeats
      * while a frame waits on a placement verdict (HIL-1041).
@@ -5008,7 +5008,7 @@ abstract class DaemonManager extends BaseManager implements
     protected function requireOnDemandPlacement(string $agentType, ?string $agentIndex): void
     {
         $registryEntry = Hilos::appClass()::AGENTS[$agentType] ?? null;
-        if (!AgentRegistry::requiresIndex($registryEntry)
+        if (AgentRegistry::scope($registryEntry) !== AgentScope::CLUSTER
             || AgentRegistry::placement($registryEntry) !== AgentPlacement::POLICY) {
             return;
         }
@@ -7306,12 +7306,9 @@ abstract class DaemonManager extends BaseManager implements
      * members a pool has and under which indexes is known only to the project that declared
      * it.
      *
-     * A reconciliation rather than an ensure-once, because {@see ClusterPlacement::placeAgentOnBestNode()}
-     * places nothing and records nothing when no online node clears the hard gate; without a
-     * per-tick re-check such an agent would never come up. A tracked record in any state
-     * suppresses placement, so this never fights failover or double-places — except a record
-     * left {@see PlacementState::Failed}, which nothing else retries and this pass re-places
-     * once per {@see POLICY_PLACEMENT_RETRY_SEC}. Nor does it race a term: a fresh leader places
+     * A declaration pass: every tracked record, including Failed and Unplaced, suppresses
+     * placement. ClusterPlacement alone retries those waiting records; this caller only declares
+     * missing singletons. Nor does it race a term: a fresh leader places
      * nothing it has no record of until its rebuild is settled (HIL-1217), so a policy agent
      * still running on a node that has not reported yet is adopted rather than placed a second
      * time.
@@ -7319,8 +7316,8 @@ abstract class DaemonManager extends BaseManager implements
      * With cluster mode off there is no placement view and no other node: the single node is
      * its own leader and its own data plane, so the same declaration lands the agent here,
      * through the same local start a remote placement ends in. Repeating that start is free
-     * once the agent is linked to a worker, and it is throttled all the same so a node that
-     * cannot host it yet does not say so every iteration of the loop.
+     * once the agent is linked to a worker. Only this standalone path keeps the local
+     * POLICY_PLACEMENT_RETRY_SEC throttle, so a node that cannot host it does not spin.
      *
      * Runs on the master loop, so the whole read/write is guarded: a registry hiccup or a
      * rejected placement is logged, never propagated, and the next tick retries from where
@@ -7334,18 +7331,18 @@ abstract class DaemonManager extends BaseManager implements
                 return;
             }
 
-            $now = microtime(true);
-            $mayRetry = $now >= $this->policyPlacementRetryAt;
-            if ($mayRetry) {
-                $this->policyPlacementRetryAt = $now + self::POLICY_PLACEMENT_RETRY_SEC;
+            $mayRetry = false;
+            if ($placement === null) {
+                $now = microtime(true);
+                $mayRetry = $now >= $this->policyPlacementRetryAt;
+                if ($mayRetry) {
+                    $this->policyPlacementRetryAt = $now + self::POLICY_PLACEMENT_RETRY_SEC;
+                }
             }
 
             $tracked = [];
             foreach ($placement?->registry()->all() ?? [] as $record) {
                 if ($record->agentIndex !== null) {
-                    continue;
-                }
-                if ($mayRetry && $record->state === PlacementState::Failed) {
                     continue;
                 }
 
@@ -7732,7 +7729,7 @@ abstract class DaemonManager extends BaseManager implements
     {
         // Placement tracking is soft-state: a fresh leader rebuilds its view from the mesh, and
         // places nothing it has no record of until that rebuild is settled (HIL-1217).
-        Hilos::$cluster?->placement()?->onBecameLeader(microtime(true));
+        Hilos::$cluster?->placement()?->onBecameLeader(microtime(true), $term);
 
         // So is the map of who owns which RT state, and on the same terms (HIL-696): the term
         // that ended took its picture with it, and the nodes are asked to draw a new one. The
@@ -7808,6 +7805,8 @@ abstract class DaemonManager extends BaseManager implements
      * A master hosting placed work arms its self-fence here whatever leader it answered to - a
      * minority has no leader to take the work over; a former leader's placed work was left
      * running before (HIL-1217).
+     *
+     * @throws PeerTransportException When the departing leader's placement snapshot metadata is invalid
      */
     public function onQuorumLost(): void
     {

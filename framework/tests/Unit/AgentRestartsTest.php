@@ -11,6 +11,7 @@ use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\DTO\PeerAgentRestartDTO;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Cluster\Placement\ClusterPlacement;
@@ -410,6 +411,25 @@ final class AgentRestartsTest extends TestCase
         self::assertSame([], $this->forwarded);
     }
 
+    /** No-host records must refuse a restart before any node is addressed or any worker stopped. */
+    public function testPolicyRecordsWithoutHostsCannotBeRestarted(): void
+    {
+        [$placement, $mesh] = $this->installCluster(true, ['self' => [], 'remote' => ['slots=10']]);
+        foreach ([PlacementState::Failed, PlacementState::Unplaced, PlacementState::Stopped] as $state) {
+            $record = new PlacementRecord('policy', null, null, $state);
+            $placement->registry()->put($record);
+
+            $this->restarts->request($this->request('policy'));
+
+            self::assertSame('Agent policy is not running anywhere', $this->nextReply()->payload[CommandConstants::FIELD_MESSAGE]);
+            self::assertSame($record, $placement->registry()->get('policy'));
+        }
+        self::assertSame([], $this->worker->restarted);
+        self::assertSame([], $this->forwarded);
+        self::assertSame([], $mesh->sent);
+        self::assertSame([], $this->restarts->restartingAgents());
+    }
+
     public function testLeaderKeepsPolicyOnRemoteHostWhenItIsTheBestNode(): void
     {
         [$placement] = $this->installCluster(true, ['self' => [], 'remote' => ['slots=10']]);
@@ -427,6 +447,10 @@ final class AgentRestartsTest extends TestCase
     public function testLeaderMovesPolicyOnlyAfterOldHostReportsStopped(): void
     {
         [$placement, $mesh] = $this->installCluster(true, ['self' => [], 'remote' => [], 'target' => ['slots=10']]);
+        $placement->onBecameLeader(1000.0);
+        $placement->onPlacementReport('remote', new PeerPlacementReportDTO([]));
+        $placement->onPlacementReport('target', new PeerPlacementReportDTO([]));
+        $placement->tick(1000.0);
         $placement->registry()->put(new PlacementRecord('policy', null, 'remote', PlacementState::Started));
 
         $this->restarts->request($this->request('policy'));

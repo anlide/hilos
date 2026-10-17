@@ -383,7 +383,7 @@ final class AgentRestarts
             $this->reply($request, CommandReplyDTO::error($request->correlationId, sprintf('Agent %s is still being placed', $id)));
             return;
         }
-        if ($record === null || $record->state !== PlacementState::Started) {
+        if ($record === null || $record->state !== PlacementState::Started || $record->nodeId === null) {
             $this->reply($request, CommandReplyDTO::error($request->correlationId, sprintf('Agent %s is not running anywhere', $id)));
             return;
         }

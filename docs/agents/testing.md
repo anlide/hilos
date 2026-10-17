@@ -354,9 +354,30 @@ scenario on a single shape is retired (HIL-1218).
 
 | Demo | View | Hilos cluster | MariaDB | Scenarios |
 |---|---|---|---|---|
-| binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server, primary + derived journal | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes, 23 verifier circle on every master, 25 freeze settles on every master, 29 a node with a cluster directory of its own refused on both ends, 30 a ready data export copy outlives the node its agent lived on, 32 a node with another admin view mode refused on both ends, 33 every master takes browsers, 34 a tab is the same on every master under protected mode, 35 rt row deleted while cut off is swept, 36 a slave cut off with its leader stops its work before it runs elsewhere, 38 manual maintenance from any node, 41 i18n catalog taken once and skipped after holder restart, 42 a node with another default language refused on both ends |
-| ecommerce-shop | React | one master and two slaves of unequal room, `ram=10` and `ram=4`, each with `slots=64` | one server, primary + derived journal | 3 placement, 4 slave-kill failover, 6 hot-join, 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused, 16 recreated node leaves no phantom fleet (parked, P-441/2), 18 capacity is consumed, 19 worker death on a live node, 37 costless agents consume slots, 39 person agents across nodes |
+| binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server, primary + derived journal | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes, 23 verifier circle on every master, 25 freeze settles on every master, 29 a node with a cluster directory of its own refused on both ends, 30 a ready data export copy outlives the node its agent lived on, 32 a node with another admin view mode refused on both ends, 33 every master takes browsers, 34 a tab is the same on every master under protected mode, 35 rt row deleted while cut off is swept, 36 a slave cut off with its leader stops its work before it runs elsewhere, 38 manual maintenance from any node, 41 i18n catalog taken once and skipped after holder restart, 42 a node with another default language refused on both ends, 44 replicated waiting fleet survives leader death and quorum loss, then starts when slots return without another ask |
+| ecommerce-shop | React | one master and two slaves of unequal room, `ram=10` and `ram=4`, each with `slots=64` | one server, primary + derived journal | 3 placement, 4 slave-kill failover, 6 hot-join, 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused, 16 recreated node leaves no phantom fleet (parked, P-441/2), 18 capacity is consumed, 19 worker death on a live node, 37 costless agents consume slots, 39 person agents across nodes, 43 waiting ballast retries after a slave returns without another ask (cleanup checked with `composer -d demo/ecommerce-shop run test:cluster:scenarios -- 43 37 18`) |
 | online-testing | Angular | three equal masters that host work themselves | one server, primary + derived journal | 11 cross-node db fact, 15 db interest addressing, 21 schema rolled out once by nodes that start together, 22 a node reading another database refused on both ends, 24 a cut-off leader stops its work before it runs elsewhere, 40 journal triggers installed once and unchanged on ordinary restart |
+
+Scenarios **43/44** prove waiting-placement recovery (HIL-446). Ecommerce-shop's
+43 returns a slave to waiting ballast; binance-btc-tracker's 44 first gives both
+slaves 16 slots, then fills them with fleet indices 2000..2032 until one waits
+`Unplaced` with a null host and exact slot refusals. Every surviving master must
+hold a complete snapshot with that record before the leader is killed, naming
+the same leader/term and at least the observed revision. A new leader's snapshot
+must name its new term after rebuild, preserve the queue, and remain available
+when that master loses quorum and leadership. Returning the masters must recover
+the queue again; restoring the first slave's 64 slots then starts the unique
+target and advances its live RT row without another ask. All live placements
+count against the ceiling. The supervisor only declares 0..9, so it cannot mask
+lost extra intent. Revisions are compared only within one leader/term. These
+are delivered memory replicas, with no durable or quorum-commit guarantee.
+Both scenarios clean up by restarting their whole original stand without
+deleting volumes, restoring the ordinary fleet and removing extra demand and
+environment overrides before the next scenario. Scenario 44 runs after 5/7/8:
+
+```bash
+composer -d demo/binance-btc-tracker run test:cluster:scenarios -- 5 7 8 44
+```
 
 Scenario 39 on ecommerce-shop proves a person's row and child-set ownership
 through a cold start, ordinary idle, wake-up on another node and active-host

@@ -13,6 +13,7 @@ use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementRequestDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementVerdictDTO;
 use Hilos\Cluster\Placement\ClusterPlacement;
+use Hilos\Cluster\Placement\PlacementRecord;
 use Hilos\Cluster\Placement\PlacementRefusal;
 use Hilos\Cluster\Placement\PlacementRefusalCode;
 use Hilos\Cluster\Placement\PlacementState;
@@ -181,9 +182,47 @@ final class ClusterPlacementRequestTest extends TestCase
         $this->assertInstanceOf(PeerPlaceAgentDTO::class, $frame);
     }
 
+    /** Waiting records answer negatively during cooldown; stopped records can be placed immediately. */
+    public function testAnAskForARecordWithoutAHostWaitsForARealPlacement(): void
+    {
+        foreach ([PlacementState::Failed, PlacementState::Unplaced, PlacementState::Stopped] as $state) {
+            $mesh = $this->mesh();
+            $placement = $this->settledLeader($mesh);
+            $placement->registry()->put(new PlacementRecord('render', '9', null, $state));
+
+            $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
+
+            if ($state !== PlacementState::Stopped) {
+                $this->assertSame([], $this->placeFrames($mesh));
+                $verdicts = $this->verdictFrames($mesh);
+                $this->assertCount(1, $verdicts);
+                $this->assertSame($state, $verdicts[0][1]->state);
+                $this->assertNull($verdicts[0][1]->nodeId);
+                $placement->tick(microtime(true) + 5.0);
+                $mesh->sent = array_values(array_filter(
+                    $mesh->sent,
+                    static fn(array $sent): bool => $sent[1] instanceof PeerPlaceAgentDTO,
+                ));
+            }
+            $this->assertCount(1, $this->placeFrames($mesh));
+            $this->assertSame('node-b', $mesh->sent[0][0]);
+            $this->assertSame([], $this->verdictFrames($mesh), 'No success may name an absent host');
+            $this->assertSame(PlacementState::Placing, $placement->registry()->get('render:9')?->state);
+
+            $placement->onAgentStatus('node-b', PeerAgentStatusDTO::started('render', '9', 1));
+            $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
+
+            $verdicts = $this->verdictFrames($mesh);
+            $this->assertCount(1, $verdicts);
+            $this->assertSame('node-c', $verdicts[0][0]);
+            $this->assertSame(PlacementState::Started, $verdicts[0][1]->state);
+            $this->assertSame('node-b', $verdicts[0][1]->nodeId);
+        }
+    }
+
     /**
      * Nowhere to put the agent is a verdict, not silence: the asking node has a frame waiting
-     * and must hear that the ask ended, even though no Unplaced record is written (HIL-1041).
+     * and must hear that the ask ended, while the Unplaced record remains available for retry (HIL-1041).
      */
     public function testTheLeaderAnswersUnplacedWhenNoNodeFits(): void
     {
@@ -224,7 +263,8 @@ final class ClusterPlacementRequestTest extends TestCase
         $this->assertSame('node-c', $nodeId);
         $this->assertInstanceOf(PeerPlacementVerdictDTO::class, $frame);
         $this->assertSame(PlacementState::Unplaced, $frame->state);
-        $this->assertNull($placement->registry()->get('render:9'));
+        $this->assertSame(PlacementState::Unplaced, $placement->registry()->get('render:9')?->state);
+        $this->assertNull($placement->registry()->get('render:9')?->nodeId);
     }
 
     /**
@@ -259,7 +299,8 @@ final class ClusterPlacementRequestTest extends TestCase
         );
         $this->assertSame(['slots' => ['cost' => 1.0, 'free' => 0.0]], $frame->refusals[1]->shortfalls);
         $this->assertSame(['worker'], $frame->refusals[2]->missingCapabilities);
-        $this->assertNull($placement->registry()->get('render:9'), 'Still no queue record for new work');
+        $this->assertSame(PlacementState::Unplaced, $placement->registry()->get('render:9')?->state);
+        $this->assertNull($placement->registry()->get('render:9')?->nodeId);
 
         $kept = $placement->placementRefusals();
         $this->assertCount(1, $kept);

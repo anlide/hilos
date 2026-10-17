@@ -215,7 +215,8 @@ the scenarios it names — 3 placement, 4 slave-kill failover, 6 hot-join,
 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused,
 16 recreated node leaves no phantom fleet (parked, P-441/2), 18 capacity is consumed,
 19 worker death on a live node, 37 costless agents consume slots, and
-39 person agents across nodes (skipped as flaky since 2026-10-17)
+39 person agents across nodes (skipped as flaky since 2026-10-17),
+43 waiting work retries when a node returns
 (`docs/agents/testing.md`, "The cluster stands — three demos, three shapes"). The framework's probe fleet, claimer and ballast
 are in this demo's `AGENTS`, and they start only here: on one node, on the
 Playwright stand and in production the rows are carried and nothing is run.
@@ -227,6 +228,27 @@ Playwright stand and in production the rows are carried and nothing is run.
 | `composer run test:cluster:scenarios` | the stand's scenario matrix on a fresh stand; `-- 14 18` runs only the ones named |
 | `composer run test:cluster:down-volumes` | take the stand down and wipe its primary and journal databases |
 | `composer run test:cluster:down` | take the stand down the way the test runner does |
+
+Scenario 43 stops both slaves after the ordinary fleet starts. The lone master
+declares no capacity, so one uniquely indexed ballast stays `unplaced` with
+`nodeId=null` and a `no_declared_capacity` refusal for that master. A second ask
+keeps one record. Returning one slave starts the waiting ballast without another
+ask; the leader logs waiting and resumed once each. Cleanup restarts the whole
+stand without deleting database volumes, restores both slaves and the ordinary
+fleet, and removes the extra ballast demand. It runs before 37 and 18; prove
+that cleanup against both capacity scenarios on one fresh stand from the root:
+
+```bash
+composer -d demo/ecommerce-shop run test:cluster:scenarios -- 43 37 18
+```
+
+The companion queue-inheritance proof is scenario 44 on binance-btc-tracker's
+three-master stand. It fills both slaves' slots with extra fleet indices,
+checks the waiting record's complete snapshot on every surviving master before
+killing the leader, then recovers it through re-election and quorum loss.
+Giving one slave room starts that target without another ask. Both scenarios
+restore the whole original stand without deleting database volumes; 44 runs
+after the ordinary leadership scenarios and before later binance scenarios.
 
 Run scenario 39 alone on a fresh stand, from `demo/ecommerce-shop`:
 

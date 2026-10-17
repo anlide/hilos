@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Placement;
 
+use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
@@ -18,6 +19,7 @@ use Hilos\Cluster\Placement\PlacementMesh;
 use Hilos\Cluster\Placement\PlacementRecord;
 use Hilos\Cluster\Placement\PlacementRegistry;
 use Hilos\Cluster\Placement\PlacementState;
+use Hilos\Cluster\Placement\PlacementSnapshot;
 use Hilos\Cluster\Placement\ResourceProfile;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
@@ -47,17 +49,24 @@ final class ClusterPlacementViewTest extends TestCase
     /** @var class-string<Hilos> App class bound before this test touched it */
     private string $boundAppClass;
 
+    private ?ClusterContext $previousCluster;
+
+    private int $viewRevision = 0;
+
     protected function setUp(): void
     {
         // Both types are declared policy-placed, because the published view is what the lookup
         // reads for that cell alone (HIL-670): an every-node replica is always here and a
         // leader-hosted singleton is wherever leadership sits, and no view carries either.
+        $this->previousCluster = Hilos::$cluster;
+        Hilos::$cluster = null;
         $this->boundAppClass = Hilos::appClass();
         new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, PlacementViewTestHilos::class);
     }
 
     protected function tearDown(): void
     {
+        Hilos::$cluster = $this->previousCluster;
         new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, $this->boundAppClass);
 
         parent::tearDown();
@@ -190,6 +199,43 @@ final class ClusterPlacementViewTest extends TestCase
         $this->assertSame(['node-b'], array_keys($view->agents));
         $this->assertSame('render', $view->agents['node-b'][0]->agentType);
         $this->assertSame('9', $view->agents['node-b'][0]->agentIndex);
+    }
+
+    /** Publication, peer hand-over and local lookup all exclude records without a current host. */
+    public function testRecordsWithoutHostsAreAbsentFromTheLiveViewAndEveryLookup(): void
+    {
+        $mesh = new PlacementViewTestMesh();
+        $placement = new ClusterPlacement(self::SELF, $mesh, new PlacementViewTestExecutor());
+        $placement->onBecameLeader(1000.0);
+        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::started('render', 'running', 1));
+        foreach ([PlacementState::Failed, PlacementState::Unplaced, PlacementState::Stopped] as $state) {
+            $placement->registry()->put(new PlacementRecord('render', $state->value, null, $state));
+            $placement->registry()->put(new PlacementRecord('render', $state->value . '-old', 'node-b', $state));
+        }
+
+        $placement->tick(1000.0);
+        $placement->onPeerHandshaked('node-c');
+
+        $view = $this->lastView($mesh);
+        $this->assertSame(['node-b'], array_keys($view->agents), 'No null or empty node key may enter the live map');
+        $this->assertCount(1, $view->agents['node-b']);
+        $this->assertCount(7, $view->placementSnapshot->records, 'Every hosted, waiting and canceled record survives the full projection');
+        $this->assertSame('running', $view->agents['node-b'][0]->agentIndex);
+        $follower = $this->follower();
+        $follower->onPlacementQuery(self::SELF);
+        $follower->onPlacementView(self::SELF, $view);
+        $this->assertSame('node-b', $follower->locate('render', 'running')->nodeId);
+        foreach ([PlacementState::Failed, PlacementState::Unplaced, PlacementState::Stopped] as $state) {
+            foreach ([$state->value, $state->value . '-old'] as $index) {
+                $this->assertSame(AgentLocationKind::Unknown, $placement->locate('render', $index)->kind);
+                $this->assertSame(AgentLocationKind::Unknown, $follower->locate('render', $index)->kind);
+            }
+        }
+        $handed = array_values(array_filter($mesh->sent, static fn(array $sent): bool => $sent[1] instanceof PeerPlacementViewDTO));
+        $this->assertCount(1, $handed);
+        $this->assertSame('node-c', $handed[0][0]);
+        $this->assertEquals($view->agents, $handed[0][1]->agents);
+        $this->assertEquals($view->placementSnapshot, $handed[0][1]->placementSnapshot);
     }
 
     /**
@@ -382,7 +428,10 @@ final class ClusterPlacementViewTest extends TestCase
      */
     private function follower(): ClusterPlacement
     {
-        return new ClusterPlacement(self::SELF, new PlacementViewTestMesh(), new PlacementViewTestExecutor());
+        $placement = new ClusterPlacement(self::SELF, new PlacementViewTestMesh(), new PlacementViewTestExecutor());
+        $placement->onPlacementQuery('leader');
+
+        return $placement;
     }
 
     /**
@@ -447,7 +496,14 @@ final class ClusterPlacementViewTest extends TestCase
             );
         }
 
-        return new PeerPlacementViewDTO($leaderNodeId, $entries);
+        $records = [];
+        foreach ($agents as $nodeId => $placed) {
+            foreach ($placed as [$type, $index]) {
+                $records[] = new PlacementRecord($type, $index, (string)$nodeId, PlacementState::Started);
+            }
+        }
+
+        return new PeerPlacementViewDTO($leaderNodeId, $entries, new PlacementSnapshot($leaderNodeId, 1, ++$this->viewRevision, $records));
     }
 
     /**

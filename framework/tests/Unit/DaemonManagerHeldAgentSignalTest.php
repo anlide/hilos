@@ -56,6 +56,7 @@ use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartFailedDTO;
 use InvalidArgumentException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use ReflectionProperty;
@@ -537,17 +538,23 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $this->assertSame([HeldAgentSignalTestRouter::COLD_AGENT], $manager->placedReleases);
     }
 
-    /**
-     * A not-placed verdict answers the waiting page at once, in the words a dropped subscribe
-     * always got. There is no clock left to stand in for that answer.
-     */
-    public function testANotPlacedVerdictAnswersTheWaitingFrameAtOnce(): void
+    /** @return iterable<string, array{string}> Every final negative placement outcome */
+    public static function negativeVerdicts(): iterable
+    {
+        yield 'failed singleton' => ['failed: no worker'];
+        yield 'unplaced singleton' => ['unplaced: no capable node'];
+        yield 'refused singleton' => ['refused: another RT owner'];
+    }
+
+    /** @param string $reason Final negative verdict received for the singleton */
+    #[DataProvider('negativeVerdicts')]
+    public function testANotPlacedVerdictAnswersTheWaitingFrameAtOnce(string $reason): void
     {
         $manager = new HeldAgentSignalTestManager();
         $this->queueSubscribe(HeldAgentSignalTestRouter::UNPLACED_PAGE);
         $manager->drainQueue();
 
-        $manager->reportNotPlaced(HeldAgentSignalTestRouter::COLD_AGENT, 'failed: no worker');
+        $manager->reportNotPlaced(HeldAgentSignalTestRouter::COLD_AGENT, $reason);
 
         $frames = $manager->pageErrorFrames();
         $this->assertCount(1, $frames);
@@ -700,11 +707,14 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
     /**
      * On the leader the verdict of its own ask comes back inside the ask (HIL-1041). The walk holds
      * the frame before asking, so the verdict finds it there: answered once, nothing left held.
+     *
+     * @param string $reason Final negative verdict received for the singleton
      */
-    public function testALeaderVerdictInsideTheWalksAskAnswersTheFrameOnce(): void
+    #[DataProvider('negativeVerdicts')]
+    public function testALeaderVerdictInsideTheWalksAskAnswersTheFrameOnce(string $reason): void
     {
         $manager = new HeldAgentSignalTestManager();
-        $manager->leaderVerdict = 'unplaced: no capable node';
+        $manager->leaderVerdict = $reason;
         $this->queueSubscribe(HeldAgentSignalTestRouter::UNPLACED_PAGE);
 
         $manager->drainQueue();
@@ -718,15 +728,18 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
     /**
      * The same verdict inside a release pass: the pass asks only once the holds are written back,
      * so the frame the verdict answers is not put back to be answered again on every pass.
+     *
+     * @param string $reason Final negative verdict received for the singleton
      */
-    public function testALeaderVerdictInsideTheReleaseAskAnswersTheFrameOnce(): void
+    #[DataProvider('negativeVerdicts')]
+    public function testALeaderVerdictInsideTheReleaseAskAnswersTheFrameOnce(string $reason): void
     {
         $manager = new HeldAgentSignalTestManager();
         $this->queueSubscribe(HeldAgentSignalTestRouter::UNPLACED_PAGE);
         $manager->drainQueue();
         $this->assertCount(1, $manager->heldFrames());
 
-        $manager->leaderVerdict = 'unplaced: no capable node';
+        $manager->leaderVerdict = $reason;
         $manager->drainQueue();
         $this->assertCount(1, $manager->pageErrorFrames());
         $this->assertSame([], $manager->heldFrames());
@@ -738,8 +751,11 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
     /**
      * A frame a stop let go that meets no address again is held before its ask as well, so the
      * leader's verdict answers it in place rather than leaving it held behind the answer.
+     *
+     * @param string $reason Final negative verdict received for the singleton
      */
-    public function testALeaderVerdictAfterAStopAnswersTheReleasedFrameOnce(): void
+    #[DataProvider('negativeVerdicts')]
+    public function testALeaderVerdictAfterAStopAnswersTheReleasedFrameOnce(string $reason): void
     {
         $manager = new HeldAgentSignalTestManager();
         $this->queueSubscribe(HeldAgentSignalTestRouter::COLD_PAGE);
@@ -747,7 +763,7 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
 
         $manager->reportStopped(HeldAgentSignalTestRouter::COLD_AGENT);
         $this->leaveUnplaced(HeldAgentSignalTestRouter::COLD_AGENT);
-        $manager->leaderVerdict = 'unplaced: no capable node';
+        $manager->leaderVerdict = $reason;
         $manager->drainQueue();
         $this->assertCount(1, $manager->pageErrorFrames());
         $this->assertSame([], $manager->heldFrames());

@@ -88,6 +88,23 @@ final class DaemonProcessRosterBuilderTest extends TestCase
         self::assertNull($builder->result()?->unplacedAgentIds);
     }
 
+    /** Failed and stopped belong beside unplaced and refused in the leader's no-host list. */
+    public function testEveryNoHostStateIsListedWithoutInventingAWorker(): void
+    {
+        $placement = new PlacementRegistry();
+        $placement->put(new PlacementRecord('policy', 'failed', null, PlacementState::Failed));
+        $placement->put(new PlacementRecord('policy', 'waiting', null, PlacementState::Unplaced));
+        $placement->put(new PlacementRecord('policy', 'stopped', null, PlacementState::Stopped));
+        $placement->put(new PlacementRecord('policy', 'refused', 'n1', PlacementState::Refused));
+        $builder = new DaemonProcessRosterBuilder(new ProcessMetricsReader());
+        $builder->start(new ProcessRosterTestWorkerServer(), new ProcessRosterTestAgentManagerDaemon(), $placement, true);
+
+        $builder->advance(100);
+
+        self::assertSame(['policy:failed', 'policy:refused', 'policy:stopped', 'policy:waiting'], $builder->result()?->unplacedAgentIds);
+        self::assertSame([], $builder->result()?->workers);
+    }
+
     public function testARebuildDiscardsAnUnfinishedFrame(): void
     {
         $server = new ProcessRosterTestWorkerServer();

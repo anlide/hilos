@@ -14,7 +14,7 @@ final class PeerProtocolTest extends TestCase
 {
     public function testCurrentVersionIsCompatible(): void
     {
-        $this->assertSame(21, PeerProtocol::VERSION);
+        $this->assertSame(22, PeerProtocol::VERSION);
         $this->assertTrue(PeerProtocol::isCompatible(PeerProtocol::VERSION));
     }
 
@@ -22,6 +22,7 @@ final class PeerProtocolTest extends TestCase
     {
         $this->assertFalse(PeerProtocol::isCompatible(PeerProtocol::VERSION + 1));
         $this->assertFalse(PeerProtocol::isCompatible(0));
+        $this->assertFalse(PeerProtocol::isCompatible(21));
     }
 
     public function testDialedLinkWinsTieBreakKeepsTheSmallerIdsDial(): void

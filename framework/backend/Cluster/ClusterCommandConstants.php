@@ -79,6 +79,9 @@ final class ClusterCommandConstants
     /** @var string Inspect reply key: the leader's last failed placement attempt per agent, a list (HIL-447) */
     public const string FIELD_PLACEMENT_REFUSALS_SNAPSHOT = 'placementRefusals';
 
+    /** @var string Complete placement registry retained by this node, or null when never received */
+    public const string FIELD_PLACEMENT_SNAPSHOT = 'placementSnapshot';
+
     /**
      * @var string Signal name the test-only client commands raise, and the browser side of the
      *     mesh answers to
