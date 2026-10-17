@@ -8,6 +8,13 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import type { Browser, Page } from '@playwright/test'
 
 import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
+import {
+  newClusterMasterPage,
+  readClusterBrowserStand,
+  setClusterMaster,
+} from '../../../../../framework/frontend/e2e/index.js'
+
+export { STAND_MASTER_COOKIE } from '../../../../../framework/frontend/e2e/index.js'
 
 interface Placement {
   agentId: string
@@ -31,29 +38,13 @@ function required(name: string): string {
   return value
 }
 
-function addressMap(name: string): Record<string, string> {
-  return Object.fromEntries(
-    required(name)
-      .split(',')
-      .map((entry) => {
-        const separator = entry.indexOf('=')
-        if (separator < 1) {
-          throw new Error(
-            `cluster e2e ${name} carries an invalid address: ${entry}`,
-          )
-        }
-        return [entry.slice(0, separator), entry.slice(separator + 1)]
-      }),
-  )
-}
-
-export const CLUSTER_LEADER = required('CLUSTER_LEADER')
-export const CLUSTER_FOLLOWER = required('CLUSTER_FOLLOWER')
-export const CLUSTER_MASTERS = required('CLUSTER_MASTERS').split(',')
+const stand = readClusterBrowserStand()
+export const CLUSTER_LEADER = stand.leader
+export const CLUSTER_FOLLOWER = stand.follower
+export const CLUSTER_MASTERS = [...stand.masters]
 export const CLUSTER_SLAVES = required('CLUSTER_SLAVES').split(',')
-export const BASE_URL = required('BASE_URL')
-export const STAND_MASTER_COOKIE = 'hilos_stand_master'
-const nodeHosts = addressMap('CLUSTER_NODE_HOSTS')
+export const BASE_URL = stand.baseURL
+const nodeHosts = stand.nodeHosts
 const faultFile = required('CLUSTER_FAULT_FILE')
 const commandPort = Number(process.env.COMMAND_PORT ?? 8094)
 
@@ -74,17 +65,7 @@ export async function newMasterPage(
   browser: Browser,
   node: string,
 ): Promise<Page> {
-  if (!CLUSTER_MASTERS.includes(node)) {
-    throw new Error(`Not a cluster master: ${node}`)
-  }
-  const context = await browser.newContext({
-    baseURL: BASE_URL,
-    ignoreHTTPSErrors: true,
-  })
-  await context.addCookies([
-    { name: STAND_MASTER_COOKIE, value: node, url: BASE_URL },
-  ])
-  return context.newPage()
+  return newClusterMasterPage(browser, stand, node)
 }
 
 /**
@@ -94,12 +75,7 @@ export async function newMasterPage(
  * @param node Master to receive the next connection.
  */
 export async function onMaster(page: Page, node: string): Promise<void> {
-  if (!CLUSTER_MASTERS.includes(node)) {
-    throw new Error(`Not a cluster master: ${node}`)
-  }
-  await page
-    .context()
-    .addCookies([{ name: STAND_MASTER_COOKIE, value: node, url: BASE_URL }])
+  await setClusterMaster(page, stand, node)
 }
 
 /** @param node Node whose command server reports its cluster view. */

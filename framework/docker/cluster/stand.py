@@ -136,6 +136,7 @@ class E2e:
     runner_container: str
     # Profile services to raise before Playwright; the runner is a one-shot container.
     services: tuple
+    daemon: bool = False
 
 
 @dataclass(frozen=True)
@@ -281,6 +282,9 @@ def _e2e(shown, project, block, services, entry):
         return None
     if not isinstance(block, dict):
         raise StandRefused(f"{shown}: {BLOCK}.e2e must name a runner")
+    daemon = block.get("daemon", False)
+    if not isinstance(daemon, bool):
+        raise StandRefused(f"{shown}: {BLOCK}.e2e.daemon must be a boolean")
     runner = block.get("runner")
     if not isinstance(runner, str) or runner not in services:
         raise StandRefused(f"{shown}: {BLOCK}.e2e.runner names {runner}, which is not a service")
@@ -291,7 +295,7 @@ def _e2e(shown, project, block, services, entry):
     profile_services = tuple(service for service, spec in services.items()
                              if service != runner and "e2e" in (spec.get("profiles") or []))
     return E2e(runner, services[runner].get("container_name") or f"{project}-{runner}-1",
-               profile_services)
+               profile_services, daemon)
 
 
 def _entry(shown, block, services, network_keys):

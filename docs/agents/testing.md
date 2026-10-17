@@ -507,6 +507,34 @@ collector, so preserve its journals before starting the next fresh stand. After
 node loss the wait checks only placements that host an agent (`placing` or
 `started`); a refused record is no running work.
 
+The `online-testing-cluster-e2e` step proves Analytics on the existing three-master
+stand (HIL-1423). After `composer -d demo/online-testing run test:e2e-build`,
+`composer -d demo/online-testing run test:cluster:e2e` runs three sequential
+source/viewer pairs, each master followed by the next in the harness's list.
+The entry serves Angular's `dist/index.csr.html`; Mailpit and the browser runner
+belong to the `e2e` profile. This stand has only a live phase: no fault request,
+no after-loss phase and no slaves. `e2e.daemon` defaults to false; binance's
+declaration opts in for the separate Daemon phase when that harness phase lands.
+
+Each pair registers a person and an administrator in separate contexts, proves
+every actual WebSocket upgrade's master through CDP, waits for both Analytics
+snapshots, and checks navigation, session isolation, action order, sorting and
+absence of action bodies in the DOM and Analytics frames. Before and after the
+browser work, the live reader is on the harness leader, the writer matches its
+single started POLICY placement, and every member has one journal agent.
+Fresh node logs prove the LEADER/NODE agents, accounting for stops, worker death
+and daemon restarts; inspect's POLICY placements are not their registry.
+The leader and term must stay unchanged throughout each pair.
+
+The graph runs this step after `online-testing-e2e`, and both it and
+`online-testing-cluster` share the `online-testing-cluster` group. A directed graph
+run is `composer run test:suite -- online-testing-cluster-e2e --lanes=1` from
+the repository root; it includes the step's dependencies. The collector keeps
+`artifacts/online-testing-cluster-e2e/nodes/<node>/`, including archive and staging
+paths, plus Playwright evidence and `SNAPSHOT.txt`, before teardown, under the same
+missing-source rules as binance. It never substitutes `data/logs-test` for these
+journals. Save direct-run logs before another fresh stand empties them.
+
 The full run carries three fleets now instead of one. An e2e step may stand
 beside any of them in the lane plan: nothing keeps them apart, and each fleet
 leaves with its own step (HIL-1227).

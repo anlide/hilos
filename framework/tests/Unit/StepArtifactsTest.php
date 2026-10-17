@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 require_once __DIR__ . '/../../../scripts/step-artifacts.php';
@@ -60,9 +61,6 @@ final class StepArtifactsTest extends TestCase
      */
     private const array STEPS_WITHOUT_A_STAND = ['framework-image'];
 
-    /** Only the working directory matters when collecting the cluster's files. */
-    private const array CLUSTER_STAND = ['cwd' => 'demo/binance-btc-tracker'];
-
     /** Temporary repository and snapshot trees used by the file-copy cases. */
     private ?string $fixtureRoot = null;
 
@@ -76,21 +74,36 @@ final class StepArtifactsTest extends TestCase
         parent::tearDown();
     }
 
-    /** Every node keeps its relative paths, including rotations from this fresh run. */
-    public function testClusterBrowserCopiesNodeTreesInsteadOfSingleNodeLogs(): void
+    /** @return array<string, array{string, string}> Browser steps and their demo working directories. */
+    public static function clusterBrowserSteps(): array
+    {
+        return [
+            'binance-btc-tracker' => ['binance-btc-tracker-cluster-e2e', 'demo/binance-btc-tracker'],
+            'online-testing' => ['online-testing-cluster-e2e', 'demo/online-testing'],
+        ];
+    }
+
+    /**
+     * Every node keeps its relative paths, including rotations from this fresh run.
+     *
+     * @param string $stepId Browser graph step.
+     * @param string $cwd Demo working directory relative to the repository.
+     */
+    #[DataProvider('clusterBrowserSteps')]
+    public function testClusterBrowserCopiesNodeTreesInsteadOfSingleNodeLogs(string $stepId, string $cwd): void
     {
         $root = $this->fixtureDirectory();
-        $source = $root . '/demo/binance-btc-tracker/data/logs-cluster';
+        $source = $root . '/' . $cwd . '/data/logs-cluster';
         mkdir($source . '/m1/archive/batch', 0o755, true);
         mkdir($source . '/s1/staging', 0o755, true);
-        mkdir($root . '/demo/binance-btc-tracker/data/logs-test', 0o755, true);
+        mkdir($root . '/' . $cwd . '/data/logs-test', 0o755, true);
         file_put_contents($source . '/m1/daemon.log', "master journal\n");
         file_put_contents($source . '/m1/archive/batch/worker.log.gz', 'rotated journal');
         file_put_contents($source . '/s1/agent-hilos_node_logs.log', "slave journal\n");
         file_put_contents($source . '/s1/staging/worker.log', "staged journal\n");
-        file_put_contents($root . '/demo/binance-btc-tracker/data/logs-test/daemon.log', 'unrelated stand');
+        file_put_contents($root . '/' . $cwd . '/data/logs-test/daemon.log', 'unrelated stand');
 
-        $missing = copyStepLogs($root, 'binance-btc-tracker-cluster-e2e', self::CLUSTER_STAND, $root . '/snapshot');
+        $missing = copyStepLogs($root, $stepId, ['cwd' => $cwd], $root . '/snapshot');
 
         $this->assertSame([], $missing);
         $this->assertSame("master journal\n", file_get_contents($root . '/snapshot/nodes/m1/daemon.log'));
@@ -100,25 +113,37 @@ final class StepArtifactsTest extends TestCase
         $this->assertDirectoryDoesNotExist($root . '/snapshot/stand');
     }
 
-    /** A missing mandatory cluster root is recorded, even when the other stand has logs. */
-    public function testMissingClusterLogsAreReportedWithoutSubstitution(): void
+    /**
+     * A missing mandatory cluster root is recorded, even when the other stand has logs.
+     *
+     * @param string $stepId Browser graph step.
+     * @param string $cwd Demo working directory relative to the repository.
+     */
+    #[DataProvider('clusterBrowserSteps')]
+    public function testMissingClusterLogsAreReportedWithoutSubstitution(string $stepId, string $cwd): void
     {
         $root = $this->fixtureDirectory();
-        mkdir($root . '/demo/binance-btc-tracker/data/logs-test', 0o755, true);
-        file_put_contents($root . '/demo/binance-btc-tracker/data/logs-test/daemon.log', 'unrelated stand');
-        $missing = copyStepLogs($root, 'binance-btc-tracker-cluster-e2e', self::CLUSTER_STAND, $root . '/snapshot');
+        mkdir($root . '/' . $cwd . '/data/logs-test', 0o755, true);
+        file_put_contents($root . '/' . $cwd . '/data/logs-test/daemon.log', 'unrelated stand');
+        $missing = copyStepLogs($root, $stepId, ['cwd' => $cwd], $root . '/snapshot');
 
-        $this->assertSame(['nodes: missing ' . $root . '/demo/binance-btc-tracker/data/logs-cluster'], $missing);
+        $this->assertSame(['nodes: missing ' . $root . '/' . $cwd . '/data/logs-cluster'], $missing);
         writeArtifactSnapshot($root . '/SNAPSHOT.txt', ['missing' => implode(ARTIFACT_VALUE_SEPARATOR, $missing)]);
         $this->assertStringContainsString('missing: nodes: missing ', file_get_contents($root . '/SNAPSHOT.txt'));
         $this->assertDirectoryDoesNotExist($root . '/snapshot/stand');
     }
 
-    /** A dangling file cannot be read even as root; the other node's evidence survives. */
-    public function testUnreadableClusterFileIsReportedAndOtherFilesAreCopied(): void
+    /**
+     * A dangling file cannot be read even as root; the other node's evidence survives.
+     *
+     * @param string $stepId Browser graph step.
+     * @param string $cwd Demo working directory relative to the repository.
+     */
+    #[DataProvider('clusterBrowserSteps')]
+    public function testUnreadableClusterFileIsReportedAndOtherFilesAreCopied(string $stepId, string $cwd): void
     {
         $root = $this->fixtureDirectory();
-        $source = $root . '/demo/binance-btc-tracker/data/logs-cluster';
+        $source = $root . '/' . $cwd . '/data/logs-cluster';
         mkdir($source . '/m1', 0o755, true);
         mkdir($source . '/s1', 0o755, true);
         symlink($root . '/gone.log', $source . '/m1/daemon.log');
@@ -126,7 +151,7 @@ final class StepArtifactsTest extends TestCase
 
         $this->assertSame(
             ['nodes: could not copy ' . $source . '/m1/daemon.log'],
-            copyStepLogs($root, 'binance-btc-tracker-cluster-e2e', self::CLUSTER_STAND, $root . '/snapshot'),
+            copyStepLogs($root, $stepId, ['cwd' => $cwd], $root . '/snapshot'),
         );
         $this->assertSame('still readable', file_get_contents($root . '/snapshot/nodes/s1/daemon.log'));
     }

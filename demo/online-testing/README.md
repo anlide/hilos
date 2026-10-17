@@ -218,8 +218,24 @@ nothing is run.
 | `composer run test:cluster:up` | build the images and start the database, the three nodes and the cli container |
 | `composer run test:cluster:status` | the containers and one line of each node's view: phase, leader, placements |
 | `composer run test:cluster:scenarios` | the stand's scenario matrix on a fresh stand; `-- 24` runs only the ones named |
+| `composer run test:cluster:e2e` | Analytics through all three source/viewer master pairs on a fresh stand; build first with `test:e2e-build` |
 | `composer run test:cluster:down-volumes` | take the stand down and wipe its primary and journal databases |
 | `composer run test:cluster:down` | take the stand down the way the test runner does |
+
+The browser suite uses the same three masters with an nginx entry at
+10.223.0.30 and Mailpit at 10.223.0.20, without host ports. The entry serves
+the Angular build's `frontend/dist/index.csr.html`; a missing build fails before
+the harness resets the stand. The `e2e` profile supplies Mailpit and Playwright.
+Each master receives a real registration and the next master shows its Analytics
+session to an administrator; actual WebSocket upgrades, live agent placement,
+isolation, action order and body privacy are checked in each pair. Only the live
+phase runs, with no fault request or after-loss phase.
+
+The full graph's `online-testing-cluster-e2e` follows `online-testing-e2e` and
+shares a group with the scenario matrix. Its snapshot keeps every node's logs
+and Playwright evidence before teardown. A direct browser run has no snapshot
+collector: save `data/logs-cluster/` and `tests/e2e/playwright-report/cluster-live/`
+before repeating it, since the next fresh run clears the node logs.
 
 The harness's other commands — `kill`, `partition`, `crash-daemon`, `inspect`
 and the rest — are called on the module directly, from `demo/online-testing`:

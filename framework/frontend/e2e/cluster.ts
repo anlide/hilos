@@ -1,8 +1,22 @@
-import { closeSync, fstatSync, openSync, readSync } from 'node:fs'
+import {
+  closeSync,
+  fstatSync,
+  openSync,
+  readFileSync,
+  readSync,
+  statSync,
+} from 'node:fs'
+import https from 'node:https'
 import { isIP } from 'node:net'
 import { isAbsolute } from 'node:path'
 
-import type { Expect, Page } from '@playwright/test'
+import type { Browser, Expect, Page } from '@playwright/test'
+
+import { createCommandChannel } from '../scripts/commandChannel.mjs'
+import {
+  ANALYTICS_WRITER_TIMEOUT_MS,
+  readAnalyticsBrowserSession,
+} from './analytics.js'
 
 /** Addresses supplied by the running cluster's browser harness. */
 export interface ClusterBrowserStand {
@@ -14,6 +28,15 @@ export interface ClusterBrowserStand {
   nodeIps: Readonly<Record<string, string>>
   nodeLogs: Readonly<Record<string, string>>
 }
+
+/** The existing inspect command lists POLICY placements, not LEADER or NODE agents. */
+export interface ClusterInspection {
+  leaderId: string | null
+  term: number | null
+  placements: readonly { agentId: string; nodeId: string; state: string }[]
+}
+
+export const STAND_MASTER_COOKIE = 'hilos_stand_master'
 
 function required(name: string): string {
   const value = process.env[name]?.trim()
@@ -87,6 +110,226 @@ export function readClusterBrowserStand(): ClusterBrowserStand {
     }
   }
   return { baseURL, leader, follower, masters, nodeHosts, nodeIps, nodeLogs }
+}
+
+/** Open an isolated context with its master cookie set before creating the page. */
+export async function newClusterMasterPage(
+  browser: Browser,
+  stand: ClusterBrowserStand,
+  node: string,
+): Promise<Page> {
+  if (!stand.masters.includes(node)) {
+    throw new Error(`Not a cluster master: ${node}`)
+  }
+  const context = await browser.newContext({
+    baseURL: stand.baseURL,
+    ignoreHTTPSErrors: true,
+  })
+  try {
+    await context.addCookies([
+      { name: STAND_MASTER_COOKIE, value: node, url: stand.baseURL },
+    ])
+    return await context.newPage()
+  } catch (error) {
+    await context.close()
+    throw error
+  }
+}
+
+/** Steer future sockets of the context; already open sockets stay on their master. */
+export async function setClusterMaster(
+  page: Page,
+  stand: ClusterBrowserStand,
+  node: string,
+): Promise<void> {
+  if (!stand.masters.includes(node)) {
+    throw new Error(`Not a cluster master: ${node}`)
+  }
+  await page
+    .context()
+    .addCookies([
+      { name: STAND_MASTER_COOKIE, value: node, url: stand.baseURL },
+    ])
+}
+
+/** Bind the existing command channel to one member of the running stand. */
+export function clusterCommandChannel(
+  stand: ClusterBrowserStand,
+  node: string,
+) {
+  const host = stand.nodeHosts[node]
+  if (!host) throw new Error(`No command host for cluster node ${node}`)
+  const port = Number(process.env.COMMAND_PORT ?? 8094)
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error('Invalid cluster COMMAND_PORT')
+  }
+  return createCommandChannel({ host, port, timeoutMs: 15_000 })
+}
+
+/** Read a fresh follower view; a changed leader or term invalidates this scenario. */
+export async function expectClusterLeaderUnchanged(
+  expect: Expect,
+  stand: ClusterBrowserStand,
+  before: ClusterInspection,
+): Promise<void> {
+  expect(before.leaderId, 'The harness leader before the scenario').toBe(
+    stand.leader,
+  )
+  expect(before.term, 'A known election term').not.toBeNull()
+  const now = await clusterCommandChannel(stand, stand.follower)(
+    'test:cluster:inspect',
+    {},
+  )
+  expect(
+    { leaderId: now.leaderId, term: now.term },
+    'Cluster leadership must stay unchanged during the browser scenario',
+  ).toEqual({ leaderId: before.leaderId, term: before.term })
+}
+
+const ANALYTICS_READER = 'hilos_analytics'
+const ANALYTICS_WRITER = 'hilos_analytics_writer'
+const ANALYTICS_JOURNAL = 'hilos_analytics_journal'
+const ANALYTICS_AGENTS = new Set([
+  ANALYTICS_READER,
+  ANALYTICS_WRITER,
+  ANALYTICS_JOURNAL,
+])
+
+/** Replay the current daemon life; a rotated or incomplete journal proves nothing. */
+function activeClusterAnalyticsAgents(path: string): readonly string[] {
+  const descriptor = openSync(path, 'r')
+  let journal: string
+  try {
+    const before = fstatSync(descriptor)
+    if (!before.isFile()) throw new Error(`Not a daemon log file: ${path}`)
+    journal = readFileSync(descriptor, 'utf8')
+    const after = statSync(path)
+    if (
+      before.dev !== after.dev ||
+      before.ino !== after.ino ||
+      after.size < before.size
+    ) {
+      throw new Error(
+        `Daemon journal replaced or truncated while reading ${path}`,
+      )
+    }
+  } finally {
+    closeSync(descriptor)
+  }
+  if (!journal.endsWith('\n')) {
+    throw new Error(`Incomplete daemon journal: ${path}`)
+  }
+
+  let running = false
+  let active: { agentId: string; worker: string }[] = []
+  for (const line of journal.split('\n')) {
+    if (line.endsWith('] Daemon started with epoll')) {
+      running = true
+      active = []
+      continue
+    }
+    if (/\] Daemon stopped(?: after a failure)?$/.test(line)) {
+      running = false
+      active = []
+      continue
+    }
+    if (!running) continue
+
+    // A worker number can be reused, including after a death without agent stops.
+    const worker = line.match(
+      /\] Worker #(\d+) (?:died hosting \d+ agent\(s\):|started \[type=)/,
+    )
+    if (worker) {
+      active = active.filter((entry) => entry.worker !== worker[1])
+      continue
+    }
+    const agent = line.match(
+      /\] Agent '([^']+)' (started|stopped) on worker #(\d+)$/,
+    )
+    if (agent && ANALYTICS_AGENTS.has(agent[1])) {
+      if (agent[2] === 'started') {
+        active.push({ agentId: agent[1], worker: agent[3] })
+      } else {
+        active = active.filter(
+          (entry) => entry.agentId !== agent[1] || entry.worker !== agent[3],
+        )
+      }
+    } else if (
+      /\] Agent 'hilos_analytics(?:_writer|_journal)?' .* on worker #/.test(
+        line,
+      )
+    ) {
+      throw new Error(
+        `Incomplete Analytics lifecycle record in ${path}: ${line}`,
+      )
+    }
+  }
+  if (!running) throw new Error(`No current daemon start in ${path}`)
+  return active.map((entry) => entry.agentId)
+}
+
+/**
+ * Prove the live reader, writer and per-node journals from this fresh stand.
+ * Inspect supplies only the writer's POLICY placement; logs supply every live copy.
+ *
+ * @param expect The spec's expect.
+ * @param stand The running stand's roles and readable node journals.
+ */
+export async function expectClusterAnalyticsAgents(
+  expect: Expect,
+  stand: ClusterBrowserStand,
+): Promise<void> {
+  const nodes = Object.keys(stand.nodeLogs).sort()
+  const inspect = clusterCommandChannel(stand, stand.leader)
+  // The reader starts on demand. Its existing read accepts any positive user id,
+  // including one with no session yet; this preparation neither creates nor seeds it.
+  await readAnalyticsBrowserSession(inspect, 1)
+  await expect
+    .poll(
+      async () => {
+        const inspection = (await inspect(
+          'test:cluster:inspect',
+          {},
+        )) as unknown as ClusterInspection
+        const writerPlacements = inspection.placements.filter(
+          (placement) => placement.agentId === ANALYTICS_WRITER,
+        )
+        const active = nodes.flatMap((node) =>
+          activeClusterAnalyticsAgents(stand.nodeLogs[node]).map((agentId) => ({
+            node,
+            agentId,
+          })),
+        )
+        const hosts = (agentId: string) =>
+          active
+            .filter((entry) => entry.agentId === agentId)
+            .map((entry) => entry.node)
+        const writerNodes = hosts(ANALYTICS_WRITER)
+        return {
+          leaderId: inspection.leaderId,
+          readerNodes: hosts(ANALYTICS_READER),
+          journalNodes: hosts(ANALYTICS_JOURNAL),
+          writerMatchesPlacement:
+            writerPlacements.length === 1 &&
+            writerPlacements[0].state === 'started' &&
+            writerNodes.length === 1 &&
+            writerNodes[0] === writerPlacements[0].nodeId,
+          writerPlacements,
+          writerNodes,
+        }
+      },
+      {
+        timeout: ANALYTICS_WRITER_TIMEOUT_MS,
+        message:
+          'Live Analytics agents agree with the harness roles and POLICY writer placement',
+      },
+    )
+    .toMatchObject({
+      leaderId: stand.leader,
+      readerNodes: [stand.leader],
+      journalNodes: nodes,
+      writerMatchesPlacement: true,
+    })
 }
 
 /**
@@ -238,4 +481,87 @@ export function expectNoProtectedModeAgentStops(
       closeSync(descriptor)
     }
   }
+}
+
+export const READY_TIMEOUT_MS = 120_000
+const POLL_INTERVAL_MS = 2_000
+
+/**
+ * @param baseURL Front origin.
+ * @param agent Agent tolerating its test certificate.
+ */
+export function probeStatic(
+  baseURL: string,
+  agent: https.Agent,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const request = https.request(
+      baseURL,
+      { method: 'HEAD', agent },
+      (response) => {
+        response.resume()
+        response.on('end', () => {
+          const status = response.statusCode ?? 0
+          resolve(status >= 200 && status < 400)
+        })
+      },
+    )
+    request.on('error', () => resolve(false))
+    request.end()
+  })
+}
+
+/**
+ * @param baseURL Front origin.
+ * @param agent Agent tolerating its test certificate.
+ * @param master Optional master selected through the cluster stand entry.
+ */
+export function probeWebSocketUpgrade(
+  baseURL: string,
+  agent: https.Agent,
+  master?: string,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const request = https.request(`${baseURL}/ws`, {
+      agent,
+      headers: {
+        ...(master ? { Cookie: `hilos_stand_master=${master}` } : {}),
+        Connection: 'Upgrade',
+        Upgrade: 'websocket',
+        'Sec-WebSocket-Version': '13',
+        'Sec-WebSocket-Key': Buffer.from('hilos-e2e-ready!').toString('base64'),
+      },
+    })
+    request.on('upgrade', (response, socket) => {
+      socket.destroy()
+      resolve(response.statusCode === 101)
+    })
+    request.on('response', (response) => {
+      response.resume()
+      resolve(false)
+    })
+    request.on('error', () => resolve(false))
+    request.end()
+  })
+}
+
+/**
+ * Poll one front until its static or WebSocket response arrives.
+ *
+ * @param what Failure-message label for the probed surface.
+ * @param deadline Epoch milliseconds after which readiness fails.
+ * @param probe One probe attempt.
+ */
+export async function waitUntilReady(
+  what: string,
+  deadline: number,
+  probe: () => Promise<boolean>,
+): Promise<void> {
+  while (Date.now() < deadline) {
+    if (await probe()) {
+      return
+    }
+    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
+  }
+  throw new Error(`${what} did not become ready within ${READY_TIMEOUT_MS}ms`)
 }

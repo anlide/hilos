@@ -130,9 +130,9 @@ def run_e2e(stand, args, prog):
     """Refuse missing browser prerequisites before touching the stand, then run both phases."""
     if stand.e2e is None:
         raise StandRefused(f"{stand.compose}: no e2e block in x-hilos-cluster")
-    bundle = stand.demo_dir / "frontend" / "dist" / "index.html"
-    if not bundle.exists():
-        raise StandRefused(f"e2e: no frontend bundle at {bundle} - build it: composer run test:e2e-build")
+    bundle = stand.demo_dir / "frontend" / "dist"
+    if not any((bundle / name).is_file() for name in ("index.html", "index.csr.html")):
+        raise StandRefused(f"e2e: no index.html or index.csr.html at {bundle} - build it: composer run test:e2e-build")
     code = control.down(stand, volumes=True)
     if code == 0:
         code = control.up(stand, prog, clean_logs=True)

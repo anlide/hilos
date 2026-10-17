@@ -159,6 +159,7 @@ polls (Angular) → online-testing (Angular).
 | Protected mode and maintenance | binance-btc-tracker: protected-mode | binance-btc-tracker | HIL-1221 |
 | Logs | binance-btc-tracker: logs, logs-rotation | binance-btc-tracker | HIL-1222 |
 | Cluster browser — backup, logs, protected mode, one person's tabs across masters | binance-btc-tracker: tests/e2e/cluster (live, after-loss), playwright.cluster.config.ts | binance-btc-tracker | HIL-1232 |
+| Cluster browser — Analytics across all three masters | online-testing: tests/e2e/cluster/live/analytics.spec.ts, playwright.cluster.config.ts | online-testing | HIL-1423 |
 | Tables | binance-btc-tracker: table-lag, table-refusal | binance-btc-tracker | HIL-1223 |
 | Notifications and communications | binance-btc-tracker: notifications, communications | binance-btc-tracker | HIL-1224 |
 | The operations half of tasks | ecommerce-shop: users, settings, notifications, protected-mode, maintenance, backup-reopen | ecommerce-shop | HIL-1225 |
@@ -186,6 +187,12 @@ with the same test titles. The actions the specs look at are the registration of
 the person and of the administrator, because tasks and polls declare no actions
 of their own; no demo's product takes part in them, and they carry no
 `spec-owner` line (HIL-1422).
+
+online-testing additionally carries the cluster Analytics proof in
+`tests/e2e/cluster/live/analytics.spec.ts`, with three sequential source/viewer
+pairs over the stand's masters. It uses the same Analytics checks and real
+registrations; it is a framework spec too. Its separate cluster config keeps it
+out of the single-node suite, and it runs live only (HIL-1423).
 
 Theme coverage has one full UI owner per kit and separate build probes:
 
@@ -570,6 +577,23 @@ probe until the last registration action of both tabs — the person's and the
 administrator's — has landed, then opens the section. The three kits' specs
 are the same text; the one difference is the stand address of the command
 channel.
+
+The cluster proof also uses `cluster.ts`: `readClusterBrowserStand` validates
+the harness roles and address/log maps, `newClusterMasterPage` sets the master
+cookie before opening a page, and `setClusterMaster` selects future sockets.
+`clusterCommandChannel` addresses a member, while `expectClusterLeaderUnchanged`
+checks a fresh follower view against the original leader and term.
+`watchClusterMasterUpgrades` checks every Chromium `/ws` handshake for status
+101 and the selected master's actual upstream address.
+`expectClusterAnalyticsAgents` polls POLICY inspect for the writer and replays
+fresh daemon logs for all live Analytics agents, clearing stopped agents, dead
+workers and earlier daemon lives. Missing or incomplete journals fail the proof.
+It first addresses the reader through the existing read-only browser-session
+probe, since that agent starts on demand; no account or session is seeded.
+The latter three checks take the spec's `expect` first. Common readiness uses
+`probeStatic`, `probeWebSocketUpgrade` and `waitUntilReady`; demo wrappers keep
+their own setup order. Scenario order, navigation and context cleanup stay in
+the cluster spec.
 
 ### The languages and countries section — rows and checks
 

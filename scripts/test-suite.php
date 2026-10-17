@@ -291,7 +291,7 @@ $steps = array_merge($steps, [
     ],
     // The fleet of online-testing (HIL-1217): three equal masters that carry the work themselves,
     // the whole demo on one MariaDB server with primary and derived journal (HIL-1453). Beside
-    // the other fleets and any e2e step, no group and no edge (the head of this file); takes its
+    // the other fleets and unrelated e2e steps, sharing a group with its browser step; takes its
     // stand down with it, at any outcome, for the reason binance-btc-tracker-cluster does.
     // The demo's unit suite runs in online-testing-php. Seconds retain the historical median of
     // ten fresh Galera stands with member death and return (HIL-1231), not a single-server timing.
@@ -301,9 +301,25 @@ $steps = array_merge($steps, [
         'cwd' => 'demo/online-testing',
         'stand' => 'online-testing-cluster',
         'deps' => [],
-        'group' => null,
+        'group' => 'online-testing-cluster',
         'tags' => ['cluster', 'backend'],
         'seconds' => 165,
+        'downsStand' => true,
+    ],
+    // Analytics across all three masters (HIL-1423), live only. The single-node e2e
+    // finishes using the shared dist, node_modules and reports before this starts;
+    // the cluster group keeps the scenario matrix from resetting the browser stand.
+    [
+        'id' => 'online-testing-cluster-e2e',
+        'command' => 'composer run test:cluster:e2e',
+        'cwd' => 'demo/online-testing',
+        'stand' => 'online-testing-cluster',
+        'deps' => ['online-testing-e2e'],
+        'group' => 'online-testing-cluster',
+        'tags' => ['cluster', 'e2e'],
+        // 2026-10-17, HIL-1423: 84s for the fresh-stand command with cached images,
+        // one worker, timeout scale 1; all three pairs passed without retries.
+        'seconds' => 84,
         'downsStand' => true,
     ],
     // Where every log line of a node lands, proven on the live tasks stand (HIL-1018): five

@@ -445,6 +445,20 @@ opening the page. The section's e2e is two identical specs in chat, tasks and
 polls; their checks live in `framework/frontend/e2e/analytics.ts`
 (HIL-1422).
 
+The cluster proof is `demo/online-testing/tests/e2e/cluster/live/analytics.spec.ts`
+(HIL-1423), run through `test:cluster:e2e` on the existing three-master stand.
+Each master records a real registration and the next master serves its session
+page to a separately registered administrator. Shared checks cover isolation,
+source order, reversed sorting and the absence of bodies in DOM and frames.
+CDP confirms the actual master of every WebSocket upgrade; the harness's leader
+and term stay unchanged. Before and after each pair, fresh node journals prove
+one reader on that leader and one journal agent per member, and the single
+writer agrees with its started POLICY placement. Replayed stops, worker deaths
+and daemon restarts prevent historical starts from counting as live copies.
+One pair therefore crosses follower → leader reader → another follower without
+assigning a fixed master the leader role. This is a live-only snapshot proof;
+failover and live page updates are outside it.
+
 `browser` is a short browser/version and operating-system label, not a raw
 User-Agent excerpt of 160 characters. An unrecognized User-Agent falls back to
 its first 60 characters; an absent one is null.

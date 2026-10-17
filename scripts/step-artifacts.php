@@ -69,8 +69,8 @@ const ARTIFACT_VALUE_SEPARATOR = '; ';
 /** Where a stand's daemon, workers and agents write, relative to the STAND's working directory. */
 const STAND_LOG_DIR = 'data/logs-test';
 
-/** The browser step whose evidence belongs to separate cluster nodes. */
-const CLUSTER_BROWSER_STEP = 'binance-btc-tracker-cluster-e2e';
+/** The browser steps whose evidence belongs to separate cluster nodes. */
+const CLUSTER_BROWSER_STEPS = ['binance-btc-tracker-cluster-e2e', 'online-testing-cluster-e2e'];
 
 /** Node log trees, emptied at the start of each fresh cluster browser run. */
 const CLUSTER_LOG_DIR = 'data/logs-cluster';
@@ -1200,7 +1200,7 @@ function runArtifactCommand(string $label, string $command, string $cwd, int $ti
  */
 function copyStepLogs(string $root, string $id, ?array $stand, string $path): array
 {
-    if ($id !== CLUSTER_BROWSER_STEP) {
+    if (!in_array($id, CLUSTER_BROWSER_STEPS, true)) {
         return copyStandLogs($root, $stand, $path);
     }
     if ($stand === null) {

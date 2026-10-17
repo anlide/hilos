@@ -215,9 +215,16 @@ export { expectHilosUserBlockSettled } from './hilosUserLifecycle.js'
 
 export {
   readClusterBrowserStand,
+  newClusterMasterPage,
+  setClusterMaster,
+  clusterCommandChannel,
+  expectClusterLeaderUnchanged,
+  expectClusterAnalyticsAgents,
   watchClusterMasterUpgrades,
   markClusterNodeLogs,
   expectNoProtectedModeAgentStops,
+  STAND_MASTER_COOKIE,
   type ClusterBrowserStand,
+  type ClusterInspection,
   type ClusterNodeLogMark,
 } from './cluster.js'
