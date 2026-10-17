@@ -32,6 +32,7 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Socket\SocketException;
+use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 use Random\RandomException;
 use Socket;
@@ -169,6 +170,7 @@ final class PeerServerMembershipTest extends TestCase
     {
         $observer = $this->registerObserver();
         $server = $this->makeServer();
+        $server->announceSourceInterest(['readRt'], ['readDb']);
         [$old, $oldFar] = $this->linkTo($server, 'node-0');
         $this->drain($old, $oldFar);
         $server->onSourceInterestReceived($old, new PeerSourceInterestDTO('node-0', ['unitRows'], []));
@@ -186,6 +188,8 @@ final class PeerServerMembershipTest extends TestCase
         $this->assertInstanceOf(PeerReadyAckDTO::class, $newFrames[1]);
         $this->assertTrue($newFrames[1]->keepNew);
         $this->assertInstanceOf(PeerSourceInterestDTO::class, $newFrames[2]);
+        $this->assertCount(3, $newFrames, 'An online duplicate must not repeat roster or reader-interest hand-over');
+        $this->assertSame([], array_filter($newFrames, static fn(PeerDTO $frame): bool => $frame instanceof PeerRosterDTO));
 
         $this->feed($old, $oldFar, new PeerDrainDTO());
         $this->closeLink($server, $old);
@@ -206,6 +210,69 @@ final class PeerServerMembershipTest extends TestCase
 
         $this->closeLink($server, $candidate);
         $this->assertSame(['node-0'], $observer->left);
+    }
+
+    /**
+     * A restarted peer has no old route, so ready(false) can replace the old generation's
+     * still-open socket after its leave. The new handshake must restore membership.
+     *
+     * @throws EnvException When a link cannot read its socket and keepalive settings
+     * @throws HilosException When a frame refuses to become wire input
+     * @throws RandomException When the secure random source refuses a handshake secret
+     * @throws SocketException When a pair under test refuses a frame
+     */
+    public function testANewGenerationReplacingALeavingLinkRestoresMembership(): void
+    {
+        $this->assertLeavingLinkReplacementRestoresMembership(false);
+    }
+
+    /**
+     * The dialing side must restore the same first-entry transfers when its ready ack wins
+     * before the leaving generation's queued EOF is read.
+     *
+     * @throws EnvException When a link cannot read its socket and keepalive settings
+     * @throws HilosException When a frame refuses to become wire input
+     * @throws RandomException When the secure random source refuses a handshake secret
+     * @throws SocketException When a pair under test refuses a frame
+     */
+    public function testADialedReplacementOfALeavingLinkRestoresMembership(): void
+    {
+        $this->assertLeavingLinkReplacementRestoresMembership(true);
+    }
+
+    /**
+     * A candidate refused by the duplicate tie-break cannot undo a real graceful leave.
+     *
+     * @throws EnvException When a link cannot read its socket and keepalive settings
+     * @throws HilosException When a frame refuses to become wire input
+     * @throws RandomException When the secure random source refuses a handshake secret
+     * @throws SocketException When a pair under test refuses a frame
+     */
+    public function testALosingDuplicateDoesNotReviveALeavingNode(): void
+    {
+        $observer = $this->registerObserver();
+        $server = $this->makeServer();
+        $server->announceSourceInterest(['readRt'], ['readDb']);
+        [$old, $oldFar] = $this->linkTo($server, 'node-b');
+        $this->drain($old, $oldFar);
+        $this->feed($old, $oldFar, new PeerNodeLeavingDTO('node-b', false, null));
+
+        [$candidate, $candidateFar] = $this->candidateTo($server, 'node-b');
+        $this->feed($candidate, $candidateFar, new PeerReadyDTO(true));
+        $candidateFrames = $this->framesOf($this->drain($candidate, $candidateFar));
+        $this->assertCount(2, $candidateFrames);
+        $this->assertInstanceOf(PeerWelcomeDTO::class, $candidateFrames[0]);
+        $this->assertInstanceOf(PeerReadyAckDTO::class, $candidateFrames[1]);
+        $this->assertFalse($candidateFrames[1]->keepNew);
+        $this->assertNull($candidate->remoteIdentity());
+        $this->closeLink($server, $candidate);
+
+        $this->assertFalse(Hilos::$cluster->registry()->isOnline('node-b'));
+        $this->assertSame(['node-b'], $server->linkedNodeIds());
+        $this->assertSame(['node-b'], $observer->joined);
+        $this->assertSame(['node-b'], $observer->left);
+        $this->assertTrue($server->sendToNode('node-b', new PeerSourceInterestDTO('node-a', [], [])));
+        $this->assertCount(1, $this->framesOf($this->drain($old, $oldFar)));
     }
 
     /**
@@ -468,6 +535,93 @@ final class PeerServerMembershipTest extends TestCase
 
         $this->assertSame(['node-b', 'node-d'], $observer->left);
         $this->assertSame('', $this->drain($linkC, $farC));
+    }
+
+    /**
+     * Drives either handshake road while the old generation's EOF waits on its socket.
+     *
+     * @param bool $dialer Whether this node dials the replacement
+     * @throws EnvException When a link cannot read its socket and keepalive settings
+     * @throws HilosException When a frame refuses to become wire input
+     * @throws RandomException When the secure random source refuses a handshake secret
+     * @throws SocketException When a pair under test refuses a frame
+     */
+    private function assertLeavingLinkReplacementRestoresMembership(bool $dialer): void
+    {
+        $logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-peer-rejoin-');
+        Logger::setLogFile($logFile);
+
+        try {
+            $observer = $this->registerObserver();
+            $server = $this->makeServer();
+            $server->announceSourceInterest(['readRt'], ['readDb']);
+            [$old, $oldFar] = $this->linkTo($server, 'node-0');
+            $this->drain($old, $oldFar);
+
+            $this->feed($old, $oldFar, new PeerNodeLeavingDTO('node-0', false, null));
+            $this->assertFalse(Hilos::$cluster->registry()->isOnline('node-0'));
+            $this->assertSame(['node-0'], $observer->left);
+            $this->assertSame(['node-0'], $server->linkedNodeIds());
+            $this->assertFalse($old->shouldClose());
+
+            // The old generation's EOF is queued, but the new socket is handled first.
+            $this->assertTrue(socket_shutdown($oldFar, 1));
+            if ($dialer) {
+                [$candidate, $candidateFar] = $this->dialedCandidateTo($server, 'node-0');
+                $readyFrames = $this->framesOf($this->drain($candidate, $candidateFar));
+                $this->assertCount(1, $readyFrames);
+                $this->assertInstanceOf(PeerReadyDTO::class, $readyFrames[0]);
+                $this->assertTrue($readyFrames[0]->hasActiveLink);
+                $this->feed($candidate, $candidateFar, new PeerReadyAckDTO(true));
+            } else {
+                [$candidate, $candidateFar] = $this->candidateTo($server, 'node-0');
+                $welcomeFrames = $this->framesOf($this->drain($candidate, $candidateFar));
+                $this->assertCount(1, $welcomeFrames);
+                $this->assertInstanceOf(PeerWelcomeDTO::class, $welcomeFrames[0]);
+                $this->feed($candidate, $candidateFar, new PeerReadyDTO(false));
+            }
+
+            $newFrames = $this->framesOf($this->drain($candidate, $candidateFar));
+            if (!$dialer) {
+                $this->assertInstanceOf(PeerReadyAckDTO::class, $newFrames[0]);
+                $this->assertTrue($newFrames[0]->keepNew);
+                array_shift($newFrames);
+            }
+            $this->assertSame([PeerRosterDTO::MESSAGE_TYPE, PeerSourceInterestDTO::MESSAGE_TYPE], array_map(
+                static fn(PeerDTO $frame): string => $frame->getType(),
+                $newFrames,
+            ));
+            $this->assertInstanceOf(PeerSourceInterestDTO::class, $newFrames[1]);
+            $this->assertSame('node-a', $newFrames[1]->nodeId);
+            $this->assertSame(['readRt'], $newFrames[1]->rtCollections);
+            $this->assertSame(['readDb'], $newFrames[1]->dbCollections);
+            $this->assertSame('node-0', $candidate->remoteIdentity()?->nodeId);
+            $this->assertTrue(Hilos::$cluster->registry()->isOnline('node-0'));
+            $this->assertSame(['node-0', 'node-0'], $observer->joined);
+            $this->assertSame(['node-0'], $observer->left);
+            $this->assertSame([PeerDrainDTO::MESSAGE_TYPE], array_map(
+                static fn(PeerDTO $frame): string => $frame->getType(),
+                $this->framesOf($this->drain($old, $oldFar)),
+            ));
+
+            $old->read();
+            $this->assertTrue($old->shouldClose());
+            $this->closeLink($server, $old);
+            $this->assertTrue(Hilos::$cluster->registry()->isOnline('node-0'));
+            $this->assertSame(['node-0'], $server->linkedNodeIds());
+            $this->assertTrue($server->sendToNode('node-0', new PeerSourceInterestDTO('node-a', [], [])));
+            $routedFrames = $this->framesOf($this->drain($candidate, $candidateFar));
+            $this->assertCount(1, $routedFrames);
+            $this->assertInstanceOf(PeerSourceInterestDTO::class, $routedFrames[0]);
+            $this->assertSame(['node-0', 'node-0'], $observer->joined);
+            $this->assertSame(['node-0'], $observer->left);
+            $log = (string)file_get_contents($logFile);
+            $this->assertSame(2, substr_count($log, 'Peer joined: node-0 role=master'));
+            $this->assertStringNotContainsString('Peer left:', $log);
+        } finally {
+            Logger::resetLogFile();
+            unlink($logFile);
+        }
     }
 
     /**

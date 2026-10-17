@@ -72,6 +72,7 @@ export function HilosDaemonPlacement({
       ) : (
         <span
           className="text-body-secondary"
+          data-id={`hilos-daemon-placement-cell-${row.rowKey}-${node.nodeId}`}
           title={
             ids === null
               ? 'Node is silent or has not reported its agents'

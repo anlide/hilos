@@ -553,7 +553,26 @@ browser run, the harness then stops the slave the backup spec names, waits for
 placement to move, and runs the after-loss phase: the archive is out of reach
 and the log node offline.
 `composer -d demo/binance-btc-tracker run test:cluster:e2e` runs that suite
-alone on a fresh stand; `-- --grep circle` points it. The scenario and browser
+alone on a fresh stand; `-- --grep circle` points the existing live/after-loss
+phases. An unpointed Binance run first executes the separate `daemon` project:
+foreign Workers/Agents/Cron/HTTP/Env, a remote UI restart proved by fresh node
+journals, mismatch privacy, then loss of the original leader. Two original
+follower contexts retain scheme, placement, mismatch and dashboard tabs; the
+source that remains follower proves addressed `page_resubscribe`, ordinary
+subscribe and live updates on its original sockets/documents. Both LEADER
+rows (`hilos_index`, `hilos_daemon`) move; the dead column remains unknown.
+`-- --daemon` runs only that project, with additional Playwright arguments
+forwarded to it. The destructive spec has no retries.
+
+The host alone changes the remote environment; it kills the leader only after the
+browser's run-id-bound readiness request. On every exit it joins its controller,
+restores the master, clears that environment override, waits for all five members
+to converge and removes only that run's control files. Cleanup failure is red;
+the old phases start only on the restored stand, with roles read again. Inspect
+before/after, fresh restart journal tails, Cron and mismatch page-response/table-window
+frames and socket/document recovery proof are Playwright attachments under
+`test-results/cluster-daemon`; the harness prints restoration/convergence too.
+The scenario and browser
 steps share a group because both reset the same compose project (HIL-1232).
 Before the browser stand starts, its node log directories are emptied, including
 rotation archives, while tracked `.gitkeep` files stay. Save a failed run's logs
@@ -574,7 +593,7 @@ source/viewer pairs, each master followed by the next in the harness's list.
 The entry serves Angular's `dist/index.csr.html`; Mailpit and the browser runner
 belong to the `e2e` profile. This stand has only a live phase: no fault request,
 no after-loss phase and no slaves. `e2e.daemon` defaults to false; binance's
-declaration opts in for the separate Daemon phase when that harness phase lands.
+declaration opts in for the separate Daemon phase.
 
 Each pair registers a person and an administrator in separate contexts, proves
 every actual WebSocket upgrade's master through CDP, waits for both Analytics

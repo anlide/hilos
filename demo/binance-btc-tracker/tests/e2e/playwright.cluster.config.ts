@@ -36,6 +36,13 @@ export default defineConfig({
   },
   projects: [
     {
+      name: 'daemon',
+      testDir: './cluster/daemon',
+      outputDir: 'test-results/cluster-daemon',
+      retries: 0,
+      use: { ...devices['Desktop Chrome'], trace: 'retain-on-failure' },
+    },
+    {
       name: 'live',
       testDir: './cluster/live',
       outputDir: 'test-results/cluster-live',

@@ -43,6 +43,9 @@ final class SignalConstants
     /** @var string Page subscription error signal - sent when onSubscribe throws PageSubscriptionException */
     public const string SUBSCRIPTION_PAGE_ERROR = 'subscription_page_error';
 
+    /** Ask the addressed browser to repeat its current page subscription. */
+    public const string PAGE_RESUBSCRIBE = 'page_resubscribe';
+
     /** @var string Group subscription error signal - sent when a group join is refused instead of answered */
     public const string SUBSCRIPTION_GROUP_ERROR = 'subscription_group_error';
 

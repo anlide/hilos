@@ -322,6 +322,9 @@ offline, known and not yet seen, until its own handshake. `onNodeJoined` also fi
 a membership change of a node that is online here: the node announced its own new
 capability, and a leader retries what it could not place.
 
+If a node left while its old link was still open, the handshake on the replacement
+link is a first handshake and brings it back online.
+
 ### Leadership hooks
 
 The daemon also registers itself as the cluster `LeadershipObserver` at start. The

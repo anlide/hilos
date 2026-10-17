@@ -166,6 +166,14 @@ export {
   expectStandaloneHttp,
   expectStandaloneEnvironment,
   expectStandaloneMismatch,
+  expectClusterOverview,
+  expectClusterDaemonNodePage,
+  expectClusterDaemonCronSchedule,
+  expectDaemonWorkerAgent,
+  expectClusterLeaderPlacement,
+  expectClusterEnvironmentMismatch,
+  watchDaemonMismatchFrames,
+  watchDaemonCronFrames,
 } from './daemon.js'
 export {
   RESTART_AGENT,

@@ -173,6 +173,20 @@ export async function markDocument(page: Page): Promise<void> {
 }
 
 /**
+ * Assert that a live update kept the document marked by {@link markDocument}.
+ *
+ * @param page The Playwright page, after the expected live state has arrived.
+ */
+export async function expectDocumentUnchanged(page: Page): Promise<void> {
+  expect(
+    await page.evaluate(
+      (mark) => (window as unknown as Record<string, boolean>)[mark],
+      DOCUMENT_MARK,
+    ),
+  ).toBe(true)
+}
+
+/**
  * Wait until the document {@link markDocument} marked has been replaced.
  *
  * That is all it waits for. A replaced document says the reload started and

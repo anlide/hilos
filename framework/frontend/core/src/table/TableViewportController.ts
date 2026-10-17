@@ -1886,6 +1886,14 @@ export class TableViewportController<R> implements TableWindowSink {
       limit,
       rowsBefore,
     )
+    if (!firstWindow) {
+      // A new owner holds the window again but has never heard this loaded controller's
+      // options. The first window already declares them through loadedSignal above.
+      const facets = this.facetOptions.get()
+      if (Object.keys(facets).length > 0) {
+        this.options.sendFacets?.(facets)
+      }
+    }
     if (
       firstWindow &&
       this.renderedKeys.get().length > 0 &&

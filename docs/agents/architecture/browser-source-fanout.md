@@ -62,6 +62,28 @@ Browser fan-out code should use this local router mirror, for example
 `Hilos::$sr->getPageSubscriptions()` or `Hilos::$sr->getAcceptKeysForPage()`.
 It must not query daemon state directly.
 
+### A changed LEADER owner
+
+Every source master watches the available consensus epoch (leader id and term,
+with quorum), including a source that stays follower after the election. A new
+available epoch starts a bounded walk over that master's immutable subscription
+records. Topology selects only `CLUSTER` + `LEADER` page owners; NODE, POLICY
+and standalone pages keep their existing paths. Before addressing each socket,
+the walk checks that its current subscription still matches. A newer epoch
+replaces an unfinished walk; a stable epoch does not duplicate it, and an
+unavailable leader sends nothing.
+
+The master queues `page_resubscribe {page,params}` to that exact accept key
+through existing `WS_USER` delivery. The browser replies on the same socket
+with ordinary `page_subscribe` and its current table windows. That delivered
+subscribe books the viewer in the **new worker's local mirror**, through the
+normal guards and parked/ensure-agent-up path, then answers with one complete
+`page_response`. No page reads another worker's registry. The master keeps no
+window/row cache and replicates no subscription registry; its private epoch and
+cursor only schedule its own walk and lose meaning on restart. Browser scope,
+filters, focus and facets survive; actions are never replayed. This owner change
+is separate from the failed-delivery debt and flush ordering described below.
+
 ## Page Snapshots
 
 `AbstractPage::onSubscribe()` answers a subscription with one `page_response`

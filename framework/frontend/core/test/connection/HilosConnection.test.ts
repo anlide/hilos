@@ -108,6 +108,29 @@ afterEach(() => {
 })
 
 describe('connection machine', () => {
+  it('emits typed page recovery on the existing socket without reconnecting or sending actions', () => {
+    const { connection } = createConnection()
+    const requests: Array<{ page: string; params: Record<string, unknown> }> =
+      []
+    connection.on('pageResubscribe', (signal) => requests.push(signal.data))
+    connection.connect()
+    const socket = MockWebSocket.last
+    socket.open()
+    socket.message(WELCOME_A)
+    socket.message(
+      JSON.stringify({
+        type: 'page_resubscribe',
+        data: { page: 'picture', params: { room: '42' } },
+      }),
+    )
+    socket.message('{"type":"page_resubscribe","data":{"page":"picture"}}')
+    expect(requests).toEqual([{ page: 'picture', params: { room: '42' } }])
+    expect(MockWebSocket.instances).toEqual([socket])
+    expect(socket.closeCalls).toBe(0)
+    expect(socket.sent).toEqual([])
+    expect(connection.state).toBe('connected')
+  })
+
   it('starts disconnected and walks connecting → connected', () => {
     const { connection, states } = createConnection()
     expect(connection.state).toBe('disconnected')

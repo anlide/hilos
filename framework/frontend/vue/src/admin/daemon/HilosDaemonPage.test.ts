@@ -1030,7 +1030,9 @@ describe('HilosDaemonPage placement', () => {
     })
     await nextTick()
     expect(h.view.find(panel).exists()).toBe(false)
-    expect(h.view.find(cell).exists()).toBe(false)
+    expect(h.view.find(`button${cell}`).exists()).toBe(false)
+    expect(h.view.find(cell).element.tagName).toBe('SPAN')
+    expect(h.view.find(cell).text()).toBe('?')
     expect(h.view.find('table span[title]').attributes('title')).toBe(
       'Node is silent or has not reported its agents',
     )
@@ -1041,7 +1043,9 @@ describe('HilosDaemonPage placement', () => {
     h.window(placementRows([]))
     await nextTick()
     expect(h.view.find(panel).exists()).toBe(false)
-    expect(h.view.find(cell).exists()).toBe(false)
+    expect(h.view.find(`button${cell}`).exists()).toBe(false)
+    expect(h.view.find(cell).element.tagName).toBe('SPAN')
+    expect(h.view.find(cell).text()).toBe('·')
     expect(h.view.find('table').text()).toContain('·')
     h.window(placementRows(null))
     await nextTick()

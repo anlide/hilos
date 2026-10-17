@@ -1,9 +1,24 @@
-"""Two-phase Playwright runner for a cluster stand's optional e2e profile (HIL-1232)."""
+"""Playwright phases for a cluster stand, with host-controlled node loss and recovery."""
 
 import json
+import threading
+import time
+import uuid
 
 import control
 import scenarios
+from stand import StandRefused
+
+
+def daemon_phase_selected(stand, extra_args):
+    """Only the Binance carrier has the daemon project and its destructive scenario."""
+    carrier = stand.demo_dir.name == "binance-btc-tracker"
+    if "--daemon" in extra_args and not carrier:
+        raise StandRefused("e2e daemon is carried only by binance-btc-tracker")
+    selected = carrier and (not extra_args or "--daemon" in extra_args)
+    if selected and (len(stand.masters) < 3 or not stand.slaves):
+        raise StandRefused("e2e daemon needs at least three masters and one slave")
+    return selected
 
 
 def _environment(stand, leader, follower, phase, stopped=None):
@@ -35,9 +50,177 @@ def _phase(stand, env, phase, extra_args):
                                   "playwright.cluster.config.ts", "--project", phase, *extra_args)
 
 
+def _switch(outcome):
+    """Keep the fault and recovery evidence in the harness log, including refused switches."""
+    if outcome.code != 0:
+        raise RuntimeError(outcome.err or outcome.out or f"cluster switch exited {outcome.code}")
+    print(outcome.out.strip())
+
+
+def _atomic_json(path, value):
+    """Publish a complete controller reply on the runner's shared filesystem."""
+    temporary = path.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(value), encoding="utf-8")
+    temporary.replace(path)
+
+
+class _DaemonController:
+    """One run's private handshake, owned by the host until the runner has exited.
+
+    This is test orchestration state, not application state: no DB/RT owner or product
+    agent participates. Only this thread kills a node; the caller joins it before recovery.
+    """
+
+    def __init__(self, stand, directory, run_id, leader, term):
+        self.stand = stand
+        self.directory = directory
+        self.run_id = run_id
+        self.leader = leader
+        self.term = term
+        self.stop = threading.Event()
+        self.kill_attempted = False
+        self.completed = False
+        self.error = None
+
+    def run(self):
+        """Accept one matching readiness request, then inspect only surviving members."""
+        try:
+            # A missing readiness request must not leave a thread alive behind a hung runner.
+            # Use the existing host budgets; do not change any browser timeout or its scale.
+            deadline = time.monotonic() + scenarios.CONVERGE_TIMEOUT + scenarios.ELECTION_TIMEOUT
+            request_path = self.directory / "request.json"
+            while not self.stop.is_set():
+                if request_path.exists():
+                    request = json.loads(request_path.read_text(encoding="utf-8"))
+                    if request != {"runId": self.run_id, "action": "kill-leader", "nodeId": self.leader}:
+                        raise RuntimeError(f"invalid daemon readiness request: {request!r}")
+                    # The runner may have exited while the file was being read.
+                    if self.stop.is_set():
+                        return
+                    initial = scenarios.inspect(self.leader)
+                    if (not scenarios.is_leader(initial) or initial.get("term") != self.term
+                            or initial.get("hasQuorum") is not True):
+                        raise RuntimeError("initial daemon leader moved before the requested kill")
+                    if self.stop.is_set():
+                        return
+                    self.kill_attempted = True
+                    _switch(control.kill(self.stand, self.leader))
+                    survivors = [node for node in self.stand.members if node != self.leader]
+
+                    def elected(views):
+                        leaders = scenarios.leaders(views)
+                        return (len(leaders) == 1 and leaders[0] in self.stand.masters
+                                and views[leaders[0]].get("hasQuorum") is True
+                                and isinstance(views[leaders[0]].get("term"), int)
+                                and views[leaders[0]]["term"] > self.term)
+
+                    views = scenarios.wait_until(elected, scenarios.ELECTION_TIMEOUT,
+                                                 "a new daemon leader with quorum and a higher term",
+                                                 nodes=survivors)
+                    leader = scenarios.leaders(views)[0]
+                    result = {"runId": self.run_id, "ok": True, "stopped": self.leader,
+                              "leaderId": leader, "term": views[leader]["term"]}
+                    print(f"cluster e2e daemon: elected {json.dumps(result)}")
+                    _atomic_json(self.directory / "result.json", result)
+                    self.completed = True
+                    return
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("timed out waiting for daemon browser readiness request")
+                self.stop.wait(scenarios.POLL_INTERVAL)
+        except Exception as error:
+            self.error = str(error)
+            print(f"cluster e2e daemon: controller failed: {error}")
+            try:
+                _atomic_json(self.directory / "result.json",
+                             {"runId": self.run_id, "ok": False, "error": self.error})
+            except OSError as write_error:
+                print(f"cluster e2e daemon: could not publish failure: {write_error}")
+
+
+def _daemon_phase(stand, extra_args):
+    """Run the live leader-loss spec, restoring every fault before any older phase starts."""
+    run_id = uuid.uuid4().hex
+    directory = stand.demo_dir / "data" / "cluster-daemon-e2e" / run_id
+    remote = stand.slaves[0]
+    env_key, env_value = "MAIL_FROM_NAME", "hil1401-foreign-value"
+    controller = None
+    thread = None
+    directory_created = False
+    override_attempted = False
+    failed = False
+    try:
+        directory.mkdir(parents=True)
+        directory_created = True
+        override_attempted = True
+        _switch(control.own_env(stand, remote, f"{env_key}={env_value}"))
+        views = scenarios.wait_converge(stand.members)
+        leader = scenarios.leaders(views)[0]
+        follower = next(master for master in stand.masters if master != leader)
+        term = views[leader]["term"]
+        print(f"cluster e2e daemon: run {run_id}, remote {remote}, "
+              f"leader {leader} (term {term}), browser on {follower}")
+        env = _environment(stand, leader, follower, "daemon")
+        env.update({"CLUSTER_DAEMON_NODE": remote, "CLUSTER_DAEMON_ENV_KEY": env_key,
+                    "CLUSTER_DAEMON_ENV_VALUE": env_value, "CLUSTER_DAEMON_RUN_ID": run_id,
+                    "CLUSTER_DAEMON_CONTROL_DIR": "/hilos/" + directory.relative_to(
+                        stand.demo_dir.parent.parent).as_posix()})
+        controller = _DaemonController(stand, directory, run_id, leader, term)
+        thread = threading.Thread(target=controller.run, name=f"daemon-e2e-{run_id}")
+        thread.start()
+        try:
+            failed = _phase(stand, env, "daemon", extra_args) != 0
+        finally:
+            controller.stop.set()
+            thread.join()
+        if controller.error is not None or not controller.completed:
+            print("cluster e2e daemon: failed: no successful leader kill/election handshake")
+            failed = True
+    except Exception as error:
+        print(f"cluster e2e daemon: failed: {error}")
+        failed = True
+    finally:
+        # Join before starting the master: an in-flight election must finish before recovery.
+        if thread is not None and thread.is_alive():
+            controller.stop.set()
+            thread.join()
+        if controller is not None and controller.kill_attempted:
+            try:
+                _switch(control.start(stand, controller.leader))
+            except Exception as error:
+                print(f"cluster e2e daemon: master recovery failed: {error}")
+                failed = True
+        if override_attempted:
+            try:
+                _switch(control.own_env(stand, remote, "off"))
+            except Exception as error:
+                print(f"cluster e2e daemon: environment recovery failed: {error}")
+                failed = True
+            try:
+                views = scenarios.wait_converge(stand.members)
+                print(f"cluster e2e daemon: recovery converged all members: {scenarios.summarize(views)}")
+            except Exception as error:
+                print(f"cluster e2e daemon: recovery convergence failed: {error}")
+                failed = True
+        try:
+            # Never sweep another run, or even the parent directory. Temp files belong to
+            # this handshake too and may remain if a writer failed before its rename.
+            if directory_created:
+                for name in ("request.json", "result.json", "request.json.tmp", "result.json.tmp"):
+                    (directory / name).unlink(missing_ok=True)
+                directory.rmdir()
+        except OSError as error:
+            print(f"cluster e2e daemon: control cleanup failed: {error}")
+            failed = True
+    print(f"cluster e2e: phase daemon {'failed' if failed else 'passed; master and environment restored'}")
+    return 1 if failed else 0
+
+
 def run(stand, extra_args):
-    """Run live browsers, perform the spec-requested slave loss, then run after-loss browsers."""
+    """The carrier adds daemon/recovery before live; pointing preserves each stand's projects."""
+    run_daemon = daemon_phase_selected(stand, extra_args)
     scenarios.bind(stand)
+    daemon_only = "--daemon" in extra_args
+    extra_args = [arg for arg in extra_args if arg != "--daemon"]
     print(f"cluster e2e: stand {stand.project}, browser suite through {stand.entry.container}")
     try:
         views = scenarios.wait_converge(stand.members)
@@ -57,6 +240,19 @@ def run(stand, extra_args):
     if install != 0:
         print("cluster e2e: failed: runner dependencies")
         return 1
+    if run_daemon:
+        if _daemon_phase(stand, extra_args) != 0:
+            return 1
+        if daemon_only:
+            print("=== summary ===\n  browser suite passed: phase daemon")
+            return 0
+        # Recovery can change both roles. Older specs must start from the restored stand.
+        views = scenarios.wait_converge(stand.members)
+        leader = scenarios.leaders(views)[0]
+        follower = next(master for master in stand.masters if master != leader)
+        live_env = _environment(stand, leader, follower, "live")
+        print(f"cluster e2e: restored leader {leader} (term {views[leader].get('term')}), "
+              f"live browser on {follower}")
     if _phase(stand, live_env, "live", extra_args) != 0:
         print("cluster e2e: failed: phase live")
         return 1

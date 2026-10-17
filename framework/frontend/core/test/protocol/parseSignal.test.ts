@@ -3,6 +3,40 @@ import { z } from 'zod'
 import { parseSignal } from '../../src/protocol/parseSignal.js'
 
 describe('parseSignal', () => {
+  it('parses page recovery before project schemas, including empty params', () => {
+    for (const params of [{}, { roomId: '42', nested: { a: [1, true] } }]) {
+      const data = { page: 'picture', params }
+      const result = parseSignal(
+        JSON.stringify({ type: 'page_resubscribe', data }),
+        { page_resubscribe: z.never() },
+      )
+      expect(result).toMatchObject({
+        ok: true,
+        signal: { kind: 'pageResubscribe', data },
+      })
+    }
+  })
+
+  it('rejects malformed page recovery at the typed boundary', () => {
+    for (const data of [
+      null,
+      {},
+      { page: '', params: {} },
+      { page: 42, params: {} },
+      { page: 'picture' },
+      { page: 'picture', params: null },
+      { page: 'picture', params: [] },
+      { page: 'picture', params: '42' },
+    ]) {
+      expect(
+        parseSignal(JSON.stringify({ type: 'page_resubscribe', data })),
+      ).toMatchObject({
+        ok: false,
+        failure: { kind: 'invalid-signal-data', type: 'page_resubscribe' },
+      })
+    }
+  })
+
   it('rejects non-text frames', () => {
     const result = parseSignal(new ArrayBuffer(4))
     expect(result).toEqual({ ok: false, failure: { kind: 'non-text-frame' } })

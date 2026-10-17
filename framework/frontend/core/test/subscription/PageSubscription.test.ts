@@ -4,6 +4,7 @@ import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { type EntityRef } from '../../src/state/EntityStore.js'
 import {
   type ConnectionState,
+  type HilosConnectionEventMap,
   type TableViewportDescriptor,
 } from '../../src/connection/HilosConnection.js'
 import {
@@ -15,6 +16,7 @@ import {
 interface FakeConnectionEvents {
   state: ConnectionState
   protectedMode: ProtectedModeStatus
+  pageResubscribe: HilosConnectionEventMap['pageResubscribe']
 }
 
 /**
@@ -26,11 +28,18 @@ function fakeConnection(initialState: ConnectionState = 'connected') {
   const listeners: Array<(state: ConnectionState) => void> = []
   const protectedModeListeners: Array<(status: ProtectedModeStatus) => void> =
     []
+  const recoveryListeners: Array<
+    (signal: HilosConnectionEventMap['pageResubscribe']) => void
+  > = []
   const listenersOf: {
     [K in keyof FakeConnectionEvents]: Array<
       (payload: FakeConnectionEvents[K]) => void
     >
-  } = { state: listeners, protectedMode: protectedModeListeners }
+  } = {
+    state: listeners,
+    protectedMode: protectedModeListeners,
+    pageResubscribe: recoveryListeners,
+  }
   const sent: Array<Record<string, unknown>> = []
 
   return {
@@ -41,6 +50,15 @@ function fakeConnection(initialState: ConnectionState = 'connected') {
     /** The windows this connection's tables are holding, as the subscribe frame reports them. */
     windows: {} as Record<string, TableViewportDescriptor>,
     forgotPageFrames: 0,
+    requestRecovery(page: string, params: Record<string, unknown> = {}) {
+      for (const listener of recoveryListeners) {
+        listener({
+          kind: 'pageResubscribe',
+          data: { page, params },
+          envelope: { type: 'page_resubscribe', data: { page, params } },
+        })
+      }
+    },
     forgetPageFrames(): void {
       this.forgotPageFrames += 1
     },
@@ -77,6 +95,118 @@ function fakeConnection(initialState: ConnectionState = 'connected') {
     },
   }
 }
+
+describe('PageSubscription leader recovery', () => {
+  it.each(['anchor', 'pageIndex'] as const)(
+    'reports fresh %s window coordinates on the same ready scope',
+    (position) => {
+      const connection = fakeConnection()
+      const scopes = new ScopeManager()
+      const pages = new PageSubscription(connection, scopes)
+      pages.releaseOnSession()
+      const scope = pages.subscribe('picture', { room: '42' })
+      pages.ingestPageResponse('picture', { data: { leader: 'old' } })
+      connection.windows = {
+        placement: {
+          filter: { query: 'current' },
+          sort: [{ field: 'name', direction: 'desc' }],
+          limit: 25,
+          anchor: position === 'anchor' ? { name: 'last', id: 9 } : null,
+          anchorDirection: 'before',
+          pageIndex: position === 'pageIndex' ? 4 : null,
+          rendered: ['name', 'state'],
+        },
+      }
+      connection.requestRecovery('picture', { room: '42' })
+      expect(connection.sent).toEqual([
+        { type: 'page_subscribe', page: 'picture', params: { room: '42' } },
+        {
+          type: 'page_subscribe',
+          page: 'picture',
+          params: { room: '42' },
+          tableWindows: connection.windows,
+        },
+      ])
+      expect(scopes.page()).toBe(scope)
+      expect(scope.data.signal('leader').get()).toBe('old')
+      expect(pages.pageLoading.get()).toBe(false)
+      expect(connection.forgotPageFrames).toBe(1)
+      pages.ingestPageResponse('picture', { data: { leader: 'new' } })
+      expect(scopes.page()).toBe(scope)
+      expect(scope.data.signal('leader').get()).toBe('new')
+      expect(pages.pageError.get()).toBeNull()
+    },
+  )
+
+  it('ignores late pages and differing param values, and compares map keys by value', () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    pages.releaseOnSession()
+    pages.subscribe('picture', { room: '42', nested: { a: 1, b: [2, 3] } })
+    connection.requestRecovery('old', {})
+    connection.requestRecovery('picture', {
+      room: 42,
+      nested: { a: 1, b: [2, 3] },
+    })
+    connection.requestRecovery('picture', {
+      room: '42',
+      nested: { a: 1, b: [3, 2] },
+    })
+    connection.requestRecovery('picture', { room: '42' })
+    expect(connection.sent).toHaveLength(1)
+    connection.requestRecovery('picture', {
+      nested: { b: [2, 3], a: 1 },
+      room: '42',
+    })
+    expect(connection.sent).toHaveLength(2)
+    pages.subscribe('picture', { room: '43' })
+    connection.requestRecovery('picture', { room: '42' })
+    expect(connection.sent).toHaveLength(3)
+    pages.unsubscribe()
+    connection.requestRecovery('picture', { room: '43' })
+    expect(connection.sent).toHaveLength(4)
+  })
+
+  it('holds recovery for a frozen connection and sends the current page on release', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    const pages = new PageSubscription(connection, scopes)
+    pages.releaseOnSession()
+    const scope = pages.subscribe('picture')
+    pages.ingestPageResponse('picture', { data: { leader: 'old' } })
+    connection.setProtectedMode({
+      ...PROTECTED_MODE_INACTIVE,
+      active: true,
+      operation: 'restore',
+      message: 'Held',
+    })
+    connection.requestRecovery('picture')
+    expect(connection.sent).toHaveLength(1)
+    expect(scopes.page()).toBe(scope)
+    expect(pages.pageLoading.get()).toBe(false)
+    pages.subscribe('another', { id: 'new' })
+    connection.setProtectedMode(PROTECTED_MODE_INACTIVE)
+    expect(connection.sent.at(-1)).toEqual({
+      type: 'page_subscribe',
+      page: 'another',
+      params: { id: 'new' },
+    })
+    expect(connection.sent).toHaveLength(2)
+  })
+
+  it('waits for the session on this socket and releases the subscription once', () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    pages.subscribe('picture')
+    connection.requestRecovery('picture')
+    expect(connection.sent).toEqual([])
+    pages.releaseOnSession()
+    pages.releaseOnSession()
+    expect(connection.sent).toEqual([
+      { type: 'page_subscribe', page: 'picture', params: {} },
+    ])
+  })
+})
 
 describe('PageSubscription.refuseUnbuilt', () => {
   it('leaves the current page, drops its data and held frames, and ignores late answers', () => {

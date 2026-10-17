@@ -377,13 +377,18 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     }
 
     /**
-     * Handle agent stopped message
+     * Confirm an awaited stop even when its roster entry was already removed.
+     * Reports still on the roster are logged by the manager; a consumed wait cannot log twice.
      *
-     * @param WorkerAgentStoppedDTO $dto DTO with agent stopped data
+     * @param WorkerAgentStoppedDTO $dto Stop reported by this worker connection
      */
     private function handleAgentStoppedMessage(WorkerAgentStoppedDTO $dto): void
     {
+        $awaited = $this->awaitsStopReport($dto->agentId);
         unset($this->stopsAwaitingReport[$dto->agentId]);
+        if ($awaited && !$this->agentManager->hasAgent($dto->agentId)) {
+            Logger::info("Agent '{$dto->agentId}' stopped on worker #{$this->workerIndex}");
+        }
         $this->agentManager->handleAgentStopped($dto);
     }
 

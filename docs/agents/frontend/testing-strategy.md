@@ -181,6 +181,23 @@ mounted — binance-btc-tracker (Vue), tasks (React), polls (Angular).
 online-testing enables the feature without a view; ecommerce-shop does not
 enable it (HIL-1400).
 
+Binance also carries one destructive cluster Daemon spec in
+`tests/e2e/cluster/daemon/daemon.spec.ts`, separate from those single-node
+screens. It reads remote node reports, restarts the remote log store through
+its real dialog, checks mismatch privacy over every matching incoming frame,
+and keeps both root views, mismatch and dashboard alive across leader loss on
+the same surviving follower. Shared `daemon.ts` owns `expectClusterOverview`,
+`expectClusterDaemonNodePage`, `expectClusterLeaderPlacement` and
+`expectClusterEnvironmentMismatch`, with the spec's `expect` first.
+`expectDaemonWorkerAgent` expands newly reported worker rows until the named
+agent is visible; a one-time list of expand buttons can miss an arriving worker.
+`watchDaemonMismatchFrames(page)` is armed before navigation and returns all
+mismatch `page_response`/`table_window` texts plus `stop()`; direct node Env
+frames are outside that privacy boundary. Navigation, order, contexts, the
+host handshake and inode/offset node-log observations stay in the demo.
+The fresh `test:cluster:e2e -- --daemon` phase and restoration before old phases
+are described in [../testing.md](../testing.md).
+
 The Analytics section did not move either: chat (Vue), tasks (React) and polls
 (Angular) each carry `analytics.spec.ts` and `analytics-browser-session.spec.ts`
 with the same test titles. The actions the specs look at are the registration of
@@ -525,6 +542,45 @@ Every check takes the spec's `expect` first, then its `Page`.
 `daemonRestart.ts` owns `RESTART_MARK_TIMEOUT_MS`, the observation budget for
 the shared restart mark. Each kit keeps one section spec. Test titles match across
 kits; only Vue carries the forged restart request, a server check.
+
+The cluster carrier is Binance's `cluster/daemon/daemon.spec.ts`; its host phases,
+cleanup and artifacts are described in [testing.md](../testing.md).
+`expectClusterOverview` and `expectClusterDaemonNodePage` wait for real node
+reports; the latter also accepts a reported empty roster. `expectDaemonWorkerAgent`
+expands visible worker rows as they arrive until the requested agent is visible.
+`expectClusterLeaderPlacement` checks the `Leader-hosted` label, exactly one
+instance in the new leader's cell and `?` in the dead member's cell.
+`expectClusterEnvironmentMismatch` checks remote digests and unknown silent cells.
+
+`watchDaemonCronFrames(page: Page)` returns
+`{ frames: DaemonPageFrame[], stop(): void }`. Arm it before the first navigation
+or socket on that `Page`, and call `stop()` in `finally`. It retains the full raw
+JSON only for `data.page === 'hilos_daemon_cron'` and types `page_response` or
+`table_window`. `DaemonPageFrame`, declared in `framework/frontend/e2e/daemon.ts`,
+has `{ type: 'page_response' | 'table_window'; raw: string }`;
+`DaemonMismatchFrame` remains an alias of it. `watchDaemonMismatchFrames(page)`
+keeps the same page-specific boundary for `hilos_daemon_env_mismatch`, including
+recovery answers, so privacy assertions can inspect every matching received frame.
+
+`expectClusterDaemonCronSchedule(expect, page, frames, { agentId, ruleName })`
+accepts the spec's `Expect`, a `Page`, `readonly DaemonPageFrame[]` and
+`{ agentId: string; ruleName: string }`, and returns `Promise<void>`.
+It polls the captured answers: `cronReported` comes from
+`data.payload.data.cronReported`; the initial rows come from
+`data.payload.windows.hilosDaemonCron.rows`, replaced by `data.rows` on later
+`table_window` frames whose `data.tableKey` is `hilosDaemonCron`. It reads each
+row's `slots.rule` and requires `cronReported === true`, the requested `agentId`
+and rule `name`, numeric `nextRunAt`, `idleReason === null` and no daemon rows
+(`agentId === null`). It then checks the real visible row/card and executor with
+`shownByTestId`, and zero loading, waiting, silent, reported-empty and
+`hilos-daemon-cron-not-leader` elements. Both Cron functions are exported from
+`framework/frontend/e2e/index.ts`.
+
+The carrier checks `{ agentId: 'hilos_log_store', ruleName: 'log-rotation' }` and
+attaches the captured Cron frames to its report. A reported empty roster cannot
+satisfy this case, though it remains valid for other nodes. Do not add a daemon
+rule to produce a notice or wait for the rotation to fire or for an exact time;
+the positive notice and reserved-room cases stay in the core and SDK unit tests.
 
 ### Theme and Appearance — choices, rows and the built first frame
 

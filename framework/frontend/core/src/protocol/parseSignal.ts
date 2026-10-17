@@ -8,6 +8,7 @@ import {
   SIGNAL_TYPE_ACTION_ERROR,
   SIGNAL_TYPE_ACTION_SUCCESS,
   SIGNAL_TYPE_HANDSHAKE,
+  SIGNAL_TYPE_PAGE_RESUBSCRIBE,
   SIGNAL_TYPE_PROTECTED_MODE,
   SIGNAL_TYPE_RT_STALENESS,
   SIGNAL_TYPE_SESSION_ROTATE,
@@ -42,6 +43,8 @@ import {
   tableBulkReportSignalDataSchema,
   tableViewportOwnCreateSignalDataSchema,
   sessionRotateSignalDataSchema,
+  pageResubscribeSignalDataSchema,
+  type PageResubscribeSignalData,
   type SignalEnvelope,
   type TableWindowSignalData,
   type TableWindowRefusedSignalData,
@@ -77,6 +80,11 @@ export type ProjectSignalSchemas = Record<string, ZodType>
 
 /** A frame that parsed into a signal the core understands or tolerates. */
 export type ParsedSignal =
+  | {
+      kind: 'pageResubscribe'
+      data: PageResubscribeSignalData
+      envelope: SignalEnvelope
+    }
   | {
       kind: 'handshake'
       build: string
@@ -182,6 +190,10 @@ export type ParsedSignal =
   | { kind: 'unknown'; type: string; envelope: SignalEnvelope }
 
 export type HandshakeSignal = Extract<ParsedSignal, { kind: 'handshake' }>
+export type PageResubscribeSignal = Extract<
+  ParsedSignal,
+  { kind: 'pageResubscribe' }
+>
 export type SessionRotateSignal = Extract<
   ParsedSignal,
   { kind: 'sessionRotate' }
@@ -299,6 +311,27 @@ export function parseSignal(
   }
 
   switch (envelope.data.type) {
+    case SIGNAL_TYPE_PAGE_RESUBSCRIBE: {
+      const data = pageResubscribeSignalDataSchema.safeParse(envelope.data.data)
+      if (!data.success) {
+        return {
+          ok: false,
+          failure: {
+            kind: 'invalid-signal-data',
+            type: SIGNAL_TYPE_PAGE_RESUBSCRIBE,
+            message: data.error.message,
+          },
+        }
+      }
+      return {
+        ok: true,
+        signal: {
+          kind: 'pageResubscribe',
+          data: data.data,
+          envelope: envelope.data,
+        },
+      }
+    }
     case SIGNAL_TYPE_HANDSHAKE: {
       const data = handshakeSignalDataSchema.safeParse(envelope.data.data)
       if (!data.success) {

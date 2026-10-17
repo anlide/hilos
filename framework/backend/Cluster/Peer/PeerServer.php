@@ -975,6 +975,10 @@ final class PeerServer extends AbstractTlsServer implements
 
         $old->beginDrain();
         Logger::info("Replaced duplicate peer link to {$remote->nodeId}");
+        $registry = $this->registry();
+        if ($registry !== null && $this->onlineNodeById($registry, $remote->nodeId) === null) {
+            $this->onHandshakeComplete($link, $remote);
+        }
     }
 
     /**

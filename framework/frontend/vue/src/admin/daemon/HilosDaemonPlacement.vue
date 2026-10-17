@@ -157,6 +157,7 @@ function cellIds(
           <span
             v-else
             class="text-body-secondary"
+            :data-id="`hilos-daemon-placement-cell-${row.rowKey}-${node.nodeId}`"
             :title="
               cellIds(row, node.nodeId) === null
                 ? 'Node is silent or has not reported its agents'

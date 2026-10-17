@@ -51,8 +51,9 @@ directory; a demo calls this from its composer scripts)
   db-proxy             print the state of every server behind the stand's database proxy
   scenarios [n ...]    run the scenario matrix on a fresh stand: the stand's scenarios, or
                        the ones named, which must be the stand's
-  e2e [-- Playwright args]  run the cluster browser suite on a fresh stand, with a live
-                       phase, then the spec-requested slave loss and after-loss phase
+  e2e [--daemon] [Playwright args]  run the cluster browser suite on a fresh stand:
+                       daemon leader loss + recovery, then live and after-loss;
+                       --daemon selects daemon only; other pointing keeps the older phases
 
 Exit code: 0 done (a green matrix), 1 failed (a red matrix), 2 the stand or the call refused.
 """
@@ -127,9 +128,10 @@ def run_scenarios(stand, args, prog):
 
 
 def run_e2e(stand, args, prog):
-    """Refuse missing browser prerequisites before touching the stand, then run both phases."""
+    """Refuse missing browser prerequisites before touching the stand, then run selected phases."""
     if stand.e2e is None:
         raise StandRefused(f"{stand.compose}: no e2e block in x-hilos-cluster")
+    browser.daemon_phase_selected(stand, args)
     bundle = stand.demo_dir / "frontend" / "dist"
     if not any((bundle / name).is_file() for name in ("index.html", "index.csr.html")):
         raise StandRefused(f"e2e: no index.html or index.csr.html at {bundle} - build it: composer run test:e2e-build")

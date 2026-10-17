@@ -146,6 +146,12 @@ import { mirrorHilosSignal } from '../../hilosSignal.js'
               } @else {
                 <span
                   class="text-body-secondary"
+                  [attr.data-id]="
+                    'hilos-daemon-placement-cell-' +
+                    row.rowKey +
+                    '-' +
+                    node.nodeId
+                  "
                   [title]="
                     cellIds(row, node.nodeId) === null
                       ? 'Node is silent or has not reported its agents'

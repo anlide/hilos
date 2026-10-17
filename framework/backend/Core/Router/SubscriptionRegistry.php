@@ -621,6 +621,17 @@ final class SubscriptionRegistry
     }
 
     /**
+     * A copy-on-write snapshot of immutable records for a source master's bounded recovery walk.
+     * The registry remains the only live owner; callers must recheck each record before use.
+     *
+     * @return array<string, PageSubscription> Subscription records keyed by accept key
+     */
+    public function pageSubscriptionRecords(): array
+    {
+        return $this->pages;
+    }
+
+    /**
      * @param string $agentType Serving agent type
      * @param ?string $agentIndex Serving agent index, or null for an unindexed agent
      * @return list<string> Accept keys whose page is bound to that agent

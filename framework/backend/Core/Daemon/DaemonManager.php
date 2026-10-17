@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
+use Generator;
 use Hilos\API\Router\Exception\GroupSubscriptionNotFoundException;
 use Hilos\API\Router\Exception\PageSubscriptionMismatchException;
 use Hilos\API\Router\Exception\PageSubscriptionNotFoundException;
@@ -90,6 +91,7 @@ use Hilos\Core\Page\Config\PageAgentIndexSource;
 use Hilos\Core\Page\DTO\PageAccessReassessConnectionsSignalData;
 use Hilos\Core\Page\DTO\PageAccessReassessSessionSignalData;
 use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
+use Hilos\Core\Page\DTO\PageResubscribeSignalData;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\PageAccessReassessment;
 use Hilos\Core\Page\PageErrorCode;
@@ -176,6 +178,7 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Socket\Client\ClientInterface;
+use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -351,6 +354,9 @@ abstract class DaemonManager extends BaseManager implements
     private const float PROCESS_ROSTER_REANNOUNCE_SECONDS = 60.0;
     private const int PROCESS_ROSTER_ROWS_PER_PASS = 100;
 
+    /** Maximum sockets examined by the leader-page recovery walk in one master pass. */
+    private const int LEADER_PAGE_RECOVERY_SOCKETS_PER_PASS = 64;
+
     private const float CRON_FRAME_REANNOUNCE_SECONDS = 60.0;
     private const float STANDING_SAMPLE_SECONDS = 1.0;
     private const float STANDING_REANNOUNCE_SECONDS = 60.0;
@@ -451,6 +457,19 @@ abstract class DaemonManager extends BaseManager implements
      *      which has no registry to count versions of (HIL-337)
      */
     private ?int $publishedClusterVersion = null;
+
+    /** Last available consensus epoch observed by this source master. */
+    private ?string $leaderPageRecoveryLeader = null;
+
+    private ?int $leaderPageRecoveryTerm = null;
+
+    /**
+     * Private cursor over this master's sockets and immutable subscription records at an epoch.
+     * No other process reads it; a restart discards this work along with these sockets.
+     *
+     * @var ?Generator<WebSocketClientInterface, ?PageSubscription>
+     */
+    private ?Generator $leaderPageRecovery = null;
 
     /** @var int RT ownership clashes this node has named as leader (HIL-696) */
     private int $rtClaimConflicts = 0;
@@ -976,6 +995,9 @@ abstract class DaemonManager extends BaseManager implements
 
             // Every master may accept browsers; a slave never opens its WebSocket.
             $this->tickReadiness();
+
+            // The browser may stay on a follower while a different master becomes leader.
+            $this->tickLeaderPageRecovery();
 
             // One bounded step of the process frame, only while its source changed or the
             // minute-long whole-frame repair is due. The fast path reads four scalars.
@@ -7544,6 +7566,95 @@ abstract class DaemonManager extends BaseManager implements
         // Last, for the reason given in {@see onNodeJoined()}. The departed node keeps its row and
         // turns offline in it; the registry does not forget it either (HIL-337).
         $this->publishClusterNodes();
+    }
+
+    /**
+     * Asks this master's existing LEADER-page viewers to register with the current owner.
+     * One unavailable viewer cannot hold up the remaining sockets in this bounded walk.
+     *
+     * @throws EnvException When cluster configuration cannot be read
+     * @throws ClusterDisabledException When the enabled cluster loses its configuration
+     * @throws ClusterConfigurationException When the node identity cannot be initialized
+     */
+    private function tickLeaderPageRecovery(): void
+    {
+        $cluster = Hilos::$cluster;
+        $router = Hilos::$sr;
+        $server = $this->findWebSocketServer();
+        if ($cluster?->isEnabled() !== true || $cluster->identity()->role !== NodeRole::Master || $router === null) {
+            return;
+        }
+
+        $leadership = $cluster->leadership();
+        $leader = $leadership->leaderId();
+        if (!$leadership instanceof ConsensusInspection || !$leadership->hasQuorum() || $leader === null) {
+            $this->leaderPageRecoveryLeader = null;
+            $this->leaderPageRecoveryTerm = null;
+            $this->leaderPageRecovery = null;
+            return;
+        }
+
+        if ($leader !== $this->leaderPageRecoveryLeader || $leadership->term() !== $this->leaderPageRecoveryTerm) {
+            $this->leaderPageRecoveryLeader = $leader;
+            $this->leaderPageRecoveryTerm = $leadership->term();
+            $this->leaderPageRecovery = $this->leaderPageRecoveryCandidates(
+                $server?->getClients() ?? [],
+                $router->pageSubscriptionRecords(),
+            );
+        }
+
+        for ($examined = 0; $examined < self::LEADER_PAGE_RECOVERY_SOCKETS_PER_PASS; $examined++) {
+            if ($this->leaderPageRecovery === null || !$this->leaderPageRecovery->valid()) {
+                $this->leaderPageRecovery = null;
+                return;
+            }
+            $client = $this->leaderPageRecovery->key();
+            $subscription = $this->leaderPageRecovery->current();
+            $this->leaderPageRecovery->next();
+            if (!$client instanceof WebSocketClient || $client->getSocket() === null || $client->shouldClose() || $subscription === null
+                || $router->pageSubscription($client->acceptKey) !== $subscription) {
+                continue;
+            }
+
+            try {
+                $agent = $router->pageServingAgent($subscription);
+                if ($agent === null) {
+                    continue;
+                }
+                $entry = Hilos::appClass()::AGENTS[$agent->agentType] ?? null;
+                if (AgentRegistry::scope($entry) !== AgentScope::CLUSTER
+                    || AgentRegistry::placement($entry) !== AgentPlacement::LEADER) {
+                    continue;
+                }
+
+                $router->queueSignal(
+                    signalSource: new SignalSource(SignalSource::DAEMON),
+                    signalType: new SignalType(SignalTypeConstants::WS_USER),
+                    signalName: new SignalName(SignalConstants::PAGE_RESUBSCRIBE),
+                    signalData: new WebSocketSignalData(
+                        data: new PageResubscribeSignalData($subscription->page, $subscription->params),
+                        targetAcceptKey: $client->acceptKey,
+                    ),
+                );
+            } catch (Throwable $failure) {
+                $this->logException('Leader page recovery refused for ' . $client->acceptKey . ': ' . $failure->getMessage());
+            }
+        }
+    }
+
+    /**
+     * Captures the existing arrays by value without copying a registry or building window state.
+     * Every socket yields once, including those without a subscription, so the pass is bounded.
+     *
+     * @param list<WebSocketClientInterface> $clients This server's sockets at the start of the epoch walk
+     * @param array<string, PageSubscription> $subscriptions Immutable records at the same epoch
+     * @return Generator<WebSocketClientInterface, ?PageSubscription> Socket and its original subscription
+     */
+    private function leaderPageRecoveryCandidates(array $clients, array $subscriptions): Generator
+    {
+        foreach ($clients as $client) {
+            yield $client => $client instanceof WebSocketClient ? ($subscriptions[$client->acceptKey] ?? null) : null;
+        }
     }
 
     /**

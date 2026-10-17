@@ -38,6 +38,7 @@ import {
   type ActionErrorSignal,
   type ActionSuccessSignal,
   type HandshakeSignal,
+  type PageResubscribeSignal,
   type ParsedSignal,
   type ParseFailure,
   type ProjectSignal,
@@ -231,6 +232,8 @@ export interface HilosConnectionEventMap extends Record<string, unknown> {
    * owes have arrived, so the login's own answer is not dropped with the socket.
    */
   sessionRotate: SessionRotation
+  /** The source master asks this live page to register with its new serving leader. */
+  pageResubscribe: PageResubscribeSignal
   /** A signal validated against a project-declared schema. */
   projectSignal: ProjectSignal
   /** A table window snapshot reply (`table_window`): the rows in the requested window. */
@@ -1024,6 +1027,9 @@ export class HilosConnection {
         break
       case 'sessionRotate':
         this.handleSessionRotate(signal)
+        break
+      case 'pageResubscribe':
+        this.emitter.emit('pageResubscribe', signal)
         break
       case 'actionSuccess':
         // Delivered first, noted second: noting it can be the arrival a held

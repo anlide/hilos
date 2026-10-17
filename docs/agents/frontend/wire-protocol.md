@@ -301,6 +301,23 @@ A connection has **at most one** page subscription.
 
 The URL is the source of truth for the page subscription on cold load.
 
+**A changed LEADER owner asks the existing tab to subscribe again.** The
+framework control signal is
+`{"type":"page_resubscribe","data":{"page":"<pageKey>","params":{}}}`.
+`page` is a nonempty string and `params` is a required map, possibly empty.
+It travels through the existing addressed `WS_USER`/`targetAcceptKey` delivery.
+The built-in parser validates it before `HilosConnection` emits the typed
+`pageResubscribe` event; a project schema cannot replace that control signal.
+
+`PageSubscription` accepts it only for the current page and equal params
+(map key order does not matter). It sends the ordinary `page_subscribe` with
+the controllers' **current** `tableWindows`: filter, sort, limit,
+anchor/direction or pageIndex, and rendered rows. The page scope, document,
+socket and session stay in place. A stale request after navigation is ignored;
+the existing session and protected-mode holds defer delivery until released.
+The new owner applies the ordinary subscribe guards and answers with the same
+one complete `page_response` below. No action or requestId is replayed.
+
 The backend answers a subscription with a `page_response` signal carrying the
 page key and the page scope payload:
 

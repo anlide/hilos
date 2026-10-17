@@ -1000,6 +1000,14 @@ class SignalRouter
     }
 
     /**
+     * @return array<string, PageSubscription> Immutable records for a bounded source-master walk
+     */
+    public function pageSubscriptionRecords(): array
+    {
+        return $this->subscriptions->pageSubscriptionRecords();
+    }
+
+    /**
      * @param string $agentType Serving agent type
      * @param ?string $agentIndex Serving agent index, or null for an unindexed agent
      * @return list<string> Accept keys whose page is bound to that agent

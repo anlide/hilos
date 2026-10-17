@@ -556,7 +556,9 @@ describe('HilosDaemonPage', () => {
     expect(h.find(PANEL, table)?.textContent).toContain('chat_room:99')
     act(() => h.window(placementRows([])))
     expect(h.find(PANEL)).toBeNull()
-    expect(h.find(CELL)).toBeNull()
+    expect(h.find(CELL)?.tagName).toBe('SPAN')
+    expect(h.find(CELL)?.textContent).toBe('·')
+    expect(table.querySelector(`button[data-id="${CELL}"]`)).toBeNull()
   })
 
   it.each(['silent', 'frozen', 'refused', 'removed'] as const)(

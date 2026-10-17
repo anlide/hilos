@@ -19,6 +19,17 @@ There is an explicit, separate behavior when there is **no** connection — neve
 an undefined or frozen state. What that behavior is per view is a project choice
 (see Disconnect behavior).
 
+Changing a cluster's LEADER page owner also preserves the live document and
+socket. Each source master, including one that remains a follower, asks its
+existing LEADER subscriptions to recover through the typed `page_resubscribe`
+control signal ([wire-protocol.md](wire-protocol.md)). The current page and
+params must still match. The browser sends its ordinary subscribe with fresh
+table-window descriptors, keeping the same scope and ready screen until the
+new owner's complete answer arrives. The subscription window restores declared
+facets and focus through their existing messages. Session/protected-mode holds
+and server access guards still apply. This recovers a read subscription without
+reconnecting, navigating, changing cookies or replaying actions.
+
 ## The one exception: a node frozen for a destructive operation
 
 The rule above describes normal operation. Exactly one case suspends it: a node

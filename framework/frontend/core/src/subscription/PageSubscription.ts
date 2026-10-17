@@ -48,7 +48,7 @@ const NOT_FOUND = 404
 /** The connection events the manager listens to. */
 type PageSubscriptionEventMap = Pick<
   HilosConnectionEventMap,
-  'state' | 'protectedMode'
+  'state' | 'protectedMode' | 'pageResubscribe'
 >
 
 /**
@@ -143,6 +143,16 @@ export class PageSubscription {
       if (!status.active && !this.subscribeDelivered) {
         this.sendSubscribe()
       }
+    })
+    connection.on('pageResubscribe', ({ data }) => {
+      if (
+        this.current?.pageKey !== data.page ||
+        !sameParams(this.current.params, data.params)
+      ) {
+        return
+      }
+      this.subscribeDelivered = false
+      this.sendSubscribe()
     })
   }
 
@@ -460,4 +470,28 @@ export class PageSubscription {
     }
     this.subscribeDelivered = this.connection.send(JSON.stringify(frame))
   }
+}
+
+/** Compare JSON param values, preserving array order while ignoring map key order. */
+function sameParams(left: unknown, right: unknown): boolean {
+  if (left === right) return true
+  if (
+    left === null ||
+    right === null ||
+    typeof left !== 'object' ||
+    typeof right !== 'object' ||
+    Array.isArray(left) !== Array.isArray(right)
+  ) {
+    return false
+  }
+  const leftMap = left as Record<string, unknown>
+  const rightMap = right as Record<string, unknown>
+  const keys = Object.keys(leftMap)
+  return (
+    keys.length === Object.keys(rightMap).length &&
+    keys.every(
+      (key) =>
+        Object.hasOwn(rightMap, key) && sameParams(leftMap[key], rightMap[key]),
+    )
+  )
 }

@@ -16,6 +16,8 @@ use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Server\AwaitingStopReportStart;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
+use Hilos\Utils\LogLevel;
+use Hilos\Utils\Logger;
 use LogicException;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
@@ -50,26 +52,65 @@ final class WorkerServerStartAfterStopTest extends TestCase
         parent::tearDown();
     }
 
+    /**
+     * A received stop must already be logged before advancing the deferred start.
+     */
     public function testLateStopReportPrecedesTheNewInstanceAndTheOldWorkerIsPreferred(): void
     {
-        [$server, $manager, $original] = $this->runningAgent();
-        $other = $server->addWorker(self::OTHER_WORKER);
+        $logFile = tempnam(sys_get_temp_dir(), 'hilos-start-after-stop-');
+        $this->assertNotFalse($logFile);
+        $previousLogFile = new ReflectionProperty(Logger::class, 'logFile')->getValue();
+        $previousShowLogLevel = new ReflectionProperty(Logger::class, 'showLogLevel')->getValue();
+        $previousWriteLevel = Logger::writeLevel();
+        Logger::setLogFile($logFile);
+        Logger::setShowLogLevel(true);
+        Logger::setWriteLevel(LogLevel::Info);
 
-        $server->restartAgentHere(self::AGENT_TYPE, null, false);
-        $server->startPublic();
-        $this->assertTrue($server->isAgentAwaitingStopReport(self::AGENT_TYPE));
-        $this->assertFalse($manager->hasAgent(self::AGENT_TYPE));
-        $this->assertCount(1, $original->startedAgentTypes);
-        $this->assertSame([], $other->startedAgentTypes);
+        try {
+            [$server, $manager, $original] = $this->runningAgent();
+            $other = $server->addWorker(self::OTHER_WORKER);
 
-        $original->reportStop();
-        $manager->handleAgentStopped(new WorkerAgentStoppedDTO(self::AGENT_TYPE));
-        $server->advancePublic();
+            $server->restartAgentHere(self::AGENT_TYPE, null, false);
+            $server->startPublic();
+            $server->advancePublic();
+            $this->assertTrue($server->isAgentAwaitingStopReport(self::AGENT_TYPE));
+            $this->assertTrue($original->awaitsStopReport(self::AGENT_TYPE));
+            $this->assertFalse($manager->hasAgent(self::AGENT_TYPE));
+            $this->assertCount(1, $original->startedAgentTypes);
+            $this->assertSame([], $other->startedAgentTypes);
+            $this->assertSame('', file_get_contents($logFile));
 
-        $this->assertFalse($server->isAgentAwaitingStopReport(self::AGENT_TYPE));
-        $this->assertSame([self::AGENT_TYPE, self::AGENT_TYPE], $original->startedAgentTypes);
-        $this->assertSame([], $other->startedAgentTypes);
-        $this->assertSame(self::ORIGINAL_WORKER, $manager->getAgentWorkerId(self::AGENT_TYPE));
+            $original->reportStop();
+
+            $this->assertFalse($original->awaitsStopReport(self::AGENT_TYPE));
+            $this->assertFalse($manager->hasAgent(self::AGENT_TYPE));
+            $this->assertTrue($server->isAgentAwaitingStopReport(self::AGENT_TYPE));
+            $this->assertCount(1, $original->startedAgentTypes);
+            $this->assertSame([], $other->startedAgentTypes);
+            $stopLog = file_get_contents($logFile);
+            $this->assertNotFalse($stopLog);
+            $this->assertMatchesRegularExpression(
+                "/\A\[[^\r\n]+\] \[INFO\] Agent 'unit_start_after_stop' stopped on worker #17\n\z/",
+                $stopLog,
+            );
+
+            $server->advancePublic();
+
+            $this->assertFalse($server->isAgentAwaitingStopReport(self::AGENT_TYPE));
+            $this->assertSame([self::AGENT_TYPE, self::AGENT_TYPE], $original->startedAgentTypes);
+            $this->assertSame([], $other->startedAgentTypes);
+            $this->assertSame(self::ORIGINAL_WORKER, $manager->getAgentWorkerId(self::AGENT_TYPE));
+            $this->assertSame($stopLog, file_get_contents($logFile));
+        } finally {
+            if ($previousLogFile === null) {
+                Logger::resetLogFile();
+            } else {
+                Logger::setLogFile($previousLogFile);
+            }
+            Logger::setShowLogLevel($previousShowLogLevel);
+            Logger::setWriteLevel($previousWriteLevel);
+            unlink($logFile);
+        }
     }
 
     public function testPlacementAcceptedDuringStopWaitKeepsItsSanction(): void
@@ -217,10 +258,18 @@ final class StartAfterStopTestWorkerServer extends WorkerServer
         new ReflectionClass(WorkerServer::class)->getMethod('advanceAgentsAwaitingStopReport')->invoke($this);
     }
 
+    /**
+     * @param int $workerIndex Index of the connection added to this server
+     * @return StartAfterStopTestWorkerClient Connection reporting into this server's real manager
+     */
     public function addWorker(int $workerIndex): StartAfterStopTestWorkerClient
     {
         $client = new ReflectionClass(StartAfterStopTestWorkerClient::class)->newInstanceWithoutConstructor();
         $client->setWorkerIndex($workerIndex);
+        new ReflectionProperty(WorkerClient::class, 'agentManager')->setValue(
+            $client,
+            new ReflectionProperty(WorkerServer::class, 'agentManager')->getValue($this),
+        );
         $this->clients[] = $client;
 
         return $client;
@@ -253,9 +302,15 @@ final class StartAfterStopTestWorkerClient extends WorkerClient
     {
     }
 
+    /**
+     * Deliver the worker's stop report through the production decoder and handler.
+     */
     public function reportStop(): void
     {
-        new ReflectionProperty(WorkerClient::class, 'stopsAwaitingReport')->setValue($this, []);
+        new ReflectionClass(WorkerClient::class)->getMethod('processMessage')->invoke(
+            $this,
+            new WorkerAgentStoppedDTO('unit_start_after_stop')->toJson(),
+        );
     }
 }
 

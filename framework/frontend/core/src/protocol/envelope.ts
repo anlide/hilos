@@ -57,6 +57,16 @@ export type SessionRotateSignalData = z.infer<
   typeof sessionRotateSignalDataSchema
 >
 
+/** Framework control payload; even an empty params map is required. */
+export const pageResubscribeSignalDataSchema = z.looseObject({
+  page: z.string().min(1),
+  params: z.record(z.string(), z.unknown()),
+})
+
+export type PageResubscribeSignalData = z.infer<
+  typeof pageResubscribeSignalDataSchema
+>
+
 /**
  * Payload of the framework action-failure signal (`type: 'action_error'`, PHP
  * `PageActionErrorSignalData`): the failed action's name, a human-readable

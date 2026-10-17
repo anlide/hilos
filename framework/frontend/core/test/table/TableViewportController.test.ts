@@ -50,6 +50,54 @@ function makeController(pageSize = 10, initialOrder?: TableSortOrder) {
 }
 
 describe('TableViewportController', () => {
+  it('restores current facets and row focus after a loaded subscription window', () => {
+    const facets: Array<Readonly<Record<string, readonly unknown[]>>> = []
+    const focus: string[] = []
+    const options = createSignal([{ value: 'up', label: 'Up' }])
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: () => {},
+      sendFocus: (key) => focus.push(key),
+      sendFacets: (declared) => facets.push(declared),
+      frame: {
+        columns: [{ key: 'name', label: 'Name' }],
+        filters: [
+          {
+            kind: 'select',
+            key: 'state',
+            label: 'State',
+            options: () => options.get(),
+          },
+        ],
+      },
+    })
+    const answer = (name: string) =>
+      controller.ingestSubscriptionWindow(
+        [{ rowKey: 'a', slots: { name } }],
+        1,
+        true,
+        null,
+        null,
+        10,
+        undefined,
+        [],
+      )
+    answer('old')
+    expect(facets).toEqual([{ state: ['up'] }])
+    controller.focusRow('a')
+    options.set([{ value: 'down', label: 'Down' }])
+    expect(facets).toEqual([{ state: ['up'] }, { state: ['down'] }])
+    answer('new')
+    expect(facets).toEqual([
+      { state: ['up'] },
+      { state: ['down'] },
+      { state: ['down'] },
+    ])
+    expect(focus).toEqual(['a', 'a'])
+    expect(controller.focusedRow.get()?.slots).toEqual({ name: 'new' })
+    expect(controller.descriptor()?.filter).toEqual({})
+  })
+
   afterEach(() => {
     vi.useRealTimers()
   })
