@@ -200,6 +200,7 @@ export {
   type ThemeTestPick,
   type ThemeTestPosition,
 } from './theme.js'
+export { watchThemeFrames, type ThemeFrameLog } from './themeFrames.js'
 export {
   APPEARANCE_PATH,
   THEME_DEFAULT_KEY,

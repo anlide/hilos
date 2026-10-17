@@ -99,11 +99,12 @@ other element. A subtree pinned to one mode is a pinned color by another name.
   truth source refuses a write from any other process (HIL-1427).
   After a successful write or a conditional skip, the owner asks for the existing
   `hilos_user_sessions_restate`. The sessions library publishes session state for
-  every open session of that person on the current node; the project answers each
-  local socket with `handshake_response`, whose `entities.currentUser.themePick`
-  and `themePickInitialized` read the stored pair. A stranger's session receives
-  nothing. Delivery to
-  sessions on other nodes remains pending (not in the code yet — HIL-1443).
+  every open session of that person found in the shared RT connection roster.
+  The project builds `handshake_response` for each addressed socket, whose
+  `entities.currentUser.themePick` and `themePickInitialized` read the stored
+  pair. The router resolves sockets on another node as remote clients, and the
+  daemon forwards their frames over the existing peer channel. A stranger's
+  session receives nothing, including on another master (HIL-1443).
 - **The browser copy:** on every valid handshake, a non-null
   `currentUser.themePick` paired with a boolean `themePickInitialized` becomes
   the tab's choice and is written under
@@ -176,8 +177,8 @@ null with initialized=true. An explicit choice after reset is still allowed.
 After the owner answers through `hilos_user_theme_pick_done`, the library resumes
 the tracked browser action. The existing session restate and handshake delivery
 update the worn mode, header marks, profile line, open profile modal and browser
-copy in every local session of that person. There is no second theme lifecycle,
-polling or separate browser fan-out signal. Cross-node delivery remains HIL-1443.
+copy in every open session of that person, across masters too. There is no second
+theme lifecycle, polling or separate browser fan-out signal (HIL-1443).
 
 Vue's `HilosThemeMenu` closes on a choice and returns focus to its toggle.
 The reset is `role=menuitem` after a separator; the three positions stay
@@ -390,4 +391,11 @@ its names into this file in the same commit that clears its marker.
 - Use the shared `theme.ts` and `appearance.ts` toolbox checks, with the spec's
   `expect` first; scenarios and navigation stay in their demo specs. The API
   and coverage map are in [testing-strategy.md](../frontend/testing-strategy.md).
-  Cross-node account delivery remains pending (not in the code yet — HIL-1443).
+- `demo/binance-btc-tracker/tests/e2e/cluster/live/theme.spec.ts` proves three
+  paths on the existing three-master browser stand: live settings delivery to
+  every master, account choices and reset between independent sessions in both
+  directions, and a stale Dark session reconnecting after a remote reset without
+  adoption. It checks complete settings and account frames, real WebSocket
+  upstreams, new tabs before and after reset, and unchanged leader and term.
+  Live changes keep the existing documents and connections. This does not cover
+  failover, partitions or an unknown account choice before its first handshake.

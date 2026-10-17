@@ -65,7 +65,8 @@ use Throwable;
  * Two tokens of one person have three sockets; a stranger has a fourth. The harness carries
  * queued frames through the ordinary declarative router, with serialization at every agent hop.
  * Its minimal project host uses the framework's identity builder and stamped send, never a
- * hand-built handshake. This proves local delivery, not the peer transport reserved for HIL-1443.
+ * hand-built handshake. This proves local delivery; peer transport is covered by
+ * demo/binance-btc-tracker/tests/e2e/cluster/live/theme.spec.ts (HIL-1443).
  */
 final class ThemeAccountSessionIntegrationTest extends HilosSessionIntegrationTestCase
 {

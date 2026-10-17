@@ -158,7 +158,7 @@ polls (Angular) → online-testing (Angular).
 | Backup | binance-btc-tracker: backup, backup-reopen | binance-btc-tracker | HIL-1220 |
 | Protected mode and maintenance | binance-btc-tracker: protected-mode | binance-btc-tracker | HIL-1221 |
 | Logs | binance-btc-tracker: logs, logs-rotation | binance-btc-tracker | HIL-1222 |
-| Cluster browser — backup, logs, protected mode, one person's tabs across masters | binance-btc-tracker: tests/e2e/cluster (live, after-loss), playwright.cluster.config.ts | binance-btc-tracker | HIL-1232 |
+| Cluster browser — backup, logs, protected mode, one person's tabs and theme settings/choices/reset across masters | binance-btc-tracker: tests/e2e/cluster (live, after-loss), playwright.cluster.config.ts | binance-btc-tracker | HIL-1232, HIL-1443 |
 | Cluster browser — Analytics across all three masters | online-testing: tests/e2e/cluster/live/analytics.spec.ts, playwright.cluster.config.ts | online-testing | HIL-1423 |
 | Tables | binance-btc-tracker: table-lag, table-refusal | binance-btc-tracker | HIL-1223 |
 | Notifications and communications | binance-btc-tracker: notifications, communications | binance-btc-tracker | HIL-1224 |
@@ -203,6 +203,7 @@ Theme coverage has one full UI owner per kit and separate build probes:
 | Both Appearance editors, live viewer rows, Save/Enter refusal, default and Off/On delivery, discard, keyboard/focus and 375px in both palettes | appearance | binance-btc-tracker (Vue), tasks (React), polls (Angular) |
 | Built head: remembered Dark and fresh System light/dark on `/` and `/about`, HTML attribute and painted background with application JS blocked | theme-first-frame | chat (Vue/Vite), ecommerce-shop (React/Vite), online-testing (Angular build/SSG) |
 | Product shell account header/reload/reset; also guest choices and the Appearance card with its two live rows in the React and Angular shells | theme-smoke | binance-btc-tracker, ecommerce-shop, online-testing |
+| Three masters: live settings, independent account choices and reset, new tabs and stale Dark reconnect without adoption | cluster/live/theme | binance-btc-tracker |
 
 Only the shell smoke carries `spec-owner: demo`. The guest/account, Appearance
 and first-frame specs are framework proofs. Profile Off/On stays within each
@@ -560,6 +561,12 @@ its fields. `saveAppearanceSwitching(expect, page, enabled)` and
 window and wait for its close, success toast, live row and returned focus.
 Navigation, registration, scenario order, independent sessions and cleanup
 remain in the demo specs.
+
+`themeFrames.ts` owns `watchThemeFrames(page)`, registered before navigation.
+It retains every `handshake_response` and `hilos_theme_settings` payload and raw
+text, including malformed relevant frames. The cluster theme spec checks whole
+intervals after each action, with a separate person's real Light round trip as
+the account-isolation boundary; cached settings alone do not prove delivery.
 
 ### The Analytics section — names and checks
 

@@ -257,6 +257,12 @@ member keep their documents. All six pages reload themselves on opening. Actual
 WebSocket upgrades prove each master's address, and inspect snapshots plus marked
 daemon log tails prove there was no freeze. Point that case with
 `composer run test:cluster:e2e -- --grep 'cluster manual maintenance:'`.
+The three tests in `cluster/live/theme.spec.ts` check live theme settings on
+every master, choices and reset between independent account sessions, new tabs
+with personal Dark and after reset, and stale Dark reconnect without adoption.
+They inspect complete theme frames and actual WebSocket upstreams; live updates
+keep documents and sockets, and the leader and term stay unchanged. Point them
+with `composer run test:cluster:e2e -- --grep 'cluster theme'`.
 The backup spec asks
 the harness to stop the slave holding its archive; after placement moves,
 `cluster/after-loss` checks the archive's out-of-reach row and offline log refusal.

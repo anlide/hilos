@@ -489,7 +489,10 @@ The browser enters through the stand's one nginx entry, where each context's
 `hilos_stand_master` cookie selects a master (HIL-1304). By default browsers and
 the protected-mode operator sit on a follower master, away from the page holder
 on the leader and the policy-placed agents on slaves. The live phase checks
-backup, logs, protected mode and one person's tabs across masters. The harness
+backup, logs, protected mode, one person's tabs and theme delivery across masters.
+The theme spec checks settings on all three masters, choices and reset between
+independent account sessions, new tabs, and stale Dark reconnect without adoption;
+`-- --grep 'cluster theme'` runs its three tests. The harness
 then stops the slave the backup spec names, waits for placement to move, and
 runs the after-loss phase: the archive is out of reach and the log node offline.
 `composer -d demo/binance-btc-tracker run test:cluster:e2e` runs that suite
