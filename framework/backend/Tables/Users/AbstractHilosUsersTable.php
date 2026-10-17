@@ -152,6 +152,28 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
     }
 
     /**
+     * Names the row of the user a DB user or presence source change is about, without building it.
+     *
+     * The id is read by the helper the build reads it with ({@see self::userIdOfChange()}), so the
+     * name is the key the build would have delivered the row under, and the method is final for the
+     * reason the build is: a project cannot move one without the other. A presence resolution that
+     * throws is not caught here; the caller reads the throw as "cannot say".
+     *
+     * @param SourceChange $change Source change the table failed to build a mutation for
+     * @return ?int Id of the user whose row the change touches, or null when the change names no user
+     * @throws LogicException When the presence key names no collection that reports presence
+     * @throws RtCollectionNotFoundException When nothing is mounted under the presence key
+     * @throws RtCollectionNotReadableException When nothing in this process reads the presence collection, or its state is still on its way
+     * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
+     */
+    final public function rowKeyForSourceEvent(SourceChange $change): ?int
+    {
+        $userId = $this->userIdOfChange($change);
+
+        return $userId > 0 ? $userId : null;
+    }
+
+    /**
      * Serializes one users-table row into its internal browser-row envelope.
      *
      * The window/delta path splits the typed row the same way the declarative
@@ -460,7 +482,7 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
      */
     private function mutationForUser(SourceChange $change): ?TableRowMutationDTO
     {
-        $userId = (int) $change->sourceId;
+        $userId = $this->userIdOfChange($change);
         if ($userId <= 0) {
             return null;
         }
@@ -484,7 +506,7 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
      */
     private function mutationForPresence(SourceChange $change): ?TableRowMutationDTO
     {
-        $userId = $this->resolveUserIdForPresence($change);
+        $userId = $this->userIdOfChange($change);
         if ($userId <= 0) {
             return null;
         }
@@ -492,6 +514,31 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
         $row = $this->rowForUserId($userId);
 
         return $row === null ? null : $this->mutation(TableMutationType::Update, $userId, $row);
+    }
+
+    /**
+     * Reads the id of the user a DB user or presence source change is about.
+     *
+     * The build and the name of a row both take the id from here, so a change is never named as one
+     * row and built as another.
+     *
+     * @param SourceChange $change Source change that may affect this table
+     * @return int Affected user id, or 0 when the change is about no user of this table
+     * @throws LogicException When the presence key names no collection that reports presence
+     * @throws RtCollectionNotFoundException When nothing is mounted under the presence key
+     * @throws RtCollectionNotReadableException When nothing in this process reads the presence collection, or its state is still on its way
+     * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
+     */
+    private function userIdOfChange(SourceChange $change): int
+    {
+        if ($change->sourceKey === HilosDbContext::users) {
+            return (int) $change->sourceId;
+        }
+        if ($change->sourceKey === $this->presenceSourceKey()) {
+            return $this->resolveUserIdForPresence($change);
+        }
+
+        return 0;
     }
 
     /**

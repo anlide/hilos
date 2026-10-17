@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 use Hilos\Tables\Users\AbstractHilosUsersTable;
@@ -28,6 +29,47 @@ final class AbstractHilosUsersTableTest extends TestCase
         );
 
         $this->assertNull($mutation);
+    }
+
+    /**
+     * A change the build threw for is named by the row it would have built, so only the windows
+     * holding that row freeze (HIL-1353).
+     */
+    public function testAUserChangeIsNamedByTheUserId(): void
+    {
+        $this->assertSame(7, $this->table()->rowKeyForSourceEvent(SourceChange::dbUpdated(HilosDbContext::users, '7', [])));
+    }
+
+    public function testAUserChangeWithNoUserIdNamesNoRow(): void
+    {
+        $this->assertNull($this->table()->rowKeyForSourceEvent(SourceChange::dbUpdated(HilosDbContext::users, '0', [])));
+    }
+
+    public function testAPresenceChangeIsNamedByTheUserItCarries(): void
+    {
+        $this->assertSame(
+            4,
+            $this->table()->rowKeyForSourceEvent(SourceChange::rtCreated('connections', 'c-1', ['userId' => 4])),
+        );
+    }
+
+    /**
+     * A sign-out on a tab that stays open clears the binding in place: the user is named by the id
+     * the update replaced, the one the build reads too (HIL-288).
+     */
+    public function testAPresenceChangeThatClearedItsUserIsNamedByThePreviousOne(): void
+    {
+        $this->assertSame(
+            9,
+            $this->table()->rowKeyForSourceEvent(
+                SourceChange::rtUpdated('connections', 'c-1', ['userId' => null], previous: ['userId' => 9]),
+            ),
+        );
+    }
+
+    public function testAnUnrelatedChangeNamesNoRow(): void
+    {
+        $this->assertNull($this->table()->rowKeyForSourceEvent(SourceChange::dbUpdated('other', '5', [])));
     }
 
     /**
@@ -113,11 +155,6 @@ final class AbstractHilosUsersTableTest extends TestCase
                         return new HilosUserPresenceSummary($userId ?? 0, $this->stale);
                     }
                 };
-            }
-
-            protected function resolveUserIdForPresence(SourceChange $change): int
-            {
-                return (int) ($change->row['userId'] ?? 0);
             }
         };
     }

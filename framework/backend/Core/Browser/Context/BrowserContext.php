@@ -199,10 +199,25 @@ abstract class BrowserContext
      * next delivery reads to catch the window up; this set is the flush's own, and says the window
      * is not to be touched again before the flush ends — not by a later change, and not by the
      * catch-up: a delivery built in the same flush as the failure is no proof the road is back.
+     * A window the catch-up sent whole in this flush is here too: it holds the flush's changes
+     * already ({@see self::catchUpOwedWindow()}).
      *
      * @var array<string, array<string, true>>
      */
     private array $setAsideThisFlush = [];
+
+    /**
+     * Unbuilt changes some window skipped in this flush, by browser table key and source address.
+     *
+     * A change the table could not build, but whose row it could name, freezes only the windows
+     * holding that row; every other window skips it and lives on ({@see self::skipUnbuiltChange()}).
+     * The defect is the table's and not the window's, so the journal is told once per change and
+     * flush, however many windows skipped it. A freshness move is keyed apart: it is a second question
+     * about the same row, with a line of its own.
+     *
+     * @var array<string, true>
+     */
+    private array $skippedThisFlush = [];
 
     /** Fact 2, the database came back, is recorded and waits for the flush; cleared the moment it is tried. */
     private bool $databaseBack = false;
@@ -1562,6 +1577,7 @@ abstract class BrowserContext
             $this->totalRecounts = [];
             $this->facetRecounts = [];
             $this->setAsideThisFlush = [];
+            $this->skippedThisFlush = [];
         }
     }
 
@@ -2228,7 +2244,11 @@ abstract class BrowserContext
      * and one table_viewport_frozen frame to the connection ({@see self::freezeViewport()}) —
      * rather than telling the subscriber its page failed. Freshness is the least of what a page
      * carries, and taking the page down over it would be the wrong trade
-     * ({@see self::emitViewportDelta()} contains its build for the same reason). A window owed
+     * ({@see self::emitViewportDelta()} contains its build for the same reason). Only the window
+     * holding the row freezes when the table names that row without building it
+     * ({@see self::rowKeyOfUnbuiltChange()}): a window that holds it neither among its rows nor in
+     * focus lives on and skips the move, with no recount, since freshness moves no number, and the
+     * journal is told once per flush ({@see self::$skippedThisFlush}). A window owed
      * whole — frozen earlier or refused — that this build reaches without a throw is caught up
      * instead of marked: the rows under the marks are the ones the tab holds, and the whole window
      * replaces them ({@see self::catchUpOwedWindow()}).
@@ -2264,6 +2284,22 @@ abstract class BrowserContext
                 }
             }
         } catch (Throwable $e) {
+            $rowKey = $this->rowKeyOfUnbuiltChange($table, $address);
+            if ($rowKey !== null && !$this->windowHoldsRow($viewport, $acceptKey, $browserKey, $rowKey)) {
+                // Freshness moves no number, so a window without the row is owed nothing at all.
+                $skipKey = "stale\0{$browserKey}\0{$address->kind}\0{$address->sourceKey}\0{$address->sourceId}";
+                if (!isset($this->skippedThisFlush[$skipKey])) {
+                    $this->skippedThisFlush[$skipKey] = true;
+                    Logger::error(
+                        'Viewport staleness skipped a row the table failed to build in windows that do not hold it: '
+                            . "table={$browserKey}, row={$rowKey}, source={$address->sourceKey}#{$address->sourceId}, "
+                            . 'exception=' . $e::class . ", message={$e->getMessage()}",
+                    );
+                }
+
+                return;
+            }
+
             $this->freezeViewport(
                 $page,
                 $acceptKey,
@@ -3444,10 +3480,15 @@ abstract class BrowserContext
      * option cannot be known without the row's previous record, so all declared facets are recalculated
      * at the end of the flush.
      *
-     * A table that fails to build the change freezes this window ({@see self::freezeViewport()}). A
-     * window owed whole — frozen earlier or refused — is sent none of the above: the first mutation
-     * the table builds for it is the proof its road is back, and it brings the whole window instead
-     * ({@see self::catchUpOwedWindow()}).
+     * A table that fails to build the change freezes this window ({@see self::freezeViewport()}), and
+     * when the table names the row of the change without building it
+     * ({@see self::rowKeyOfUnbuiltChange()}), only a window holding that row freezes — among its
+     * rows or in focus. A window without the row lives on: it skips this change, and is recounted
+     * at the end of the flush when the change could have moved its numbers
+     * ({@see self::skipUnbuiltChange()}). The journal is told once per change and flush
+     * ({@see self::$skippedThisFlush}). A window owed whole — frozen earlier or refused — is sent
+     * none of the above: the first mutation the table builds for it is the proof its road is back,
+     * and it brings the whole window instead ({@see self::catchUpOwedWindow()}).
      *
      * A {@see WindowScopedViewportTable} builds the change for this window alone and may answer with
      * several mutations. Each of them takes the road above in turn ({@see self::emitViewportMutation()});
@@ -3473,6 +3514,13 @@ abstract class BrowserContext
         try {
             $mutations = $this->viewportMutations($table, $viewport, $change);
         } catch (Throwable $e) {
+            $rowKey = $this->rowKeyOfUnbuiltChange($table, $change);
+            if ($rowKey !== null && !$this->windowHoldsRow($viewport, $acceptKey, $browserKey, $rowKey)) {
+                $this->skipUnbuiltChange($viewport, $change, $rowKey, $e, $acceptKey, $page, $browserKey);
+
+                return;
+            }
+
             // This window is owed whole while every neighboring window stays live. The line and
             // the frozen frame go out only when this call is what set the debt: a window already
             // owed, refused or frozen, is told nothing.
@@ -3699,6 +3747,104 @@ abstract class BrowserContext
     }
 
     /**
+     * Names the row of a change the table failed to build, when the table can say it without the build.
+     *
+     * A table whose change touches several rows, or whose rows depend on the window, is not asked:
+     * one name does not describe it ({@see ViewportTable::rowKeyForSourceEvent()}). A throw reads as
+     * "cannot say", and so does an empty name; either way every reader's window freezes, as it did
+     * before the question existed.
+     *
+     * @param ViewportTable $table Viewport table whose build threw
+     * @param SourceChange $change Source change the build threw for
+     * @return ?string Key of the row the change touches, or null when the table cannot say
+     */
+    private function rowKeyOfUnbuiltChange(ViewportTable $table, SourceChange $change): ?string
+    {
+        if ($table instanceof MultiRowViewportTable || $table instanceof WindowScopedViewportTable) {
+            return null;
+        }
+
+        try {
+            $rowKey = $table->rowKeyForSourceEvent($change);
+        } catch (Throwable) {
+            return null;
+        }
+
+        return $rowKey === null || $rowKey === '' ? null : (string) $rowKey;
+    }
+
+    /**
+     * Whether a window holds a row: among the rows it was given, or in focus under an open dialog.
+     *
+     * @param TableViewportSubscription $viewport Connection's window
+     * @param string $acceptKey Connection the window belongs to
+     * @param string $browserKey Browser table key of the window
+     * @param string $rowKey Row to look for
+     * @return bool True when the window shows the row or holds it in focus
+     */
+    private function windowHoldsRow(TableViewportSubscription $viewport, string $acceptKey, string $browserKey, string $rowKey): bool
+    {
+        return $viewport->hasRow($rowKey) || Hilos::$sr?->getTableFocus($acceptKey, $browserKey) === $rowKey;
+    }
+
+    /**
+     * Lets a window that does not hold the row of a change the table failed to build skip the change.
+     *
+     * The change cannot reach a row the window does not hold, so the rows the window shows are still
+     * the table's. What it can move are the window's numbers: a create or a delete may move its total,
+     * and so may an edit in a window that narrows its set by a search or a filter, since whether the
+     * row was in that set before is not known. Such a window is recounted at the end of the flush; an
+     * edit in a window that narrows nothing moves no total and costs no query. The counts beside the
+     * filters are recounted whenever the connection declared them, as for any change the table builds
+     * ({@see self::emitViewportDelta()}).
+     *
+     * The window is not set aside and owes nothing, so a later change of the same flush reaches it as
+     * usual. A window owed already keeps its debt: the recount passes it by, and its numbers arrive
+     * with its catch-up ({@see self::recountMarkedWindows()}).
+     *
+     * The journal is told once per change and flush, whichever window skipped it first
+     * ({@see self::$skippedThisFlush}).
+     *
+     * @param TableViewportSubscription $viewport Connection's window
+     * @param SourceChange $change Source change the build threw for
+     * @param string $rowKey Row the table named for the change
+     * @param Throwable $e What the build threw
+     * @param string $acceptKey Connection whose window skips the change
+     * @param string $page Subscribed page key
+     * @param string $browserKey Browser table key of the window
+     */
+    private function skipUnbuiltChange(
+        TableViewportSubscription $viewport,
+        SourceChange $change,
+        string $rowKey,
+        Throwable $e,
+        string $acceptKey,
+        string $page,
+        string $browserKey,
+    ): void {
+        $skipKey = "{$browserKey}\0{$change->kind}\0{$change->sourceKey}\0{$change->sourceId}";
+        if (!isset($this->skippedThisFlush[$skipKey])) {
+            $this->skippedThisFlush[$skipKey] = true;
+            Logger::error(
+                'Viewport delta skipped a change the table failed to build in windows that do not hold its row: '
+                    . "table={$browserKey}, row={$rowKey}, "
+                    . "source={$change->kind}:{$change->sourceKey}#{$change->sourceId}, "
+                    . 'exception=' . $e::class . ", message={$e->getMessage()}, "
+                    . 'at=' . basename($e->getFile()) . ':' . $e->getLine(),
+            );
+        }
+
+        $unfiltered = $this->viewportQuery($viewport)->search === null && $viewport->filter === [];
+        if ($change->mutationType !== TableMutationType::Update || !$unfiltered) {
+            $this->markTotalRecount($acceptKey, $browserKey, $page);
+        }
+
+        if (Hilos::$sr->getTableFacets($acceptKey, $browserKey) !== []) {
+            $this->facetRecounts[$acceptKey][$browserKey] = $page;
+        }
+    }
+
+    /**
      * Replaces a window owed whole — frozen on the live road or refused — with the whole of it,
      * on the first delivery that reached it without a throw or when the database came back (fact 2).
      *
@@ -3713,6 +3859,17 @@ abstract class BrowserContext
      * rest of the flush, as a freeze sets it aside: the table that refused it once refuses it for
      * every later change of the same flush, and each would cost a full query. The next flush that
      * reaches it tries again. The debt is cleared only after the window is on its way.
+     *
+     * A window the catch-up sent is set aside for the rest of the flush too (P-588). It was built
+     * from the table as it is now, so it already holds every change of this flush, the later ones
+     * included, and the delta of a later change on top of it would move its count of rows a second
+     * time. That holds whatever caught the window up — a change, a staleness, or the database fact,
+     * where it costs nothing because that try comes after the flush's changes. The rule is the
+     * page's own: a page re-sent whole is not sent this flush's changes on top of it
+     * ({@see self::addBrowserChange()}). Nothing is lost by it: a progress bar is not part of the
+     * window and still goes out, the counts beside the filters went with the window, and a dialog
+     * open over a row is given its fresh body when the tab names its focus again with the window
+     * it was sent.
      *
      * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window; its delivered rows are replaced
@@ -3736,6 +3893,7 @@ abstract class BrowserContext
         }
 
         $this->queueTableWindow($page, $acceptKey, $browserKey, $window);
+        $this->setAsideThisFlush[$acceptKey][$browserKey] = true;
         Hilos::$sr?->clearTableWindowDebt($acceptKey, $browserKey);
         $this->sendTableFacetCounts($page, $acceptKey, $viewport);
     }

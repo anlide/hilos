@@ -186,6 +186,24 @@ abstract class TableDefinition implements ArrayAccess
     }
 
     /**
+     * Names the row a source change would touch, without building it.
+     *
+     * The default is "cannot say", which is what keeps a table that knows nothing of this
+     * contract on the road it was already on: a change its build threw for freezes the window of
+     * every reader, exactly as before. A table that can name the row overrides this, and then
+     * only the windows holding that row freeze. A name has to be the key the build would have
+     * delivered the row under; a table that is not sure of it stays with this default.
+     *
+     * @param SourceChange $change Source change the table failed to build a mutation for
+     * @return int|string|null Key of the row the change touches, or null when this table cannot say
+     * @throws Throwable Whatever the concrete table raises while naming the row
+     */
+    public function rowKeyForSourceEvent(SourceChange $change): int|string|null
+    {
+        return null;
+    }
+
+    /**
      * Names the work this table has running right now; by default there is none.
      *
      * A table with nothing running pays nothing for the channel: it declares no bars here and

@@ -7,7 +7,10 @@ namespace Hilos\Tests\Unit;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\AdminViewMode\ViewerFields;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Object\Item\Setting as ObjectSetting;
+use Hilos\Hilos;
 use Hilos\Tables\Settings\HilosSettingTableRow;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use PHPUnit\Framework\TestCase;
@@ -85,5 +88,47 @@ final class HilosSettingsTableTest extends TestCase
             [HilosSettingTableRow::key, HilosSettingTableRow::type, HilosSettingTableRow::valueSource],
             ViewerFields::shownNames($fields, $columnShown),
         );
+    }
+
+    /**
+     * A change the build threw for is named by the setting key it carries, so only the windows
+     * holding that row freeze (HIL-1353).
+     */
+    public function testAChangeCarryingItsKeyIsNamedByIt(): void
+    {
+        $change = SourceChange::dbUpdated(HilosDbContext::settings, '7', [ObjectSetting::key => 'feature_flag']);
+
+        $this->assertSame('feature_flag', new HilosSettingsTable()->rowKeyForSourceEvent($change));
+    }
+
+    public function testAChangeOfAnotherSourceNamesNoRow(): void
+    {
+        $change = SourceChange::dbUpdated(HilosDbContext::users, '7', [ObjectSetting::key => 'feature_flag']);
+
+        $this->assertNull(new HilosSettingsTable()->rowKeyForSourceEvent($change));
+    }
+
+    /**
+     * The build falls back to the source id when the change carries no key; a name cannot, because
+     * the id standing in for a key is a guess.
+     */
+    public function testAChangeWithNoKeyAndNoNumericIdNamesNoRow(): void
+    {
+        $change = SourceChange::dbUpdated(HilosDbContext::settings, 'feature_flag', []);
+
+        $this->assertNull(new HilosSettingsTable()->rowKeyForSourceEvent($change));
+    }
+
+    public function testAChangeWithNoKeyWhoseCollectionCannotBeReadNamesNoRow(): void
+    {
+        $db = Hilos::$db;
+        Hilos::$db = null;
+        try {
+            $change = SourceChange::dbUpdated(HilosDbContext::settings, '7', []);
+
+            $this->assertNull(new HilosSettingsTable()->rowKeyForSourceEvent($change));
+        } finally {
+            Hilos::$db = $db;
+        }
     }
 }

@@ -21,6 +21,7 @@ use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\HilosException;
 use Hilos\Core\Table\DTO\TableFacetCountDTO;
 use Hilos\Core\Table\TableFacetTally;
+use Throwable;
 
 /**
  * Contract for a table that can serve a server-windowed viewport.
@@ -35,7 +36,7 @@ use Hilos\Core\Table\TableFacetTally;
  * source-fanned table (the Hilos users table), independent of how the table
  * delivers its non-viewport page_response rows.
  *
- * getPage(), scopeSearch(), buildMutationForSourceEvent(), progressSnapshot(),
+ * getPage(), scopeSearch(), buildMutationForSourceEvent(), rowKeyForSourceEvent(), progressSnapshot(),
  * buildProgressForSourceEvent(), containsRow(), placeRowAgainst(), anchorForRow(), windowSize()
  * and defaultSort() are already concrete on TableDefinition, so a TableDefinition subclass
  * satisfies them by inheritance and only browserRow() is feature-specific.
@@ -226,6 +227,27 @@ interface ViewportTable
      * @return ?TableRowMutationDTO Row mutation to scope into a delta, or null when the table is unaffected
      */
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO;
+
+    /**
+     * Names the row a source change would touch, without building it.
+     *
+     * It is asked only after {@see buildMutationForSourceEvent()} threw for the same change, so
+     * that the failure freezes just the windows holding that row and leaves every other reader of
+     * the table live (HIL-1353, P-412).
+     *
+     * Null is a real answer and means "this table cannot say", and it is the default: the window
+     * of every reader freezes, as it did before this question existed. A name has to be exact —
+     * the key the build would have delivered the row under — and a table that is not sure answers
+     * null, because a wrong name would leave live a window the row stands in. A throw is read as
+     * null by the caller. A table whose change touches several rows, or whose rows depend on the
+     * window ({@see MultiRowViewportTable}, {@see WindowScopedViewportTable}), is never asked: one
+     * name does not describe it.
+     *
+     * @param SourceChange $change Source change the table failed to build a mutation for
+     * @return int|string|null Key of the row the change touches, or null when this table cannot say
+     * @throws Throwable Whatever the concrete table raises while naming the row
+     */
+    public function rowKeyForSourceEvent(SourceChange $change): int|string|null;
 
     /**
      * Names the work this table has running right now.

@@ -1347,6 +1347,13 @@ delta. A delta would be judged against rows the connection was never brought up
 to date on; the whole window is laid down the way one is after a broken socket —
 pending, placeholders, highlights and announcements go, the selection narrows to
 the rows that came, the focus is said again — and the frozen line goes with them.
+A change the table could not build, but whose row it named without the build
+(`ViewportTable::rowKeyForSourceEvent()`), freezes only the windows that hold
+that row, among their rows or in focus. Any other window lives on and skips
+that change; at the end of the flush its total is recounted when the change
+could have moved it — a create, a delete, or a window narrowed by a search or a
+filter — and so are the facet counts it declared. A freshness move skipped the
+same way moves no number and is recounted for nothing.
 Any window pays the debt; a refusal does not — it changes the visible state to
 the tile, and the window remains owed whole.
 A window that cannot be built sends nothing and leaves the debt standing.
@@ -1386,6 +1393,7 @@ an address does not:
 | the windows a tab is holding, and the frame that reports them | `framework/frontend/core/src/connection/HilosConnection.ts`, `framework/frontend/core/src/subscription/PageSubscription.ts` |
 | judging a mutation against a window, and emitting the live frames | `framework/backend/Core/Browser/Context/BrowserContext.php` (`viewportPlacement`, `tryEmitViewportArrival`, `emitViewportAppend`, `emitViewportAnnounce`, `emitTableProgress`, `viewportTotalAfterMutation`, `rowDeltaForMutation`) |
 | placing one row against a window boundary, in the table's own key names | `framework/backend/Core/Table/Definition/ViewportTable.php` (`placeRowAgainst`) |
+| naming the row of a change the table could not build | `framework/backend/Core/Table/Definition/ViewportTable.php` (`rowKeyForSourceEvent`) |
 | the `ORDER BY` and the window query | `framework/backend/Database/Object/Objects.php` |
 | the headless state machine | `framework/frontend/core/src/table/TableViewportController.ts` |
 | the frame a page declares | `framework/frontend/core/src/table/tableFrame.ts` |

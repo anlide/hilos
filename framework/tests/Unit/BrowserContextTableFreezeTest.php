@@ -33,6 +33,7 @@ use Hilos\Core\Table\DTO\TableProgressSignalData;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\DTO\TableViewportCountDTO;
 use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
 use Hilos\Core\Table\DTO\TableViewportFrozenSignalData;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
@@ -68,13 +69,20 @@ use RuntimeException;
  * window is also left alone for the rest of the flush that froze it — a delivery built in the
  * same flush as the failure is no proof the road is back. The window's debt is one for a freeze
  * and a refusal alike (HIL-1350), and the database coming back tries it once too (HIL-1352).
+ *
+ * A table that can name the row of a change it cannot build freezes only the windows holding that
+ * row, among their rows or in focus; every other window skips the change, lives on, and is recounted
+ * when the change could have moved its numbers (HIL-1353).
  */
 final class BrowserContextTableFreezeTest extends TestCase
 {
+    /** Line a change skipped by the windows that do not hold its row writes into the journal */
+    private const string SKIPPED_DELTA_LINE = 'Viewport delta skipped a change the table failed to build in windows that do not hold its row';
+
     /** Temporary main log file the assertions read the written lines back from */
     private string $logFile = '';
 
-    /** @var list<array{0: string, 1: mixed}> Signals taken off the router since the last drain, by name and payload */
+    /** @var list<array{0: string, 1: string, 2: mixed}> Signals taken off the router since the last drain, by tab, name and payload */
     private array $taken = [];
 
     protected function setUp(): void
@@ -736,6 +744,57 @@ final class BrowserContextTableFreezeTest extends TestCase
         $this->assertTrue(Hilos::$sr?->isTableWindowOwed('ak-1', $table::TABLE));
     }
 
+    /**
+     * A window a change caught up whole is left alone for the rest of the flush (P-588): it was
+     * built from the table as it is, so it holds a row created later in the same flush already, and
+     * a count for that row on top of it would move the total a second time.
+     */
+    public function testAWindowCaughtUpWholeIsNotCountedAgainForARowCreatedInTheSameFlush(): void
+    {
+        $table = $this->boot();
+        $this->refuseTheWindow($table);
+
+        $table->failQuery = false;
+        Hilos::$rt->addRow(FreezeUnitState::create('z', 'Zeta'));
+        $table->rows[] = new FreezeUnitRow('z', 'Zeta');
+        $context = new FreezeUnitContext();
+        $context->record(SourceChange::rtUpdated(FreezeUnitRtContext::ROWS, 'a', ['name' => 'Alpha renamed']));
+        $context->record(SourceChange::rtCreated(FreezeUnitRtContext::ROWS, 'z', ['id' => 'z', 'name' => 'Zeta']));
+        $context->flushToSignalRouter();
+
+        $windows = $this->payloadsNamed(SignalTypeConstants::TABLE_WINDOW);
+        $this->assertCount(1, $windows);
+        $this->assertInstanceOf(TableWindowSignalData::class, $windows[0]);
+        $this->assertSame(3, $windows[0]->totalCount);
+        $this->assertSame([], $this->payloadsNamed(SignalTypeConstants::TABLE_VIEWPORT_COUNT));
+        $this->assertSame([SignalTypeConstants::TABLE_WINDOW], $this->tableFrameNames());
+        $this->assertSame(3, Hilos::$sr?->getTableViewport('ak-1', $table::TABLE)?->totalCount());
+    }
+
+    /**
+     * The same for a row deleted outside the window: the window caught up whole no longer counts it,
+     * and a count for its removal on top of it would take it away a second time (P-588).
+     */
+    public function testAWindowCaughtUpWholeIsNotCountedAgainForARowDeletedInTheSameFlush(): void
+    {
+        $table = $this->boot();
+        $this->refuseTheWindow($table);
+
+        $table->failQuery = false;
+        $context = new FreezeUnitContext();
+        $context->record(SourceChange::rtUpdated(FreezeUnitRtContext::ROWS, 'a', ['name' => 'Alpha renamed']));
+        $context->record(SourceChange::rtDeleted(FreezeUnitRtContext::ROWS, 'y'));
+        $context->flushToSignalRouter();
+
+        $windows = $this->payloadsNamed(SignalTypeConstants::TABLE_WINDOW);
+        $this->assertCount(1, $windows);
+        $this->assertInstanceOf(TableWindowSignalData::class, $windows[0]);
+        $this->assertSame(2, $windows[0]->totalCount);
+        $this->assertSame([], $this->payloadsNamed(SignalTypeConstants::TABLE_VIEWPORT_COUNT));
+        $this->assertSame([SignalTypeConstants::TABLE_WINDOW], $this->tableFrameNames());
+        $this->assertSame(2, Hilos::$sr?->getTableViewport('ak-1', $table::TABLE)?->totalCount());
+    }
+
     public function testTheDatabaseFactLeavesAHealthyNeighborAlone(): void
     {
         $table = $this->boot(withNeighbor: true);
@@ -757,6 +816,255 @@ final class BrowserContextTableFreezeTest extends TestCase
         $this->flushTheDatabaseFact();
 
         $this->assertSame([], $this->queued());
+    }
+
+    /**
+     * A change the table cannot build but can name the row of freezes only the window holding that
+     * row (HIL-1353): the tab whose window does not show the row lives on, owes nothing, and the
+     * journal is told it skipped the change.
+     */
+    public function testAChangeWhoseRowTheTableNamesFreezesOnlyTheWindowHoldingIt(): void
+    {
+        $table = $this->boot(failOn: ['a']);
+        $table->namesRows = true;
+        $this->openTab('ak-2', ['b']);
+
+        $this->flushChange('a');
+
+        $this->assertCount(1, $this->payloadsNamed(SignalTypeConstants::TABLE_VIEWPORT_FROZEN));
+        $this->assertTrue(Hilos::$sr?->isTableWindowOwed('ak-1', $table::TABLE));
+        $this->assertSame([], $this->tableFrameNames('ak-2'));
+        $this->assertFalse(Hilos::$sr?->isTableWindowOwed('ak-2', $table::TABLE));
+        $logged = $this->writtenLog();
+        $this->assertSame(1, substr_count($logged, 'Viewport delta skipped a change the table failed to build: '));
+        $this->assertSame(1, substr_count($logged, self::SKIPPED_DELTA_LINE));
+        $this->assertStringContainsString('table=' . $table::TABLE . ', row=a, ', $logged);
+    }
+
+    /**
+     * A table that does not name the row keeps the road it was on before the question existed: the
+     * window of every reader freezes.
+     */
+    public function testAChangeWhoseRowTheTableDoesNotNameFreezesEveryWindow(): void
+    {
+        $table = $this->boot(failOn: ['a']);
+        $this->openTab('ak-2', ['b']);
+
+        $this->flushChange('a');
+
+        $this->assertCount(1, $this->payloadsNamed(SignalTypeConstants::TABLE_VIEWPORT_FROZEN));
+        $this->assertCount(1, $this->payloadsNamed(SignalTypeConstants::TABLE_VIEWPORT_FROZEN, 'ak-2'));
+        $this->assertTrue(Hilos::$sr?->isTableWindowOwed('ak-2', $table::TABLE));
+        $this->assertStringNotContainsString(self::SKIPPED_DELTA_LINE, $this->writtenLog());
+    }
+
+    /**
+     * A table that throws while naming the row cannot say which windows hold it, so every one of them
+     * freezes.
+     */
+    public function testATableThatFailsToNameTheRowFreezesEveryWindow(): void
+    {
+        $table = $this->boot(failOn: ['a']);
+        $table->namesRows = true;
+        $table->namingFails = true;
+        $this->openTab('ak-2', ['b']);
+
+        $this->flushChange('a');
+
+        $this->assertCount(1, $this->payloadsNamed(SignalTypeConstants::TABLE_VIEWPORT_FROZEN));
+        $this->assertCount(1, $this->payloadsNamed(SignalTypeConstants::TABLE_VIEWPORT_FROZEN, 'ak-2'));
+        $this->assertTrue(Hilos::$sr?->isTableWindowOwed('ak-2', $table::TABLE));
+        $this->assertStringNotContainsString(self::SKIPPED_DELTA_LINE, $this->writtenLog());
+    }
+
+    /**
+     * A row held in focus under an open dialog is a row the window holds: the dialog would go on
+     * showing a body the change never reached.
+     */
+    public function testAWindowHoldingTheRowInFocusFreezesToo(): void
+    {
+        $table = $this->boot(failOn: ['a']);
+        $table->namesRows = true;
+        $this->openTab('ak-2', ['b']);
+        Hilos::$sr?->setTableFocus('ak-2', $table::TABLE, 'a');
+
+        $this->flushChange('a');
+
+        $this->assertCount(1, $this->payloadsNamed(SignalTypeConstants::TABLE_VIEWPORT_FROZEN));
+        $this->assertCount(1, $this->payloadsNamed(SignalTypeConstants::TABLE_VIEWPORT_FROZEN, 'ak-2'));
+        $this->assertTrue(Hilos::$sr?->isTableWindowOwed('ak-2', $table::TABLE));
+    }
+
+    /**
+     * A window that skipped a change is not set aside: the next change of the same flush reaches it
+     * as usual, while the window that froze is left alone until the flush ends.
+     */
+    public function testAWindowThatSkippedAChangeIsSentTheNextChangeOfTheSameFlush(): void
+    {
+        $table = $this->boot(failOn: ['a']);
+        $table->namesRows = true;
+        $this->openTab('ak-2', ['b']);
+
+        $this->flushChanges(
+            SourceChange::rtUpdated(FreezeUnitRtContext::ROWS, 'a', ['name' => 'Alpha renamed']),
+            SourceChange::rtUpdated(FreezeUnitRtContext::ROWS, 'b', ['name' => 'Beta renamed']),
+        );
+
+        $deltas = $this->payloadsNamed(SignalTypeConstants::TABLE_VIEWPORT_DELTA, 'ak-2');
+        $this->assertCount(1, $deltas);
+        $this->assertInstanceOf(TableViewportDeltaDTO::class, $deltas[0]);
+        $this->assertSame('b', (string) $deltas[0]->rowKey);
+        $this->assertSame([SignalTypeConstants::TABLE_VIEWPORT_FROZEN], $this->tableFrameNames());
+    }
+
+    /**
+     * The defect is the table's and not the window's: however many windows skip the change, the
+     * journal is told once.
+     */
+    public function testThreeTabsWithoutTheRowWriteOneLine(): void
+    {
+        $table = $this->boot(failOn: ['a']);
+        $table->namesRows = true;
+        $this->openTab('ak-2', ['b']);
+        $this->openTab('ak-3', ['b']);
+        $this->openTab('ak-4', []);
+
+        $this->flushChange('a');
+
+        $this->assertSame(1, substr_count($this->writtenLog(), self::SKIPPED_DELTA_LINE));
+        foreach (['ak-2', 'ak-3', 'ak-4'] as $acceptKey) {
+            $this->assertSame([], $this->tableFrameNames($acceptKey), $acceptKey);
+            $this->assertFalse(Hilos::$sr?->isTableWindowOwed($acceptKey, $table::TABLE), $acceptKey);
+        }
+    }
+
+    /**
+     * A created row no window holds may still belong to every window's set, so a window that skipped
+     * its create is recounted at the end of the flush.
+     */
+    public function testASkippedCreateRecountsTheWindowsTotal(): void
+    {
+        $table = $this->boot(failOn: ['c']);
+        $table->namesRows = true;
+        $this->openTab('ak-2', ['b']);
+        Hilos::$rt->addRow(FreezeUnitState::create('c', 'Gamma'));
+        $table->rows[] = new FreezeUnitRow('c', 'Gamma');
+
+        $this->flushChanges(SourceChange::rtCreated(FreezeUnitRtContext::ROWS, 'c', ['id' => 'c', 'name' => 'Gamma']));
+
+        $counts = $this->payloadsNamed(SignalTypeConstants::TABLE_VIEWPORT_COUNT, 'ak-2');
+        $this->assertCount(1, $counts);
+        $this->assertInstanceOf(TableViewportCountDTO::class, $counts[0]);
+        $this->assertSame(3, $counts[0]->totalCount);
+        $this->assertSame([SignalTypeConstants::TABLE_VIEWPORT_COUNT], $this->tableFrameNames('ak-2'));
+        $this->assertSame(3, Hilos::$sr?->getTableViewport('ak-2', $table::TABLE)?->totalCount());
+        $this->assertFalse(Hilos::$sr?->isTableWindowOwed('ak-2', $table::TABLE));
+    }
+
+    /**
+     * An edit of a row outside a window that narrows nothing moves no total, so skipping it costs
+     * no query.
+     */
+    public function testASkippedEditInAWindowWithoutSearchCostsNoQuery(): void
+    {
+        $table = $this->boot(failOn: ['a']);
+        $table->namesRows = true;
+        $this->openTab('ak-2', ['b']);
+        $queries = $table->queries;
+
+        $this->flushChange('a');
+
+        $this->assertSame($queries, $table->queries);
+        $this->assertSame([], $this->payloadsNamed(SignalTypeConstants::TABLE_VIEWPORT_COUNT, 'ak-2'));
+    }
+
+    /**
+     * In a window that narrows its set by a search, the edited row may have entered or left the set,
+     * and whether it was in it before is not known; the window is recounted.
+     */
+    public function testASkippedEditInASearchingWindowRecountsIt(): void
+    {
+        $table = $this->boot(failOn: ['a']);
+        $table->namesRows = true;
+        $this->openTab('ak-2', ['b'], search: 'Beta');
+        $queries = $table->queries;
+
+        $this->flushChange('a');
+
+        $this->assertGreaterThan($queries, $table->queries);
+        $counts = $this->payloadsNamed(SignalTypeConstants::TABLE_VIEWPORT_COUNT, 'ak-2');
+        $this->assertCount(1, $counts);
+        $this->assertInstanceOf(TableViewportCountDTO::class, $counts[0]);
+        $this->assertSame(1, $counts[0]->totalCount);
+    }
+
+    /**
+     * Whether the edit moved a filter option cannot be known without the row's previous record, so
+     * the counts beside the filters the tab declared arrive at the end of the flush.
+     */
+    public function testASkippedEditBringsTheDeclaredFacetCounts(): void
+    {
+        $table = $this->boot(failOn: ['a']);
+        $table->namesRows = true;
+        $this->openTab('ak-2', ['b']);
+        Hilos::$sr?->setTableFacets('ak-2', $table::TABLE, [FreezeUnitTable::FILTER_LABEL => ['Alpha', 'Beta']]);
+
+        $this->flushChange('a');
+
+        $this->assertSame([SignalTypeConstants::TABLE_FACET_COUNTS], $this->tableFrameNames('ak-2'));
+        $facets = $this->payloadsNamed(SignalTypeConstants::TABLE_FACET_COUNTS, 'ak-2');
+        $this->assertInstanceOf(TableFacetCountsSignalData::class, $facets[0]);
+        $this->assertSame($table::TABLE, $facets[0]->tableKey);
+    }
+
+    /**
+     * A window owed whole keeps its debt when it skips a change: the build failed, which is no proof
+     * its road is back, and its numbers arrive with its catch-up.
+     */
+    public function testAnOwedWindowThatSkipsAChangeGetsNothingAndStaysOwed(): void
+    {
+        $table = $this->boot(failOn: ['c']);
+        $table->namesRows = true;
+        $this->openTab('ak-2', ['b']);
+        $this->refuseTheWindow($table, 'ak-2');
+        $table->failQuery = false;
+        Hilos::$rt->addRow(FreezeUnitState::create('c', 'Gamma'));
+        $table->rows[] = new FreezeUnitRow('c', 'Gamma');
+
+        $this->flushChanges(SourceChange::rtCreated(FreezeUnitRtContext::ROWS, 'c', ['id' => 'c', 'name' => 'Gamma']));
+
+        $this->assertSame([], $this->tableFrameNames('ak-2'));
+        $this->assertTrue(Hilos::$sr?->isTableWindowOwed('ak-2', $table::TABLE));
+        $this->assertSame([SignalTypeConstants::TABLE_VIEWPORT_COUNT], $this->tableFrameNames());
+    }
+
+    /**
+     * A freshness move the table cannot build freezes only the window holding the row; the window
+     * without it skips the move with a line of its own, and is recounted for nothing, since freshness
+     * moves no number.
+     */
+    public function testAFreshnessMoveWhoseRowTheTableNamesFreezesOnlyTheWindowHoldingIt(): void
+    {
+        $table = $this->boot(failOn: ['a']);
+        $table->namesRows = true;
+        $this->openTab('ak-2', ['b'], search: 'Beta');
+        Hilos::$sr?->setTableFacets('ak-2', $table::TABLE, [FreezeUnitTable::FILTER_LABEL => ['Alpha', 'Beta']]);
+        $queries = $table->queries;
+
+        $context = new FreezeUnitContext();
+        $context->recordSourceStaleness(FreezeUnitRtContext::ROWS, ['a']);
+        $context->flushToSignalRouter();
+
+        $this->assertCount(1, $this->payloadsNamed(SignalTypeConstants::TABLE_VIEWPORT_FROZEN));
+        $this->assertSame([], $this->tableFrameNames('ak-2'));
+        $this->assertFalse(Hilos::$sr?->isTableWindowOwed('ak-2', $table::TABLE));
+        $this->assertSame($queries, $table->queries);
+        $logged = $this->writtenLog();
+        $this->assertSame(1, substr_count($logged, 'Viewport staleness skipped a row the table failed to build: '));
+        $this->assertSame(
+            1,
+            substr_count($logged, 'Viewport staleness skipped a row the table failed to build in windows that do not hold it'),
+        );
     }
 
     /**
@@ -789,13 +1097,14 @@ final class BrowserContextTableFreezeTest extends TestCase
     }
 
     /**
-     * A window holding rows a and b as placeholder bodies, so any edit of them reads as a change.
+     * A window holding its rows as placeholder bodies, so any edit of them reads as a change.
      *
      * @param string $tableKey Table the window is on
      * @param ?string $search Search the window narrows its set by, or null for none
-     * @return TableViewportSubscription Window with rows a and b delivered
+     * @param list<string> $holds Rows the window holds
+     * @return TableViewportSubscription Window with those rows delivered
      */
-    private static function viewportOf(string $tableKey, ?string $search): TableViewportSubscription
+    private static function viewportOf(string $tableKey, ?string $search, array $holds = ['a', 'b']): TableViewportSubscription
     {
         $viewport = new TableViewportSubscription(
             tableKey: $tableKey,
@@ -803,7 +1112,7 @@ final class BrowserContextTableFreezeTest extends TestCase
             limit: 10,
         );
         $window = [];
-        foreach (['a', 'b'] as $rowKey) {
+        foreach ($holds as $rowKey) {
             $window[$rowKey] = [PagePayload::rowKey => $rowKey, PagePayload::slots => []];
         }
         $viewport->recordWindow($window, 7, true, null, null);
@@ -812,18 +1121,35 @@ final class BrowserContextTableFreezeTest extends TestCase
     }
 
     /**
-     * Refuses the connection's window and empties the queue of the refusal.
+     * Opens one more tab on the page, whose window on the table holds only the rows named.
+     *
+     * @param string $acceptKey Connection of the tab
+     * @param list<string> $holds Rows its window holds
+     * @param ?string $search Search its window narrows its set by, or null for none
+     */
+    private function openTab(string $acceptKey, array $holds, ?string $search = null): void
+    {
+        Hilos::$sr?->subscribeToPage(
+            FreezeUnitContext::PAGE,
+            new WebSocketPageSubscribeSignalDTO($acceptKey, FreezeUnitContext::PAGE),
+        );
+        Hilos::$sr?->setTableViewport($acceptKey, self::viewportOf(FreezeUnitTable::TABLE, $search, $holds));
+    }
+
+    /**
+     * Refuses a connection's window and empties the queue of the refusal.
      *
      * The table is left refusing its window, so the test decides when it comes back.
      *
      * @param FreezeUnitTable $table Table whose window is refused
+     * @param string $acceptKey Connection whose window is refused
      */
-    private function refuseTheWindow(FreezeUnitTable $table): void
+    private function refuseTheWindow(FreezeUnitTable $table, string $acceptKey = 'ak-1'): void
     {
         $table->failQuery = true;
-        $viewport = Hilos::$sr?->getTableViewport('ak-1', $table::TABLE);
+        $viewport = Hilos::$sr?->getTableViewport($acceptKey, $table::TABLE);
         $this->assertNotNull($viewport);
-        $this->assertFalse((new FreezeUnitContext())->sendTableWindow(FreezeUnitContext::PAGE, 'ak-1', $viewport));
+        $this->assertFalse((new FreezeUnitContext())->sendTableWindow(FreezeUnitContext::PAGE, $acceptKey, $viewport));
         $this->drain();
     }
 
@@ -835,8 +1161,20 @@ final class BrowserContextTableFreezeTest extends TestCase
      */
     private function flushChange(string $rowKey, string $name = 'Renamed'): void
     {
+        $this->flushChanges(SourceChange::rtUpdated(FreezeUnitRtContext::ROWS, $rowKey, ['name' => $name]));
+    }
+
+    /**
+     * Records the changes in their order and flushes them through one fresh browser context.
+     *
+     * @param SourceChange ...$changes Changes of one flush
+     */
+    private function flushChanges(SourceChange ...$changes): void
+    {
         $context = new FreezeUnitContext();
-        $context->record(SourceChange::rtUpdated(FreezeUnitRtContext::ROWS, $rowKey, ['name' => $name]));
+        foreach ($changes as $change) {
+            $context->record($change);
+        }
         $context->flushToSignalRouter();
     }
 
@@ -851,44 +1189,56 @@ final class BrowserContextTableFreezeTest extends TestCase
     }
 
     /**
-     * The names of the table frames queued since the last drain.
+     * The names of the table frames queued to one tab since the last drain.
      *
+     * @param string $acceptKey Tab the frames went to
      * @return list<string> Names that start with table_, in the order they were queued
      */
-    private function tableFrameNames(): array
+    private function tableFrameNames(string $acceptKey = 'ak-1'): array
     {
         return array_values(array_filter(
-            array_column($this->queued(), 0),
+            array_column($this->queued($acceptKey), 0),
             static fn(string $name): bool => str_starts_with($name, 'table_'),
         ));
     }
 
     /**
-     * Every signal queued since the last drain, in the order they were queued.
+     * Every signal queued to one tab since the last drain, in the order they were queued.
      *
+     * Each signal taken off the router must be addressed to a tab subscribed to the page.
+     *
+     * @param string $acceptKey Tab the signals went to
      * @return list<array{0: string, 1: mixed}> Signal name and its addressed payload
      */
-    private function queued(): array
+    private function queued(string $acceptKey = 'ak-1'): array
     {
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
             $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
-            $this->assertSame('ak-1', $signal->data->targetAcceptKey);
-            $this->taken[] = [$signal->signalName->getName(), $signal->data->data];
+            $this->assertArrayHasKey($signal->data->targetAcceptKey, Hilos::$sr->getPageSubscriptions());
+            $this->taken[] = [$signal->data->targetAcceptKey, $signal->signalName->getName(), $signal->data->data];
         }
 
-        return $this->taken;
+        $queued = [];
+        foreach ($this->taken as [$target, $name, $payload]) {
+            if ($target === $acceptKey) {
+                $queued[] = [$name, $payload];
+            }
+        }
+
+        return $queued;
     }
 
     /**
-     * The payloads of one name among the signals queued since the last drain.
+     * The payloads of one name among the signals queued to one tab since the last drain.
      *
      * @param string $name Signal name to keep
+     * @param string $acceptKey Tab the signals went to
      * @return list<mixed> Payloads of that name, in the order they were queued
      */
-    private function payloadsNamed(string $name): array
+    private function payloadsNamed(string $name, string $acceptKey = 'ak-1'): array
     {
         $payloads = [];
-        foreach ($this->queued() as [$queuedName, $payload]) {
+        foreach ($this->queued($acceptKey) as [$queuedName, $payload]) {
             if ($queuedName === $name) {
                 $payloads[] = $payload;
             }
@@ -1020,10 +1370,19 @@ final class FreezeUnitTable extends TableDefinition implements SelfSnapshotTable
     /** Message the refused row-mutation build carries into the journal line */
     public const string MUTATION_FAILURE = 'the project row builder gave up';
 
+    /** Message the refused naming of a row carries */
+    public const string NAMING_FAILURE = 'the project row namer gave up';
+
     /** @var list<string> Row keys whose change reports work on the table beside the row */
     public array $progressOn = [];
 
     public bool $failQuery = false;
+
+    /** Whether the table names the row of a change it fails to build */
+    public bool $namesRows = false;
+
+    /** Whether naming the row of a change throws */
+    public bool $namingFails = false;
 
     /** How many times the window's rows were asked for, served or refused */
     public int $queries = 0;
@@ -1063,6 +1422,25 @@ final class FreezeUnitTable extends TableDefinition implements SelfSnapshotTable
         );
 
         return $this->mutation($change->mutationType, $change->sourceId, $row);
+    }
+
+    /**
+     * Names the row a change of the runtime rows touches, when the fixture was asked to.
+     *
+     * @param SourceChange $change Source change the build threw for
+     * @return ?string Row key, or null when the fixture names nothing
+     * @throws RuntimeException When the fixture was asked to fail at naming the row
+     */
+    public function rowKeyForSourceEvent(SourceChange $change): ?string
+    {
+        if ($change->sourceKey !== FreezeUnitRtContext::ROWS) {
+            return null;
+        }
+        if ($this->namingFails) {
+            throw new RuntimeException(self::NAMING_FAILURE);
+        }
+
+        return $this->namesRows ? (string) $change->sourceId : null;
     }
 
     /**

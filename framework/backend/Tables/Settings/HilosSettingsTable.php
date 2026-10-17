@@ -130,6 +130,32 @@ final class HilosSettingsTable extends TableDefinition implements SelfSnapshotTa
     }
 
     /**
+     * Names the settings row a settings DB source change is about, without building it.
+     *
+     * Only a key that was read names a row: the one the change carries, or the one the collection
+     * gives for its numeric id. The build falls back to the source id when neither answers, and that
+     * fallback is a guess, so here it is "cannot say". A collection that cannot be read is "cannot
+     * say" too.
+     *
+     * @param SourceChange $change Source change the table failed to build a mutation for
+     * @return ?string Setting key of the row the change touches, or null when this table cannot say
+     */
+    public function rowKeyForSourceEvent(SourceChange $change): ?string
+    {
+        if ($change->sourceKey !== HilosDbContext::settings) {
+            return null;
+        }
+
+        try {
+            $key = $this->knownSettingKey($change);
+        } catch (Throwable) {
+            return null;
+        }
+
+        return $key === '' ? null : $key;
+    }
+
+    /**
      * Builds the current table row for a setting key.
      *
      * Catalog keys without a persisted setting return their placeholder row.
@@ -360,23 +386,35 @@ final class HilosSettingsTable extends TableDefinition implements SelfSnapshotTa
      */
     private function settingKeyFromSourceChange(SourceChange $change): string
     {
+        try {
+            return $this->knownSettingKey($change) ?? $change->sourceId;
+        } catch (Throwable) {
+            return '';
+        }
+    }
+
+    /**
+     * Reads the settings key a DB source change is known to be about, from the change or by its id.
+     *
+     * Known means read, never guessed: the key the change carries, or the key of the persisted
+     * setting its numeric id names. The source id standing in for a key is the build's own fallback
+     * ({@see self::settingKeyFromSourceChange()}) and is not a key anyone has read.
+     *
+     * @param SourceChange $change Settings source change
+     * @return ?string Setting key, or null when neither the change nor the collection names one
+     * @throws DatabaseException When the settings collection cannot be read
+     */
+    private function knownSettingKey(SourceChange $change): ?string
+    {
         $key = $change->row[ObjectSetting::key] ?? null;
         if (is_string($key) || is_int($key)) {
             return (string) $key;
         }
-
-        try {
-            $setting = ctype_digit($change->sourceId)
-                ? ($this->settingsCollection()[(int) $change->sourceId] ?? null)
-                : null;
-            if ($setting !== null) {
-                return $setting->key;
-            }
-        } catch (Throwable) {
-            return '';
+        if (!ctype_digit($change->sourceId)) {
+            return null;
         }
 
-        return $change->sourceId;
+        return ($this->settingsCollection()[(int) $change->sourceId] ?? null)?->key;
     }
 
     /**

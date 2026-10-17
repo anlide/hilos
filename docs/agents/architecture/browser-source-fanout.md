@@ -189,7 +189,10 @@ own meaning and are outside this rule.
 A **window owed whole** is one whose live road froze, with
 `table_viewport_frozen` (HIL-1139). A refused window is owed whole too, whether
 the refusal arrived as `table_window_refused` in reply to a request or in the
-`refusedWindows` section of `page_response`.
+`refusedWindows` section of `page_response`. When the table names the row of a
+change it could not build, only the windows holding that row freeze; the others
+skip the change and owe nothing
+([Backend contract surface](../frontend/table-subscription.md#backend-contract-surface-the-gate)).
 
 A **page owed whole** is one whose delivery failed and whose connection was
 told `subscription_page_error`. The subscription's very first answer sets
@@ -274,7 +277,10 @@ the debt waits for the next fact.
 A try that fails again writes no new log line: the line was written when the
 debt was set. Set aside a window that could
 not be built for the rest of that flush; this already holds for a frozen
-window. A page tried whole is set aside for the rest of that flush too:
+window. A window the try sent whole is set aside for the rest of that flush
+too: it was built from the table as it is, so it holds the flush's later
+changes already, and a delta of one of them would count it twice (P-588).
+A page tried whole is set aside for the rest of that flush too:
 another row fact sends neither a second full answer nor a partial delta or
 progress frame. Once a full answer pays the debt, the next flush can deliver
 ordinary deltas again. The server starts the try. The tab never asks again
