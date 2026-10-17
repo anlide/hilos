@@ -177,9 +177,11 @@ export {
 
 export {
   expectDefaultLanguageHeader,
+  expectI18nName,
   expectNoOtherLanguageNames,
   i18nLocaleRow,
   i18nNameRow,
+  watchI18nLivePages,
 } from './i18n.js'
 export {
   DARK_FRAME,

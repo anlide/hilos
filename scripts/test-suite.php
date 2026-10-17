@@ -240,9 +240,8 @@ $steps = array_merge($steps, [
     // runner holds the outcome. The demo's unit suite runs in binance-btc-tracker-php.
     // Scenarios 23 and 25 freeze the masters last (HIL-1125, HIL-1128). Scenarios 29 and 30
     // recreate and kill a slave (HIL-1243); scenario 32 recreates one twice (HIL-1274). The
-    // seconds are measured alone on nova-de, 2026-10-08, with the database in host memory
-    // (HIL-1327), after HIL-1280 returned scenarios 20 and 25 and with 8 and 13 parked;
-    // returning one moves the number.
+    // seconds are measured on nova-de, 2026-10-17 (HIL-1505): full fresh stand, cached images;
+    // 363.153 s rounded to 363, 18 passed, 3 existing skips (13, 8, 36), no retries.
     [
         'id' => 'binance-btc-tracker-cluster',
         'command' => 'composer run test:cluster:scenarios',
@@ -251,7 +250,7 @@ $steps = array_merge($steps, [
         'deps' => [],
         'group' => 'binance-btc-tracker-cluster',
         'tags' => ['cluster', 'backend'],
-        'seconds' => 251,
+        'seconds' => 363,
         'downsStand' => true,
     ],
     // A browser on the cluster stand through its entry (HIL-1232, HIL-1304).
@@ -266,9 +265,10 @@ $steps = array_merge($steps, [
         'deps' => ['binance-btc-tracker-e2e'],
         'group' => 'binance-btc-tracker-cluster',
         'tags' => ['cluster', 'e2e'],
-        // 2026-10-16, HIL-1368: full fresh-stand browser command, cached images,
-        // one worker, timeout scale 1; 10 live + 2 after-loss passed, 2 existing skips, no retries.
-        'seconds' => 95,
+        // nova-de, 2026-10-17 (HIL-1505): full fresh-stand browser command, cached images;
+        // 232.773 s rounded to 233; 19 live + 2 after-loss passed, 2 existing skips
+        // (logs overview/rotations), no retries or unstable tests.
+        'seconds' => 233,
         'downsStand' => true,
     ],
     // The fleet of ecommerce-shop (HIL-1216): one master and two slaves of unequal room, the

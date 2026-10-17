@@ -657,6 +657,27 @@ a rolling restart only the part with a majority of masters can work. The
 node without changing its startup marker. The node-local runtime mode and the latch
 are described in [admin-view-mode.md](admin-view-mode.md).
 
+**The default language (HIL-1505).** With `HilosFeature::I18N`, `PeerModule`
+adds the kind `default-language` after admin view mode. Its value is the exact
+lowercase built-in code from `HILOS_DEFAULT_LANGUAGE`, resolved by
+`DefaultLanguage::code()`. The marker is read once during bootstrap, before
+constructing `PeerServer` and before `DaemonManager::run()`, and kept in memory
+for the handshake. An absent or unknown code refuses startup. The INFO line is
+`Default language marker <code>, read from the variable HILOS_DEFAULT_LANGUAGE`.
+Both `hello` and `welcome` use the existing `PeerMarkers::refusalFor()` rule,
+after certificate checks and before remembering or admitting the peer. A
+mismatch is logged as:
+`Peer link dropped: Peer handshake from node '<id>' names default-language marker '<theirs>', but this node reads '<ours>' from the variable HILOS_DEFAULT_LANGUAGE: the two nodes do not read one default-language`.
+A peer from an older build without this kind is refused by that same rule:
+`Peer handshake from node '<id>' names no default-language marker, but this node reads '<ours>' from the variable HILOS_DEFAULT_LANGUAGE`.
+Without I18N, the node neither reads that env value nor carries this kind; a
+peer naming it receives the common extra-kind refusal:
+`Peer handshake from node '<id>' names default-language marker '<theirs>', which this node does not carry`.
+The handshake DTO shape and `PeerProtocol::VERSION` did not change for this
+marker kind. Scenario 42 proves the exact `ru`/`en` refusal on both ends,
+exclusion from the mesh and absence of a provisioned `ru` row
+([../testing.md](../testing.md)).
+
 **Proof on the stand.** The cluster matrix starts five nodes at once on an empty database
 (HIL-1228), and the first convergence passes only if all five read one marker — the race of
 the first write, proven for free. Scenario 22 points a living node at another marker and

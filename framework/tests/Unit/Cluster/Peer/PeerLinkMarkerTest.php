@@ -13,6 +13,7 @@ use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerWelcomeDTO;
 use Hilos\Cluster\Peer\DTO\PeerReadyDTO;
+use Hilos\Cluster\Peer\DTO\PeerReadyAckDTO;
 use Hilos\Cluster\Peer\PeerLink;
 use Hilos\Cluster\Peer\PeerMarkers;
 use Hilos\Cluster\Peer\PeerProtocol;
@@ -20,6 +21,7 @@ use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Utils\Logger;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Socket;
 
@@ -242,6 +244,137 @@ final class PeerLinkMarkerTest extends TestCase
             . " but this node reads 'off' from the variable HILOS_ADMIN_VIEW_MODE_ENABLED:"
             . ' the two nodes do not read one admin-view-mode',
             $this->log(),
+        );
+    }
+
+    /** Matching default languages let the accepting side welcome and remember the peer. */
+    public function testAHelloNamingTheSameDefaultLanguageCompletesTheHandshakeAndIsWelcomedWithIt(): void
+    {
+        $local = $this->localWithDefaultLanguage();
+        [$near, $far] = $this->makeSocketPair();
+        $link = $this->link($near, dialer: false, markers: $local);
+
+        $this->deliver($far, $this->hello($local->values));
+        $link->read();
+        $welcome = PeerDTO::fromWire(trim($this->flushAndReadFar($link, $far)));
+
+        $this->assertInstanceOf(PeerWelcomeDTO::class, $welcome);
+        $this->assertSame($local->values, $welcome->markers);
+
+        $this->deliver($far, new PeerReadyDTO(false));
+        $link->read();
+
+        $this->assertFalse($link->shouldClose());
+        $this->assertSame(self::REMOTE_NODE, $link->remoteIdentity()?->nodeId);
+        $this->assertContains(self::REMOTE_NODE, $this->registeredNodeIds());
+    }
+
+    /** Matching default languages let the dialing side finish the ready exchange. */
+    public function testAWelcomeNamingTheSameDefaultLanguageCompletesTheHandshake(): void
+    {
+        $local = $this->localWithDefaultLanguage();
+        [$near, $far] = $this->makeSocketPair();
+        $link = $this->link($near, dialer: true, markers: $local);
+
+        $link->startHandshake();
+        $hello = PeerDTO::fromWire(trim($this->flushAndReadFar($link, $far)));
+        $this->assertInstanceOf(PeerHelloDTO::class, $hello);
+        $this->assertSame($local->values, $hello->markers);
+
+        $this->deliver($far, new PeerWelcomeDTO(PeerProtocol::VERSION, self::REMOTE_NODE, NodeRole::Master, [], $local->values));
+        $link->read();
+        $this->deliver($far, new PeerReadyAckDTO(true));
+        $link->read();
+
+        $this->assertFalse($link->shouldClose());
+        $this->assertSame(self::REMOTE_NODE, $link->remoteIdentity()?->nodeId);
+        $this->assertContains(self::REMOTE_NODE, $this->registeredNodeIds());
+    }
+
+    /**
+     * @param bool $localHasI18n Whether this node carries the default language marker
+     * @param array<string, string> $remoteMarkers Markers in the peer's hello
+     * @param string $refusal Exact reason the link must log
+     */
+    #[DataProvider('defaultLanguageRefusals')]
+    public function testAHelloBreakingDefaultLanguageAgreementIsRefusedBeforeWelcome(
+        bool $localHasI18n,
+        array $remoteMarkers,
+        string $refusal,
+    ): void {
+        [$near, $far] = $this->makeSocketPair();
+        $link = $this->link($near, dialer: false, markers: $localHasI18n ? $this->localWithDefaultLanguage() : PeerTestMarkers::shared());
+
+        $this->deliver($far, $this->hello($remoteMarkers));
+        $link->read();
+
+        $this->assertTrue($link->shouldClose());
+        $this->assertNull($link->remoteIdentity());
+        $this->assertNotContains(self::REMOTE_NODE, $this->registeredNodeIds());
+        $this->assertSame('', $this->flushAndReadFar($link, $far), 'no welcome goes back to a refused hello');
+        $this->assertStringContainsString('Peer link dropped: ' . $refusal, $this->log());
+    }
+
+    /**
+     * @param bool $localHasI18n Whether this node carries the default language marker
+     * @param array<string, string> $remoteMarkers Markers in the peer's welcome
+     * @param string $refusal Exact reason the link must log
+     */
+    #[DataProvider('defaultLanguageRefusals')]
+    public function testAWelcomeBreakingDefaultLanguageAgreementIsRefusedBeforeRememberingThePeer(
+        bool $localHasI18n,
+        array $remoteMarkers,
+        string $refusal,
+    ): void {
+        [$near, $far] = $this->makeSocketPair();
+        $link = $this->link($near, dialer: true, markers: $localHasI18n ? $this->localWithDefaultLanguage() : PeerTestMarkers::shared());
+
+        $this->deliver($far, new PeerWelcomeDTO(PeerProtocol::VERSION, self::REMOTE_NODE, NodeRole::Master, [], $remoteMarkers));
+        $link->read();
+
+        $this->assertTrue($link->shouldClose());
+        $this->assertNull($link->remoteIdentity());
+        $this->assertNotContains(self::REMOTE_NODE, $this->registeredNodeIds());
+        $this->assertFalse($link->closedUnwelcomed(), 'this side refused the welcome; the peer did not close before it');
+        $this->assertSame('', $this->flushAndReadFar($link, $far), 'a refused welcome must not advance to ready');
+        $this->assertStringContainsString('Peer link dropped: ' . $refusal, $this->log());
+    }
+
+    /**
+     * @return array<string, array{bool, array<string, string>, string}> Breaches of the default language agreement
+     */
+    public static function defaultLanguageRefusals(): array
+    {
+        return [
+            'another default language' => [
+                true,
+                [...PeerTestMarkers::onWire(), PeerMarkers::DEFAULT_LANGUAGE => 'ru'],
+                "Peer handshake from node 'node-b' names default-language marker 'ru',"
+                . " but this node reads 'en' from the variable HILOS_DEFAULT_LANGUAGE:"
+                . ' the two nodes do not read one default-language',
+            ],
+            'missing default language' => [
+                true,
+                PeerTestMarkers::onWire(),
+                "Peer handshake from node 'node-b' names no default-language marker,"
+                . " but this node reads 'en' from the variable HILOS_DEFAULT_LANGUAGE",
+            ],
+            'local node without I18N' => [
+                false,
+                [...PeerTestMarkers::onWire(), PeerMarkers::DEFAULT_LANGUAGE => 'en'],
+                "Peer handshake from node 'node-b' names default-language marker 'en', which this node does not carry",
+            ],
+        ];
+    }
+
+    /**
+     * @return PeerMarkers Markers of an I18N node configured for English
+     */
+    private function localWithDefaultLanguage(): PeerMarkers
+    {
+        return new PeerMarkers(
+            [...PeerTestMarkers::onWire(), PeerMarkers::DEFAULT_LANGUAGE => 'en'],
+            [PeerMarkers::DATABASE => PeerTestMarkers::DATABASE_PLACE, PeerMarkers::DEFAULT_LANGUAGE => 'the variable HILOS_DEFAULT_LANGUAGE'],
         );
     }
 

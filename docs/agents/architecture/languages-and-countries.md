@@ -89,7 +89,7 @@ decides them (owner's decision, 2026-10-04).
 
 ## One Library Holds The Reference
 
-One entity library, the i18n library, holds all five tables, and with them the
+One entity library, `hilos_i18n_library`, holds all five tables, and with them the
 one-row record of the last reflow, `hilos_i18n_reflow`.
 It also serves the section's pages.
 Like every library, it has `SCOPE = CLUSTER` and `PLACEMENT = POLICY`.
@@ -425,8 +425,23 @@ language created on this start gets the catalog's country names in it inside
 that first transaction — on a fresh installation there are no countries yet and
 the reflow brings both, while after an env change to a new language its 51 names
 arrive at once.
-The reflow runs once regardless of how many nodes start
-(not in the code yet — HIL-1505).
+
+On an ordinary shared startup, the existing POLICY placement gives
+`hilos_i18n_library` one holder, so it takes the catalog once regardless of how
+many nodes start. A restarted holder compares the database fingerprint and
+skips the same catalog. After a successful commit, `reflowIfChanged()` writes
+`I18n catalog reflow committed: <fingerprint>` at INFO, outside the rollback
+catch. A matching fingerprint or a rolled-back reflow writes no such line.
+`I18nCatalogReflowTest` in chat proves the transaction is closed and the data
+and fingerprint recorded before INFO, along with skip, rollback and retry.
+A crash between commit and logging can leave a committed reflow without that
+line; restart idempotence comes from the database fingerprint.
+
+HIL-1505's cluster proofs are scenarios **41/42** and the five live i18n browser
+checks on binance-btc-tracker: one startup and committed reflow, no repeat after
+holder restart, another default language refused on both ends, and edits
+delivered between masters. Their checks and pointed commands are in
+[the cluster testing guide](../testing.md#the-cluster-stands--three-demos-three-shapes).
 Reflow as an Operations action, with history and a manual trigger, belongs
 to HIL-1424.
 
@@ -457,7 +472,7 @@ value in the error; the library also resolves it from env when starting.
 - Its countryless locale is created with it at startup if the catalog has
   one. The language card warns when the countryless locale is missing or off.
 - A cluster handshake refuses a node whose env names a different default
-  language (not in the code yet — HIL-1505).
+  language, through the `default-language` marker.
 
 The handshake follows the admin view mode precedent in
 [daemon lifecycle](daemon-lifecycle.md). The language list cannot be empty:

@@ -94,6 +94,52 @@ final class PeerMarkersTest extends TestCase
         );
     }
 
+    /** I18N nodes compare the exact configured code under the agreed marker kind. */
+    public function testTheSameDefaultLanguagePasses(): void
+    {
+        $this->assertSame('default-language', PeerMarkers::DEFAULT_LANGUAGE);
+        $this->assertNull($this->localWithDefaultLanguage()->refusalFor(self::PEER, [
+            PeerMarkers::DATABASE => self::LOCAL_MARKER,
+            PeerMarkers::DEFAULT_LANGUAGE => 'en',
+        ]));
+    }
+
+    /** The refusal names both codes and the environment source literally. */
+    public function testAnotherDefaultLanguageIsRefused(): void
+    {
+        $this->assertSame(
+            "Peer handshake from node 'node-s1' names default-language marker 'ru',"
+            . " but this node reads 'en' from the variable HILOS_DEFAULT_LANGUAGE:"
+            . ' the two nodes do not read one default-language',
+            $this->localWithDefaultLanguage()->refusalFor(self::PEER, [
+                PeerMarkers::DATABASE => self::LOCAL_MARKER,
+                PeerMarkers::DEFAULT_LANGUAGE => 'ru',
+            ]),
+        );
+    }
+
+    /** A peer from an older build cannot omit the I18N agreement. */
+    public function testAMissingDefaultLanguageIsRefused(): void
+    {
+        $this->assertSame(
+            "Peer handshake from node 'node-s1' names no default-language marker,"
+            . " but this node reads 'en' from the variable HILOS_DEFAULT_LANGUAGE",
+            $this->localWithDefaultLanguage()->refusalFor(self::PEER, [PeerMarkers::DATABASE => self::LOCAL_MARKER]),
+        );
+    }
+
+    /** A node without I18N refuses a peer carrying the language kind it does not carry. */
+    public function testADefaultLanguageOnlyThePeerNamesIsRefused(): void
+    {
+        $this->assertSame(
+            "Peer handshake from node 'node-s1' names default-language marker 'en', which this node does not carry",
+            $this->local()->refusalFor(self::PEER, [
+                PeerMarkers::DATABASE => self::LOCAL_MARKER,
+                PeerMarkers::DEFAULT_LANGUAGE => 'en',
+            ]),
+        );
+    }
+
     /**
      * A cluster directory is one more kind beside the database (HIL-1242): the same rule, and the
      * same words, with the directory's kind and the place it was read from.
@@ -132,5 +178,16 @@ final class PeerMarkersTest extends TestCase
     private function local(): PeerMarkers
     {
         return new PeerMarkers([PeerMarkers::DATABASE => self::LOCAL_MARKER], [PeerMarkers::DATABASE => self::PLACE]);
+    }
+
+    /**
+     * @return PeerMarkers Markers of an I18N node configured for English
+     */
+    private function localWithDefaultLanguage(): PeerMarkers
+    {
+        return new PeerMarkers(
+            [PeerMarkers::DATABASE => self::LOCAL_MARKER, PeerMarkers::DEFAULT_LANGUAGE => 'en'],
+            [PeerMarkers::DATABASE => self::PLACE, PeerMarkers::DEFAULT_LANGUAGE => 'the variable HILOS_DEFAULT_LANGUAGE'],
+        );
     }
 }

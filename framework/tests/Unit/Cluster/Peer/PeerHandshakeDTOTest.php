@@ -14,6 +14,7 @@ use Hilos\Cluster\Peer\DTO\PeerReadyAckDTO;
 use Hilos\Cluster\Peer\DTO\PeerReadyDTO;
 use Hilos\Cluster\Peer\DTO\PeerWelcomeDTO;
 use Hilos\Cluster\Peer\PeerAddress;
+use Hilos\Cluster\Peer\PeerMarkers;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -59,9 +60,11 @@ final class PeerHandshakeDTOTest extends TestCase
         return ['missing' => [null], 'number' => [1], 'string' => ['true']];
     }
 
+    /** The marker map carries the exact default language without a new DTO field. */
     public function testHelloRoundTripsThroughTheWire(): void
     {
-        $hello = new PeerHelloDTO(1, 'node-a', NodeRole::Master, ['gpu-local', 'ssd'], PeerTestMarkers::onWire());
+        $markers = [...PeerTestMarkers::onWire(), PeerMarkers::DEFAULT_LANGUAGE => 'en'];
+        $hello = new PeerHelloDTO(1, 'node-a', NodeRole::Master, ['gpu-local', 'ssd'], $markers);
 
         $parsed = PeerDTO::fromWire($hello->toJson());
 
@@ -71,13 +74,14 @@ final class PeerHandshakeDTOTest extends TestCase
         $this->assertSame('node-a', $parsed->nodeId);
         $this->assertSame(NodeRole::Master, $parsed->role);
         $this->assertSame(['gpu-local', 'ssd'], $parsed->capabilities);
-        $this->assertSame(PeerTestMarkers::onWire(), $parsed->markers);
+        $this->assertSame($markers, $parsed->markers);
     }
 
+    /** Welcome uses the same unmodified marker map as hello. */
     public function testWelcomeRoundTripsThroughTheWire(): void
     {
-        // A node that carries no marker says so with an empty set, and the empty set survives the wire.
-        $welcome = new PeerWelcomeDTO(1, 'node-b', NodeRole::Slave, [], []);
+        $markers = [...PeerTestMarkers::onWire(), PeerMarkers::DEFAULT_LANGUAGE => 'ru'];
+        $welcome = new PeerWelcomeDTO(1, 'node-b', NodeRole::Slave, [], $markers);
 
         $parsed = PeerDTO::fromWire($welcome->toJson());
 
@@ -86,6 +90,15 @@ final class PeerHandshakeDTOTest extends TestCase
         $this->assertSame('node-b', $parsed->nodeId);
         $this->assertSame(NodeRole::Slave, $parsed->role);
         $this->assertSame([], $parsed->capabilities);
+        $this->assertSame($markers, $parsed->markers);
+    }
+
+    /** A node carrying no markers preserves its empty map on the wire too. */
+    public function testWelcomeWithoutMarkersRoundTripsThroughTheWire(): void
+    {
+        $parsed = PeerDTO::fromWire(new PeerWelcomeDTO(1, 'node-b', NodeRole::Slave, [], [])->toJson());
+
+        $this->assertInstanceOf(PeerWelcomeDTO::class, $parsed);
         $this->assertSame([], $parsed->markers);
     }
 

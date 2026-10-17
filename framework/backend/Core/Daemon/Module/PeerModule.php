@@ -15,14 +15,17 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Core\Daemon\DaemonContext;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DatabaseMarker;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\Fs\ClusterDirectoryMarker;
 use Hilos\Fs\Exception\DirectoryCreateException;
 use Hilos\Fs\Exception\FileReadException;
 use Hilos\Fs\Exception\FileWriteException;
 use Hilos\Hilos;
+use Hilos\I18n\DefaultLanguage;
 use Hilos\Utils\Logger;
 
 /**
@@ -39,7 +42,8 @@ final class PeerModule implements DaemonModule
 
     /**
      * @param ?Closure(): PeerMarkers $localMarkers Reads this node's markers; the database marker, the marker of
-     *     every cluster directory and the admin view mode variable when null - a unit test without a database hands its own
+     *     every cluster directory, the admin view mode variable and, with I18N, the default language variable
+     *     when null - a unit test without a database hands its own
      */
     public function __construct(?Closure $localMarkers = null)
     {
@@ -62,7 +66,8 @@ final class PeerModule implements DaemonModule
      * reads the markers it names to its peers on every handshake - the database marker
      * ({@see DatabaseMarker}), the marker of every cluster directory of `$fs`
      * ({@see ClusterDirectoryMarker}), each written here by the first node to start, and the
-     * admin view mode variable. Those reads are the one database and file access of the master
+     * admin view mode variable, plus the default language variable when the project declares I18N.
+     * Those reads are the one database and file access of the master
      * outside its loop that the peer channel needs: a one-time bootstrap read before
      * {@see DaemonManager::run()}, which the rule against heavy work in the master allows
      * (docs/agents/antipatterns/heavy-work-in-master.md, *Exceptions*), as it allows the
@@ -73,7 +78,8 @@ final class PeerModule implements DaemonModule
      * @param DaemonContext $context Resolved path context (unused; peer wiring is env-driven)
      * @throws ClusterDisabledException When cluster mode is disabled
      * @throws ClusterConfigurationException When enabled but node config or its TLS files are missing or invalid
-     * @throws EnvException When a cluster env value cannot be read
+     * @throws EnvException When a cluster env value or the default language cannot be read
+     * @throws EnvInvalidValueException When I18N is declared and the default language code is absent or unknown
      * @throws DatabaseException When the database marker cannot be read or written
      * @throws DirectoryCreateException When a cluster directory is absent and cannot be created
      * @throws FileReadException When a cluster directory's marker cannot be read, or is a file this build does not write
@@ -101,16 +107,17 @@ final class PeerModule implements DaemonModule
 
     /**
      * Reads the database marker, then the marker of every cluster directory, writing each first where
-     * there is none yet, then the admin view mode variable, and says so.
+     * there is none yet, then the admin view mode variable and, with I18N, the default language, and says so.
      *
      * The database comes first: a refusal names the first breach, so a node on another database is
      * named by its database and not by a directory. No `$fs` context, or no cluster directory in it,
-     * leaves the database marker alone.
+     * leaves no directory marker. A project without I18N never reads the default language variable.
      *
      * @return PeerMarkers This node's markers
      * @throws ClusterDisabledException When cluster mode is disabled
      * @throws ClusterConfigurationException When enabled but node config is missing or invalid
-     * @throws EnvException When a cluster env value cannot be read
+     * @throws EnvException When a cluster env value or the default language cannot be read
+     * @throws EnvInvalidValueException When I18N is declared and the default language code is absent or unknown
      * @throws DatabaseException When the database marker cannot be read or written
      * @throws DirectoryCreateException When a cluster directory is absent and cannot be created
      * @throws FileReadException When a cluster directory's marker cannot be read, or is a file this build does not write
@@ -147,6 +154,15 @@ final class PeerModule implements DaemonModule
             "Admin view mode marker {$values[PeerMarkers::ADMIN_VIEW_MODE]}, read from"
             . ' ' . $places[PeerMarkers::ADMIN_VIEW_MODE],
         );
+
+        if (Hilos::hasFeature(HilosFeature::I18N)) {
+            $values[PeerMarkers::DEFAULT_LANGUAGE] = DefaultLanguage::code();
+            $places[PeerMarkers::DEFAULT_LANGUAGE] = 'the variable ' . EnvConstants::HILOS_DEFAULT_LANGUAGE->name;
+            Logger::info(
+                "Default language marker {$values[PeerMarkers::DEFAULT_LANGUAGE]}, read from"
+                . ' ' . $places[PeerMarkers::DEFAULT_LANGUAGE],
+            );
+        }
 
         return new PeerMarkers($values, $places);
     }

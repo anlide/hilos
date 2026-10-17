@@ -98,6 +98,10 @@ Plus scenarios beyond that matrix:
                                and the death of that node, through real commands (HIL-1412)
  40 journal triggers installed  concurrent startup creates the filed triggers once; an ordinary
     once                       node restart leaves their catalog and DDL counters intact (HIL-1465)
+ 41 i18n catalog taken once     one library starts and commits the catalog on a fresh cluster;
+                               restarting its holder keeps the fingerprint and catalog (HIL-1505)
+ 42 another default language    a node naming another HILOS_DEFAULT_LANGUAGE is refused on both
+    refused                    ends, stays outside the mesh and creates no language (HIL-1505)
  31 replica keeps up with       a replica took every write the preceding scenarios made, stays
     the primary                read-only and is reached by nobody (HIL-1229)
 
@@ -2757,6 +2761,125 @@ CLUSTER_DIRECTORY_MARKER_FILE = ".hilos-cluster-directory.json"
 DATA_EXPORT_AGENT_TYPE = "hilos_data_export"
 
 
+# Mirrors HilosAgentType::HILOS_I18N_LIBRARY and I18nLibraryAgent's post-commit INFO line.
+I18N_LIBRARY_AGENT_TYPE = "hilos_i18n_library"
+I18N_REFLOW_COMMITTED = "I18n catalog reflow committed: "
+# The initial language declared by the i18n scenarios' carrier, not a framework default.
+I18N_DEFAULT_LANGUAGE = "en"
+
+
+def i18n_library_placements(views):
+    """All placements of the i18n library on the current leader, including pending ones."""
+    return [row for row in leader_placements(views)
+            if str(row.get("agentId", "")).split(":", 1)[0] == I18N_LIBRARY_AGENT_TYPE]
+
+
+def i18n_library_started(views):
+    """One library placement, acknowledged as started on a member of the stand."""
+    rows = i18n_library_placements(views)
+    return len(rows) == 1 and rows[0].get("state") == "started" and rows[0].get("nodeId") in ALL_NODES
+
+
+def scenario_41_i18n_catalog_taken_once():
+    """A fresh cluster takes the catalog once; a holder restart skips the same fingerprint.
+
+    This must run before any other scenario can restart a node and rotate its startup log.
+    SQL is an independent observation from the external harness, not application data access.
+    The framework's mounted i18n collections remain owned by its one policy-placed library.
+    """
+    worker_marks = {}
+
+    def worker_log(node):
+        # The reflow INFO is worker output (WorkerServer::saveWorkerOutput), not daemon.log.
+        # Like scenario 39, follow each live worker stream by inode across holder rotation.
+        parts = []
+        for path in sorted(STAND.node(node).log_dir.glob("worker-*.log")):
+            mark = worker_marks.get(node, {}).get(path)
+            try:
+                with path.open("rb") as stream:
+                    if mark is not None and os.fstat(stream.fileno()).st_ino == mark.inode:
+                        stream.seek(mark.size)
+                    parts.append(stream.read().decode("utf-8", errors="replace"))
+            except FileNotFoundError:
+                continue
+        return "\n".join(parts)
+
+    wait_converge(ALL_NODES)
+    views = wait_until(lambda current: i18n_library_started(current)
+                       and any(I18N_REFLOW_COMMITTED in worker_log(node) for node in ALL_NODES),
+                       CONVERGE_TIMEOUT, "one i18n library started and its catalog reflow committed")
+    placement = i18n_library_placements(views)[0]
+    holder, agent_id = placement["nodeId"], placement["agentId"]
+    logs = {node: node_log(node) for node in ALL_NODES}
+    starts = [(node, agent) for node, log in logs.items()
+              for agent, _worker in AGENT_STARTED_ON_WORKER.findall(log)
+              if agent.split(":", 1)[0] == I18N_LIBRARY_AGENT_TYPE]
+    assert starts == [(holder, agent_id)], f"expected exactly one i18n library startup, got {starts}"
+    commits = [(node, line.split(I18N_REFLOW_COMMITTED, 1)[1])
+               for node in ALL_NODES for line in worker_log(node).splitlines() if I18N_REFLOW_COMMITTED in line]
+    assert len(commits) == 1 and commits[0][0] == holder, f"expected one reflow on {holder}, got {commits}"
+    fingerprint = commits[0][1]
+    assert re.fullmatch(r"[0-9a-f]{64}", fingerprint), f"invalid committed fingerprint: {fingerprint!r}"
+
+    def catalog_snapshot():
+        return (db_sql("SELECT fingerprint FROM hilos_i18n_reflow WHERE id = 1"),
+                db_sql("SELECT COUNT(*) FROM hilos_country"),
+                db_sql("SELECT COUNT(*) FROM hilos_country_name n JOIN hilos_language l ON l.id = n.language_id "
+                       "WHERE l.code = 'en' AND n.locale_id IS NULL"),
+                db_sql("SELECT code FROM hilos_language"),
+                db_sql("SELECT code FROM hilos_locale"))
+
+    expected = (fingerprint, "51", "51", I18N_DEFAULT_LANGUAGE, I18N_DEFAULT_LANGUAGE)
+    before = catalog_snapshot()
+    assert before == expected, f"unexpected initial i18n catalog: {before!r}, expected {expected!r}"
+    marks = {node: node_log_mark(node) for node in ALL_NODES}
+    for node in ALL_NODES:
+        worker_marks[node] = {}
+        for path in STAND.node(node).log_dir.glob("worker-*.log"):
+            stat = path.stat()
+            worker_marks[node][path] = control.LogMark(stat.st_ino, stat.st_size)
+    survivors = [node for node in ALL_NODES if node != holder]
+    failed = False
+    try:
+        print(f"    restarting i18n holder {holder}; committed fingerprint {fingerprint}", flush=True)
+        outcome = control.execute(STAND, "kill", holder)
+        assert outcome.code == 0, f"could not kill {holder}: {outcome.err or outcome.out}"
+        wait_until(lambda current: converged(survivors)(current) and not node_online(current, holder),
+                   CONVERGE_TIMEOUT, f"i18n holder {holder} offline", nodes=survivors)
+        outcome = control.execute(STAND, "start", holder)
+        assert outcome.code == 0, f"could not start {holder}: {outcome.err or outcome.out}"
+        wait_converge(ALL_NODES)
+
+        def restarted(current):
+            if not i18n_library_started(current):
+                return False
+            row = i18n_library_placements(current)[0]
+            return bool(started_on_worker_at(node_log_since(row["nodeId"], marks[row["nodeId"]]), row["agentId"]))
+
+        views = wait_until(restarted, CONVERGE_TIMEOUT, "a new i18n library startup and one started placement")
+        after = catalog_snapshot()
+        assert after == before, f"holder restart changed the i18n catalog: before {before!r}, after {after!r}"
+        commits_after = [node for node in ALL_NODES if I18N_REFLOW_COMMITTED in worker_log(node)]
+        assert not commits_after, f"holder restart committed the catalog again on {commits_after}"
+        new_holder = i18n_library_placements(views)[0]["nodeId"]
+    except BaseException:
+        failed = True
+        raise
+    finally:
+        try:
+            outcome = control.execute(STAND, "start", holder)
+            assert outcome.code == 0, f"could not restore {holder}: {outcome.err or outcome.out}"
+            wait_converge(ALL_NODES)
+            wait_until(i18n_library_started, CONVERGE_TIMEOUT, "the i18n singleton restored after restart checks")
+        except Exception as cleanup_error:
+            print(f"    scenario 41 recovery failed: {cleanup_error}", flush=True)
+            if not failed:
+                raise
+
+    return (f"one library startup and one committed reflow {fingerprint}; 51 countries and en base names, "
+            f"only en language/locale; {holder} kill/start left holder {new_holder}, unchanged catalog, no new reflow")
+
+
 def scenario_22_other_database_refused():
     """A node that reads another database marker is admitted by nobody (HIL-1206).
 
@@ -2947,6 +3070,63 @@ def scenario_32_another_admin_view_mode_refused():
 
     return (f"{victim} named admin view mode on, was refused on both ends; the rest agreed on off; "
             "back on the stand's environment it rejoined")
+
+
+def scenario_42_another_default_language_refused():
+    """A slave naming ru instead of the stand's en stays outside the mesh and writes no ru row."""
+    wait_converge(ALL_NODES)
+    wait_until(i18n_library_started, CONVERGE_TIMEOUT, "the i18n singleton started before the env mismatch")
+    victim = SLAVES[0]
+    observer = MASTERS[0]
+    rest = [node for node in ALL_NODES if node != victim]
+    marks = {node: node_log_mark(node) for node in (observer, victim)}
+
+    def refusal(peer, theirs, ours):
+        return (f"Peer handshake from node '{peer}' names default-language marker '{theirs}', "
+                f"but this node reads '{ours}' from the variable HILOS_DEFAULT_LANGUAGE: "
+                "the two nodes do not read one default-language")
+
+    failed = False
+    try:
+        print(f"    recreating {victim} with HILOS_DEFAULT_LANGUAGE=ru", flush=True)
+        outcome = control.execute(STAND, "own-env", victim, "HILOS_DEFAULT_LANGUAGE=ru")
+        assert outcome.code == 0, f"could not give {victim} a default language of its own: {outcome.err or outcome.out}"
+
+        def refused_on_both_ends(_views):
+            return (refusal(victim, "ru", I18N_DEFAULT_LANGUAGE) in node_log_since(observer, marks[observer])
+                    and refusal(observer, I18N_DEFAULT_LANGUAGE, "ru") in node_log_since(victim, marks[victim]))
+
+        wait_until(refused_on_both_ends, CONVERGE_TIMEOUT,
+                   f"the exact default language refusals named by {observer} and {victim}", nodes=rest)
+
+        def left_out(current):
+            return (converged(rest)(current) and i18n_library_started(current)
+                    and i18n_library_placements(current)[0].get("nodeId") != victim
+                    and all(current.get(node) and not any(row.get("nodeId") == victim and row.get("online")
+                                                         for row in current[node].get("nodes", []))
+                            for node in rest))
+
+        views = wait_until(left_out, CONVERGE_TIMEOUT,
+                           f"{victim} offline everywhere, the rest converged with one i18n library", nodes=rest)
+        assert not node_online(views, victim), f"the leader admitted {victim} with another default language"
+        assert db_sql("SELECT COUNT(*) FROM hilos_language WHERE code = 'ru'") == "0", \
+            f"the refused {victim} provisioned a Russian language"
+    except BaseException:
+        failed = True
+        raise
+    finally:
+        try:
+            outcome = control.execute(STAND, "own-env", victim, "off")
+            assert outcome.code == 0, f"could not restore {victim}'s environment: {outcome.err or outcome.out}"
+            wait_converge(ALL_NODES)
+            wait_until(i18n_library_started, CONVERGE_TIMEOUT, "the i18n singleton restored after the env mismatch")
+        except Exception as cleanup_error:
+            print(f"    scenario 42 recovery failed: {cleanup_error}", flush=True)
+            if not failed:
+                raise
+
+    return (f"{victim} named ru, {observer} named en: exact refusals on both ends, nobody admitted {victim}, "
+            "one library outside it, no ru language; the stand's env, full mesh and singleton restored")
 
 
 def scenario_30_ready_copy_outlives_its_node():
@@ -4227,6 +4407,9 @@ class Scenario(namedtuple("Scenario", "name run need")):
 # (x-hilos-cluster.scenarios) and never their order: the order is what the comments above and
 # below explain, and a stand carrying a subset runs it in this same order.
 SCENARIOS = [
+    # Read every node's original i18n startup and commit before any kill/start rotates its log.
+    # Its carrier does not run 21/24/40, whose original startup/placement observations must stay intact.
+    Scenario("41 i18n catalog taken once", scenario_41_i18n_catalog_taken_once, Need(nodes=2, slaves=1)),
     # First, because it reads the container logs of the stand `cluster scenarios` has just
     # raised: 9 and 16 kill and recreate nodes, and a recreated container starts a new log.
     Scenario("21 schema rolled out once", scenario_21_schema_rolled_out_once, Need(nodes=2)),
@@ -4290,6 +4473,8 @@ SCENARIOS = [
     # The victim is a slave or a non-leading master, so three nodes leave a quorum to observe it.
     Scenario("32 a node with another admin view mode refused", scenario_32_another_admin_view_mode_refused,
              Need(nodes=3)),
+    Scenario("42 another default language refused", scenario_42_another_default_language_refused,
+             Need(nodes=3, slaves=1)),
     Scenario("30 ready copy outlives its node", scenario_30_ready_copy_outlives_its_node,
              Need(slaves=2, cluster_directory=True)),
     # Last, both of them, because the freeze stops the agents of every master: a lift that fails

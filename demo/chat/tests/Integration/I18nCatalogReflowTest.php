@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Integration;
 
+use Closure;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\I18n\Details\CountryNamesPage;
 use Hilos\Constants\EnvConstants;
@@ -22,7 +23,10 @@ use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\MeasurementSystem;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nCountryNameUpdateActionDTO;
+use Hilos\Utils\LogLevel;
+use Hilos\Utils\Logger;
 use PHPUnit\Framework\Attributes\DataProvider;
+use ReflectionProperty;
 
 /**
  * The library takes the built-in catalog in on start when its fingerprint changed, and on the
@@ -36,6 +40,10 @@ final class I18nCatalogReflowTest extends IntegrationTestCase
     private I18nLibraryAgent $agent;
     private string|false $previousDefaultLanguage;
     private I18nReflowWriteRecorder $writes;
+    private string $logFile;
+    private ?string $previousLogFile;
+    private bool $previousShowLogLevel;
+    private LogLevel $previousWriteLevel;
 
     protected function setUp(): void
     {
@@ -46,12 +54,33 @@ final class I18nCatalogReflowTest extends IntegrationTestCase
         $this->clearFixtures();
         $this->writes = new I18nReflowWriteRecorder();
         SourceChangeBus::subscribe($this->writes);
+
+        $this->previousLogFile = (new ReflectionProperty(Logger::class, 'logFile'))->getValue();
+        $this->previousShowLogLevel = (new ReflectionProperty(Logger::class, 'showLogLevel'))->getValue();
+        $this->previousWriteLevel = Logger::writeLevel();
+        $file = tempnam(sys_get_temp_dir(), 'hilos-i18n-reflow');
+        self::assertIsString($file);
+        $this->logFile = $file;
+        Logger::setLogFile($this->logFile);
+        Logger::setShowLogLevel(true);
+        Logger::setWriteLevel(LogLevel::Info);
     }
 
     protected function tearDown(): void
     {
         // The bus has no unsubscribe, and the facade is initialized once per process.
         $this->writes->listening = false;
+        $this->writes->onReflowCommitted = null;
+        if ($this->previousLogFile === null) {
+            Logger::resetLogFile();
+        } else {
+            Logger::setLogFile($this->previousLogFile);
+        }
+        Logger::setShowLogLevel($this->previousShowLogLevel);
+        Logger::setWriteLevel($this->previousWriteLevel);
+        if (is_file($this->logFile)) {
+            unlink($this->logFile);
+        }
         Database::sqlRun('DROP TRIGGER IF EXISTS `' . self::FAILURE_TRIGGER . '`');
         $this->clearFixtures();
         TruthSourceRegistry::unregisterAgent($this->agent->getId());
@@ -65,8 +94,24 @@ final class I18nCatalogReflowTest extends IntegrationTestCase
 
     public function testFirstStartTakesInSwitchedOffCountriesWithNamesInTheDefaultLanguage(): void
     {
+        $reflowCommitted = false;
+        $this->writes->onReflowCommitted = function () use (&$reflowCommitted): void {
+            Database::transactionStart();
+            try {
+                self::assertSame('', file_get_contents($this->logFile), 'The commit is announced before success is logged');
+                Database::sql('SELECT `fingerprint` FROM `hilos_i18n_reflow`');
+                self::assertSame(BuiltInI18nCatalog::fingerprint(), Database::field('fingerprint'));
+                self::assertSame(self::CATALOG_COUNTRIES, $this->rows('SELECT COUNT(*) AS `count` FROM `hilos_country`'));
+                $reflowCommitted = true;
+            } finally {
+                Database::transactionRollback();
+            }
+        };
+
         $this->startLibrary();
 
+        self::assertTrue($reflowCommitted, 'The reflow committed and allowed a new transaction before success was logged');
+        $this->assertReflowCommittedOnce();
         $english = Hilos::$db->languages['en'];
         self::assertNotNull($english);
         self::assertSame(self::CATALOG_COUNTRIES, $this->rows('SELECT COUNT(*) AS `count` FROM `hilos_country`'));
@@ -95,9 +140,11 @@ final class I18nCatalogReflowTest extends IntegrationTestCase
         });
 
         $this->writes->count = 0;
+        file_put_contents($this->logFile, '');
         $this->startLibrary();
 
         self::assertSame(0, $this->writes->count);
+        self::assertSame('', file_get_contents($this->logFile));
         self::assertSame('$', Hilos::$db->countries['de']?->currencySymbol);
         self::assertSame('USD', Hilos::$db->countries['de']?->currencyCode);
         self::assertSame(self::CATALOG_COUNTRIES, $this->namesIn('en'));
@@ -245,6 +292,7 @@ final class I18nCatalogReflowTest extends IntegrationTestCase
             self::assertStringContainsString('forced country name refusal', $failure->getMessage());
         }
 
+        self::assertSame('', file_get_contents($this->logFile));
         self::assertSame(0, $this->rows('SELECT COUNT(*) AS `count` FROM `hilos_country`'));
         self::assertSame(0, $this->rows('SELECT COUNT(*) AS `count` FROM `hilos_i18n_reflow`'));
         self::assertNull(Hilos::$db->countries['us']);
@@ -255,6 +303,7 @@ final class I18nCatalogReflowTest extends IntegrationTestCase
         Database::sqlRun('DROP TRIGGER IF EXISTS `' . self::FAILURE_TRIGGER . '`');
         $this->startLibrary();
 
+        $this->assertReflowCommittedOnce();
         self::assertSame(self::CATALOG_COUNTRIES, $this->rows('SELECT COUNT(*) AS `count` FROM `hilos_country`'));
         self::assertSame(self::CATALOG_COUNTRIES, $this->namesIn('en'));
         self::assertSame(BuiltInI18nCatalog::fingerprint(), Hilos::$db->i18nReflows->recordedFingerprint());
@@ -277,6 +326,17 @@ final class I18nCatalogReflowTest extends IntegrationTestCase
             Hilos::$db->countryNames->findBase((int)$us?->id, (int)$russian->id)?->name,
         );
         self::assertSame(BuiltInI18nCatalog::fingerprint(), Hilos::$db->i18nReflows->recordedFingerprint());
+    }
+
+    private function assertReflowCommittedOnce(): void
+    {
+        $lines = file($this->logFile, FILE_IGNORE_NEW_LINES);
+        self::assertIsArray($lines);
+        self::assertCount(1, $lines);
+        self::assertMatchesRegularExpression(
+            '/^\[[^\]]+\] \[INFO\] I18n catalog reflow committed: ' . BuiltInI18nCatalog::fingerprint() . '$/',
+            $lines[0],
+        );
     }
 
     private function startLibrary(): void
@@ -352,11 +412,15 @@ final class I18nReflowWriteRecorder implements SourceChangeSubscriberInterface
 
     public bool $listening = true;
     public int $count = 0;
+    public ?Closure $onReflowCommitted = null;
 
     public function onSourceChange(SourceChange $change, SourceChangeProvenance $provenance): void
     {
         if ($this->listening && in_array($change->sourceKey, self::KEYS, true)) {
             $this->count++;
+            if ($change->sourceKey === HilosDbContext::i18nReflows) {
+                $this->onReflowCommitted?->__invoke();
+            }
         }
     }
 }

@@ -14,7 +14,7 @@ use Hilos\Fs\ClusterDirectoryMarker;
  * The markers a node names to its peers on the handshake, one per kind, and the rule both ends
  * of a link judge them by (HIL-1206).
  *
- * A marker names something every node of a cluster must share, and the kinds are of three sorts.
+ * A marker names something every node of a cluster must share, and the kinds are of four sorts.
  * One is the database ({@see DatabaseMarker}): nodes that name different database markers read
  * different databases, and a mesh of them would read wrong rows quietly. The other is one kind
  * `directory:<name>` per cluster directory of `$fs` ({@see ClusterDirectoryMarker}, HIL-1242):
@@ -23,6 +23,8 @@ use Hilos\Fs\ClusterDirectoryMarker;
  * nodes with different values would answer admin viewers differently. The variable is compared,
  * not the startup verdict: in production the database latch itself closes each node on its next
  * start, and comparing the verdict would split the cluster during a rolling restart.
+ * The fourth is the default language variable for a project with I18N (HIL-1505): nodes with
+ * different codes would provision different defaults into the same language catalog.
  *
  * Every hello and welcome carries the sender's markers ({@see PeerHandshakeDTO}), and both ends of
  * a link check them right after the certificate name: a kind named by either side must be named by
@@ -51,6 +53,9 @@ final readonly class PeerMarkers
 
     /** @var string Marker value when the admin view mode variable is off */
     public const string ADMIN_VIEW_MODE_OFF = 'off';
+
+    /** @var string Kind of the marker naming the default language variable of an I18N project */
+    public const string DEFAULT_LANGUAGE = 'default-language';
 
     /**
      * @param array<string, string> $values Marker this node carries, per kind

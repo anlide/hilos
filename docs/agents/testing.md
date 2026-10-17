@@ -354,7 +354,7 @@ scenario on a single shape is retired (HIL-1218).
 
 | Demo | View | Hilos cluster | MariaDB | Scenarios |
 |---|---|---|---|---|
-| binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server, primary + derived journal | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes, 23 verifier circle on every master, 25 freeze settles on every master, 29 a node with a cluster directory of its own refused on both ends, 30 a ready data export copy outlives the node its agent lived on, 32 a node with another admin view mode refused on both ends, 33 every master takes browsers, 34 a tab is the same on every master under protected mode, 35 rt row deleted while cut off is swept, 36 a slave cut off with its leader stops its work before it runs elsewhere, 38 manual maintenance from any node |
+| binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server, primary + derived journal | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes, 23 verifier circle on every master, 25 freeze settles on every master, 29 a node with a cluster directory of its own refused on both ends, 30 a ready data export copy outlives the node its agent lived on, 32 a node with another admin view mode refused on both ends, 33 every master takes browsers, 34 a tab is the same on every master under protected mode, 35 rt row deleted while cut off is swept, 36 a slave cut off with its leader stops its work before it runs elsewhere, 38 manual maintenance from any node, 41 i18n catalog taken once and skipped after holder restart, 42 a node with another default language refused on both ends |
 | ecommerce-shop | React | one master and two slaves of unequal room, `ram=10` and `ram=4`, each with `slots=64` | one server, primary + derived journal | 3 placement, 4 slave-kill failover, 6 hot-join, 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused, 16 recreated node leaves no phantom fleet (parked, P-441/2), 18 capacity is consumed, 19 worker death on a live node, 37 costless agents consume slots, 39 person agents across nodes |
 | online-testing | Angular | three equal masters that host work themselves | one server, primary + derived journal | 11 cross-node db fact, 15 db interest addressing, 21 schema rolled out once by nodes that start together, 22 a node reading another database refused on both ends, 24 a cut-off leader stops its work before it runs elsewhere, 40 journal triggers installed once and unchanged on ordinary restart |
 
@@ -378,6 +378,31 @@ Wake-up places the person on the other slave while both libraries stay on the
 first, proving the cross-node path. Cleanup removes the fixtures and restarts
 the same stand without deleting volumes, then requires the full mesh and fleet
 before the matrix continues.
+
+Scenarios **41/42** on binance-btc-tracker prove the i18n startup and default
+language agreement (HIL-1505); its compose gives every node
+`HILOS_DEFAULT_LANGUAGE=en`. Scenario 41 runs first in that stand's matrix,
+before any restart or kill can rotate the original startup logs. It requires
+one `hilos_i18n_library` startup and one started POLICY placement, one
+`I18n catalog reflow committed: <fingerprint>` INFO on its holder, and the same
+64-character lowercase hex fingerprint in `hilos_i18n_reflow`. The database has
+51 countries, 51 English base country names, and only the `en` language and
+countryless locale. Killing and restarting the holder produces a new library
+startup and one started placement, with the catalog snapshot unchanged and no
+new reflow commit line.
+
+Scenario 42 temporarily recreates a slave with `HILOS_DEFAULT_LANGUAGE=ru`.
+It requires the exact `ru` versus `en` refusal on both ends, the node offline
+in every survivor's view, the singleton placed outside it, and no `ru` language
+row. Its `finally` restores the original env, full mesh and singleton; scenario
+41 also restores the holder, mesh and singleton in `finally`. Both scenarios
+belong only to binance-btc-tracker. From the repository root, the pointed run
+and that carrier's full matrix are:
+
+```bash
+composer -d demo/binance-btc-tracker run test:cluster:scenarios -- 41 42
+composer -d demo/binance-btc-tracker run test:cluster:scenarios
+```
 
 The Hilos shapes keep their original purpose: quorum, network partitions and
 TLS on binance-btc-tracker; placement and failover with a stable leader on
@@ -489,8 +514,8 @@ The browser enters through the stand's one nginx entry, where each context's
 `hilos_stand_master` cookie selects a master (HIL-1304). By default browsers and
 the protected-mode operator sit on a follower master, away from the page holder
 on the leader and the policy-placed agents on slaves. The live phase checks
-backup, logs, protected mode, one person's tabs, theme delivery and Change Log
-across masters. `cluster/live/change-log.spec.ts` checks one remote writer and
+backup, logs, protected mode, one person's tabs, theme delivery, Change Log and
+i18n across masters. `cluster/live/change-log.spec.ts` checks one remote writer and
 one receipt through every master: the person's `started` owner is observed on a
 slave before and after the block, away from the card's leader host. Fresh reads
 must return the same receipt and single entry IDs, exact actor/action/agent,
@@ -499,9 +524,34 @@ term unchanged. Point it with `-- --grep 'cluster change log:'` (HIL-1465).
 This pointed run stays in the live phase, with no fault request.
 The theme spec checks settings on all three masters, choices and reset between
 independent account sessions, new tabs, and stale Dark reconnect without adoption;
-`-- --grep 'cluster theme'` runs its three tests. The harness
-then stops the slave the backup spec names, waits for placement to move, and
-runs the after-loss phase: the archive is out of reach and the log node offline.
+`-- --grep 'cluster theme'` runs its three tests.
+
+`cluster/live/i18n.spec.ts` adds five live tests (HIL-1505):
+
+- language `nativeName` edits in both directions;
+- country `currencySymbol` edited from the list and delivered to the other card;
+- locale off/on delivered between masters;
+- language base and locale-correction names created and then edited across masters;
+- country base and locale-correction names edited in both directions.
+
+Each test uses real forms in two independent contexts fixed to the two follower
+masters, with `signUpAdmin` in both. CDP checks their WebSocket upgrades against
+those masters. After the subscriptions are ready, `watchI18nLivePages` checks
+delivery on the existing documents and sockets, with no observer reload,
+navigation or Apply and no new WebSocket on either page; `expectI18nName` checks
+the saved names in place without Apply. The leader and term stay unchanged.
+Cleanup removes the language, locale and names fixtures; the country edit
+restores its original currency symbol, currency code, default locale and card
+text. From the repository root, the pointed live run is:
+
+```bash
+composer -d demo/binance-btc-tracker run test:cluster:e2e -- --grep i18n
+```
+
+The pointed i18n run stays in the live phase, with no fault request. In the full
+browser run, the harness then stops the slave the backup spec names, waits for
+placement to move, and runs the after-loss phase: the archive is out of reach
+and the log node offline.
 `composer -d demo/binance-btc-tracker run test:cluster:e2e` runs that suite
 alone on a fresh stand; `-- --grep circle` points it. The scenario and browser
 steps share a group because both reset the same compose project (HIL-1232).

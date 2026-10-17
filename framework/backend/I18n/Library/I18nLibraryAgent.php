@@ -22,6 +22,7 @@ use Hilos\I18n\LocaleTemplates;
 use Hilos\I18n\MeasurementSystem;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Utils\Logger;
 use Hilos\WiringRefusal;
 use JsonException;
 use LogicException as NativeLogicException;
@@ -751,6 +752,7 @@ final class I18nLibraryAgent extends AbstractHilosAgent
      * Takes the built-in catalog into the reference tables when its fingerprint differs from the
      * recorded one - a fresh installation, a new or an older framework, a restored archive - and
      * records the new fingerprint as the last step. An equal fingerprint writes nothing at all.
+     * Logs the fingerprint after the reflow transaction commits successfully.
      *
      * One transaction: a failure rolls the whole reflow back with the record, so the next start
      * runs it again. The walk is over the catalog, so a row of the installation's own is never
@@ -788,5 +790,7 @@ final class I18nLibraryAgent extends AbstractHilosAgent
             }
             throw $failure;
         }
+
+        Logger::info("I18n catalog reflow committed: {$fingerprint}");
     }
 }

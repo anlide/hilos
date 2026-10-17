@@ -158,7 +158,7 @@ polls (Angular) → online-testing (Angular).
 | Backup | binance-btc-tracker: backup, backup-reopen | binance-btc-tracker | HIL-1220 |
 | Protected mode and maintenance | binance-btc-tracker: protected-mode | binance-btc-tracker | HIL-1221 |
 | Logs | binance-btc-tracker: logs, logs-rotation | binance-btc-tracker | HIL-1222 |
-| Cluster browser — backup, logs, protected mode, one person's tabs, theme settings/choices/reset and Change Log across masters | binance-btc-tracker: tests/e2e/cluster (live, after-loss), playwright.cluster.config.ts | binance-btc-tracker | HIL-1232, HIL-1443, HIL-1465 |
+| Cluster browser — backup, logs, protected mode, one person's tabs, theme settings/choices/reset, Change Log and live i18n edits across masters | binance-btc-tracker: tests/e2e/cluster (live, after-loss), playwright.cluster.config.ts | binance-btc-tracker | HIL-1232, HIL-1443, HIL-1465, HIL-1505 |
 | Cluster browser — Analytics across all three masters | online-testing: tests/e2e/cluster/live/analytics.spec.ts, playwright.cluster.config.ts | online-testing | HIL-1423 |
 | Tables | binance-btc-tracker: table-lag, table-refusal | binance-btc-tracker | HIL-1223 |
 | Notifications and communications | binance-btc-tracker: notifications, communications | binance-btc-tracker | HIL-1224 |
