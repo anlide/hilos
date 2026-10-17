@@ -471,9 +471,6 @@ final class HilosSignalConstants
     /** Subscription signal for Hilos logging modes page. */
     public const string SUBSCRIPTION_PAGE_HILOS_LOGS_SETTINGS = 'subscription_page_hilos_logs_settings';
 
-    /** Subscription signal for Hilos operations page. */
-    public const string SUBSCRIPTION_PAGE_HILOS_OPERATIONS = 'subscription_page_hilos_operations';
-
     /** Subscription signal for Hilos users list. */
     public const string SUBSCRIPTION_PAGE_HILOS_USERS = 'subscription_page_hilos_users';
 

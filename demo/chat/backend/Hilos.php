@@ -146,7 +146,6 @@ use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsDashboardPage;
 use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpLogsPage;
 use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpLogsViewPage;
 use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpPage;
-use Demo\Chat\Pages\Hilos\Operations\OperationsPage;
 use Demo\Chat\Pages\Hilos\PrivacyPage;
 use Demo\Chat\Pages\Hilos\ProfilePage;
 use Demo\Chat\Pages\Hilos\ProfileSignInPage;
@@ -411,7 +410,6 @@ final class Hilos extends HilosFacade
         LogsRotationsPage::PAGE => LogsRotationsPage::class,
         LogsViewPage::PAGE => LogsViewPage::class,
         LogsSettingsPage::PAGE => LogsSettingsPage::class,
-        OperationsPage::PAGE => OperationsPage::class,
         HilosUsersPage::PAGE => HilosUsersPage::class,
         HilosUserPage::PAGE => HilosUserPage::class,
         RolesPage::PAGE => RolesPage::class,

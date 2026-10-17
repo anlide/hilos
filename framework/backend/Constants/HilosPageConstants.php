@@ -180,9 +180,6 @@ final class HilosPageConstants
     /** @var string Hilos logs — logging modes */
     public const string HILOS_LOGS_SETTINGS = 'hilos_logs_settings';
 
-    /** @var string Hilos — maintenance operations (sitemap, static build, etc.) */
-    public const string HILOS_OPERATIONS = 'hilos_operations';
-
     /** @var string Hilos — users list */
     public const string HILOS_USERS = 'hilos_users';
 

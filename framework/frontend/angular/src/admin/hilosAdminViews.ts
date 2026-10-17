@@ -50,7 +50,6 @@ import { HilosBillingPage } from './billing/HilosBillingPage.js'
 import { HilosBillingProviderPage } from './billing/HilosBillingProviderPage.js'
 import { HilosBillingPaymentsPage } from './billing/HilosBillingPaymentsPage.js'
 import { HilosBillingRefundsPage } from './billing/HilosBillingRefundsPage.js'
-import { HilosOperationsPage } from './operations/HilosOperationsPage.js'
 import { HilosDaemonWebsocketsPage } from './daemon/HilosDaemonWebsocketsPage.js'
 import { HilosAnalyticsPage } from './analytics/HilosAnalyticsPage.js'
 import { HilosMcpSkillsPage } from './mcpSkills/HilosMcpSkillsPage.js'
@@ -119,7 +118,6 @@ export function hilosAdminViews(): Record<string, Type<unknown>> {
     [HilosPages.BILLING_PROVIDER]: HilosBillingProviderPage,
     [HilosPages.BILLING_PAYMENTS]: HilosBillingPaymentsPage,
     [HilosPages.BILLING_REFUNDS]: HilosBillingRefundsPage,
-    [HilosPages.OPERATIONS]: HilosOperationsPage,
     // The seven built Daemon pages require a project context and mount directly.
     [HilosPages.DAEMON_WEBSOCKETS]: HilosDaemonWebsocketsPage,
     // LOGS, LOGS_KEYS, LOGS_WORKERS, LOGS_ROTATIONS, LOGS_SETTINGS and LOGS_VIEW are

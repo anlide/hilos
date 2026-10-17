@@ -344,12 +344,6 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
             PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-palette',
         ],
-        HilosPageConstants::HILOS_OPERATIONS => [
-            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Operations',
-            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Sitemap generation, static HTML builds, and maintenance tasks.',
-            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-diagram-3',
-        ],
         HilosPageConstants::HILOS_DAEMON => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Daemon',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Nodes and their processes, with agent placement across them.',
@@ -550,7 +544,6 @@ final class HilosPageCatalog
             PageCatalogConstants::SECTION_ITEMS => [
                 HilosPageConstants::HILOS_SETTINGS,
                 HilosPageConstants::HILOS_APPEARANCE,
-                HilosPageConstants::HILOS_OPERATIONS,
                 HilosPageConstants::HILOS_DAEMON,
                 HilosPageConstants::HILOS_LOGS,
                 HilosPageConstants::HILOS_CHANGE_LOG,

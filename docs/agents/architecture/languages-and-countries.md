@@ -442,8 +442,8 @@ checks on binance-btc-tracker: one startup and committed reflow, no repeat after
 holder restart, another default language refused on both ends, and edits
 delivered between masters. Their checks and pointed commands are in
 [the cluster testing guide](../testing.md#the-cluster-stands--three-demos-three-shapes).
-Reflow as an Operations action, with history and a manual trigger, belongs
-to HIL-1424.
+Manual reflow and its history belong to the languages and countries section in
+HIL-1424.
 
 ## The Default Language
 
@@ -737,7 +737,7 @@ These keys are pointers to later work, not implementation markers:
   HIL-1424.
 - Translation — HIL-1424.
 - Synchronization with restcountries and flags — HIL-1424.
-- Reflow and synchronization as Operations actions — HIL-1424 and HIL-1053.
+- Manual reflow, its history, and synchronization in this section — HIL-1424.
 - `first_week_day` and `timezone` — HIL-1424.
 - A working preview — HIL-1424.
 - Multilingual CMS content — HIL-129; SSG language editions — HIL-130.

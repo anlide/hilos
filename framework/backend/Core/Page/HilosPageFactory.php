@@ -80,7 +80,6 @@ class HilosPageFactory extends AbstractPageFactory
         HilosPageConstants::HILOS_LOGS_ROTATIONS => true,
         HilosPageConstants::HILOS_LOGS_VIEW => true,
         HilosPageConstants::HILOS_LOGS_SETTINGS => true,
-        HilosPageConstants::HILOS_OPERATIONS => true,
         HilosPageConstants::HILOS_USERS => true,
         HilosPageConstants::HILOS_USER => true,
         HilosPageConstants::HILOS_LEGAL => true,

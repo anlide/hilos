@@ -51,7 +51,6 @@ import { HilosBillingPage } from './billing/HilosBillingPage.js'
 import { HilosBillingProviderPage } from './billing/HilosBillingProviderPage.js'
 import { HilosBillingPaymentsPage } from './billing/HilosBillingPaymentsPage.js'
 import { HilosBillingRefundsPage } from './billing/HilosBillingRefundsPage.js'
-import { HilosOperationsPage } from './operations/HilosOperationsPage.js'
 import { HilosDaemonWebsocketsPage } from './daemon/HilosDaemonWebsocketsPage.js'
 import { HilosAnalyticsPage } from './analytics/HilosAnalyticsPage.js'
 import { HilosMcpSkillsPage } from './mcpSkills/HilosMcpSkillsPage.js'
@@ -111,7 +110,6 @@ export function hilosAdminViews(): Record<string, ComponentType> {
     [HilosPages.BILLING_PROVIDER]: HilosBillingProviderPage,
     [HilosPages.BILLING_PAYMENTS]: HilosBillingPaymentsPage,
     [HilosPages.BILLING_REFUNDS]: HilosBillingRefundsPage,
-    [HilosPages.OPERATIONS]: HilosOperationsPage,
     // Daemon root, Workers, Agents, Cron, HTTP, Environment and Env mismatch
     // require a project context and stay outside this default map.
     // Thin wrappers bind connection/scopes, and the action lifecycle for Agents.

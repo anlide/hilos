@@ -51,7 +51,6 @@ import HilosBillingPage from './billing/HilosBillingPage.vue'
 import HilosBillingProviderPage from './billing/HilosBillingProviderPage.vue'
 import HilosBillingPaymentsPage from './billing/HilosBillingPaymentsPage.vue'
 import HilosBillingRefundsPage from './billing/HilosBillingRefundsPage.vue'
-import HilosOperationsPage from './operations/HilosOperationsPage.vue'
 import HilosDaemonWebsocketsPage from './daemon/HilosDaemonWebsocketsPage.vue'
 import HilosAnalyticsPage from './analytics/HilosAnalyticsPage.vue'
 import HilosMcpSkillsPage from './mcpSkills/HilosMcpSkillsPage.vue'
@@ -113,7 +112,6 @@ export function hilosAdminViews(): Record<string, Component> {
     [HilosPages.BILLING_PROVIDER]: HilosBillingProviderPage,
     [HilosPages.BILLING_PAYMENTS]: HilosBillingPaymentsPage,
     [HilosPages.BILLING_REFUNDS]: HilosBillingRefundsPage,
-    [HilosPages.OPERATIONS]: HilosOperationsPage,
     [HilosPages.DAEMON_WEBSOCKETS]: HilosDaemonWebsocketsPage,
     // LOGS, LOGS_KEYS, LOGS_WORKERS, LOGS_ROTATIONS, LOGS_SETTINGS and LOGS_VIEW are
     // absent for the same reason as the deliveries journal: the stream lists and the
