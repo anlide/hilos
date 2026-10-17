@@ -131,6 +131,26 @@ class Sessions extends Objects
     }
 
     /**
+     * Loads every session in which some administrator is acting as somebody else, and answers with their keys, oldest row first (HIL-1308).
+     *
+     * The read half of switching impersonation off for the installation: the session holder
+     * returns each of these takeovers to the administrator behind it, whoever that is. A
+     * takeover is an administrator on the column, so nobody impersonating yields no keys.
+     *
+     * @return list<int> Keys of the impersonating sessions (empty when none)
+     * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     */
+    public function findImpersonating(): array
+    {
+        return $this->hydrateAll(static::entityClass()::get(
+            '`' . EntitySession::impersonator_user_id . '` IS NOT NULL',
+            [],
+            [EntitySession::id => SqlSortDirection::ASC],
+        ));
+    }
+
+    /**
      * Loads every session a person stands in, in any of the three places a session names one, and answers with their keys (HIL-302).
      *
      * The erasure's sign-out read path: the person signed in on it, the administrator behind

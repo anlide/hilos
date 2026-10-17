@@ -136,6 +136,25 @@ class Sessions extends DbCollection
     }
 
     /**
+     * Lists every session in which some administrator is acting as somebody else, oldest row first (HIL-1308).
+     *
+     * The read half of switching impersonation off for the installation: see the object
+     * collection. Delegates to it and gathers the Db items into a collection of this class, in
+     * the order the rows came; nobody impersonating yields an empty collection.
+     *
+     * @return static Impersonating session Db items (empty when none)
+     * @throws LogicException When the collection class constants are not configured
+     * @throws InvalidArgumentException When the loaded object type does not match the collection
+     * @throws DatabaseException When the lookup or lazy session load fails
+     * @throws ObjectGetIdStringNotImplementedException If a session's Object does not implement getIdString()
+     * @throws CollectionNotManualException When add() rejects an item on a non-manual collection
+     */
+    public function findImpersonating(): static
+    {
+        return $this->sessionsForKeys($this->objectCollection->findImpersonating());
+    }
+
+    /**
      * Lists every session a person stands in - signed in, taking over, or waiting on a second factor (HIL-302).
      *
      * The read half of the erasure's sign-out; see the object collection for the three places.

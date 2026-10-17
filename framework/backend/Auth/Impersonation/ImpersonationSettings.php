@@ -18,9 +18,11 @@ use Hilos\Hilos;
  *
  * They are judged at two moments, and each setting at one of them. Whether and whom - allowed,
  * blocked, frozen, equal - at the start, by the sessions library for both ways in, the card and
- * the command line; a takeover already under way is not ended by a later switch, the way a
- * sign-in method switched off does not sign anybody out. What may be done inside - the scope,
- * the sign-in and the admin rights - on every action, by the live value.
+ * the command line. Switching allowed off also ends every takeover already under way: the
+ * session holder returns each to its administrator on the settings library's frame (HIL-1308).
+ * Blocked, frozen and equal judge the start only, the way a sign-in method switched off does not
+ * sign anybody out. What may be done inside - the scope, the sign-in and the admin rights - on
+ * every action, by the live value.
  *
  * Every default is the behavior the product had before the settings existed, so a project whose
  * catalog does not fold {@see ImpersonationSettingsCatalog} in lives on the defaults: a key the

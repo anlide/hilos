@@ -102,6 +102,7 @@ use Hilos\Auth\AccountDeletion\DTO\AccountDeletionOpenActionDTO;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionStartActionDTO;
 use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
 use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
+use Hilos\Auth\Library\DTO\AuthImpersonationOffApplySignalData;
 use Hilos\Auth\Library\DTO\AuthOtherSessionsEndSignalData;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
@@ -1205,6 +1206,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_OFF => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_DISABLE_APPLY => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_AUTH_IMPERSONATION_OFF_APPLY => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_BLOCK_CHANGED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
@@ -1516,6 +1518,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_OFF => AuthSecondFactorOffSignalData::class,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY => AuthSecondFactorTrustDaysApplySignalData::class,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_DISABLE_APPLY => AuthSecondFactorDisableApplySignalData::class,
+            HilosSignalConstants::HILOS_AUTH_IMPERSONATION_OFF_APPLY => AuthImpersonationOffApplySignalData::class,
             HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END => AuthOtherSessionsEndSignalData::class,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL => AuthSecondFactorCancelSignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_BLOCK_CHANGED => AccountBlockChangedSignalData::class,

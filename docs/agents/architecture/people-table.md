@@ -165,10 +165,20 @@ into another one is refused before any setting is asked (HIL-1292): a tombstone
 is nobody to act as, whatever the settings allow, and its card offers no
 takeover.
 
-These settings are judged at the start and nowhere later: a takeover under way
-is not ended by a later switch, the way a sign-in method switched off signs
-nobody out. What may be done inside is judged on every action instead
-([page-access-control.md](page-access-control.md), *The takeover gate*).
+Whom may be taken over — `.blocked`, `.frozen`, `.equal` — is judged at the
+start and nowhere later: a takeover under way is not ended by a later switch,
+the way a sign-in method switched off signs nobody out. Impersonation itself
+switched off (`auth.impersonation.allowed` from on to off, HIL-1308) returns
+every takeover under way to its administrator, by whichever door it was
+written. The settings library holds the answer to that write and sends the
+session holder `hilos_auth_impersonation_off_apply`; the holder walks every
+session with an `impersonator_user_id` down the path of `impersonate:stop` —
+no token rotation, the new identity to every live tab of the session — tells
+the administrator why on that session's toast, and only then answers the write.
+A tab on another node of a cluster comes back on its own handshake, which
+already reads the rewritten session row. What may be done inside is judged on
+every action instead ([page-access-control.md](page-access-control.md), *The
+takeover gate*).
 
 ## A Merged Account
 

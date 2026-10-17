@@ -9,6 +9,7 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\Security\SecurityImpersonationPage;
 use Hilos\Auth\Impersonation\DTO\ImpersonationPolicySignalData;
 use Hilos\Auth\Impersonation\ImpersonationSettings;
+use Hilos\Auth\Library\DTO\AuthImpersonationOffApplySignalData;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
@@ -32,7 +33,8 @@ use Hilos\Pages\Security\DTO\HilosImpersonationSwitchSetActionDTO;
  * the key's rule and, when any of the seven settings changed, tells every connection
  * the new policy snapshot. Both halves run here in one process against the real catalog and database, the
  * frame carried across by hand as the step-up switches' suite carries it
- * ({@see SecurityStepUpSwitchTest}).
+ * ({@see SecurityStepUpSwitchTest}). Impersonation switched off is answered by the session holder
+ * once it has returned every takeover (HIL-1308), so that frame is carried on to the holder too.
  */
 final class SecurityImpersonationPageTest extends IntegrationTestCase
 {
@@ -42,6 +44,9 @@ final class SecurityImpersonationPageTest extends IntegrationTestCase
 
     /** @var list<ImpersonationPolicySignalData> Policy frames the last write sent to every connection */
     private array $policyFrames = [];
+
+    /** @var list<AuthImpersonationOffApplySignalData> Switch-off applies the last write handed the session holder */
+    private array $offApplies = [];
 
     protected function setUp(): void
     {
@@ -58,11 +63,13 @@ final class SecurityImpersonationPageTest extends IntegrationTestCase
             $this->assertFalse(ImpersonationSettings::isAllowed());
             $this->assertCount(1, $this->policyFrames);
             $this->assertFalse($this->policyFrames[0]->allowed);
+            $this->assertCount(1, $this->offApplies);
 
             $this->assertNull($this->switch(ImpersonationSettings::ALLOWED_KEY, true));
             $this->assertTrue(ImpersonationSettings::isAllowed());
             $this->assertCount(1, $this->policyFrames);
             $this->assertTrue($this->policyFrames[0]->allowed);
+            $this->assertSame([], $this->offApplies);
         });
     }
 
@@ -125,16 +132,19 @@ final class SecurityImpersonationPageTest extends IntegrationTestCase
             $this->assertFalse(ImpersonationSettings::allowsBlocked());
             $this->assertCount(1, $this->policyFrames);
             $this->assertFalse($this->policyFrames[0]->blocked);
+            $this->assertSame([], $this->offApplies);
 
             $this->assertNull($this->switch(ImpersonationSettings::FROZEN_KEY, false));
             $this->assertFalse(ImpersonationSettings::allowsFrozen());
             $this->assertCount(1, $this->policyFrames);
             $this->assertFalse($this->policyFrames[0]->frozen);
+            $this->assertSame([], $this->offApplies);
 
             $this->assertNull($this->switch(ImpersonationSettings::EQUAL_KEY, false));
             $this->assertFalse(ImpersonationSettings::allowsEqual());
             $this->assertCount(1, $this->policyFrames);
             $this->assertFalse($this->policyFrames[0]->equal);
+            $this->assertSame([], $this->offApplies);
         });
     }
 
@@ -257,16 +267,32 @@ final class SecurityImpersonationPageTest extends IntegrationTestCase
     }
 
     /**
-     * Reads back the library's answer and keeps the policy frames it sent beside it.
+     * Reads back the write's answer and keeps the policy frames sent beside it.
+     *
+     * A switch-off apply is handed on to the session holder as it is met, and the answer then
+     * read is the holder's, on the same reply name (HIL-1308).
      *
      * @return ?string Sentence the write was refused with, or null when it went through
      */
     private function answer(): ?string
     {
         $this->policyFrames = [];
+        $this->offApplies = [];
         $answered = false;
         $error = null;
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() === HilosSignalConstants::HILOS_AUTH_IMPERSONATION_OFF_APPLY) {
+                $this->assertInstanceOf(AgentSignalData::class, $signal->data);
+                $this->assertInstanceOf(AuthImpersonationOffApplySignalData::class, $signal->data->data);
+                $this->offApplies[] = $signal->data->data;
+                $library = $this->sessionsLibrary();
+                $apply = $signal->data;
+                $this->underAgent($library, static fn () => $library->onSignalAgent(
+                    $apply,
+                    'agent',
+                    HilosSignalConstants::HILOS_AUTH_IMPERSONATION_OFF_APPLY,
+                ));
+            }
             if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof HandoverAnswerSignalData) {
                 $this->assertSame(HilosSignalConstants::HILOS_IMPERSONATION_SETTING_WRITE_DONE, $signal->signalName->getName());
                 $answered = true;

@@ -16,6 +16,7 @@ use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\Impersonation\ImpersonationMessages;
 use Hilos\Auth\Impersonation\ImpersonationSettings;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\Library\DTO\AuthImpersonationOffApplySignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\LegalReconsentActionDTO;
 use Hilos\Auth\Library\DTO\LoginActionDTO;
@@ -46,6 +47,7 @@ use Hilos\Core\Page\PageAccessVerdict;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
@@ -54,6 +56,7 @@ use Hilos\Files\Upload\DTO\UploadInitActionDTO;
 use Hilos\Files\Upload\UploadsAgent;
 use Hilos\HilosException;
 use Hilos\Pages\Users\AbstractHilosUserPage;
+use Hilos\Runtime\State\Item\HilosSessionToastStack as StateHilosSessionToastStack;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
@@ -145,6 +148,100 @@ final class ImpersonationTest extends IntegrationTestCase
             $this->assertSame($adminId, $session?->userId);
             $this->assertNull($session?->impersonatorUserId);
             $this->assertSame($adminId, Hilos::$rt->connections['stop-ak']->userId);
+        } finally {
+            Hilos::$rt->connections->actions->clear();
+        }
+    }
+
+    /**
+     * Impersonation switched off returns every takeover to its own administrator the way Stop
+     * does, tells the one with a live tab why, leaves an ordinary session alone, and only then
+     * answers the write (HIL-1308).
+     *
+     * @throws HilosException When setup or the apply fails
+     */
+    public function testImpersonationSwitchedOffReturnsEveryTakeoverBeforeTheAnswer(): void
+    {
+        $agent = $this->bootAgent();
+        $this->returnEveryTakeover($agent);
+        $library = $this->sessionsLibrary();
+
+        $liveToken = RandomHelper::hex(16);
+        $liveAdminId = $this->authenticatedAdminSession($agent, 'off-live-ak', $liveToken);
+        $liveTargetId = $this->registerUser();
+        $this->runCommand($agent, $this->startCommand($liveToken, $liveTargetId));
+
+        $socketlessToken = RandomHelper::hex(16);
+        $socketlessAdminId = $this->registerAdmin();
+        $this->underAgent($library, static fn () => Hilos::$db->sessions->actions->createAnonymous($socketlessToken)
+            ->actions->bindUser($socketlessAdminId));
+        $this->runCommand($agent, $this->startCommand($socketlessToken, $this->registerUser()));
+
+        $ordinaryToken = RandomHelper::hex(16);
+        $ordinaryUserId = $this->registerUser();
+        $this->deliverHandshake($agent, $this->handshake('off-ordinary-ak', $ordinaryToken));
+        $this->authenticateSession($agent, $ordinaryToken, $ordinaryUserId, null);
+
+        try {
+            $this->assertSame($liveTargetId, Hilos::$rt->connections['off-live-ak']->userId);
+            $this->assertSame($socketlessAdminId, Hilos::$db->sessions->findByToken($socketlessToken)?->impersonatorUserId);
+            $this->drainSignals();
+
+            $this->applyImpersonationOff($agent);
+
+            $live = Hilos::$db->sessions->findByToken($liveToken);
+            $this->assertSame($liveAdminId, $live?->userId);
+            $this->assertNull($live?->impersonatorUserId);
+            $this->assertSame($liveAdminId, Hilos::$rt->connections['off-live-ak']->userId);
+            $socketless = Hilos::$db->sessions->findByToken($socketlessToken);
+            $this->assertSame($socketlessAdminId, $socketless?->userId);
+            $this->assertNull($socketless?->impersonatorUserId);
+            $ordinary = Hilos::$db->sessions->findByToken($ordinaryToken);
+            $this->assertSame($ordinaryUserId, $ordinary?->userId);
+            $this->assertNull($ordinary?->impersonatorUserId);
+            $this->assertSame($ordinaryUserId, Hilos::$rt->connections['off-ordinary-ak']->userId);
+
+            $toasts = Hilos::$rt->hilosSessionToastStacks[ProtectedModeRuntime::hashSessionToken($liveToken)]?->toasts ?? [];
+            $this->assertCount(1, $toasts);
+            $this->assertSame(ImpersonationMessages::ENDED_SWITCHED_OFF, $toasts[0][StateHilosSessionToastStack::TOAST_MESSAGE]);
+            $this->assertSame('info', $toasts[0][StateHilosSessionToastStack::TOAST_SEVERITY]);
+            $this->assertSame('Impersonation', $toasts[0][StateHilosSessionToastStack::TOAST_SOURCE]);
+            $this->assertSame('/hilos/security/impersonation', $toasts[0][StateHilosSessionToastStack::TOAST_DESTINATION]);
+            $this->assertNull(Hilos::$rt->hilosSessionToastStacks[ProtectedModeRuntime::hashSessionToken($socketlessToken)]);
+            $this->assertNull(Hilos::$rt->hilosSessionToastStacks[ProtectedModeRuntime::hashSessionToken($ordinaryToken)]);
+
+            [$answers] = $this->impersonationOffFrames();
+            $this->assertCount(1, $answers, 'An ask that arrived as a frame is answered once');
+            $this->assertNull($answers[0]->error);
+        } finally {
+            Hilos::$rt->connections->actions->clear();
+        }
+    }
+
+    /**
+     * With nobody inside somebody else's account the write is answered at once, and nobody is told anything (HIL-1308).
+     *
+     * @throws HilosException When setup or the apply fails
+     */
+    public function testImpersonationSwitchedOffWithNoTakeoverAnswersAtOnce(): void
+    {
+        $agent = $this->bootAgent();
+        $this->returnEveryTakeover($agent);
+        $token = RandomHelper::hex(16);
+        $adminId = $this->authenticatedAdminSession($agent, 'off-none-ak', $token);
+
+        try {
+            $this->assertCount(0, Hilos::$db->sessions->findImpersonating());
+            $this->drainSignals();
+
+            $this->applyImpersonationOff($agent);
+
+            $this->assertSame($adminId, Hilos::$rt->connections['off-none-ak']->userId);
+            $this->assertNull(Hilos::$rt->hilosSessionToastStacks[ProtectedModeRuntime::hashSessionToken($token)]);
+            [$answers, $toastFrames] = $this->impersonationOffFrames();
+            $this->assertCount(1, $answers, 'An ask that arrived as a frame is answered once');
+            $this->assertNull($answers[0]->error);
+            $this->assertSame([], $toastFrames);
         } finally {
             Hilos::$rt->connections->actions->clear();
         }
@@ -770,6 +867,66 @@ final class ImpersonationTest extends IntegrationTestCase
     {
         $this->sessionsLibrary()->onSignalCommand($command, '', '');
         $this->deliverLibraryFrames($agent);
+    }
+
+    /**
+     * Hands the session holder the settings library's switch-off apply and carries what it sends to the project.
+     *
+     * @param ChatAgent $agent Agent that holds this project's connections
+     * @throws HilosException When the apply or a frame that follows it fails
+     */
+    private function applyImpersonationOff(ChatAgent $agent): void
+    {
+        $library = $this->sessionsLibrary();
+        $this->underAgent($library, static fn () => $library->onSignalAgent(
+            new AgentSignalData(new AuthImpersonationOffApplySignalData(
+                replySignal: HilosSignalConstants::HILOS_IMPERSONATION_SETTING_WRITE_DONE,
+                acceptKey: 'off-writer-ak',
+                requestId: 'off-request',
+                action: HilosSignalConstants::SECURITY_IMPERSONATION_SWITCH_SET,
+                successMessage: null,
+            )),
+            'agent',
+            HilosSignalConstants::HILOS_AUTH_IMPERSONATION_OFF_APPLY,
+        ));
+        $this->deliverLibraryFrames($agent);
+    }
+
+    /**
+     * Drains the queue once, sorting out the holder's answers to the switch-off and the toast frames sent beside them.
+     *
+     * @return array{0: list<HandoverAnswerSignalData>, 1: list<SignalDTO>} The answers, and the toast frames, in the order sent
+     */
+    private function impersonationOffFrames(): array
+    {
+        $answers = [];
+        $toastFrames = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof HandoverAnswerSignalData) {
+                $this->assertSame(HilosSignalConstants::HILOS_IMPERSONATION_SETTING_WRITE_DONE, $signal->signalName->getName());
+                $this->assertSame('off-request', $signal->data->data->requestId);
+                $answers[] = $signal->data->data;
+            }
+            if ($signal->signalName->getName() === HilosSignalConstants::HILOS_SESSION_TOASTS) {
+                $toastFrames[] = $signal;
+            }
+        }
+
+        return [$answers, $toastFrames];
+    }
+
+    /**
+     * Ends whatever takeover an earlier case left in the shared database, by the command line's Stop.
+     *
+     * @param ChatAgent $agent Agent that holds this project's connections
+     * @throws HilosException When a stop or a frame that follows it fails
+     */
+    private function returnEveryTakeover(ChatAgent $agent): void
+    {
+        foreach (Hilos::$db->sessions->findImpersonating() as $session) {
+            $this->runCommand($agent, $this->stopCommand($session->token));
+        }
+        $this->drainSignals();
     }
 
     /**

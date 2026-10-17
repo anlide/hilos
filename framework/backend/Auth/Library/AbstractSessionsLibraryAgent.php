@@ -28,6 +28,7 @@ use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
 use Hilos\Auth\Library\Command\PhoneCodeCommands;
 use Hilos\Auth\Library\Command\RecoveryCommands;
+use Hilos\Auth\Library\DTO\AuthImpersonationOffApplySignalData;
 use Hilos\Auth\Library\DTO\AuthOtherSessionsEndSignalData;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
@@ -503,6 +504,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * this library sends on to the tabs.
      * The users library reports expired registration holds so this holder clears only the
      * named session's wait and tells its tabs (HIL-1411).
+     *
+     * The settings library hands impersonation switched off here (HIL-1308): the takeovers under
+     * way are this library's sessions, so it returns every one of them to its administrator before
+     * the write that switched it off is answered.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => AuthSessionGrantSignalData::class,
@@ -531,6 +536,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_OFF => AuthSecondFactorOffSignalData::class,
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY => AuthSecondFactorTrustDaysApplySignalData::class,
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_DISABLE_APPLY => AuthSecondFactorDisableApplySignalData::class,
+        HilosSignalConstants::HILOS_AUTH_IMPERSONATION_OFF_APPLY => AuthImpersonationOffApplySignalData::class,
         HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END => AuthOtherSessionsEndSignalData::class,
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL => AuthSecondFactorCancelSignalData::class,
         HilosSignalConstants::HILOS_ACCOUNT_BLOCK_CHANGED => AccountBlockChangedSignalData::class,
@@ -4254,6 +4260,19 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
                 return;
 
+            case HilosSignalConstants::HILOS_AUTH_IMPERSONATION_OFF_APPLY:
+                if (!$data->data instanceof AuthImpersonationOffApplySignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        AuthImpersonationOffApplySignalData::class,
+                        $data->data,
+                    );
+                }
+
+                $this->applyImpersonationOff($data->data);
+
+                return;
+
             case HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END:
                 if (!$data->data instanceof AuthOtherSessionsEndSignalData) {
                     throw new InvalidAgentSignalPayloadException($name, AuthOtherSessionsEndSignalData::class, $data->data);
@@ -5350,11 +5369,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * refusal reaches an operator as the command's error reply and a browser as the action's fail
      * ack, in the words the card shows under its switched-off button ({@see ImpersonationMessages}).
      *
-     * The settings are judged here, at the start, and nowhere later: a takeover under way is not
-     * ended by a switch, the way a sign-in method switched off signs nobody out. What may be done
-     * inside is judged on every action instead, by the action dispatcher. The asker naming their own
-     * user is not "another administrator": that one the library refuses on its own, after.
-     * Not final, for the reason {@see self::mintAdminUser()} gives.
+     * The settings are judged here, at the start. A takeover under way is ended by one switch
+     * alone, impersonation itself switched off ({@see self::applyImpersonationOff()}); the rows of
+     * whom - blocked, frozen, equal - judge only the start, the way a sign-in method switched off
+     * signs nobody out. What may be done inside is judged on every action instead, by the action
+     * dispatcher. The asker naming their own user is not "another administrator": that one the
+     * library refuses on its own, after. Not final, for the reason {@see self::mintAdminUser()} gives.
      *
      * @param int $adminUserId User the acting session currently carries
      * @param int $targetUserId User that session asks to act as
@@ -7001,6 +7021,84 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         $this->sendToAgent($ask->replySignal, HandoverAnswerSignalData::to($ask, null));
+    }
+
+    /**
+     * Returns every takeover to its administrator once impersonation is switched off, then answers the setting action (HIL-1308).
+     *
+     * Each session with an administrator behind it goes back the way the command line's Stop sends
+     * it ({@see self::stopImpersonation()} with no initiator): the token is not rotated, every live
+     * tab of the session is told who it is now, and the ending is logged and counted as any Stop
+     * is. The administrator is then told why on that session's toast; a session with no live tab
+     * is told nothing ({@see self::raiseSessionToast()}). The rows are read when the frame
+     * arrives, and a takeover asked for after it is refused at its own start by this same holder.
+     *
+     * A session already out of its takeover - a Stop that got there first, a row that is gone - is
+     * passed over without a word. Any other failure of one session is logged and the walk goes on:
+     * the switch is off for everybody, and one broken row must not keep the rest inside somebody
+     * else's account. The write is then refused with the first such failure.
+     *
+     * @param AuthImpersonationOffApplySignalData $ask The original handover address
+     * @throws InvalidArgumentException When the handover answer cannot be routed
+     */
+    private function applyImpersonationOff(AuthImpersonationOffApplySignalData $ask): void
+    {
+        try {
+            $sessions = Hilos::$db->sessions->findImpersonating();
+        } catch (WiringRefusal $refusal) {
+            $this->logAgentError("Impersonation switched off is not wired: {$refusal->getMessage()}");
+            $this->sendToAgent(
+                $ask->replySignal,
+                HandoverAnswerSignalData::to($ask, ActionRefusal::fromThrowable($refusal)),
+            );
+
+            return;
+        } catch (Throwable $e) {
+            $refusal = ActionRefusal::fromThrowable($e);
+            if ($refusal->isInternal()) {
+                $this->logAgentError("Impersonation switched off apply failed: {$e->getMessage()}");
+            }
+            $this->sendToAgent($ask->replySignal, HandoverAnswerSignalData::to($ask, $refusal));
+
+            return;
+        }
+
+        $returned = [];
+        $failure = null;
+        foreach ($sessions as $session) {
+            // Read before the return: the rebind writes the administrator into the person's place.
+            $adminUserId = $session->impersonatorUserId;
+            $sessionToken = $session->token;
+            try {
+                $this->stopImpersonation($sessionToken, null, null);
+                $returned[] = $session->id;
+                $this->raiseSessionToast(new RaiseSessionToastSignalData(
+                    sessionTokenHash: StateProtectedModeRuntime::hashSessionToken($sessionToken),
+                    addresseeUserId: $adminUserId,
+                    message: ImpersonationMessages::ENDED_SWITCHED_OFF,
+                    severity: SessionToastSeverity::INFO,
+                    source: ImpersonationMessages::TOAST_SOURCE,
+                    destination: ImpersonationMessages::TOAST_DESTINATION,
+                ));
+            } catch (ValidationException) {
+                continue;
+            } catch (Throwable $e) {
+                $this->logAgentError("Impersonation switched off could not return session {$session->id}: {$e->getMessage()}");
+                $failure ??= $e;
+            }
+        }
+
+        if ($returned !== []) {
+            $this->logAgentInfo('impersonation_switched_off ' . json_encode([
+                'event' => 'impersonation_switched_off',
+                'sessions' => $returned,
+            ]));
+        }
+
+        $this->sendToAgent(
+            $ask->replySignal,
+            HandoverAnswerSignalData::to($ask, $failure === null ? null : ActionRefusal::fromThrowable($failure)),
+        );
     }
 
     /**

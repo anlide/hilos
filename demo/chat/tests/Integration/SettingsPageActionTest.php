@@ -15,6 +15,8 @@ use Hilos\Auth\Method\AuthMethodSettings;
 use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
 use Hilos\Auth\Method\EnabledAuthMethods;
 use Hilos\Auth\Method\PasskeyAddressPolicy;
+use Hilos\Auth\Impersonation\ImpersonationSettings;
+use Hilos\Auth\Library\DTO\AuthImpersonationOffApplySignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorDisableApplySignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorTrustDaysApplySignalData;
 use Hilos\Auth\SecondFactor\DTO\SecondFactorPolicySignalData;
@@ -850,6 +852,112 @@ final class SettingsPageActionTest extends IntegrationTestCase
     }
 
     /**
+     * Switching impersonation off hands the session holder the apply with the whole address of the
+     * write, and the settings library does not answer first (HIL-1308).
+     */
+    public function testSwitchingImpersonationOffDefersTheAnswer(): void
+    {
+        $this->withSettingsWriter(function (): void {
+            $this->deleteSettingIfExists(ImpersonationSettings::ALLOWED_KEY);
+            new SettingsLibraryAgent()->onSignalAgent(
+                new AgentSignalData(new SettingWriteSignalData(
+                    replySignal: 'impersonation-setting-done',
+                    acceptKey: 'impersonation-ak',
+                    requestId: 'impersonation-request',
+                    action: HilosSignalConstants::SETTING_UPDATE,
+                    successMessage: 'Impersonation saved.',
+                    key: ImpersonationSettings::ALLOWED_KEY,
+                    value: 'false',
+                )),
+                'test',
+                HilosSignalConstants::HILOS_SETTING_WRITE,
+            );
+            [$apply, $answers] = $this->impersonationOffFrames();
+
+            $this->assertFalse(ImpersonationSettings::isAllowed());
+            $this->assertSame([], $answers, 'The write waits for the session holder');
+            $this->assertCount(1, $apply);
+            $this->assertInstanceOf(AuthImpersonationOffApplySignalData::class, $apply[0]->data->data);
+            $this->assertSame([
+                'replySignal' => 'impersonation-setting-done',
+                'acceptKey' => 'impersonation-ak',
+                'requestId' => 'impersonation-request',
+                'action' => HilosSignalConstants::SETTING_UPDATE,
+                'successMessage' => 'Impersonation saved.',
+            ], $apply[0]->data->data->toArray());
+        }, [ImpersonationSettings::ALLOWED_KEY]);
+    }
+
+    /**
+     * Only a move from on to off returns anybody: off written over off, a reset to the default and
+     * switching it back on are answered at once and hand the session holder nothing (HIL-1308).
+     */
+    public function testImpersonationLeftOffOrBackOnAppliesNothing(): void
+    {
+        $this->withSettingsWriter(function (): void {
+            $this->deleteSettingIfExists(ImpersonationSettings::ALLOWED_KEY);
+            $this->writeFromTheConsole(ImpersonationSettings::ALLOWED_KEY, 'false');
+            $this->drainSignals();
+
+            $this->writeFromTheConsole(ImpersonationSettings::ALLOWED_KEY, 'false');
+            [$apply, $answers] = $this->impersonationOffFrames();
+            $this->assertSame([], $apply, 'Off over off');
+            $this->assertCount(1, $answers);
+            $this->assertNull($answers[0]->error);
+
+            new SettingsLibraryAgent()->onSignalAgent(
+                new AgentSignalData(new SettingResetSignalData(
+                    replySignal: HilosSignalConstants::HILOS_SETTING_COMMAND_DONE,
+                    acceptKey: '',
+                    requestId: 'impersonation-reset',
+                    action: CliCommands::SETTINGS_RESET,
+                    successMessage: null,
+                    key: ImpersonationSettings::ALLOWED_KEY,
+                )),
+                'test',
+                HilosSignalConstants::HILOS_SETTING_RESET,
+            );
+            [$apply, $answers] = $this->impersonationOffFrames();
+            $this->assertTrue(ImpersonationSettings::isAllowed());
+            $this->assertSame([], $apply, 'A reset to the default');
+            $this->assertCount(1, $answers);
+            $this->assertNull($answers[0]->error);
+
+            $this->writeFromTheConsole(ImpersonationSettings::ALLOWED_KEY, 'false');
+            $this->drainSignals();
+            $this->writeFromTheConsole(ImpersonationSettings::ALLOWED_KEY, 'true');
+            [$apply, $answers] = $this->impersonationOffFrames();
+            $this->assertTrue(ImpersonationSettings::isAllowed());
+            $this->assertSame([], $apply, 'Back on');
+            $this->assertCount(1, $answers);
+            $this->assertNull($answers[0]->error);
+        }, [ImpersonationSettings::ALLOWED_KEY]);
+    }
+
+    /**
+     * Whom may be taken over - a blocked person, a frozen person, another administrator - is judged
+     * at the start only: switching any of them off is answered at once and returns nobody (HIL-1308).
+     */
+    public function testWhomMayBeTakenOverSwitchedOffAppliesNothing(): void
+    {
+        $keys = [ImpersonationSettings::BLOCKED_KEY, ImpersonationSettings::FROZEN_KEY, ImpersonationSettings::EQUAL_KEY];
+        $this->withSettingsWriter(function () use ($keys): void {
+            foreach ($keys as $key) {
+                $this->deleteSettingIfExists($key);
+                $this->writeFromTheConsole($key, 'false');
+                [$apply, $answers] = $this->impersonationOffFrames();
+
+                $this->assertSame([], $apply, $key);
+                $this->assertCount(1, $answers, $key);
+                $this->assertNull($answers[0]->error, $key);
+            }
+            $this->assertFalse(ImpersonationSettings::allowsBlocked());
+            $this->assertFalse(ImpersonationSettings::allowsFrozen());
+            $this->assertFalse(ImpersonationSettings::allowsEqual());
+        }, $keys);
+    }
+
+    /**
      * Runs one settings action end to end: the page checks and forwards, the library writes.
      *
      * Both halves in one process, which is what makes this a test of the seam and not of one
@@ -952,6 +1060,28 @@ final class SettingsPageActionTest extends IntegrationTestCase
         }
 
         return [$apply, $answers, $policies];
+    }
+
+    /**
+     * Drains the queue once, sorting out what a write of an impersonation setting sent (HIL-1308).
+     *
+     * @return array{0: list<SignalDTO>, 1: list<HandoverAnswerSignalData>}
+     *     The impersonation switch-off applies handed to the session holder, and the answers, in the order sent
+     */
+    private function impersonationOffFrames(): array
+    {
+        $apply = [];
+        $answers = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() === HilosSignalConstants::HILOS_AUTH_IMPERSONATION_OFF_APPLY) {
+                $apply[] = $signal;
+            }
+            if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof HandoverAnswerSignalData) {
+                $answers[] = $signal->data->data;
+            }
+        }
+
+        return [$apply, $answers];
     }
 
     /**

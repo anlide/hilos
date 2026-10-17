@@ -17,6 +17,7 @@ use Hilos\Auth\Library\DTO\ProfilePasswordUpdatedSignalData;
 use Hilos\Auth\Library\DTO\ProfileSetPasswordActionDTO;
 use Hilos\Auth\Library\DTO\ProfileChangePasswordOpeningReplyDTO;
 use Hilos\Auth\Library\DTO\AuthOtherSessionsEndSignalData;
+use Hilos\Auth\Library\DTO\AuthImpersonationOffApplySignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorTrustDaysApplySignalData;
 use Hilos\Auth\Library\DTO\ProfileChangePasswordOpenActionDTO;
 use Hilos\Auth\Library\DTO\ProfileChangePasswordCodeRequestActionDTO;
@@ -203,6 +204,22 @@ final class ProfileActionDTOTest extends TestCase
         self::assertSame($dto->toArray(), AuthSecondFactorTrustDaysApplySignalData::fromJson($dto->toJson())->toArray());
         $this->expectException(InvalidFormatException::class);
         AuthSecondFactorTrustDaysApplySignalData::fromArray(['trustDays' => 7]);
+    }
+
+    /** The session holder receives the original answer address of the write that switched impersonation off. */
+    public function testImpersonationOffHandoverRoundTrips(): void
+    {
+        $dto = new AuthImpersonationOffApplySignalData('reply', 'accept', 'request-1', 'setting_update', 'Saved');
+        self::assertSame([
+            'replySignal' => 'reply',
+            'acceptKey' => 'accept',
+            'requestId' => 'request-1',
+            'action' => 'setting_update',
+            'successMessage' => 'Saved',
+        ], $dto->toArray());
+        self::assertSame($dto->toArray(), AuthImpersonationOffApplySignalData::fromJson($dto->toJson())->toArray());
+        $this->expectException(InvalidFormatException::class);
+        AuthImpersonationOffApplySignalData::fromArray(['acceptKey' => 'accept', 'action' => 'setting_update']);
     }
 
     /**

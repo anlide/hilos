@@ -15,6 +15,7 @@ use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
 use Hilos\Auth\Code\DTO\CodeSendProgressSignalData;
 use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
 use Hilos\Auth\Impersonation\DTO\ImpersonationPolicySignalData;
+use Hilos\Auth\Library\DTO\AuthImpersonationOffApplySignalData;
 use Hilos\Auth\Library\DTO\AuthOtherSessionsEndSignalData;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
@@ -2041,6 +2042,13 @@ final class HilosSignalConstants
      * Carried by {@see AuthSecondFactorDisableApplySignalData}.
      */
     public const string HILOS_AUTH_SECOND_FACTOR_DISABLE_APPLY = 'hilos_auth_second_factor_disable_apply';
+
+    /**
+     * Settings library → session holder: return every takeover to its administrator before answering
+     * the write that switched impersonation off (HIL-1308).
+     * Carried by {@see AuthImpersonationOffApplySignalData}.
+     */
+    public const string HILOS_AUTH_IMPERSONATION_OFF_APPLY = 'hilos_auth_impersonation_off_apply';
 
     /**
      * Users library → session holder: end the other sessions after a password change (HIL-300).

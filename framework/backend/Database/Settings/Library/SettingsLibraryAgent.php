@@ -10,6 +10,7 @@ use Hilos\Auth\Method\PasskeyAddressPolicy;
 use Hilos\Auth\SecondFactor\DTO\SecondFactorPolicySignalData;
 use Hilos\Auth\SecondFactor\SecondFactorPolicy;
 use Hilos\Auth\SecondFactor\SecondFactorSettings;
+use Hilos\Auth\Library\DTO\AuthImpersonationOffApplySignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorDisableApplySignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorTrustDaysApplySignalData;
 use Hilos\Auth\StepUp\StepUpOperationKey;
@@ -590,7 +591,7 @@ final class SettingsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Announces installation-wide changes and answers once any trust reduction, or the second factor turned off, has landed.
+     * Announces installation-wide changes and answers once a trust reduction, the second factor or impersonation turned off has landed.
      *
      * A refused write changed nothing and sends nothing. Neither does a write the method set
      * could not be read around: the set is then unknown on both sides of it, and the next write
@@ -610,7 +611,10 @@ final class SettingsLibraryAgent extends AbstractAgent
      *
      * So is the impersonation policy (HIL-1170): a write that moved "only look" or the carried
      * admin rights is told to every connection, so a tab open inside a takeover redraws its strip,
-     * its switched-off buttons and its gear at once.
+     * its switched-off buttons and its gear at once. A write that switched impersonation itself off
+     * (HIL-1308) - by whichever door - is also held unanswered until the session holder has
+     * returned every takeover under way to its administrator. Switching it back on, a key reset to
+     * its default or a row dropped returns nobody: the default allows it.
      *
      * The theme settings (HIL-1428) travel as a complete pair after either value changes.
      * An unreadable pair is logged and cannot be compared to a fabricated default.
@@ -647,7 +651,9 @@ final class SettingsLibraryAgent extends AbstractAgent
             && $policyAfter->trustDays === $policyBefore?->trustDays;
         $disabled = $policyBefore?->enabled === true && $policyAfter?->enabled === false;
         $deferAnswer = $shortened || $retry || $disabled;
-        if (!$deferAnswer && (!$touchesTrustDays || $policyAfter !== null)) {
+        $impersonationAfter = $impersonationBefore === null ? null : $this->impersonationPolicy();
+        $impersonationClosed = $impersonationBefore?->allowed === true && $impersonationAfter?->allowed === false;
+        if (!$deferAnswer && !$impersonationClosed && (!$touchesTrustDays || $policyAfter !== null)) {
             $this->answer($ask, null);
         }
 
@@ -661,7 +667,6 @@ final class SettingsLibraryAgent extends AbstractAgent
             $this->sendToAllConnected(HilosSignalConstants::HILOS_CODE_DELIVERY, $deliveryAfter);
         }
 
-        $impersonationAfter = $impersonationBefore === null ? null : $this->impersonationPolicy();
         if ($impersonationAfter !== null && $impersonationAfter->toArray() !== $impersonationBefore->toArray()) {
             $this->sendToAllConnected(HilosSignalConstants::HILOS_IMPERSONATION_POLICY, $impersonationAfter);
         }
@@ -676,6 +681,27 @@ final class SettingsLibraryAgent extends AbstractAgent
             if ($announced->toArray() !== SecondFactorPolicySignalData::of($policyBefore)->toArray()) {
                 $this->sendToAllConnected(HilosSignalConstants::HILOS_SECOND_FACTOR_POLICY, $announced);
             }
+        }
+
+        // One write moves one key, and no preset group holds the switch, so a write that switched
+        // impersonation off touched neither the second factor nor its trust term.
+        if ($impersonationClosed) {
+            try {
+                $this->sendToAgent(
+                    HilosSignalConstants::HILOS_AUTH_IMPERSONATION_OFF_APPLY,
+                    new AuthImpersonationOffApplySignalData(
+                        replySignal: $ask->replySignal,
+                        acceptKey: $ask->acceptKey,
+                        requestId: $ask->requestId,
+                        action: $ask->action,
+                        successMessage: $ask->successMessage,
+                    ),
+                );
+            } catch (HilosException $e) {
+                $this->answer($ask, $this->refusal($e, 'Impersonation switch-off could not be sent to the session holder'));
+            }
+
+            return;
         }
 
         if ($touchesTrustDays && $policyAfter === null) {
