@@ -29,7 +29,7 @@ test('the viewport table has an accessible name and a labelled search', async ({
   await signUpAdmin(page)
   await openSettings(page)
 
-  // The page heading is the table's accessible name: a declared table carries no
+  // The page heading is the table's accessible name: a table carries no
   // title of its own, and points at the heading that already names it.
   await expect(page.getByRole('table', { name: 'Settings' })).toBeVisible()
 

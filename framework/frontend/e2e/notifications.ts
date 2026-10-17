@@ -53,7 +53,7 @@ export function unreadBadge(page: Page): Locator {
  * @param page Page of a signed-in administrator on the communications hub.
  */
 export async function enableEmailChannel(page: Page): Promise<void> {
-  // The switch stands in a cell, and the hub is a declared table drawn both as rows
+  // The switch stands in a cell, and the hub is a table drawn both as rows
   // and as cards, so it is aimed at through the copy on screen.
   const toggle = shownByTestId(page, EMAIL_CHANNEL_SWITCH)
   await toggle.waitFor({ state: 'visible' })

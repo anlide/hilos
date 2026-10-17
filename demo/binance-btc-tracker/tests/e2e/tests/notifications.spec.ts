@@ -416,7 +416,7 @@ test("an operator reaches a channel's delivery journal by clicks alone", async (
   await grantAdminToSelf(page)
   await gotoPage(page, '/hilos/communications')
 
-  // The hub is a declared table drawn both as rows and as cards, so the button
+  // The hub is a table drawn both as rows and as cards, so the button
   // is aimed at through the copy on screen.
   await shownByTestId(page, 'hilos-channel-configure-email').click()
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('Channel')

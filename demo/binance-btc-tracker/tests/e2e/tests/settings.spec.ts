@@ -164,7 +164,7 @@ test('a third click on a sorted header returns the table to its initial order', 
 test('a narrow window draws the settings as cards and never scrolls sideways', async ({
   page,
 }) => {
-  // HIL-806 acceptance. A declared table is a table on a wide screen and a list of
+  // HIL-806 acceptance. A table is a table on a wide screen and a list of
   // cards on a narrow one; both are mounted, and Bootstrap's display utilities show
   // exactly one of them. What a phone must never get is the wide table squeezed
   // into a sideways scroll — the thing the cards exist to replace.

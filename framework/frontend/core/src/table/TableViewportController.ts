@@ -1,8 +1,7 @@
-// The headless SERVER-WINDOWED table controller (table-subscription.md). Unlike
-// the client-side TableController — which filters/sorts/paginates all delivered
-// rows locally — here the window comes from the backend: the view's intents
-// (search / sort / paginate) change the viewport descriptor and are sent to the
-// server, which replies a table_window snapshot the controller displays.
+// The headless SERVER-WINDOWED table controller (table-subscription.md). The
+// window comes from the backend: the view's intents (search / sort / paginate)
+// change the viewport descriptor and are sent to the server, which replies a
+// table_window snapshot the controller displays.
 //
 // Changes to the SHOWN rows arrive as table_viewport_delta, and what the gate holds
 // is POSITION and MEMBERSHIP, not the fields of a record: a value that left the row
@@ -491,14 +490,10 @@ export interface TableViewportControllerOptions<R> {
   declaredOrders?: readonly HilosTableSortOrder[]
   /**
    * What this table's page declares about its frame — title, search, filters,
-   * main action, columns, bulk actions, empty state. Optional because a table
-   * that declares nothing still has a frame state to read: the footer and the
-   * body follow from the window, not from the declaration. A table that declares
-   * none is drawn from the props its view is handed instead — the older of the
-   * two ways a view is given its columns, which the framework's log pages still
-   * take.
+   * main action, columns, bulk actions, empty state. It is the one way a table
+   * is built: a view draws every part of the table from it.
    */
-  frame?: HilosTableFrame
+  frame: HilosTableFrame
 }
 
 export class TableViewportController<R> implements TableWindowSink {
@@ -514,7 +509,7 @@ export class TableViewportController<R> implements TableWindowSink {
     Readonly<Record<string, readonly unknown[]>>
   >
 
-  /** Fields of a row the declared columns draw, empty when the table declares no frame. */
+  /** Fields of a row the declared columns draw, empty when no declared column draws a field of the row. */
   private readonly renderedKeys: ReadonlySignal<readonly string[]>
 
   private readonly orderSignal: WritableSignal<TableSortOrder | undefined>
@@ -774,20 +769,8 @@ export class TableViewportController<R> implements TableWindowSink {
    */
   readonly focusedRow: ReadonlySignal<R | undefined>
 
-  /** Total rows matching the filter, as the last applied window/change reported. */
-  readonly totalCount: ReadonlySignal<number>
-
-  /**
-   * Whether {@link totalCount} is the size of the set rather than the ceiling it stopped at.
-   *
-   * The backend counts a windowed query only up to a ceiling, so past it the total is that
-   * ceiling and reads as "at least this many". Everything a reader gets from the total —
-   * the page count, the numbered pages, the end of the set — follows from this too.
-   */
-  readonly totalExact: ReadonlySignal<boolean>
-
   /** Number of pages under the window size; at least 1, and null while the total is not exact. */
-  readonly pageCount: ReadonlySignal<number | null>
+  private readonly pageCount: ReadonlySignal<number | null>
 
   /**
    * Rows of the set standing before the window, or null while the window reports no place.
@@ -819,7 +802,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * answer is read off the window itself: a window filled to its size has rows behind it,
    * and a short one is the end of the set.
    */
-  readonly hasNextPage: ReadonlySignal<boolean>
+  private readonly hasNextPage: ReadonlySignal<boolean>
 
   /**
    * Whether there is a page before this one to go to.
@@ -828,7 +811,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * including from a window that came back empty, which is reached from the address it was
    * asked by rather than from rows it does not have. Otherwise it is the count of presses.
    */
-  readonly hasPreviousPage: ReadonlySignal<boolean>
+  private readonly hasPreviousPage: ReadonlySignal<boolean>
 
   /**
    * Whether the pager has anywhere to lead: false when the whole set fits on one page.
@@ -837,7 +820,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * the appearance of navigation rather than navigation. An inexact count keeps the pager
    * always, because whether a next page exists cannot be known.
    */
-  readonly paginated: ReadonlySignal<boolean>
+  private readonly paginated: ReadonlySignal<boolean>
 
   /** Count of accumulated pending changes (the badge); 0 when there is nothing to apply. */
   readonly pendingCount: ReadonlySignal<number>
@@ -940,8 +923,6 @@ export class TableViewportController<R> implements TableWindowSink {
 
       return body === null ? undefined : options.resolve(body)
     })
-    this.totalCount = this.totalCountSignal
-    this.totalExact = this.totalExactSignal
     this.pageCount = computedSignal(() =>
       this.totalExactSignal.get()
         ? Math.max(
@@ -987,16 +968,16 @@ export class TableViewportController<R> implements TableWindowSink {
     this.pendingCount = this.pendingCountSignal
     this.announced = this.announcedSignal
     this.loaded = this.loadedSignal
-    const declaration = options.frame ?? null
+    const declaration = options.frame
     const resolvedFrame = computedSignal(() => ({
       columns:
-        typeof declaration?.columns === 'function'
+        typeof declaration.columns === 'function'
           ? declaration.columns()
-          : (declaration?.columns ?? []),
+          : declaration.columns,
       filters:
-        typeof declaration?.filters === 'function'
+        typeof declaration.filters === 'function'
           ? declaration.filters()
-          : (declaration?.filters ?? []),
+          : (declaration.filters ?? []),
     }))
     const columns = computedSignal(() => resolvedFrame.get().columns)
     const filters = computedSignal(() => resolvedFrame.get().filters)
@@ -1176,11 +1157,9 @@ export class TableViewportController<R> implements TableWindowSink {
     this.frameState = {
       declaration,
       columns,
-      card: computedSignal(() =>
-        declaration ? hilosTableCard(columns.get()) : null,
-      ),
+      card: computedSignal(() => hilosTableCard(columns.get())),
       searchPlaceholder: computedSignal(() => {
-        const placeholder = declaration?.search?.placeholder
+        const placeholder = declaration.search?.placeholder
         return typeof placeholder === 'function' ? placeholder() : placeholder
       }),
       filters: filterViews,
@@ -1244,7 +1223,7 @@ export class TableViewportController<R> implements TableWindowSink {
     // A table has marks exactly when its page declared bulk operations: one sign,
     // the one that already exists. A second one ("this table is selectable") would
     // drift from it and give a table with no operations a column leading nowhere.
-    const selectionEnabled = (declaration?.bulkActions?.length ?? 0) > 0
+    const selectionEnabled = (declaration.bulkActions?.length ?? 0) > 0
     const selectedRows = computedSignal(() =>
       this.rows.get().filter((row) => row.selected),
     )
@@ -1331,10 +1310,9 @@ export class TableViewportController<R> implements TableWindowSink {
 
   /**
    * The frame state a view renders the bar and the footer from: what the page
-   * declared, and the parts that follow from the window. A table that declared
-   * no frame still has one to read — `declaration` is then null. Every view reads
-   * it for the bar and the footer, and reads its `card` for the card a row
-   * projects to on a narrow screen.
+   * declared, and the parts that follow from the window. Every view reads it for
+   * the bar and the footer, and reads its `card` for the card a row projects to
+   * on a narrow screen.
    */
   get frame(): HilosTableFrameState {
     return this.frameState
@@ -1387,11 +1365,6 @@ export class TableViewportController<R> implements TableWindowSink {
    */
   get bulk(): HilosTableBulkState {
     return this.bulkState
-  }
-
-  /** The current zero-based page index, read out of {@link rowsBefore} where there is one. */
-  get page(): ReadonlySignal<number> {
-    return this.pageNumber
   }
 
   /**
@@ -3085,7 +3058,7 @@ export class TableViewportController<R> implements TableWindowSink {
       anchor: this.anchor,
       anchorDirection: this.anchorDirection,
       pageIndex: this.pageIndex,
-      ...(this.options.frame ? { rendered: this.renderedKeys.get() } : {}),
+      rendered: this.renderedKeys.get(),
     }
   }
 

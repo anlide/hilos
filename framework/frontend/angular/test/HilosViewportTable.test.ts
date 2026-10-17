@@ -139,7 +139,7 @@ class MarkedTableHost {
 }
 
 /**
- * A page drawing a declared table inside the admin shell, the way the framework's
+ * A page drawing a table inside the admin shell, the way the framework's
  * admin pages do: the table is handed its controller and its cells, and nothing else.
  */
 @Component({
@@ -283,7 +283,7 @@ const STATE_COLUMNS: HilosTableColumn[] = [
   { key: 'kind', label: 'Kind' },
 ]
 
-/** A host drawing a declared table over two columns, one of them marked. */
+/** A host drawing a table over two columns, one of them marked. */
 @Component({
   selector: 'test-states-table-host',
   imports: [HilosTableCell, HilosViewportTable],
@@ -886,7 +886,7 @@ describe('HilosViewportTable with a declared frame', () => {
 })
 
 describe('HilosViewportTable on an admin page', () => {
-  /** A declared table with no title of its own — the one table of such a page. */
+  /** A table with no title of its own — the one table of such a page. */
   const UNTITLED: HilosTableFrame = {
     search: {},
     columns: COLUMNS,

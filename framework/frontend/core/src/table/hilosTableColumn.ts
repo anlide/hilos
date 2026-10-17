@@ -44,11 +44,10 @@ export interface HilosTableColumn {
   headerClass?: string
   /**
    * Extra classes for this column's body cell, e.g. `text-end` under a numeric
-   * header. Only the wide branch of a DECLARED table reads it — the one place the
+   * header. Only the wide branch of a table reads it — the one place the
    * framework draws the cell itself. The card does not: a line of a description
    * list is not a cell of a table, and the alignment of a column means nothing
-   * once the column is a labelled line. A table drawing its frame from props does
-   * not either, its page writing the `<td>` with its own classes on it.
+   * once the column is a labelled line.
    */
   cellClass?: string
   /**

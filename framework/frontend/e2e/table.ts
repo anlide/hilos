@@ -1,6 +1,6 @@
 import type { Expect, Locator, Page } from '@playwright/test'
 
-// A declared table stands in the document twice: as a table for a wide screen and
+// A table stands in the document twice: as a table for a wide screen and
 // as a list of cards for a narrow one, both mounted at once and one of them hidden
 // by Bootstrap's display utilities (docs/agents/frontend/table-subscription.md,
 // "The card a row projects to"). So every `data-id` a page writes into a cell is in
@@ -29,7 +29,7 @@ export const ROW_PREFIX = 'hilos-table-row-'
 export const ROWS = `tbody [data-id^="${ROW_PREFIX}"]:not([data-id^="${ROW_PREFIX}detail-"])`
 
 /**
- * The copies of an element that are on screen, for an element a declared table
+ * The copies of an element that are on screen, for an element a table
  * draws in both its branches.
  *
  * @param scope The page, or a locator the element stands inside.
@@ -46,7 +46,7 @@ export function shownByTestId(
 /**
  * How far the page reaches sideways, in pixels: once for the shell's own scrolling
  * container, where an admin page lives (HilosLayout), and once for the document
- * around it. A declared table turns into cards on a narrow screen precisely so a
+ * around it. A table turns into cards on a narrow screen precisely so a
  * phone never gets the wide table in a sideways scroll, so `[0, 0]` is what a narrow
  * window over such a table must read.
  *
@@ -67,7 +67,7 @@ export function sidewaysOverflow(page: Page): Promise<number[]> {
 }
 
 /**
- * Settle a declared table after a row the page itself removed on the server: the
+ * Settle a table after a row the page itself removed on the server: the
  * ordinary removal gate of the table may leave this window owing an Apply, or may
  * take the row out at once, so the step waits for either and presses Apply where
  * it is offered. At the end the removed row's control is gone from both branches

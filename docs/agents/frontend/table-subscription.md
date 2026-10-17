@@ -201,7 +201,7 @@ states again.
 The declaration is one value, `HilosTableFrame`
 (`framework/frontend/core/src/table/tableFrame.ts`), handed to the controller as
 its `frame` option. This is the only way to build a table: `frame` is required,
-so a table cannot be built without its declaration (not in the code yet — HIL-1346).
+so a table cannot be built without its declaration.
 
 | Declared | What it is |
 |---|---|

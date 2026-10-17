@@ -5,7 +5,7 @@ import { dismissToasts } from './toasts.js'
 
 /**
  * Prefix of each setting row's edit control in all three SDKs. The control lives in a
- * cell, and a declared table draws its cells twice — once in the row and once in the
+ * cell, and a table draws its cells twice — once in the row and once in the
  * card — so it is always looked up through the copy on screen.
  */
 const SETTING_EDIT_PREFIX = 'hilos-settings-edit-'

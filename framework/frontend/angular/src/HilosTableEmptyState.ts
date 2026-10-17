@@ -70,7 +70,7 @@ function filterTerm(view: HilosTableFilterView): string {
   template: `
     @if (kind() === 'empty') {
       <div class="text-center py-4" role="status" data-id="hilos-table-empty">
-        @if (declaration()?.empty; as empty) {
+        @if (declaration().empty; as empty) {
           <i
             class="bi bi-inbox fs-1 text-body-secondary mb-2 d-block"
             aria-hidden="true"
@@ -95,11 +95,11 @@ function filterTerm(view: HilosTableFilterView): string {
           <!-- A frame without an empty declaration uses the words the page
           passed in the #empty template: the log tables and the daemon section
           speak that way. -->
-          <div class="text-muted" [class.mb-3]="!!declaration()?.mainAction">
+          <div class="text-muted" [class.mb-3]="!!declaration().mainAction">
             <ng-container [ngTemplateOutlet]="fallback()" />
           </div>
         }
-        @if (declaration()?.mainAction; as mainAction) {
+        @if (declaration().mainAction; as mainAction) {
           <button
             type="button"
             class="btn btn-sm btn-primary"
@@ -202,9 +202,8 @@ export class HilosTableEmptyState<R> {
    */
   readonly fallback = input.required<TemplateRef<unknown>>()
 
-  // What the page declared about the frame, or null when it declared nothing. It
-  // does not change over the life of a table, so it is read off the controller
-  // rather than mirrored as a signal.
+  // What the page declared about the frame. It does not change over the life of a
+  // table, so it is read off the controller rather than mirrored as a signal.
   protected readonly declaration = computed(
     () => this.controller().frame.declaration,
   )

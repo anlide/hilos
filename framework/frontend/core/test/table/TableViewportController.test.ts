@@ -21,6 +21,7 @@ function makeController(pageSize = 10, initialOrder?: TableSortOrder) {
   const controller = new TableViewportController<TableRow>({
     resolve: (row) => row,
     sendViewport: (descriptor) => sent.push(descriptor),
+    frame: { columns: [] },
   })
 
   // Deliver a window the way the page's own answer does — which is also the only frame that
@@ -70,6 +71,7 @@ describe('TableViewportController', () => {
       anchor: null,
       anchorDirection: 'after',
       pageIndex: null,
+      rendered: [],
     })
   })
 
@@ -169,17 +171,6 @@ describe('TableViewportController', () => {
     expect(sent.at(-1)?.rendered).toEqual(['name'])
   })
 
-  it('a table that declares no frame carries no drawn fields at all', () => {
-    const { controller, sent, open } = makeController()
-
-    open()
-    controller.setSort('name')
-
-    // Absent rather than empty: absence is what asks the server to compare the whole row.
-    expect(sent.at(-1)).not.toHaveProperty('rendered')
-    expect(controller.descriptor()).not.toHaveProperty('rendered')
-  })
-
   it('takes the size and the order of its window from the window itself', () => {
     const { controller, open } = makeController(25, [
       { field: 'id', direction: 'desc' },
@@ -198,6 +189,7 @@ describe('TableViewportController', () => {
     const controller = new TableViewportController<TableRow>({
       resolve: (row) => row,
       sendViewport: (descriptor) => sent.push(descriptor),
+      frame: { columns: [] },
       initialFilter: { channel: 'mail' },
     })
     const everyChannel: TableRow[] = [
@@ -228,6 +220,7 @@ describe('TableViewportController', () => {
         anchor: null,
         anchorDirection: 'after',
         pageIndex: null,
+        rendered: [],
       },
     ])
 
@@ -243,6 +236,7 @@ describe('TableViewportController', () => {
     const controller = new TableViewportController<TableRow>({
       resolve: (row) => row,
       sendViewport: (descriptor) => sent.push(descriptor),
+      frame: { columns: [] },
       initialFilter: { channel: '' },
     })
 
@@ -275,6 +269,7 @@ describe('TableViewportController', () => {
       anchor: null,
       anchorDirection: 'after',
       pageIndex: null,
+      rendered: [],
     })
   })
 
@@ -290,6 +285,7 @@ describe('TableViewportController', () => {
       anchor: null,
       anchorDirection: 'after',
       pageIndex: null,
+      rendered: [],
     })
   })
 
@@ -306,6 +302,7 @@ describe('TableViewportController', () => {
       anchor: null,
       anchorDirection: 'after',
       pageIndex: null,
+      rendered: [],
     })
   })
 
@@ -323,6 +320,7 @@ describe('TableViewportController', () => {
       anchor: null,
       anchorDirection: 'after',
       pageIndex: null,
+      rendered: [],
     })
   })
 
@@ -340,6 +338,7 @@ describe('TableViewportController', () => {
       anchor: null,
       anchorDirection: 'after',
       pageIndex: null,
+      rendered: [],
     })
   })
 
@@ -347,6 +346,7 @@ describe('TableViewportController', () => {
     const controller = new TableViewportController<TableRow>({
       resolve: (row) => row,
       sendViewport: () => {},
+      frame: { columns: [] },
       initialFilter: { state: 'due' },
     })
 
@@ -406,6 +406,7 @@ describe('TableViewportController', () => {
       anchor: null,
       anchorDirection: 'after',
       pageIndex: null,
+      rendered: [],
     })
   })
 
@@ -446,6 +447,7 @@ describe('TableViewportController', () => {
       anchor: null,
       anchorDirection: 'after',
       pageIndex: null,
+      rendered: [],
     })
   })
 
@@ -468,8 +470,9 @@ describe('TableViewportController', () => {
       anchor: null,
       anchorDirection: 'after',
       pageIndex: null,
+      rendered: [],
     })
-    expect(controller.page.get()).toBe(0)
+    expect(controller.frame.footer.get().page).toBe(0)
   })
 
   it('a header click leaves a composite order rather than adding to it', () => {
@@ -500,6 +503,7 @@ describe('TableViewportController', () => {
     const controller = new TableViewportController<TableRow>({
       resolve: (row) => row,
       sendViewport: () => {},
+      frame: { columns: [] },
       declaredOrders,
     })
 
@@ -728,7 +732,7 @@ describe('TableViewportController', () => {
 
     controller.nextPage()
 
-    expect(controller.page.get()).toBe(1)
+    expect(controller.frame.footer.get().page).toBe(1)
     expect(sent.at(-1)).toMatchObject({
       anchor: { id: 10 },
       anchorDirection: 'after',
@@ -744,7 +748,7 @@ describe('TableViewportController', () => {
 
     controller.prevPage()
 
-    expect(controller.page.get()).toBe(2)
+    expect(controller.frame.footer.get().page).toBe(2)
     expect(sent.at(-1)).toMatchObject({
       anchor: { id: 31 },
       anchorDirection: 'before',
@@ -759,7 +763,7 @@ describe('TableViewportController', () => {
     controller.prevPage()
     controller.nextPage()
 
-    expect(controller.page.get()).toBe(0)
+    expect(controller.frame.footer.get().page).toBe(0)
     expect(sent).toEqual([])
   })
 
@@ -769,7 +773,7 @@ describe('TableViewportController', () => {
 
     controller.nextPage()
 
-    expect(controller.page.get()).toBe(0)
+    expect(controller.frame.footer.get().page).toBe(0)
     expect(sent).toEqual([])
   })
 
@@ -779,7 +783,7 @@ describe('TableViewportController', () => {
     controller.nextPage()
     controller.setFilter('status', 'failed')
 
-    expect(controller.page.get()).toBe(0)
+    expect(controller.frame.footer.get().page).toBe(0)
     expect(sent.at(-1)).toMatchObject({
       anchor: null,
       anchorDirection: 'after',
@@ -805,8 +809,8 @@ describe('TableViewportController', () => {
         staleSources: [],
       },
     ])
-    expect(controller.totalCount.get()).toBe(42)
-    expect(controller.pageCount.get()).toBe(5)
+    expect(controller.frame.footer.get().totalCount).toBe(42)
+    expect(controller.frame.footer.get().pageCount).toBe(5)
   })
 
   it('marks a shown row stale without touching its values or its pending change', () => {
@@ -1382,7 +1386,7 @@ describe('TableViewportController', () => {
     open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
     controller.ingestCount(5, true)
 
-    expect(controller.totalCount.get()).toBe(5)
+    expect(controller.frame.footer.get().totalCount).toBe(5)
     expect(controller.pendingCount.get()).toBe(0)
   })
 
@@ -1397,7 +1401,7 @@ describe('TableViewportController', () => {
       inside: 1,
       total: 2,
     })
-    expect(controller.totalCount.get()).toBe(3)
+    expect(controller.frame.footer.get().totalCount).toBe(3)
     expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['a'])
     expect(controller.pendingCount.get()).toBe(0)
   })
@@ -1431,7 +1435,7 @@ describe('TableViewportController', () => {
       inside: 0,
       total: 0,
     })
-    expect(controller.totalCount.get()).toBe(1)
+    expect(controller.frame.footer.get().totalCount).toBe(1)
   })
 
   it('moves nothing when the same row is taken back twice', () => {
@@ -1460,7 +1464,7 @@ describe('TableViewportController', () => {
     // were not woken by a delete that changes nothing on the strip.
     expect(controller.announced.get()).toBe(before)
     expect(before).toEqual({ above: 1, inside: 0, total: 1 })
-    expect(controller.totalCount.get()).toBe(2)
+    expect(controller.frame.footer.get().totalCount).toBe(2)
   })
 
   it('forgets what was announced when any window arrives', () => {
@@ -1516,7 +1520,7 @@ describe('TableViewportController', () => {
 
     const rows = controller.rows.get()
     expect(rows.map((row) => row.rowKey)).toEqual(['a', 'b'])
-    expect(controller.totalCount.get()).toBe(2)
+    expect(controller.frame.footer.get().totalCount).toBe(2)
     expect(controller.pendingCount.get()).toBe(0)
   })
 
@@ -1544,7 +1548,7 @@ describe('TableViewportController', () => {
 
     const rows = controller.rows.get()
     expect(rows.map((row) => row.rowKey)).toEqual(['a', 'b', 'c'])
-    expect(controller.totalCount.get()).toBe(3)
+    expect(controller.frame.footer.get().totalCount).toBe(3)
     expect(controller.pendingCount.get()).toBe(0)
     expect(controller.ownCreateRequestId.get()).toBe('req-1')
   })
@@ -1571,7 +1575,7 @@ describe('TableViewportController', () => {
     )
 
     expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['a', 'b'])
-    expect(controller.totalCount.get()).toBe(3)
+    expect(controller.frame.footer.get().totalCount).toBe(3)
   })
 
   it('an evicted row takes its pending change and its placeholder with it', () => {
@@ -1930,7 +1934,7 @@ describe('TableViewportController', () => {
 
     expect(controller.frame.body.get()).toBe('unavailable')
     expect(controller.rows.get()).toEqual([])
-    expect(controller.totalCount.get()).toBe(0)
+    expect(controller.frame.footer.get().totalCount).toBe(0)
     expect(controller.progress.table.get()?.progressKey).toBe('nightly')
   })
 
@@ -2619,7 +2623,7 @@ describe('TableViewportController', () => {
 
     // A bar is not a record of the set: it enters no count, takes no checkbox, and the
     // key it names need not be a row of the window at all.
-    expect(controller.totalCount.get()).toBe(1)
+    expect(controller.frame.footer.get().totalCount).toBe(1)
     expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['a'])
     expect(controller.selection.count.get()).toBe(0)
   })
@@ -2652,6 +2656,7 @@ describe('TableViewportController window place', () => {
     const controller = new TableViewportController<TableRow>({
       resolve: (row) => row,
       sendViewport: (descriptor) => sent.push(descriptor),
+      frame: { columns: [] },
     })
     const open = (
       rows: readonly TableRow[],
@@ -2694,7 +2699,7 @@ describe('TableViewportController window place', () => {
 
     // Eleven before it and ten in it is the whole set: there is nothing behind this window,
     // even though its place is not the last page number the count allows.
-    expect(controller.hasNextPage.get()).toBe(false)
+    expect(controller.frame.footer.get().hasNextPage).toBe(false)
     expect(controller.frame.footer.get().hasNextPage).toBe(false)
   })
 
@@ -2703,9 +2708,9 @@ describe('TableViewportController window place', () => {
     open(tail(), 21, 11, { id: 12 }, { id: 21 })
 
     controller.ingestAnnounce('new-above', 'above', 22, true)
-    expect(controller.hasNextPage.get()).toBe(false)
+    expect(controller.frame.footer.get().hasNextPage).toBe(false)
     controller.ingestAnnounce('new-inside', 'inside', 23, true)
-    expect(controller.hasNextPage.get()).toBe(false)
+    expect(controller.frame.footer.get().hasNextPage).toBe(false)
     expect(controller.frame.footer.get().totalCount).toBe(23)
     expect(controller.rowsBefore.get()).toBe(11)
   })
@@ -2713,28 +2718,28 @@ describe('TableViewportController window place', () => {
   it('keeps Next available after deletes above it when the server still finds rows after it', () => {
     const { controller, open } = makePlaced()
     open(tail(), 23, 10, { id: 12 }, { id: 21 })
-    expect(controller.hasNextPage.get()).toBe(true)
+    expect(controller.frame.footer.get().hasNextPage).toBe(true)
 
     controller.ingestCount(20, true, true)
-    expect(controller.hasNextPage.get()).toBe(true)
+    expect(controller.frame.footer.get().hasNextPage).toBe(true)
     expect(controller.frame.footer.get().hasNextPage).toBe(true)
     controller.ingestCount(19, true, false)
-    expect(controller.hasNextPage.get()).toBe(false)
+    expect(controller.frame.footer.get().hasNextPage).toBe(false)
   })
 
   it('turns Next on and off when a count keeps the total and only the edge changes', () => {
     const { controller, open } = makePlaced()
     open(tail(), 21, 11, { id: 12 }, { id: 21 })
-    expect(controller.hasNextPage.get()).toBe(false)
+    expect(controller.frame.footer.get().hasNextPage).toBe(false)
 
     // The total is the one the window already holds. Next follows the word in the frame.
     controller.ingestCount(21, true, true)
-    expect(controller.hasNextPage.get()).toBe(true)
+    expect(controller.frame.footer.get().hasNextPage).toBe(true)
     expect(controller.frame.footer.get().hasNextPage).toBe(true)
     expect(controller.frame.footer.get().totalCount).toBe(21)
 
     controller.ingestCount(21, true, false)
-    expect(controller.hasNextPage.get()).toBe(false)
+    expect(controller.frame.footer.get().hasNextPage).toBe(false)
     expect(controller.frame.footer.get().hasNextPage).toBe(false)
     expect(controller.frame.footer.get().totalCount).toBe(21)
   })
@@ -2749,15 +2754,15 @@ describe('TableViewportController window place', () => {
       rowKey: 'row-12',
       reason: 'deleted',
     })
-    expect(controller.hasNextPage.get()).toBe(true)
+    expect(controller.frame.footer.get().hasNextPage).toBe(true)
     controller.apply()
-    expect(controller.hasNextPage.get()).toBe(true)
+    expect(controller.frame.footer.get().hasNextPage).toBe(true)
   })
 
   it('opens Next when an own create pushes a row beyond the window', () => {
     const { controller, open } = makePlaced()
     open(tail(), 21, 11, { id: 12 }, { id: 21 })
-    expect(controller.hasNextPage.get()).toBe(false)
+    expect(controller.frame.footer.get().hasNextPage).toBe(false)
 
     controller.ingestOwnCreate(
       { rowKey: 'new', slots: {} },
@@ -2768,7 +2773,7 @@ describe('TableViewportController window place', () => {
       null,
     )
 
-    expect(controller.hasNextPage.get()).toBe(true)
+    expect(controller.frame.footer.get().hasNextPage).toBe(true)
   })
 
   it('keeps a tail append in the window without inventing rows after it', () => {
@@ -2777,7 +2782,7 @@ describe('TableViewportController window place', () => {
 
     controller.ingestAppend({ rowKey: 'new', slots: {} }, 17, true, null, null)
 
-    expect(controller.hasNextPage.get()).toBe(false)
+    expect(controller.frame.footer.get().hasNextPage).toBe(false)
   })
 
   it('pages after the last appended row when more rows arrive', () => {
@@ -2875,8 +2880,8 @@ describe('TableViewportController window place', () => {
       PAGE_SIZE,
       0,
     )
-    expect(controller.hasPreviousPage.get()).toBe(false)
-    expect(controller.hasNextPage.get()).toBe(true)
+    expect(controller.frame.footer.get().hasPreviousPage).toBe(false)
+    expect(controller.frame.footer.get().hasNextPage).toBe(true)
 
     controller.ingestOwnCreate(
       { rowKey: 'new', slots: {} },
@@ -2899,8 +2904,8 @@ describe('TableViewportController window place', () => {
       'row-9',
       'row-10',
     ])
-    expect(controller.hasNextPage.get()).toBe(true)
-    expect(controller.hasPreviousPage.get()).toBe(true)
+    expect(controller.frame.footer.get().hasNextPage).toBe(true)
+    expect(controller.frame.footer.get().hasPreviousPage).toBe(true)
     expect(controller.rowsBefore.get()).toBe(0)
     controller.prevPage()
     expect(sent.at(-1)).toMatchObject({
@@ -2973,7 +2978,7 @@ describe('TableViewportController window place', () => {
         { id: 2 },
         { id: 10 },
       )
-      expect(controller.hasPreviousPage.get()).toBe(true)
+      expect(controller.frame.footer.get().hasPreviousPage).toBe(true)
       return controller
     }
 
@@ -2987,31 +2992,31 @@ describe('TableViewportController window place', () => {
       PAGE_SIZE,
       0,
     )
-    expect(afterWindow.hasPreviousPage.get()).toBe(false)
+    expect(afterWindow.frame.footer.get().hasPreviousPage).toBe(false)
 
     const afterRefusal = createPushed()
     afterRefusal.ingestRefusal('table_not_served')
-    expect(afterRefusal.hasPreviousPage.get()).toBe(false)
+    expect(afterRefusal.frame.footer.get().hasPreviousPage).toBe(false)
 
     const afterReset = createPushed()
     afterReset.setSort('id')
-    expect(afterReset.hasPreviousPage.get()).toBe(false)
+    expect(afterReset.frame.footer.get().hasPreviousPage).toBe(false)
   })
 
   it('forgets the edge when a count becomes inexact and uses the full-window rule', () => {
     const { controller, open } = makePlaced()
     open(tail(), 21, 11, { id: 12 }, { id: 21 })
-    expect(controller.hasNextPage.get()).toBe(false)
+    expect(controller.frame.footer.get().hasNextPage).toBe(false)
 
     controller.ingestCount(500, false, false)
-    expect(controller.hasNextPage.get()).toBe(true)
+    expect(controller.frame.footer.get().hasNextPage).toBe(true)
     controller.ingestCount(21, true, false)
-    expect(controller.hasNextPage.get()).toBe(false)
+    expect(controller.frame.footer.get().hasNextPage).toBe(false)
 
     open(tail().slice(0, 5), 30, 11, { id: 12 }, { id: 16 })
-    expect(controller.hasNextPage.get()).toBe(true)
+    expect(controller.frame.footer.get().hasNextPage).toBe(true)
     controller.ingestCount(500, false, true)
-    expect(controller.hasNextPage.get()).toBe(false)
+    expect(controller.frame.footer.get().hasNextPage).toBe(false)
   })
 
   it('forgets the edge when an arrival carries an inexact count', () => {
@@ -3024,7 +3029,7 @@ describe('TableViewportController window place', () => {
       null,
       null,
     )
-    expect(controller.hasNextPage.get()).toBe(true)
+    expect(controller.frame.footer.get().hasNextPage).toBe(true)
 
     // A partial window used to have rows after it; an inexact own-create frame must
     // drop that word too, so the short-window rule takes over.
@@ -3037,25 +3042,25 @@ describe('TableViewportController window place', () => {
       null,
       null,
     )
-    expect(controller.hasNextPage.get()).toBe(false)
+    expect(controller.frame.footer.get().hasNextPage).toBe(false)
   })
 
   it('keeps the page-count rule for a window with no order', () => {
     const { controller, open } = makePlaced([])
     open(tail(), 21, 11)
-    expect(controller.hasNextPage.get()).toBe(true)
+    expect(controller.frame.footer.get().hasNextPage).toBe(true)
 
     controller.ingestCount(20, true)
-    expect(controller.hasNextPage.get()).toBe(false)
+    expect(controller.frame.footer.get().hasNextPage).toBe(false)
   })
 
   it('forgets the edge with the address when the order changes', () => {
     const { controller, open } = makePlaced()
     open(tail(), 21, 11, { id: 12 }, { id: 21 })
-    expect(controller.hasNextPage.get()).toBe(false)
+    expect(controller.frame.footer.get().hasNextPage).toBe(false)
 
     controller.setOrder([{ field: 'id', direction: 'desc' }])
-    expect(controller.hasNextPage.get()).toBe(true)
+    expect(controller.frame.footer.get().hasNextPage).toBe(true)
   })
 
   it('keeps Back on wherever anything stands to the left', () => {
@@ -3063,7 +3068,7 @@ describe('TableViewportController window place', () => {
 
     open(tail(), 21, 11, { id: 12 }, { id: 21 })
 
-    expect(controller.hasPreviousPage.get()).toBe(true)
+    expect(controller.frame.footer.get().hasPreviousPage).toBe(true)
   })
 
   it('pages back from the window standing between two pages by its own first row', () => {
@@ -3134,8 +3139,8 @@ describe('TableViewportController window place', () => {
     // while it was being asked for. Nothing stands to the left of an address like that.
     open([], 11, 0)
 
-    expect(controller.hasPreviousPage.get()).toBe(false)
-    expect(controller.hasNextPage.get()).toBe(true)
+    expect(controller.frame.footer.get().hasPreviousPage).toBe(false)
+    expect(controller.frame.footer.get().hasNextPage).toBe(true)
 
     controller.nextPage()
 
@@ -3164,8 +3169,8 @@ describe('TableViewportController window place', () => {
     open([], 4, 0)
     const asked = sent.length
 
-    expect(controller.hasNextPage.get()).toBe(false)
-    expect(controller.hasPreviousPage.get()).toBe(false)
+    expect(controller.frame.footer.get().hasNextPage).toBe(false)
+    expect(controller.frame.footer.get().hasPreviousPage).toBe(false)
 
     controller.nextPage()
 
@@ -3189,6 +3194,7 @@ describe('TableViewportController focus', () => {
     const controller = new TableViewportController<TableRow>({
       resolve: (row) => row,
       sendViewport: () => {},
+      frame: { columns: [] },
       sendFocus: (rowKey) => focus.push(rowKey),
     })
     const rowA: TableRow = { rowKey: 'a', slots: { v: 1 } }

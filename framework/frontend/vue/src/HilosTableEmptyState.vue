@@ -28,8 +28,8 @@ const props = defineProps<{
   kind: 'empty' | 'empty_filtered' | 'empty_page' | 'unavailable'
 }>()
 
-// What the page declared about the frame, or null when it declared nothing. It
-// does not change over the life of a table, so it is read once.
+// What the page declared about the frame. It does not change over the life of a
+// table, so it is read once.
 const declaration = props.controller.frame.declaration
 
 const search = useSignal(props.controller.search)
@@ -81,7 +81,7 @@ const terms = computed(() => {
 })
 
 function pressMainAction(): void {
-  declaration?.mainAction?.press()
+  declaration.mainAction?.press()
 }
 </script>
 
@@ -92,7 +92,7 @@ function pressMainAction(): void {
     role="status"
     data-id="hilos-table-empty"
   >
-    <template v-if="declaration?.empty">
+    <template v-if="declaration.empty">
       <i
         class="bi bi-inbox fs-1 text-body-secondary mb-2 d-block"
         aria-hidden="true"
@@ -114,11 +114,11 @@ function pressMainAction(): void {
     </template>
     <!-- A frame without an empty declaration uses the page's empty slot:
     the log tables supply their own states through it. -->
-    <div v-else class="text-muted" :class="{ 'mb-3': declaration?.mainAction }">
+    <div v-else class="text-muted" :class="{ 'mb-3': declaration.mainAction }">
       <slot />
     </div>
     <button
-      v-if="declaration?.mainAction"
+      v-if="declaration.mainAction"
       type="button"
       class="btn btn-sm btn-primary"
       data-id="hilos-table-empty-action"

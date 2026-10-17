@@ -76,16 +76,16 @@ export function HilosTableEmptyState<R>({
   kind,
   children,
 }: HilosTableEmptyStateProps<R>) {
-  // What the page declared about the frame, or null when it declared nothing. It
-  // does not change over the life of a table, so it is read without a signal.
+  // What the page declared about the frame. It does not change over the life of a
+  // table, so it is read without a signal.
   const declaration = controller.frame.declaration
 
   const search = useSignal(controller.search)
   const filters = useSignal(controller.frame.filters)
 
   if (kind === 'empty') {
-    const empty = declaration?.empty
-    const mainAction = declaration?.mainAction
+    const empty = declaration.empty
+    const mainAction = declaration.mainAction
 
     return (
       <div

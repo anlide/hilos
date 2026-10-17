@@ -14,9 +14,10 @@
 // its name, and the words it says when empty from there too. A table whose page
 // declared bulk operations also carries the framework's checkbox column, on
 // whichever edge the installation provided — one choice for the whole application
-// rather than an input of this table (mockups/components/table section 6). Below the md breakpoint a declared table is
-// a list of cards instead, built from the same declared columns and filled by the
-// same marked templates (mockups/components/table section 9). A field that did not
+// rather than an input of this table (mockups/components/table section 6). Below
+// the md breakpoint a table is a list of cards instead, built from the same
+// declared columns and filled by the same marked templates
+// (mockups/components/table section 9). A field that did not
 // fit a column of its own is declared `detail` and waits in a panel under the row:
 // the framework owns the room, the order and the labels, while the page draws every
 // value through `<ng-template hilosTableDetail="<column key>">`, exactly as it draws
@@ -44,6 +45,7 @@ import {
   TABLE_DETAIL_COPY,
   TABLE_STALENESS_COPY,
   HILOS_TABLE_ACTIONS_KEY,
+  hilosTableCard,
   hilosTableDetailFields,
   hilosTableOrderPosition,
   hilosTablePlaceholder,
@@ -77,8 +79,8 @@ import { HilosTableProgress } from './HilosTableProgress.js'
 import { HILOS_PAGE_HEADING_ID } from './hilosPageHeadingToken.js'
 import { HILOS_TABLE_SELECTION_EDGE } from './hilosTableSelectionEdge.js'
 
-// Distinct ids so two declared tables on one page never name themselves by the
-// same title.
+// Distinct ids so two tables on one page never name themselves by the same
+// title.
 let viewportTableSeq = 0
 
 /** The context a HilosViewportTable `#tableProgress` or `#tableProgressAction` template receives. */
@@ -120,13 +122,11 @@ export interface BulkUntouchedContext {
   ],
   template: `
     <div [attr.data-id]="dataId()">
-      @if (declaration()) {
-        <hilos-table-bar
-          [controller]="controller()"
-          [titleId]="titleId"
-          [autofocusSearch]="autofocusSearch()"
-        />
-      }
+      <hilos-table-bar
+        [controller]="controller()"
+        [titleId]="titleId"
+        [autofocusSearch]="autofocusSearch()"
+      />
 
       <!-- Everything live the table has to say — work running over the set, a
       source gone quiet, new rows the window cannot show, changes waiting for Apply —
@@ -143,11 +143,7 @@ export interface BulkUntouchedContext {
 
       <!-- The scroll wrapper belongs to the wide table: once columns become
       lines of a card, there is nothing left to scroll sideways (Design D8). -->
-      <div
-        class="table-responsive"
-        [class.d-none]="declaration() !== null"
-        [class.d-md-block]="declaration() !== null"
-      >
+      <div class="table-responsive d-none d-md-block">
         <table
           class="table table-striped table-hover align-middle mb-0"
           [attr.aria-labelledby]="nameId()"
@@ -542,39 +538,140 @@ export interface BulkUntouchedContext {
       display (Flow F9). The list holds the cards and nothing else; what the table
       says in words when it has no rows stands BESIDE it, a sentence not being an
       item of a list. -->
-      @if (card(); as layout) {
-        <div class="d-md-none" data-id="hilos-table-cards">
-          @if (body() === 'rows') {
-            <div role="list" [attr.aria-labelledby]="nameId()">
-              @for (view of rows(); track view.rowKey) {
-                <div
-                  class="card mb-2"
-                  [class]="cardClass(view)"
-                  role="listitem"
-                  [attr.data-id]="'hilos-table-card-' + view.rowKey"
-                >
-                  <!-- A removed row keeps its place as a card of one line,
-                  exactly as it keeps it as a row of one cell, until an empty
-                  set makes the whole window converge (Flow F4). -->
-                  @if (view.placeholder) {
-                    <div
-                      class="card-body py-2 px-3 text-center text-body-secondary fst-italic small"
-                      data-id="hilos-table-placeholder"
-                    >
-                      <i
-                        class="bi {{ placeholder(view.removal).icon }} me-1"
-                        aria-hidden="true"
-                      ></i>
-                      {{ placeholder(view.removal).text }}
-                    </div>
-                  } @else {
-                    <div class="card-body py-2 px-3">
-                      <div class="d-flex align-items-start gap-2 mb-1">
-                        <!-- The mark sits on the edge the installation chose, the
-                        same edge it sits on in the row: one product disagreeing
-                        with itself between its table and its card is the very
-                        thing that choice forbids. -->
-                        @if (selectionEnabled() && selectionEdge === 'start') {
+      @let layout = card();
+      <div class="d-md-none" data-id="hilos-table-cards">
+        @if (body() === 'rows') {
+          <div role="list" [attr.aria-labelledby]="nameId()">
+            @for (view of rows(); track view.rowKey) {
+              <div
+                class="card mb-2"
+                [class]="cardClass(view)"
+                role="listitem"
+                [attr.data-id]="'hilos-table-card-' + view.rowKey"
+              >
+                <!-- A removed row keeps its place as a card of one line,
+                exactly as it keeps it as a row of one cell, until an empty
+                set makes the whole window converge (Flow F4). -->
+                @if (view.placeholder) {
+                  <div
+                    class="card-body py-2 px-3 text-center text-body-secondary fst-italic small"
+                    data-id="hilos-table-placeholder"
+                  >
+                    <i
+                      class="bi {{ placeholder(view.removal).icon }} me-1"
+                      aria-hidden="true"
+                    ></i>
+                    {{ placeholder(view.removal).text }}
+                  </div>
+                } @else {
+                  <div class="card-body py-2 px-3">
+                    <div class="d-flex align-items-start gap-2 mb-1">
+                      <!-- The mark sits on the edge the installation chose, the
+                      same edge it sits on in the row: one product disagreeing
+                      with itself between its table and its card is the very
+                      thing that choice forbids. -->
+                      @if (selectionEnabled() && selectionEdge === 'start') {
+                        <input
+                          class="form-check-input mt-1"
+                          type="checkbox"
+                          aria-label="Select row"
+                          [attr.data-id]="'hilos-table-select-' + view.rowKey"
+                          [checked]="view.selected"
+                          (change)="onSelectRow(view.rowKey, $event)"
+                        />
+                      }
+                      @if (cellFor(layout.title); as title) {
+                        <span class="fw-medium">
+                          <ng-container
+                            [ngTemplateOutlet]="title"
+                            [ngTemplateOutletContext]="{
+                              $implicit: view.row,
+                              rowKey: view.rowKey,
+                            }"
+                          />
+                        </span>
+                      }
+                      <!-- The right of the head, in one group: what the PAGE
+                      says about the row first, then what the FRAMEWORK says
+                      about it. The page's badge is not pushed out by a
+                      framework mark — on a wide screen the two stand in two
+                      different cells, and a card is a second projection of the
+                      same columns rather than a smaller set of facts (Flow
+                      F6). -->
+                      <span class="ms-auto d-flex align-items-center gap-1">
+                        @if (cellFor(layout.badge); as badge) {
+                          <ng-container
+                            [ngTemplateOutlet]="badge"
+                            [ngTemplateOutletContext]="{
+                              $implicit: view.row,
+                              rowKey: view.rowKey,
+                            }"
+                          />
+                        }
+                        @if (view.staleSources.length > 0) {
+                          <i
+                            class="bi bi-snow"
+                            [attr.data-id]="
+                              'hilos-table-stale-row-' + view.rowKey
+                            "
+                            aria-hidden="true"
+                          ></i>
+                          <span class="visually-hidden">{{ rowMark }}</span>
+                        }
+                        @if (view.pending === 'move') {
+                          <span
+                            class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                            [attr.data-id]="
+                              'hilos-table-pending-move-' + view.rowKey
+                            "
+                          >
+                            <i class="bi bi-arrows-move" aria-hidden="true"></i>
+                            Will move
+                          </span>
+                        } @else if (view.pending === 'remove') {
+                          <span
+                            class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                            [attr.data-id]="
+                              'hilos-table-pending-remove-' + view.rowKey
+                            "
+                          >
+                            <i
+                              class="bi bi-box-arrow-right"
+                              aria-hidden="true"
+                            ></i>
+                            Will leave
+                          </span>
+                        }
+                        <!-- The control comes after everything that merely
+                        STATES something about the record, exactly as it does at
+                        the end of a row: it is the one thing in the head the
+                        reader acts on. -->
+                        @if (detailFields().length > 0 && view.expandable) {
+                          <button
+                            type="button"
+                            class="btn btn-sm btn-outline-secondary"
+                            [attr.data-id]="'hilos-table-expand-' + view.rowKey"
+                            [attr.aria-expanded]="view.expanded"
+                            [attr.aria-controls]="cardDetailId(view.rowKey)"
+                            (click)="
+                              controller().expandRow(
+                                view.rowKey,
+                                !view.expanded
+                              )
+                            "
+                          >
+                            <i
+                              class="bi"
+                              [class.bi-chevron-up]="view.expanded"
+                              [class.bi-chevron-down]="!view.expanded"
+                              aria-hidden="true"
+                            ></i>
+                            <span class="visually-hidden">{{
+                              view.expanded ? detailCopy.hide : detailCopy.show
+                            }}</span>
+                          </button>
+                        }
+                        @if (selectionEnabled() && selectionEdge === 'end') {
                           <input
                             class="form-check-input mt-1"
                             type="checkbox"
@@ -584,274 +681,159 @@ export interface BulkUntouchedContext {
                             (change)="onSelectRow(view.rowKey, $event)"
                           />
                         }
-                        @if (cellFor(layout.title); as title) {
-                          <span class="fw-medium">
-                            <ng-container
-                              [ngTemplateOutlet]="title"
-                              [ngTemplateOutletContext]="{
-                                $implicit: view.row,
-                                rowKey: view.rowKey,
-                              }"
-                            />
-                          </span>
-                        }
-                        <!-- The right of the head, in one group: what the PAGE
-                        says about the row first, then what the FRAMEWORK says
-                        about it. The page's badge is not pushed out by a
-                        framework mark — on a wide screen the two stand in two
-                        different cells, and a card is a second projection of the
-                        same columns rather than a smaller set of facts (Flow
-                        F6). -->
-                        <span class="ms-auto d-flex align-items-center gap-1">
-                          @if (cellFor(layout.badge); as badge) {
-                            <ng-container
-                              [ngTemplateOutlet]="badge"
-                              [ngTemplateOutletContext]="{
-                                $implicit: view.row,
-                                rowKey: view.rowKey,
-                              }"
-                            />
-                          }
-                          @if (view.staleSources.length > 0) {
-                            <i
-                              class="bi bi-snow"
-                              [attr.data-id]="
-                                'hilos-table-stale-row-' + view.rowKey
-                              "
-                              aria-hidden="true"
-                            ></i>
-                            <span class="visually-hidden">{{ rowMark }}</span>
-                          }
-                          @if (view.pending === 'move') {
-                            <span
-                              class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
-                              [attr.data-id]="
-                                'hilos-table-pending-move-' + view.rowKey
-                              "
-                            >
-                              <i
-                                class="bi bi-arrows-move"
-                                aria-hidden="true"
-                              ></i>
-                              Will move
-                            </span>
-                          } @else if (view.pending === 'remove') {
-                            <span
-                              class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
-                              [attr.data-id]="
-                                'hilos-table-pending-remove-' + view.rowKey
-                              "
-                            >
-                              <i
-                                class="bi bi-box-arrow-right"
-                                aria-hidden="true"
-                              ></i>
-                              Will leave
-                            </span>
-                          }
-                          <!-- The control comes after everything that merely
-                          STATES something about the record, exactly as it does at
-                          the end of a row: it is the one thing in the head the
-                          reader acts on. -->
-                          @if (detailFields().length > 0 && view.expandable) {
-                            <button
-                              type="button"
-                              class="btn btn-sm btn-outline-secondary"
-                              [attr.data-id]="
-                                'hilos-table-expand-' + view.rowKey
-                              "
-                              [attr.aria-expanded]="view.expanded"
-                              [attr.aria-controls]="cardDetailId(view.rowKey)"
-                              (click)="
-                                controller().expandRow(
-                                  view.rowKey,
-                                  !view.expanded
-                                )
-                              "
-                            >
-                              <i
-                                class="bi"
-                                [class.bi-chevron-up]="view.expanded"
-                                [class.bi-chevron-down]="!view.expanded"
-                                aria-hidden="true"
-                              ></i>
-                              <span class="visually-hidden">{{
-                                view.expanded
-                                  ? detailCopy.hide
-                                  : detailCopy.show
-                              }}</span>
-                            </button>
-                          }
-                          @if (selectionEnabled() && selectionEdge === 'end') {
-                            <input
-                              class="form-check-input mt-1"
-                              type="checkbox"
-                              aria-label="Select row"
-                              [attr.data-id]="
-                                'hilos-table-select-' + view.rowKey
-                              "
-                              [checked]="view.selected"
-                              (change)="onSelectRow(view.rowKey, $event)"
-                            />
-                          }
-                        </span>
-                      </div>
+                      </span>
+                    </div>
 
-                      <!-- What a column becomes on a narrow screen is a pair of a
-                      label and a value, and a description list is the one markup
-                      that says so to a screen reader (Flow F10). -->
-                      @if (cardFields().length > 0) {
-                        <dl class="row mb-2 small g-0">
-                          @for (field of cardFields(); track field.column.key) {
-                            <dt class="col-5 fw-normal text-body-secondary">
-                              {{ field.column.label }}
+                    <!-- What a column becomes on a narrow screen is a pair of a
+                    label and a value, and a description list is the one markup
+                    that says so to a screen reader (Flow F10). -->
+                    @if (cardFields().length > 0) {
+                      <dl class="row mb-2 small g-0">
+                        @for (field of cardFields(); track field.column.key) {
+                          <dt class="col-5 fw-normal text-body-secondary">
+                            {{ field.column.label }}
+                          </dt>
+                          <dd class="col-7 mb-0">
+                            <ng-container
+                              [ngTemplateOutlet]="field.template"
+                              [ngTemplateOutletContext]="{
+                                $implicit: view.row,
+                                rowKey: view.rowKey,
+                              }"
+                            />
+                          </dd>
+                        }
+                      </dl>
+                    }
+
+                    <!-- What the reader opened, going on with the very pairs of
+                    label and value the fields above are: in a row the panel
+                    comes last of all, under the bar of the row's own work, but in
+                    a card the controls and that bar are the bottom block and the
+                    panel belongs with the body. -->
+                    @if (view.expanded) {
+                      <div
+                        [id]="cardDetailId(view.rowKey)"
+                        class="mb-2"
+                        [attr.data-id]="'hilos-table-row-detail-' + view.rowKey"
+                      >
+                        <dl class="row mb-0 small g-0">
+                          <!-- A wide field puts its label above its value:
+                          the value is a list of its own and needs the card's
+                          whole width. -->
+                          @for (field of detailFields(); track field.key) {
+                            <dt
+                              class="fw-normal text-body-secondary"
+                              [class.col-12]="field.detailWide === true"
+                              [class.col-5]="field.detailWide !== true"
+                            >
+                              {{ field.label }}
                             </dt>
-                            <dd class="col-7 mb-0">
-                              <ng-container
-                                [ngTemplateOutlet]="field.template"
-                                [ngTemplateOutletContext]="{
-                                  $implicit: view.row,
-                                  rowKey: view.rowKey,
-                                }"
-                              />
+                            <dd
+                              class="mb-0 text-break"
+                              [class.col-12]="field.detailWide === true"
+                              [class.col-7]="field.detailWide !== true"
+                            >
+                              <!-- A field the page declared but drew nothing
+                              into shows the dash its cells show, rather than an
+                              empty line that would read as "there is no
+                              value". -->
+                              @if (detailTemplate(field.key); as detail) {
+                                <ng-container
+                                  [ngTemplateOutlet]="detail"
+                                  [ngTemplateOutletContext]="{
+                                    $implicit: view.row,
+                                    rowKey: view.rowKey,
+                                  }"
+                                />
+                              } @else {
+                                {{ detailCopy.empty }}
+                              }
                             </dd>
                           }
                         </dl>
-                      }
+                      </div>
+                    }
 
-                      <!-- What the reader opened, going on with the very pairs of
-                      label and value the fields above are: in a row the panel
-                      comes last of all, under the bar of the row's own work, but in
-                      a card the controls and that bar are the bottom block and the
-                      panel belongs with the body. -->
-                      @if (view.expanded) {
-                        <div
-                          [id]="cardDetailId(view.rowKey)"
-                          class="mb-2"
-                          [attr.data-id]="
-                            'hilos-table-row-detail-' + view.rowKey
-                          "
-                        >
-                          <dl class="row mb-0 small g-0">
-                            <!-- A wide field puts its label above its value:
-                            the value is a list of its own and needs the card's
-                            whole width. -->
-                            @for (field of detailFields(); track field.key) {
-                              <dt
-                                class="fw-normal text-body-secondary"
-                                [class.col-12]="field.detailWide === true"
-                                [class.col-5]="field.detailWide !== true"
-                              >
-                                {{ field.label }}
-                              </dt>
-                              <dd
-                                class="mb-0 text-break"
-                                [class.col-12]="field.detailWide === true"
-                                [class.col-7]="field.detailWide !== true"
-                              >
-                                <!-- A field the page declared but drew nothing
-                                into shows the dash its cells show, rather than an
-                                empty line that would read as "there is no
-                                value". -->
-                                @if (detailTemplate(field.key); as detail) {
-                                  <ng-container
-                                    [ngTemplateOutlet]="detail"
-                                    [ngTemplateOutletContext]="{
-                                      $implicit: view.row,
-                                      rowKey: view.rowKey,
-                                    }"
-                                  />
-                                } @else {
-                                  {{ detailCopy.empty }}
-                                }
-                              </dd>
-                            }
-                          </dl>
-                        </div>
-                      }
+                    <!-- The controls of the row, one row at the foot of the
+                    card, sharing it equally. Which of them comes first is the
+                    markup the page hands over, and the framework neither
+                    reorders them nor takes one away (Flow F2). -->
+                    @if (cellFor(layout.actions); as actions) {
+                      <div class="d-flex gap-2 hilos-button-row">
+                        <ng-container
+                          [ngTemplateOutlet]="actions"
+                          [ngTemplateOutletContext]="{
+                            $implicit: view.row,
+                            rowKey: view.rowKey,
+                          }"
+                        />
+                      </div>
+                    }
 
-                      <!-- The controls of the row, one row at the foot of the
-                      card, sharing it equally. Which of them comes first is the
-                      markup the page hands over, and the framework neither
-                      reorders them nor takes one away (Flow F2). -->
-                      @if (cellFor(layout.actions); as actions) {
-                        <div class="d-flex gap-2 hilos-button-row">
-                          <ng-container
-                            [ngTemplateOutlet]="actions"
-                            [ngTemplateOutletContext]="{
-                              $implicit: view.row,
-                              rowKey: view.rowKey,
-                            }"
-                          />
-                        </div>
-                      }
-
-                      <!-- Work running over this one record, at the very bottom of
-                      the card and across its whole width: which columns a bar
-                      stretches under says nothing here, a card having no columns
-                      standing in a row (Flow F7). -->
-                      @if (rowBar(view.rowKey); as bar) {
-                        <div
-                          class="mt-2"
-                          [attr.data-id]="
-                            'hilos-table-progress-row-' + view.rowKey
-                          "
-                        >
-                          @if (rowProgress(); as caption) {
-                            <div class="small text-body-secondary mb-1">
-                              <ng-container
-                                [ngTemplateOutlet]="caption"
-                                [ngTemplateOutletContext]="{
-                                  $implicit: bar,
-                                  rowKey: view.rowKey,
-                                }"
-                              />
-                            </div>
-                          }
-                          <hilos-table-progress
-                            [progress]="bar"
-                            label="Work on this row"
-                          />
-                        </div>
-                      }
-                    </div>
-                  }
-                </div>
-              }
-            </div>
-          } @else if (body() === 'loading') {
-            <!-- The skeleton and the four states a table says in words live
-            inside the table in the wide branch, so a narrow screen would hide
-            them along with it and the phone would be left with a blank space
-            where they are (Flow F12). A card of the skeleton is one bar, as the
-            mockup draws it. -->
-            <div aria-busy="true" data-id="hilos-table-loading">
-              <span class="visually-hidden" role="status">Loading…</span>
-              @for (index of skeletonRowIndexes(); track index) {
-                <div
-                  class="card mb-2"
-                  aria-hidden="true"
-                  data-id="hilos-table-skeleton-row"
-                >
-                  <div class="card-body py-2 px-3 placeholder-glow">
-                    <span class="placeholder col-12"></span>
+                    <!-- Work running over this one record, at the very bottom of
+                    the card and across its whole width: which columns a bar
+                    stretches under says nothing here, a card having no columns
+                    standing in a row (Flow F7). -->
+                    @if (rowBar(view.rowKey); as bar) {
+                      <div
+                        class="mt-2"
+                        [attr.data-id]="
+                          'hilos-table-progress-row-' + view.rowKey
+                        "
+                      >
+                        @if (rowProgress(); as caption) {
+                          <div class="small text-body-secondary mb-1">
+                            <ng-container
+                              [ngTemplateOutlet]="caption"
+                              [ngTemplateOutletContext]="{
+                                $implicit: bar,
+                                rowKey: view.rowKey,
+                              }"
+                            />
+                          </div>
+                        }
+                        <hilos-table-progress
+                          [progress]="bar"
+                          label="Work on this row"
+                        />
+                      </div>
+                    }
                   </div>
+                }
+              </div>
+            }
+          </div>
+        } @else if (body() === 'loading') {
+          <!-- The skeleton and the four states a table says in words live
+          inside the table in the wide branch, so a narrow screen would hide
+          them along with it and the phone would be left with a blank space
+          where they are (Flow F12). A card of the skeleton is one bar, as the
+          mockup draws it. -->
+          <div aria-busy="true" data-id="hilos-table-loading">
+            <span class="visually-hidden" role="status">Loading…</span>
+            @for (index of skeletonRowIndexes(); track index) {
+              <div
+                class="card mb-2"
+                aria-hidden="true"
+                data-id="hilos-table-skeleton-row"
+              >
+                <div class="card-body py-2 px-3 placeholder-glow">
+                  <span class="placeholder col-12"></span>
                 </div>
-              }
-            </div>
-          } @else {
-            <hilos-table-empty-state
-              [controller]="controller()"
-              [kind]="emptyKind()"
-              [fallback]="emptyFallback"
-            />
-          }
-        </div>
-      }
+              </div>
+            }
+          </div>
+        } @else {
+          <hilos-table-empty-state
+            [controller]="controller()"
+            [kind]="emptyKind()"
+            [fallback]="emptyFallback"
+          />
+        }
+      </div>
 
-      @if (declaration()) {
-        <hilos-table-footer [controller]="controller()" />
-      }
+      <hilos-table-footer [controller]="controller()" />
 
       <!-- The page's own words for the "nothing here yet" tile when it declared no
       empty state: its #empty template, or else the fallback words. Handed to the
@@ -887,7 +869,7 @@ export class HilosViewportTable<R> {
   }
 
   /**
-   * The content of the cells of a declared table, one `<ng-template
+   * The content of the cells of a table, one `<ng-template
    * hilosTableCell="<column key>">` per column. Collected through descendants,
    * because a page may wrap a template in an `@if` of its own.
    */
@@ -977,11 +959,9 @@ export class HilosViewportTable<R> {
   // narrow screen — the head, the badge beside it, the labelled lines, the
   // controls. The core derived it from the declaration (tableCard.ts) and the view
   // has no arithmetic of its own about it; like the declaration it follows from, it
-  // changes with the resolved columns and is null exactly without a frame.
-  private readonly resolvedCard = signal<HilosTableCard | null>(null)
-  protected readonly card = computed<HilosTableCard | null>(() =>
-    this.resolvedCard(),
-  )
+  // changes with the resolved columns.
+  private readonly resolvedCard = signal<HilosTableCard>(hilosTableCard([]))
+  protected readonly card = computed<HilosTableCard>(() => this.resolvedCard())
   // The labelled lines of a card, each with the template that fills it: the fields
   // of the layout the page actually marked a template for. A card leaves out the
   // place of a column the page drew nothing into — a label with nothing under it
@@ -989,7 +969,7 @@ export class HilosViewportTable<R> {
   protected readonly cardFields = computed(() => {
     const templates = this.cellTemplates()
 
-    return (this.card()?.fields ?? []).flatMap((column) => {
+    return this.card().fields.flatMap((column) => {
       const template = templates.get(column.key)
 
       return template === undefined ? [] : [{ column, template }]
@@ -1055,14 +1035,14 @@ export class HilosViewportTable<R> {
   // so a card borrowing the row's id would put that id in twice and break the tie
   // between control and panel on both.
   protected readonly cardDetailBaseId = `hilos-table-card-detail-${viewportTableSeq++}`
-  // What names a declared table: its own title when it declared one, and otherwise
+  // What names a table: its own title when it declared one, and otherwise
   // the heading of the page it stands on, which already names it. Null for a table
   // that declared neither and stands outside an admin page — it has no name to take.
   private readonly pageHeadingId = inject(HILOS_PAGE_HEADING_ID, {
     optional: true,
   })
   protected readonly nameId = computed(() =>
-    this.declaration()?.title ? this.titleId : this.pageHeadingId,
+    this.declaration().title ? this.titleId : this.pageHeadingId,
   )
   protected readonly rows = signal<readonly TableViewportRow<R>[]>([])
   protected readonly order = signal<TableSortOrder | undefined>(undefined)
@@ -1082,7 +1062,7 @@ export class HilosViewportTable<R> {
     const body = this.body()
 
     return (body === 'empty_filtered' &&
-      this.declaration()?.filteredEmpty !== 'page') ||
+      this.declaration().filteredEmpty !== 'page') ||
       body === 'empty_page' ||
       body === 'unavailable'
       ? body

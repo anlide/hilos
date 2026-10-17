@@ -40,7 +40,7 @@ const props = defineProps<{
 
 // The declaration does not change over the life of a table, so its operations are
 // read once rather than wrapped in a signal (tableFrame.ts, HilosTableFrameState).
-const bulkActions = props.controller.frame.declaration?.bulkActions ?? []
+const bulkActions = props.controller.frame.declaration.bulkActions ?? []
 
 const target = useSignal(props.controller.selection.target)
 const count = useSignal(props.controller.selection.count)

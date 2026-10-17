@@ -13,7 +13,7 @@
 // A table whose page declared bulk operations also carries the
 // framework's checkbox column, on whichever edge the installation provided — one
 // choice for the whole application rather than a prop of this table
-// (mockups/components/table section 6). Below the md breakpoint a declared table is
+// (mockups/components/table section 6). Below the md breakpoint a table is
 // a list of cards instead, built from the same declared columns and filled by the
 // same cell renderers (mockups/components/table section 9). A field that did not
 // fit a column of its own is declared `detail` and waits in a panel under the row:
@@ -62,7 +62,7 @@ export interface HilosViewportTableProps<R> {
   /** The headless server-windowed controller driving rows, descriptor, and pending. */
   controller: TableViewportController<R>
   /**
-   * The content of one cell of a declared table, by the key of its column — the
+   * The content of one cell of a table, by the key of its column — the
    * content only, the framework writes the `<td>` around it and reads its class off
    * the column. A column this has no renderer for still gets its cell in the row.
    */
@@ -173,7 +173,7 @@ export function HilosViewportTable<R>({
   // narrow screen — the head, the badge beside it, the labelled lines, the
   // controls. The core derived it from the declaration (tableCard.ts) and the view
   // has no arithmetic of its own about it; like the declaration it follows from, it
-  // changes with the resolved columns and is null exactly without a frame.
+  // changes with the resolved columns.
   const card = useSignal(controller.frame.card)
   // The row-state cell stands while anything waits OR while a shown row's values are
   // behind OR while the table declared a field to expand into: it carries all three,
@@ -204,12 +204,12 @@ export function HilosViewportTable<R>({
   // about it is the very thing the rule forbids (Design D5). A project that
   // provided nothing gets the left edge, where lists usually keep it.
   const selectionEdge = useContext(HilosTableSelectionEdgeContext)
-  // What names a declared table: its own title when it declared one, and otherwise
+  // What names a table: its own title when it declared one, and otherwise
   // the heading of the page it stands on, which already names it. Undefined for a
   // table that declared neither and stands outside an admin page — it has no name to
   // take.
   const pageHeadingId = useContext(HilosPageHeadingIdContext)
-  const nameId = declaration?.title ? titleId : pageHeadingId
+  const nameId = declaration.title ? titleId : pageHeadingId
 
   // The cells of a row bar's row, in the order the columns are declared: runs of
   // marked columns merge into one covered cell, runs of unmarked ones into one
@@ -317,7 +317,7 @@ export function HilosViewportTable<R>({
     )
   }
 
-  // The cells of one row of a declared table: one per column left standing in the
+  // The cells of one row of a table: one per column left standing in the
   // row, the content from the page's renderer for that column and the class from the
   // column itself. The cell stands even where the page gave no renderer: a row one
   // cell short is a row narrower than its header (Flow F3).
@@ -616,13 +616,11 @@ export function HilosViewportTable<R>({
 
   return (
     <div data-id={dataId}>
-      {declaration ? (
-        <HilosTableBar
-          controller={controller}
-          titleId={titleId}
-          autofocusSearch={autofocusSearch}
-        />
-      ) : null}
+      <HilosTableBar
+        controller={controller}
+        titleId={titleId}
+        autofocusSearch={autofocusSearch}
+      />
 
       {/* Everything live the table has to say — work running over the set, a source
           gone quiet, new rows the window cannot show, changes waiting for Apply — in
@@ -638,13 +636,7 @@ export function HilosViewportTable<R>({
 
       {/* The scroll wrapper belongs to the wide table: once the columns became
           lines of a card, there is nothing left to scroll sideways. */}
-      <div
-        className={
-          declaration
-            ? 'table-responsive d-none d-md-block'
-            : 'table-responsive'
-        }
-      >
+      <div className="table-responsive d-none d-md-block">
         <table
           className="table table-striped table-hover align-middle mb-0"
           aria-labelledby={nameId}
@@ -946,7 +938,7 @@ export function HilosViewportTable<R>({
                       controller={controller}
                       kind={
                         (body === 'empty_filtered' &&
-                          declaration?.filteredEmpty !== 'page') ||
+                          declaration.filteredEmpty !== 'page') ||
                         body === 'empty_page' ||
                         body === 'unavailable'
                           ? body
@@ -977,86 +969,84 @@ export function HilosViewportTable<R>({
           leaves the accessibility tree with its display (Flow F9). The list holds
           the cards and nothing else; what the table says in words when it has no
           rows stands BESIDE it, a sentence not being an item of a list. */}
-      {card !== null ? (
-        <div className="d-md-none" data-id="hilos-table-cards">
-          {body === 'rows' ? (
-            <div role="list" aria-labelledby={nameId}>
-              {rows.map((view) => {
-                const tint = cardClass(view)
-                const placeholder = hilosTablePlaceholder(view.removal)
+      <div className="d-md-none" data-id="hilos-table-cards">
+        {body === 'rows' ? (
+          <div role="list" aria-labelledby={nameId}>
+            {rows.map((view) => {
+              const tint = cardClass(view)
+              const placeholder = hilosTablePlaceholder(view.removal)
 
-                return (
-                  <div
-                    key={view.rowKey}
-                    className={
-                      tint === undefined ? 'card mb-2' : `card mb-2 ${tint}`
-                    }
-                    role="listitem"
-                    data-id={`hilos-table-card-${view.rowKey}`}
-                  >
-                    {/* A removed row keeps its place as a card of one line,
-                        exactly as it keeps it as a row of one cell, until an
-                        empty set makes the whole window converge (Flow F4). */}
-                    {view.placeholder || view.row === null ? (
-                      <div
-                        className="card-body py-2 px-3 text-center text-body-secondary fst-italic small"
-                        data-id="hilos-table-placeholder"
-                      >
-                        <i
-                          className={`bi ${placeholder.icon} me-1`}
-                          aria-hidden="true"
-                        />
-                        {placeholder.text}
-                      </div>
-                    ) : (
-                      cardBody(card, view, view.row)
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          ) : body === 'loading' ? (
-            // The skeleton and the four states a table says in words live inside
-            // the table in the wide branch, so a narrow screen would hide them
-            // along with it and the phone would be left with a blank space where
-            // they are (Flow F12). A card of the skeleton is one bar, as the
-            // mockup draws it.
-            <div aria-busy="true" data-id="hilos-table-loading">
-              <span className="visually-hidden" role="status">
-                Loading…
-              </span>
-              {Array.from({ length: skeletonRows }, (_unused, index) => (
+              return (
                 <div
-                  key={index}
-                  className="card mb-2"
-                  aria-hidden="true"
-                  data-id="hilos-table-skeleton-row"
+                  key={view.rowKey}
+                  className={
+                    tint === undefined ? 'card mb-2' : `card mb-2 ${tint}`
+                  }
+                  role="listitem"
+                  data-id={`hilos-table-card-${view.rowKey}`}
                 >
-                  <div className="card-body py-2 px-3 placeholder-glow">
-                    <span className="placeholder col-12" />
-                  </div>
+                  {/* A removed row keeps its place as a card of one line,
+                      exactly as it keeps it as a row of one cell, until an
+                      empty set makes the whole window converge (Flow F4). */}
+                  {view.placeholder || view.row === null ? (
+                    <div
+                      className="card-body py-2 px-3 text-center text-body-secondary fst-italic small"
+                      data-id="hilos-table-placeholder"
+                    >
+                      <i
+                        className={`bi ${placeholder.icon} me-1`}
+                        aria-hidden="true"
+                      />
+                      {placeholder.text}
+                    </div>
+                  ) : (
+                    cardBody(card, view, view.row)
+                  )}
                 </div>
-              ))}
-            </div>
-          ) : (
-            <HilosTableEmptyState
-              controller={controller}
-              kind={
-                (body === 'empty_filtered' &&
-                  declaration?.filteredEmpty !== 'page') ||
-                body === 'empty_page' ||
-                body === 'unavailable'
-                  ? body
-                  : 'empty'
-              }
-            >
-              {empty ?? 'No rows.'}
-            </HilosTableEmptyState>
-          )}
-        </div>
-      ) : null}
+              )
+            })}
+          </div>
+        ) : body === 'loading' ? (
+          // The skeleton and the four states a table says in words live inside
+          // the table in the wide branch, so a narrow screen would hide them
+          // along with it and the phone would be left with a blank space where
+          // they are (Flow F12). A card of the skeleton is one bar, as the
+          // mockup draws it.
+          <div aria-busy="true" data-id="hilos-table-loading">
+            <span className="visually-hidden" role="status">
+              Loading…
+            </span>
+            {Array.from({ length: skeletonRows }, (_unused, index) => (
+              <div
+                key={index}
+                className="card mb-2"
+                aria-hidden="true"
+                data-id="hilos-table-skeleton-row"
+              >
+                <div className="card-body py-2 px-3 placeholder-glow">
+                  <span className="placeholder col-12" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <HilosTableEmptyState
+            controller={controller}
+            kind={
+              (body === 'empty_filtered' &&
+                declaration.filteredEmpty !== 'page') ||
+              body === 'empty_page' ||
+              body === 'unavailable'
+                ? body
+                : 'empty'
+            }
+          >
+            {empty ?? 'No rows.'}
+          </HilosTableEmptyState>
+        )}
+      </div>
 
-      {declaration ? <HilosTableFooter controller={controller} /> : null}
+      <HilosTableFooter controller={controller} />
     </div>
   )
 }

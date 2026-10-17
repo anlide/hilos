@@ -21,7 +21,7 @@ row of its own under a row for work over that one row, stretched under whichever
 columns declared themselves. The room and the track are the framework's, while
 everything a reader sees beside them comes from the page through slots
 (mockups/components/table section 5).
-On a narrow screen a declared table is drawn as a list of cards instead: the
+On a narrow screen a table is drawn as a list of cards instead: the
 framework builds each card out of the very columns the page declared and fills
 it from the same `#cell-<key>` slots, so a project writes no second markup for
 its phone (mockups/components/table section 9). A card opens into its own panel,
@@ -92,7 +92,7 @@ const frameColumns = useSignal(props.controller.frame.columns)
 // narrow screen — the head, the badge beside it, the labelled lines, the
 // controls. The core derived it from the declaration (tableCard.ts) and the view
 // has no arithmetic of its own about it; like the declaration it follows from, it
-// changes with the resolved columns and is null exactly without a frame.
+// changes with the resolved columns.
 const card = useSignal(props.controller.frame.card)
 
 // The slots as the page filled them — read to tell a place of the card the page
@@ -104,11 +104,11 @@ const slots = useSlots()
 // points at it can see it (Flow F9).
 const titleId = useId()
 
-// What names a declared table: its own title when it declared one, and otherwise the
+// What names a table: its own title when it declared one, and otherwise the
 // heading of the page it stands on, which already names it (Design D3). Undefined for a
 // table that declared neither and stands outside an admin page — it has no name to take.
 const pageHeadingId = inject(hilosPageHeadingIdKey, undefined)
-const nameId = declaration?.title ? titleId : pageHeadingId
+const nameId = declaration.title ? titleId : pageHeadingId
 
 // The base every expanded row's panel takes its id from — minted the same way the
 // title above is, and for the same reason: the control that points at a panel and
@@ -291,7 +291,7 @@ function hasCell(column: HilosTableColumn | null): boolean {
 // those are settled per render — a computed would hold the answer from the render
 // the page passed other slots in.
 function cardFields(): readonly HilosTableColumn[] {
-  return card.value === null ? [] : card.value.fields.filter(hasCell)
+  return card.value.fields.filter(hasCell)
 }
 
 // The id of one row's panel, which the control above it points at through
@@ -385,7 +385,6 @@ function onSelectPage(event: Event): void {
 <template>
   <div :data-id="dataId">
     <HilosTableBar
-      v-if="declaration"
       :controller="controller"
       :title-id="titleId"
       :autofocus-search="autofocusSearch"
@@ -412,10 +411,7 @@ function onSelectPage(event: Event): void {
 
     <!-- The scroll wrapper belongs to the wide table: once columns become
     lines of a card, there is nothing left to scroll sideways (Design D8). -->
-    <div
-      class="table-responsive"
-      :class="{ 'd-none d-md-block': declaration !== null }"
-    >
+    <div class="table-responsive d-none d-md-block">
       <table
         class="table table-striped table-hover align-middle mb-0"
         :aria-labelledby="nameId"
@@ -780,7 +776,7 @@ function onSelectPage(event: Event): void {
                 :controller="controller"
                 :kind="
                   (body === 'empty_filtered' &&
-                    declaration?.filteredEmpty !== 'page') ||
+                    declaration.filteredEmpty !== 'page') ||
                   body === 'empty_page' ||
                   body === 'unavailable'
                     ? body
@@ -809,7 +805,7 @@ function onSelectPage(event: Event): void {
     that is hidden leaves the accessibility tree with its display (Flow F9). The
     list holds the cards and nothing else; what the table says in words when it
     has no rows stands BESIDE it, a sentence not being an item of a list. -->
-    <div v-if="card" class="d-md-none" data-id="hilos-table-cards">
+    <div class="d-md-none" data-id="hilos-table-cards">
       <div v-if="body === 'rows'" role="list" :aria-labelledby="nameId">
         <div
           v-for="view in rows"
@@ -1061,8 +1057,7 @@ function onSelectPage(event: Event): void {
         v-else
         :controller="controller"
         :kind="
-          (body === 'empty_filtered' &&
-            declaration?.filteredEmpty !== 'page') ||
+          (body === 'empty_filtered' && declaration.filteredEmpty !== 'page') ||
           body === 'empty_page' ||
           body === 'unavailable'
             ? body
@@ -1073,6 +1068,6 @@ function onSelectPage(event: Event): void {
       </HilosTableEmptyState>
     </div>
 
-    <HilosTableFooter v-if="declaration" :controller="controller" />
+    <HilosTableFooter :controller="controller" />
   </div>
 </template>

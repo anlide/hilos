@@ -43,10 +43,10 @@ const props = defineProps<{
 // The declaration does not change over the life of a table, so its parts are
 // read once rather than wrapped in signals (tableFrame.ts, HilosTableFrameState).
 const declaration = props.controller.frame.declaration
-const title = declaration?.title
-const subtitle = declaration?.subtitle
-const searchBox = declaration?.search
-const mainAction = declaration?.mainAction
+const title = declaration.title
+const subtitle = declaration.subtitle
+const searchBox = declaration.search
+const mainAction = declaration.mainAction
 
 // The search placeholder doubles as the field's accessible name: the field
 // carries no visible label, and two different strings would name it twice.

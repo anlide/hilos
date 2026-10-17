@@ -123,7 +123,7 @@ test('a narrow window draws the settings as cards and never scrolls sideways', a
   page,
 }) => {
   // HIL-815 acceptance, the Angular twin of the binance-btc-tracker case. A
-  // declared table is a table on a wide screen and a list of cards on a narrow
+  // table is a table on a wide screen and a list of cards on a narrow
   // one; both are mounted, and Bootstrap's display utilities show exactly one of
   // them. What a phone must never get is the wide table squeezed into a sideways
   // scroll — the thing the cards exist to replace.

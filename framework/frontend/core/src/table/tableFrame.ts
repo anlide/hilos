@@ -281,13 +281,10 @@ export type HilosTableBody =
  * placeholder are resolved as signals so each view follows page state.
  */
 export interface HilosTableFrameState {
-  /** What the page declared, or null when it declared no frame. */
-  readonly declaration: HilosTableFrame | null
-  /**
-   * The card a row projects to on a narrow screen, derived from resolved columns.
-   * Null exactly when `declaration` is.
-   */
-  readonly card: ReadonlySignal<HilosTableCard | null>
+  /** What the page declared. */
+  readonly declaration: HilosTableFrame
+  /** The card a row projects to on a narrow screen, derived from resolved columns. */
+  readonly card: ReadonlySignal<HilosTableCard>
   /** The columns currently offered by the page. */
   readonly columns: ReadonlySignal<readonly HilosTableColumn[]>
   /** The current search placeholder, or undefined when none was declared. */

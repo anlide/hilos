@@ -156,7 +156,7 @@ export class HilosTableSelection<R> {
   // read off it rather than mirrored as a signal (tableFrame.ts,
   // HilosTableFrameState); they follow only the controller input itself.
   protected readonly bulkActions = computed(
-    () => this.controller().frame.declaration?.bulkActions ?? [],
+    () => this.controller().frame.declaration.bulkActions ?? [],
   )
 
   private readonly target = signal<HilosTableSelectionTarget | null>(null)

@@ -114,6 +114,7 @@ describe('the cold entry of a table', () => {
     const controller = new TableViewportController<TableRow>({
       resolve: (row) => row,
       sendViewport: () => {},
+      frame: { columns: [] },
     })
     bindTableViewport(
       connection,
@@ -152,6 +153,7 @@ describe('the cold entry of a table', () => {
     const controller = new TableViewportController<TableRow>({
       resolve: (row) => row,
       sendViewport: () => {},
+      frame: { columns: [] },
     })
     bindTableViewport(
       connection,

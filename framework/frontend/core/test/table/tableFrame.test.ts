@@ -15,7 +15,7 @@ import {
 } from '../../src/table/tableFrame.js'
 
 function makeController(
-  frame?: HilosTableFrame,
+  frame: HilosTableFrame,
   initialFilter?: Record<string, unknown>,
   pageSize = 10,
 ) {
@@ -266,14 +266,6 @@ describe('TableViewportController frame declaration', () => {
     ])
   })
 
-  it('has a frame state even when the page declared no frame', () => {
-    const { controller } = makeController()
-
-    expect(controller.frame.declaration).toBeNull()
-    expect(controller.frame.filters.get()).toEqual([])
-    expect(controller.frame.activeFilterCount.get()).toBe(0)
-  })
-
   it('gives the same frame state object on every read', () => {
     const { controller } = makeController(backupsFrame)
 
@@ -377,7 +369,7 @@ describe('TableViewportController frame filters', () => {
     controller.setPage(2)
     controller.setFilters({ kind: 'full' })
 
-    expect(controller.page.get()).toBe(0)
+    expect(controller.frame.footer.get().page).toBe(0)
     expect(sent.at(-1)?.pageIndex).toBeNull()
     expect(sent.at(-1)?.anchor).toBeNull()
   })

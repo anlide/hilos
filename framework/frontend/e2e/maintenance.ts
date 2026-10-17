@@ -69,7 +69,7 @@ export async function addToMaintenanceCircle(
   identifier: string,
 ): Promise<void> {
   // The bar's button, the one on screen: the empty state offers the same press
-  // under another handle, and a declared table never draws the bar twice.
+  // under another handle, and a table never draws the bar twice.
   await shownByTestId(
     page.getByTestId('hilos-maintenance-circle-table'),
     'hilos-table-main-action',

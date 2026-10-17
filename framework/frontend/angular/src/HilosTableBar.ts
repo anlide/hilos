@@ -461,10 +461,10 @@ export class HilosTableBar<R> {
   private readonly declaration = computed(
     () => this.controller().frame.declaration,
   )
-  protected readonly title = computed(() => this.declaration()?.title)
-  protected readonly subtitle = computed(() => this.declaration()?.subtitle)
-  protected readonly searchBox = computed(() => this.declaration()?.search)
-  protected readonly mainAction = computed(() => this.declaration()?.mainAction)
+  protected readonly title = computed(() => this.declaration().title)
+  protected readonly subtitle = computed(() => this.declaration().subtitle)
+  protected readonly searchBox = computed(() => this.declaration().search)
+  protected readonly mainAction = computed(() => this.declaration().mainAction)
 
   // The search placeholder doubles as the field's accessible name: the field
   // carries no visible label, and two different strings would name it twice.

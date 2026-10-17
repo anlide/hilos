@@ -8,7 +8,7 @@ import {
 import { hilosTableCard } from '../../src/table/tableCard.js'
 import { type HilosTableFrame } from '../../src/table/tableFrame.js'
 
-function makeController(frame?: HilosTableFrame) {
+function makeController(frame: HilosTableFrame) {
   return new TableViewportController<TableRow>({
     resolve: (row) => row,
     sendViewport: () => undefined,
@@ -177,10 +177,6 @@ describe('hilosTableCard', () => {
 })
 
 describe('TableViewportController frame card', () => {
-  it('has no card when the page declared no frame', () => {
-    expect(makeController().frame.card.get()).toBeNull()
-  })
-
   it('reads back the layout the declared columns derive', () => {
     const columns: readonly HilosTableColumn[] = [
       { key: 'createdAt', label: 'Date' },

@@ -24,6 +24,7 @@ function makeController(pageSize = 10) {
   const controller = new TableViewportController<TableRow>({
     resolve: (shown) => shown,
     sendViewport: (descriptor) => sent.push(descriptor),
+    frame: { columns: [] },
   })
 
   const open = (
@@ -241,6 +242,7 @@ describe('TableViewportController expandable rows', () => {
     const controller = new TableViewportController<TableRow>({
       resolve: (shown) => shown,
       sendViewport: () => {},
+      frame: { columns: [] },
       expandable: (shown) => {
         const slot = shown.slots['names'] as { corrections: number }
 

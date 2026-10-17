@@ -47,7 +47,7 @@ export function HilosTableSelection<R>({
 }: HilosTableSelectionProps<R>) {
   // The declaration does not change over the life of a table, so its operations are
   // read once rather than wrapped in a signal (tableFrame.ts, HilosTableFrameState).
-  const bulkActions = controller.frame.declaration?.bulkActions ?? []
+  const bulkActions = controller.frame.declaration.bulkActions ?? []
 
   const target = useSignal(controller.selection.target)
   const count = useSignal(controller.selection.count)
