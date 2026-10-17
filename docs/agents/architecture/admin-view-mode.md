@@ -348,11 +348,14 @@ nobody is asked*).
     the setting presets, the Legal acceptances): `AbstractPage::frameForViewer()`
     on every send, by the frame DTO's static `wireFields()`. Such a frame goes
     past the delivery guards, so it asks the gate's verdict for the connection
-    itself, every time: a connection the gate refuses is sent nothing and stays
-    in the set — promoted live the moment the gate lets it through — and that
-    holds with the mode off too, so an admin whose rights were taken stops
-    receiving the frames; a viewer is sent the hidden frame, an admin the frame
-    as it is. A viewer's frame goes out untyped (`SignalData`) under the same
+    itself, every time: a connection the gate refuses is sent nothing, and it
+    stays in the set only until the refusal is announced. An announced refusal
+    releases it through `onUnsubscribe`; a later admission returns it through
+    `onSubscribe`. The check on every send remains for a refusal nobody
+    announced — the connection stays in the set and is promoted live the moment
+    the gate lets it through — and that holds with the mode off too, so an
+    admin whose rights were taken stops receiving the frames; a viewer is sent
+    the hidden frame, an admin the frame as it is. A viewer's frame goes out untyped (`SignalData`) under the same
     signal name: a typed frame is rebuilt on the master by its own
     `fromArray()`, and a typed reader takes the mark for a malformed value.
 - The window of a viewer is not sorted or searched by a field hidden from

@@ -16,6 +16,7 @@ use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
@@ -225,13 +226,13 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
     }
 
     /**
-     * Releases the follow of a connection that left the page or lost its socket, and drops it from
-     * the subscriber set.
+     * Releases the follow of a connection that left the page, lost its socket, or was refused the
+     * page, and drops it from the subscriber set.
      *
-     * The framework delivers this on an explicit unsubscribe AND on the socket closing
-     * ({@see WorkerManager::dispatchPageUnsubscribeIfTrackedOnConnectionClose()}), so a closed tab
-     * and a walk to another page release the reader by the same path. A viewer that vanishes
-     * without either is caught on the owner's own tick, against the connection roster.
+     * The framework delivers this on an explicit unsubscribe, on the socket closing
+     * ({@see WorkerManager::dispatchPageUnsubscribeIfTrackedOnConnectionClose()}), and on a refusal
+     * ({@see PageSignalRouter}). A viewer that vanishes without any of those is caught on the
+     * owner's own tick, against the connection roster.
      *
      * @param string $acceptKey WebSocket accept key
      * @throws InvalidArgumentException When the frame to the owner cannot be named

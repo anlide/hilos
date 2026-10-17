@@ -27,6 +27,9 @@ signals back to their source.
   top of its subscription reply: `docs/agents/signals/subscriptions.md`
 - `PageSubscriptionException` taxonomy and `@throws` style: use
   `$hilos-exception`
+- What a page releases when the connection leaves and when the server refuses
+  it: `docs/agents/architecture/page-access-control.md` (section "A refusal
+  releases what the page holds")
 
 ## Workflow
 

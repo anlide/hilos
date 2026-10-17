@@ -7,10 +7,16 @@ namespace Hilos\Tests\Unit;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\AbstractPageFactory;
+use Hilos\Core\Page\ActionRouteConfig;
+use Hilos\Core\Page\Exception\PageNotFoundException;
+use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Hilos;
 use Hilos\Log\DTO\LogsFollowStartSignalData;
@@ -18,7 +24,9 @@ use Hilos\Log\DTO\LogsFollowStopSignalData;
 use Hilos\Pages\Logs\DTO\LogsFollowStartActionDTO;
 use Hilos\Pages\Logs\DTO\LogsFollowStopActionDTO;
 use Hilos\Runtime\State\Item\HilosClusterNode as StateHilosClusterNode;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -287,6 +295,46 @@ final class LogsViewPageFollowTest extends TestCase
     }
 
     /**
+     * A refusal on the re-decision of rights releases the follow the same way leaving the page does.
+     * The stop is queued before the refusal frame, so it is the next frame the owner is sent.
+     */
+    public function testARefusalOnReassessmentReleasesTheOwnerTheStartWasSentTo(): void
+    {
+        $logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-follow-refusal');
+        Logger::setLogFile($logFile);
+        try {
+            $this->publishNode(self::PEER, true);
+            $this->dispatchingPage()->onAction(
+                self::ACCEPT_KEY,
+                HilosSignalConstants::LOGS_FOLLOW_START,
+                $this->request(self::PEER),
+            );
+            $this->nextFrame(HilosSignalConstants::LOGS_AGENT_FOLLOW_START);
+            Hilos::$sr?->subscribeToPage(
+                LogsViewTestPage::PAGE,
+                new WebSocketPageSubscribeSignalDTO(self::ACCEPT_KEY, LogsViewTestPage::PAGE),
+            );
+
+            new PageSignalRouter(new LogsViewFollowReleasePageFactory(new LogsViewTestAgent()), new ActionRouteConfig())
+                ->dispatchPageAccessReassess(
+                    new WebSocketPageSubscribeSignalDTO(self::ACCEPT_KEY, LogsViewTestPage::PAGE),
+                    SignalSource::WORKER,
+                    LogsViewTestPage::PAGE,
+                );
+
+            $this->assertEquals(
+                new LogsFollowStopSignalData(self::PEER, self::ACCEPT_KEY),
+                $this->nextFrame(HilosSignalConstants::LOGS_AGENT_FOLLOW_STOP),
+            );
+        } finally {
+            Logger::resetLogFile();
+            if (is_file($logFile)) {
+                unlink($logFile);
+            }
+        }
+    }
+
+    /**
      * The follow id IS the request id: a viewer that did not track its own start has nothing to
      * match the frames against, so there is no follow to begin.
      */
@@ -391,5 +439,35 @@ final class FollowTestBrowser extends BrowserContext
     public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
     {
         return $this->viewer;
+    }
+}
+
+/**
+ * Serves the logs viewer page to the router, so a refusal can reach its unsubscribe.
+ *
+ * @extends AbstractPageFactory<LogsViewTestAgent>
+ */
+final class LogsViewFollowReleasePageFactory extends AbstractPageFactory
+{
+    /**
+     * @param string $pageName Page name
+     * @return AbstractPage Logs viewer page
+     * @throws PageNotFoundException When an unexpected page is requested
+     */
+    protected function createPage(string $pageName): AbstractPage
+    {
+        return match ($pageName) {
+            LogsViewTestPage::PAGE => new LogsViewTestPage($this->agent),
+            default => throw new PageNotFoundException($pageName),
+        };
+    }
+
+    /**
+     * @param string $pageName Page name
+     * @return bool Whether this is the logs viewer page
+     */
+    public function hasPage(string $pageName): bool
+    {
+        return $pageName === LogsViewTestPage::PAGE;
     }
 }

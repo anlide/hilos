@@ -230,6 +230,9 @@ class PageSignalRouter
      * subscription error the same verdict would have produced at subscribe - one path, one
      * shape on the wire, and nothing new for the client to receive.
      *
+     * An answer that is not the page releases what the page holds for the connection
+     * ({@see AbstractPage::onUnsubscribe()}); the subscription registration stays.
+     *
      * What it deliberately does NOT do is re-subscribe. The subscription itself is unchanged;
      * only the answer to it is. That is why the frame never passes through
      * {@see DaemonManager::updateSubscriptions}: a real re-subscribe would rewrite the
@@ -347,6 +350,9 @@ class PageSignalRouter
      * A complete answer pays the page debt. Primary failures are reported and set it; a debt
      * probe keeps it without repeating the error frame or log line.
      *
+     * An answer that is not the page releases what the page holds for the connection
+     * ({@see AbstractPage::onUnsubscribe()}); the subscription registration stays.
+     *
      * @param WebSocketPageSubscribeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name (page name fallback)
@@ -409,6 +415,7 @@ class PageSignalRouter
 
             return PageResendOutcome::Answered;
         } catch (PageInternalErrorException $e) {
+            $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
             if (!$reportFailure) {
                 return PageResendOutcome::Failed;
             }
@@ -431,19 +438,22 @@ class PageSignalRouter
 
             return PageResendOutcome::Failed;
         } catch (PageSubscriptionException $e) {
+            $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
             if (!$reportFailure) {
                 return PageResendOutcome::Refused;
             }
-            // The subscription is intentionally KEPT alive, not torn down. A guard
-            // failure is a transient state, not a dead end: if the missing resource
-            // later appears (e.g. user #10 is created while a client sits on its 404
-            // page) or access is later granted, the guard starts passing and the live
-            // fan-out promotes the error page into the real page with no re-subscribe
-            // — the Hilos live-promotion model. Because the subscription stays
-            // registered, the browser delivery paths must re-check the guard on every
-            // fan-out (not rely on the subscription being absent): a guard-failed
-            // subscription receives nothing WHILE the guard fails, yet resumes the
-            // instant it passes.
+            // The subscription registration is intentionally KEPT alive, not torn down.
+            // What stays alive is that registration, not what the page held for the
+            // connection: that is released before this frame
+            // ({@see AbstractPage::onUnsubscribe()}). A guard failure is a transient
+            // state, not a dead end: if the missing resource later appears (e.g. user
+            // #10 is created while a client sits on its 404 page) or access is later
+            // granted, the guard starts passing and the live fan-out promotes the error
+            // page into the real page with no re-subscribe — the Hilos live-promotion
+            // model. Because the subscription stays registered, the browser delivery
+            // paths must re-check the guard on every fan-out (not rely on the
+            // subscription being absent): a guard-failed subscription receives nothing
+            // WHILE the guard fails, yet resumes the instant it passes.
             Logger::info("Page subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
             $this->sendSubscriptionError(
                 $pageInstance->getAgent()->getAgentSignalSource(),
@@ -456,6 +466,7 @@ class PageSignalRouter
 
             return PageResendOutcome::Refused;
         } catch (Throwable $e) {
+            $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
             if (!$reportFailure) {
                 return PageResendOutcome::Failed;
             }
@@ -575,6 +586,7 @@ class PageSignalRouter
                 Logger::error("Cannot mirror page subscription update: page={$page}, acceptKey={$data->acceptKey}, {$e->getMessage()}");
             }
         } catch (PageInternalErrorException $e) {
+            $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
             // Same order and the same reason as in dispatchPageSubscribe(): a node wrong about
             // itself is not a verdict about the subscriber, so it is logged as an error and its
             // words stay inside.
@@ -588,6 +600,7 @@ class PageSignalRouter
                 self::UPDATE_INTERNAL_ERROR,
             );
         } catch (PageSubscriptionException $e) {
+            $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
             Logger::info("Page update subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
             $this->sendSubscriptionError(
                 $pageInstance->getAgent()->getAgentSignalSource(),
@@ -598,6 +611,7 @@ class PageSignalRouter
                 ActionFailureReason::forSubscriber($e),
             );
         } catch (Throwable $e) {
+            $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
             Logger::error("Unexpected page update subscription error: page={$page}, exception={$e->getMessage()}");
             $this->sendSubscriptionError(
                 $pageInstance->getAgent()->getAgentSignalSource(),
@@ -2498,6 +2512,28 @@ class PageSignalRouter
         }
 
         return $this->resolvePage($page);
+    }
+
+    /**
+     * Releases what a page holds for a connection answered with something other than the page.
+     *
+     * Called before the refusal frame, so a channel's stop is queued before the browser hears
+     * the refusal. A failure of the release is logged and swallowed: the browser's refusal
+     * matters more than the cleanup, and an exception here would take the worker down with
+     * every connection it serves.
+     *
+     * @param AbstractPage $page Page that was judged
+     * @param string $acceptKey Connection the answer is addressed to
+     */
+    private function releaseUnservedConnection(AbstractPage $page, string $acceptKey): void
+    {
+        try {
+            $page->onUnsubscribe($acceptKey);
+        } catch (Throwable $e) {
+            Logger::error(
+                "Page release after a refusal failed: page={$page->getPageName()}, acceptKey={$acceptKey}, {$e->getMessage()}",
+            );
+        }
     }
 
     /**

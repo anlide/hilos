@@ -429,12 +429,14 @@ search result would reveal something about hidden text (HIL-1257).
   addressed to the node the page recorded at the start, not the one the browser
   names now — a viewer that switched nodes still releases the reader it left
   behind. A follow is also dropped when the page unsubscribes, when the socket
-  closes, and — checked before the file is touched — when the connection is no
-  longer on the node's roster, which is the only thing that catches a viewer who
-  left without a word. A changed answer to "is this connection a view-mode
-  viewer?" during subscription delivery stops the old follow before the new
-  answer leaves the page. Whenever the owner removes a follow it still holds,
-  it sends `stopped` with that follow's id; the browser drops frames of a follow
+  closes, when the server answered the connection with something other than the
+  page (rights taken away, sign-out, a block, a freeze), and — checked before
+  the file is touched — when the connection is no longer on the node's roster,
+  which is the only thing that catches a viewer who left without a word. A
+  changed answer to "is this connection a view-mode viewer?" during subscription
+  delivery stops the old follow before the new answer leaves the page. Whenever
+  the owner removes a follow it still holds, it sends `stopped` with that
+  follow's id; the browser drops frames of a follow
   it has already left (HIL-1257).
 - A stack trace cut by a tick boundary keeps the level of its entry: the reader
   carries the running level across the cut (`inheritedLevel`), so an `ERROR`

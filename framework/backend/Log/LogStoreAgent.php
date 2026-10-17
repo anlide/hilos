@@ -1348,8 +1348,9 @@ final class LogStoreAgent extends AbstractAgent
      *
      * Asked before the file is touched, deliberately: reading for somebody who has gone is exactly
      * the work this leaf promised not to do. It is also the only thing that catches a viewer who
-     * left without a word - a tab that closed cleanly is released by the page's own unsubscribe,
-     * and a socket struck out by {@see ConnectionRosterReconciler::reconcile()} is caught here.
+     * left without a word - a tab that closed cleanly or was refused its page is released by the
+     * page's own unsubscribe, and a socket struck out by
+     * {@see ConnectionRosterReconciler::reconcile()} is caught here.
      *
      * A project with no connections collection at all cannot answer, and a follow nobody can ever
      * verify would live as long as the process; it is treated as gone.

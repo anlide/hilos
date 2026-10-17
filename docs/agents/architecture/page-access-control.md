@@ -380,15 +380,16 @@ sees it.
 
 ## Preserve-on-fail and live-promotion
 
-A failed guard does **not** tear the subscription down — preserving it is
-intentional. It enables *live-promotion*: open `/user/10` when only 9 users exist
-→ 404 ErrorPage; user #10 is then created → the same live subscription resumes
-delivering on the backend with no re-subscribe. The access case is symmetric: a
-person denied access is granted the required flag → delivery resumes.
+A failed guard does **not** tear the subscription registration down — preserving
+that registration is intentional. It enables *live-promotion*: open `/user/10`
+when only 9 users exist → 404 ErrorPage; user #10 is then created → the same
+live subscription resumes delivering on the backend with no re-subscribe. The
+access case is symmetric: a person denied access is granted the required flag →
+delivery resumes.
 
-This rules out both tearing the subscription down and a static "guard passed" tag
-set once at subscribe. The guard is re-evaluated dynamically on each delivery
-(above), so the instant it passes, delivery resumes.
+This rules out both tearing the subscription registration down and a static
+"guard passed" tag set once at subscribe. The guard is re-evaluated dynamically
+on each delivery (above), so the instant it passes, delivery resumes.
 
 A 404 or 403 clears the client's page scope, so the preserved subscription is
 owed a whole page, just as it is after an internal error on the first answer.
@@ -414,6 +415,35 @@ that window would pull the sign-in surface out from under the panel and show a
 page nobody has acknowledged. The payload is ingested all the same, which is why
 the resume costs no round trip: the page is already in the scope when the error is
 lifted off it.
+
+### A refusal releases what the page holds
+
+An answer that is not the page — a refusal or a failure — on any of the four
+roads into that answer (subscribe, the re-decision of an open page, a silent
+`resendPage`, and a change of params) calls `AbstractPage::onUnsubscribe()`
+before the refusal frame. A silent resend sends no frame and still releases.
+A release that throws is logged, and the refusal is still sent when that road
+reports one.
+
+Everything the page opened for that connection outside the page answer is
+released in `onUnsubscribe`: its subscriber set, a viewer count, a channel at
+another agent. A call for a connection the page was not serving is an empty
+move.
+
+What stays is the subscription registration, and the debt a failed answer
+owes. A later admission does not revive what was released; the next
+`onSubscribe` registers it again.
+
+The window and the limit are named, and neither is closed. The window runs
+from the write that removes the rights until the stop reaches the file owner:
+the time the signals are in flight, tens to hundreds of milliseconds. The
+owner's tick inside that window may send one batch of lines, and an answer to
+a read handed over before the removal may likewise return one page of lines.
+A rights change nobody announced — a flag written straight into the database —
+is not noticed, the same as the rest of re-deciding an open page, the limit
+written under
+[Re-deciding an OPEN page when rights change](#re-deciding-an-open-page-when-rights-change)
+(**The limit, written down rather than engineered away**).
 
 ## Re-deciding an OPEN page when rights change
 

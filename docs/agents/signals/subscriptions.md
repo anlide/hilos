@@ -66,7 +66,9 @@ PAGE_UPDATE_SUBSCRIPTION / GROUP_UPDATE_SUBSCRIPTION
 ```
 
 ### Unsubscribe
-Sent on page leave or WS close.
+Sent on page leave or WS close. The same page cleanup (`onUnsubscribe`) also
+runs on a refusal
+([A refusal releases what the page holds](../architecture/page-access-control.md#a-refusal-releases-what-the-page-holds)).
 ```
 PAGE_UNSUBSCRIBE / GROUP_UNSUBSCRIBE
 ```

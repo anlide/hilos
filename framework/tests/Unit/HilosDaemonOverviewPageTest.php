@@ -518,7 +518,7 @@ final class HilosDaemonOverviewPageTest extends TestCase
         self::assertSame(SignalTypeConstants::TABLE_WINDOW, $signals[0]->signalName->getName());
     }
 
-    public function testPlacementFactRecoversAnOwedPageOnceAndAFailedTrySendsNoWindow(): void
+    public function testAFailedReleaseDropsTheViewerSoAPlacementFactSendsNothing(): void
     {
         $report = new NodeDaemonPicture('n1', NodeRole::Master, 100, $this->roster('x:1'));
         $this->deliver([$this->node($report)]);
@@ -529,13 +529,15 @@ final class HilosDaemonOverviewPageTest extends TestCase
         $this->deliver([$this->node($report->withProcesses($this->roster('x:2')))]);
         self::assertSame([], $this->drain());
         self::assertTrue(Hilos::$sr->hasPageDeliveryFailure('root'));
+        // The failure released the viewer. A placement-only change finds subscribers
+        // through that set, so it sends neither the owed page nor a window. The
+        // subscription and the debt stay for a later page answer.
         DaemonOverviewTestPage::$fails = false;
         $this->deliver([$this->node($report->withProcesses($this->roster('x:3')))]);
-        $this->onlyResponse();
-        $this->deliver([$this->node($report->withProcesses($this->roster('x:4')))]);
-        $signals = $this->drain();
-        self::assertCount(1, $signals);
-        self::assertSame(SignalTypeConstants::TABLE_WINDOW, $signals[0]->signalName->getName());
+        self::assertSame([], $this->drain());
+        self::assertTrue(Hilos::$sr->hasPageDeliveryFailure('root'));
+        self::assertSame(['root'], Hilos::$sr->getAcceptKeysForPage(HilosPageConstants::HILOS_DAEMON));
+        self::assertNotContains('root', ClusterDaemonPictureMirror::viewerKeys());
     }
 
     public function testAdminAndViewModeViewerReceiveBothDiagnosticFieldsThroughTheVerdict(): void

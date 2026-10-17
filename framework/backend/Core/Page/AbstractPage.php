@@ -541,10 +541,12 @@ abstract class AbstractPage implements ActionHostInterface
     }
 
     /**
-     * Handles page unsubscription.
+     * Stops serving one connection.
      *
-     * Default is a no-op; override in child classes when unsubscription cleanup
-     * is needed.
+     * The connection left the page, closed its socket, or the server answered it with something
+     * other than the page - a refusal or a failure. Everything the page opened for that connection
+     * outside the page answer (its subscriber set, a viewer count, a channel at another agent) is
+     * released here. A call for a connection the page was not serving must be a no-op.
      *
      * @param string $acceptKey WebSocket accept key
      * @throws HilosException Whatever the concrete page's cleanup raises
