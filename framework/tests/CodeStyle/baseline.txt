@@ -21,7 +21,6 @@ COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/SecondFactor
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/SecondFactorResets.php 3 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/SecondFactorTrusts.php 1 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/SecondFactors.php 1 # HIL-1531
-COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/Sessions.php 8 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/Settings.php 1 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/UserVerifications.php 1 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/VerifierCircleMembers.php 1 # HIL-1531
@@ -40,7 +39,6 @@ COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/PasskeyCredent
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/SecondFactorBackupCodes.php 2 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/SecondFactorResets.php 4 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/SecondFactors.php 2 # HIL-1531
-COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/Sessions.php 7 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/Settings.php 1 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/Users.php 1 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/VerifierCircleMembers.php 1 # HIL-1531

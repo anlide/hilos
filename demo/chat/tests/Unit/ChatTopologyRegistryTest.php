@@ -112,6 +112,7 @@ use Hilos\Auth\Library\DTO\AuthRegistrationProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitHeldSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorCancelSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorDisableApplySignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorMissedSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorOffSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorTrustDaysApplySignalData;
@@ -932,6 +933,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_TEST => PageConstants::HILOS_COMMUNICATIONS_CHANNEL,
             HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY => PageConstants::HILOS_COMMUNICATIONS_DELIVERIES,
             HilosSignalConstants::SECURITY_2FA_SETTING_SET => HilosPageConstants::HILOS_SECURITY_2FA,
+            HilosSignalConstants::SECURITY_2FA_SWITCH_SET => HilosPageConstants::HILOS_SECURITY_2FA,
             HilosSignalConstants::SECURITY_STEP_UP_OPERATION_SET => HilosPageConstants::HILOS_SECURITY_STEP_UP,
             HilosSignalConstants::LEGAL_ACCEPTANCES_EXPORT => HilosPageConstants::HILOS_LEGAL_ACCEPTANCES,
             HilosSignalConstants::LEGAL_SETTING_SET => HilosPageConstants::HILOS_LEGAL_SETTINGS,
@@ -1023,6 +1025,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_TEST => AgentType::HILOS_INDEX,
             HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY => AgentType::HILOS_INDEX,
             HilosSignalConstants::SECURITY_2FA_SETTING_SET => AgentType::HILOS_INDEX,
+            HilosSignalConstants::SECURITY_2FA_SWITCH_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::SECURITY_STEP_UP_OPERATION_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::LEGAL_ACCEPTANCES_EXPORT => AgentType::HILOS_LEGAL,
             HilosSignalConstants::LEGAL_SETTING_SET => AgentType::HILOS_LEGAL,
@@ -1201,6 +1204,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_SETUP_PROVEN => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_OFF => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_DISABLE_APPLY => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_BLOCK_CHANGED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
@@ -1511,6 +1515,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_SETUP_PROVEN => AuthSecondFactorSetupProvenSignalData::class,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_OFF => AuthSecondFactorOffSignalData::class,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY => AuthSecondFactorTrustDaysApplySignalData::class,
+            HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_DISABLE_APPLY => AuthSecondFactorDisableApplySignalData::class,
             HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END => AuthOtherSessionsEndSignalData::class,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL => AuthSecondFactorCancelSignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_BLOCK_CHANGED => AccountBlockChangedSignalData::class,

@@ -9,6 +9,10 @@
 // first connection is the protected operation "Add an authenticator app"
 // (HIL-1138): its modal opens on the server's word, at the confirmation step or
 // straight at the name.
+// While the administrator has turned the factor off for everyone (HIL-1303) the
+// page is one plate saying so — and, beside it, a removal that stands with its
+// date and Cancel; it turns back and forth live with the policy, and a window
+// open when it turns off closes.
 // The section, its live copy and the actions are the core's; this view owns only
 // the markup. The page is drawn from text — the mockup's node is a debt (D-113).
 // Bootstrap classes only (styling-rules.md).
@@ -22,6 +26,7 @@ import {
   effect,
   input,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core'
 import {
@@ -42,6 +47,7 @@ import type {
   HilosSecondFactorEnrollment,
   HilosSecondFactorProof,
   HilosSecondFactorState,
+  HilosSecondFactorView,
 } from '@hilos/core'
 
 import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
@@ -143,118 +149,131 @@ function focusStep(form: HTMLFormElement | undefined): void {
       <hilos-page-heading />
 
       @if (state(); as section) {
-        <h2 class="h6 text-uppercase text-body-secondary mb-2">
-          Two-step verification
-        </h2>
-        @if (section.required) {
-          <p class="small mb-2" data-id="profile-2fa-required">
-            Your administrator requires two-step verification.
-          </p>
-        }
-        <ul class="list-group mb-3" data-id="profile-2fa-apps">
-          @for (app of section.authenticators; track app.id) {
-            <li
-              class="list-group-item d-flex align-items-center gap-3"
-              [attr.data-id]="'profile-2fa-app-' + app.id"
-            >
-              <i class="bi bi-phone-vibrate fs-5" aria-hidden="true"></i>
-              <div class="flex-grow-1">
-                <div class="fw-semibold">{{ app.label }}</div>
-                <div class="small text-body-secondary">
-                  Connected {{ day(app.createdAt) }}
+        @if (view() === 'turnedOff') {
+          <div class="alert alert-secondary" data-id="hilos-2fa-turned-off">
+            Your administrator turned two-step verification off.{{
+              factorOn()
+                ? ' Your apps and backup codes are kept and will work again when it is turned back on.'
+                : ''
+            }}
+          </div>
+        } @else {
+          <h2 class="h6 text-uppercase text-body-secondary mb-2">
+            Two-step verification
+          </h2>
+          @if (section.required) {
+            <p class="small mb-2" data-id="profile-2fa-required">
+              Your administrator requires two-step verification.
+            </p>
+          }
+          <ul class="list-group mb-3" data-id="profile-2fa-apps">
+            @for (app of section.authenticators; track app.id) {
+              <li
+                class="list-group-item d-flex align-items-center gap-3"
+                [attr.data-id]="'profile-2fa-app-' + app.id"
+              >
+                <i class="bi bi-phone-vibrate fs-5" aria-hidden="true"></i>
+                <div class="flex-grow-1">
+                  <div class="fw-semibold">{{ app.label }}</div>
+                  <div class="small text-body-secondary">
+                    Connected {{ day(app.createdAt) }}
+                  </div>
+                  @if (removalLocked()) {
+                    <div
+                      class="small text-body-secondary"
+                      data-id="profile-2fa-remove-locked"
+                    >
+                      Your administrator requires two-step verification, so the
+                      last app stays.
+                    </div>
+                  }
                 </div>
-                @if (removalLocked()) {
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-danger"
+                  [disabled]="removalLocked()"
+                  [attr.data-id]="'profile-2fa-remove-' + app.id"
+                  (click)="openRemove(app)"
+                >
+                  Remove
+                </button>
+              </li>
+            }
+            @if (factorOn()) {
+              <li class="list-group-item d-flex align-items-center gap-3">
+                <i class="bi bi-key fs-5" aria-hidden="true"></i>
+                <div class="flex-grow-1">
+                  <div class="fw-semibold">Backup codes</div>
                   <div
                     class="small text-body-secondary"
-                    data-id="profile-2fa-remove-locked"
+                    data-id="profile-2fa-codes-left"
                   >
-                    Your administrator requires two-step verification, so the
-                    last app stays.
+                    {{ section.backupCodesLeft }} of
+                    {{ section.backupCodesTotal }} left
                   </div>
-                }
-              </div>
-              <button
-                type="button"
-                class="btn btn-sm btn-outline-danger"
-                [disabled]="removalLocked()"
-                [attr.data-id]="'profile-2fa-remove-' + app.id"
-                (click)="openRemove(app)"
+                </div>
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-secondary"
+                  data-id="profile-2fa-codes-show"
+                  (click)="openCodes()"
+                >
+                  Show
+                </button>
+              </li>
+            } @else {
+              <li
+                class="list-group-item text-body-secondary small"
+                data-id="profile-2fa-off"
               >
-                Remove
-              </button>
-            </li>
-          }
-          @if (factorOn()) {
+                Two-step verification is off. Connect an authenticator app to
+                turn it on.
+              </li>
+            }
+          </ul>
+          <button
+            hilosLoadingButton
+            type="button"
+            class="btn btn-sm btn-outline-primary mb-4"
+            [loading]="enrollStep() === 'opening'"
+            [disabled]="enrollStep() === 'opening'"
+            data-id="profile-2fa-add"
+            (click)="openEnroll()"
+          >
+            <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
+            Add an authenticator app
+          </button>
+
+          <h2 class="h6 text-uppercase text-body-secondary mb-2">
+            If you lose access
+          </h2>
+          <ul class="list-group mb-3">
             <li class="list-group-item d-flex align-items-center gap-3">
-              <i class="bi bi-key fs-5" aria-hidden="true"></i>
+              <i class="bi bi-hourglass-split fs-5" aria-hidden="true"></i>
               <div class="flex-grow-1">
-                <div class="fw-semibold">Backup codes</div>
+                <div class="fw-semibold">Wait before removal</div>
                 <div
                   class="small text-body-secondary"
-                  data-id="profile-2fa-codes-left"
+                  data-id="profile-2fa-wait"
                 >
-                  {{ section.backupCodesLeft }} of
-                  {{ section.backupCodesTotal }} left
+                  {{ section.resetWait.days }} days
+                  @if (section.resetWait.pendingDays !== null) {
+                    · {{ section.resetWait.pendingDays }} days from
+                    {{ day(section.resetWait.pendingFrom ?? now()) }}
+                  }
                 </div>
               </div>
               <button
                 type="button"
                 class="btn btn-sm btn-outline-secondary"
-                data-id="profile-2fa-codes-show"
-                (click)="openCodes()"
+                data-id="profile-2fa-wait-edit"
+                (click)="openWait()"
               >
-                Show
+                Change
               </button>
             </li>
-          } @else {
-            <li
-              class="list-group-item text-body-secondary small"
-              data-id="profile-2fa-off"
-            >
-              Two-step verification is off. Connect an authenticator app to turn
-              it on.
-            </li>
-          }
-        </ul>
-        <button
-          hilosLoadingButton
-          type="button"
-          class="btn btn-sm btn-outline-primary mb-4"
-          [loading]="enrollStep() === 'opening'"
-          [disabled]="enrollStep() === 'opening'"
-          data-id="profile-2fa-add"
-          (click)="openEnroll()"
-        >
-          <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
-          Add an authenticator app
-        </button>
-
-        <h2 class="h6 text-uppercase text-body-secondary mb-2">
-          If you lose access
-        </h2>
-        <ul class="list-group mb-3">
-          <li class="list-group-item d-flex align-items-center gap-3">
-            <i class="bi bi-hourglass-split fs-5" aria-hidden="true"></i>
-            <div class="flex-grow-1">
-              <div class="fw-semibold">Wait before removal</div>
-              <div class="small text-body-secondary" data-id="profile-2fa-wait">
-                {{ section.resetWait.days }} days
-                @if (section.resetWait.pendingDays !== null) {
-                  · {{ section.resetWait.pendingDays }} days from
-                  {{ day(section.resetWait.pendingFrom ?? now()) }}
-                }
-              </div>
-            </div>
-            <button
-              type="button"
-              class="btn btn-sm btn-outline-secondary"
-              data-id="profile-2fa-wait-edit"
-              (click)="openWait()"
-            >
-              Change
-            </button>
-          </li>
-        </ul>
+          </ul>
+        }
         @if (section.reset; as reset) {
           <div
             class="alert alert-warning d-flex align-items-center gap-3"
@@ -276,7 +295,7 @@ function focusStep(form: HTMLFormElement | undefined): void {
               Cancel
             </button>
           </div>
-        } @else if (factorOn()) {
+        } @else if (factorOn() && view() === 'full') {
           <button
             type="button"
             class="btn btn-sm btn-outline-danger mb-3"
@@ -290,12 +309,14 @@ function focusStep(form: HTMLFormElement | undefined): void {
           [action]="resetCancelAction"
           detailsTitle="Couldn't cancel the removal"
         />
-        <p class="small text-body-secondary mb-0">
-          While a removal waits, every channel you have is told about it, and
-          any of those messages stops it. A longer wait makes the account harder
-          to take — and makes you wait longer if your phone is really gone. A
-          shorter wait takes effect only after the wait in force.
-        </p>
+        @if (view() === 'full') {
+          <p class="small text-body-secondary mb-0">
+            While a removal waits, every channel you have is told about it, and
+            any of those messages stops it. A longer wait makes the account
+            harder to take — and makes you wait longer if your phone is really
+            gone. A shorter wait takes effect only after the wait in force.
+          </p>
+        }
       } @else {
         <div class="text-body-secondary" role="status">Loading…</div>
       }
@@ -676,6 +697,7 @@ export class HilosProfileSecurityPage {
   )
 
   protected readonly state = signal<HilosSecondFactorState | null>(null)
+  protected readonly view = signal<HilosSecondFactorView | null>(null)
   protected readonly apps = computed(() => this.state()?.authenticators ?? [])
   protected readonly factorOn = computed(() => this.apps().length > 0)
   protected readonly removalLocked = computed(
@@ -819,10 +841,29 @@ export class HilosProfileSecurityPage {
       const store = this.store()
       store.start()
       this.state.set(store.state.get())
-      const off = subscribeSignal(store.state, (next) => this.state.set(next))
+      this.view.set(store.view.get())
+      const off = [
+        subscribeSignal(store.state, (next) => this.state.set(next)),
+        subscribeSignal(store.view, (next) => this.view.set(next)),
+      ]
       onCleanup(() => {
-        off()
+        off.forEach((stop) => stop())
         store.dispose()
+      })
+    })
+    // Turned off, the section has none of the windows' actions any more: every
+    // window closes, and an opening still out drops its answer when it comes.
+    effect(() => {
+      if (this.view() !== 'turnedOff') {
+        return
+      }
+      untracked(() => {
+        if (this.enrollStep() === 'opening') this.enrollStep.set('name')
+        this.enrollOpen.set(false)
+        this.codesOpen.set(false)
+        this.removeOpen.set(false)
+        this.waitOpen.set(false)
+        this.resetOpen.set(false)
       })
     })
     effect((onCleanup) => {

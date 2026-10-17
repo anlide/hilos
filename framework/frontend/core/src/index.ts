@@ -741,6 +741,7 @@ export {
   type HilosSecondFactorResetWait,
   type HilosSecondFactorState,
   type HilosSecondFactorStore,
+  type HilosSecondFactorView,
 } from './profile/secondFactor.js'
 export {
   ACCOUNT_DELETION_OPERATION,
@@ -1746,6 +1747,7 @@ export {
   HILOS_SECOND_FACTOR_REQUIRED_COPY,
   HILOS_SECOND_FACTOR_SETTING_COPY,
   describeHilosSecondFactorSetting,
+  isHilosSecondFactorSwitch,
   type HilosSecondFactorSettingCopy,
   type HilosTwoFactorSettingRow,
   type HilosTwoFactorContext,
@@ -1757,6 +1759,13 @@ export {
   type HilosTwoFactorSettingEditFields,
   type HilosTwoFactorSettingEditForm,
 } from './admin/security/hilosSecurityTwoFactorEdit.js'
+export {
+  createHilosTwoFactorDisable,
+  DISABLE_SECOND_FACTOR_OPERATION,
+  HILOS_TWO_FACTOR_DISABLE_COPY,
+  type HilosTwoFactorDisable,
+  type HilosTwoFactorDisableStep,
+} from './admin/security/hilosSecurityTwoFactorDisable.js'
 export {
   resolveHilosStepUpOperationRow,
   createHilosSecurityStepUpTable,

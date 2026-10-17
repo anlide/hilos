@@ -19,6 +19,7 @@ use Hilos\Core\Router\SignalDataInterface;
  */
 final class SecondFactorStateSignalData extends BaseDTO implements SignalDataInterface
 {
+    public const string enabled = 'enabled';
     public const string authenticators = 'authenticators';
     public const string id = 'id';
     public const string label = 'label';
@@ -39,6 +40,8 @@ final class SecondFactorStateSignalData extends BaseDTO implements SignalDataInt
     public const string effectiveAt = 'effectiveAt';
 
     /**
+     * @param bool $enabled Whether the second factor exists in the installation; off, the section only says so
+     *     and keeps carrying the person's apps, codes and removal as they stand (HIL-1303)
      * @param list<array{id: int, label: string, createdAt: int, lastUsedAt: ?int}> $authenticators Confirmed apps
      * @param int $backupCodesLeft Unused backup codes of the person's set
      * @param int $backupCodesTotal Codes in the person's set
@@ -48,6 +51,7 @@ final class SecondFactorStateSignalData extends BaseDTO implements SignalDataInt
      * @param ?array{requestedAt: int, effectiveAt: int} $reset The standing removal, or null when none stands
      */
     public function __construct(
+        public readonly bool $enabled,
         public readonly array $authenticators,
         public readonly int $backupCodesLeft,
         public readonly int $backupCodesTotal,
@@ -63,6 +67,7 @@ final class SecondFactorStateSignalData extends BaseDTO implements SignalDataInt
     public function toArray(): array
     {
         return [
+            self::enabled => $this->enabled,
             self::authenticators => $this->authenticators,
             self::backupCodesLeft => $this->backupCodesLeft,
             self::backupCodesTotal => $this->backupCodesTotal,
@@ -95,6 +100,7 @@ final class SecondFactorStateSignalData extends BaseDTO implements SignalDataInt
         $reset = self::optionalArray($data, self::reset);
 
         return new static(
+            self::requireBool($data, self::enabled),
             $authenticators,
             self::requireInt($data, self::backupCodesLeft),
             self::requireInt($data, self::backupCodesTotal),

@@ -4,22 +4,32 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Integration;
 
+use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosAgent;
+use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\SettingsPage;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\AuthMethodKey;
 use Hilos\Auth\Method\AuthMethodSettings;
 use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
 use Hilos\Auth\Method\EnabledAuthMethods;
 use Hilos\Auth\Method\PasskeyAddressPolicy;
+use Hilos\Auth\Library\DTO\AuthSecondFactorDisableApplySignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorTrustDaysApplySignalData;
+use Hilos\Auth\SecondFactor\DTO\SecondFactorPolicySignalData;
+use Hilos\Auth\SecondFactor\SecondFactorPolicy;
 use Hilos\Auth\SecondFactor\SecondFactorSettings;
+use Hilos\Auth\StepUp\StepUpMessages;
+use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\Verification\DTO\CodeDeliverySignalData;
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -40,7 +50,9 @@ use Hilos\Database\Settings\Preset\SettingPresetGroup;
 use Hilos\Database\Settings\Preset\SettingPresetGroupProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Notification\Delivery\DeliveryChannelSettings;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Sms\Delivery\SmsDeliveryChannel;
+use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Tables\Settings\DTO\HilosSettingAddActionDTO;
 use Hilos\Tables\Settings\DTO\HilosSettingDeleteActionDTO;
 use Hilos\Tables\Settings\DTO\HilosSettingResetActionDTO;
@@ -48,6 +60,7 @@ use Hilos\Tables\Settings\DTO\HilosSettingUpdateActionDTO;
 use Hilos\Tables\Settings\HilosSettingTableRow;
 use Hilos\Theme\ThemeSettingsCatalog;
 use Hilos\Theme\DTO\ThemeSettingsSignalData;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
@@ -77,6 +90,12 @@ final class SettingsPageActionTest extends IntegrationTestCase
 
     /** @var string A second catalog key (no seeded override) for the update-missing case. */
     private const string UNSEEDED_CATALOG_KEY = SettingsCatalogConstants::STUB_KEY_EXAMPLE_INTEGER;
+
+    /** @var string Tab of the signed-in administrator in the cases that turn the second factor off. */
+    private const string ADMIN_KEY = 'second-factor-off-admin-ak';
+
+    /** Lifetime of a seeded confirmation, in seconds; longer than any case runs. */
+    private const int CONFIRMATION_TTL_SECONDS = 900;
 
     protected function setUp(): void
     {
@@ -702,6 +721,135 @@ final class SettingsPageActionTest extends IntegrationTestCase
     }
 
     /**
+     * Turning the second factor off from the general table asks the administrator's fresh
+     * confirmation first: without it the write is refused as expired and nothing is stored (HIL-1303).
+     */
+    public function testTurningTheSecondFactorOffWithoutAConfirmationIsRefused(): void
+    {
+        $this->withAdministrator(function (): void {
+            $this->withSettingsWriter(function (): void {
+                $this->deleteSettingIfExists(SecondFactorSettings::ENABLED_KEY);
+
+                $error = $this->submit(
+                    self::ADMIN_KEY,
+                    HilosSignalConstants::SETTING_UPDATE,
+                    new HilosSettingUpdateActionDTO(SecondFactorSettings::ENABLED_KEY, 'false'),
+                );
+
+                $this->assertSame(StepUpMessages::EXPIRED, $error);
+                $this->assertNull(Hilos::$db->settings[SecondFactorSettings::ENABLED_KEY]);
+                $this->assertTrue(SecondFactorPolicy::current()->enabled);
+            }, [SecondFactorSettings::ENABLED_KEY]);
+        });
+    }
+
+    /**
+     * With a fresh confirmation the value is stored, the session holder is handed the apply with the
+     * forget switch as it stands, and the write is answered only once the holder applied it (HIL-1303).
+     */
+    public function testTurningTheSecondFactorOffWithAConfirmationIsAppliedBeforeTheAnswer(): void
+    {
+        $this->withAdministrator(function (string $token, int $adminId): void {
+            $this->withSettingsWriter(function () use ($token, $adminId): void {
+                $this->deleteSettingIfExists(SecondFactorSettings::ENABLED_KEY);
+                $this->writeFromTheConsole(SecondFactorSettings::FORGET_TRUSTS_ON_DISABLE_KEY, 'false');
+                $this->drainSignals();
+                Hilos::$db->stepUps->actions->confirm(
+                    ProtectedModeRuntime::hashSessionToken($token),
+                    $adminId,
+                    StepUpOperationKey::DISABLE_SECOND_FACTOR,
+                    date('Y-m-d H:i:s', time() + self::CONFIRMATION_TTL_SECONDS),
+                );
+
+                $this->settingsPage()->onAction(
+                    self::ADMIN_KEY,
+                    HilosSignalConstants::SETTING_UPDATE,
+                    new HilosSettingUpdateActionDTO(SecondFactorSettings::ENABLED_KEY, 'false'),
+                );
+                $this->carryToTheLibrary();
+                [$apply, $answers, $policies] = $this->secondFactorFrames();
+
+                $this->assertFalse(SecondFactorPolicy::current()->enabled);
+                $this->assertCount(1, $policies);
+                $this->assertFalse($policies[0]->enabled);
+                $this->assertSame([], $answers, 'The write waits for the session holder');
+                $this->assertCount(1, $apply);
+                $this->assertInstanceOf(AuthSecondFactorDisableApplySignalData::class, $apply[0]->data->data);
+                $this->assertFalse($apply[0]->data->data->forgetTrusts);
+                $this->assertSame(self::ADMIN_KEY, $apply[0]->data->data->acceptKey);
+
+                $library = $this->sessionsLibrary();
+                $this->underAgent($library, static fn () => $library->onSignalAgent(
+                    $apply[0]->data,
+                    'agent',
+                    HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_DISABLE_APPLY,
+                ));
+                $this->assertNull($this->answeredError(), 'The holder answers the write once it applied it');
+            }, [SecondFactorSettings::ENABLED_KEY, SecondFactorSettings::FORGET_TRUSTS_ON_DISABLE_KEY]);
+        });
+    }
+
+    /**
+     * The console carries no connection and stands outside the confirmation; the apply goes all the same,
+     * carrying the forget switch's default (HIL-1303).
+     */
+    public function testTheConsoleTurnsTheSecondFactorOffWithoutAConfirmation(): void
+    {
+        $this->withSettingsWriter(function (): void {
+            $this->deleteSettingIfExists(SecondFactorSettings::ENABLED_KEY);
+
+            $this->writeFromTheConsole(SecondFactorSettings::ENABLED_KEY, 'false');
+            [$apply, $answers] = $this->secondFactorFrames();
+
+            $this->assertFalse(SecondFactorPolicy::current()->enabled);
+            $this->assertSame([], $answers);
+            $this->assertCount(1, $apply);
+            $this->assertTrue($apply[0]->data->data->forgetTrusts);
+            $this->assertSame(HilosSignalConstants::HILOS_SETTING_COMMAND_DONE, $apply[0]->data->data->replySignal);
+        }, [SecondFactorSettings::ENABLED_KEY]);
+    }
+
+    /**
+     * Turning the second factor back on - by a write or by a reset to the default - applies nothing:
+     * the policy frame alone, and the write answered at once (HIL-1303).
+     */
+    public function testTurningTheSecondFactorBackOnAppliesNothing(): void
+    {
+        $this->withSettingsWriter(function (): void {
+            $this->deleteSettingIfExists(SecondFactorSettings::ENABLED_KEY);
+            $this->writeFromTheConsole(SecondFactorSettings::ENABLED_KEY, 'false');
+            $this->drainSignals();
+
+            $this->writeFromTheConsole(SecondFactorSettings::ENABLED_KEY, 'true');
+            [$apply, $answers, $policies] = $this->secondFactorFrames();
+            $this->assertTrue(SecondFactorPolicy::current()->enabled);
+            $this->assertSame([], $apply);
+            $this->assertCount(1, $answers);
+            $this->assertCount(1, $policies);
+            $this->assertTrue($policies[0]->enabled);
+
+            $this->writeFromTheConsole(SecondFactorSettings::ENABLED_KEY, 'false');
+            $this->drainSignals();
+            new SettingsLibraryAgent()->onSignalAgent(
+                new AgentSignalData(new SettingResetSignalData(
+                    replySignal: HilosSignalConstants::HILOS_SETTING_COMMAND_DONE,
+                    acceptKey: '',
+                    requestId: 'second-factor-reset',
+                    action: CliCommands::SETTINGS_RESET,
+                    successMessage: null,
+                    key: SecondFactorSettings::ENABLED_KEY,
+                )),
+                'test',
+                HilosSignalConstants::HILOS_SETTING_RESET,
+            );
+            [$apply, $answers] = $this->secondFactorFrames();
+            $this->assertTrue(SecondFactorPolicy::current()->enabled);
+            $this->assertSame([], $apply);
+            $this->assertCount(1, $answers);
+        }, [SecondFactorSettings::ENABLED_KEY]);
+    }
+
+    /**
      * Runs one settings action end to end: the page checks and forwards, the library writes.
      *
      * Both halves in one process, which is what makes this a test of the seam and not of one
@@ -733,6 +881,110 @@ final class SettingsPageActionTest extends IntegrationTestCase
         }
 
         $this->fail('The page owes the library a frame for every write it takes');
+    }
+
+    /**
+     * Hands the library the one frame the page addressed to it, leaving what the library sends on the queue.
+     */
+    private function carryToTheLibrary(): void
+    {
+        $asks = array_keys(SettingsLibraryAgent::AGENT_SIGNALS);
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if (!in_array($signal->signalName->getName(), $asks, true)) {
+                continue;
+            }
+
+            $this->assertInstanceOf(AgentSignalData::class, $signal->data);
+            new SettingsLibraryAgent()->onSignalAgent($signal->data, 'agent', $signal->signalName->getName());
+
+            return;
+        }
+
+        $this->fail('The page owes the library a frame for every write it takes');
+    }
+
+    /**
+     * Writes a value the way the console's settings:set does - no connection behind it.
+     *
+     * @param string $key Setting key
+     * @param string $value Value as typed at the console
+     */
+    private function writeFromTheConsole(string $key, string $value): void
+    {
+        new SettingsLibraryAgent()->onSignalAgent(
+            new AgentSignalData(new SettingWriteSignalData(
+                replySignal: HilosSignalConstants::HILOS_SETTING_COMMAND_DONE,
+                acceptKey: '',
+                requestId: 'second-factor-console',
+                action: CliCommands::SETTINGS_SET,
+                successMessage: null,
+                key: $key,
+                value: $value,
+            )),
+            'test',
+            HilosSignalConstants::HILOS_SETTING_WRITE,
+        );
+    }
+
+    /**
+     * Drains the queue once, sorting out what a write of the second factor's switch sent.
+     *
+     * @return array{0: list<SignalDTO>, 1: list<HandoverAnswerSignalData>, 2: list<SecondFactorPolicySignalData>}
+     *     The applies handed to the session holder, the answers, and the policy frames, in the order sent
+     */
+    private function secondFactorFrames(): array
+    {
+        $apply = [];
+        $answers = [];
+        $policies = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            $name = $signal->signalName->getName();
+            if ($name === HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_DISABLE_APPLY) {
+                $apply[] = $signal;
+            }
+            if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof HandoverAnswerSignalData) {
+                $answers[] = $signal->data->data;
+            }
+            if ($name === HilosSignalConstants::HILOS_SECOND_FACTOR_POLICY && $signal->data instanceof WebSocketSignalData
+                && $signal->data->data instanceof SecondFactorPolicySignalData) {
+                $policies[] = $signal->data->data;
+            }
+        }
+
+        return [$apply, $answers, $policies];
+    }
+
+    /**
+     * Signs an active administrator in on one tab and runs a body with that browser, as the card's suite does.
+     *
+     * @param callable(string, int): void $body Test body, given the browser's session token and the administrator
+     */
+    private function withAdministrator(callable $body): void
+    {
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), 'test-agent');
+        Hilos::$rt->connections->actions->clear();
+        Hilos::initSignalRouter(new ChatSignalRouter());
+        Hilos::initBrowser();
+        $holder = new ChatAgent();
+        $adminId = (int) Hilos::$db->users->actions->createWithName('Administrator')->id;
+        Hilos::$db->users[$adminId]->actions->setAdmin(true);
+        $token = RandomHelper::hex(16);
+        $this->deliverHandshake($holder, new WebSocketHandshakeSignalDTO(
+            headers: [],
+            acceptKey: self::ADMIN_KEY,
+            cookies: [],
+            clientIp: '127.0.0.1',
+            queryParams: RequestQueryParams::empty(),
+            sessionToken: $token,
+        ));
+        $this->authenticateSession($holder, $token, $adminId, null);
+        $this->drainSignals();
+
+        try {
+            $body($token, $adminId);
+        } finally {
+            Hilos::$rt->connections->actions->clear();
+        }
     }
 
     /**

@@ -1,6 +1,7 @@
 // Covers the React profile root (HIL-1169): Name with Change only for the
 // project's rename, Email only with a verified address, a row per catalog
-// section with its summary, a name window that still closes on the name it
+// section with its summary — but for a section the root hides (HIL-1303) — a
+// name window that still closes on the name it
 // sent after StrictMode ran its effects twice, and the Theme row with its
 // window (HIL-1440).
 import { StrictMode } from 'react'
@@ -298,6 +299,45 @@ it('draws only the placeholder while nobody is signed in', () => {
 
   expect(node('profile-loading')).not.toBeNull()
   expect(node('profile-view')).toBeNull()
+})
+
+it('draws no Security row while two-step verification is turned off with nothing of the person standing, live', () => {
+  const { node, scopes } = setup(nameOnly())
+  const section = {
+    enabled: false,
+    authenticators: [],
+    backupCodesLeft: 0,
+    backupCodesTotal: 0,
+    required: false,
+    resetWait: {
+      days: 8,
+      pendingDays: null,
+      pendingFrom: null,
+      defaultDays: 8,
+      minDays: 1,
+      maxDays: 30,
+    },
+    reset: null,
+  }
+  act(() =>
+    scopes.openPage(HilosPages.PROFILE).data.set('secondFactor', section),
+  )
+
+  expect(
+    [...document.querySelectorAll('[data-id="profile-section"]')].map(
+      (row) => row.querySelector('.fw-semibold')?.textContent,
+    ),
+  ).toEqual(['Ways to sign in'])
+  expect(node('profile-security-open')).toBeNull()
+
+  act(() =>
+    scopes
+      .openPage(HilosPages.PROFILE)
+      .data.set('secondFactor', { ...section, enabled: true }),
+  )
+  expect(node('profile-security-summary')?.textContent).toBe(
+    'Two-step verification is off',
+  )
 })
 
 it('warns under the sign-in row while device keys are the only way in, live', () => {

@@ -37,6 +37,9 @@ final class SecondFactorMessages
     /** A removal asked for by a person who has no second factor to remove. */
     public const string FACTOR_OFF = 'Two-step verification is off';
 
+    /** A profile action of the section while the administrator has turned the second factor off for everyone (HIL-1303). */
+    public const string TURNED_OFF_BY_ADMIN = 'Two-step verification is turned off by your administrator';
+
     /**
      * App codes refused under the lock wrong ones put (HIL-1285); the time left follows. Said
      * the same whether the code typed was right or wrong, so the lock tells a guesser nothing.

@@ -10,7 +10,9 @@ use Hilos\Auth\Method\PasskeyAddressPolicy;
 use Hilos\Auth\SecondFactor\DTO\SecondFactorPolicySignalData;
 use Hilos\Auth\SecondFactor\SecondFactorPolicy;
 use Hilos\Auth\SecondFactor\SecondFactorSettings;
+use Hilos\Auth\Library\DTO\AuthSecondFactorDisableApplySignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorTrustDaysApplySignalData;
+use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\Verification\DTO\CodeDeliverySignalData;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosAgentType;
@@ -23,6 +25,7 @@ use Hilos\Core\Agent\Config\AgentCommandConfigKey;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Table\Exception\TableActionException;
@@ -36,12 +39,14 @@ use Hilos\Database\Settings\Exception\SettingPresetUnknownException;
 use Hilos\Database\Settings\Preset\SettingPresetGroupProviderInterface;
 use Hilos\Database\Settings\Preset\SettingPresetResolver;
 use Hilos\Database\Settings\SettingsCommandConstants;
+use Hilos\Database\Settings\SettingValue;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Theme\DTO\ThemeSettingsSignalData;
+use Hilos\Users\AskingAdministrator;
 use Hilos\Utils\Logger;
 
 /**
@@ -122,6 +127,22 @@ final class SettingsLibraryAgent extends AbstractAgent
         HilosDbContext::settings => TruthSourceOperation::ALL,
     ];
 
+    /**
+     * What the step-up gate reads where the library runs (HIL-1303).
+     *
+     * Turning the second factor off from a browser asks the administrator's fresh confirmation
+     * here, at the write ({@see AskingAdministrator::confirmed()}): the confirmation itself, and
+     * - when it is missing - the second factors and device keys that name the proof the refusal
+     * asks for. Sessions and identities are read in every process already.
+     *
+     * @var list<string>
+     */
+    public const array READS_DB = [
+        HilosDbContext::stepUps,
+        HilosDbContext::secondFactors,
+        HilosDbContext::passkeyCredentials,
+    ];
+
     public const string AGENT_TYPE = HilosAgentType::HILOS_SETTINGS_LIBRARY;
 
     /**
@@ -160,6 +181,9 @@ final class SettingsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_SETTING_PRESET_APPLY => SettingPresetApplySignalData::class,
         HilosSignalConstants::HILOS_SETTING_COMMAND_DONE => HandoverAnswerSignalData::class,
     ];
+
+    /** Texts a yes-or-no setting reads as no, after trimming and lowering ({@see SettingValue::bool()}). */
+    private const array OFF_TEXTS = ['0', 'false'];
 
     /**
      * Nothing is released on stop: this library holds a claim, not a resource.
@@ -415,18 +439,63 @@ final class SettingsLibraryAgent extends AbstractAgent
      * key, and whether a row already stands under it, are questions the table answers as it
      * writes; its idempotence is what lets two administrators press the same button.
      *
+     * Turning the second factor off asks the administrator's fresh confirmation first
+     * ({@see confirmSecondFactorOff()}), whichever screen forwarded it.
+     *
      * @param SettingWriteSignalData $ask Key and value the administrator asked for
      * @return ?ActionRefusal Why the value was refused, or null when it was written
      */
     private function storeValue(SettingWriteSignalData $ask): ?ActionRefusal
     {
         try {
+            $this->confirmSecondFactorOff($ask);
             $this->settingsTable()->actions->add($ask->key, $ask->value);
         } catch (HilosException $e) {
             return $this->refusal($e, "Setting write failed for '{$ask->key}'");
         }
 
         return null;
+    }
+
+    /**
+     * Requires the administrator's live confirmation before the second factor is turned off (HIL-1303).
+     *
+     * The check stands here, in the library that owns the write, and not in the page that forwards
+     * it, so the general settings table cannot turn the factor off without a fresh confirmation of
+     * that browser either. A write from the console carries no connection and stays outside the
+     * check, as account:merge and admin:grant do; turning the factor on, or writing "off" over an
+     * "off", is not the operation and passes. The value is read as off the way
+     * {@see SettingValue::bool()} reads it.
+     *
+     * @param SettingWriteSignalData $ask Key and value the administrator asked for
+     * @throws ValidationException When the administrator is not an active one, or the confirmation is absent or expired
+     * @throws HilosException When the second-factor settings, the session or the confirmation cannot be read
+     */
+    private function confirmSecondFactorOff(SettingWriteSignalData $ask): void
+    {
+        if ($ask->key !== SecondFactorSettings::ENABLED_KEY || $ask->acceptKey === '' || !$this->readsAsOff($ask->value)) {
+            return;
+        }
+        if (!SecondFactorPolicy::current()->enabled) {
+            return;
+        }
+
+        AskingAdministrator::confirmed($ask->acceptKey, StepUpOperationKey::DISABLE_SECOND_FACTOR);
+    }
+
+    /**
+     * Whether a value about to be written to a yes-or-no setting reads as no.
+     *
+     * @param mixed $value Value as the write carries it
+     * @return bool True for false, 0, and the texts "0" and "false" in any case and spacing
+     */
+    private function readsAsOff(mixed $value): bool
+    {
+        if (is_string($value)) {
+            return in_array(strtolower(trim($value)), self::OFF_TEXTS, true);
+        }
+
+        return $value === false || $value === 0;
     }
 
     /**
@@ -521,7 +590,7 @@ final class SettingsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Announces installation-wide changes and answers once any trust reduction has landed.
+     * Announces installation-wide changes and answers once any trust reduction, or the second factor turned off, has landed.
      *
      * A refused write changed nothing and sends nothing. Neither does a write the method set
      * could not be read around: the set is then unknown on both sides of it, and the next write
@@ -529,6 +598,12 @@ final class SettingsLibraryAgent extends AbstractAgent
      *
      * The second-factor settings travel the same way (HIL-494): a write that moved them is told to
      * every connection, so the profile section and the code step redraw without a reload.
+     *
+     * A write that turned the second factor off (HIL-1303) - by whichever door: a screen, the console
+     * - is applied by the session holder before it is answered: the trusted browsers forgotten when
+     * the setting asks it, and every sign-in waiting on a code or on enrolment let go. Turning it
+     * back on applies nothing; the frame alone carries it. A key reset to its default, or a row
+     * dropped, turns it on.
      *
      * Delivery is compared independently of both policies: an unreadable policy cannot hide
      * a change of delivery availability, whose reader itself fails open (HIL-1102).
@@ -570,7 +645,8 @@ final class SettingsLibraryAgent extends AbstractAgent
             && ($policyBefore === null || $policyAfter->trustDays < $policyBefore->trustDays);
         $retry = $touchesTrustDays && $ask instanceof SettingWriteSignalData && $policyAfter !== null
             && $policyAfter->trustDays === $policyBefore?->trustDays;
-        $deferAnswer = $shortened || $retry;
+        $disabled = $policyBefore?->enabled === true && $policyAfter?->enabled === false;
+        $deferAnswer = $shortened || $retry || $disabled;
         if (!$deferAnswer && (!$touchesTrustDays || $policyAfter !== null)) {
             $this->answer($ask, null);
         }
@@ -607,6 +683,28 @@ final class SettingsLibraryAgent extends AbstractAgent
             return;
         }
         if (!$deferAnswer) {
+            return;
+        }
+
+        // One write moves one key, and no preset group holds the switch, so a write that turned the
+        // factor off did not touch the trust term: the two applies never meet on one answer.
+        if ($disabled) {
+            try {
+                $this->sendToAgent(
+                    HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_DISABLE_APPLY,
+                    new AuthSecondFactorDisableApplySignalData(
+                        forgetTrusts: $policyAfter->forgetTrustsOnDisable,
+                        replySignal: $ask->replySignal,
+                        acceptKey: $ask->acceptKey,
+                        requestId: $ask->requestId,
+                        action: $ask->action,
+                        successMessage: $ask->successMessage,
+                    ),
+                );
+            } catch (HilosException $e) {
+                $this->answer($ask, $this->refusal($e, 'Second factor turned off could not be sent to the session holder'));
+            }
+
             return;
         }
 

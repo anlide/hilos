@@ -2,8 +2,10 @@
 // (HIL-1134): it holds the setting row in focus, reloads a pristine edit when
 // the value changes elsewhere and says so, shows the conflict chrome without
 // Merge on a changed one (the live value in words) and answers Keep mine / Take
-// theirs, and locks save as "Deleted" when the row goes.
-import { mount } from '@vue/test-utils'
+// theirs, and locks save as "Deleted" when the row goes. The two first rows are
+// switches (HIL-1303): the first, while on, opens the window that turns the
+// factor off instead of moving, and off it dims and locks the rows below it.
+import { flushPromises, mount } from '@vue/test-utils'
 import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
@@ -27,6 +29,8 @@ import HilosSecurity2faPage from './HilosSecurity2faPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 
 const SETTINGS_TABLE = 'hilosSecurityTwoFactor'
+const ENABLED = HilosSecondFactorSettingKey.enabled
+const FORGET = HilosSecondFactorSettingKey.forgetTrustsOnDisable
 const REQUIRED = HilosSecondFactorSettingKey.required
 const TRUST_DAYS = HilosSecondFactorSettingKey.trustDays
 
@@ -57,18 +61,44 @@ function router(): HilosRouter {
 
 /** A setting row's slot, with the given value. */
 function settingSlot(rowKey: string, value: string): Record<string, unknown> {
-  return { rowKey, value, defaultValue: rowKey === REQUIRED ? 'none' : '30' }
+  return {
+    rowKey,
+    value,
+    defaultValue:
+      rowKey === REQUIRED
+        ? 'none'
+        : rowKey === ENABLED || rowKey === FORGET
+          ? 'true'
+          : '30',
+  }
 }
 
-function seededContext(hiddenValues = false): {
+/** A setting row's slot hidden from a viewer of the admin view mode. */
+function hiddenSlot(rowKey: string): Record<string, unknown> {
+  return { rowKey, value: { _hidden: true }, defaultValue: { _hidden: true } }
+}
+
+function seededContext(
+  hiddenValues = false,
+  enabled = 'true',
+): {
   context: HilosTwoFactorContext
   pushUpdate: (rowKey: string, value: string) => void
   pushRemove: (rowKey: string) => void
-  answer: (outcome: 'success' | 'fail', errorCode?: string) => void
+  answer: (
+    outcome: 'success' | 'fail',
+    errorCode?: string,
+    reply?: unknown,
+  ) => void
   sent: Array<{ action: string; payload: Record<string, unknown> }>
   focus: string[]
 } {
   let settings = new Map<string, Record<string, unknown>>([
+    [
+      ENABLED,
+      hiddenValues ? hiddenSlot(ENABLED) : settingSlot(ENABLED, enabled),
+    ],
+    [FORGET, hiddenValues ? hiddenSlot(FORGET) : settingSlot(FORGET, 'true')],
     [
       REQUIRED,
       hiddenValues
@@ -222,7 +252,11 @@ function seededContext(hiddenValues = false): {
       settings.delete(rowKey)
       pushDelta({ kind: 'row_removed', rowKey, reason: 'deleted' })
     },
-    answer(outcome: 'success' | 'fail', errorCode?: string): void {
+    answer(
+      outcome: 'success' | 'fail',
+      errorCode?: string,
+      reply?: unknown,
+    ): void {
       const last = sent[sent.length - 1]
       const event = outcome === 'success' ? 'actionSuccess' : 'actionError'
       for (const listener of replyListeners.get(event) ?? []) {
@@ -232,6 +266,7 @@ function seededContext(hiddenValues = false): {
           requestId: last?.requestId,
           reason: 'The setting refused the write.',
           ...(errorCode !== undefined ? { errorCode } : {}),
+          ...(reply !== undefined ? { reply } : {}),
         })
       }
     },
@@ -437,6 +472,225 @@ describe('HilosSecurity2faPage', () => {
   })
 })
 
+/** Mount the page over a context. */
+async function mountPage(context: HilosTwoFactorContext): Promise<void> {
+  const wrapper = mount(HilosSecurity2faPage, {
+    props: { context: markRaw(context) },
+    attachTo: document.body,
+    global: { provide: { [hilosRouterKey as symbol]: router() } },
+  })
+  mounted.push(wrapper)
+  await nextTick()
+}
+
+/** A row's control as the table draws it (the card draws it once more). */
+function inTable<T extends HTMLElement>(id: string): T {
+  return document.querySelector(`table [data-id="${id}"]`) as T
+}
+
+/** Let an answered action reach the view. */
+async function replied(): Promise<void> {
+  await flushPromises()
+  await nextTick()
+}
+
+/** Click the first switch and answer the opening of its step. */
+async function openDisable(
+  world: ReturnType<typeof seededContext>,
+  required: boolean,
+): Promise<void> {
+  inTable<HTMLInputElement>(`hilos-2fa-switch-${ENABLED}`).click()
+  await nextTick()
+  world.answer('success', undefined, {
+    required,
+    purpose: 'turn the second factor off',
+    method: 'password',
+  })
+  await replied()
+}
+
+describe('HilosSecurity2faPage switches', () => {
+  it('draws the two first rows as switches without a pencil, the rest with one', async () => {
+    await mountPage(seededContext().context)
+
+    const first = inTable<HTMLInputElement>(`hilos-2fa-switch-${ENABLED}`)
+    expect(first.checked).toBe(true)
+    expect(first.getAttribute('aria-label')).toBe('Two-factor enabled')
+    expect(
+      inTable<HTMLInputElement>(`hilos-2fa-switch-${FORGET}`).checked,
+    ).toBe(true)
+    expect(inTable(`hilos-2fa-edit-${ENABLED}`)).toBeNull()
+    expect(inTable(`hilos-2fa-edit-${FORGET}`)).toBeNull()
+    expect(inTable(`hilos-2fa-value-${ENABLED}`)).toBeNull()
+    expect(inTable(`hilos-2fa-edit-${REQUIRED}`)).not.toBeNull()
+  })
+
+  it('sets the second switch by one write and moves it only with the row', async () => {
+    const world = seededContext()
+    await mountPage(world.context)
+
+    const forget = inTable<HTMLInputElement>(`hilos-2fa-switch-${FORGET}`)
+    forget.click()
+    await nextTick()
+    expect(world.sent).toEqual([
+      expect.objectContaining({
+        action: 'security_2fa_switch_set',
+        payload: { key: FORGET, enabled: false },
+      }),
+    ])
+    expect(forget.checked).toBe(true)
+
+    world.answer('success')
+    world.pushUpdate(FORGET, 'false')
+    await replied()
+    expect(
+      inTable<HTMLInputElement>(`hilos-2fa-switch-${FORGET}`).checked,
+    ).toBe(false)
+  })
+
+  it('turns the factor back on by one write, with no window', async () => {
+    const world = seededContext(false, 'false')
+    await mountPage(world.context)
+
+    inTable<HTMLInputElement>(`hilos-2fa-switch-${ENABLED}`).click()
+    await nextTick()
+
+    expect(world.sent).toEqual([
+      expect.objectContaining({
+        action: 'security_2fa_switch_set',
+        payload: { key: ENABLED, enabled: true },
+      }),
+    ])
+    expect(modalEl('hilos-2fa-disable-window')).toBeNull()
+  })
+
+  it('dims the rows below the first and locks their pencils and the second switch while off', async () => {
+    const world = seededContext(false, 'false')
+    await mountPage(world.context)
+
+    expect(
+      inTable<HTMLInputElement>(`hilos-2fa-switch-${ENABLED}`).disabled,
+    ).toBe(false)
+    expect(
+      inTable<HTMLInputElement>(`hilos-2fa-switch-${FORGET}`).disabled,
+    ).toBe(true)
+    expect(
+      inTable<HTMLButtonElement>(`hilos-2fa-edit-${REQUIRED}`).disabled,
+    ).toBe(true)
+    expect(
+      inTable(`hilos-2fa-value-${TRUST_DAYS}`).classList.contains('opacity-50'),
+    ).toBe(true)
+
+    world.pushUpdate(ENABLED, 'true')
+    await replied()
+    expect(
+      inTable<HTMLInputElement>(`hilos-2fa-switch-${FORGET}`).disabled,
+    ).toBe(false)
+    expect(
+      inTable<HTMLButtonElement>(`hilos-2fa-edit-${REQUIRED}`).disabled,
+    ).toBe(false)
+    expect(
+      inTable(`hilos-2fa-value-${TRUST_DAYS}`).classList.contains('opacity-50'),
+    ).toBe(false)
+  })
+})
+
+describe('HilosSecurity2faPage turning the factor off', () => {
+  it("opens the window instead of moving the switch: Confirm it's you, then what it does and Turn off", async () => {
+    const world = seededContext()
+    await mountPage(world.context)
+    await openDisable(world, true)
+
+    expect(world.sent[0]).toMatchObject({
+      action: 'hilos_step_up_start',
+      payload: { operation: 'disable_second_factor' },
+    })
+    expect(
+      inTable<HTMLInputElement>(`hilos-2fa-switch-${ENABLED}`).checked,
+    ).toBe(true)
+    expect(modalEl('modal')?.textContent).toContain("Confirm it's you")
+    const password = modalEl('step-up-password') as HTMLInputElement
+    password.value = 'secret'
+    password.dispatchEvent(new Event('input'))
+    modalEl('hilos-2fa-disable-step-up-confirm')?.click()
+    await nextTick()
+    expect(world.sent[1]).toMatchObject({
+      action: 'hilos_step_up_confirm',
+      payload: { operation: 'disable_second_factor', password: 'secret' },
+    })
+
+    world.answer('success')
+    await replied()
+    expect(modalEl('modal')?.textContent).toContain('Turn two-factor off')
+    const lines = Array.from(
+      document.querySelectorAll(
+        '[data-id="hilos-2fa-disable-consequences"] li',
+      ),
+    ).map((item) => item.textContent?.trim())
+    expect(lines).toHaveLength(6)
+    expect(lines[2]).toBe(
+      'Trusted browsers are forgotten: once it is back on, they ask for the code again.',
+    )
+
+    modalEl('hilos-2fa-disable-confirm')?.click()
+    await nextTick()
+    expect(world.sent[2]).toMatchObject({
+      action: 'security_2fa_switch_set',
+      payload: { key: ENABLED, enabled: false },
+    })
+    world.answer('success')
+    await replied()
+    expect(modalEl('hilos-2fa-disable-window')).toBeNull()
+  })
+
+  it('keeps the window open with the refusal above the buttons', async () => {
+    const world = seededContext()
+    await mountPage(world.context)
+    await openDisable(world, false)
+
+    expect(modalEl('hilos-2fa-disable-refusal')).toBeNull()
+    modalEl('hilos-2fa-disable-confirm')?.click()
+    await nextTick()
+    world.answer('fail')
+    await replied()
+
+    expect(modalEl('hilos-2fa-disable-refusal')?.textContent).toContain(
+      'The setting refused the write.',
+    )
+    expect(modalEl('hilos-2fa-disable-confirm')).not.toBeNull()
+  })
+
+  it('says why the step could not open, with Cancel alone', async () => {
+    const world = seededContext()
+    await mountPage(world.context)
+    inTable<HTMLInputElement>(`hilos-2fa-switch-${ENABLED}`).click()
+    await nextTick()
+    world.answer('fail')
+    await replied()
+
+    expect(modalEl('hilos-2fa-disable-refusal')?.textContent).toContain(
+      'The setting refused the write.',
+    )
+    expect(modalEl('hilos-2fa-disable-confirm')).toBeNull()
+    expect(modalEl('hilos-2fa-disable-step-up-confirm')).toBeNull()
+    modalEl('hilos-2fa-disable-cancel')?.click()
+    await nextTick()
+    expect(modalEl('hilos-2fa-disable-window')).toBeNull()
+  })
+
+  it('closes by itself once the first row says off, whoever wrote it', async () => {
+    const world = seededContext()
+    await mountPage(world.context)
+    await openDisable(world, false)
+    expect(modalEl('hilos-2fa-disable-window')).not.toBeNull()
+
+    world.pushUpdate(ENABLED, 'false')
+    await replied()
+
+    expect(modalEl('hilos-2fa-disable-window')).toBeNull()
+  })
+})
+
 describe('HilosSecurity2faPage in the admin view mode', () => {
   const releases: (() => void)[] = []
 
@@ -502,6 +756,22 @@ describe('HilosSecurity2faPage in the admin view mode', () => {
 
     expect(modalEl('modal-confirm-discard')).toBeNull()
     expect(modalEl('modal')).toBeNull()
+  })
+
+  it('a viewer finds both switches locked, and the window does not open', async () => {
+    const { context, sent } = seededContext()
+    bindSession(context.scopes).handshake(null, true)
+    await mountPage(context)
+
+    const first = inTable<HTMLInputElement>(`hilos-2fa-switch-${ENABLED}`)
+    expect(first.disabled).toBe(true)
+    expect(
+      inTable<HTMLInputElement>(`hilos-2fa-switch-${FORGET}`).disabled,
+    ).toBe(true)
+    first.click()
+    await nextTick()
+    expect(sent).toEqual([])
+    expect(modalEl('hilos-2fa-disable-window')).toBeNull()
   })
 
   it('an admin on a node in the mode has Save active after typing a draft', async () => {

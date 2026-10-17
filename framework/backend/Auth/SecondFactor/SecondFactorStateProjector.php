@@ -14,9 +14,11 @@ use Hilos\Utils\Helpers\TimeHelper;
  * Builds the profile's second-factor section of one person (HIL-494).
  *
  * The one place the section is put together, so the security page's first render and every
- * change fanned to the person's group say the same thing: the confirmed apps, how many backup
- * codes are left of the set, whether the administrator requires a factor, the person's removal
- * wait with the bounds around it, and the removal that stands, if any.
+ * change fanned to the person's group say the same thing: whether the second factor is turned
+ * on for the installation, the confirmed apps, how many backup codes are left of the set,
+ * whether the administrator requires a factor, the person's removal wait with the bounds around
+ * it, and the removal that stands, if any. Turned off, the section carries the same - the
+ * browser decides what to draw from the switch, the apps and the removal (HIL-1303).
  */
 final class SecondFactorStateProjector
 {
@@ -54,6 +56,7 @@ final class SecondFactorStateProjector
         $pendingActive = $wait->pendingDays !== null && $wait->pendingFromSec !== null && $wait->pendingFromSec > $now;
 
         return new SecondFactorStateSignalData(
+            $policy->enabled,
             $authenticators,
             $left,
             count($codes),

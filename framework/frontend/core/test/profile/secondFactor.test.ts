@@ -1,9 +1,10 @@
 // Covers the profile's second-factor section (HIL-494): the section read off
 // the wire with its moments on the local scale, the store that takes it from the
 // page and from the person's group, the administrator's policy frame laid over
-// an older section and not over a newer one, and the profile actions with the
-// replies they read — including the empty reply a PHP array with nothing in it
-// becomes.
+// an older section and not over a newer one, the view the section is drawn in
+// once the factor is turned off for everyone (HIL-1303), and the profile
+// actions with the replies they read — including the empty reply a PHP array
+// with nothing in it becomes.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createHilosSecondFactorActions,
@@ -30,6 +31,7 @@ const SERVER_DRIFT_MS = 45_000
 /** A section as the backend sends it, its moments on the server's scale. */
 function wireSection(overrides: Record<string, unknown> = {}) {
   return {
+    enabled: true,
     authenticators: [
       {
         id: 7,
@@ -100,6 +102,7 @@ function storeSetup() {
 }
 
 const POLICY = {
+  enabled: true,
   required: 'none',
   trustDays: 30,
   backupCodes: 10,
@@ -161,6 +164,16 @@ describe('readHilosSecondFactorState', () => {
         wireSection({ authenticators: [{ id: 'seven' }] }),
       ),
     ).toBeNull()
+    expect(
+      readHilosSecondFactorState(wireSection({ enabled: undefined })),
+    ).toBeNull()
+  })
+
+  it('reads whether the factor exists in the installation', () => {
+    expect(readHilosSecondFactorState(wireSection())?.enabled).toBe(true)
+    expect(
+      readHilosSecondFactorState(wireSection({ enabled: false }))?.enabled,
+    ).toBe(false)
   })
 })
 
@@ -262,6 +275,46 @@ describe('the section store', () => {
 
     connection.emit(SIGNAL_SECOND_FACTOR_POLICY, { ...POLICY })
     expect(store.state.get()?.required).toBe(false)
+  })
+})
+
+describe('the view of the section (HIL-1303)', () => {
+  it('has none before the first copy and draws the section whole while the factor is on', () => {
+    const { store } = storeSetup()
+    expect(store.view.get()).toBeNull()
+
+    store.applyState(wireSection())
+    expect(store.view.get()).toBe('full')
+  })
+
+  it('says only "turned off" for a section sent with the factor off', () => {
+    const { store } = storeSetup()
+    store.applyState(wireSection({ enabled: false }))
+
+    expect(store.view.get()).toBe('turnedOff')
+    expect(store.state.get()?.authenticators).toHaveLength(1)
+  })
+
+  it('follows a newer policy frame off and back on, with no new copy of the section', () => {
+    const { connection, store } = storeSetup()
+    connection.emit(SIGNAL_SECOND_FACTOR_POLICY, POLICY)
+    store.applyState(wireSection())
+
+    connection.emit(SIGNAL_SECOND_FACTOR_POLICY, { ...POLICY, enabled: false })
+    expect(store.state.get()?.enabled).toBe(false)
+    expect(store.view.get()).toBe('turnedOff')
+
+    connection.emit(SIGNAL_SECOND_FACTOR_POLICY, { ...POLICY })
+    expect(store.view.get()).toBe('full')
+  })
+
+  it('takes the section, not the frame it was sent under, as the word on the factor', () => {
+    const { connection, store } = storeSetup()
+    connection.emit(SIGNAL_SECOND_FACTOR_POLICY, { ...POLICY, enabled: false })
+    // Sent after the frame: computed with the factor back on.
+    store.applyState(wireSection())
+
+    expect(store.view.get()).toBe('full')
   })
 })
 

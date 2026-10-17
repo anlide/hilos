@@ -9,13 +9,20 @@ use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Hilos;
 
 /**
- * SecondFactorSettings - the administrator's six settings of the second factor (HIL-494).
+ * SecondFactorSettings - the administrator's eight settings of the second factor (HIL-494, HIL-1303).
  *
- * Who must use a second factor, how long a browser may be trusted to skip it, how many
- * backup codes a set holds, and the bounds of the wait before a removal: the default a
- * person starts on and the floor and ceiling a person's own choice stays between. Each key
- * names its rule ({@see SecondFactorSettingsCatalog}), and the three wait keys also hold
- * each other: 1 <= minimum <= default <= maximum <= 365.
+ * Whether the second factor exists in the installation at all and whether turning it off
+ * forgets every trusted browser (two yes-or-no switches, HIL-1303); who must use a second
+ * factor, how long a browser may be trusted to skip it, how many backup codes a set holds,
+ * and the bounds of the wait before a removal: the default a person starts on and the floor
+ * and ceiling a person's own choice stays between. Each of these six keys names its rule
+ * ({@see SecondFactorSettingsCatalog}), and the three wait keys also hold each other:
+ * 1 <= minimum <= default <= maximum <= 365.
+ *
+ * Turned off, the second factor asks nobody: the gate lets every proof of a sign-in through,
+ * a step-up skips its step, and a person's own section of it refuses every change but calling
+ * off a removal already under way. The people's apps, codes and removals stay as they are, so
+ * turning it back on asks the same apps again at the next sign-in.
  *
  * The floor of the wait is hard even for an administrator: a zero-day wait would make a
  * removal instant, and the second factor would protect against nothing a mailbox can do.
@@ -23,6 +30,12 @@ use Hilos\Hilos;
  */
 final class SecondFactorSettings
 {
+    /** Setting key: whether the second factor exists in the installation at all. */
+    public const string ENABLED_KEY = 'auth.second_factor.enabled';
+
+    /** Setting key: whether turning the second factor off forgets every trusted browser. */
+    public const string FORGET_TRUSTS_ON_DISABLE_KEY = 'auth.second_factor.forget_trusts_on_disable';
+
     /** Setting key: who must use a second factor (one of the REQUIRED_* values). */
     public const string REQUIRED_KEY = 'auth.second_factor.required';
 
@@ -43,6 +56,8 @@ final class SecondFactorSettings
 
     /** Every key of the group, in the order the administration screen lists them. */
     public const array KEYS = [
+        self::ENABLED_KEY,
+        self::FORGET_TRUSTS_ON_DISABLE_KEY,
         self::REQUIRED_KEY,
         self::TRUST_DAYS_KEY,
         self::BACKUP_CODES_KEY,
@@ -50,6 +65,28 @@ final class SecondFactorSettings
         self::RESET_WAIT_MIN_DAYS_KEY,
         self::RESET_WAIT_MAX_DAYS_KEY,
     ];
+
+    /** The keys that are a yes or a no, switched on the screen rather than edited in a dialog. */
+    public const array SWITCH_KEYS = [
+        self::ENABLED_KEY,
+        self::FORGET_TRUSTS_ON_DISABLE_KEY,
+    ];
+
+    /** The keys edited in a dialog on the screen. */
+    public const array DIALOG_KEYS = [
+        self::REQUIRED_KEY,
+        self::TRUST_DAYS_KEY,
+        self::BACKUP_CODES_KEY,
+        self::RESET_WAIT_DEFAULT_DAYS_KEY,
+        self::RESET_WAIT_MIN_DAYS_KEY,
+        self::RESET_WAIT_MAX_DAYS_KEY,
+    ];
+
+    /** Default of the enabled key: the second factor exists. */
+    public const bool DEFAULT_ENABLED = true;
+
+    /** Default of the forget key: turning the second factor off forgets every trusted browser. */
+    public const bool DEFAULT_FORGET_TRUSTS_ON_DISABLE = true;
 
     /** Required value: nobody has to use a second factor. */
     public const string REQUIRED_NONE = 'none';

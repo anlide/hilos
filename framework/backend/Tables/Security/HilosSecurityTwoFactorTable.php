@@ -29,13 +29,13 @@ use Hilos\Hilos;
 use Hilos\Pages\Security\AbstractHilosSecurityTwoFactorPage;
 
 /**
- * Framework two-factor settings table: the six settings of the second factor (HIL-494).
+ * Framework two-factor settings table: the eight settings of the second factor (HIL-494, HIL-1303).
  *
  * A self-snapshot table of one row per setting of {@see SecondFactorSettings}, in the order the
- * administration screen lists them: the value in force and the catalog default. A table and not
- * page data for the reason every admin value is one - a snapshot on subscribe and a redraw after
- * the write, which the tracked action waits for. It reacts to changes of those six settings rows
- * and of nothing else.
+ * administration screen lists them: the value in force and the catalog default, a switch read as
+ * 'true' or 'false'. A table and not page data for the reason every admin value is one - a snapshot
+ * on subscribe and a redraw after the write, which the tracked action waits for. It reacts to
+ * changes of those eight settings rows and of nothing else.
  *
  * A project activates it by registering it under a table key and binding that key to the
  * two-factor page ({@see AbstractHilosSecurityTwoFactorPage}) in its page tables.
@@ -48,8 +48,14 @@ class HilosSecurityTwoFactorTable extends TableDefinition implements SelfSnapsho
     /** Wire slot the row payload rides under; must match the frontend slot. */
     private const string ROW_SLOT = 'setting';
 
+    /** Text of a switch that is on, as the screen reads it. */
+    private const string SWITCH_ON = 'true';
+
+    /** Text of a switch that is off, as the screen reads it. */
+    private const string SWITCH_OFF = 'false';
+
     /**
-     * Declares how many rows the first window carries: all six.
+     * Declares how many rows the first window carries: all eight.
      *
      * @return int Rows the first window carries
      */
@@ -59,7 +65,7 @@ class HilosSecurityTwoFactorTable extends TableDefinition implements SelfSnapsho
     }
 
     /**
-     * Builds the row mutation from a change of one of the six settings.
+     * Builds the row mutation from a change of one of the eight settings.
      *
      * @param SourceChange $change Source change
      * @return ?TableRowMutationDTO Row mutation, or null when the change is about another setting
@@ -116,7 +122,7 @@ class HilosSecurityTwoFactorTable extends TableDefinition implements SelfSnapsho
     }
 
     /**
-     * Queries the six rows.
+     * Queries the eight rows.
      *
      * @param TableQueryDTO $query Table query parameters
      * @return TableSnapshotDTO Settings table snapshot
@@ -163,6 +169,14 @@ class HilosSecurityTwoFactorTable extends TableDefinition implements SelfSnapsho
             throw new LogicException("Second-factor setting '{$key}' has a default that is not a single value");
         }
 
+        if ($settings->typeFor($key) === SettingsCatalogConstants::TYPE_BOOLEAN) {
+            return new HilosSecurityTwoFactorTableRow(
+                rowKey: $key,
+                value: $this->switchText($settings[$key]->bool()),
+                defaultValue: $this->switchText((bool) $default),
+            );
+        }
+
         return new HilosSecurityTwoFactorTableRow(
             rowKey: $key,
             value: $settings->typeFor($key) === SettingsCatalogConstants::TYPE_INTEGER
@@ -170,6 +184,15 @@ class HilosSecurityTwoFactorTable extends TableDefinition implements SelfSnapsho
                 : $settings[$key]->string(),
             defaultValue: (string) $default,
         );
+    }
+
+    /**
+     * @param bool $on Position of a switch
+     * @return string The position as the screen reads it
+     */
+    private function switchText(bool $on): string
+    {
+        return $on ? self::SWITCH_ON : self::SWITCH_OFF;
     }
 
     /**

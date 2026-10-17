@@ -2,6 +2,8 @@
 // is a protected operation, so the modal opens on the server's word - at the
 // confirmation step for the first app, at the name when no step is needed - and
 // a second app is still asked for a code from the connected one after the name.
+// Turned off by the administrator (HIL-1303), the page is one plate, beside a
+// removal that stands, and an open window closes when it turns off.
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   createSignal,
@@ -16,6 +18,7 @@ import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 
 /** A section with no app connected yet, as the group frame carries it. */
 const SECTION_OFF = {
+  enabled: true,
   authenticators: [],
   backupCodesLeft: 0,
   backupCodesTotal: 0,
@@ -83,13 +86,16 @@ function setup(
   const fixture = TestBed.createComponent(HilosProfileSecurityPage)
   fixture.componentRef.setInput('context', context)
   fixture.detectChanges()
-  for (const listener of [...listeners])
-    listener({
-      kind: 'project',
-      type: 'hilos_second_factor_state',
-      data: section,
-    } as unknown as ProjectSignal)
-  fixture.detectChanges()
+  const push = (next: object): void => {
+    for (const listener of [...listeners])
+      listener({
+        kind: 'project',
+        type: 'hilos_second_factor_state',
+        data: next,
+      } as unknown as ProjectSignal)
+    fixture.detectChanges()
+  }
+  push(section)
   const node = (id: string) =>
     (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>(
       `[data-id="${id}"]`,
@@ -100,7 +106,7 @@ function setup(
     input.dispatchEvent(new Event('input', { bubbles: true }))
     fixture.detectChanges()
   }
-  return { dispatch, fill, fixture, node }
+  return { dispatch, fill, fixture, node, push }
 }
 
 /**
@@ -179,4 +185,59 @@ it('asks a second app for a code from the connected one after the name, as befor
   expect(node('profile-2fa-proof')).not.toBeNull()
   expect(dispatch).toHaveBeenCalledTimes(1)
   fixture.destroy()
+})
+
+it('is one plate while turned off, saying the apps are kept, with no apps, codes, wait or buttons', () => {
+  const { node } = setup(REPLIES, { ...SECTION_ON, enabled: false })
+
+  expect(node('hilos-2fa-turned-off')?.textContent?.trim()).toBe(
+    'Your administrator turned two-step verification off. Your apps and backup codes are kept and will work again when it is turned back on.',
+  )
+  for (const id of [
+    'profile-2fa-apps',
+    'profile-2fa-codes-left',
+    'profile-2fa-add',
+    'profile-2fa-wait',
+    'profile-2fa-reset-request',
+  ]) {
+    expect(node(id)).toBeNull()
+  }
+})
+
+it('says only the first sentence while turned off with no app connected', () => {
+  const { node } = setup(REPLIES, { ...SECTION_OFF, enabled: false })
+
+  expect(node('hilos-2fa-turned-off')?.textContent?.trim()).toBe(
+    'Your administrator turned two-step verification off.',
+  )
+})
+
+it('keeps a removal that stands beside the plate, with its date and Cancel', () => {
+  const { node } = setup(REPLIES, {
+    ...SECTION_ON,
+    enabled: false,
+    reset: { requestedAt: 0, effectiveAt: 86_400_000 },
+  })
+
+  expect(node('hilos-2fa-turned-off')).not.toBeNull()
+  expect(node('profile-2fa-reset-pending')?.textContent).toContain(
+    'Two-step verification will be removed on',
+  )
+  expect(node('profile-2fa-reset-cancel')).not.toBeNull()
+})
+
+it('closes an open window when it turns off, and is the whole page again when it turns back on', () => {
+  const { fixture, node, push } = setup(REPLIES, SECTION_ON)
+  node('profile-2fa-codes-show')!.click()
+  fixture.detectChanges()
+  expect(node('profile-2fa-proof')).not.toBeNull()
+
+  push({ ...SECTION_ON, enabled: false })
+
+  expect(node('modal')).toBeNull()
+  expect(node('hilos-2fa-turned-off')).not.toBeNull()
+
+  push(SECTION_ON)
+  expect(node('hilos-2fa-turned-off')).toBeNull()
+  expect(node('profile-2fa-apps')).not.toBeNull()
 })

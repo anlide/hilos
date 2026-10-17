@@ -11,6 +11,7 @@ use Hilos\Auth\Impersonation\ImpersonationSettingsCatalog;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\SecondFactor\Base32;
 use Hilos\Auth\SecondFactor\BackupCodeGenerator;
+use Hilos\Auth\SecondFactor\SecondFactorSettings;
 use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
 use Hilos\Auth\SecondFactor\Totp;
 use Hilos\Auth\StepUp\DTO\StepUpConfirmActionDTO;
@@ -284,6 +285,46 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
         );
 
         self::assertSame(StepUpMethod::PASSKEY, new StepUpMethodResolver()->resolve(self::USER_ID)?->method);
+    }
+
+    /**
+     * While the administrator has the second factor turned off, a person with an app is asked the next
+     * proof in the order - the password, then an address code, then a device key (HIL-1303).
+     *
+     * @throws HilosException When a proof row cannot be written or read
+     */
+    public function testATurnedOffSecondFactorGivesWayToTheNextProof(): void
+    {
+        Hilos::$db->secondFactors->actions
+            ->startEnrolment(self::USER_ID, 'Phone', Base32::encode(self::SECRET_BYTES))
+            ->actions->confirm('Phone');
+        Hilos::$setting = new SettingsAccessor(StepUpSecondFactorOffSettingsCatalog::class);
+        self::assertNull(new StepUpMethodResolver()->resolve(self::USER_ID), 'The app alone is no proof while it is off');
+
+        $identity = Hilos::$db->identities->createPasskeyIdentity(self::USER_ID, 'credential-1303');
+        Database::sqlRun(
+            'INSERT INTO `hilos_passkey_credential` '
+            . '(`identity_id`, `user_id`, `credential_id`, `public_key`, `algorithm`, `user_handle`) '
+            . 'VALUES (?, ?, ?, ?, ?, ?)',
+            [(int)$identity->id, self::USER_ID, 'credential-1303', 'unused-public-key', -7, 'handle-1303'],
+        );
+        self::assertSame(StepUpMethod::PASSKEY, new StepUpMethodResolver()->resolve(self::USER_ID)?->method);
+
+        Hilos::$db->identities->createSmsIdentity(self::USER_ID, self::PHONE);
+        self::assertSame(StepUpMethod::SMS_CODE, new StepUpMethodResolver()->resolve(self::USER_ID)?->method);
+
+        Hilos::$db->identities->createMagicLinkIdentity(self::USER_ID, self::EMAIL);
+        self::assertSame(StepUpMethod::EMAIL_CODE, new StepUpMethodResolver()->resolve(self::USER_ID)?->method);
+
+        $this->addPassword();
+        self::assertSame(StepUpMethod::PASSWORD, new StepUpMethodResolver()->resolve(self::USER_ID)?->method);
+
+        Hilos::$setting = new SettingsAccessor(StepUpIntegrationSettingsCatalog::class);
+        self::assertSame(
+            StepUpMethod::SECOND_FACTOR,
+            new StepUpMethodResolver()->resolve(self::USER_ID)?->method,
+            'Turned back on, the same app is the proof again',
+        );
     }
 
     /**
@@ -1001,6 +1042,23 @@ final class StepUpIntegrationSettingsCatalog implements CatalogProviderInterface
     public static function getCatalog(): array
     {
         return array_replace(StepUpSettingsCatalog::getCatalog(), SecondFactorSettingsCatalog::getCatalog());
+    }
+}
+
+/**
+ * The same catalog with the second factor turned off for the installation (HIL-1303).
+ */
+final class StepUpSecondFactorOffSettingsCatalog implements CatalogProviderInterface
+{
+    /**
+     * @return array<string, array<string, mixed>> Fixture settings catalog
+     */
+    public static function getCatalog(): array
+    {
+        $catalog = StepUpIntegrationSettingsCatalog::getCatalog();
+        $catalog[SecondFactorSettings::ENABLED_KEY][SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE] = false;
+
+        return $catalog;
     }
 }
 

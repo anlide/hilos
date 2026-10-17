@@ -9,6 +9,10 @@ code: a stolen live session must not strip or copy the factor. The first
 connection is the protected operation "Add an authenticator app" (HIL-1138): its
 modal opens on the server's word, at the confirmation step or straight at the
 name.
+While the administrator has turned the factor off for everyone (HIL-1303) the
+page is one plate saying so — and, beside it, a removal that stands with its
+date and Cancel; it turns back and forth live with the policy, and a window open
+when it turns off closes.
 The section, its live copy and the actions are the core's
 (createHilosSecondFactorStore / createHilosSecondFactorActions); this view owns
 only the markup. The page is drawn from text — the mockup's node is a debt
@@ -66,6 +70,7 @@ onMounted(() => store.start())
 onUnmounted(() => store.dispose())
 
 const state = useSignal(store.state)
+const view = useSignal(store.view)
 const apps = computed(() => state.value?.authenticators ?? [])
 const factorOn = computed(() => apps.value.length > 0)
 /** The last app of a factor an administrator requires cannot be removed. */
@@ -453,6 +458,20 @@ async function resetSubmit(): Promise<void> {
 function cancelReset(): void {
   void resetCancelAction.run(actions.cancelReset())
 }
+
+// Turned off, the section has none of the windows' actions any more: every
+// window closes, and an opening still out drops its answer when it comes.
+watch(view, (current) => {
+  if (current !== 'turnedOff') {
+    return
+  }
+  if (enrollStep.value === 'opening') enrollStep.value = 'name'
+  enrollOpen.value = false
+  codesOpen.value = false
+  removeOpen.value = false
+  waitOpen.value = false
+  resetOpen.value = false
+})
 </script>
 
 <template>
@@ -463,117 +482,131 @@ function cancelReset(): void {
       Loading…
     </div>
     <template v-else>
-      <h2 class="h6 text-uppercase text-body-secondary mb-2">
-        Two-step verification
-      </h2>
-      <p
-        v-if="state.required"
-        class="small mb-2"
-        data-id="profile-2fa-required"
+      <div
+        v-if="view === 'turnedOff'"
+        class="alert alert-secondary"
+        data-id="hilos-2fa-turned-off"
       >
-        Your administrator requires two-step verification.
-      </p>
-      <ul class="list-group mb-3" data-id="profile-2fa-apps">
-        <li
-          v-for="app in apps"
-          :key="app.id"
-          class="list-group-item d-flex align-items-center gap-3"
-          :data-id="`profile-2fa-app-${app.id}`"
-        >
-          <i class="bi bi-phone-vibrate fs-5" aria-hidden="true" />
-          <div class="flex-grow-1">
-            <div class="fw-semibold">{{ app.label }}</div>
-            <div class="small text-body-secondary">
-              Connected {{ day(app.createdAt) }}
-            </div>
-            <div
-              v-if="removalLocked"
-              class="small text-body-secondary"
-              data-id="profile-2fa-remove-locked"
-            >
-              Your administrator requires two-step verification, so the last app
-              stays.
-            </div>
-          </div>
-          <button
-            type="button"
-            class="btn btn-sm btn-outline-danger"
-            :disabled="removalLocked"
-            :data-id="`profile-2fa-remove-${app.id}`"
-            @click="openRemove(app)"
-          >
-            Remove
-          </button>
-        </li>
-        <li
+        Your administrator turned two-step verification off.<template
           v-if="factorOn"
-          class="list-group-item d-flex align-items-center gap-3"
         >
-          <i class="bi bi-key fs-5" aria-hidden="true" />
-          <div class="flex-grow-1">
-            <div class="fw-semibold">Backup codes</div>
-            <div
-              class="small text-body-secondary"
-              data-id="profile-2fa-codes-left"
+          Your apps and backup codes are kept and will work again when it is
+          turned back on.</template
+        >
+      </div>
+      <template v-else>
+        <h2 class="h6 text-uppercase text-body-secondary mb-2">
+          Two-step verification
+        </h2>
+        <p
+          v-if="state.required"
+          class="small mb-2"
+          data-id="profile-2fa-required"
+        >
+          Your administrator requires two-step verification.
+        </p>
+        <ul class="list-group mb-3" data-id="profile-2fa-apps">
+          <li
+            v-for="app in apps"
+            :key="app.id"
+            class="list-group-item d-flex align-items-center gap-3"
+            :data-id="`profile-2fa-app-${app.id}`"
+          >
+            <i class="bi bi-phone-vibrate fs-5" aria-hidden="true" />
+            <div class="flex-grow-1">
+              <div class="fw-semibold">{{ app.label }}</div>
+              <div class="small text-body-secondary">
+                Connected {{ day(app.createdAt) }}
+              </div>
+              <div
+                v-if="removalLocked"
+                class="small text-body-secondary"
+                data-id="profile-2fa-remove-locked"
+              >
+                Your administrator requires two-step verification, so the last
+                app stays.
+              </div>
+            </div>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-danger"
+              :disabled="removalLocked"
+              :data-id="`profile-2fa-remove-${app.id}`"
+              @click="openRemove(app)"
             >
-              {{ state.backupCodesLeft }} of {{ state.backupCodesTotal }} left
-            </div>
-          </div>
-          <button
-            type="button"
-            class="btn btn-sm btn-outline-secondary"
-            data-id="profile-2fa-codes-show"
-            @click="openCodes()"
+              Remove
+            </button>
+          </li>
+          <li
+            v-if="factorOn"
+            class="list-group-item d-flex align-items-center gap-3"
           >
-            Show
-          </button>
-        </li>
-        <li
-          v-if="!factorOn"
-          class="list-group-item text-body-secondary small"
-          data-id="profile-2fa-off"
+            <i class="bi bi-key fs-5" aria-hidden="true" />
+            <div class="flex-grow-1">
+              <div class="fw-semibold">Backup codes</div>
+              <div
+                class="small text-body-secondary"
+                data-id="profile-2fa-codes-left"
+              >
+                {{ state.backupCodesLeft }} of {{ state.backupCodesTotal }} left
+              </div>
+            </div>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary"
+              data-id="profile-2fa-codes-show"
+              @click="openCodes()"
+            >
+              Show
+            </button>
+          </li>
+          <li
+            v-if="!factorOn"
+            class="list-group-item text-body-secondary small"
+            data-id="profile-2fa-off"
+          >
+            Two-step verification is off. Connect an authenticator app to turn
+            it on.
+          </li>
+        </ul>
+        <LoadingButton
+          class="btn-sm btn-outline-primary mb-4"
+          :loading="enrollStep === 'opening'"
+          :disabled="enrollStep === 'opening'"
+          data-id="profile-2fa-add"
+          @click="openEnroll()"
         >
-          Two-step verification is off. Connect an authenticator app to turn it
-          on.
-        </li>
-      </ul>
-      <LoadingButton
-        class="btn-sm btn-outline-primary mb-4"
-        :loading="enrollStep === 'opening'"
-        :disabled="enrollStep === 'opening'"
-        data-id="profile-2fa-add"
-        @click="openEnroll()"
-      >
-        <i class="bi bi-plus-lg me-1" aria-hidden="true" />
-        Add an authenticator app
-      </LoadingButton>
+          <i class="bi bi-plus-lg me-1" aria-hidden="true" />
+          Add an authenticator app
+        </LoadingButton>
 
-      <h2 class="h6 text-uppercase text-body-secondary mb-2">
-        If you lose access
-      </h2>
-      <ul class="list-group mb-3">
-        <li class="list-group-item d-flex align-items-center gap-3">
-          <i class="bi bi-hourglass-split fs-5" aria-hidden="true" />
-          <div class="flex-grow-1">
-            <div class="fw-semibold">Wait before removal</div>
-            <div class="small text-body-secondary" data-id="profile-2fa-wait">
-              {{ state.resetWait.days }} days
-              <template v-if="state.resetWait.pendingDays !== null">
-                · {{ state.resetWait.pendingDays }} days from
-                {{ day(state.resetWait.pendingFrom ?? Date.now()) }}
-              </template>
+        <h2 class="h6 text-uppercase text-body-secondary mb-2">
+          If you lose access
+        </h2>
+        <ul class="list-group mb-3">
+          <li class="list-group-item d-flex align-items-center gap-3">
+            <i class="bi bi-hourglass-split fs-5" aria-hidden="true" />
+            <div class="flex-grow-1">
+              <div class="fw-semibold">Wait before removal</div>
+              <div class="small text-body-secondary" data-id="profile-2fa-wait">
+                {{ state.resetWait.days }} days
+                <template v-if="state.resetWait.pendingDays !== null">
+                  · {{ state.resetWait.pendingDays }} days from
+                  {{ day(state.resetWait.pendingFrom ?? Date.now()) }}
+                </template>
+              </div>
             </div>
-          </div>
-          <button
-            type="button"
-            class="btn btn-sm btn-outline-secondary"
-            data-id="profile-2fa-wait-edit"
-            @click="openWait()"
-          >
-            Change
-          </button>
-        </li>
-      </ul>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary"
+              data-id="profile-2fa-wait-edit"
+              @click="openWait()"
+            >
+              Change
+            </button>
+          </li>
+        </ul>
+      </template>
       <div
         v-if="state.reset !== null"
         class="alert alert-warning d-flex align-items-center gap-3"
@@ -595,7 +628,7 @@ function cancelReset(): void {
         </LoadingButton>
       </div>
       <button
-        v-else-if="factorOn"
+        v-else-if="factorOn && view === 'full'"
         type="button"
         class="btn btn-sm btn-outline-danger mb-3"
         data-id="profile-2fa-reset-request"
@@ -607,7 +640,7 @@ function cancelReset(): void {
         :action="resetCancelAction"
         details-title="Couldn't cancel the removal"
       />
-      <p class="small text-body-secondary mb-0">
+      <p v-if="view === 'full'" class="small text-body-secondary mb-0">
         While a removal waits, every channel you have is told about it, and any
         of those messages stops it. A longer wait makes the account harder to
         take — and makes you wait longer if your phone is really gone. A shorter

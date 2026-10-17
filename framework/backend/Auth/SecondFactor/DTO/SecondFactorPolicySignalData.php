@@ -12,12 +12,14 @@ use Hilos\Core\Router\SignalDataInterface;
 /**
  * The administrator's second-factor settings, sent to every connection when they change (HIL-494).
  *
- * The profile section draws its bounds and its "required" note from these, and the code step
- * its trust checkbox, so a change on the administration screen reaches every open surface
- * without a reload - the way a change of sign-in methods does.
+ * The profile section draws its bounds and its "required" note from these - and whether it is
+ * there at all, when the administrator turns the second factor off for the installation
+ * (HIL-1303) - and the code step its trust checkbox, so a change on the administration screen
+ * reaches every open surface without a reload - the way a change of sign-in methods does.
  */
 final class SecondFactorPolicySignalData extends BaseDTO implements SignalDataInterface
 {
+    public const string enabled = 'enabled';
     public const string required = 'required';
     public const string trustDays = 'trustDays';
     public const string backupCodes = 'backupCodes';
@@ -26,6 +28,7 @@ final class SecondFactorPolicySignalData extends BaseDTO implements SignalDataIn
     public const string resetWaitMaxDays = 'resetWaitMaxDays';
 
     /**
+     * @param bool $enabled Whether the second factor exists in the installation
      * @param string $required Who must use a second factor (a SecondFactorSettings::REQUIRED_* value)
      * @param int $trustDays Days a trusted browser skips the step; 0 offers no trust
      * @param int $backupCodes Backup codes in one issued set
@@ -34,6 +37,7 @@ final class SecondFactorPolicySignalData extends BaseDTO implements SignalDataIn
      * @param int $resetWaitMaxDays Longest removal wait a person may choose
      */
     public function __construct(
+        public readonly bool $enabled,
         public readonly string $required,
         public readonly int $trustDays,
         public readonly int $backupCodes,
@@ -52,6 +56,7 @@ final class SecondFactorPolicySignalData extends BaseDTO implements SignalDataIn
     public static function of(SecondFactorPolicy $policy): self
     {
         return new self(
+            $policy->enabled,
             $policy->required,
             $policy->trustDays,
             $policy->backupCodes,
@@ -67,6 +72,7 @@ final class SecondFactorPolicySignalData extends BaseDTO implements SignalDataIn
     public function toArray(): array
     {
         return [
+            self::enabled => $this->enabled,
             self::required => $this->required,
             self::trustDays => $this->trustDays,
             self::backupCodes => $this->backupCodes,
@@ -84,6 +90,7 @@ final class SecondFactorPolicySignalData extends BaseDTO implements SignalDataIn
     public static function fromArray(array $data): static
     {
         return new static(
+            self::requireBool($data, self::enabled),
             self::requireString($data, self::required),
             self::requireInt($data, self::trustDays),
             self::requireInt($data, self::backupCodes),

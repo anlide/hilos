@@ -537,6 +537,7 @@ describe('the step every tab of a browser follows', () => {
 
 describe('the policy frame an administrator sends', () => {
   const POLICY: SecondFactorPolicy = {
+    enabled: true,
     required: 'none',
     trustDays: 30,
     backupCodes: 10,

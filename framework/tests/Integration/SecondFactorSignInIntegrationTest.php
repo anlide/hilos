@@ -9,6 +9,7 @@ use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorDisableApplySignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorTrustDaysApplySignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\ConfirmSecondFactorActionDTO;
@@ -71,7 +72,8 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
  * gives up after its ceiling, that a trusted browser skips the step, that recovering a password
  * by mail does not sign in past the factor, and that an administrator's requirement enrols on
  * the way in. A code is checked by the person's agent, and its frames are carried both ways
- * (HIL-1406).
+ * (HIL-1406). Turned off for the installation (HIL-1303), the factor lets every proof through,
+ * and the session holder applies the switch to the waits and the trusts.
  */
 final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTestCase
 {
@@ -360,6 +362,8 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
 
         $defaults = SecondFactorPolicy::defaults();
         $policy = new SecondFactorPolicy(
+            $defaults->enabled,
+            $defaults->forgetTrustsOnDisable,
             $defaults->required,
             7,
             $defaults->backupCodes,
@@ -632,6 +636,189 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
     }
 
     /**
+     * Turned off for the installation, the factor asks a person with an app no code (HIL-1303).
+     *
+     * @throws HilosException When enrolment or the grant fails
+     */
+    public function testATurnedOffSecondFactorSignsInWithoutTheCode(): void
+    {
+        $this->enrol();
+        Hilos::$setting = new SettingsAccessor(SecondFactorTurnedOffTestCatalog::class);
+
+        $this->grant();
+
+        $this->assertSame(self::USER_ID, $this->lastStateFrame()?->userId, 'The password alone signs the person in');
+        $this->assertNull(self::sessionRow(self::SESSION_TOKEN), 'The token rotated on the sign-in');
+        $this->assertCount(0, Hilos::$db->sessions->findAwaitingSecondFactor(), 'Nothing waits on a second factor');
+    }
+
+    /**
+     * A new password saved by mail signs in at once while the factor is turned off (HIL-1303).
+     *
+     * @throws HilosException When enrolment, the agent's write or the frame fails
+     */
+    public function testARecoveredPasswordSignsInAtOnceWhileTurnedOff(): void
+    {
+        $this->enrol();
+        $this->recoverPassword((int)Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)->id);
+        Hilos::$setting = new SettingsAccessor(SecondFactorTurnedOffTestCatalog::class);
+
+        $this->holder->onSignalAgent(
+            new AgentSignalData(new AuthPasswordChangedSignalData(
+                self::USER_ID,
+                self::SESSION_TOKEN,
+                self::ACCEPT_KEY,
+                'ada@example.test',
+                self::REQUEST_ID,
+                HilosSignalConstants::HILOS_COMPLETE_PASSWORD_RESET,
+            )),
+            'test',
+            HilosSignalConstants::HILOS_AUTH_PASSWORD_CHANGED,
+        );
+
+        $this->assertSame(self::USER_ID, $this->lastStateFrame()?->userId, 'Recovery lets the person in');
+        $this->assertNull(self::sessionRow(self::SESSION_TOKEN), 'The token rotated on the sign-in');
+    }
+
+    /**
+     * Turning the factor off lets every wait go back to the start of the sign-in, the code step and
+     * the enrolment alike, and the holder answers the write after it (HIL-1303).
+     *
+     * @throws HilosException When a grant, the apply or a lookup fails
+     */
+    public function testTurningOffLetsEveryWaitGo(): void
+    {
+        $this->enrol();
+        $this->grant();
+        $setupToken = 'cc00000000000000000000000000cc94';
+        $setupUserId = 78;
+        self::seedSession($setupToken, null, self::CREATED_AT, null);
+        Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Newcomer')", [$setupUserId]);
+        Hilos::$setting = new SettingsAccessor(SecondFactorRequiredTestCatalog::class);
+        $this->holder->onSignalAgent(
+            new AgentSignalData(new AuthSessionGrantSignalData(
+                sessionToken: $setupToken,
+                userId: $setupUserId,
+                acceptKey: 'accept-sf-newcomer',
+                requestId: 'request-sf-newcomer',
+                action: HilosSignalConstants::HILOS_LOGIN,
+            )),
+            'test',
+            HilosSignalConstants::HILOS_AUTH_SESSION_GRANT,
+        );
+        $this->assertSame(
+            SecondFactorPendingMode::VERIFY,
+            Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)?->pendingSecondFactorMode,
+        );
+        $this->assertSame(SecondFactorPendingMode::SETUP, Hilos::$db->sessions->findByToken($setupToken)?->pendingSecondFactorMode);
+        $this->drain();
+        Hilos::$setting = new SettingsAccessor(SecondFactorTurnedOffTestCatalog::class);
+
+        $this->applyTurnedOff(forgetTrusts: true);
+
+        $signals = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof AgentSignalData) {
+                $signals[] = $signal->data->data;
+            }
+        }
+        $states = array_values(array_filter($signals, static fn ($data): bool => $data instanceof SessionStateSignalData));
+        $this->assertCount(1, $states, 'Both tabs of the waiting browser are told in one frame, nobody is answered');
+        $this->assertSame([self::ACCEPT_KEY, self::SIBLING_KEY], $states[0]->acceptKeys);
+        $this->assertNull($states[0]->userId);
+        $this->assertSame(AuthFlowStep::IDENTIFIER, $states[0]->pendingAuthStep[HandshakeResponseSignalData::step] ?? null);
+        $this->assertNull($states[0]->pendingAuthStep[HandshakeResponseSignalData::code] ?? null, 'No reason is given');
+        $answer = $signals[count($signals) - 1];
+        $this->assertInstanceOf(HandoverAnswerSignalData::class, $answer, 'The write is answered last');
+        $this->assertNull($answer->error);
+        $this->assertSame(self::REQUEST_ID, $answer->requestId);
+        $this->assertNull(Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)?->pendingSecondFactorUserId);
+        $this->assertNull(Hilos::$db->sessions->findByToken($setupToken)?->pendingSecondFactorUserId);
+        $this->assertNull(Hilos::$db->sessions->findByToken($setupToken)?->userId, 'Nobody is signed in by the release');
+    }
+
+    /**
+     * Turning the factor off forgets the trusts only when the setting says so; a trust kept lets the
+     * browser skip the code step until its end once the factor is back on (HIL-1303).
+     *
+     * @throws HilosException When enrolment, a trust write, the apply or the grant fails
+     */
+    public function testTurningOffForgetsTrustsOnlyWhenTheSettingSays(): void
+    {
+        $this->enrol();
+        $sessionId = (int)Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)->id;
+        $otherToken = 'ff00000000000000000000000000ff94';
+        self::seedSession($otherToken, null, self::CREATED_AT, null);
+        $otherSessionId = (int)Hilos::$db->sessions->findByToken($otherToken)->id;
+        $until = date('Y-m-d H:i:s', time() + 7 * TimeConstants::SECONDS_PER_DAY);
+        Hilos::$db->secondFactorTrusts->actions->trust($sessionId, self::USER_ID, $until);
+        Hilos::$db->secondFactorTrusts->actions->trust($otherSessionId, self::USER_ID, $until);
+        Hilos::$setting = new SettingsAccessor(SecondFactorTurnedOffTestCatalog::class);
+
+        $this->applyTurnedOff(forgetTrusts: false);
+        $this->drain();
+
+        $this->assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($sessionId, self::USER_ID, SecondFactorSettings::DEFAULT_TRUST_DAYS));
+        Hilos::$setting = new SettingsAccessor(SecondFactorSettingsCatalog::class);
+        $this->grant();
+        $this->assertSame(self::USER_ID, $this->lastStateFrame()?->userId, 'The kept trust skips the code step once it is back on');
+
+        Hilos::$setting = new SettingsAccessor(SecondFactorTurnedOffTestCatalog::class);
+        $this->applyTurnedOff(forgetTrusts: true);
+        $this->drain();
+
+        $this->assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($otherSessionId, self::USER_ID, SecondFactorSettings::DEFAULT_TRUST_DAYS));
+        $this->assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($sessionId, self::USER_ID, SecondFactorSettings::DEFAULT_TRUST_DAYS));
+    }
+
+    /**
+     * Turned back on, the factor asks the same app again at the next sign-in (HIL-1303).
+     *
+     * @throws HilosException When enrolment, a grant or the code fails
+     */
+    public function testTurningBackOnAsksTheSameAppAgain(): void
+    {
+        $this->enrol();
+        Hilos::$setting = new SettingsAccessor(SecondFactorTurnedOffTestCatalog::class);
+        $this->grant();
+        $this->assertSame(self::USER_ID, $this->lastStateFrame()?->userId);
+
+        Hilos::$setting = new SettingsAccessor(SecondFactorSettingsCatalog::class);
+        $this->reseedAndHold();
+        $this->assertSame(
+            SecondFactorPendingMode::VERIFY,
+            Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)?->pendingSecondFactorMode,
+        );
+
+        $this->confirm($this->currentCode());
+        $this->forwardToHolder();
+
+        $this->assertSame(self::USER_ID, $this->lastStateFrame()?->userId, 'The same app lets the person in');
+    }
+
+    /**
+     * Hands the holder the settings library's ask to apply the factor turned off.
+     *
+     * @param bool $forgetTrusts Whether every trusted browser is forgotten with it
+     * @throws HilosException When the holder fails on the frame
+     */
+    private function applyTurnedOff(bool $forgetTrusts): void
+    {
+        $this->holder->onSignalAgent(
+            new AgentSignalData(new AuthSecondFactorDisableApplySignalData(
+                forgetTrusts: $forgetTrusts,
+                replySignal: 'second-factor-off-test-done',
+                acceptKey: self::ACCEPT_KEY,
+                requestId: self::REQUEST_ID,
+                action: HilosSignalConstants::SECURITY_2FA_SWITCH_SET,
+                successMessage: null,
+            )),
+            'test',
+            HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_DISABLE_APPLY,
+        );
+    }
+
+    /**
      * Enrols a confirmed authenticator holding the RFC test secret.
      *
      * @throws HilosException When a write fails
@@ -819,6 +1006,23 @@ final class SecondFactorRequiredTestCatalog implements CatalogProviderInterface
         $catalog = SecondFactorSettingsCatalog::getCatalog();
         $catalog[SecondFactorSettings::REQUIRED_KEY][SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE]
             = SecondFactorSettings::REQUIRED_EVERYONE;
+
+        return $catalog;
+    }
+}
+
+/**
+ * The second-factor catalog with the second factor turned off for the installation (HIL-1303).
+ */
+final class SecondFactorTurnedOffTestCatalog implements CatalogProviderInterface
+{
+    /**
+     * @return array<string, array<string, mixed>> Catalog with the second factor turned off
+     */
+    public static function getCatalog(): array
+    {
+        $catalog = SecondFactorSettingsCatalog::getCatalog();
+        $catalog[SecondFactorSettings::ENABLED_KEY][SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE] = false;
 
         return $catalog;
     }

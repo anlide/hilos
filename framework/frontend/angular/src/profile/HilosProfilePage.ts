@@ -263,12 +263,14 @@ export class HilosProfilePage {
   private readonly router = inject(HILOS_ROUTER)
   private readonly identity = hilosSignal(this.router.pageIdentity)
   private readonly route = hilosSignal(this.router.currentRoute)
+  // A section the root hides has no row: two-step verification turned off by
+  // the administrator, with nothing of the person's own standing (HIL-1303).
   protected readonly sections = computed(() =>
     hilosChildLinks(
       this.identity()?.children ?? [],
       this.route().params,
       this.router.resolvePath,
-    ),
+    ).filter((section) => !this.hiddenSections().includes(section.page)),
   )
   private readonly root = computed(() =>
     createHilosProfileRootStore(this.context(), this.binding()),
@@ -294,6 +296,7 @@ export class HilosProfilePage {
   protected readonly photo = signal<string | null>(null)
   protected readonly name = signal('')
   protected readonly summaries = signal<Readonly<Record<string, string>>>({})
+  private readonly hiddenSections = signal<readonly string[]>([])
   protected readonly verifiedEmail = signal<string | null>(null)
   protected readonly passkeyOnly = signal(false)
   protected readonly theme = signal<string | null>(null)
@@ -315,6 +318,7 @@ export class HilosProfilePage {
       this.photoEnabled.set(root.photoEnabled.get())
       this.photo.set(root.photo.get())
       this.summaries.set(root.summaries.get())
+      this.hiddenSections.set(root.hiddenSections.get())
       this.verifiedEmail.set(root.verifiedEmail.get())
       this.passkeyOnly.set(root.passkeyOnly.get())
       this.theme.set(root.theme.get())
@@ -325,6 +329,9 @@ export class HilosProfilePage {
         ),
         subscribeSignal(root.photo, (value) => this.photo.set(value)),
         subscribeSignal(root.summaries, (value) => this.summaries.set(value)),
+        subscribeSignal(root.hiddenSections, (value) =>
+          this.hiddenSections.set(value),
+        ),
         subscribeSignal(root.verifiedEmail, (value) =>
           this.verifiedEmail.set(value),
         ),

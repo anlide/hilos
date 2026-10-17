@@ -19,7 +19,7 @@ use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for the rules the six second-factor settings are written through (HIL-494).
+ * Unit tests for the eight second-factor settings and the rules six of them are written through (HIL-494, HIL-1303).
  *
  * The three wait bounds judge each other, so those cases run over a settings accessor whose
  * catalog holds the bounds under test as defaults - with no database mounted, a default is
@@ -42,6 +42,45 @@ final class SecondFactorSettingsRulesTest extends TestCase
         Hilos::$setting = $this->previousSetting;
 
         parent::tearDown();
+    }
+
+    /**
+     * The group lists its eight keys in the order of the screen (HIL-1303): the two switches first, a
+     * yes or a no that is on out of the box and needs no rule, then the six keys edited in a dialog.
+     */
+    public function testTheGroupListsTheTwoSwitchesBeforeTheSixDialogKeys(): void
+    {
+        self::assertSame([
+            'auth.second_factor.enabled',
+            'auth.second_factor.forget_trusts_on_disable',
+            'auth.second_factor.required',
+            'auth.second_factor.trust_days',
+            'auth.second_factor.backup_codes',
+            'auth.second_factor.reset_wait_default_days',
+            'auth.second_factor.reset_wait_min_days',
+            'auth.second_factor.reset_wait_max_days',
+        ], SecondFactorSettings::KEYS);
+        self::assertSame(
+            ['auth.second_factor.enabled', 'auth.second_factor.forget_trusts_on_disable'],
+            SecondFactorSettings::SWITCH_KEYS,
+        );
+        self::assertSame([
+            'auth.second_factor.required',
+            'auth.second_factor.trust_days',
+            'auth.second_factor.backup_codes',
+            'auth.second_factor.reset_wait_default_days',
+            'auth.second_factor.reset_wait_min_days',
+            'auth.second_factor.reset_wait_max_days',
+        ], SecondFactorSettings::DIALOG_KEYS);
+
+        $catalog = SecondFactorSettingsCatalog::getCatalog();
+        self::assertSame(SecondFactorSettings::KEYS, array_keys($catalog));
+        foreach (SecondFactorSettings::SWITCH_KEYS as $key) {
+            self::assertSame(SettingsCatalogConstants::TYPE_BOOLEAN, $catalog[$key][SettingsCatalogConstants::CATALOG_ENTRY_TYPE], $key);
+            self::assertTrue($catalog[$key][SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE], $key);
+            self::assertArrayNotHasKey(SettingsCatalogConstants::CATALOG_ENTRY_RULE, $catalog[$key], $key);
+            self::assertTrue(Hilos::$setting[$key]->bool(), $key);
+        }
     }
 
     /**

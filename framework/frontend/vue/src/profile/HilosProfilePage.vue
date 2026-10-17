@@ -39,14 +39,17 @@ if (!router)
   throw new Error('HilosProfilePage requires a provided Hilos router.')
 const identity = useSignal(router.pageIdentity)
 const route = useSignal(router.currentRoute)
+const root = createHilosProfileRootStore(props.context, props.binding)
+const hiddenSections = useSignal(root.hiddenSections)
+// A section the root hides has no row: two-step verification turned off by the
+// administrator, with nothing of the person's own standing (HIL-1303).
 const sections = computed(() =>
   hilosChildLinks(
     identity.value?.children ?? [],
     route.value.params,
     router.resolvePath,
-  ),
+  ).filter((section) => !hiddenSections.value.includes(section.page)),
 )
-const root = createHilosProfileRootStore(props.context, props.binding)
 const signedIn = useSignal(root.signedIn)
 const photoEnabled = useSignal(root.photoEnabled)
 const photo = useSignal(root.photo)

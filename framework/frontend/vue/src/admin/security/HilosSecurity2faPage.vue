@@ -1,43 +1,64 @@
 <!-- HilosSecurity2faPage — the framework two-step verification admin page
-(HilosPages.SECURITY_2FA, HIL-494): the six second-factor settings, one row
-each — who must use it, the days a device is trusted, the size of a set of
-backup codes, and the removal wait with its bounds. Each row shows its value in
-words and a pencil; the pencil opens a modal (the modal-only editing rule), and
-a value a setting's rule refuses stays in the modal with the refusal above it.
-The table, the row view-model and the edit round-trip are the core headless's
-(createHilosSecurityTwoFactorTable / createHilosSecurityTwoFactorActions), and
-so are the words; this view owns only the markup, so a project mounts it by
-passing its HilosTwoFactorContext. The modal is the core row-edit session over
-the focused row (createHilosTwoFactorSettingEdit, rowEditSession.ts,
-conflict-resolution.md), saying what happened elsewhere on one line of room held
-in advance (HilosEditNotice); this view binds the input. The screen is built from text: the mockup's node
-is a debt (D-115). Bootstrap classes only (styling-rules.md). -->
+(HilosPages.SECURITY_2FA, HIL-494): the eight second-factor settings, one row
+each — whether the second factor is on at all and whether turning it off forgets
+the trusted browsers (HIL-1303), then who must use it, the days a device is
+trusted, the size of a set of backup codes, and the removal wait with its
+bounds. The two first rows carry a switch, as on the Impersonation tab; each
+other row shows its value in words and a pencil that opens a modal (the
+modal-only editing rule), and a value a setting's rule refuses stays in the
+modal with the refusal above it.
+A switch is a tracked action: a spinner on its own row while it flies, the
+other switches disabled, no toast on success, and the switch moves only when
+the table's row does; a refusal is the action's toast. The first switch, while
+on, does not move at all: it opens the window that turns the factor off — the
+operation's "Confirm it's you" first, then what turning it off does and "Turn
+off" (createHilosTwoFactorDisable, in the order of the account card's windows).
+While the factor is off every row below the first is dimmed, its pencil or its
+switch locked (the table's locked).
+The table, the row view-model, the edit round-trip, the window and the words
+are the core headless's (createHilosSecurityTwoFactorTable /
+createHilosSecurityTwoFactorActions); this view owns only the markup, so a
+project mounts it by passing its HilosTwoFactorContext. The modal is the core
+row-edit session over the focused row (createHilosTwoFactorSettingEdit,
+rowEditSession.ts, conflict-resolution.md), saying what happened elsewhere on
+one line of room held in advance (HilosEditNotice); this view binds the input.
+The screen is built from text: the mockup's node is a debt (D-115, and for the
+switches, the dimmed rows and the window D-234). Bootstrap classes only
+(styling-rules.md). -->
 <script setup lang="ts">
 import {
   createHilosSecurityTwoFactorActions,
   createHilosSecurityTwoFactorTable,
+  createHilosTwoFactorDisable,
   createHilosTwoFactorSettingEdit,
   describeHilosSecondFactorSetting,
+  focusInitial,
   HILOS_SECOND_FACTOR_REQUIRED_COPY,
   HILOS_SECOND_FACTOR_REQUIRED_VALUES,
   HILOS_SECOND_FACTOR_SETTING_COPY,
+  HILOS_STEP_UP_COPY,
+  HILOS_TWO_FACTOR_DISABLE_COPY as DISABLE_COPY,
   HilosPages,
   HilosSecondFactorSettingKey,
+  isHilosSecondFactorSwitch,
   type HilosTwoFactorContext,
   type HilosTwoFactorSettingRow,
 } from '@hilos/core'
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import ConflictActions from '../../ConflictActions.vue'
 import ConflictHeader from '../../ConflictHeader.vue'
 import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosEditNotice from '../../HilosEditNotice.vue'
+import HilosFormError from '../../HilosFormError.vue'
 import HilosHiddenMark from '../../HilosHiddenMark.vue'
 import HilosHideable from '../../HilosHideable.vue'
 import HilosModal from '../../HilosModal.vue'
+import HilosSwitch from '../../HilosSwitch.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import LoadingButton from '../../LoadingButton.vue'
+import HilosStepUpStep from '../../auth/HilosStepUpStep.vue'
 import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
 
@@ -48,12 +69,15 @@ const props = defineProps<{
 
 const settings = createHilosSecurityTwoFactorTable(props.context)
 const actions = createHilosSecurityTwoFactorActions(props.context)
+const locked = useSignal(settings.locked)
 
 onMounted(() => {
   settings.start()
   editor.start()
+  disable.start()
 })
 onUnmounted(() => {
+  disable.dispose()
   editor.dispose()
   settings.dispose()
 })
@@ -65,6 +89,71 @@ onUnmounted(() => {
  */
 function labelOf(row: HilosTwoFactorSettingRow): string {
   return HILOS_SECOND_FACTOR_SETTING_COPY[row.rowKey]?.label ?? row.rowKey
+}
+
+/**
+ * Whether a row is locked: below the first while the factor is off.
+ *
+ * @param row The row of the setting.
+ */
+function isLocked(row: HilosTwoFactorSettingRow): boolean {
+  return locked.value.includes(row.rowKey)
+}
+
+// One tracked runner for both switches: a single in-flight guard is enough,
+// and the busy flag disables the other switch while one write is settling.
+const { busy: switchBusy, run: runSwitch } = useTrackedAction()
+const pendingSwitchKey = ref<string | null>(null)
+
+// The window that turns the factor off, over the table; this view draws it.
+const disable = createHilosTwoFactorDisable(props.context, settings.controller)
+const disableStep = useSignal(disable.step)
+const disableBusy = useSignal(disable.busy)
+const disableRefusal = useSignal(disable.refusal)
+const stepUpBusy = useSignal(disable.stepUp.busy)
+const stepUpRefusal = useSignal(disable.stepUp.refusal)
+const consequences = useSignal(disable.consequences)
+const disableOpen = computed({
+  get: () =>
+    disableStep.value === 'step-up' ||
+    disableStep.value === 'consequences' ||
+    disableStep.value === 'refused',
+  set: (next: boolean) => {
+    if (!next) disable.close()
+  },
+})
+const disableBody = ref<HTMLElement | null>(null)
+
+// The step the window moves to takes the focus once it is drawn: the field that
+// held it is gone, and the modal places focus only when it opens.
+watch(disableStep, () => {
+  void nextTick(() => {
+    const dialog = disableBody.value?.closest<HTMLElement>('[role="dialog"]')
+    if (dialog) {
+      focusInitial(dialog)
+    }
+  })
+})
+
+// Turning the factor off opens its window and leaves the switch where it is;
+// anything else is the switch's own tracked write. Nothing is set
+// optimistically: the switch follows the row, which moves when the setting is
+// written.
+async function toggle(
+  row: HilosTwoFactorSettingRow,
+  next: boolean,
+): Promise<void> {
+  if (row.rowKey === HilosSecondFactorSettingKey.enabled && !next) {
+    void disable.open()
+
+    return
+  }
+  pendingSwitchKey.value = row.rowKey
+  try {
+    await runSwitch(actions.switchSet(row.rowKey, next))
+  } finally {
+    pendingSwitchKey.value = null
+  }
 }
 
 // The edit modal: one setting at a time, as the core window has it; this view
@@ -134,13 +223,39 @@ function submitEdit(): void {
   <HilosAdminPage :page="HilosPages.SECURITY_2FA">
     <HilosViewportTable :controller="settings.controller">
       <template #cell-rowKey="{ row }">
-        <div class="fw-semibold">{{ labelOf(row) }}</div>
-        <div class="small text-body-secondary">
-          {{ HILOS_SECOND_FACTOR_SETTING_COPY[row.rowKey]?.hint }}
+        <div :class="{ 'opacity-50': isLocked(row) }">
+          <div class="fw-semibold">{{ labelOf(row) }}</div>
+          <div class="small text-body-secondary">
+            {{ HILOS_SECOND_FACTOR_SETTING_COPY[row.rowKey]?.hint }}
+          </div>
         </div>
       </template>
       <template #cell-value="{ row }">
-        <span :data-id="`hilos-2fa-value-${row.rowKey}`">
+        <HilosHideable
+          v-if="isHilosSecondFactorSwitch(row.rowKey)"
+          :value="row.enabled"
+        >
+          <template #default="{ value }">
+            <HilosSwitch
+              class="mb-0"
+              :checked="value"
+              :busy="
+                pendingSwitchKey === row.rowKey ||
+                (row.rowKey === HilosSecondFactorSettingKey.enabled &&
+                  disableStep === 'opening')
+              "
+              :disabled="switchBusy || isLocked(row)"
+              :aria-label="labelOf(row)"
+              :data-id="`hilos-2fa-switch-${row.rowKey}`"
+              @toggle="toggle(row, $event)"
+            />
+          </template>
+        </HilosHideable>
+        <span
+          v-else
+          :class="{ 'opacity-50': isLocked(row) }"
+          :data-id="`hilos-2fa-value-${row.rowKey}`"
+        >
           <HilosHideable :value="row.value">
             <template #default="{ value }">
               {{ describeHilosSecondFactorSetting(row.rowKey, value) }}
@@ -150,10 +265,12 @@ function submitEdit(): void {
       </template>
       <template #cell-actions="{ row }">
         <button
+          v-if="!isHilosSecondFactorSwitch(row.rowKey)"
           type="button"
           class="btn btn-sm btn-outline-primary"
-          title="Edit"
+          :title="`Edit ${labelOf(row)}`"
           :aria-label="`Edit ${labelOf(row)}`"
+          :disabled="isLocked(row)"
           :data-id="`hilos-2fa-edit-${row.rowKey}`"
           @click="openEdit(row)"
         >
@@ -254,6 +371,74 @@ function submitEdit(): void {
             </LoadingButton>
           </template>
         </ConflictActions>
+      </template>
+    </HilosModal>
+
+    <HilosModal
+      v-model="disableOpen"
+      :title="
+        disableStep === 'step-up'
+          ? HILOS_STEP_UP_COPY.title
+          : DISABLE_COPY.title
+      "
+      initial-focus="inner"
+      :close-on-backdrop="!disableBusy"
+      :close-on-esc="!disableBusy"
+      @cancel="disable.close()"
+    >
+      <div ref="disableBody" data-id="hilos-2fa-disable-window">
+        <div class="visually-hidden" role="alert" aria-live="assertive">
+          {{ disableStep === 'step-up' ? stepUpRefusal : disableRefusal }}
+        </div>
+        <form
+          v-if="disableStep === 'step-up'"
+          id="hilos-2fa-disable-proof"
+          data-id="hilos-2fa-disable-step-up"
+          @submit.prevent="disable.confirmStepUp()"
+        >
+          <HilosStepUpStep :controller="disable.stepUp" />
+        </form>
+        <template v-else>
+          <template v-if="disableStep === 'consequences'">
+            <p>{{ DISABLE_COPY.intro }}</p>
+            <ul data-id="hilos-2fa-disable-consequences">
+              <li v-for="line in consequences" :key="line">{{ line }}</li>
+            </ul>
+          </template>
+          <HilosFormError
+            :message="disableRefusal"
+            data-id="hilos-2fa-disable-refusal"
+          />
+        </template>
+      </div>
+      <template #actions="{ requestClose }">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          :disabled="disableBusy"
+          data-id="hilos-2fa-disable-cancel"
+          @click="requestClose"
+        >
+          {{ DISABLE_COPY.cancel }}
+        </button>
+        <LoadingButton
+          v-if="disableStep === 'step-up'"
+          class="btn-primary"
+          type="submit"
+          form="hilos-2fa-disable-proof"
+          :loading="stepUpBusy"
+          data-id="hilos-2fa-disable-step-up-confirm"
+          >{{ HILOS_STEP_UP_COPY.confirm }}</LoadingButton
+        >
+        <LoadingButton
+          v-else-if="disableStep === 'consequences'"
+          class="btn-danger"
+          :loading="disableBusy"
+          :disabled="disableBusy"
+          data-id="hilos-2fa-disable-confirm"
+          @click="disable.confirm()"
+          >{{ DISABLE_COPY.confirm }}</LoadingButton
+        >
       </template>
     </HilosModal>
   </HilosAdminPage>

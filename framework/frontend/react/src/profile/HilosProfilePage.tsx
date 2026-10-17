@@ -50,15 +50,18 @@ export function HilosProfilePage({ context, binding }: HilosProfilePageProps) {
     throw new Error('HilosProfilePage requires a HilosRouterContext provider.')
   const identity = useSignal(router.pageIdentity)
   const route = useSignal(router.currentRoute)
-  const sections = hilosChildLinks(
-    identity?.children ?? [],
-    route.params,
-    router.resolvePath,
-  )
   const root = useMemo(
     () => createHilosProfileRootStore(context, binding),
     [context, binding],
   )
+  const hiddenSections = useSignal(root.hiddenSections)
+  // A section the root hides has no row: two-step verification turned off by
+  // the administrator, with nothing of the person's own standing (HIL-1303).
+  const sections = hilosChildLinks(
+    identity?.children ?? [],
+    route.params,
+    router.resolvePath,
+  ).filter((section) => !hiddenSections.includes(section.page))
   useEffect(() => {
     root.start()
     return () => root.dispose()

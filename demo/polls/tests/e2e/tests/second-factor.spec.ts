@@ -1,7 +1,8 @@
 // Two-step verification end to end (HIL-494): an authenticator app connected in
 // the profile with its first code, the code step it adds to the next sign-in and
 // the browser it may trust after it, a backup code that signs in once, and the
-// enrolment an administrator's policy requires on the way in. The removal notice
+// enrolment an administrator's policy requires on the way in, and the factor an
+// administrator turns off for everyone and back on (HIL-1303). The removal notice
 // rides notification delivery, tested in chat's second-factor-mail.spec.ts. The codes are
 // computed here from the secret the enrolment screen prints, as any app would.
 import { test, expect, type Browser, type Page } from '@playwright/test'
@@ -167,6 +168,76 @@ test.describe('two-step verification', () => {
       await submitCodeStep(member)
     } finally {
       await setRequired(page, 'none', 'Nobody')
+    }
+  })
+})
+
+/** The first switch of the two-step verification tab. */
+const ENABLED_SWITCH = 'hilos-2fa-switch-auth.second_factor.enabled'
+
+/**
+ * Turn the second factor off on the administration page: the switch opens its
+ * window, the window asks the administrator's password, then Turn off.
+ *
+ * @param page An administrator's page whose account holds a password.
+ */
+async function turnSecondFactorOff(page: Page): Promise<void> {
+  await gotoPage(page, '/hilos/security/2fa')
+  const on = shownByTestId(page, ENABLED_SWITCH)
+  await expect(on).toBeChecked()
+  await clickSubmit(on)
+  await expect(page.getByTestId('hilos-2fa-disable-window')).toBeVisible()
+  await typeInto(page.getByTestId('step-up-password'), PASSWORD)
+  await clickSubmit(page.getByTestId('hilos-2fa-disable-step-up-confirm'))
+  await clickSubmit(page.getByTestId('hilos-2fa-disable-confirm'))
+  await expect(page.getByTestId('hilos-2fa-disable-window')).toHaveCount(0)
+  await expect(shownByTestId(page, ENABLED_SWITCH)).not.toBeChecked()
+}
+
+/**
+ * Turn the second factor back on: the switch alone, no window.
+ *
+ * @param page An administrator's page on the two-step verification tab.
+ */
+async function turnSecondFactorOn(page: Page): Promise<void> {
+  const off = shownByTestId(page, ENABLED_SWITCH)
+  await clickSubmit(off)
+  await expect(off).toBeChecked()
+}
+
+test.describe('turned off for everyone', () => {
+  test('lets a person with an app in without the code, says so in the profile, and asks again once it is back on', async ({
+    page,
+    browser,
+  }) => {
+    const member = await freshPage(browser)
+    const user = await signUp(member)
+    await gotoPage(member, '/profile/security')
+    await connectFirstApp(member, PASSWORD)
+    await logout(member)
+
+    await signUpAdmin(page)
+    try {
+      await turnSecondFactorOff(page)
+
+      await gotoPage(member, '/profile')
+      await expect(member.getByTestId('auth-surface')).toBeVisible()
+      await enterIdentifierAndPassword(member, user.email, PASSWORD)
+      await clickSubmit(member.getByTestId('auth-submit'))
+      await expect(member.getByTestId('auth-surface')).toHaveCount(0)
+      await gotoPage(member, '/profile/security')
+      await expect(member.getByTestId('hilos-2fa-turned-off')).toBeVisible()
+
+      await turnSecondFactorOn(page)
+      await logout(member)
+      await signInToCodeStep(member, user.email)
+    } finally {
+      // The policy outlives this test on the shared stand, so it goes back on
+      // whatever happens in between.
+      await gotoPage(page, '/hilos/security/2fa')
+      if (!(await shownByTestId(page, ENABLED_SWITCH).isChecked())) {
+        await turnSecondFactorOn(page)
+      }
     }
   })
 })

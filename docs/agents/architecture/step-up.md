@@ -57,6 +57,13 @@ A provider login is not a step-up method. When none of the methods is available,
 the operation is refused before its own form begins unless it declares
 `passesWithNothingToConfirm`.
 
+While the administrator has the second factor turned off for the installation
+(HIL-1303, [second-factor.md](second-factor.md), "Policy"), the first method is
+skipped: a person with an app is asked the password, then an address code, then
+a device key. A window that asked the app code before it was turned off gets
+"Your confirmation has expired" when it submits — the method no longer matches
+— and opens again on the next method.
+
 If the chosen method is an address code and the operation declares that its own
 first step proves that same account address, the separate confirmation step is
 skipped. This prevents two consecutive codes from asking the same question.
@@ -248,13 +255,16 @@ someone else at it.
   same test: a file that has left the server cannot be called back
   (`export_legal_acceptances`, HIL-1234,
   [legal-documents.md](legal-documents.md), "Export of acceptances").
+  Turning the second factor off for everyone is declared on by the same test
+  (`disable_second_factor`, HIL-1303): the sign-ins let in without a code while
+  it was off are not taken back by turning it on again.
 - **Declared off** — when one action gives it back: removing rights, blocking,
   and taking the person over (`impersonate`, HIL-1170), which "Stop" ends with
   everything returned. They stand in the list so that an administrator can
   switch them on.
 - **Never an operation** — an action that gives back rather than takes: lifting
   a block, calling a deletion off, as calling off one's own deletion stands
-  outside the gate (HIL-302).
+  outside the gate (HIL-302), turning the second factor back on.
 
 A new action of this kind — the next one the card grows — is declared the same
 way and takes its position by the same test.
@@ -269,6 +279,13 @@ with nothing to confirm with: such an administrator is refused. The operator's
 console commands (`account:merge`, `admin:grant`, `admin:revoke`,
 `impersonate:start`) stand outside the check: at the console there is nothing
 to confirm with.
+
+Turning the second factor off is a setting, so its write is owned by the
+settings library, and the check stands there: a browser write of "off" over "on"
+to `auth.second_factor.enabled` asks `disable_second_factor` before it is
+stored, whether the two-factor screen or the general settings table forwarded
+it, and is refused as expired without a fresh confirmation of that browser. The
+console's `settings:set` stands outside, as the commands above do.
 
 On the card the window of such an action opens on the step
 (`createHilosUserCardStepUp`): the view asks the server by its window's

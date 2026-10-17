@@ -5,30 +5,35 @@ declare(strict_types=1);
 namespace Hilos\Auth\StepUp;
 
 use Hilos\Auth\Detection\IdentifierDetection;
+use Hilos\Auth\SecondFactor\SecondFactorPolicy;
 use Hilos\Auth\Verification\CodeDeliveryAvailability;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Hilos;
 
 /**
  * Chooses the strongest available proof for operation-level step-up (HIL-495).
  *
  * The choice belongs to the application, not to a menu. It is derived from proofs the
- * account owns, independent of the method the current session used to sign in.
+ * account owns, independent of the method the current session used to sign in. A second
+ * factor the administrator turned off for the installation (HIL-1303) is no proof at all:
+ * its step is skipped and the next one in the order is asked.
  */
 final class StepUpMethodResolver
 {
     /**
      * @param int $userId Person whose available proofs are inspected
      * @return ?StepUpTarget Selected method and destination, or null when the account has no usable proof
-     * @throws DatabaseException When an account-proof lookup fails
+     * @throws DatabaseException When an account-proof lookup or the second-factor setting read fails
+     * @throws SettingException When the second-factor setting catalog or value is invalid
      * @throws InvalidArgumentException When a collection query or loaded object is invalid
      * @throws LogicException When collection metadata is incomplete
      */
     public function resolve(int $userId): ?StepUpTarget
     {
-        if (Hilos::$db->secondFactors->confirmedOf($userId) !== []) {
+        if (SecondFactorPolicy::current()->enabled && Hilos::$db->secondFactors->confirmedOf($userId) !== []) {
             return new StepUpTarget(StepUpMethod::SECOND_FACTOR);
         }
 

@@ -363,12 +363,14 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * @param ProfileSecondFactorEnrollStartActionDTO $dto Proof, when an app is already connected
      * @return ?SecondFactorProfileReplyDTO The enrolment, its secret and otpauth address, or null when the code went to the agent
      * @throws ItemNotFoundForUpdateException When the acting connection has no signed-in session
-     * @throws ValidationException When the first app is not confirmed, or the person can no longer be addressed
+     * @throws ValidationException When the second factor is turned off, the first app is not confirmed, or the person
+     *     can no longer be addressed
      * @throws RandomException When the secret cannot be drawn
-     * @throws HilosException When a lookup, a write or a frame fails
+     * @throws HilosException When a lookup, the settings read, a write or a frame fails
      */
     public function profileEnrollStart(string $acceptKey, ProfileSecondFactorEnrollStartActionDTO $dto): ?SecondFactorProfileReplyDTO
     {
+        $this->refuseTurnedOff();
         $userId = (int)$this->confirmedUser($acceptKey, StepUpOperationKey::ADD_AUTHENTICATOR_APP)->userId;
         if (Hilos::$db->secondFactors->confirmedOf($userId) !== []) {
             $this->askProof($userId, $acceptKey, (string)$dto->proofCode, $dto->proofBackup);
@@ -392,11 +394,13 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileSecondFactorEnrollConfirmActionDTO $dto Enrolment, first code and name
      * @throws ItemNotFoundForUpdateException When the acting connection has no signed-in session
-     * @throws ValidationException When the add is not confirmed, or the person can no longer be addressed
-     * @throws HilosException When a lookup or the frame fails
+     * @throws ValidationException When the second factor is turned off, the add is not confirmed, or the person can no
+     *     longer be addressed
+     * @throws HilosException When a lookup, the settings read or the frame fails
      */
     public function profileEnrollConfirm(string $acceptKey, ProfileSecondFactorEnrollConfirmActionDTO $dto): void
     {
+        $this->refuseTurnedOff();
         $userId = (int)$this->confirmedUser($acceptKey, StepUpOperationKey::ADD_AUTHENTICATOR_APP)->userId;
         $this->askEnrollConfirm($userId, $acceptKey, $dto->authenticatorId, $dto->code, $dto->label);
     }
@@ -411,11 +415,12 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileSecondFactorRemoveActionDTO $dto App and the proof
      * @throws ItemNotFoundForUpdateException When the acting connection has no signed-in session
-     * @throws ValidationException When the person can no longer be addressed
-     * @throws HilosException When a lookup or the frame fails
+     * @throws ValidationException When the second factor is turned off, or the person can no longer be addressed
+     * @throws HilosException When a lookup, the settings read or the frame fails
      */
     public function profileRemove(string $acceptKey, ProfileSecondFactorRemoveActionDTO $dto): void
     {
+        $this->refuseTurnedOff();
         $userId = (int)$this->actingUser($acceptKey)->userId;
         $this->library->askPersonAgent($userId, HilosSignalConstants::HILOS_USER_SECOND_FACTOR_REMOVE, new UserSecondFactorRemoveSignalData(
             userId: $userId,
@@ -436,11 +441,12 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileSecondFactorCodesShowActionDTO $dto The proof
      * @throws ItemNotFoundForUpdateException When the acting connection has no signed-in session
-     * @throws ValidationException When the person can no longer be addressed
-     * @throws HilosException When a lookup or the frame fails
+     * @throws ValidationException When the second factor is turned off, or the person can no longer be addressed
+     * @throws HilosException When a lookup, the settings read or the frame fails
      */
     public function profileCodesShow(string $acceptKey, ProfileSecondFactorCodesShowActionDTO $dto): void
     {
+        $this->refuseTurnedOff();
         $this->askProof((int)$this->actingUser($acceptKey)->userId, $acceptKey, $dto->proofCode, $dto->proofBackup);
     }
 
@@ -450,11 +456,12 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileSecondFactorCodesRenewActionDTO $dto The proof
      * @throws ItemNotFoundForUpdateException When the acting connection has no signed-in session
-     * @throws ValidationException When the person can no longer be addressed
-     * @throws HilosException When a lookup or the frame fails
+     * @throws ValidationException When the second factor is turned off, or the person can no longer be addressed
+     * @throws HilosException When a lookup, the settings read or the frame fails
      */
     public function profileCodesRenew(string $acceptKey, ProfileSecondFactorCodesRenewActionDTO $dto): void
     {
+        $this->refuseTurnedOff();
         $this->askProof((int)$this->actingUser($acceptKey)->userId, $acceptKey, $dto->proofCode, $dto->proofBackup);
     }
 
@@ -466,11 +473,13 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileSecondFactorResetWaitSetActionDTO $dto Wait asked for
      * @throws ItemNotFoundForUpdateException When the acting connection has no signed-in session
-     * @throws ValidationException When the wait is outside the administrator's bounds, or the person can no longer be addressed
+     * @throws ValidationException When the second factor is turned off, the wait is outside the administrator's bounds,
+     *     or the person can no longer be addressed
      * @throws HilosException When a lookup, the settings read or the frame fails
      */
     public function profileResetWaitSet(string $acceptKey, ProfileSecondFactorResetWaitSetActionDTO $dto): void
     {
+        $this->refuseTurnedOff();
         $userId = (int)$this->actingUser($acceptKey)->userId;
         $policy = SecondFactorPolicy::current();
         $min = max($policy->resetWaitMinDays, SecondFactorSettings::RESET_WAIT_FLOOR_DAYS);
@@ -494,12 +503,13 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      *
      * @param string $acceptKey Accept key the action arrived on
      * @throws ItemNotFoundForUpdateException When the acting connection has no signed-in session
-     * @throws ValidationException When the person has no factor, or a removal already stands
+     * @throws ValidationException When the second factor is turned off, the person has no factor, or a removal already stands
      * @throws RandomException When the cancel token cannot be drawn
-     * @throws HilosException When a lookup, the write or the announcement fails
+     * @throws HilosException When a lookup, the settings read, the write or the announcement fails
      */
     public function profileResetRequest(string $acceptKey): void
     {
+        $this->refuseTurnedOff();
         $userId = (int)$this->actingUser($acceptKey)->userId;
         if (Hilos::$db->secondFactors->confirmedOf($userId) === []) {
             throw new ValidationException(SecondFactorMessages::FACTOR_OFF);
@@ -511,6 +521,9 @@ final class SecondFactorCommands extends AbstractLibraryCommands
 
     /**
      * Cancels the removal that stands, from the profile; the person's agent cancels it.
+     *
+     * Asked even while the administrator has the second factor turned off (HIL-1303): a removal
+     * asked for before lives on as it stands, and so does the way to call it off.
      *
      * @param string $acceptKey Accept key the action arrived on
      * @throws ItemNotFoundForUpdateException When the acting connection has no signed-in session
@@ -910,6 +923,22 @@ final class SecondFactorCommands extends AbstractLibraryCommands
             $step();
         } catch (Throwable $e) {
             Logger::error("Second factor of #{$userId}: the {$what} failed: {$e->getMessage()}");
+        }
+    }
+
+    /**
+     * Refuses a change of the person's own second factor while the administrator has it turned off (HIL-1303).
+     *
+     * The section keeps the person's apps, codes and removal as they stand, so turning it back on
+     * finds them; only calling off a removal under way is left open.
+     *
+     * @throws ValidationException When the second factor is turned off for the installation
+     * @throws HilosException When the settings cannot be read
+     */
+    private function refuseTurnedOff(): void
+    {
+        if (!SecondFactorPolicy::current()->enabled) {
+            throw new ValidationException(SecondFactorMessages::TURNED_OFF_BY_ADMIN);
         }
     }
 

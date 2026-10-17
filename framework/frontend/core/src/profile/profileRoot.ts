@@ -8,7 +8,9 @@
 // The summaries of the framework's own sections come from the answer of the
 // page (notifications, two-step verification, agreements, the data copy) and
 // stay live through their stores; a summary whose list the project did not hand
-// over is empty.
+// over is empty. A section with nothing to show the person has no row at all:
+// two-step verification turned off by the administrator, for a person with no
+// app and no removal standing (HIL-1303).
 import { type ActionLifecycle } from '../connection/actionLifecycle.js'
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import {
@@ -84,6 +86,12 @@ export const HILOS_PROFILE_ROOT_COPY = {
 /** The prefix every profile section's page key carries. */
 const SECTION_PAGE_PREFIX = 'hilos_profile_'
 
+/** No section hidden — one value, so a recomputation that hides none is no change. */
+const NO_HIDDEN_SECTIONS: readonly string[] = []
+
+/** Two-step verification hidden — one value, for the same reason. */
+const SECURITY_HIDDEN: readonly string[] = [HilosPages.PROFILE_SECURITY]
+
 /**
  * The icon of a section row; a project's own section under the profile gets a folder.
  *
@@ -132,6 +140,12 @@ export interface HilosProfileRootStore {
   readonly photo: ReadonlySignal<string | null>
   /** Summary per section page key; a key absent here has none. */
   readonly summaries: ReadonlySignal<Readonly<Record<string, string>>>
+  /**
+   * The page keys of the sections the root draws no row for, live: two-step
+   * verification once the administrator turned it off, while the person has
+   * no app and no removal standing (HIL-1303).
+   */
+  readonly hiddenSections: ReadonlySignal<readonly string[]>
   /** The account's verified address, or null — no Email row then. */
   readonly verifiedEmail: ReadonlySignal<string | null>
   /**
@@ -178,6 +192,7 @@ export function createHilosProfileRootStore(
   const summaries = computedSignal(() => {
     const sessions = binding.sessionCount?.get()
     const devices = binding.deviceCount?.get()
+    const security = secondFactor.state.get()
     const summary: Record<string, string> = {
       [HilosPages.PROFILE_NOTIFICATIONS]: describeHilosNotificationChannels(
         hilosNotificationPreferences.channels.get(),
@@ -188,9 +203,12 @@ export function createHilosProfileRootStore(
       [HilosPages.PROFILE_DATA]: describeHilosDataExport(
         dataExport.state.get(),
       ),
-      [HilosPages.PROFILE_SECURITY]: `Two-step verification is ${
-        secondFactor.state.get()?.authenticators.length ? 'on' : 'off'
-      }`,
+      [HilosPages.PROFILE_SECURITY]:
+        security?.enabled === false
+          ? 'Turned off by your administrator'
+          : `Two-step verification is ${
+              security?.authenticators.length ? 'on' : 'off'
+            }`,
     }
     summary[HilosPages.PROFILE_SIGN_IN] = describeHilosProfileSignInMethods(
       methods.get(),
@@ -209,6 +227,16 @@ export function createHilosProfileRootStore(
     photoEnabled: computedSignal(() => photoEnabledField.get() === true),
     photo,
     summaries,
+    hiddenSections: computedSignal(() => {
+      const security = secondFactor.state.get()
+
+      return security !== null &&
+        !security.enabled &&
+        security.authenticators.length === 0 &&
+        security.reset === null
+        ? SECURITY_HIDDEN
+        : NO_HIDDEN_SECTIONS
+    }),
     verifiedEmail: computedSignal(
       () => hilosProfilePasswordState(methods.get()).verifiedEmail,
     ),

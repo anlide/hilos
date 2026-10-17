@@ -29,6 +29,7 @@ function harness(initial: HilosTwoFactorSettingRow) {
       sent.push([key, value]),
       {} as ActionHandle
     ),
+    switchSet: () => ({}) as ActionHandle,
   }
   const edit = createHilosTwoFactorSettingEdit(controller, actions)
   edit.start()

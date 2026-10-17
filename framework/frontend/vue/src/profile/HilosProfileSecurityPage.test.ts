@@ -3,6 +3,8 @@
 // step a modal moves to takes the focus, and backup codes shown once ask before
 // the modal closes. Connecting an app is a protected operation (HIL-1138): the
 // modal opens on the server's word, at the confirmation step or at the name.
+// Turned off by the administrator (HIL-1303), the page is one plate, beside a
+// removal that stands, and an open window closes when it turns off.
 import {
   createSignal,
   ScopeManager,
@@ -32,6 +34,7 @@ enableAutoUnmount(afterEach)
 
 /** A section with no app connected yet, as the group frame carries it. */
 const SECTION_OFF = {
+  enabled: true,
   authenticators: [],
   backupCodesLeft: 0,
   backupCodesTotal: 0,
@@ -76,7 +79,11 @@ const REPLIES: Record<string, unknown> = {
 function pageWorld(
   replies: Record<string, unknown> = REPLIES,
   section: object = SECTION_OFF,
-): { dispatched: string[]; wrapper: VueWrapper } {
+): {
+  dispatched: string[]
+  wrapper: VueWrapper
+  push: (next: object) => void
+} {
   const dispatched: string[] = []
   const listeners: Array<(signal: ProjectSignal) => void> = []
   const connection = {
@@ -105,15 +112,18 @@ function pageWorld(
     global: { stubs: { HilosPageHeading: true } },
     props: { context: { connection, scopes: new ScopeManager(), actions } },
   })
-  for (const listener of listeners) {
-    listener({
-      kind: 'project',
-      type: 'hilos_second_factor_state',
-      data: section,
-    } as unknown as ProjectSignal)
+  const push = (next: object): void => {
+    for (const listener of listeners) {
+      listener({
+        kind: 'project',
+        type: 'hilos_second_factor_state',
+        data: next,
+      } as unknown as ProjectSignal)
+    }
   }
+  push(section)
 
-  return { dispatched, wrapper }
+  return { dispatched, wrapper, push }
 }
 
 /** The element carrying a data-id, wherever the modal put it. */
@@ -251,5 +261,73 @@ describe('HilosProfileSecurityPage', () => {
 
     expect(byId('modal-confirm')).toBeTruthy()
     expect(byId('backup-codes-list')).toBeTruthy()
+  })
+})
+
+describe('HilosProfileSecurityPage turned off by the administrator', () => {
+  it('is one plate saying the apps are kept, with no apps, codes, wait or buttons', async () => {
+    const { wrapper } = pageWorld(REPLIES, { ...SECTION_ON, enabled: false })
+    await nextTick()
+
+    expect(wrapper.find('[data-id="hilos-2fa-turned-off"]').text()).toBe(
+      'Your administrator turned two-step verification off. Your apps and backup codes are kept and will work again when it is turned back on.',
+    )
+    for (const id of [
+      'profile-2fa-apps',
+      'profile-2fa-codes-left',
+      'profile-2fa-add',
+      'profile-2fa-wait',
+      'profile-2fa-reset-request',
+    ]) {
+      expect(wrapper.find(`[data-id="${id}"]`).exists()).toBe(false)
+    }
+  })
+
+  it('says only the first sentence when no app is connected', async () => {
+    const { wrapper } = pageWorld(REPLIES, { ...SECTION_OFF, enabled: false })
+    await nextTick()
+
+    expect(wrapper.find('[data-id="hilos-2fa-turned-off"]').text()).toBe(
+      'Your administrator turned two-step verification off.',
+    )
+  })
+
+  it('keeps a removal that stands beside the plate, with its date and Cancel', async () => {
+    const { wrapper } = pageWorld(REPLIES, {
+      ...SECTION_ON,
+      enabled: false,
+      reset: { requestedAt: 0, effectiveAt: 86_400_000 },
+    })
+    await nextTick()
+
+    expect(wrapper.find('[data-id="hilos-2fa-turned-off"]').exists()).toBe(true)
+    expect(
+      wrapper.find('[data-id="profile-2fa-reset-pending"]').text(),
+    ).toContain('Two-step verification will be removed on')
+    expect(wrapper.find('[data-id="profile-2fa-reset-cancel"]').exists()).toBe(
+      true,
+    )
+  })
+
+  it('closes an open window when it turns off, and is the whole page again when it turns back on', async () => {
+    const { wrapper, push } = pageWorld(REPLIES, SECTION_ON)
+    await nextTick()
+    await wrapper.find('[data-id="profile-2fa-codes-show"]').trigger('click')
+    await nextTick()
+    expect(byId('profile-2fa-proof')).toBeTruthy()
+
+    push({ ...SECTION_ON, enabled: false })
+    await nextTick()
+    await nextTick()
+
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    expect(wrapper.find('[data-id="hilos-2fa-turned-off"]').exists()).toBe(true)
+
+    push(SECTION_ON)
+    await nextTick()
+    expect(wrapper.find('[data-id="hilos-2fa-turned-off"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-id="profile-2fa-apps"]').exists()).toBe(true)
   })
 })

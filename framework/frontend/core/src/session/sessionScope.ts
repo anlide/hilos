@@ -253,6 +253,7 @@ const SECOND_FACTOR_POLICY_KEY = 'secondFactorPolicy'
 
 /** The payload of {@link SIGNAL_SECOND_FACTOR_POLICY} (PHP `SecondFactorPolicySignalData`). */
 export const secondFactorPolicySchema = z.looseObject({
+  enabled: z.boolean(),
   required: z.enum(['none', 'admins', 'everyone']),
   trustDays: z.number(),
   backupCodes: z.number(),
@@ -263,9 +264,10 @@ export const secondFactorPolicySchema = z.looseObject({
 
 /**
  * The administrator's second-factor settings as the last policy frame said them
- * (HIL-494): who must use a second factor, the days of trust a browser may be
- * given (0 offers none), the size of a set of backup codes, and the bounds of a
- * person's removal wait.
+ * (HIL-494): whether the second factor exists in the installation at all
+ * (HIL-1303), who must use one, the days of trust a browser may be given (0
+ * offers none), the size of a set of backup codes, and the bounds of a person's
+ * removal wait.
  */
 export type SecondFactorPolicy = z.infer<typeof secondFactorPolicySchema>
 

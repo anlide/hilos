@@ -25,6 +25,7 @@ use Hilos\Auth\Library\DTO\AuthRegistrationProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitHeldSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorCancelSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorDisableApplySignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorMissedSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorOffSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorTrustDaysApplySignalData;
@@ -1243,12 +1244,20 @@ final class HilosSignalConstants
 
     // ── Hilos security admin: two-factor settings action (client → server, HIL-494) ──
     /**
-     * Client → server: write one of the six second-factor settings.
+     * Client → server: write one of the six second-factor settings edited in a dialog.
      *
      * Owned by the two-factor page, which narrows the write to its own keys and asks the
      * settings library to store it; the setting's rule answers a refusal in the dialog.
      */
     public const string SECURITY_2FA_SETTING_SET = 'security_2fa_setting_set';
+
+    /**
+     * Client → server: switch one of the two yes-or-no second-factor settings (HIL-1303).
+     *
+     * Owned by the two-factor page, which narrows the write to its own switches and asks the
+     * settings library to store it; turning the second factor off is confirmed by the library.
+     */
+    public const string SECURITY_2FA_SWITCH_SET = 'security_2fa_switch_set';
 
     /**
      * Client → server: switch operation-level confirmation on or off.
@@ -2025,6 +2034,13 @@ final class HilosSignalConstants
      * Carried by {@see AuthSecondFactorTrustDaysApplySignalData}.
      */
     public const string HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY = 'hilos_auth_second_factor_trust_days_apply';
+
+    /**
+     * Settings library → session holder: forget trusts per setting and let every second-factor wait go
+     * before answering the write (HIL-1303).
+     * Carried by {@see AuthSecondFactorDisableApplySignalData}.
+     */
+    public const string HILOS_AUTH_SECOND_FACTOR_DISABLE_APPLY = 'hilos_auth_second_factor_disable_apply';
 
     /**
      * Users library → session holder: end the other sessions after a password change (HIL-300).

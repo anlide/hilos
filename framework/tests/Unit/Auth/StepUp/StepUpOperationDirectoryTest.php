@@ -31,6 +31,7 @@ final class StepUpOperationDirectoryTest extends TestCase
             StepUpOperationKey::DELETE_OTHER_ACCOUNT,
             StepUpOperationKey::IMPERSONATE,
             StepUpOperationKey::EXPORT_LEGAL_ACCEPTANCES,
+            StepUpOperationKey::DISABLE_SECOND_FACTOR,
             StepUpTestDirectory::PROJECT_OPERATION,
         ], StepUpTestDirectory::keys());
     }
@@ -39,7 +40,9 @@ final class StepUpOperationDirectoryTest extends TestCase
      * The administrator's operations on another person's account: three declared on, the three an
      * administrator undoes with one action declared off (HIL-1275) - the takeover among them, whose
      * "Stop" returns everything (HIL-1170). The export of everybody's acceptance records is declared on
-     * by the same test: a file that has left cannot be called back (HIL-1234).
+     * by the same test: a file that has left cannot be called back (HIL-1234). So is turning the second
+     * factor off for everyone (HIL-1303): the sign-ins let in without a code while it was off are not
+     * taken back by turning it on again.
      */
     public function testAdministratorOperationsCarryTheirCopyAndTheirDefaults(): void
     {
@@ -51,6 +54,7 @@ final class StepUpOperationDirectoryTest extends TestCase
             StepUpOperationKey::DELETE_OTHER_ACCOUNT => ["Delete another person's account", 'delete this account', true],
             StepUpOperationKey::IMPERSONATE => ['Impersonate a person', 'impersonate this person', false],
             StepUpOperationKey::EXPORT_LEGAL_ACCEPTANCES => ['Export legal acceptances', 'export legal acceptances', true],
+            StepUpOperationKey::DISABLE_SECOND_FACTOR => ['Turn two-factor off for everyone', 'turn two-factor off for everyone', true],
         ];
         foreach ($expected as $key => [$label, $purpose, $enabledByDefault]) {
             $operation = StepUpTestDirectory::get($key);

@@ -115,6 +115,12 @@ abstract class StepUpOperationDirectory
                 'export legal acceptances',
                 false,
             ),
+            StepUpOperationKey::DISABLE_SECOND_FACTOR => new StepUpOperation(
+                StepUpOperationKey::DISABLE_SECOND_FACTOR,
+                'Turn two-factor off for everyone',
+                'turn two-factor off for everyone',
+                false,
+            ),
         ];
     }
 

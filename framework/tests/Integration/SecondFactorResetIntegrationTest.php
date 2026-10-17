@@ -7,9 +7,12 @@ namespace Hilos\Tests\Integration;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\DTO\SecondFactorResetCancelLinkActionDTO;
 use Hilos\Auth\SecondFactor\Base32;
+use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorCodesRenewActionDTO;
+use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorCodesShowActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorEnrollConfirmActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorEnrollStartActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorRemoveActionDTO;
+use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetCancelActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetRequestActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetWaitSetActionDTO;
 use Hilos\Auth\SecondFactor\DTO\SecondFactorProfileReplyDTO;
@@ -23,6 +26,7 @@ use Hilos\Auth\SecondFactor\Totp;
 use Hilos\Auth\StepUp\StepUpMessages;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
@@ -36,6 +40,7 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Settings\SettingsAccessor;
+use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Notification\DTO\NotificationEmitSignalData;
@@ -435,6 +440,99 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
     }
 
     /**
+     * While the administrator has the second factor turned off, the section refuses every action of
+     * its own with one sentence, and only calling off the removal under way still works (HIL-1303).
+     *
+     * @throws HilosException When a command fails for another reason
+     */
+    public function testWhileTurnedOffTheSectionRefusesAllButCallingOffARemoval(): void
+    {
+        $secret = $this->connectFirstAppSecret();
+        $this->act(self::ACCEPT_KEY, HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST, new ProfileSecondFactorResetRequestActionDTO());
+        $factorId = (int)Hilos::$db->secondFactors->confirmedOf(self::USER_ID)[0]->id;
+        $this->drain();
+        Hilos::$setting = new SettingsAccessor(SecondFactorResetTurnedOffTestCatalog::class);
+
+        $refused = [
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START => new ProfileSecondFactorEnrollStartActionDTO(
+                $this->nextCodeOf($secret),
+                false,
+            ),
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_CONFIRM => new ProfileSecondFactorEnrollConfirmActionDTO(
+                $factorId,
+                $this->nextCodeOf($secret),
+                'Tablet',
+            ),
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_REMOVE => new ProfileSecondFactorRemoveActionDTO(
+                $factorId,
+                $this->nextCodeOf($secret),
+                false,
+            ),
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_SHOW => new ProfileSecondFactorCodesShowActionDTO($this->nextCodeOf($secret), false),
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_RENEW => new ProfileSecondFactorCodesRenewActionDTO($this->nextCodeOf($secret), false),
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_WAIT_SET => new ProfileSecondFactorResetWaitSetActionDTO(20),
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST => new ProfileSecondFactorResetRequestActionDTO(),
+        ];
+        foreach ($refused as $action => $dto) {
+            try {
+                $this->act(self::ACCEPT_KEY, $action, $dto);
+                self::fail("{$action} must be refused while the second factor is turned off");
+            } catch (ValidationException $exception) {
+                $this->assertSame(SecondFactorMessages::TURNED_OFF_BY_ADMIN, $exception->getMessage(), $action);
+            }
+        }
+        $this->assertCount(1, Hilos::$db->secondFactors->confirmedOf(self::USER_ID), 'The app stays as it was');
+        $this->assertNotNull(Hilos::$db->secondFactorResets->liveOf(self::USER_ID), 'The removal stays as it was');
+
+        $this->act(self::ACCEPT_KEY, HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_CANCEL, new ProfileSecondFactorResetCancelActionDTO());
+
+        $this->assertNull(Hilos::$db->secondFactorResets->liveOf(self::USER_ID), 'Calling off the removal still works');
+    }
+
+    /**
+     * The letter's link still calls a removal off while the second factor is turned off (HIL-1303).
+     *
+     * @throws HilosException When a command fails
+     */
+    public function testTheLinkStillCallsOffARemovalWhileTurnedOff(): void
+    {
+        $this->connectFirstApp();
+        $this->act(self::ACCEPT_KEY, HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST, new ProfileSecondFactorResetRequestActionDTO());
+        $token = $this->tokenOf($this->announcement(SecondFactorNotificationType::RESET_REQUESTED));
+        Hilos::$setting = new SettingsAccessor(SecondFactorResetTurnedOffTestCatalog::class);
+
+        $this->act('accept-anyone', HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_CANCEL_LINK, new SecondFactorResetCancelLinkActionDTO($token));
+
+        $this->assertNull(Hilos::$db->secondFactorResets->liveOf(self::USER_ID));
+    }
+
+    /**
+     * A removal asked for before the second factor was turned off is carried out on time (HIL-1303).
+     *
+     * @throws HilosException When a command or the sweep fails
+     * @throws DatabaseException When the backdating write fails
+     */
+    public function testARemovalAskedBeforeItWasTurnedOffIsCarriedOutOnTime(): void
+    {
+        $this->connectFirstApp();
+        $this->act(self::ACCEPT_KEY, HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST, new ProfileSecondFactorResetRequestActionDTO());
+        Hilos::$setting = new SettingsAccessor(SecondFactorResetTurnedOffTestCatalog::class);
+        Database::sqlRun(
+            'UPDATE `hilos_second_factor_reset` SET `effective_at` = ? WHERE `user_id` = ?',
+            [date('Y-m-d H:i:s', time() - 60), self::USER_ID],
+        );
+        Hilos::$db->secondFactorResets->getObjectCollection()?->clearInMemory();
+        Hilos::$db->secondFactorResets->clearCache();
+        $this->drain();
+
+        $this->tick();
+
+        $this->assertSame([], Hilos::$db->secondFactors->confirmedOf(self::USER_ID));
+        $this->assertNull(Hilos::$db->secondFactorResets->liveOf(self::USER_ID));
+        $this->assertNotNull($this->announcement(SecondFactorNotificationType::RESET_COMPLETED));
+    }
+
+    /**
      * Asks a removal and makes its first notice old enough to remind.
      *
      * @return string Token the first notice carried
@@ -701,6 +799,23 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
         $this->assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($sessionId, self::USER_ID, 30));
 
         return $sessionId;
+    }
+}
+
+/**
+ * The second-factor catalog with the second factor turned off for the installation (HIL-1303).
+ */
+final class SecondFactorResetTurnedOffTestCatalog implements CatalogProviderInterface
+{
+    /**
+     * @return array<string, array<string, mixed>> Catalog with the second factor turned off
+     */
+    public static function getCatalog(): array
+    {
+        $catalog = SecondFactorSettingsCatalog::getCatalog();
+        $catalog[SecondFactorSettings::ENABLED_KEY][SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE] = false;
+
+        return $catalog;
     }
 }
 

@@ -1,7 +1,8 @@
 // Covers the Angular profile root (HIL-1169): Name with Change only for the
 // project's rename, Email only with a verified address, a row per catalog
-// section in its order with the summaries it knows, and the Theme row with its
-// window (HIL-1441, the React page's cases).
+// section in its order with the summaries it knows — but for a section the
+// root hides (HIL-1303) — and the Theme row with its window (HIL-1441, the
+// React page's cases).
 import type { ComponentFixture } from '@angular/core/testing'
 import { TestBed } from '@angular/core/testing'
 import {
@@ -290,6 +291,43 @@ it("offers Change for the project's rename and the Email row for a verified addr
     'ann@example.test · verified',
   )
   expect(node('profile-email-change')).not.toBeNull()
+})
+
+it('draws no Security row while two-step verification is turned off with nothing of the person standing, live', () => {
+  const { fixture, node, root, scopes } = setup(nameOnly())
+  const section = {
+    enabled: false,
+    authenticators: [],
+    backupCodesLeft: 0,
+    backupCodesTotal: 0,
+    required: false,
+    resetWait: {
+      days: 8,
+      pendingDays: null,
+      pendingFrom: null,
+      defaultDays: 8,
+      minDays: 1,
+      maxDays: 30,
+    },
+    reset: null,
+  }
+  scopes.openPage(HilosPages.PROFILE).data.set('secondFactor', section)
+  fixture.detectChanges()
+
+  expect(
+    [...root.querySelectorAll('[data-id="profile-section"] .fw-semibold')].map(
+      (label) => label.textContent,
+    ),
+  ).toEqual(['Your data'])
+  expect(node('profile-security-open')).toBeNull()
+
+  scopes
+    .openPage(HilosPages.PROFILE)
+    .data.set('secondFactor', { ...section, enabled: true })
+  fixture.detectChanges()
+  expect(node('profile-security-summary')?.textContent?.trim()).toBe(
+    'Two-step verification is off',
+  )
 })
 
 it('draws only the placeholder while nobody is signed in', () => {

@@ -987,6 +987,7 @@ describe('a sign-in held on its second factor (HIL-494)', () => {
     bindSessionScope(connection as unknown as HilosConnection, scopes)
     const policy = sessionSecondFactorPolicy(scopes)
     const frame = {
+      enabled: true,
       required: 'everyone',
       trustDays: 0,
       backupCodes: 12,

@@ -1,27 +1,44 @@
 // HilosSecurity2faPage — the framework two-step verification admin page
-// (HilosPages.SECURITY_2FA, HIL-494): the six second-factor settings, one row
-// each — who must use it, the days a device is trusted, the size of a set of
-// backup codes, and the removal wait with its bounds. Each row shows its value in
-// words and a pencil; the pencil opens a modal (the modal-only editing rule), and
-// a value a setting's rule refuses stays in the modal with the refusal above it.
-// The table, the row view-model, the edit round-trip and the words are the core
-// headless's; this view owns only the markup, so a project mounts it by passing
-// its HilosTwoFactorContext. The modal holds its row in focus and merges against
-// it through the shared row-edit helper (rowEdit.ts, conflict-resolution.md),
-// saying what happened elsewhere on one line of room held in advance
-// (HilosEditNotice). The screen is built from text: the mockup's node is a debt
-// (D-115). Bootstrap classes only (styling-rules.md).
-import { useEffect, useMemo } from 'react'
+// (HilosPages.SECURITY_2FA, HIL-494): the eight second-factor settings, one row
+// each — whether the second factor is on at all and whether turning it off
+// forgets the trusted browsers (HIL-1303), then who must use it, the days a
+// device is trusted, the size of a set of backup codes, and the removal wait
+// with its bounds. The two first rows carry a switch, as on the Impersonation
+// tab; each other row shows its value in words and a pencil that opens a modal
+// (the modal-only editing rule), and a value a setting's rule refuses stays in
+// the modal with the refusal above it.
+// A switch is a tracked action: a spinner on its own row while it flies, the
+// other switch disabled, no toast on success, and the switch moves only when the
+// table's row does; a refusal is the action's toast. The first switch, while on,
+// does not move at all: it opens the window that turns the factor off — the
+// operation's "Confirm it's you" first, then what turning it off does and "Turn
+// off" (createHilosTwoFactorDisable, in the order of the account card's
+// windows). While the factor is off every row below the first is dimmed, its
+// pencil or its switch locked (the table's locked).
+// The table, the row view-model, the edit round-trip, the window and the words
+// are the core headless's; this view owns only the markup, so a project mounts
+// it by passing its HilosTwoFactorContext. The modal holds its row in focus and
+// merges against it through the shared row-edit helper (rowEdit.ts,
+// conflict-resolution.md), saying what happened elsewhere on one line of room
+// held in advance (HilosEditNotice). The screen is built from text: the
+// mockup's node is a debt (D-115, and for the switches, the dimmed rows and the
+// window D-234). Bootstrap classes only (styling-rules.md).
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   HILOS_SECOND_FACTOR_REQUIRED_COPY,
   HILOS_SECOND_FACTOR_REQUIRED_VALUES,
   HILOS_SECOND_FACTOR_SETTING_COPY,
+  HILOS_STEP_UP_COPY,
+  HILOS_TWO_FACTOR_DISABLE_COPY as DISABLE_COPY,
   HilosPages,
   HilosSecondFactorSettingKey,
   createHilosSecurityTwoFactorActions,
   createHilosSecurityTwoFactorTable,
+  createHilosTwoFactorDisable,
   createHilosTwoFactorSettingEdit,
   describeHilosSecondFactorSetting,
+  focusInitial,
+  isHilosSecondFactorSwitch,
 } from '@hilos/core'
 import type {
   HilosTwoFactorContext,
@@ -33,11 +50,14 @@ import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
+import { HilosFormError } from '../../HilosFormError.js'
 import { HilosHiddenMark } from '../../HilosHiddenMark.js'
 import { HilosHideable } from '../../HilosHideable.js'
 import { HilosModal } from '../../HilosModal.js'
+import { HilosSwitch } from '../../HilosSwitch.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
+import { HilosStepUpStep } from '../../auth/HilosStepUpStep.js'
 import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
 
@@ -77,16 +97,81 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
     () => createHilosTwoFactorSettingEdit(settings.controller, actions),
     [settings, actions],
   )
+  // The window that turns the factor off, over the table; this view draws it.
+  const disable = useMemo(
+    () => createHilosTwoFactorDisable(context, settings.controller),
+    [context, settings],
+  )
 
   useEffect(() => {
     settings.start()
     editor.start()
+    disable.start()
 
     return () => {
+      disable.dispose()
       editor.dispose()
       settings.dispose()
     }
-  }, [settings, editor])
+  }, [settings, editor, disable])
+
+  const locked = useSignal(settings.locked)
+
+  // One tracked runner for both switches: a single in-flight guard is enough,
+  // and the busy flag disables the other switch while one write is settling.
+  const toggle = useTrackedAction()
+  const [pendingSwitchKey, setPendingSwitchKey] = useState<string | null>(null)
+
+  const disableStep = useSignal(disable.step)
+  const disableBusy = useSignal(disable.busy)
+  const disableRefusal = useSignal(disable.refusal)
+  const stepUpBusy = useSignal(disable.stepUp.busy)
+  const stepUpRefusal = useSignal(disable.stepUp.refusal)
+  const consequences = useSignal(disable.consequences)
+  const disableOpen =
+    disableStep === 'step-up' ||
+    disableStep === 'consequences' ||
+    disableStep === 'refused'
+  const disableBody = useRef<HTMLDivElement>(null)
+
+  // The step the window moves to takes the focus once it is drawn: the field
+  // that held it is gone, and the modal places focus only when it opens.
+  useEffect(() => {
+    const dialog = disableBody.current?.closest<HTMLElement>('[role="dialog"]')
+    if (dialog) {
+      focusInitial(dialog)
+    }
+  }, [disableStep])
+
+  /**
+   * Whether a row is locked: below the first while the factor is off.
+   *
+   * @param row The row of the setting.
+   */
+  function isLocked(row: HilosTwoFactorSettingRow): boolean {
+    return locked.includes(row.rowKey)
+  }
+
+  // Turning the factor off opens its window and leaves the switch where it is;
+  // anything else is the switch's own tracked write. Nothing is set
+  // optimistically: the switch follows the row, which moves when the setting is
+  // written.
+  async function toggleSwitch(
+    row: HilosTwoFactorSettingRow,
+    next: boolean,
+  ): Promise<void> {
+    if (row.rowKey === HilosSecondFactorSettingKey.enabled && !next) {
+      void disable.open()
+
+      return
+    }
+    setPendingSwitchKey(row.rowKey)
+    try {
+      await toggle.run(actions.switchSet(row.rowKey, next))
+    } finally {
+      setPendingSwitchKey(null)
+    }
+  }
 
   const editOpen = useSignal(editor.opened)
   const editRow = useSignal(editor.row)
@@ -134,32 +219,58 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
         controller={settings.controller}
         cells={{
           rowKey: (row) => (
-            <>
+            <div className={isLocked(row) ? 'opacity-50' : undefined}>
               <div className="fw-semibold">{labelOf(row)}</div>
               <div className="small text-body-secondary">
                 {HILOS_SECOND_FACTOR_SETTING_COPY[row.rowKey]?.hint}
               </div>
-            </>
+            </div>
           ),
-          value: (row) => (
-            <span data-id={`hilos-2fa-value-${row.rowKey}`}>
-              <HilosHideable value={row.value}>
-                {(value) => describeHilosSecondFactorSetting(row.rowKey, value)}
+          value: (row) =>
+            isHilosSecondFactorSwitch(row.rowKey) ? (
+              <HilosHideable value={row.enabled}>
+                {(value) => (
+                  <HilosSwitch
+                    className="mb-0"
+                    checked={value}
+                    busy={
+                      pendingSwitchKey === row.rowKey ||
+                      (row.rowKey === HilosSecondFactorSettingKey.enabled &&
+                        disableStep === 'opening')
+                    }
+                    disabled={toggle.busy || isLocked(row)}
+                    aria-label={labelOf(row)}
+                    dataId={`hilos-2fa-switch-${row.rowKey}`}
+                    onToggle={(next) => void toggleSwitch(row, next)}
+                  />
+                )}
               </HilosHideable>
-            </span>
-          ),
-          actions: (row) => (
-            <button
-              type="button"
-              className="btn btn-sm btn-outline-primary"
-              title="Edit"
-              aria-label={`Edit ${labelOf(row)}`}
-              data-id={`hilos-2fa-edit-${row.rowKey}`}
-              onClick={() => openEdit(row)}
-            >
-              <i className="bi bi-pencil" aria-hidden="true"></i>
-            </button>
-          ),
+            ) : (
+              <span
+                className={isLocked(row) ? 'opacity-50' : undefined}
+                data-id={`hilos-2fa-value-${row.rowKey}`}
+              >
+                <HilosHideable value={row.value}>
+                  {(value) =>
+                    describeHilosSecondFactorSetting(row.rowKey, value)
+                  }
+                </HilosHideable>
+              </span>
+            ),
+          actions: (row) =>
+            isHilosSecondFactorSwitch(row.rowKey) ? null : (
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-primary"
+                title={`Edit ${labelOf(row)}`}
+                aria-label={`Edit ${labelOf(row)}`}
+                disabled={isLocked(row)}
+                data-id={`hilos-2fa-edit-${row.rowKey}`}
+                onClick={() => openEdit(row)}
+              >
+                <i className="bi bi-pencil" aria-hidden="true"></i>
+              </button>
+            ),
         }}
       />
 
@@ -264,6 +375,88 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
             />
           </form>
         ) : null}
+      </HilosModal>
+
+      <HilosModal
+        open={disableOpen}
+        onClose={() => disable.close()}
+        title={
+          disableStep === 'step-up'
+            ? HILOS_STEP_UP_COPY.title
+            : DISABLE_COPY.title
+        }
+        initialFocus="inner"
+        closeOnBackdrop={!disableBusy}
+        closeOnEsc={!disableBusy}
+        actions={({ requestClose }) => (
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={disableBusy}
+              data-id="hilos-2fa-disable-cancel"
+              onClick={requestClose}
+            >
+              {DISABLE_COPY.cancel}
+            </button>
+            {disableStep === 'step-up' ? (
+              <LoadingButton
+                className="btn-primary"
+                type="submit"
+                form="hilos-2fa-disable-proof"
+                loading={stepUpBusy}
+                data-id="hilos-2fa-disable-step-up-confirm"
+              >
+                {HILOS_STEP_UP_COPY.confirm}
+              </LoadingButton>
+            ) : disableStep === 'consequences' ? (
+              <LoadingButton
+                className="btn-danger"
+                loading={disableBusy}
+                disabled={disableBusy}
+                data-id="hilos-2fa-disable-confirm"
+                onClick={() => void disable.confirm()}
+              >
+                {DISABLE_COPY.confirm}
+              </LoadingButton>
+            ) : null}
+          </>
+        )}
+      >
+        <div ref={disableBody} data-id="hilos-2fa-disable-window">
+          <div className="visually-hidden" role="alert" aria-live="assertive">
+            {disableStep === 'step-up' ? stepUpRefusal : disableRefusal}
+          </div>
+          {disableStep === 'step-up' ? (
+            <form
+              id="hilos-2fa-disable-proof"
+              data-id="hilos-2fa-disable-step-up"
+              onSubmit={(event) => {
+                event.preventDefault()
+                void disable.confirmStepUp()
+              }}
+            >
+              <HilosStepUpStep controller={disable.stepUp} />
+            </form>
+          ) : (
+            <>
+              {disableStep === 'consequences' ? (
+                <>
+                  <p>{DISABLE_COPY.intro}</p>
+                  <ul data-id="hilos-2fa-disable-consequences">
+                    {consequences.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+              <HilosFormError
+                message={disableRefusal}
+                dataId="hilos-2fa-disable-refusal"
+              />
+            </>
+          )}
+        </div>
       </HilosModal>
     </HilosAdminPage>
   )

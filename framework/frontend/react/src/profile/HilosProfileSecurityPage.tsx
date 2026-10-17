@@ -9,6 +9,10 @@
 // first connection is the protected operation "Add an authenticator app"
 // (HIL-1138): its modal opens on the server's word, at the confirmation step or
 // straight at the name.
+// While the administrator has turned the factor off for everyone (HIL-1303) the
+// page is one plate saying so — and, beside it, a removal that stands with its
+// date and Cancel; it turns back and forth live with the policy, and a window
+// open when it turns off closes.
 // The section, its live copy and the actions are the core's; this view owns only
 // the markup. The page is drawn from text — the mockup's node is a debt (D-113).
 // Bootstrap classes only (styling-rules.md).
@@ -167,6 +171,7 @@ export function HilosProfileSecurityPage({
   }, [store])
 
   const state = useSignal(store.state)
+  const view = useSignal(store.view)
   const apps = state?.authenticators ?? []
   const factorOn = apps.length > 0
   const removalLocked = (state?.required ?? false) && apps.length === 1
@@ -447,6 +452,23 @@ export function HilosProfileSecurityPage({
     }
   }
 
+  // Turned off, the section has none of the windows' actions any more: every
+  // window closes, and an opening still out drops its answer when it comes.
+  useEffect(() => {
+    if (view !== 'turnedOff') {
+      return
+    }
+    if (enrollStepRef.current === 'opening') {
+      enrollStepRef.current = 'name'
+      setEnrollStep('name')
+    }
+    setEnrollOpen(false)
+    setCodesOpen(false)
+    setRemoveOpen(false)
+    setWaitOpen(false)
+    setResetOpen(false)
+  }, [view])
+
   return (
     <section data-id="profile-security" className="mx-auto py-3">
       <HilosPageHeading />
@@ -457,118 +479,138 @@ export function HilosProfileSecurityPage({
         </div>
       ) : (
         <>
-          <h2 className="h6 text-uppercase text-body-secondary mb-2">
-            Two-step verification
-          </h2>
-          {state.required ? (
-            <p className="small mb-2" data-id="profile-2fa-required">
-              Your administrator requires two-step verification.
-            </p>
-          ) : null}
-          <ul className="list-group mb-3" data-id="profile-2fa-apps">
-            {apps.map((app) => (
-              <li
-                key={app.id}
-                className="list-group-item d-flex align-items-center gap-3"
-                data-id={`profile-2fa-app-${app.id}`}
+          {view === 'turnedOff' ? (
+            <div
+              className="alert alert-secondary"
+              data-id="hilos-2fa-turned-off"
+            >
+              Your administrator turned two-step verification off.
+              {factorOn
+                ? ' Your apps and backup codes are kept and will work again when it is turned back on.'
+                : null}
+            </div>
+          ) : (
+            <>
+              <h2 className="h6 text-uppercase text-body-secondary mb-2">
+                Two-step verification
+              </h2>
+              {state.required ? (
+                <p className="small mb-2" data-id="profile-2fa-required">
+                  Your administrator requires two-step verification.
+                </p>
+              ) : null}
+              <ul className="list-group mb-3" data-id="profile-2fa-apps">
+                {apps.map((app) => (
+                  <li
+                    key={app.id}
+                    className="list-group-item d-flex align-items-center gap-3"
+                    data-id={`profile-2fa-app-${app.id}`}
+                  >
+                    <i
+                      className="bi bi-phone-vibrate fs-5"
+                      aria-hidden="true"
+                    />
+                    <div className="flex-grow-1">
+                      <div className="fw-semibold">{app.label}</div>
+                      <div className="small text-body-secondary">
+                        Connected {formatCalendarDate(app.createdAt)}
+                      </div>
+                      {removalLocked ? (
+                        <div
+                          className="small text-body-secondary"
+                          data-id="profile-2fa-remove-locked"
+                        >
+                          Your administrator requires two-step verification, so
+                          the last app stays.
+                        </div>
+                      ) : null}
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-danger"
+                      disabled={removalLocked}
+                      data-id={`profile-2fa-remove-${app.id}`}
+                      onClick={() => openRemove(app)}
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+                {factorOn ? (
+                  <li className="list-group-item d-flex align-items-center gap-3">
+                    <i className="bi bi-key fs-5" aria-hidden="true" />
+                    <div className="flex-grow-1">
+                      <div className="fw-semibold">Backup codes</div>
+                      <div
+                        className="small text-body-secondary"
+                        data-id="profile-2fa-codes-left"
+                      >
+                        {state.backupCodesLeft} of {state.backupCodesTotal} left
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-secondary"
+                      data-id="profile-2fa-codes-show"
+                      onClick={openCodes}
+                    >
+                      Show
+                    </button>
+                  </li>
+                ) : (
+                  <li
+                    className="list-group-item text-body-secondary small"
+                    data-id="profile-2fa-off"
+                  >
+                    Two-step verification is off. Connect an authenticator app
+                    to turn it on.
+                  </li>
+                )}
+              </ul>
+              <LoadingButton
+                className="btn-sm btn-outline-primary mb-4"
+                loading={enrollStep === 'opening'}
+                disabled={enrollStep === 'opening'}
+                data-id="profile-2fa-add"
+                onClick={() => void openEnroll()}
               >
-                <i className="bi bi-phone-vibrate fs-5" aria-hidden="true" />
-                <div className="flex-grow-1">
-                  <div className="fw-semibold">{app.label}</div>
-                  <div className="small text-body-secondary">
-                    Connected {formatCalendarDate(app.createdAt)}
-                  </div>
-                  {removalLocked ? (
+                <i className="bi bi-plus-lg me-1" aria-hidden="true" />
+                Add an authenticator app
+              </LoadingButton>
+
+              <h2 className="h6 text-uppercase text-body-secondary mb-2">
+                If you lose access
+              </h2>
+              <ul className="list-group mb-3">
+                <li className="list-group-item d-flex align-items-center gap-3">
+                  <i
+                    className="bi bi-hourglass-split fs-5"
+                    aria-hidden="true"
+                  />
+                  <div className="flex-grow-1">
+                    <div className="fw-semibold">Wait before removal</div>
                     <div
                       className="small text-body-secondary"
-                      data-id="profile-2fa-remove-locked"
+                      data-id="profile-2fa-wait"
                     >
-                      Your administrator requires two-step verification, so the
-                      last app stays.
+                      {state.resetWait.days} days
+                      {state.resetWait.pendingDays !== null
+                        ? ` · ${state.resetWait.pendingDays} days from ${formatCalendarDate(state.resetWait.pendingFrom ?? Date.now())}`
+                        : null}
                     </div>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-danger"
-                  disabled={removalLocked}
-                  data-id={`profile-2fa-remove-${app.id}`}
-                  onClick={() => openRemove(app)}
-                >
-                  Remove
-                </button>
-              </li>
-            ))}
-            {factorOn ? (
-              <li className="list-group-item d-flex align-items-center gap-3">
-                <i className="bi bi-key fs-5" aria-hidden="true" />
-                <div className="flex-grow-1">
-                  <div className="fw-semibold">Backup codes</div>
-                  <div
-                    className="small text-body-secondary"
-                    data-id="profile-2fa-codes-left"
-                  >
-                    {state.backupCodesLeft} of {state.backupCodesTotal} left
                   </div>
-                </div>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-secondary"
-                  data-id="profile-2fa-codes-show"
-                  onClick={openCodes}
-                >
-                  Show
-                </button>
-              </li>
-            ) : (
-              <li
-                className="list-group-item text-body-secondary small"
-                data-id="profile-2fa-off"
-              >
-                Two-step verification is off. Connect an authenticator app to
-                turn it on.
-              </li>
-            )}
-          </ul>
-          <LoadingButton
-            className="btn-sm btn-outline-primary mb-4"
-            loading={enrollStep === 'opening'}
-            disabled={enrollStep === 'opening'}
-            data-id="profile-2fa-add"
-            onClick={() => void openEnroll()}
-          >
-            <i className="bi bi-plus-lg me-1" aria-hidden="true" />
-            Add an authenticator app
-          </LoadingButton>
-
-          <h2 className="h6 text-uppercase text-body-secondary mb-2">
-            If you lose access
-          </h2>
-          <ul className="list-group mb-3">
-            <li className="list-group-item d-flex align-items-center gap-3">
-              <i className="bi bi-hourglass-split fs-5" aria-hidden="true" />
-              <div className="flex-grow-1">
-                <div className="fw-semibold">Wait before removal</div>
-                <div
-                  className="small text-body-secondary"
-                  data-id="profile-2fa-wait"
-                >
-                  {state.resetWait.days} days
-                  {state.resetWait.pendingDays !== null
-                    ? ` · ${state.resetWait.pendingDays} days from ${formatCalendarDate(state.resetWait.pendingFrom ?? Date.now())}`
-                    : null}
-                </div>
-              </div>
-              <button
-                type="button"
-                className="btn btn-sm btn-outline-secondary"
-                data-id="profile-2fa-wait-edit"
-                onClick={openWait}
-              >
-                Change
-              </button>
-            </li>
-          </ul>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-secondary"
+                    data-id="profile-2fa-wait-edit"
+                    onClick={openWait}
+                  >
+                    Change
+                  </button>
+                </li>
+              </ul>
+            </>
+          )}
           {state.reset !== null ? (
             <div
               className="alert alert-warning d-flex align-items-center gap-3"
@@ -590,7 +632,7 @@ export function HilosProfileSecurityPage({
                 Cancel
               </LoadingButton>
             </div>
-          ) : factorOn ? (
+          ) : factorOn && view === 'full' ? (
             <button
               type="button"
               className="btn btn-sm btn-outline-danger mb-3"
@@ -607,12 +649,15 @@ export function HilosProfileSecurityPage({
             action={resetCancelAction}
             detailsTitle="Couldn't cancel the removal"
           />
-          <p className="small text-body-secondary mb-0">
-            While a removal waits, every channel you have is told about it, and
-            any of those messages stops it. A longer wait makes the account
-            harder to take — and makes you wait longer if your phone is really
-            gone. A shorter wait takes effect only after the wait in force.
-          </p>
+          {view === 'full' ? (
+            <p className="small text-body-secondary mb-0">
+              While a removal waits, every channel you have is told about it,
+              and any of those messages stops it. A longer wait makes the
+              account harder to take — and makes you wait longer if your phone
+              is really gone. A shorter wait takes effect only after the wait in
+              force.
+            </p>
+          ) : null}
         </>
       )}
 

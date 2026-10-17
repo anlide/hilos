@@ -13,13 +13,15 @@ use Hilos\Users\AdminAudience;
 /**
  * The administrator's second-factor settings as they stand, read once for one decision (HIL-494).
  *
- * Built by {@see current()} from the six settings ({@see SecondFactorSettings}); the sign-in
- * gate, the profile section and the reset read the same instance shape, so "who must enrol",
- * "how long a trust lasts" and "how long a removal waits" have one reading each.
+ * Built by {@see current()} from the eight settings ({@see SecondFactorSettings}); the sign-in
+ * gate, the profile section and the reset read the same instance shape, so "is it on at all",
+ * "who must enrol", "how long a trust lasts" and "how long a removal waits" have one reading each.
  */
 final readonly class SecondFactorPolicy
 {
     /**
+     * @param bool $enabled Whether the second factor exists in the installation; off, it asks nobody
+     * @param bool $forgetTrustsOnDisable Whether turning the second factor off forgets every trusted browser
      * @param string $required Who must use a second factor (a SecondFactorSettings::REQUIRED_* value)
      * @param int $trustDays Days a trusted browser skips the step; 0 offers no trust
      * @param int $backupCodes Backup codes in one issued set
@@ -28,6 +30,8 @@ final readonly class SecondFactorPolicy
      * @param int $resetWaitMaxDays Longest removal wait a person may choose, in days
      */
     public function __construct(
+        public bool $enabled,
+        public bool $forgetTrustsOnDisable,
         public string $required,
         public int $trustDays,
         public int $backupCodes,
@@ -38,7 +42,7 @@ final readonly class SecondFactorPolicy
     }
 
     /**
-     * Reads the six settings as they stand now.
+     * Reads the eight settings as they stand now.
      *
      * A project whose catalog carries none of them - no settings accessor, or a catalog that does
      * not fold the fragment in - is on the defaults, which require nobody.
@@ -55,6 +59,8 @@ final readonly class SecondFactorPolicy
         }
 
         return new self(
+            $settings[SecondFactorSettings::ENABLED_KEY]->bool(),
+            $settings[SecondFactorSettings::FORGET_TRUSTS_ON_DISABLE_KEY]->bool(),
             $settings[SecondFactorSettings::REQUIRED_KEY]->string(),
             $settings[SecondFactorSettings::TRUST_DAYS_KEY]->int(),
             $settings[SecondFactorSettings::BACKUP_CODES_KEY]->int(),
@@ -72,6 +78,8 @@ final readonly class SecondFactorPolicy
     public static function defaults(): self
     {
         return new self(
+            SecondFactorSettings::DEFAULT_ENABLED,
+            SecondFactorSettings::DEFAULT_FORGET_TRUSTS_ON_DISABLE,
             SecondFactorSettings::REQUIRED_NONE,
             SecondFactorSettings::DEFAULT_TRUST_DAYS,
             SecondFactorSettings::DEFAULT_BACKUP_CODES,
@@ -86,7 +94,8 @@ final readonly class SecondFactorPolicy
      *
      * "Administrators" is the administrators' circle ({@see AdminAudience}): the unblocked
      * people whose `hilos_user` row says admin, narrowed further by a project that points the
-     * facade at a circle of its own.
+     * facade at a circle of its own. A second factor turned off for the installation is
+     * required of nobody, whatever the required key says.
      *
      * @param int $userId Person asking to be let in
      * @return bool True when the policy requires a second factor of this person
@@ -94,6 +103,10 @@ final readonly class SecondFactorPolicy
      */
     public function requiresFor(int $userId): bool
     {
+        if (!$this->enabled) {
+            return false;
+        }
+
         return match ($this->required) {
             SecondFactorSettings::REQUIRED_EVERYONE => true,
             SecondFactorSettings::REQUIRED_ADMINS => in_array($userId, Hilos::adminAudienceClass()::all(), true),

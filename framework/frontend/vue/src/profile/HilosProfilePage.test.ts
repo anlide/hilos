@@ -1,7 +1,8 @@
 // Covers the profile root's view (HIL-1169): Name with Change only when the
 // project handed its rename, Email only with a verified address, a row per
-// catalog section in the catalog's order with its summary, the placeholder
-// while the name is not known yet, and the Theme row (HIL-1434).
+// catalog section in the catalog's order with its summary — but for a section
+// the root hides (HIL-1303) — the placeholder while the name is not known yet,
+// and the Theme row (HIL-1434).
 import {
   ActionLifecycle,
   bindImpersonation,
@@ -354,6 +355,46 @@ describe('HilosProfilePage', () => {
     expect(
       wrapper.find('[data-id="profile-security-open"]').attributes('href'),
     ).toBe(`/${HilosPages.PROFILE_SECURITY}`)
+  })
+
+  it('draws no Security row while two-step verification is turned off with nothing of the person standing, live', async () => {
+    const scopes = signedInScopes()
+    const page = scopes.openPage(HilosPages.PROFILE)
+    const section = {
+      enabled: false,
+      authenticators: [],
+      backupCodesLeft: 0,
+      backupCodesTotal: 0,
+      required: false,
+      resetWait: {
+        days: 8,
+        pendingDays: null,
+        pendingFrom: null,
+        defaultDays: 8,
+        minDays: 1,
+        maxDays: 30,
+      },
+      reset: null,
+    }
+    page.data.set('secondFactor', section)
+    const wrapper = mountPage(nameOnly(), scopes)
+    await nextTick()
+
+    expect(
+      wrapper.findAll('[data-id="profile-section"]').map((row) => row.text()),
+    ).toEqual([
+      expect.stringContaining('Ways to sign in'),
+      expect.stringContaining('Sessions'),
+    ])
+    expect(wrapper.find('[data-id="profile-security-open"]').exists()).toBe(
+      false,
+    )
+
+    page.data.set('secondFactor', { ...section, enabled: true })
+    await nextTick()
+    expect(wrapper.find('[data-id="profile-security-summary"]').text()).toBe(
+      'Two-step verification is off',
+    )
   })
 
   it('draws only the placeholder while nobody is signed in', () => {

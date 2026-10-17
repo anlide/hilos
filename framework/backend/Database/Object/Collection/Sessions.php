@@ -17,6 +17,11 @@ use Hilos\Database\SqlSortDirection;
 /**
  * Sessions object collection.
  *
+ * A finder that answers with several sessions answers with their keys, in the order the rows
+ * came, rather than with objects, as {@see Objects::loadByColumn()} does: a list of objects stays
+ * out of the contract, and the view layer turns the keys into its own collection. Each row is
+ * hydrated on the way, so every key names an object this collection already holds.
+ *
  * @extends Objects<ObjectSession>
  * @method ObjectSession|null current()
  * @method ObjectSession|null first()
@@ -54,15 +59,15 @@ class Sessions extends Objects
     }
 
     /**
-     * Lists every session bound to a user (HIL-378).
+     * Loads every session bound to a user, and answers with their keys (HIL-378).
      *
      * The account-merge force-logout read path: the merge orchestrator resolves
      * a loser's live sessions to revert each to anonymous. A user may hold several
      * sessions (distinct devices/tabs), so this returns all of them; an anonymous
-     * or unused account yields an empty list.
+     * or unused account yields no keys.
      *
      * @param int $userId Owning user id
-     * @return list<ObjectSession> Session objects bound to the user (empty when none)
+     * @return list<int> Keys of the sessions bound to the user (empty when none)
      * @throws DatabaseException If the database query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
@@ -72,14 +77,14 @@ class Sessions extends Objects
     }
 
     /**
-     * Lists every session holding the "Access closed" card for a blocked account (HIL-289).
+     * Loads every session holding the "Access closed" card for a blocked account, and answers with their keys (HIL-289).
      *
      * The unblock read path: the sessions library lowers the mark on each browser that lost
      * this account or was refused it, so their cards go. A browser that never met the block
-     * holds no mark, so an account nobody saw blocked yields an empty list.
+     * holds no mark, so an account nobody saw blocked yields no keys.
      *
      * @param int $userId Blocked account the mark names
-     * @return list<ObjectSession> Session objects marked with the account (empty when none)
+     * @return list<int> Keys of the sessions marked with the account (empty when none)
      * @throws DatabaseException If the database query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
@@ -89,14 +94,34 @@ class Sessions extends Objects
     }
 
     /**
-     * Lists every session in which an administrator is acting as somebody else (HIL-289).
+     * Loads every session whose proven sign-in waits on a second factor, and answers with their keys, oldest row first (HIL-1303).
+     *
+     * The read half of turning the second factor off for the installation: the session holder
+     * lets each of these waits go, whoever's it is and whichever screen - the code or enrolment
+     * - it stands on. A wait is a person on the column, so nobody waiting yields no keys.
+     *
+     * @return list<int> Keys of the sessions with a second-factor wait (empty when none)
+     * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     */
+    public function findAwaitingSecondFactor(): array
+    {
+        return $this->hydrateAll(static::entityClass()::get(
+            '`' . EntitySession::pending_second_factor_user_id . '` IS NOT NULL',
+            [],
+            [EntitySession::id => SqlSortDirection::ASC],
+        ));
+    }
+
+    /**
+     * Loads every session in which an administrator is acting as somebody else, and answers with their keys (HIL-289).
      *
      * The block enforcement read path for a blocked administrator: the takeover goes with the
      * rest of that person's access, or the block would leave them a way in through another
-     * account. An administrator who impersonates nobody yields an empty list.
+     * account. An administrator who impersonates nobody yields no keys.
      *
      * @param int $userId Administrator behind the impersonation
-     * @return list<ObjectSession> Session objects the administrator is impersonating in (empty when none)
+     * @return list<int> Keys of the sessions the administrator is impersonating in (empty when none)
      * @throws DatabaseException If the database query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
@@ -106,14 +131,14 @@ class Sessions extends Objects
     }
 
     /**
-     * Lists every session a person stands in, in any of the three places a session names one (HIL-302).
+     * Loads every session a person stands in, in any of the three places a session names one, and answers with their keys (HIL-302).
      *
      * The erasure's sign-out read path: the person signed in on it, the administrator behind
      * a takeover on it, or the person whose proven sign-in waits there on a second factor. An
      * account that no longer exists must not stay in any of the three.
      *
      * @param int $userId Person
-     * @return list<ObjectSession> Session objects naming the person (empty when none)
+     * @return list<int> Keys of the sessions naming the person, oldest row first (empty when none)
      * @throws DatabaseException If the database query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
@@ -128,15 +153,15 @@ class Sessions extends Objects
     }
 
     /**
-     * Lists the sessions waiting on one address's registration code (HIL-612).
+     * Loads the sessions waiting on one address's registration code, and answers with their keys (HIL-612).
      *
      * The reverse read of the pending-registration memory, and the reason the column
      * carries an index of its own: several is the normal answer - a desktop and a phone
      * can both sit on the code screen of one address, and both are owed the news when
      * it resolves.
      *
-     * @param string $identifier Normalized identifier (empty string returns an empty list)
-     * @return list<ObjectSession> Session objects waiting on it (empty when nobody is)
+     * @param string $identifier Normalized identifier (empty string returns no keys)
+     * @return list<int> Keys of the sessions waiting on it (empty when nobody is)
      * @throws DatabaseException If the database query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
@@ -152,13 +177,13 @@ class Sessions extends Objects
     }
 
     /**
-     * Lists sessions whose cookie lifetime has ended, oldest row first.
+     * Loads sessions whose cookie lifetime has ended, and answers with their keys, oldest row first.
      *
      * A null expiry is deliberately open-ended and does not belong to the sweep.
      *
      * @param string $nowSql Current moment as an SQL datetime
      * @param int $limit Maximum rows to load
-     * @return list<ObjectSession> Expired session objects, empty when none
+     * @return list<int> Keys of the expired sessions, empty when none
      * @throws DatabaseException When the lookup query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
@@ -173,14 +198,14 @@ class Sessions extends Objects
     }
 
     /**
-     * Lists old anonymous sessions whose browser never returned, oldest row first.
+     * Loads old anonymous sessions whose browser never returned, and answers with their keys, oldest row first.
      *
      * `last_seen_at = created_at` is the durable proof that only the opening handshake
      * touched the row; the cutoff is applied to the indexed last-seen column.
      *
      * @param string $cutoffSql Latest first-handshake moment eligible for removal
      * @param int $limit Maximum rows to load
-     * @return list<ObjectSession> Never-returned session objects, empty when none
+     * @return list<int> Keys of the never-returned sessions, empty when none
      * @throws DatabaseException When the lookup query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
@@ -221,7 +246,8 @@ class Sessions extends Objects
             [$cutoffSql],
         ));
 
-        foreach ($stale as $session) {
+        foreach ($stale as $key) {
+            $session = $this->objects[$key];
             $session->pendingRegistrationIdentifier = null;
             $session->pendingRegistrationSince = null;
             $session->sync();
@@ -231,26 +257,27 @@ class Sessions extends Objects
     }
 
     /**
-     * Loads and caches every session of an entity query result.
+     * Loads and caches every session of an entity query result, and answers with their keys in its order.
      *
      * Typed on the base collection rather than on {@see EntitySessions}: the string-filter
      * form of `Entity::get()` hands back a plain {@see EntityCollection}, and the narrower
      * hint would refuse the very query the sweep is built on.
      *
      * @param EntityCollection<EntitySession> $entitySessions Entity query result to wrap
-     * @return list<ObjectSession> Session objects (empty when nothing matched)
+     * @return list<int> Keys of the sessions, each held by this collection (empty when nothing matched)
      */
     private function hydrateAll(EntityCollection $entitySessions): array
     {
-        $result = [];
+        $keys = [];
         foreach ($entitySessions as $entitySession) {
             if ($entitySession->id === null) {
                 continue;
             }
-            $result[] = $this->hydrateSession($entitySession);
+            $this->hydrateSession($entitySession);
+            $keys[] = $entitySession->id;
         }
 
-        return $result;
+        return $keys;
     }
 
     /**

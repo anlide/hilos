@@ -19,10 +19,12 @@ use Hilos\HilosException;
  * recovery - and on none that is not a proof: a registration lands an account that has no
  * second factor yet, and an operator's `admin:create` or takeover is no sign-in by the person.
  *
- * Three answers. A person with a confirmed authenticator is let through only on a browser they
- * asked to trust and whose trust has not run out; elsewhere the sign-in waits on the code step.
- * A person without one is let through - unless the administrator requires a second factor of
- * them, in which case the sign-in waits on enrolment.
+ * Four answers. A second factor the administrator turned off for the installation (HIL-1303)
+ * lets every proof through, with no code and no enrolment. Otherwise a person with a confirmed
+ * authenticator is let through only on a browser they asked to trust and whose trust has not
+ * run out; elsewhere the sign-in waits on the code step. A person without one is let through -
+ * unless the administrator requires a second factor of them, in which case the sign-in waits on
+ * enrolment.
  */
 final class SecondFactorGate
 {
@@ -49,6 +51,9 @@ final class SecondFactorGate
      */
     public static function verdict(int $sessionId, int $userId, SecondFactorPolicy $policy): string
     {
+        if (!$policy->enabled) {
+            return self::PASS;
+        }
         if (Hilos::$db->secondFactors->confirmedOf($userId) !== []) {
             return Hilos::$db->secondFactorTrusts->isTrusted($sessionId, $userId, $policy->trustDays)
                 ? self::PASS : self::VERIFY;

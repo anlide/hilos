@@ -10,10 +10,10 @@ use Hilos\Database\Settings\SettingsCatalogConstants;
 /**
  * SecondFactorSettingsCatalog - the framework settings-catalog fragment of the second factor (HIL-494).
  *
- * Six keys ({@see SecondFactorSettings}), each naming its rule so every write path - the
- * two-factor administration screen, the general settings table, a preset - refuses the same
- * values with the same words. A project folds this into its own catalog beside the other
- * framework fragments.
+ * Eight keys ({@see SecondFactorSettings}): two yes-or-no switches and six keys that each name
+ * their rule so every write path - the two-factor administration screen, the general settings
+ * table, a preset - refuses the same values with the same words. A project folds this into its
+ * own catalog beside the other framework fragments.
  */
 final class SecondFactorSettingsCatalog implements CatalogProviderInterface
 {
@@ -25,6 +25,16 @@ final class SecondFactorSettingsCatalog implements CatalogProviderInterface
     public static function getCatalog(): array
     {
         return [
+            SecondFactorSettings::ENABLED_KEY => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => SecondFactorSettings::DEFAULT_ENABLED,
+            ],
+            SecondFactorSettings::FORGET_TRUSTS_ON_DISABLE_KEY => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => SecondFactorSettings::DEFAULT_FORGET_TRUSTS_ON_DISABLE,
+            ],
             SecondFactorSettings::REQUIRED_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
                 SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,

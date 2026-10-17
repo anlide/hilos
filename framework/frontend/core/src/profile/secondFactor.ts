@@ -9,7 +9,8 @@
 // tab that missed one change never draws the next on top of a picture that is no
 // longer true. The administrator's policy frame is the one thing that changes the
 // section without a new copy of it, and it is read here as news newer than the
-// copy (sessionSecondFactorPolicy).
+// copy (sessionSecondFactorPolicy) — turning the factor off for everyone among
+// it (HIL-1303), which the section then only says.
 //
 // Every action but the first enrolment, the wait and the removal request starts
 // with a code — from an app or a backup code — because a stolen live session must
@@ -65,6 +66,7 @@ const ACTION_RESET_CANCEL = 'profile_second_factor_reset_cancel'
  * epoch ms here and local in {@link HilosSecondFactorState}.
  */
 export const secondFactorStateSchema = z.looseObject({
+  enabled: z.boolean(),
   authenticators: z.array(
     z.looseObject({
       id: z.number(),
@@ -140,6 +142,12 @@ export interface HilosSecondFactorReset {
 
 /** The profile's second-factor section, as the page draws it. */
 export interface HilosSecondFactorState {
+  /**
+   * Whether the second factor exists in the installation (HIL-1303). Off, the
+   * administrator turned it off for everyone: the person's apps and codes are
+   * kept but sleep, and the section only says so.
+   */
+  readonly enabled: boolean
   /** The connected apps; empty means the factor is off. */
   readonly authenticators: readonly HilosSecondFactorAuthenticator[]
   /** Unused codes of the person's backup set. */
@@ -175,6 +183,7 @@ export function readHilosSecondFactorState(
   const wait = data.resetWait
 
   return {
+    enabled: data.enabled,
     authenticators: data.authenticators.map((entry) => ({
       id: entry.id,
       label: entry.label,
@@ -203,8 +212,17 @@ export function readHilosSecondFactorState(
 }
 
 /**
- * The section with a policy frame NEWER than it laid over it. The bounds are the
- * administrator's and move with the frame. Whether the factor is required of
+ * How the section is drawn (HIL-1303): `full` — the apps, the codes, the wait and
+ * their buttons; `turnedOff` — the administrator turned the factor off for
+ * everyone, and the section is one line saying so, with a removal that stands
+ * beside it.
+ */
+export type HilosSecondFactorView = 'full' | 'turnedOff'
+
+/**
+ * The section with a policy frame NEWER than it laid over it. Whether the factor
+ * exists and the bounds are the administrator's and move with the frame. Whether
+ * the factor is required of
  * THIS person moves only where the policy alone decides it: `none` and
  * `everyone` do, while `admins` turns on who the administrators are, which the
  * server knows and this tab does not — the next section it sends says it.
@@ -225,6 +243,7 @@ function underPolicy(
 
   return {
     ...state,
+    enabled: policy.enabled,
     required,
     resetWait: {
       ...state.resetWait,
@@ -249,6 +268,11 @@ export interface HilosSecondFactorContext {
 export interface HilosSecondFactorStore {
   /** The section as it stands, or `null` before the first copy arrives. */
   readonly state: ReadonlySignal<HilosSecondFactorState | null>
+  /**
+   * How the section is drawn, following `state` live, or `null` before the
+   * first copy arrives.
+   */
+  readonly view: ReadonlySignal<HilosSecondFactorView | null>
   /**
    * Replace the section from a copy of it — the subscription's data slot or a
    * frame. A copy that is not a section is ignored rather than drawn.
@@ -290,17 +314,27 @@ export function createHilosSecondFactorStore(
     }
   }
 
+  const state = computedSignal(() => {
+    const current = held.get()
+    if (current === null) {
+      return null
+    }
+    const latest = policy.get()
+
+    return latest === null || latest === current.policy
+      ? current.state
+      : underPolicy(current.state, latest)
+  })
+
   return {
-    state: computedSignal(() => {
-      const current = held.get()
+    state,
+    view: computedSignal(() => {
+      const current = state.get()
       if (current === null) {
         return null
       }
-      const latest = policy.get()
 
-      return latest === null || latest === current.policy
-        ? current.state
-        : underPolicy(current.state, latest)
+      return current.enabled ? 'full' : 'turnedOff'
     }),
     applyState,
     start() {

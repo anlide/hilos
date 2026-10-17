@@ -15,9 +15,12 @@ there, before `authenticateSession()`: a password, a phone code, a link and its
 code, a device key, a provider trip (live tab, no record, held grant), and the
 new password of a recovery. `SecondFactorGate::verdict()` answers `pass`,
 `verify` (a confirmed app and no live trust of this browser) or `setup` (no app,
-and the policy requires one of this person). Registration, `admin:create` and
-impersonation do not pass the gate: the first has no factor yet, the other two
-are the operator's.
+and the policy requires one of this person). The fourth answer is the
+installation's: a second factor the administrator turned off
+(`auth.second_factor.enabled`, HIL-1303) answers `pass` to every proof, with no
+code and no enrolment, so a recovery by mail lets the person in at once.
+Registration, `admin:create` and impersonation do not pass the gate: the first
+has no factor yet, the other two are the operator's.
 
 A grant that already carries the proof (`secondFactorProven` on the grant frame)
 skips the gate; that is how the code step, and the end of an enrolment on the
@@ -122,6 +125,12 @@ the term later does not recreate or lengthen a trust. The settings library sends
 the reduction to the session holder and the administrator's action is answered
 after the holder commits it.
 
+Turning the second factor off for the installation (HIL-1303) forgets every
+trust when `auth.second_factor.forget_trusts_on_disable` says so — the same
+erasure a term of 0 makes, by the same holder. When it says no, the trusts live
+to their own expiry, and turning the factor back on finds them: a trusted browser
+still skips the code step until its trust runs out.
+
 Password recovery and a profile password change revoke trust of every other
 browser, including browsers already signed out; the current browser is kept by
 its durable session row id across token rotation. Choosing to end other sessions
@@ -132,9 +141,9 @@ currently signed in. Unblocking does not restore one. Ordinary sign-out keeps
 the trust until its expiry or an explicit revocation.
 
 Who writes each of these (HIL-1407). The session holder creates a trust on the
-way in, applies the administrator's term to every person's trust at once, and
-moves or removes them in the merge and the erasure; it claims the table whole for
-that. Taking one person's trust away is that person's agent's, in the turn of the
+way in, applies the administrator's term to every person's trust at once, forgets
+them all when the factor is turned off for everyone, and moves or removes them in
+the merge and the erasure; it claims the table whole for that. Taking one person's trust away is that person's agent's, in the turn of the
 write that causes it:
 
 - switching the factor off and a carried-out removal - in the transaction that
@@ -226,8 +235,34 @@ so it passes the auth throttle; the same request from the profile does not.
 
 ## Policy
 
-Six settings (`SecondFactorSettings`): who must use it (`none|admins|everyone`),
+Eight settings (`SecondFactorSettings`): two switches — whether the second
+factor is on for the installation at all, and whether turning it off forgets
+every trusted browser (HIL-1303) — then who must use it (`none|admins|everyone`),
 trusted-device days, backup codes per set, the default, shortest and longest
 removal wait. A write that moves them is sent to every connection
-(`hilos_second_factor_policy`); the browser keeps it in the session scope and
-lets it override only answers older than the frame.
+(`hilos_second_factor_policy`, which carries `enabled` too); the browser keeps it
+in the session scope and lets it override only answers older than the frame.
+
+Turned off, the second factor asks nobody. The gate passes every proof, a
+step-up skips its step and asks the next proof ([step-up.md](step-up.md),
+"Choosing the proof"), and nobody is required to enrol whatever the required key
+says. The people's apps, backup codes and removals stay as they are: the profile
+section keeps carrying them beside `enabled`, refuses every action of its own
+with "Two-step verification is turned off by your administrator" but calling off
+a removal under way — from the profile and by the letter's link — and a removal
+asked for before runs out on time. Turning it back on asks the same apps again at
+the next sign-in; the sign-ins already in stay in.
+
+Turning it off is applied whichever door wrote it — the two-factor screen, the
+general settings table, the console's `settings:set`. After the write the
+settings library compares the policy before and after; on "on → off" it sends the
+frame, then hands `hilos_auth_second_factor_disable_apply` to the session holder,
+which forgets the trusts when the second switch says so, lets every sign-in
+waiting on a code or on enrolment go back to its start with no reason given — as
+when a person's last app goes — and answers the write. A tab let go there finds
+an empty wait if it submits a code afterwards, and is told the step has expired.
+"Off → on", a reset of the key and a dropped row only send the frame. A browser
+write that turns it off is confirmed first: the settings library asks
+`AskingAdministrator::confirmed()` for `disable_second_factor` before the write
+([step-up.md](step-up.md), "Operations on another person's account"); the
+console carries no connection and stands outside.

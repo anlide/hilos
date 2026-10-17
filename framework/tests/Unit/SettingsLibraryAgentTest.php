@@ -102,6 +102,19 @@ final class SettingsLibraryAgentTest extends TestCase
         $this->assertSame(HilosAgentType::HILOS_SETTINGS_LIBRARY, SettingsLibraryAgent::AGENT_TYPE);
     }
 
+    /**
+     * Turning the second factor off asks the step-up gate first (HIL-1303), and the gate reads
+     * where the library runs: the confirmation, and - when it is missing - the second factors and
+     * device keys that name the proof it refuses with. Undeclared, a worker hosting the library
+     * refused the read, and every "off" from a browser failed with the generic action failure.
+     */
+    public function testTheLibraryDeclaresWhatTheStepUpGateReadsBeforeTheFactorGoesOff(): void
+    {
+        foreach ([HilosDbContext::stepUps, HilosDbContext::secondFactors, HilosDbContext::passkeyCredentials] as $key) {
+            $this->assertContains($key, SettingsLibraryAgent::READS_DB);
+        }
+    }
+
     public function testAValueAskIsAnsweredWithTheTableRefusalRatherThanThrown(): void
     {
         $this->ask(HilosSignalConstants::HILOS_SETTING_WRITE, new SettingWriteSignalData(

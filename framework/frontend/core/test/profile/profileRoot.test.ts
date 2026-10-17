@@ -1,6 +1,8 @@
 // Covers the profile root's state (HIL-1169): the row icons and ids, the
 // summary of each section from the page's answer and browser lists, the
-// verified address the Email row shows, and the Theme row line (HIL-1434).
+// verified address the Email row shows, the Theme row line (HIL-1434), and the
+// Security row once two-step verification is turned off for everyone
+// (HIL-1303).
 import { describe, expect, it, vi } from 'vitest'
 import { ActionLifecycle } from '../../src/connection/actionLifecycle.js'
 import { type HilosConnection } from '../../src/connection/HilosConnection.js'
@@ -15,7 +17,10 @@ import {
 } from '../../src/profile/profileRoot.js'
 import { type HilosProfileSignInIdentitySource } from '../../src/profile/profileSignInMethods.js'
 import { HilosPages } from '../../src/routing/hilosPages.js'
-import { bindSessionScope } from '../../src/session/sessionScope.js'
+import {
+  bindSessionScope,
+  SIGNAL_SECOND_FACTOR_POLICY,
+} from '../../src/session/sessionScope.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { ingest } from '../../src/state/normalizer.js'
 import { createSignal } from '../../src/state/signal.js'
@@ -79,8 +84,16 @@ const key = {
   verified: true,
 }
 
-/** The profile page's scopes with its answer in the page data. */
-function answeredScopes(authenticators: readonly unknown[] = []): ScopeManager {
+/**
+ * The profile page's scopes with its answer in the page data.
+ *
+ * @param authenticators The person's apps in the second-factor section.
+ * @param section Members of that section to set otherwise.
+ */
+function answeredScopes(
+  authenticators: readonly unknown[] = [],
+  section: Record<string, unknown> = {},
+): ScopeManager {
   const scopes = new ScopeManager()
   scopes.session.data.set('currentUser', { type: 'user', id: 1 })
   const page = scopes.openPage(HilosPages.PROFILE)
@@ -91,6 +104,7 @@ function answeredScopes(authenticators: readonly unknown[] = []): ScopeManager {
     mandatoryNote: false,
   })
   page.data.set('secondFactor', {
+    enabled: true,
     authenticators,
     backupCodesLeft: 0,
     backupCodesTotal: 0,
@@ -104,6 +118,7 @@ function answeredScopes(authenticators: readonly unknown[] = []): ScopeManager {
       maxDays: 30,
     },
     reset: null,
+    ...section,
   })
   return scopes
 }
@@ -213,6 +228,95 @@ describe('profile root store', () => {
     expect(store.summaries.get()[HilosPages.PROFILE_SECURITY]).toBe(
       'Two-step verification is on',
     )
+    store.dispose()
+  })
+
+  it('says the administrator turned two-step verification off, and keeps the row for a person with an app', () => {
+    const store = rootStore(
+      answeredScopes(
+        [{ id: 7, label: 'Phone', createdAt: 1, lastUsedAt: null }],
+        { enabled: false },
+      ),
+      nameOnly(),
+    )
+    store.start()
+
+    expect(store.summaries.get()[HilosPages.PROFILE_SECURITY]).toBe(
+      'Turned off by your administrator',
+    )
+    expect(store.hiddenSections.get()).toStrictEqual([])
+    store.dispose()
+  })
+
+  it('keeps the row while a removal stands, and hides it with no app and no removal', () => {
+    const removing = rootStore(
+      answeredScopes([], {
+        enabled: false,
+        reset: { requestedAt: 1, effectiveAt: 2 },
+      }),
+      nameOnly(),
+    )
+    removing.start()
+    expect(removing.hiddenSections.get()).toStrictEqual([])
+    removing.dispose()
+
+    const nothing = rootStore(
+      answeredScopes([], { enabled: false }),
+      nameOnly(),
+    )
+    nothing.start()
+    expect(nothing.hiddenSections.get()).toStrictEqual([
+      HilosPages.PROFILE_SECURITY,
+    ])
+    nothing.dispose()
+  })
+
+  it('hides no row while two-step verification is on or not answered yet', () => {
+    const scopes = new ScopeManager()
+    scopes.openPage(HilosPages.PROFILE)
+    const unanswered = rootStore(scopes, nameOnly())
+    unanswered.start()
+    expect(unanswered.hiddenSections.get()).toStrictEqual([])
+    expect(unanswered.summaries.get()[HilosPages.PROFILE_SECURITY]).toBe(
+      'Two-step verification is off',
+    )
+    unanswered.dispose()
+
+    const on = rootStore(answeredScopes(), nameOnly())
+    on.start()
+    expect(on.hiddenSections.get()).toStrictEqual([])
+    on.dispose()
+  })
+
+  it('follows the policy frame off and back on with no reload', () => {
+    const connection = fakeConnection()
+    const scopes = answeredScopes()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const store = rootStore(scopes, nameOnly())
+    store.start()
+    const policy = {
+      enabled: false,
+      required: 'none',
+      trustDays: 30,
+      backupCodes: 10,
+      resetWaitDefaultDays: 8,
+      resetWaitMinDays: 1,
+      resetWaitMaxDays: 30,
+    }
+
+    connection.emit(SIGNAL_SECOND_FACTOR_POLICY, policy)
+    expect(store.summaries.get()[HilosPages.PROFILE_SECURITY]).toBe(
+      'Turned off by your administrator',
+    )
+    expect(store.hiddenSections.get()).toStrictEqual([
+      HilosPages.PROFILE_SECURITY,
+    ])
+
+    connection.emit(SIGNAL_SECOND_FACTOR_POLICY, { ...policy, enabled: true })
+    expect(store.summaries.get()[HilosPages.PROFILE_SECURITY]).toBe(
+      'Two-step verification is off',
+    )
+    expect(store.hiddenSections.get()).toStrictEqual([])
     store.dispose()
   })
 

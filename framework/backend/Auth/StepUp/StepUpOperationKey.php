@@ -40,4 +40,7 @@ final class StepUpOperationKey
 
     /** An administrator taking the acceptance records of every person under a filter away as a file (HIL-1234). */
     public const string EXPORT_LEGAL_ACCEPTANCES = 'export_legal_acceptances';
+
+    /** An administrator turning the second factor off for the whole installation (HIL-1303). */
+    public const string DISABLE_SECOND_FACTOR = 'disable_second_factor';
 }

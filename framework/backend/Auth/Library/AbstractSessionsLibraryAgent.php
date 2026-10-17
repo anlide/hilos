@@ -38,6 +38,7 @@ use Hilos\Auth\Library\DTO\AuthRegistrationProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitHeldSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorCancelSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorDisableApplySignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorMissedSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorOffSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorTrustDaysApplySignalData;
@@ -529,6 +530,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_SETUP_PROVEN => AuthSecondFactorSetupProvenSignalData::class,
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_OFF => AuthSecondFactorOffSignalData::class,
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY => AuthSecondFactorTrustDaysApplySignalData::class,
+        HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_DISABLE_APPLY => AuthSecondFactorDisableApplySignalData::class,
         HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END => AuthOtherSessionsEndSignalData::class,
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL => AuthSecondFactorCancelSignalData::class,
         HilosSignalConstants::HILOS_ACCOUNT_BLOCK_CHANGED => AccountBlockChangedSignalData::class,
@@ -4239,6 +4241,19 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
                 return;
 
+            case HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_DISABLE_APPLY:
+                if (!$data->data instanceof AuthSecondFactorDisableApplySignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        AuthSecondFactorDisableApplySignalData::class,
+                        $data->data,
+                    );
+                }
+
+                $this->applySecondFactorDisable($data->data);
+
+                return;
+
             case HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END:
                 if (!$data->data instanceof AuthOtherSessionsEndSignalData) {
                     throw new InvalidAgentSignalPayloadException($name, AuthOtherSessionsEndSignalData::class, $data->data);
@@ -5842,14 +5857,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return 0;
         }
 
-        $sessions = array_merge(
-            array_filter(
-                Hilos::$db->sessions->findByUserId($userId),
-                static fn(Session $session): bool => $session->impersonatorUserId === null,
-            ),
-            Hilos::$db->sessions->findByImpersonator($userId),
-        );
-        if ($sessions === []) {
+        $sessions = Hilos::$db->sessions->findByUserId($userId)
+            ->filter(static fn(Session $session): bool => $session->impersonatorUserId === null)
+            ->mergeWith(Hilos::$db->sessions->findByImpersonator($userId));
+        if (count($sessions) === 0) {
             return 0;
         }
 
@@ -6941,6 +6952,48 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $refusal = ActionRefusal::fromThrowable($e);
             if ($refusal->isInternal()) {
                 $this->logAgentError("Second-factor trust term apply failed: {$e->getMessage()}");
+            }
+            $this->sendToAgent($ask->replySignal, HandoverAnswerSignalData::to($ask, $refusal));
+
+            return;
+        }
+
+        $this->sendToAgent($ask->replySignal, HandoverAnswerSignalData::to($ask, null));
+    }
+
+    /**
+     * Applies a second factor turned off for the installation, then answers the original setting action (HIL-1303).
+     *
+     * Every trusted browser is forgotten when the setting asks it - the same erasure a trust term
+     * of 0 makes (HIL-1301) - and every sign-in still waiting on a code or on enrolment is let go
+     * back to the address field with no reason given, the way it is when a person's last app goes
+     * ({@see forgetSecondFactor()}): nothing will ask for that code any more, and the next proof
+     * walks through the gate.
+     *
+     * @param AuthSecondFactorDisableApplySignalData $ask Whether to forget trusts, and the original handover address
+     * @throws InvalidArgumentException When the handover answer cannot be routed
+     */
+    private function applySecondFactorDisable(AuthSecondFactorDisableApplySignalData $ask): void
+    {
+        try {
+            if ($ask->forgetTrusts) {
+                Hilos::$db->secondFactorTrusts->actions->deleteAll();
+            }
+            foreach (Hilos::$db->sessions->findAwaitingSecondFactor() as $session) {
+                $this->releaseSecondFactorWait($session, null, null, null, null, null);
+            }
+        } catch (WiringRefusal $refusal) {
+            $this->logAgentError("Second factor turned off is not wired: {$refusal->getMessage()}");
+            $this->sendToAgent(
+                $ask->replySignal,
+                HandoverAnswerSignalData::to($ask, ActionRefusal::fromThrowable($refusal)),
+            );
+
+            return;
+        } catch (Throwable $e) {
+            $refusal = ActionRefusal::fromThrowable($e);
+            if ($refusal->isInternal()) {
+                $this->logAgentError("Second factor turned off apply failed: {$e->getMessage()}");
             }
             $this->sendToAgent($ask->replySignal, HandoverAnswerSignalData::to($ask, $refusal));
 
