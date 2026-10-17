@@ -25,7 +25,7 @@ name: hilos-online-testing-cluster
 x-hilos-cluster:
   cli: online-testing-cluster-cli
   entry: online-testing-cluster-entry
-  scenarios: [11, 15, 21, 22, 24]
+  scenarios: [11, 15, 21, 22, 24, 40]
   e2e:
     runner: online-testing-cluster-e2e-runner
 

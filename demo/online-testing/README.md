@@ -206,8 +206,9 @@ Nothing here drives the stand: the framework's shared cluster harness
 (`framework/docker/cluster/`) reads the nodes out of the compose file and runs
 the scenarios it names — 11 cross-node db fact, 15 db interest addressing
 (skipped as flaky since 2026-10-16), 21 schema rolled out once, 22 other
-database refused, and 24 cut-off leader stops its work (skipped as flaky since
-2026-10-10)
+database refused, 24 cut-off leader stops its work (skipped as flaky since
+2026-10-10), and 40 journal triggers installed once and unchanged on ordinary
+non-leader restart
 (`docs/agents/testing.md`, "The cluster stands — three demos, three shapes"). The framework's probe fleet and
 database probe are in this demo's `AGENTS`, and they start only here: on one
 node, on the Playwright stand and in production the rows are carried and
@@ -217,7 +218,7 @@ nothing is run.
 |---|---|
 | `composer run test:cluster:up` | build the images and start the database, the three nodes and the cli container |
 | `composer run test:cluster:status` | the containers and one line of each node's view: phase, leader, placements |
-| `composer run test:cluster:scenarios` | the stand's scenario matrix on a fresh stand; `-- 24` runs only the ones named |
+| `composer run test:cluster:scenarios` | the stand's scenario matrix on a fresh stand; `-- 21 40` points the schema and journal-trigger checks |
 | `composer run test:cluster:e2e` | Analytics through all three source/viewer master pairs on a fresh stand; build first with `test:e2e-build` |
 | `composer run test:cluster:down-volumes` | take the stand down and wipe its primary and journal databases |
 | `composer run test:cluster:down` | take the stand down the way the test runner does |

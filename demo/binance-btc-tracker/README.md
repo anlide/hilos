@@ -263,6 +263,13 @@ with personal Dark and after reset, and stale Dark reconnect without adoption.
 They inspect complete theme frames and actual WebSocket upstreams; live updates
 keep documents and sockets, and the leader and term stay unchanged. Point them
 with `composer run test:cluster:e2e -- --grep 'cluster theme'`.
+Change Log in `cluster/live/change-log.spec.ts` checks one remote writer and one
+receipt through every master. The person's `started` owner is observed on a
+slave before and after the block, away from the leader serving the card. Fresh
+reads through each master must show the same receipt and single entry IDs,
+actor, action, writer agent, `block` values `0` → `1` and complete attribution
+header, with the leader and term unchanged. Point it with
+`composer run test:cluster:e2e -- --grep 'cluster change log:'`.
 The backup spec asks
 the harness to stop the slave holding its archive; after placement moves,
 `cluster/after-loss` checks the archive's out-of-reach row and offline log refusal.

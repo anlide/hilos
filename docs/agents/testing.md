@@ -356,7 +356,7 @@ scenario on a single shape is retired (HIL-1218).
 |---|---|---|---|---|
 | binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server, primary + derived journal | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes, 23 verifier circle on every master, 25 freeze settles on every master, 29 a node with a cluster directory of its own refused on both ends, 30 a ready data export copy outlives the node its agent lived on, 32 a node with another admin view mode refused on both ends, 33 every master takes browsers, 34 a tab is the same on every master under protected mode, 35 rt row deleted while cut off is swept, 36 a slave cut off with its leader stops its work before it runs elsewhere, 38 manual maintenance from any node |
 | ecommerce-shop | React | one master and two slaves of unequal room, `ram=10` and `ram=4`, each with `slots=64` | one server, primary + derived journal | 3 placement, 4 slave-kill failover, 6 hot-join, 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused, 16 recreated node leaves no phantom fleet (parked, P-441/2), 18 capacity is consumed, 19 worker death on a live node, 37 costless agents consume slots, 39 person agents across nodes |
-| online-testing | Angular | three equal masters that host work themselves | one server, primary + derived journal | 11 cross-node db fact, 15 db interest addressing, 21 schema rolled out once by nodes that start together, 22 a node reading another database refused on both ends, 24 a cut-off leader stops its work before it runs elsewhere |
+| online-testing | Angular | three equal masters that host work themselves | one server, primary + derived journal | 11 cross-node db fact, 15 db interest addressing, 21 schema rolled out once by nodes that start together, 22 a node reading another database refused on both ends, 24 a cut-off leader stops its work before it runs elsewhere, 40 journal triggers installed once and unchanged on ordinary restart |
 
 Scenario 39 on ecommerce-shop proves a person's row and child-set ownership
 through a cold start, ordinary idle, wake-up on another node and active-host
@@ -489,7 +489,14 @@ The browser enters through the stand's one nginx entry, where each context's
 `hilos_stand_master` cookie selects a master (HIL-1304). By default browsers and
 the protected-mode operator sit on a follower master, away from the page holder
 on the leader and the policy-placed agents on slaves. The live phase checks
-backup, logs, protected mode, one person's tabs and theme delivery across masters.
+backup, logs, protected mode, one person's tabs, theme delivery and Change Log
+across masters. `cluster/live/change-log.spec.ts` checks one remote writer and
+one receipt through every master: the person's `started` owner is observed on a
+slave before and after the block, away from the card's leader host. Fresh reads
+must return the same receipt and single entry IDs, exact actor/action/agent,
+`block` values `0` → `1` and complete attribution header, with the leader and
+term unchanged. Point it with `-- --grep 'cluster change log:'` (HIL-1465).
+This pointed run stays in the live phase, with no fault request.
 The theme spec checks settings on all three masters, choices and reset between
 independent account sessions, new tabs, and stale Dark reconnect without adoption;
 `-- --grep 'cluster theme'` runs its three tests. The harness

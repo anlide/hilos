@@ -93,6 +93,38 @@ export async function expectChangeLogReceiptOpen(
   await expect(modal).toHaveAccessibleName(`Receipt #${receiptId}`)
 }
 
+/** Check the receipt's writer and retain its complete attribution header. */
+export async function expectChangeLogReceiptWriter(
+  expect: Expect,
+  page: Page,
+  actorLabel: string,
+  action: string,
+  agentId: string,
+): Promise<string> {
+  const header = page
+    .getByTestId('hilos-change-log-detail')
+    .locator(':scope > dl')
+    .first()
+  await expect(header).toBeVisible()
+  await expect(
+    header.locator('dt').filter({ hasText: /^Who$/ }).locator('+ dd'),
+  ).toHaveText(actorLabel)
+  await expect(
+    header
+      .locator('dt')
+      .filter({ hasText: /^Action$/ })
+      .locator('+ dd'),
+  ).toHaveText(action)
+  await expect(
+    header
+      .locator('dt')
+      .filter({ hasText: /^Agent$/ })
+      .locator('+ dd'),
+  ).toHaveText(agentId)
+
+  return (await header.innerText()).replace(/\s+/g, ' ').trim()
+}
+
 /** The receipt shows both values of the changed field. */
 export async function expectChangeLogValues(
   expect: Expect,

@@ -158,7 +158,7 @@ polls (Angular) → online-testing (Angular).
 | Backup | binance-btc-tracker: backup, backup-reopen | binance-btc-tracker | HIL-1220 |
 | Protected mode and maintenance | binance-btc-tracker: protected-mode | binance-btc-tracker | HIL-1221 |
 | Logs | binance-btc-tracker: logs, logs-rotation | binance-btc-tracker | HIL-1222 |
-| Cluster browser — backup, logs, protected mode, one person's tabs and theme settings/choices/reset across masters | binance-btc-tracker: tests/e2e/cluster (live, after-loss), playwright.cluster.config.ts | binance-btc-tracker | HIL-1232, HIL-1443 |
+| Cluster browser — backup, logs, protected mode, one person's tabs, theme settings/choices/reset and Change Log across masters | binance-btc-tracker: tests/e2e/cluster (live, after-loss), playwright.cluster.config.ts | binance-btc-tracker | HIL-1232, HIL-1443, HIL-1465 |
 | Cluster browser — Analytics across all three masters | online-testing: tests/e2e/cluster/live/analytics.spec.ts, playwright.cluster.config.ts | online-testing | HIL-1423 |
 | Tables | binance-btc-tracker: table-lag, table-refusal | binance-btc-tracker | HIL-1223 |
 | Notifications and communications | binance-btc-tracker: notifications, communications | binance-btc-tracker | HIL-1224 |
@@ -220,7 +220,10 @@ is journaled in every demo, and the signed-in person is the author (a
 registration receipt has no author because it comes from a guest). Only chat
 carries `change-log-bot.spec.ts` (`spec-owner: demo`): a bot's description is
 the only long text under the journal. binance-btc-tracker, ecommerce-shop and
-online-testing mount the section without specs (HIL-1464).
+online-testing mount the section without the single-node specs (HIL-1464).
+binance-btc-tracker additionally carries the separate cluster proof in
+`tests/e2e/cluster/live/change-log.spec.ts`: one remote writer's block receipt
+reads identically through every master (HIL-1465).
 
 The languages and countries section is proved on every kit by the same 25
 `i18n-*.spec.ts` files with the same test titles: binance-btc-tracker (Vue),
@@ -621,6 +624,10 @@ page loads, for a spec that needs its pages in one theme rather than the menu.
 `chooseChangeLogFeedTable` takes no `expect` and chooses by text, since option numbers belong to each demo.
 `expectChangeLog…`, `expectRegistrationReceiptFacts`, `expectTracked…` and
 `expectNarrowColumns` take the spec's `expect` first, then its `Page`.
+`expectChangeLogReceiptWriter(expect, page, actorLabel, action, agentId)` checks
+the exact Who, Action and Agent values in the receipt's first attribution `dl`.
+It returns the complete visible header with whitespace normalized, including
+When and Source, for comparison across masters.
 The shared row reader is `tableRowKeyByText(expect, page, text)` in `table.ts`; chat keeps a wrapper.
 The three kits' section specs are the same text, with no differences.
 

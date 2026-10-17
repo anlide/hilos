@@ -642,9 +642,28 @@ explicit operator action ([protected-mode.md](protected-mode.md)).
 All three existing Hilos cluster stands use one ordinary MariaDB server with
 the primary and derived journal provisioned before nodes start (HIL-1453).
 Startup prepares journal partitions and installs triggers under the existing
-primary schema rollout claim. New cluster scenarios proving journal guarantees,
-including a receipt read identically through every node, belong to HIL-1465
-(not in the code yet — HIL-1465).
+primary schema rollout claim.
+
+Scenario 40 in `framework/docker/cluster/scenarios.py`, carried by online-testing,
+checks the exact live trigger set against the project's 12 SQL trigger files:
+names, tables, events, `AFTER` timing and the derived journal address. On the
+fresh stand, global DDL counters require 12 `CREATE TRIGGER` statements and no
+`DROP TRIGGER`, and the rollout claim is empty. An ordinary kill/start of an
+existing non-leader container must leave the full trigger catalog, including
+bodies, and both counters unchanged, with no claim left behind. This proves the
+DDL outcome and startup idempotence; it does not force a scheduler race or prove
+claim ownership through installation by itself. `MigrationClaimIntegrationTest`
+and `JournalTriggerStartupIntegrationTest` cover that claim boundary.
+
+`demo/binance-btc-tracker/tests/e2e/cluster/live/change-log.spec.ts` proves one
+remote writer and one receipt read through every master. An administrator blocks
+a person from a separate browser context; the person's real `started`
+`hilos_user:<id>` placement is checked on a slave before and after the write,
+away from the leader serving the card through `hilos_index`. Each master gets a
+fresh connection, filter and receipt open. The receipt ID, single entry ID,
+actor, action, writer agent, `block` values `0` → `1` and complete visible
+attribution header, including When and Source, must agree. The leader and term
+stay unchanged (HIL-1465).
 
 The existing stands no longer carry primary/replica or Galera topologies, by
 the owner's decision of 2026-10-14. Specialized database carriers and six new

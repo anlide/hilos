@@ -137,6 +137,7 @@ export {
   expectChangeLogOverview,
   expectChangeLogFeedRow,
   expectChangeLogReceiptOpen,
+  expectChangeLogReceiptWriter,
   expectChangeLogValues,
   expectChangeLogReceiptFits,
   expectRegistrationReceiptFacts,

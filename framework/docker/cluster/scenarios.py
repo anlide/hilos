@@ -96,6 +96,8 @@ Plus scenarios beyond that matrix:
     any node                   every master holds the window without stopping agents (HIL-1367)
  39 person agents across nodes a person's row and child set survive idle, a wake on another node
                                and the death of that node, through real commands (HIL-1412)
+ 40 journal triggers installed  concurrent startup creates the filed triggers once; an ordinary
+    once                       node restart leaves their catalog and DDL counters intact (HIL-1465)
  31 replica keeps up with       a replica took every write the preceding scenarios made, stays
     the primary                read-only and is reached by nobody (HIL-1229)
 
@@ -2625,6 +2627,128 @@ def scenario_21_schema_rolled_out_once():
             f"all {in_words(len(ALL_NODES))} in the cluster")
 
 
+def journal_trigger_sources():
+    """Read trigger names and coordinates from the project's active CREATE TRIGGER files.
+
+    The production preflight owns canonical body validation; this independent oracle only
+    reads the declaration, rather than duplicating JournalTriggerFile's body comparison.
+    """
+    directory = STAND.demo_dir / "backend/Database/Migration/Triggers"
+    assert directory.is_dir(), f"journal trigger directory is missing: {directory}"
+    expected = {}
+    for path in sorted(directory.glob("*.sql")):
+        declaration = re.search(r"^CREATE TRIGGER `([^`]+)` AFTER (INSERT|UPDATE|DELETE) ON `([^`]+)`\n"
+                                r"FOR EACH ROW\b", path.read_text(encoding="utf-8"), re.MULTILINE)
+        assert declaration is not None, f"no active journal trigger declaration in {path}"
+        name, event, table = declaration.groups()
+        assert name == path.stem, f"trigger {name} differs from filename {path.name}"
+        assert name not in expected, f"duplicate journal trigger {name} in {directory}"
+        expected[name] = (table, event, "AFTER")
+    assert expected, f"no active journal trigger files in {directory}"
+    return expected
+
+
+def journal_trigger_catalog():
+    """Snapshot every primary-schema trigger, including its complete server-reported body.
+
+    db_sql uses MariaDB's batch output: embedded newlines and tabs in a body are escaped,
+    so each trigger occupies one tab-separated line and can be kept verbatim across starts.
+    """
+    output = db_sql("SELECT TRIGGER_NAME,EVENT_OBJECT_TABLE,EVENT_MANIPULATION,ACTION_TIMING,ACTION_STATEMENT "
+                    "FROM INFORMATION_SCHEMA.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE() ORDER BY TRIGGER_NAME")
+    assert output, "the primary trigger catalog is empty or could not be read"
+    catalog = {}
+    for line in output.splitlines():
+        fields = line.split("\t", 4)
+        assert len(fields) == 5, f"invalid trigger catalog row: {line!r}"
+        name, table, event, timing, body = fields
+        assert name not in catalog, f"duplicate live trigger {name}"
+        catalog[name] = (table, event, timing, body)
+    return catalog
+
+
+def journal_trigger_ddl_status():
+    """Global DDL counters of this fresh isolated MariaDB, read as its application user."""
+    output = db_sql("SHOW GLOBAL STATUS WHERE Variable_name IN ('Com_create_trigger','Com_drop_trigger')")
+    counters = {}
+    for line in output.splitlines():
+        fields = line.split("\t")
+        assert len(fields) == 2 and fields[1].isdigit(), f"invalid trigger DDL status row: {line!r}"
+        name, value = fields
+        assert name not in counters, f"duplicate trigger DDL counter {name}"
+        counters[name] = int(value)
+    assert set(counters) == {"Com_create_trigger", "Com_drop_trigger"}, \
+        f"trigger DDL status is incomplete: {output!r}"
+    return counters
+
+
+def scenario_40_journal_triggers_are_installed_once():
+    """Fresh concurrent startup installs the filed journal triggers once (HIL-1465).
+
+    The catalog proves the exact set and its journal address; global DDL counters prove
+    one CREATE per active source file and no DROP, including after an ordinary kill/start.
+    This proves the outcome, not a forced scheduler race or a replicated database rollout.
+    Claim-through-install is covered by MigrationClaimIntegrationTest together with
+    JournalTriggerStartupIntegrationTest. Snapshots belong to this invocation alone.
+    """
+    wait_converge(ALL_NODES)
+    wait_until(fleet_started, CONVERGE_TIMEOUT, "the fleet started before journal trigger checks")
+    expected = journal_trigger_sources()
+    before = journal_trigger_catalog()
+    assert set(before) == set(expected), \
+        f"live triggers differ from source files: missing {sorted(set(expected) - set(before))}, " \
+        f"extra {sorted(set(before) - set(expected))}"
+    journal = "`" + (STAND.database.name + "-change-log").replace("`", "``") + "`"
+    for name, coordinates in expected.items():
+        assert before[name][:3] == coordinates, f"wrong coordinates for {name}: {before[name][:3]}"
+        assert f"{journal}.`hilos_change_log`" in before[name][3], \
+            f"{name} does not address the derived journal {journal}: {before[name][3]}"
+    counters = journal_trigger_ddl_status()
+    assert counters == {"Com_create_trigger": len(expected), "Com_drop_trigger": 0}, \
+        f"fresh startup did not install each trigger exactly once: {counters}, {len(expected)} source files"
+    assert db_sql("SELECT COUNT(*) FROM hilos_migration_claim") == "0", "startup left a schema rollout claim"
+
+    views = wait_converge(ALL_NODES)
+    leader = leaders(views)[0]
+    victim = next(node for node in ALL_NODES if node != leader)
+    survivors = [node for node in ALL_NODES if node != victim]
+    failed = False
+    try:
+        print(f"    restarting non-leader {victim}; {len(expected)} triggers, DDL counters {counters}", flush=True)
+        ctl("kill", victim)
+
+        def offline(current):
+            return (converged(survivors)(current)
+                    and all(current.get(node) and not any(row.get("nodeId") == victim and row.get("online")
+                                                         for row in current[node].get("nodes", []))
+                            for node in survivors))
+
+        wait_until(offline, CONVERGE_TIMEOUT, f"{victim} offline among surviving nodes", nodes=survivors)
+        ctl("start", victim)
+        wait_converge(ALL_NODES)
+        wait_until(fleet_started, CONVERGE_TIMEOUT, "the fleet started after journal trigger restart")
+        after = journal_trigger_catalog()
+        assert after == before, f"ordinary start changed the trigger catalog: before {before!r}, after {after!r}"
+        after_counters = journal_trigger_ddl_status()
+        assert after_counters == counters, f"ordinary start ran trigger DDL: before {counters}, after {after_counters}"
+        assert db_sql("SELECT COUNT(*) FROM hilos_migration_claim") == "0", "restart left a schema rollout claim"
+    except BaseException:
+        failed = True
+        raise
+    finally:
+        try:
+            ctl("start", victim)
+            wait_converge(ALL_NODES)
+            wait_until(fleet_started, CONVERGE_TIMEOUT, "the fleet restored after journal trigger checks")
+        except Exception as cleanup_error:
+            print(f"    scenario 40 recovery failed: {cleanup_error}", flush=True)
+            if not failed:
+                raise
+
+    return (f"{len(expected)} journal triggers installed once, no DROP; {victim} kill/start kept the full "
+            "catalog and global DDL counters unchanged, rollout claim empty, full mesh and fleet restored")
+
+
 # The row that names the database every node of the stand reads (HIL-1206); a marker is 32 hex.
 DATABASE_MARKER_SQL = "SELECT marker FROM hilos_database_marker WHERE id = 1"
 DATABASE_MARKER = re.compile(r"^[0-9a-f]{32}$")
@@ -4114,6 +4238,9 @@ SCENARIOS = [
     # is not one cluster of every member is named here rather than failed for in 11 or 22. It
     # only reads.
     Scenario("26 database is one cluster", scenario_26_database_is_one_cluster, Need(database_members=2)),
+    # Keep 24's initial fleet placement, then read fresh global DDL counters before later
+    # scenarios can touch the database or replace containers.
+    Scenario("40 journal triggers are installed once", scenario_40_journal_triggers_are_installed_once, Need(nodes=2)),
     Scenario("1 master-slave mesh", scenario_1_master_slave_mesh, Need(masters=1, slaves=1)),
     Scenario("2 master-master", scenario_2_master_master, Need(masters=1)),
     Scenario("3 placement", scenario_3_placement, Need(slaves=1)),
