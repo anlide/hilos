@@ -355,8 +355,29 @@ scenario on a single shape is retired (HIL-1218).
 | Demo | View | Hilos cluster | MariaDB | Scenarios |
 |---|---|---|---|---|
 | binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server, primary + derived journal | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes, 23 verifier circle on every master, 25 freeze settles on every master, 29 a node with a cluster directory of its own refused on both ends, 30 a ready data export copy outlives the node its agent lived on, 32 a node with another admin view mode refused on both ends, 33 every master takes browsers, 34 a tab is the same on every master under protected mode, 35 rt row deleted while cut off is swept, 36 a slave cut off with its leader stops its work before it runs elsewhere, 38 manual maintenance from any node |
-| ecommerce-shop | React | one master and two slaves of unequal room, `ram=10` and `ram=4`, each with `slots=64` | one server, primary + derived journal | 3 placement, 4 slave-kill failover, 6 hot-join, 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused, 16 recreated node leaves no phantom fleet (parked, P-441/2), 18 capacity is consumed, 19 worker death on a live node, 37 costless agents consume slots |
+| ecommerce-shop | React | one master and two slaves of unequal room, `ram=10` and `ram=4`, each with `slots=64` | one server, primary + derived journal | 3 placement, 4 slave-kill failover, 6 hot-join, 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused, 16 recreated node leaves no phantom fleet (parked, P-441/2), 18 capacity is consumed, 19 worker death on a live node, 37 costless agents consume slots, 39 person agents across nodes |
 | online-testing | Angular | three equal masters that host work themselves | one server, primary + derived journal | 11 cross-node db fact, 15 db interest addressing, 21 schema rolled out once by nodes that start together, 22 a node reading another database refused on both ends, 24 a cut-off leader stops its work before it runs elsewhere |
+
+Scenario 39 on ecommerce-shop proves a person's row and child-set ownership
+through a cold start, ordinary idle, wake-up on another node and active-host
+failover. From that demo, `composer run test:cluster:scenarios -- 39` runs it
+alone on a fresh stand; from the repository root:
+
+```bash
+composer -d demo/ecommerce-shop run test:cluster:scenarios -- 39
+```
+
+It waits for the normal **240-second idle window**, checking the worker log's
+idle reason and the disappearance of the placement without addressing the
+person. Real `admin:grant` / `admin:revoke` row commands and
+`second-factor:unlock` set commands must return the expected replies and persist
+the expected database facts. The cold unlock clears a lock; the later unlocks
+prove the set's Update permission after wake-up and failover by advancing
+`updated_at`, while sentinel fields and a second person's rows stay unchanged.
+Wake-up places the person on the other slave while both libraries stay on the
+first, proving the cross-node path. Cleanup removes the fixtures and restarts
+the same stand without deleting volumes, then requires the full mesh and fleet
+before the matrix continues.
 
 The Hilos shapes keep their original purpose: quorum, network partitions and
 TLS on binance-btc-tracker; placement and failover with a stable leader on

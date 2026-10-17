@@ -25,7 +25,7 @@ name: hilos-ecommerce-shop-cluster
 # below; the nodes, their addresses, roles, room and log directories it takes from the services.
 x-hilos-cluster:
   cli: ecommerce-shop-cluster-cli
-  scenarios: [3, 4, 6, 9, 12, 14, 16, 18, 19, 37]
+  scenarios: [3, 4, 6, 9, 12, 14, 16, 18, 19, 37, 39]
 
 x-node-base: &node-base
   build: .

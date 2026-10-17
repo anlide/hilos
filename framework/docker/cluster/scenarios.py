@@ -94,6 +94,8 @@ Plus scenarios beyond that matrix:
                                want of a slot on every slave (HIL-447)
  38 manual maintenance from    enable and disable on different follower masters, mint on a slave:
     any node                   every master holds the window without stopping agents (HIL-1367)
+ 39 person agents across nodes a person's row and child set survive idle, a wake on another node
+                               and the death of that node, through real commands (HIL-1412)
  31 replica keeps up with       a replica took every write the preceding scenarios made, stays
     the primary                read-only and is reached by nobody (HIL-1229)
 
@@ -106,6 +108,7 @@ import re
 import sys
 import threading
 import time
+import uuid
 from collections import namedtuple
 from datetime import datetime
 
@@ -1180,6 +1183,267 @@ def sweep_finished_off(node, pid):
         miss(f"no orphan scan before terminating frozen worker pid {pid}")
     if "found 1 orphan(s)" not in lines[scan_at]:
         miss(f"the scan nearest pid {pid} did not find exactly 1 orphan: {lines[scan_at]}")
+
+
+def scenario_39_person_agents_across_nodes():
+    """Real row/set writes follow one person's canonical owner through idle and failover.
+
+    SQL belongs to this external harness only: unique fixtures precede their first lazy
+    read, and the oracle reads durable rows independently of the agents' caches. All edits
+    go through the existing admin and second-factor commands. A final restart discards
+    the process-local caches and claims that deleting the fixtures cannot announce.
+    """
+    # Mirrors AgentRegistry::DEFAULT_IDLE_TIMEOUT_SEC; the product window is never shortened.
+    idle_seconds = 240
+    library_types = {"hilos_users_library", "hilos_sessions_library"}
+    tables = {"hilos_user": "id", "hilos_second_factor_setting": "user_id"}
+    entry, host_a, host_b = MASTERS[0], SLAVES[0], SLAVES[1]
+    survivors = [node for node in ALL_NODES if node != host_b]
+    fixture_ids = []
+    phase = "preparation"
+    marks = {node: node_log_mark(node) for node in ALL_NODES}
+    worker_marks = {}
+    failed = False
+
+    def begin_phase(name):
+        nonlocal phase, marks, worker_marks
+        phase = name
+        marks = {node: node_log_mark(node) for node in ALL_NODES}
+        worker_marks = {}
+        for node in ALL_NODES:
+            worker_marks[node] = {}
+            for path in STAND.node(node).log_dir.glob("worker-*.log"):
+                stat = path.stat()
+                worker_marks[node][path] = control.LogMark(stat.st_ino, stat.st_size)
+        print(f"    person agents: {phase}", flush=True)
+
+    def worker_log(node):
+        # WorkerManager's lifecycle reasons and start-hook failures go to worker streams,
+        # not daemon.log (WorkerServer::saveWorkerOutput). Only live files, since this phase.
+        parts = []
+        for path in sorted(STAND.node(node).log_dir.glob("worker-*.log")):
+            mark = worker_marks.get(node, {}).get(path)
+            try:
+                with path.open("rb") as stream:
+                    if mark is not None and os.fstat(stream.fileno()).st_ino == mark.inode:
+                        stream.seek(mark.size)
+                    parts.append(stream.read().decode("utf-8", errors="replace"))
+            except FileNotFoundError:
+                # A returning node rotates its previous process's streams before starting.
+                continue
+        return "\n".join(parts)
+
+    def libraries_on_a(views):
+        rows = [row for row in leader_placements(views)
+                if row.get("agentId", "").split(":", 1)[0] in library_types]
+        return (len(rows) == len(library_types)
+                and {row["agentId"].split(":", 1)[0] for row in rows} == library_types
+                and all(row.get("nodeId") == host_a and row.get("state") == "started" for row in rows))
+
+    def command(name, expected_reply):
+        outcome = control.client(STAND, entry, name, str(user_x))
+        assert outcome.code == 0, \
+            f"{phase}: {name} failed ({outcome.code}): {outcome.out}\n{outcome.err}"
+        assert expected_reply in outcome.out.splitlines(), \
+            f"{phase}: {name} gave no expected reply {expected_reply!r}: {outcome.out}\n{outcome.err}"
+        print(f"      {expected_reply}", flush=True)
+
+    def snapshot():
+        result = {}
+        for table, key in tables.items():
+            answer = db_sql(f"SELECT * FROM {table} WHERE {key} IN ({ids_sql}) ORDER BY {key}")
+            rows = [line.split("\t") for line in answer.splitlines()]
+            assert len(rows) == 2 and all(len(row) == len(columns[table]) for row in rows), \
+                f"{phase}: missing or malformed {table} fixtures: {answer!r}"
+            mapped = [dict(zip(columns[table], row)) for row in rows]
+            result[table] = {int(row[key]): row for row in mapped}
+            assert set(result[table]) == set(fixture_ids), f"{phase}: wrong fixture ids in {table}"
+        return result
+
+    def assert_facts(admin=None, unlocked=False):
+        actual = snapshot()
+        if admin is not None:
+            expected["hilos_user"][user_x]["admin"] = str(admin)
+        if unlocked:
+            setting = expected["hilos_second_factor_setting"][user_x]
+            updated_at = actual["hilos_second_factor_setting"][user_x]["updated_at"]
+            assert datetime.fromisoformat(updated_at) > datetime.fromisoformat(setting["updated_at"]), \
+                f"{phase}: unlock did not advance updated_at: {setting['updated_at']} -> {updated_at}"
+            setting.update(app_code_misses="0", app_code_misses_from="NULL", app_code_lock_step="0",
+                           app_code_locked_until="NULL", updated_at=updated_at)
+            print(f"      set Update persisted at {updated_at}", flush=True)
+        assert actual == expected, f"{phase}: durable facts changed:\nexpected {expected}\nactual {actual}"
+        for node in ALL_NODES:
+            log = node_log_since(node, marks[node]) + worker_log(node)
+            refused = [line for line in log.splitlines()
+                       if f"Agent '{agent_id}' start hook failed" in line
+                       or f"Agent '{agent_id}' did not start" in line
+                       or ("Agent start refused:" in line and f"-> agent: {agent_id} -" in line)]
+            assert not refused, f"{phase}: {agent_id} failed on {node}: {refused}"
+
+    def started_on(host, nodes, timeout=CONVERGE_TIMEOUT):
+        views = wait_until(lambda current: placement_row(current, agent_id).get("state") == "started",
+                           timeout, f"{phase}: {agent_id} started", nodes=nodes)
+        row = placement_row(views, agent_id)
+        assert row.get("nodeId") == host, f"{phase}: {agent_id} started on the wrong node: {row}"
+        assert libraries_on_a(views), f"{phase}: the libraries left {host_a}: {summarize(views)}"
+        log = node_log_since(host, marks[host])
+        assert any(match.group(1) == agent_id for match in AGENT_STARTED_ON_WORKER.finditer(log)), \
+            f"{phase}: {host} never logged the start of {agent_id}"
+        assert f"Agent '{agent_id}' start hook failed" not in worker_log(host), \
+            f"{phase}: {agent_id}'s start hook failed on {host}"
+        print(f"      {agent_id} started on {host}; both libraries on {host_a}", flush=True)
+        return views
+
+    try:
+        wait_converge(ALL_NODES)
+        views = wait_until(fleet_started, CONVERGE_TIMEOUT, "the fleet started before person fixtures")
+        # Scenario 14 leaves a refused claim in the leader's view; it hosts no agent.
+        placed_before = {row["agentId"] for row in leader_placements(views)
+                         if row.get("state") in LIVE_PLACEMENT_STATES}
+        outcome = control.execute(STAND, "kill", host_b)
+        assert outcome.code == 0, f"could not stop {host_b}: {outcome.err or outcome.out}"
+
+        def gathered_on_a(current):
+            rows = [row for row in leader_placements(current)
+                    if row.get("state") in LIVE_PLACEMENT_STATES]
+            return (len(leaders(current)) == 1 and not node_online(current, host_b)
+                    and fleet_started(current) and libraries_on_a(current)
+                    and placed_before <= {row["agentId"] for row in rows}
+                    and all(row.get("nodeId") == host_a and row.get("state") == "started" for row in rows))
+
+        wait_until(gathered_on_a, FAILOVER_TIMEOUT,
+                   f"{host_b} offline and every live placement started on {host_a}", nodes=survivors)
+
+        # New ids before the first frame: users and secondFactorSettings both use LAZY_STRATEGY_KEY.
+        prefix = f"cluster-person-39-{uuid.uuid4().hex}"
+        for suffix, admin in (("x", 0), ("y", 1)):
+            answer = db_sql(f"INSERT INTO hilos_user (name, admin) VALUES ('{prefix}-{suffix}', {admin}); "
+                            "SELECT LAST_INSERT_ID()")
+            assert answer.isdigit() and int(answer) > 0, f"could not seed person {suffix}: {answer!r}"
+            fixture_ids.append(int(answer))
+        user_x, user_y = fixture_ids
+        ids_sql = ",".join(str(user_id) for user_id in fixture_ids)
+        agent_id = f"hilos_user:{user_x}"
+        for user_id, wait_days, misses, step in ((user_x, 7, 5, 2), (user_y, 14, 9, 3)):
+            outcome = control.execute(STAND, "db-sql",
+                "INSERT INTO hilos_second_factor_setting "
+                "(user_id, reset_wait_days, pending_reset_wait_days, pending_reset_wait_from, "
+                "app_code_misses, app_code_misses_from, app_code_lock_step, app_code_locked_until, updated_at) "
+                f"VALUES ({user_id}, {wait_days}, {wait_days + 1}, UTC_TIMESTAMP() + INTERVAL 2 DAY, "
+                f"{misses}, UTC_TIMESTAMP(), {step}, UTC_TIMESTAMP() + INTERVAL 1 DAY, "
+                "UTC_TIMESTAMP() - INTERVAL 1 DAY)")
+            assert outcome.code == 0, f"could not seed second-factor settings: {outcome.err or outcome.out}"
+        columns = {table: [line.split("\t")[0] for line in db_sql(f"SHOW COLUMNS FROM {table}").splitlines()]
+                   for table in tables}
+        assert all(key in columns[table] for table, key in tables.items()), "could not read fixture columns"
+        expected = snapshot()
+        assert expected["hilos_user"][user_x]["admin"] == "0", "X must begin without admin rights"
+        assert expected["hilos_user"][user_y]["admin"] == "1", "Y must reserve another administrator"
+        assert not placement_row(inspect_all(survivors), agent_id), f"{agent_id} was already placed before its first frame"
+
+        begin_phase("cold start and row/set writes")
+        command("admin:grant", f"Reply (ok): user #{user_x} is now admin, no open session to tell")
+        started_on(host_a, survivors)
+        assert_facts(admin=1)
+        locked_until = expected["hilos_second_factor_setting"][user_x]["app_code_locked_until"]
+        command("second-factor:unlock",
+                f"Reply (ok): user #{user_x} was locked until {locked_until}; app codes are accepted again")
+        assert_facts(unlocked=True)
+
+        begin_phase("ordinary idle with no frames addressed to X")
+        outcome = control.execute(STAND, "start", host_b)
+        assert outcome.code == 0, f"could not return {host_b}: {outcome.err or outcome.out}"
+        views = wait_converge(ALL_NODES)
+        assert libraries_on_a(views), f"returning {host_b} moved the libraries: {summarize(views)}"
+        idle_line = f"Agent {agent_id} stopped (idle for {idle_seconds}s)"
+
+        def idled(current):
+            return (len(leaders(current)) == 1 and not placement_row(current, agent_id)
+                    and idle_line in worker_log(host_a))
+
+        views = wait_until(idled, idle_seconds + CONVERGE_TIMEOUT,
+                           f"{agent_id}'s placement gone and its ordinary {idle_seconds}s idle stop logged")
+        assert libraries_on_a(views), f"{phase}: the libraries left {host_a}: {summarize(views)}"
+        assert_facts()
+        print(f"      {idle_line}; placement absent and durable facts intact", flush=True)
+        assert live_on(views, host_b) < live_on(views, host_a), \
+            f"{host_b} is not the less occupied node after idle: {summarize(views)}"
+
+        begin_phase("wake on the other node and cross-node replies")
+        no_lock_reply = f"Reply (ok): user #{user_x} had no lock; the miss count is cleared"
+        command("second-factor:unlock", no_lock_reply)
+        started_on(host_b, ALL_NODES)
+        assert_facts(unlocked=True)
+        command("admin:revoke", f"Reply (ok): user #{user_x} is now not admin, no open session to tell")
+        assert_facts(admin=0)
+        views = inspect_all()
+        assert placement_row(views, agent_id).get("nodeId") == host_b \
+            and placement_row(views, agent_id).get("state") == "started" and libraries_on_a(views), \
+            f"the live cross-node owner disappeared before the kill: {summarize(views)}"
+
+        begin_phase("active owner host dies and its claims are rebuilt")
+        outcome = control.execute(STAND, "kill", host_b)
+        assert outcome.code == 0, f"could not kill {host_b}: {outcome.err or outcome.out}"
+        views = wait_until(lambda current: len(leaders(current)) == 1 and not node_online(current, host_b)
+                           and placement_row(current, agent_id).get("state") == "started"
+                           and placement_row(current, agent_id).get("nodeId") == host_a,
+                           FAILOVER_TIMEOUT, f"{host_b} offline and the same {agent_id} started on {host_a}",
+                           nodes=survivors)
+        started_on(host_a, survivors)
+        assert_facts()
+        command("admin:grant", f"Reply (ok): user #{user_x} is now admin, no open session to tell")
+        assert_facts(admin=1)
+        command("second-factor:unlock", no_lock_reply)
+        assert_facts(unlocked=True)
+    except BaseException:
+        failed = True
+        # Save evidence before restart rotates the files, including on a retried timeout.
+        try:
+            print(f"    person agents FAILED in {phase}: {summarize(inspect_all(survivors))}", flush=True)
+            for node in ALL_NODES:
+                print(f"    {phase}: {node} log since phase mark ({node_log_path(node)}):\n"
+                      f"{node_log_since(node, marks[node])}", flush=True)
+                print(f"    {phase}: {node} worker logs since phase mark:\n{worker_log(node)}", flush=True)
+        except Exception as evidence_error:
+            print(f"    could not collect phase evidence: {evidence_error}", flush=True)
+        raise
+    finally:
+        recovery_errors = []
+        if fixture_ids:
+            # Try each cleanup and the restart independently; recovery never masks the original error.
+            ids = ",".join(str(user_id) for user_id in fixture_ids)
+            for table, key in reversed(list(tables.items())):
+                try:
+                    outcome = control.execute(STAND, "db-sql", f"DELETE FROM {table} WHERE {key} IN ({ids})")
+                    assert outcome.code == 0, f"could not clean {table}: {outcome.err or outcome.out}"
+                    assert db_sql(f"SELECT COUNT(*) FROM {table} WHERE {key} IN ({ids})") == "0", \
+                        f"fixture rows remain in {table}"
+                except Exception as cleanup_error:
+                    recovery_errors.append(str(cleanup_error))
+        try:
+            outcome = control.execute(STAND, "start", host_b)
+            assert outcome.code == 0, f"could not return {host_b}: {outcome.err or outcome.out}"
+        except Exception as start_error:
+            recovery_errors.append(str(start_error))
+        try:
+            print("    person agents: restarting the same stand after fixture cleanup", flush=True)
+            code = control.restart(STAND, f"{sys.argv[0]} {STAND.compose}")
+            assert code == 0, f"the stand did not come back after scenario 39 (exit {code})"
+            wait_converge(ALL_NODES)
+            wait_until(fleet_started, CONVERGE_TIMEOUT, "the fleet started after person fixture cleanup")
+            print("    person agents: full mesh and fleet restored", flush=True)
+        except Exception as restart_error:
+            recovery_errors.append(str(restart_error))
+        if recovery_errors:
+            message = "scenario 39 recovery failed: " + "; ".join(recovery_errors)
+            print(f"    {message}", flush=True)
+            if not failed:
+                raise AssertionError(message)
+
+    return (f"{agent_id}: cold on {host_a}, ordinary {idle_seconds}s idle, woke on {host_b} beside libraries "
+            f"on {host_a}, failed over to {host_a}; row/set writes and updated_at proved by DB, "
+            f"Y={user_y} unchanged; fixtures removed, full mesh and fleet restored")
 
 
 def scenario_10_cross_node_browser():
@@ -3870,6 +4134,7 @@ SCENARIOS = [
     Scenario("36 slave cut off with its leader stops its work",
              scenario_36_slave_cut_off_with_its_leader_stops_its_work, Need(masters=3, slaves=2, slave_ram=True)),
     Scenario("9 daemon-crash self-heal", scenario_9_daemon_crash_selfheal, Need(slaves=2)),
+    Scenario("39 person agents across nodes", scenario_39_person_agents_across_nodes, Need(masters=1, slaves=2)),
     Scenario("10 cross-node browser", scenario_10_cross_node_browser, Need(masters=2, slaves=1)),
     Scenario("11 cross-node db fact", scenario_11_cross_node_db_fact, Need(masters=2)),
     Scenario("15 db interest addressing", scenario_15_db_interest_addressing, Need(masters=2)),

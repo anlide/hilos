@@ -330,7 +330,7 @@ move keeps a `TODO` naming the leaf that will remove the borrowed write.
 | HIL-1409 | Account-deletion requests and profile photos (built). |
 | HIL-1410 | Erasure and merge stop the affected instance agents (built). |
 | HIL-1411 | The people library is the only full owner of codes and registration holds (built). The code agent writes neither table; the sessions holder retains only borrowed `Remove` on codes for account erasure. Verification codes are outside the person's set (P-163, 2026-08-30). |
-| HIL-1412 | Cluster behavior of the person's agent (not in the code yet — HIL-1412). |
+| HIL-1412 | Cluster behavior of the person's agent (built). |
 | HIL-1403 | A session has no instance owner today: standalone, written by the sessions holder; an agent per session keyed by its stable id is acceptable later (decided 2026-10-11, [Session Ownership](entity-libraries.md#session-ownership)). |
 | HIL-1281 | Profile on the owner's agent and memory as the reader's truth (not in the code yet — HIL-1281). |
 

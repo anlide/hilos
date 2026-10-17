@@ -214,7 +214,8 @@ Nothing here drives the stand: the framework's shared cluster harness
 the scenarios it names — 3 placement, 4 slave-kill failover, 6 hot-join,
 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused,
 16 recreated node leaves no phantom fleet (parked, P-441/2), 18 capacity is consumed,
-19 worker death on a live node, and 37 costless agents consume slots
+19 worker death on a live node, 37 costless agents consume slots, and
+39 person agents across nodes
 (`docs/agents/testing.md`, "The cluster stands — three demos, three shapes"). The framework's probe fleet, claimer and ballast
 are in this demo's `AGENTS`, and they start only here: on one node, on the
 Playwright stand and in production the rows are carried and nothing is run.
@@ -226,6 +227,28 @@ Playwright stand and in production the rows are carried and nothing is run.
 | `composer run test:cluster:scenarios` | the stand's scenario matrix on a fresh stand; `-- 14 18` runs only the ones named |
 | `composer run test:cluster:down-volumes` | take the stand down and wipe its primary and journal databases |
 | `composer run test:cluster:down` | take the stand down the way the test runner does |
+
+Run scenario 39 alone on a fresh stand, from `demo/ecommerce-shop`:
+
+```bash
+composer run test:cluster:scenarios -- 39
+```
+
+In the full matrix, 39 runs after 9. It raises one person's agent on `s1`,
+waits for its ordinary **240-second idle window**, then wakes the same index
+on `s2` while the people and sessions libraries remain on `s1`. The idle
+check requires both the worker log's stop reason and the placement's removal;
+it does not shorten the product timeout. Killing `s2` then moves the active
+owner back to `s1`.
+
+The checks use real `admin:grant` / `admin:revoke` row writes and
+`second-factor:unlock` writes to the person's child set, with expected CLI
+replies and an independent database oracle. The first unlock clears a real
+lock; after wake-up and failover, unlock proves the set's Update permission
+again and advances `updated_at`. Confirmed facts survive idle and host loss,
+the reset-wait sentinel stays intact, and a second person's rows stay unchanged.
+Cleanup removes only the fixtures, restarts the same stand without deleting
+volumes, and waits for the full mesh and fleet before the next scenario.
 
 The harness's other commands — `kill`, `partition`, `crash-daemon`,
 `kill-worker`, `freeze-worker`, `recreate`, `inspect` and the rest — are called on the module
