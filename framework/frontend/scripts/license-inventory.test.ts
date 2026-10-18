@@ -3,13 +3,23 @@
 // where the line between failing the build and recording an absent text runs.
 // A real tree rather than mocks, in the style of its neighbour staleness.test.ts:
 // every rule here turns on a file being there or not being there.
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 
 import {
   collectLicenseEntries,
+  readProjectLicenseText,
   readProjectName,
   renderInventoryModule,
 } from './license-inventory.mjs'
@@ -64,6 +74,10 @@ function writeTree(): void {
     ],
   })
   writeAt('project/vendor/anlide/hilos/LICENSE', 'The MIT License (MIT)\n')
+  writeAt(
+    'project/LICENSE',
+    'MIT License\n\nCopyright (c) 2026 Hilos Project Name\n',
+  )
 
   writeJsonAt('project/frontend/package-lock.json', {
     lockfileVersion: 3,
@@ -229,10 +243,12 @@ it('orders the rows by name, so two runs over one tree agree byte for byte', () 
   const first = renderInventoryModule(
     collectLicenseEntries(frontendDir()),
     'demo-chat',
+    'Project MIT\n',
   )
   const second = renderInventoryModule(
     collectLicenseEntries(frontendDir()),
     'demo-chat',
+    'Project MIT\n',
   )
 
   expect(first).toBe(second)
@@ -280,6 +296,7 @@ it('renders a module the demo can import and typecheck', () => {
   const module = renderInventoryModule(
     collectLicenseEntries(frontendDir()),
     'demo-chat',
+    'Project MIT\n',
   )
 
   expect(module).toContain(
@@ -289,6 +306,7 @@ it('renders a module the demo can import and typecheck', () => {
     'export const hilosLicenseInventory: HilosLicenseInventory = {',
   )
   expect(module).toContain("  project: 'demo-chat',")
+  expect(module).toContain("  projectLicenseText: 'Project MIT\\n',")
   expect(module).toContain("name: 'anlide/hilos',")
   expect(module).toContain('licenseText: null,')
 })
@@ -303,6 +321,7 @@ it('escapes a license text that carries quotes and newlines', () => {
   const module = renderInventoryModule(
     collectLicenseEntries(frontendDir()),
     'demo-chat',
+    'Project MIT\n',
   )
 
   expect(module).toContain(
@@ -332,11 +351,133 @@ it('falls back to the project directory name when the lockfile has no name', () 
 })
 
 it('renders the project name as the first property of the snapshot and escapes it', () => {
-  const module = renderInventoryModule([], "demo's-chat\nsecond")
+  const module = renderInventoryModule(
+    [],
+    "demo's-chat\nsecond",
+    'Project MIT\n',
+  )
 
   expect(module).toContain("  project: 'demo\\'s-chat\\nsecond',")
   const projectIdx = module.indexOf("  project: 'demo\\'s-chat\\nsecond',")
   const entriesIdx = module.indexOf('  entries: [')
   expect(projectIdx).toBeGreaterThan(-1)
   expect(entriesIdx).toBeGreaterThan(projectIdx)
+})
+
+it("reads the project's own LICENSE file verbatim, preserving whitespace, quotes, and line endings", () => {
+  writeTree()
+  const rawLicense =
+    'MIT License\r\n\r\nCopyright (c) 2026 "Acme" \\ Corp.\n\n  Indented prose: utf-8 — Лицензия\n\n'
+  writeAt('project/LICENSE', rawLicense)
+
+  // Installed package has a different LICENSE file and does not affect project license
+  expect(
+    collectLicenseEntries(frontendDir()).find((e) => e.name === 'vue')
+      ?.licenseText,
+  ).toBe('MIT, from the package\n')
+
+  expect(readProjectLicenseText(frontendDir())).toBe(rawLicense)
+})
+
+it('returns an empty string when the project LICENSE file is empty', () => {
+  writeTree()
+  writeAt('project/LICENSE', '')
+
+  expect(readProjectLicenseText(frontendDir())).toBe('')
+})
+
+it('fails with the full path when the project LICENSE file is missing, even if LICENSE.md is present', () => {
+  writeTree()
+  rmSync(join(dir, 'project/LICENSE'))
+  writeAt('project/LICENSE.md', '# License\n')
+
+  const expectedPath = join(dir, 'project/LICENSE')
+  expect(() => readProjectLicenseText(frontendDir())).toThrow(
+    `Cannot read project LICENSE at ${expectedPath}:`,
+  )
+})
+
+it('renders the project license text between project and entries and escapes it', () => {
+  const module = renderInventoryModule(
+    [],
+    'demo-chat',
+    'Line with \'single\' and "double" quotes,\nbackslashes \\ and trailing newline\n',
+  )
+
+  expect(module).toContain(
+    "  projectLicenseText: 'Line with \\'single\\' and \"double\" quotes,\\nbackslashes \\\\ and trailing newline\\n',",
+  )
+  const projectIdx = module.indexOf("  project: 'demo-chat',")
+  const textIdx = module.indexOf(
+    "  projectLicenseText: 'Line with \\'single\\'",
+  )
+  const entriesIdx = module.indexOf('  entries: [')
+
+  expect(projectIdx).toBeGreaterThan(-1)
+  expect(textIdx).toBeGreaterThan(projectIdx)
+  expect(entriesIdx).toBeGreaterThan(textIdx)
+})
+
+it('generates the inventory snapshot module including projectLicenseText via CLI', () => {
+  writeTree()
+  writeAt('project/LICENSE', 'My Project License\n')
+  const outFile = join(
+    dir,
+    'project/frontend/src/generated/hilosLicenseInventory.ts',
+  )
+
+  const generatorScript = fileURLToPath(
+    new URL('./generate-license-inventory.mjs', import.meta.url),
+  )
+
+  const result = spawnSync(
+    process.execPath,
+    [generatorScript, '--frontend', frontendDir(), '--out', outFile],
+    { encoding: 'utf8' },
+  )
+
+  expect(result.status).toBe(0)
+  expect(existsSync(outFile)).toBe(true)
+  const content = readFileSync(outFile, 'utf8')
+  expect(content).toContain("projectLicenseText: 'My Project License\\n'")
+})
+
+it('fails when project LICENSE is missing and does not write or overwrite out file', () => {
+  writeTree()
+  rmSync(join(dir, 'project/LICENSE'))
+  const outFile = join(
+    dir,
+    'project/frontend/src/generated/hilosLicenseInventory.ts',
+  )
+
+  const generatorScript = fileURLToPath(
+    new URL('./generate-license-inventory.mjs', import.meta.url),
+  )
+
+  // 1. Without pre-existing file: out file is not created
+  const result1 = spawnSync(
+    process.execPath,
+    [generatorScript, '--frontend', frontendDir(), '--out', outFile],
+    { encoding: 'utf8' },
+  )
+
+  expect(result1.status).not.toBe(0)
+  expect(result1.stderr).toContain('Cannot read project LICENSE at')
+  expect(existsSync(outFile)).toBe(false)
+
+  // 2. With sentinel file: sentinel is not overwritten
+  writeAt(
+    'project/frontend/src/generated/hilosLicenseInventory.ts',
+    'SENTINEL_CONTENT',
+  )
+
+  const result2 = spawnSync(
+    process.execPath,
+    [generatorScript, '--frontend', frontendDir(), '--out', outFile],
+    { encoding: 'utf8' },
+  )
+
+  expect(result2.status).not.toBe(0)
+  expect(result2.stderr).toContain('Cannot read project LICENSE at')
+  expect(readFileSync(outFile, 'utf8')).toBe('SENTINEL_CONTENT')
 })

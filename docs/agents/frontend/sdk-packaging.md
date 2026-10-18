@@ -208,20 +208,26 @@ it: `HilosAboutPage`, `HilosTermsPage`, `HilosPrivacyPage` and
 `HilosLicensePage` under `@hilos/vue/src/public/` (and the React / Angular
 twins), one file per page. Each renders the tier-1 `HilosStaticPage` frame with
 the page's own title around two things: the project's prose, taken through the
-**default slot** and placed above, and the framework's behavior block for that
-page, placed below. The framework owns the frame and the behavior; the project
-owns the words. Leaving the behavior as blocks a project pastes in would make
-"Privacy without the erase button" indistinguishable from a deliberate choice.
+**default slot** and placed above (with `HilosLicensePage` as the exception: its
+own license text comes from the project root `LICENSE` file via the
+`projectLicenseText` property of the `inventory` snapshot, not through default
+slot/children), and the framework's behavior block for that page, placed below.
+The framework owns the frame and the behavior; the project owns the words.
+Leaving the behavior as blocks a project pastes in would make "Privacy without
+the erase button" indistinguishable from a deliberate choice.
 
 No aggregate collects the four — there is no `hilosPublicViews()`. Each needs a
 project-supplied input, which is the same exception `hilosAdminViews.ts` already
 makes for `HilosUsersPage` / `HilosSettingsPage` / `HilosBackupPage`: a project
 mounts them directly under their `HilosPages` keys. A project that wants its own
 License page mounts its own component under `HilosPages.LICENSE` and gets none
-of the framework behavior — the existing extension model, and the reason the
-prose comes through a slot rather than through configuration. The project's own
-view keeps its file and its name (`views/License/License.vue` and the twins) and
-wraps its paragraphs in the framework page instead of in `HilosStaticPage`;
+of the framework behavior — the existing extension model, and the reason About,
+Privacy and Terms take their prose through a slot rather than through
+configuration. `HilosLicensePage` takes `inventory` as a prop/input and renders
+both the project's own text and the dependency inventory, so a project mounts the
+component thinly without prose slots (`<HilosLicensePage :inventory="hilosLicenseInventory" />`).
+The project's own view keeps its file and its name (`views/License/License.vue`
+and the twins) and mounts the framework page instead of `HilosStaticPage`;
 nothing else in the project moves — not the page key, not the route, not the
 footer link, not the prerender entry's component map. A behavior block takes
 its data as an input, never as a fetch from inside the page: `HilosLicensePage`

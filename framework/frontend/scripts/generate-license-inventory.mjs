@@ -19,6 +19,7 @@ import process from 'node:process'
 
 import {
   collectLicenseEntries,
+  readProjectLicenseText,
   readProjectName,
   renderInventoryModule,
 } from './license-inventory.mjs'
@@ -53,10 +54,14 @@ const outFile =
     ? join(frontendDir, 'src/generated/hilosLicenseInventory.ts')
     : resolve(out)
 
+const projectLicenseText = readProjectLicenseText(frontendDir)
 const entries = collectLicenseEntries(frontendDir)
 const project = readProjectName(frontendDir)
 
 mkdirSync(dirname(outFile), { recursive: true })
-writeFileSync(outFile, renderInventoryModule(entries, project))
+writeFileSync(
+  outFile,
+  renderInventoryModule(entries, project, projectLicenseText),
+)
 
 console.log(`license inventory: ${entries.length} packages -> ${outFile}`)

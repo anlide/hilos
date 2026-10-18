@@ -1,5 +1,5 @@
 // HilosLicensePage — the tier-2 public /license page: the project's own license
-// prose (the projected content) and, under it, the inventory of everything the
+// text (inventory().projectLicenseText) and, under it, the inventory of everything the
 // build actually stands on. The list is not typed by hand and not fetched: it is
 // the build-time snapshot generated from the project's own two lockfiles
 // (framework/frontend/scripts/generate-license-inventory.mjs), handed over in one
@@ -46,7 +46,7 @@ import { HilosStaticPage } from '../HilosStaticPage.js'
 const DOWNLOAD_MIME_TYPE = 'text/csv;charset=utf-8'
 
 /**
- * The /license page: the project's prose, and under it the build's inventory
+ * The /license page: the project's own license text, and under it the build's inventory
  * with a search, two filters, a package's own license text, and both exports.
  */
 @Component({
@@ -55,7 +55,10 @@ const DOWNLOAD_MIME_TYPE = 'text/csv;charset=utf-8'
   imports: [HilosLongText, HilosModal, HilosStaticPage],
   template: `
     <hilos-static-page title="License">
-      <ng-content />
+      <pre
+        class="small text-body mb-3 text-break hilos-pre-wrap"
+        data-id="license-project-text"
+        >{{ inventory().projectLicenseText }}</pre>
 
       <h2 class="h6 text-uppercase text-body-secondary mb-2 mt-4">
         What this build stands on

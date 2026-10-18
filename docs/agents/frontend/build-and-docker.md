@@ -199,20 +199,25 @@ the page for the line. Three rules follow, and every public page keeps them:
   project's own two lockfiles (`composer.lock` and `frontend/package-lock.json`)
   — and a `link:`-ed SDK package in the latter is a door rather than a row, so
   what the SDK itself brings in is read out of
-  `framework/frontend/package-lock.json`. The snapshot also carries the
-  project's name from its own `package-lock.json`, and downloads from the page
-  are named after it. The hook is `prebuild`, `predev` and `precheck`, so the
-  file exists before a build, a dev start or a type check reads it.
+  `framework/frontend/package-lock.json`. The generator also reads the project's
+  root `LICENSE` file and places it into the `projectLicenseText` field of the
+  `hilosLicenseInventory.ts` snapshot alongside the project's name and
+  dependencies; a missing or unreadable `LICENSE` file fails the build with an
+  error stating the path and reason. The snapshot also carries the project's name
+  from its own `package-lock.json`, and downloads from the page are named after
+  it. The hook is `prebuild`, `predev` and `precheck`, so the file exists before a
+  build, a dev start or a type check reads it.
 
 What each static file contains: /about the prose, the support block and the
 modal in its closed state; /privacy the prose and the erase block, button
-included, inert until the SPA mounts; /license the prose and the full inventory;
-/terms the heading and the project's introduction, with the text of the revision
-in force, its date, the reader's line and the history absent from the file and
-arriving over the subscription — the legal catalog lives on the server, and the
-frontend build does not read it. The backend pages behind About, Privacy and
-License answer the subscription with nothing; Terms answers with its own section
-([legal-documents.md](../architecture/legal-documents.md), *Public Terms page*).
+included, inert until the SPA mounts; /license the project's root LICENSE text
+and the full inventory; /terms the heading and the project's introduction, with
+the text of the revision in force, its date, the reader's line and the history
+absent from the file and arriving over the subscription — the legal catalog lives
+on the server, and the frontend build does not read it. The backend pages behind
+About, Privacy and License answer the subscription with nothing; Terms answers
+with its own section ([legal-documents.md](../architecture/legal-documents.md),
+*Public Terms page*).
 
 Vue and React run a Vite SSR build of a prerender entry that writes a flat
 `<route>.html` (and `robots.txt` + `sitemap.xml`). Angular uses its **native

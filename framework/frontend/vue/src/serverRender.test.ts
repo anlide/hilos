@@ -9,6 +9,7 @@ import HilosLicensePage from './public/HilosLicensePage.vue'
 
 const inventory = {
   project: 'demo-chat',
+  projectLicenseText: 'Project license <script>alert(1)</script>',
   entries: [
     {
       name: 'vue',
@@ -35,16 +36,13 @@ describe('Vue server rendering', () => {
   it('renders the license page without a browser document', async () => {
     const html = await renderToString(
       createSSRApp({
-        render: () =>
-          h(
-            HilosLicensePage,
-            { inventory },
-            { default: () => 'Project license' },
-          ),
+        render: () => h(HilosLicensePage, { inventory }),
       }),
     )
 
     expect(html).toContain('Project license')
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
+    expect(html).not.toContain('<script>alert(1)</script>')
     expect(html).toContain('vue')
     expect(html).toContain('3.5.35')
   })

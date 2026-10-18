@@ -1,5 +1,5 @@
 <!-- HilosLicensePage — the tier-2 public /license page: the project's own license
-prose (the default slot) and, under it, the inventory of everything the build
+text (inventory.projectLicenseText) and, under it, the inventory of everything the build
 actually stands on. The list is not typed by hand and not fetched: it is the
 build-time snapshot generated from the project's own two lockfiles
 (framework/frontend/scripts/generate-license-inventory.mjs), handed over in one
@@ -102,7 +102,10 @@ function onDownload(): void {
 
 <template>
   <HilosStaticPage title="License">
-    <slot />
+    <pre
+      class="small text-body mb-3 text-break hilos-pre-wrap"
+      data-id="license-project-text"
+      >{{ inventory.projectLicenseText }}</pre>
 
     <h2 class="h6 text-uppercase text-body-secondary mb-2 mt-4">
       What this build stands on

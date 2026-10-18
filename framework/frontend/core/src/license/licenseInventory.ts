@@ -30,6 +30,8 @@ export interface HilosLicenseEntry {
 export interface HilosLicenseInventory {
   /** The name of the project this snapshot was taken of, as its own lockfile writes it. */
   readonly project: string
+  /** The project's own license text, read from LICENSE in the project root. */
+  readonly projectLicenseText: string
   readonly entries: readonly HilosLicenseEntry[]
 }
 

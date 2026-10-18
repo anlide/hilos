@@ -8,6 +8,7 @@ import { HilosLicensePage } from '../src/public/HilosLicensePage.js'
 
 const inventory = {
   project: 'demo-tasks',
+  projectLicenseText: 'Project license <script>alert(1)</script>',
   entries: [
     {
       name: 'react',
@@ -29,12 +30,12 @@ describe('React server rendering', () => {
 
   it('renders the license page without a browser document', () => {
     const html = renderToStaticMarkup(
-      <HilosLicensePage inventory={inventory}>
-        Project license
-      </HilosLicensePage>,
+      <HilosLicensePage inventory={inventory} />,
     )
 
     expect(html).toContain('Project license')
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
+    expect(html).not.toContain('<script>alert(1)</script>')
     expect(html).toContain('react')
     expect(html).toContain('19.2.7')
   })

@@ -26,6 +26,8 @@ function entry(over: Partial<HilosLicenseEntry> = {}): HilosLicenseEntry {
 
 const inventory = {
   project: 'demo-chat',
+  projectLicenseText:
+    'Custom Project License\n\n  Indented clause   with spaces\nTrailing newline\n',
   entries: [
     entry(),
     entry({ name: 'bootstrap', version: '5.3.3', licenseText: null }),
@@ -184,5 +186,31 @@ describe('HilosLicensePage', () => {
 
     expect(anchor.download).toBe('demo-chat-license-hilos-framework.csv')
     expect(anchor.click).toHaveBeenCalledOnce()
+  })
+
+  it('renders the project license text verbatim before the inventory list', () => {
+    const wrapper = mountPage()
+    const pre = wrapper.find<HTMLElement>(
+      '[data-id="license-project-text"]',
+    ).element
+    expect(pre.textContent).toBe(inventory.projectLicenseText)
+  })
+
+  it('renders markup in project license text as plain text and produces no nested elements', () => {
+    const markupText =
+      'Custom License with <script>alert("xss")</script> and <b>bold</b>'
+    const wrapper = mount(HilosLicensePage, {
+      props: {
+        inventory: {
+          ...inventory,
+          projectLicenseText: markupText,
+        },
+      },
+    })
+    const pre = wrapper.find<HTMLElement>(
+      '[data-id="license-project-text"]',
+    ).element
+    expect(pre.textContent).toBe(markupText)
+    expect(pre.children.length).toBe(0)
   })
 })

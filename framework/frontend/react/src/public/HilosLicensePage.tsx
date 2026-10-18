@@ -1,5 +1,5 @@
 // HilosLicensePage — the tier-2 public /license page: the project's own license
-// prose (the children) and, under it, the inventory of everything the build
+// text (inventory.projectLicenseText) and, under it, the inventory of everything the build
 // actually stands on. The list is not typed by hand and not fetched: it is the
 // build-time snapshot generated from the project's own two lockfiles
 // (framework/frontend/scripts/generate-license-inventory.mjs), handed over in one
@@ -19,7 +19,6 @@
 // never disabled — on an empty result they hand over the header row alone.
 // Bootstrap classes only, no CSS of its own (styling-rules.md).
 import { useEffect, useMemo, useState } from 'react'
-import type { ReactNode } from 'react'
 import {
   type HilosLicenseEntry,
   type HilosLicenseInventory,
@@ -43,20 +42,15 @@ const DOWNLOAD_MIME_TYPE = 'text/csv;charset=utf-8'
 export interface HilosLicensePageProps {
   /** The build-time snapshot of everything this build stands on. */
   inventory: HilosLicenseInventory
-  /** The project's own license prose, above the inventory. */
-  children?: ReactNode
 }
 
 /**
- * The /license page: the project's prose, and under it the build's inventory
+ * The /license page: the project's own license text, and under it the build's inventory
  * with a search, two filters, a package's own license text, and both exports.
  *
- * @param props The build-time snapshot and the project's prose.
+ * @param props The build-time snapshot of the project and its dependencies.
  */
-export function HilosLicensePage({
-  inventory,
-  children,
-}: HilosLicensePageProps) {
+export function HilosLicensePage({ inventory }: HilosLicensePageProps) {
   const [search, setSearch] = useState('')
   const [license, setLicense] = useState('')
   const [language, setLanguage] = useState('')
@@ -101,7 +95,12 @@ export function HilosLicensePage({
 
   return (
     <HilosStaticPage title="License">
-      {children}
+      <pre
+        className="small text-body mb-3 text-break hilos-pre-wrap"
+        data-id="license-project-text"
+      >
+        {inventory.projectLicenseText}
+      </pre>
 
       <h2 className="h6 text-uppercase text-body-secondary mb-2 mt-4">
         What this build stands on
