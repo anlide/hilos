@@ -27,7 +27,14 @@ import {
 import { gotoPage } from '../../helpers/page.js'
 import { clickSubmit, signUpPerson, typeInto } from '../../helpers/session.js'
 
-test('cluster change log: one remote block receipt reads the same through every master', async ({
+// FIXME(F-016, 2026-10-18): parked on the owner's word (HOTFIX), without a diagnosis.
+// Red in 2 of the 6 full runs since 1268 (1271, 1277, both on seven lanes) and passed only
+// on its retry in 1274; green alone on the same sha each time (1272, 1275, 1278). Every
+// failure is a browser sign-up after the daemon phase lost the leader and recreated s1: the
+// code is accepted, the registration never completes. On 1274 and 1277 the auth throttle
+// also went silent for 8-9 s and refused the first registration. Node journals:
+// runs/<n>/steps/artifacts/binance-btc-tracker-cluster-e2e/nodes/ on nova-de.
+test.fixme('cluster change log: one remote block receipt reads the same through every master', async ({
   browser,
 }) => {
   // Two registrations, a remote writer and three fresh reads outlive the base cap.

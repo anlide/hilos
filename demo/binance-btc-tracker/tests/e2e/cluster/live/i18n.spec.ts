@@ -70,7 +70,14 @@ const test = baseTest.extend<{ masters: [Page, Page] }>({
   },
 })
 
-test('cluster i18n: language nativeName reaches the other master in both directions', async ({
+// FIXME(F-016, 2026-10-18): parked on the owner's word (HOTFIX), without a diagnosis.
+// All five tests red in 3 of the 6 full runs since 1268 (1269, 1271, 1277, all on seven
+// lanes), each time green alone on the same sha (1270, 1272, 1278). Every failure is a
+// browser sign-up after the daemon phase lost the leader and recreated s1: the code is
+// accepted, the registration never completes. On 1274 and 1277 the auth throttle also went
+// silent for 8-9 s and refused the first registration. Node journals:
+// runs/<n>/steps/artifacts/binance-btc-tracker-cluster-e2e/nodes/ on nova-de.
+test.fixme('cluster i18n: language nativeName reaches the other master in both directions', async ({
   masters: [first, second],
 }) => {
   try {
@@ -114,7 +121,8 @@ test('cluster i18n: language nativeName reaches the other master in both directi
   }
 })
 
-test('cluster i18n: country currencySymbol reaches a card on another master', async ({
+// FIXME(F-016, 2026-10-18): parked with the first test of this file; the reason is above it.
+test.fixme('cluster i18n: country currencySymbol reaches a card on another master', async ({
   masters: [writer, observer],
 }) => {
   let original: { symbol: string; currency: string; locale: string } | undefined
@@ -168,7 +176,8 @@ test('cluster i18n: country currencySymbol reaches a card on another master', as
   }
 })
 
-test('cluster i18n: locale off and on reach the other master without reconnecting', async ({
+// FIXME(F-016, 2026-10-18): parked with the first test of this file; the reason is above it.
+test.fixme('cluster i18n: locale off and on reach the other master without reconnecting', async ({
   masters: [first, second],
 }) => {
   try {
@@ -210,7 +219,8 @@ test('cluster i18n: locale off and on reach the other master without reconnectin
   }
 })
 
-test('cluster i18n: language base and correction are created and edited across masters', async ({
+// FIXME(F-016, 2026-10-18): parked with the first test of this file; the reason is above it.
+test.fixme('cluster i18n: language base and correction are created and edited across masters', async ({
   masters: [first, second],
 }) => {
   await clearLanguageNamesFixture()
@@ -266,7 +276,8 @@ test('cluster i18n: language base and correction are created and edited across m
   }
 })
 
-test('cluster i18n: country base and correction edits reach both masters', async ({
+// FIXME(F-016, 2026-10-18): parked with the first test of this file; the reason is above it.
+test.fixme('cluster i18n: country base and correction edits reach both masters', async ({
   masters: [first, second],
 }) => {
   await clearCountryNamesFixture()

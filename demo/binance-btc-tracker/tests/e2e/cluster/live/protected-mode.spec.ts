@@ -94,7 +94,14 @@ async function presentCode(page: Page, code: string): Promise<void> {
   await expect(page.getByTestId('maintenance-pass-form')).toHaveCount(0)
 }
 
-test('every master shows the stub while the mode is on, and a person signed in on a follower master comes back as the same person', async ({
+// FIXME(F-016, 2026-10-18): parked on the owner's word (HOTFIX), without a diagnosis.
+// Both tests red in 2 of the 6 full runs since 1268 (1271, 1277, both on seven lanes), each
+// time green alone on the same sha (1272, 1278). Every failure is a browser sign-up after
+// the daemon phase lost the leader and recreated s1: the code is accepted, the registration
+// never completes. On 1274 and 1277 the auth throttle also went silent for 8-9 s and
+// refused the first registration. Node journals:
+// runs/<n>/steps/artifacts/binance-btc-tracker-cluster-e2e/nodes/ on nova-de.
+test.fixme('every master shows the stub while the mode is on, and a person signed in on a follower master comes back as the same person', async ({
   browser,
 }) => {
   // Multiple masters settle a freeze, verification window and self-reload in this test.
@@ -138,7 +145,8 @@ test('every master shows the stub while the mode is on, and a person signed in o
   }
 })
 
-test("the named circle walks in on a follower master with the tab it already had open, the operator's tab follows its session to another master, and nobody else does", async ({
+// FIXME(F-016, 2026-10-18): parked with the test above; the reason is above it.
+test.fixme("the named circle walks in on a follower master with the tab it already had open, the operator's tab follows its session to another master, and nobody else does", async ({
   browser,
 }) => {
   // Multiple masters settle a freeze, verification window and self-reload in this test.
