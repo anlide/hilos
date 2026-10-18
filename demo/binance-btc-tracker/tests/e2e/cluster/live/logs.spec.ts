@@ -3,6 +3,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import {
   clearCustomSetting,
   setCustomSetting,
+  shownByTestId,
 } from '../../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../../helpers/adminGrant.js'
 import {
@@ -92,10 +93,10 @@ test.afterEach(async () => {
  * @param key Catalog key to isolate.
  */
 async function isolate(tab: Page, key: string): Promise<void> {
-  const search = tab.getByTestId('hilos-table-search')
+  const search = shownByTestId(tab, 'hilos-table-search')
   await search.fill('')
   await search.pressSequentially(key, { delay: 10 })
-  await expect(tab.getByTestId(`${ROW_ID_PREFIX}${key}`)).toBeVisible()
+  await expect(shownByTestId(tab, `${ROW_ID_PREFIX}${key}`)).toBeVisible()
 }
 
 /**
@@ -114,7 +115,7 @@ async function setSetting(
   await setCustomSetting(tab, key, value)
 
   await expect(tab.getByTestId('hilos-settings-edit-value')).toHaveCount(0)
-  await expect(tab.getByTestId(`${ROW_ID_PREFIX}${key}`)).toContainText(
+  await expect(shownByTestId(tab, `${ROW_ID_PREFIX}${key}`)).toContainText(
     'custom',
   )
 }
@@ -127,37 +128,110 @@ async function setSetting(
  */
 async function resetSetting(tab: Page, key: string): Promise<void> {
   await isolate(tab, key)
-  const row = tab.getByTestId(`${ROW_ID_PREFIX}${key}`)
+  const row = shownByTestId(tab, `${ROW_ID_PREFIX}${key}`)
   await clearCustomSetting(tab, key)
   await expect(row).toContainText('default')
 }
 
 /**
- * Locates the node dropdown option for a specific cluster member.
+ * Wait for the complete sorted node list before trusting its indexed data ids.
  *
- * Matches both before and after facet counts arrive: the accessible option name
- * starts with the member identifier followed by either space and the facet count
- * or the end of string.
+ * A partial cluster picture can give the same index to another node. Facet
+ * counts may follow the node name without changing which option it represents.
  *
- * @param filter The node filter locator.
- * @param member The cluster member node identifier.
+ * @param filter The visible, open node filter.
+ * @param members Every expected cluster member.
  */
-function nodeOption(filter: Locator, member: string): Locator {
-  return filter
-    .getByRole('option', { name: new RegExp(`^${member}(\\s|$)`) })
-    .or(filter.getByTestId(`hilos-dropdown-option-${member}`))
+async function expectNodeOptions(
+  filter: Locator,
+  members: readonly string[],
+): Promise<void> {
+  await expect(shownByTestId(filter, 'hilos-dropdown-option--1')).toBeVisible({
+    timeout: TAIL_ARRIVAL_TIMEOUT_MS,
+  })
+  await expect(
+    shownByTestId(filter, /^hilos-dropdown-option-\d+$/),
+  ).toHaveCount(members.length, { timeout: TAIL_ARRIVAL_TIMEOUT_MS })
+  for (const [index, member] of [...members].sort().entries()) {
+    await expect(
+      shownByTestId(filter, `hilos-dropdown-option-${index}`),
+    ).toHaveAccessibleName(new RegExp(`^${member}(\\s|$)`), {
+      timeout: TAIL_ARRIVAL_TIMEOUT_MS,
+    })
+  }
 }
 
 /**
- * Locates the "All nodes" dropdown option.
+ * Select a node by its data id after checking the complete option mapping.
  *
- * @param filter The node filter locator.
+ * @param page The follower master tab showing the table.
+ * @param members Every expected cluster member.
+ * @param member The cluster member to select.
  */
-function allNodesOption(filter: Locator): Locator {
-  return filter
-    .getByRole('option', { name: /^All nodes(\s|$)/ })
-    .or(filter.getByTestId('hilos-dropdown-option-all'))
-    .or(filter.getByTestId('hilos-dropdown-option--1'))
+async function selectMember(
+  page: Page,
+  members: readonly string[],
+  member: string,
+): Promise<void> {
+  const filter = shownByTestId(page, 'hilos-table-filter-node')
+  await shownByTestId(filter, 'hilos-dropdown-toggle').click()
+  await expectNodeOptions(filter, members)
+  const index = [...members].sort().indexOf(member)
+  expect(index).toBeGreaterThanOrEqual(0)
+  await shownByTestId(filter, `hilos-dropdown-option-${index}`).click()
+}
+
+/**
+ * Wait for a nonempty window containing only the selected member's rows.
+ *
+ * A positive length alone can accept the previous member's window while the
+ * new filter request is still in flight, ending rotation preparation too soon.
+ *
+ * @param page The follower master tab showing the table.
+ * @param member The cluster member whose rows must arrive.
+ * @param timeout The existing arrival budget for this stage.
+ * @param stage The stage named in a failed wait's diagnostic message.
+ */
+async function expectMemberRows(
+  page: Page,
+  member: string,
+  timeout: number,
+  stage: 'rotation preparation' | 'node filter',
+): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const keys = await tableRowKeys(page)
+        return (
+          keys.length > 0 && keys.every((key) => key.startsWith(`${member}:`))
+        )
+      },
+      {
+        timeout,
+        message: `${stage}: waiting for rows exclusively from ${member}`,
+      },
+    )
+    .toBe(true)
+}
+
+/**
+ * Press Reset filters and settle on a window containing multiple nodes.
+ *
+ * @param page The follower master tab showing the table.
+ */
+async function resetNodeFilter(page: Page): Promise<void> {
+  await shownByTestId(page, 'hilos-table-filter-reset').click()
+  await expect
+    .poll(
+      async () => {
+        const keys = await tableRowKeys(page)
+        const prefixes = new Set(keys.map((key) => key.split(':')[0]))
+        return keys.length >= 2 && prefixes.size >= 2
+      },
+      { timeout: TAIL_ARRIVAL_TIMEOUT_MS },
+    )
+    .toBe(true)
+  await expect(page.getByTestId('hilos-table-filter-reset')).toHaveCount(0)
 }
 
 /**
@@ -180,53 +254,24 @@ async function expectClusterTable(
   await gotoPage(page, options.path, PAGE_READY)
   await options.prepare?.()
 
-  const filter = page.getByTestId('hilos-table-filter-node')
-  const toggle = filter.getByTestId('hilos-dropdown-toggle')
+  const filter = shownByTestId(page, 'hilos-table-filter-node')
+  const toggle = shownByTestId(filter, 'hilos-dropdown-toggle')
   await toggle.click()
-  const allOption = allNodesOption(filter)
-  await expect(allOption).toBeVisible({ timeout: TAIL_ARRIVAL_TIMEOUT_MS })
-  for (const member of options.members) {
-    const memberOption = nodeOption(filter, member)
-    await expect(memberOption).toBeVisible({ timeout: TAIL_ARRIVAL_TIMEOUT_MS })
-  }
+  await expectNodeOptions(filter, options.members)
   await toggle.click()
 
-  await expect(page.getByTestId('hilos-table-sort-node')).toBeVisible()
-  await expect(page.getByTestId('hilos-table-search')).toHaveAttribute(
+  await expect(shownByTestId(page, 'hilos-table-sort-node')).toBeVisible()
+  await expect(shownByTestId(page, 'hilos-table-search')).toHaveAttribute(
     'placeholder',
     options.searchPlaceholder,
   )
 
   for (const member of options.members) {
-    await toggle.click()
-    const memberOption = nodeOption(filter, member)
-    await memberOption.click()
-    await expect
-      .poll(
-        async () => {
-          const keys = await tableRowKeys(page)
-          return (
-            keys.length >= 1 && keys.every((k) => k.startsWith(`${member}:`))
-          )
-        },
-        { timeout: TAIL_ARRIVAL_TIMEOUT_MS },
-      )
-      .toBe(true)
+    await selectMember(page, options.members, member)
+    await expectMemberRows(page, member, TAIL_ARRIVAL_TIMEOUT_MS, 'node filter')
   }
 
-  await toggle.click()
-  await allOption.click()
-  await expect
-    .poll(
-      async () => {
-        const keys = await tableRowKeys(page)
-        const prefixes = new Set(keys.map((k) => k.split(':')[0]))
-        return keys.length >= 2 && prefixes.size >= 2
-      },
-      { timeout: TAIL_ARRIVAL_TIMEOUT_MS },
-    )
-    .toBe(true)
-  await expect(page.getByTestId('hilos-table-filter-reset')).toHaveCount(0)
+  await resetNodeFilter(page)
 }
 
 test('cluster logs keys: shows node column and filters by every cluster member', async ({
@@ -261,14 +306,7 @@ test('cluster logs workers: shows node column and filters by every cluster membe
   }
 })
 
-// Red in 2 of the 6 full runs since HIL-1347 added it, both on the HIL-1350 leaf: 1056
-// failed all three attempts and 1060 passed on the third. Every failed attempt is the
-// same - after picking a member in the node filter, the rows did not all turn to that
-// member's within 15 s (expectClusterTable, the poll after memberOption.click()). The
-// journals of every node of both runs are kept in
-// runs/<run>/steps/artifacts/binance-btc-tracker-cluster-e2e/nodes/ on nova-de.
-// Parked by the owner on 10.10.2026 (HOTFIX) without a diagnosis.
-test.fixme('cluster logs rotations: shows node column, creates batches via max_age, and filters by every cluster member', async ({
+test('cluster logs rotations: shows node column, creates batches via max_age, and filters by every cluster member', async ({
   browser,
 }) => {
   test.slow()
@@ -287,35 +325,18 @@ test.fixme('cluster logs rotations: shows node column, creates batches via max_a
       prepare: async () => {
         await setSetting(control, ROTATION_MAX_AGE, '1')
 
-        const filter = page.getByTestId('hilos-table-filter-node')
-        const toggle = filter.getByTestId('hilos-dropdown-toggle')
-        await toggle.click()
-        const allOption = allNodesOption(filter)
-        await expect(allOption).toBeVisible({
-          timeout: TAIL_ARRIVAL_TIMEOUT_MS,
-        })
         for (const member of members) {
-          const memberOption = nodeOption(filter, member)
-          await expect(memberOption).toBeVisible({
-            timeout: TAIL_ARRIVAL_TIMEOUT_MS,
-          })
-        }
-        await toggle.click()
-
-        for (const member of members) {
-          await toggle.click()
-          const memberOption = nodeOption(filter, member)
-          await memberOption.click()
-          await expect
-            .poll(async () => (await tableRowKeys(page)).length, {
-              timeout: ROTATION_ARRIVAL_TIMEOUT_MS,
-            })
-            .toBeGreaterThanOrEqual(1)
+          await selectMember(page, members, member)
+          await expectMemberRows(
+            page,
+            member,
+            ROTATION_ARRIVAL_TIMEOUT_MS,
+            'rotation preparation',
+          )
         }
 
         await setSetting(control, ROTATION_MAX_AGE, '0')
-        await toggle.click()
-        await allOption.click()
+        await resetNodeFilter(page)
       },
     })
   } finally {
