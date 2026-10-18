@@ -24,6 +24,11 @@ use Hilos\Core\Process;
  */
 final class BackupRunCommand implements CommandInterface
 {
+    /** @var list<string> Option names this command reads, without the leading dashes */
+    public const array OPTIONS = [
+        BackupConstants::SCOPE_OPTION,
+    ];
+
     /** Default scope when `--scope` is omitted. */
     private const string DEFAULT_SCOPE = BackupScope::FULL->value;
 

@@ -35,6 +35,12 @@ final class AccountMergeCommand implements CommandInterface, DatabaseFreeCommand
 {
     use CommandChannelClientTrait;
 
+    /** @var list<string> Option names this command reads, without the leading dashes */
+    public const array OPTIONS = [
+        AccountMergeCommandConstants::OPTION_PASSWORD,
+        AccountMergeCommandConstants::OPTION_SECOND_FACTOR,
+    ];
+
     public function getName(): string
     {
         return CliCommands::ACCOUNT_MERGE;

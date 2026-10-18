@@ -36,6 +36,16 @@ use Hilos\ProtectedMode\ProtectedModeCommandConstants;
  */
 class ProtectedModeTestEnterCommand extends AbstractCommandChannelTestCommand implements DatabaseFreeCommand
 {
+    /** @var list<string> Option names this command reads, without the leading dashes */
+    public const array OPTIONS = [
+        self::OPTION_ACCEPT_KEY,
+        self::OPTION_SESSION_TOKEN,
+    ];
+
+    private const string OPTION_ACCEPT_KEY = 'accept-key';
+
+    private const string OPTION_SESSION_TOKEN = 'session-token';
+
     /**
      * Returns command name for CLI routing.
      *
@@ -113,8 +123,8 @@ HELP;
         // for from a terminal has no browser connection to name. A key or session cookie is
         // passed only when the test is about the initiator's own window.
         $acceptKey = '';
-        if (isset($options['accept-key'])) {
-            $acceptKey = $options['accept-key'];
+        if (isset($options[self::OPTION_ACCEPT_KEY])) {
+            $acceptKey = $options[self::OPTION_ACCEPT_KEY];
             if (!is_string($acceptKey) || $acceptKey === '') {
                 echo "Option --accept-key must be a non-empty connection accept key.\n";
 
@@ -123,8 +133,8 @@ HELP;
         }
 
         $sessionToken = null;
-        if (isset($options['session-token'])) {
-            $sessionToken = $options['session-token'];
+        if (isset($options[self::OPTION_SESSION_TOKEN])) {
+            $sessionToken = $options[self::OPTION_SESSION_TOKEN];
             if (!is_string($sessionToken) || $sessionToken === '') {
                 echo "Option --session-token must be a non-empty session token.\n";
 

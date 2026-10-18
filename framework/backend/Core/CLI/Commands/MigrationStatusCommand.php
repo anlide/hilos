@@ -19,6 +19,11 @@ use Hilos\Database\MigrationClaim;
  */
 class MigrationStatusCommand implements CommandInterface
 {
+    /** @var list<string> Option names this command reads, without the leading dashes */
+    public const array OPTIONS = [
+        CliCommands::OPTION_DB_INDEX,
+    ];
+
     /** @var int Width of the horizontal rule that frames the migration list, in characters */
     private const int TABLE_RULE_WIDTH = 50;
 
@@ -93,7 +98,7 @@ HELP;
         echo "\n=== Migration Status ===\n\n";
 
         // Parse arguments from options
-        $dbIndex = isset($options['db-index']) ? (int)$options['db-index'] : 0;
+        $dbIndex = isset($options[CliCommands::OPTION_DB_INDEX]) ? (int)$options[CliCommands::OPTION_DB_INDEX] : 0;
 
         // Set database connection index if specified
         if ($dbIndex !== 0) {

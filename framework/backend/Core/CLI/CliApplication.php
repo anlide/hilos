@@ -40,6 +40,11 @@ use Throwable;
  * declaration ({@see CommandExecution}). A command that writes state the daemon owns is
  * admissible only while no daemon is running, so the spine asks the machine before it lets
  * one start ({@see refuseOfflineWriteBesideALiveDaemon()}).
+ *
+ * A third gate runs first in that queue, and it is read the same way — off the command's
+ * own declaration ({@see CliManager::answerWithoutRunning()}). It answers `--help` and
+ * `-h`, and refuses an option the command did not declare, before the daemon is asked and
+ * before the database is connected.
  */
 final class CliApplication
 {
@@ -80,6 +85,11 @@ final class CliApplication
             Seed::setSeedPath($bootstrapDir . '/../Database/Migration/Seed');
 
             $cliManager = new $cliManagerClass($argv);
+
+            $answered = $cliManager->answerWithoutRunning();
+            if ($answered !== null) {
+                exit($answered);
+            }
 
             $refusal = self::refuseOfflineWriteBesideALiveDaemon($cliManager->execution($command), $command);
             if ($refusal !== null) {

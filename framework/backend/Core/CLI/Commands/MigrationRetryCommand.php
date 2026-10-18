@@ -18,6 +18,11 @@ use Hilos\Environment\Exception\EnvException;
  */
 class MigrationRetryCommand implements CommandInterface
 {
+    /** @var list<string> Option names this command reads, without the leading dashes */
+    public const array OPTIONS = [
+        CliCommands::OPTION_DB_INDEX,
+    ];
+
     /**
      * Returns command name for CLI routing.
      *
@@ -98,7 +103,7 @@ HELP;
         echo "\n=== Retry Failed Migration ===\n\n";
 
         // Parse arguments from options
-        $dbIndex = isset($options['db-index']) ? (int)$options['db-index'] : 0;
+        $dbIndex = isset($options[CliCommands::OPTION_DB_INDEX]) ? (int)$options[CliCommands::OPTION_DB_INDEX] : 0;
         
         // Get migration version from positional args
         $version = !empty($args) && is_numeric($args[0]) ? (int)$args[0] : null;

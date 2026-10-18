@@ -20,6 +20,17 @@ use Hilos\Environment\Exception\EnvException;
  */
 class MigrationUpCommand implements CommandInterface
 {
+    /** @var list<string> Option names this command reads, without the leading dashes */
+    public const array OPTIONS = [
+        CliCommands::OPTION_DB_INDEX,
+        self::OPTION_TO,
+        self::OPTION_FORCE,
+    ];
+
+    private const string OPTION_TO = 'to';
+
+    private const string OPTION_FORCE = 'force';
+
     /**
      * Returns command name for CLI routing.
      *
@@ -117,9 +128,9 @@ HELP;
         echo "\n=== Database Migration UP ===\n\n";
 
         // Parse arguments from options
-        $dbIndex = isset($options['db-index']) ? (int)$options['db-index'] : 0;
-        $targetVersion = $options['to'] ?? null;
-        $force = isset($options['force']);
+        $dbIndex = isset($options[CliCommands::OPTION_DB_INDEX]) ? (int)$options[CliCommands::OPTION_DB_INDEX] : 0;
+        $targetVersion = $options[self::OPTION_TO] ?? null;
+        $force = isset($options[self::OPTION_FORCE]);
 
         // Set database connection index if specified
         if ($dbIndex !== 0) {

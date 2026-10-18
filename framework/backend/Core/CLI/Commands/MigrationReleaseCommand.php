@@ -22,6 +22,11 @@ use Hilos\Database\MigrationClaimRow;
  */
 class MigrationReleaseCommand implements CommandInterface
 {
+    /** @var list<string> Option names this command reads, without the leading dashes */
+    public const array OPTIONS = [
+        CliCommands::OPTION_DB_INDEX,
+    ];
+
     /**
      * Returns command name for CLI routing.
      *
@@ -100,7 +105,7 @@ HELP;
     {
         echo "\n=== Release Schema Rollout Claim ===\n\n";
 
-        $dbIndex = isset($options['db-index']) ? (int)$options['db-index'] : 0;
+        $dbIndex = isset($options[CliCommands::OPTION_DB_INDEX]) ? (int)$options[CliCommands::OPTION_DB_INDEX] : 0;
         $holder = $args[0] ?? null;
 
         if ($holder === null || trim($holder) === '') {

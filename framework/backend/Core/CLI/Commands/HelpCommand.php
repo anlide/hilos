@@ -79,6 +79,7 @@ Description:
 Usage:
   php cli.php help [command]
   php cli.php [command] --help
+  php cli.php [command] -h
 
 Arguments:
   command    Optional: Show detailed help for specific command
@@ -95,7 +96,7 @@ HELP;
      *
      * Displays available commands and usage information.
      *
-     * @param array<string, mixed> $options Command options (--help for specific command)
+     * @param array<string, mixed> $options Declared options; `--help` does not arrive here
      * @param list<string> $args Positional args (command name for detailed help)
      * @return int Exit code (0)
      */
@@ -157,6 +158,7 @@ HELP;
         echo "For detailed help on a specific command:\n";
         echo "  php cli.php help <command>\n";
         echo "  php cli.php <command> --help\n";
+        echo "  php cli.php [command] -h\n";
         echo "\n";
 
         return ExitCode::SUCCESS;

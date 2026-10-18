@@ -16,6 +16,11 @@ final class AgentRestartCommand implements CommandInterface, DatabaseFreeCommand
 {
     use CommandChannelClientTrait;
 
+    /** @var list<string> Option names this command reads, without the leading dashes */
+    public const array OPTIONS = [
+        self::OPTION_NODE,
+    ];
+
     private const string OPTION_NODE = 'node';
 
     /** @param ?Closure(string, array<string, mixed>): CommandChannelResult $channel Command transport, if supplied */

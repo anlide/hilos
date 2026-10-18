@@ -32,6 +32,19 @@ use Hilos\Notification\NotificationSeverity;
  */
 class NotificationTestEmitCommand extends AbstractCommandChannelTestCommand implements DatabaseFreeCommand
 {
+    /** @var list<string> Option names this command reads, without the leading dashes */
+    public const array OPTIONS = [
+        self::OPTION_BODY,
+        self::OPTION_SEVERITY,
+        self::OPTION_CHANNELS,
+    ];
+
+    private const string OPTION_BODY = 'body';
+
+    private const string OPTION_SEVERITY = 'severity';
+
+    private const string OPTION_CHANNELS = 'channels';
+
     /** Separator between channel names inside the --channels option value. */
     private const string CHANNEL_SEPARATOR = ',';
 
@@ -157,8 +170,8 @@ HELP;
             NotificationCommandConstants::FIELD_TITLE => $title,
         ];
 
-        if (isset($options['body'])) {
-            $body = $options['body'];
+        if (isset($options[self::OPTION_BODY])) {
+            $body = $options[self::OPTION_BODY];
             if (!is_string($body) || $body === '') {
                 echo "Option --body must be a non-empty string.\n";
 
@@ -167,8 +180,8 @@ HELP;
             $payload[NotificationCommandConstants::FIELD_BODY] = $body;
         }
 
-        if (isset($options['severity'])) {
-            $severity = $options['severity'];
+        if (isset($options[self::OPTION_SEVERITY])) {
+            $severity = $options[self::OPTION_SEVERITY];
             // Rejected here rather than left to the emit seam, which silently falls back to
             // info: a fixture that asked for a severity must not pass with another one.
             if (!is_string($severity) || !NotificationSeverity::isValid($severity)) {
@@ -180,8 +193,8 @@ HELP;
             $payload[NotificationCommandConstants::FIELD_SEVERITY] = $severity;
         }
 
-        if (isset($options['channels'])) {
-            $channels = $options['channels'];
+        if (isset($options[self::OPTION_CHANNELS])) {
+            $channels = $options[self::OPTION_CHANNELS];
             $names = is_string($channels) ? self::parseChannelList($channels) : [];
             if ($names === []) {
                 echo "Option --channels must name at least one channel.\n";

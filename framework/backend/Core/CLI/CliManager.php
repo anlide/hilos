@@ -115,12 +115,20 @@ use Throwable;
  *
  * Parses the command name, positional arguments and `--key=value` / `--flag`
  * options from argv, then routes execution to the matching registered command.
+ * Parsing knows `--help` and `-h`, and checks every other option against the
+ * command's {@see CommandInterface::OPTIONS} declaration before execute().
  * Each command receives the parsed options and arguments through its execute().
  */
 class CliManager
 {
     /** @var string Option prefix */
     private const string OPTION_PREFIX = '--';
+
+    /** @var string Long help option name, without the prefix */
+    private const string HELP_OPTION = 'help';
+
+    /** @var string Short help flag, the whole token */
+    private const string HELP_SHORT_FLAG = '-h';
 
     /**
      * @var string What a refused command's sentence is prefixed with, the way
@@ -139,6 +147,9 @@ class CliManager
 
     /** @var array<string, mixed> parsed options (--key=value or --flag) */
     private array $options = [];
+
+    /** @var bool True when argv asked for help with `--help`, `--help=<value>`, or `-h` */
+    private bool $helpRequested = false;
 
     /** @var array<string, CommandInterface> Registered commands */
     private array $commands = [];
@@ -379,6 +390,43 @@ class CliManager
     }
 
     /**
+     * Answers help or an undeclared option before the command runs.
+     *
+     * No named registered command answers null, and {@see run()} prints help or the
+     * unknown-command line. Help on a registered command is answered as `help <command>`.
+     * Any other option outside {@see CommandInterface::OPTIONS} is refused on stderr.
+     *
+     * @return ?int Exit code when this gate answered, or null when the command may run
+     */
+    public function answerWithoutRunning(): ?int
+    {
+        if ($this->command === null || !isset($this->commands[$this->command])) {
+            return null;
+        }
+
+        if ($this->helpRequested) {
+            return $this->commands[CliCommands::HELP]->execute([], [$this->command]);
+        }
+
+        $command = $this->commands[$this->command];
+        $unknown = array_diff(array_keys($this->options), $command::OPTIONS);
+        if ($unknown === []) {
+            return null;
+        }
+
+        $names = [];
+        foreach ($unknown as $name) {
+            $names[] = self::OPTION_PREFIX . $name;
+        }
+        $this->writeToStandardError(
+            'Unknown ' . (count($names) === 1 ? 'option' : 'options') . ' ' . implode(', ', $names)
+                . " for {$this->command}; see php cli.php help {$this->command}",
+        );
+
+        return ExitCode::INVALID_ARGUMENT;
+    }
+
+    /**
      * Registers a command under its own name.
      *
      * @param CommandInterface $command Command to register
@@ -459,8 +507,9 @@ class CliManager
     /**
      * Parses command line arguments.
      *
-     * Extracts command, positional arguments and options from argv.
-     * Supports formats:
+     * Extracts the command, positional arguments and options from argv.
+     * `--help`, `--help=<value>` and `-h` set the help flag and stay out of
+     * both. `-h` is not taken as the command name. Supports formats:
      * - --key=value (option with value)
      * - --flag (boolean flag)
      * - positional arguments
@@ -470,24 +519,46 @@ class CliManager
         // Skip script name (argv[0])
         $args = array_slice($this->argv, 1);
 
-        // First argument is command (if not an option)
-        if (count($args) > 0 && !str_starts_with($args[0], self::OPTION_PREFIX)) {
+        // First argument is the command, unless it is an option or the short help flag.
+        if (
+            count($args) > 0
+            && !str_starts_with($args[0], self::OPTION_PREFIX)
+            && $args[0] !== self::HELP_SHORT_FLAG
+        ) {
             $this->command = array_shift($args);
         }
 
         // Parse remaining arguments
         foreach ($args as $arg) {
-            if (preg_match('/^' . preg_quote(self::OPTION_PREFIX) . '([^=]+)=(.+)$/', $arg, $matches)) {
-                // Option with value: --key=value
-                $this->options[$matches[1]] = $matches[2];
+            if ($arg === self::HELP_SHORT_FLAG) {
+                $this->helpRequested = true;
+            } elseif (preg_match('/^' . preg_quote(self::OPTION_PREFIX) . '([^=]+)=(.+)$/', $arg, $matches)) {
+                // Option with value: --key=value. Help is consumed and not stored.
+                $this->acceptOption($matches[1], $matches[2]);
             } elseif (preg_match('/^' . preg_quote(self::OPTION_PREFIX) . '(.+)$/', $arg, $matches)) {
-                // Boolean flag: --flag
-                $this->options[$matches[1]] = true;
+                // Boolean flag: --flag. Help is consumed and not stored.
+                $this->acceptOption($matches[1], true);
             } else {
                 // Positional argument
                 $this->args[] = $arg;
             }
         }
+    }
+
+    /**
+     * Records one long option, or the help flag when the name is help.
+     *
+     * @param string $name Option name without the leading dashes
+     * @param mixed $value True for a bare flag, or the text after `=`
+     */
+    private function acceptOption(string $name, mixed $value): void
+    {
+        if ($name === self::HELP_OPTION) {
+            $this->helpRequested = true;
+            return;
+        }
+
+        $this->options[$name] = $value;
     }
 
     /**

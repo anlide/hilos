@@ -32,6 +32,11 @@ use Hilos\LLM\Routing\LlmRouter;
  */
 class LlmPingCommand implements CommandInterface
 {
+    /** @var list<string> Option names this command reads, without the leading dashes */
+    public const array OPTIONS = [
+        self::OPTION_PROBE,
+    ];
+
     /** @var int Column width the resolution labels are padded to */
     private const int LABEL_WIDTH = 10;
 
@@ -277,7 +282,7 @@ HELP;
     private function probe(LlmProfile $profile): int
     {
         $client = ClientFactory::createChatClientForProfile($profile);
-        $options = new ChatGenerateOptions(
+        $generateOptions = new ChatGenerateOptions(
             model: $profile->model,
             timeoutSec: $profile->timeoutSec,
             maxTokens: self::PROBE_MAX_TOKENS,
@@ -286,7 +291,7 @@ HELP;
         echo "\n";
 
         try {
-            $client->startGenerate([new Message(Message::ROLE_USER, 'ping')], $options);
+            $client->startGenerate([new Message(Message::ROLE_USER, 'ping')], $generateOptions);
 
             $startedAt = microtime(true);
             while (!$client->hasResult()) {

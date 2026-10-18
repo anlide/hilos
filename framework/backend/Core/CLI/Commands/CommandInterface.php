@@ -22,9 +22,28 @@ use JsonException;
 interface CommandInterface
 {
     /**
+     * @var list<string> Option names this command reads, without the leading dashes, as the operator
+     *     types them (`db-index`, not `--db-index`). {@see CliManager} reads this off the class
+     *     before any of the command's work runs: an option outside the list never reaches
+     *     {@see self::execute()}, and `--help` / `-h` never arrive here either — the gate answers
+     *     them itself.
+     *
+     *     A list of names and not a map, because this door only knows names. What a value means,
+     *     and whether it may be left out, stays with the command that reads it.
+     *
+     *     `CLI-OPTIONS-DECLARED` judges that every option a command reads is named here. A command
+     *     that reads nothing leaves the empty default; one that reads options replaces it with
+     *     exactly those names.
+     */
+    public const array OPTIONS = [];
+
+    /**
      * Executes command with options and positional arguments.
      *
-     * @param array<string, mixed> $options Parsed command options (--key=value or --flag)
+     * `$options` carries only names declared in {@see self::OPTIONS}. Anything else, including
+     * `--help` and `-h`, is answered before this runs and does not arrive.
+     *
+     * @param array<string, mixed> $options Declared options only (`--key=value` or `--flag`)
      * @param list<string> $args Positional arguments
      * @return int Exit code (0 = success, non-zero = error)
      * @throws HilosException When the command refuses its input or its work fails

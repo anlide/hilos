@@ -18,6 +18,7 @@ use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
  *
  * Defines all available CLI command names used throughout the framework.
  * Centralized command name management prevents typos and ensures consistency.
+ * The shared `--db-index` option name lives here too: seven commands read it.
  */
 final class CliCommands
 {
@@ -549,4 +550,13 @@ final class CliCommands
      * @var string Command: Reset a setting to its catalog default
      */
     public const string SETTINGS_RESET = 'settings:reset';
+
+    /**
+     * `--db-index` option name shared by the commands that select a database connection.
+     *
+     * An option name, not a command name: seven commands read it, so the spelling has one home.
+     *
+     * @var string Option name without the leading dashes
+     */
+    public const string OPTION_DB_INDEX = 'db-index';
 }

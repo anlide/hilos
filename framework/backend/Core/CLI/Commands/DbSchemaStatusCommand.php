@@ -20,6 +20,17 @@ use Hilos\Core\CLI\Exception\CommandException;
  */
 class DbSchemaStatusCommand implements CommandInterface
 {
+    /** @var list<string> Option names this command reads, without the leading dashes */
+    public const array OPTIONS = [
+        CliCommands::OPTION_DB_INDEX,
+        self::OPTION_TABLE,
+        self::OPTION_VERBOSE,
+    ];
+
+    private const string OPTION_TABLE = 'table';
+
+    private const string OPTION_VERBOSE = 'verbose';
+
     /**
      * Returns command name for CLI routing.
      *
@@ -96,9 +107,9 @@ HELP;
         echo "\n=== Database Schema Status ===\n\n";
 
         // Parse arguments from options
-        $dbIndex = isset($options['db-index']) ? (int)$options['db-index'] : 0;
-        $tableName = $options['table'] ?? null;
-        $verbose = isset($options['verbose']);
+        $dbIndex = isset($options[CliCommands::OPTION_DB_INDEX]) ? (int)$options[CliCommands::OPTION_DB_INDEX] : 0;
+        $tableName = $options[self::OPTION_TABLE] ?? null;
+        $verbose = isset($options[self::OPTION_VERBOSE]);
 
         // Set database connection index if specified
         Database::useConnection($dbIndex);

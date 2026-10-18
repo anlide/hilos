@@ -24,17 +24,17 @@ use Hilos\Environment\Exception\EnvException;
  */
 class TableTestLagCommand extends AbstractCommandChannelTestCommand implements DatabaseFreeCommand
 {
+    /** @var list<string> Option names this command reads, without the leading dashes */
+    public const array OPTIONS = [
+        self::OPTION_WINDOW,
+        self::OPTION_FACETS,
+    ];
+
     /** Option naming the window lag in milliseconds. */
     private const string OPTION_WINDOW = 'window';
 
     /** Option naming the facet count lag in milliseconds. */
     private const string OPTION_FACETS = 'facets';
-
-    /** Payload field each option travels under, in the order the options are checked. */
-    private const array OPTION_FIELDS = [
-        self::OPTION_WINDOW => CommandConstants::FIELD_WINDOW_MS,
-        self::OPTION_FACETS => CommandConstants::FIELD_FACETS_MS,
-    ];
 
     /**
      * Returns command name for CLI routing.
@@ -98,18 +98,22 @@ HELP;
      */
     protected function run(array $options, array $args): int
     {
-        $payload = [];
-        foreach (self::OPTION_FIELDS as $option => $field) {
-            // external-boundary: the operator's command line; absent means that lag is off
-            $raw = $options[$option] ?? '0';
-            if (!is_string($raw) || preg_match('/^\d+$/', $raw) !== 1) {
-                echo "Error: --{$option} must be a whole number of milliseconds, 0 or more\n";
-
-                return ExitCode::ERROR;
-            }
-
-            $payload[$field] = (int)$raw;
+        // external-boundary: the operator's command line; absent means that lag is off
+        $windowLagMs = $this->lagMilliseconds(self::OPTION_WINDOW, $options[self::OPTION_WINDOW] ?? '0');
+        if ($windowLagMs === null) {
+            return ExitCode::ERROR;
         }
+
+        // external-boundary: the operator's command line; absent means that lag is off
+        $facetsLagMs = $this->lagMilliseconds(self::OPTION_FACETS, $options[self::OPTION_FACETS] ?? '0');
+        if ($facetsLagMs === null) {
+            return ExitCode::ERROR;
+        }
+
+        $payload = [
+            CommandConstants::FIELD_WINDOW_MS => $windowLagMs,
+            CommandConstants::FIELD_FACETS_MS => $facetsLagMs,
+        ];
 
         try {
             $result = $this->sendCommand(CliCommands::TABLE_TEST_LAG, $payload);
@@ -144,5 +148,26 @@ HELP;
             : "Table lag: window {$windowMs} ms, facets {$facetsMs} ms\n";
 
         return ExitCode::SUCCESS;
+    }
+
+    /**
+     * Reads one lag option as a whole number of milliseconds, 0 or more.
+     *
+     * Prints the refusal the operator sees and returns null when the value is not that number.
+     * Absence is not a refusal: the caller passes the off default before this is asked.
+     *
+     * @param string $option Option name as typed, without the leading dashes
+     * @param mixed $raw Operator value, or the off default when the option was left out
+     * @return ?int Milliseconds, or null when the value is refused
+     */
+    private function lagMilliseconds(string $option, mixed $raw): ?int
+    {
+        if (!is_string($raw) || preg_match('/^\d+$/', $raw) !== 1) {
+            echo "Error: --{$option} must be a whole number of milliseconds, 0 or more\n";
+
+            return null;
+        }
+
+        return (int)$raw;
     }
 }

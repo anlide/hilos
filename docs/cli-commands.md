@@ -8,6 +8,7 @@ Hilos includes a command-line interface for management. Commands can be run via 
 php cli.php daemon:status     # Display daemon status and metrics
 php cli.php daemon:monitor    # Real-time daemon monitoring (requires TTY)
 php cli.php help              # Show help; use "php cli.php help <command>" for command-specific help
+php cli.php <command> --help   # or -h: the command's help; nothing runs
 ```
 
 ## Database Migrations
@@ -27,6 +28,8 @@ php cli.php db:migration:release <holder> [options] # Release a rollout claim a 
 | `--db-index=<N>` | db:migration:*, db:* | Database connection index (default: 0) |
 | `--to=<version>` | db:migration:up | Migrate up to specific version only |
 | `--force` | db:migration:up, db:migration:down | Force despite failures (use with caution) |
+
+An option the command does not have is refused with exit 2.
 
 ## Database Schema
 

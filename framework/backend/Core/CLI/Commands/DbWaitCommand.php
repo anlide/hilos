@@ -23,6 +23,16 @@ use mysqli_sql_exception;
  */
 class DbWaitCommand implements CommandInterface, DatabaseFreeCommand
 {
+    /** @var list<string> Option names this command reads, without the leading dashes */
+    public const array OPTIONS = [
+        self::OPTION_INTERVAL,
+        self::OPTION_TIMEOUT,
+    ];
+
+    private const string OPTION_INTERVAL = 'interval';
+
+    private const string OPTION_TIMEOUT = 'timeout';
+
     /** @var int Poll interval in seconds */
     private const int DEFAULT_INTERVAL_SEC = 2;
 
@@ -98,8 +108,8 @@ HELP;
      */
     public function execute(array $options, array $args): int
     {
-        $interval = isset($options['interval']) ? (int)$options['interval'] : self::DEFAULT_INTERVAL_SEC;
-        $timeout = isset($options['timeout']) ? (int)$options['timeout'] : self::DEFAULT_TIMEOUT_SEC;
+        $interval = isset($options[self::OPTION_INTERVAL]) ? (int)$options[self::OPTION_INTERVAL] : self::DEFAULT_INTERVAL_SEC;
+        $timeout = isset($options[self::OPTION_TIMEOUT]) ? (int)$options[self::OPTION_TIMEOUT] : self::DEFAULT_TIMEOUT_SEC;
 
         $host = Hilos::$env[EnvConstants::DB_HOST]->string();
         $port = Hilos::$env[EnvConstants::DB_PORT]->int();

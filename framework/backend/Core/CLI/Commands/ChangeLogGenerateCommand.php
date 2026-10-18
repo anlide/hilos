@@ -56,7 +56,7 @@ HELP;
     }
 
     /**
-     * @param array<string, mixed> $options Parsed options; none are accepted
+     * @param array<string, mixed> $options Parsed options; none are declared
      * @param list<string> $args Positional arguments; none are accepted
      * @return int Exit code
      * @throws CommandException When arguments are supplied
@@ -64,7 +64,7 @@ HELP;
      */
     public function execute(array $options, array $args): int
     {
-        if ($options !== [] || $args !== []) {
+        if ($args !== []) {
             throw new CommandException('db:change-log:generate takes no arguments');
         }
 

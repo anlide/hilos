@@ -38,6 +38,22 @@ final class NotificationTestSeedCommand extends TestOnlyCommand
         HilosDbContext::notificationDeliveries => TruthSourceOperation::BY_KIND,
     ];
 
+    /** @var list<string> Option names this command reads, without the leading dashes */
+    public const array OPTIONS = [
+        self::OPTION_USER,
+        self::OPTION_READ,
+        self::OPTION_PREFIX,
+        self::OPTION_DELIVERED,
+    ];
+
+    private const string OPTION_USER = 'user';
+
+    private const string OPTION_READ = 'read';
+
+    private const string OPTION_PREFIX = 'prefix';
+
+    private const string OPTION_DELIVERED = 'delivered';
+
     /** @var string Default fixture recipient when --user is not given */
     private const string DEFAULT_USER = 'seed-001@example.test';
 
@@ -143,14 +159,14 @@ HELP;
         }
         $count = (int)$countArg;
 
-        $user = $options['user'] ?? self::DEFAULT_USER;
+        $user = $options[self::OPTION_USER] ?? self::DEFAULT_USER;
         if (!is_string($user) || $user === '') {
             echo "Option --user must be a non-empty string.\n";
 
             return ExitCode::INVALID_ARGUMENT;
         }
 
-        $readArg = $options['read'] ?? '0';
+        $readArg = $options[self::OPTION_READ] ?? '0';
         if (!is_string($readArg) || preg_match('/^\d+$/', $readArg) !== 1 || (int)$readArg > $count) {
             $this->printUsage();
 
@@ -158,7 +174,7 @@ HELP;
         }
         $read = (int)$readArg;
 
-        $prefix = $options['prefix'] ?? self::DEFAULT_PREFIX;
+        $prefix = $options[self::OPTION_PREFIX] ?? self::DEFAULT_PREFIX;
         if (!is_string($prefix) || $prefix === '') {
             echo "Option --prefix must be a non-empty string.\n";
 
@@ -166,8 +182,8 @@ HELP;
         }
 
         $channel = null;
-        if (array_key_exists('delivered', $options)) {
-            $deliveredOption = $options['delivered'];
+        if (array_key_exists(self::OPTION_DELIVERED, $options)) {
+            $deliveredOption = $options[self::OPTION_DELIVERED];
             if (!is_string($deliveredOption) || $deliveredOption === '') {
                 $this->printUsage();
 

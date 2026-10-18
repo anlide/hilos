@@ -26,6 +26,7 @@ final readonly class MethodRecord
      * @param array<int, CallSite> $callSites Calls, throws and opaque entries found in the body, in source order
      * @param array<string, string> $variableTypes Declared type by variable name, an `[]` suffix marking an array of it
      * @param array<string, array{base: string, path: array<int, string>}> $arrayBindings Iterated receiver by loop variable
+     * @param array<int, OptionAccess> $optionAccesses Reads of `$options` and handoffs of the variable whole, class names already resolved
      */
     public function __construct(
         public string $class,
@@ -37,6 +38,7 @@ final readonly class MethodRecord
         public array $callSites,
         public array $variableTypes,
         public array $arrayBindings,
+        public array $optionAccesses,
     ) {
     }
 

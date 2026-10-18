@@ -10,7 +10,8 @@ use Hilos\Tests\CodeStyle\SourceScanner;
  * One tokenization pass over the production roots, kept as the little the cross-file
  * rules need: which classes exist, where they stand, whether they are abstract, what
  * they extend, use and implement, which constants and methods they declare with which
- * visibility and `@throws`, and where inside each body a call or a `throw` sits.
+ * visibility and `@throws`, where inside each body a call or a `throw` sits, and where
+ * a body reads `$options` or passes that variable into a call.
  *
  * The index is always built over every production root, whatever zone is judged: a
  * demo calls the framework, and an index cut down to the judged zone would answer
@@ -52,6 +53,12 @@ final class SourceIndex
 
     /** `ArrayAccess` method `unset()` reaches. */
     private const string INDEX_DROP = 'offsetUnset';
+
+    /** Variable whose reads the options rule judges, and no other spelling of it. */
+    private const string OPTIONS_VARIABLE = '$options';
+
+    /** Builtin that asks whether a key is present without reading the value through the index. */
+    private const string ARRAY_KEY_EXISTS = 'array_key_exists';
 
     /** @var array<string, ClassRecord> Indexed classes keyed by lowercased fully qualified name */
     private array $classes = [];
@@ -483,6 +490,7 @@ final class SourceIndex
         $properties = [];
         $docProperties = $this->propertyTags($classDoc);
         $constants = [];
+        $qualifiedConstants = [];
         $constantClasses = [];
         $doc = null;
         $modifiers = [];
@@ -513,8 +521,9 @@ final class SourceIndex
                 continue;
             }
             if ($type === T_CONST) {
-                $declaredConstants = $this->readConstants();
+                [$declaredConstants, $declaredQualified] = $this->readConstants();
                 $constants = [...$constants, ...$declaredConstants];
+                $qualifiedConstants = [...$qualifiedConstants, ...$declaredQualified];
                 foreach ($declaredConstants as $constant => $value) {
                     if (!str_ends_with($value, '::class')) {
                         continue;
@@ -574,6 +583,7 @@ final class SourceIndex
             $properties,
             $docProperties,
             $constants,
+            $qualifiedConstants,
             $constantClasses,
             $isAbstract,
             $line,
@@ -590,15 +600,21 @@ final class SourceIndex
      * whatever name token stands directly before it — which is also how one statement
      * declaring several constants is read, one comma-separated part at a time.
      *
-     * @return array<string, string> Raw value text by constant name
+     * The qualified copy resolves a class named before `::` while the file's imports are
+     * still known. The raw copy stays as written: a rule that compares value text
+     * (`PageReach::ACTION_HOST`) would stop matching if the name were rewritten in place.
+     *
+     * @return array{0: array<string, string>, 1: array<string, string>} Raw value text, then the same text with class names qualified
      */
     private function readConstants(): array
     {
         $this->cursor++;
         $constants = [];
+        $qualified = [];
         $declared = null;
         $name = null;
         $value = '';
+        $qualifiedValue = '';
         while (isset($this->tokens[$this->cursor])) {
             $token = $this->tokens[$this->cursor];
             $type = $token[0];
@@ -621,26 +637,66 @@ final class SourceIndex
             }
             if ($type === ',') {
                 $constants[$name] = $value;
-                [$declared, $name, $value] = [null, null, ''];
+                $qualified[$name] = $qualifiedValue;
+                [$declared, $name, $value, $qualifiedValue] = [null, null, '', ''];
                 $this->cursor++;
                 continue;
             }
             if ($type === '(' || $type === '[') {
                 $close = $this->matchingBracket($this->cursor, $type, $type === '(' ? ')' : ']');
                 for (; $this->cursor <= $close; $this->cursor++) {
-                    $value .= $this->tokens[$this->cursor][1];
+                    $this->appendConstantText($this->cursor, $value, $qualifiedValue);
                 }
                 continue;
             }
-            $value .= $token[1];
+            $this->appendConstantText($this->cursor, $value, $qualifiedValue);
             $this->cursor++;
         }
 
         if ($name !== null) {
             $constants[$name] = $value;
+            $qualified[$name] = $qualifiedValue;
         }
 
-        return $constants;
+        return [$constants, $qualified];
+    }
+
+    /**
+     * @param int $cursor Index of the token being copied into a constant value
+     * @param string $raw Raw value text accumulated so far
+     * @param string $qualified Value text with class names resolved, accumulated so far
+     */
+    private function appendConstantText(int $cursor, string &$raw, string &$qualified): void
+    {
+        $raw .= $this->tokens[$cursor][1];
+        $qualified .= $this->qualifiedTokenText($cursor);
+    }
+
+    /**
+     * A name that introduces `Class::member` is resolved; `self`, `static` and `parent`
+     * stay written, and so does a name that is itself the member (`Foo::bar::baz`
+     * qualifies `Foo` only). The member is resolved later, by the rule, once it knows
+     * which class the constant is read on.
+     *
+     * @param int $cursor Index of the token being copied
+     * @return string Text to append to the qualified value
+     */
+    private function qualifiedTokenText(int $cursor): string
+    {
+        $token = $this->tokens[$cursor];
+        $text = $token[1];
+        if (!$this->isName($token) || ($this->tokens[$cursor + 1][0] ?? null) !== T_DOUBLE_COLON) {
+            return $text;
+        }
+        if (($this->tokens[$cursor - 1][0] ?? null) === T_DOUBLE_COLON) {
+            return $text;
+        }
+        $written = strtolower($text);
+        if ($written === 'self' || $written === 'static' || $written === 'parent') {
+            return $text;
+        }
+
+        return $this->resolveName($text);
     }
 
     /**
@@ -677,8 +733,9 @@ final class SourceIndex
         $hasBody = ($this->tokens[$this->cursor][0] ?? null) === '{';
         $callSites = [];
         $arrayBindings = [];
+        $optionAccesses = [];
         if ($hasBody) {
-            [$callSites, $arrayBindings] = $this->readMethodBody($class);
+            [$callSites, $arrayBindings, $optionAccesses] = $this->readMethodBody($class);
         } else {
             $this->cursor++;
         }
@@ -693,6 +750,7 @@ final class SourceIndex
             $callSites,
             $variableTypes,
             $arrayBindings,
+            $optionAccesses,
         );
     }
 
@@ -778,7 +836,7 @@ final class SourceIndex
      * not a body anyone may claim cannot throw.
      *
      * @param string $class Fully qualified name of the declaring class
-     * @return array{0: array<int, CallSite>, 1: array<string, array{base: string, path: array<int, string>}>}
+     * @return array{0: array<int, CallSite>, 1: array<string, array{base: string, path: array<int, string>}>, 2: array<int, OptionAccess>}
      */
     private function readMethodBody(string $class): array
     {
@@ -867,7 +925,7 @@ final class SourceIndex
             ARRAY_FILTER_USE_BOTH,
         );
 
-        return [$sites, $unambiguous];
+        return [$sites, $unambiguous, $this->readOptionAccesses($start, $end)];
     }
 
     /**
@@ -1036,6 +1094,324 @@ final class SourceIndex
         $after = $this->matchingBracket($bracket, self::INDEX_OPEN, self::INDEX_CLOSE) + 1;
 
         return ($this->tokens[$after][0] ?? null) === '=' ? self::INDEX_WRITE : self::INDEX_READ;
+    }
+
+    /**
+     * Collects every place this body reads `$options` by key, or hands the variable
+     * to a call. Class names in a key or a callee are resolved here: the import table
+     * is not kept on the class, and a rule that parsed the file again would be a
+     * second walk of source the index already holds.
+     *
+     * A write and an `unset` are left out. The options rule judges reads, and an
+     * assignment is not one. `isset` and `empty` are reads: both ask about a key.
+     * `array_key_exists` is the same question written as a call, so it is recorded
+     * as a key and not also as a handoff of the variable.
+     *
+     * @param int $start Index of the opening brace
+     * @param int $end Index of the closing brace
+     * @return array<int, OptionAccess> Accesses in source order
+     */
+    private function readOptionAccesses(int $start, int $end): array
+    {
+        $accesses = [];
+        $cursor = $start + 1;
+        while ($cursor < $end) {
+            $token = $this->tokens[$cursor];
+            if ($this->isArrayKeyExists($cursor)) {
+                $close = $this->matchingBracket($cursor + 1, '(', ')');
+                $recorded = $this->readArrayKeyExists($cursor, $close);
+                if ($recorded !== null) {
+                    $accesses[] = $recorded;
+                    $cursor = $close + 1;
+                    continue;
+                }
+            }
+            if ($token[0] === T_VARIABLE && $token[1] === self::OPTIONS_VARIABLE) {
+                if (($this->tokens[$cursor + 1][0] ?? null) === self::INDEX_OPEN) {
+                    $close = $this->matchingBracket($cursor + 1, self::INDEX_OPEN, self::INDEX_CLOSE);
+                    if ($close > $cursor && $close <= $end) {
+                        $target = $this->indexTarget($cursor, $cursor + 1);
+                        if ($target === self::INDEX_READ || $target === self::INDEX_TEST) {
+                            $accesses[] = $this->optionKey($token[2], $cursor + 2, $close);
+                        }
+                        $cursor = $close + 1;
+                        continue;
+                    }
+                }
+                $handoff = $this->optionHandoff($cursor);
+                if ($handoff !== null) {
+                    $accesses[] = $handoff;
+                }
+            }
+            $cursor++;
+        }
+
+        return $accesses;
+    }
+
+    /**
+     * @param int $cursor Index of the name that may be `array_key_exists`
+     * @return bool True when that name is the builtin and a call follows it
+     */
+    private function isArrayKeyExists(int $cursor): bool
+    {
+        $token = $this->tokens[$cursor];
+        if (!$this->isName($token) || ($this->tokens[$cursor + 1][0] ?? null) !== '(') {
+            return false;
+        }
+
+        return strtolower(ltrim($token[1], '\\')) === self::ARRAY_KEY_EXISTS;
+    }
+
+    /**
+     * @param int $name Index of the `array_key_exists` token
+     * @param int $close Index of the call's closing parenthesis
+     * @return ?OptionAccess The key read, or null when the subject is not `$options`
+     */
+    private function readArrayKeyExists(int $name, int $close): ?OptionAccess
+    {
+        $arguments = $this->argumentTokens($name + 1, $close);
+        $subject = $arguments[1] ?? null;
+        if ($subject === null || count($subject) !== 1) {
+            return null;
+        }
+        $variable = $subject[0];
+        if ($variable[0] !== T_VARIABLE || $variable[1] !== self::OPTIONS_VARIABLE) {
+            return null;
+        }
+
+        return $this->keyFromTokens($arguments[0], $this->tokens[$name][2]);
+    }
+
+    /**
+     * @param int $open Index of the opening parenthesis
+     * @param int $close Index of the closing parenthesis
+     * @return array<int, array<int, array{0: int|string, 1: string, 2: int}>> Tokens of each argument, commas dropped
+     */
+    private function argumentTokens(int $open, int $close): array
+    {
+        $arguments = [];
+        $current = [];
+        $depth = 0;
+        for ($index = $open + 1; $index < $close; $index++) {
+            $type = $this->tokens[$index][0];
+            if ($type === '(' || $type === self::INDEX_OPEN || in_array($type, self::BRACE_OPENERS, true)) {
+                $depth++;
+                $current[] = $this->tokens[$index];
+                continue;
+            }
+            if ($type === ')' || $type === self::INDEX_CLOSE || $type === '}') {
+                $depth--;
+                $current[] = $this->tokens[$index];
+                continue;
+            }
+            if ($type === ',' && $depth === 0) {
+                $arguments[] = $current;
+                $current = [];
+                continue;
+            }
+            $current[] = $this->tokens[$index];
+        }
+        if ($current !== []) {
+            $arguments[] = $current;
+        }
+
+        return $arguments;
+    }
+
+    /**
+     * @param int $line Line the read sits on
+     * @param int $from Index of the first token of the key
+     * @param int $to Index of the closing bracket, not included
+     * @return OptionAccess The key, or an unnamed read when the key is not a literal or a constant
+     */
+    private function optionKey(int $line, int $from, int $to): OptionAccess
+    {
+        $tokens = [];
+        for ($index = $from; $index < $to; $index++) {
+            $tokens[] = $this->tokens[$index];
+        }
+
+        return $this->keyFromTokens($tokens, $line);
+    }
+
+    /**
+     * @param array<int, array{0: int|string, 1: string, 2: int}> $tokens Tokens of the key, with nothing around them
+     * @param int $line Line the read sits on
+     * @return OptionAccess The key, or an unnamed read when the key is not a literal or a constant
+     */
+    private function keyFromTokens(array $tokens, int $line): OptionAccess
+    {
+        if (count($tokens) === 1 && $tokens[0][0] === T_CONSTANT_ENCAPSED_STRING) {
+            $literal = $this->quotedLiteral($tokens[0][1]);
+            if ($literal !== null) {
+                return new OptionAccess(OptionAccess::KIND_KEY, $line, $literal, null, null, null, null, null);
+            }
+        }
+        if (count($tokens) === 3 && $this->isName($tokens[0]) && $tokens[1][0] === T_DOUBLE_COLON && $this->isMemberName($tokens[2])) {
+            $head = $tokens[0][1];
+            $written = strtolower($head);
+            $constant = $tokens[2][1];
+            if ($written === 'self' || $written === 'static' || $written === 'parent') {
+                return new OptionAccess(OptionAccess::KIND_KEY, $line, null, $written, null, $constant, null, null);
+            }
+
+            return new OptionAccess(
+                OptionAccess::KIND_KEY,
+                $line,
+                null,
+                null,
+                $this->resolveName($head),
+                $constant,
+                null,
+                null,
+            );
+        }
+
+        return new OptionAccess(OptionAccess::KIND_UNNAMED, $line, null, null, null, null, null, null);
+    }
+
+    /**
+     * A bare `$options` is a handoff only when it is one whole argument of a call.
+     * Spread, a language construct (`isset`, `empty`, `unset`) and a value nested
+     * inside an array are not: the first unpacks it, the second does not call a
+     * method, and the third passes a different value.
+     *
+     * @param int $variable Index of the `$options` token
+     * @return ?OptionAccess The handoff, or null when this occurrence is not one
+     */
+    private function optionHandoff(int $variable): ?OptionAccess
+    {
+        $depth = 0;
+        for ($index = $variable - 1; $index >= 0; $index--) {
+            $type = $this->tokens[$index][0];
+            if ($type === ')' || $type === self::INDEX_CLOSE || $type === '}') {
+                $depth++;
+                continue;
+            }
+            if ($type !== '(' && $type !== self::INDEX_OPEN && !in_array($type, self::BRACE_OPENERS, true)) {
+                if ($type === ';' && $depth === 0) {
+                    return null;
+                }
+                continue;
+            }
+            if ($depth > 0) {
+                $depth--;
+                continue;
+            }
+            if ($type !== '(') {
+                return null;
+            }
+            if ($this->spreadArgument($variable)) {
+                return null;
+            }
+            $before = $this->tokens[$index - 1][0] ?? null;
+            if ($before === T_ISSET || $before === T_EMPTY || $before === T_UNSET) {
+                return null;
+            }
+            [$base, $callee] = $this->calleeBefore($index);
+
+            return new OptionAccess(
+                OptionAccess::KIND_HANDOFF,
+                $this->tokens[$variable][2],
+                null,
+                null,
+                null,
+                null,
+                $base,
+                $callee,
+            );
+        }
+
+        return null;
+    }
+
+    /**
+     * @param int $variable Index of the argument token
+     * @return bool True when `...` stands immediately before it
+     */
+    private function spreadArgument(int $variable): bool
+    {
+        return ($this->tokens[$variable - 1][0] ?? null) === T_ELLIPSIS;
+    }
+
+    /**
+     * The base is `$this`, `self`, `static` or `parent` for a direct method of the
+     * enclosing class, {@see OptionAccess::BASE_FUNCTION} for a function, a fully
+     * qualified class for `Class::method` and `new Class`, and empty when the
+     * receiver is a chain or a variable the index cannot name.
+     *
+     * @param int $paren Index of the opening parenthesis
+     * @return array{0: string, 1: string} Callee base and the method or function name
+     */
+    private function calleeBefore(int $paren): array
+    {
+        $nameToken = $this->tokens[$paren - 1] ?? null;
+        if ($nameToken === null || !$this->isMemberName($nameToken)) {
+            return ['', ''];
+        }
+
+        $name = $nameToken[1];
+        $operator = $this->tokens[$paren - 2][0] ?? null;
+        if ($operator === T_OBJECT_OPERATOR || $operator === T_NULLSAFE_OBJECT_OPERATOR) {
+            $receiver = $this->tokens[$paren - 3] ?? null;
+            $beforeReceiver = $this->tokens[$paren - 4][0] ?? null;
+            $continues = $beforeReceiver === T_OBJECT_OPERATOR
+                || $beforeReceiver === T_NULLSAFE_OBJECT_OPERATOR
+                || $beforeReceiver === T_DOUBLE_COLON;
+            if (
+                $receiver !== null
+                && $receiver[0] === T_VARIABLE
+                && $receiver[1] === '$this'
+                && !$continues
+            ) {
+                return [OptionAccess::BASE_THIS, $name];
+            }
+
+            return ['', ''];
+        }
+        if ($operator === T_DOUBLE_COLON) {
+            $classToken = $this->tokens[$paren - 3] ?? null;
+            if ($classToken === null || !$this->isName($classToken)) {
+                return ['', ''];
+            }
+            $written = strtolower($classToken[1]);
+            if ($written === 'self' || $written === 'static' || $written === 'parent') {
+                return [$written, $name];
+            }
+
+            return [$this->resolveName($classToken[1]), $name];
+        }
+        if ($operator === T_NEW) {
+            return [$this->resolveName($name), OptionAccess::CONSTRUCT];
+        }
+
+        return [OptionAccess::BASE_FUNCTION, $name];
+    }
+
+    /**
+     * @param string $token Text of a constant-encapsed string, quotes included
+     * @return ?string The text inside the quotes, or null when the token is not one
+     */
+    private function quotedLiteral(string $token): ?string
+    {
+        $length = strlen($token);
+        if ($length < 2) {
+            return null;
+        }
+        $quote = $token[0];
+        if (($quote !== "'" && $quote !== '"') || $token[$length - 1] !== $quote) {
+            return null;
+        }
+        $inner = substr($token, 1, -1);
+        if (!str_contains($inner, '\\')) {
+            return $inner;
+        }
+        if ($quote === "'") {
+            return str_replace(["\\\\", "\\'"], ['\\', "'"], $inner);
+        }
+
+        return stripcslashes($inner);
     }
 
     /**

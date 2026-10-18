@@ -39,6 +39,16 @@ final class UserTestSeedCommand extends TestOnlyCommand
     /** @var array<string, list<TruthSourceOperation>> Identity rows this command seeds, claimed for it by its runner */
     public const array OWNS_DB = [HilosDbContext::identities => TruthSourceOperation::BY_KIND];
 
+    /** @var list<string> Option names this command reads, without the leading dashes */
+    public const array OPTIONS = [
+        self::OPTION_PREFIX,
+        self::OPTION_PASSWORD,
+    ];
+
+    private const string OPTION_PREFIX = 'prefix';
+
+    private const string OPTION_PASSWORD = 'password';
+
     /** @var string Default identifier prefix when --prefix is not given */
     private const string DEFAULT_PREFIX = 'seed';
 
@@ -129,14 +139,14 @@ HELP;
         }
         $count = (int)$countArg;
 
-        $prefix = $options['prefix'] ?? self::DEFAULT_PREFIX;
+        $prefix = $options[self::OPTION_PREFIX] ?? self::DEFAULT_PREFIX;
         if (!is_string($prefix) || $prefix === '') {
             echo "Option --prefix must be a non-empty string.\n";
 
             return ExitCode::INVALID_ARGUMENT;
         }
 
-        $password = $options['password'] ?? self::DEFAULT_PASSWORD;
+        $password = $options[self::OPTION_PASSWORD] ?? self::DEFAULT_PASSWORD;
         if (!is_string($password) || $password === '') {
             echo "Option --password must be a non-empty string.\n";
 

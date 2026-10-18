@@ -19,6 +19,11 @@ use Hilos\Environment\Exception\EnvException;
  */
 class SeedApplyCommand implements CommandInterface
 {
+    /** @var list<string> Option names this command reads, without the leading dashes */
+    public const array OPTIONS = [
+        CliCommands::OPTION_DB_INDEX,
+    ];
+
     /**
      * Get command name.
      *
@@ -96,7 +101,7 @@ HELP;
     {
         echo "\n=== Database Seed ===\n\n";
 
-        $dbIndex = isset($options['db-index']) ? (int)$options['db-index'] : 0;
+        $dbIndex = isset($options[CliCommands::OPTION_DB_INDEX]) ? (int)$options[CliCommands::OPTION_DB_INDEX] : 0;
         if ($dbIndex !== 0) {
             Database::useConnection($dbIndex);
             echo "Using database connection index: {$dbIndex}\n\n";

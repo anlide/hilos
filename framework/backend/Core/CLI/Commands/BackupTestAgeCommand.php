@@ -29,6 +29,13 @@ use Hilos\Environment\Exception\EnvException;
  */
 class BackupTestAgeCommand extends AbstractCommandChannelTestCommand
 {
+    /** @var list<string> Option names this command reads, without the leading dashes */
+    public const array OPTIONS = [
+        BackupConstants::SCOPE_OPTION,
+        BackupConstants::AT_OPTION,
+        BackupConstants::DAYS_OPTION,
+    ];
+
     /**
      * Returns command name for CLI routing.
      *

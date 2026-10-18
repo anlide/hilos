@@ -2,6 +2,10 @@
 
 Run via: `php Backend/Bootstrap/cli.php <command> [options]`
 
+`--help` / `-h` after the command print its help and run nothing. An option the
+command has not declared is refused with exit 2, before the daemon is asked and
+before the database is connected.
+
 Every command below carries a **site**: the process its work actually happens in. `daemon`
 is the rule and needs no explanation; the other three are departures, each with a written
 reason in its `execution()` declaration. See
@@ -251,11 +255,18 @@ php cli.php test:db:reset
 
 ## Declaring a new command
 
-Three declarations, all made by the command about itself, all read by the spine:
+Four declarations, all made by the command about itself, all read by the spine:
 
 1. **the site** — `execution()`, always; a departure from the daemon rule carries its
    reason ([command-execution.md](command-execution.md));
 2. **the database** — implement `DatabaseFreeCommand` when the bootstrap must not connect
    (above);
 3. **test-only** — extend `TestOnlyCommand` and name the command `test:*` (above); the
-   prefix is the declaration, and the guard fails if the two disagree either way.
+   prefix is the declaration, and the guard fails if the two disagree either way;
+4. **the options** — `OPTIONS` names every option that `execute()` or its helpers and
+   parents read. Read an option by name (a constant or a literal), not through a
+   variable. Do not hand `$options` to another class. An option the command has not
+   declared never reaches the command.
+
+Checked automatically: `CLI-OPTIONS-DECLARED`, see
+[automated-checks.md](../code-style/automated-checks.md).

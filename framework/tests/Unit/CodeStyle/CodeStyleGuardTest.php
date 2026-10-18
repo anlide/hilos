@@ -8,6 +8,7 @@ use Hilos\Tests\CodeStyle\Baseline;
 use Hilos\Tests\CodeStyle\CodeStyleRule;
 use Hilos\Tests\CodeStyle\RootKind;
 use Hilos\Tests\CodeStyle\Rule\BlockingResolutionRule;
+use Hilos\Tests\CodeStyle\Rule\CliOptionsDeclaredRule;
 use Hilos\Tests\CodeStyle\Rule\CodeFqnRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionItemNarrowingRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionObjectListRule;
@@ -200,7 +201,12 @@ final class CodeStyleGuardTest extends TestCase
      */
     private function crossFileRules(): array
     {
-        return [ThrowsPropagationRule::forWholeIndex(), ThrowsOrphanRule::forWholeIndex(), PageReachRule::forPageHierarchy()];
+        return [
+            ThrowsPropagationRule::forWholeIndex(),
+            ThrowsOrphanRule::forWholeIndex(),
+            PageReachRule::forPageHierarchy(),
+            CliOptionsDeclaredRule::forCommandInterface(),
+        ];
     }
 
     /**

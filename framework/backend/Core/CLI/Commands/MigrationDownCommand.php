@@ -18,6 +18,14 @@ use Hilos\Environment\Exception\EnvException;
  */
 class MigrationDownCommand implements CommandInterface
 {
+    /** @var list<string> Option names this command reads, without the leading dashes */
+    public const array OPTIONS = [
+        CliCommands::OPTION_DB_INDEX,
+        self::OPTION_FORCE,
+    ];
+
+    private const string OPTION_FORCE = 'force';
+
     /**
      * Returns command name for CLI routing.
      *
@@ -100,8 +108,8 @@ HELP;
         echo "\n=== Database Migration DOWN ===\n\n";
 
         // Parse arguments from options
-        $dbIndex = isset($options['db-index']) ? (int)$options['db-index'] : 0;
-        $force = isset($options['force']);
+        $dbIndex = isset($options[CliCommands::OPTION_DB_INDEX]) ? (int)$options[CliCommands::OPTION_DB_INDEX] : 0;
+        $force = isset($options[self::OPTION_FORCE]);
         
         // Get target version from positional args
         $targetVersion = !empty($args) && is_numeric($args[0]) ? (int)$args[0] : null;

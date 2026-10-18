@@ -1,6 +1,6 @@
 ---
 name: hilos-cli-commands
-description: Place a Hilos CLI command — which process does its work (the daemon does it, the CLI process initiates and prints), which side of the framework/project line the file lives on, and the site plus reason when it departs from that rule. Use when adding or changing a CLI command, deciding whether a command belongs to the framework or to one project, deciding between doing work in the command and driving an agent over the command channel, writing state from a CLI process that a running daemon also writes, wording what a command prints when the daemon does not answer, or reviewing a command whose body reaches the database or the filesystem directly.
+description: Place a Hilos CLI command — which process does its work (the daemon does it, the CLI process initiates and prints), which side of the framework/project line the file lives on, and the site plus reason when it departs from that rule. Use when adding or changing a CLI command, declaring the options a command reads, deciding whether a command belongs to the framework or to one project, deciding between doing work in the command and driving an agent over the command channel, writing state from a CLI process that a running daemon also writes, wording what a command prints when the daemon does not answer, or reviewing a command whose body reaches the database or the filesystem directly.
 ---
 
 # Hilos CLI Command Placement
@@ -31,20 +31,22 @@ canonical rule before writing or moving command code.
    `CommandExecution::daemon()`. Print the SUCCESS yourself, on stdout; hand a refusal to
    `printRefusal()` and a failed round-trip to `printChannelFailure()`, both of which word
    it, write it to stderr and answer `ExitCode::ERROR`.
-4. Wire the answering half on the owner: add the wire name to its `AGENT_COMMANDS`, branch
+4. Declare in `OPTIONS` every option that `execute()` or its helpers and parents
+   read. See `docs/agents/cli/commands.md`.
+5. Wire the answering half on the owner: add the wire name to its `AGENT_COMMANDS`, branch
    in `onSignalCommand()`, and reply exactly once on every path, success and refusal alike.
    Three of those paths are no longer yours: since HIL-730 the framework itself refuses a
    command no agent owns, one whose agent nothing placed, and one whose node has no live
    link, and it turns an `AgentException` out of your handler into a reply too. What is
    left to you is the refusal only your handler knows about — and the one silence nothing
    can see for you, a handler that returns having neither thrown nor replied.
-5. Only if the work genuinely cannot happen in the daemon, declare a departure — and write
+6. Only if the work genuinely cannot happen in the daemon, declare a departure — and write
    the reason as the factory argument, not as a comment beside it. A departure whose reason
    is blank fails `CommandExecutionRoleTest`.
-6. A `cli-offline-write` command must be reachable in the environments that run it: the CLI
+7. A `cli-offline-write` command must be reachable in the environments that run it: the CLI
    container needs `HILOS_DAEMON_HOST` and `COMMAND_PORT`, because the gate in front of it
    is fail-closed and refuses when it cannot check.
-7. For a test-only command, name it `test:*` — the prefix is the whole declaration, and
+8. For a test-only command, name it `test:*` — the prefix is the whole declaration, and
    `extends TestOnlyCommand` is what has to match it. `TestOnlyNameContractTest` fails
    either way round. Extending `AbstractCommandChannelTestCommand` gives the round-trip, the
    prefix latch, and the `daemon` site in one.
@@ -67,3 +69,6 @@ canonical rule before writing or moving command code.
   today. What decides is the state it touches; naming one demo's directory made fifteen
   commands unreachable to every other project until HIL-729 moved them back.
 - A temporary departure names the ticket that ends it, in the reason itself.
+- Do not read an option the command has not declared in `OPTIONS`. Read it by
+  name (a constant or a literal), not through a variable, and do not hand
+  `$options` to another class. `CLI-OPTIONS-DECLARED` judges this.

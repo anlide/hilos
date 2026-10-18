@@ -44,6 +44,11 @@ use Hilos\Hilos;
  */
 class BackupVerifyCommand implements CommandInterface
 {
+    /** @var list<string> Option names this command reads, without the leading dashes */
+    public const array OPTIONS = [
+        BackupConstants::SCOPE_OPTION,
+    ];
+
     /** Digest characters shown when a mismatch prints both sides; the full 64 would drown the line. */
     private const int DIGEST_PREVIEW = 12;
 

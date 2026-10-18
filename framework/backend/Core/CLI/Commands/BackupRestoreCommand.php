@@ -62,6 +62,15 @@ class BackupRestoreCommand implements CommandInterface
 {
     use CommandChannelClientTrait;
 
+    /** @var list<string> Option names this command reads, without the leading dashes */
+    public const array OPTIONS = [
+        BackupConstants::SCOPE_OPTION,
+        BackupConstants::MIGRATION_INDEX_OPTION,
+        BackupConstants::FORCE_OPTION,
+        BackupConstants::YES_OPTION,
+        BackupConstants::COLD_OPTION,
+    ];
+
     /** Seconds between status polls while monitoring a hot restore. */
     private const int MONITOR_POLL_SECONDS = 1;
 
