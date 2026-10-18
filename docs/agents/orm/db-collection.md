@@ -119,6 +119,55 @@ For direct relation properties on View items, read
 properties, result accessors, and `findBy*()` methods, read
 `docs/agents/orm/accessor-contracts.md`.
 
+## A Concrete Collection Names Its Item
+
+A concrete View or Object collection names its own item in the readers it
+inherits. PhpStorm does not substitute `T` from
+`@extends DbCollection<Item, ObjectCollection>` or
+`@extends Objects<ObjectItem>` into those readers; it falls back on the native
+`?DbItem` / `?Object_`, and a property read by key —
+`Hilos::$db->users[$userId]->name` — is flagged "Potentially polymorphic call".
+The collection names the item once, in its own docblock, and every caller reads
+it typed.
+
+The readers to name, by layer:
+
+- a View collection: `getObjectCollection()` to the class in
+  `OBJECT_COLLECTION_CLASS`; `first()`, `last()`, and `offsetGet()` to the class
+  in `DB_ITEM_CLASS`;
+- an Object collection: `first()`, `last()`, `get()`, and `offsetGet()` to the
+  class in `OBJECT_CLASS`.
+
+The shape is the class-level `@method` block of
+`framework/backend/Database/View/Collection/Users.php` and
+`framework/backend/Database/Object/Collection/Users.php`:
+
+```php
+/**
+ * @extends DbCollection<User, ObjectUsers>
+ * @method ObjectUsers|null getObjectCollection()
+ * @method User|null first()
+ * @method User|null last()
+ * @method User|null offsetGet(mixed $offset)
+ */
+class Users extends DbCollection
+{
+    public const string DB_ITEM_CLASS = User::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectUsers::class;
+```
+
+A real method with the narrow native return type counts the same —
+`offsetGet(mixed $offset): ?Language` in
+`framework/backend/Database/View/Collection/Languages.php` — and is the shape
+when the reader also changes behavior. The type is exactly the class the
+constant names, nullable: a base class, a foreign class, or an extra union
+branch does not narrow. `current()` is not required. An abstract base that does
+not declare the constant, or leaves it empty, names no item and is not judged;
+the concrete collection that sets the constant is. A runtime state collection
+narrows with real methods instead — see [rt-state.md](../runtime/rt-state.md).
+Checked automatically: `COLLECTION-ITEM-NARROWING`, see
+[automated-checks.md](../code-style/automated-checks.md).
+
 ## Collection Actions
 
 Collection actions are for writes that create rows or affect the collection as

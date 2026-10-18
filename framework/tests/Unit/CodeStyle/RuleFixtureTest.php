@@ -8,6 +8,7 @@ use Hilos\Tests\CodeStyle\Baseline;
 use Hilos\Tests\CodeStyle\CodeStyleRule;
 use Hilos\Tests\CodeStyle\Rule\BlockingResolutionRule;
 use Hilos\Tests\CodeStyle\Rule\CodeFqnRule;
+use Hilos\Tests\CodeStyle\Rule\CollectionItemNarrowingRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionObjectListRule;
 use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
@@ -141,6 +142,18 @@ final class RuleFixtureTest extends TestCase
                 'EMPTY-STRING-SENTINEL Bad/Core/Router/TernaryBranch.php:24 — a ternary branch hands back '
                     . '\'\' where the value is missing; keep it null or make the field required '
                     . '(see docs/agents/code-style/method-contracts.md)',
+                'COLLECTION-ITEM-NARROWING Bad/Database/Object/Collection/CollectionItemNarrowingSamples.php:19 — first() '
+                    . 'does not name the item ObjectUser; declare `@method ObjectUser|null first()` '
+                    . '(see docs/agents/orm/db-collection.md)',
+                'COLLECTION-ITEM-NARROWING Bad/Database/Object/Collection/CollectionItemNarrowingSamples.php:19 — last() '
+                    . 'does not name the item ObjectUser; declare `@method ObjectUser|null last()` '
+                    . '(see docs/agents/orm/db-collection.md)',
+                'COLLECTION-ITEM-NARROWING Bad/Database/Object/Collection/CollectionItemNarrowingSamples.php:19 — get() '
+                    . 'does not name the item ObjectUser; declare `@method ObjectUser|null get(int|string $key)` '
+                    . '(see docs/agents/orm/db-collection.md)',
+                'COLLECTION-ITEM-NARROWING Bad/Database/Object/Collection/CollectionItemNarrowingSamples.php:35 — get() '
+                    . 'names User instead of the item ObjectUser; declare `@method ObjectUser|null get(int|string $key)` '
+                    . '(see docs/agents/orm/db-collection.md)',
                 'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:16 — choices @param '
                     . '$choices list<CountryLocaleChoice>: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
                 'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:17 — choices @return '
@@ -205,6 +218,14 @@ final class RuleFixtureTest extends TestCase
                 'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:126 — branches @return '
                     . '(list<int>)|(list<CountryLocaleChoice>): use a typed collection (see '
                     . 'docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-ITEM-NARROWING Bad/Database/View/Collection/CollectionItemNarrowingSamples.php:24 — '
+                    . 'getObjectCollection() names ObjectSessions instead of the item ObjectUsers; '
+                    . 'declare `@method ObjectUsers|null getObjectCollection()` (see docs/agents/orm/db-collection.md)',
+                'COLLECTION-ITEM-NARROWING Bad/Database/View/Collection/CollectionItemNarrowingSamples.php:24 — first() '
+                    . 'does not name the item User; declare `@method User|null first()` (see docs/agents/orm/db-collection.md)',
+                'COLLECTION-ITEM-NARROWING Bad/Database/View/Collection/CollectionItemNarrowingSamples.php:24 — offsetGet() '
+                    . 'names DbItem instead of the item User; declare `@method User|null offsetGet(mixed $offset)` '
+                    . '(see docs/agents/orm/db-collection.md)',
                 'COLLECTION-OBJECT-LIST Bad/Database/View/Collection/CollectionObjectListSamples.php:12 — accept @param $choices '
                     . 'array<int, ChoiceDTO>: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
                 'COLLECTION-OBJECT-LIST Bad/Database/View/Collection/CollectionObjectListSamples.php:15 — choices @return '
@@ -435,6 +456,26 @@ final class RuleFixtureTest extends TestCase
                     . 'outside Database/ and Runtime/ (see docs/agents/runtime/rt-state.md)',
                 'RT-STATE-REACH Bad/RtStateReach.php:25 — $this->stateCollection reaches backing RT state '
                     . 'outside Database/ and Runtime/ (see docs/agents/runtime/rt-state.md)',
+                'COLLECTION-ITEM-NARROWING Bad/Runtime/State/Collection/CollectionItemNarrowingSamples.php:21 — get() '
+                    . 'does not name the state AuthAttempt; declare it as a method: get(?string $id): ?AuthAttempt, '
+                    . 'offsetGet(mixed $offset): AuthAttempt that throws when the row is missing '
+                    . '(docs/agents/runtime/rt-state.md) (see docs/agents/orm/db-collection.md)',
+                'COLLECTION-ITEM-NARROWING Bad/Runtime/State/Collection/CollectionItemNarrowingSamples.php:21 — offsetGet() '
+                    . 'does not name the state AuthAttempt; declare it as a method: get(?string $id): ?AuthAttempt, '
+                    . 'offsetGet(mixed $offset): AuthAttempt that throws when the row is missing '
+                    . '(docs/agents/runtime/rt-state.md) (see docs/agents/orm/db-collection.md)',
+                'COLLECTION-ITEM-NARROWING Bad/Runtime/State/Collection/CollectionItemNarrowingSamples.php:31 — get() '
+                    . 'does not name the state AuthAttempt; declare it as a method: get(?string $id): ?AuthAttempt, '
+                    . 'offsetGet(mixed $offset): AuthAttempt that throws when the row is missing '
+                    . '(docs/agents/runtime/rt-state.md) (see docs/agents/orm/db-collection.md)',
+                'COLLECTION-ITEM-NARROWING Bad/Runtime/State/Collection/CollectionItemNarrowingSamples.php:52 — get() '
+                    . 'names RtState instead of the state AuthAttempt; declare it as a method: get(?string $id): ?AuthAttempt, '
+                    . 'offsetGet(mixed $offset): AuthAttempt that throws when the row is missing '
+                    . '(docs/agents/runtime/rt-state.md) (see docs/agents/orm/db-collection.md)',
+                'COLLECTION-ITEM-NARROWING Bad/Runtime/State/Collection/CollectionItemNarrowingSamples.php:52 — offsetGet() '
+                    . 'names RtState instead of the state AuthAttempt; declare it as a method: get(?string $id): ?AuthAttempt, '
+                    . 'offsetGet(mixed $offset): AuthAttempt that throws when the row is missing '
+                    . '(docs/agents/runtime/rt-state.md) (see docs/agents/orm/db-collection.md)',
                 'SECRET-IN-QUERY Bad/SecretInQuerySamples.php:24 — query param '
                     . 'HilosHttpHeaders::HILOS_SESSION_TOKEN is read from the url; a session token or any '
                     . 'other secret arrives in a cookie or a header '
@@ -564,45 +605,45 @@ final class RuleFixtureTest extends TestCase
                     . 'hydrate() for a row read out of storage (see docs/agents/orm/object.md)',
                 'COLLECTION-OBJECT-LIST Database/Object/Collection/ObjectStoreMutateLookAlikes.php:55 — localNamedLikeTheStore '
                     . '@return array<int, Object_>: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
-                'CODE-FQN Database/Object/Collection/OrmChainSamples.php:44 — '
+                'CODE-FQN Database/Object/Collection/OrmChainSamples.php:48 — '
                     . '\Hilos\Database\Object\Item\AccountDeletion is written out in code; import it and use the '
                     . 'short name (see docs/agents/code-style/qualified-names.md)',
-                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:23 — OrmChainSamples is final; a '
+                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:27 — OrmChainSamples is final; a '
                     . 'framework ORM class is designed for inheritance, and a project extends its table by '
                     . 'subclassing the whole chain — drop final (see docs/agents/orm/inheritance.md)',
-                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:34 — EntityAccountDeletion::getById() '
+                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:38 — EntityAccountDeletion::getById() '
                     . 'builds a framework chain class by name; build through the link '
                     . 'constants — static::OBJECT_CLASS, static::entityClass() — so a subclass mounted under the '
                     . 'framework key is what gets built (see docs/agents/orm/inheritance.md)',
-                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:37 — ObjectAccountDeletion::create() '
+                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:41 — ObjectAccountDeletion::create() '
                     . 'builds a framework chain class by name; build through the link '
                     . 'constants — static::OBJECT_CLASS, static::entityClass() — so a subclass mounted under the '
                     . 'framework key is what gets built (see docs/agents/orm/inheritance.md)',
-                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:38 — ObjectAccountDeletion::fromEntity() '
+                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:42 — ObjectAccountDeletion::fromEntity() '
                     . 'builds a framework chain class by name; build through the link '
                     . 'constants — static::OBJECT_CLASS, static::entityClass() — so a subclass mounted under the '
                     . 'framework key is what gets built (see docs/agents/orm/inheritance.md)',
-                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:39 — EntityAccountDeletion::get() '
+                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:43 — EntityAccountDeletion::get() '
                     . 'builds a framework chain class by name; build through the link '
                     . 'constants — static::OBJECT_CLASS, static::entityClass() — so a subclass mounted under the '
                     . 'framework key is what gets built (see docs/agents/orm/inheritance.md)',
-                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:40 — EntityAccountDeletion::getAll() '
+                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:44 — EntityAccountDeletion::getAll() '
                     . 'builds a framework chain class by name; build through the link '
                     . 'constants — static::OBJECT_CLASS, static::entityClass() — so a subclass mounted under the '
                     . 'framework key is what gets built (see docs/agents/orm/inheritance.md)',
-                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:41 — EntityAccountDeletion::getEmpty() '
+                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:45 — EntityAccountDeletion::getEmpty() '
                     . 'builds a framework chain class by name; build through the link '
                     . 'constants — static::OBJECT_CLASS, static::entityClass() — so a subclass mounted under the '
                     . 'framework key is what gets built (see docs/agents/orm/inheritance.md)',
-                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:42 — EntityAccountDeletion::fromRow() '
+                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:46 — EntityAccountDeletion::fromRow() '
                     . 'builds a framework chain class by name; build through the link '
                     . 'constants — static::OBJECT_CLASS, static::entityClass() — so a subclass mounted under the '
                     . 'framework key is what gets built (see docs/agents/orm/inheritance.md)',
-                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:43 — new EntityAccountDeletion() '
+                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:47 — new EntityAccountDeletion() '
                     . 'builds a framework chain class by name; build through the link '
                     . 'constants — static::OBJECT_CLASS, static::entityClass() — so a subclass mounted under the '
                     . 'framework key is what gets built (see docs/agents/orm/inheritance.md)',
-                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:44 — \Hilos\Database\Object\Item\AccountDeletion::create() '
+                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:48 — \Hilos\Database\Object\Item\AccountDeletion::create() '
                     . 'builds a framework chain class by name; build through the link '
                     . 'constants — static::OBJECT_CLASS, static::entityClass() — so a subclass mounted under the '
                     . 'framework key is what gets built (see docs/agents/orm/inheritance.md)',
@@ -773,6 +814,47 @@ final class RuleFixtureTest extends TestCase
         }
     }
 
+    /**
+     * The same tokens earn a verdict from their root and whole path segments alone, in each of
+     * the three layers. The layer is read off the path, so each layer's own broken sample is what
+     * proves the catch there, and every sample proves the silence outside the three segments.
+     */
+    public function testCollectionItemNarrowingIsJudgedOnlyInProductionCollectionLayers(): void
+    {
+        $layers = [];
+        foreach ([
+            'Database/View/Collection' => [24, 24, 24],
+            'Database/Object/Collection' => [19, 19, 19, 35],
+            'Runtime/State/Collection' => [21, 21, 31, 52, 52],
+        ] as $layer => $lines) {
+            $layers[$layer] = [
+                token_get_all((string)file_get_contents($this->fixtureRoot() . '/Bad/' . $layer . '/CollectionItemNarrowingSamples.php')),
+                $lines,
+            ];
+        }
+        foreach (['framework/backend', 'demo/example/backend', 'framework/tests', 'demo/example/tests', 'scripts'] as $root) {
+            $rule = new CollectionItemNarrowingRule($root);
+            foreach ($layers as $layer => [$tokens, $lines]) {
+                foreach ([$layer . '/Sample.php', 'Nested/' . $layer . '/Sample.php'] as $path) {
+                    $hits = iterator_to_array($rule->check($path, $tokens), false);
+                    $this->assertSame(
+                        in_array($root, ['framework/backend', 'demo/example/backend'], true) ? $lines : [],
+                        array_map(static fn(Violation $hit): int => $hit->line, $hits),
+                        $root . '/' . $path,
+                    );
+                }
+                foreach ([
+                    'Database/View/CollectionExtra/Sample.php',
+                    'Runtime/View/Collection/Sample.php',
+                    'Runtime/State/CollectionExtra/Sample.php',
+                    'Tables/Sample.php',
+                ] as $path) {
+                    $this->assertSame([], iterator_to_array($rule->check($path, $tokens), false), $root . '/' . $path);
+                }
+            }
+        }
+    }
+
     /** A real extra annotation must cross the frozen count through the detector and the shared baseline. */
     public function testCollectionObjectListBaselineRefusesAnAdditionalRealAnnotation(): void
     {
@@ -883,6 +965,7 @@ final class RuleFixtureTest extends TestCase
             new CodeFqnRule($this->fixtureRoot()),
             new PhpDocFqnRule($this->fixtureRoot()),
             new CollectionObjectListRule('framework/backend'),
+            new CollectionItemNarrowingRule('framework/backend'),
             new RtStateReachRule(),
             new RtStateMutationRule(),
             new ObjectStoreMutationRule(),

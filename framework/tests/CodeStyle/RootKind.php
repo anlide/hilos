@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\CodeStyle;
 
+use Hilos\Tests\CodeStyle\Rule\CollectionItemNarrowingRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionObjectListRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
 use Hilos\Tests\CodeStyle\Rule\FsSeamRule;
@@ -58,6 +59,7 @@ enum RootKind
      */
     private const array PRODUCTION_ONLY_RULES = [
         CollectionObjectListRule::ID,
+        CollectionItemNarrowingRule::ID,
         ErrorSuppressionRule::ID,
         FsSeamRule::ID,
         RandomSourceRule::ID,

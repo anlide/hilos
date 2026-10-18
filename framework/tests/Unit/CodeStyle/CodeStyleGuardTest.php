@@ -9,6 +9,7 @@ use Hilos\Tests\CodeStyle\CodeStyleRule;
 use Hilos\Tests\CodeStyle\RootKind;
 use Hilos\Tests\CodeStyle\Rule\BlockingResolutionRule;
 use Hilos\Tests\CodeStyle\Rule\CodeFqnRule;
+use Hilos\Tests\CodeStyle\Rule\CollectionItemNarrowingRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionObjectListRule;
 use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
@@ -218,6 +219,7 @@ final class CodeStyleGuardTest extends TestCase
             new CodeFqnRule($this->repositoryRoot() . '/' . $root),
             new PhpDocFqnRule($this->repositoryRoot() . '/' . $root),
             new CollectionObjectListRule($root),
+            new CollectionItemNarrowingRule($root),
             new RtStateReachRule(),
             new RtStateMutationRule(),
             new ObjectStoreMutationRule(),

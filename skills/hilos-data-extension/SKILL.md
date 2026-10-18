@@ -64,6 +64,11 @@ restart is acceptable and a truth source can own writes.
    skips its owner*).
 4. Inspect the existing View collection/item, Object or State collection/item,
    and collection/item Actions classes.
+   A new concrete collection names its own item — see
+   `docs/agents/orm/db-collection.md` (*A Concrete Collection Names Its Item*)
+   and `docs/agents/runtime/rt-state.md`. Checked automatically by the
+   `COLLECTION-ITEM-NARROWING` guard on `test:framework:unit` — see
+   `docs/agents/code-style/automated-checks.md`.
 5. Add the smallest missing API to the owning layer.
 6. Update frontend representation only when the new data is part of page state:
    View item/collection shape, DTO or signal payload, and subscription response.

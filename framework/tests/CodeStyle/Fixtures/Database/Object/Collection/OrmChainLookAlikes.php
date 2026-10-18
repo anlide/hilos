@@ -20,6 +20,10 @@ use Hilos\Database\Object\Objects;
  * ObjectStoreMutate next door stands for: the same shape in another namespace, and silent.
  *
  * @extends Objects<ObjectAccountDeletion>
+ * @method ObjectAccountDeletion|null first()
+ * @method ObjectAccountDeletion|null last()
+ * @method ObjectAccountDeletion|null get(int|string $key)
+ * @method ObjectAccountDeletion|null offsetGet(mixed $offset)
  */
 class OrmChainLookAlikes extends Objects
 {

@@ -191,6 +191,11 @@ state properties without falling back to `?RtState`. Never cast a nullable
 state key to string before deciding whether it is absent; `null` must not
 address the empty-string state key.
 
+An abstract generic base such as `HilosConnections` names no state class of its
+own; the project collection that sets `STATE_CLASS` is the one that narrows.
+Checked automatically: `COLLECTION-ITEM-NARROWING`, see
+[automated-checks.md](../code-style/automated-checks.md).
+
 Which rows a collection holds changes only through the base `RtActions` methods
 — `addStateToCollection()`, `removeStateFromCollection()`, `clearAllStates()`,
 and the item's `remove()`. The backing collection's `add()` and `remove()`

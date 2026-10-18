@@ -19,6 +19,10 @@ use Hilos\Database\Object\Objects;
  * by this rule for what it builds.
  *
  * @extends Objects<ObjectAccountDeletion>
+ * @method ObjectAccountDeletion|null first()
+ * @method ObjectAccountDeletion|null last()
+ * @method ObjectAccountDeletion|null get(int|string $key)
+ * @method ObjectAccountDeletion|null offsetGet(mixed $offset)
  */
 final class OrmChainSamples extends Objects
 {

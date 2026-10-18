@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\CodeStyle;
 use Hilos\Tests\CodeStyle\RootKind;
 use Hilos\Tests\CodeStyle\Rule\BlockingResolutionRule;
 use Hilos\Tests\CodeStyle\Rule\CodeFqnRule;
+use Hilos\Tests\CodeStyle\Rule\CollectionItemNarrowingRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionObjectListRule;
 use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
@@ -47,6 +48,7 @@ final class ScannedRootsTest extends TestCase
      */
     private const array PRODUCTION_ONLY_RULE_IDS = [
         CollectionObjectListRule::ID,
+        CollectionItemNarrowingRule::ID,
         ErrorSuppressionRule::ID,
         FsSeamRule::ID,
         RandomSourceRule::ID,
