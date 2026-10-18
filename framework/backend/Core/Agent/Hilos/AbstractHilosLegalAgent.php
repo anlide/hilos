@@ -93,10 +93,6 @@ abstract class AbstractHilosLegalAgent extends AbstractHilosAgent
     /**
      * Removes the exports an erasure makes stale.
      *
-     * One more name is taken and dropped: the settings library's answer to a legal setting write is
-     * addressed to the settings page, and an agent-routed signal reaches this agent first and the page
-     * after it, so the answer passes through here on its way there.
-     *
      * @param AgentSignalData $data Typed erasure frame
      * @param string $sender Sending agent identity
      * @param string $name Declared signal name
@@ -111,9 +107,6 @@ abstract class AbstractHilosLegalAgent extends AbstractHilosAgent
                 }
                 LegalAcceptancesExports::forget($this, $data->data->userId);
 
-                return;
-
-            case HilosSignalConstants::HILOS_LEGAL_SETTING_WRITE_DONE:
                 return;
 
             default:

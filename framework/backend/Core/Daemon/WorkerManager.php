@@ -2092,26 +2092,30 @@ abstract class WorkerManager extends BaseManager implements PageResender
                     $this->onAgentSignalHandled($name, $signalData);
                     $dispatch = function () use ($signalData, $name, $agent, $sender, $agentId): void {
                         $parsedAgentSignalData = $signalData;
-                        try {
-                            $parsedAgentSignalData = Hilos::$sr?->createAgentSignalPayloadDTO($name, $signalData) ?? $signalData;
-                            $ask = $parsedAgentSignalData->data;
-                            if ($ask instanceof HandoverAskInterface) {
-                                // The receipt of an ask is where the write it asks for gets its author:
-                                // the handler runs where no connection is served, and the asker travels
-                                // in the frame (HIL-1001). Only the agent's handler - the page dispatch
-                                // below answers a client and writes on nobody's behalf.
-                                ExecutionContext::withOrigin(
-                                    $ask->acceptKey,
-                                    $ask->requestId,
-                                    static fn () => $agent->onSignalAgent($parsedAgentSignalData, $sender, $name),
-                                );
-                            } else {
-                                $agent->onSignalAgent($parsedAgentSignalData, $sender, $name);
+                        // A page-declared name is its own answer; the agent merely serves that page
+                        // and cannot know the name, so its handler is not asked (HIL-1541).
+                        if (!$this->pageOwnsAgentSignal($agentId, $agent, $name)) {
+                            try {
+                                $parsedAgentSignalData = Hilos::$sr?->createAgentSignalPayloadDTO($name, $signalData) ?? $signalData;
+                                $ask = $parsedAgentSignalData->data;
+                                if ($ask instanceof HandoverAskInterface) {
+                                    // The receipt of an ask is where the write it asks for gets its author:
+                                    // the handler runs where no connection is served, and the asker travels
+                                    // in the frame (HIL-1001). Only the agent's handler - the page dispatch
+                                    // below answers a client and writes on nobody's behalf.
+                                    ExecutionContext::withOrigin(
+                                        $ask->acceptKey,
+                                        $ask->requestId,
+                                        static fn () => $agent->onSignalAgent($parsedAgentSignalData, $sender, $name),
+                                    );
+                                } else {
+                                    $agent->onSignalAgent($parsedAgentSignalData, $sender, $name);
+                                }
+                            } catch (InvalidAgentSignalPayloadException $e) {
+                                Logger::logAgentError($agent->getId(), "Agent signal payload validation failed: {$e->getMessage()}");
+                            } catch (AgentException $e) {
+                                Logger::logAgentError($agent->getId(), "Agent signal handler failed: {$e->getMessage()}");
                             }
-                        } catch (InvalidAgentSignalPayloadException $e) {
-                            Logger::logAgentError($agent->getId(), "Agent signal payload validation failed: {$e->getMessage()}");
-                        } catch (AgentException $e) {
-                            Logger::logAgentError($agent->getId(), "Agent signal handler failed: {$e->getMessage()}");
                         }
                         try {
                             $this->getPageSignalRouter($agentId, $agent)->dispatchAgentSignal($parsedAgentSignalData, $sender, $name);
@@ -2402,6 +2406,24 @@ abstract class WorkerManager extends BaseManager implements PageResender
 
         $this->pageSignalRouters[$agentId] = $this->createPageSignalRouter($agent);
         return $this->pageSignalRouters[$agentId];
+    }
+
+    /**
+     * An agent without a page router still receives its signals as before; the subsequent page
+     * dispatch raises the same missing-router exception it did before this ownership check.
+     *
+     * @param string $agentId Serving agent id
+     * @param AgentInterface $agent Serving agent instance
+     * @param string $name Agent-signal name
+     * @return bool Whether a page owns the name, or false when the agent has no page router
+     */
+    private function pageOwnsAgentSignal(string $agentId, AgentInterface $agent, string $name): bool
+    {
+        try {
+            return $this->getPageSignalRouter($agentId, $agent)->ownsAgentSignal($name);
+        } catch (PageSignalRouterNotFoundException) {
+            return false;
+        }
     }
 
     /**

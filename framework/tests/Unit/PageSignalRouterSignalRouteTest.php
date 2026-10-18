@@ -60,6 +60,49 @@ final class PageSignalRouterSignalRouteTest extends TestCase
         $this->assertSame('moderation_result', $page->agentSignalName);
     }
 
+    public function testOwnsConfiguredAgentSignalWithoutCreatingPage(): void
+    {
+        $factory = new PageSignalRouterTestPageFactory(new PageSignalRouterTestAgent());
+        $router = new PageSignalRouter(
+            $factory,
+            new ActionRouteConfig(),
+            new SignalRouteConfig([
+                SignalTypeConstants::AGENT_SIGNAL => [
+                    'moderation_result' => PageSignalRouterTestPage::PAGE,
+                ],
+            ]),
+        );
+
+        $this->assertTrue($router->ownsAgentSignal('moderation_result'));
+        $this->assertSame(0, $factory->createPageCount);
+    }
+
+    public function testDoesNotOwnAgentSignalWithoutRouteOrCreatePage(): void
+    {
+        $factory = new PageSignalRouterTestPageFactory(new PageSignalRouterTestAgent());
+        $router = new PageSignalRouter($factory, new ActionRouteConfig());
+
+        $this->assertFalse($router->ownsAgentSignal('moderation_result'));
+        $this->assertSame(0, $factory->createPageCount);
+    }
+
+    public function testCronRouteDoesNotOwnAgentSignalWithTheSameNameOrCreatePage(): void
+    {
+        $factory = new PageSignalRouterTestPageFactory(new PageSignalRouterTestAgent());
+        $router = new PageSignalRouter(
+            $factory,
+            new ActionRouteConfig(),
+            new SignalRouteConfig([
+                SignalTypeConstants::CRON => [
+                    'moderation_result' => PageSignalRouterTestPage::PAGE,
+                ],
+            ]),
+        );
+
+        $this->assertFalse($router->ownsAgentSignal('moderation_result'));
+        $this->assertSame(0, $factory->createPageCount);
+    }
+
     public function testDispatchTableViewportStoresTheDescriptor(): void
     {
         $previousRouter = HilosFacade::$sr;

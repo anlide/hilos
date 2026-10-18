@@ -102,7 +102,8 @@ Topology parsing happens on the worker before handlers:
 
 - `ACTION` → `HilosPageFactory::createActionPayloadDTO()` → `onAction()`
 - page-routed `AGENT_SIGNAL` → `HilosPageFactory::createPageSignalPayloadDTO()`
-  → `onSignalAgent()`
+  → page `onSignalAgent()` only; the serving agent's handler is not called for
+  a name declared by the page.
 - agent-owned `AGENT_SIGNAL` → `SignalRouter::createAgentSignalPayloadDTO()`
   → agent `onSignalAgent()`
 

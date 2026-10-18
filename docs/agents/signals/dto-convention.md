@@ -295,6 +295,14 @@ type private handlers the same way. `PageSignalRouter::dispatchAgentSignal()`
 parses through `HilosPageFactory::createPageSignalPayloadDTO()` before
 `onSignalAgent()`.
 
+A signal name declared in a page's `SIGNALS[AGENT_SIGNAL]` is that page's
+own reply. `WorkerManager` asks `PageSignalRouter::ownsAgentSignal()` and
+delivers it only to the page router; the serving agent's `onSignalAgent()` is
+not called. Do not add a `case` for a page reply to the serving agent. Its
+`default` still throws `AgentUnknownSignalException` for a name declared by
+neither the agent nor the page, and `WorkerManager` still logs that failure
+at `ERROR` in the agent's log.
+
 Known signal names with a topology DTO rely on dispatch-time parsing. For
 routing-only signals, validate the exact payload class manually. A mismatched inner
 payload is a contract error: throw `InvalidAgentSignalPayloadException`, do not

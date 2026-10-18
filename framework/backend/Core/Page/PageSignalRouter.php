@@ -2389,6 +2389,18 @@ class PageSignalRouter
     }
 
     /**
+     * The worker asks before calling the agent handler: a page's own answer travels through
+     * the agent serving that page, whose handler cannot be expected to know the name.
+     *
+     * @param string $name Agent-signal name
+     * @return bool Whether a page owns this agent-signal name
+     */
+    public function ownsAgentSignal(string $name): bool
+    {
+        return $this->signalRoutes->getPageForSignal(SignalTypeConstants::AGENT_SIGNAL, $name) !== null;
+    }
+
+    /**
      * Dispatch agent-to-agent signal to its configured page handler.
      *
      * The throttle verdict is answered here rather than by a page: it belongs to an action
