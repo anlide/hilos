@@ -777,6 +777,58 @@ final class TopologyValidatorTest extends TestCase
         );
     }
 
+    /**
+     * PARAM cannot address a registered NODE-scoped page owner.
+     */
+    public function testParamSourceOnNodeScopedOwnerFails(): void
+    {
+        $this->assertTopologyErrors(
+            static fn(): mixed => TopologyNodeAddressedParamHilos::validateTopology(),
+            [
+                'PAGES[' . TopologyNodeAddressedParamPage::PAGE . ']',
+                'with source ' . PageAgentIndexSource::PARAM->value,
+                'NODE-scoped SUBSCRIPTION_AGENT_TYPE ' . TopologyPageNodeAgent::AGENT_TYPE,
+                'use source ' . PageAgentIndexSource::NODE_PARAM->value,
+            ],
+        );
+    }
+
+    /**
+     * SESSION_USER cannot address a registered NODE-scoped page owner.
+     *
+     * The page is authenticated, so the older public-page refusal cannot satisfy this assertion.
+     */
+    public function testSessionUserSourceOnNodeScopedOwnerFails(): void
+    {
+        $this->assertTopologyErrors(
+            static fn(): mixed => TopologyNodeAddressedSessionUserHilos::validateTopology(),
+            [
+                'PAGES[' . TopologyNodeAddressedSessionUserPage::PAGE . ']',
+                'with source ' . PageAgentIndexSource::SESSION_USER->value,
+                'NODE-scoped SUBSCRIPTION_AGENT_TYPE ' . TopologyPageNodeAgent::AGENT_TYPE,
+                'use source ' . PageAgentIndexSource::NODE_PARAM->value,
+            ],
+        );
+    }
+
+    /**
+     * An authenticated SESSION_USER page with a non-NODE owner stays valid.
+     */
+    public function testAuthenticatedSessionUserOnNonNodeOwnerPasses(): void
+    {
+        TopologyPerInstanceSessionUserHilos::validateTopology();
+
+        $routes = TopologyPerInstanceSessionUserHilos::getPageAgentIndexRoutes();
+        $this->assertSame(
+            PageAgentIndexSource::SESSION_USER,
+            $routes[TopologyPerInstanceSessionUserPage::PAGE]->source,
+        );
+        $this->assertSame(
+            TopologyValidAgent::AGENT_TYPE,
+            $routes[TopologyPerInstanceSessionUserPage::PAGE]->fallbackAgentType,
+        );
+    }
+
     public function testPerInstanceFallbackAgentTypeMissingFromAgentsFails(): void
     {
         $this->expectException(InvalidTopologyException::class);
@@ -5332,6 +5384,29 @@ final class TopologyNodeAddressedMissingParamPage extends TopologyNodeAddressedP
     ];
 }
 
+final class TopologyNodeAddressedParamPage extends TopologyNodeAddressedPage
+{
+    public const string PAGE = 'topology_node_addressed_param_page';
+
+    public const array SUBSCRIPTION_AGENT_INDEX = [
+        PageAgentIndexKey::SOURCE => PageAgentIndexSource::PARAM,
+        PageAgentIndexKey::PARAM => 'nodeId',
+        PageAgentIndexKey::FALLBACK_AGENT_TYPE => TopologyValidAgent::AGENT_TYPE,
+    ];
+}
+
+final class TopologyNodeAddressedSessionUserPage extends TopologyNodeAddressedPage
+{
+    public const string PAGE = 'topology_node_addressed_session_user_page';
+
+    public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::AUTHENTICATED;
+
+    public const array SUBSCRIPTION_AGENT_INDEX = [
+        PageAgentIndexKey::SOURCE => PageAgentIndexSource::SESSION_USER,
+        PageAgentIndexKey::FALLBACK_AGENT_TYPE => TopologyValidAgent::AGENT_TYPE,
+    ];
+}
+
 class TopologyNodeAddressedPageHilos extends HilosFacade
 {
     public const array PAGES = [TopologyNodeAddressedPage::PAGE => TopologyNodeAddressedPage::class];
@@ -5367,6 +5442,18 @@ final class TopologyNodeAddressedWrongFallbackHilos extends TopologyNodeAddresse
 final class TopologyNodeAddressedMissingParamHilos extends TopologyNodeAddressedPageHilos
 {
     public const array PAGES = [TopologyNodeAddressedMissingParamPage::PAGE => TopologyNodeAddressedMissingParamPage::class];
+}
+
+final class TopologyNodeAddressedParamHilos extends TopologyNodeAddressedPageHilos
+{
+    public const array PAGES = [TopologyNodeAddressedParamPage::PAGE => TopologyNodeAddressedParamPage::class];
+}
+
+final class TopologyNodeAddressedSessionUserHilos extends TopologyNodeAddressedPageHilos
+{
+    public const array PAGES = [
+        TopologyNodeAddressedSessionUserPage::PAGE => TopologyNodeAddressedSessionUserPage::class,
+    ];
 }
 
 final class TopologyPerInstanceMissingParamPage extends AbstractPage
@@ -5406,10 +5493,48 @@ final class TopologyPerInstancePublicSessionUserPage extends AbstractPage
     ];
 }
 
+final class TopologyPerInstanceSessionUserPage extends AbstractPage
+{
+    public const string PAGE = 'per_instance_session_user_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+
+    public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::AUTHENTICATED;
+
+    public const array SUBSCRIPTION_AGENT_INDEX = [
+        PageAgentIndexKey::SOURCE => PageAgentIndexSource::SESSION_USER,
+        PageAgentIndexKey::FALLBACK_AGENT_TYPE => 'valid_agent',
+    ];
+}
+
 final class TopologyPerInstancePageHilos extends HilosFacade
 {
     public const array PAGES = [
         TopologyPerInstancePage::PAGE => TopologyPerInstancePage::class,
+    ];
+
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyPerInstanceSessionUserHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyPerInstanceSessionUserPage::PAGE => TopologyPerInstanceSessionUserPage::class,
     ];
 
     public const array AGENTS = [

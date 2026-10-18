@@ -305,6 +305,12 @@ Consequences worth knowing before declaring one:
 "my" page for real.
 For `NODE_PARAM`, it also requires a registered `NODE`-scoped owner and a
 registered fallback with a different scope.
+`PARAM` and `SESSION_USER` cannot address a `NODE`-scoped
+`SUBSCRIPTION_AGENT_TYPE` — an instance index would create an additional
+local replica rather than select a node; a node replica is addressed with
+`NODE_PARAM`:
+`PAGES[{page}] class {pageClass} SUBSCRIPTION_AGENT_INDEX with source param cannot address NODE-scoped SUBSCRIPTION_AGENT_TYPE {agentType}; use source node_param`,
+and `PAGES[{page}] class {pageClass} SUBSCRIPTION_AGENT_INDEX with source session_user cannot address NODE-scoped SUBSCRIPTION_AGENT_TYPE {agentType}; use source node_param`.
 An indexed `SUBSCRIPTION_AGENT_TYPE` that leaves `SUBSCRIPTION_AGENT_INDEX` empty is refused:
 `PAGES[{page}] class {pageClass} SUBSCRIPTION_AGENT_INDEX is required for indexed SUBSCRIPTION_AGENT_TYPE {agentType}`.
 A group whose `SUBSCRIPTION_AGENT_TYPE` is an indexed agent is refused:

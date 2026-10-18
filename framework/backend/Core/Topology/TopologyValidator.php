@@ -2080,7 +2080,9 @@ final class TopologyValidator
      * a malformed entry silently ({@see PageAgentIndexRouteRegistry::routes}), so reading it
      * here would report nothing at all for exactly the pages that need reporting. An indexed
      * owner that leaves the declaration empty is refused in the same pass: the page would be
-     * addressed with no index. The error joins the accumulator and the walk continues.
+     * addressed with no index. A PARAM or SESSION_USER source cannot address a NODE-scoped
+     * owner; that page declares source NODE_PARAM. The error joins the accumulator and the
+     * walk continues.
      *
      * @param array $pages Page registry
      * @param array $agents Agent registry
@@ -2132,8 +2134,16 @@ final class TopologyValidator
                 $errors[] = "{$path} names fallback agent type {$fallbackAgentType}, which is missing from AGENTS";
             }
 
+            $agentType = $pageClass::SUBSCRIPTION_AGENT_TYPE;
+            if (in_array($source, [PageAgentIndexSource::PARAM, PageAgentIndexSource::SESSION_USER], true)
+                && is_string($agentType)
+                && isset($agents[$agentType])
+                && AgentRegistry::scope($agents[$agentType]) === AgentScope::NODE) {
+                $errors[] = "{$path} with source " . $source->value
+                    . " cannot address NODE-scoped SUBSCRIPTION_AGENT_TYPE {$agentType}; use source node_param";
+            }
+
             if ($source === PageAgentIndexSource::NODE_PARAM) {
-                $agentType = $pageClass::SUBSCRIPTION_AGENT_TYPE;
                 if (!is_string($agentType) || !isset($agents[$agentType])
                     || AgentRegistry::scope($agents[$agentType]) !== AgentScope::NODE) {
                     $errors[] = "{$path} with source node_param requires a registered NODE-scoped SUBSCRIPTION_AGENT_TYPE";
