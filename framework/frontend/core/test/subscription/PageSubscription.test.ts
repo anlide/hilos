@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { PageSubscription } from '../../src/subscription/PageSubscription.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
+import { subscribeSignal } from '../../src/state/signal.js'
 import { type EntityRef } from '../../src/state/EntityStore.js'
 import {
   type ConnectionState,
@@ -15,6 +16,7 @@ import {
 /** The connection events the double replays. */
 interface FakeConnectionEvents {
   state: ConnectionState
+  reconnectDragging: boolean
   protectedMode: ProtectedModeStatus
   pageResubscribe: HilosConnectionEventMap['pageResubscribe']
 }
@@ -26,6 +28,7 @@ interface FakeConnectionEvents {
  */
 function fakeConnection(initialState: ConnectionState = 'connected') {
   const listeners: Array<(state: ConnectionState) => void> = []
+  const draggingListeners: Array<(dragging: boolean) => void> = []
   const protectedModeListeners: Array<(status: ProtectedModeStatus) => void> =
     []
   const recoveryListeners: Array<
@@ -37,6 +40,7 @@ function fakeConnection(initialState: ConnectionState = 'connected') {
     >
   } = {
     state: listeners,
+    reconnectDragging: draggingListeners,
     protectedMode: protectedModeListeners,
     pageResubscribe: recoveryListeners,
   }
@@ -44,14 +48,16 @@ function fakeConnection(initialState: ConnectionState = 'connected') {
 
   return {
     state: initialState,
+    reconnectDragging: false,
     sent,
+    journal: [] as string[],
     /** Whether protected mode holds this connection, as the last frame said. */
     frozen: false,
     /** The windows this connection's tables are holding, as the subscribe frame reports them. */
     windows: {} as Record<string, TableViewportDescriptor>,
     forgotPageFrames: 0,
     requestRecovery(page: string, params: Record<string, unknown> = {}) {
-      for (const listener of recoveryListeners) {
+      for (const listener of [...recoveryListeners]) {
         listener({
           kind: 'pageResubscribe',
           data: { page, params },
@@ -64,13 +70,19 @@ function fakeConnection(initialState: ConnectionState = 'connected') {
     },
     setState(state: ConnectionState) {
       this.state = state
-      for (const listener of listeners) {
+      for (const listener of [...listeners]) {
         listener(state)
+      }
+    },
+    setReconnectDragging(dragging: boolean) {
+      this.reconnectDragging = dragging
+      for (const listener of [...draggingListeners]) {
+        listener(dragging)
       }
     },
     setProtectedMode(status: ProtectedModeStatus) {
       this.frozen = status.active
-      for (const listener of protectedModeListeners) {
+      for (const listener of [...protectedModeListeners]) {
         listener(status)
       }
     },
@@ -78,7 +90,9 @@ function fakeConnection(initialState: ConnectionState = 'connected') {
       if (this.state !== 'connected' || this.frozen) {
         return false
       }
-      sent.push(JSON.parse(text) as Record<string, unknown>)
+      const frame = JSON.parse(text) as Record<string, unknown>
+      sent.push(frame)
+      this.journal.push(String(frame.type))
 
       return true
     },
@@ -88,13 +102,417 @@ function fakeConnection(initialState: ConnectionState = 'connected') {
     ) {
       listenersOf[event].push(listener)
 
-      return () => {}
+      return () => {
+        const index = listenersOf[event].indexOf(listener)
+        if (index !== -1) {
+          listenersOf[event].splice(index, 1)
+        }
+      }
+    },
+    listenerCount(event: keyof FakeConnectionEvents): number {
+      return listenersOf[event].length
     },
     tableWindowDescriptors(): Record<string, TableViewportDescriptor> {
       return this.windows
     },
   }
 }
+
+/** Waiting must leave no per-call connection listener or callback behind. */
+function expectNoSubscriptionWaiters(
+  pages: PageSubscription,
+  connection: ReturnType<typeof fakeConnection>,
+): void {
+  expect(connection.listenerCount('state')).toBe(1)
+  expect(connection.listenerCount('reconnectDragging')).toBe(0)
+  expect(pages).toHaveProperty('subscriptionWaiters.size', 0)
+}
+
+describe('PageSubscription.runWhenSubscribed', () => {
+  it('starts in the subscribe send stack, after the session answer and before returning', async () => {
+    const connection = fakeConnection('connecting')
+    const pages = new PageSubscription(connection, new ScopeManager())
+    pages.subscribe('main')
+    const controller = new AbortController()
+    const add = vi.spyOn(controller.signal, 'addEventListener')
+    const remove = vi.spyOn(controller.signal, 'removeEventListener')
+    const result = pages.runWhenSubscribed(() => {
+      connection.journal.push('callback')
+      connection.send(JSON.stringify({ type: 'action' }))
+
+      return Promise.resolve('answered')
+    }, controller.signal)
+    connection.setState('connected')
+    pages.ingestPageResponse('main', {})
+    expect(connection.journal).toEqual([])
+    expect(connection.listenerCount('state')).toBe(2)
+    expect(connection.listenerCount('reconnectDragging')).toBe(1)
+
+    pages.releaseOnSession()
+    connection.journal.push('returned')
+    expect(connection.journal).toEqual([
+      'page_subscribe',
+      'callback',
+      'action',
+      'returned',
+    ])
+    expectNoSubscriptionWaiters(pages, connection)
+    expect(remove).toHaveBeenCalledExactlyOnceWith(
+      'abort',
+      add.mock.calls[0]?.[1],
+    )
+    await expect(result).resolves.toBe('answered')
+    pages.releaseOnSession()
+    connection.requestRecovery('main')
+    expect(
+      connection.journal.filter((event) => event === 'callback'),
+    ).toHaveLength(1)
+  })
+
+  it('calls an already ready callback before runWhenSubscribed returns', async () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    pages.subscribe('main')
+    pages.releaseOnSession()
+    const result = pages.runWhenSubscribed(() => {
+      connection.journal.push('callback')
+
+      return Promise.resolve(42)
+    })
+    connection.journal.push('returned')
+
+    expect(connection.journal).toEqual([
+      'page_subscribe',
+      'callback',
+      'returned',
+    ])
+    expectNoSubscriptionWaiters(pages, connection)
+    await expect(result).resolves.toBe(42)
+  })
+
+  it.each(['initial', 'navigation', 'recovery'] as const)(
+    'holds a refused %s subscribe until its existing retry succeeds',
+    async (path) => {
+      const connection = fakeConnection()
+      const pages = new PageSubscription(connection, new ScopeManager())
+      pages.subscribe('main')
+      if (path !== 'initial') pages.releaseOnSession()
+      connection.frozen = true
+      if (path === 'navigation') pages.subscribe('next', { id: 2 })
+      if (path === 'recovery') connection.requestRecovery('main')
+      if (path === 'initial') pages.releaseOnSession()
+      const run = vi.fn(() => {
+        connection.journal.push('callback')
+
+        return Promise.resolve('sent')
+      })
+      const result = pages.runWhenSubscribed(run)
+      const sentBeforeRetry = connection.sent.length
+      expect(run).not.toHaveBeenCalled()
+
+      connection.setProtectedMode(PROTECTED_MODE_INACTIVE)
+      expect(connection.sent).toHaveLength(sentBeforeRetry + 1)
+      expect(connection.journal.slice(-2)).toEqual([
+        'page_subscribe',
+        'callback',
+      ])
+      expect(run).toHaveBeenCalledTimes(1)
+      expectNoSubscriptionWaiters(pages, connection)
+      await expect(result).resolves.toBe('sent')
+    },
+  )
+
+  it('clears old delivery before navigation notifies page observers', async () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    pages.subscribe('main')
+    pages.releaseOnSession()
+    pages.ingestPageResponse('main', {})
+    connection.frozen = true
+    const run = vi.fn(() => {
+      connection.journal.push('callback')
+
+      return Promise.resolve()
+    })
+    let result: Promise<void> | undefined
+    const stop = subscribeSignal(pages.pageLoading, () => {
+      result = pages.runWhenSubscribed(run)
+    })
+
+    pages.subscribe('next', { id: 2 })
+    stop()
+    expect(result).toBeDefined()
+    expect(run).not.toHaveBeenCalled()
+    connection.setProtectedMode(PROTECTED_MODE_INACTIVE)
+    expect(connection.journal).toEqual([
+      'page_subscribe',
+      'page_subscribe',
+      'callback',
+    ])
+    expectNoSubscriptionWaiters(pages, connection)
+    await result
+  })
+
+  it('forgets old delivery on reconnect and waits through another socket attempt', async () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    pages.subscribe('main', { id: 1 })
+    pages.releaseOnSession()
+    pages.ingestPageResponse('main', {})
+    connection.setState('reconnecting')
+    const run = vi.fn(() => {
+      connection.journal.push('callback')
+
+      return Promise.resolve()
+    })
+    const result = pages.runWhenSubscribed(run)
+    connection.setState('connected')
+    pages.ingestPageResponse('main', {})
+    expect(run).not.toHaveBeenCalled()
+    connection.setState('reconnecting')
+    connection.setState('connected')
+    expect(run).not.toHaveBeenCalled()
+
+    pages.releaseOnSession()
+    expect(connection.journal).toEqual([
+      'page_subscribe',
+      'page_subscribe',
+      'callback',
+    ])
+    expect(connection.sent[1]).toEqual({
+      type: 'page_subscribe',
+      page: 'main',
+      params: { id: 1 },
+    })
+    expect(run).toHaveBeenCalledTimes(1)
+    expectNoSubscriptionWaiters(pages, connection)
+    await result
+  })
+
+  it('rejects an aborted signal even when the subscription is already ready', async () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    pages.subscribe('main')
+    pages.releaseOnSession()
+    const controller = new AbortController()
+    const reason = new Error('Canceled by the caller')
+    controller.abort(reason)
+    const run = vi.fn(() => Promise.resolve())
+
+    await expect(pages.runWhenSubscribed(run, controller.signal)).rejects.toBe(
+      reason,
+    )
+    expect(run).not.toHaveBeenCalled()
+    expectNoSubscriptionWaiters(pages, connection)
+  })
+
+  it('aborts a pending wait, removes its abort listener, and never dispatches it later', async () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    pages.subscribe('main')
+    const controller = new AbortController()
+    const add = vi.spyOn(controller.signal, 'addEventListener')
+    const remove = vi.spyOn(controller.signal, 'removeEventListener')
+    const run = vi.fn(() => Promise.resolve())
+    const result = pages.runWhenSubscribed(run, controller.signal)
+    controller.abort()
+
+    await expect(result).rejects.toMatchObject({ name: 'AbortError' })
+    expect(remove).toHaveBeenCalledExactlyOnceWith(
+      'abort',
+      add.mock.calls[0]?.[1],
+    )
+    expectNoSubscriptionWaiters(pages, connection)
+    pages.releaseOnSession()
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  it.each(['page', 'params', 'resubscribe', 'unsubscribe'] as const)(
+    'cancels the captured subscription on %s',
+    async (change) => {
+      const connection = fakeConnection()
+      const pages = new PageSubscription(connection, new ScopeManager())
+      pages.subscribe('main', { id: 1 })
+      const controller = new AbortController()
+      const remove = vi.spyOn(controller.signal, 'removeEventListener')
+      const run = vi.fn(() => Promise.resolve())
+      const result = pages.runWhenSubscribed(run, controller.signal)
+      if (change === 'page') pages.subscribe('next', { id: 1 })
+      if (change === 'params') pages.subscribe('main', { id: 2 })
+      if (change === 'resubscribe') pages.subscribe('main', { id: 1 })
+      if (change === 'unsubscribe') pages.unsubscribe()
+
+      await expect(result).rejects.toMatchObject({ name: 'AbortError' })
+      expect(remove).toHaveBeenCalledTimes(1)
+      expectNoSubscriptionWaiters(pages, connection)
+      pages.releaseOnSession()
+      expect(run).not.toHaveBeenCalled()
+    },
+  )
+
+  it('refuses a wait with no current page instead of attaching it to future navigation', async () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    const run = vi.fn(() => Promise.resolve())
+
+    await expect(pages.runWhenSubscribed(run)).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+    expectNoSubscriptionWaiters(pages, connection)
+    pages.subscribe('main')
+    pages.releaseOnSession()
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  it.each(['disconnected', 'dragging'] as const)(
+    'rejects immediately when %s is already known',
+    async (unavailable) => {
+      const connection = fakeConnection()
+      const pages = new PageSubscription(connection, new ScopeManager())
+      pages.subscribe('main')
+      pages.releaseOnSession()
+      if (unavailable === 'disconnected') connection.setState('disconnected')
+      else connection.setReconnectDragging(true)
+      const run = vi.fn(() => Promise.resolve())
+
+      await expect(pages.runWhenSubscribed(run)).rejects.toThrow(
+        'Connection is unavailable',
+      )
+      expect(run).not.toHaveBeenCalled()
+      expectNoSubscriptionWaiters(pages, connection)
+    },
+  )
+
+  it.each(['disconnected', 'dragging'] as const)(
+    'rejects every pending wait when %s arrives and cleans up even before an abort',
+    async (unavailable) => {
+      const connection = fakeConnection('reconnecting')
+      const pages = new PageSubscription(connection, new ScopeManager())
+      pages.subscribe('main')
+      const controller = new AbortController()
+      const remove = vi.spyOn(controller.signal, 'removeEventListener')
+      const run = vi.fn(() => Promise.resolve())
+      const first = pages.runWhenSubscribed(run, controller.signal)
+      const second = pages.runWhenSubscribed(run)
+      if (unavailable === 'disconnected') connection.setState('disconnected')
+      else connection.setReconnectDragging(true)
+
+      await expect(first).rejects.toThrow('Connection is unavailable')
+      await expect(second).rejects.toThrow('Connection is unavailable')
+      expect(remove).toHaveBeenCalledTimes(1)
+      expectNoSubscriptionWaiters(pages, connection)
+      connection.setReconnectDragging(false)
+      connection.setState('connected')
+      pages.releaseOnSession()
+      controller.abort()
+      expect(run).not.toHaveBeenCalled()
+    },
+  )
+
+  it('rechecks readiness after a preceding callback closes the socket', async () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    pages.subscribe('main')
+    const first = pages.runWhenSubscribed(() => {
+      connection.journal.push('first')
+      connection.setState('reconnecting')
+
+      return Promise.resolve(1)
+    })
+    const second = pages.runWhenSubscribed(() => {
+      connection.journal.push('second')
+
+      return Promise.resolve(2)
+    })
+    pages.releaseOnSession()
+    expect(connection.journal).toEqual(['page_subscribe', 'first'])
+    connection.setState('connected')
+    expect(connection.journal).toEqual(['page_subscribe', 'first'])
+
+    pages.releaseOnSession()
+    expect(connection.journal).toEqual([
+      'page_subscribe',
+      'first',
+      'page_subscribe',
+      'second',
+    ])
+    expectNoSubscriptionWaiters(pages, connection)
+    await expect(first).resolves.toBe(1)
+    await expect(second).resolves.toBe(2)
+  })
+
+  it.each(['navigation', 'abort'] as const)(
+    'does not release a second callback canceled by the first through %s',
+    async (change) => {
+      const connection = fakeConnection()
+      const pages = new PageSubscription(connection, new ScopeManager())
+      pages.subscribe('main')
+      const controller = new AbortController()
+      const first = pages.runWhenSubscribed(() => {
+        if (change === 'navigation') pages.subscribe('next')
+        else controller.abort()
+
+        return Promise.resolve()
+      })
+      const run = vi.fn(() => Promise.resolve())
+      const second = pages.runWhenSubscribed(run, controller.signal)
+      pages.releaseOnSession()
+
+      await first
+      await expect(second).rejects.toMatchObject({ name: 'AbortError' })
+      expect(run).not.toHaveBeenCalled()
+      expectNoSubscriptionWaiters(pages, connection)
+    },
+  )
+
+  it.each([
+    { ready: true, throws: true },
+    { ready: true, throws: false },
+    { ready: false, throws: true },
+    { ready: false, throws: false },
+  ])(
+    'passes through callback failure and cleans up ($ready, $throws)',
+    async ({ ready, throws }) => {
+      const connection = fakeConnection()
+      const pages = new PageSubscription(connection, new ScopeManager())
+      pages.subscribe('main')
+      if (ready) pages.releaseOnSession()
+      const failure = new Error('Action failed')
+      const controller = new AbortController()
+      const remove = vi.spyOn(controller.signal, 'removeEventListener')
+      const result = pages.runWhenSubscribed(() => {
+        if (throws) throw failure
+
+        return Promise.reject(failure)
+      }, controller.signal)
+      if (!ready) pages.releaseOnSession()
+
+      expectNoSubscriptionWaiters(pages, connection)
+      expect(remove).toHaveBeenCalledTimes(1)
+      await expect(result).rejects.toBe(failure)
+    },
+  )
+
+  it('hands the result to the action lifecycle once dispatch starts', async () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    pages.subscribe('main')
+    const controller = new AbortController()
+    let finish!: (result: string) => void
+    const action = new Promise<string>((resolve) => {
+      finish = resolve
+    })
+    const result = pages.runWhenSubscribed(() => action, controller.signal)
+    pages.releaseOnSession()
+    expectNoSubscriptionWaiters(pages, connection)
+    controller.abort()
+    pages.unsubscribe()
+    connection.setState('disconnected')
+    finish('action result')
+
+    await expect(result).resolves.toBe('action result')
+  })
+})
 
 describe('PageSubscription leader recovery', () => {
   it.each(['anchor', 'pageIndex'] as const)(

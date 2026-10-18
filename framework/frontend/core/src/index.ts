@@ -1137,6 +1137,7 @@ export {
   type AuthMethodVisibility,
   type AuthFlowPrimaryAction,
   type AuthFlowSubmitOutcome,
+  type AuthFlowContinueCompletion,
   type AuthStep,
   type AuthIntent,
   type AuthSubmitAction,

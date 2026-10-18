@@ -48,7 +48,7 @@ const NOT_FOUND = 404
 /** The connection events the manager listens to. */
 type PageSubscriptionEventMap = Pick<
   HilosConnectionEventMap,
-  'state' | 'protectedMode' | 'pageResubscribe'
+  'state' | 'protectedMode' | 'pageResubscribe' | 'reconnectDragging'
 >
 
 /**
@@ -57,6 +57,7 @@ type PageSubscriptionEventMap = Pick<
  */
 export interface PageSubscriptionConnection {
   readonly state: ConnectionState
+  readonly reconnectDragging: boolean
   send(text: string): boolean
   on<K extends keyof PageSubscriptionEventMap>(
     event: K,
@@ -113,6 +114,9 @@ export class PageSubscription {
    * mode stops holding this connection.
    */
   private subscribeDelivered = false
+
+  /** Waits owned by this page subscription, forgotten on departure or dispatch. */
+  private readonly subscriptionWaiters = new Set<() => void>()
 
   /** The current page's catalog identity, read off the page scope it arrives in. */
   private readonly pageIdentitySignal: ReadonlySignal<
@@ -219,7 +223,9 @@ export class PageSubscription {
    * @param params Route params for the subscription.
    */
   subscribe(pageKey: string, params: Record<string, unknown> = {}): Scope {
+    this.subscribeDelivered = false
     this.current = { pageKey, params }
+    this.notifySubscriptionWaiters()
     this.pageErrorSignal.set(null)
     this.pageLoadingSignal.set(true)
     const scope = this.scopes.openPage(pageKey)
@@ -227,6 +233,77 @@ export class PageSubscription {
     this.sendSubscribe()
 
     return scope
+  }
+
+  /**
+   * Run in the same stack that proves this page's subscription was sent on the
+   * current socket. A reconnect may keep the wait alive; leaving the captured
+   * subscription, aborting, or an unreachable connection rejects it. Once run
+   * starts, its own lifecycle owns the result.
+   *
+   * @param run Start the action synchronously and return its result promise.
+   * @param signal Cancel the wait before the action starts.
+   * @returns The action's result, or a rejection if the wait cannot complete.
+   */
+  runWhenSubscribed<T>(
+    run: () => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    const current = this.current
+
+    return new Promise<T>((resolve, reject) => {
+      const cleanup = (): void => {
+        this.subscriptionWaiters.delete(check)
+        stopState()
+        stopDragging()
+        signal?.removeEventListener('abort', check)
+      }
+      const check = (): void => {
+        if (!this.subscriptionWaiters.has(check)) {
+          return
+        }
+        if (signal?.aborted) {
+          cleanup()
+          reject(signal.reason)
+        } else if (!current || this.current !== current) {
+          cleanup()
+          reject(new DOMException('Page subscription changed', 'AbortError'))
+        } else if (
+          this.connection.reconnectDragging ||
+          this.connection.state === 'disconnected'
+        ) {
+          cleanup()
+          reject(new Error('Connection is unavailable'))
+        } else if (
+          this.connection.state === 'connected' &&
+          this.sessionAnswered &&
+          this.subscribeDelivered
+        ) {
+          cleanup()
+          try {
+            resolve(run())
+          } catch (error) {
+            reject(error)
+          }
+        }
+      }
+      const stopState = this.connection.on('state', (state) => {
+        if (state === 'disconnected') {
+          check()
+        }
+      })
+      const stopDragging = this.connection.on(
+        'reconnectDragging',
+        (dragging) => {
+          if (dragging) {
+            check()
+          }
+        },
+      )
+      this.subscriptionWaiters.add(check)
+      signal?.addEventListener('abort', check)
+      check()
+    })
   }
 
   /**
@@ -312,7 +389,9 @@ export class PageSubscription {
       return
     }
     const left = this.current.pageKey
+    this.subscribeDelivered = false
     this.current = null
+    this.notifySubscriptionWaiters()
     this.pageErrorSignal.set(null)
     this.pageLoadingSignal.set(false)
     this.scopes.dropPage()
@@ -469,6 +548,14 @@ export class PageSubscription {
       frame[FIELD_TABLE_WINDOWS] = windows
     }
     this.subscribeDelivered = this.connection.send(JSON.stringify(frame))
+    this.notifySubscriptionWaiters()
+  }
+
+  /** Each callback rechecks readiness: the previous one may have closed the socket. */
+  private notifySubscriptionWaiters(): void {
+    for (const check of [...this.subscriptionWaiters]) {
+      check()
+    }
   }
 }
 

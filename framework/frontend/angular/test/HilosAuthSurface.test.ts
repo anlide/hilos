@@ -14,11 +14,14 @@ import {
   AUTH_ACTION_CANCEL_REGISTRATION,
   AUTH_ACTION_COMPLETE_REGISTRATION_PASSWORDLESS,
   AUTH_ACTION_DETECT_IDENTIFIER,
+  AUTH_ACTION_DISMISS_SESSION_ACK,
   AUTH_ACTION_LEGAL_CONSENT,
   AUTH_ACTION_REGISTRATION_PASSKEY_OPTIONS,
   AUTH_SURFACE_HEADING_ID,
   bindCodeSendProgress,
   bindPageReady,
+  bindPageScope,
+  bindSessionScope,
   cancelOAuthTrip,
   CODE_SEND_STATE_FAILED,
   CODE_SEND_STATE_NOT_SENT,
@@ -27,15 +30,18 @@ import {
   CODE_SEND_STATE_SENT,
   COOKIES_REFUSED_COPY,
   createHilosAuthContext,
+  createHilosConnection,
   createOAuthLogin,
   createSignal,
   DEFAULT_DETECT_DEBOUNCE_MS,
+  DEFAULT_SPINNER_DELAY_MS,
   MAGIC_LINK_METHOD_KEY,
   OAUTH_RESULT_SIGNAL,
   OAUTH_REASON_CONSENT_REQUIRED,
   OAUTH_RETURN_MESSAGE_TYPE,
   PASSWORD_METHOD_KEY,
   ScopeManager,
+  SESSION_ACK_PASSWORD_CHANGED,
   SESSION_ACK_REGISTERED,
   SIGNAL_CODE_SEND_PROGRESS,
   SIGNAL_HANDSHAKE_RESPONSE,
@@ -48,6 +54,7 @@ import {
   type HilosAuthContext,
   type HilosConnection,
   type ProjectSignal,
+  type WebSocketLike,
 } from '@hilos/core'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -253,6 +260,106 @@ function provenOnReturnWorld(
       actions,
       channels: [],
     }),
+  }
+}
+
+/** A socket whose events drive the real connection and whose sent frames stay in order. */
+function authSocket() {
+  const listeners = new Map<
+    string,
+    Array<(event: { data?: unknown }) => void>
+  >()
+  const sent: Array<Record<string, unknown>> = []
+  const socket: WebSocketLike = {
+    send: (data) => sent.push(JSON.parse(data as string)),
+    close: () => {},
+    addEventListener: (type, listener) => {
+      const handlers = listeners.get(type) ?? []
+      handlers.push(listener)
+      listeners.set(type, handlers)
+    },
+  }
+
+  return {
+    socket,
+    sent,
+    open(): void {
+      for (const listener of listeners.get('open') ?? []) listener({})
+    },
+    message(frame: Record<string, unknown>): void {
+      for (const listener of listeners.get('message') ?? []) {
+        listener({ data: JSON.stringify(frame) })
+      }
+    },
+  }
+}
+
+/** A restored done panel on a new socket still waiting to send its page subscription. */
+function doneBeforeSubscription() {
+  const sockets: Array<ReturnType<typeof authSocket>> = []
+  const { connection, actions } = createHilosConnection({
+    url: 'ws://test/ws',
+    webSocketFactory: () => {
+      const socket = authSocket()
+      sockets.push(socket)
+      return socket.socket
+    },
+  })
+  const scopes = new ScopeManager()
+  bindSessionScope(connection, scopes)
+  const pages = bindPageScope(connection, scopes)
+  pages.subscribe('main')
+  connection.on('projectSignal', (signal) => {
+    if (signal.type === SIGNAL_HANDSHAKE_RESPONSE) pages.releaseOnSession()
+  })
+  const welcome = { type: 'handshake', data: { build: 'test-build' } }
+  const session = {
+    type: SIGNAL_HANDSHAKE_RESPONSE,
+    data: {
+      entities: { currentUser: { id: 1, name: 'Ada' } },
+      data: {
+        authMethods: [{ key: PASSWORD_METHOD_KEY, name: null }],
+        pendingAck: SESSION_ACK_REGISTERED,
+      },
+    },
+  }
+  connection.connect()
+  const previous = sockets[0]!
+  previous.open()
+  previous.message(welcome)
+  previous.message(session)
+  expect(previous.sent).toEqual([
+    { type: 'page_subscribe', page: 'main', params: {} },
+  ])
+  connection.close()
+  connection.connect()
+  const current = sockets[1]!
+  current.open()
+  current.message(welcome)
+  const dismissed = vi.fn()
+
+  return {
+    context: createHilosAuthContext({
+      connection,
+      actions,
+      scopes,
+      channels: [],
+    }),
+    gate: {
+      modalOpen: createSignal(false),
+      requireAuth: vi.fn(),
+      dismiss: dismissed,
+    },
+    dismissed,
+    current,
+    identify: (pendingAck: string = SESSION_ACK_REGISTERED) =>
+      current.message({
+        ...session,
+        data: {
+          ...session.data,
+          data: { ...session.data.data, pendingAck },
+        },
+      }),
   }
 }
 
@@ -567,6 +674,249 @@ function elementsBeforeCodeField(
 
   return all.findIndex((node) => node.getAttribute('data-id') === 'auth-code')
 }
+
+describe('HilosAuthSurface Continue waits for its subscription (HIL-1557)', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('holds the restored panel and loading until one dismiss follows the new subscription', async () => {
+    vi.useFakeTimers()
+    const world = doneBeforeSubscription()
+    const { context, current, identify, dismissed } = world
+    const fixture = mountSurface(world)
+    try {
+      await flush(fixture)
+      expect(context.connection.state).toBe('connected')
+      const button = byId(fixture, 'auth-continue') as HTMLButtonElement
+      expect(button.textContent?.trim()).toBe('Continue')
+      expect(button.disabled).toBe(false)
+
+      button.click()
+      await flush(fixture)
+      await vi.advanceTimersByTimeAsync(DEFAULT_SPINNER_DELAY_MS)
+      await flush(fixture)
+      expect(byId(fixture, 'auth-surface')?.textContent).toContain(
+        'You are signed in.',
+      )
+      expect(button.disabled).toBe(true)
+      expect(button.getAttribute('aria-busy')).toBe('true')
+      expect(
+        button.querySelector('[data-id="loading-button-spinner"]'),
+      ).not.toBeNull()
+      expect(current.sent).toEqual([])
+      expect(dismissed).not.toHaveBeenCalled()
+
+      // No page_response arrives: sending the subscription alone releases Continue.
+      identify()
+      await flush(fixture)
+      expect(current.sent).toEqual([
+        { type: 'page_subscribe', page: 'main', params: {} },
+        {
+          type: 'action',
+          action: AUTH_ACTION_DISMISS_SESSION_ACK,
+          data: {},
+          requestId: expect.any(String),
+        },
+      ])
+      expect(button.getAttribute('aria-busy')).toBe('true')
+      expect(dismissed).not.toHaveBeenCalled()
+
+      current.message({
+        type: 'action_success',
+        data: { action: AUTH_ACTION_DISMISS_SESSION_ACK },
+        requestId: current.sent[1]!.requestId,
+        outcome: 'success',
+      })
+      await vi.advanceTimersByTimeAsync(0)
+      await flush(fixture)
+      expect(dismissed).toHaveBeenCalledTimes(1)
+      expect(button.disabled).toBe(false)
+      expect(button.getAttribute('aria-busy')).toBeNull()
+      expect(
+        button.querySelector('[data-id="loading-button-spinner"]'),
+      ).toBeNull()
+      expect(current.sent).toHaveLength(2)
+    } finally {
+      fixture.destroy()
+      context.connection.close()
+    }
+  })
+
+  it('keeps a replacement done panel open until its own Continue succeeds', async () => {
+    vi.useFakeTimers()
+    const world = doneBeforeSubscription()
+    const { context, current, identify, dismissed } = world
+    const fixture = mountSurface(world)
+    try {
+      await flush(fixture)
+      byId(fixture, 'auth-continue')!.click()
+      await flush(fixture)
+      expect(current.sent).toEqual([])
+
+      context.scopes.session.data.set(
+        PENDING_ACK_SLOT,
+        SESSION_ACK_PASSWORD_CHANGED,
+      )
+      await flush(fixture)
+      await vi.advanceTimersByTimeAsync(0)
+      await flush(fixture)
+      expect(dismissed).not.toHaveBeenCalled()
+      expect(current.sent).toEqual([])
+      expect(byId(fixture, 'auth-surface')?.textContent).toContain(
+        'Your new password is saved.',
+      )
+      const button = byId(fixture, 'auth-continue') as HTMLButtonElement
+      expect(button.disabled).toBe(false)
+      expect(button.getAttribute('aria-busy')).toBeNull()
+
+      // The late handshake carries the replacement, not the abandoned ack.
+      identify(SESSION_ACK_PASSWORD_CHANGED)
+      await flush(fixture)
+      expect(current.sent).toEqual([
+        { type: 'page_subscribe', page: 'main', params: {} },
+      ])
+      expect(dismissed).not.toHaveBeenCalled()
+
+      button.click()
+      await flush(fixture)
+      expect(current.sent).toEqual([
+        { type: 'page_subscribe', page: 'main', params: {} },
+        {
+          type: 'action',
+          action: AUTH_ACTION_DISMISS_SESSION_ACK,
+          data: {},
+          requestId: expect.any(String),
+        },
+      ])
+      expect(button.getAttribute('aria-busy')).toBe('true')
+      expect(dismissed).not.toHaveBeenCalled()
+
+      current.message({
+        type: 'action_success',
+        data: { action: AUTH_ACTION_DISMISS_SESSION_ACK },
+        requestId: current.sent[1]!.requestId,
+        outcome: 'success',
+      })
+      await vi.advanceTimersByTimeAsync(0)
+      await flush(fixture)
+      expect(dismissed).toHaveBeenCalledTimes(1)
+      expect(button.disabled).toBe(false)
+      expect(button.getAttribute('aria-busy')).toBeNull()
+      expect(current.sent).toHaveLength(2)
+    } finally {
+      fixture.destroy()
+      context.connection.close()
+    }
+  })
+
+  it('preserves a new pending Continue when cancellation returns to the same done values', async () => {
+    vi.useFakeTimers()
+    const world = doneBeforeSubscription()
+    const { context, current, identify, dismissed } = world
+    const fixture = mountSurface(world)
+    try {
+      await flush(fixture)
+      byId(fixture, 'auth-continue')!.click()
+      await flush(fixture)
+      expect(current.sent).toEqual([])
+
+      // Run each ack's Angular effects without draining the canceled submit.
+      context.scopes.session.data.set(
+        PENDING_ACK_SLOT,
+        SESSION_ACK_PASSWORD_CHANGED,
+      )
+      fixture.detectChanges()
+      context.scopes.session.data.set(PENDING_ACK_SLOT, SESSION_ACK_REGISTERED)
+      fixture.detectChanges()
+      expect(dismissed).not.toHaveBeenCalled()
+      const button = byId(fixture, 'auth-continue') as HTMLButtonElement
+      expect(button.disabled).toBe(false)
+      button.click()
+
+      await vi.advanceTimersByTimeAsync(0)
+      await flush(fixture)
+      expect(dismissed).not.toHaveBeenCalled()
+      expect(current.sent).toEqual([])
+      expect(byId(fixture, 'auth-surface')?.textContent).toContain(
+        'You are signed in.',
+      )
+      expect(button.disabled).toBe(true)
+      expect(button.getAttribute('aria-busy')).toBe('true')
+
+      identify()
+      await flush(fixture)
+      expect(current.sent).toEqual([
+        { type: 'page_subscribe', page: 'main', params: {} },
+        {
+          type: 'action',
+          action: AUTH_ACTION_DISMISS_SESSION_ACK,
+          data: {},
+          requestId: expect.any(String),
+        },
+      ])
+      expect(dismissed).not.toHaveBeenCalled()
+      expect(button.getAttribute('aria-busy')).toBe('true')
+
+      current.message({
+        type: 'action_success',
+        data: { action: AUTH_ACTION_DISMISS_SESSION_ACK },
+        requestId: current.sent[1]!.requestId,
+        outcome: 'success',
+      })
+      await vi.advanceTimersByTimeAsync(0)
+      await flush(fixture)
+      expect(dismissed).toHaveBeenCalledTimes(1)
+      expect(button.disabled).toBe(false)
+      expect(button.getAttribute('aria-busy')).toBeNull()
+      expect(current.sent).toHaveLength(2)
+    } finally {
+      fixture.destroy()
+      context.connection.close()
+    }
+  })
+
+  it.each(['close', 'unmount'] as const)(
+    'cancels Continue on %s before the new socket subscribes',
+    async (departure) => {
+      vi.useFakeTimers()
+      const world = doneBeforeSubscription()
+      const { context, current, identify, dismissed } = world
+      const fixture = mountSurface(world)
+      try {
+        await flush(fixture)
+        const button = byId(fixture, 'auth-continue') as HTMLButtonElement
+        button.click()
+        await flush(fixture)
+        expect(button.getAttribute('aria-busy')).toBe('true')
+        expect(current.sent).toEqual([])
+        expect(dismissed).not.toHaveBeenCalled()
+
+        if (departure === 'close') {
+          // The session clears the ack while this surface remains mounted.
+          context.scopes.session.data.set(PENDING_ACK_SLOT, null)
+          await flush(fixture)
+          expect(byId(fixture, 'auth-continue')).toBeNull()
+        } else {
+          fixture.destroy()
+        }
+        await vi.advanceTimersByTimeAsync(0)
+        expect(dismissed).toHaveBeenCalledTimes(departure === 'close' ? 1 : 0)
+
+        identify()
+        await vi.advanceTimersByTimeAsync(0)
+        if (departure === 'close') await flush(fixture)
+        expect(current.sent).toEqual([
+          { type: 'page_subscribe', page: 'main', params: {} },
+        ])
+        expect(dismissed).toHaveBeenCalledTimes(departure === 'close' ? 1 : 0)
+      } finally {
+        fixture.destroy()
+        context.connection.close()
+      }
+    },
+  )
+})
 
 describe('HilosAuthSurface', () => {
   afterEach(() => {

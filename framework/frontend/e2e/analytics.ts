@@ -63,9 +63,6 @@ export const ANALYTICS_WRITER_TIMEOUT_MS = 20_000
  */
 export const ANALYTICS_SIGN_UP_LAST_ACTION = 'hilos_dismiss_session_ack'
 
-/** The registration action whose body carries the password (authActions.ts). */
-export const ANALYTICS_PASSWORD_ACTION = 'hilos_complete_registration'
-
 /** One action of a browser session, as the session page draws its row. */
 export interface AnalyticsActionRow {
   rowKey: number
@@ -365,6 +362,26 @@ export async function expectAnalyticsActionsInOrder(
     [...rows].sort((a, b) => a.createdTs - b.createdTs || a.rowKey - b.rowKey),
   )
   return rows
+}
+
+/**
+ * Every row the actions table draws stands on this page.
+ *
+ * @param expect The spec's expect.
+ * @param page The page showing a browser session.
+ * @param pageName The page every shown action ran on.
+ */
+export async function expectAnalyticsActionsOnPage(
+  expect: Expect,
+  page: Page,
+  pageName: string,
+): Promise<void> {
+  const rows = await readAnalyticsActionRows(page)
+  const expected = pageName
+  expect(rows.length).toBeGreaterThan(0)
+  expect(
+    rows.map(({ actionName, pageName }) => ({ actionName, pageName })),
+  ).toEqual(rows.map(({ actionName }) => ({ actionName, pageName: expected })))
 }
 
 /**

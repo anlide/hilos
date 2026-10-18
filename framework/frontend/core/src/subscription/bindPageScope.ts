@@ -22,6 +22,9 @@ import { type NormalizerOptions } from '../state/normalizer.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
 import { PageSubscription } from './PageSubscription.js'
 
+/** Locate a connection's existing owner without copying its readiness state. */
+const pageSubscriptions = new WeakMap<HilosConnection, PageSubscription>()
+
 /**
  * The page_response schema keyed for a connection's `projectSchemas`. A project
  * spreads it into its own schema map so the parse boundary validates the page
@@ -49,6 +52,7 @@ export function bindPageScope(
   options: NormalizerOptions = {},
 ): PageSubscription {
   const pages = new PageSubscription(connection, scopes)
+  pageSubscriptions.set(connection, pages)
   connection.on('projectSignal', (signal) => {
     if (signal.type === SIGNAL_TYPE_PAGE_RESPONSE) {
       // Validated against pageResponseSchema at the parse boundary; this cast
@@ -61,6 +65,26 @@ export function bindPageScope(
       pages.handleSubscriptionError(signal.data as PageSubscriptionError)
     }
   })
+
+  return pages
+}
+
+/**
+ * Find the page subscription bound at boot; an unbound connection cannot dispatch
+ * an action that needs its current subscription.
+ *
+ * Internal to the SDK.
+ *
+ * @param connection The application's Hilos connection.
+ * @throws When boot has not bound a page subscription to this connection.
+ */
+export function pageSubscriptionFor(
+  connection: HilosConnection,
+): PageSubscription {
+  const pages = pageSubscriptions.get(connection)
+  if (!pages) {
+    throw new Error('No page subscription is bound to this connection')
+  }
 
   return pages
 }

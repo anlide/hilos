@@ -1,12 +1,12 @@
 import { expect, test } from '@playwright/test'
 
 import {
-  ANALYTICS_PASSWORD_ACTION,
   ANALYTICS_SIGN_UP_LAST_ACTION,
   ANALYTICS_WRITER_TIMEOUT_MS,
   analyticsSessionLink,
   expectAnalyticsActionRows,
   expectAnalyticsActionsInOrder,
+  expectAnalyticsActionsOnPage,
   expectAnalyticsPersonSession,
   expectAnalyticsSessionFrames,
   expectAnalyticsSessionHeader,
@@ -119,12 +119,8 @@ test('shows real session actions in source order without bodies or another sessi
       admin,
       userSession.actionNames,
     )
-    // The registration ran on the main page; its password never leaves the body.
-    expect(
-      ascending
-        .filter((row) => row.actionName === ANALYTICS_PASSWORD_ACTION)
-        .map((row) => row.pageName),
-    ).toEqual(['main'])
+    // The whole registration ran on the main page: every action stands on it.
+    await expectAnalyticsActionsOnPage(expect, admin, 'main')
 
     await expectAnalyticsSessionFrames(
       expect,

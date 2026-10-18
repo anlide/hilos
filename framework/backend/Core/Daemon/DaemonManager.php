@@ -6177,7 +6177,6 @@ abstract class DaemonManager extends BaseManager implements
                         $address->agentNode,
                     );
                 }
-                Hilos::$ac?->openPageSession($signal->data->acceptKey, $page, $signal->data->params);
                 break;
 
             // A re-decision is where a live subscription may change hands: a guest who signed in
@@ -6223,16 +6222,11 @@ abstract class DaemonManager extends BaseManager implements
                     Logger::error("Dropped {$signalType} for page '{$updatedPage}': {$e->getMessage()}");
                     return;
                 }
-                Hilos::$ac?->updatePageSession($signal->data->acceptKey, $signal->data->params);
                 break;
 
             case SignalTypeConstants::PAGE_UNSUBSCRIBE:
-                if (!($signal->data instanceof WebSocketPageUnsubscribeSignalDTO)) {
-                    return;
-                }
                 // The registry entry itself is dropped after routing, by
                 // {@see forgetSubscriptionsAfterRouting()}: it is what names the addressee.
-                Hilos::$ac?->closePageSession($signal->data->acceptKey);
                 break;
 
             // GROUP_SUBSCRIBE is deliberately absent: the master no longer writes a membership off

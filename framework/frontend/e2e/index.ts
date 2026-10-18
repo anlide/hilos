@@ -102,13 +102,13 @@ export {
   isRotateCookie,
 } from './sessionCookie.js'
 export {
-  ANALYTICS_PASSWORD_ACTION,
   ANALYTICS_SIGN_UP_LAST_ACTION,
   ANALYTICS_WRITER_TIMEOUT_MS,
   analyticsSessionCell,
   analyticsSessionLink,
   expectAnalyticsActionRows,
   expectAnalyticsActionsInOrder,
+  expectAnalyticsActionsOnPage,
   expectAnalyticsDashboardCard,
   expectAnalyticsOverview,
   expectAnalyticsPersonSession,

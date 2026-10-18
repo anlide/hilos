@@ -1073,8 +1073,12 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
   // logout that overtakes it hands the mark to a socket of a session that is
   // already gone (HIL-865, and the seam itself is HIL-875).
   async function continueFromDone(): Promise<void> {
-    await auth.submit()
-    if (auth.error.get() === null) {
+    const completion = await auth.submit()
+    if (
+      completion?.isCurrent() &&
+      auth.flow.get().step === 'done' &&
+      auth.error.get() === null
+    ) {
       gate?.dismiss()
     }
   }
@@ -1388,6 +1392,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
     }
 
     return () => {
+      auth.reset()
       stopWatchingChannels()
       stopRefreshingConsent()
       stopWatchingConverge()

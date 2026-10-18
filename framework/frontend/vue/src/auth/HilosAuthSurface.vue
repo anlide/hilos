@@ -1109,8 +1109,13 @@ const trip = useSignal(oauthTrip)
 // logout that overtakes it hands the mark to a socket of a session that is
 // already gone (HIL-865, and the seam itself is HIL-875).
 async function continueFromDone(): Promise<void> {
-  await auth.submit()
-  if (auth.error.get() === null) {
+  const completion = await auth.submit()
+  if (
+    mounted &&
+    auth.flow.get().step === 'done' &&
+    auth.error.get() === null &&
+    completion?.isCurrent()
+  ) {
     gate?.dismiss()
   }
 }
@@ -1429,6 +1434,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   mounted = false
+  auth.reset()
   stopWatchingChannels?.()
   stopWatchingChannels = null
   stopRefreshingConsent?.()

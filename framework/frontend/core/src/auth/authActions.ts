@@ -44,6 +44,7 @@ import { z } from 'zod'
 
 import { ActionError } from '../connection/actionLifecycle.js'
 import { type ProjectSignal } from '../protocol/parseSignal.js'
+import { pageSubscriptionFor } from '../subscription/bindPageScope.js'
 import { whenPageReady } from '../subscription/pageReadyGate.js'
 import { hilosThemePick } from '../theme/themeState.js'
 import {
@@ -319,7 +320,7 @@ async function detectIdentifier(
  * @param action Whether this is the step's submit or a re-send of its code.
  * @param flow The current flow state (step, intent, identifier kind, channel).
  * @param form The current form values.
- * @param signal Aborted when the machine calls the dispatch off; only the passkey ending passes one.
+ * @param signal Aborted when the machine calls off a passkey ending or a deferred Continue.
  * @returns The outcome the machine applies (error inline, or the next step).
  */
 function submitAuthFlow(
@@ -412,7 +413,7 @@ function submitAuthFlow(
     case 'done':
       // Continue: the announcement is cleared on the server, the gate releases
       // the resume it was holding, and the surface closes.
-      return dispatchFlow(context, AUTH_ACTION_DISMISS_SESSION_ACK, {})
+      return dismissSessionAck(context, signal)
     case 'second_factor':
       // A code from the app or a backup code, told apart by the person rather
       // than guessed from its shape (HIL-494): the server burns a backup code
@@ -440,6 +441,27 @@ function submitAuthFlow(
       // Continue is the machine's own move, and an external step is waiting on
       // a ceremony, which cancels rather than submits.
       return Promise.resolve({ ok: false })
+  }
+}
+
+/**
+ * Send Continue after the current socket's subscription, without waiting for its reply.
+ *
+ * @param context The project auth context the action dispatches over.
+ * @param signal Aborted when this Continue no longer belongs to the active flow.
+ * @returns The ordinary auth outcome, including a failed readiness wait.
+ */
+async function dismissSessionAck(
+  context: HilosAuthContext,
+  signal?: AbortSignal,
+): Promise<AuthFlowSubmitOutcome> {
+  try {
+    return await pageSubscriptionFor(context.connection).runWhenSubscribed(
+      () => dispatchFlow(context, AUTH_ACTION_DISMISS_SESSION_ACK, {}),
+      signal,
+    )
+  } catch (error) {
+    return failedOutcome(error)
   }
 }
 

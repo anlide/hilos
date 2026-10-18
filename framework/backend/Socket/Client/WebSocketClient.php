@@ -1179,6 +1179,15 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     $dto,
                 );
 
+                // Only parsing sees connection frames in order, the same order used for actions.
+                // The queue cannot preserve it: DaemonManager::parkUntilIdentified() parks a
+                // subscription whose page instance is the person until identity arrives; actions pass it.
+                match ($type) {
+                    SignalTypeConstants::PAGE_SUBSCRIBE => Hilos::$ac?->openPageSession($acceptKey, $page, $params),
+                    SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION => Hilos::$ac?->updatePageSession($acceptKey, $page, $params),
+                    default => throw new UnsupportedOperationException("Unsupported page signal type: {$type}"),
+                };
+
                 match ($type) {
                     SignalTypeConstants::PAGE_SUBSCRIBE => $this->onPageSubscribeParsed($page, $dto),
                     SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION => $this->onPageUpdateSubscriptionParsed($page, $dto),
@@ -1207,6 +1216,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     $dto,
                 );
 
+                // Keep the close in frame order with page opens and actions, before the project hook.
+                Hilos::$ac?->closePageSession($acceptKey, $page);
                 $this->onPageUnsubscribeParsed($page, $dto);
                 break;
             }
@@ -1625,7 +1636,6 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             return;
         }
 
-        Hilos::$ac?->closePageSession($this->acceptKey);
         Hilos::$ac?->closeWsConnection($this->acceptKey);
 
         $closeDto = new WebSocketCloseSignalDTO(acceptKey: $this->acceptKey);

@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { bootHilos } from '../../src/bootstrap/bootHilos.js'
+import { createAuthActions } from '../../src/auth/authActions.js'
+import { createAuthFlow } from '../../src/auth/authFlow.js'
 import { ActionLifecycle } from '../../src/connection/actionLifecycle.js'
+import { createHilosConnection } from '../../src/connection/createHilosConnection.js'
+import { type WebSocketLike } from '../../src/connection/HilosConnection.js'
 import { createAppPageRouter } from '../../src/routing/appPageRouter.js'
 import { type NavigationEnvironment } from '../../src/routing/HilosRouter.js'
 import {
@@ -100,11 +104,121 @@ function boot(
   return { scopes, hilosRouter }
 }
 
+/** A socket driven by open/message events, with every outbound frame recorded. */
+function scriptedSocket() {
+  const listeners = new Map<
+    string,
+    Array<(event: { data?: unknown }) => void>
+  >()
+  const sent: Array<Record<string, unknown>> = []
+  const socket: WebSocketLike = {
+    send: (data) => sent.push(JSON.parse(data as string)),
+    close: () => {},
+    addEventListener: (type, listener) => {
+      const handlers = listeners.get(type) ?? []
+      handlers.push(listener)
+      listeners.set(type, handlers)
+    },
+  }
+  return {
+    socket,
+    sent,
+    open: () => {
+      for (const listener of listeners.get('open') ?? []) listener({})
+    },
+    message: (frame: Record<string, unknown>) => {
+      for (const listener of listeners.get('message') ?? []) {
+        listener({ data: JSON.stringify(frame) })
+      }
+    },
+  }
+}
+
 describe('bootHilos', () => {
   afterEach(() => {
     // The stack is the shared singleton every boot binds to.
     hilosToasts.clear()
     vi.unstubAllGlobals()
+  })
+
+  it('holds early Continue on a new socket until its page subscription is sent', async () => {
+    const sockets: Array<ReturnType<typeof scriptedSocket>> = []
+    const { connection, actions } = createHilosConnection({
+      url: 'ws://test/ws',
+      webSocketFactory: () => {
+        const socket = scriptedSocket()
+        sockets.push(socket)
+        return socket.socket
+      },
+    })
+    const scopes = new ScopeManager()
+    bootHilos({
+      connection,
+      actions,
+      scopes,
+      viewLayer: 'vue',
+      router: createAppPageRouter(
+        { main: { path: '/', admin: false } },
+        { fallback: 'main' },
+      ),
+      navigationEnvironment: fakeNavigation('/'),
+    })
+    const flow = createAuthFlow({
+      ...createAuthActions({ connection, actions, scopes, channels: [] }),
+      authMethods: createSignal([]),
+      channels: [],
+    })
+    const welcome = { type: 'handshake', data: { build: 'test-build' } }
+    const session = {
+      type: 'handshake_response',
+      data: { entities: { currentUser: { id: 1, name: 'Ada' } } },
+    }
+    try {
+      const first = sockets[0]!
+      first.open()
+      first.message(welcome)
+      first.message(session)
+      expect(first.sent).toEqual([
+        { type: 'page_subscribe', page: 'main', params: {} },
+      ])
+      connection.close()
+      connection.connect()
+      const current = sockets[1]!
+      current.open()
+      current.message(welcome)
+      expect(connection.state).toBe('connected')
+      flow.applyExternal({ step: 'done' })
+
+      const submitted = flow.submit()
+      await flow.submit()
+      expect(flow.pending.get()).toBe(true)
+      // No page_response is needed: the sent subscription is the ordering gate.
+      expect(current.sent).toEqual([])
+      current.message(session)
+      expect(current.sent).toEqual([
+        { type: 'page_subscribe', page: 'main', params: {} },
+        {
+          type: 'action',
+          action: 'hilos_dismiss_session_ack',
+          data: {},
+          requestId: expect.any(String),
+        },
+      ])
+      expect(flow.pending.get()).toBe(true)
+      current.message({
+        type: 'action_success',
+        data: { action: 'hilos_dismiss_session_ack' },
+        requestId: current.sent[1]!.requestId,
+        outcome: 'success',
+      })
+      await submitted
+      expect(flow.pending.get()).toBe(false)
+      expect(flow.error.get()).toBeNull()
+      expect(current.sent).toHaveLength(2)
+    } finally {
+      flow.reset()
+      connection.close()
+    }
   })
 
   it('binds cached theme and applies it before connect, with no DOM required', () => {

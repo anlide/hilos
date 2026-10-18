@@ -48,7 +48,7 @@ final class AnalyticsCollectorMasterTest extends TestCase
         $collector->openWsConnection(self::ACCEPT_KEY, '127.0.0.1');
         $collector->openPageSession(self::ACCEPT_KEY, 'first', ['room' => 1]);
         $collector->openPageSession(self::ACCEPT_KEY, 'second', ['room' => 2]);
-        $collector->updatePageSession(self::ACCEPT_KEY, ['room' => 3]);
+        $collector->updatePageSession(self::ACCEPT_KEY, 'second', ['room' => 3]);
         $actionKey = $collector->logUserAction(self::ACCEPT_KEY, 'send', ['body' => 'hi']);
         $this->assertNotNull($actionKey);
         $collector->closeOpenConnections();
@@ -71,6 +71,45 @@ final class AnalyticsCollectorMasterTest extends TestCase
         $this->assertSame('send', $records[5]['action']);
         $this->assertNull($records[5]['payload']);
         $this->assertNull($collector->logUserAction(self::ACCEPT_KEY, 'send', null));
+    }
+
+    /** Frames naming another page neither update nor close the connection's current page. */
+    public function testOnlyMatchingPageFramesUpdateAndCloseTheSession(): void
+    {
+        $collector = new AnalyticsCollector();
+        $collector->openWsConnection(self::ACCEPT_KEY, null);
+        $collector->openPageSession(self::ACCEPT_KEY, 'second', ['room' => 2]);
+        $collector->flush();
+        $opened = $this->records();
+        $this->assertSame([
+            AnalyticsJournalRecord::TYPE_WS_CONNECTION_OPEN,
+            AnalyticsJournalRecord::TYPE_PAGE_SESSION_OPEN,
+        ], array_column($opened, AnalyticsJournalRecord::KEY_TYPE));
+        $this->assertSame('second', $opened[1]['page']);
+
+        $collector->updatePageSession(self::ACCEPT_KEY, 'first', ['room' => 1]);
+        $collector->closePageSession(self::ACCEPT_KEY, 'first');
+        $collector->flush();
+        $this->assertSame([], $this->records());
+
+        $collector->logUserAction(self::ACCEPT_KEY, 'send', null);
+        $collector->updatePageSession(self::ACCEPT_KEY, 'second', ['room' => 3]);
+        $collector->closePageSession(self::ACCEPT_KEY, 'second');
+        $collector->logUserAction(self::ACCEPT_KEY, 'send', null);
+        $collector->flush();
+
+        $records = $this->records();
+        $this->assertSame([
+            AnalyticsJournalRecord::TYPE_USER_ACTION,
+            AnalyticsJournalRecord::TYPE_PAGE_SESSION_UPDATE,
+            AnalyticsJournalRecord::TYPE_PAGE_SESSION_CLOSE,
+            AnalyticsJournalRecord::TYPE_USER_ACTION,
+        ], array_column($records, AnalyticsJournalRecord::KEY_TYPE));
+        $this->assertSame($opened[1]['key'], $records[0]['pageKey']);
+        $this->assertSame($opened[1]['key'], $records[1]['key']);
+        $this->assertSame(['room' => 3], $records[1]['params']);
+        $this->assertSame($opened[1]['key'], $records[2]['key']);
+        $this->assertNull($records[3]['pageKey']);
     }
 
     /** A parked request has no active cause until its synchronous handler is running. */

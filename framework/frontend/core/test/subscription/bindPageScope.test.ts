@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   bindPageScope,
   PAGE_SIGNAL_SCHEMAS,
+  pageSubscriptionFor,
 } from '../../src/subscription/bindPageScope.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import {
@@ -21,6 +22,7 @@ function fakeConnection() {
 
   return {
     state: 'connected' as ConnectionState,
+    reconnectDragging: false,
     sent: [] as Array<Record<string, unknown>>,
     send(text: string): boolean {
       this.sent.push(JSON.parse(text) as Record<string, unknown>)
@@ -71,6 +73,35 @@ function fakeConnection() {
 }
 
 describe('bindPageScope', () => {
+  it('looks up exactly the owner returned by the binding', () => {
+    const connection = fakeConnection() as unknown as HilosConnection
+    const pages = bindPageScope(connection, new ScopeManager())
+
+    expect(pageSubscriptionFor(connection)).toBe(pages)
+  })
+
+  it('keeps the owners of two connections independent', () => {
+    const first = fakeConnection() as unknown as HilosConnection
+    const second = fakeConnection() as unknown as HilosConnection
+    const firstPages = bindPageScope(first, new ScopeManager())
+    const secondPages = bindPageScope(second, new ScopeManager())
+    firstPages.subscribe('first')
+    secondPages.subscribe('second')
+
+    expect(pageSubscriptionFor(first)).toBe(firstPages)
+    expect(pageSubscriptionFor(second)).toBe(secondPages)
+    expect(pageSubscriptionFor(first).pageKey()).toBe('first')
+    expect(pageSubscriptionFor(second).pageKey()).toBe('second')
+  })
+
+  it('refuses a connection that has no bound owner', () => {
+    const connection = fakeConnection() as unknown as HilosConnection
+
+    expect(() => pageSubscriptionFor(connection)).toThrow(
+      'No page subscription is bound to this connection',
+    )
+  })
+
   it('exposes the page_response schema keyed for projectSchemas', () => {
     expect(PAGE_SIGNAL_SCHEMAS[SIGNAL_TYPE_PAGE_RESPONSE]).toBeDefined()
   })

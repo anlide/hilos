@@ -42,6 +42,9 @@ final class WebSocketClientTestProbe extends WebSocketClient
     /** @var string Peer address the probe reports; blank stands for "no peer name" */
     public string $peerIp = '127.0.0.1';
 
+    /** @var list<string> Action names the probe lets through */
+    public array $acceptedActions = [];
+
     /**
      * Build a probe without invoking the socket/env constructor chain.
      *
@@ -146,6 +149,19 @@ final class WebSocketClientTestProbe extends WebSocketClient
     protected function getClientIp(): string
     {
         return $this->peerIp;
+    }
+
+    /**
+     * Lets explicitly accepted test actions pass; all others keep the framework refusal.
+     *
+     * @param string $actionName Action name from the frame
+     * @throws AgentUnknownActionException When the test has not accepted the action
+     */
+    protected function onActionValidated(string $actionName): void
+    {
+        if (!in_array($actionName, $this->acceptedActions, true)) {
+            parent::onActionValidated($actionName);
+        }
     }
 
     /**

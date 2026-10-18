@@ -1,12 +1,12 @@
 import { expect, test, type Page } from '@playwright/test'
 
 import {
-  ANALYTICS_PASSWORD_ACTION,
   ANALYTICS_SIGN_UP_LAST_ACTION,
   ANALYTICS_WRITER_TIMEOUT_MS,
   analyticsSessionLink,
   expectAnalyticsActionRows,
   expectAnalyticsActionsInOrder,
+  expectAnalyticsActionsOnPage,
   expectAnalyticsPersonSession,
   expectAnalyticsSessionFrames,
   expectAnalyticsSessionHeader,
@@ -158,12 +158,8 @@ for (const [index, sourceNode] of stand.masters.entries()) {
         admin,
         userSession.actionNames,
       )
-      // The registration ran on the main page; its password never leaves the body.
-      expect(
-        ascending
-          .filter((row) => row.actionName === ANALYTICS_PASSWORD_ACTION)
-          .map((row) => row.pageName),
-      ).toEqual(['main'])
+      // The whole registration ran on the main page: every action stands on it.
+      await expectAnalyticsActionsOnPage(expect, admin, 'main')
 
       await expectAnalyticsSessionFrames(
         expect,

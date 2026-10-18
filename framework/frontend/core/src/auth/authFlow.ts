@@ -414,6 +414,18 @@ export interface AuthFlowSubmitOutcome {
   readonly secondFactor?: SecondFactorStepData
 }
 
+/** A successful Continue accepted by this flow, with a live ownership check. */
+export interface AuthFlowContinueCompletion {
+  /**
+   * Whether this dispatch and its accepted flow snapshot still belong to the
+   * surface. Any flow replacement or newer dispatch invalidates it, even a
+   * replacement with the same values. Check after awaiting submit, immediately
+   * before acting; never cache the boolean across another await. This says
+   * nothing about the accepted step: a view still checks `done` before closing.
+   */
+  isCurrent(): boolean
+}
+
 /**
  * The derived main control of the current screen: the submit button, an icon
  * method promoted to the primary button (a passwordless account's magic link),
@@ -523,9 +535,9 @@ export interface AuthFlowOptions {
    * @param flow The current flow state (step/intent/channel tell it what to do).
    * @param form The current form values.
    * @param signal Passed only to a dispatch the machine can call off - the
-   *   passkey ending of a registration (HIL-1104) - and aborted when it does; a
-   *   driver MUST hand it to the browser call it awaits, as with
-   *   {@link AuthFlowOptions.onMethodAction}.
+   *   passkey ending of a registration or a deferred Continue - and aborted
+   *   when it does; a driver MUST hand it to the browser call or subscription
+   *   wait it awaits, as with {@link AuthFlowOptions.onMethodAction}.
    */
   onSubmit: (
     action: AuthSubmitAction,
@@ -750,8 +762,12 @@ export interface AuthFlow {
    * Submit the active step. From the `identifier` step with a `register` intent
    * this is a LOCAL move to `consent` — nothing is created until the terms
    * screen submits. Everywhere else it dispatches. A no-op while pending.
+   *
+   * Only an accepted successful Continue from `done` returns a completion;
+   * refused, orphaned, ignored and other submits return nothing. The completion
+   * must still be current when the consumer acts on it after its own await.
    */
-  submit(): Promise<void>
+  submit(): Promise<AuthFlowContinueCompletion | void>
   /**
    * Finish a proved registration with no password, the exit that stands beside
    * this screen's submit (HIL-1008).
@@ -1850,6 +1866,8 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
   // a slow onSubmit resolution would merge its `next` into whatever flow exists
   // by then, and its pending-clear would release a NEWER dispatch's guard.
   let dispatchSeq = 0
+  // One Continue owns its subscription wait; leaving its scenario ends that wait.
+  let continueController: AbortController | null = null
   // The icon ceremony currently owning the external step, so a cancel can reach
   // INTO it (abort its signal) instead of only forgetting it.
   let ceremony: CeremonyRun | null = null
@@ -2029,6 +2047,20 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
   function moveFlow(next: AuthFlowState): void {
     const leaving = flow.get()
     const previous = leaving.step
+    if (
+      continueController !== null &&
+      (next.step !== 'done' ||
+        next.intent !== leaving.intent ||
+        next.methodKey !== leaving.methodKey ||
+        next.identifierKind !== leaving.identifierKind ||
+        next.channelKey !== leaving.channelKey)
+    ) {
+      const controller = continueController
+      continueController = null
+      dispatchSeq += 1
+      controller.abort()
+      pending.set(false)
+    }
     if (previous === 'consent' && next.step !== 'consent') {
       if (leaving.methodKey?.startsWith(OAUTH_METHOD_PREFIX)) {
         dropOAuthAccount()
@@ -2326,10 +2358,15 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
    * The applied outcome is returned for the caller that has a move of its own to
    * make on top of it (consent parking a started ceremony); `undefined` says the
    * dispatch was orphaned, so that move must not happen either.
+   * Its ownership check captures the accepted snapshot here, before any caller's
+   * await, so even a flow replaced between acceptance and that await is stale.
+   * A Continue controller detaches in the same turn as acceptance, before its
+   * own transition, and cannot detach a newer dispatch's controller.
    */
   async function dispatch(
     run: () => Promise<AuthFlowSubmitOutcome>,
-  ): Promise<AuthFlowSubmitOutcome | undefined> {
+    controller?: AbortController,
+  ): Promise<(AuthFlowSubmitOutcome & AuthFlowContinueCompletion) | undefined> {
     error.set(null)
     // Every dispatch is a new ask, and the line on screen is about the old one
     // (HIL-826). Cleared HERE rather than in each caller so a submit, a resend
@@ -2343,10 +2380,20 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       if (seq !== dispatchSeq) {
         return undefined
       }
+      if (controller !== undefined && continueController === controller) {
+        continueController = null
+      }
       applyOutcome(outcome)
+      const acceptedFlow = flow.get()
 
-      return outcome
+      return {
+        ...outcome,
+        isCurrent: () => seq === dispatchSeq && flow.get() === acceptedFlow,
+      }
     } finally {
+      if (controller !== undefined && continueController === controller) {
+        continueController = null
+      }
       if (seq === dispatchSeq) {
         pending.set(false)
       }
@@ -2644,7 +2691,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       }
       form.set({ ...form.get(), [field]: value })
     },
-    async submit(): Promise<void> {
+    async submit(): Promise<AuthFlowContinueCompletion | void> {
       if (
         pending.get() ||
         (flow.get().step === 'consent' && !submittable.get())
@@ -2736,6 +2783,25 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         // screen opens from HERE the same way it does for a sign-in - and a
         // refusal comes back to the terms, not to the field (HIL-826).
         await sendPhoneCodeFrom('consent')
+
+        return
+      }
+      if (state.step === 'done') {
+        const controller = new AbortController()
+        continueController = controller
+        const outcome = await dispatch(
+          () =>
+            options.onSubmit(
+              'submit',
+              flow.get(),
+              form.get(),
+              controller.signal,
+            ),
+          controller,
+        )
+        if (outcome?.ok) {
+          return { isCurrent: outcome.isCurrent }
+        }
 
         return
       }

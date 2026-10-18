@@ -21,6 +21,7 @@ import {
   AUTH_ACTION_COMPLETE_REGISTRATION_PASSWORDLESS,
   AUTH_ACTION_CONFIRM_MAGIC_LINK_CODE,
   AUTH_ACTION_DETECT_IDENTIFIER,
+  AUTH_ACTION_DISMISS_SESSION_ACK,
   AUTH_ACTION_LEGAL_CONSENT,
   AUTH_ACTION_LOGIN,
   AUTH_ACTION_REGISTRATION_PASSKEY_OPTIONS,
@@ -28,6 +29,8 @@ import {
   AUTH_SURFACE_HEADING_ID,
   bindCodeSendProgress,
   bindPageReady,
+  bindPageScope,
+  bindSessionScope,
   cancelOAuthTrip,
   CODE_SEND_STATE_FAILED,
   CODE_SEND_STATE_NOT_SENT,
@@ -36,15 +39,18 @@ import {
   CODE_SEND_STATE_SENT,
   COOKIES_REFUSED_COPY,
   createHilosAuthContext,
+  createHilosConnection,
   createOAuthLogin,
   createSignal,
   DEFAULT_DETECT_DEBOUNCE_MS,
+  DEFAULT_SPINNER_DELAY_MS,
   MAGIC_LINK_METHOD_KEY,
   OAUTH_RESULT_SIGNAL,
   OAUTH_REASON_CONSENT_REQUIRED,
   OAUTH_RETURN_MESSAGE_TYPE,
   PASSWORD_METHOD_KEY,
   ScopeManager,
+  SESSION_ACK_PASSWORD_CHANGED,
   SESSION_ACK_REGISTERED,
   SIGNAL_CODE_SEND_PROGRESS,
   SIGNAL_HANDSHAKE_RESPONSE,
@@ -56,9 +62,11 @@ import {
   type HilosAuthContext,
   type HilosConnection,
   type ProjectSignal,
+  type WebSocketLike,
 } from '@hilos/core'
-import { mount, type VueWrapper } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { markRaw } from 'vue'
 
 import HilosAuthSurface from './HilosAuthSurface.vue'
 import { hilosAuthGateKey } from './hilosAuthGateKey.js'
@@ -633,6 +641,98 @@ function expiringLetterContext(lifetimeMs: number): {
   }
 }
 
+/** A socket whose events drive the real connection and whose sent frames stay in order. */
+function authSocket() {
+  const listeners = new Map<
+    string,
+    Array<(event: { data?: unknown }) => void>
+  >()
+  const sent: Array<Record<string, unknown>> = []
+  const socket: WebSocketLike = {
+    send: (data) => sent.push(JSON.parse(data as string)),
+    close: () => {},
+    addEventListener: (type, listener) => {
+      const handlers = listeners.get(type) ?? []
+      handlers.push(listener)
+      listeners.set(type, handlers)
+    },
+  }
+
+  return {
+    socket,
+    sent,
+    open(): void {
+      for (const listener of listeners.get('open') ?? []) listener({})
+    },
+    message(frame: Record<string, unknown>): void {
+      for (const listener of listeners.get('message') ?? []) {
+        listener({ data: JSON.stringify(frame) })
+      }
+    },
+  }
+}
+
+/** A restored done panel on a new socket still waiting to send its page subscription. */
+function doneBeforeSubscription() {
+  const sockets: Array<ReturnType<typeof authSocket>> = []
+  const { connection, actions } = createHilosConnection({
+    url: 'ws://test/ws',
+    webSocketFactory: () => {
+      const socket = authSocket()
+      sockets.push(socket)
+      return socket.socket
+    },
+  })
+  const scopes = new ScopeManager()
+  bindSessionScope(connection, scopes)
+  const pages = bindPageScope(connection, scopes)
+  pages.subscribe('main')
+  connection.on('projectSignal', (signal) => {
+    if (signal.type === SIGNAL_HANDSHAKE_RESPONSE) pages.releaseOnSession()
+  })
+  const welcome = { type: 'handshake', data: { build: 'test-build' } }
+  const session = {
+    type: SIGNAL_HANDSHAKE_RESPONSE,
+    data: {
+      entities: { currentUser: { id: 1, name: 'Ada' } },
+      data: {
+        authMethods: [{ key: PASSWORD_METHOD_KEY, name: null }],
+        pendingAck: SESSION_ACK_REGISTERED,
+      },
+    },
+  }
+  connection.connect()
+  const previous = sockets[0]!
+  previous.open()
+  previous.message(welcome)
+  previous.message(session)
+  expect(previous.sent).toEqual([
+    { type: 'page_subscribe', page: 'main', params: {} },
+  ])
+  connection.close()
+  connection.connect()
+  const current = sockets[1]!
+  current.open()
+  current.message(welcome)
+
+  return {
+    // mount() makes props deeply reactive; the app supplies this context as a
+    // module singleton, preserving the connection's subscription-owner identity.
+    context: markRaw(
+      createHilosAuthContext({ connection, actions, scopes, channels: [] }),
+    ),
+    current,
+    identify: (pendingAck: string = SESSION_ACK_REGISTERED) =>
+      current.message({
+        ...session,
+        data: {
+          ...session.data,
+          data: { ...session.data.data, pendingAck },
+        },
+      }),
+  }
+}
+
 /**
  * A gate double: the surface only ever asks it to close, and the test asks the
  * double whether that happened.
@@ -899,6 +999,243 @@ function oauthTripWorld(): TripWorld {
 
   return world
 }
+
+describe('HilosAuthSurface Continue waits for its subscription (HIL-1557)', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it('holds the restored panel and loading until one dismiss follows the new subscription', async () => {
+    vi.useFakeTimers()
+    const { context, current, identify } = doneBeforeSubscription()
+    const { gate, dismissed } = gateDouble()
+    const wrapper = mount(HilosAuthSurface, {
+      props: { context },
+      global: { provide: { [hilosAuthGateKey as symbol]: gate } },
+    })
+    try {
+      await flush(wrapper)
+      expect(context.connection.state).toBe('connected')
+      const button = wrapper.get('[data-id="auth-continue"]')
+      expect(button.text()).toBe('Continue')
+      expect(button.attributes('disabled')).toBeUndefined()
+
+      await button.trigger('click')
+      await vi.advanceTimersByTimeAsync(DEFAULT_SPINNER_DELAY_MS)
+      await flush(wrapper)
+      expect(wrapper.text()).toContain('You are signed in.')
+      expect(button.attributes('disabled')).toBeDefined()
+      expect(button.attributes('aria-busy')).toBe('true')
+      expect(button.find('[data-id="loading-button-spinner"]').exists()).toBe(
+        true,
+      )
+      expect(current.sent).toEqual([])
+      expect(dismissed).not.toHaveBeenCalled()
+
+      // No page_response arrives: sending the subscription alone releases Continue.
+      identify()
+      expect(current.sent).toEqual([
+        { type: 'page_subscribe', page: 'main', params: {} },
+        {
+          type: 'action',
+          action: AUTH_ACTION_DISMISS_SESSION_ACK,
+          data: {},
+          requestId: expect.any(String),
+        },
+      ])
+      await flush(wrapper)
+      expect(button.attributes('aria-busy')).toBe('true')
+      expect(dismissed).not.toHaveBeenCalled()
+
+      current.message({
+        type: 'action_success',
+        data: { action: AUTH_ACTION_DISMISS_SESSION_ACK },
+        requestId: current.sent[1]!.requestId,
+        outcome: 'success',
+      })
+      await flushPromises()
+      await flush(wrapper)
+      expect(dismissed).toHaveBeenCalledTimes(1)
+      expect(button.attributes('disabled')).toBeUndefined()
+      expect(button.attributes('aria-busy')).toBeUndefined()
+      expect(button.find('[data-id="loading-button-spinner"]').exists()).toBe(
+        false,
+      )
+      expect(current.sent).toHaveLength(2)
+    } finally {
+      wrapper.unmount()
+      context.connection.close()
+    }
+  })
+
+  it('keeps a replacement done panel open until its own Continue succeeds', async () => {
+    const { context, current, identify } = doneBeforeSubscription()
+    const { gate, dismissed } = gateDouble()
+    const wrapper = mount(HilosAuthSurface, {
+      props: { context },
+      global: { provide: { [hilosAuthGateKey as symbol]: gate } },
+    })
+    try {
+      await flush(wrapper)
+      await wrapper.get('[data-id="auth-continue"]').trigger('click')
+      expect(current.sent).toEqual([])
+
+      context.scopes.session.data.set(
+        PENDING_ACK_SLOT,
+        SESSION_ACK_PASSWORD_CHANGED,
+      )
+      await flushPromises()
+      await flush(wrapper)
+      expect(dismissed).not.toHaveBeenCalled()
+      expect(current.sent).toEqual([])
+      expect(wrapper.text()).toContain('Your new password is saved.')
+      const button = wrapper.get('[data-id="auth-continue"]')
+      expect(button.attributes('disabled')).toBeUndefined()
+      expect(button.attributes('aria-busy')).toBeUndefined()
+
+      // The late handshake carries the replacement, not the abandoned ack.
+      identify(SESSION_ACK_PASSWORD_CHANGED)
+      await flushPromises()
+      expect(current.sent).toEqual([
+        { type: 'page_subscribe', page: 'main', params: {} },
+      ])
+      expect(dismissed).not.toHaveBeenCalled()
+
+      await button.trigger('click')
+      expect(current.sent).toEqual([
+        { type: 'page_subscribe', page: 'main', params: {} },
+        {
+          type: 'action',
+          action: AUTH_ACTION_DISMISS_SESSION_ACK,
+          data: {},
+          requestId: expect.any(String),
+        },
+      ])
+      expect(button.attributes('aria-busy')).toBe('true')
+      expect(dismissed).not.toHaveBeenCalled()
+
+      current.message({
+        type: 'action_success',
+        data: { action: AUTH_ACTION_DISMISS_SESSION_ACK },
+        requestId: current.sent[1]!.requestId,
+        outcome: 'success',
+      })
+      await flushPromises()
+      await flush(wrapper)
+      expect(dismissed).toHaveBeenCalledTimes(1)
+      expect(button.attributes('aria-busy')).toBeUndefined()
+      expect(current.sent).toHaveLength(2)
+    } finally {
+      wrapper.unmount()
+      context.connection.close()
+    }
+  })
+
+  it('preserves a new pending Continue when cancellation returns to the same done values', async () => {
+    const { context, current, identify } = doneBeforeSubscription()
+    const { gate, dismissed } = gateDouble()
+    const wrapper = mount(HilosAuthSurface, {
+      props: { context },
+      global: { provide: { [hilosAuthGateKey as symbol]: gate } },
+    })
+    try {
+      await flush(wrapper)
+      await wrapper.get('[data-id="auth-continue"]').trigger('click')
+      expect(current.sent).toEqual([])
+
+      // Let Vue apply each ack without draining the canceled submit's chain.
+      context.scopes.session.data.set(
+        PENDING_ACK_SLOT,
+        SESSION_ACK_PASSWORD_CHANGED,
+      )
+      await wrapper.vm.$nextTick()
+      context.scopes.session.data.set(PENDING_ACK_SLOT, SESSION_ACK_REGISTERED)
+      await wrapper.vm.$nextTick()
+      expect(dismissed).not.toHaveBeenCalled()
+      const button = wrapper.get('[data-id="auth-continue"]')
+      expect(button.attributes('disabled')).toBeUndefined()
+      await button.trigger('click')
+
+      await flushPromises()
+      await flush(wrapper)
+      expect(dismissed).not.toHaveBeenCalled()
+      expect(current.sent).toEqual([])
+      expect(wrapper.text()).toContain('You are signed in.')
+      expect(button.attributes('disabled')).toBeDefined()
+      expect(button.attributes('aria-busy')).toBe('true')
+
+      identify()
+      expect(current.sent).toEqual([
+        { type: 'page_subscribe', page: 'main', params: {} },
+        {
+          type: 'action',
+          action: AUTH_ACTION_DISMISS_SESSION_ACK,
+          data: {},
+          requestId: expect.any(String),
+        },
+      ])
+      await flush(wrapper)
+      expect(dismissed).not.toHaveBeenCalled()
+      expect(button.attributes('aria-busy')).toBe('true')
+
+      current.message({
+        type: 'action_success',
+        data: { action: AUTH_ACTION_DISMISS_SESSION_ACK },
+        requestId: current.sent[1]!.requestId,
+        outcome: 'success',
+      })
+      await flushPromises()
+      await flush(wrapper)
+      expect(dismissed).toHaveBeenCalledTimes(1)
+      expect(button.attributes('disabled')).toBeUndefined()
+      expect(button.attributes('aria-busy')).toBeUndefined()
+      expect(current.sent).toHaveLength(2)
+    } finally {
+      wrapper.unmount()
+      context.connection.close()
+    }
+  })
+
+  it.each(['close', 'unmount'] as const)(
+    'cancels Continue on %s before the new socket subscribes',
+    async (departure) => {
+      const { context, current, identify } = doneBeforeSubscription()
+      const { gate, dismissed } = gateDouble()
+      const wrapper = mount(HilosAuthSurface, {
+        props: { context },
+        global: { provide: { [hilosAuthGateKey as symbol]: gate } },
+      })
+      try {
+        await flush(wrapper)
+        const button = wrapper.get('[data-id="auth-continue"]')
+        await button.trigger('click')
+        await flush(wrapper)
+        expect(button.attributes('aria-busy')).toBe('true')
+        expect(current.sent).toEqual([])
+        expect(dismissed).not.toHaveBeenCalled()
+
+        if (departure === 'close') {
+          // The session clears the ack while this surface remains mounted.
+          context.scopes.session.data.set(PENDING_ACK_SLOT, null)
+          await flush(wrapper)
+          expect(wrapper.find('[data-id="auth-continue"]').exists()).toBe(false)
+        } else {
+          wrapper.unmount()
+        }
+        await flushPromises()
+        expect(dismissed).toHaveBeenCalledTimes(departure === 'close' ? 1 : 0)
+
+        identify()
+        await flushPromises()
+        expect(current.sent).toEqual([
+          { type: 'page_subscribe', page: 'main', params: {} },
+        ])
+        expect(dismissed).toHaveBeenCalledTimes(departure === 'close' ? 1 : 0)
+      } finally {
+        if (wrapper.exists()) wrapper.unmount()
+        context.connection.close()
+      }
+    },
+  )
+})
 
 describe('HilosAuthSurface', () => {
   afterEach(() => {

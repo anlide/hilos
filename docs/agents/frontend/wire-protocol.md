@@ -492,6 +492,22 @@ rotation until every outstanding `requestId` has been answered (or a 10 s grace
 elapses), which is a guarantee rather than the hope that both frames land in one
 batch.
 
+**Continue waits for the current socket's page subscription.** After the socket
+changes, Continue (`hilos_dismiss_session_ack`) waits until the existing
+`PageSubscription` has actually sent the current page's subscription on that
+socket. A `connected` state or `page_ready` remembered from the old socket does
+not prove that. `runWhenSubscribed()` starts the action synchronously when the
+subscription is sent, without an await between readiness and dispatch; it does
+not wait for `page_response`.
+
+One click enters the ordinary pending state and sends the action once when
+ready. Leaving the page, closing or resetting the auth flow, or changing its
+identity or scenario cancels a Continue that has not been sent. Established
+connection unavailability ends pending with the existing error and permits a
+retry. Canceling after dispatch does not undo the server mutation. This wait
+belongs only to Continue; other auth actions and `ActionLifecycle` do not gain
+a buffer. It adds no frames or fields to the wire.
+
 A ticket that is unknown, expired, malformed or already spent is not an error:
 the handshake is served by the ordinary cookie rule, and the auxiliary cookie is
 erased all the same, so it is never presented twice. The session cookie name

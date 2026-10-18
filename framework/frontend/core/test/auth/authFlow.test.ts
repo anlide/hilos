@@ -50,8 +50,18 @@ import {
 import { createAuthActions } from '../../src/auth/authActions.js'
 import { toFlowPatch } from '../../src/auth/authFlowReply.js'
 import { type HilosAuthContext } from '../../src/auth/authContext.js'
+import {
+  type ActionLifecycle,
+  type ActionResult,
+} from '../../src/connection/actionLifecycle.js'
+import {
+  type ConnectionState,
+  type HilosConnection,
+} from '../../src/connection/HilosConnection.js'
 import { type AuthMethodEntry } from '../../src/session/sessionScope.js'
+import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { createSignal } from '../../src/state/signal.js'
+import { bindPageScope } from '../../src/subscription/bindPageScope.js'
 
 /** One second in ms — the scale a backend `resendAt` moment is built in here. */
 const SECOND_MS = 1000
@@ -1768,7 +1778,7 @@ describe('a canceled ceremony that settles anyway', () => {
     // A registration's ceremony starts where the terms are ACCEPTED, not where
     // the method is picked (HIL-417): the choice only hops to consent, and it
     // has to be awaited first — it settles without a dispatch of its own.
-    let ceremony = flow.chooseMethod('passkey')
+    let ceremony: ReturnType<typeof flow.submit> = flow.chooseMethod('passkey')
     if (registering) {
       await ceremony
       flow.setField('consentAccepted', true)
@@ -1838,6 +1848,437 @@ describe('a canceled ceremony that settles anyway', () => {
     const registering = await lateOutcome(failure, 0, true)
     expect(registering.flow.get().step).toBe('identifier')
     expect(registering.error.get()).toBeNull()
+  })
+})
+
+describe('cancelable Continue (HIL-1557)', () => {
+  /** A real auth adapter and subscription owner; only transport and replies are scripted. */
+  function waitingContinue() {
+    const listeners = new Map<string, Set<(value: unknown) => void>>()
+    let state: ConnectionState = 'connected'
+    const connection = {
+      get state() {
+        return state
+      },
+      reconnectDragging: false,
+      send: () => true,
+      forgetPageFrames: () => {},
+      tableWindowDescriptors: () => ({}),
+      on(event: string, handler: (value: unknown) => void) {
+        const handlers = listeners.get(event) ?? new Set()
+        handlers.add(handler)
+        listeners.set(event, handlers)
+        return () => handlers.delete(handler)
+      },
+    } as unknown as HilosConnection
+    const scopes = new ScopeManager()
+    const pages = bindPageScope(connection, scopes)
+    pages.subscribe('main')
+    const answers: Array<(result: ActionResult) => void> = []
+    const dispatch = vi.fn(() => ({
+      done: new Promise<ActionResult>((resolve) => answers.push(resolve)),
+    }))
+    const actions = createAuthActions({
+      connection,
+      scopes,
+      actions: { dispatch } as unknown as ActionLifecycle,
+      channels: [],
+    })
+    const onSubmit = vi.fn(actions.onSubmit)
+    const flow = setup({ onSubmit })
+    flow.applyExternal({ step: 'done' })
+    return {
+      flow,
+      pages,
+      onSubmit,
+      dispatch,
+      answer: (result: ActionResult = {}) => answers.shift()!(result),
+      setState(next: ConnectionState): void {
+        state = next
+        for (const listener of listeners.get('state') ?? []) listener(next)
+      },
+    }
+  }
+
+  it('holds pending immediately, accepts one press and keeps it held until the action replies', async () => {
+    const { flow, pages, onSubmit, dispatch, answer } = waitingContinue()
+    const submitted = flow.submit()
+    expect(flow.pending.get()).toBe(true)
+    expect(await flow.submit()).toBeUndefined()
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(onSubmit.mock.calls[0]![3]?.aborted).toBe(false)
+    expect(dispatch).not.toHaveBeenCalled()
+
+    pages.releaseOnSession()
+    expect(dispatch).toHaveBeenCalledExactlyOnceWith(
+      'hilos_dismiss_session_ack',
+      {},
+      expect.any(Object),
+    )
+    await flow.submit()
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(flow.pending.get()).toBe(true)
+    answer()
+    const completion = await submitted
+    expect(completion?.isCurrent()).toBe(true)
+    expect(flow.pending.get()).toBe(false)
+    expect(flow.error.get()).toBeNull()
+  })
+
+  it.each([
+    'reset',
+    'back',
+    'identifier',
+    'step',
+    'intent',
+    'method',
+    'kind',
+    'channel',
+    'resume',
+  ] as const)(
+    'aborts on %s and never dismisses on late subscription readiness',
+    async (change) => {
+      const { flow, pages, onSubmit, dispatch } = waitingContinue()
+      const submitted = flow.submit()
+      const signal = onSubmit.mock.calls[0]![3]!
+      switch (change) {
+        case 'reset':
+          flow.reset()
+          break
+        case 'back':
+          flow.backToIdentifier()
+          break
+        case 'identifier':
+          flow.setField('identifier', 'other@example.test')
+          break
+        case 'step':
+          flow.applyExternal({ step: 'code' })
+          break
+        case 'intent':
+          flow.applyExternal({ intent: 'register' })
+          break
+        case 'method':
+          flow.applyExternal({ methodKey: 'oauth:github' })
+          break
+        case 'kind':
+          flow.applyExternal({ identifierKind: 'phone' })
+          break
+        case 'channel':
+          flow.applyExternal({ channelKey: 'sms' })
+          break
+        case 'resume':
+          flow.resume({
+            step: 'code',
+            intent: 'register',
+            identifier: 'other@example.test',
+            kind: 'email',
+            channel: null,
+            expiresAt: null,
+            code: null,
+            secondFactor: null,
+            acceptedRevisions: null,
+          })
+          break
+      }
+      expect(signal.aborted).toBe(true)
+      expect(flow.pending.get()).toBe(false)
+      const changed = flow.flow.get()
+      // The abort settles without waiting for any later connection event.
+      expect(await submitted).toBeUndefined()
+      pages.releaseOnSession()
+      expect(dispatch).not.toHaveBeenCalled()
+      expect(flow.flow.get()).toEqual(changed)
+      expect(flow.error.get()).toBeNull()
+    },
+  )
+
+  it('keeps a same-scenario echo and the send-progress clear from canceling Continue', async () => {
+    const { flow, pages, onSubmit, dispatch, answer } = waitingContinue()
+    const submitted = flow.submit()
+    flow.applyExternal({ step: 'done', intent: 'login' })
+    flow.reportSendProgress(null)
+    flow.setField('identifier', '')
+    expect(onSubmit.mock.calls[0]![3]?.aborted).toBe(false)
+    expect(flow.pending.get()).toBe(true)
+    pages.releaseOnSession()
+    answer()
+    await submitted
+    expect(dispatch).toHaveBeenCalledTimes(1)
+    expect(flow.pending.get()).toBe(false)
+  })
+
+  it('releases pending on unavailable connection and lets another press retry', async () => {
+    const { flow, pages, onSubmit, dispatch, answer, setState } =
+      waitingContinue()
+    const submitted = flow.submit()
+    setState('disconnected')
+    expect(await submitted).toBeUndefined()
+    expect(flow.pending.get()).toBe(false)
+    expect(flow.error.get()?.message).toBe(
+      'Could not reach the server. Please try again.',
+    )
+    expect(dispatch).not.toHaveBeenCalled()
+
+    setState('connecting')
+    const retried = flow.submit()
+    expect(flow.pending.get()).toBe(true)
+    expect(flow.error.get()).toBeNull()
+    expect(onSubmit.mock.calls[1]![3]).not.toBe(onSubmit.mock.calls[0]![3])
+    setState('connected')
+    pages.releaseOnSession()
+    answer()
+    await retried
+    expect(dispatch).toHaveBeenCalledTimes(1)
+    expect(flow.pending.get()).toBe(false)
+  })
+
+  it('does not release or detach the newer Continue when an aborted wait finishes', async () => {
+    const { flow, pages, onSubmit, dispatch } = waitingContinue()
+    const first = flow.submit()
+    flow.reset()
+    flow.applyExternal({ step: 'done' })
+    const second = flow.submit()
+    expect(await first).toBeUndefined()
+    expect(flow.pending.get()).toBe(true)
+    expect(onSubmit.mock.calls[1]![3]?.aborted).toBe(false)
+    flow.reset()
+    expect(onSubmit.mock.calls[1]![3]?.aborted).toBe(true)
+    await second
+    pages.releaseOnSession()
+    expect(dispatch).not.toHaveBeenCalled()
+    expect(flow.pending.get()).toBe(false)
+    expect(flow.error.get()).toBeNull()
+  })
+
+  it('detaches before applying its own successful transition and clears pending', async () => {
+    const { flow, pages, onSubmit, answer } = waitingContinue()
+    const submitted = flow.submit()
+    pages.releaseOnSession()
+    answer({ reply: { ok: true, next: { step: 'identifier' } } })
+    const completion = await submitted
+    expect(completion?.isCurrent()).toBe(true)
+    expect(onSubmit.mock.calls[0]![3]?.aborted).toBe(false)
+    expect(flow.flow.get().step).toBe('identifier')
+    expect(flow.pending.get()).toBe(false)
+    expect(flow.error.get()).toBeNull()
+  })
+
+  it.each<AuthFlowSubmitOutcome>([
+    { ok: true, next: { step: 'identifier' } },
+    { ok: false, message: 'Old refusal', next: { step: 'code' } },
+  ])(
+    'does not apply a Continue reply after a scenario changes between promise continuations: %j',
+    async (outcome) => {
+      let answer!: (outcome: AuthFlowSubmitOutcome) => void
+      const flow = setup({
+        onSubmit: () => new Promise((resolve) => (answer = resolve)),
+      })
+      flow.applyExternal({ step: 'done', intent: 'register' })
+      const submitted = flow.submit()
+      answer(outcome)
+      // Run the inner onSubmit finally, but not dispatch's acceptance continuation.
+      await Promise.resolve()
+      flow.applyExternal({ step: 'done', intent: 'recovery' })
+      await submitted
+      expect(flow.flow.get()).toMatchObject({
+        step: 'done',
+        intent: 'recovery',
+      })
+      expect(flow.error.get()).toBeNull()
+      expect(flow.pending.get()).toBe(false)
+    },
+  )
+
+  it('cannot complete a replacement done scenario, whose own Continue still works', async () => {
+    const { flow, pages, onSubmit, dispatch, answer } = waitingContinue()
+    flow.applyExternal({ intent: 'register' })
+    const first = flow.submit()
+    flow.applyExternal({ step: 'done', intent: 'recovery' })
+    expect(await first).toBeUndefined()
+    expect(onSubmit.mock.calls[0]![3]?.aborted).toBe(true)
+    expect(dispatch).not.toHaveBeenCalled()
+
+    const second = flow.submit()
+    pages.releaseOnSession()
+    expect(dispatch).toHaveBeenCalledTimes(1)
+    answer()
+    expect((await second)?.isCurrent()).toBe(true)
+    expect(flow.flow.get()).toMatchObject({ step: 'done', intent: 'recovery' })
+    expect(flow.pending.get()).toBe(false)
+  })
+
+  it('keeps the newer pending and controller when the old acceptance continuation finishes', async () => {
+    const answers: Array<(outcome: AuthFlowSubmitOutcome) => void> = []
+    const onSubmit = vi.fn<AuthFlowOptions['onSubmit']>(
+      () => new Promise((resolve) => answers.push(resolve)),
+    )
+    const flow = setup({ onSubmit })
+    flow.applyExternal({ step: 'done', intent: 'register' })
+    const first = flow.submit()
+    answers.shift()!({ ok: false, message: 'Old refusal' })
+    await Promise.resolve()
+    flow.applyExternal({ step: 'done', intent: 'recovery' })
+    const second = flow.submit()
+    expect(await first).toBeUndefined()
+    expect(onSubmit).toHaveBeenCalledTimes(2)
+    expect(flow.pending.get()).toBe(true)
+    expect(flow.error.get()).toBeNull()
+    expect(onSubmit.mock.calls[1]![3]?.aborted).toBe(false)
+    flow.reset()
+    expect(onSubmit.mock.calls[1]![3]?.aborted).toBe(true)
+    answers.shift()!({ ok: true, next: { step: 'code' } })
+    expect(await second).toBeUndefined()
+    expect(flow.pending.get()).toBe(false)
+    expect(flow.flow.get().step).toBe('identifier')
+  })
+
+  it.each(['scenario', 'reset'] as const)(
+    'invalidates an accepted completion on %s before submit resumes',
+    async (change) => {
+      let answer!: (outcome: AuthFlowSubmitOutcome) => void
+      const flow = setup({
+        onSubmit: () => new Promise((resolve) => (answer = resolve)),
+      })
+      flow.applyExternal({ step: 'done', intent: 'register' })
+      const submitted = flow.submit()
+      answer({ ok: true })
+      // Dispatch has accepted, but submit's own await has not resumed yet.
+      await Promise.resolve()
+      expect(flow.pending.get()).toBe(false)
+      if (change === 'reset') flow.reset()
+      flow.applyExternal({ step: 'done', intent: 'recovery' })
+      const completion = await submitted
+      expect(completion).toBeDefined()
+      expect(completion?.isCurrent()).toBe(false)
+      expect(flow.flow.get()).toMatchObject({
+        step: 'done',
+        intent: 'recovery',
+      })
+    },
+  )
+
+  it('rechecks ownership after the consumer await, even if submit has already resolved', async () => {
+    const flow = setup()
+    flow.applyExternal({ step: 'done', intent: 'register' })
+    const submitted = flow.submit()
+    // This reaction runs after submit resolves but before the consumer resumes.
+    const replacement = submitted.then((completion) => {
+      expect(completion?.isCurrent()).toBe(true)
+      flow.applyExternal({ step: 'done', intent: 'recovery' })
+    })
+    const completion = await submitted
+    expect(completion?.isCurrent()).toBe(false)
+    expect(flow.flow.get()).toMatchObject({ step: 'done', intent: 'recovery' })
+    expect(flow.error.get()).toBeNull()
+    await replacement
+    expect((await flow.submit())?.isCurrent()).toBe(true)
+  })
+
+  it('invalidates a completion when reset returns to identical done values with a new pending', async () => {
+    const { flow, pages, answer, onSubmit } = waitingContinue()
+    const submitted = flow.submit()
+    pages.releaseOnSession()
+    answer()
+    const completion = await submitted
+    expect(completion?.isCurrent()).toBe(true)
+    const acceptedFlow = flow.flow.get()
+    flow.reset()
+    flow.applyExternal({ step: 'done' })
+    const second = flow.submit()
+    expect(flow.flow.get()).toEqual(acceptedFlow)
+    expect(completion?.isCurrent()).toBe(false)
+    expect(flow.pending.get()).toBe(true)
+    expect(onSubmit.mock.calls[1]![3]?.aborted).toBe(false)
+    answer()
+    expect((await second)?.isCurrent()).toBe(true)
+    expect(completion?.isCurrent()).toBe(false)
+    expect(flow.pending.get()).toBe(false)
+  })
+
+  it('expires the accepted snapshot on an echo as well as a newer dispatch', async () => {
+    const flow = setup()
+    flow.applyExternal({ step: 'done' })
+    const first = await flow.submit()
+    expect(first?.isCurrent()).toBe(true)
+    flow.applyExternal({ step: 'done' })
+    expect(first?.isCurrent()).toBe(false)
+    const second = await flow.submit()
+    expect(second?.isCurrent()).toBe(true)
+    const third = await flow.submit()
+    expect(second?.isCurrent()).toBe(false)
+    expect(third?.isCurrent()).toBe(true)
+  })
+
+  it('cleans up a rejected driver without detaching a newer Continue', async () => {
+    let reject!: (reason: Error) => void
+    const onSubmit = vi.fn<AuthFlowOptions['onSubmit']>(
+      () => new Promise(() => {}),
+    )
+    onSubmit.mockImplementationOnce(
+      () => new Promise((_, fail) => (reject = fail)),
+    )
+    const flow = setup({ onSubmit })
+    flow.applyExternal({ step: 'done' })
+    const first = flow.submit()
+    const refused = expect(first).rejects.toThrow('Driver failed')
+    flow.reset()
+    flow.applyExternal({ step: 'done' })
+    onSubmit.mockImplementationOnce(
+      (_action, _flow, _form, signal) =>
+        new Promise((resolve) => {
+          signal!.addEventListener('abort', () => resolve({ ok: false }))
+        }),
+    )
+    const second = flow.submit()
+    reject(new Error('Driver failed'))
+    await refused
+    expect(flow.pending.get()).toBe(true)
+    expect(onSubmit.mock.calls[1]![3]?.aborted).toBe(false)
+    flow.reset()
+    expect(onSubmit.mock.calls[1]![3]?.aborted).toBe(true)
+    expect(await second).toBeUndefined()
+    expect(flow.pending.get()).toBe(false)
+  })
+
+  it('does not undo or repeat an already sent action when its flow is abandoned', async () => {
+    const { flow, pages, onSubmit, dispatch, answer } = waitingContinue()
+    const submitted = flow.submit()
+    pages.releaseOnSession()
+    expect(dispatch).toHaveBeenCalledTimes(1)
+    flow.reset()
+    expect(onSubmit.mock.calls[0]![3]?.aborted).toBe(true)
+    const reset = flow.flow.get()
+    pages.releaseOnSession()
+    answer({ reply: { ok: true, next: { step: 'done' } } })
+    await submitted
+    expect(flow.flow.get()).toEqual(reset)
+    expect(flow.pending.get()).toBe(false)
+    expect(dispatch).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores a late sent reply without clearing the next dispatch pending', async () => {
+    const { flow, pages, onSubmit, dispatch, answer } = waitingContinue()
+    const first = flow.submit()
+    pages.releaseOnSession()
+    flow.reset()
+    flow.applyExternal({ step: 'done', intent: 'register' })
+    const second = flow.submit()
+    answer({
+      reply: {
+        ok: false,
+        message: 'Old refusal',
+        next: { step: 'identifier' },
+      },
+    })
+    await first
+    expect(flow.pending.get()).toBe(true)
+    expect(flow.flow.get()).toMatchObject({ step: 'done', intent: 'register' })
+    expect(flow.error.get()).toBeNull()
+    expect(onSubmit.mock.calls[1]![3]?.aborted).toBe(false)
+    answer()
+    await second
+    expect(flow.pending.get()).toBe(false)
+    expect(dispatch).toHaveBeenCalledTimes(2)
   })
 })
 

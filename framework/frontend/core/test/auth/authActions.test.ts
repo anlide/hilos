@@ -6,12 +6,16 @@ import {
   type AuthFlowForm,
   type AuthFlowState,
 } from '../../src/auth/authFlow.js'
-import { type HilosConnection } from '../../src/connection/HilosConnection.js'
+import {
+  type ConnectionState,
+  type HilosConnection,
+} from '../../src/connection/HilosConnection.js'
 import {
   ActionError,
   type ActionLifecycle,
 } from '../../src/connection/actionLifecycle.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
+import { bindPageScope } from '../../src/subscription/bindPageScope.js'
 import { bindPageReady } from '../../src/subscription/pageReadyGate.js'
 import { setHilosThemePick } from '../../src/theme/themeState.js'
 import { SIGNAL_TYPE_PAGE_RESPONSE } from '../../src/protocol/constants.js'
@@ -45,7 +49,19 @@ function world(
 ) {
   const listeners = new Map<string, Set<(value: unknown) => void>>()
   const sent: Array<{ action: string; payload: Record<string, unknown> }> = []
+  const frames: Array<Record<string, unknown>> = []
+  let state: ConnectionState = 'connected'
   const connection = {
+    get state() {
+      return state
+    },
+    reconnectDragging: false,
+    send(text: string): boolean {
+      frames.push(JSON.parse(text))
+      return true
+    },
+    forgetPageFrames: () => {},
+    tableWindowDescriptors: () => ({}),
     on(event: string, handler: (value: unknown) => void) {
       const set = listeners.get(event) ?? new Set<(value: unknown) => void>()
       listeners.set(event, set)
@@ -61,6 +77,7 @@ function world(
   const actions = {
     dispatch(action: string, payload: Record<string, unknown>) {
       sent.push({ action, payload })
+      frames.push({ type: 'action', action, data: payload })
       if (action === 'hilos_request_phone_code') {
         emit('projectSignal', {
           type: 'hilos_code_send_progress',
@@ -84,16 +101,145 @@ function world(
       }
     },
   } as unknown as ActionLifecycle
+  const scopes = new ScopeManager()
+  const pages = bindPageScope(connection, scopes)
+  pages.subscribe('main')
+  connection.on('projectSignal', (signal) => {
+    if (signal.type === 'handshake_response') pages.releaseOnSession()
+  })
   const context = createHilosAuthContext({
     connection,
     actions,
-    scopes: new ScopeManager(),
+    scopes,
     channels: [],
   })
-  return { actions: createAuthActions(context), sent, emit, connection }
+  return {
+    actions: createAuthActions(context),
+    lifecycle: actions,
+    sent,
+    frames,
+    emit,
+    connection,
+    setState(next: ConnectionState): void {
+      state = next
+      emit('state', next)
+    },
+  }
 }
 
 afterEach(() => setHilosThemePick(null))
+
+describe('Continue waits for its page subscription (HIL-1557)', () => {
+  it('sends one empty dismiss after subscribe, without a page response', async () => {
+    const { actions, sent, frames, emit } = world()
+    const submitted = actions.onSubmit(
+      'submit',
+      { ...FLOW, step: 'done' },
+      FORM,
+    )
+    expect(sent).toEqual([])
+    expect(frames).toEqual([])
+
+    emit('projectSignal', { type: 'handshake_response' })
+    expect(frames).toEqual([
+      { type: 'page_subscribe', page: 'main', params: {} },
+      { type: 'action', action: 'hilos_dismiss_session_ack', data: {} },
+    ])
+    await expect(submitted).resolves.toEqual({ ok: true })
+    emit('projectSignal', { type: 'handshake_response' })
+    expect(sent).toEqual([{ action: 'hilos_dismiss_session_ack', payload: {} }])
+  })
+
+  it('reports unavailable connection through the ordinary failed outcome and permits retry', async () => {
+    const { actions, sent, emit, setState } = world()
+    const submitted = actions.onSubmit(
+      'submit',
+      { ...FLOW, step: 'done' },
+      FORM,
+    )
+    setState('disconnected')
+    await expect(submitted).resolves.toEqual({
+      ok: false,
+      message: 'Could not reach the server. Please try again.',
+    })
+    setState('connected')
+    emit('projectSignal', { type: 'handshake_response' })
+    expect(sent).toEqual([])
+    await expect(
+      actions.onSubmit('submit', { ...FLOW, step: 'done' }, FORM),
+    ).resolves.toEqual({ ok: true })
+    expect(sent).toEqual([{ action: 'hilos_dismiss_session_ack', payload: {} }])
+  })
+
+  it.each([false, true])(
+    'aborts a wait, already aborted = %s',
+    async (alreadyAborted) => {
+      const { actions, sent, emit } = world()
+      const controller = new AbortController()
+      if (alreadyAborted) controller.abort()
+      const submitted = actions.onSubmit(
+        'submit',
+        { ...FLOW, step: 'done' },
+        FORM,
+        controller.signal,
+      )
+      controller.abort()
+      await expect(submitted).resolves.toEqual({
+        ok: false,
+        message: 'Could not reach the server. Please try again.',
+      })
+      emit('projectSignal', { type: 'handshake_response' })
+      expect(sent).toEqual([])
+    },
+  )
+
+  it('converts a missing subscription owner to the same failed outcome', async () => {
+    const { lifecycle } = world()
+    const dispatch = vi.spyOn(lifecycle, 'dispatch')
+    const actions = createAuthActions({
+      actions: lifecycle,
+      connection: {} as HilosConnection,
+      scopes: new ScopeManager(),
+      channels: [],
+    })
+    await expect(
+      actions.onSubmit('submit', { ...FLOW, step: 'done' }, FORM),
+    ).resolves.toEqual({
+      ok: false,
+      message: 'Could not reach the server. Please try again.',
+    })
+    expect(dispatch).not.toHaveBeenCalled()
+  })
+
+  it('keeps a dispatch failure on the ordinary failed outcome path', async () => {
+    const { actions, lifecycle, emit } = world()
+    vi.spyOn(lifecycle, 'dispatch').mockImplementationOnce(() => {
+      throw new Error('Could not send')
+    })
+    const submitted = actions.onSubmit(
+      'submit',
+      { ...FLOW, step: 'done' },
+      FORM,
+    )
+    emit('projectSignal', { type: 'handshake_response' })
+    await expect(submitted).resolves.toEqual({
+      ok: false,
+      message: 'Could not reach the server. Please try again.',
+    })
+  })
+
+  it('does not delay other auth actions behind the subscription', async () => {
+    const { actions, sent, frames } = world()
+    await actions.onSubmit('submit', { ...FLOW, step: 'identifier' }, FORM)
+    expect(sent).toEqual([
+      {
+        action: 'hilos_login',
+        payload: { email: FORM.identifier, password: '' },
+      },
+    ])
+    expect(frames.map((frame) => frame.type)).toEqual(['action'])
+  })
+})
 
 describe('guest theme choice on account-creating submits (HIL-1427)', () => {
   it.each(['dark', null] as const)(
@@ -102,7 +248,10 @@ describe('guest theme choice on account-creating submits (HIL-1427)', () => {
       setHilosThemePick(pick)
       const { actions, sent, emit, connection } = world()
       const stopReady = bindPageReady(connection)
-      emit('projectSignal', { type: SIGNAL_TYPE_PAGE_RESPONSE })
+      emit('projectSignal', {
+        type: SIGNAL_TYPE_PAGE_RESPONSE,
+        data: { page: 'main', payload: {} },
+      })
       const pending = vi
         .spyOn(oauthLogin, 'pendingOAuthAccount')
         .mockReturnValue({

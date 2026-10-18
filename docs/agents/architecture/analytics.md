@@ -48,9 +48,10 @@ every process, including master ── Hilos::$ac ──► AnalyticsJournalOutb
 - **The source** is `AnalyticsCollector` (`Hilos::$ac`) in every process. Its
   worker methods describe sessions, signals, browser-session attachments and
   token changes. The master records WebSocket connections, their current pages,
-  user actions and completed HTTP requests. It remembers only connection-to-page
-  keys and correlation keys captured during synchronous dispatch; it has no
-  analytics database access. Records gather in `AnalyticsJournalOutbox`. A batch
+  user actions and completed HTTP requests. It remembers only the key and name
+  of each connection's open page and correlation keys captured during synchronous
+  dispatch; it has no analytics database access. Records gather in
+  `AnalyticsJournalOutbox`. A batch
   leaves as one frame to the journal agent of the node once a second, at 64 KiB
   gathered, and at worker shutdown (`WorkerManager::cleanup()` sends it with the
   stop hooks' frames). The master queues its batch through its signal router,
@@ -170,6 +171,29 @@ counts as `payload_dropped`.
 The master's `ip`, `pageKey`,
 `params`, `sessionToken`, `userAgent`, `acceptLanguage`, `status` and `durationMs`
 are nullable where their builders say so.
+
+**An action's page is the page of the frames before it.** In the connection
+journal (`page_session_*` and `user_action`), an action belongs to the last page
+its connection subscribed to before the action's frame, in frame order, while
+that page is still open. The master records a page session's open, update and
+close where it parses the connection's frames (`WebSocketClient::onFrame()`),
+the same place it records the action. Its signal queue cannot keep that order:
+it parks a subscription to a page whose instance is the person until identity
+arrives, while actions pass. An update or a leave applies to the page it names
+only while that page is open on the connection. A frame naming another page is
+skipped, as the subscription registry skips it, so the next action stays on the
+page the master routes it to. A subscription the master later refuses still
+opens a page session. The owner settled the frame-order rule on 16.10.2026 and
+the skip on 17.10.2026.
+
+An action before the first subscription of its connection legitimately has
+`pageKey: null`; so does an action after that subscription closes and before
+another opens. It inherits no page from another socket, and a later subscription
+does not rewrite the earlier action. The SDK ensures that the current socket's
+subscription is sent before Continue
+([session-token rotation](../frontend/wire-protocol.md#session-token-rotation-hil-582));
+it does not repair the journal after the fact. The owner approved this SDK
+ordering on 18.10.2026.
 
 `person_event` is written only when the source has a proven authenticated actor.
 Its `userId` is that actor, not the last user of the browser. During a takeover
@@ -444,6 +468,8 @@ endpoint; e2e polls it to observe journal rotation and writer loading before
 opening the page. The section's e2e is two identical specs in chat, tasks and
 polls; their checks live in `framework/frontend/e2e/analytics.ts`
 (HIL-1422).
+Every action of the registered person's session stands on `main`, checked by
+`expectAnalyticsActionsOnPage`.
 
 The cluster proof is `demo/online-testing/tests/e2e/cluster/live/analytics.spec.ts`
 (HIL-1423), run through `test:cluster:e2e` on the existing three-master stand.

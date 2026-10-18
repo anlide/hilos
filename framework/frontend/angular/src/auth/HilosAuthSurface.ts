@@ -2951,6 +2951,7 @@ export class HilosAuthSurface {
       }
 
       onCleanup(() => {
+        auth.reset()
         stopWatchingChannels()
         stopRefreshingConsent()
         stopWatchingConverge()
@@ -3397,8 +3398,12 @@ export class HilosAuthSurface {
   // already gone (HIL-865, and the seam itself is HIL-875).
   protected continueFromDone(): void {
     const auth = this.auth()
-    void auth.submit().then(() => {
-      if (auth.error.get() === null) {
+    void auth.submit().then((completion) => {
+      if (
+        completion?.isCurrent() &&
+        auth.flow.get().step === 'done' &&
+        auth.error.get() === null
+      ) {
         this.gate?.dismiss()
       }
     })

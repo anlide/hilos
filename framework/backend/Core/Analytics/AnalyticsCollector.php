@@ -9,6 +9,7 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\AgentId;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\SubscriptionRegistry;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Utils\Helpers\RandomHelper;
@@ -21,7 +22,7 @@ use Hilos\Utils\Logger;
  * ({@see AnalyticsJournalRecord}). They gather in {@see AnalyticsJournalOutbox} and go to the
  * journal agent of the node in batches; one writer per cluster loads them into the tables.
  * The collector touches no database. The master remembers its live connections and their page
- * keys; correlation keys are captured only during synchronous action or request dispatch.
+ * keys and names; correlation keys are captured only during synchronous action or request dispatch.
  *
  * A worker session and an agent session are named by a key the process draws in memory
  * (`RandomHelper::hex()`, the tolerant axis: the key only has to not collide, nobody guesses it),
@@ -53,7 +54,7 @@ final class AnalyticsCollector
 
     private readonly AnalyticsJournalOutbox $outbox;
 
-    /** @var array<string, ?string> WebSocket accept key to current page key, or null */
+    /** @var array<string, ?AnalyticsOpenPage> WebSocket accept key to its open page, or null */
     private array $connections = [];
 
     /** @var ?AnalyticsJournalSession The worker session of this process, null while none is live */
@@ -236,9 +237,9 @@ final class AnalyticsCollector
             return;
         }
 
-        $pageKey = $this->connections[$acceptKey];
-        if ($pageKey !== null) {
-            $this->record(AnalyticsJournalRecord::pageSessionClose($pageKey, $this->nowTs()), null);
+        $openPage = $this->connections[$acceptKey];
+        if ($openPage !== null) {
+            $this->record(AnalyticsJournalRecord::pageSessionClose($openPage->key, $this->nowTs()), null);
         }
         $this->record(AnalyticsJournalRecord::wsConnectionClose($acceptKey, $this->nowTs()), null);
         unset($this->connections[$acceptKey]);
@@ -251,9 +252,9 @@ final class AnalyticsCollector
     public function closeOpenConnections(): void
     {
         $ts = $this->nowTs();
-        foreach ($this->connections as $acceptKey => $pageKey) {
-            if ($pageKey !== null) {
-                $this->record(AnalyticsJournalRecord::pageSessionClose($pageKey, $ts), null);
+        foreach ($this->connections as $acceptKey => $openPage) {
+            if ($openPage !== null) {
+                $this->record(AnalyticsJournalRecord::pageSessionClose($openPage->key, $ts), null);
             }
             $this->record(AnalyticsJournalRecord::wsConnectionClose($acceptKey, $ts), null);
         }
@@ -274,42 +275,44 @@ final class AnalyticsCollector
             return;
         }
 
-        $this->closePageSession($acceptKey);
+        $this->closeOpenPage($acceptKey);
         $key = RandomHelper::hex(self::SESSION_KEY_BYTES);
-        $this->connections[$acceptKey] = $key;
+        $this->connections[$acceptKey] = new AnalyticsOpenPage($key, $pageName);
         $this->record(AnalyticsJournalRecord::pageSessionOpen($key, $acceptKey, $pageName, $params, $this->nowTs()), null);
     }
 
     /**
      * Updates the route params of the current page session.
+     * A frame naming another page is ignored, as it is by the master's {@see SubscriptionRegistry}.
      *
      * @param string $acceptKey WebSocket accept key; empty is ignored
+     * @param string $pageName Page name that must match the open session
      * @param ?array<string, mixed> $params New page route params, or null
      */
-    public function updatePageSession(string $acceptKey, ?array $params): void
+    public function updatePageSession(string $acceptKey, string $pageName, ?array $params): void
     {
-        $key = $this->connections[$acceptKey] ?? null;
-        if ($key === null) {
+        $openPage = $this->connections[$acceptKey] ?? null;
+        if ($openPage === null || $openPage->pageName !== $pageName) {
             return;
         }
 
-        $this->record(AnalyticsJournalRecord::pageSessionUpdate($key, $params, $this->nowTs()), null);
+        $this->record(AnalyticsJournalRecord::pageSessionUpdate($openPage->key, $params, $this->nowTs()), null);
     }
 
     /**
      * Marks the current page session closed and drops it from the connection map.
+     * A frame naming another page is ignored, as it is by the master's {@see SubscriptionRegistry}.
      *
      * @param string $acceptKey WebSocket accept key; empty is ignored
+     * @param string $pageName Page name that must match the open session
      */
-    public function closePageSession(string $acceptKey): void
+    public function closePageSession(string $acceptKey, string $pageName): void
     {
-        $key = $this->connections[$acceptKey] ?? null;
-        if ($key === null) {
+        if (($this->connections[$acceptKey] ?? null)?->pageName !== $pageName) {
             return;
         }
 
-        $this->record(AnalyticsJournalRecord::pageSessionClose($key, $this->nowTs()), null);
-        $this->connections[$acceptKey] = null;
+        $this->closeOpenPage($acceptKey);
     }
 
     /**
@@ -424,7 +427,7 @@ final class AnalyticsCollector
         }
 
         $key = RandomHelper::hex(self::SESSION_KEY_BYTES);
-        $this->record(AnalyticsJournalRecord::userAction($key, $acceptKey, $this->connections[$acceptKey],
+        $this->record(AnalyticsJournalRecord::userAction($key, $acceptKey, $this->connections[$acceptKey]?->key,
             $actionName, null, $this->nowTs()), null);
         return $key;
     }
@@ -702,6 +705,22 @@ final class AnalyticsCollector
         $this->activeApiRequestKey = null;
         $this->activeUserActionKey = null;
         $this->connections = [];
+    }
+
+    /**
+     * Closes whichever page is open, including when a new subscribe replaces it with another name.
+     *
+     * @param string $acceptKey WebSocket accept key; unknown or pageless connections are ignored
+     */
+    private function closeOpenPage(string $acceptKey): void
+    {
+        $openPage = $this->connections[$acceptKey] ?? null;
+        if ($openPage === null) {
+            return;
+        }
+
+        $this->record(AnalyticsJournalRecord::pageSessionClose($openPage->key, $this->nowTs()), null);
+        $this->connections[$acceptKey] = null;
     }
 
     /**
