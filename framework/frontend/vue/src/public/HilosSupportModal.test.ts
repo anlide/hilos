@@ -63,8 +63,44 @@ describe('HilosSupportModal', () => {
   it('opens on the drawn default tier with the primary answer live', () => {
     mountOpen()
 
-    expect(tier('beer').getAttribute('aria-pressed')).toBe('true')
-    expect(tier('coffee').getAttribute('aria-pressed')).toBe('false')
+    const buttons = document.querySelectorAll('[data-id^="hilos-about-tier-"]')
+    expect(buttons).toHaveLength(3)
+
+    expect(tier('medium').getAttribute('aria-pressed')).toBe('true')
+    expect(tier('small').getAttribute('aria-pressed')).toBe('false')
+    expect(tier('large').getAttribute('aria-pressed')).toBe('false')
+
+    expect(
+      tier('small').querySelector('.fw-semibold')?.textContent?.trim(),
+    ).toBe('€0.20 / month')
+    expect(
+      tier('medium').querySelector('.fw-semibold')?.textContent?.trim(),
+    ).toBe('€2 / month')
+    expect(
+      tier('large').querySelector('.fw-semibold')?.textContent?.trim(),
+    ).toBe('€20 / month')
+
+    expect(tier('small').textContent).not.toContain('Small')
+    expect(tier('small').textContent).not.toContain('Coffee')
+    expect(tier('medium').textContent).not.toContain('Medium')
+    expect(tier('medium').textContent).not.toContain('Beer')
+    expect(tier('large').textContent).not.toContain('Large')
+    expect(tier('large').textContent).not.toContain('Patron')
+
+    expect(
+      tier('small').querySelector('i')?.classList.contains('bi-heart'),
+    ).toBe(true)
+    expect(
+      tier('medium').querySelector('i')?.classList.contains('bi-heart'),
+    ).toBe(true)
+    expect(
+      tier('large').querySelector('i')?.classList.contains('bi-heart'),
+    ).toBe(true)
+
+    expect(
+      tier('small').querySelector('.text-body-secondary')?.textContent,
+    ).toContain('Thank you — these coins add up to a server')
+
     // The region stands there before it has anything to say.
     expect(region()).not.toBeNull()
     expect(region()?.textContent?.trim()).toBe('')
@@ -104,20 +140,20 @@ describe('HilosSupportModal', () => {
 
     await subscribe()
     expect(refusals()).toHaveLength(1)
-    await pick('patron')
+    await pick('large')
 
     expect(refusals()).toHaveLength(0)
     expect(region()?.textContent?.trim()).toBe('')
-    expect(tier('patron').getAttribute('aria-pressed')).toBe('true')
-    expect(tier('beer').getAttribute('aria-pressed')).toBe('false')
+    expect(tier('large').getAttribute('aria-pressed')).toBe('true')
+    expect(tier('medium').getAttribute('aria-pressed')).toBe('false')
   })
 
   it('starts clean when it is opened again', async () => {
     const wrapper = mountOpen()
 
     await subscribe()
-    await pick('coffee')
-    expect(tier('coffee').getAttribute('aria-pressed')).toBe('true')
+    await pick('small')
+    expect(tier('small').getAttribute('aria-pressed')).toBe('true')
     await subscribe()
     expect(refusals()).toHaveLength(1)
 
@@ -125,7 +161,7 @@ describe('HilosSupportModal', () => {
     await wrapper.setProps({ modelValue: true })
 
     expect(refusals()).toHaveLength(0)
-    expect(tier('beer').getAttribute('aria-pressed')).toBe('true')
+    expect(tier('medium').getAttribute('aria-pressed')).toBe('true')
   })
 
   it('keeps the invisible refusal twin standing in both resting and refused states', async () => {

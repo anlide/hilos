@@ -41,6 +41,6 @@ describe('HilosAboutPage', () => {
     fireEvent.click(byId('hilos-about-support-open') as HTMLElement)
 
     expect(byId('modal')).not.toBeNull()
-    expect(byId('hilos-about-tier-beer')).not.toBeNull()
+    expect(byId('hilos-about-tier-medium')).not.toBeNull()
   })
 })

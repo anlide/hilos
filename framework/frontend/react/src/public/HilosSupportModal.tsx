@@ -134,9 +134,7 @@ export function HilosSupportModal({ open, onClose }: HilosSupportModalProps) {
           >
             <i className={`bi ${tier.icon} fs-5`} aria-hidden="true" />
             <span className="flex-grow-1">
-              <span className="d-block fw-semibold small">
-                {tier.label} · {tier.price}
-              </span>
+              <span className="d-block fw-semibold small">{tier.price}</span>
               <span className="d-block small text-body-secondary">
                 {tier.blurb}
               </span>

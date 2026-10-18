@@ -32,7 +32,7 @@ describe('HilosAboutPage', () => {
 
     expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
     expect(
-      document.querySelector('[data-id="hilos-about-tier-beer"]'),
+      document.querySelector('[data-id="hilos-about-tier-medium"]'),
     ).not.toBeNull()
   })
 })

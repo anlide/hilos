@@ -18,41 +18,36 @@
 export interface HilosSupportTier {
   /** The tier's own identifier, used for its `data-id` and for the selection. */
   readonly key: HilosSupportTierKey
-  /** The tier's name, `Coffee` — the first half of its line. */
-  readonly label: string
-  /** The price as it is shown, currency sign and period included. */
+  /** The price as it is shown, currency sign and period included — the tier's heading, with no name. */
   readonly price: string
-  /** The one line under the name saying what the money means. */
+  /** The one line under the heading saying what the money means. */
   readonly blurb: string
-  /** The Bootstrap icon class the tier is drawn with, `bi-cup-hot`. */
+  /** The Bootstrap icon class the tier is drawn with, `bi-heart`. */
   readonly icon: string
 }
 
 /** The tiers there are. A closed set: a tier is a drawing, not a configuration. */
-export type HilosSupportTierKey = 'coffee' | 'beer' | 'patron'
+export type HilosSupportTierKey = 'small' | 'medium' | 'large'
 
 /** The three tiers, in the order the mockup draws them. */
 export const HILOS_SUPPORT_TIERS: readonly HilosSupportTier[] = [
   {
-    key: 'coffee',
-    label: 'Coffee',
+    key: 'small',
+    price: '€0.20 / month',
+    blurb: 'Thank you — these coins add up to a server',
+    icon: 'bi-heart',
+  },
+  {
+    key: 'medium',
     price: '€2 / month',
-    blurb: 'Thank you — that is one server for a week',
-    icon: 'bi-cup-hot',
-  },
-  {
-    key: 'beer',
-    label: 'Beer',
-    price: '€5 / month',
     blurb: 'A tick on your profile and our honest affection',
-    icon: 'bi-cup-straw',
+    icon: 'bi-heart',
   },
   {
-    key: 'patron',
-    label: 'Patron',
-    price: '€15 / month',
+    key: 'large',
+    price: '€20 / month',
     blurb: 'The same, only the tick sparkles a little',
-    icon: 'bi-gem',
+    icon: 'bi-heart',
   },
 ]
 
@@ -63,7 +58,7 @@ export const HILOS_SUPPORT_TIERS: readonly HilosSupportTier[] = [
  * frame: a screen whose whole subject is the absence of dead buttons cannot open
  * with one.
  */
-export const HILOS_SUPPORT_DEFAULT_TIER: HilosSupportTierKey = 'beer'
+export const HILOS_SUPPORT_DEFAULT_TIER: HilosSupportTierKey = 'medium'
 
 /** The honest answer to a subscribe attempt, for as long as there is no payment. */
 export const HILOS_SUPPORT_REFUSAL =

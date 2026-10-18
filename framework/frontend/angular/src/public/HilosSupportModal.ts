@@ -78,9 +78,7 @@ import { HilosModal } from '../HilosModal.js'
           >
             <i [class]="'bi ' + tier.icon + ' fs-5'" aria-hidden="true"></i>
             <span class="flex-grow-1">
-              <span class="d-block fw-semibold small"
-                >{{ tier.label }} · {{ tier.price }}</span
-              >
+              <span class="d-block fw-semibold small">{{ tier.price }}</span>
               <span class="d-block small text-body-secondary">{{
                 tier.blurb
               }}</span>

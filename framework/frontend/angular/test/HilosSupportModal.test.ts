@@ -81,8 +81,50 @@ describe('HilosSupportModal', () => {
   it('opens on the drawn default tier with the primary answer live', () => {
     const fixture = mountOpen()
 
-    expect(tier(fixture, 'beer').getAttribute('aria-pressed')).toBe('true')
-    expect(tier(fixture, 'coffee').getAttribute('aria-pressed')).toBe('false')
+    const buttons = (fixture.nativeElement as HTMLElement).querySelectorAll(
+      '[data-id^="hilos-about-tier-"]',
+    )
+    expect(buttons).toHaveLength(3)
+
+    expect(tier(fixture, 'medium').getAttribute('aria-pressed')).toBe('true')
+    expect(tier(fixture, 'small').getAttribute('aria-pressed')).toBe('false')
+    expect(tier(fixture, 'large').getAttribute('aria-pressed')).toBe('false')
+
+    expect(
+      tier(fixture, 'small').querySelector('.fw-semibold')?.textContent?.trim(),
+    ).toBe('€0.20 / month')
+    expect(
+      tier(fixture, 'medium')
+        .querySelector('.fw-semibold')
+        ?.textContent?.trim(),
+    ).toBe('€2 / month')
+    expect(
+      tier(fixture, 'large').querySelector('.fw-semibold')?.textContent?.trim(),
+    ).toBe('€20 / month')
+
+    expect(tier(fixture, 'small').textContent).not.toContain('Small')
+    expect(tier(fixture, 'small').textContent).not.toContain('Coffee')
+    expect(tier(fixture, 'medium').textContent).not.toContain('Medium')
+    expect(tier(fixture, 'medium').textContent).not.toContain('Beer')
+    expect(tier(fixture, 'large').textContent).not.toContain('Large')
+    expect(tier(fixture, 'large').textContent).not.toContain('Patron')
+
+    expect(
+      tier(fixture, 'small').querySelector('i')?.classList.contains('bi-heart'),
+    ).toBe(true)
+    expect(
+      tier(fixture, 'medium')
+        .querySelector('i')
+        ?.classList.contains('bi-heart'),
+    ).toBe(true)
+    expect(
+      tier(fixture, 'large').querySelector('i')?.classList.contains('bi-heart'),
+    ).toBe(true)
+
+    expect(
+      tier(fixture, 'small').querySelector('.text-body-secondary')?.textContent,
+    ).toContain('Thank you — these coins add up to a server')
+
     // The region stands there before it has anything to say.
     expect(region(fixture)).not.toBeNull()
     expect(region(fixture)?.textContent?.trim()).toBe('')
@@ -122,20 +164,20 @@ describe('HilosSupportModal', () => {
 
     subscribe(fixture)
     expect(refusals(fixture)).toHaveLength(1)
-    pick(fixture, 'patron')
+    pick(fixture, 'large')
 
     expect(refusals(fixture)).toHaveLength(0)
     expect(region(fixture)?.textContent?.trim()).toBe('')
-    expect(tier(fixture, 'patron').getAttribute('aria-pressed')).toBe('true')
-    expect(tier(fixture, 'beer').getAttribute('aria-pressed')).toBe('false')
+    expect(tier(fixture, 'large').getAttribute('aria-pressed')).toBe('true')
+    expect(tier(fixture, 'medium').getAttribute('aria-pressed')).toBe('false')
   })
 
   it('starts clean when it is opened again', () => {
     const fixture = mountOpen()
 
     subscribe(fixture)
-    pick(fixture, 'coffee')
-    expect(tier(fixture, 'coffee').getAttribute('aria-pressed')).toBe('true')
+    pick(fixture, 'small')
+    expect(tier(fixture, 'small').getAttribute('aria-pressed')).toBe('true')
     subscribe(fixture)
     expect(refusals(fixture)).toHaveLength(1)
 
@@ -145,7 +187,7 @@ describe('HilosSupportModal', () => {
     fixture.detectChanges()
 
     expect(refusals(fixture)).toHaveLength(0)
-    expect(tier(fixture, 'beer').getAttribute('aria-pressed')).toBe('true')
+    expect(tier(fixture, 'medium').getAttribute('aria-pressed')).toBe('true')
   })
 
   it('keeps the invisible refusal twin standing in both resting and refused states', () => {
