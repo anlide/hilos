@@ -69,11 +69,7 @@ class LanguageNameActions extends DbActions
             $this->deleteOne();
             Database::transactionCommit();
         } catch (Throwable $failure) {
-            try {
-                Database::transactionRollback();
-            } catch (HilosException) {
-                // Keep the failure that prevented the name removal.
-            }
+            Database::transactionRollbackSilent();
             throw $failure;
         }
     }

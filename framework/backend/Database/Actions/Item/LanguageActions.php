@@ -126,11 +126,7 @@ class LanguageActions extends DbActions
             $this->item->getCollection()?->forgetCachedItem($idString);
             Database::transactionCommit();
         } catch (Throwable $failure) {
-            try {
-                Database::transactionRollback();
-            } catch (HilosException) {
-                // Preserve the failure that prevented language removal.
-            }
+            Database::transactionRollbackSilent();
             throw $failure;
         }
     }

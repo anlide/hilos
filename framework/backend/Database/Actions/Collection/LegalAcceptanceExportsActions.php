@@ -44,11 +44,7 @@ class LegalAcceptanceExportsActions extends DbActions
 
             return $order;
         } catch (Throwable $e) {
-            try {
-                Database::transactionRollback();
-            } catch (HilosException) {
-                // Preserve the failure that prevented the order from being replaced.
-            }
+            Database::transactionRollbackSilent();
             throw $e;
         }
     }

@@ -39,11 +39,7 @@ class DataExportsActions extends DbActions
 
             return $request;
         } catch (Throwable $e) {
-            try {
-                Database::transactionRollback();
-            } catch (HilosException) {
-                // Preserve the failure that prevented the request from being replaced.
-            }
+            Database::transactionRollbackSilent();
             throw $e;
         }
     }

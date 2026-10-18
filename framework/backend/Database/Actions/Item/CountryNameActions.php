@@ -90,11 +90,7 @@ class CountryNameActions extends DbActions
             $this->deleteBaseAndOverridesInTransaction();
             Database::transactionCommit();
         } catch (Throwable $failure) {
-            try {
-                Database::transactionRollback();
-            } catch (HilosException) {
-                // Keep the failure that prevented the name removal.
-            }
+            Database::transactionRollbackSilent();
             throw $failure;
         }
     }
@@ -124,11 +120,7 @@ class CountryNameActions extends DbActions
             Hilos::$db->countryNames->actions->takeFromCatalog($country, $language);
             Database::transactionCommit();
         } catch (Throwable $failure) {
-            try {
-                Database::transactionRollback();
-            } catch (HilosException) {
-                // Keep the failure that prevented the name removal or restoration.
-            }
+            Database::transactionRollbackSilent();
             throw $failure;
         }
     }

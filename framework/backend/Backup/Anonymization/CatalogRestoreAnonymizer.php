@@ -150,7 +150,7 @@ final class CatalogRestoreAnonymizer implements RestoreAnonymizer
             }
             Database::transactionCommit();
         } catch (HilosException $failure) {
-            self::rollBack();
+            Database::transactionRollbackSilent();
 
             throw new RestoreFailedException(
                 self::holdsPii($index, $database) . $failure->getMessage(),
@@ -236,22 +236,5 @@ final class CatalogRestoreAnonymizer implements RestoreAnonymizer
     {
         return "Database [{$database}] on connection {$index} is restored but NOT anonymized - "
             . 'it holds PII: ';
-    }
-
-    /**
-     * Rolls the pass back, best effort.
-     *
-     * A rollback that itself fails changes nothing an operator can act on: the restore is
-     * already failing, and the message it fails with already says the database is to be
-     * treated as holding personal data. That covers a step putting memory back too, which
-     * the rollback has logged already.
-     */
-    private static function rollBack(): void
-    {
-        try {
-            Database::transactionRollback();
-        } catch (HilosException) {
-            // The pass is already lost; the caller's refusal carries the outcome.
-        }
     }
 }

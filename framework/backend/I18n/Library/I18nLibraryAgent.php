@@ -236,11 +236,7 @@ final class I18nLibraryAgent extends AbstractHilosAgent
             );
             Database::transactionCommit();
         } catch (Throwable $failure) {
-            try {
-                Database::transactionRollback();
-            } catch (HilosException) {
-                // Keep the failure that prevented the fixture from being created.
-            }
+            Database::transactionRollbackSilent();
             throw $failure;
         }
     }
@@ -370,11 +366,7 @@ final class I18nLibraryAgent extends AbstractHilosAgent
             );
             Database::transactionCommit();
         } catch (Throwable $failure) {
-            try {
-                Database::transactionRollback();
-            } catch (HilosException) {
-                // Preserve the failure that prevented the fixture from being created.
-            }
+            Database::transactionRollbackSilent();
             throw $failure;
         }
     }
@@ -466,11 +458,7 @@ final class I18nLibraryAgent extends AbstractHilosAgent
             Database::transactionRollback();
             throw $refusal;
         } catch (Throwable $failure) {
-            try {
-                Database::transactionRollback();
-            } catch (HilosException) {
-                // Preserve the failure that prevented the command.
-            }
+            Database::transactionRollbackSilent();
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
 
             return;
@@ -509,11 +497,7 @@ final class I18nLibraryAgent extends AbstractHilosAgent
             Database::transactionRollback();
             throw $refusal;
         } catch (Throwable $failure) {
-            try {
-                Database::transactionRollback();
-            } catch (HilosException) {
-                // Preserve the failure that prevented the command.
-            }
+            Database::transactionRollbackSilent();
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
             return;
         }
@@ -584,11 +568,7 @@ final class I18nLibraryAgent extends AbstractHilosAgent
             Database::transactionRollback();
             throw $refusal;
         } catch (Throwable $failure) {
-            try {
-                Database::transactionRollback();
-            } catch (HilosException) {
-                // Preserve the failure that prevented cleanup.
-            }
+            Database::transactionRollbackSilent();
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
 
             return;
@@ -638,11 +618,7 @@ final class I18nLibraryAgent extends AbstractHilosAgent
             Database::transactionRollback();
             throw $refusal;
         } catch (Throwable $failure) {
-            try {
-                Database::transactionRollback();
-            } catch (HilosException) {
-                // Preserve the failure that prevented the command.
-            }
+            Database::transactionRollbackSilent();
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
             return;
         }
@@ -709,11 +685,7 @@ final class I18nLibraryAgent extends AbstractHilosAgent
             Database::transactionRollback();
             throw $refusal;
         } catch (Throwable $failure) {
-            try {
-                Database::transactionRollback();
-            } catch (HilosException) {
-                // Preserve the failure that prevented the command.
-            }
+            Database::transactionRollbackSilent();
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
 
             return;
@@ -783,11 +755,7 @@ final class I18nLibraryAgent extends AbstractHilosAgent
             Hilos::$db->i18nReflows->actions->record($fingerprint);
             Database::transactionCommit();
         } catch (Throwable $failure) {
-            try {
-                Database::transactionRollback();
-            } catch (HilosException) {
-                // Keep the failure that stopped the reflow.
-            }
+            Database::transactionRollbackSilent();
             throw $failure;
         }
 

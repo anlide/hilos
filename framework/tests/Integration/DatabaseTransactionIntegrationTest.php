@@ -6,6 +6,7 @@ namespace Hilos\Tests\Integration;
 
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\SignalConstants;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
@@ -359,6 +360,50 @@ final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTe
         self::assertSame([], Database::handlerEnd(), 'The rollback closed the failed level');
         self::assertSame([], $this->drainDbFrames());
         self::assertSame([], $this->reaction->seen);
+
+        Database::close();
+        Database::connect(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        self::assertSame(0, self::requestRows(), 'The writes went with the link');
+    }
+
+    /**
+     * A silent rollback is the first statement on a link that was killed, so the SQL that fails is
+     * ROLLBACK itself. The caller raises the same error it held, the failure is logged with its
+     * prefix, the handler owes nothing and no announcement leaves.
+     *
+     * @throws HilosException When a write, the kill or the reconnect fails
+     */
+    public function testASilentRollbackOfAKilledSessionLogsTheSqlFailureAndKeepsTheOperationError(): void
+    {
+        $operation = new LogicException('the write was refused');
+        $logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-transaction-silent-rollback');
+        Logger::setLogFile($logFile);
+        try {
+            try {
+                Database::transactionStart();
+                $this->request(self::FIRST_USER_ID);
+                Database::sql('SELECT CONNECTION_ID() AS id');
+                $this->killFromAnotherSession((int)Database::field('id'));
+                throw $operation;
+            } catch (LogicException $failure) {
+                Database::transactionRollbackSilent();
+                throw $failure;
+            }
+
+            self::fail('The operation failure still reaches the caller');
+        } catch (LogicException $failure) {
+            self::assertSame($operation, $failure);
+            $log = (string)file_get_contents($logFile);
+            self::assertStringContainsString('A silent transaction rollback failed: ', $log);
+            self::assertStringContainsString("Query: ROLLBACK\n", $log);
+        } finally {
+            Logger::resetLogFile();
+            unlink($logFile);
+        }
+
+        self::assertSame([], Database::handlerEnd(), 'The silent rollback closed the level');
+        self::assertSame([], $this->drainDbFrames(), 'No frame leaves for a write that did not stand');
+        self::assertSame([], $this->reaction->seen, 'No reaction hears a write that did not stand');
 
         Database::close();
         Database::connect(DatabaseConnectionDefaults::PRIMARY_INDEX);

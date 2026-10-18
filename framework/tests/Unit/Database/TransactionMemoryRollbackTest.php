@@ -44,6 +44,7 @@ use Hilos\Runtime\View\Collection\RtCollection;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\Item\RtItem;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
@@ -339,6 +340,133 @@ final class TransactionMemoryRollbackTest extends TestCase
 
         $this->expectException(LogicException::class);
         $this->expectExceptionMessage('a framework step failed');
+        Database::transactionRollback();
+    }
+
+    /**
+     * A silent rollback puts the memory back and drops what the level held. Neither a rollback
+     * that succeeds nor a second call with nothing open writes an error.
+     *
+     * @throws HilosException When the fixture object cannot be saved
+     */
+    public function testASilentRollbackRestoresMemoryDropsWhatItHeldAndLogsNoError(): void
+    {
+        $logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-silent-rollback');
+        Logger::setLogFile($logFile);
+        try {
+            $object = MemoryRollbackObject::stored(7, 'before');
+
+            Database::transactionStart();
+            $object->remark('after');
+            $object->sync();
+            Database::transactionRollbackSilent();
+
+            $this->assertSame('before', $object->mark());
+            $this->assertTrue($object->isRelated());
+            $this->assertSame(
+                [[TableMutationType::Update, '7', ['mark' => 'after']], [TableMutationType::Update, '7', ['mark' => 'before']]],
+                $this->mirror->seen,
+            );
+            $this->assertSame([], $this->reaction->seen);
+            $this->assertSame([], Database::handlerEnd(), 'The level is closed');
+            Database::transactionStart();
+            Database::transactionRollback();
+            Database::transactionRollbackSilent();
+
+            $this->assertStringNotContainsString('ERROR', (string)file_get_contents($logFile));
+        } finally {
+            Logger::resetLogFile();
+            unlink($logFile);
+        }
+    }
+
+    /**
+     * A framework undo does not replace the operation's own exception: the caller raises that
+     * same object again, the other steps still put the memory back, and the log names the silent
+     * rollback together with the undo's own text.
+     *
+     * @throws HilosException When the fixture object cannot be saved
+     */
+    public function testASilentRollbackKeepsTheOperationFailureWhenAFrameworkUndoFails(): void
+    {
+        $object = MemoryRollbackObject::stored(7, 'before');
+        $operation = new LogicException('the write was refused');
+        $logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-silent-rollback');
+        Logger::setLogFile($logFile);
+        try {
+            try {
+                Database::transactionStart();
+                $object->remark('after');
+                $object->sync();
+                Database::onRollback(static function (): void {
+                    throw new LogicException('a framework step failed');
+                });
+                throw $operation;
+            } catch (LogicException $failure) {
+                Database::transactionRollbackSilent();
+                throw $failure;
+            }
+
+            $this->fail('The operation failure still reaches the caller');
+        } catch (LogicException $failure) {
+            $this->assertSame($operation, $failure);
+            $this->assertStringContainsString(
+                'A silent transaction rollback failed: a framework step failed',
+                (string)file_get_contents($logFile),
+            );
+        } finally {
+            Logger::resetLogFile();
+            unlink($logFile);
+        }
+
+        $this->assertSame('before', $object->mark());
+        $this->assertSame([], Database::handlerEnd(), 'The level is closed');
+        Database::transactionStart();
+        Database::transactionRollback();
+    }
+
+    /**
+     * A foreign undo is wrapped inside the rollback and still does not replace the operation's
+     * own exception. The caller raises that same object again, the other steps still put the
+     * memory back, and the log names the silent rollback together with the undo's own text.
+     *
+     * @throws HilosException When the fixture object cannot be saved
+     */
+    public function testASilentRollbackKeepsTheOperationFailureWhenAForeignUndoFails(): void
+    {
+        $object = MemoryRollbackObject::stored(7, 'before');
+        $operation = new LogicException('the write was refused');
+        $logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-silent-rollback');
+        Logger::setLogFile($logFile);
+        try {
+            try {
+                Database::transactionStart();
+                $object->remark('after');
+                $object->sync();
+                Database::onRollback(static function (): void {
+                    throw new RuntimeException('a foreign step failed');
+                });
+                throw $operation;
+            } catch (LogicException $failure) {
+                Database::transactionRollbackSilent();
+                throw $failure;
+            }
+
+            $this->fail('The operation failure still reaches the caller');
+        } catch (LogicException $failure) {
+            $this->assertSame($operation, $failure);
+            $this->assertStringContainsString(
+                'A silent transaction rollback failed: A step restoring this process\'s memory on a rollback failed: a foreign step failed',
+                (string)file_get_contents($logFile),
+            );
+        } finally {
+            Logger::resetLogFile();
+            unlink($logFile);
+        }
+
+        $this->assertSame('before', $object->mark());
+        $this->assertSame([], Database::handlerEnd(), 'The level is closed');
+        Database::transactionStart();
         Database::transactionRollback();
     }
 

@@ -122,11 +122,7 @@ class SecondFactorTrustsActions extends DbActions
             $write();
             Database::transactionCommit();
         } catch (Throwable $failure) {
-            try {
-                Database::transactionRollback();
-            } catch (HilosException) {
-                // Keep the failure that prevented the trust change.
-            }
+            Database::transactionRollbackSilent();
             throw $failure;
         }
     }

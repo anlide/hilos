@@ -23,6 +23,20 @@ try {
 }
 ```
 
+Cleanup that must not replace the failure the caller already holds calls
+`Database::transactionRollbackSilent()`. What the caller raises again is their
+own failure. A `HilosException` from the rollback is logged as an error and
+dropped. A step that failed while putting memory back has already been logged,
+so the same failure can be recorded a second time. A rollback that succeeds,
+and a call with no transaction open, writes nothing.
+
+```php
+} catch (HilosException $failure) {
+    Database::transactionRollbackSilent();
+    throw $failure;
+}
+```
+
 One transaction covers the database and the memory of this process — the row
 cache and the runtime. While it is open, the announcements of its writes wait.
 The commit of the outermost level releases them in the order the writes were

@@ -74,11 +74,7 @@ class LanguagesActions extends DbActions
             Hilos::$db->countryNames->actions->takeAllFromCatalog($language);
             Database::transactionCommit();
         } catch (Throwable $failure) {
-            try {
-                Database::transactionRollback();
-            } catch (HilosException) {
-                // Keep the failure that prevented the language addition.
-            }
+            Database::transactionRollbackSilent();
             throw $failure;
         }
 

@@ -5689,11 +5689,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $this->foldAccount($survivorId, $loserId);
             Database::transactionCommit();
         } catch (HilosException $e) {
-            try {
-                Database::transactionRollback();
-            } catch (HilosException) {
-                // A failing rollback would replace the error that made the merge fail
-            }
+            Database::transactionRollbackSilent();
 
             throw $e;
         }
@@ -6211,11 +6207,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             }
             Database::transactionCommit();
         } catch (HilosException | RandomException $e) {
-            try {
-                Database::transactionRollback();
-            } catch (HilosException) {
-                // A failing rollback would replace the error that made the erasure fail
-            }
+            Database::transactionRollbackSilent();
 
             throw $e;
         }

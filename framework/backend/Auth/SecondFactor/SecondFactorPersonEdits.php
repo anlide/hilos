@@ -179,7 +179,7 @@ final class SecondFactorPersonEdits
             $this->takeFactorOut();
             Database::transactionCommit();
         } catch (HilosException $failure) {
-            $this->rollBack();
+            Database::transactionRollbackSilent();
 
             throw $failure;
         }
@@ -258,7 +258,7 @@ final class SecondFactorPersonEdits
             $this->takeFactorOut();
             Database::transactionCommit();
         } catch (HilosException $failure) {
-            $this->rollBack();
+            Database::transactionRollbackSilent();
 
             throw $failure;
         }
@@ -407,20 +407,5 @@ final class SecondFactorPersonEdits
         Hilos::$db->secondFactors->actions->deleteForUser($this->userId);
         Hilos::$db->secondFactorBackupCodes->actions->deleteForUser($this->userId);
         Hilos::$db->secondFactorTrusts->actions->deleteForUser($this->userId);
-    }
-
-    /**
-     * Rolls back a failed switch-off without letting the cleanup replace the failure.
-     *
-     * The connection under the transaction belongs to the worker and outlives the frame, so a
-     * transaction left open would take in every later write that worker makes.
-     */
-    private function rollBack(): void
-    {
-        try {
-            Database::transactionRollback();
-        } catch (HilosException) {
-            // Reporting the cleanup would replace the failure the caller is owed
-        }
     }
 }

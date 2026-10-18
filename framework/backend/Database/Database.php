@@ -1065,6 +1065,23 @@ class Database
     }
 
     /**
+     * Rolls the innermost open level back without replacing the failure the caller already holds.
+     *
+     * What the caller raises again is their own error. A Hilos exception from the rollback is logged
+     * as an error and dropped. A step that failed while putting memory back has already been logged,
+     * so this line can record that same failure a second time. A rollback that succeeds, and a call
+     * with no transaction open, writes nothing.
+     */
+    public static function transactionRollbackSilent(): void
+    {
+        try {
+            self::transactionRollback();
+        } catch (HilosException $failure) {
+            Logger::error('A silent transaction rollback failed: ' . $failure->getMessage());
+        }
+    }
+
+    /**
      * Makes an announcement now, or once the transaction it was made under commits.
      *
      * Held on the innermost open level of the current connection: a committed nested level

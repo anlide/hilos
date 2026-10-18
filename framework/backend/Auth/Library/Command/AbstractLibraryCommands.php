@@ -627,16 +627,11 @@ abstract class AbstractLibraryCommands
      * committed by an unrelated BEGIN - together with the orphan account that has no
      * identity, which is the very thing this transaction exists to prevent.
      *
-     * A rollback that fails on its own is dropped rather than reported: the caller is
-     * owed the failure that ended the landing, and a second one about the cleanup would
-     * take its place.
+     * A rollback that fails on its own is written to the log, and the failure that
+     * ended the landing is not replaced by it.
      */
     private function endFailedLanding(): void
     {
-        try {
-            Database::transactionRollback();
-        } catch (HilosException) {
-            // Reporting the cleanup would replace the failure the caller is owed
-        }
+        Database::transactionRollbackSilent();
     }
 }

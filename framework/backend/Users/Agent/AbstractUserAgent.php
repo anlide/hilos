@@ -930,7 +930,7 @@ abstract class AbstractUserAgent extends AbstractAgent
             $rename = Hilos::$db->userRenames->actions->add($this->userId, $renamedByUserId, $oldName, $user->name);
             Database::transactionCommit();
         } catch (HilosException $failure) {
-            $this->rollBack();
+            Database::transactionRollbackSilent();
 
             throw $failure;
         }
@@ -999,7 +999,7 @@ abstract class AbstractUserAgent extends AbstractAgent
             $user->actions->setBlock(true);
             Database::transactionCommit();
         } catch (HilosException $failure) {
-            $this->rollBack();
+            Database::transactionRollbackSilent();
 
             throw $failure;
         }
@@ -1167,11 +1167,11 @@ abstract class AbstractUserAgent extends AbstractAgent
             Hilos::$db->identities->changeEmail($this->userId, $from, $to);
             Database::transactionCommit();
         } catch (DuplicateValueException | DuplicateEntryException) {
-            $this->rollBack();
+            Database::transactionRollbackSilent();
 
             throw new ValidationException(AuthMessages::EMAIL_IN_USE);
         } catch (HilosException $failure) {
-            $this->rollBack();
+            Database::transactionRollbackSilent();
 
             throw $failure;
         }
@@ -1424,7 +1424,7 @@ abstract class AbstractUserAgent extends AbstractAgent
             $former = Hilos::$db->userPhotos->actions->put($this->userId, $fileId);
             Database::transactionCommit();
         } catch (HilosException $failure) {
-            $this->rollBack();
+            Database::transactionRollbackSilent();
 
             throw $failure;
         }
@@ -1458,7 +1458,7 @@ abstract class AbstractUserAgent extends AbstractAgent
             $fileId = Hilos::$db->userPhotos->actions->deleteForUser($this->userId);
             Database::transactionCommit();
         } catch (HilosException $failure) {
-            $this->rollBack();
+            Database::transactionRollbackSilent();
 
             throw $failure;
         }
@@ -1708,21 +1708,6 @@ abstract class AbstractUserAgent extends AbstractAgent
     {
         if ($userId !== $this->userId) {
             throw new AgentException("{$name} for user #{$userId} reached the agent of user #{$this->userId}");
-        }
-    }
-
-    /**
-     * Rolls back a failed rename, address move or block without letting the cleanup replace the failure.
-     *
-     * The connection under the transaction belongs to the worker and outlives the frame, so a
-     * transaction left open would take in every later write that worker makes.
-     */
-    private function rollBack(): void
-    {
-        try {
-            Database::transactionRollback();
-        } catch (HilosException) {
-            // Reporting the cleanup would replace the failure the caller is owed
         }
     }
 }
