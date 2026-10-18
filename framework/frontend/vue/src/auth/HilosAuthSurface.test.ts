@@ -17,6 +17,7 @@ import { consentTerms } from '../../../core/test/legal/consentFixture.js'
 import {
   ActionError,
   ActionLifecycle,
+  AUTH_ACTION_CANCEL_REGISTRATION,
   AUTH_ACTION_COMPLETE_REGISTRATION_PASSWORDLESS,
   AUTH_ACTION_CONFIRM_MAGIC_LINK_CODE,
   AUTH_ACTION_DETECT_IDENTIFIER,
@@ -511,6 +512,58 @@ function heldIdentifierContext(): {
       channels: [],
     }),
   }
+}
+
+/**
+ * A context that starts at a free registrable address and answers a proven
+ * address afterwards on return (HIL-825).
+ *
+ * @param dispatched Optional array to log dispatches.
+ * @returns The context to mount with.
+ */
+function provenOnReturnContext(dispatched?: Dispatched): HilosAuthContext {
+  let answered = false
+  const connection = {
+    on: vi.fn().mockReturnValue(() => undefined),
+  } as unknown as HilosConnection
+  const actions = {
+    dispatch: (action: string, payload: Record<string, unknown>) => {
+      dispatched?.push({ action, payload })
+      const identifier = String(payload['identifier'] ?? '')
+      let reply
+      if (action === AUTH_ACTION_DETECT_IDENTIFIER) {
+        reply = {
+          identifier,
+          normalized: identifier,
+          kind: 'email',
+          status: answered ? 'proven' : 'none',
+          methods: [],
+          registerable: answered ? [] : [PASSWORD_METHOD_KEY],
+          registrationBlock: null,
+          signInBlock: null,
+        }
+        answered = true
+      } else if (action === AUTH_ACTION_LEGAL_CONSENT) {
+        reply = consentTerms()
+      } else if (action === AUTH_ACTION_CANCEL_REGISTRATION) {
+        answered = false
+        reply = {}
+      }
+
+      return {
+        requestId: 'req-proven',
+        loading: createSignal(false),
+        done: Promise.resolve({ reply }),
+      } as unknown as ActionHandle
+    },
+  } as unknown as ActionLifecycle
+
+  return createHilosAuthContext({
+    connection,
+    scopes: scopesWith([{ key: 'password', name: null }]),
+    actions,
+    channels: [],
+  })
 }
 
 /**
@@ -2773,6 +2826,204 @@ describe('HilosAuthSurface loads real consent (HIL-499)', () => {
     expect(
       wrapper.get('[data-id="auth-submit"]').attributes('disabled'),
     ).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('renders red cancel button on proven_identifier and cancelling dispatches hilos_cancel_registration and returns to address', async () => {
+    vi.useFakeTimers()
+    const dispatched: Dispatched = []
+    const wrapper = mount(HilosAuthSurface, {
+      props: { context: provenOnReturnContext(dispatched) },
+    })
+
+    await wrapper
+      .find('[data-id="auth-identifier"]')
+      .setValue('newcomer@example.com')
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(wrapper)
+    await wrapper.get('form').trigger('submit')
+    await flush(wrapper)
+    await wrapper.get('[data-id="auth-restart"]').trigger('click')
+    await flush(wrapper)
+
+    const resume = wrapper.find('[data-id="auth-resume-password"]')
+    expect(resume.exists()).toBe(true)
+    expect(resume.attributes('disabled')).toBeUndefined()
+
+    const cancel = wrapper.find('[data-id="auth-cancel-registration"]')
+    expect(cancel.exists()).toBe(true)
+    expect(cancel.attributes('type')).toBe('button')
+    expect(cancel.text()).toBe('Cancel registration')
+    expect(cancel.classes()).toContain('text-danger')
+    expect(cancel.attributes('disabled')).toBeUndefined()
+
+    await cancel.trigger('click')
+    await flush(wrapper)
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(wrapper)
+
+    expect(
+      dispatched.filter((c) => c.action === AUTH_ACTION_CANCEL_REGISTRATION),
+    ).toHaveLength(1)
+    expect(
+      dispatched.find((c) => c.action === AUTH_ACTION_CANCEL_REGISTRATION)
+        ?.payload,
+    ).toEqual({})
+
+    expect(wrapper.find('[data-id="auth-identifier"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="auth-cancel-registration"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.text()).toContain('Create your account')
+    wrapper.unmount()
+  })
+
+  it('disables cancel button on proven_identifier when detection is outdated', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(HilosAuthSurface, {
+      props: { context: provenOnReturnContext() },
+    })
+
+    await wrapper
+      .find('[data-id="auth-identifier"]')
+      .setValue('newcomer@example.com')
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(wrapper)
+    await wrapper.get('form').trigger('submit')
+    await flush(wrapper)
+    await wrapper.get('[data-id="auth-restart"]').trigger('click')
+    await flush(wrapper)
+
+    const cancel = wrapper.find('[data-id="auth-cancel-registration"]')
+    expect(cancel.exists()).toBe(true)
+    expect(cancel.attributes('disabled')).toBeUndefined()
+
+    await wrapper
+      .find('[data-id="auth-identifier"]')
+      .setValue('newcomer@example.co')
+    await flush(wrapper)
+    expect(cancel.attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('toggles password visibility for sign-in, registration, and recovery without form submit or dispatch', async () => {
+    vi.useFakeTimers()
+    const { context, dispatched } = passwordOnlyContext()
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+
+    await wrapper
+      .find('[data-id="auth-identifier"]')
+      .setValue('someone@example.com')
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(wrapper)
+
+    const pwInput = wrapper.find('[data-id="auth-password"]')
+    expect(pwInput.exists()).toBe(true)
+    expect(pwInput.attributes('type')).toBe('password')
+    expect(pwInput.attributes('autocomplete')).toBe('current-password')
+
+    const pwToggle = wrapper.find('[data-id="auth-password-toggle"]')
+    expect(pwToggle.exists()).toBe(true)
+    expect(pwToggle.attributes('type')).toBe('button')
+    expect(pwToggle.attributes('aria-label')).toBe('Show password')
+    expect(pwToggle.attributes('title')).toBe('Show password')
+    expect(pwToggle.attributes('aria-controls')).toBe('auth-password')
+    expect(pwToggle.attributes('aria-pressed')).toBeUndefined()
+    expect(pwToggle.find('.bi-eye').exists()).toBe(true)
+
+    await pwInput.setValue('secret-pass-1')
+    await flush(wrapper)
+
+    const dispatchCountBeforeToggle = dispatched.length
+
+    await pwToggle.trigger('click')
+    await flush(wrapper)
+
+    expect(pwInput.attributes('type')).toBe('text')
+    expect((pwInput.element as HTMLInputElement).value).toBe('secret-pass-1')
+    expect(pwInput.attributes('autocomplete')).toBe('current-password')
+    expect(pwToggle.attributes('aria-label')).toBe('Hide password')
+    expect(pwToggle.attributes('title')).toBe('Hide password')
+    expect(pwToggle.find('.bi-eye-slash').exists()).toBe(true)
+    expect(dispatched.length).toBe(dispatchCountBeforeToggle)
+
+    await pwInput.setValue('secret-pass-2')
+    await flush(wrapper)
+    expect(pwInput.attributes('type')).toBe('text')
+    expect((pwInput.element as HTMLInputElement).value).toBe('secret-pass-2')
+
+    await pwToggle.trigger('click')
+    await flush(wrapper)
+    expect(pwInput.attributes('type')).toBe('password')
+    expect(pwToggle.attributes('aria-label')).toBe('Show password')
+    expect(pwToggle.find('.bi-eye').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('resets password visibility across context changes (address, step, intent)', async () => {
+    vi.useFakeTimers()
+    const { context } = magicLinkContext()
+    context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, {
+      ...PROVED_REGISTRATION_STEP,
+      intent: 'register',
+    })
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+
+    const newPwInput = wrapper.find('[data-id="auth-new-password"]')
+    const newPwToggle = wrapper.find('[data-id="auth-new-password-toggle"]')
+    expect(newPwInput.exists()).toBe(true)
+    expect(newPwToggle.exists()).toBe(true)
+    expect(newPwInput.attributes('type')).toBe('password')
+    expect(newPwInput.attributes('autocomplete')).toBe('new-password')
+
+    await newPwToggle.trigger('click')
+    await flush(wrapper)
+    expect(newPwInput.attributes('type')).toBe('text')
+
+    wrapper.unmount()
+
+    const recoveryContext = magicLinkContext().context
+    recoveryContext.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, {
+      ...PROVED_REGISTRATION_STEP,
+      intent: 'recovery',
+    })
+    const recWrapper = mount(HilosAuthSurface, {
+      props: { context: recoveryContext },
+    })
+    await flush(recWrapper)
+
+    const recPwInput = recWrapper.find('[data-id="auth-new-password"]')
+    const recPwToggle = recWrapper.find('[data-id="auth-new-password-toggle"]')
+    expect(recPwInput.exists()).toBe(true)
+    expect(recPwToggle.exists()).toBe(true)
+    expect(recPwInput.attributes('type')).toBe('password')
+    expect(recPwToggle.attributes('aria-label')).toBe('Show password')
+
+    await recPwToggle.trigger('click')
+    await flush(recWrapper)
+    expect(recPwInput.attributes('type')).toBe('text')
+    expect(recPwToggle.attributes('aria-label')).toBe('Hide password')
+    recWrapper.unmount()
+  })
+
+  it('omits toggle buttons when password fields are absent from DOM', async () => {
+    vi.useFakeTimers()
+    const { context } = heldIdentifierContext()
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-password"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="auth-password-toggle"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-id="auth-new-password"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="auth-new-password-toggle"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-id="auth-cancel-registration"]').exists()).toBe(
+      false,
+    )
     wrapper.unmount()
   })
 })

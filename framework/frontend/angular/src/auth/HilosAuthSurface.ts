@@ -61,6 +61,7 @@ import {
   createAuthActions,
   createAuthFlow,
   createOAuthLogin,
+  createPasswordVisibilityState,
   formatCalendarDate,
   formatCountdown,
   hilosCodeSendProgress,
@@ -732,15 +733,43 @@ const ERROR_DETAILS_TWIN_CLASS =
                       Password
                     </label>
                     <div class="d-flex align-items-center gap-2">
-                      <input
-                        id="auth-password"
-                        type="password"
-                        class="form-control"
-                        autocomplete="current-password"
-                        data-id="auth-password"
-                        [value]="form().password"
-                        (input)="updatePassword($event)"
-                      />
+                      <div class="input-group">
+                        <input
+                          id="auth-password"
+                          [type]="passwordVisible() ? 'text' : 'password'"
+                          class="form-control"
+                          autocomplete="current-password"
+                          data-id="auth-password"
+                          [value]="form().password"
+                          (input)="updatePassword($event)"
+                        />
+                        <button
+                          type="button"
+                          class="btn btn-outline-secondary"
+                          [attr.aria-label]="
+                            passwordVisible()
+                              ? 'Hide password'
+                              : 'Show password'
+                          "
+                          [title]="
+                            passwordVisible()
+                              ? 'Hide password'
+                              : 'Show password'
+                          "
+                          aria-controls="auth-password"
+                          data-id="auth-password-toggle"
+                          (click)="togglePasswordVisibility()"
+                        >
+                          <i
+                            [class]="
+                              passwordVisible()
+                                ? 'bi bi-eye-slash'
+                                : 'bi bi-eye'
+                            "
+                            aria-hidden="true"
+                          ></i>
+                        </button>
+                      </div>
                       @for (method of adjacentIcons(); track method.key) {
                         <button
                           hilosLoadingButton
@@ -907,6 +936,19 @@ const ERROR_DETAILS_TWIN_CLASS =
             button above it may rise by its height. -->
                   <div class="hilos-stack mt-2" data-id="auth-step-tail">
                     <div class="d-flex flex-column">
+                      @if (screenKey() === 'proven_identifier') {
+                        <button
+                          type="button"
+                          class="btn btn-link btn-sm w-100 text-danger"
+                          [disabled]="
+                            pending() || detection().status !== 'resolved'
+                          "
+                          data-id="auth-cancel-registration"
+                          (click)="cancelRegistration()"
+                        >
+                          Cancel registration
+                        </button>
+                      }
                       @if (primaryChannel() && otherChannels().length > 0) {
                         <div class="d-flex align-items-center gap-2 my-3">
                           <hr class="flex-grow-1 my-0" />
@@ -1462,16 +1504,38 @@ const ERROR_DETAILS_TWIN_CLASS =
                 >
                   {{ newPasswordLabel() }}
                 </label>
-                <input
-                  #newPasswordInput
-                  id="auth-new-password"
-                  type="password"
-                  class="form-control"
-                  autocomplete="new-password"
-                  data-id="auth-new-password"
-                  [value]="form().newPassword"
-                  (input)="updateNewPassword($event)"
-                />
+                <div class="input-group">
+                  <input
+                    #newPasswordInput
+                    id="auth-new-password"
+                    [type]="newPasswordVisible() ? 'text' : 'password'"
+                    class="form-control"
+                    autocomplete="new-password"
+                    data-id="auth-new-password"
+                    [value]="form().newPassword"
+                    (input)="updateNewPassword($event)"
+                  />
+                  <button
+                    type="button"
+                    class="btn btn-outline-secondary"
+                    [attr.aria-label]="
+                      newPasswordVisible() ? 'Hide password' : 'Show password'
+                    "
+                    [title]="
+                      newPasswordVisible() ? 'Hide password' : 'Show password'
+                    "
+                    aria-controls="auth-new-password"
+                    data-id="auth-new-password-toggle"
+                    (click)="toggleNewPasswordVisibility()"
+                  >
+                    <i
+                      [class]="
+                        newPasswordVisible() ? 'bi bi-eye-slash' : 'bi bi-eye'
+                      "
+                      aria-hidden="true"
+                    ></i>
+                  </button>
+                </div>
                 <div class="form-text">
                   At least {{ passwordMinLength }} characters.
                 </div>
@@ -2161,6 +2225,15 @@ export class HilosAuthSurface {
   // place, and only a line that went away altogether closes it.
   protected readonly sendDetailOpen = signal(false)
 
+  protected readonly passwordVisibility = createPasswordVisibilityState()
+  protected readonly newPasswordVisibility = createPasswordVisibilityState()
+  protected readonly passwordVisible = hilosSignal(
+    this.passwordVisibility.isVisible,
+  )
+  protected readonly newPasswordVisible = hilosSignal(
+    this.newPasswordVisibility.isVisible,
+  )
+
   /** The send line's row classes, shared to the character with its idle twin. */
   protected readonly sendProgressRowClass = SEND_PROGRESS_ROW_CLASS
 
@@ -2672,6 +2745,27 @@ export class HilosAuthSurface {
       if (this.sendProgress() === null) {
         this.sendDetailOpen.set(false)
       }
+    })
+    effect(() => {
+      const activeKey = this.showPassword()
+        ? JSON.stringify([
+            this.form().identifier,
+            this.state().step,
+            this.state().intent,
+          ])
+        : null
+      this.passwordVisibility.updateContext(activeKey)
+    })
+    effect(() => {
+      const activeKey =
+        this.state().step === 'set_password'
+          ? JSON.stringify([
+              this.form().identifier,
+              this.state().step,
+              this.state().intent,
+            ])
+          : null
+      this.newPasswordVisibility.updateContext(activeKey)
     })
     // The machine arrives through the context input (not at construction) and
     // carries core signals, so mirror them into the Angular signals above once
@@ -3202,6 +3296,31 @@ export class HilosAuthSurface {
     const auth = this.auth()
     auth.startRecovery()
     void auth.resend()
+  }
+
+  protected togglePasswordVisibility(): void {
+    const activeKey = this.showPassword()
+      ? JSON.stringify([
+          this.form().identifier,
+          this.state().step,
+          this.state().intent,
+        ])
+      : null
+    this.passwordVisibility.updateContext(activeKey)
+    this.passwordVisibility.toggle()
+  }
+
+  protected toggleNewPasswordVisibility(): void {
+    const activeKey =
+      this.state().step === 'set_password'
+        ? JSON.stringify([
+            this.form().identifier,
+            this.state().step,
+            this.state().intent,
+          ])
+        : null
+    this.newPasswordVisibility.updateContext(activeKey)
+    this.newPasswordVisibility.toggle()
   }
 
   // The way out of a code screen, whichever intent opened it: every tab of this

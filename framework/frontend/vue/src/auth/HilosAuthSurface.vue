@@ -49,6 +49,7 @@ import {
   createAuthActions,
   createAuthFlow,
   createOAuthLogin,
+  createPasswordVisibilityState,
   formatCalendarDate,
   formatCountdown,
   hilosCodeSendProgress,
@@ -408,6 +409,11 @@ const codeInput = ref<HTMLInputElement | null>(null)
 const newPasswordInput = ref<HTMLInputElement | null>(null)
 const consentInput = ref<InstanceType<typeof HilosLegalConsent> | null>(null)
 
+const passwordVisibility = createPasswordVisibilityState()
+const newPasswordVisibility = createPasswordVisibilityState()
+const passwordVisible = useSignal(passwordVisibility.isVisible)
+const newPasswordVisible = useSignal(newPasswordVisibility.isVisible)
+
 // A browser that refuses cookies cannot stay signed in by any method (HIL-1074),
 // so the surface draws the card that says so instead of a form. Read once: the
 // browser fires no event when its settings change, and the card sends the person
@@ -588,6 +594,50 @@ const showPassword = computed(() => {
     result.status === 'active' && result.methods.includes(PASSWORD_METHOD_KEY)
   )
 })
+
+const passwordContextKey = computed(() =>
+  showPassword.value
+    ? JSON.stringify([
+        form.value.identifier,
+        state.value.step,
+        state.value.intent,
+      ])
+    : null,
+)
+
+const newPasswordContextKey = computed(() =>
+  state.value.step === 'set_password'
+    ? JSON.stringify([
+        form.value.identifier,
+        state.value.step,
+        state.value.intent,
+      ])
+    : null,
+)
+
+watch(
+  passwordContextKey,
+  (key) => {
+    passwordVisibility.updateContext(key)
+  },
+  { immediate: true, flush: 'sync' },
+)
+
+watch(
+  newPasswordContextKey,
+  (key) => {
+    newPasswordVisibility.updateContext(key)
+  },
+  { immediate: true, flush: 'sync' },
+)
+
+function togglePasswordVisibility(): void {
+  passwordVisibility.toggle()
+}
+
+function toggleNewPasswordVisibility(): void {
+  newPasswordVisibility.toggle()
+}
 
 // The room under the identifier field is taken from the first character typed
 // and never given back while something is in the field: the reveal and the hint
@@ -1707,15 +1757,37 @@ onUnmounted(() => {
                   Password
                 </label>
                 <div class="d-flex align-items-center gap-2">
-                  <input
-                    id="auth-password"
-                    type="password"
-                    class="form-control"
-                    autocomplete="current-password"
-                    data-id="auth-password"
-                    :value="form.password"
-                    @input="updatePassword($event)"
-                  />
+                  <div class="input-group">
+                    <input
+                      id="auth-password"
+                      :type="passwordVisible ? 'text' : 'password'"
+                      class="form-control"
+                      autocomplete="current-password"
+                      data-id="auth-password"
+                      :value="form.password"
+                      @input="updatePassword($event)"
+                    />
+                    <button
+                      type="button"
+                      class="btn btn-outline-secondary"
+                      :aria-label="
+                        passwordVisible ? 'Hide password' : 'Show password'
+                      "
+                      :title="
+                        passwordVisible ? 'Hide password' : 'Show password'
+                      "
+                      aria-controls="auth-password"
+                      data-id="auth-password-toggle"
+                      @click="togglePasswordVisibility()"
+                    >
+                      <i
+                        :class="
+                          passwordVisible ? 'bi bi-eye-slash' : 'bi bi-eye'
+                        "
+                        aria-hidden="true"
+                      />
+                    </button>
+                  </div>
                   <LoadingButton
                     v-for="method in adjacentIcons"
                     :key="method.key"
@@ -1863,6 +1935,16 @@ onUnmounted(() => {
         not part of the room the tail holds: it is a rare refusal, and the
         button above it may rise by its height. -->
             <HilosAuthStepTail data-id="auth-step-tail">
+              <button
+                v-if="screenKey === 'proven_identifier'"
+                type="button"
+                class="btn btn-link btn-sm w-100 text-danger"
+                :disabled="pending || detection.status !== 'resolved'"
+                data-id="auth-cancel-registration"
+                @click="cancelRegistration()"
+              >
+                Cancel registration
+              </button>
               <template v-if="primaryChannel && otherChannels.length > 0">
                 <div class="d-flex align-items-center gap-2 my-3">
                   <hr class="flex-grow-1 my-0" />
@@ -2349,16 +2431,34 @@ onUnmounted(() => {
             <label class="form-label small fw-semibold" for="auth-new-password">
               {{ newPasswordLabel }}
             </label>
-            <input
-              id="auth-new-password"
-              ref="newPasswordInput"
-              type="password"
-              class="form-control"
-              autocomplete="new-password"
-              data-id="auth-new-password"
-              :value="form.newPassword"
-              @input="updateNewPassword($event)"
-            />
+            <div class="input-group">
+              <input
+                id="auth-new-password"
+                ref="newPasswordInput"
+                :type="newPasswordVisible ? 'text' : 'password'"
+                class="form-control"
+                autocomplete="new-password"
+                data-id="auth-new-password"
+                :value="form.newPassword"
+                @input="updateNewPassword($event)"
+              />
+              <button
+                type="button"
+                class="btn btn-outline-secondary"
+                :aria-label="
+                  newPasswordVisible ? 'Hide password' : 'Show password'
+                "
+                :title="newPasswordVisible ? 'Hide password' : 'Show password'"
+                aria-controls="auth-new-password"
+                data-id="auth-new-password-toggle"
+                @click="toggleNewPasswordVisibility()"
+              >
+                <i
+                  :class="newPasswordVisible ? 'bi bi-eye-slash' : 'bi bi-eye'"
+                  aria-hidden="true"
+                />
+              </button>
+            </div>
             <div class="form-text">
               At least {{ PASSWORD_MIN_LENGTH }} characters.
             </div>

@@ -1,7 +1,14 @@
 import { test, expect, type Page } from '@playwright/test'
 import { grantAdminToSelf } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
-import { openSignIn } from '../helpers/session'
+import {
+  enterIdentifierAndPassword,
+  logout,
+  openSignIn,
+  PASSWORD,
+  signUp,
+} from '../helpers/session'
+import { expectPasswordVisibility } from '../../../../../framework/frontend/e2e/index.js'
 
 // Hilos accessibility (a11y) e2e — the rarely-run a11y category (see
 // docs/agents/testing.md "Selective testing"). Asserts the framework viewport
@@ -162,4 +169,22 @@ test('an admin screen holds the refusal region before there is a refusal', async
     'true',
   )
   await expect(page.getByTestId('hilos-action-error')).toHaveCount(0)
+})
+
+test('password visibility toggle operates from keyboard on sign-in', async ({
+  page,
+}) => {
+  const user = await signUp(page)
+  await logout(page)
+  await openSignIn(page)
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await enterIdentifierAndPassword(page, user.email, PASSWORD)
+  await expectPasswordVisibility(
+    expect,
+    page,
+    'auth-password',
+    'auth-password-toggle',
+  )
+  // Ensure the surface remains open: toggling password visibility does not submit the form.
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
 })

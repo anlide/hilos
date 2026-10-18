@@ -55,6 +55,7 @@ import {
   createAuthActions,
   createAuthFlow,
   createOAuthLogin,
+  createPasswordVisibilityState,
   formatCalendarDate,
   formatCountdown,
   hilosCodeSendProgress,
@@ -615,6 +616,33 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
   const newPasswordInput = useRef<HTMLInputElement>(null)
   const consentInput = useRef<{ focus(): void }>(null)
 
+  const [passwordVisibility] = useState(() => createPasswordVisibilityState())
+  const [newPasswordVisibility] = useState(() =>
+    createPasswordVisibilityState(),
+  )
+
+  const detected = detection.result
+  const showPassword =
+    state.step === 'identifier' &&
+    detected !== null &&
+    detected.kind === 'email' &&
+    detected.status === 'active' &&
+    detected.methods.includes(PASSWORD_METHOD_KEY)
+
+  const passwordContextKey = showPassword
+    ? JSON.stringify([form.identifier, state.step, state.intent])
+    : null
+  passwordVisibility.updateContext(passwordContextKey)
+
+  const newPasswordContextKey =
+    state.step === 'set_password'
+      ? JSON.stringify([form.identifier, state.step, state.intent])
+      : null
+  newPasswordVisibility.updateContext(newPasswordContextKey)
+
+  const passwordVisible = useSignal(passwordVisibility.isVisible)
+  const newPasswordVisible = useSignal(newPasswordVisibility.isVisible)
+
   // A browser that refuses cookies cannot stay signed in by any method
   // (HIL-1074), so the surface draws the card that says so instead of a form.
   // Read once: the browser fires no event when its settings change, and the card
@@ -799,18 +827,13 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
     (method) => method.placement === 'password_adjacent',
   )
 
-  // The password reveals INSIDE the identifier step for one reply only: an
-  // account that signs in with one. A free address does not offer it any more
-  // (HIL-825) — a registration asks for a password after the code, on the screen
-  // that creates the account, so nobody invents a credential for an inbox they
-  // have not proved.
-  const detected = detection.result
-  const showPassword =
-    state.step === 'identifier' &&
-    detected !== null &&
-    detected.kind === 'email' &&
-    detected.status === 'active' &&
-    detected.methods.includes(PASSWORD_METHOD_KEY)
+  function togglePasswordVisibility(): void {
+    passwordVisibility.toggle()
+  }
+
+  function toggleNewPasswordVisibility(): void {
+    newPasswordVisibility.toggle()
+  }
 
   // The room under the identifier field is taken from the first character typed
   // and never given back while something is in the field: the reveal and the
@@ -1691,17 +1714,45 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
                           Password
                         </label>
                         <div className="d-flex align-items-center gap-2">
-                          <input
-                            id="auth-password"
-                            type="password"
-                            className="form-control"
-                            autoComplete="current-password"
-                            data-id="auth-password"
-                            value={form.password}
-                            onChange={(event) =>
-                              auth.setField('password', event.target.value)
-                            }
-                          />
+                          <div className="input-group">
+                            <input
+                              id="auth-password"
+                              type={passwordVisible ? 'text' : 'password'}
+                              className="form-control"
+                              autoComplete="current-password"
+                              data-id="auth-password"
+                              value={form.password}
+                              onChange={(event) =>
+                                auth.setField('password', event.target.value)
+                              }
+                            />
+                            <button
+                              type="button"
+                              className="btn btn-outline-secondary"
+                              aria-label={
+                                passwordVisible
+                                  ? 'Hide password'
+                                  : 'Show password'
+                              }
+                              title={
+                                passwordVisible
+                                  ? 'Hide password'
+                                  : 'Show password'
+                              }
+                              aria-controls="auth-password"
+                              data-id="auth-password-toggle"
+                              onClick={togglePasswordVisibility}
+                            >
+                              <i
+                                className={
+                                  passwordVisible
+                                    ? 'bi bi-eye-slash'
+                                    : 'bi bi-eye'
+                                }
+                                aria-hidden="true"
+                              />
+                            </button>
+                          </div>
                           {adjacentIcons.map((method) => (
                             <LoadingButton
                               key={method.key}
@@ -1877,6 +1928,17 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
                   that line is not part of the room the tail holds: it is a rare
                   refusal, and the button above it may rise by its height. */}
                     <StepTail dataId="auth-step-tail">
+                      {screenKey === 'proven_identifier' ? (
+                        <button
+                          type="button"
+                          className="btn btn-link btn-sm w-100 text-danger"
+                          disabled={pending || detection.status !== 'resolved'}
+                          data-id="auth-cancel-registration"
+                          onClick={cancelRegistration}
+                        >
+                          Cancel registration
+                        </button>
+                      ) : null}
                       {primaryChannel && otherChannels.length > 0 ? (
                         <>
                           <div className="d-flex align-items-center gap-2 my-3">
@@ -2411,18 +2473,40 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
                   >
                     {newPasswordLabel}
                   </label>
-                  <input
-                    id="auth-new-password"
-                    ref={newPasswordInput}
-                    type="password"
-                    className="form-control"
-                    autoComplete="new-password"
-                    data-id="auth-new-password"
-                    value={form.newPassword}
-                    onChange={(event) =>
-                      auth.setField('newPassword', event.target.value)
-                    }
-                  />
+                  <div className="input-group">
+                    <input
+                      id="auth-new-password"
+                      ref={newPasswordInput}
+                      type={newPasswordVisible ? 'text' : 'password'}
+                      className="form-control"
+                      autoComplete="new-password"
+                      data-id="auth-new-password"
+                      value={form.newPassword}
+                      onChange={(event) =>
+                        auth.setField('newPassword', event.target.value)
+                      }
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-outline-secondary"
+                      aria-label={
+                        newPasswordVisible ? 'Hide password' : 'Show password'
+                      }
+                      title={
+                        newPasswordVisible ? 'Hide password' : 'Show password'
+                      }
+                      aria-controls="auth-new-password"
+                      data-id="auth-new-password-toggle"
+                      onClick={toggleNewPasswordVisibility}
+                    >
+                      <i
+                        className={
+                          newPasswordVisible ? 'bi bi-eye-slash' : 'bi bi-eye'
+                        }
+                        aria-hidden="true"
+                      />
+                    </button>
+                  </div>
                   <div className="form-text">
                     At least {PASSWORD_MIN_LENGTH} characters.
                   </div>

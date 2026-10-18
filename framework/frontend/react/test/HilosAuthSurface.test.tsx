@@ -457,15 +457,17 @@ function freeIdentifierContext(
  * only ever drawn by a RETURN to the field, which asks the lookup again without
  * moving the step (HIL-825).
  *
+ * @param dispatched Optional array to log dispatches.
  * @returns The context to mount with.
  */
-function provenOnReturnContext(): HilosAuthContext {
+function provenOnReturnContext(dispatched?: Dispatched): HilosAuthContext {
   let answered = false
   const connection = {
     on: vi.fn().mockReturnValue(() => undefined),
   } as unknown as HilosConnection
   const actions = {
     dispatch: (action: string, payload: Record<string, unknown>) => {
+      dispatched?.push({ action, payload })
       const identifier = String(payload['identifier'] ?? '')
       let reply
       if (action === AUTH_ACTION_DETECT_IDENTIFIER) {
@@ -482,6 +484,9 @@ function provenOnReturnContext(): HilosAuthContext {
         answered = true
       } else if (action === AUTH_ACTION_LEGAL_CONSENT) {
         reply = consentTerms()
+      } else if (action === AUTH_ACTION_CANCEL_REGISTRATION) {
+        answered = false
+        reply = {}
       }
 
       return {
@@ -2398,6 +2403,215 @@ it('waits for consent content before exposing the checkbox and retries an unansw
       'By creating an account you accept the',
     )
     expect((byId('auth-submit') as HTMLButtonElement).disabled).toBe(false)
+  } finally {
+    cleanup()
+    vi.useRealTimers()
+  }
+})
+
+it('renders red cancel button on proven_identifier and cancelling dispatches hilos_cancel_registration and returns to address', async () => {
+  vi.useFakeTimers()
+  const dispatched: Dispatched = []
+  try {
+    render(<HilosAuthSurface context={provenOnReturnContext(dispatched)} />)
+
+    type('auth-identifier', 'newcomer@example.com')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    })
+    await flush()
+    fireEvent.submit(document.querySelector('form') as Element)
+    await flush()
+    fireEvent.click(byId('auth-restart') as Element)
+    await flush()
+
+    const resume = byId('auth-resume-password') as HTMLButtonElement | null
+    expect(resume).not.toBeNull()
+    expect(resume?.disabled).toBe(false)
+
+    const cancel = byId('auth-cancel-registration') as HTMLButtonElement | null
+    expect(cancel).not.toBeNull()
+    expect(cancel?.type).toBe('button')
+    expect(cancel?.textContent).toBe('Cancel registration')
+    expect(cancel?.classList.contains('text-danger')).toBe(true)
+    expect(cancel?.disabled).toBe(false)
+
+    fireEvent.click(cancel as Element)
+    await flush()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    })
+    await flush()
+
+    expect(
+      dispatched.filter((c) => c.action === AUTH_ACTION_CANCEL_REGISTRATION),
+    ).toHaveLength(1)
+    expect(
+      dispatched.find((c) => c.action === AUTH_ACTION_CANCEL_REGISTRATION)
+        ?.payload,
+    ).toEqual({})
+
+    expect(byId('auth-identifier')).not.toBeNull()
+    expect(byId('auth-cancel-registration')).toBeNull()
+    expect(document.body.textContent).toContain('Create your account')
+  } finally {
+    cleanup()
+    vi.useRealTimers()
+  }
+})
+
+it('disables cancel button on proven_identifier when detection is outdated', async () => {
+  vi.useFakeTimers()
+  try {
+    render(<HilosAuthSurface context={provenOnReturnContext()} />)
+
+    type('auth-identifier', 'newcomer@example.com')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    })
+    await flush()
+    fireEvent.submit(document.querySelector('form') as Element)
+    await flush()
+    fireEvent.click(byId('auth-restart') as Element)
+    await flush()
+
+    const cancel = byId('auth-cancel-registration') as HTMLButtonElement | null
+    expect(cancel).not.toBeNull()
+    expect(cancel?.disabled).toBe(false)
+
+    type('auth-identifier', 'newcomer@example.co')
+    await flush()
+    expect(cancel?.disabled).toBe(true)
+  } finally {
+    cleanup()
+    vi.useRealTimers()
+  }
+})
+
+it('toggles password visibility for sign-in, registration, and recovery without form submit or dispatch', async () => {
+  vi.useFakeTimers()
+  try {
+    const { context, dispatched } = contextAnswering([PASSWORD_METHOD_KEY])
+    render(<HilosAuthSurface context={context} />)
+
+    type('auth-identifier', 'someone@example.com')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    })
+    await flush()
+
+    const pwInput = byId('auth-password') as HTMLInputElement
+    expect(pwInput).not.toBeNull()
+    expect(pwInput.type).toBe('password')
+    expect(pwInput.getAttribute('autocomplete')).toBe('current-password')
+
+    const pwToggle = byId('auth-password-toggle') as HTMLButtonElement
+    expect(pwToggle).not.toBeNull()
+    expect(pwToggle.type).toBe('button')
+    expect(pwToggle.getAttribute('aria-label')).toBe('Show password')
+    expect(pwToggle.getAttribute('title')).toBe('Show password')
+    expect(pwToggle.getAttribute('aria-controls')).toBe('auth-password')
+    expect(pwToggle.getAttribute('aria-pressed')).toBeNull()
+    expect(pwToggle.querySelector('.bi-eye')).not.toBeNull()
+
+    type('auth-password', 'secret-pass-1')
+    await flush()
+
+    const dispatchCountBeforeToggle = dispatched.length
+
+    fireEvent.click(pwToggle)
+    await flush()
+
+    expect(pwInput.type).toBe('text')
+    expect(pwInput.value).toBe('secret-pass-1')
+    expect(pwInput.getAttribute('autocomplete')).toBe('current-password')
+    expect(pwToggle.getAttribute('aria-label')).toBe('Hide password')
+    expect(pwToggle.getAttribute('title')).toBe('Hide password')
+    expect(pwToggle.querySelector('.bi-eye-slash')).not.toBeNull()
+    expect(dispatched.length).toBe(dispatchCountBeforeToggle)
+
+    type('auth-password', 'secret-pass-2')
+    await flush()
+    expect(pwInput.type).toBe('text')
+    expect(pwInput.value).toBe('secret-pass-2')
+
+    fireEvent.click(pwToggle)
+    await flush()
+    expect(pwInput.type).toBe('password')
+    expect(pwToggle.getAttribute('aria-label')).toBe('Show password')
+    expect(pwToggle.querySelector('.bi-eye')).not.toBeNull()
+  } finally {
+    cleanup()
+    vi.useRealTimers()
+  }
+})
+
+it('resets password visibility across context changes (address, step, intent)', async () => {
+  vi.useFakeTimers()
+  try {
+    const { context } = contextAnswering([
+      PASSWORD_METHOD_KEY,
+      MAGIC_LINK_METHOD_KEY,
+    ])
+    context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, {
+      ...PROVED_REGISTRATION_STEP,
+      intent: 'register',
+    })
+    render(<HilosAuthSurface context={context} />)
+    await flush()
+
+    const newPwInput = byId('auth-new-password') as HTMLInputElement
+    const newPwToggle = byId('auth-new-password-toggle') as HTMLButtonElement
+    expect(newPwInput).not.toBeNull()
+    expect(newPwToggle).not.toBeNull()
+    expect(newPwInput.type).toBe('password')
+    expect(newPwInput.getAttribute('autocomplete')).toBe('new-password')
+
+    fireEvent.click(newPwToggle)
+    await flush()
+    expect(newPwInput.type).toBe('text')
+
+    cleanup()
+
+    const recoveryContext = contextAnswering([
+      PASSWORD_METHOD_KEY,
+      MAGIC_LINK_METHOD_KEY,
+    ]).context
+    recoveryContext.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, {
+      ...PROVED_REGISTRATION_STEP,
+      intent: 'recovery',
+    })
+    render(<HilosAuthSurface context={recoveryContext} />)
+    await flush()
+
+    const recPwInput = byId('auth-new-password') as HTMLInputElement
+    const recPwToggle = byId('auth-new-password-toggle') as HTMLButtonElement
+    expect(recPwInput).not.toBeNull()
+    expect(recPwToggle).not.toBeNull()
+    expect(recPwInput.type).toBe('password')
+    expect(recPwToggle.getAttribute('aria-label')).toBe('Show password')
+
+    fireEvent.click(recPwToggle)
+    await flush()
+    expect(recPwInput.type).toBe('text')
+    expect(recPwToggle.getAttribute('aria-label')).toBe('Hide password')
+  } finally {
+    cleanup()
+    vi.useRealTimers()
+  }
+})
+
+it('omits toggle buttons when password fields are absent from DOM', async () => {
+  vi.useFakeTimers()
+  try {
+    const { context } = heldIdentifierContext()
+    render(<HilosAuthSurface context={context} />)
+
+    expect(byId('auth-password')).toBeNull()
+    expect(byId('auth-password-toggle')).toBeNull()
+    expect(byId('auth-new-password')).toBeNull()
+    expect(byId('auth-new-password-toggle')).toBeNull()
+    expect(byId('auth-cancel-registration')).toBeNull()
   } finally {
     cleanup()
     vi.useRealTimers()

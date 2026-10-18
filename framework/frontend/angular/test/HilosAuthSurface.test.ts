@@ -11,6 +11,7 @@ import { consentTerms } from '../../core/test/legal/consentFixture.js'
 
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
+  AUTH_ACTION_CANCEL_REGISTRATION,
   AUTH_ACTION_COMPLETE_REGISTRATION_PASSWORDLESS,
   AUTH_ACTION_DETECT_IDENTIFIER,
   AUTH_ACTION_LEGAL_CONSENT,
@@ -187,6 +188,68 @@ function magicLinkWorld(
         { key: 'password', name: null },
         { key: 'magic_link', name: null },
       ]),
+      actions,
+      channels: [],
+    }),
+  }
+}
+
+/**
+ * A world whose lookup answers active on the first request, then none on any
+ * subsequent request, mimicking the return to a proven address where the lookup
+ * answers with an existing session waiting for a password (HIL-825).
+ *
+ * @param dispatched Optional array to log dispatches.
+ * @returns The context to mount with and a gate that does nothing.
+ */
+function provenOnReturnWorld(
+  dispatched?: Array<{ action: string; payload: Record<string, unknown> }>,
+): { context: HilosAuthContext; gate: AuthGate } {
+  let answered = false
+  const connection = {
+    on: (): (() => void) => () => undefined,
+  } as unknown as HilosConnection
+  const actions = {
+    dispatch: (action: string, payload: Record<string, unknown>) => {
+      dispatched?.push({ action, payload })
+      const identifier = String(payload['identifier'] ?? '')
+      let reply
+      if (action === AUTH_ACTION_DETECT_IDENTIFIER) {
+        reply = {
+          identifier,
+          normalized: identifier,
+          kind: 'email',
+          status: answered ? 'proven' : 'none',
+          methods: [],
+          registerable: answered ? [] : [PASSWORD_METHOD_KEY],
+          registrationBlock: null,
+          signInBlock: null,
+        }
+        answered = true
+      } else if (action === AUTH_ACTION_LEGAL_CONSENT) {
+        reply = consentTerms()
+      } else if (action === AUTH_ACTION_CANCEL_REGISTRATION) {
+        answered = false
+        reply = {}
+      }
+
+      return {
+        requestId: 'req-proven',
+        loading: createSignal(false),
+        done: Promise.resolve({ reply }),
+      } as unknown as ActionHandle
+    },
+  } as unknown as ActionLifecycle
+
+  return {
+    gate: {
+      modalOpen: createSignal(false),
+      requireAuth: vi.fn(),
+      dismiss: vi.fn(),
+    },
+    context: createHilosAuthContext({
+      connection,
+      scopes: scopesWith([{ key: 'password', name: null }]),
       actions,
       channels: [],
     }),
@@ -1676,6 +1739,264 @@ it('waits for consent content before exposing the checkbox and retries an unansw
     expect((byId(fixture, 'auth-submit') as HTMLButtonElement).disabled).toBe(
       false,
     )
+  } finally {
+    fixture.destroy()
+    TestBed.resetTestingModule()
+    vi.useRealTimers()
+  }
+})
+
+it('renders red cancel button on proven_identifier and cancelling dispatches hilos_cancel_registration and returns to address', async () => {
+  vi.useFakeTimers()
+  const dispatched: Array<{
+    action: string
+    payload: Record<string, unknown>
+  }> = []
+  const world = provenOnReturnWorld(dispatched)
+  const fixture = mountSurface(world)
+  try {
+    const input = byId(fixture, 'auth-identifier') as HTMLInputElement
+    input.value = 'newcomer@example.com'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(fixture)
+    byId(fixture, 'auth-submit')!
+      .closest('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flush(fixture)
+    byId(fixture, 'auth-restart')!.click()
+    await flush(fixture)
+
+    const resume = byId(
+      fixture,
+      'auth-resume-password',
+    ) as HTMLButtonElement | null
+    expect(resume).not.toBeNull()
+    expect(resume?.disabled).toBe(false)
+
+    const cancel = byId(
+      fixture,
+      'auth-cancel-registration',
+    ) as HTMLButtonElement | null
+    expect(cancel).not.toBeNull()
+    expect(cancel?.type).toBe('button')
+    expect(cancel?.textContent?.trim()).toBe('Cancel registration')
+    expect(cancel?.classList.contains('text-danger')).toBe(true)
+    expect(cancel?.disabled).toBe(false)
+
+    cancel?.click()
+    await flush(fixture)
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(fixture)
+
+    expect(
+      dispatched.filter((c) => c.action === AUTH_ACTION_CANCEL_REGISTRATION),
+    ).toHaveLength(1)
+    expect(
+      dispatched.find((c) => c.action === AUTH_ACTION_CANCEL_REGISTRATION)
+        ?.payload,
+    ).toEqual({})
+
+    expect(byId(fixture, 'auth-identifier')).not.toBeNull()
+    expect(byId(fixture, 'auth-cancel-registration')).toBeNull()
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
+      'Create your account',
+    )
+  } finally {
+    fixture.destroy()
+    TestBed.resetTestingModule()
+    vi.useRealTimers()
+  }
+})
+
+it('disables cancel button on proven_identifier when detection is outdated', async () => {
+  vi.useFakeTimers()
+  const world = provenOnReturnWorld()
+  const fixture = mountSurface(world)
+  try {
+    const input = byId(fixture, 'auth-identifier') as HTMLInputElement
+    input.value = 'newcomer@example.com'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(fixture)
+    byId(fixture, 'auth-submit')!
+      .closest('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flush(fixture)
+    byId(fixture, 'auth-restart')!.click()
+    await flush(fixture)
+
+    const cancel = byId(
+      fixture,
+      'auth-cancel-registration',
+    ) as HTMLButtonElement | null
+    expect(cancel).not.toBeNull()
+    expect(cancel?.disabled).toBe(false)
+
+    const retypedInput = byId(fixture, 'auth-identifier') as HTMLInputElement
+    retypedInput.value = 'newcomer@example.co'
+    retypedInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush(fixture)
+    expect(
+      (byId(fixture, 'auth-cancel-registration') as HTMLButtonElement | null)
+        ?.disabled,
+    ).toBe(true)
+  } finally {
+    fixture.destroy()
+    TestBed.resetTestingModule()
+    vi.useRealTimers()
+  }
+})
+
+it('toggles password visibility for sign-in, registration, and recovery without form submit or dispatch', async () => {
+  vi.useFakeTimers()
+  const dispatched: Array<{
+    action: string
+    payload: Record<string, unknown>
+  }> = []
+  const world = magicLinkWorld(dispatched)
+  const fixture = mountSurface(world)
+  try {
+    const idInput = byId(fixture, 'auth-identifier') as HTMLInputElement
+    idInput.value = 'someone@example.com'
+    idInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(fixture)
+
+    const pwInput = byId(fixture, 'auth-password') as HTMLInputElement
+    expect(pwInput).not.toBeNull()
+    expect(pwInput.type).toBe('password')
+    expect(pwInput.getAttribute('autocomplete')).toBe('current-password')
+
+    const pwToggle = byId(fixture, 'auth-password-toggle') as HTMLButtonElement
+    expect(pwToggle).not.toBeNull()
+    expect(pwToggle.type).toBe('button')
+    expect(pwToggle.getAttribute('aria-label')).toBe('Show password')
+    expect(pwToggle.getAttribute('title')).toBe('Show password')
+    expect(pwToggle.getAttribute('aria-controls')).toBe('auth-password')
+    expect(pwToggle.getAttribute('aria-pressed')).toBeNull()
+    expect(pwToggle.querySelector('.bi-eye')).not.toBeNull()
+
+    pwInput.value = 'secret-pass-1'
+    pwInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush(fixture)
+
+    const dispatchCountBeforeToggle = dispatched.length
+
+    pwToggle.click()
+    await flush(fixture)
+
+    expect(pwInput.type).toBe('text')
+    expect(pwInput.value).toBe('secret-pass-1')
+    expect(pwInput.getAttribute('autocomplete')).toBe('current-password')
+    expect(pwToggle.getAttribute('aria-label')).toBe('Hide password')
+    expect(pwToggle.getAttribute('title')).toBe('Hide password')
+    expect(pwToggle.querySelector('.bi-eye-slash')).not.toBeNull()
+    expect(dispatched.length).toBe(dispatchCountBeforeToggle)
+
+    pwInput.value = 'secret-pass-2'
+    pwInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush(fixture)
+    expect(pwInput.type).toBe('text')
+    expect(pwInput.value).toBe('secret-pass-2')
+
+    pwToggle.click()
+    await flush(fixture)
+    expect(pwInput.type).toBe('password')
+    expect(pwToggle.getAttribute('aria-label')).toBe('Show password')
+    expect(pwToggle.querySelector('.bi-eye')).not.toBeNull()
+  } finally {
+    fixture.destroy()
+    TestBed.resetTestingModule()
+    vi.useRealTimers()
+  }
+})
+
+it('resets password visibility across context changes (address, step, intent)', async () => {
+  vi.useFakeTimers()
+  const world = magicLinkWorld()
+  world.context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, {
+    ...PROVED_REGISTRATION_STEP,
+    intent: 'register',
+  })
+  const fixture = mountSurface(world)
+  try {
+    await flush(fixture)
+
+    const newPwInput = byId(fixture, 'auth-new-password') as HTMLInputElement
+    const newPwToggle = byId(
+      fixture,
+      'auth-new-password-toggle',
+    ) as HTMLButtonElement
+    expect(newPwInput).not.toBeNull()
+    expect(newPwToggle).not.toBeNull()
+    expect(newPwInput.type).toBe('password')
+    expect(newPwInput.getAttribute('autocomplete')).toBe('new-password')
+
+    newPwToggle.click()
+    await flush(fixture)
+    expect(newPwInput.type).toBe('text')
+
+    fixture.destroy()
+    TestBed.resetTestingModule()
+
+    const recoveryWorld = magicLinkWorld()
+    recoveryWorld.context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, {
+      ...PROVED_REGISTRATION_STEP,
+      intent: 'recovery',
+    })
+    const recFixture = mountSurface(recoveryWorld)
+    try {
+      await flush(recFixture)
+
+      const recPwInput = byId(
+        recFixture,
+        'auth-new-password',
+      ) as HTMLInputElement
+      const recPwToggle = byId(
+        recFixture,
+        'auth-new-password-toggle',
+      ) as HTMLButtonElement
+      expect(recPwInput).not.toBeNull()
+      expect(recPwToggle).not.toBeNull()
+      expect(recPwInput.type).toBe('password')
+      expect(recPwToggle.getAttribute('aria-label')).toBe('Show password')
+
+      recPwToggle.click()
+      await flush(recFixture)
+      expect(recPwInput.type).toBe('text')
+      expect(recPwToggle.getAttribute('aria-label')).toBe('Hide password')
+    } finally {
+      recFixture.destroy()
+      TestBed.resetTestingModule()
+    }
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('omits toggle buttons when password fields are absent from DOM', async () => {
+  vi.useFakeTimers()
+  const world = surfaceWorld()
+  world.context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, {
+    identifier: null,
+    kind: null,
+    intent: 'login',
+    step: 'second_factor',
+    channel: null,
+    expiresAt: Date.now() + 600000,
+    code: null,
+    secondFactor: { trustDeviceDays: 30, resetEffectiveAt: null },
+  })
+  const fixture = mountSurface(world)
+  try {
+    await flush(fixture)
+
+    expect(byId(fixture, 'auth-password')).toBeNull()
+    expect(byId(fixture, 'auth-password-toggle')).toBeNull()
+    expect(byId(fixture, 'auth-new-password')).toBeNull()
+    expect(byId(fixture, 'auth-new-password-toggle')).toBeNull()
+    expect(byId(fixture, 'auth-cancel-registration')).toBeNull()
   } finally {
     fixture.destroy()
     TestBed.resetTestingModule()

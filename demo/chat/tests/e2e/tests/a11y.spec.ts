@@ -3,10 +3,14 @@ import { test, expect, type Page } from '@playwright/test'
 import { signUpAdmin } from '../helpers/adminGrant'
 import {
   clickSubmit,
+  enterIdentifierAndPassword,
+  logout,
+  PASSWORD,
   signUp,
   signUpWithVerifiedEmail,
 } from '../helpers/session'
 import { gotoPage } from '../helpers/page'
+import { expectPasswordVisibility } from '../../../../../framework/frontend/e2e/index.js'
 
 // Hilos accessibility (a11y) e2e — the rarely-run a11y category (see
 // docs/agents/testing.md "Selective testing"). Asserts the framework viewport
@@ -173,4 +177,22 @@ test('the profile session and device pages expose one named surface', async ({
     'aria-label',
     'Devices',
   )
+})
+
+test('password visibility toggle operates from keyboard on sign-in', async ({
+  page,
+}) => {
+  const user = await signUp(page)
+  await logout(page)
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await enterIdentifierAndPassword(page, user.email, PASSWORD)
+  await expectPasswordVisibility(
+    expect,
+    page,
+    'auth-password',
+    'auth-password-toggle',
+  )
+  // Ensure the surface remains open: toggling password visibility does not submit the form.
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
 })

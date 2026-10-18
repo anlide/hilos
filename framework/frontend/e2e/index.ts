@@ -224,6 +224,7 @@ export {
 } from './appearance.js'
 
 export { expectHilosUserBlockSettled } from './hilosUserLifecycle.js'
+export { expectPasswordVisibility } from './passwordVisibility.js'
 
 export {
   readClusterBrowserStand,

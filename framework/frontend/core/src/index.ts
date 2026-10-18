@@ -438,6 +438,10 @@ export {
   type SpinnerDelay,
 } from './primitives/loadingButton.js'
 export {
+  createPasswordVisibilityState,
+  type PasswordVisibilityState,
+} from './primitives/passwordVisibility.js'
+export {
   SEND_AGAIN_LABEL,
   SEND_PROGRESS_DETAILS_CLASS,
   SEND_PROGRESS_ROW_CLASS,
