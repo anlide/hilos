@@ -31,6 +31,8 @@ use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Socket\Worker\DTO\SystemSignalDTO;
 use PHPUnit\Framework\TestCase;
 
@@ -106,6 +108,39 @@ final class ChatSignalRouterTest extends TestCase
             $this->assertEquals([
                 new AgentDestination(AgentType::LIBRARY),
             ], $destinations);
+        }
+    }
+
+    /**
+     * The bot card is served by the library agent, with no instance index on the destination.
+     */
+    public function testBotCardSubscribesThroughLibraryAgentWithoutAnIndex(): void
+    {
+        $router = new ChatSignalRouter();
+        $expected = [new AgentDestination(AgentType::LIBRARY)];
+
+        foreach ([
+            SignalTypeConstants::PAGE_SUBSCRIBE => new WebSocketPageSubscribeSignalDTO(
+                'accept-key',
+                PageConstants::BOT,
+                ['id' => '7'],
+            ),
+            SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION => new WebSocketPageUpdateSubscriptionSignalDTO(
+                'accept-key',
+                PageConstants::BOT,
+                ['id' => '7'],
+            ),
+            SignalTypeConstants::PAGE_UNSUBSCRIBE => new WebSocketPageUnsubscribeSignalDTO('accept-key'),
+        ] as $signalType => $data) {
+            $destinations = $router->getDestinations(new SignalDTO(
+                new SignalSource(SignalSource::WEBSOCKET),
+                new SignalType($signalType),
+                new SignalName(PageConstants::BOT),
+                $data,
+            ));
+
+            $this->assertEquals($expected, $destinations);
+            $this->assertNull($destinations[0]->agentIndex);
         }
     }
 

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Pages;
 
 use Demo\Chat\Database\ChatDbContext;
-use Demo\Chat\Agents\BotAgent;
+use Demo\Chat\Agents\LibraryAgent;
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Constants\AgentType;
@@ -41,7 +41,7 @@ use Hilos\Core\Exception\LogicException;
  * entity payload. A missing, malformed, or unknown `id` surfaces as a
  * structured subscription error.
  *
- * @property BotAgent $agent
+ * @property LibraryAgent $agent
  */
 final class BotPage extends AbstractPage
 {
@@ -52,7 +52,7 @@ final class BotPage extends AbstractPage
 
     public const PageReach REACH = PageReach::ROUTE;
 
-    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::BOT;
+    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::LIBRARY;
 
     /** Page payload entity slot carrying the requested bot's profile. */
     public const string ENTITY_SLOT = 'bot';

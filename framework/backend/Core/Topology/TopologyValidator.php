@@ -171,7 +171,7 @@ final class TopologyValidator
         $this->validateBrowserSourceConfigs($browserData, self::SECTION_BROWSER_DATA, $errors);
         $this->validatePageRoutes($pages, $hilosClass::getPageRoutes(), $errors);
         $this->validatePageAgentIndexRoutes($pages, $agents, $errors);
-        $this->validateGroupRoutes($groups, $hilosClass::getGroupRoutes(), $errors);
+        $this->validateGroupRoutes($groups, $hilosClass::getGroupRoutes(), $agents, $errors);
         $this->validatePageActionRoutes($pages, $hilosClass::getPageActionRoutes(), $errors);
         $this->validatePageReadingActions($pages, $errors);
         $this->validateActionDtoRoutes($pages, $hilosClass::getActionDtoRoutes(), $errors);
@@ -772,11 +772,18 @@ final class TopologyValidator
     /**
      * Validates computed group route declarations against registered groups.
      *
+     * An indexed owner is refused in the same pass: a group subscription carries no
+     * agent index, so the destination would name an agent type and nothing to address.
+     * The check runs only when the group class extends AbstractGroup, so a broken
+     * registry entry keeps the diagnostic it already had. The error joins the
+     * accumulator and the walk continues.
+     *
      * @param array $groups Group registry
      * @param array $groupRoutes Computed group route registry
+     * @param array $agents Agent registry
      * @param list<string> $errors Validation error accumulator
      */
-    private function validateGroupRoutes(array $groups, array $groupRoutes, array &$errors): void
+    private function validateGroupRoutes(array $groups, array $groupRoutes, array $agents, array &$errors): void
     {
         foreach ($groups as $group => $groupClass) {
             if (!is_string($group)) {
@@ -795,6 +802,13 @@ final class TopologyValidator
                 } else {
                     $errors[] = "GROUPS[{$group}] must declare a non-empty SUBSCRIPTION_AGENT_TYPE";
                 }
+            } elseif (
+                is_string($groupClass)
+                && is_subclass_of($groupClass, AbstractGroup::class)
+                && AgentRegistry::requiresIndex($agents[$agentType] ?? null)
+            ) {
+                $errors[] = "GROUPS[{$group}] class {$groupClass} SUBSCRIPTION_AGENT_TYPE {$agentType}"
+                    . ' cannot use an indexed agent: group subscriptions carry no agentIndex';
             }
         }
 
@@ -2064,7 +2078,9 @@ final class TopologyValidator
      *
      * Judged off the raw declaration and not off the computed registry: the registry drops
      * a malformed entry silently ({@see PageAgentIndexRouteRegistry::routes}), so reading it
-     * here would report nothing at all for exactly the pages that need reporting.
+     * here would report nothing at all for exactly the pages that need reporting. An indexed
+     * owner that leaves the declaration empty is refused in the same pass: the page would be
+     * addressed with no index. The error joins the accumulator and the walk continues.
      *
      * @param array $pages Page registry
      * @param array $agents Agent registry
@@ -2078,11 +2094,15 @@ final class TopologyValidator
             }
 
             $declaration = $pageClass::SUBSCRIPTION_AGENT_INDEX;
+            $path = "PAGES[{$page}] class {$pageClass} SUBSCRIPTION_AGENT_INDEX";
             if ($declaration === []) {
+                $agentType = $pageClass::SUBSCRIPTION_AGENT_TYPE;
+                if (AgentRegistry::requiresIndex($agents[$agentType] ?? null)) {
+                    $errors[] = "{$path} is required for indexed SUBSCRIPTION_AGENT_TYPE {$agentType}";
+                }
                 continue;
             }
 
-            $path = "PAGES[{$page}] class {$pageClass} SUBSCRIPTION_AGENT_INDEX";
             $unknownKeys = array_diff(array_keys($declaration), [
                 PageAgentIndexKey::SOURCE,
                 PageAgentIndexKey::PARAM,

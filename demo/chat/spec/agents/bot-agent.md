@@ -34,4 +34,4 @@ Client polled in `onTick()` — no blocking.
 
 ## Page
 
-`BotAgent` handles `PageConstants::BOT` page subscription — provides bot detail data.
+`LibraryAgent` serves the `PageConstants::BOT` card. The profile is read from `bots`. The status is the existing `BotStatusBrowserData` browser source. Opening the card does not start `BotAgent`.

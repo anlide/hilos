@@ -54,14 +54,17 @@ table contexts when they can read the project registry.
   subscription when no instance can be determined. `Hilos::getPageAgentIndexRoutes()`
   computes the per-instance map; the master resolves the address once, on subscribe, and
   every later signal of that subscription is addressed off the subscription record. An
-  empty declaration — the default — means the page routes by type exactly as before. See
+  empty declaration — the default — means the page routes by type exactly as before when
+  its owner does not require an index. An indexed owner that leaves the declaration empty
+  is refused at startup. See
   [signals/routing.md](signals/routing.md) for the full behavior and its consequences.
 - Each group class declares its group subscription owner in
   `GroupClass::SUBSCRIPTION_AGENT_TYPE`. `Hilos::getGroupRoutes()` computes the
   group-to-agent routing map from `Hilos::GROUPS` and those group-level constants.
   `SignalRouter` resolves group subscription signals from that computed registry
   through the active project Hilos facade; project routers should not rebuild
-  the group-to-agent list in config.
+  the group-to-agent list in config. An indexed owner is refused at startup, because
+  a group subscription carries no agent index.
 - Each page class declares WebSocket actions it owns in `PageClass::ACTIONS` as
   `action name => ActionPayloadDTO class`. `Hilos::getPageActionRoutes()`
   computes `action -> page`, `Hilos::getActionDtoRoutes()` computes

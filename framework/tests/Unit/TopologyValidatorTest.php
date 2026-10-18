@@ -31,6 +31,7 @@ use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\Config\BrowserSubscriptionError;
 use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
+use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\Config\PageAgentIndexKey;
 use Hilos\Core\Page\Config\PageAgentIndexSource;
@@ -552,6 +553,196 @@ final class TopologyValidatorTest extends TestCase
         $this->assertSame(
             TopologyValidAgent::AGENT_TYPE,
             $routes[TopologyPerInstancePage::PAGE]->fallbackAgentType,
+        );
+    }
+
+    /**
+     * An indexed owner that inherits the empty index is refused, and that refusal is the fixture's only error.
+     */
+    public function testIndexedOwnerWithInheritedEmptyIndexIsRefused(): void
+    {
+        $this->assertTopologyErrors(
+            static fn(): mixed => TopologyIndexedOwnerEmptyIndexHilos::validateTopology(),
+            [
+                'PAGES[' . TopologyIndexedOwnerEmptyIndexPage::PAGE . ']',
+                'class ' . TopologyIndexedOwnerEmptyIndexPage::class,
+                'SUBSCRIPTION_AGENT_INDEX',
+                'is required for indexed SUBSCRIPTION_AGENT_TYPE ' . TopologyIndexedFactoryAgent::AGENT_TYPE,
+            ],
+        );
+
+        try {
+            TopologyIndexedOwnerEmptyIndexHilos::validateTopology();
+            $this->fail('Expected topology validation to fail');
+        } catch (InvalidTopologyException $exception) {
+            $this->assertSame(1, substr_count($exception->getMessage(), "\n- "));
+        }
+    }
+
+    /**
+     * A singleton owner and a page that inherits the empty index stay valid.
+     */
+    public function testSingletonPageWithEmptyIndexPasses(): void
+    {
+        TopologySingletonEmptyIndexHilos::validateTopology();
+
+        $this->assertSame([], TopologySingletonEmptyIndexHilos::getPageAgentIndexRoutes());
+    }
+
+    /**
+     * An indexed owner with a param index, a non-empty param, and a registered non-indexed fallback passes.
+     */
+    public function testIndexedOwnerWithParamIndexPasses(): void
+    {
+        TopologyIndexedOwnerParamHilos::validateTopology();
+
+        $route = TopologyIndexedOwnerParamHilos::getPageAgentIndexRoutes()[TopologyIndexedOwnerParamPage::PAGE];
+        $this->assertSame(PageAgentIndexSource::PARAM, $route->source);
+        $this->assertSame('entityId', $route->param);
+        $this->assertSame(TopologyValidAgent::AGENT_TYPE, $route->fallbackAgentType);
+    }
+
+    /**
+     * The indexed-owner refusal is collected with an older page error instead of replacing it.
+     */
+    public function testIndexedEmptyIndexErrorIsAggregatedWithOtherPageErrors(): void
+    {
+        $this->assertTopologyErrors(
+            static fn(): mixed => TopologyIndexedIndexAggregatedHilos::validateTopology(),
+            [
+                'PAGES[' . TopologyIndexedOwnerEmptyIndexPage::PAGE . '] class '
+                    . TopologyIndexedOwnerEmptyIndexPage::class
+                    . ' SUBSCRIPTION_AGENT_INDEX is required for indexed SUBSCRIPTION_AGENT_TYPE '
+                    . TopologyIndexedFactoryAgent::AGENT_TYPE,
+                'PAGES[' . TopologyPerInstanceUnknownFallbackPage::PAGE . ']',
+                'unregistered_agent',
+                'missing from AGENTS',
+            ],
+        );
+    }
+
+    /**
+     * An indexed owner of a group is refused, and that refusal is the fixture's only error.
+     */
+    public function testIndexedOwnerGroupIsRefused(): void
+    {
+        $this->assertTopologyErrors(
+            static fn(): mixed => TopologyIndexedOwnerGroupHilos::validateTopology(),
+            [
+                'GROUPS[' . TopologyIndexedOwnerGroup::GROUP . ']',
+                'class ' . TopologyIndexedOwnerGroup::class,
+                'SUBSCRIPTION_AGENT_TYPE ' . TopologyIndexedFactoryAgent::AGENT_TYPE,
+                'no agentIndex',
+            ],
+        );
+
+        try {
+            TopologyIndexedOwnerGroupHilos::validateTopology();
+            $this->fail('Expected topology validation to fail');
+        } catch (InvalidTopologyException $exception) {
+            $this->assertSame(1, substr_count($exception->getMessage(), "\n- "));
+        }
+    }
+
+    /**
+     * A singleton group with a non-indexed owner stays valid.
+     */
+    public function testSingletonGroupPasses(): void
+    {
+        TopologySingletonGroupHilos::validateTopology();
+
+        $this->assertSame(
+            [TopologySingletonGroup::GROUP => TopologyValidAgent::AGENT_TYPE],
+            TopologySingletonGroupHilos::getGroupRoutes(),
+        );
+    }
+
+    /**
+     * The indexed-owner refusal is collected with an older group error instead of replacing it.
+     */
+    public function testIndexedGroupErrorIsAggregatedWithOtherGroupErrors(): void
+    {
+        $this->assertTopologyErrors(
+            static fn(): mixed => TopologyIndexedGroupAggregatedHilos::validateTopology(),
+            [
+                'GROUPS[' . TopologyIndexedOwnerGroup::GROUP . '] class '
+                    . TopologyIndexedOwnerGroup::class
+                    . ' SUBSCRIPTION_AGENT_TYPE ' . TopologyIndexedFactoryAgent::AGENT_TYPE
+                    . ' cannot use an indexed agent: group subscriptions carry no agentIndex',
+                'GROUPS[' . TopologyEmptyOwnerGroup::GROUP . '] class '
+                    . TopologyEmptyOwnerGroup::class
+                    . ' must declare a non-empty SUBSCRIPTION_AGENT_TYPE',
+            ],
+        );
+    }
+
+    /**
+     * A non-group class and a missing class stay topology errors rather than a type error.
+     */
+    public function testMalformedGroupClassStaysInvalidTopology(): void
+    {
+        try {
+            TopologyMalformedGroupHilos::validateTopology();
+            $this->fail('Expected topology validation to fail');
+        } catch (InvalidTopologyException $exception) {
+            $message = $exception->getMessage();
+        }
+
+        $this->assertStringContainsString(
+            'GROUPS[not_group] class ' . TopologyTestDbContext::class . ' must extend ' . AbstractGroup::class,
+            $message,
+        );
+        $this->assertStringContainsString(
+            'GROUPS[missing_group] class ' . TopologyMalformedGroupHilos::MISSING_GROUP_CLASS . ' does not exist',
+            $message,
+        );
+        $this->assertStringNotContainsString('no agentIndex', $message);
+    }
+
+    /**
+     * A non-array agent entry keeps its registry diagnostic and is not reread as an indexed owner.
+     */
+    public function testBrokenAgentRegistryEntryIsNotReportedAsIndexed(): void
+    {
+        try {
+            TopologyBrokenRegistryGroupHilos::validateTopology();
+            $this->fail('Expected topology validation to fail');
+        } catch (InvalidTopologyException $exception) {
+            $message = $exception->getMessage();
+        }
+
+        $this->assertStringContainsString(
+            'AGENTS[' . TopologyBrokenRegistryGroup::SUBSCRIPTION_AGENT_TYPE
+                . '] must be an array declaring worker and daemon classes',
+            $message,
+        );
+        $this->assertStringNotContainsString('no agentIndex', $message);
+    }
+
+    /**
+     * A group whose owner is absent from AGENTS is not refused as an indexed owner.
+     */
+    public function testMissingAgentRegistryEntryIsNotReportedAsIndexed(): void
+    {
+        TopologyMissingRegistryGroupHilos::validateTopology();
+
+        $this->assertSame(
+            [TopologyMissingRegistryGroup::GROUP => TopologyMissingRegistryGroup::SUBSCRIPTION_AGENT_TYPE],
+            TopologyMissingRegistryGroupHilos::getGroupRoutes(),
+        );
+    }
+
+    /**
+     * A non-page class and a non-array agent entry stay topology errors rather than a type error.
+     */
+    public function testMalformedPageClassAndAgentEntryStayInvalidTopology(): void
+    {
+        $this->assertTopologyErrors(
+            static fn(): mixed => TopologyMalformedPageAndAgentHilos::validateTopology(),
+            [
+                'PAGES[not_page] class ' . TopologyTestDbContext::class . ' must extend ' . AbstractPage::class,
+                'AGENTS[broken_agent] must be an array',
+            ],
         );
     }
 
@@ -5298,6 +5489,307 @@ final class TopologyPerInstancePublicSessionUserHilos extends HilosFacade
             AgentRegistryKey::WORKER => TopologyValidAgent::class,
             AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
         ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyIndexedOwnerEmptyIndexPage extends AbstractPage
+{
+    public const string PAGE = 'indexed_owner_empty_index_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = TopologyIndexedFactoryAgent::AGENT_TYPE;
+}
+
+final class TopologyIndexedOwnerParamPage extends AbstractPage
+{
+    public const string PAGE = 'indexed_owner_param_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = TopologyIndexedFactoryAgent::AGENT_TYPE;
+
+    public const array SUBSCRIPTION_AGENT_INDEX = [
+        PageAgentIndexKey::SOURCE => PageAgentIndexSource::PARAM,
+        PageAgentIndexKey::PARAM => 'entityId',
+        PageAgentIndexKey::FALLBACK_AGENT_TYPE => TopologyValidAgent::AGENT_TYPE,
+    ];
+}
+
+final class TopologySingletonEmptyIndexPage extends AbstractPage
+{
+    public const string PAGE = 'singleton_empty_index_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = TopologyValidAgent::AGENT_TYPE;
+}
+
+final class TopologyBrokenAgentEntryPage extends AbstractPage
+{
+    public const string PAGE = 'broken_agent_entry_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'broken_agent';
+}
+
+class TopologyIndexedOwnerPageHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyIndexedFactoryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyIndexedFactoryAgent::class,
+            AgentRegistryKey::DAEMON => TopologyIndexedFactoryAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyIndexedOwnerEmptyIndexHilos extends TopologyIndexedOwnerPageHilos
+{
+    public const array PAGES = [
+        TopologyIndexedOwnerEmptyIndexPage::PAGE => TopologyIndexedOwnerEmptyIndexPage::class,
+    ];
+}
+
+final class TopologyIndexedOwnerParamHilos extends TopologyIndexedOwnerPageHilos
+{
+    public const array PAGES = [
+        TopologyIndexedOwnerParamPage::PAGE => TopologyIndexedOwnerParamPage::class,
+    ];
+}
+
+final class TopologyIndexedIndexAggregatedHilos extends TopologyIndexedOwnerPageHilos
+{
+    public const array PAGES = [
+        TopologyIndexedOwnerEmptyIndexPage::PAGE => TopologyIndexedOwnerEmptyIndexPage::class,
+        TopologyPerInstanceUnknownFallbackPage::PAGE => TopologyPerInstanceUnknownFallbackPage::class,
+    ];
+}
+
+final class TopologySingletonEmptyIndexHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologySingletonEmptyIndexPage::PAGE => TopologySingletonEmptyIndexPage::class,
+    ];
+
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyMalformedPageAndAgentHilos extends HilosFacade
+{
+    public const array PAGES = [
+        'not_page' => TopologyTestDbContext::class,
+        TopologyBrokenAgentEntryPage::PAGE => TopologyBrokenAgentEntryPage::class,
+    ];
+
+    public const array AGENTS = [
+        'broken_agent' => 'not-an-array',
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyIndexedOwnerGroup extends AbstractGroup
+{
+    public const string GROUP = 'indexed_owner_group';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = TopologyIndexedFactoryAgent::AGENT_TYPE;
+}
+
+final class TopologyIndexedOwnerGroupHilos extends HilosFacade
+{
+    public const array GROUPS = [
+        TopologyIndexedOwnerGroup::GROUP => TopologyIndexedOwnerGroup::class,
+    ];
+
+    public const array AGENTS = [
+        TopologyIndexedFactoryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyIndexedFactoryAgent::class,
+            AgentRegistryKey::DAEMON => TopologyIndexedFactoryAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologySingletonGroup extends AbstractGroup
+{
+    public const string GROUP = 'singleton_group';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = TopologyValidAgent::AGENT_TYPE;
+}
+
+final class TopologyEmptyOwnerGroup extends AbstractGroup
+{
+    public const string GROUP = 'empty_owner_group';
+}
+
+final class TopologyBrokenRegistryGroup extends AbstractGroup
+{
+    public const string GROUP = 'broken_registry_group';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'broken_agent';
+}
+
+final class TopologyMissingRegistryGroup extends AbstractGroup
+{
+    public const string GROUP = 'missing_registry_group';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'missing_agent';
+}
+
+final class TopologySingletonGroupHilos extends HilosFacade
+{
+    public const array GROUPS = [
+        TopologySingletonGroup::GROUP => TopologySingletonGroup::class,
+    ];
+
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyIndexedGroupAggregatedHilos extends HilosFacade
+{
+    public const array GROUPS = [
+        TopologyIndexedOwnerGroup::GROUP => TopologyIndexedOwnerGroup::class,
+        TopologyEmptyOwnerGroup::GROUP => TopologyEmptyOwnerGroup::class,
+    ];
+
+    public const array AGENTS = [
+        TopologyIndexedFactoryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyIndexedFactoryAgent::class,
+            AgentRegistryKey::DAEMON => TopologyIndexedFactoryAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyMalformedGroupHilos extends HilosFacade
+{
+    public const string MISSING_GROUP_CLASS = 'Hilos\\Tests\\Unit\\TopologyGroupClassThatDoesNotExist';
+
+    public const array GROUPS = [
+        'not_group' => TopologyTestDbContext::class,
+        'missing_group' => self::MISSING_GROUP_CLASS,
+    ];
+
+    public const array AGENTS = [
+        TopologyIndexedFactoryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyIndexedFactoryAgent::class,
+            AgentRegistryKey::DAEMON => TopologyIndexedFactoryAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyBrokenRegistryGroupHilos extends HilosFacade
+{
+    public const array GROUPS = [
+        TopologyBrokenRegistryGroup::GROUP => TopologyBrokenRegistryGroup::class,
+    ];
+
+    public const array AGENTS = [
+        TopologyBrokenRegistryGroup::SUBSCRIPTION_AGENT_TYPE => 'not-an-array',
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyMissingRegistryGroupHilos extends HilosFacade
+{
+    public const array GROUPS = [
+        TopologyMissingRegistryGroup::GROUP => TopologyMissingRegistryGroup::class,
     ];
 
     /**

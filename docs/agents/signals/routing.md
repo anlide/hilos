@@ -305,8 +305,13 @@ Consequences worth knowing before declaring one:
 "my" page for real.
 For `NODE_PARAM`, it also requires a registered `NODE`-scoped owner and a
 registered fallback with a different scope.
+An indexed `SUBSCRIPTION_AGENT_TYPE` that leaves `SUBSCRIPTION_AGENT_INDEX` empty is refused:
+`PAGES[{page}] class {pageClass} SUBSCRIPTION_AGENT_INDEX is required for indexed SUBSCRIPTION_AGENT_TYPE {agentType}`.
+A group whose `SUBSCRIPTION_AGENT_TYPE` is an indexed agent is refused:
+`GROUPS[{group}] class {groupClass} SUBSCRIPTION_AGENT_TYPE {agentType} cannot use an indexed agent: group subscriptions carry no agentIndex`.
 
 Groups (`GROUPS`) stay on the agent type: there is no per-instance group surface yet.
+An indexed owner is refused because a group subscription carries no agent index.
 
 ## Out of scope for topology DTO routing
 
