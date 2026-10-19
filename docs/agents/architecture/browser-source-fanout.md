@@ -275,12 +275,11 @@ drops these frames; that is a defense, not the rule's enforcement.
    next eligible delivery to it: a change of its own DB/RT source or a window
    it asked for, once the page guards allow it. A source fact tries the whole
    page even when the failed first answer left it without any viewport.
-2. The database came back: the worker's first successful query after it lost
-   its database connection tries all that worker's debts — windows and pages
-   — once each, in the next flush. The fact
-   stays inside the worker that saw it; it is not announced to other
-   processes, each of which has its own connection and debts (owner's
-   decision, 2026-10-04).
+2. The database came back: the worker's first successful query after it lost its
+   database connection tries all that worker's debts — windows and pages — once
+   each, in the next flush. The fact stays inside the worker that saw it; it is
+   not announced to other processes, each of which has its own connection and
+   debts (owner's decision, 2026-10-04).
    The table that needs this fact is step-up on `/hilos/security/2fa`: it has
    no sort, search, or filter, and its live source — the step-up setting keys
    — almost never changes. After a database failure, it used to have only F5.
