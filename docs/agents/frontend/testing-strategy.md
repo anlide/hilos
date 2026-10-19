@@ -630,21 +630,20 @@ the account-isolation boundary; cached settings alone do not prove delivery.
 ### The Analytics section — names and checks
 
 `analytics.ts` owns `ANALYTICS_WRITER_TIMEOUT_MS`,
-`ANALYTICS_SIGN_UP_LAST_ACTION`, the frame
-observer `watchAnalyticsFrames` (called before the page signs in), the row
-reader `readAnalyticsActionRows` (the no-value sign reads as a null page name,
-as the frames carry it) and the cell locator `analyticsSessionLink`.
-`expectAnalyticsDashboardCard` and `expectAnalyticsOverview` check the way in;
-the `expectAnalytics…`, `expectNoAnalytics…` and
-`expectOtherAnalyticsSession` checks cover the person page and the session
-page. `expectAnalyticsActionsOnPage` checks that every action row shown for
-the session stands on the same named page; registration expects `main` for
-every row. Every check takes the spec's `expect` first, then its `Page`. A spec
-waits for the journal writer by polling the `test:analytics:browser-session`
-probe until the last registration action of both tabs — the person's and the
-administrator's — has landed, then opens the section. The three kits' specs
-are the same text; the one difference is the stand address of the command
-channel.
+`ANALYTICS_SIGN_UP_LAST_ACTION`, the frame observer `watchAnalyticsFrames`
+(called before the page signs in), the row reader `readAnalyticsActionRows` (the
+no-value sign reads as a null page name, as the frames carry it) and the cell
+locator `analyticsSessionLink`. `expectAnalyticsDashboardCard` and
+`expectAnalyticsOverview` check the way in; the `expectAnalytics…`,
+`expectNoAnalytics…` and `expectOtherAnalyticsSession` checks cover the person
+page and the session page. `expectAnalyticsActionsOnPage` checks that every
+action row shown for the session stands on the same named page; registration
+expects `main` for every row. Every check takes the spec's `expect` first, then
+its `Page`. A spec waits for the journal writer by polling the
+`test:analytics:browser-session` probe until the last registration action of
+both tabs — the person's and the administrator's — has landed, then opens the
+section. The three kits' specs are the same text; the one difference is the
+stand address of the command channel.
 
 The cluster proof also uses `cluster.ts`: `readClusterBrowserStand` validates
 the harness roles and address/log maps, `newClusterMasterPage` sets the master

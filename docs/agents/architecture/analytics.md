@@ -49,13 +49,13 @@ every process, including master ── Hilos::$ac ──► AnalyticsJournalOutb
   worker methods describe sessions, signals, browser-session attachments and
   token changes. The master records WebSocket connections, their current pages,
   user actions and completed HTTP requests. It remembers only the key and name
-  of each connection's open page and correlation keys captured during synchronous
-  dispatch; it has no analytics database access. Records gather in
-  `AnalyticsJournalOutbox`. A batch
-  leaves as one frame to the journal agent of the node once a second, at 64 KiB
-  gathered, and at worker shutdown (`WorkerManager::cleanup()` sends it with the
-  stop hooks' frames). The master queues its batch through its signal router,
-  which `dispatchSignals()` delivers to the journal agent of that same node.
+  of each connection's open page and correlation keys captured during
+  synchronous dispatch; it has no analytics database access. Records gather in
+  `AnalyticsJournalOutbox`. A batch leaves as one frame to the journal agent of
+  the node once a second, at 64 KiB gathered, and at worker shutdown
+  (`WorkerManager::cleanup()` sends it with the stop hooks' frames). The master
+  queues its batch through its signal router, which `dispatchSignals()` delivers
+  to the journal agent of that same node.
   A browser-session rename flushes at once. New action and signal bodies and
   arbitrary API request parameters are discarded at the source
   ([../signals/dto-convention.md](../signals/dto-convention.md)): the file on the
