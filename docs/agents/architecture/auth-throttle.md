@@ -201,9 +201,9 @@ while remaining a page exception: its safe server reason travels beside the code
 and `retryAfter`. The core preserves that reason through the auth outcome, and
 the sign-in surface displays it; the code selects behavior, not local wording.
 See [the refusal-copy rule](../frontend/wire-protocol.md#a-failure-reason-is-a-domain-sentence-never-an-engine-message).
-A denial that arrived without a number still denies —
-dropping a decision because a hint went missing would let a blocked key through —
-and the client is told the shortest wait the ladder can impose instead.
+A denial that arrived without a number still denies — dropping a decision because a
+hint went missing would let a blocked key through — and the client is told the
+shortest wait the ladder can impose instead.
 
 ## Configuration
 

@@ -53,11 +53,11 @@ use Throwable;
  * The mode is the node's own runtime row, turned on the way the lever turns it on, and who is behind a
  * connection is answered by the demo's own browser context from its live connections. Nothing is a
  * double. On trial: every action of an admin page is refused to a viewer - with or without an account -
- * but the reading ones, and the refusal carries a safe sentence authored by the server and changes nothing; a viewer subscribes to an
- * admin page of the framework and of the project; taking or giving the admin flag switches an open page
- * between viewing and full; the freeze closes a viewer as it closes an admin; and a page with a
- * subscriber set of its own stops sending to someone whose rights were taken - hidden with the mode on.
- * With the mode off everything is refused as before.
+ * but the reading ones, and the refusal carries a safe sentence authored by the server and changes
+ * nothing; a viewer subscribes to an admin page of the framework and of the project; taking or giving
+ * the admin flag switches an open page between viewing and full; the freeze closes a viewer as it
+ * closes an admin; and a page with a subscriber set of its own stops sending to someone whose rights
+ * were taken - hidden with the mode on. With the mode off everything is refused as before.
  */
 final class AdminViewModeGateTest extends IntegrationTestCase
 {

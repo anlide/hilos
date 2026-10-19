@@ -171,13 +171,13 @@ change the body of that question, not the mode around it.
   `view_mode`, HTTP 403, and the server's safe reason. The exception declares
   `PersonFacingFailure` while remaining a page exception, so all three frontends
   display its reason through the ordinary action-error path.
-  `ActionError.errorCode` carries the code for behavior; it does not select
-  a local sentence. See [the refusal-copy rule](../frontend/wire-protocol.md#a-failure-reason-is-a-domain-sentence-never-an-engine-message).
-  The code is its own and
-  not `forbidden`, so a viewer without an account is not answered with the
-  sign-in modal. The refusal is a verdict, not a failure: one INFO line in the
-  journal and no trace, because the overview of the logs collects ERROR lines
-  and a viewer is looking at exactly that page.
+  `ActionError.errorCode` carries the code for behavior; it does not select a
+  local sentence. See
+  [the refusal-copy rule](../frontend/wire-protocol.md#a-failure-reason-is-a-domain-sentence-never-an-engine-message).
+  The code is its own and not `forbidden`, so a viewer without an account is not
+  answered with the sign-in modal. The refusal is a verdict, not a failure: one
+  INFO line in the journal and no trace, because the overview of the logs
+  collects ERROR lines and a viewer is looking at exactly that page.
 - A refused action writes nothing — not to the database, not to RT: the page's
   refusal handler records no state. The case the rule is written from is the
   Guardian page of the chat demo.

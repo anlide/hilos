@@ -45,9 +45,9 @@ final class ActionFailureReason
      *
      * A marked refusal declares its own message safe for the person, so that message travels.
      * An unmarked failure - a driver error carrying SQL text, index names, paths, or an
-     * unexpected engine fault -
-     * stays on the server, and the caller gets the placeholder instead; the full detail is
-     * in the log the dispatcher wrote. See docs/agents/frontend/wire-protocol.md.
+     * unexpected engine fault - stays on the server, and the caller gets the placeholder
+     * instead; the full detail is in the log the dispatcher wrote. See
+     * docs/agents/frontend/wire-protocol.md.
      *
      * @param Throwable $e Failure raised by an action handler
      * @return string Message safe to deliver to a client

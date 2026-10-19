@@ -290,10 +290,10 @@ view mode never gets them: its refusal is `errorCode` `view_mode` with the
 server's safe reason, which the frontend displays
 ([../architecture/admin-view-mode.md](../architecture/admin-view-mode.md)). A
 non-admin whose action the gate refused receives no diagnostic details either.
-The SDK's `HilosActionError` draws the
-class name as text beside the icon of the row's details button, and the original
-message in the details panel under the caption "Exception", with Copy, so an
-operator can carry the real text into a ticket. Three limits are part of the rule:
+The SDK's `HilosActionError` draws the class name as text beside the icon of the
+row's details button, and the original message in the details panel under the
+caption "Exception", with Copy, so an operator can carry the real text into a
+ticket. Three limits are part of the rule:
 
 - they ride **only** on that admin frame to that actor; for any other caller the
   frame is byte for byte what it was before they existed;

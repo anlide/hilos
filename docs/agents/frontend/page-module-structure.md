@@ -196,11 +196,10 @@ fills in — instead of recopying them into every project. The `users` / `user`
 pages are deliberately **not** in the map: they are real framework pages that
 need a project-supplied `HilosUsersContext`, so a consumer mounts them directly.
 It is **not** the revoked God-map: every page is its own module file (no page
-content or metadata map in any project), the catalog of identity stays in
-the backend and arrives with the page's answer, each file renders the
-page-agnostic shell, and `HilosView` selects the page from the navigator.
-To implement a page, replace its file's shell body with real content and strike
-that layer from
+content or metadata map in any project), the catalog of identity stays in the
+backend and arrives with the page's answer, each file renders the page-agnostic
+shell, and `HilosView` selects the page from the navigator. To implement a page,
+replace its file's shell body with real content and strike that layer from
 `HILOS_UNBUILT_PAGES` in `@hilos/core` (remove the entry when no layers remain);
 a consumer overriding an unbuilt key names it and its section in `bootHilos`
 `projectViews`. An unbuilt page is listed for each layer that has not built it:

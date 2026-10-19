@@ -1728,8 +1728,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * Called when socket connection is successfully closed.
      *
      * Deletes socket input and releases its obligations, then announces the close.
-     * The subscriptions the accept key held are
-     * dropped by the master's own dispatch, after the close has been routed
+     * The subscriptions the accept key held are dropped by the master's own dispatch,
+     * after the close has been routed
      * ({@see DaemonManager::forgetSubscriptionsAfterRouting()}): the records name the
      * agent instances serving this connection, and dropping them here would erase the
      * addressees before the close reached them (HIL-627). The page the connection sat

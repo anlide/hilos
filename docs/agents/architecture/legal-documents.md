@@ -103,13 +103,12 @@ replies with `{form, documents, unpublishedMessage, revisedMessage}`. Both
 messages are required server-authored words for the consent surface and its
 admin preview; a failed action's own message is preserved through legal catches
 ([the refusal-copy rule](../frontend/wire-protocol.md#a-failure-reason-is-a-domain-sentence-never-an-engine-message)).
-`form` is `checkbox` or `line`, read from
-`legal.consent_form`. Each document supplies its `document` key, current
-`revision` and composed `clauses` in the shared `LegalWire` shapes. The last
-declared revision is current even when its acceptance deadline is in the future.
-The action is declared reading (`AbstractUsersLibraryAgent::READING_ACTIONS`),
-open in every look-only state, and is not an authentication or secret-guessing
-door.
+`form` is `checkbox` or `line`, read from `legal.consent_form`. Each document
+supplies its `document` key, current `revision` and composed `clauses` in the
+shared `LegalWire` shapes. The last declared revision is current even when its
+acceptance deadline is in the future. The action is declared reading
+(`AbstractUsersLibraryAgent::READING_ACTIONS`), open in every look-only state,
+and is not an authentication or secret-guessing door.
 
 The first email, phone or magic-link send carries `acceptedRevisions`, a map
 from each declared document to the exact revision shown. Both actions of the
