@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Auth\Detection;
 
 use Hilos\Auth\AuthMethodKey;
+use Hilos\Auth\Detection\IdentifierDetection;
 use Hilos\Auth\Detection\IdentifierDetector;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
@@ -54,17 +55,17 @@ final class IdentifierDetectorTest extends TestCase
     }
 
     /**
-     * @return list<array{string}> Inputs a surface may legitimately look up
+     * @return list<array{string, string, string}> Input, classification and canonical identifier
      */
     public static function readableIdentifiers(): array
     {
         return [
-            ['person@example.com'],
-            ['  Person@Example.COM  '],
-            ['+15550101234'],
-            ['+1 (555) 010-1234'],
-            ['0015550101234'],
-            ['15550101234'],
+            ['person@example.com', IdentifierDetection::KIND_EMAIL, 'person@example.com'],
+            ['  Person@Example.COM  ', IdentifierDetection::KIND_EMAIL, 'person@example.com'],
+            ['+15550101234', IdentifierDetection::KIND_PHONE, '+15550101234'],
+            ['+1 (555) 010-1234', IdentifierDetection::KIND_PHONE, '+15550101234'],
+            ['0015550101234', IdentifierDetection::KIND_PHONE, '+15550101234'],
+            ['15550101234', IdentifierDetection::KIND_PHONE, '+15550101234'],
         ];
     }
 
@@ -94,12 +95,16 @@ final class IdentifierDetectorTest extends TestCase
      * A well-formed address or number classifies and is carried on to the account lookup.
      *
      * @param string $identifier Input that should classify
+     * @param string $kind Expected identifier kind
+     * @param string $normalized Expected canonical identifier
      * @throws InvalidFormatException Never: these classify
      * @throws LogicException Always — reaching the lookup with no database is what is asserted
      */
     #[DataProvider('readableIdentifiers')]
-    public function testReadableIdentifierReachesTheLookup(string $identifier): void
+    public function testReadableIdentifierReachesTheLookup(string $identifier, string $kind, string $normalized): void
     {
+        self::assertSame($kind, IdentifierDetector::kindOf($identifier));
+        self::assertSame($normalized, IdentifierDetector::normalize($identifier, $kind));
         $this->expectException(LogicException::class);
 
         new IdentifierDetector(self::ENABLED)->detect($identifier, self::SESSION_TOKEN);

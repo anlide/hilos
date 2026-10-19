@@ -5,7 +5,6 @@ import {
   createHilosLegalConsentPreview,
   createHilosLegalReconsentPreview,
   hilosLegalDocumentLabel,
-  LEGAL_TERMS_UNPUBLISHED_MESSAGE,
   HilosPages,
   LEGAL_CATALOG_REFUSAL_SECTION,
   LEGAL_DOCUMENT_SECTION,
@@ -243,7 +242,7 @@ onUnmounted(() => {
           v-if="previewTerms?.documents.length === 0"
           data-id="legal-consent-unpublished"
         >
-          {{ LEGAL_TERMS_UNPUBLISHED_MESSAGE }}
+          {{ previewTerms.unpublishedMessage }}
         </p>
         <HilosLegalConsent
           v-else-if="previewTerms"

@@ -17,18 +17,20 @@ const NOT_FOUND: PageSubscriptionError = {
   page: 'user',
   httpCode: 404,
   errorCode: 'not_found',
-  message: 'Resource #9 not found',
+  title: 'Page Not Found',
+  message: 'The page you are looking for does not exist.',
 }
 
 const FORBIDDEN: PageSubscriptionError = {
   page: 'user',
   httpCode: 403,
   errorCode: 'forbidden',
-  message: 'Access forbidden',
+  title: 'Forbidden',
+  message: 'You do not have access to this page.',
 }
 
 describe('ErrorPage', () => {
-  it('renders the HTTP code and a mapped title', () => {
+  it('renders the HTTP code and server title', () => {
     const wrapper = mount(ErrorPage, { props: { error: NOT_FOUND } })
 
     const surface = wrapper.find('[data-id="page-error"]')
@@ -37,18 +39,42 @@ describe('ErrorPage', () => {
     expect(surface.text()).toContain('Page Not Found')
   })
 
-  it('falls back to a generic title for an unmapped status', () => {
+  it('renders server fallback wording for an unmapped status', () => {
     const wrapper = mount(ErrorPage, {
-      props: { error: { ...NOT_FOUND, httpCode: 418 } },
+      props: {
+        error: {
+          ...NOT_FOUND,
+          httpCode: 418,
+          title: 'Error',
+          message: 'An error occurred.',
+        },
+      },
     })
 
     expect(wrapper.find('[data-id="page-error"]').text()).toContain('Error')
   })
 
-  // The 403 row answers every refusal, so it must not name the refused person:
-  // an administrator whose privilege was revoked under an open page used to read
-  // that they were a guest (HIL-779). The literal lives here on purpose — read
-  // from the component, the assertion would follow a rewording silently.
+  it('renders arbitrary server text literally for a known status', () => {
+    const wrapper = mount(ErrorPage, {
+      props: {
+        error: {
+          ...FORBIDDEN,
+          title: 'Server <b>title</b>',
+          message: 'Server <em>description</em> & details.',
+        },
+      },
+    })
+    const surface = wrapper.find('[data-id="page-error"]')
+    expect(surface.find('.lead').text()).toBe('Server <b>title</b>')
+    expect(surface.find('p.text-body-secondary').text()).toBe(
+      'Server <em>description</em> & details.',
+    )
+    expect(surface.find('b, em').exists()).toBe(false)
+    expect(surface.find('[data-id="page-error-home"]').attributes('href')).toBe(
+      '/',
+    )
+  })
+
   it('refuses a 403 without calling the reader a guest', () => {
     const wrapper = mount(ErrorPage, { props: { error: FORBIDDEN } })
 
@@ -115,6 +141,7 @@ const UNAUTHORIZED: PageSubscriptionError = {
   page: 'user',
   httpCode: 401,
   errorCode: 'unauthorized',
+  title: 'Unauthorized',
   message: 'Authentication required',
 }
 

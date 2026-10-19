@@ -37,6 +37,7 @@ use Hilos\Runtime\View\Collection\HilosOAuthTrips;
 use Hilos\Runtime\View\Item\HilosOAuthTrip as ViewHilosOAuthTrip;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
 
@@ -124,7 +125,70 @@ final class OAuthTripHolderTest extends TestCase
         $this->assertCount(1, $results);
         $this->assertSame(self::LIVE_ACCEPT_KEY, $results[0]->acceptKey);
         $this->assertSame(OAuthResultSignalData::REASON_LOGIN_FAILED, $results[0]->reason);
+        $this->assertSame('OAuth login failed. Please try again.', $results[0]->message);
         $this->assertSame(OAuthResultSignalData::REASON_LOGIN_FAILED, $this->trip()?->ending);
+    }
+
+    /** @return array<string, array{string, ?string}> Result reasons and their safe sentences */
+    public static function resultMessages(): array
+    {
+        return [
+            'login failure' => ['oauth_login_failed', 'OAuth login failed. Please try again.'],
+            'duplicate link' => ['oauth_link_duplicate', 'That account is already linked to another user.'],
+            'link failure' => ['oauth_link_failed', 'Could not link the account. Please try again.'],
+            'unknown reason' => ['future_reason', 'OAuth login failed. Please try again.'],
+            'reauth' => ['reauth_required', null],
+            'consent' => ['consent_required', null],
+            'linked' => ['oauth_link_ok', null],
+            'second factor' => ['second_factor', null],
+            'blocked' => ['account_blocked', null],
+        ];
+    }
+
+    /**
+     * @param string $reason Result reason
+     * @param ?string $message Safe sentence or silent transition
+     */
+    #[DataProvider('resultMessages')]
+    public function testEachDeliveryComposesTheSafeSentence(string $reason, ?string $message): void
+    {
+        $agent = new OAuthTripHolderTestAgent();
+
+        // No runtime record: the direct answer still carries the same safe sentence.
+        $this->end($agent, $reason, self::LIVE_ACCEPT_KEY);
+        $results = $this->drainResults();
+        self::assertCount(1, $results);
+        self::assertSame(self::LIVE_ACCEPT_KEY, $results[0]->acceptKey);
+        self::assertSame($message, $results[0]->message);
+
+        $this->open($agent, self::LIVE_ACCEPT_KEY);
+        $this->end($agent, $reason);
+        $results = $this->drainResults();
+        self::assertCount(1, $results);
+        self::assertSame($message, $results[0]->message);
+
+        self::assertTrue($this->resume($agent, self::LIVE_ACCEPT_KEY)->known);
+        $replayed = $this->drainResults();
+        self::assertCount(1, $replayed);
+        self::assertSame($results[0]->toArray(), $replayed[0]->toArray());
+    }
+
+    public function testAStoredGrantWithoutItsUserSendsADirectFailure(): void
+    {
+        $agent = new OAuthTripHolderTestAgent();
+        $this->open($agent, self::DEAD_ACCEPT_KEY);
+        $this->trip()?->actions->end(StateHilosOAuthTrip::ENDING_GRANTED);
+
+        $reply = $this->resume($agent, self::LIVE_ACCEPT_KEY);
+
+        self::assertTrue($reply->known);
+        self::assertNull($reply->message);
+        $results = $this->drainResults();
+        self::assertCount(1, $results);
+        self::assertSame(self::LIVE_ACCEPT_KEY, $results[0]->acceptKey);
+        self::assertSame('oauth_login_failed', $results[0]->reason);
+        self::assertSame('OAuth login failed. Please try again.', $results[0]->message);
+        self::assertSame(StateHilosOAuthTrip::ENDING_GRANTED, $this->trip()?->ending);
     }
 
     public function testConsentEndingCarriesItsAccountTokenToTheLiveTab(): void
@@ -215,6 +279,7 @@ final class OAuthTripHolderTest extends TestCase
         $reply = $this->resume($agent, self::LIVE_ACCEPT_KEY);
 
         $this->assertFalse($reply->known);
+        $this->assertSame('OAuth login failed. Please try again.', $reply->message);
     }
 
     public function testAKeyPresentedUnderAnotherCookieOpensNothing(): void
@@ -227,6 +292,7 @@ final class OAuthTripHolderTest extends TestCase
 
         // A key that leaked without the session it was minted under is worth nothing.
         $this->assertFalse($reply->known);
+        $this->assertSame('OAuth login failed. Please try again.', $reply->message);
         $this->assertSame([], $this->drainResults());
         $this->assertSame(self::DEAD_ACCEPT_KEY, $this->trip()?->acceptKey);
     }
@@ -240,6 +306,7 @@ final class OAuthTripHolderTest extends TestCase
         $reply = $this->resume($agent, self::LIVE_ACCEPT_KEY);
 
         $this->assertTrue($reply->known);
+        $this->assertNull($reply->message);
         $results = $this->drainResults();
         $this->assertCount(1, $results);
         $this->assertSame(self::LIVE_ACCEPT_KEY, $results[0]->acceptKey);
@@ -265,6 +332,7 @@ final class OAuthTripHolderTest extends TestCase
 
         $reply = $this->resume($agent, self::LIVE_ACCEPT_KEY);
         $this->assertTrue($reply->known);
+        $this->assertNull($reply->message);
         $this->assertSame([], $this->drainResults());
 
         $this->end($agent, OAuthResultSignalData::REASON_LOGIN_FAILED);
@@ -416,6 +484,7 @@ final class OAuthTripHolderTest extends TestCase
         $this->assertCount(1, $results);
         $this->assertSame(self::LIVE_ACCEPT_KEY, $results[0]->acceptKey);
         $this->assertSame(OAuthResultSignalData::REASON_LOGIN_FAILED, $results[0]->reason);
+        $this->assertSame('OAuth login failed. Please try again.', $results[0]->message);
         $this->assertSame(StateHilosCodeSendAttempt::STATE_FAILED, $attempts['hash-phone']?->state);
         $this->assertSame(StateHilosCodeSendAttempt::STATE_QUEUED, $attempts['hash-mail']?->state);
     }

@@ -475,6 +475,27 @@ describe('the screen content (HIL-500)', () => {
 })
 
 describe('the acceptance (HIL-500)', () => {
+  it('preserves a server refusal while reading the current terms', async () => {
+    const dispatch = vi.fn(() => ({
+      done: Promise.reject(
+        new ActionError(
+          'hilos_legal_reconsent',
+          'fail',
+          'These revisions are temporarily unavailable.',
+        ),
+      ),
+    }))
+    const store = createHilosLegalReconsentStore({
+      actions: { dispatch } as unknown as ActionLifecycle,
+    })
+    await store.load()
+    expect(store.error.get()).toBe(
+      'These revisions are temporarily unavailable.',
+    )
+    expect(store.content.get()).toBeNull()
+    expect(store.loading.get()).toBe(false)
+  })
+
   it('sends the revisions in force of every document shown and reports success', async () => {
     const onAccepted = vi.fn()
     const dispatch = vi.fn((action: string) => ({
@@ -565,6 +586,78 @@ describe('the acceptance (HIL-500)', () => {
   })
 })
 
+describe.each(['read', 'preview'] as const)(
+  're-consent %s load failures',
+  (kind) => {
+    /** Drive either existing read surface through the same failure scenarios. */
+    function setupLoad(dispatch: ReturnType<typeof vi.fn>) {
+      const context = { actions: { dispatch } as unknown as ActionLifecycle }
+      if (kind === 'read') {
+        const store = createHilosLegalReconsentStore(context)
+        return { ...store, open: store.load, close: store.reset }
+      }
+      const preview = createHilosLegalReconsentPreview(context)
+      return { ...preview, open: () => preview.open('terms') }
+    }
+
+    it.each([
+      'timeout',
+      'disconnected',
+      'invalid-reply',
+      'exception',
+      'missing',
+    ] as const)('keeps the local fallback for %s', async (outcome) => {
+      const dispatch = vi.fn(() => ({
+        done:
+          outcome === 'missing'
+            ? Promise.resolve({})
+            : Promise.reject(
+                outcome === 'exception'
+                  ? new Error('Internal exception detail')
+                  : new ActionError(
+                      'hilos_legal_reconsent',
+                      outcome,
+                      'Internal transport detail',
+                    ),
+              ),
+      }))
+      const store = setupLoad(dispatch)
+      await store.open()
+      expect(store.error.get()).toBe('The terms could not be loaded.')
+      expect(store.loading.get()).toBe(false)
+    })
+
+    it.each([false, true])(
+      'ignores an old refusal after closing, reopened=%s',
+      async (reopened) => {
+        let rejectOld!: (reason: unknown) => void
+        const dispatch = vi
+          .fn()
+          .mockReturnValueOnce({
+            done: new Promise((_, reject) => {
+              rejectOld = reject
+            }),
+          })
+          .mockReturnValueOnce({
+            done: Promise.resolve({
+              reply: kind === 'read' ? content() : content().documents[0],
+            }),
+          })
+        const store = setupLoad(dispatch)
+        const old = store.open()
+        store.close()
+        if (reopened) await store.open()
+        rejectOld(
+          new ActionError('hilos_legal_reconsent', 'fail', 'Old refusal'),
+        )
+        await old
+        expect(store.error.get()).toBeNull()
+        expect(store.loading.get()).toBe(false)
+      },
+    )
+  },
+)
+
 describe('the acceptance guards (HIL-500)', () => {
   it('sends nothing when nothing is left to accept', async () => {
     const empty = { ...content(), documents: [] }
@@ -604,6 +697,25 @@ describe('the acceptance guards (HIL-500)', () => {
 })
 
 describe('the admin preview (HIL-500)', () => {
+  it('preserves the server refusal while opening a preview', async () => {
+    const dispatch = vi.fn(() => ({
+      done: Promise.reject(
+        new ActionError(
+          'hilos_legal_reconsent_preview',
+          'fail',
+          'This document cannot be previewed yet.',
+        ),
+      ),
+    }))
+    const preview = createHilosLegalReconsentPreview({
+      actions: { dispatch } as unknown as ActionLifecycle,
+    })
+    await preview.open('terms')
+    expect(preview.error.get()).toBe('This document cannot be previewed yet.')
+    expect(preview.preview.get()).toBeNull()
+    expect(preview.loading.get()).toBe(false)
+  })
+
   it('reads one document and forgets it on close', async () => {
     const reply = {
       document: 'terms',

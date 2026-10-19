@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Code\DTO;
 
+use Hilos\Auth\Library\Command\AuthMessages;
 use Hilos\Auth\Session\DTO\SessionToastsSignalData;
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\View\Item\HilosCodeSendAttempt;
 
 /**
@@ -40,6 +42,7 @@ final class CodeSendProgressSignalData extends BaseDTO implements SignalDataInte
      * @param ?string $reason How the code agent's send ended, on its closing step alone (HIL-1044)
      * @param ?int $resendAt Server moment a send is allowed again, in epoch ms, or null
      * @param ?int $expiresAt Server moment the live code dies, in epoch ms, or null
+     * @param ?string $message Safe refusal sentence, separate from the provider detail
      */
     public function __construct(
         public readonly ?string $state = null,
@@ -50,6 +53,7 @@ final class CodeSendProgressSignalData extends BaseDTO implements SignalDataInte
         public readonly ?string $reason = null,
         public readonly ?int $resendAt = null,
         public readonly ?int $expiresAt = null,
+        public readonly ?string $message = null,
     ) {
     }
 
@@ -78,6 +82,19 @@ final class CodeSendProgressSignalData extends BaseDTO implements SignalDataInte
             reason: $attempt->reason,
             resendAt: $attempt->resendAt,
             expiresAt: $attempt->expiresAt,
+            message: match ($attempt->reason) {
+                StateHilosCodeSendAttempt::REASON_CHANNEL_UNAVAILABLE => 'That number cannot be reached this way.',
+                StateHilosCodeSendAttempt::REASON_CAP_REACHED =>
+                    'Too many codes have been sent to this number. Please try again later.',
+                StateHilosCodeSendAttempt::REASON_CONSENT_REVISED => AuthMessages::CONSENT_REVISED,
+                StateHilosCodeSendAttempt::REASON_TERMS_UNPUBLISHED => AuthMessages::TERMS_UNPUBLISHED,
+                StateHilosCodeSendAttempt::REASON_CODE_SENT,
+                StateHilosCodeSendAttempt::REASON_RATE_LIMITED,
+                StateHilosCodeSendAttempt::REASON_CONSENT_REQUIRED => null,
+                default => $attempt->state === StateHilosCodeSendAttempt::STATE_FAILED
+                    ? 'Could not send the code. Please try again.'
+                    : null,
+            },
         );
     }
 
@@ -95,19 +112,19 @@ final class CodeSendProgressSignalData extends BaseDTO implements SignalDataInte
             'reason' => $this->reason,
             'resendAt' => $this->resendAt,
             'expiresAt' => $this->expiresAt,
+            'message' => $this->message,
         ];
     }
 
     /**
      * Rebuilds the line one session is being shown.
      *
-     * Every field is optional, and that is the empty frame rather than a lax reader: a payload
-     * with no state IS the sentence that takes the line away, so refusing it would refuse the
-     * commonest frame the signal carries.
+     * The nullable message is required, including on an empty frame. The other fields remain
+     * optional: a payload with no state takes the line away.
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
-     * @throws InvalidFormatException When a field is present and is not of its type
+     * @throws InvalidFormatException When message is absent or a field has the wrong type
      */
     public static function fromArray(array $data): static
     {
@@ -120,6 +137,7 @@ final class CodeSendProgressSignalData extends BaseDTO implements SignalDataInte
             reason: self::optionalString($data, 'reason'),
             resendAt: self::optionalInt($data, 'resendAt'),
             expiresAt: self::optionalInt($data, 'expiresAt'),
+            message: self::requireNullableString($data, 'message'),
         );
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\Exception\PageBadRequestException;
 use Hilos\Core\Page\Exception\PageConflictException;
@@ -13,6 +14,7 @@ use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\Exception\PageUnauthorizedException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -29,13 +31,50 @@ final class PageSubscriptionErrorSignalDataTest extends TestCase
             page: 'test_page',
             httpCode: 404,
             errorCode: 'not_found',
-            message: 'Resource not found',
+            title: 'A server title',
+            message: 'A server description',
         );
 
         $this->assertSame('test_page', $data->page);
         $this->assertSame(404, $data->httpCode);
         $this->assertSame('not_found', $data->errorCode);
-        $this->assertSame('Resource not found', $data->message);
+        $this->assertSame('A server title', $data->title);
+        $this->assertSame('A server description', $data->message);
+        $this->assertSame($data->toArray(), PageSubscriptionErrorSignalData::fromArray($data->toArray())->toArray());
+        $this->assertSame($data->toArray(), PageSubscriptionErrorSignalData::fromJson($data->toJson())->toArray());
+    }
+
+    #[DataProvider('malformedText')]
+    public function testRejectsMalformedPublicText(string $field, bool $present, mixed $value): void
+    {
+        $payload = [
+            'page' => 'test_page',
+            'httpCode' => 404,
+            'errorCode' => 'not_found',
+            'title' => 'Server title',
+            'message' => 'Server description',
+        ];
+        if ($present) {
+            $payload[$field] = $value;
+        } else {
+            unset($payload[$field]);
+        }
+
+        $this->expectException(InvalidFormatException::class);
+        PageSubscriptionErrorSignalData::fromArray($payload);
+    }
+
+    /** @return iterable<string, array{string, bool, mixed}> Missing, mistyped and empty public text */
+    public static function malformedText(): iterable
+    {
+        foreach (['title', 'message'] as $field) {
+            yield $field . ' missing' => [$field, false, null];
+            yield $field . ' null' => [$field, true, null];
+            yield $field . ' integer' => [$field, true, 404];
+            yield $field . ' boolean' => [$field, true, false];
+            yield $field . ' array' => [$field, true, []];
+            yield $field . ' empty' => [$field, true, ''];
+        }
     }
 
     /**

@@ -7,6 +7,10 @@ export function consentTerms(
 ): HilosLegalConsentTerms {
   return {
     form,
+    unpublishedMessage:
+      'This project has not published its terms yet, so an account cannot be created here.',
+    revisedMessage:
+      'The terms were updated while you were reading. Review the differences and accept again.',
     documents: (['terms', 'privacy'] as const).map((document) => ({
       document,
       revision: {

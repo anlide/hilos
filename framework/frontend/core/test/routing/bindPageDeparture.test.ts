@@ -106,6 +106,7 @@ describe('bindPageDeparture', () => {
       page: 'new',
       httpCode: 404,
       errorCode: 'not_found',
+      title: 'Page Not Found',
       message: 'Missing page',
     })
 

@@ -12,7 +12,6 @@
 // authoritative-backend close depends on.
 
 import { type ZodType } from 'zod'
-import { actionFailureReason } from '../admin/viewMode.js'
 import {
   type ActionErrorSignal,
   type ActionSuccessSignal,
@@ -201,6 +200,7 @@ export class ActionLifecycle {
     )
     source.on('state', (state) => {
       if (state === 'reconnecting' || state === 'disconnected') {
+        // TODO(i18n): Remove this client-side fallback when backend-provided local error copy is available.
         this.failAll('The connection dropped before the action completed.')
       }
     })
@@ -229,6 +229,7 @@ export class ActionLifecycle {
     })
 
     if (!this.source.sendAction(action, data, requestId)) {
+      // TODO(i18n): Remove this client-side fallback when backend-provided local error copy is available.
       reject(new ActionError(action, 'disconnected', 'Not connected.'))
 
       return { requestId, loading, done }
@@ -293,7 +294,8 @@ export class ActionLifecycle {
         new ActionError(
           action,
           'fail',
-          actionFailureReason(detail ?? 'The action failed.', errorCode),
+          // TODO(i18n): Remove this client-side fallback when backend-provided local error copy is available.
+          detail ?? 'The action failed.',
           errorType,
           errorDetail,
           errorCode,
@@ -331,6 +333,7 @@ export class ActionLifecycle {
     }
     this.settle(requestId, pending)
     this.orphans.set(requestId, pending.action)
+    // TODO(i18n): Remove this client-side fallback when backend-provided local error copy is available.
     pending.reject(
       new ActionError(pending.action, 'timeout', 'The action timed out.'),
     )

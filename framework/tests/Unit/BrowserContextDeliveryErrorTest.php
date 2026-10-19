@@ -107,7 +107,8 @@ final class BrowserContextDeliveryErrorTest extends TestCase
         $this->assertSame(DeliveryErrorContext::PAGE, $signal->data->data->page);
         $this->assertSame(500, $signal->data->data->httpCode);
         $this->assertSame('internal_error', $signal->data->data->errorCode);
-        $this->assertSame('Internal error while delivering the page', $signal->data->data->message);
+        $this->assertSame('Internal Server Error', $signal->data->data->title);
+        $this->assertSame('An unexpected error occurred.', $signal->data->data->message);
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 

@@ -1,6 +1,6 @@
 ---
 name: hilos-signals
-description: Work with Hilos signal routing, SignalRouter declarations, page subscription topology, signal payload DTOs, page subscriptions, group subscriptions, sendToUser, sendToGroup, sendToAgent, client-server actions, server-client signals, and signal delivery debugging. Use when adding, changing, or tracing Hilos signal flow, when a page must be served by the agent of one particular entity rather than by an agent of a type, and when a page needs one more piece of data to render and you are deciding which frame carries it.
+description: Work with Hilos signal routing, SignalRouter declarations, page subscription topology, signal payload DTOs, page subscriptions, group subscriptions, sendToUser, sendToGroup, sendToAgent, client-server actions, server-client signals, and signal delivery debugging. Use when adding, changing, or tracing Hilos signal flow, when a page must be served by the agent of one particular entity rather than by an agent of a type, and when a page needs one more piece of data to render and you are deciding which frame carries it. Use it too when writing, carrying or reading the words of a server refusal.
 ---
 
 # Hilos Signals
@@ -21,6 +21,9 @@ Use this skill for every change that affects signal shape, route, subscription, 
 - Page/group subscriptions, send helpers, and the rule that one page
   subscription answers with everything the page renders:
   `docs/agents/signals/subscriptions.md`
+- Writing, carrying or reading the words of a server refusal:
+  `docs/agents/frontend/wire-protocol.md`
+  (section "A failure reason is a domain sentence, never an engine message")
 - Payload DTOs, agent-to-agent signals, and declaring an action payload's
   secret fields: `docs/agents/signals/dto-convention.md`
 - You just wrote a fact and someone is looking at a screen it devalues right

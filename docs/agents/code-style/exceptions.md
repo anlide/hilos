@@ -16,6 +16,23 @@ error handling in Hilos PHP code.
 | `LogicException` | Framework or application invariant violations, not user-correctable input |
 | `HilosException` | Broad public contract when the caller only needs "Hilos failure" |
 
+### The `PersonFacingFailure` declaration
+
+`Hilos\Core\Exception\PersonFacingFailure` declares that an exception's
+`getMessage()` is safe text written for the person who asked. It is independent
+of the exception family and of the `MalformedInput` and `WiringRefusal` markers
+below. `ValidationException` carries it for all its children, including
+`TableActionException`. `ActionRateLimitedException`, `ActionViewModeException`
+and `ActionImpersonationException` implement it without leaving `PageException`
+or changing their HTTP statuses, error codes or retry hints.
+
+Keep the existing family for catching and `@throws`; do not reparent an
+exception to make its message public. Never apply the marker to diagnostic
+text. `ActionFailureReason::forClient()` publishes marked action messages and
+uses the generic reason for unmarked failures. The source of refusal words,
+page status catalog and admin-detail limits are canonical in
+[wire-protocol.md](../frontend/wire-protocol.md#a-failure-reason-is-a-domain-sentence-never-an-engine-message).
+
 ### The `MalformedInput` marker
 
 `Hilos\Core\Exception\MalformedInput` is an empty interface an exception implements
@@ -51,7 +68,7 @@ branch at once.
 
 ### The `WiringRefusal` marker
 
-`Hilos\WiringRefusal` is the second empty interface of this kind, and it says the
+`Hilos\WiringRefusal` is another empty interface, and it says the
 opposite sort of thing: the failure is not about the data at all, it is the wiring
 refusing. `DbCollectionNotReadableException` and `RtCollectionNotReadableException`
 carry it — a collection this process never declared it reads, in two exception
@@ -82,8 +99,10 @@ they exist so a project always has the right status class without re-inventing
 one, and `PageSignalRouter` maps each to a `subscription_page_error` signal.
 
 The message of these exceptions is written for the journal, not for the client:
-the frame carries the status and error code with a placeholder, so the message may
-name keys, ids and collections (`docs/agents/frontend/wire-protocol.md`).
+it may name keys, ids and collections. `PageSubscriptionErrorSignalData::forStatus()`
+supplies the frame's required `title` and `message` from `PageErrorMessages`,
+alongside the status and error code. The action marker does not publish a page
+subscription exception's diagnostic text; see the wire-protocol rule above.
 
 `PageInternalErrorException` is the one with a framework-side thrower of its own:
 `BrowserContext` raises it when a page's `BROWSER` declaration is malformed, which

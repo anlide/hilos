@@ -7,12 +7,13 @@ namespace Hilos\Tests\Unit\Auth\Detection;
 use Hilos\Auth\AuthMethodKey;
 use Hilos\Auth\Detection\IdentifierDetection;
 use Hilos\Core\Exception\InvalidFormatException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
  * Unit tests for the identifier-lookup reply the surface reveals from (HIL-414).
  *
- * What is guarded here is the shape, not the lookup: the eight keys the frontend
+ * What is guarded here is the shape, not the lookup: the nine keys the frontend
  * `IdentifierDetection` interface declares are always present, the verbatim echo
  * survives normalization, and each status carries only the method list that makes
  * sense for it — a `pending` or `proven` hold naming a way in, or a `none` naming an
@@ -21,6 +22,7 @@ use PHPUnit\Framework\TestCase;
  * seventh key is the reason registration is not offered (HIL-830), and it rides
  * `none` alone for the same reason the two lists are kept apart. The eighth is its
  * sign-in twin (HIL-973): why an account is offered no way in, riding `active` alone.
+ * The ninth is the server's sentence for that refusal, or null without one (HIL-1516).
  */
 final class IdentifierDetectionTest extends TestCase
 {
@@ -44,6 +46,9 @@ final class IdentifierDetectionTest extends TestCase
         self::assertSame([AuthMethodKey::PASSWORD, AuthMethodKey::MAGIC_LINK], $detection->registerable);
         self::assertNull($detection->registrationBlock, 'Something registerable is not blocked by anything');
         self::assertNull($detection->signInBlock, 'A free identifier has no account to sign in to');
+        self::assertNull($detection->message);
+        self::assertArrayHasKey('message', $detection->toArray());
+        self::assertNull($detection->toArray()['message']);
     }
 
     /**
@@ -73,6 +78,8 @@ final class IdentifierDetectionTest extends TestCase
         self::assertSame(IdentifierDetection::BLOCK_CLOSED, $closed->registrationBlock);
         self::assertSame(IdentifierDetection::BLOCK_NO_CHANNEL, $noChannel->registrationBlock);
         self::assertNull($noChannel->signInBlock, 'A refused registration is not a refused sign-in');
+        self::assertSame('No account for this, and registration is closed.', $closed->message);
+        self::assertSame('No account for this, and there is nothing to send a code with.', $noChannel->message);
     }
 
     /**
@@ -91,6 +98,9 @@ final class IdentifierDetectionTest extends TestCase
         self::assertSame([], $detection->registerable);
         self::assertNull($detection->registrationBlock, 'A hold is not a refused registration');
         self::assertNull($detection->signInBlock, 'A hold has no account to sign in to');
+        self::assertNull($detection->message);
+        self::assertArrayHasKey('message', $detection->toArray());
+        self::assertNull($detection->toArray()['message']);
     }
 
     /**
@@ -116,6 +126,9 @@ final class IdentifierDetectionTest extends TestCase
         self::assertSame([], $detection->registerable);
         self::assertNull($detection->registrationBlock, 'A proved hold is not a refused registration');
         self::assertNull($detection->signInBlock, 'A proved hold has no account to sign in to yet');
+        self::assertNull($detection->message);
+        self::assertArrayHasKey('message', $detection->toArray());
+        self::assertNull($detection->toArray()['message']);
     }
 
     /**
@@ -135,6 +148,9 @@ final class IdentifierDetectionTest extends TestCase
         self::assertSame([], $detection->registerable);
         self::assertNull($detection->registrationBlock, 'An owned identifier is not up for registration at all');
         self::assertNull($detection->signInBlock, 'An account with a way in is not blocked by anything');
+        self::assertNull($detection->message);
+        self::assertArrayHasKey('message', $detection->toArray());
+        self::assertNull($detection->toArray()['message']);
     }
 
     /**
@@ -154,10 +170,14 @@ final class IdentifierDetectionTest extends TestCase
         self::assertSame([], $detection->methods);
         self::assertSame(IdentifierDetection::BLOCK_NO_CHANNEL, $detection->signInBlock);
         self::assertNull($detection->registrationBlock, 'A refused sign-in is not a refused registration');
+        self::assertSame(
+            'This account signs in by a mailed link, and this installation has nothing to send it with. Whoever runs it can set that up.',
+            $detection->message,
+        );
     }
 
     /**
-     * The wire form carries all eight keys, and the echo is what was asked, not what it normalized to.
+     * The wire form carries all nine keys, and the echo is what was asked, not what it normalized to.
      */
     public function testWireFormCarriesEveryKeyAndTheVerbatimEcho(): void
     {
@@ -177,6 +197,7 @@ final class IdentifierDetectionTest extends TestCase
             'registerable' => [],
             'registrationBlock' => null,
             'signInBlock' => null,
+            'message' => null,
         ], $detection->toArray());
     }
 
@@ -213,7 +234,110 @@ final class IdentifierDetectionTest extends TestCase
             IdentifierDetection::BLOCK_NO_CHANNEL,
         );
 
+        self::assertSame(
+            'This account signs in by a code, and this installation has nothing to send it with. Whoever runs it can set that up.',
+            $detection->message,
+        );
         self::assertSame($detection->toArray(), IdentifierDetection::fromArray($detection->toArray())->toArray());
+    }
+
+    /** An empty method list without a named block carries no invented refusal. */
+    public function testOwnedIdentifierWithoutNamedBlockHasNoMessage(): void
+    {
+        $detection = IdentifierDetection::owned(
+            self::TYPED_EMAIL,
+            self::NORMALIZED_EMAIL,
+            IdentifierDetection::KIND_EMAIL,
+            [],
+        );
+
+        self::assertSame([], $detection->methods);
+        self::assertNull($detection->signInBlock);
+        self::assertNull($detection->message);
+    }
+
+    /**
+     * @return list<array{string, ?string, ?string}> Status and its two block slots
+     */
+    public static function statuses(): array
+    {
+        return [
+            ['none', 'closed', null],
+            ['none', 'no_channel', null],
+            ['active', null, 'no_channel'],
+            ['active', null, null],
+            ['pending', null, null],
+            ['proven', null, null],
+        ];
+    }
+
+    /**
+     * @param string $status Account or reservation state
+     * @param ?string $registrationBlock Registration refusal code
+     * @param ?string $signInBlock Sign-in refusal code
+     * @throws InvalidFormatException Never for a complete reply
+     */
+    #[DataProvider('statuses')]
+    public function testWireMessageIsPreservedWithoutRebuildingFromTheCodes(
+        string $status,
+        ?string $registrationBlock,
+        ?string $signInBlock,
+    ): void {
+        foreach ([" Server sentence.\nKeep the spaces and line break. ", '', null] as $message) {
+            $wire = [
+                'identifier' => self::TYPED_EMAIL,
+                'normalized' => self::NORMALIZED_EMAIL,
+                'kind' => IdentifierDetection::KIND_EMAIL,
+                'status' => $status,
+                'methods' => [],
+                'registerable' => [],
+                'registrationBlock' => $registrationBlock,
+                'signInBlock' => $signInBlock,
+                'message' => $message,
+            ];
+
+            $detection = IdentifierDetection::fromArray($wire);
+
+            self::assertSame($message, $detection->message);
+            self::assertSame($wire, $detection->toArray());
+        }
+    }
+
+    /**
+     * @return array<string, array{array<string, mixed>}> Missing or mistyped message keys
+     */
+    public static function invalidMessages(): array
+    {
+        return [
+            'missing' => [[]],
+            'integer' => [['message' => 42]],
+            'float' => [['message' => 1.5]],
+            'boolean' => [['message' => false]],
+            'array' => [['message' => []]],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $messageField Invalid wire fragment
+     * @throws InvalidFormatException Always for a missing or mistyped message
+     */
+    #[DataProvider('invalidMessages')]
+    public function testWireRequiresTheNullableStringMessage(array $messageField): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage('message');
+
+        IdentifierDetection::fromArray([
+            'identifier' => self::TYPED_EMAIL,
+            'normalized' => self::NORMALIZED_EMAIL,
+            'kind' => IdentifierDetection::KIND_EMAIL,
+            'status' => IdentifierDetection::STATUS_ACTIVE,
+            'methods' => [AuthMethodKey::PASSWORD],
+            'registerable' => [],
+            'registrationBlock' => null,
+            'signInBlock' => null,
+            ...$messageField,
+        ]);
     }
 
     /**
@@ -234,6 +358,7 @@ final class IdentifierDetectionTest extends TestCase
             'registerable' => [],
             'registrationBlock' => null,
             'signInBlock' => null,
+            'message' => null,
         ]);
     }
 }

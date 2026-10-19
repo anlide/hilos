@@ -1,6 +1,6 @@
 ---
 name: hilos-exception
-description: Choose and document Hilos PHP exceptions, including ValidationException vs DatabaseException vs RtBaseException, TableActionException, page subscription errors, agent lifecycle errors, and PHPDoc @throws contracts.
+description: Choose and document Hilos PHP exceptions, including ValidationException vs DatabaseException vs RtBaseException, TableActionException, page subscription errors, agent lifecycle errors, and PHPDoc @throws contracts. Use it too when writing or exposing an exception's refusal message to a person.
 ---
 
 # Hilos Exception Taxonomy
@@ -11,6 +11,9 @@ reviewing `catch (...)`, or documenting `@throws` in Hilos PHP code.
 ## Read First
 
 - Exception taxonomy and examples: `docs/agents/code-style/exceptions.md`
+- Writing or exposing refusal words, including an exception's safe message:
+  `docs/agents/frontend/wire-protocol.md`
+  (section "A failure reason is a domain sentence, never an engine message")
 - PHPDoc rules for `@throws`: `docs/agents/code-style/phpdoc.md`
 - Page action error conversion: `docs/agents/code-style/page-action-handlers.md`
 - Broad catches around a facade read: `docs/agents/code-style/wiring-refusals.md`

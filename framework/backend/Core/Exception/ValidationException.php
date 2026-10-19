@@ -7,8 +7,8 @@ namespace Hilos\Core\Exception;
 use Hilos\HilosException;
 
 /**
- * Base exception for validation errors (empty value, length, format, etc.).
+ * Base exception for validation errors whose messages are written for the person who asked.
  */
-class ValidationException extends HilosException
+class ValidationException extends HilosException implements PersonFacingFailure
 {
 }

@@ -34,6 +34,7 @@ const WRONG_PASSWORD = 'not the password'
 // The refusal a block gives on the wire, and the words it is drawn in.
 const RATE_LIMITED_CODE = '"rate_limited"'
 const REFUSED = 'Too many attempts'
+const REFUSED_REASON = 'Too many attempts. Please wait a moment and try again.'
 
 test('a run of wrong passwords is refused, and the block holds the right one too', async ({
   page,
@@ -45,12 +46,15 @@ test('a run of wrong passwords is refused, and the block holds the right one too
   // Counted off the socket, so each step waits for its own reply rather than
   // reading the line the previous refusal left on screen.
   let refusals = 0
+  let refusalReason: unknown
   page.on('websocket', (socket) => {
     socket.on('framereceived', (frame) => {
       if (
         typeof frame.payload === 'string' &&
         frame.payload.includes(RATE_LIMITED_CODE)
       ) {
+        const reply: { data?: { reason?: unknown } } = JSON.parse(frame.payload)
+        refusalReason = reply.data?.reason
         refusals += 1
       }
     })
@@ -91,6 +95,7 @@ test('a run of wrong passwords is refused, and the block holds the right one too
     await typeInto(password, WRONG_PASSWORD)
     await clickSubmit(submit)
     await expect.poll(() => refusals).toBeGreaterThan(0)
+    expect(refusalReason).toBe(REFUSED_REASON)
     await expect(error).toContainText(REFUSED)
 
     // The key is blocked now, and the block holds whatever is typed.
@@ -98,6 +103,7 @@ test('a run of wrong passwords is refused, and the block holds the right one too
     await typeInto(password, PASSWORD)
     await clickSubmit(submit)
     await expect.poll(() => refusals).toBeGreaterThan(refusedBefore)
+    expect(refusalReason).toBe(REFUSED_REASON)
     await expect(error).toContainText(REFUSED)
     await expect(page.getByTestId('self-anonymous')).toBeVisible()
     await expect(page.getByTestId('self-user')).toHaveCount(0)

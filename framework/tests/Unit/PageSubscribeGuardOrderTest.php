@@ -205,7 +205,7 @@ final class PageSubscribeGuardOrderTest extends TestCase
             SubscribeGuardOrderTestBrokenGuardPage::PAGE,
             500,
             'internal_error',
-            'Internal error during subscription',
+            'An unexpected error occurred.',
         );
 
         $lines = $this->writtenLines();
@@ -219,7 +219,7 @@ final class PageSubscribeGuardOrderTest extends TestCase
      * A refusal stays a verdict about the subscriber, which is why the internal error had to be
      * split out: an info line rather than an error, and its own codes on the wire. Its words do
      * not travel since HIL-956 - they are written for the journal - so the frame carries the
-     * subscription placeholder, not the internal-error sentence.
+     * public status wording while the diagnostic remains in the journal.
      */
     public function testARefusalIsAnInfoLineAndARefusalOnTheWire(): void
     {
@@ -237,7 +237,7 @@ final class PageSubscribeGuardOrderTest extends TestCase
             SubscribeGuardOrderTestPage::PAGE,
             401,
             'unauthorized',
-            SignalConstants::SUBSCRIPTION_FAILED_REASON,
+            'Authentication is required.',
         );
 
         $lines = $this->writtenLines();

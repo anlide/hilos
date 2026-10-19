@@ -149,15 +149,6 @@ abstract class BrowserContext
      */
     private const string DELIVERY_FAILURE_CODE = 'internal_error';
 
-    /**
-     * Wording the delivery-failure frame carries, scrubbed of everything about this node.
-     *
-     * Deliberately not the subscribe path's wording. A subscription that failed never opened;
-     * a delivery that failed means the page the person is looking at has stopped being fed, and
-     * the two are different things to be told.
-     */
-    private const string DELIVERY_FAILURE_MESSAGE = 'Internal error while delivering the page';
-
     protected SourceChangeSet $changes;
 
     /**
@@ -1915,8 +1906,7 @@ abstract class BrowserContext
      * looking at simply stopped moving, with nothing on the wire to say so and no way for the
      * person in front of it to tell a broken node from a quiet one. It reuses the subscription
      * error frame rather than inventing a name, because the client already knows how to show
-     * one, and it carries the scrubbed wording for the same reason the subscribe path does: the
-     * text names the inside of the node and the subscriber can act on none of it.
+     * one. Its public wording comes from the status catalog; diagnostic text stays in the journal.
      *
      * Once per subscription and not once per failure. The defect is in a declaration or in the
      * wiring, so it is present on every flush; a frame per flush would be ten a second for as
@@ -1937,11 +1927,10 @@ abstract class BrowserContext
                 signalType: new SignalType(SignalTypeConstants::WS_USER),
                 signalName: new SignalName(SignalConstants::SUBSCRIPTION_PAGE_ERROR),
                 signalData: new WebSocketSignalData(
-                    data: new PageSubscriptionErrorSignalData(
+                    data: PageSubscriptionErrorSignalData::forStatus(
                         page: $page,
                         httpCode: HttpConstants::HTTP_INTERNAL_ERROR,
                         errorCode: self::DELIVERY_FAILURE_CODE,
-                        message: self::DELIVERY_FAILURE_MESSAGE,
                     ),
                     targetAcceptKey: $acceptKey,
                 ),

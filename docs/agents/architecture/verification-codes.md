@@ -260,7 +260,7 @@ declaration, and registration is withdrawn on it as HIL-830 decided. There is no
 second env key for the mode, and no per-address opt-out: one transport is resolved
 for the installation and every letter it takes gets the same reading.
 
-**The refusal carries the provider's own words**, cut to one sentence on the way
+**The refusal's `detail` carries the provider's own words**, cut to one sentence on the way
 out (`CodeSendStepSignalData::step()`: first line, whitespace collapsed, capped).
 This is a deliberate departure from the practice the outcome of a code send set —
 a stable reason code only, detail in the log — because a stable code cannot hold
@@ -272,6 +272,13 @@ and the two moments the code screen counts down to
 them on every handshake, and the tab that ordered the code settles on the closing
 frame carrying its own `ticket` — there is no outcome signal addressed to one
 socket any more.
+
+The safe refusal `message` is separate from that provider detail.
+`CodeSendProgressSignalData::fromAttempt()` composes it from the runtime view for
+delivery and handshake replay; the state row does not store it. The nullable key
+is required even on a quiet or empty frame, where it is `null`. The frontend
+displays the received words and keeps reason codes for behavior, under
+[the refusal-copy rule](../frontend/wire-protocol.md#a-failure-reason-is-a-domain-sentence-never-an-engine-message).
 
 **There is no timeout on a silent transport.** A dead mail shard leaves the line
 on `queued` though the letter died with it: a raw send has no durable record, and

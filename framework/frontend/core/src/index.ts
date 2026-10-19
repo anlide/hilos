@@ -622,10 +622,7 @@ export {
   hilosTakeoverViewOnly,
   type ImpersonationStrip,
 } from './session/impersonation.js'
-export {
-  IMPERSONATION_ERROR_CODE,
-  IMPERSONATION_REFUSAL_COPY,
-} from './session/impersonationRefusal.js'
+export { IMPERSONATION_ERROR_CODE } from './session/impersonationRefusal.js'
 export {
   bindAccountBlocked,
   hilosAccountBlocked,
@@ -663,7 +660,6 @@ export {
   type HilosAdminAccess,
 } from './session/adminAccess.js'
 export {
-  actionFailureReason,
   hiddenAsWord,
   HILOS_VIEW_MODE_COPY,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,

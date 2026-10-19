@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Action;
 
 use Hilos\Constants\SignalConstants;
+use Hilos\Core\Exception\PersonFacingFailure;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Table\Exception\TableActionException;
@@ -21,16 +22,10 @@ use Throwable;
  * frontend no longer dropping what arrives, "Setting 'logs.write_level' value is not a
  * valid integer" would have been read as an answer to a person (HIL-779).
  *
- * The check itself is the exception family, not a marker interface: {@see
- * ValidationException} already means "this text was written for the person who asked",
- * already carries the table-action refusals through {@see TableActionException}, and is
- * already read that way on the agent-signal path. A second mechanism beside it would
- * have to be remembered by every future thrower; this one is remembered by the type.
- *
- * The door has a second edge besides actions: a refused page subscription, which the
- * router turns into a subscription error frame. It is asked the same question and answers
- * with its own placeholder, so the rule of whose text crosses the wire reads in this one
- * file for both (HIL-956).
+ * The check is the {@see PersonFacingFailure} declaration, independent of exception family
+ * or error code. {@see ValidationException} carries it for all of its children, including
+ * {@see TableActionException}; individual action guards declare it without changing their
+ * page exception family. Unmarked failures keep their diagnostic text off the public reason.
  */
 final class ActionFailureReason
 {
@@ -42,15 +37,15 @@ final class ActionFailureReason
      */
     public static function isPersonFacing(Throwable $e): bool
     {
-        return $e instanceof ValidationException;
+        return $e instanceof PersonFacingFailure;
     }
 
     /**
      * Reduces an action failure to what may cross the wire.
      *
-     * A domain refusal - a validation rule, a table action, a business rule - describes
-     * itself in terms the caller asked about, so its message travels. Anything else - a
-     * driver error carrying SQL text, index names, paths, or an unexpected engine fault -
+     * A marked refusal declares its own message safe for the person, so that message travels.
+     * An unmarked failure - a driver error carrying SQL text, index names, paths, or an
+     * unexpected engine fault -
      * stays on the server, and the caller gets the placeholder instead; the full detail is
      * in the log the dispatcher wrote. See docs/agents/frontend/wire-protocol.md.
      *
@@ -61,28 +56,6 @@ final class ActionFailureReason
     {
         if (!self::isPersonFacing($e)) {
             return SignalConstants::ACTION_FAILED_REASON;
-        }
-
-        return $e->getMessage();
-    }
-
-    /**
-     * Reduces a page subscription refusal to what may cross the wire.
-     *
-     * The policy is the one {@see self::forClient()} applies; only the placeholder differs,
-     * because a refused page is not a refused action. No subscription refusal is of the
-     * person-facing family: its message - a guard's canonical phrase, a missing key, a
-     * malformed route param - is written for the journal the router already filled, so the
-     * subscriber gets the placeholder, while the frame's HTTP and error codes still say what
-     * happened.
-     *
-     * @param Throwable $e Refusal raised while subscribing to a page or updating the subscription
-     * @return string Message safe to deliver to the subscriber
-     */
-    public static function forSubscriber(Throwable $e): string
-    {
-        if (!self::isPersonFacing($e)) {
-            return SignalConstants::SUBSCRIPTION_FAILED_REASON;
         }
 
         return $e->getMessage();

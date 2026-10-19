@@ -25,6 +25,7 @@ const base: CodeSendProgress = {
   detail: null,
   ticket: 'a1b2c3d4e5f60718',
   reason: null,
+  message: null,
   resendAt: null,
   expiresAt: null,
 }

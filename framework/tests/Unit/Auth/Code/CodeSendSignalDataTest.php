@@ -10,6 +10,7 @@ use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Auth\StepUp\StepUpOperationKey;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -35,11 +36,15 @@ final class CodeSendSignalDataTest extends TestCase
             channel: StateHilosCodeSendAttempt::CHANNEL_EMAIL,
             purpose: StepUpOperationKey::CHANGE_EMAIL,
             detail: self::REFUSAL,
+            reason: StateHilosCodeSendAttempt::REASON_SEND_FAILED,
+            message: 'A different server sentence — keep it verbatim.',
         );
 
         $restored = CodeSendProgressSignalData::fromArray($original->toArray());
 
         $this->assertEquals($original, $restored);
+        $this->assertSame('A different server sentence — keep it verbatim.', $restored->message);
+        $this->assertSame(self::REFUSAL, $restored->detail);
     }
 
     public function testTheEmptyProgressFrameSurvivesTheRoundTrip(): void
@@ -51,6 +56,8 @@ final class CodeSendSignalDataTest extends TestCase
         $this->assertNull($restored->state);
         $this->assertNull($restored->channel);
         $this->assertNull($restored->detail);
+        $this->assertNull($restored->message);
+        $this->assertArrayHasKey('message', $restored->toArray());
     }
 
     public function testTheProgressFrameOfNoLineIsTheEmptyOne(): void
@@ -59,6 +66,35 @@ final class CodeSendSignalDataTest extends TestCase
 
         $this->assertNull($frame->state);
         $this->assertNull($frame->channel);
+        $this->assertNull($frame->message);
+        $this->assertArrayHasKey('message', $frame->toArray());
+    }
+
+    public function testOtherProgressFieldsRemainOptional(): void
+    {
+        $this->assertEquals(new CodeSendProgressSignalData(), CodeSendProgressSignalData::fromArray(['message' => null]));
+    }
+
+    /**
+     * @param array<string, mixed> $payload Progress payload with an absent or mistyped message
+     */
+    #[DataProvider('invalidProgressMessages')]
+    public function testProgressRequiresANullableStringMessage(array $payload): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        CodeSendProgressSignalData::fromArray($payload);
+    }
+
+    /**
+     * @return iterable<string, array{array<string, mixed>}> Invalid message payloads
+     */
+    public static function invalidProgressMessages(): iterable
+    {
+        yield 'absent' => [[]];
+        yield 'number' => [['message' => 7]];
+        yield 'boolean' => [['message' => false]];
+        yield 'array' => [['message' => []]];
     }
 
     public function testTheQueuedStepIsTheOnlyOneThatNamesTheSession(): void

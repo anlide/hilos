@@ -90,6 +90,7 @@ export const codeSendProgressSchema = z.looseObject({
   detail: z.string().nullable().default(null),
   ticket: z.string().nullable().default(null),
   reason: z.string().nullable().default(null),
+  message: z.string().nullable(),
   resendAt: z.number().nullable().default(null),
   expiresAt: z.number().nullable().default(null),
 })
@@ -118,6 +119,8 @@ export interface CodeSendProgress {
   readonly ticket: string | null
   /** Send gate outcome on a held code, or null. */
   readonly reason: string | null
+  /** Server refusal sentence, separate from the provider detail, or null. */
+  readonly message: string | null
   /** Local-scale moment another send is allowed, or null. */
   readonly resendAt: number | null
   /** Local-scale moment the live code dies, or null. */
@@ -191,6 +194,7 @@ export function bindCodeSendProgress(connection: HilosConnection): () => void {
             detail: data.detail,
             ticket: data.ticket,
             reason: data.reason,
+            message: data.message,
             resendAt: data.resendAt === null ? null : toLocal(data.resendAt),
             expiresAt: data.expiresAt === null ? null : toLocal(data.expiresAt),
           },

@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\Flow\AuthFlowOutcome;
+use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
+use Hilos\Core\Action\ActionMessages;
+use Hilos\Core\Page\Exception\ActionRateLimitedException;
+
 /**
  * The sentences a sign-in command puts in front of a person, in one place (HIL-622).
  *
@@ -189,6 +194,9 @@ final class AuthMessages
      */
     public const string OAUTH_VERIFICATION_FAILED = 'OAuth verification failed';
 
+    /** Safe refusal shared by failed exchanges and unknown resumed trips. */
+    public const string OAUTH_LOGIN_FAILED = 'OAuth login failed. Please try again.';
+
     /**
      * Refusal of an action whose sign-in method an administrator switched off (HIL-427).
      *
@@ -247,4 +255,65 @@ final class AuthMessages
 
     /** Refusal of an unlink that names no sign-in method. */
     public const string IDENTITY_ID_REQUIRED = 'Identity id is required';
+
+    /**
+     * Composes the sentence each delivery or replay owes without storing words in the trip.
+     *
+     * @param string $reason Stable OAuth result reason
+     * @return ?string Safe refusal sentence, or null for a silent transition
+     */
+    public static function forOAuthReason(string $reason): ?string
+    {
+        return match ($reason) {
+            OAuthResultSignalData::REASON_REAUTH_REQUIRED,
+            OAuthResultSignalData::REASON_CONSENT_REQUIRED,
+            OAuthResultSignalData::REASON_LINK_OK,
+            OAuthResultSignalData::REASON_SECOND_FACTOR,
+            OAuthResultSignalData::REASON_ACCOUNT_BLOCKED => null,
+            OAuthResultSignalData::REASON_LINK_DUPLICATE => 'That account is already linked to another user.',
+            OAuthResultSignalData::REASON_LINK_FAILED => 'Could not link the account. Please try again.',
+            default => self::OAUTH_LOGIN_FAILED,
+        };
+    }
+
+    /**
+     * Supplies the former client fallback only when a refusal has no explicit sentence.
+     * Codes for silent transitions and unknown codes have no fallback.
+     *
+     * @param string $code Refusal code
+     * @return ?string Fallback sentence, or null when the code has no words
+     */
+    public static function forFallbackCode(string $code): ?string
+    {
+        return match ($code) {
+            AuthFlowOutcome::CODE_OAUTH_SIGN_IN_EXPIRED => 'Your sign-in has expired. Continue with your provider again.',
+            default => self::forNoticeCode($code),
+        };
+    }
+
+    /**
+     * Preserves the former converge/resume wording, independently of explicit command messages.
+     * A taken-address notice, for example, differs from the synchronous email refusal.
+     *
+     * @param string $code Convergence or resume reason
+     * @return ?string Notice sentence, or null when the code has no notice
+     */
+    public static function forNoticeCode(string $code): ?string
+    {
+        return match ($code) {
+            AuthFlowOutcome::CODE_IDENTIFIER_TAKEN => 'That address already has an account — sign in instead.',
+            AuthFlowOutcome::CODE_RESERVATION_EXPIRED => 'That registration expired. Ask for a new code.',
+            AuthFlowOutcome::CODE_RESET_CODE_EXPIRED => 'That reset code has expired. Ask for a new one.',
+            AuthFlowOutcome::CODE_PASSWORD_ALREADY_CHANGED =>
+                'The password was already changed on another device. Sign in with the new one.',
+            AuthFlowOutcome::CODE_MAGIC_LINK_INVALID => 'That sign-in link is no longer valid. Ask for a new one.',
+            AuthFlowOutcome::CODE_SEND_CAP_REACHED => 'Too many codes have gone out. Please try again later.',
+            ActionRateLimitedException::ERROR_CODE => ActionMessages::RATE_LIMITED,
+            'challenge_required' => 'Please confirm you are not a robot and try again.',
+            AuthFlowOutcome::CODE_SECOND_FACTOR_EXPIRED => 'Your sign-in step expired. Sign in again.',
+            AuthFlowOutcome::CODE_SECOND_FACTOR_ATTEMPTS => 'Too many wrong codes. Sign in again.',
+            AuthFlowOutcome::CODE_ACCOUNT_BLOCKED => 'This account has been blocked by the project administration.',
+            default => null,
+        };
+    }
 }

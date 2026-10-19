@@ -18,6 +18,7 @@ const SENT: CodeSendProgress = {
   detail: null,
   ticket: 'ticket-1',
   reason: null,
+  message: null,
   resendAt: null,
   expiresAt: null,
 }

@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { type ActionLifecycle } from '../../src/connection/actionLifecycle.js'
+import {
+  ActionError,
+  type ActionLifecycle,
+} from '../../src/connection/actionLifecycle.js'
 import {
   createHilosLegalConsentPreview,
   hilosLegalClauseIcon,
@@ -11,6 +14,41 @@ import {
 import { consentTerms } from './consentFixture.js'
 
 describe('registration consent content', () => {
+  it('keeps arbitrary server words verbatim', () => {
+    const terms = legalConsentTermsSchema.parse({
+      ...consentTerms(),
+      unpublishedMessage: ' Publication is paused.\nReturn later. ',
+      revisedMessage: ' A new revision is ready.\nReview it. ',
+    })
+    expect(terms.unpublishedMessage).toBe(
+      ' Publication is paused.\nReturn later. ',
+    )
+    expect(terms.revisedMessage).toBe(' A new revision is ready.\nReview it. ')
+  })
+
+  describe.each(['unpublishedMessage', 'revisedMessage'])(
+    'required %s',
+    (field) => {
+      it('rejects an absent key', () => {
+        const payload: Record<string, unknown> = { ...consentTerms() }
+        delete payload[field]
+        expect(legalConsentTermsSchema.safeParse(payload).success).toBe(false)
+      })
+
+      it.each([undefined, null, false, 42, 1.5, [], {}])(
+        'rejects a non-string value %j',
+        (value) => {
+          expect(
+            legalConsentTermsSchema.safeParse({
+              ...consentTerms(),
+              [field]: value,
+            }).success,
+          ).toBe(false)
+        },
+      )
+    },
+  )
+
   it('reads the exact displayed revisions of both documents', () => {
     const terms = legalConsentTermsSchema.parse(consentTerms())
     expect(hilosLegalConsentAcceptance(terms)).toEqual({
@@ -57,7 +95,11 @@ describe('registration consent content', () => {
   })
 
   it('dispatches an empty public read with its reply schema', async () => {
-    const terms = consentTerms()
+    const terms = {
+      ...consentTerms(),
+      unpublishedMessage: 'Publication is paused for this installation.',
+      revisedMessage: 'This installation published new terms.',
+    }
     const dispatch = vi.fn(() => ({ done: Promise.resolve({ reply: terms }) }))
     expect(
       await loadHilosLegalConsentTerms({
@@ -82,6 +124,89 @@ describe('registration consent content', () => {
 })
 
 describe('consent preview reads', () => {
+  it.each(['timeout', 'disconnected', 'invalid-reply'] as const)(
+    'uses the local fallback for %s without exposing technical details',
+    async (outcome) => {
+      const dispatch = vi.fn(() => ({
+        done: Promise.reject(
+          new ActionError('hilos_legal_consent', outcome, 'Technical detail'),
+        ),
+      }))
+      const preview = createHilosLegalConsentPreview({
+        actions: { dispatch } as unknown as ActionLifecycle,
+      })
+      await preview.open()
+      expect(preview.error.get()).toBe('The terms could not be loaded.')
+      expect(preview.loading.get()).toBe(false)
+      expect(preview.terms.get()).toBeNull()
+    },
+  )
+
+  it('uses the local fallback when a success has no reply', async () => {
+    const preview = createHilosLegalConsentPreview({
+      actions: {
+        dispatch: () => ({ done: Promise.resolve({}) }),
+      } as unknown as ActionLifecycle,
+    })
+    await preview.open()
+    expect(preview.error.get()).toBe('The terms could not be loaded.')
+    expect(preview.loading.get()).toBe(false)
+  })
+
+  it.each([false, true])(
+    'drops an old refusal after close, reopened=%s',
+    async (reopened) => {
+      let rejectOld!: (reason: unknown) => void
+      const terms = {
+        ...consentTerms('terms-v2'),
+        unpublishedMessage: 'Current unpublished words.',
+        revisedMessage: 'Current revised words.',
+      }
+      const dispatch = vi
+        .fn()
+        .mockReturnValueOnce({
+          done: new Promise((_, reject) => {
+            rejectOld = reject
+          }),
+        })
+        .mockReturnValueOnce({ done: Promise.resolve({ reply: terms }) })
+      const preview = createHilosLegalConsentPreview({
+        actions: { dispatch } as unknown as ActionLifecycle,
+      })
+      const old = preview.open()
+      preview.close()
+      if (reopened) await preview.open()
+      rejectOld(new ActionError('hilos_legal_consent', 'fail', 'Old refusal'))
+      await old
+      expect(preview.error.get()).toBeNull()
+      expect(preview.loading.get()).toBe(false)
+      expect(preview.opened.get()).toBe(reopened)
+      expect(preview.terms.get()).toEqual(reopened ? terms : null)
+    },
+  )
+
+  it('preserves the server refusal even for a familiar code', async () => {
+    const dispatch = vi.fn(() => ({
+      done: Promise.reject(
+        new ActionError(
+          'hilos_legal_consent',
+          'fail',
+          'Publication is paused by this project.',
+          undefined,
+          undefined,
+          'terms_unpublished',
+        ),
+      ),
+    }))
+    const preview = createHilosLegalConsentPreview({
+      actions: { dispatch } as unknown as ActionLifecycle,
+    })
+    await preview.open()
+    expect(preview.error.get()).toBe('Publication is paused by this project.')
+    expect(preview.terms.get()).toBeNull()
+    expect(preview.loading.get()).toBe(false)
+  })
+
   it('drops a closed read even if it answers after a reopened preview', async () => {
     let resolveOld!: (value: { reply: ReturnType<typeof consentTerms> }) => void
     const dispatch = vi

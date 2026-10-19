@@ -28,7 +28,6 @@ import {
 } from '../connection/HilosConnection.js'
 import {
   PAGE_ERROR_NOT_SERVED,
-  PAGE_ERROR_NOT_SERVED_MESSAGE,
   type PageSubscriptionError,
 } from '../protocol/pageError.js'
 import { type Scope, type ScopeManager } from '../state/ScopeManager.js'
@@ -347,7 +346,9 @@ export class PageSubscription {
       page: pageKey,
       httpCode: 403,
       errorCode: 'forbidden',
-      message: 'Access forbidden',
+      // TODO(i18n): Remove temporary client text when backend delivery supplies this refusal.
+      title: 'Forbidden',
+      message: 'You do not have access to this page.',
     })
   }
 
@@ -417,7 +418,9 @@ export class PageSubscription {
       page: pageKey,
       httpCode: NOT_FOUND,
       errorCode: PAGE_ERROR_NOT_SERVED,
-      message: PAGE_ERROR_NOT_SERVED_MESSAGE,
+      // TODO(i18n): Remove temporary client text when backend delivery supplies this refusal.
+      title: 'Page Not Found',
+      message: 'The page you are looking for does not exist.',
     })
     this.pageLoadingSignal.set(false)
   }

@@ -20,6 +20,7 @@ const NOT_FOUND: PageSubscriptionError = {
   page: 'main',
   httpCode: 404,
   errorCode: 'not_found',
+  title: 'Page Not Found',
   message: 'Not found',
 }
 

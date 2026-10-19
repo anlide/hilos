@@ -18,17 +18,20 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 final class OAuthCreateAccountActionDTO extends ActionPayloadDTO
 {
     public const string accountToken = 'accountToken';
+    public const string provider = 'provider';
     public const array SECRET_FIELDS = [self::accountToken];
 
     /**
      * @param string $accountToken Signed first sign-in capability
      * @param ?array<string, string> $acceptedRevisions Revisions accepted on the consent step
      * @param ?string $themePick Guest browser's choice, or null when they never picked
+     * @param ?string $provider Catalog key used only to name an expired sign-in, never as proof
      */
     public function __construct(
         public readonly string $accountToken,
         public readonly ?array $acceptedRevisions,
         public readonly ?string $themePick = null,
+        public readonly ?string $provider = null,
     ) {
     }
 
@@ -41,7 +44,7 @@ final class OAuthCreateAccountActionDTO extends ActionPayloadDTO
     /**
      * @param array<string, mixed> $data Action payload
      * @return static Parsed action
-     * @throws InvalidFormatException When the account token is absent or it or the theme choice has the wrong type
+     * @throws InvalidFormatException When the account token is absent or a supplied field has the wrong type
      * @throws ValidationException When the acceptance map or theme choice is invalid
      */
     public static function fromArray(array $data): static
@@ -52,6 +55,7 @@ final class OAuthCreateAccountActionDTO extends ActionPayloadDTO
                 self::optionalArray($data, RegistrationConsent::PAYLOAD_KEY),
             ),
             themePick: RegistrationThemePick::readPayload(self::optionalString($data, RegistrationThemePick::PAYLOAD_KEY)),
+            provider: array_key_exists(self::provider, $data) ? self::requireString($data, self::provider) : null,
         );
     }
 
@@ -62,6 +66,7 @@ final class OAuthCreateAccountActionDTO extends ActionPayloadDTO
             self::accountToken => $this->accountToken,
             RegistrationConsent::PAYLOAD_KEY => $this->acceptedRevisions,
             RegistrationThemePick::PAYLOAD_KEY => $this->themePick,
+            ...($this->provider === null ? [] : [self::provider => $this->provider]),
         ];
     }
 }

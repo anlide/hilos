@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-import { HILOS_VIEW_MODE_COPY } from '../../src/admin/viewMode.js'
 import {
   ActionError,
   ActionLifecycle,
@@ -230,25 +229,35 @@ describe('ActionLifecycle', () => {
     })
   })
 
-  it('reads a view-mode refusal as the mode sentence and keeps its code', async () => {
+  it.each([
+    'view_mode',
+    'impersonation_view_only',
+    'impersonated',
+    'rate_limited',
+  ])('keeps the wire reason and code verbatim for %s', async (errorCode) => {
     const source = new FakeSource()
     const lifecycle = new ActionLifecycle(source)
+    const reason = ` Server refusal for ${errorCode}.\nKeep this sentence. `
 
     const handle = lifecycle.dispatch('a', {})
-    source.fail(
-      'a',
-      handle.requestId,
-      'The action could not be completed.',
-      'view_mode',
-    )
+    const other = lifecycle.dispatch('a', {})
+    vi.advanceTimersByTime(300)
+    source.fail('a', handle.requestId, reason, errorCode)
 
-    // The server's reason is the impersonal one; the screen shows the core's
-    // sentence of the admin view mode, and the code travels on the failure.
     await expect(handle.done).rejects.toMatchObject({
+      action: 'a',
       outcome: 'fail',
-      message: HILOS_VIEW_MODE_COPY.refusal,
-      errorCode: 'view_mode',
+      message: reason,
+      errorCode,
       errorType: undefined,
+      errorDetail: undefined,
+    })
+    expect(handle.loading.get()).toBe(false)
+    expect(other.loading.get()).toBe(true)
+    source.success('a', other.requestId)
+    await expect(other.done).resolves.toEqual({
+      message: undefined,
+      reply: undefined,
     })
   })
 

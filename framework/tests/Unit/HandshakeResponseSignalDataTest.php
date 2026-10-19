@@ -8,6 +8,7 @@ use Hilos\Auth\Session\SessionAck;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -27,6 +28,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
         'channel' => null,
         'expiresAt' => 1_700_000_600_000,
         'code' => null,
+        'message' => null,
     ];
 
     /**
@@ -41,6 +43,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
         'channel' => null,
         'expiresAt' => null,
         'code' => 'identifier_taken',
+        'message' => 'That address already has an account — sign in instead.',
     ];
 
     /** A deployment that can mail a code but has no phone channel - the asymmetric case. */
@@ -69,6 +72,36 @@ final class HandshakeResponseSignalDataTest extends TestCase
         'mergedInto' => null,
         'mergedIntoName' => null,
     ];
+
+    /**
+     * @param array<string, mixed> $messageField Missing or mistyped required message
+     */
+    #[DataProvider('malformedPendingMessages')]
+    public function testPendingStepRequiresNullableStringMessage(array $messageField): void
+    {
+        $step = self::PENDING_AUTH_STEP;
+        unset($step['message']);
+        $this->expectException(InvalidFormatException::class);
+
+        HandshakeResponseSignalData::fromArray(['data' => ['pendingAuthStep' => $step + $messageField]]);
+    }
+
+    /** @return array<string, array{array<string, mixed>}> Invalid nested message fields */
+    public static function malformedPendingMessages(): array
+    {
+        return [
+            'missing' => [[]],
+            'integer' => [['message' => 42]],
+            'boolean' => [['message' => false]],
+            'array' => [['message' => []]],
+        ];
+    }
+
+    public function testMissingOrNullPendingNodeStaysAbsent(): void
+    {
+        self::assertNull(HandshakeResponseSignalData::fromArray([])->pendingAuthStep);
+        self::assertNull(HandshakeResponseSignalData::fromArray(['data' => ['pendingAuthStep' => null]])->pendingAuthStep);
+    }
 
     public function testPendingRegistrationConsentSurvivesTheTransportRoundtrip(): void
     {
@@ -491,6 +524,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
             'channel' => null,
             'expiresAt' => 1_760_000_900_000,
             'code' => null,
+            'message' => null,
             'secondFactor' => ['trustDeviceDays' => 30, 'resetEffectiveAt' => null],
         ];
         $payload = new HandshakeResponseSignalData()

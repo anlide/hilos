@@ -35,6 +35,8 @@ export const AUTH_CONVERGE_SIGNAL = 'hilos_auth_converge'
  * from the wire whenever the move is not one. The targeting `acceptKey` is kept
  * for validation fidelity though the reaction ignores it — WS_USER already
  * targets this connection.
+ * `message` carries the server's words and is always present; null explicitly
+ * says the move needs no notice.
  */
 export const authConvergeSignalSchema = z.object({
   acceptKey: z.string(),
@@ -42,6 +44,7 @@ export const authConvergeSignalSchema = z.object({
   step: z.string(),
   intent: z.string(),
   code: z.string().nullable().default(null),
+  message: z.string().nullable(),
 })
 
 /** Typed converge payload (the schema's output). */

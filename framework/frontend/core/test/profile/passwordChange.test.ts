@@ -95,6 +95,7 @@ function passwordLine(ticket: string, state: string) {
     channel: 'email',
     purpose: 'change_password',
     ticket,
+    message: null,
   }
 }
 
@@ -185,7 +186,7 @@ describe('password change', () => {
     expect(flow.sendProgress.get()).toBeNull()
     showLine(passwordLine('this-send', 'queued'))
     expect(flow.sendProgress.get()?.ticket).toBe('this-send')
-    showLine({ state: null })
+    showLine({ state: null, message: null })
   })
 
   it('lets a record that exists close the window even after a held repeat', async () => {

@@ -62,7 +62,7 @@ function fakeConnection() {
       const signal = {
         kind: 'project',
         type: SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR,
-        data: { page, httpCode, errorCode, message },
+        data: { page, httpCode, errorCode, title: 'Server title', message },
         envelope: {},
       } as unknown as ProjectSignal
       for (const listener of projectListeners) {

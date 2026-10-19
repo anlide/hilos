@@ -111,6 +111,52 @@ it('opens both consent documents in a read-only React preview', async () => {
   expect(document.querySelector('[data-id="legal-consent-preview"]')).toBeNull()
 })
 
+it('shows the server unpublished sentence as text in the React preview', async () => {
+  const h = harness()
+  h.scope.data.set('legalDocument', {
+    document: 'terms',
+    declared: true,
+    revision: null,
+    set: null,
+    newerSet: null,
+    deviations: [],
+  })
+  const unpublishedMessage = '<b>This preview has no published terms yet.</b>'
+  Object.assign(h.context.actions, {
+    dispatch: () => ({
+      done: Promise.resolve({
+        reply: {
+          ...consentTermsWithClauses(),
+          documents: [],
+          unpublishedMessage,
+        },
+      }),
+    }),
+  })
+  render(
+    <HilosRouterContext.Provider value={h.router}>
+      <HilosLegalDocumentPage context={h.context} />
+    </HilosRouterContext.Provider>,
+  )
+  await act(async () => {
+    fireEvent.click(
+      document.querySelector('[data-id="legal-preview-consent"]')!,
+    )
+  })
+
+  const preview = document.querySelector('[data-id="legal-consent-preview"]')!
+  const unpublished = preview.querySelector(
+    '[data-id="legal-consent-unpublished"]',
+  )!
+  expect(unpublished.textContent).toBe(unpublishedMessage)
+  expect(unpublished.querySelector('b')).toBeNull()
+  expect(preview.querySelector('[data-id="auth-submit"]')).toBeNull()
+  fireEvent.click(
+    document.querySelector('[data-id="legal-consent-preview-close"]')!,
+  )
+  expect(document.querySelector('[data-id="legal-consent-preview"]')).toBeNull()
+})
+
 it('links the past-deadline count to the people it counts, only when there are any (HIL-945)', () => {
   const h = harness()
   const windowListeners: ((signal: { data: unknown }) => void)[] = []

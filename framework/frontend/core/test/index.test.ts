@@ -23,7 +23,7 @@ import {
   bindAdminAccess,
   hilosAdminAccess,
   type HilosAdminAccess,
-  actionFailureReason,
+  IMPERSONATION_ERROR_CODE,
   hiddenAsWord,
   HILOS_VIEW_MODE_COPY,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
@@ -114,8 +114,15 @@ it('exports the @hilos/core public surface', () => {
   expect(bindAdminAccess).toBeTypeOf('function')
   const access: HilosAdminAccess = hilosAdminAccess.get()
   expect(access).toBe('none')
-  expect(actionFailureReason).toBeTypeOf('function')
-  expect(HILOS_VIEW_MODE_COPY.refusal).toBeTypeOf('string')
+  expect(IMPERSONATION_ERROR_CODE).toEqual({
+    viewOnly: 'impersonation_view_only',
+    accountAccess: 'impersonated',
+  })
+  expect(HILOS_VIEW_MODE_COPY).toEqual({
+    mark: 'View mode',
+    explanation: 'You can look around, but not change anything.',
+    hidden: 'Hidden',
+  })
   expect(HILOS_VIEW_MODE_STRIP_TEXT_ID).toBeTypeOf('string')
   expect(VIEW_MODE_ERROR_CODE).toBeTypeOf('string')
   expect(hiddenAsWord).toBeTypeOf('function')

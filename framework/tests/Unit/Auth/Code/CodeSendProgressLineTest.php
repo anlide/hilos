@@ -30,6 +30,7 @@ use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Runtime\View\Collection\HilosCodeSendAttempts;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -189,6 +190,77 @@ final class CodeSendProgressLineTest extends TestCase
 
         self::assertSame(StateHilosCodeSendAttempt::STATE_FAILED, $attempts[self::SESSION_HASH]?->state);
         self::assertSame(self::REFUSAL, $attempts[self::SESSION_HASH]?->detail);
+        self::assertSame(
+            'Could not send the code. Please try again.',
+            CodeSendProgressSignalData::fromAttempt($attempts[self::SESSION_HASH])->message,
+        );
+    }
+
+    /**
+     * @param string $state Transport state
+     * @param ?string $reason Closing reason, or null for transport-only progress
+     * @param ?string $message Expected safe sentence, or null for a silent outcome
+     */
+    #[DataProvider('progressMessages')]
+    public function testProgressBuildsItsMessageFromTheRuntimeView(string $state, ?string $reason, ?string $message): void
+    {
+        $attempts = $this->attempts();
+        $attempts->actions->start(self::SESSION_HASH, self::TICKET, 'sms');
+        $attempts->actions->advance(self::TICKET, null, null, null, 1_900_000_000_000);
+        $attempts->actions->advance(self::TICKET, $state, null, $reason);
+
+        $frame = CodeSendProgressSignalData::fromAttempt($attempts[self::SESSION_HASH]);
+
+        self::assertSame($message, $frame->message);
+        self::assertNull($frame->detail);
+        self::assertSame($reason, $frame->reason);
+        self::assertSame(1_900_000_000_000, $frame->resendAt);
+        self::assertEquals($frame, CodeSendProgressSignalData::fromArray($frame->toArray()));
+    }
+
+    /**
+     * @return iterable<string, array{string, ?string, ?string}> Transport and gate outcomes
+     */
+    public static function progressMessages(): iterable
+    {
+        yield 'queued' => [StateHilosCodeSendAttempt::STATE_QUEUED, null, null];
+        yield 'sending' => [StateHilosCodeSendAttempt::STATE_SENDING, null, null];
+        yield 'transport sent' => [StateHilosCodeSendAttempt::STATE_SENT, null, null];
+        yield 'test transport' => [StateHilosCodeSendAttempt::STATE_NOT_SENT, null, null];
+        yield 'code sent' => [StateHilosCodeSendAttempt::STATE_SENT, StateHilosCodeSendAttempt::REASON_CODE_SENT, null];
+        yield 'cooldown' => [StateHilosCodeSendAttempt::STATE_SENT, StateHilosCodeSendAttempt::REASON_RATE_LIMITED, null];
+        yield 'held' => [StateHilosCodeSendAttempt::STATE_HELD, StateHilosCodeSendAttempt::REASON_RATE_LIMITED, null];
+        yield 'consent required' => [StateHilosCodeSendAttempt::STATE_FAILED, StateHilosCodeSendAttempt::REASON_CONSENT_REQUIRED, null];
+        yield 'unreachable' => [
+            StateHilosCodeSendAttempt::STATE_FAILED,
+            StateHilosCodeSendAttempt::REASON_CHANNEL_UNAVAILABLE,
+            'That number cannot be reached this way.',
+        ];
+        yield 'cap' => [
+            StateHilosCodeSendAttempt::STATE_FAILED,
+            StateHilosCodeSendAttempt::REASON_CAP_REACHED,
+            'Too many codes have been sent to this number. Please try again later.',
+        ];
+        yield 'send failed' => [
+            StateHilosCodeSendAttempt::STATE_FAILED,
+            StateHilosCodeSendAttempt::REASON_SEND_FAILED,
+            'Could not send the code. Please try again.',
+        ];
+        yield 'transport failed after gate stamp' => [
+            StateHilosCodeSendAttempt::STATE_FAILED,
+            null,
+            'Could not send the code. Please try again.',
+        ];
+        yield 'terms revised' => [
+            StateHilosCodeSendAttempt::STATE_FAILED,
+            StateHilosCodeSendAttempt::REASON_CONSENT_REVISED,
+            'The terms were updated while you were reading. Review the differences and accept again.',
+        ];
+        yield 'terms unpublished' => [
+            StateHilosCodeSendAttempt::STATE_FAILED,
+            StateHilosCodeSendAttempt::REASON_TERMS_UNPUBLISHED,
+            'This project has not published its terms yet, so an account cannot be created here.',
+        ];
     }
 
     public function testAResendReplacesTheLineRatherThanStandingBesideIt(): void
@@ -243,6 +315,9 @@ final class CodeSendProgressLineTest extends TestCase
         // "Something went wrong" is what the ticket exists to stop being the answer.
         $this->assertSame(StateHilosCodeSendAttempt::STATE_FAILED, $attempts[self::SESSION_HASH]?->state);
         $this->assertSame(self::REFUSAL, $attempts[self::SESSION_HASH]?->detail);
+        $frame = CodeSendProgressSignalData::fromAttempt($attempts[self::SESSION_HASH]);
+        self::assertSame(self::REFUSAL, $frame->detail);
+        self::assertSame('Could not send the code. Please try again.', $frame->message);
     }
 
     public function testALetterOnlyWrittenDownEndsTheLineWithoutASentence(): void
@@ -272,6 +347,7 @@ final class CodeSendProgressLineTest extends TestCase
         // queue - and yesterday's reason must not be left standing under today's state.
         $this->assertSame(StateHilosCodeSendAttempt::STATE_QUEUED, $attempts[self::SESSION_HASH]?->state);
         $this->assertNull($attempts[self::SESSION_HASH]?->detail);
+        self::assertNull(CodeSendProgressSignalData::fromAttempt($attempts[self::SESSION_HASH])->message);
     }
 
     public function testOneSessionsLineIsInvisibleToAnother(): void

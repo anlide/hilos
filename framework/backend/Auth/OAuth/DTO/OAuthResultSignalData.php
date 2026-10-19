@@ -81,6 +81,7 @@ final class OAuthResultSignalData extends BaseDTO implements SignalDataInterface
      * @param ?string $linkToken Signed link-capability token to redeem after re-auth, null for the
      *                           arms that carry none
      * @param ?string $accountToken Signed first sign-in capability, on consent_required alone
+     * @param ?string $message Safe refusal sentence, or null for a silent transition
      */
     public function __construct(
         public readonly string $acceptKey,
@@ -89,6 +90,7 @@ final class OAuthResultSignalData extends BaseDTO implements SignalDataInterface
         public readonly ?string $email = null,
         public readonly ?string $linkToken = null,
         public readonly ?string $accountToken = null,
+        public readonly ?string $message = null,
     ) {
     }
 
@@ -112,6 +114,7 @@ final class OAuthResultSignalData extends BaseDTO implements SignalDataInterface
             'email' => $this->email,
             'linkToken' => $this->linkToken,
             'accountToken' => $this->accountToken,
+            'message' => $this->message,
         ];
     }
 
@@ -127,7 +130,7 @@ final class OAuthResultSignalData extends BaseDTO implements SignalDataInterface
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
-     * @throws InvalidFormatException When the payload carries no accept key, provider or reason
+     * @throws InvalidFormatException When a required field is absent or a field has the wrong type
      */
     public static function fromArray(array $data): static
     {
@@ -138,6 +141,7 @@ final class OAuthResultSignalData extends BaseDTO implements SignalDataInterface
             email: self::optionalString($data, 'email'),
             linkToken: self::optionalString($data, 'linkToken'),
             accountToken: self::optionalString($data, 'accountToken'),
+            message: self::requireNullableString($data, 'message'),
         );
     }
 }

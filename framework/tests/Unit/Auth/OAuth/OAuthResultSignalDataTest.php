@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\Auth\OAuth;
 
 use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
 use Hilos\Core\Exception\InvalidFormatException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -38,6 +39,7 @@ final class OAuthResultSignalDataTest extends TestCase
                 'email' => null,
                 'linkToken' => null,
                 'accountToken' => null,
+                'message' => null,
             ],
             $data->toArray(),
         );
@@ -61,6 +63,7 @@ final class OAuthResultSignalDataTest extends TestCase
                 'email' => 'user@example.com',
                 'linkToken' => 'link.token',
                 'accountToken' => null,
+                'message' => null,
             ],
             $data->toArray(),
         );
@@ -87,6 +90,41 @@ final class OAuthResultSignalDataTest extends TestCase
 
         self::assertSame('signed.account.token', $data->toArray()['accountToken']);
         self::assertSame($data->toArray(), OAuthResultSignalData::fromArray($data->toArray())->toArray());
+    }
+
+    public function testRoundTripPreservesArbitraryServerWords(): void
+    {
+        $message = " Server words, unchanged.\nAnother line. ";
+        $data = new OAuthResultSignalData('accept-2', 'oauth:stub', message: $message);
+
+        self::assertSame($message, $data->toArray()['message']);
+        self::assertSame($message, OAuthResultSignalData::fromArray($data->toArray())->message);
+    }
+
+    /** @return array<string, array{array<string, mixed>}> Missing or mistyped message */
+    public static function malformedMessages(): array
+    {
+        return [
+            'missing' => [[]],
+            'integer' => [['message' => 42]],
+            'boolean' => [['message' => false]],
+            'array' => [['message' => []]],
+        ];
+    }
+
+    /** @param array<string, mixed> $messageField Missing or mistyped message */
+    #[DataProvider('malformedMessages')]
+    public function testMessageIsRequiredAndNullableString(array $messageField): void
+    {
+        self::expectException(InvalidFormatException::class);
+        self::expectExceptionMessage('message');
+
+        OAuthResultSignalData::fromArray([
+            'acceptKey' => 'accept-1',
+            'provider' => 'oauth:github',
+            'reason' => 'oauth_login_failed',
+            ...$messageField,
+        ]);
     }
 
     public function testFromArrayRefusesAPayloadCarryingNoReason(): void

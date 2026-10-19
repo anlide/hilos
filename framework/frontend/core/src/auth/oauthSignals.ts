@@ -98,6 +98,7 @@ export const oauthResultSignalSchema = z.object({
   acceptKey: z.string(),
   provider: z.string(),
   reason: z.string(),
+  message: z.string().nullable(),
   email: z.string().nullable().default(null),
   linkToken: z.string().nullable().default(null),
   accountToken: z.string().nullable().default(null),

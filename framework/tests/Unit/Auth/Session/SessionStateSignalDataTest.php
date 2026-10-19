@@ -7,6 +7,8 @@ namespace Hilos\Tests\Unit\Auth\Session;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -14,6 +16,91 @@ use PHPUnit\Framework\TestCase;
  */
 final class SessionStateSignalDataTest extends TestCase
 {
+    /**
+     * @param ?string $message Server words, or an explicit quiet resume
+     */
+    #[DataProvider('pendingMessages')]
+    public function testPendingMessageReachesTheHandshakeThroughEveryCopy(?string $message): void
+    {
+        $step = [
+            'identifier' => 'ada@example.com',
+            'kind' => 'email',
+            'intent' => 'register',
+            'step' => 'code',
+            'channel' => null,
+            'expiresAt' => 1_700_000_600_000,
+            'code' => null,
+            'message' => $message,
+            'acceptedRevisions' => ['terms' => 'terms-1'],
+        ];
+        $state = SessionStateSignalData::fromArray(
+            new SessionStateSignalData('token', 17, null, ['socket-a', 'socket-b'], pendingAuthStep: $step)
+                ->withAccountBlocked(null)
+                ->withAccountStanding(null)
+                ->toArray(),
+        );
+        self::assertSame(['socket-a', 'socket-b'], $state->acceptKeys);
+        self::assertSame($step, $state->pendingAuthStep);
+
+        // sendHandshakeResponse stamps the session's node onto the identity with this same chain.
+        foreach ([null, 41] as $userId) {
+            $handshake = new HandshakeResponseSignalData(selfId: $userId)
+                ->withSessionContext(1_700_000_000_000, $state->pendingAuthStep, ['email' => true, 'phone' => false], [], false)
+                ->withPendingAck(null)
+                ->withAccountBlocked(null)
+                ->withAccountStanding(null)
+                ->withAdminViewMode(false)
+                ->withImpersonationPolicy([
+                    'viewOnly' => true,
+                    'carryAdmin' => false,
+                    'allowed' => false,
+                    'accountAccess' => false,
+                    'blocked' => false,
+                    'frozen' => false,
+                    'equal' => false,
+                ])
+                ->withThemeSettings(['switchingEnabled' => true, 'defaultTheme' => 'light']);
+
+            self::assertSame($step, $handshake->pendingAuthStep);
+            self::assertSame($step, HandshakeResponseSignalData::fromArray($handshake->toArray())->pendingAuthStep);
+        }
+    }
+
+    /** @return array<string, array{?string}> Notice and quiet resume */
+    public static function pendingMessages(): array
+    {
+        return [
+            'server notice' => ['A server-authored notice without a client dictionary entry.'],
+            'quiet resume' => [null],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $messageField Missing or mistyped message
+     */
+    #[DataProvider('malformedPendingMessages')]
+    public function testMalformedPendingMessageIsRefused(array $messageField): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        SessionStateSignalData::fromArray([
+            'sessionToken' => 'token',
+            'sessionId' => 17,
+            'pendingAuthStep' => ['step' => 'identifier', 'code' => 'identifier_taken'] + $messageField,
+        ]);
+    }
+
+    /** @return array<string, array{array<string, mixed>}> Invalid nested message fields */
+    public static function malformedPendingMessages(): array
+    {
+        return [
+            'missing' => [[]],
+            'integer' => [['message' => 42]],
+            'boolean' => [['message' => false]],
+            'array' => [['message' => []]],
+        ];
+    }
+
     public function testRoundtripKeepsTheSessionId(): void
     {
         $frame = new SessionStateSignalData('token', 17, 41, ['accept-key']);

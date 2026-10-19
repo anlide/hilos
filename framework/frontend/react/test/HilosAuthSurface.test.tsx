@@ -24,6 +24,7 @@ import {
   AUTH_ACTION_LOGIN,
   AUTH_ACTION_REGISTRATION_PASSKEY_OPTIONS,
   AUTH_ACTION_REQUEST_MAGIC_LINK,
+  AUTH_CONVERGE_SIGNAL,
   AUTH_SURFACE_HEADING_ID,
   bindCodeSendProgress,
   bindPageReady,
@@ -109,6 +110,7 @@ const LOST_RACE_STEP = {
   channel: null,
   expiresAt: null,
   code: 'identifier_taken',
+  message: 'That address already has an account — sign in instead.',
 }
 
 /**
@@ -123,6 +125,7 @@ const RESUMED_CODE_STEP = {
   channel: null,
   expiresAt: Date.now() + 600000,
   code: null,
+  message: null,
 }
 
 /**
@@ -193,6 +196,7 @@ function contextAnswering(
               registerable: [],
               registrationBlock: null,
               signInBlock: null,
+              message: null,
             }
           : undefined
 
@@ -270,6 +274,7 @@ function expiringLetterContext(lifetimeMs: number): {
               registerable: [],
               registrationBlock: null,
               signInBlock: null,
+              message: null,
             }
           : {
               ok: true,
@@ -336,6 +341,7 @@ function heldIdentifierContext(): {
               registerable: [],
               registrationBlock: null,
               signInBlock: null,
+              message: null,
             }
           : undefined
 
@@ -388,6 +394,10 @@ function liveAccountContext(
               registerable: [],
               registrationBlock: null,
               signInBlock,
+              message:
+                signInBlock === 'no_channel'
+                  ? 'This account signs in by a mailed link, and this installation has nothing to send it with. Whoever runs it can set that up.'
+                  : null,
             }
           : undefined
 
@@ -438,6 +448,10 @@ function freeIdentifierContext(
               registerable: [],
               registrationBlock,
               signInBlock: null,
+              message:
+                registrationBlock === 'no_channel'
+                  ? 'No account for this, and there is nothing to send a code with.'
+                  : 'No account for this, and registration is closed.',
             }
           : undefined
 
@@ -487,6 +501,7 @@ function provenOnReturnContext(dispatched?: Dispatched): HilosAuthContext {
           registerable: answered ? [] : [PASSWORD_METHOD_KEY],
           registrationBlock: null,
           signInBlock: null,
+          message: null,
         }
         answered = true
       } else if (action === AUTH_ACTION_LEGAL_CONSENT) {
@@ -671,7 +686,7 @@ function reportSendProgress(
   for (const listener of listeners) {
     listener({
       type: SIGNAL_CODE_SEND_PROGRESS,
-      data: { state, channel: 'email', detail },
+      data: { state, channel: 'email', detail, message: null },
     })
   }
   unbind()
@@ -1872,6 +1887,7 @@ describe('HilosAuthSurface', () => {
         acceptKey: 'accept-1',
         provider: GITHUB_PROVIDER,
         reason: OAUTH_REASON_LOGIN_FAILED,
+        message: OAUTH_FAILED_MESSAGE,
         email: null,
         linkToken: null,
       })
@@ -1902,6 +1918,7 @@ describe('HilosAuthSurface', () => {
           acceptKey: 'accept-1',
           provider: GITHUB_PROVIDER,
           reason: OAUTH_REASON_CONSENT_REQUIRED,
+          message: null,
           email,
           linkToken: null,
           accountToken: 'signed-account-token',
@@ -1976,6 +1993,7 @@ describe('HilosAuthSurface on a sign-in held on its second factor (HIL-494)', ()
     channel: null,
     expiresAt: Date.now() + 600000,
     code: null,
+    message: null,
     secondFactor: { trustDeviceDays: 30, resetEffectiveAt: null },
   }
 
@@ -2063,6 +2081,7 @@ const PROVED_REGISTRATION_STEP = {
   channel: null,
   expiresAt: Date.now() + 600000,
   code: null,
+  message: null,
 }
 
 /**
@@ -2077,6 +2096,7 @@ const PHONE_CODE_STEP = {
   channel: 'sms',
   expiresAt: Date.now() + 600000,
   code: null,
+  message: null,
 }
 
 /**
@@ -2708,6 +2728,357 @@ describe('HilosAuthSurface offers a passkey account on an empty field (HIL-1106)
     expect(document.body.textContent).not.toContain(
       'Your address is confirmed and you are signed in.',
     )
+  })
+})
+
+describe('HilosAuthSurface server refusal copy (HIL-1516)', () => {
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+  })
+
+  it.each([
+    {
+      source: 'action',
+      code: 'rate_limited',
+      message: 'Wait for this server to allow another attempt.',
+      expected: 'Wait for this server to allow another attempt.',
+    },
+    {
+      source: 'reply',
+      code: 'reservation_expired',
+      message: ' <b>This reservation ended on the server.</b> ',
+      expected: ' <b>This reservation ended on the server.</b> ',
+    },
+    { source: 'action', code: 'rate_limited', message: '', expected: '' },
+    { source: 'reply', code: 'identifier_taken', message: '', expected: '' },
+    {
+      source: 'reply',
+      code: 'rate_limited',
+      message: undefined,
+      expected: 'That did not work. Please try again.',
+    },
+    {
+      source: 'transport',
+      code: undefined,
+      message: undefined,
+      expected: 'Could not reach the server. Please try again.',
+    },
+    { source: 'silent', code: undefined, message: undefined, expected: '' },
+  ])(
+    'shows $source copy for $code: $message',
+    async ({ source, code, message, expected }) => {
+      vi.useFakeTimers()
+      const { context } = contextAnswering([PASSWORD_METHOD_KEY])
+      const original = context.actions.dispatch.bind(context.actions)
+      vi.spyOn(context.actions, 'dispatch').mockImplementation(
+        (action, payload, options) => {
+          if (action !== AUTH_ACTION_LOGIN)
+            return original(action, payload, options)
+
+          return {
+            requestId: 'refused-login',
+            loading: createSignal(false),
+            done:
+              source === 'reply' || source === 'silent'
+                ? Promise.resolve({
+                    reply: {
+                      ok: source === 'silent',
+                      code,
+                      message,
+                      next: { step: 'identifier', intent: 'login' },
+                    },
+                  })
+                : Promise.reject(
+                    new ActionError(
+                      action,
+                      source === 'transport' ? 'timeout' : 'fail',
+                      message ?? 'No reply',
+                      undefined,
+                      undefined,
+                      code,
+                    ),
+                  ),
+          } as ActionHandle
+        },
+      )
+      render(<HilosAuthSurface context={context} />)
+      type('auth-identifier', 'someone@example.com')
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+      })
+      type('auth-password', 'wrong password')
+      fireEvent.submit(byId('auth-submit')!.closest('form')!)
+      await flush()
+
+      expect(byId('auth-live-assertive')!.textContent).toBe(expected)
+      if (expected === '') {
+        expect(byId('auth-error')).toBeNull()
+        expect(byId('auth-error-idle')!.classList.contains('invisible')).toBe(
+          true,
+        )
+      } else {
+        const row = byId('auth-error')!
+        expect(row.querySelector('.text-truncate')!.textContent).toBe(expected)
+        expect(row.querySelector('b')).toBeNull()
+        expect(byId('auth-error-details')!.getAttribute('aria-label')).toBe(
+          'Show error details',
+        )
+      }
+      expect(byId('auth-notice')).toBeNull()
+      expect((byId('auth-submit') as HTMLButtonElement).disabled).toBe(false)
+    },
+  )
+
+  it.each([
+    {
+      identifier: ' SomeOne@EXAMPLE.com ',
+      normalized: 'someone@example.com',
+      kind: 'email',
+    },
+    {
+      identifier: '+1 (202) 555-0123',
+      normalized: '+12025550123',
+      kind: 'phone',
+    },
+  ])(
+    'applies only the current normalized $kind converge and clears a silent notice',
+    async ({ identifier, normalized, kind }) => {
+      vi.useFakeTimers()
+      const { context, emitProjectSignal } = contextAnswering([
+        PASSWORD_METHOD_KEY,
+      ])
+      vi.spyOn(context.actions, 'dispatch').mockReturnValue({
+        requestId: 'normalized-detection',
+        loading: createSignal(false),
+        done: Promise.resolve({
+          reply: {
+            identifier,
+            normalized,
+            kind,
+            status: 'active',
+            methods: [PASSWORD_METHOD_KEY],
+            registerable: [],
+            registrationBlock: null,
+            signInBlock: null,
+            message: null,
+          },
+        }),
+      } as ActionHandle)
+      const view = render(<HilosAuthSurface context={context} />)
+      type('auth-identifier', identifier)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+      })
+      if (kind === 'email') type('auth-password', 'still typing')
+      view.rerender(<HilosAuthSurface context={context} />)
+      const data = {
+        identifier: 'somebody-else@example.com',
+        step: 'code',
+        intent: 'register',
+        code: 'reservation_expired',
+        message: '<b>The server moved this registration.</b>',
+      }
+      await act(async () => {
+        emitProjectSignal({ type: AUTH_CONVERGE_SIGNAL, data })
+      })
+      expect(byId('auth-notice')).toBeNull()
+      expect(byId('auth-code')).toBeNull()
+      expect((byId('auth-identifier') as HTMLInputElement).value).toBe(
+        identifier,
+      )
+      if (kind === 'email')
+        expect((byId('auth-password') as HTMLInputElement).value).toBe(
+          'still typing',
+        )
+
+      await act(async () => {
+        emitProjectSignal({
+          type: AUTH_CONVERGE_SIGNAL,
+          data: { ...data, identifier: normalized },
+        })
+      })
+      const notice = byId('auth-notice')!
+      expect(notice.textContent).toBe(data.message)
+      expect(notice.querySelector('b')).toBeNull()
+      expect(byId('auth-code')).not.toBeNull()
+
+      await act(async () => {
+        emitProjectSignal({
+          type: AUTH_CONVERGE_SIGNAL,
+          data: {
+            ...data,
+            identifier: normalized,
+            step: 'identifier',
+            intent: 'login',
+            message: null,
+          },
+        })
+      })
+      expect(byId('auth-notice')).toBeNull()
+      expect(byId('auth-identifier')).not.toBeNull()
+    },
+  )
+
+  it.each(['mount', 'handshake'])(
+    'shows the pending step sentence on %s',
+    async (arrival) => {
+      const { context } = contextAnswering([PASSWORD_METHOD_KEY])
+      const step = {
+        ...LOST_RACE_STEP,
+        message: '<b>This address was claimed while you were away.</b>',
+      }
+      if (arrival === 'mount')
+        context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, step)
+      render(<HilosAuthSurface context={context} />)
+      await act(async () => {
+        if (arrival === 'handshake')
+          context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, step)
+      })
+
+      const notice = byId('auth-notice')!
+      expect(notice.textContent).toBe(step.message)
+      expect(notice.querySelector('b')).toBeNull()
+      expect(byId('auth-live-polite')!.textContent).toContain(step.message)
+      expect(byId('auth-identifier')).not.toBeNull()
+    },
+  )
+
+  it('keeps ordinary resume from rebuilding the form even if it carries words', async () => {
+    vi.useFakeTimers()
+    const { context } = contextAnswering([PASSWORD_METHOD_KEY])
+    render(<HilosAuthSurface context={context} />)
+    type('auth-identifier', 'someone@example.com')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    })
+    type('auth-password', 'still typing')
+
+    await act(async () => {
+      context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, {
+        ...RESUMED_CODE_STEP,
+        message: 'An ordinary resume does not announce this.',
+      })
+    })
+    expect(byId('auth-code')).toBeNull()
+    expect(byId('auth-notice')).toBeNull()
+    expect((byId('auth-password') as HTMLInputElement).value).toBe(
+      'still typing',
+    )
+  })
+
+  it.each([
+    {
+      kind: 'email',
+      identifier: 'someone@example.com',
+      status: 'active',
+      signInBlock: 'no_channel',
+      registrationBlock: null,
+      row: 'auth-error',
+    },
+    {
+      kind: 'phone',
+      identifier: '+12025550123',
+      status: 'active',
+      signInBlock: 'no_channel',
+      registrationBlock: null,
+      row: 'auth-error',
+    },
+    {
+      kind: 'email',
+      identifier: 'someone@example.com',
+      status: 'none',
+      signInBlock: null,
+      registrationBlock: 'closed',
+      row: 'auth-identifier-hint',
+    },
+    {
+      kind: 'email',
+      identifier: 'someone@example.com',
+      status: 'none',
+      signInBlock: null,
+      registrationBlock: 'no_channel',
+      row: 'auth-identifier-hint',
+    },
+  ])(
+    'shows detection words for $status/$kind/$registrationBlock',
+    async ({
+      kind,
+      identifier,
+      status,
+      signInBlock,
+      registrationBlock,
+      row,
+    }) => {
+      vi.useFakeTimers()
+      const { context } = contextAnswering([PASSWORD_METHOD_KEY])
+      const message =
+        '<b>The server explains why this address cannot continue.</b>'
+      vi.spyOn(context.actions, 'dispatch').mockReturnValue({
+        requestId: 'refused-detection',
+        loading: createSignal(false),
+        done: Promise.resolve({
+          reply: {
+            identifier,
+            normalized: identifier,
+            kind,
+            status,
+            methods: [],
+            registerable: [],
+            registrationBlock,
+            signInBlock,
+            message,
+          },
+        }),
+      } as ActionHandle)
+      render(<HilosAuthSurface context={context} />)
+      type('auth-identifier', identifier)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+      })
+
+      expect(byId(row)!.textContent).toBe(message)
+      expect(byId(row)!.querySelector('b')).toBeNull()
+      expect(byId('auth-password')).toBeNull()
+      expect(byId('auth-submit')).toBeNull()
+      if (status === 'active') expect(byId('auth-identifier-hint')).toBeNull()
+    },
+  )
+
+  it('uses the empty consent reply sentence in the existing unpublished slot', async () => {
+    vi.useFakeTimers()
+    const context = provenOnReturnContext()
+    const original = context.actions.dispatch.bind(context.actions)
+    const unpublishedMessage =
+      '<b>This project is still preparing its terms.</b>'
+    vi.spyOn(context.actions, 'dispatch').mockImplementation(
+      (action, payload, options) =>
+        action === AUTH_ACTION_LEGAL_CONSENT
+          ? ({
+              requestId: 'unpublished-consent',
+              loading: createSignal(false),
+              done: Promise.resolve({
+                reply: { ...consentTerms(), documents: [], unpublishedMessage },
+              }),
+            } as ActionHandle)
+          : original(action, payload, options),
+    )
+    render(<HilosAuthSurface context={context} />)
+    type('auth-identifier', 'newcomer@example.com')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    })
+    fireEvent.submit(byId('auth-submit')!.closest('form')!)
+    await flush()
+
+    const unpublished = byId('legal-consent-unpublished')!
+    expect(unpublished.textContent).toBe(unpublishedMessage)
+    expect(unpublished.querySelector('b')).toBeNull()
+    expect(byId('auth-consent-accept')).toBeNull()
+    expect(byId('auth-error')).toBeNull()
+    expect((byId('auth-submit') as HTMLButtonElement).disabled).toBe(true)
+    expect((byId('auth-restart') as HTMLButtonElement).disabled).toBe(false)
   })
 })
 

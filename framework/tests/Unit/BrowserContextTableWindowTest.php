@@ -262,7 +262,8 @@ final class BrowserContextTableWindowTest extends TestCase
         $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
         $this->assertInstanceOf(PageSubscriptionErrorSignalData::class, $signal->data->data);
         $this->assertSame(500, $signal->data->data->httpCode);
-        $this->assertSame('Internal error while delivering the page', $signal->data->data->message);
+        $this->assertSame('Internal Server Error', $signal->data->data->title);
+        $this->assertSame('An unexpected error occurred.', $signal->data->data->message);
         $this->assertNull(
             Hilos::$sr->getNextQueuedSignal(),
             'a broken declaration must receive no table window',

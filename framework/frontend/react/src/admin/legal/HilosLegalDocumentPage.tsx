@@ -5,7 +5,6 @@ import {
   createHilosLegalConsentPreview,
   createHilosLegalReconsentPreview,
   hilosLegalDocumentLabel,
-  LEGAL_TERMS_UNPUBLISHED_MESSAGE,
   HilosPages,
   HilosLegalRowKey,
   HILOS_TABLE_ACTIONS_KEY,
@@ -298,7 +297,7 @@ export function HilosLegalDocumentPage({
               />
             ) : (
               <p data-id="legal-consent-unpublished">
-                {LEGAL_TERMS_UNPUBLISHED_MESSAGE}
+                {previewTerms.unpublishedMessage}
               </p>
             ))}
           {previewTerms?.form === 'line' &&

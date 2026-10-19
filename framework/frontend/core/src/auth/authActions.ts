@@ -30,8 +30,6 @@
 // outcome.
 import {
   loadHilosLegalConsentTerms,
-  LEGAL_CONSENT_REVISED_MESSAGE,
-  LEGAL_TERMS_UNPUBLISHED_MESSAGE,
   type HilosLegalConsentTerms,
 } from '../legal/legalConsent.js'
 import {
@@ -48,10 +46,8 @@ import { pageSubscriptionFor } from '../subscription/bindPageScope.js'
 import { whenPageReady } from '../subscription/pageReadyGate.js'
 import { hilosThemePick } from '../theme/themeState.js'
 import {
-  AUTH_CODE_REASON_CAP_REACHED,
   AUTH_CODE_REASON_CHANNEL_UNAVAILABLE,
   AUTH_CODE_REASON_RATE_LIMITED,
-  AUTH_CODE_REASON_SEND_FAILED,
   AUTH_CODE_REASON_SENT,
 } from './authCodeSignals.js'
 import { type HilosAuthContext } from './authContext.js'
@@ -151,6 +147,7 @@ const identifierDetectionSchema = z.object({
   // The sign-in twin (HIL-973), non-null only for `active`; nullable and not
   // optional for the same reason.
   signInBlock: z.enum(['no_channel']).nullable(),
+  message: z.string().nullable(),
 })
 
 /**
@@ -300,6 +297,7 @@ async function detectIdentifier(
     throw new ActionError(
       AUTH_ACTION_DETECT_IDENTIFIER,
       'invalid-reply',
+      // TODO(i18n): Remove this client-side fallback when backend-provided local error copy is available.
       'The identifier lookup answered nothing.',
     )
   }
@@ -480,6 +478,7 @@ async function createOAuthAccount(
       ok: false,
       code: OAUTH_SIGN_IN_EXPIRED_CODE,
       next: { step: 'identifier', intent: 'login' },
+      // TODO(i18n): Remove this client-side fallback when backend-provided local error copy is available.
       message: 'Your sign-in has expired. Continue with your provider again.',
     }
   }
@@ -489,17 +488,13 @@ async function createOAuthAccount(
     AUTH_ACTION_OAUTH_CREATE_ACCOUNT,
     {
       accountToken: pending.accountToken,
+      provider: pending.provider,
       acceptedRevisions: form.acceptedRevisions,
       themePick: hilosThemePick.get(),
     },
   )
   if (outcome.code === OAUTH_SIGN_IN_EXPIRED_CODE) {
     dropOAuthAccount()
-
-    return {
-      ...outcome,
-      message: `Your sign-in with ${pending.providerName} has expired. Continue with ${pending.providerName} again.`,
-    }
   }
 
   return outcome
@@ -900,7 +895,9 @@ function requestPhoneCode(
           // email code): the closing step of ours will be dropped as stale, so
           // nothing more is coming for it.
           settle({
-            ...describeCodeOutcome(AUTH_CODE_REASON_SEND_FAILED),
+            ok: false,
+            // TODO(i18n): Remove this client-side fallback when backend-provided local error copy is available.
+            message: 'Could not send the code. Please try again.',
             channel,
           })
         }
@@ -916,7 +913,7 @@ function requestPhoneCode(
         return
       }
       settle({
-        ...describeCodeOutcome(latest.reason),
+        ...describeCodeOutcome(latest),
         channel: latest.channel ?? channel,
         resendAt: latest.resendAt ?? undefined,
         expiresAt: latest.expiresAt ?? undefined,
@@ -948,6 +945,7 @@ function requestPhoneCode(
         if (reply === undefined) {
           settle({
             ok: false,
+            // TODO(i18n): Remove this client-side fallback when backend-provided local error copy is available.
             message: 'Could not send the code. Please try again.',
             channel,
           })
@@ -972,15 +970,16 @@ function requestPhoneCode(
  * hide the very code they are waiting to type.
  *
  * The genuine refusals send them back to where they can act — pick another channel,
- * fix the number, or wait out the window. The wording is the client's: the outcome
- * signal deliberately carries a stable reason code and no prose. The provider's own
- * sentence has a road of its own now (HIL-826) and it is the send-progress line, not
- * this one.
+ * fix the number, or wait out the window. The server supplies the refusal sentence
+ * separately from the provider's detail on the send-progress line.
  *
- * @param reason The stable reason code the outcome signal carried.
+ * @param progress The closing line of this request's ticket.
  * @returns Whether a code is in play, and the sentence to show when none is.
  */
-function describeCodeOutcome(reason: string): AuthFlowSubmitOutcome {
+function describeCodeOutcome(
+  progress: CodeSendProgressSignalData,
+): AuthFlowSubmitOutcome {
+  const { reason, message } = progress
   switch (reason) {
     case AUTH_CODE_REASON_CONSENT_REQUIRED:
     case AUTH_CODE_REASON_CONSENT_REVISED:
@@ -989,30 +988,15 @@ function describeCodeOutcome(reason: string): AuthFlowSubmitOutcome {
         ok: false,
         code: reason,
         next: { step: 'consent', intent: 'register' },
-        ...(reason === AUTH_CODE_REASON_CONSENT_REQUIRED
-          ? {}
-          : {
-              message:
-                reason === AUTH_CODE_REASON_CONSENT_REVISED
-                  ? LEGAL_CONSENT_REVISED_MESSAGE
-                  : LEGAL_TERMS_UNPUBLISHED_MESSAGE,
-            }),
+        ...(message === null ? {} : { message }),
       }
     case AUTH_CODE_REASON_SENT:
     case AUTH_CODE_REASON_RATE_LIMITED:
       return { ok: true }
-    case AUTH_CODE_REASON_CHANNEL_UNAVAILABLE:
-      return { ok: false, message: 'That number cannot be reached this way.' }
-    case AUTH_CODE_REASON_CAP_REACHED:
-      return {
-        ok: false,
-        message:
-          'Too many codes have been sent to this number. Please try again later.',
-      }
     default:
       return {
         ok: false,
-        message: 'Could not send the code. Please try again.',
+        ...(message === null ? {} : { message }),
       }
   }
 }
@@ -1082,13 +1066,11 @@ async function dispatchFlow(
 /**
  * Reduce a failed auth action to the outcome the machine applies.
  *
- * The refusal of the anti-abuse guard is named by its code and nothing else: the
- * server sends a placeholder in place of the refusal's own sentence, and the
- * surface draws the code in its own words, "Too many attempts…" (HIL-1280).
- * Every other failure carries its sentence.
+ * Every server refusal keeps its sentence. The anti-abuse guard's code also
+ * travels with it for the machine's behavior (HIL-1280).
  *
  * @param error The caught failure from the action lifecycle.
- * @returns The failed outcome, with the code or the sentence to show inline.
+ * @returns The failed outcome, with the sentence and any behavioral code.
  */
 function failedOutcome(error: unknown): AuthFlowSubmitOutcome {
   if (
@@ -1096,7 +1078,11 @@ function failedOutcome(error: unknown): AuthFlowSubmitOutcome {
     error.outcome === 'fail' &&
     error.errorCode === RATE_LIMITED_ERROR_CODE
   ) {
-    return { ok: false, code: RATE_LIMITED_ERROR_CODE }
+    return {
+      ok: false,
+      code: RATE_LIMITED_ERROR_CODE,
+      message: error.message,
+    }
   }
 
   return { ok: false, message: describeAuthError(error) }
@@ -1114,5 +1100,6 @@ function describeAuthError(error: unknown): string {
     return error.message
   }
 
+  // TODO(i18n): Remove this client-side fallback when backend-provided local error copy is available.
   return 'Could not reach the server. Please try again.'
 }

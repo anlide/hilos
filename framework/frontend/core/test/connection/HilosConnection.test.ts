@@ -922,7 +922,7 @@ describe('page frame buffer', () => {
       '{"type":"logs_lines_appended","data":{"line":"first"}}',
     )
     MockWebSocket.last.message(
-      '{"type":"subscription_page_error","data":{"page":"hilos_logs"}}',
+      '{"type":"subscription_page_error","data":{"page":"hilos_logs","httpCode":404,"errorCode":"not_found","title":"Page Not Found","message":"The page you are looking for does not exist."}}',
     )
 
     const received: string[] = []

@@ -16,20 +16,22 @@ const NOT_FOUND: PageSubscriptionError = {
   page: 'user',
   httpCode: 404,
   errorCode: 'not_found',
-  message: 'Resource #9 not found',
+  title: 'Page Not Found',
+  message: 'The page you are looking for does not exist.',
 }
 
 const FORBIDDEN: PageSubscriptionError = {
   page: 'user',
   httpCode: 403,
   errorCode: 'forbidden',
-  message: 'Access forbidden',
+  title: 'Forbidden',
+  message: 'You do not have access to this page.',
 }
 
 describe('ErrorPage', () => {
   afterEach(cleanup)
 
-  it('renders the HTTP code and a mapped title', () => {
+  it('renders the HTTP code and server title', () => {
     const { container } = render(<ErrorPage error={NOT_FOUND} />)
 
     const surface = container.querySelector('[data-id="page-error"]')
@@ -38,9 +40,16 @@ describe('ErrorPage', () => {
     expect(surface?.textContent).toContain('Page Not Found')
   })
 
-  it('falls back to a generic title for an unmapped status', () => {
+  it('renders server fallback wording for an unmapped status', () => {
     const { container } = render(
-      <ErrorPage error={{ ...NOT_FOUND, httpCode: 418 }} />,
+      <ErrorPage
+        error={{
+          ...NOT_FOUND,
+          httpCode: 418,
+          title: 'Error',
+          message: 'An error occurred.',
+        }}
+      />,
     )
 
     expect(
@@ -48,10 +57,31 @@ describe('ErrorPage', () => {
     ).toContain('Error')
   })
 
-  // The 403 row answers every refusal, so it must not name the refused person:
-  // an administrator whose privilege was revoked under an open page used to read
-  // that they were a guest (HIL-779). The literal lives here on purpose — read
-  // from the component, the assertion would follow a rewording silently.
+  it('renders arbitrary server text literally for a known status', () => {
+    const { container } = render(
+      <ErrorPage
+        error={{
+          ...FORBIDDEN,
+          title: 'Server <b>title</b>',
+          message: 'Server <em>description</em> & details.',
+        }}
+      />,
+    )
+    const surface = container.querySelector('[data-id="page-error"]')
+    expect(surface?.querySelector('.lead')?.textContent).toBe(
+      'Server <b>title</b>',
+    )
+    expect(surface?.querySelector('p.text-body-secondary')?.textContent).toBe(
+      'Server <em>description</em> & details.',
+    )
+    expect(surface?.querySelector('b, em')).toBeNull()
+    expect(
+      surface
+        ?.querySelector('[data-id="page-error-home"]')
+        ?.getAttribute('href'),
+    ).toBe('/')
+  })
+
   it('refuses a 403 without calling the reader a guest', () => {
     const { container } = render(<ErrorPage error={FORBIDDEN} />)
 
@@ -122,6 +152,7 @@ const UNAUTHORIZED: PageSubscriptionError = {
   page: 'user',
   httpCode: 401,
   errorCode: 'unauthorized',
+  title: 'Unauthorized',
   message: 'Authentication required',
 }
 

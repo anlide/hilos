@@ -405,7 +405,7 @@ final class PageAccessGateTest extends TestCase
         $this->assertInstanceOf(PageActionErrorSignalData::class, $error);
         $this->assertSame('req-1', $error->requestId);
         $this->assertSame(ActionViewModeException::ERROR_CODE, $error->errorCode);
-        $this->assertSame(SignalConstants::ACTION_FAILED_REASON, $error->reason);
+        $this->assertSame('View mode: you can look around, but not change anything.', $error->reason);
         $this->assertNull($error->errorType);
         $this->assertNull($error->errorDetail);
 

@@ -710,6 +710,7 @@ describe('sessionScope', () => {
           channel: null,
           expiresAt: null,
           code: 'identifier_taken',
+          message: 'That address already has an account — sign in instead.',
         },
       },
     })
@@ -722,6 +723,7 @@ describe('sessionScope', () => {
       channel: null,
       expiresAt: null,
       code: 'identifier_taken',
+      message: 'That address already has an account — sign in instead.',
       secondFactor: null,
       acceptedRevisions: null,
     })
@@ -740,6 +742,7 @@ describe('sessionScope', () => {
         intent: 'register',
         step,
         expiresAt: Date.now() + 60_000,
+        message: null,
       }
       connection.emitHandshakeResponse({
         data: { pendingAuthStep: { ...pending, acceptedRevisions } },
@@ -766,6 +769,7 @@ describe('sessionScope', () => {
             intent: 'register',
             step: 'code',
             expiresAt: Date.now() + 60_000,
+            message: null,
             acceptedRevisions,
           },
         },
@@ -793,6 +797,7 @@ describe('sessionScope', () => {
           channel: null,
           expiresAt: null,
           code: null,
+          message: null,
         },
       },
     })
@@ -808,6 +813,7 @@ describe('sessionScope', () => {
           channel: null,
           expiresAt: 1_700_000_000_000,
           code: 'identifier_taken',
+          message: 'That address already has an account — sign in instead.',
         },
       },
     })
@@ -834,11 +840,77 @@ describe('sessionScope', () => {
           channel: null,
           expiresAt: null,
           code: null,
+          message: null,
         },
       },
     })
 
     expect(step.get()).toBeNull()
+  })
+})
+
+describe('pending auth step server words', () => {
+  it.each([
+    {
+      identifier: 'ada@example.com',
+      kind: 'email',
+      intent: 'register',
+      step: 'code',
+      expiresAt: 1_700_000_600_000,
+    },
+    {
+      identifier: 'ada@example.com',
+      kind: 'email',
+      intent: 'recovery',
+      step: 'set_password',
+      expiresAt: 1_700_000_600_000,
+    },
+    {
+      identifier: 'ada@example.com',
+      kind: 'email',
+      intent: 'login',
+      step: 'identifier',
+      expiresAt: null,
+      code: 'identifier_taken',
+    },
+    {
+      identifier: null,
+      kind: null,
+      intent: 'login',
+      step: 'identifier',
+      expiresAt: null,
+      code: 'second_factor_expired',
+    },
+    ...['second_factor', 'second_factor_setup'].map((step) => ({
+      identifier: null,
+      kind: null,
+      intent: 'login',
+      step,
+      expiresAt: 1_700_000_600_000,
+      secondFactor: { trustDeviceDays: 30, resetEffectiveAt: null },
+    })),
+  ])('preserves and validates message on $intent / $step', (node) => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const pending = sessionPendingAuthStep(scopes)
+
+    for (const message of [null, 'Arbitrary server words: déjà vu.']) {
+      connection.emitHandshakeResponse({
+        data: { pendingAuthStep: { ...node, message } },
+      })
+      expect(pending.get()).toMatchObject({ step: node.step, message })
+    }
+
+    // Missing is not a quiet resume, even after a valid node was received.
+    connection.emitHandshakeResponse({ data: { pendingAuthStep: node } })
+    expect(pending.get()).toBeNull()
+    for (const message of [undefined, false, 42, [], {}]) {
+      connection.emitHandshakeResponse({
+        data: { pendingAuthStep: { ...node, message } },
+      })
+      expect(pending.get()).toBeNull()
+    }
   })
 })
 
@@ -863,6 +935,7 @@ describe('a sign-in held on its second factor (HIL-494)', () => {
             channel: null,
             expiresAt: LOCAL_NOW + SERVER_DRIFT_MS + 60_000,
             code: null,
+            message: null,
             secondFactor: {
               trustDeviceDays: 30,
               resetEffectiveAt: LOCAL_NOW + SERVER_DRIFT_MS + 86_400_000,
@@ -879,6 +952,7 @@ describe('a sign-in held on its second factor (HIL-494)', () => {
         channel: null,
         expiresAt: LOCAL_NOW + 60_000,
         code: null,
+        message: null,
         secondFactor: {
           trustDeviceDays: 30,
           resetEffectiveAt: LOCAL_NOW + 86_400_000,
@@ -907,6 +981,7 @@ describe('a sign-in held on its second factor (HIL-494)', () => {
           channel: null,
           expiresAt: 1_700_000_000_000,
           code: null,
+          message: null,
           secondFactor: { trustDeviceDays: null, resetEffectiveAt: null },
         },
       },
@@ -931,6 +1006,7 @@ describe('a sign-in held on its second factor (HIL-494)', () => {
       channel: null,
       expiresAt: 1_700_000_000_000,
       code: null,
+      message: null,
       secondFactor: { trustDeviceDays: 30, resetEffectiveAt: null },
     }
 
@@ -960,6 +1036,7 @@ describe('a sign-in held on its second factor (HIL-494)', () => {
       channel: null,
       expiresAt: null,
       code: null,
+      message: null,
     }
 
     connection.emitHandshakeResponse({ data: { pendingAuthStep: released } })

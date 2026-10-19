@@ -287,14 +287,8 @@ abstract class DaemonManager extends BaseManager implements
     /** @var string Error code a browser is answered with when the node serving its page cannot be reached */
     private const string SUBSCRIPTION_NODE_UNREACHABLE_CODE = 'node_unreachable';
 
-    /** @var string Message a browser is answered with when the node serving its page cannot be reached */
-    private const string SUBSCRIPTION_NODE_UNREACHABLE_MESSAGE = 'This page is temporarily unavailable. Please try again.';
-
     /** @var string Error code a browser is answered with when the agent serving its page could not be started here */
     private const string SUBSCRIPTION_AGENT_UNAVAILABLE_CODE = 'agent_unavailable';
-
-    /** @var string Message a browser is answered with when the agent serving its page could not be started here */
-    private const string SUBSCRIPTION_AGENT_UNAVAILABLE_MESSAGE = 'This page is temporarily unavailable. Please try again.';
 
     /** @var string Message a browser is answered with when no registered class serves the group it named */
     private const string SUBSCRIPTION_GROUP_UNSERVED_MESSAGE = 'This channel is not available.';
@@ -5129,7 +5123,6 @@ abstract class DaemonManager extends BaseManager implements
             $signal,
             HttpConstants::HTTP_SERVICE_UNAVAILABLE,
             self::SUBSCRIPTION_NODE_UNREACHABLE_CODE,
-            self::SUBSCRIPTION_NODE_UNREACHABLE_MESSAGE,
             'the node serving it is unreachable',
         );
     }
@@ -5153,7 +5146,6 @@ abstract class DaemonManager extends BaseManager implements
             $signal,
             HttpConstants::HTTP_SERVICE_UNAVAILABLE,
             self::SUBSCRIPTION_AGENT_UNAVAILABLE_CODE,
-            self::SUBSCRIPTION_AGENT_UNAVAILABLE_MESSAGE,
             'the agent serving it could not be started on this node',
         );
     }
@@ -5173,7 +5165,6 @@ abstract class DaemonManager extends BaseManager implements
             $signal,
             HttpConstants::HTTP_NOT_FOUND,
             PageErrorCode::NOT_SERVED,
-            SignalConstants::SUBSCRIPTION_FAILED_REASON,
             'no page of this project serves it',
         );
     }
@@ -5188,7 +5179,6 @@ abstract class DaemonManager extends BaseManager implements
      * @param SignalDTO $signal Signal that could not be delivered, a subscribe or not
      * @param int $httpCode HTTP status of the refusal
      * @param string $errorCode Error code of the refusal, one of the SUBSCRIPTION_* codes
-     * @param string $message Sentence the browser is answered with, one of the SUBSCRIPTION_* messages
      * @param string $reason Why the subscription went unanswered, as the journal line ends
      * @throws InvalidArgumentException When the subscription-error signal cannot be named
      */
@@ -5196,7 +5186,6 @@ abstract class DaemonManager extends BaseManager implements
         SignalDTO $signal,
         int $httpCode,
         string $errorCode,
-        string $message,
         string $reason,
     ): void {
         if ($signal->signalType->getType() !== SignalTypeConstants::PAGE_SUBSCRIBE) {
@@ -5218,11 +5207,10 @@ abstract class DaemonManager extends BaseManager implements
             signalType: new SignalType(SignalTypeConstants::WS_USER),
             signalName: new SignalName(SignalConstants::SUBSCRIPTION_PAGE_ERROR),
             signalData: new WebSocketSignalData(
-                data: new PageSubscriptionErrorSignalData(
+                data: PageSubscriptionErrorSignalData::forStatus(
                     page: $page,
                     httpCode: $httpCode,
                     errorCode: $errorCode,
-                    message: $message,
                 ),
                 targetAcceptKey: $data->acceptKey,
             ),

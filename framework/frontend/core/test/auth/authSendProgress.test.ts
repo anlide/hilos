@@ -21,6 +21,7 @@ describe('code send progress frame', () => {
   it('parses a reported step with the provider sentence', () => {
     const parsed = codeSendProgressSchema.parse({
       state: CODE_SEND_STATE_FAILED,
+      message: 'The server has different words for this refusal.',
       channel: 'email',
       detail: 'mailbox unavailable (550)',
     })
@@ -30,11 +31,42 @@ describe('code send progress frame', () => {
     // The provider's own words travel as text and untranslated: the refusal is
     // the one thing on this line no key of ours can hold.
     expect(parsed.detail).toBe('mailbox unavailable (550)')
+    expect(parsed.message).toBe(
+      'The server has different words for this refusal.',
+    )
+  })
+
+  it.each([
+    {},
+    { message: undefined },
+    { message: 7 },
+    { message: false },
+    { message: [] },
+  ])(
+    'rejects an absent or mistyped message %j, including on an empty frame',
+    (payload) => {
+      expect(codeSendProgressSchema.safeParse(payload).success).toBe(false)
+      expect(
+        codeSendProgressSchema.safeParse({
+          state: CODE_SEND_STATE_FAILED,
+          ...payload,
+        }).success,
+      ).toBe(false)
+    },
+  )
+
+  it('allows the old fields to remain absent when the message is explicitly null', () => {
+    expect(codeSendProgressSchema.parse({ message: null })).toMatchObject({
+      state: null,
+      message: null,
+      detail: null,
+    })
   })
 
   it('parses the step of a letter that was only written down', () => {
     const parsed = codeSendProgressSchema.parse({
       state: CODE_SEND_STATE_NOT_SENT,
+      message: null,
       channel: 'email',
       detail: null,
     })
@@ -50,6 +82,7 @@ describe('code send progress frame', () => {
   it('parses the empty frame that takes the line away', () => {
     const parsed = codeSendProgressSchema.parse({
       state: null,
+      message: null,
       channel: null,
       detail: null,
     })
@@ -65,6 +98,7 @@ describe('code send progress frame', () => {
   it('reads a frame that omits what it has nothing to say about', () => {
     const parsed = codeSendProgressSchema.parse({
       state: CODE_SEND_STATE_QUEUED,
+      message: null,
       channel: 'email',
     })
 
@@ -76,6 +110,7 @@ describe('code send progress frame', () => {
   it('carries the outcome of a phone code on its closing step (HIL-1044)', () => {
     const parsed = codeSendProgressSchema.parse({
       state: CODE_SEND_STATE_SENT,
+      message: null,
       channel: 'telegram',
       detail: null,
       ticket: 'a1b2c3d4e5f60718',
@@ -96,6 +131,7 @@ describe('code send progress frame', () => {
   it('reads a step before the closing one as carrying no outcome', () => {
     const parsed = codeSendProgressSchema.parse({
       state: CODE_SEND_STATE_QUEUED,
+      message: null,
       channel: 'telegram',
     })
 
@@ -121,7 +157,12 @@ describe('code send progress frame', () => {
     for (const listener of listeners) {
       listener({
         type: SIGNAL_CODE_SEND_PROGRESS,
-        data: { state: CODE_SEND_STATE_SENT, channel: 'email', detail: null },
+        data: {
+          state: CODE_SEND_STATE_SENT,
+          channel: 'email',
+          detail: null,
+          message: null,
+        },
       })
     }
 
@@ -131,6 +172,7 @@ describe('code send progress frame', () => {
     // what makes a reload come back to the same line.
     expect(hilosCodeSendProgress.get()).toEqual({
       state: CODE_SEND_STATE_SENT,
+      message: null,
       channel: 'email',
       purpose: null,
       detail: null,
@@ -140,10 +182,25 @@ describe('code send progress frame', () => {
       expiresAt: null,
     })
 
+    const replay = {
+      state: CODE_SEND_STATE_FAILED,
+      channel: 'email',
+      ticket: 'same-ticket',
+      reason: 'code_send_failed',
+      message: 'The replay must keep these exact words.',
+      detail: 'mailbox unavailable (550)',
+    }
+    for (const listener of listeners) {
+      listener({ type: SIGNAL_CODE_SEND_PROGRESS, data: replay })
+      listener({ type: 'handshake_response', data: {} })
+      listener({ type: SIGNAL_CODE_SEND_PROGRESS, data: replay })
+    }
+    expect(hilosCodeSendProgress.get()).toMatchObject(replay)
+
     for (const listener of listeners) {
       listener({
         type: SIGNAL_CODE_SEND_PROGRESS,
-        data: { state: null, channel: null, detail: null },
+        data: { state: null, channel: null, detail: null, message: null },
       })
     }
 
@@ -168,6 +225,7 @@ describe('code send progress frame', () => {
         type: SIGNAL_CODE_SEND_PROGRESS,
         data: {
           state: CODE_SEND_STATE_HELD,
+          message: null,
           channel: 'email',
           purpose: 'change_password',
         },
@@ -213,6 +271,7 @@ describe('code send progress frame', () => {
           type: SIGNAL_CODE_SEND_PROGRESS,
           data: {
             state: CODE_SEND_STATE_SENT,
+            message: null,
             purpose: 'change_password',
             resendAt: Date.now() + 47_000,
             expiresAt: Date.now() + 65_000,

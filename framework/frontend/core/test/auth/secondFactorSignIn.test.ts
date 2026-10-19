@@ -51,6 +51,7 @@ function detected(identifier: string): IdentifierDetection {
     registerable: ['password'],
     registrationBlock: null,
     signInBlock: null,
+    message: null,
   }
 }
 
@@ -72,14 +73,22 @@ function heldStep(overrides: Partial<PendingAuthStep> = {}): PendingAuthStep {
     channel: null,
     expiresAt: LOCAL_NOW + 15 * 60_000,
     code: null,
+    message: null,
     secondFactor: { trustDeviceDays: 30, resetEffectiveAt: null },
     acceptedRevisions: null,
     ...overrides,
   }
 }
 
-/** The handshake node of a wait let go: the field, naming nobody. */
-function releasedStep(code: string | null = null): PendingAuthStep {
+/**
+ * The handshake node of a wait let go: the field, naming nobody.
+ * @param code The reason the wait ended, or null for a quiet release.
+ * @param message The server's words about that reason, or null.
+ */
+function releasedStep(
+  code: string | null = null,
+  message: string | null = null,
+): PendingAuthStep {
   return {
     identifier: null,
     kind: null,
@@ -88,6 +97,7 @@ function releasedStep(code: string | null = null): PendingAuthStep {
     channel: null,
     expiresAt: null,
     code,
+    message,
     secondFactor: null,
     acceptedRevisions: null,
   }
@@ -179,6 +189,7 @@ describe('the code step a proven sign-in is held on', () => {
       channel: null,
       expiresAt: LOCAL_NOW + 60_000,
       code: null,
+      message: null,
       secondFactor: null,
       acceptedRevisions: null,
     })
@@ -417,7 +428,12 @@ describe('a held sign-in restored by the handshake', () => {
   it('comes back to the field when the wait ran out while the tab was closed', async () => {
     const onDetect = vi.fn(async (identifier: string) => detected(identifier))
     const flow = setup({ onDetect })
-    flow.resume(releasedStep('second_factor_expired'))
+    flow.resume(
+      releasedStep(
+        'second_factor_expired',
+        'Your sign-in step expired. Sign in again.',
+      ),
+    )
 
     expect(flow.flow.get().step).toBe('identifier')
     // Nobody is named, so nothing is looked up.
@@ -516,7 +532,12 @@ describe('the step every tab of a browser follows', () => {
     const flow = setup()
     flow.setField('identifier', 'ada@b.com')
     flow.setField('password', 'secret-1')
-    flow.followReportedStep(releasedStep('second_factor_attempts'))
+    flow.followReportedStep(
+      releasedStep(
+        'second_factor_attempts',
+        'Too many wrong codes. Sign in again.',
+      ),
+    )
     flow.followReportedStep({
       identifier: 'ada@b.com',
       kind: 'email',
@@ -525,6 +546,7 @@ describe('the step every tab of a browser follows', () => {
       channel: null,
       expiresAt: LOCAL_NOW + 60_000,
       code: null,
+      message: null,
       secondFactor: null,
       acceptedRevisions: null,
     })

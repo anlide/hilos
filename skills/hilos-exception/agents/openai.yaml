@@ -1,4 +1,4 @@
 interface:
   display_name: "Hilos Exceptions"
   short_description: "Choose exception classes and document @throws contracts"
-  default_prompt: "Use $hilos-exception to choose Hilos exception classes and update @throws docs."
+  default_prompt: "Use $hilos-exception to choose Hilos exception classes and update @throws docs. When writing or exposing refusal words, read the section A failure reason is a domain sentence, never an engine message in docs/agents/frontend/wire-protocol.md."

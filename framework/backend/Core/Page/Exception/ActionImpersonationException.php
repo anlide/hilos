@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Core\Page\Exception;
 
 use Hilos\Auth\Impersonation\ImpersonationSettings;
+use Hilos\Core\Action\ActionMessages;
+use Hilos\Core\Exception\PersonFacingFailure;
 use Hilos\Core\Page\PageException;
 use Hilos\Core\Page\PageSignalRouter;
 use Throwable;
@@ -16,14 +18,13 @@ use Throwable;
  * the impersonation settings ({@see ImpersonationSettings}) close inside a takeover. Two codes,
  * one per setting: `impersonation_view_only` - only looking is allowed, and every writing action is
  * refused - and `impersonated` - the sign-in of the account is not to be touched. The code is its
- * own and not `forbidden`: the administrator holds every right the page asks for, and the screen
- * says why in its own words, picked by the code.
+ * own and not `forbidden`: the administrator holds every right the page asks for.
  *
- * Not a validation refusal: the message is written for the journal, and the client gets the
- * impersonal placeholder with the code. The dispatcher ({@see PageSignalRouter}) journals it as a
- * verdict, not as a failure.
+ * The person-facing message defaults to the catalog sentence for the given code and travels
+ * with it in the action-error frame. The dispatcher ({@see PageSignalRouter}) journals it as
+ * a verdict, not as a failure.
  */
-final class ActionImpersonationException extends PageException
+final class ActionImpersonationException extends PageException implements PersonFacingFailure
 {
     /** Code: inside a takeover the administrator only looks. */
     public const string CODE_VIEW_ONLY = 'impersonation_view_only';
@@ -35,14 +36,18 @@ final class ActionImpersonationException extends PageException
      * Creates the impersonation refusal with 403 access semantics.
      *
      * @param string $errorCode One of the CODE_* constants, carried to the client action_error
-     * @param string $message Message for the journal
+     * @param ?string $message Person-facing refusal message, or null for the code's catalog sentence
      * @param ?Throwable $previous Previous exception for chaining
      */
     public function __construct(
         public readonly string $errorCode,
-        string $message = 'Refused inside an impersonation by the impersonation settings',
+        ?string $message = null,
         ?Throwable $previous = null,
     ) {
-        parent::__construct($message, 403, $previous);
+        parent::__construct(
+            $message ?? ($errorCode === self::CODE_VIEW_ONLY ? ActionMessages::IMPERSONATION_VIEW_ONLY : ActionMessages::IMPERSONATED),
+            403,
+            $previous,
+        );
     }
 }

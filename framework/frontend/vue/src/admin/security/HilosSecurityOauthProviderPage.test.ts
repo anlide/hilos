@@ -10,7 +10,6 @@ import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionLifecycle,
-  HILOS_VIEW_MODE_COPY,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   ScopeManager,
@@ -102,7 +101,11 @@ function seededContext(clientId: string | null): {
   context: HilosSecurityOauthContext
   pushUpdate: (value: string | null, source?: string) => void
   pushRemove: (rowKey: string) => void
-  answer: (outcome: 'success' | 'fail', errorCode?: string) => void
+  answer: (
+    outcome: 'success' | 'fail',
+    errorCode?: string,
+    reason?: string,
+  ) => void
   sent: Array<{
     action: string
     payload: Record<string, unknown>
@@ -246,7 +249,11 @@ function seededContext(clientId: string | null): {
       pushDelta({ kind: 'row_removed', rowKey, reason: 'deleted' })
     },
     // Answer the last action sent, the way the server replies to it.
-    answer(outcome: 'success' | 'fail', errorCode?: string): void {
+    answer(
+      outcome: 'success' | 'fail',
+      errorCode?: string,
+      reason = 'The provider refused the reset.',
+    ): void {
       const last = sent[sent.length - 1]
       const event = outcome === 'success' ? 'actionSuccess' : 'actionError'
       for (const listener of replyListeners.get(event) ?? []) {
@@ -254,7 +261,7 @@ function seededContext(clientId: string | null): {
           kind: event,
           action: last?.action,
           requestId: last?.requestId,
-          reason: 'The provider refused the reset.',
+          reason,
           ...(errorCode !== undefined ? { errorCode } : {}),
         })
       }
@@ -706,13 +713,17 @@ describe('HilosSecurityOauthProviderPage in the admin view mode', () => {
       value: 'Iv1.mine',
     })
 
-    answer('fail', 'view_mode')
+    answer(
+      'fail',
+      'view_mode',
+      'View mode: you can look around, but not change anything.',
+    )
     await settle()
     await nextTick()
 
     expect(modalEl('modal')).not.toBeNull()
     expect(modalEl('hilos-action-error')?.textContent).toContain(
-      HILOS_VIEW_MODE_COPY.refusal,
+      'View mode: you can look around, but not change anything.',
     )
     expect(saveButton().disabled).toBe(true)
   })

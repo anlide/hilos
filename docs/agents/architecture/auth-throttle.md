@@ -196,13 +196,12 @@ payload (`actionErrorSignalDataSchema` in
 `framework/frontend/core/src/protocol/envelope.ts`).
 
 The refusal has **no screen of its own**: it travels the ordinary action-error path
-every failed action uses. Its words are the client's, not the server's: the
-exception is not of the person-facing family, so the frame carries the placeholder
-reason (`SignalConstants::ACTION_FAILED_REASON`) beside the code, and the sign-in
-surface draws `rate_limited` in its own words — "Too many attempts…". The core hands
-it the code alone for exactly that reason (`failedOutcome()` in
-`framework/frontend/core/src/auth/authActions.ts`, HIL-1280); before that the
-surface showed the placeholder. A denial that arrived without a number still denies —
+every failed action uses. `ActionRateLimitedException` declares `PersonFacingFailure`
+while remaining a page exception: its safe server reason travels beside the code
+and `retryAfter`. The core preserves that reason through the auth outcome, and
+the sign-in surface displays it; the code selects behavior, not local wording.
+See [the refusal-copy rule](../frontend/wire-protocol.md#a-failure-reason-is-a-domain-sentence-never-an-engine-message).
+A denial that arrived without a number still denies —
 dropping a decision because a hint went missing would let a blocked key through —
 and the client is told the shortest wait the ladder can impose instead.
 

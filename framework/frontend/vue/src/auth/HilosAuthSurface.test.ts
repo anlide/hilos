@@ -26,6 +26,7 @@ import {
   AUTH_ACTION_LOGIN,
   AUTH_ACTION_REGISTRATION_PASSKEY_OPTIONS,
   AUTH_ACTION_REQUEST_MAGIC_LINK,
+  AUTH_CONVERGE_SIGNAL,
   AUTH_SURFACE_HEADING_ID,
   bindCodeSendProgress,
   bindPageReady,
@@ -109,6 +110,7 @@ const LOST_RACE_STEP = {
   channel: null,
   expiresAt: null,
   code: 'identifier_taken',
+  message: 'That address already has an account — sign in instead.',
 }
 
 /**
@@ -123,6 +125,7 @@ const RESUMED_CODE_STEP = {
   channel: null,
   expiresAt: Date.now() + 600000,
   code: null,
+  message: null,
 }
 
 /**
@@ -140,6 +143,7 @@ const PROVED_REGISTRATION_STEP = {
   // out, and a node without one is dropped as half-written (sessionScope).
   expiresAt: Date.now() + 600000,
   code: null,
+  message: null,
 }
 
 /** The dispatch calls one mounted surface made, in order. */
@@ -210,6 +214,7 @@ function passwordOnlyContext(refuseLogin = false): {
               registerable: [],
               registrationBlock: null,
               signInBlock: null,
+              message: null,
             }
           : action === AUTH_ACTION_LEGAL_CONSENT
             ? consentTerms()
@@ -280,6 +285,7 @@ function magicLinkContext(): {
               registerable: [],
               registrationBlock: null,
               signInBlock: null,
+              message: null,
             }
           : action === AUTH_ACTION_LEGAL_CONSENT
             ? consentTerms()
@@ -335,6 +341,10 @@ function freeIdentifierContext(
               registerable: [],
               registrationBlock,
               signInBlock: null,
+              message:
+                registrationBlock === 'no_channel'
+                  ? 'No account for this, and there is nothing to send a code with.'
+                  : 'No account for this, and registration is closed.',
             }
           : action === AUTH_ACTION_LEGAL_CONSENT
             ? consentTerms()
@@ -383,6 +393,7 @@ function registrableIdentifierContext(): HilosAuthContext {
               registerable: [PASSWORD_METHOD_KEY, MAGIC_LINK_METHOD_KEY],
               registrationBlock: null,
               signInBlock: null,
+              message: null,
             }
           : action === AUTH_ACTION_LEGAL_CONSENT
             ? consentTerms()
@@ -437,6 +448,10 @@ function liveAccountContext(
               registerable: [],
               registrationBlock: null,
               signInBlock,
+              message:
+                signInBlock === 'no_channel'
+                  ? 'This account signs in by a mailed link, and this installation has nothing to send it with. Whoever runs it can set that up.'
+                  : null,
             }
           : action === AUTH_ACTION_LEGAL_CONSENT
             ? consentTerms()
@@ -498,6 +513,7 @@ function heldIdentifierContext(): {
               registerable: [],
               registrationBlock: null,
               signInBlock: null,
+              message: null,
             }
           : action === AUTH_ACTION_LEGAL_CONSENT
             ? consentTerms()
@@ -549,6 +565,7 @@ function provenOnReturnContext(dispatched?: Dispatched): HilosAuthContext {
           registerable: answered ? [] : [PASSWORD_METHOD_KEY],
           registrationBlock: null,
           signInBlock: null,
+          message: null,
         }
         answered = true
       } else if (action === AUTH_ACTION_LEGAL_CONSENT) {
@@ -612,6 +629,7 @@ function expiringLetterContext(lifetimeMs: number): {
               registerable: [],
               registrationBlock: null,
               signInBlock: null,
+              message: null,
             }
           : {
               ok: true,
@@ -795,7 +813,7 @@ function reportSendProgress(
   for (const listener of listeners) {
     listener({
       type: SIGNAL_CODE_SEND_PROGRESS,
-      data: { state, channel: 'email', detail },
+      data: { state, channel: 'email', detail, message: null },
     })
   }
   unbind()
@@ -1748,6 +1766,8 @@ describe('HilosAuthSurface', () => {
         registerable: [],
         registrationBlock: 'no_channel',
         signInBlock: null,
+        message:
+          'No account for this, and there is nothing to send a code with.',
       },
     })
     await flush(wrapper)
@@ -2270,6 +2290,7 @@ describe('HilosAuthSurface', () => {
       acceptKey: 'accept-1',
       provider: GITHUB_PROVIDER,
       reason: OAUTH_REASON_LOGIN_FAILED,
+      message: OAUTH_FAILED_MESSAGE,
       email: null,
       linkToken: null,
     })
@@ -2304,6 +2325,7 @@ describe('HilosAuthSurface', () => {
         acceptKey: 'accept-1',
         provider: GITHUB_PROVIDER,
         reason: OAUTH_REASON_CONSENT_REQUIRED,
+        message: null,
         email,
         linkToken: null,
         accountToken: 'signed-account-token',
@@ -2401,6 +2423,7 @@ describe('HilosAuthSurface on a sign-in held on its second factor (HIL-494)', ()
     channel: null,
     expiresAt: Date.now() + 600000,
     code: null,
+    message: null,
     secondFactor: { trustDeviceDays: 30, resetEffectiveAt: null },
   }
 
@@ -2515,6 +2538,7 @@ describe('HilosAuthSurface on a sign-in held on its second factor (HIL-494)', ()
       channel: null,
       expiresAt: null,
       code: 'second_factor_attempts',
+      message: 'Too many wrong codes. Sign in again.',
     })
     await flush(wrapper)
 
@@ -2587,6 +2611,7 @@ const PHONE_CODE_STEP = {
   channel: 'sms',
   expiresAt: Date.now() + 600000,
   code: null,
+  message: null,
 }
 
 /**
@@ -3054,6 +3079,367 @@ describe('HilosAuthSurface offers a passkey account on an empty field (HIL-1106)
       'Your address is confirmed and you are signed in.',
     )
     wrapper.unmount()
+  })
+})
+
+describe('HilosAuthSurface server refusal copy (HIL-1516)', () => {
+  let wrapper: VueWrapper | undefined
+
+  afterEach(() => {
+    wrapper?.unmount()
+    wrapper = undefined
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+  })
+
+  it.each([
+    {
+      source: 'action',
+      code: 'rate_limited',
+      message: 'Wait for this server to allow another attempt.',
+      expected: 'Wait for this server to allow another attempt.',
+    },
+    {
+      source: 'reply',
+      code: 'reservation_expired',
+      message: ' <b>This reservation ended on the server.</b> ',
+      expected: ' <b>This reservation ended on the server.</b> ',
+    },
+    { source: 'action', code: 'rate_limited', message: '', expected: '' },
+    { source: 'reply', code: 'identifier_taken', message: '', expected: '' },
+    {
+      source: 'reply',
+      code: 'rate_limited',
+      message: undefined,
+      expected: 'That did not work. Please try again.',
+    },
+    {
+      source: 'transport',
+      code: undefined,
+      message: undefined,
+      expected: 'Could not reach the server. Please try again.',
+    },
+  ])(
+    'shows $source copy for $code: $message',
+    async ({ source, code, message, expected }) => {
+      vi.useFakeTimers()
+      const { context } = passwordOnlyContext()
+      const original = context.actions.dispatch.bind(context.actions)
+      vi.spyOn(context.actions, 'dispatch').mockImplementation(
+        (action, payload, options) => {
+          if (action !== AUTH_ACTION_LOGIN)
+            return original(action, payload, options)
+
+          return {
+            requestId: 'refused-login',
+            loading: createSignal(false),
+            done:
+              source === 'reply'
+                ? Promise.resolve({
+                    reply: {
+                      ok: false,
+                      code,
+                      message,
+                      next: { step: 'identifier', intent: 'login' },
+                    },
+                  })
+                : Promise.reject(
+                    new ActionError(
+                      action,
+                      source === 'transport' ? 'timeout' : 'fail',
+                      message ?? 'No reply',
+                      undefined,
+                      undefined,
+                      code,
+                    ),
+                  ),
+          } as ActionHandle
+        },
+      )
+      wrapper = mount(HilosAuthSurface, { props: { context } })
+      await wrapper
+        .get('[data-id="auth-identifier"]')
+        .setValue('someone@example.com')
+      await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+      await wrapper.get('[data-id="auth-password"]').setValue('wrong password')
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+
+      expect(
+        wrapper.get('[data-id="auth-live-assertive"]').element.textContent,
+      ).toBe(expected)
+      if (expected === '') {
+        expect(wrapper.find('[data-id="auth-error"]').exists()).toBe(false)
+        expect(wrapper.get('[data-id="auth-error-idle"]').classes()).toContain(
+          'invisible',
+        )
+      } else {
+        const row = wrapper.get('[data-id="auth-error"]')
+        expect(row.get('.text-truncate').element.textContent).toBe(expected)
+        expect(row.find('b').exists()).toBe(false)
+        expect(
+          row.get('[data-id="auth-error-details"]').attributes('aria-label'),
+        ).toBe('Show error details')
+      }
+      expect(wrapper.find('[data-id="auth-notice"]').exists()).toBe(false)
+      expect(
+        wrapper.get('[data-id="auth-submit"]').attributes('disabled'),
+      ).toBeUndefined()
+    },
+  )
+
+  it.each([
+    {
+      identifier: ' SomeOne@EXAMPLE.com ',
+      normalized: 'someone@example.com',
+      kind: 'email',
+    },
+    {
+      identifier: '+1 (202) 555-0123',
+      normalized: '+12025550123',
+      kind: 'phone',
+    },
+  ])(
+    'applies only the current normalized $kind converge and clears a silent notice',
+    async ({ identifier, normalized, kind }) => {
+      vi.useFakeTimers()
+      const { context, emitProjectSignal } = passwordOnlyContext()
+      vi.spyOn(context.actions, 'dispatch').mockReturnValue({
+        requestId: 'normalized-detection',
+        loading: createSignal(false),
+        done: Promise.resolve({
+          reply: {
+            identifier,
+            normalized,
+            kind,
+            status: 'active',
+            methods: [PASSWORD_METHOD_KEY],
+            registerable: [],
+            registrationBlock: null,
+            signInBlock: null,
+            message: null,
+          },
+        }),
+      } as ActionHandle)
+      wrapper = mount(HilosAuthSurface, { props: { context } })
+      await wrapper.get('[data-id="auth-identifier"]').setValue(identifier)
+      await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+      if (kind === 'email') {
+        await wrapper.get('[data-id="auth-password"]').setValue('still typing')
+      }
+      const data = {
+        identifier: 'somebody-else@example.com',
+        step: 'code',
+        intent: 'register',
+        code: 'reservation_expired',
+        message: '<b>The server moved this registration.</b>',
+      }
+      emitProjectSignal({ type: AUTH_CONVERGE_SIGNAL, data })
+      await flush(wrapper)
+      expect(wrapper.find('[data-id="auth-notice"]').exists()).toBe(false)
+      expect(wrapper.find('[data-id="auth-code"]').exists()).toBe(false)
+      expect(
+        (wrapper.get('[data-id="auth-identifier"]').element as HTMLInputElement)
+          .value,
+      ).toBe(identifier)
+      if (kind === 'email') {
+        expect(
+          (wrapper.get('[data-id="auth-password"]').element as HTMLInputElement)
+            .value,
+        ).toBe('still typing')
+      }
+
+      emitProjectSignal({
+        type: AUTH_CONVERGE_SIGNAL,
+        data: { ...data, identifier: normalized },
+      })
+      await flush(wrapper)
+      const notice = wrapper.get('[data-id="auth-notice"]')
+      expect(notice.text()).toBe(data.message)
+      expect(notice.find('b').exists()).toBe(false)
+      expect(wrapper.find('[data-id="auth-code"]').exists()).toBe(true)
+
+      emitProjectSignal({
+        type: AUTH_CONVERGE_SIGNAL,
+        data: {
+          ...data,
+          identifier: normalized,
+          step: 'identifier',
+          intent: 'login',
+          message: null,
+        },
+      })
+      await flush(wrapper)
+      expect(wrapper.find('[data-id="auth-notice"]').exists()).toBe(false)
+      expect(wrapper.find('[data-id="auth-identifier"]').exists()).toBe(true)
+    },
+  )
+
+  it.each(['mount', 'handshake'])(
+    'shows the pending step sentence on $0',
+    async (arrival) => {
+      const { context } = passwordOnlyContext()
+      const step = {
+        ...LOST_RACE_STEP,
+        message: '<b>This address was claimed while you were away.</b>',
+      }
+      if (arrival === 'mount')
+        context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, step)
+      wrapper = mount(HilosAuthSurface, { props: { context } })
+      if (arrival === 'handshake')
+        context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, step)
+      await flushPromises()
+
+      const notice = wrapper.get('[data-id="auth-notice"]')
+      expect(notice.text()).toBe(step.message)
+      expect(notice.find('b').exists()).toBe(false)
+      expect(wrapper.get('[data-id="auth-live-polite"]').text()).toContain(
+        step.message,
+      )
+      expect(wrapper.find('[data-id="auth-identifier"]').exists()).toBe(true)
+    },
+  )
+
+  it('keeps ordinary resume from rebuilding the form even if it carries words', async () => {
+    vi.useFakeTimers()
+    const { context } = passwordOnlyContext()
+    wrapper = mount(HilosAuthSurface, { props: { context } })
+    await wrapper
+      .get('[data-id="auth-identifier"]')
+      .setValue('someone@example.com')
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await wrapper.get('[data-id="auth-password"]').setValue('still typing')
+
+    context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, {
+      ...RESUMED_CODE_STEP,
+      message: 'An ordinary resume does not announce this.',
+    })
+    await flush(wrapper)
+    expect(wrapper.find('[data-id="auth-code"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="auth-notice"]').exists()).toBe(false)
+    expect(
+      (wrapper.get('[data-id="auth-password"]').element as HTMLInputElement)
+        .value,
+    ).toBe('still typing')
+  })
+
+  it.each([
+    {
+      kind: 'email',
+      identifier: 'someone@example.com',
+      status: 'active',
+      signInBlock: 'no_channel',
+      registrationBlock: null,
+      row: 'auth-error',
+    },
+    {
+      kind: 'phone',
+      identifier: '+12025550123',
+      status: 'active',
+      signInBlock: 'no_channel',
+      registrationBlock: null,
+      row: 'auth-error',
+    },
+    {
+      kind: 'email',
+      identifier: 'someone@example.com',
+      status: 'none',
+      signInBlock: null,
+      registrationBlock: 'closed',
+      row: 'auth-identifier-hint',
+    },
+    {
+      kind: 'email',
+      identifier: 'someone@example.com',
+      status: 'none',
+      signInBlock: null,
+      registrationBlock: 'no_channel',
+      row: 'auth-identifier-hint',
+    },
+  ])(
+    'shows detection words for $status/$kind/$registrationBlock',
+    async ({
+      kind,
+      identifier,
+      status,
+      signInBlock,
+      registrationBlock,
+      row,
+    }) => {
+      vi.useFakeTimers()
+      const { context } = passwordOnlyContext()
+      const message =
+        '<b>The server explains why this address cannot continue.</b>'
+      vi.spyOn(context.actions, 'dispatch').mockReturnValue({
+        requestId: 'refused-detection',
+        loading: createSignal(false),
+        done: Promise.resolve({
+          reply: {
+            identifier,
+            normalized: identifier,
+            kind,
+            status,
+            methods: [],
+            registerable: [],
+            registrationBlock,
+            signInBlock,
+            message,
+          },
+        }),
+      } as ActionHandle)
+      wrapper = mount(HilosAuthSurface, { props: { context } })
+      await wrapper.get('[data-id="auth-identifier"]').setValue(identifier)
+      await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+      await flush(wrapper)
+
+      expect(wrapper.get(`[data-id="${row}"]`).text()).toBe(message)
+      expect(wrapper.get(`[data-id="${row}"]`).find('b').exists()).toBe(false)
+      expect(wrapper.find('[data-id="auth-password"]').exists()).toBe(false)
+      expect(wrapper.find('[data-id="auth-submit"]').exists()).toBe(false)
+      if (status === 'active')
+        expect(wrapper.find('[data-id="auth-identifier-hint"]').exists()).toBe(
+          false,
+        )
+    },
+  )
+
+  it('uses the empty consent reply sentence in the existing unpublished slot', async () => {
+    vi.useFakeTimers()
+    const context = registrableIdentifierContext()
+    const original = context.actions.dispatch.bind(context.actions)
+    const unpublishedMessage =
+      '<b>This project is still preparing its terms.</b>'
+    vi.spyOn(context.actions, 'dispatch').mockImplementation(
+      (action, payload, options) =>
+        action === AUTH_ACTION_LEGAL_CONSENT
+          ? ({
+              requestId: 'unpublished-consent',
+              loading: createSignal(false),
+              done: Promise.resolve({
+                reply: { ...consentTerms(), documents: [], unpublishedMessage },
+              }),
+            } as ActionHandle)
+          : original(action, payload, options),
+    )
+    wrapper = mount(HilosAuthSurface, { props: { context } })
+    await wrapper
+      .get('[data-id="auth-identifier"]')
+      .setValue('newcomer@example.com')
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    const unpublished = wrapper.get('[data-id="legal-consent-unpublished"]')
+    expect(unpublished.text()).toBe(unpublishedMessage)
+    expect(unpublished.find('b').exists()).toBe(false)
+    expect(wrapper.find('[data-id="auth-consent-accept"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="auth-error"]').exists()).toBe(false)
+    expect(
+      wrapper.get('[data-id="auth-submit"]').attributes('disabled'),
+    ).toBeDefined()
+    expect(
+      wrapper.get('[data-id="auth-restart"]').attributes('disabled'),
+    ).toBeUndefined()
   })
 })
 

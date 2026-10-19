@@ -117,18 +117,6 @@ class PageSignalRouter
      */
     private const int IDENTITY_WAIT_TIMEOUT_MS = 500;
 
-    /**
-     * What a subscription that failed for a reason of the node's own tells the client.
-     *
-     * One name for two senders. The generic catch has always sent it; since HIL-575 the
-     * internal-error branch sends it too, in place of the engine's own words, and two spellings
-     * of one sentence would drift the moment either is reworded.
-     */
-    private const string SUBSCRIBE_INTERNAL_ERROR = 'Internal error during subscription';
-
-    /** The same sentence for an update, which the client shows against the page it is already on. */
-    private const string UPDATE_INTERNAL_ERROR = 'Internal error during subscription update';
-
     /** Signal-to-page route config for non-action routed signals. */
     private SignalRouteConfig $signalRoutes;
 
@@ -387,7 +375,6 @@ class PageSignalRouter
                 $data->acceptKey,
                 HttpConstants::HTTP_NOT_FOUND,
                 PageErrorCode::NOT_SERVED,
-                SignalConstants::SUBSCRIPTION_FAILED_REASON,
             );
             return PageResendOutcome::Refused;
         }
@@ -421,7 +408,7 @@ class PageSignalRouter
             }
             // Ahead of its own base class, because it is not the same event. Every other species
             // below is a verdict about the resource or the rights, reached on purpose and worth
-            // an info line and a refusal placeholder to the subscriber. This one says the node is
+            // an info line and public status wording to the subscriber. This one says the node is
             // wrong about itself: error, because nobody comes to fix an info line, and the
             // internal-error sentence, because the text names the inside of the node and the
             // subscriber can act on none of it. The frame it sends is the internal-error frame either way — the species
@@ -433,7 +420,6 @@ class PageSignalRouter
                 $data->acceptKey,
                 $e->httpCode,
                 $e->errorCode,
-                self::SUBSCRIBE_INTERNAL_ERROR,
             );
 
             return PageResendOutcome::Failed;
@@ -461,7 +447,6 @@ class PageSignalRouter
                 $data->acceptKey,
                 $e->httpCode,
                 $e->errorCode,
-                ActionFailureReason::forSubscriber($e),
             );
 
             return PageResendOutcome::Refused;
@@ -477,7 +462,6 @@ class PageSignalRouter
                 $data->acceptKey,
                 HttpConstants::HTTP_INTERNAL_ERROR,
                 'internal_error',
-                self::SUBSCRIBE_INTERNAL_ERROR,
             );
 
             return PageResendOutcome::Failed;
@@ -597,7 +581,6 @@ class PageSignalRouter
                 $data->acceptKey,
                 $e->httpCode,
                 $e->errorCode,
-                self::UPDATE_INTERNAL_ERROR,
             );
         } catch (PageSubscriptionException $e) {
             $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
@@ -608,7 +591,6 @@ class PageSignalRouter
                 $data->acceptKey,
                 $e->httpCode,
                 $e->errorCode,
-                ActionFailureReason::forSubscriber($e),
             );
         } catch (Throwable $e) {
             $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
@@ -619,7 +601,6 @@ class PageSignalRouter
                 $data->acceptKey,
                 HttpConstants::HTTP_INTERNAL_ERROR,
                 'internal_error',
-                self::UPDATE_INTERNAL_ERROR,
             );
         }
     }
@@ -2560,7 +2541,6 @@ class PageSignalRouter
      * @param string $acceptKey Target connection acceptKey
      * @param int $httpCode HTTP status code for the error
      * @param string $errorCode Machine-readable error code
-     * @param string $message Human-readable error message
      */
     private function sendSubscriptionError(
         SignalSourceInterface $signalSource,
@@ -2568,18 +2548,16 @@ class PageSignalRouter
         string $acceptKey,
         int $httpCode,
         string $errorCode,
-        string $message,
     ): void {
         Hilos::$sr->queueSignal(
             signalSource: $signalSource,
             signalType: new SignalType(SignalTypeConstants::WS_USER),
             signalName: new SignalName(SignalConstants::SUBSCRIPTION_PAGE_ERROR),
             signalData: new WebSocketSignalData(
-                data: new PageSubscriptionErrorSignalData(
+                data: PageSubscriptionErrorSignalData::forStatus(
                     page: $page,
                     httpCode: $httpCode,
                     errorCode: $errorCode,
-                    message: $message,
                 ),
                 targetAcceptKey: $acceptKey,
             ),

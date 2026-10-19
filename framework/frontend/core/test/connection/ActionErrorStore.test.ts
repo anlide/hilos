@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { HILOS_VIEW_MODE_COPY } from '../../src/admin/viewMode.js'
 import { ActionErrorStore } from '../../src/connection/ActionErrorStore.js'
 
 /** What the store hears from its source on one action failure. */
@@ -51,13 +50,19 @@ describe('ActionErrorStore', () => {
     )
   })
 
-  it('keeps a view-mode refusal as the mode sentence', () => {
+  it.each([
+    'view_mode',
+    'impersonation_view_only',
+    'impersonated',
+    'rate_limited',
+  ])('keeps the wire reason verbatim for %s', (errorCode) => {
     const source = createSource()
     const store = new ActionErrorStore(source)
+    const reason = ` Server refusal for ${errorCode}.\nKeep this sentence. `
 
-    source.emit('rename', 'The action could not be completed.', 'view_mode')
+    source.emit('rename', reason, errorCode)
     source.emit('message', 'Not allowed.', 'forbidden')
-    expect(store.signal('rename').get()).toBe(HILOS_VIEW_MODE_COPY.refusal)
+    expect(store.signal('rename').get()).toBe(reason)
     expect(store.signal('message').get()).toBe('Not allowed.')
   })
 

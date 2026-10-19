@@ -314,9 +314,10 @@ A guard failure throws a `PageSubscriptionException` subclass, which is caught a
 sent to the client as a `subscription_page_error` signal. The frame carries the
 exception's HTTP status and error code, but not its message: that text is written
 for the journal, and the router logs it in full on the refusal's info line, while
-`message` carries `SignalConstants::SUBSCRIPTION_FAILED_REASON` (or the
-internal-error sentence for a 500). The frontend picks what to show by the codes
-(`docs/agents/frontend/wire-protocol.md`):
+`PageSubscriptionErrorSignalData::forStatus()` supplies required `title` and
+`message` from the server's `PageErrorMessages` catalog. The frontend displays
+those words and uses the codes only for behavior
+([the refusal-copy rule](../frontend/wire-protocol.md#a-failure-reason-is-a-domain-sentence-never-an-engine-message)):
 
 - 404 `not_found` — `PageResourceNotFoundException`: the resource is missing.
 - 404 `not_served` — no page class registered by the project serves the key, including a page of an inactive feature. The master answers when
@@ -345,8 +346,10 @@ codes of the page — 401 `unauthorized`, 403 `forbidden`, 403 `account_frozen`
 error alike) — and its own: 403 `view_mode` (`ActionViewModeException`),
 the refusal of a viewer of the admin view mode, and 403
 `impersonation_view_only` / `impersonated` (`ActionImpersonationException`),
-the refusals of the takeover gate; their reason is the impersonal sentence and
-never the exception's text.
+the refusals of the takeover gate. `ActionViewModeException` and
+`ActionImpersonationException` declare `PersonFacingFailure` and carry their safe
+server reason; unmarked exceptions keep the generic action reason. The codes
+and access behavior are unchanged.
 
 ## Guards run on EVERY delivery path
 

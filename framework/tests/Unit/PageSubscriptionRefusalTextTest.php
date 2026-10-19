@@ -34,7 +34,7 @@ use PHPUnit\Framework\TestCase;
  * Unit tests for the text a refused page subscription carries across the wire (HIL-956).
  *
  * A refusal's own message is written for the journal - a guard's canonical phrase, a route
- * param's name and value - so the frame carries the subscription placeholder while its HTTP
+ * param's name and value - so the frame carries public status wording while its HTTP
  * and error codes stay what they were, and the words stay in the log the router writes.
  */
 final class PageSubscriptionRefusalTextTest extends TestCase
@@ -63,12 +63,13 @@ final class PageSubscriptionRefusalTextTest extends TestCase
         parent::tearDown();
     }
 
-    public function testAGuardDenialTravelsAsThePlaceholder(): void
+    public function testAGuardDenialTravelsWithStatusWording(): void
     {
         $this->subscribeAnonymouslyToTheAdminPage();
 
         $frame = $this->takeSubscriptionError();
-        $this->assertSame(SignalConstants::SUBSCRIPTION_FAILED_REASON, $frame->message);
+        $this->assertSame('Unauthorized', $frame->title);
+        $this->assertSame('Authentication is required.', $frame->message);
         $this->assertSame(401, $frame->httpCode);
         $this->assertSame('unauthorized', $frame->errorCode);
     }
@@ -105,10 +106,14 @@ final class PageSubscriptionRefusalTextTest extends TestCase
         );
 
         $frame = $this->takeSubscriptionError();
-        $this->assertSame(SignalConstants::SUBSCRIPTION_FAILED_REASON, $frame->message);
+        $this->assertSame('Bad Request', $frame->title);
+        $this->assertSame('The request could not be understood.', $frame->message);
         $this->assertSame(400, $frame->httpCode);
         $this->assertSame('invalid_page_route_param', $frame->errorCode);
-        $this->assertStringNotContainsString(SubscriptionRefusalTextTestUserPage::USER_ID_PARAM, $frame->message);
+        $this->assertStringNotContainsString(SubscriptionRefusalTextTestUserPage::USER_ID_PARAM, $frame->toJson());
+        $this->assertStringNotContainsString('not-an-id', $frame->toJson());
+        $this->assertStringNotContainsString('InvalidPageRouteParamException', $frame->toJson());
+        $this->assertStringContainsString('not-an-id', implode('\n', $this->writtenLines()));
     }
 
     public function testAnUnservedPageIsRefusedByTheFallbackAgent(): void
@@ -128,7 +133,8 @@ final class PageSubscriptionRefusalTextTest extends TestCase
         $this->assertSame('unserved_page', $frame->page);
         $this->assertSame(HttpConstants::HTTP_NOT_FOUND, $frame->httpCode);
         $this->assertSame(PageErrorCode::NOT_SERVED, $frame->errorCode);
-        $this->assertSame(SignalConstants::SUBSCRIPTION_FAILED_REASON, $frame->message);
+        $this->assertSame('Page Not Found', $frame->title);
+        $this->assertSame('The page you are looking for does not exist.', $frame->message);
     }
 
     public function testTheFamilyDoorIsShutForSubscriptionExceptions(): void

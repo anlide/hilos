@@ -11,22 +11,17 @@ import { z } from 'zod'
 export const PAGE_ERROR_NOT_SERVED = 'not_served'
 
 /**
- * The server's not_served message (PHP SignalConstants::SUBSCRIPTION_FAILED_REASON).
- * ErrorPage does not show it, but the error payload requires a message.
- */
-export const PAGE_ERROR_NOT_SERVED_MESSAGE = 'The page could not be opened.'
-
-/**
  * The page-subscription error payload (PHP `PageSubscriptionErrorSignalData`):
  * the page the error is for — so a late one for a page already left is dropped,
- * mirroring page_response — plus the HTTP status, a machine-readable code, and a
- * human-readable message.
+ * mirroring page_response — plus the HTTP status, a machine-readable code, and
+ * ready-to-display title and message. Both text fields are required and non-empty.
  */
 export const pageSubscriptionErrorSchema = z.looseObject({
   page: z.string().min(1),
   httpCode: z.number().int(),
   errorCode: z.string(),
-  message: z.string(),
+  title: z.string().min(1),
+  message: z.string().min(1),
 })
 
 export type PageSubscriptionError = z.infer<typeof pageSubscriptionErrorSchema>

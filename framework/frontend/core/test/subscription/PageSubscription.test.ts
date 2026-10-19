@@ -649,7 +649,8 @@ describe('PageSubscription.refuseUnbuilt', () => {
       page: 'hilos_roles',
       httpCode: 404,
       errorCode: 'not_served',
-      message: 'The page could not be opened.',
+      title: 'Page Not Found',
+      message: 'The page you are looking for does not exist.',
     })
     expect(pages.pageLoading.get()).toBe(false)
     expect(
@@ -660,6 +661,7 @@ describe('PageSubscription.refuseUnbuilt', () => {
         page: 'main',
         httpCode: 403,
         errorCode: 'forbidden',
+        title: 'Forbidden',
         message: 'late',
       }),
     ).toBe(false)
@@ -858,12 +860,15 @@ describe('PageSubscription', () => {
       page: 'user',
       httpCode: 404,
       errorCode: 'not_found',
-      message: 'Resource #9 not found',
+      title: 'Server chose this title',
+      message: 'Server chose this description',
     })
 
     expect(recorded).toBe(true)
     expect(pages.pageError.get()?.httpCode).toBe(404)
     expect(pages.pageError.get()?.errorCode).toBe('not_found')
+    expect(pages.pageError.get()?.title).toBe('Server chose this title')
+    expect(pages.pageError.get()?.message).toBe('Server chose this description')
   })
 
   it('drops a subscription error for a page the client has left', () => {
@@ -875,6 +880,7 @@ describe('PageSubscription', () => {
       page: 'user',
       httpCode: 404,
       errorCode: 'not_found',
+      title: 'Page Not Found',
       message: 'Resource #9 not found',
     })
 
@@ -889,6 +895,7 @@ describe('PageSubscription', () => {
       page: 'user',
       httpCode: 403,
       errorCode: 'forbidden',
+      title: 'Forbidden',
       message: 'Access forbidden',
     })
 
@@ -904,6 +911,7 @@ describe('PageSubscription', () => {
       page: 'user',
       httpCode: 403,
       errorCode: 'forbidden',
+      title: 'Forbidden',
       message: 'Access forbidden',
     })
 
@@ -921,6 +929,7 @@ describe('PageSubscription', () => {
       page: 'user',
       httpCode: 401,
       errorCode: 'unauthorized',
+      title: 'Unauthorized',
       message: 'Authentication required',
     })
     const sentBefore = connection.sent.length
@@ -961,6 +970,7 @@ describe('reacting to a rights change on the open page', () => {
       page: 'hilos_backup',
       httpCode: 403,
       errorCode: 'forbidden',
+      title: 'Forbidden',
       message: 'Access forbidden',
     })
 
@@ -982,6 +992,7 @@ describe('reacting to a rights change on the open page', () => {
       page: 'profile',
       httpCode: 401,
       errorCode: 'unauthorized',
+      title: 'Unauthorized',
       message: 'Authentication required',
     })
 
@@ -1019,7 +1030,8 @@ describe('reacting to a rights change on the open page', () => {
       page: 'hilos_backup',
       httpCode: 403,
       errorCode: 'forbidden',
-      message: 'Access forbidden',
+      title: 'Forbidden',
+      message: 'You do not have access to this page.',
     })
     expect(pages.pageLoading.get()).toBe(false)
     // The rows are gone, not hidden behind the error surface.
@@ -1038,6 +1050,7 @@ describe('reacting to a rights change on the open page', () => {
       page: 'hilos_users',
       httpCode: 403,
       errorCode: 'forbidden',
+      title: 'Forbidden',
       message: 'Access forbidden',
     })
     const sentBefore = connection.sent.length
@@ -1092,6 +1105,7 @@ describe('reacting to a rights change on the open page', () => {
       page: 'hilos_users',
       httpCode: 403,
       errorCode: 'forbidden',
+      title: 'Forbidden',
       message: 'Access denied',
     })
 
@@ -1156,6 +1170,7 @@ describe('page frame lifetime', () => {
       page: 'hilos_users',
       httpCode: 403,
       errorCode: 'forbidden',
+      title: 'Forbidden',
       message: 'Access denied',
     })
 

@@ -55,6 +55,14 @@ final class LegalConsentActionTest extends IntegrationTestCase
         $reply = $this->usersLibrary()->onAgentAction('anonymous-consent', HilosSignalConstants::HILOS_LEGAL_CONSENT, new LegalConsentActionDTO());
         self::assertInstanceOf(LegalConsentReplyDTO::class, $reply);
         self::assertSame('checkbox', $reply->form);
+        self::assertSame(
+            'This project has not published its terms yet, so an account cannot be created here.',
+            $reply->unpublishedMessage,
+        );
+        self::assertSame(
+            'The terms were updated while you were reading. Review the differences and accept again.',
+            $reply->revisedMessage,
+        );
         self::assertSame(['terms', 'privacy'], array_column($reply->documents, 'document'));
         self::assertCount(6, $reply->documents[0]['clauses']);
         self::assertCount(7, $reply->documents[1]['clauses']);

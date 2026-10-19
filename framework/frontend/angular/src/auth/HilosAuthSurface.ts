@@ -66,7 +66,6 @@ import {
   formatCountdown,
   hilosCodeSendProgress,
   hilosLegalDocumentLabel,
-  LEGAL_TERMS_UNPUBLISHED_MESSAGE,
   isPasskeySupported,
   isPlatformPasskeyAvailable,
   handshakeResponseAck,
@@ -227,30 +226,8 @@ const SUBMIT_LABELS: Record<AuthFlowScreen, string> = {
   done_signed_in: 'Continue',
 }
 
-/**
- * The sentence for a refusal that arrived as a bare code. Hilos i18n is
- * backend-side, so a reply that carries its own message wins and this map is
- * only for the codes sent without one (and for the converge, which never
- * carries prose at all).
- */
-const CODE_MESSAGES: Record<string, string> = {
-  identifier_taken: 'That address already has an account — sign in instead.',
-  reservation_expired: 'That registration expired. Ask for a new code.',
-  reset_code_expired: 'That reset code has expired. Ask for a new one.',
-  password_already_changed:
-    'The password was already changed on another device. Sign in with the new one.',
-  magic_link_invalid:
-    'That sign-in link is no longer valid. Ask for a new one.',
-  send_cap_reached: 'Too many codes have gone out. Please try again later.',
-  rate_limited: 'Too many attempts. Please wait a moment and try again.',
-  challenge_required: 'Please confirm you are not a robot and try again.',
-  second_factor_expired: 'Your sign-in step expired. Sign in again.',
-  second_factor_attempts: 'Too many wrong codes. Sign in again.',
-  account_blocked:
-    'This account has been blocked by the project administration.',
-}
-
-/** What is shown when a refusal carried neither a sentence nor a known code. */
+/** Local fallback for a malformed refusal with no server sentence. */
+// TODO(i18n): Remove this client-side fallback when backend-provided local error copy is available.
 const GENERIC_ERROR = 'That did not work. Please try again.'
 
 /**
@@ -1064,7 +1041,7 @@ const ERROR_DETAILS_TWIN_CLASS =
                     class="small text-body-secondary"
                     data-id="legal-consent-unpublished"
                   >
-                    {{ termsUnpublishedMessage }}
+                    {{ terms.unpublishedMessage }}
                   </p>
                 } @else {
                   <hilos-legal-consent
@@ -2187,7 +2164,6 @@ export class HilosAuthSurface {
   )
   protected readonly readingConsent = signal<HilosLegalDocumentKey | null>(null)
   protected readonly legalDocumentLabel = hilosLegalDocumentLabel
-  protected readonly termsUnpublishedMessage = LEGAL_TERMS_UNPUBLISHED_MESSAGE
   protected readonly form = signal<AuthFlowForm>(EMPTY_FORM)
   protected readonly detection = signal<DetectionState>(IDLE_DETECTION)
   protected readonly pending = signal(false)
@@ -2437,25 +2413,18 @@ export class HilosAuthSurface {
       return null
     }
 
-    return result.kind === 'phone'
-      ? 'This account signs in by a code, and this installation has nothing to send it with. Whoever runs it can set that up.'
-      : 'This account signs in by a mailed link, and this installation has nothing to send it with. Whoever runs it can set that up.'
+    return result.message
   })
 
-  // The inline refusal: the backend's own sentence when it sent one, its
-  // semantic code turned into ours when it did not, and an account left with no
-  // way in when no action was refused.
+  // The inline refusal keeps the backend's words, including an empty sentence.
+  // Without an action refusal, detection may explain an account with no way in.
   protected readonly errorMessage = computed<string | null>(() => {
     const shown = this.error()
     if (shown === null) {
       return this.signInRefusal()
     }
 
-    return (
-      shown.message ??
-      (shown.code === null ? null : CODE_MESSAGES[shown.code]) ??
-      GENERIC_ERROR
-    )
+    return shown.message ?? GENERIC_ERROR
   })
 
   // A module constant is invisible to the template, so the two sentences the
@@ -2600,12 +2569,7 @@ export class HilosAuthSurface {
         return 'No account yet — this creates one.'
       }
 
-      // Two reasons, two sentences: a locked door somebody locked, and a
-      // deployment that simply has nothing to send with. Which one it is was
-      // resolved on the backend, never by comparing flags here (HIL-830).
-      return result.registrationBlock === 'no_channel'
-        ? 'No account for this, and there is nothing to send a code with.'
-        : 'No account for this, and registration is closed.'
+      return result.message
     }
     // A held address has no account to describe — it has a code in flight, and
     // saying so is the whole point of the screen the return lands on (HIL-651).
@@ -2859,7 +2823,7 @@ export class HilosAuthSurface {
           if (!this.isCurrentIdentifier(auth, data.identifier)) {
             return
           }
-          this.applyFromServer(auth, data.step, data.intent, data.code)
+          this.applyFromServer(auth, data.step, data.intent, data.message)
         },
       )
 
@@ -3456,20 +3420,20 @@ export class HilosAuthSurface {
    * @param auth The machine the patch is applied to.
    * @param step The step off the wire.
    * @param intent The intent off the wire.
-   * @param code The semantic reason of a rollback, or null.
+   * @param message The server's sentence for the move, or null.
    */
   private applyFromServer(
     auth: AuthFlow,
     step: unknown,
     intent: unknown,
-    code: string | null,
+    message: string | null,
   ): void {
     const patch = toFlowPatch(step, intent)
     if (patch === null) {
       return
     }
     auth.applyExternal(patch)
-    this.notice.set(code === null ? null : (CODE_MESSAGES[code] ?? null))
+    this.notice.set(message)
   }
 
   /**
@@ -3492,6 +3456,6 @@ export class HilosAuthSurface {
     if (step === null || step.code === null) {
       return
     }
-    this.applyFromServer(auth, step.step, step.intent, step.code)
+    this.applyFromServer(auth, step.step, step.intent, step.message)
   }
 }

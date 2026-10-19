@@ -14,15 +14,14 @@ import {
 } from './legalAgreements.js'
 
 export const LEGAL_CONSENT_ACTION = AUTH_ACTION_LEGAL_CONSENT
-export const LEGAL_CONSENT_REVISED_MESSAGE =
-  'The terms were updated while you were reading. Review the differences and accept again.'
-export const LEGAL_TERMS_UNPUBLISHED_MESSAGE =
-  'This project has not published its terms yet, so an account cannot be created here.'
+// TODO(i18n): Remove this local fallback when backend delivery supplies transport and missing-reply copy.
 export const LEGAL_CONSENT_LOAD_FAILED_MESSAGE =
   'The terms could not be loaded.'
 
 export const legalConsentTermsSchema = z.looseObject({
   form: z.enum(['checkbox', 'line']),
+  unpublishedMessage: z.string(),
+  revisedMessage: z.string(),
   documents: z.array(
     z.looseObject({
       document: legalDocumentSchema,
@@ -124,8 +123,14 @@ export function createHilosLegalConsentPreview(context: {
       try {
         const reply = await loadHilosLegalConsentTerms(context)
         if (current === generation) terms.set(reply)
-      } catch {
-        if (current === generation) error.set(LEGAL_CONSENT_LOAD_FAILED_MESSAGE)
+      } catch (failure) {
+        if (current === generation) {
+          error.set(
+            failure instanceof ActionError && failure.outcome === 'fail'
+              ? failure.message
+              : LEGAL_CONSENT_LOAD_FAILED_MESSAGE,
+          )
+        }
       } finally {
         if (current === generation) loading.set(false)
       }

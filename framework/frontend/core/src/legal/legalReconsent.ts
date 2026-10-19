@@ -58,7 +58,6 @@ import {
 import {
   hilosLegalClauseIcon,
   LEGAL_CONSENT_LOAD_FAILED_MESSAGE,
-  LEGAL_CONSENT_REVISED_MESSAGE,
 } from './legalConsent.js'
 
 /** Read what the screen shows the signed-in person; open while frozen. */
@@ -180,7 +179,6 @@ export const LEGAL_RECONSENT_COPY = {
   badgeReview: 'The terms have changed — please review them',
   loadFailed: LEGAL_CONSENT_LOAD_FAILED_MESSAGE,
   retry: 'Try again',
-  revised: LEGAL_CONSENT_REVISED_MESSAGE,
 } as const
 
 /** The plate over a section: its color, icon, sentence and the smaller line beside it. */
@@ -511,8 +509,14 @@ export function createHilosLegalReconsentStore(
       } else {
         content.set(reply)
       }
-    } catch {
-      if (current === generation) error.set(LEGAL_RECONSENT_COPY.loadFailed)
+    } catch (failure) {
+      if (current === generation) {
+        error.set(
+          failure instanceof ActionError && failure.outcome === 'fail'
+            ? failure.message
+            : LEGAL_RECONSENT_COPY.loadFailed,
+        )
+      }
     } finally {
       if (current === generation) loading.set(false)
     }
@@ -621,8 +625,14 @@ export function createHilosLegalReconsentPreview(context: {
         } else {
           preview.set(reply)
         }
-      } catch {
-        if (current === generation) error.set(LEGAL_RECONSENT_COPY.loadFailed)
+      } catch (failure) {
+        if (current === generation) {
+          error.set(
+            failure instanceof ActionError && failure.outcome === 'fail'
+              ? failure.message
+              : LEGAL_RECONSENT_COPY.loadFailed,
+          )
+        }
       } finally {
         if (current === generation) loading.set(false)
       }

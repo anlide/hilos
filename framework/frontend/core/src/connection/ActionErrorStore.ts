@@ -6,11 +6,9 @@
 // `signal(action)` and the action's caller clears it on a fresh submit. The
 // request-correlated acknowledgement lifecycle (requestId, success acks) is the
 // ActionLifecycle store; this action-name-keyed store remains the simpler half
-// for consumers that only need the latest failure per action. A refusal of the
-// admin view mode (code `view_mode`) is kept as the screen's sentence for it,
-// not the server's impersonal reason (see admin/viewMode.ts).
+// for consumers that only need the latest failure per action. Every reason is
+// kept exactly as the backend sent it, regardless of its machine-readable code.
 
-import { actionFailureReason } from '../admin/viewMode.js'
 import {
   createSignal,
   type ReadonlySignal,
@@ -41,8 +39,8 @@ export class ActionErrorStore {
    * @param source The connection (or a test double) emitting `actionError`.
    */
   constructor(source: ActionErrorSource) {
-    this.stop = source.on('actionError', ({ action, reason, errorCode }) => {
-      this.cell(action).set(actionFailureReason(reason, errorCode))
+    this.stop = source.on('actionError', ({ action, reason }) => {
+      this.cell(action).set(reason)
     })
   }
 

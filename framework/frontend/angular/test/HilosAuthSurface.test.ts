@@ -11,12 +11,15 @@ import { consentTerms } from '../../core/test/legal/consentFixture.js'
 
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
+  ActionError,
   AUTH_ACTION_CANCEL_REGISTRATION,
   AUTH_ACTION_COMPLETE_REGISTRATION_PASSWORDLESS,
   AUTH_ACTION_DETECT_IDENTIFIER,
   AUTH_ACTION_DISMISS_SESSION_ACK,
   AUTH_ACTION_LEGAL_CONSENT,
+  AUTH_ACTION_LOGIN,
   AUTH_ACTION_REGISTRATION_PASSKEY_OPTIONS,
+  AUTH_CONVERGE_SIGNAL,
   AUTH_SURFACE_HEADING_ID,
   bindCodeSendProgress,
   bindPageReady,
@@ -170,6 +173,7 @@ function magicLinkWorld(
               registerable: [],
               registrationBlock: null,
               signInBlock: null,
+              message: null,
             }
           : action === AUTH_ACTION_LEGAL_CONSENT
             ? consentTerms()
@@ -231,6 +235,7 @@ function provenOnReturnWorld(
           registerable: answered ? [] : [PASSWORD_METHOD_KEY],
           registrationBlock: null,
           signInBlock: null,
+          message: null,
         }
         answered = true
       } else if (action === AUTH_ACTION_LEGAL_CONSENT) {
@@ -394,7 +399,7 @@ function reportSendProgress(
   for (const listener of listeners) {
     listener({
       type: SIGNAL_CODE_SEND_PROGRESS,
-      data: { state, channel: 'email', detail },
+      data: { state, channel: 'email', detail, message: null },
     })
   }
   unbind()
@@ -1073,6 +1078,7 @@ describe('HilosAuthSurface', () => {
       acceptKey: 'accept-1',
       provider: GITHUB_PROVIDER,
       reason: OAUTH_REASON_LOGIN_FAILED,
+      message: OAUTH_FAILED_MESSAGE,
       email: null,
       linkToken: null,
     })
@@ -1105,6 +1111,7 @@ describe('HilosAuthSurface', () => {
         acceptKey: 'accept-1',
         provider: GITHUB_PROVIDER,
         reason: OAUTH_REASON_CONSENT_REQUIRED,
+        message: null,
         email,
         linkToken: null,
         accountToken: 'signed-account-token',
@@ -1146,6 +1153,7 @@ describe('HilosAuthSurface', () => {
       channel: null,
       expiresAt: null,
       code: 'identifier_taken',
+      message: 'That address already has an account — sign in instead.',
     })
     const fixture = mountSurface(world)
     await flush(fixture)
@@ -1166,6 +1174,7 @@ describe('HilosAuthSurface on a sign-in held on its second factor (HIL-494)', ()
       channel: null,
       expiresAt: Date.now() + 600000,
       code: null,
+      message: null,
       secondFactor: { trustDeviceDays: 30, resetEffectiveAt: null },
     })
     const fixture = mountSurface(world)
@@ -1195,6 +1204,7 @@ describe('HilosAuthSurface on a sign-in held on its second factor (HIL-494)', ()
       channel: null,
       expiresAt: null,
       code: null,
+      message: null,
     })
     await flush(fixture)
 
@@ -1244,6 +1254,7 @@ const RESUMED_CODE_STEP = {
   channel: null,
   expiresAt: Date.now() + 600000,
   code: null,
+  message: null,
 }
 
 /**
@@ -1258,6 +1269,7 @@ const PROVED_REGISTRATION_STEP = {
   channel: null,
   expiresAt: Date.now() + 600000,
   code: null,
+  message: null,
 }
 
 /**
@@ -1272,6 +1284,7 @@ const PHONE_CODE_STEP = {
   channel: 'sms',
   expiresAt: Date.now() + 600000,
   code: null,
+  message: null,
 }
 
 /**
@@ -1299,6 +1312,7 @@ function registrableWorld(): { context: HilosAuthContext; gate: AuthGate } {
               registerable: [PASSWORD_METHOD_KEY],
               registrationBlock: null,
               signInBlock: null,
+              message: null,
             }
           : action === AUTH_ACTION_LEGAL_CONSENT
             ? consentTerms()
@@ -2096,6 +2110,388 @@ it('waits for consent content before exposing the checkbox and retries an unansw
   }
 })
 
+describe('HilosAuthSurface server refusal copy (HIL-1516)', () => {
+  afterEach(() => {
+    TestBed.resetTestingModule()
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+  })
+
+  /** Fill a real input and let the surface handle its input event. */
+  function type(
+    fixture: ComponentFixture<HilosAuthSurface>,
+    id: string,
+    value: string,
+  ): void {
+    const field = byId(fixture, id) as HTMLInputElement
+    field.value = value
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+
+  /** Let the debounced identifier lookup and its rendered reveal settle. */
+  async function detect(fixture: ComponentFixture<HilosAuthSurface>) {
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(fixture)
+  }
+
+  /** Submit the current form through its existing primary control. */
+  async function submit(fixture: ComponentFixture<HilosAuthSurface>) {
+    byId(fixture, 'auth-submit')!
+      .closest('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flush(fixture)
+    await flush(fixture)
+  }
+
+  it.each([
+    {
+      source: 'action',
+      code: 'rate_limited',
+      message: 'Wait for this server to allow another attempt.',
+      expected: 'Wait for this server to allow another attempt.',
+    },
+    {
+      source: 'reply',
+      code: 'reservation_expired',
+      message: ' <b>This reservation ended on the server.</b> ',
+      expected: ' <b>This reservation ended on the server.</b> ',
+    },
+    { source: 'action', code: 'rate_limited', message: '', expected: '' },
+    { source: 'reply', code: 'identifier_taken', message: '', expected: '' },
+    {
+      source: 'reply',
+      code: 'rate_limited',
+      message: undefined,
+      expected: 'That did not work. Please try again.',
+    },
+    {
+      source: 'transport',
+      code: undefined,
+      message: undefined,
+      expected: 'Could not reach the server. Please try again.',
+    },
+    { source: 'silent', code: undefined, message: undefined, expected: '' },
+  ])(
+    'shows $source copy for $code: $message',
+    async ({ source, code, message, expected }) => {
+      vi.useFakeTimers()
+      const world = magicLinkWorld()
+      const original = world.context.actions.dispatch.bind(
+        world.context.actions,
+      )
+      vi.spyOn(world.context.actions, 'dispatch').mockImplementation(
+        (action, payload, options) => {
+          if (action !== AUTH_ACTION_LOGIN)
+            return original(action, payload, options)
+
+          return {
+            requestId: 'refused-login',
+            loading: createSignal(false),
+            done:
+              source === 'reply' || source === 'silent'
+                ? Promise.resolve({
+                    reply: {
+                      ok: source === 'silent',
+                      code,
+                      message,
+                      next: { step: 'identifier', intent: 'login' },
+                    },
+                  })
+                : Promise.reject(
+                    new ActionError(
+                      action,
+                      source === 'transport' ? 'timeout' : 'fail',
+                      message ?? 'No reply',
+                      undefined,
+                      undefined,
+                      code,
+                    ),
+                  ),
+          } as ActionHandle
+        },
+      )
+      const fixture = mountSurface(world)
+      type(fixture, 'auth-identifier', 'someone@example.com')
+      await detect(fixture)
+      type(fixture, 'auth-password', 'wrong password')
+      await submit(fixture)
+
+      expect(byId(fixture, 'auth-live-assertive')!.textContent).toBe(
+        ` ${expected} `,
+      )
+      if (expected === '') {
+        expect(byId(fixture, 'auth-error')).toBeNull()
+        expect(
+          byId(fixture, 'auth-error-idle')!.classList.contains('invisible'),
+        ).toBe(true)
+      } else {
+        const row = byId(fixture, 'auth-error')!
+        expect(row.querySelector('.text-truncate')!.textContent).toBe(expected)
+        expect(row.querySelector('b')).toBeNull()
+        expect(
+          byId(fixture, 'auth-error-details')!.getAttribute('aria-label'),
+        ).toBe('Show error details')
+      }
+      expect(byId(fixture, 'auth-notice')).toBeNull()
+      expect((byId(fixture, 'auth-submit') as HTMLButtonElement).disabled).toBe(
+        false,
+      )
+    },
+  )
+
+  it.each([
+    {
+      identifier: ' SomeOne@EXAMPLE.com ',
+      normalized: 'someone@example.com',
+      kind: 'email',
+    },
+    {
+      identifier: '+1 (202) 555-0123',
+      normalized: '+12025550123',
+      kind: 'phone',
+    },
+  ])(
+    'applies only the current normalized $kind converge and clears a silent notice',
+    async ({ identifier, normalized, kind }) => {
+      vi.useFakeTimers()
+      const world = surfaceWorld()
+      vi.spyOn(world.context.actions, 'dispatch').mockReturnValue({
+        requestId: 'normalized-detection',
+        loading: createSignal(false),
+        done: Promise.resolve({
+          reply: {
+            identifier,
+            normalized,
+            kind,
+            status: 'active',
+            methods: [PASSWORD_METHOD_KEY],
+            registerable: [],
+            registrationBlock: null,
+            signInBlock: null,
+            message: null,
+          },
+        }),
+      } as ActionHandle)
+      const fixture = mountSurface(world)
+      type(fixture, 'auth-identifier', identifier)
+      await detect(fixture)
+      if (kind === 'email') type(fixture, 'auth-password', 'still typing')
+      await flush(fixture)
+      const data = {
+        identifier: 'somebody-else@example.com',
+        step: 'code',
+        intent: 'register',
+        code: 'reservation_expired',
+        message: '<b>The server moved this registration.</b>',
+      }
+      world.emitProjectSignal({ type: AUTH_CONVERGE_SIGNAL, data })
+      await flush(fixture)
+      expect(byId(fixture, 'auth-notice')).toBeNull()
+      expect(byId(fixture, 'auth-code')).toBeNull()
+      expect((byId(fixture, 'auth-identifier') as HTMLInputElement).value).toBe(
+        identifier,
+      )
+      if (kind === 'email')
+        expect((byId(fixture, 'auth-password') as HTMLInputElement).value).toBe(
+          'still typing',
+        )
+
+      world.emitProjectSignal({
+        type: AUTH_CONVERGE_SIGNAL,
+        data: { ...data, identifier: normalized },
+      })
+      await flush(fixture)
+      const notice = byId(fixture, 'auth-notice')!
+      expect(notice.textContent).toBe(` ${data.message} `)
+      expect(notice.querySelector('b')).toBeNull()
+      expect(byId(fixture, 'auth-code')).not.toBeNull()
+
+      world.emitProjectSignal({
+        type: AUTH_CONVERGE_SIGNAL,
+        data: {
+          ...data,
+          identifier: normalized,
+          step: 'identifier',
+          intent: 'login',
+          message: null,
+        },
+      })
+      await flush(fixture)
+      expect(byId(fixture, 'auth-notice')).toBeNull()
+      expect(byId(fixture, 'auth-identifier')).not.toBeNull()
+    },
+  )
+
+  it.each(['mount', 'handshake'])(
+    'shows the pending step sentence on %s',
+    async (arrival) => {
+      const world = magicLinkWorld()
+      const step = {
+        identifier: 'someone@example.com',
+        kind: 'email',
+        intent: 'login',
+        step: 'identifier',
+        channel: null,
+        expiresAt: null,
+        code: 'identifier_taken',
+        message: '<b>This address was claimed while you were away.</b>',
+      }
+      if (arrival === 'mount')
+        world.context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, step)
+      const fixture = mountSurface(world)
+      if (arrival === 'handshake')
+        world.context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, step)
+      await flush(fixture)
+
+      const notice = byId(fixture, 'auth-notice')!
+      expect(notice.textContent).toBe(` ${step.message} `)
+      expect(notice.querySelector('b')).toBeNull()
+      expect(byId(fixture, 'auth-live-polite')!.textContent).toContain(
+        step.message,
+      )
+      expect(byId(fixture, 'auth-identifier')).not.toBeNull()
+    },
+  )
+
+  it('keeps ordinary resume from rebuilding the form even if it carries words', async () => {
+    vi.useFakeTimers()
+    const world = magicLinkWorld()
+    const fixture = mountSurface(world)
+    type(fixture, 'auth-identifier', 'someone@example.com')
+    await detect(fixture)
+    type(fixture, 'auth-password', 'still typing')
+
+    world.context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, {
+      ...RESUMED_CODE_STEP,
+      message: 'An ordinary resume does not announce this.',
+    })
+    await flush(fixture)
+    expect(byId(fixture, 'auth-code')).toBeNull()
+    expect(byId(fixture, 'auth-notice')).toBeNull()
+    expect((byId(fixture, 'auth-password') as HTMLInputElement).value).toBe(
+      'still typing',
+    )
+  })
+
+  it.each([
+    {
+      kind: 'email',
+      identifier: 'someone@example.com',
+      status: 'active',
+      signInBlock: 'no_channel',
+      registrationBlock: null,
+      row: 'auth-error',
+    },
+    {
+      kind: 'phone',
+      identifier: '+12025550123',
+      status: 'active',
+      signInBlock: 'no_channel',
+      registrationBlock: null,
+      row: 'auth-error',
+    },
+    {
+      kind: 'email',
+      identifier: 'someone@example.com',
+      status: 'none',
+      signInBlock: null,
+      registrationBlock: 'closed',
+      row: 'auth-identifier-hint',
+    },
+    {
+      kind: 'email',
+      identifier: 'someone@example.com',
+      status: 'none',
+      signInBlock: null,
+      registrationBlock: 'no_channel',
+      row: 'auth-identifier-hint',
+    },
+  ])(
+    'shows detection words for $status/$kind/$registrationBlock',
+    async ({
+      kind,
+      identifier,
+      status,
+      signInBlock,
+      registrationBlock,
+      row,
+    }) => {
+      vi.useFakeTimers()
+      const world = surfaceWorld()
+      const message =
+        '<b>The server explains why this address cannot continue.</b>'
+      vi.spyOn(world.context.actions, 'dispatch').mockReturnValue({
+        requestId: 'refused-detection',
+        loading: createSignal(false),
+        done: Promise.resolve({
+          reply: {
+            identifier,
+            normalized: identifier,
+            kind,
+            status,
+            methods: [],
+            registerable: [],
+            registrationBlock,
+            signInBlock,
+            message,
+          },
+        }),
+      } as ActionHandle)
+      const fixture = mountSurface(world)
+      type(fixture, 'auth-identifier', identifier)
+      await detect(fixture)
+
+      const shown = byId(fixture, row)!
+      if (row === 'auth-error') {
+        expect(shown.querySelector('.text-truncate')!.textContent).toBe(message)
+      } else {
+        expect(shown.textContent).toBe(` ${message} `)
+      }
+      expect(shown.querySelector('b')).toBeNull()
+      expect(byId(fixture, 'auth-password')).toBeNull()
+      expect(byId(fixture, 'auth-submit')).toBeNull()
+      if (status === 'active')
+        expect(byId(fixture, 'auth-identifier-hint')).toBeNull()
+    },
+  )
+
+  it('uses the empty consent reply sentence in the existing unpublished slot', async () => {
+    vi.useFakeTimers()
+    const world = registrableWorld()
+    const original = world.context.actions.dispatch.bind(world.context.actions)
+    const unpublishedMessage =
+      '<b>This project is still preparing its terms.</b>'
+    vi.spyOn(world.context.actions, 'dispatch').mockImplementation(
+      (action, payload, options) =>
+        action === AUTH_ACTION_LEGAL_CONSENT
+          ? ({
+              requestId: 'unpublished-consent',
+              loading: createSignal(false),
+              done: Promise.resolve({
+                reply: { ...consentTerms(), documents: [], unpublishedMessage },
+              }),
+            } as ActionHandle)
+          : original(action, payload, options),
+    )
+    const fixture = mountSurface(world)
+    type(fixture, 'auth-identifier', 'newcomer@example.com')
+    await detect(fixture)
+    await submit(fixture)
+
+    const unpublished = byId(fixture, 'legal-consent-unpublished')!
+    expect(unpublished.textContent).toBe(` ${unpublishedMessage} `)
+    expect(unpublished.querySelector('b')).toBeNull()
+    expect(byId(fixture, 'auth-consent-accept')).toBeNull()
+    expect(byId(fixture, 'auth-error')).toBeNull()
+    expect((byId(fixture, 'auth-submit') as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+    expect((byId(fixture, 'auth-restart') as HTMLButtonElement).disabled).toBe(
+      false,
+    )
+  })
+})
+
 it('renders red cancel button on proven_identifier and cancelling dispatches hilos_cancel_registration and returns to address', async () => {
   vi.useFakeTimers()
   const dispatched: Array<{
@@ -2336,6 +2732,7 @@ it('omits toggle buttons when password fields are absent from DOM', async () => 
     channel: null,
     expiresAt: Date.now() + 600000,
     code: null,
+    message: null,
     secondFactor: { trustDeviceDays: 30, resetEffectiveAt: null },
   })
   const fixture = mountSurface(world)

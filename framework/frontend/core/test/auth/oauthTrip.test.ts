@@ -9,6 +9,7 @@
 // follows came later (HIL-707), and the closed window that waits for a return it
 // posted before closing later still (HIL-926).
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { type ZodType } from 'zod'
 import { type HilosConnection } from '../../src/connection/HilosConnection.js'
 import {
   ActionError,
@@ -36,6 +37,7 @@ import {
   OAUTH_REASON_LINK_OK,
   OAUTH_REASON_REAUTH_REQUIRED,
   OAUTH_RESULT_SIGNAL,
+  oauthResultSignalSchema,
 } from '../../src/auth/oauthSignals.js'
 import { SIGNAL_TYPE_PAGE_RESPONSE } from '../../src/protocol/constants.js'
 import { type ProjectSignal } from '../../src/protocol/parseSignal.js'
@@ -106,7 +108,7 @@ interface TripWorld {
   /** Drop the callback with its connection instead of accepting it. */
   dropCallback: boolean
   /** What the server answers a presented trip key with (HIL-1044). */
-  resumeKnown: boolean
+  resumeReply: unknown
   /** Hold the next start's answer back, for the test to refuse when it chooses. */
   holdStart: boolean
   /** Refuse a held start, the way a slow backend refusal lands. */
@@ -191,13 +193,24 @@ function tripWorld(): TripWorld {
   } as unknown as HilosConnection
 
   const actions = {
-    dispatch: (action: string, payload: Record<string, unknown>) => {
+    dispatch: (
+      action: string,
+      payload: Record<string, unknown>,
+      options?: { replySchema?: ZodType },
+    ) => {
       world.dispatched.push({ action, payload })
       if (action === 'hilos_oauth_resume') {
         return {
           requestId: `req-${world.dispatched.length}`,
           loading: createSignal(false),
-          done: Promise.resolve({ reply: { known: world.resumeKnown } }),
+          done: Promise.resolve().then(() => {
+            const parsed = options?.replySchema?.safeParse(world.resumeReply)
+            if (!parsed?.success) {
+              throw new ActionError(action, 'invalid-reply', 'Malformed reply')
+            }
+
+            return { reply: parsed.data }
+          }),
         } as unknown as ActionHandle
       }
       if (action === 'hilos_oauth_callback' && world.dropCallback) {
@@ -301,7 +314,7 @@ function tripWorld(): TripWorld {
     outcomes: [],
     refuseStart: null,
     dropCallback: false,
-    resumeKnown: true,
+    resumeReply: { known: true, message: null },
     holdStart: false,
     refuseHeldStart(message) {
       held.shift()?.(new Error(message))
@@ -799,7 +812,10 @@ describe('the OAuth trip machine', () => {
 
   it('ends the trip when the server does not know the presented key', async () => {
     const world = tripWorld()
-    world.resumeKnown = false
+    world.resumeReply = {
+      known: false,
+      message: 'OAuth login failed. Please try again.',
+    }
     await reachExchange(world)
 
     world.setState('reconnecting')
@@ -812,6 +828,64 @@ describe('the OAuth trip machine', () => {
       { kind: 'error', message: 'OAuth login failed. Please try again.' },
     ])
     expect(world.oauth.trip.get()).toBeNull()
+  })
+
+  it('uses the unknown-resume sentence verbatim', async () => {
+    const world = tripWorld()
+    const message = ' Server resume words.\nKeep whitespace. '
+    world.resumeReply = { known: false, message }
+    await reachExchange(world)
+
+    world.setState('reconnecting')
+    world.setState('connected')
+    world.emit(SIGNAL_TYPE_PAGE_RESPONSE, { page: 'main', payload: {} })
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(world.outcomes).toEqual([{ kind: 'error', message }])
+    expect(world.oauth.trip.get()).toBeNull()
+  })
+
+  it.each([
+    undefined,
+    { known: false },
+    { known: false, message: 42 },
+    { known: false, message: false },
+    { known: false, message: [] },
+    { known: true },
+  ])('rejects a malformed resume reply: %j', async (reply) => {
+    const world = tripWorld()
+    world.resumeReply = reply
+    await reachExchange(world)
+
+    world.setState('reconnecting')
+    world.setState('connected')
+    world.emit(SIGNAL_TYPE_PAGE_RESPONSE, { page: 'main', payload: {} })
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(world.outcomes).toEqual([
+      { kind: 'error', message: 'OAuth login failed. Please try again.' },
+    ])
+    expect(world.oauth.trip.get()).toBeNull()
+  })
+
+  it('ignores an unknown-resume reply after the trip has ended', async () => {
+    const world = tripWorld()
+    world.resumeReply = { known: false, message: 'Late refusal' }
+    await reachExchange(world)
+
+    world.setState('reconnecting')
+    world.setState('connected')
+    world.emit(SIGNAL_TYPE_PAGE_RESPONSE, { page: 'main', payload: {} })
+    world.signIn(7)
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(world.outcomes).toEqual([{ kind: 'signed_in', message: '' }])
   })
 
   it('keeps the trip when the callback went down with its connection', async () => {
@@ -925,6 +999,7 @@ describe('the OAuth trip machine', () => {
       acceptKey: 'accept-1',
       provider: GITHUB,
       reason: OAUTH_REASON_LINK_OK,
+      message: null,
       email: null,
       linkToken: null,
     })
@@ -940,6 +1015,7 @@ describe('the OAuth trip machine', () => {
       acceptKey: 'accept-1',
       provider: GITHUB,
       reason: OAUTH_REASON_ACCOUNT_BLOCKED,
+      message: null,
       email: null,
       linkToken: null,
     })
@@ -955,6 +1031,7 @@ describe('the OAuth trip machine', () => {
       acceptKey: 'accept-1',
       provider: GITHUB,
       reason: OAUTH_REASON_LINK_DUPLICATE,
+      message: 'That account is already linked to another user.',
       email: null,
       linkToken: null,
     })
@@ -967,6 +1044,60 @@ describe('the OAuth trip machine', () => {
     ])
   })
 
+  it.each(['oauth_login_failed', 'oauth_link_duplicate', 'oauth_link_failed'])(
+    'passes arbitrary server words on %s, including a reconnect replay',
+    async (reason) => {
+      const world = tripWorld()
+      const message = ` Server words for ${reason}.\nKeep whitespace. `
+      await reachExchange(
+        world,
+        reason === 'oauth_login_failed' ? 'login' : 'link',
+      )
+
+      world.setState('reconnecting')
+      world.setState('connected')
+      world.emit(SIGNAL_TYPE_PAGE_RESPONSE, { page: 'main', payload: {} })
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(world.outcomes).toEqual([])
+      world.emit(OAUTH_RESULT_SIGNAL, {
+        acceptKey: 'accept-new',
+        provider: GITHUB,
+        reason,
+        message,
+      })
+
+      expect(world.outcomes).toEqual([{ kind: 'error', message }])
+      expect(world.oauth.trip.get()).toBeNull()
+    },
+  )
+
+  it('lets a second-factor transition go quietly', async () => {
+    const world = tripWorld()
+    await reachExchange(world)
+    world.emit(OAUTH_RESULT_SIGNAL, {
+      acceptKey: 'accept-1',
+      provider: GITHUB,
+      reason: 'second_factor',
+      message: null,
+    })
+
+    expect(world.outcomes).toEqual([{ kind: 'second_factor', message: '' }])
+  })
+
+  it.each([{}, { message: 42 }, { message: false }, { message: [] }])(
+    'refuses a missing or mistyped result message at the parse boundary: %j',
+    (field) => {
+      const payload = {
+        acceptKey: 'accept-1',
+        provider: GITHUB,
+        reason: 'oauth_login_failed',
+        ...field,
+      }
+      expect(oauthResultSignalSchema.safeParse(payload).success).toBe(false)
+    },
+  )
+
   it('arms the pending link when the provider email needs a re-auth', async () => {
     const world = tripWorld()
     await reachExchange(world)
@@ -975,6 +1106,7 @@ describe('the OAuth trip machine', () => {
       acceptKey: 'accept-1',
       provider: GITHUB,
       reason: OAUTH_REASON_REAUTH_REQUIRED,
+      message: null,
       email: 'someone@example.test',
       linkToken: 'link-token-1',
     })
@@ -994,6 +1126,7 @@ describe('the OAuth trip machine', () => {
       acceptKey: 'accept-1',
       provider: GITHUB,
       reason: OAUTH_REASON_CONSENT_REQUIRED,
+      message: null,
       email: 'new@example.test',
       linkToken: null,
       accountToken: 'account-token-1',
@@ -1018,6 +1151,7 @@ describe('the OAuth trip machine', () => {
       acceptKey: 'accept-1',
       provider: GITHUB,
       reason: OAUTH_REASON_CONSENT_REQUIRED,
+      message: null,
       email: null,
       linkToken: null,
       accountToken: 'account-token-2',
@@ -1041,6 +1175,7 @@ describe('the OAuth trip machine', () => {
       acceptKey: 'accept-1',
       provider: GITHUB,
       reason: OAUTH_REASON_LINK_OK,
+      message: null,
       email: null,
       linkToken: null,
     })

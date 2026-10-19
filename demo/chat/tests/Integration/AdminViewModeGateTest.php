@@ -53,7 +53,7 @@ use Throwable;
  * The mode is the node's own runtime row, turned on the way the lever turns it on, and who is behind a
  * connection is answered by the demo's own browser context from its live connections. Nothing is a
  * double. On trial: every action of an admin page is refused to a viewer - with or without an account -
- * but the reading ones, and the refusal is impersonal and changes nothing; a viewer subscribes to an
+ * but the reading ones, and the refusal carries a safe sentence authored by the server and changes nothing; a viewer subscribes to an
  * admin page of the framework and of the project; taking or giving the admin flag switches an open page
  * between viewing and full; the freeze closes a viewer as it closes an admin; and a page with a
  * subscriber set of its own stops sending to someone whose rights were taken - hidden with the mode on.
@@ -256,7 +256,7 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         }
     }
 
-    public function testAnUntrackedRenameFromAViewerIsAnsweredWithTheImpersonalSentence(): void
+    public function testAnUntrackedRenameFromAViewerIsAnsweredWithTheSafeSentenceAuthoredByTheServer(): void
     {
         $person = Hilos::$db->users->actions->createWithName('Olena Kovalenko');
 
@@ -269,7 +269,7 @@ final class AdminViewModeGateTest extends IntegrationTestCase
 
         $fail = $this->frameTo(self::VISITOR_KEY, HilosSignalConstants::HILOS_USER_UPDATE_FAIL);
         self::assertInstanceOf(HilosUserUpdateFailSignalData::class, $fail);
-        self::assertSame(SignalConstants::ACTION_FAILED_REASON, $fail->reason);
+        self::assertSame('View mode: you can look around, but not change anything.', $fail->reason);
         self::assertSame('Olena Kovalenko', Hilos::$db->users[(int) $person->id]?->name);
     }
 

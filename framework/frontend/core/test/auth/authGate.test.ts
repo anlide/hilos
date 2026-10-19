@@ -50,6 +50,7 @@ const UNAUTHORIZED: PageSubscriptionError = {
   page: 'profile',
   httpCode: 401,
   errorCode: 'unauthorized',
+  title: 'Unauthorized',
   message: 'Authentication required',
 }
 
@@ -57,6 +58,7 @@ const FORBIDDEN: PageSubscriptionError = {
   page: 'admin',
   httpCode: 403,
   errorCode: 'forbidden',
+  title: 'Forbidden',
   message: 'Access forbidden',
 }
 

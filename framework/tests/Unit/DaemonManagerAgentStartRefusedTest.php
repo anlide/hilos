@@ -101,7 +101,8 @@ final class DaemonManagerAgentStartRefusedTest extends TestCase
         $this->assertSame(AgentStartRefusedTestRouter::REFUSED_PAGE, $error->page);
         $this->assertSame(HttpConstants::HTTP_SERVICE_UNAVAILABLE, $error->httpCode);
         $this->assertSame('agent_unavailable', $error->errorCode);
-        $this->assertSame('This page is temporarily unavailable. Please try again.', $error->message);
+        $this->assertSame('Service Unavailable', $error->title);
+        $this->assertSame('The service is temporarily unavailable.', $error->message);
     }
 
     /**

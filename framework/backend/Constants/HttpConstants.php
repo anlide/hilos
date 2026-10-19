@@ -77,8 +77,14 @@ final class HttpConstants
     /** @var int HTTP status code for internal server error */
     public const int HTTP_INTERNAL_ERROR = 500;
 
+    /** @var int HTTP status code for an invalid upstream response */
+    public const int HTTP_BAD_GATEWAY = 502;
+
     /** @var int HTTP status code for a service that is temporarily unable to answer */
     public const int HTTP_SERVICE_UNAVAILABLE = 503;
+
+    /** @var int HTTP status code for an upstream response timeout */
+    public const int HTTP_GATEWAY_TIMEOUT = 504;
 
     /** @var string Fallback HTTP status reason phrase for unknown codes */
     public const string HTTP_STATUS_TEXT_UNKNOWN = 'Unknown';

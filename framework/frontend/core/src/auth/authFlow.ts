@@ -43,12 +43,11 @@
 // descriptor plus a setting, never a surface edit. Change detection is
 // `Object.is` (signal.ts): replace objects on update, never mutate them.
 
+import { ActionError } from '../connection/actionLifecycle.js'
 import { toLocal } from '../session/serverClock.js'
 import {
   hilosLegalConsentAcceptance,
   LEGAL_CONSENT_LOAD_FAILED_MESSAGE,
-  LEGAL_CONSENT_REVISED_MESSAGE,
-  LEGAL_TERMS_UNPUBLISHED_MESSAGE,
   type HilosLegalConsentTerms,
 } from '../legal/legalConsent.js'
 import {
@@ -301,6 +300,8 @@ export interface IdentifierDetection {
    * here names no cause, and the surface says nothing new about it.
    */
   readonly signInBlock: 'no_channel' | null
+  /** The server's refusal sentence, or null when no refusal is named. */
+  readonly message: string | null
 }
 
 /**
@@ -2105,12 +2106,12 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       if (terms.documents.length === 0) {
         error.set({
           code: 'terms_unpublished',
-          message: LEGAL_TERMS_UNPUBLISHED_MESSAGE,
+          message: terms.unpublishedMessage,
         })
       } else if (previous !== null && !same) {
         error.set({
           code: 'consent_revised',
-          message: LEGAL_CONSENT_REVISED_MESSAGE,
+          message: terms.revisedMessage,
         })
       } else if (
         error.get()?.code === 'consent_load_failed' ||
@@ -2118,12 +2119,15 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       ) {
         error.set(null)
       }
-    } catch {
+    } catch (failure) {
       if (sequence !== consentSeq || flow.get().step !== 'consent') return
       consent.set({ status: 'failed', terms: null })
       error.set({
         code: 'consent_load_failed',
-        message: LEGAL_CONSENT_LOAD_FAILED_MESSAGE,
+        message:
+          failure instanceof ActionError && failure.outcome === 'fail'
+            ? failure.message
+            : LEGAL_CONSENT_LOAD_FAILED_MESSAGE,
       })
     }
   }

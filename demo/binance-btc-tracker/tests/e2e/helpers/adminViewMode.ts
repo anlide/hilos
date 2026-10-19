@@ -125,4 +125,9 @@ export async function expectViewerRestartRefused(
   )
   expect(reply.type).toBe('action_error')
   expect(reply.errorCode).toBe('view_mode')
+  expect(reply.reason).toBe(
+    'View mode: you can look around, but not change anything.',
+  )
+  expect(reply).not.toHaveProperty('errorType')
+  expect(reply).not.toHaveProperty('errorDetail')
 }

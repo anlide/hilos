@@ -54,7 +54,6 @@ import {
   formatCountdown,
   hilosCodeSendProgress,
   hilosLegalDocumentLabel,
-  LEGAL_TERMS_UNPUBLISHED_MESSAGE,
   isPasskeySupported,
   isPlatformPasskeyAvailable,
   MAGIC_LINK_FLOW_METHOD,
@@ -187,29 +186,10 @@ const SUBMIT_LABELS: Record<AuthFlowScreen, string> = {
 }
 
 /**
- * The sentence for a refusal that arrived as a bare code. Hilos i18n is
- * backend-side, so a reply that carries its own message wins and this map is
- * only for the codes sent without one (and for the converge, which never
- * carries prose at all).
+ * Local fallback for a malformed refusal that carried no sentence.
+ * TODO(i18n): Remove this client-side fallback when backend-provided local
+ * error copy is available.
  */
-const CODE_MESSAGES: Record<string, string> = {
-  identifier_taken: 'That address already has an account — sign in instead.',
-  reservation_expired: 'That registration expired. Ask for a new code.',
-  reset_code_expired: 'That reset code has expired. Ask for a new one.',
-  password_already_changed:
-    'The password was already changed on another device. Sign in with the new one.',
-  magic_link_invalid:
-    'That sign-in link is no longer valid. Ask for a new one.',
-  send_cap_reached: 'Too many codes have gone out. Please try again later.',
-  rate_limited: 'Too many attempts. Please wait a moment and try again.',
-  challenge_required: 'Please confirm you are not a robot and try again.',
-  second_factor_expired: 'Your sign-in step expired. Sign in again.',
-  second_factor_attempts: 'Too many wrong codes. Sign in again.',
-  account_blocked:
-    'This account has been blocked by the project administration.',
-}
-
-/** What is shown when a refusal carried neither a sentence nor a known code. */
 const GENERIC_ERROR = 'That did not work. Please try again.'
 
 /**
@@ -504,25 +484,18 @@ const signInRefusal = computed(() => {
     return null
   }
 
-  return result.kind === 'phone'
-    ? 'This account signs in by a code, and this installation has nothing to send it with. Whoever runs it can set that up.'
-    : 'This account signs in by a mailed link, and this installation has nothing to send it with. Whoever runs it can set that up.'
+  return result.message
 })
 
-// The inline refusal: the backend's own sentence when it sent one, its semantic
-// code turned into ours when it did not, and an account left with no way in when
-// no action was refused.
+// The inline refusal keeps the backend's sentence, including an empty one.
+// Without a refused action, detection may explain why the account has no way in.
 const errorMessage = computed(() => {
   const shown = error.value
   if (shown === null) {
     return signInRefusal.value
   }
 
-  return (
-    shown.message ??
-    (shown.code === null ? null : CODE_MESSAGES[shown.code]) ??
-    GENERIC_ERROR
-  )
+  return shown.message ?? GENERIC_ERROR
 })
 
 // What the calm region says: the screen's news, in the order they stand on it
@@ -694,12 +667,7 @@ const identifierHint = computed(() => {
       return 'No account yet — this creates one.'
     }
 
-    // Two reasons, two sentences: a locked door somebody locked, and a
-    // deployment that simply has nothing to send with. Which one it is was
-    // resolved on the backend, never by comparing flags here (HIL-830).
-    return result.registrationBlock === 'no_channel'
-      ? 'No account for this, and there is nothing to send a code with.'
-      : 'No account for this, and registration is closed.'
+    return result.message
   }
   // A held address has no account to describe — it has a code in flight, and
   // saying so is the whole point of the screen the return lands on (HIL-651).
@@ -1127,19 +1095,19 @@ async function continueFromDone(): Promise<void> {
  *
  * @param step The step off the wire.
  * @param intent The intent off the wire.
- * @param code The semantic reason of a rollback, or null.
+ * @param message The server's notice, or null for a silent transition.
  */
 function applyFromServer(
   step: unknown,
   intent: unknown,
-  code: string | null,
+  message: string | null,
 ): void {
   const patch = toFlowPatch(step, intent)
   if (patch === null) {
     return
   }
   auth.applyExternal(patch)
-  notice.value = code === null ? null : (CODE_MESSAGES[code] ?? null)
+  notice.value = message
 }
 
 /**
@@ -1157,7 +1125,7 @@ function applyReportedStep(step: PendingAuthStep | null): void {
   if (step === null || step.code === null) {
     return
   }
-  applyFromServer(step.step, step.intent, step.code)
+  applyFromServer(step.step, step.intent, step.message)
 }
 
 /**
@@ -1384,7 +1352,7 @@ onMounted(() => {
       if (!isCurrentIdentifier(data.identifier)) {
         return
       }
-      applyFromServer(data.step, data.intent, data.code)
+      applyFromServer(data.step, data.intent, data.message)
     },
   )
 
@@ -2043,7 +2011,7 @@ onUnmounted(() => {
               class="small text-body-secondary"
               data-id="legal-consent-unpublished"
             >
-              {{ LEGAL_TERMS_UNPUBLISHED_MESSAGE }}
+              {{ consent.terms.unpublishedMessage }}
             </p>
             <HilosLegalConsent
               v-else

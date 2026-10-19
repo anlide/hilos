@@ -26,6 +26,7 @@ use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
+use Hilos\Auth\Library\Command\AuthMessages;
 use Hilos\Auth\Library\Command\PhoneCodeCommands;
 use Hilos\Auth\Library\Command\RecoveryCommands;
 use Hilos\Auth\Library\DTO\AuthImpersonationOffApplySignalData;
@@ -1607,7 +1608,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * @param ?Session $session Session to describe, or null for an anonymous response
      * @return ?array{identifier: ?string, kind: ?string, intent: string, step: string,
-     *     channel: ?string, expiresAt: ?int, code: ?string, acceptedRevisions?: array<string, string>,
+     *     channel: ?string, expiresAt: ?int, code: ?string, message: ?string, acceptedRevisions?: array<string, string>,
      *     secondFactor?: array{trustDeviceDays: ?int, resetEffectiveAt: ?int}} Step, or null when there is none
      * @throws HilosException When the reservation, runtime, verification or identity query fails
      */
@@ -1668,6 +1669,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 : null,
             HandshakeResponseSignalData::expiresAt => TimeHelper::sqlToMs($reservation->expiresAt),
             HandshakeResponseSignalData::code => null,
+            HandshakeResponseSignalData::message => null,
         ];
         $acceptedRevisions = $reservation->acceptedRevisions();
         if ($acceptedRevisions !== null) {
@@ -1694,7 +1696,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @param string $identifier Address the session was registering
      * @param string $kind Classification of that address (see IdentifierDetection::KIND_*)
      * @return ?array{identifier: string, kind: string, intent: string, step: string,
-     *     channel: ?string, expiresAt: ?int, code: ?string} Step, or null when the address is free
+     *     channel: ?string, expiresAt: ?int, code: ?string, message: ?string} Step, or null when the address is free
      * @throws HilosException When the identity lookup fails
      */
     private function lostRegistrationStepFor(string $identifier, string $kind): ?array
@@ -1711,6 +1713,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             HandshakeResponseSignalData::channel => null,
             HandshakeResponseSignalData::expiresAt => null,
             HandshakeResponseSignalData::code => AuthFlowOutcome::CODE_IDENTIFIER_TAKEN,
+            HandshakeResponseSignalData::message => AuthMessages::forNoticeCode(AuthFlowOutcome::CODE_IDENTIFIER_TAKEN),
         ];
     }
 
@@ -1743,7 +1746,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * @param Session $session Session to describe
      * @return ?array{identifier: string, kind: string, intent: string, step: string,
-     *     channel: ?string, expiresAt: ?int, code: ?string} Step, or null when the session stands on no live recovery
+     *     channel: ?string, expiresAt: ?int, code: ?string, message: ?string} Step, or null when the session stands on no live recovery
      * @throws HilosException When the runtime read or a verification query fails
      */
     private function recoveryStepFor(Session $session): ?array
@@ -1790,6 +1793,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             HandshakeResponseSignalData::channel => null,
             HandshakeResponseSignalData::expiresAt => $expiresAt,
             HandshakeResponseSignalData::code => null,
+            HandshakeResponseSignalData::message => null,
         ];
     }
 
@@ -3563,6 +3567,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                         $identifier,
                         AuthFlowStep::IDENTIFIER,
                         AuthFlowIntent::LOGIN,
+                        AuthMessages::forNoticeCode(AuthFlowOutcome::CODE_IDENTIFIER_TAKEN),
                         AuthFlowOutcome::CODE_IDENTIFIER_TAKEN,
                     ),
                 );
@@ -3573,7 +3578,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $this->sendToUser(
                 HilosSignalConstants::HILOS_AUTH_CONVERGE,
                 $acceptKey,
-                new AuthConvergeSignalData($acceptKey, $identifier, AuthFlowStep::DONE, AuthFlowIntent::REGISTER),
+                new AuthConvergeSignalData($acceptKey, $identifier, AuthFlowStep::DONE, AuthFlowIntent::REGISTER, null),
             );
         }
     }
@@ -3671,7 +3676,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $this->sendToUser(
                 HilosSignalConstants::HILOS_AUTH_CONVERGE,
                 $acceptKey,
-                new AuthConvergeSignalData($acceptKey, $recoveredIdentifier, AuthFlowStep::IDENTIFIER, AuthFlowIntent::LOGIN),
+                new AuthConvergeSignalData($acceptKey, $recoveredIdentifier, AuthFlowStep::IDENTIFIER, AuthFlowIntent::LOGIN, null),
             );
         }
 
@@ -3689,6 +3694,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                     $waitedIdentifier,
                     AuthFlowStep::IDENTIFIER,
                     AuthFlowIntent::REGISTER,
+                    null,
                 ),
             );
         }
@@ -3737,7 +3743,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $this->sendToUser(
                 HilosSignalConstants::HILOS_AUTH_CONVERGE,
                 $acceptKey,
-                new AuthConvergeSignalData($acceptKey, $identifier, AuthFlowStep::SET_PASSWORD, AuthFlowIntent::REGISTER),
+                new AuthConvergeSignalData($acceptKey, $identifier, AuthFlowStep::SET_PASSWORD, AuthFlowIntent::REGISTER, null),
             );
         }
     }
@@ -3785,7 +3791,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $this->sendToUser(
                 HilosSignalConstants::HILOS_AUTH_CONVERGE,
                 $acceptKey,
-                new AuthConvergeSignalData($acceptKey, $identifier, AuthFlowStep::SET_PASSWORD, AuthFlowIntent::RECOVERY),
+                new AuthConvergeSignalData($acceptKey, $identifier, AuthFlowStep::SET_PASSWORD, AuthFlowIntent::RECOVERY, null),
             );
         }
     }
@@ -3847,6 +3853,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                     $identifier,
                     $isSameSession ? AuthFlowStep::DONE : AuthFlowStep::IDENTIFIER,
                     $isSameSession ? AuthFlowIntent::RECOVERY : AuthFlowIntent::LOGIN,
+                    $isSameSession ? null : AuthMessages::forNoticeCode(AuthFlowOutcome::CODE_PASSWORD_ALREADY_CHANGED),
                     $isSameSession ? null : AuthFlowOutcome::CODE_PASSWORD_ALREADY_CHANGED,
                 ),
             );
@@ -6461,6 +6468,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                     $identifier,
                     AuthFlowStep::CODE_EXPIRED,
                     AuthFlowIntent::REGISTER,
+                    AuthMessages::forNoticeCode(AuthFlowOutcome::CODE_RESERVATION_EXPIRED),
                     AuthFlowOutcome::CODE_RESERVATION_EXPIRED,
                 ),
             );
@@ -7223,6 +7231,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             HandshakeResponseSignalData::channel => null,
             HandshakeResponseSignalData::expiresAt => TimeHelper::sqlToMs($until),
             HandshakeResponseSignalData::code => null,
+            HandshakeResponseSignalData::message => null,
             HandshakeResponseSignalData::secondFactor => [
                 HandshakeResponseSignalData::trustDeviceDays => SecondFactorPolicy::current()->trustDeviceDays(),
                 HandshakeResponseSignalData::resetEffectiveAt => $reset === null
@@ -7248,6 +7257,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             HandshakeResponseSignalData::channel => null,
             HandshakeResponseSignalData::expiresAt => null,
             HandshakeResponseSignalData::code => $code,
+            HandshakeResponseSignalData::message => $code === null ? null : AuthMessages::forNoticeCode($code),
         ];
     }
 
@@ -7406,6 +7416,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                     $frame->email,
                     $frame->linkToken,
                     $frame->accountToken,
+                    AuthMessages::forOAuthReason($frame->reason),
                 ),
             );
 
@@ -7449,6 +7460,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 $trip->email,
                 $trip->linkToken,
                 $trip->accountToken,
+                AuthMessages::forOAuthReason($reason),
             ),
         );
     }
@@ -7603,7 +7615,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     {
         $trip = Hilos::$rt->hilosOAuthTrips[StateHilosOAuthTrip::hashKey($tripKey)];
         if ($trip === null || $trip->sessionTokenHash !== StateProtectedModeRuntime::hashSessionToken($sessionToken)) {
-            return new OAuthResumeReplyDTO(false);
+            return new OAuthResumeReplyDTO(false, AuthMessages::OAUTH_LOGIN_FAILED);
         }
 
         $trip->actions->readdress($acceptKey);
@@ -7617,7 +7629,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $this->deliverOAuthTripResult($trip, $ending);
         }
 
-        return new OAuthResumeReplyDTO(true);
+        return new OAuthResumeReplyDTO(true, null);
     }
 
     /**
@@ -7733,7 +7745,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $this->sendToUser(
             HilosSignalConstants::HILOS_OAUTH_RESULT,
             $acceptKey,
-            new OAuthResultSignalData($acceptKey, $trip->provider, OAuthResultSignalData::REASON_LOGIN_FAILED),
+            new OAuthResultSignalData(
+                $acceptKey,
+                $trip->provider,
+                OAuthResultSignalData::REASON_LOGIN_FAILED,
+                message: AuthMessages::OAUTH_LOGIN_FAILED,
+            ),
         );
     }
 

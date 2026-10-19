@@ -272,6 +272,68 @@ describe('legal admin views', () => {
     view.unmount()
   })
 
+  it('shows the server unpublished sentence as text in the consent preview', async () => {
+    const h = harness()
+    h.scope.data.set('legalDocument', {
+      document: 'terms',
+      declared: true,
+      revision,
+      set: null,
+      newerSet: null,
+      deviations: [],
+    })
+    const unpublishedMessage =
+      '<b>The server has not published these terms.</b>'
+    const dispatch = vi.fn(() => ({
+      done: Promise.resolve({
+        reply: {
+          ...consentTermsWithClauses(),
+          documents: [],
+          unpublishedMessage,
+        },
+      }),
+    }))
+    Object.assign(h.context.actions, { dispatch })
+    const view = mount(HilosLegalDocumentPage, {
+      props: { context: h.context },
+      global: h.global,
+      attachTo: document.body,
+    })
+    try {
+      await view.get('[data-id="legal-preview-consent"]').trigger('click')
+      await flushPromises()
+      const preview = document.querySelector(
+        '[data-id="legal-consent-preview"]',
+      )!
+      const unpublished = preview.querySelector(
+        '[data-id="legal-consent-unpublished"]',
+      )!
+      expect(unpublished.textContent).toBe(unpublishedMessage)
+      expect(unpublished.querySelector('b')).toBeNull()
+      expect(
+        preview.querySelector('[data-id="auth-consent-accept"]'),
+      ).toBeNull()
+      expect(preview.querySelector('[data-id="auth-submit"]')).toBeNull()
+      expect(dispatch).toHaveBeenCalledTimes(1)
+      expect(dispatch).toHaveBeenCalledWith(
+        'hilos_legal_consent',
+        {},
+        expect.any(Object),
+      )
+      ;(
+        document.querySelector(
+          '[data-id="legal-consent-preview-close"]',
+        ) as HTMLElement
+      ).click()
+      await flushPromises()
+      expect(
+        document.querySelector('[data-id="legal-consent-preview"]'),
+      ).toBeNull()
+    } finally {
+      view.unmount()
+    }
+  })
+
   it('does not invent text or a zero count for an undeclared revision', () => {
     const h = harness()
     h.scope.data.set('legalRevision', {

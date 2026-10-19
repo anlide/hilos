@@ -99,7 +99,11 @@ old revisions.
 ## Consent at registration
 
 The public `hilos_legal_consent` action on the users library accepts `{}` and
-replies with `{form, documents}`. `form` is `checkbox` or `line`, read from
+replies with `{form, documents, unpublishedMessage, revisedMessage}`. Both
+messages are required server-authored words for the consent surface and its
+admin preview; a failed action's own message is preserved through legal catches
+([the refusal-copy rule](../frontend/wire-protocol.md#a-failure-reason-is-a-domain-sentence-never-an-engine-message)).
+`form` is `checkbox` or `line`, read from
 `legal.consent_form`. Each document supplies its `document` key, current
 `revision` and composed `clauses` in the shared `LegalWire` shapes. The last
 declared revision is current even when its acceptance deadline is in the future.
@@ -117,7 +121,9 @@ A provider's first sign-in (HIL-1235) stops before account creation and ends its
 OAuth trip with `consent_required` and an `accountToken`. This signed, session-bound
 token carries the provider, subject, optional address, and name for 30 minutes;
 the server stores no pending account. The tab submits
-`hilos_oauth_create_account` with `{accountToken, acceptedRevisions}`. The server
+`hilos_oauth_create_account` with `{accountToken, acceptedRevisions}` and an
+optional `provider` string as a catalog-label hint for an invalid proof's
+message. The signed `accountToken` remains the authority. The server
 checks the token, whether the provider is open, whether the provider identity
 already belongs to an account, whether its address became somebody else's, and
 then the current revisions, in that order. A known provider identity signs in
@@ -130,7 +136,7 @@ without an address hold. A failed landing rolls them all back.
 | `consent_required` | Return to consent, without an error sentence |
 | `consent_revised` | Reload current documents, clear the checkbox and explain that the terms changed |
 | `terms_unpublished` | Explain that the project has not published terms; creating an account stays unavailable |
-| `oauth_sign_in_expired` | Return to the identifier field and ask for another provider sign-in; the frontend names that provider |
+| `oauth_sign_in_expired` | Return to the identifier field and show the server message asking for another provider sign-in, with its provider name |
 
 The phone owner reports these same codes on the closing send-progress row and
 finishes the operation before minting or delivering a code.

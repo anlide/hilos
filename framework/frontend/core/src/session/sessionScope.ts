@@ -359,6 +359,8 @@ export interface PendingAuthStep {
    * `null` when it simply has not finished what it started.
    */
   readonly code: string | null
+  /** Server words about the step change, or null for a quiet resume. */
+  readonly message: string | null
   /**
    * What the second-factor steps draw (HIL-494) — the days of trust the code
    * step offers and the LOCAL moment an already requested removal takes effect —
@@ -878,10 +880,12 @@ function readPendingAuthStep(value: unknown): PendingAuthStep | null {
   const channel = node['channel'] ?? null
   const expiresAt = node['expiresAt'] ?? null
   const code = node['code'] ?? null
+  const message = node['message']
   if (
     (intent !== 'register' && intent !== 'recovery' && intent !== 'login') ||
     (channel !== null && typeof channel !== 'string') ||
-    (code !== null && typeof code !== 'string')
+    (code !== null && typeof code !== 'string') ||
+    (message !== null && typeof message !== 'string')
   ) {
     return null
   }
@@ -904,6 +908,7 @@ function readPendingAuthStep(value: unknown): PendingAuthStep | null {
       channel,
       expiresAt: toLocal(expiresAt),
       code,
+      message,
       secondFactor,
       acceptedRevisions: null,
     }
@@ -921,6 +926,7 @@ function readPendingAuthStep(value: unknown): PendingAuthStep | null {
       channel,
       expiresAt: null,
       code,
+      message,
       secondFactor: null,
       acceptedRevisions: null,
     }
@@ -963,6 +969,7 @@ function readPendingAuthStep(value: unknown): PendingAuthStep | null {
     channel,
     expiresAt: typeof expiresAt === 'number' ? toLocal(expiresAt) : null,
     code,
+    message,
     secondFactor: null,
     acceptedRevisions: acceptedRevisions as Readonly<
       Record<string, string>

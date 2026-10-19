@@ -22,6 +22,7 @@
 import { consentTerms } from '../legal/consentFixture.js'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ActionError } from '../../src/connection/actionLifecycle.js'
 import {
   applicableChannels,
   authFlowMethodsFor,
@@ -163,6 +164,7 @@ function detected(
     registerable: ['password'],
     registrationBlock: null,
     signInBlock: null,
+    message: null,
     ...overrides,
   }
 }
@@ -375,6 +377,8 @@ describe('a live account on an installation that cannot send (HIL-973)', () => {
           kind: 'phone',
           methods: [],
           signInBlock: 'no_channel',
+          message:
+            'This account signs in by a code, and this installation has nothing to send it with. Whoever runs it can set that up.',
         }),
     })
     await typeAndDetect(flow, '+79991234567')
@@ -385,11 +389,19 @@ describe('a live account on an installation that cannot send (HIL-973)', () => {
   it('an address with nothing to sign in with gets no primary action', async () => {
     const flow = setup({
       onDetect: async (identifier) =>
-        detected({ identifier, methods: [], signInBlock: 'no_channel' }),
+        detected({
+          identifier,
+          methods: [],
+          signInBlock: 'no_channel',
+          message: ' Server refusal for this address.\nKeep this sentence. ',
+        }),
     })
     await typeAndDetect(flow, 'a@b.com')
     expect(flow.primaryAction.get()).toBeNull()
     expect(flow.submittable.get()).toBe(false)
+    expect(flow.detection.get().result?.message).toBe(
+      ' Server refusal for this address.\nKeep this sentence. ',
+    )
   })
 })
 
@@ -422,6 +434,7 @@ describe('the lookup reply schema', () => {
     registerable: [],
     registrationBlock: null,
     signInBlock: null,
+    message: null,
   }
 
   it('lets a proven reply through (HIL-825), which the backend does send', async () => {
@@ -439,12 +452,50 @@ describe('the lookup reply schema', () => {
         ...wireReply,
         status: 'active',
         signInBlock: 'no_channel',
+        message: ' Server sign-in refusal.\nKeep this sentence. ',
       }),
     )
     await expect(actions.onDetect('a@b.com')).resolves.toMatchObject({
       signInBlock: 'no_channel',
+      message: ' Server sign-in refusal.\nKeep this sentence. ',
     })
   })
+
+  it.each(['none', 'active', 'pending', 'proven'])(
+    'keeps an explicit null message for %s',
+    async (status) => {
+      const reply = { ...wireReply, status }
+      const actions = createAuthActions(contextReplying(reply))
+      await expect(actions.onDetect('a@b.com')).resolves.toEqual(reply)
+    },
+  )
+
+  it('rejects an absent message instead of deriving words from the block', async () => {
+    const reply: Record<string, unknown> = {
+      ...wireReply,
+      status: 'active',
+      signInBlock: 'no_channel',
+    }
+    delete reply.message
+    const actions = createAuthActions(contextReplying(reply))
+
+    await expect(actions.onDetect('a@b.com')).rejects.toMatchObject({
+      issues: [expect.objectContaining({ path: ['message'] })],
+    })
+  })
+
+  it.each([undefined, 42, 1.5, false, [], {}])(
+    'rejects a mistyped message %j',
+    async (message) => {
+      const actions = createAuthActions(
+        contextReplying({ ...wireReply, status: 'none', message }),
+      )
+
+      await expect(actions.onDetect('a@b.com')).rejects.toMatchObject({
+        issues: [expect.objectContaining({ path: ['message'] })],
+      })
+    },
+  )
 })
 
 describe('applicableChannels', () => {
@@ -501,6 +552,7 @@ describe('isFlowSubmittable', () => {
         methods: [],
         registerable: [],
         registrationBlock: 'closed',
+        message: 'No account for this, and registration is closed.',
       }),
     )
     expect(isFlowSubmittable(flow, form, closed)).toBe(false)
@@ -1975,6 +2027,7 @@ describe('cancelable Continue (HIL-1557)', () => {
             channel: null,
             expiresAt: null,
             code: null,
+            message: null,
             secondFactor: null,
             acceptedRevisions: null,
           })
@@ -2705,6 +2758,7 @@ describe('failure surface', () => {
       channel: null,
       expiresAt: Date.now() + 10 * SECOND_MS,
       code: null,
+      message: null,
       secondFactor: null,
       acceptedRevisions: null,
     })
@@ -2818,9 +2872,17 @@ describe('a delivery change re-asks the held lookup (HIL-1102)', () => {
     expect(flow.submittable.get()).toBe(false)
     expect(onSubmit).not.toHaveBeenCalled()
 
-    finish({ ...phoneReply, registerable: [], registrationBlock: 'no_channel' })
+    finish({
+      ...phoneReply,
+      registerable: [],
+      registrationBlock: 'no_channel',
+      message: ' Server refusal after delivery changed. ',
+    })
     await settleRefresh()
     expect(flow.detection.get().result?.registrationBlock).toBe('no_channel')
+    expect(flow.detection.get().result?.message).toBe(
+      ' Server refusal after delivery changed. ',
+    )
     expect(flow.primaryAction.get()).toBeNull()
     expect(flow.flow.get().step).toBe('identifier')
   })
@@ -2833,6 +2895,8 @@ describe('a delivery change re-asks the held lookup (HIL-1102)', () => {
         ...phoneReply,
         registerable: [],
         registrationBlock: 'no_channel',
+        message:
+          'No account for this, and there is nothing to send a code with.',
       })
       .mockResolvedValueOnce(phoneReply)
     const flow = setup({ codeDelivery, onDetect })
@@ -2892,6 +2956,7 @@ describe('a delivery change re-asks the held lookup (HIL-1102)', () => {
         ...phoneReply,
         registerable: [],
         registrationBlock: 'no_channel',
+        message: ' The current server refusal. ',
       })
     const flow = setup({ codeDelivery, onDetect })
     await typeAndDetect(flow, phone)
@@ -2903,6 +2968,9 @@ describe('a delivery change re-asks the held lookup (HIL-1102)', () => {
     await settleRefresh()
     expect(onDetect).toHaveBeenCalledTimes(2)
     expect(flow.detection.get().result?.registrationBlock).toBe('no_channel')
+    expect(flow.detection.get().result?.message).toBe(
+      ' The current server refusal. ',
+    )
   })
 
   it('leaves an in-flight send to its own reply', async () => {
@@ -3066,6 +3134,7 @@ describe('resuming an unfinished auth step', () => {
         channel: null,
         expiresAt: Date.now() + SECOND_MS,
         code: null,
+        message: null,
         secondFactor: null,
         acceptedRevisions,
       })
@@ -3088,6 +3157,7 @@ describe('resuming an unfinished auth step', () => {
       channel: null,
       expiresAt: Date.now() + SECOND_MS,
       code: null,
+      message: null,
       secondFactor: null,
       acceptedRevisions,
     })
@@ -3111,6 +3181,7 @@ describe('resuming an unfinished auth step', () => {
       channel: null,
       expiresAt: Date.now() + 10 * SECOND_MS,
       code: null,
+      message: null,
       secondFactor: null,
       acceptedRevisions: null,
     })
@@ -3135,6 +3206,7 @@ describe('resuming an unfinished auth step', () => {
       channel: 'telegram',
       expiresAt: Date.now() + 10 * SECOND_MS,
       code: null,
+      message: null,
       secondFactor: null,
       acceptedRevisions: null,
     })
@@ -3166,6 +3238,7 @@ describe('resuming an unfinished auth step', () => {
       channel: null,
       expiresAt: Date.now() + 10 * SECOND_MS,
       code: null,
+      message: null,
       secondFactor: null,
       acceptedRevisions: null,
     })
@@ -3203,6 +3276,7 @@ describe('resuming an unfinished auth step', () => {
       channel: null,
       expiresAt: Date.now() + 10 * SECOND_MS,
       code: null,
+      message: null,
       secondFactor: null,
       acceptedRevisions: null,
     })
@@ -3223,6 +3297,7 @@ describe('resuming an unfinished auth step', () => {
       channel: null,
       expiresAt: Date.now() + 10 * SECOND_MS,
       code: null,
+      message: null,
       secondFactor: null,
       acceptedRevisions: null,
     })
@@ -3244,6 +3319,7 @@ describe('resuming an unfinished auth step', () => {
       channel: null,
       expiresAt: Date.now() + 10 * SECOND_MS,
       code: null,
+      message: null,
       secondFactor: null,
       acceptedRevisions: null,
     })
@@ -3267,6 +3343,7 @@ describe('resuming an unfinished auth step', () => {
       channel: null,
       expiresAt: null,
       code: 'identifier_taken',
+      message: 'That address already has an account — sign in instead.',
       secondFactor: null,
       acceptedRevisions: null,
     })
@@ -3295,6 +3372,7 @@ describe('resuming an unfinished auth step', () => {
       channel: null,
       expiresAt: null,
       code: 'identifier_taken',
+      message: 'That address already has an account — sign in instead.',
       secondFactor: null,
       acceptedRevisions: null,
     })
@@ -3320,6 +3398,7 @@ describe('resuming an unfinished auth step', () => {
       channel: null,
       expiresAt: Date.now() + 10 * SECOND_MS,
       code: null,
+      message: null,
       secondFactor: null,
       acceptedRevisions: null,
     })
@@ -3341,6 +3420,7 @@ describe('resuming an unfinished auth step', () => {
       channel: null,
       expiresAt: Date.now() + 5 * SECOND_MS,
       code: null,
+      message: null,
       secondFactor: null,
       acceptedRevisions: null,
     })
@@ -3352,6 +3432,7 @@ describe('resuming an unfinished auth step', () => {
       channel: null,
       expiresAt: null,
       code: 'identifier_taken',
+      message: 'That address already has an account — sign in instead.',
       secondFactor: null,
       acceptedRevisions: null,
     })
@@ -3370,6 +3451,7 @@ describe('the send-progress line (HIL-826)', () => {
     purpose: null,
     ticket: null,
     reason: null,
+    message: null,
     resendAt: null,
     expiresAt: null,
   }
@@ -3590,6 +3672,7 @@ describe('a code that ran out says so itself (HIL-828)', () => {
       channel: null,
       expiresAt: Date.now() - SECOND_MS,
       code: null,
+      message: null,
       secondFactor: null,
       acceptedRevisions: null,
     })
@@ -4290,6 +4373,117 @@ describe('a passkey account from an empty field (HIL-1106)', () => {
 })
 
 describe('current registration consent (HIL-499)', () => {
+  it.each(['timeout', 'disconnected', 'invalid-reply'] as const)(
+    'keeps technical %s details out of the load failure',
+    async (outcome) => {
+      const flow = setup({
+        onConsentTerms: async () => {
+          throw new ActionError(
+            'hilos_legal_consent',
+            outcome,
+            'Internal transport detail',
+          )
+        },
+      })
+      flow.applyExternal({ step: 'consent', intent: 'register' })
+      await Promise.resolve()
+      expect(flow.consent.get().status).toBe('failed')
+      expect(flow.error.get()?.message).toBe('The terms could not be loaded.')
+      expect(flow.submittable.get()).toBe(false)
+    },
+  )
+
+  it.each([false, true])(
+    'ignores a late server refusal after leaving consent, reopened=%s',
+    async (reopened) => {
+      let rejectOld!: (reason: unknown) => void
+      const onConsentTerms = vi
+        .fn<AuthFlowOptions['onConsentTerms']>()
+        .mockImplementationOnce(
+          () =>
+            new Promise((_, reject) => {
+              rejectOld = reject
+            }),
+        )
+        .mockResolvedValue(consentTerms('terms-v2'))
+      const flow = setup({ onConsentTerms })
+      flow.applyExternal({ step: 'consent', intent: 'register' })
+      flow.backToIdentifier()
+      if (reopened) {
+        flow.applyExternal({ step: 'consent', intent: 'register' })
+        await Promise.resolve()
+      }
+      const settled = flow.consent.get()
+      rejectOld(
+        new ActionError('hilos_legal_consent', 'fail', 'Old server refusal'),
+      )
+      await Promise.resolve()
+      expect(flow.error.get()).toBeNull()
+      expect(flow.consent.get()).toBe(settled)
+      if (reopened) {
+        expect(
+          flow.consent.get().terms?.documents[0]?.revision.revisionId,
+        ).toBe('terms-v2')
+      }
+    },
+  )
+
+  it.each(['reordered', 'removed', 'added', 'privacy changed'])(
+    'compares the whole accepted revision map when documents are %s',
+    async (change) => {
+      const initial = consentTerms()
+      const next = consentTerms()
+      if (change === 'reordered') next.documents.reverse()
+      if (change === 'removed') next.documents.pop()
+      if (change === 'added') initial.documents.pop()
+      if (change === 'privacy changed')
+        next.documents[1]!.revision.revisionId = 'privacy-v2'
+      next.revisedMessage = 'Review this newly published document set.'
+      const onConsentTerms = vi
+        .fn<AuthFlowOptions['onConsentTerms']>()
+        .mockResolvedValueOnce(initial)
+        .mockResolvedValueOnce(next)
+      const flow = setup({ onConsentTerms })
+      flow.applyExternal({ step: 'consent', intent: 'register' })
+      await Promise.resolve()
+      flow.setField('consentAccepted', true)
+      flow.refreshConsentTerms()
+      await Promise.resolve()
+      expect(flow.form.get().consentAccepted).toBe(change === 'reordered')
+      expect(flow.error.get()).toEqual(
+        change === 'reordered'
+          ? null
+          : {
+              code: 'consent_revised',
+              message: 'Review this newly published document set.',
+            },
+      )
+    },
+  )
+
+  it('preserves the server load refusal even for a familiar code', async () => {
+    const flow = setup({
+      onConsentTerms: async () => {
+        throw new ActionError(
+          'hilos_legal_consent',
+          'fail',
+          'This project is preparing its legal documents.',
+          undefined,
+          undefined,
+          'terms_unpublished',
+        )
+      },
+    })
+    flow.applyExternal({ step: 'consent', intent: 'register' })
+    await Promise.resolve()
+    expect(flow.consent.get().status).toBe('failed')
+    expect(flow.error.get()).toEqual({
+      code: 'consent_load_failed',
+      message: 'This project is preparing its legal documents.',
+    })
+    expect(flow.submittable.get()).toBe(false)
+  })
+
   it('blocks submission during loading and after load failure, and retries explicitly', async () => {
     const onSubmit = vi
       .fn<AuthFlowOptions['onSubmit']>()
@@ -4320,7 +4514,10 @@ describe('current registration consent (HIL-499)', () => {
       .fn<AuthFlowOptions['onConsentTerms']>()
       .mockResolvedValueOnce(consentTerms())
       .mockResolvedValueOnce(consentTerms())
-      .mockResolvedValueOnce(consentTerms('terms-v2'))
+      .mockResolvedValueOnce({
+        ...consentTerms('terms-v2'),
+        revisedMessage: 'A new project revision is ready for your review.',
+      })
     const flow = setup({ onConsentTerms })
     flow.applyExternal({ step: 'consent', intent: 'register' })
     await Promise.resolve()
@@ -4338,6 +4535,9 @@ describe('current registration consent (HIL-499)', () => {
       privacy: 'privacy-v1',
     })
     expect(flow.error.get()?.code).toBe('consent_revised')
+    expect(flow.error.get()?.message).toBe(
+      'A new project revision is ready for your review.',
+    )
   })
 
   it('applies a changed form setting on the next entry, including overlapping reconnect reads', async () => {
@@ -4387,14 +4587,25 @@ describe('current registration consent (HIL-499)', () => {
   })
 
   it('never enables registration for an unpublished project', async () => {
+    const onSubmit = vi.fn<AuthFlowOptions['onSubmit']>()
     const flow = setup({
-      onConsentTerms: async () => ({ form: 'line', documents: [] }),
+      onSubmit,
+      onConsentTerms: async () => ({
+        ...consentTerms('terms-v1', 'line'),
+        documents: [],
+        unpublishedMessage: 'The project has no published terms today.',
+      }),
     })
     flow.applyExternal({ step: 'consent', intent: 'register' })
     await Promise.resolve()
     flow.setField('consentAccepted', true)
     expect(flow.submittable.get()).toBe(false)
     expect(flow.error.get()?.code).toBe('terms_unpublished')
+    expect(flow.error.get()?.message).toBe(
+      'The project has no published terms today.',
+    )
+    await flow.submit()
+    expect(onSubmit).not.toHaveBeenCalled()
   })
 
   it.each(['consent_required', 'consent_revised'])(

@@ -61,7 +61,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      * @param list<string> $acceptKeys Accept keys of the live connections this state applies to
      * @param ?string $pendingAck Ack the session owes (a {@see SessionAck} value), or null for none
      * @param ?array{identifier: ?string, kind: ?string, intent: string, step: string,
-     *     channel: ?string, expiresAt: ?int, code: ?string, acceptedRevisions?: array<string, string>,
+     *     channel: ?string, expiresAt: ?int, code: ?string, message: ?string, acceptedRevisions?: array<string, string>,
      *     secondFactor?: array{trustDeviceDays: ?int, resetEffectiveAt: ?int}} $pendingAuthStep
      *     Authentication step the session has not finished ({@see HandshakeResponseSignalData}), or null
      * @param ?string $rotationTicket Ticket the named socket trades for the rotated cookie, or null when nothing rotated
@@ -200,6 +200,11 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
             throw new InvalidFormatException('Payload carries no session id field');
         }
 
+        $pendingAuthStep = self::optionalArray($data, HandshakeResponseSignalData::pendingAuthStep);
+        if ($pendingAuthStep !== null) {
+            self::requireNullableString($pendingAuthStep, HandshakeResponseSignalData::message);
+        }
+
         return new static(
             sessionToken: self::requireString($data, 'sessionToken'),
             sessionId: self::optionalInt($data, self::sessionId),
@@ -209,7 +214,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
                 self::optionalArray($data, 'acceptKeys') ?? [],
             )),
             pendingAck: self::optionalString($data, 'pendingAck'),
-            pendingAuthStep: self::optionalArray($data, 'pendingAuthStep'),
+            pendingAuthStep: $pendingAuthStep,
             rotationTicket: self::optionalString($data, 'rotationTicket'),
             requestId: self::optionalString($data, 'requestId'),
             action: self::optionalString($data, 'action'),

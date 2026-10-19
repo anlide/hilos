@@ -20,6 +20,7 @@ import { bindPageReady } from '../../src/subscription/pageReadyGate.js'
 import { setHilosThemePick } from '../../src/theme/themeState.js'
 import { SIGNAL_TYPE_PAGE_RESPONSE } from '../../src/protocol/constants.js'
 import { consentTerms } from '../legal/consentFixture.js'
+import { codeSendProgressSchema } from '../../src/auth/authSendProgress.js'
 
 const FORM: AuthFlowForm = {
   identifier: 'person@example.test',
@@ -44,8 +45,9 @@ const FLOW: AuthFlowState = {
 
 /** A real action adapter over a wire that can deliver a phone outcome before its ack. */
 function world(
-  phoneReason = 'code_sent',
+  phoneReason: string | null = 'code_sent',
   replies: Record<string, unknown> = {},
+  phoneMessage: string | null = null,
 ) {
   const listeners = new Map<string, Set<(value: unknown) => void>>()
   const sent: Array<{ action: string; payload: Record<string, unknown> }> = []
@@ -79,18 +81,22 @@ function world(
       sent.push({ action, payload })
       frames.push({ type: 'action', action, data: payload })
       if (action === 'hilos_request_phone_code') {
-        emit('projectSignal', {
-          type: 'hilos_code_send_progress',
-          data: {
-            ticket: 'phone-send',
-            reason: phoneReason,
-            state: phoneReason === 'code_sent' ? 'sent' : 'failed',
-            channel: 'sms',
-            detail: null,
-            resendAt: null,
-            expiresAt: null,
-          },
-        })
+        if (phoneReason !== null)
+          emit('projectSignal', {
+            type: 'hilos_code_send_progress',
+            data: {
+              ticket: 'phone-send',
+              reason: phoneReason,
+              message: phoneMessage,
+              state: ['code_sent', 'code_rate_limited'].includes(phoneReason)
+                ? 'sent'
+                : 'failed',
+              channel: 'sms',
+              detail: null,
+              resendAt: null,
+              expiresAt: null,
+            },
+          })
         return { done: Promise.resolve({ reply: { ticket: 'phone-send' } }) }
       }
       return {
@@ -120,6 +126,9 @@ function world(
     frames,
     emit,
     connection,
+    listenerCount(event: string): number {
+      return listeners.get(event)?.size ?? 0
+    },
     setState(next: ConnectionState): void {
       state = next
       emit('state', next)
@@ -128,6 +137,176 @@ function world(
 }
 
 afterEach(() => setHilosThemePick(null))
+
+describe('phone code closing progress (HIL-1516)', () => {
+  const phoneFlow: AuthFlowState = { ...FLOW, identifierKind: 'phone' }
+  const phoneForm = { ...FORM, identifier: '+14155552671' }
+
+  it.each(['code_channel_unavailable', 'code_cap_reached', 'code_send_failed'])(
+    'keeps arbitrary server text for %s when progress precedes the ack',
+    async (reason) => {
+      const message = ` Server words for ${reason}.\nKeep them verbatim. `
+      const { actions } = world(reason, {}, message)
+
+      expect(
+        await actions.onSubmit('submit', phoneFlow, phoneForm),
+      ).toMatchObject({
+        ok: false,
+        message,
+      })
+    },
+  )
+
+  it.each(['code_sent', 'code_rate_limited'])(
+    'keeps %s successful with no invented message',
+    async (reason) => {
+      const { actions } = world(reason)
+      const outcome = await actions.onSubmit('submit', phoneFlow, phoneForm)
+
+      expect(outcome).toMatchObject({
+        ok: true,
+        next: { step: 'code', intent: 'register', channelKey: 'sms' },
+      })
+      expect(outcome.message).toBeUndefined()
+    },
+  )
+
+  it('does not invent words for a nullable refusal', async () => {
+    const { actions } = world('code_send_failed')
+    const outcome = await actions.onSubmit('submit', phoneFlow, phoneForm)
+
+    expect(outcome.ok).toBe(false)
+    expect(outcome.message).toBeUndefined()
+  })
+
+  it('waits through foreign replay and settles its own ticket after reconnect', async () => {
+    const w = world(null)
+    const subscribers = w.listenerCount('projectSignal')
+    const settled = vi.fn()
+    const pending = w.actions
+      .onSubmit('submit', phoneFlow, phoneForm)
+      .then((outcome) => {
+        settled(outcome)
+        return outcome
+      })
+    const closing = {
+      state: 'failed',
+      ticket: 'phone-send',
+      channel: 'sms',
+      reason: 'code_send_failed',
+      message: 'This ticket has its own server sentence.',
+      detail: 'Provider detail is separate.',
+    }
+    w.emit('projectSignal', {
+      type: 'hilos_code_send_progress',
+      data: codeSendProgressSchema.parse({
+        ...closing,
+        ticket: 'earlier-send',
+        message: 'Not ours.',
+      }),
+    })
+    // Release the ack and the promise reactions that a mistaken foreign settle would queue.
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(settled).not.toHaveBeenCalled()
+    w.emit('projectSignal', {
+      type: 'hilos_code_send_progress',
+      data: codeSendProgressSchema.parse({
+        ...closing,
+        state: 'queued',
+        reason: null,
+        message: null,
+        detail: null,
+      }),
+    })
+    w.setState('disconnected')
+    w.setState('connected')
+    w.emit('projectSignal', { type: 'handshake_response', data: {} })
+    w.emit('projectSignal', {
+      type: 'hilos_code_send_progress',
+      data: codeSendProgressSchema.parse(closing),
+    })
+    // A duplicate closing line cannot settle twice or keep the request subscribed.
+    w.emit('projectSignal', {
+      type: 'hilos_code_send_progress',
+      data: codeSendProgressSchema.parse({
+        ...closing,
+        message: 'A later duplicate.',
+      }),
+    })
+
+    expect(await pending).toMatchObject({ ok: false, message: closing.message })
+    expect(settled).toHaveBeenCalledTimes(1)
+    expect(w.listenerCount('projectSignal')).toBe(subscribers)
+  })
+
+  it.each(['replacement', null])(
+    'locally ends a seen ticket when the line moves to %s',
+    async (ticket) => {
+      const w = world(null)
+      const subscribers = w.listenerCount('projectSignal')
+      const pending = w.actions.onSubmit('submit', phoneFlow, phoneForm)
+      w.emit('projectSignal', {
+        type: 'hilos_code_send_progress',
+        data: codeSendProgressSchema.parse({
+          state: 'queued',
+          ticket: 'phone-send',
+          message: null,
+        }),
+      })
+      await Promise.resolve()
+      w.emit('projectSignal', {
+        type: 'hilos_code_send_progress',
+        data: codeSendProgressSchema.parse({
+          state: ticket === null ? null : 'failed',
+          ticket,
+          reason: ticket === null ? null : 'code_send_failed',
+          message: ticket === null ? null : 'Another send owns this sentence.',
+        }),
+      })
+
+      expect(await pending).toMatchObject({
+        ok: false,
+        message: 'Could not send the code. Please try again.',
+      })
+      expect(w.listenerCount('projectSignal')).toBe(subscribers)
+    },
+  )
+})
+
+describe('identifier detection server messages (HIL-1516)', () => {
+  it.each([
+    ['email', 'active', null, 'no_channel'],
+    ['phone', 'active', null, 'no_channel'],
+    ['email', 'none', 'closed', null],
+    ['phone', 'none', 'no_channel', null],
+  ])(
+    'keeps the server sentence for %s/%s/%s/%s',
+    async (kind, status, registrationBlock, signInBlock) => {
+      const identifier = kind === 'phone' ? '+1 (555) 010-1234' : 'A@B.com'
+      const reply = {
+        identifier,
+        normalized: kind === 'phone' ? '+15550101234' : 'a@b.com',
+        kind,
+        status,
+        methods: [],
+        registerable: [],
+        registrationBlock,
+        signInBlock,
+        message: ' Server detection refusal.\nKeep this sentence. ',
+      }
+      const { actions, sent } = world('code_sent', {
+        hilos_detect_identifier: reply,
+      })
+
+      await expect(actions.onDetect(identifier)).resolves.toEqual(reply)
+      expect(sent).toEqual([
+        { action: 'hilos_detect_identifier', payload: { identifier } },
+      ])
+    },
+  )
+})
 
 describe('Continue waits for its page subscription (HIL-1557)', () => {
   it('sends one empty dismiss after subscribe, without a page response', async () => {
@@ -442,7 +621,11 @@ describe('registration consent on the wire', () => {
   it.each(['consent_required', 'consent_revised', 'terms_unpublished'])(
     'returns the phone owner refusal %s to consent',
     async (reason) => {
-      const { actions } = world(reason)
+      const message =
+        reason === 'consent_required'
+          ? null
+          : 'The server asks for another review.'
+      const { actions } = world(reason, {}, message)
       const outcome = await actions.onSubmit(
         'submit',
         { ...FLOW, identifierKind: 'phone' },
@@ -454,6 +637,7 @@ describe('registration consent on the wire', () => {
         next: { step: 'consent', intent: 'register' },
       })
       expect(outcome.message === undefined).toBe(reason === 'consent_required')
+      expect(outcome.message).toBe(message ?? undefined)
     },
   )
 
@@ -497,6 +681,7 @@ describe('provider first sign-in consent on the wire (HIL-1235)', () => {
           action: 'hilos_oauth_create_account',
           payload: {
             accountToken: 'signed-account-token',
+            provider: 'oauth:github',
             acceptedRevisions: FORM.acceptedRevisions,
             themePick: 'dark',
           },
@@ -517,24 +702,28 @@ describe('provider first sign-in consent on the wire (HIL-1235)', () => {
       ok: false,
       code: 'oauth_sign_in_expired',
       next: { step: 'identifier', intent: 'login' },
+      message: 'Your sign-in has expired. Continue with your provider again.',
     })
     expect(sent).toEqual([])
   })
 
-  it('names the provider in an expired proof refusal', async () => {
+  it('keeps the server expired-proof sentence despite a different cached name', async () => {
     const pending = vi
       .spyOn(oauthLogin, 'pendingOAuthAccount')
       .mockReturnValue({
         provider: 'oauth:github',
-        providerName: 'GitHub',
+        providerName: 'Stale provider name',
         email: 'new@example.test',
         accountToken: 'expired-token',
       })
+    const drop = vi.spyOn(oauthLogin, 'dropOAuthAccount')
     try {
       const { actions } = world('code_sent', {
         hilos_oauth_create_account: {
           ok: false,
           code: 'oauth_sign_in_expired',
+          message:
+            'Your sign-in with GitHub has expired. Continue with GitHub again.',
           next: { step: 'identifier', intent: 'login' },
         },
       })
@@ -543,14 +732,17 @@ describe('provider first sign-in consent on the wire (HIL-1235)', () => {
       expect(outcome.message).toBe(
         'Your sign-in with GitHub has expired. Continue with GitHub again.',
       )
+      expect(outcome.code).toBe('oauth_sign_in_expired')
+      expect(drop).toHaveBeenCalledOnce()
       expect(outcome.next).toEqual({ step: 'identifier', intent: 'login' })
     } finally {
       pending.mockRestore()
+      drop.mockRestore()
     }
   })
 })
 
-describe('a refusal of the anti-abuse guard (HIL-1280)', () => {
+describe('auth action failures', () => {
   /** An adapter whose every dispatch the server refuses with the given failure. */
   function refusing(failure: ActionError) {
     const actions = {
@@ -573,12 +765,16 @@ describe('a refusal of the anti-abuse guard (HIL-1280)', () => {
     intent: 'login',
   }
 
-  it('reaches the surface as its code, not as the placeholder sent in place of its words', async () => {
+  it.each([
+    'Too many attempts. Please try again later.',
+    ' Server refusal for this sign-in.\nKeep this sentence. ',
+    '',
+  ])('keeps the rate limit code and wire message %j', async (message) => {
     const actions = refusing(
       new ActionError(
         'hilos_login',
         'fail',
-        'The action could not be completed.',
+        message,
         undefined,
         undefined,
         'rate_limited',
@@ -587,8 +783,53 @@ describe('a refusal of the anti-abuse guard (HIL-1280)', () => {
 
     const outcome = await actions.onSubmit('submit', SIGN_IN, FORM)
 
-    expect(outcome).toEqual({ ok: false, code: 'rate_limited' })
+    expect(outcome).toEqual({ ok: false, code: 'rate_limited', message })
   })
+
+  it.each([
+    'view_mode',
+    'impersonation_view_only',
+    'impersonated',
+    'forbidden',
+    undefined,
+  ])('keeps the wire message of a refusal with code %s', async (errorCode) => {
+    const message = ` Server refusal for ${errorCode}.\nKeep this sentence. `
+    const actions = refusing(
+      new ActionError(
+        'hilos_login',
+        'fail',
+        message,
+        undefined,
+        undefined,
+        errorCode,
+      ),
+    )
+
+    const outcome = await actions.onSubmit('submit', SIGN_IN, FORM)
+
+    expect(outcome).toEqual({ ok: false, message })
+  })
+
+  it.each(['timeout', 'disconnected', 'invalid-reply'] as const)(
+    'keeps the local fallback for %s',
+    async (outcome) => {
+      const actions = refusing(
+        new ActionError(
+          'hilos_login',
+          outcome,
+          'Technical failure details.',
+          undefined,
+          undefined,
+          'rate_limited',
+        ),
+      )
+
+      await expect(actions.onSubmit('submit', SIGN_IN, FORM)).resolves.toEqual({
+        ok: false,
+        message: 'Could not reach the server. Please try again.',
+      })
+    },
+  )
 
   it('keeps the sentence of any other refusal', async () => {
     const actions = refusing(

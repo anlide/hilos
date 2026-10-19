@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Page\Exception;
 
+use Hilos\Core\Action\ActionMessages;
+use Hilos\Core\Exception\PersonFacingFailure;
 use Hilos\Core\Page\PageException;
 use Hilos\Core\Page\PageSignalRouter;
 use Throwable;
@@ -18,9 +20,9 @@ use Throwable;
  * rather than sleeping (the worker is single-threaded, so a blocking delay would
  * stall the whole cohort). It carries a retry-after hint in seconds alongside the
  * 'rate_limited' code; the dispatcher converts it into the client `action_error`,
- * carrying 429 rate-limit semantics through the exception code.
+ * carrying its person-facing message and 429 rate-limit semantics through the exception code.
  */
-final class ActionRateLimitedException extends PageException
+final class ActionRateLimitedException extends PageException implements PersonFacingFailure
 {
     /** Machine-readable error code carried to the client action_error. */
     public const string ERROR_CODE = 'rate_limited';
@@ -35,7 +37,7 @@ final class ActionRateLimitedException extends PageException
      */
     public function __construct(
         public readonly int $retryAfter,
-        string $message = 'Too many attempts',
+        string $message = ActionMessages::RATE_LIMITED,
         public readonly string $errorCode = self::ERROR_CODE,
         ?Throwable $previous = null,
     ) {

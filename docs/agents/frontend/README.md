@@ -26,7 +26,7 @@ document.
 | Working on... | Read |
 |---|---|
 | connection / authentication / authorization state, the authoritative-backend rule, per-datum loading and placeholder state, disconnect and stale-data UX, the protected-mode exception to no-refresh | [core-and-connection.md](core-and-connection.md) |
-| the handshake and cookie auth, the server-side session store, signals / actions / subscribe, discriminated-union parsing, requestId correlation, build-version forced refresh | [wire-protocol.md](wire-protocol.md) |
+| the handshake and cookie auth, the server-side session store, signals / actions / subscribe, discriminated-union parsing, requestId correlation, backend-authored refusal words and safe exception messages, build-version forced refresh | [wire-protocol.md](wire-protocol.md) |
 | the entity store, the four scopes (page / session / user / group), the normalizer boundary, entity references, the rowKey / sourceKey / entityType keys | [data-model.md](data-model.md) |
 | tables: viewport subscriptions, the live-change taxonomy and Apply, sort-key window deltas, selection and bulk actions, progress bars, custom filters, search-as-filter | [table-subscription.md](table-subscription.md) |
 | researching departed-record geometry, column-width retention and declared row heights in both table projections — HIL-1321 research, not an implemented contract | [table-row-geometry-research.md](table-row-geometry-research.md) |

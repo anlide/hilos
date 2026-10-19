@@ -2342,7 +2342,12 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 return $this->detectionCommands()->detectIdentifier($acceptKey, $dto);
 
             case HilosSignalConstants::HILOS_LEGAL_CONSENT:
-                return new LegalConsentReplyDTO(LegalSettings::consentForm(), LegalConsentProjector::documents());
+                return new LegalConsentReplyDTO(
+                    LegalSettings::consentForm(),
+                    LegalConsentProjector::documents(),
+                    AuthMessages::TERMS_UNPUBLISHED,
+                    AuthMessages::CONSENT_REVISED,
+                );
 
             case HilosSignalConstants::HILOS_LEGAL_RECONSENT:
                 return $this->legalAcceptanceCommands()->reconsent($acceptKey);

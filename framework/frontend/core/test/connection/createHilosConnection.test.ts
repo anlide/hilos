@@ -145,6 +145,7 @@ describe('createHilosConnection', () => {
           acceptKey: 'key-1',
           provider: 'github',
           reason: 'provider_error',
+          message: 'OAuth login failed. Please try again.',
           email: null,
           linkToken: null,
         },
@@ -157,6 +158,7 @@ describe('createHilosConnection', () => {
           step: 'identifier',
           intent: 'sign_in',
           code: 'reservation_expired',
+          message: 'That registration expired. Ask for a new code.',
         },
       },
     ]

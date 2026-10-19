@@ -71,6 +71,7 @@ const forbidden: PageSubscriptionError = {
   page: 'hilos_backup',
   httpCode: 403,
   errorCode: 'forbidden',
+  title: 'Forbidden',
   message: 'Access forbidden',
 }
 
@@ -79,6 +80,7 @@ const notServed: PageSubscriptionError = {
   page: 'hilos_backup',
   httpCode: 404,
   errorCode: PAGE_ERROR_NOT_SERVED,
+  title: 'Page Not Found',
   message: 'Subscription failed',
 }
 
@@ -172,6 +174,7 @@ describe('bindAccessReaction', () => {
       page: 'hilos_backup',
       httpCode: 404,
       errorCode: 'not_found',
+      title: 'Page Not Found',
       message: 'No such backup',
     })
     bindAccessReaction(router, isAdmin, userId, viewMode)
@@ -217,6 +220,7 @@ describe('bindAccessReaction', () => {
       page: 'user',
       httpCode: 404,
       errorCode: 'not_found',
+      title: 'Page Not Found',
       message: 'No such user',
     })
     bindAccessReaction(router, isAdmin, userId, viewMode)
@@ -304,6 +308,7 @@ describe('bindAccessReaction', () => {
       page: 'hilos_user',
       httpCode: 404,
       errorCode: 'not_found',
+      title: 'Page Not Found',
       message: 'No such user',
     })
     bindAccessReaction(router, isAdmin, userId, viewMode)

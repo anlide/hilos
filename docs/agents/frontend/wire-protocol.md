@@ -197,6 +197,15 @@ connection mutate and assume the others discover it — send them the signal.
 
 ### A failure reason is a domain sentence, never an engine message
 
+**The backend writes the words of a server refusal; the frontend displays them.**
+Use the received `reason`, `title` or `message` as ready-to-show text. Machine
+codes and HTTP statuses select behavior — which step to open, whether to invite
+sign-in, what can be retried — never a frontend dictionary of refusal sentences.
+This applies to action and page errors, auth and OAuth outcomes, identifier
+detection, code-send progress, and legal consent replies. Preserve the words
+through catches, replay and session/handshake delivery; a code must not replace
+an explicit server message with a generic local sentence.
+
 What travels on a `::fail` is a sentence about the thing the caller asked for:
 "That name is already taken", "Backups are disabled". What must never travel is
 the machinery underneath — driver text, SQL statements, index and column names,
@@ -209,29 +218,54 @@ names a table, a column set and an index to anyone holding a socket, and tells
 the user nothing they can act on. It is a leak whether or not the frontend
 renders it.
 
-The framework enforces this at two edges, and the rule reads as a single line:
-**an exception's own message crosses the wire only when the exception is a
-`ValidationException`.** Everything else is replaced by a placeholder and stays in
-the log, which `PageSignalRouter` writes in full. An action failure becomes
-`SignalConstants::ACTION_FAILED_REASON` in `action_error`, logged with class,
-message, file, line and trace; a refused page subscription becomes
-`SignalConstants::SUBSCRIPTION_FAILED_REASON` in `subscription_page_error`, whose
-`httpCode` and `errorCode` still say what happened and whose cause is on the
-router's info line. Both placeholders are picked by the same check. A handler
-that wants the person to read something specific raises an exception in that
-family, and `TableActionException` — the one most table and page handlers already
-throw — is in it.
+**An action exception declares safe text with `PersonFacingFailure`.** The marker
+means its `getMessage()` is written for the person and safe to publish; it is
+independent of the exception family. `ValidationException` carries it for its
+children, including `TableActionException`. `ActionRateLimitedException`,
+`ActionViewModeException` and `ActionImpersonationException` declare it while
+remaining page exceptions, with their existing statuses, codes and `retryAfter`.
+Keep a failure in its proper family; do not reparent it just to publish words,
+and never mark diagnostic text as person-facing.
 
-The check lives in `ActionFailureReason`, and every path that turns an exception
-into client text goes through it: the tracked failure ack, the untracked
-`ActionReply::sendException()`, an agent answering its own action
-(`forClient()`), and the two catch blocks of a refused page subscription and
-subscription update (`forSubscriber()`). No `PageSubscriptionException` is in the
-`ValidationException` family, so a subscription refusal never carries its own
-words today. A reason a
-handler wrote *by hand* and passed to `sendActionFail()` does not pass the gate
-and does not need to: its author is already a person writing for a person. The
-gate stands on the conversion of an exception into a sentence, not on the field.
+`ActionFailureReason::forClient()` applies that declaration to the tracked failure
+ack, the untracked `ActionReply::sendException()` and an agent's action answer.
+An unmarked failure gets `SignalConstants::ACTION_FAILED_REASON`; its diagnostic
+class, message, file, line and trace stay in the server log. A reason a handler
+writes directly for `sendActionFail()` is already person-facing text and owes the
+same safety rule; this is not a way to pass `getMessage()` around the check.
+
+**Page refusal words come from the server's status catalog.** Build
+`subscription_page_error` through `PageSubscriptionErrorSignalData::forStatus()`:
+`PageErrorMessages` supplies a `PageErrorText` with the required `title` and
+`message`. It keeps the existing pairs for 400, 401, 403, 404, 500, 502, 503 and
+504, and "Error" / "An error occurred." for any other status. Router, browser
+and daemon producers use that same catalog. The frontend renders those fields;
+`httpCode` and `errorCode` still govern behavior. A `PageSubscriptionException`
+message remains a journal diagnostic, even if it names keys, ids or collections;
+the page catalog does not publish it through the action marker.
+
+For auth replies, the server's `AuthMessages` supplies a default only when no
+explicit message was given. Preserve a received message through the selected
+step and its replay. Where a reply or pending auth step declares a required
+nullable `message`, the key is always present and `null` means a quiet outcome.
+A missing or mistyped field is malformed, not an invitation to reconstruct
+words from its code. The safe `message` on code-send progress is composed for
+delivery/replay from the runtime view; provider detail remains a separate field,
+not a substitute for that message. Legal consent likewise supplies its
+unpublished/revised words, and a failed action's message survives a legal catch.
+
+**Only three temporary local exceptions remain:**
+
+- transport/timeout failures, including genuinely local malformed or browser
+  outcomes for which no server refusal was received;
+- the immediate admin 403 drawn while the server's access answer is in flight;
+- the unbuilt-page 404 drawn without sending a subscription.
+
+Keep the existing words in these cases. Put a `TODO` beside each local phrase
+that requires removing it when server delivery supplies those words. A local
+fallback never licenses discarding the words of a valid server refusal. This
+rule changes the source of refusal copy, not its English wording or behavior;
+it introduces no i18n mechanism and does not move ordinary UI/progress labels.
 
 **Admin surfaces are the exception, and only for an actor who proved an admin.**
 When the owner of the action is an `AbstractPage` whose `ACCESS_LEVEL` is
@@ -241,18 +275,19 @@ standing on an `ADMIN` page — the `action_error` frame carries two more option
 fields beside the generic reason: `errorType`, the failure's class name without
 its namespace, and `errorDetail`, its original message. A viewer of the admin
 view mode never gets them: its refusal is `errorCode` `view_mode` with the
-generic reason, and the frontend shows its own sentence for that code
-(`HILOS_VIEW_MODE_COPY.refusal`), not the reason
-([../architecture/admin-view-mode.md](../architecture/admin-view-mode.md)),
-and a non-admin whose action the gate refused gets its code alone. The SDK's `HilosActionError` draws the
+server's safe reason, which the frontend displays
+([../architecture/admin-view-mode.md](../architecture/admin-view-mode.md)). A
+non-admin whose action the gate refused receives no diagnostic details either.
+The SDK's `HilosActionError` draws the
 class name as text beside the icon of the row's details button, and the original
 message in the details panel under the caption "Exception", with Copy, so an
 operator can carry the real text into a ticket. Three limits are part of the rule:
 
 - they ride **only** on that admin frame to that actor; for any other caller the
   frame is byte for byte what it was before they existed;
-- they are **absent for a `ValidationException`**, whose message is already shown
-  in full — so their presence means the framework held something back;
+- they are **absent for a `PersonFacingFailure`**, whose message is already shown
+  in full: there is no withheld text to reveal, and the admin permission rule
+  has not been relaxed;
 - an action owned by an **agent** never carries them: the access-level guard
   judges a subscription to a page, and an agent has no page to be asked about.
 

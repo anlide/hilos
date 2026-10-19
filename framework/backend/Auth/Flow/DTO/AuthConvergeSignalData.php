@@ -50,11 +50,15 @@ final class AuthConvergeSignalData extends BaseDTO implements SignalDataInterfac
     /** Wire key for the semantic reason of a rollback. */
     private const string FIELD_CODE = 'code';
 
+    /** Wire key for the server's words about the step change. */
+    private const string FIELD_MESSAGE = 'message';
+
     /**
      * @param string $acceptKey Waiting connection accept key the signal targets
      * @param string $identifier Identifier the parked session was waiting on
      * @param string $step Step the surface moves to (see AuthFlowStep)
      * @param string $intent Intent the surface moves under (see AuthFlowIntent)
+     * @param ?string $message Server notice, or null when the move needs no words
      * @param ?string $code Semantic reason when the move is a rollback, or null
      */
     public function __construct(
@@ -62,6 +66,7 @@ final class AuthConvergeSignalData extends BaseDTO implements SignalDataInterfac
         public readonly string $identifier,
         public readonly string $step,
         public readonly string $intent,
+        public readonly ?string $message,
         public readonly ?string $code = null,
     ) {
     }
@@ -75,7 +80,7 @@ final class AuthConvergeSignalData extends BaseDTO implements SignalDataInterfac
     }
 
     /**
-     * @return array<string, string> DTO payload for transport; the reason is omitted when absent
+     * @return array<string, ?string> DTO payload; absent code is omitted, absent words are explicit null
      */
     public function toArray(): array
     {
@@ -84,6 +89,7 @@ final class AuthConvergeSignalData extends BaseDTO implements SignalDataInterfac
             self::FIELD_IDENTIFIER => $this->identifier,
             self::FIELD_STEP => $this->step,
             self::FIELD_INTENT => $this->intent,
+            self::FIELD_MESSAGE => $this->message,
         ];
         if ($this->code !== null) {
             $data[self::FIELD_CODE] = $this->code;
@@ -96,6 +102,7 @@ final class AuthConvergeSignalData extends BaseDTO implements SignalDataInterfac
      * The four required fields are required in the literal sense: a converge with no
      * target reaches nobody, and one with no step tells the surface to do nothing. A
      * frame missing any of them is refused rather than turned into a stub that travels.
+     * The message key is required too; null explicitly says the move needs no words.
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
@@ -108,6 +115,7 @@ final class AuthConvergeSignalData extends BaseDTO implements SignalDataInterfac
             identifier: self::requireString($data, self::FIELD_IDENTIFIER),
             step: self::requireString($data, self::FIELD_STEP),
             intent: self::requireString($data, self::FIELD_INTENT),
+            message: self::requireNullableString($data, self::FIELD_MESSAGE),
             code: self::optionalString($data, self::FIELD_CODE),
         );
     }

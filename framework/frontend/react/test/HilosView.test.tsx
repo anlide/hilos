@@ -30,6 +30,7 @@ const UNAUTHORIZED: PageSubscriptionError = {
   page: 'user',
   httpCode: 401,
   errorCode: 'unauthorized',
+  title: 'Unauthorized',
   message: 'Authentication required',
 }
 
@@ -175,6 +176,7 @@ const NOT_FOUND: PageSubscriptionError = {
   page: 'user',
   httpCode: 404,
   errorCode: 'not_found',
+  title: 'Page Not Found',
   message: 'Not found',
 }
 

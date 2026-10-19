@@ -132,6 +132,63 @@ it('opens both consent documents in a read-only Angular preview', async () => {
   ).toBeNull()
 })
 
+it('shows the server unpublished sentence literally in the Angular consent preview', async () => {
+  const h = harness()
+  h.scope.data.set('legalDocument', {
+    document: 'terms',
+    declared: true,
+    revision: null,
+    set: null,
+    newerSet: null,
+    deviations: [],
+  })
+  const unpublishedMessage = '<b>The server has no terms to show yet.</b>'
+  Object.assign(h.context.actions, {
+    dispatch: () => ({
+      done: Promise.resolve({
+        reply: {
+          ...consentTermsWithClauses(),
+          documents: [],
+          unpublishedMessage,
+        },
+      }),
+    }),
+  })
+  await TestBed.configureTestingModule({
+    imports: [HilosLegalDocumentPage],
+    providers: [{ provide: HILOS_ROUTER, useValue: h.router }],
+  }).compileComponents()
+  const fixture = TestBed.createComponent(HilosLegalDocumentPage)
+  fixture.componentRef.setInput('context', h.context)
+  fixture.detectChanges()
+  await fixture.whenStable()
+  const element = fixture.nativeElement as HTMLElement
+  element
+    .querySelector<HTMLElement>('[data-id="legal-preview-consent"]')!
+    .click()
+  fixture.detectChanges()
+  await Promise.resolve()
+  await Promise.resolve()
+  await fixture.whenStable()
+  fixture.detectChanges()
+
+  const preview = element.querySelector('[data-id="legal-consent-preview"]')!
+  const unpublished = preview.querySelector(
+    '[data-id="legal-consent-unpublished"]',
+  )!
+  expect(unpublished.textContent?.trim()).toBe(unpublishedMessage)
+  expect(unpublished.querySelector('b')).toBeNull()
+  expect(preview.querySelector('[data-id="auth-consent-accept"]')).toBeNull()
+  expect(preview.querySelector('[data-id="auth-submit"]')).toBeNull()
+  element
+    .querySelector<HTMLElement>('[data-id="legal-consent-preview-close"]')!
+    .click()
+  fixture.detectChanges()
+  await fixture.whenStable()
+  expect(element.querySelector('[data-id="legal-consent-preview"]')).toBeNull()
+  fixture.destroy()
+})
+
 it('links the past-deadline count to the people it counts, only when there are any (HIL-945)', async () => {
   const h = harness()
   const windowListeners: ((signal: { data: unknown }) => void)[] = []

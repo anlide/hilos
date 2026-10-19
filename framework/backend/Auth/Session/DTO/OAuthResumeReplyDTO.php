@@ -20,29 +20,37 @@ final class OAuthResumeReplyDTO extends ActionReplyDTO
     /** Wire key for whether the presented trip is known. */
     public const string known = 'known';
 
+    /** Wire key for the safe refusal sentence. */
+    public const string message = 'message';
+
     /**
      * @param bool $known Whether the holder keeps a trip under the presented key for this session
+     * @param ?string $message Refusal sentence for an unknown trip, or null when known
      */
     public function __construct(
         public readonly bool $known,
+        public readonly ?string $message,
     ) {
     }
 
     /**
-     * @return array<string, bool> Reply payload
+     * @return array<string, bool|string|null> Reply payload
      */
     public function toArray(): array
     {
-        return [self::known => $this->known];
+        return [self::known => $this->known, self::message => $this->message];
     }
 
     /**
      * @param array<string, mixed> $data Source data
      * @return static Restored DTO instance
-     * @throws InvalidFormatException When the answer is missing or not a boolean
+     * @throws InvalidFormatException When a required key is absent or a field has the wrong type
      */
     public static function fromArray(array $data): static
     {
-        return new static(known: self::requireBool($data, self::known));
+        return new static(
+            known: self::requireBool($data, self::known),
+            message: self::requireNullableString($data, self::message),
+        );
     }
 }

@@ -59,7 +59,8 @@ final class DaemonManagerUnservedSubscriptionTest extends TestCase
         $this->assertSame('missing', $signal->data->data->page);
         $this->assertSame(HttpConstants::HTTP_NOT_FOUND, $signal->data->data->httpCode);
         $this->assertSame(PageErrorCode::NOT_SERVED, $signal->data->data->errorCode);
-        $this->assertSame(SignalConstants::SUBSCRIPTION_FAILED_REASON, $signal->data->data->message);
+        $this->assertSame('Page Not Found', $signal->data->data->title);
+        $this->assertSame('The page you are looking for does not exist.', $signal->data->data->message);
     }
 
     public function testThePageNameFallsBackToTheSignalName(): void

@@ -279,10 +279,13 @@ final class OAuthCommands extends AbstractLibraryCommands
         $acting = $this->acting($acceptKey);
         $pass = $this->oauthService()->verifyAccountToken($dto->accountToken, $acting->sessionToken);
         if ($pass === null) {
+            $label = $dto->provider === null ? null : Hilos::oauthProviderDirectoryClass()::get($dto->provider)?->label;
+
             return AuthFlowOutcome::rejectTo(
                 AuthFlowOutcome::CODE_OAUTH_SIGN_IN_EXPIRED,
                 AuthFlowStep::IDENTIFIER,
                 AuthFlowIntent::LOGIN,
+                $label === null ? null : "Your sign-in with {$label} has expired. Continue with {$label} again.",
             );
         }
 

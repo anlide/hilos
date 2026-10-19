@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Flow;
 
+use Hilos\Auth\Library\Command\AuthMessages;
 use Hilos\Auth\SecondFactor\DTO\SecondFactorStepData;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
@@ -219,12 +220,12 @@ final class AuthFlowOutcome extends ActionReplyDTO
      * @param string $code Semantic error code (see self::CODE_*)
      * @param string $step Step the surface rolls to (see AuthFlowStep)
      * @param string $intent Intent the surface rolls to (see AuthFlowIntent)
-     * @param ?string $message Backend-authored inline sentence, or null to let the view word it
+     * @param ?string $message Explicit sentence, or null to use the server fallback when the code has words
      * @return static Failure outcome
      */
     public static function rejectTo(string $code, string $step, string $intent, ?string $message = null): static
     {
-        return new static(false, $step, $intent, $code, $message, null, null);
+        return new static(false, $step, $intent, $code, $message ?? AuthMessages::forFallbackCode($code), null, null);
     }
 
     /**

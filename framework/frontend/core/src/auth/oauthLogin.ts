@@ -65,8 +65,6 @@ import {
   OAUTH_AUTHORIZE_SIGNAL,
   OAUTH_REASON_ACCOUNT_BLOCKED,
   OAUTH_REASON_CONSENT_REQUIRED,
-  OAUTH_REASON_LINK_DUPLICATE,
-  OAUTH_REASON_LINK_FAILED,
   OAUTH_REASON_LINK_OK,
   OAUTH_REASON_REAUTH_REQUIRED,
   OAUTH_REASON_SECOND_FACTOR,
@@ -205,6 +203,7 @@ export const OAUTH_WINDOW_FEATURES = 'popup=yes,width=600,height=700'
  */
 export const OAUTH_WINDOW_POLL_MS = 500
 
+// TODO(i18n): Remove this client-side fallback when backend-provided local error copy is available.
 /** Shown when the browser refused to open the provider window. */
 export const OAUTH_POPUP_BLOCKED_MESSAGE =
   'Allow pop-ups for this site to continue.'
@@ -237,9 +236,11 @@ export const OAUTH_PROVIDER_BROWSER_VALUE = browserValue({
   label: 'The sign-in provider a login in progress was started with',
 })
 
-/** The generic message shown when an OAuth login cannot be completed. */
+// TODO(i18n): Remove this client-side fallback when backend-provided local error copy is available.
+/** Local fallback for browser, transport, or malformed-reply failures. */
 const OAUTH_FAILED_MESSAGE = 'OAuth login failed. Please try again.'
 
+// TODO(i18n): Remove this client-side fallback when backend-provided local error copy is available.
 /**
  * Shown when the connection cannot be brought back while the exchange runs: the
  * connection's own verdict that the repair is dragging (HIL-831), or a connection
@@ -249,6 +250,7 @@ const OAUTH_FAILED_MESSAGE = 'OAuth login failed. Please try again.'
 const OAUTH_UNREACHABLE_MESSAGE =
   'Could not reach the server. Please try again.'
 
+// TODO(i18n): Remove this client-side fallback when backend-provided local error copy is available.
 /** Shown when the provider came back without the code and state to exchange. */
 const OAUTH_INCOMPLETE_MESSAGE = 'This sign-in link is invalid or incomplete.'
 
@@ -259,15 +261,10 @@ const OAUTH_INCOMPLETE_MESSAGE = 'This sign-in link is invalid or incomplete.'
 const OAUTH_TRIP_KEY_BYTES = 16
 
 /** What the server answers a presented trip key with: whether it keeps that trip. */
-const oauthResumeReplySchema = z.object({ known: z.boolean() })
-
-/**
- * The messages shown when a profile link (HIL-401) does not succeed. A duplicate is
- * a distinct, non-sensitive outcome (the provider is tied to another account); any
- * other link failure is generic (no provider/network detail on the wire).
- */
-const LINK_DUPLICATE_MESSAGE = 'That account is already linked to another user.'
-const LINK_FAILED_MESSAGE = 'Could not link the account. Please try again.'
+const oauthResumeReplySchema = z.object({
+  known: z.boolean(),
+  message: z.string().nullable(),
+})
 
 /**
  * The OAuth client one context is bound to, as a surface and the boot sequence
@@ -1057,9 +1054,13 @@ function presentTripKey(
       { replySchema: oauthResumeReplySchema },
     )
     .done.then(({ reply }) => {
-      // A server that answered nothing kept nothing either.
-      if (isLive() && reply?.known !== true) {
+      if (!isLive()) {
+        return
+      }
+      if (reply === undefined) {
         finishTrip({ kind: 'error', message: OAUTH_FAILED_MESSAGE })
+      } else if (!reply.known) {
+        finishTrip({ kind: 'error', message: reply.message ?? '' })
       }
     })
     .catch((error: unknown) => {
@@ -1128,17 +1129,7 @@ function applyResult(
 
     return
   }
-  if (data.reason === OAUTH_REASON_LINK_DUPLICATE) {
-    finishTrip({ kind: 'error', message: LINK_DUPLICATE_MESSAGE })
-
-    return
-  }
-  if (data.reason === OAUTH_REASON_LINK_FAILED) {
-    finishTrip({ kind: 'error', message: LINK_FAILED_MESSAGE })
-
-    return
-  }
-  finishTrip({ kind: 'error', message: OAUTH_FAILED_MESSAGE })
+  finishTrip({ kind: 'error', message: data.message ?? '' })
 }
 
 /**

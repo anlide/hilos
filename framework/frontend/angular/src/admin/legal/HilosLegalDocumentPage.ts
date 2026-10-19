@@ -13,7 +13,6 @@ import {
   createHilosLegalConsentPreview,
   createHilosLegalReconsentPreview,
   hilosLegalDocumentLabel,
-  LEGAL_TERMS_UNPUBLISHED_MESSAGE,
   HilosPages,
   HilosLegalRowKey,
   HILOS_TABLE_ACTIONS_KEY,
@@ -225,7 +224,7 @@ import { HILOS_ROUTER } from '../../hilosRouterToken.js'
               />
             } @else {
               <p data-id="legal-consent-unpublished">
-                {{ unpublishedMessage }}
+                {{ terms.unpublishedMessage }}
               </p>
             }
             @if (terms.form === 'line' && terms.documents.length) {
@@ -346,7 +345,6 @@ export class HilosLegalDocumentPage {
   protected readonly accepted = signal(false)
   protected readonly reading = signal<HilosLegalDocumentKey | null>(null)
   protected readonly documentLabel = hilosLegalDocumentLabel
-  protected readonly unpublishedMessage = LEGAL_TERMS_UNPUBLISHED_MESSAGE
   private readonly router = inject(HILOS_ROUTER)
   private readonly document = computedSignal(() =>
     String(this.router.currentRoute.get().params['documentKey'] ?? ''),

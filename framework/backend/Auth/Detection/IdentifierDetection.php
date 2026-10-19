@@ -100,6 +100,9 @@ final class IdentifierDetection extends ActionReplyDTO
     /** Wire key for why an existing account is offered no way to sign in. */
     private const string FIELD_SIGN_IN_BLOCK = 'signInBlock';
 
+    /** Wire key for the server's refusal sentence, or null when no refusal is named. */
+    private const string FIELD_MESSAGE = 'message';
+
     /**
      * @param string $identifier Identifier exactly as it was submitted
      * @param string $normalized Identifier in its canonical form
@@ -107,6 +110,7 @@ final class IdentifierDetection extends ActionReplyDTO
      * @param string $status Account status (see self::STATUS_*)
      * @param list<string> $methods Method keys of the existing account (see AuthMethodKey)
      * @param list<string> $registerable Method keys registration is open with (see AuthMethodKey)
+     * @param ?string $message Server refusal sentence, or null when no refusal is named
      * @param ?string $registrationBlock Why registration is not offered (see self::BLOCK_*), or null when it is
      * @param ?string $signInBlock Why the account is offered no way to sign in (see self::BLOCK_*), or null when it is
      */
@@ -117,6 +121,7 @@ final class IdentifierDetection extends ActionReplyDTO
         public readonly string $status,
         public readonly array $methods,
         public readonly array $registerable,
+        public readonly ?string $message,
         public readonly ?string $registrationBlock = null,
         public readonly ?string $signInBlock = null,
     ) {
@@ -139,7 +144,20 @@ final class IdentifierDetection extends ActionReplyDTO
         array $registerable,
         ?string $registrationBlock = null,
     ): static {
-        return new static($identifier, $normalized, $kind, self::STATUS_NONE, [], $registerable, $registrationBlock);
+        return new static(
+            $identifier,
+            $normalized,
+            $kind,
+            self::STATUS_NONE,
+            [],
+            $registerable,
+            match ($registrationBlock) {
+                self::BLOCK_NO_CHANNEL => 'No account for this, and there is nothing to send a code with.',
+                self::BLOCK_CLOSED => 'No account for this, and registration is closed.',
+                default => null,
+            },
+            $registrationBlock,
+        );
     }
 
     /**
@@ -155,7 +173,7 @@ final class IdentifierDetection extends ActionReplyDTO
      */
     public static function held(string $identifier, string $normalized, string $kind): static
     {
-        return new static($identifier, $normalized, $kind, self::STATUS_PENDING, [], []);
+        return new static($identifier, $normalized, $kind, self::STATUS_PENDING, [], [], null);
     }
 
     /**
@@ -174,7 +192,7 @@ final class IdentifierDetection extends ActionReplyDTO
      */
     public static function proven(string $identifier, string $normalized, string $kind): static
     {
-        return new static($identifier, $normalized, $kind, self::STATUS_PROVEN, [], []);
+        return new static($identifier, $normalized, $kind, self::STATUS_PROVEN, [], [], null);
     }
 
     /**
@@ -194,7 +212,21 @@ final class IdentifierDetection extends ActionReplyDTO
         array $methods,
         ?string $signInBlock = null,
     ): static {
-        return new static($identifier, $normalized, $kind, self::STATUS_ACTIVE, $methods, [], null, $signInBlock);
+        return new static(
+            $identifier,
+            $normalized,
+            $kind,
+            self::STATUS_ACTIVE,
+            $methods,
+            [],
+            $signInBlock === self::BLOCK_NO_CHANNEL
+                ? ($kind === self::KIND_PHONE
+                    ? 'This account signs in by a code, and this installation has nothing to send it with. Whoever runs it can set that up.'
+                    : 'This account signs in by a mailed link, and this installation has nothing to send it with. Whoever runs it can set that up.')
+                : null,
+            null,
+            $signInBlock,
+        );
     }
 
     /**
@@ -207,7 +239,8 @@ final class IdentifierDetection extends ActionReplyDTO
      *     registerable: list<string>,
      *     registrationBlock: ?string,
      *     signInBlock: ?string,
-     * } Wire form; both lists and both blocks are always present, empty or null where the status has none
+     *     message: ?string,
+     * } Wire form; lists, blocks and message are always present, empty or null where the status has none
      */
     public function toArray(): array
     {
@@ -220,6 +253,7 @@ final class IdentifierDetection extends ActionReplyDTO
             self::FIELD_REGISTERABLE => $this->registerable,
             self::FIELD_REGISTRATION_BLOCK => $this->registrationBlock,
             self::FIELD_SIGN_IN_BLOCK => $this->signInBlock,
+            self::FIELD_MESSAGE => $this->message,
         ];
     }
 
@@ -237,6 +271,7 @@ final class IdentifierDetection extends ActionReplyDTO
             self::requireString($data, self::FIELD_STATUS),
             self::requireMethodKeys($data, self::FIELD_METHODS),
             self::requireMethodKeys($data, self::FIELD_REGISTERABLE),
+            self::requireNullableString($data, self::FIELD_MESSAGE),
             self::optionalString($data, self::FIELD_REGISTRATION_BLOCK),
             self::optionalString($data, self::FIELD_SIGN_IN_BLOCK),
         );

@@ -1,52 +1,14 @@
 <!-- ErrorPage — the SDK's full-page subscription-error surface. HilosView
 renders it in place of the routed page component whenever the navigator carries a
-page subscription error (subscription_page_error), mapping the HTTP status to a
-title and description. The connection stays live, so "Back to home" navigates
+page subscription error (subscription_page_error), displaying its server title and
+message. The connection stays live, so "Back to home" navigates
 without a refresh. -->
 <script setup lang="ts">
-import { computed } from 'vue'
 import type { PageSubscriptionError } from '@hilos/core'
 
 import HilosLink from './HilosLink.vue'
 
-const props = defineProps<{ error: PageSubscriptionError }>()
-
-/** HTTP status → human-readable title and description for the error surface. */
-const ERROR_TEXT: Record<number, { title: string; description: string }> = {
-  400: {
-    title: 'Bad Request',
-    description: 'The request could not be understood.',
-  },
-  401: { title: 'Unauthorized', description: 'Authentication is required.' },
-  // Says that access was refused and nothing about who was refused: this table
-  // answers EVERY 403, and the one it used to name - a guest - is the case it is
-  // least often shown for. An administrator whose privilege was revoked while the
-  // page was open read that they were a guest, which they were not (HIL-779).
-  403: {
-    title: 'Forbidden',
-    description: 'You do not have access to this page.',
-  },
-  404: {
-    title: 'Page Not Found',
-    description: 'The page you are looking for does not exist.',
-  },
-  500: {
-    title: 'Internal Server Error',
-    description: 'An unexpected error occurred.',
-  },
-  502: {
-    title: 'Bad Gateway',
-    description: 'The server received an invalid response.',
-  },
-  503: {
-    title: 'Service Unavailable',
-    description: 'The service is temporarily unavailable.',
-  },
-  504: { title: 'Gateway Timeout', description: 'The gateway timed out.' },
-}
-
-const fallback = { title: 'Error', description: 'An error occurred.' }
-const text = computed(() => ERROR_TEXT[props.error.httpCode] ?? fallback)
+defineProps<{ error: PageSubscriptionError }>()
 </script>
 
 <template>
@@ -56,8 +18,8 @@ const text = computed(() => ERROR_TEXT[props.error.httpCode] ?? fallback)
     :data-error-code="error.httpCode"
   >
     <h1 class="display-4 fw-bold text-body-secondary">{{ error.httpCode }}</h1>
-    <p class="lead mb-1">{{ text.title }}</p>
-    <p class="text-body-secondary">{{ text.description }}</p>
+    <p class="lead mb-1">{{ error.title }}</p>
+    <p class="text-body-secondary">{{ error.message }}</p>
     <HilosLink to="/" class="btn btn-primary mt-3" data-id="page-error-home">
       Back to home
     </HilosLink>

@@ -536,6 +536,7 @@ describe('createHilosRouter', () => {
       page: 'user',
       httpCode: 404,
       errorCode: 'not_found',
+      title: 'Page Not Found',
       message: 'Resource #9 not found',
     })
 
@@ -551,6 +552,7 @@ describe('createHilosRouter', () => {
       page: 'user',
       httpCode: 401,
       errorCode: 'unauthorized',
+      title: 'Unauthorized',
       message: 'Authentication required',
     })
     const subscribesBefore = calls.length

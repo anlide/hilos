@@ -168,13 +168,12 @@ change the body of that question, not the mode around it.
   travel as frames of their own, not as actions.
 - A page action is refused to a viewer, except the ones the page declared
   reading (*Reading Actions* below): `ActionViewModeException`, code
-  `view_mode`, HTTP 403, and the impersonal reason
-  (`SignalConstants::ACTION_FAILED_REASON`) — never the exception's text; the
-  sentence on the screen is the frontend's (HIL-1261): the core reads the code
-  (`VIEW_MODE_ERROR_CODE`) and shows `HILOS_VIEW_MODE_COPY.refusal` in place of
-  the reason (`actionFailureReason`, called by `ActionLifecycle` and
-  `ActionErrorStore`), for the three frontends at once, and
-  `ActionError.errorCode` carries the code. The code is its own and
+  `view_mode`, HTTP 403, and the server's safe reason. The exception declares
+  `PersonFacingFailure` while remaining a page exception, so all three frontends
+  display its reason through the ordinary action-error path.
+  `ActionError.errorCode` carries the code for behavior; it does not select
+  a local sentence. See [the refusal-copy rule](../frontend/wire-protocol.md#a-failure-reason-is-a-domain-sentence-never-an-engine-message).
+  The code is its own and
   not `forbidden`, so a viewer without an account is not answered with the
   sign-in modal. The refusal is a verdict, not a failure: one INFO line in the
   journal and no trace, because the overview of the logs collects ERROR lines
@@ -182,16 +181,19 @@ change the body of that question, not the mode around it.
 - A refused action writes nothing — not to the database, not to RT: the page's
   refusal handler records no state. The case the rule is written from is the
   Guardian page of the chat demo.
-- The error's text — the exception's class and message — goes to a connection
+- Withheld diagnostic details — the exception's class and message — go to a connection
   that proves an admin on the page at the moment of the answer
   (`PageAccessGate::provesAdmin()`: an `ADMIN` page whose verdict for this
   connection is *allow*), not to anyone on an `ADMIN` page: not to a viewer,
   and — with the mode off too — not to a non-admin whose action the gate
   refused. The dispatcher's tracked answer and the answer to a write handed
-  over to the row's owner (`HandoverGatekeeperTrait`) ask it alike. A page
+  over to the row's owner (`HandoverGatekeeperTrait`) ask it alike.
+  `errorType` and `errorDetail` are absent for `PersonFacingFailure`: its words
+  are already public, with no hidden diagnostic text to reveal. A page
   that answers a failure with a frame of its own puts
   `AbstractPage::failureText()` into it — the message for the one who proves
-  an admin, the impersonal sentence for everyone else — never `getMessage()`.
+  an admin, `ActionFailureReason::forClient()` for everyone else — never a
+  direct `getMessage()` call.
 - The mode opens a page by its level: every `ADMIN` page — framework-owned and
   project-owned alike — is in it. A page's `ACCESS` guard is judged after the
   level, as always, and does not let a viewer through, so a page closed by a
