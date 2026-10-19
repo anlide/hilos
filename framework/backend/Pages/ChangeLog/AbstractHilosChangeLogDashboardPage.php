@@ -161,7 +161,6 @@ abstract class AbstractHilosChangeLogDashboardPage extends AbstractHilosPage
         if (Hilos::$browser === null) {
             throw new LogicException('Change log reading requires a browser context');
         }
-        Hilos::$browser->isAdminViewModeViewer(static::class, $acceptKey);
         $entry = new ChangeLogSectionReader()->entry($dto->entryId);
         if ($entry === null) {
             throw new ValidationException('Change not found');
