@@ -285,9 +285,23 @@ the `chat` demo share a group — one stand — so 106 + 1227 + 6 = 1339s of the
 never overlap: **22m19s is the floor of a full run at any lane count**, measured
 2026-09-29 on nova-de at seven lanes (HIL-1227, run 0659). That run took 22m20s,
 every other step was done by 7m08s, and seven lanes could otherwise pack the whole
-graph into 6m25s. The next lever is an instance of the stand as a parameter, so that
-`chat-e2e` can be cut across stands of its own. The numbers are in the head of
+graph into 6m25s. The next lever is to cut `chat-e2e` across stands of its own, now
+that a stand can have instances (below). The numbers are in the head of
 [`scripts/test-suite.php`](../../scripts/test-suite.php).
+
+**Stand instances.** Several copies of every stand can stand on one host at once, one
+per working tree. An instance is a number from 1 to 9:
+`eval "$(php scripts/stand-instance-env.php <n>)"` exports its environment, and
+everything run in that shell — the runner, a demo's composer script, a teardown —
+lands on that instance and leaves the others alone. The instance appends `-s<n>` to
+every compose project, container, explicitly named volume and network and `/dev/shm`
+directory, moves each stand's `10.x.0.0/16` network (and every fixed address on it) to
+an octet of its own, and leaves host ports to docker. Without those variables a stand
+is exactly what its compose file says: the default instance. Service keys are not
+renamed — they are the host names inside a stand's own network. A new compose file
+that pins a name, a subnet, an address or a host path takes `${HILOS_STAND_SUFFIX:-}`
+or its stand's `HILOS_STAND_NET_*` octet the same way; the table of octets lives in
+[`scripts/stand-instance.php`](../../scripts/stand-instance.php).
 
 **Any cluster fleet may run beside any e2e step.** No edge keeps them apart and the
 order does not either; a fleet leaves with its own step (`downsStand`), which is

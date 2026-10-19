@@ -23,6 +23,9 @@ fi
 
 # Substitute env vars in nginx config
 export FRONTEND_HTML_UPSTREAM="${FRONTEND_HTML_UPSTREAM:-binance-btc-tracker-daemon-local}"
-envsubst '${FRONTEND_HTML_UPSTREAM}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
+# HILOS_CLUSTER_NET is the first two octets of the cluster stand's network, which moves with
+# the stand instance; the cluster entry's upstreams name node addresses on it. Other
+# templates do not mention it, so substituting it there changes nothing.
+envsubst '${FRONTEND_HTML_UPSTREAM} ${HILOS_CLUSTER_NET}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
 
 exec "$@"

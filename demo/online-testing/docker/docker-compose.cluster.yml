@@ -18,7 +18,7 @@
 # every agent it registers, the framework's cluster probes among them — and publish nothing
 # on the host: the harness reaches them through the cli container.
 
-name: hilos-online-testing-cluster
+name: hilos-online-testing-cluster${HILOS_STAND_SUFFIX:-}
 
 # What the shared cluster harness (framework/docker/cluster/cluster.py) reads besides the services
 # below; the nodes, their addresses, roles, room and log directories it takes from the services.
@@ -105,18 +105,21 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.nginx
-    container_name: online-testing-cluster-entry
+    container_name: online-testing-cluster-entry${HILOS_STAND_SUFFIX:-}
+    environment:
+      # The upstreams in nginx.cluster.conf.template name node addresses on this network.
+      HILOS_CLUSTER_NET: 10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}
     volumes:
       - ./nginx.cluster.conf.template:/etc/nginx/nginx.conf.template:ro
       - ../frontend/dist:/usr/share/nginx/html:ro
       - ../data/data_export:/data_export:ro
     networks:
       cluster-net:
-        ipv4_address: 10.223.0.30
+        ipv4_address: 10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.30
 
   online-testing-cluster-mysql:
     image: mariadb:11.4
-    container_name: online-testing-cluster-mysql
+    container_name: online-testing-cluster-mysql${HILOS_STAND_SUFFIX:-}
     # How the runner's artifact collector finds this container: the stands spell their
     # database service several ways, so it is asked for by role rather than guessed at by
     # name (HIL-841).
@@ -131,7 +134,7 @@ services:
     volumes:
       # Host memory keeps this member's data across down/up and kill/start;
       # the harness wipes it on down --volumes (HIL-1327).
-      - /dev/shm/hilos-online-testing-cluster-mysql-data:/var/lib/mysql
+      - /dev/shm/hilos-online-testing-cluster-mysql-data${HILOS_STAND_SUFFIX:-}:/var/lib/mysql
       - ../../../framework/docker/mysql/test-stand.cnf:/etc/mysql/conf.d/zz-hilos-test-stand.cnf:ro
       - ./mysql/init-change-log.sh:/docker-entrypoint-initdb.d/init-change-log.sh:ro
       - ./mysql/provision-change-log.sh:/usr/local/bin/provision-change-log.sh:ro
@@ -146,11 +149,11 @@ services:
       start_period: 10s
     networks:
       cluster-net:
-        ipv4_address: 10.223.0.10
+        ipv4_address: 10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.10
 
   online-testing-cluster-m1:
     <<: *node-base
-    container_name: online-testing-cluster-m1
+    container_name: online-testing-cluster-m1${HILOS_STAND_SUFFIX:-}
     # Found by role for the same reason the database is (HIL-841), and carried by m1 ALONE:
     # the three nodes share one schema (HIL-712), the collector takes the first container
     # wearing the label, and putting it on all three would make which of them answers a
@@ -169,8 +172,8 @@ services:
       # they are equal, so the work spreads over all three by equal shares, and the leader is
       # last only among equal shares (rule 3): it takes its share after the two that do not lead.
       CLUSTER_NODE_CAPABILITIES: "worker,ram=10,slots=64"
-      CLUSTER_PEER_ADVERTISE: "10.223.0.11:8095"
-      CLUSTER_SEEDS: "10.223.0.12:8095,10.223.0.13:8095"
+      CLUSTER_PEER_ADVERTISE: "10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.11:8095"
+      CLUSTER_SEEDS: "10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.12:8095,10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.13:8095"
     volumes:
       - ..:/app
       - ../../../composer.json:/hilos/composer.json:ro
@@ -179,11 +182,11 @@ services:
       - ../data/logs-cluster/m1:/var/log/hilos
     networks:
       cluster-net:
-        ipv4_address: 10.223.0.11
+        ipv4_address: 10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.11
 
   online-testing-cluster-m2:
     <<: *node-base
-    container_name: online-testing-cluster-m2
+    container_name: online-testing-cluster-m2${HILOS_STAND_SUFFIX:-}
     environment:
       <<: *node-env
       CLUSTER_NODE_ID: m2
@@ -191,8 +194,8 @@ services:
       CLUSTER_NODE_ROLE: master
       # The same as m1's, and for the same reasons; see the comment there.
       CLUSTER_NODE_CAPABILITIES: "worker,ram=10,slots=64"
-      CLUSTER_PEER_ADVERTISE: "10.223.0.12:8095"
-      CLUSTER_SEEDS: "10.223.0.11:8095,10.223.0.13:8095"
+      CLUSTER_PEER_ADVERTISE: "10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.12:8095"
+      CLUSTER_SEEDS: "10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.11:8095,10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.13:8095"
     volumes:
       - ..:/app
       - ../../../composer.json:/hilos/composer.json:ro
@@ -201,11 +204,11 @@ services:
       - ../data/logs-cluster/m2:/var/log/hilos
     networks:
       cluster-net:
-        ipv4_address: 10.223.0.12
+        ipv4_address: 10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.12
 
   online-testing-cluster-m3:
     <<: *node-base
-    container_name: online-testing-cluster-m3
+    container_name: online-testing-cluster-m3${HILOS_STAND_SUFFIX:-}
     environment:
       <<: *node-env
       CLUSTER_NODE_ID: m3
@@ -213,8 +216,8 @@ services:
       CLUSTER_NODE_ROLE: master
       # The same as m1's, and for the same reasons; see the comment there.
       CLUSTER_NODE_CAPABILITIES: "worker,ram=10,slots=64"
-      CLUSTER_PEER_ADVERTISE: "10.223.0.13:8095"
-      CLUSTER_SEEDS: "10.223.0.11:8095,10.223.0.12:8095"
+      CLUSTER_PEER_ADVERTISE: "10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.13:8095"
+      CLUSTER_SEEDS: "10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.11:8095,10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.12:8095"
     volumes:
       - ..:/app
       - ../../../composer.json:/hilos/composer.json:ro
@@ -223,7 +226,7 @@ services:
       - ../data/logs-cluster/m3:/var/log/hilos
     networks:
       cluster-net:
-        ipv4_address: 10.223.0.13
+        ipv4_address: 10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.13
 
   # Long-lived CLI container the harness `docker exec`s for test:cluster:inspect,
   # and the one-shot runner for the harness's own chores (profile cli, so it never
@@ -233,7 +236,7 @@ services:
   # HILOS_DAEMON_HOST=<ip>`): the shared harness names the node per call.
   online-testing-cluster-cli:
     build: .
-    container_name: online-testing-cluster-cli
+    container_name: online-testing-cluster-cli${HILOS_STAND_SUFFIX:-}
     working_dir: /app
     command: ["sleep", "infinity"]
     environment:
@@ -261,7 +264,7 @@ services:
 
   online-testing-cluster-mailpit:
     image: axllent/mailpit:v1.21
-    container_name: online-testing-cluster-mailpit
+    container_name: online-testing-cluster-mailpit${HILOS_STAND_SUFFIX:-}
     environment:
       MP_SMTP_AUTH_ACCEPT_ANY: "1"
       MP_SMTP_AUTH_ALLOW_INSECURE: "1"
@@ -275,11 +278,11 @@ services:
     profiles: [e2e]
     networks:
       cluster-net:
-        ipv4_address: 10.223.0.20
+        ipv4_address: 10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.20
 
   online-testing-cluster-e2e-runner:
     image: mcr.microsoft.com/playwright:v1.60.0-noble
-    container_name: online-testing-cluster-e2e-runner
+    container_name: online-testing-cluster-e2e-runner${HILOS_STAND_SUFFIX:-}
     # The browser's scratch lives in memory: chromium runs with
     # --disable-dev-shm-usage, so its shared memory and profile churn land in
     # /tmp - gigabytes per suite written through the container layer to disk.
@@ -300,7 +303,7 @@ services:
 
 networks:
   cluster-net:
-    name: hilos-online-testing-cluster-net
+    name: hilos-online-testing-cluster-net${HILOS_STAND_SUFFIX:-}
     driver: bridge
     ipam:
       config:
@@ -311,4 +314,4 @@ networks:
         # race: any other stack whose network came up first may already hold the
         # range, and then the whole cluster fails to start with "Pool overlaps with
         # other one on this address space". 10.0.0.0/8 is never auto-assigned.
-        - subnet: 10.223.0.0/16
+        - subnet: 10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.0/16

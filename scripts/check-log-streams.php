@@ -74,9 +74,9 @@ const LOG_STREAMS_HARNESS = 2;
 const LOG_STREAMS_STAND_ID = 'tasks';
 
 /**
- * The compose service the daemon runs as. It is also the container name the stand gives it and
- * the network alias the cli container reaches it by, so the own-container scenarios keep the
- * alias with `--use-aliases`.
+ * The compose service the daemon runs as. It is also the network alias the cli container reaches
+ * it by, so the own-container scenarios keep the alias with `--use-aliases`; the container the
+ * stand gives it is this name with the instance suffix, `logStreamsDaemonContainer()`.
  */
 const LOG_STREAMS_DAEMON_SERVICE = 'tasks-daemon-test';
 
@@ -86,8 +86,11 @@ const LOG_STREAMS_CLI_SERVICE = 'tasks-cli-test';
 /** The compose profile the cli service sits behind. */
 const LOG_STREAMS_CLI_PROFILE = 'cli';
 
-/** The name the two own-container scenarios start the daemon service under. */
-const LOG_STREAMS_OWN_CONTAINER = 'tasks-daemon-log-streams';
+/**
+ * The name the two own-container scenarios start the daemon service under, before the instance
+ * suffix: `logStreamsOwnContainer()`.
+ */
+const LOG_STREAMS_OWN_CONTAINER_BASE = 'tasks-daemon-log-streams';
 
 /** Where the log directory is mounted inside the daemon container. */
 const LOG_STREAMS_CONTAINER_LOG_DIR = '/var/log/hilos';
@@ -224,6 +227,7 @@ const LOG_STREAMS_REFUSAL_ROW = 2;
 const LOG_STREAMS_CONTAINER_EXITED = 'exited';
 
 $root = dirname(__DIR__);
+require_once $root . '/scripts/stand-instance.php';
 require_once $root . '/scripts/stand-registry.php';
 require_once $root . '/scripts/step-artifacts.php';
 require_once $root . '/scripts/log-stream-verdicts.php';
@@ -328,22 +332,22 @@ function runAliveScenario(array $box, array $records): array
     if ($raised !== null) {
         return ['failures' => [], 'harness' => $raised];
     }
-    $marks = markStreams($box, LOG_STREAMS_DAEMON_SERVICE);
+    $marks = markStreams($box, logStreamsDaemonContainer());
     $up = runFromStand($box, $box['compose'] . ' up -d ' . LOG_STREAMS_DAEMON_SERVICE, LOG_STREAMS_STAND_TIMEOUT_SECONDS);
     if (!$up['ok']) {
         return ['failures' => [], 'harness' => 'the daemon container did not start: ' . $up['note'] . "\n" . $up['output']];
     }
-    $ready = waitDaemonReady(LOG_STREAMS_DAEMON_SERVICE);
+    $ready = waitDaemonReady(logStreamsDaemonContainer());
     if ($ready !== null) {
         return ['failures' => [], 'harness' => $ready];
     }
-    $appended = containerExec(LOG_STREAMS_DAEMON_SERVICE, LOG_STREAMS_CLI . ' ' . escapeshellarg('test:log:append') . ' '
+    $appended = containerExec(logStreamsDaemonContainer(), LOG_STREAMS_CLI . ' ' . escapeshellarg('test:log:append') . ' '
         . escapeshellarg(LOG_STREAMS_APPEND_MESSAGE) . ' ' . LOG_STREAMS_APPEND_COUNT);
     if (!$appended['ok']) {
         return ['failures' => [], 'harness' => 'test:log:append was refused: ' . $appended['note'] . "\n" . $appended['output']];
     }
 
-    $snapshot = awaitLandings($box, LOG_STREAMS_DAEMON_SERVICE, $marks, $records);
+    $snapshot = awaitLandings($box, logStreamsDaemonContainer(), $marks, $records);
     $failures = judgeScenario($records, $snapshot);
     $shared = logStreamSharedWorkerIndexes($snapshot);
     if ($shared !== []) {
@@ -370,15 +374,15 @@ function runAliveScenario(array $box, array $records): array
  */
 function runCrashScenario(array $box, array $records): array
 {
-    $marks = markStreams($box, LOG_STREAMS_DAEMON_SERVICE);
-    $killed = signalDaemon(LOG_STREAMS_DAEMON_SERVICE, LOG_STREAMS_SIGNAL_KILL);
+    $marks = markStreams($box, logStreamsDaemonContainer());
+    $killed = signalDaemon(logStreamsDaemonContainer(), LOG_STREAMS_SIGNAL_KILL);
     if ($killed !== null) {
         return ['failures' => [], 'harness' => $killed];
     }
 
-    awaitLandings($box, LOG_STREAMS_DAEMON_SERVICE, $marks, $records);
+    awaitLandings($box, logStreamsDaemonContainer(), $marks, $records);
     sleep(LOG_STREAMS_FAREWELL_WINDOW_SECONDS);
-    $snapshot = takeSnapshot($box, LOG_STREAMS_DAEMON_SERVICE, $marks);
+    $snapshot = takeSnapshot($box, logStreamsDaemonContainer(), $marks);
 
     return ['failures' => judgeScenario($records, $snapshot), 'harness' => null];
 }
@@ -424,31 +428,31 @@ function provokeMasterErrors(array $box, array $records): array
 {
     // `crash` left the master dead and the watchdog inside its restart interval: the master
     // has to be back before it can be killed into a start under the probe.
-    $back = waitDaemonReady(LOG_STREAMS_DAEMON_SERVICE);
+    $back = waitDaemonReady(logStreamsDaemonContainer());
     if ($back !== null) {
         return ['failures' => [], 'harness' => 'before the restart under the probe: ' . $back];
     }
-    $restarted = signalDaemon(LOG_STREAMS_DAEMON_SERVICE, LOG_STREAMS_SIGNAL_KILL);
+    $restarted = signalDaemon(logStreamsDaemonContainer(), LOG_STREAMS_SIGNAL_KILL);
     if ($restarted !== null) {
         return ['failures' => [], 'harness' => $restarted];
     }
-    $ready = waitDaemonReady(LOG_STREAMS_DAEMON_SERVICE);
+    $ready = waitDaemonReady(logStreamsDaemonContainer());
     if ($ready !== null) {
         return ['failures' => [], 'harness' => 'after the restart under the probe: ' . $ready];
     }
-    $marks = markStreams($box, LOG_STREAMS_DAEMON_SERVICE);
+    $marks = markStreams($box, logStreamsDaemonContainer());
 
     $workerWarningRecords = array_values(array_filter(
         $records,
         static fn(array $record): bool => in_array(LOG_STREAMS_WORKER_WARNING_ROW, $record['rows'], true),
     ));
-    $workerWarned = signalRegularWorker(LOG_STREAMS_DAEMON_SERVICE, LOG_STREAMS_SIGNAL_WARNING);
+    $workerWarned = signalRegularWorker(logStreamsDaemonContainer(), LOG_STREAMS_SIGNAL_WARNING);
     if ($workerWarned !== null) {
         return ['failures' => [], 'harness' => $workerWarned];
     }
-    awaitLandings($box, LOG_STREAMS_DAEMON_SERVICE, $marks, $workerWarningRecords);
+    awaitLandings($box, logStreamsDaemonContainer(), $marks, $workerWarningRecords);
 
-    $ready = waitDaemonReady(LOG_STREAMS_DAEMON_SERVICE);
+    $ready = waitDaemonReady(logStreamsDaemonContainer());
     if ($ready !== null) {
         return ['failures' => [], 'harness' => 'after the worker warning: ' . $ready];
     }
@@ -457,21 +461,21 @@ function provokeMasterErrors(array $box, array $records): array
         $records,
         static fn(array $record): bool => in_array(LOG_STREAMS_WARNING_ROW, $record['rows'], true),
     ));
-    $warned = signalDaemon(LOG_STREAMS_DAEMON_SERVICE, LOG_STREAMS_SIGNAL_WARNING);
+    $warned = signalDaemon(logStreamsDaemonContainer(), LOG_STREAMS_SIGNAL_WARNING);
     if ($warned !== null) {
         return ['failures' => [], 'harness' => $warned];
     }
-    awaitLandings($box, LOG_STREAMS_DAEMON_SERVICE, $marks, $warningRecords);
+    awaitLandings($box, logStreamsDaemonContainer(), $marks, $warningRecords);
 
-    $ready = waitDaemonReady(LOG_STREAMS_DAEMON_SERVICE);
+    $ready = waitDaemonReady(logStreamsDaemonContainer());
     if ($ready !== null) {
         return ['failures' => [], 'harness' => 'after the warning: ' . $ready];
     }
-    $fatal = signalDaemon(LOG_STREAMS_DAEMON_SERVICE, LOG_STREAMS_SIGNAL_FATAL);
+    $fatal = signalDaemon(logStreamsDaemonContainer(), LOG_STREAMS_SIGNAL_FATAL);
     if ($fatal !== null) {
         return ['failures' => [], 'harness' => $fatal];
     }
-    $snapshot = awaitLandings($box, LOG_STREAMS_DAEMON_SERVICE, $marks, $records);
+    $snapshot = awaitLandings($box, logStreamsDaemonContainer(), $marks, $records);
 
     return ['failures' => judgeScenario($records, $snapshot), 'harness' => null];
 }
@@ -494,7 +498,7 @@ function runAgentInMasterScenario(array $box, array $records): array
     if ($cleared !== null) {
         return ['failures' => [], 'harness' => $cleared];
     }
-    $marks = markStreams($box, LOG_STREAMS_OWN_CONTAINER);
+    $marks = markStreams($box, logStreamsOwnContainer());
     $started = startOwnContainer($box, '-e ' . escapeshellarg(LOG_STREAMS_SILENCE_TIMEOUT_VAR . '=' . LOG_STREAMS_SILENCE_TIMEOUT_SECONDS)
         . ' -e ' . escapeshellarg(LOG_STREAMS_ALERT_EMAILS_VAR . '='));
     if ($started !== null) {
@@ -504,8 +508,8 @@ function runAgentInMasterScenario(array $box, array $records): array
     }
 
     $outcome = provokeIdleFreeze($box, $marks, $records);
-    containerExec(LOG_STREAMS_OWN_CONTAINER, LOG_STREAMS_CLI . ' ' . escapeshellarg('test:protected-mode:leave'));
-    containerExec(LOG_STREAMS_OWN_CONTAINER, LOG_STREAMS_CLI . ' ' . escapeshellarg('test:protected-mode:open'));
+    containerExec(logStreamsOwnContainer(), LOG_STREAMS_CLI . ' ' . escapeshellarg('test:protected-mode:leave'));
+    containerExec(logStreamsOwnContainer(), LOG_STREAMS_CLI . ' ' . escapeshellarg('test:protected-mode:open'));
     removeOwnContainer($box);
     deleteFreezeState($box);
 
@@ -522,16 +526,16 @@ function runAgentInMasterScenario(array $box, array $records): array
  */
 function provokeIdleFreeze(array $box, array $marks, array $records): array
 {
-    $ready = waitDaemonReady(LOG_STREAMS_OWN_CONTAINER);
+    $ready = waitDaemonReady(logStreamsOwnContainer());
     if ($ready !== null) {
         return ['failures' => [], 'harness' => $ready];
     }
-    $entered = containerExec(LOG_STREAMS_OWN_CONTAINER, LOG_STREAMS_CLI . ' ' . escapeshellarg('test:protected-mode:enter') . ' '
+    $entered = containerExec(logStreamsOwnContainer(), LOG_STREAMS_CLI . ' ' . escapeshellarg('test:protected-mode:enter') . ' '
         . escapeshellarg(LOG_STREAMS_FREEZE_OPERATION));
     if (!$entered['ok']) {
         return ['failures' => [], 'harness' => 'the freeze was not entered: ' . $entered['note'] . "\n" . $entered['output']];
     }
-    $snapshot = awaitLandings($box, LOG_STREAMS_OWN_CONTAINER, $marks, $records);
+    $snapshot = awaitLandings($box, logStreamsOwnContainer(), $marks, $records);
 
     return ['failures' => judgeScenario($records, $snapshot), 'harness' => null];
 }
@@ -561,7 +565,7 @@ function runRotationRefusedScenario(array $box, array $records): array
     if ($pin === false || file_put_contents($pin, "pinned by the log-stream check\n") === false) {
         return ['failures' => [], 'harness' => 'no host file to mount into the log directory'];
     }
-    $marks = markStreams($box, LOG_STREAMS_OWN_CONTAINER);
+    $marks = markStreams($box, logStreamsOwnContainer());
     $started = startOwnContainer(
         $box,
         '-v ' . escapeshellarg($pin . ':' . LOG_STREAMS_CONTAINER_LOG_DIR . '/' . LOG_STREAMS_PIN_NAME),
@@ -574,7 +578,7 @@ function runRotationRefusedScenario(array $box, array $records): array
     }
 
     $failures = [];
-    $ready = waitDaemonReady(LOG_STREAMS_OWN_CONTAINER);
+    $ready = waitDaemonReady(logStreamsOwnContainer());
     if ($ready !== null) {
         $failures[] = sprintf(
             "RED map row %d, scenario %s: the node did not come up after the rotation skipped a file it could not move\n%s\n",
@@ -584,7 +588,7 @@ function runRotationRefusedScenario(array $box, array $records): array
         );
     }
 
-    $snapshot = awaitLandings($box, LOG_STREAMS_OWN_CONTAINER, $marks, $records);
+    $snapshot = awaitLandings($box, logStreamsOwnContainer(), $marks, $records);
     $failures = array_merge($failures, judgeScenario($records, $snapshot));
     removeOwnContainer($box);
     unlink($pin);
@@ -634,7 +638,7 @@ function runLogRootForeignScenario(array $box, array $records): array
     }
 
     $before = logDirectoryListing($box['logDir']);
-    $marks = markStreams($box, LOG_STREAMS_OWN_CONTAINER);
+    $marks = markStreams($box, logStreamsOwnContainer());
     $started = startOwnContainer($box, '');
     if ($started !== null) {
         removeOwnContainer($box);
@@ -644,7 +648,7 @@ function runLogRootForeignScenario(array $box, array $records): array
     }
 
     $failures = [];
-    $exit = awaitContainerExit(LOG_STREAMS_OWN_CONTAINER);
+    $exit = awaitContainerExit(logStreamsOwnContainer());
     if ($exit !== null) {
         $failures[] = sprintf(
             "RED map row %d, scenario %s: the container did not leave with exit code %d on a log directory another environment owns: %s\n",
@@ -670,7 +674,7 @@ function runLogRootForeignScenario(array $box, array $records): array
         );
     }
 
-    $snapshot = awaitLandings($box, LOG_STREAMS_OWN_CONTAINER, $marks, $records);
+    $snapshot = awaitLandings($box, logStreamsOwnContainer(), $marks, $records);
     $failures = array_merge($failures, judgeScenario($records, $snapshot));
     removeOwnContainer($box);
     restoreOwnerMarker($markerPath, $previousMarker);
@@ -792,6 +796,28 @@ function clearForOwnContainer(array $box): ?string
 }
 
 /**
+ * The container the stand runs the daemon service as: the service name with the suffix of the
+ * stand instance this check runs in, which the compose file appends to its `container_name`.
+ *
+ * @return string The container name.
+ */
+function logStreamsDaemonContainer(): string
+{
+    return LOG_STREAMS_DAEMON_SERVICE . standInstanceSuffix();
+}
+
+/**
+ * The name the own-container scenarios start the daemon under, kept apart per stand instance so
+ * two instances never remove each other's container.
+ *
+ * @return string The container name.
+ */
+function logStreamsOwnContainer(): string
+{
+    return LOG_STREAMS_OWN_CONTAINER_BASE . standInstanceSuffix();
+}
+
+/**
  * Start the daemon service as a container of its own, with extra arguments for `compose run`.
  *
  * `run` rather than `up`: the two scenarios need an environment and a mount the compose file
@@ -807,7 +833,7 @@ function startOwnContainer(array $box, string $extra): ?string
 {
     $ran = runFromStand(
         $box,
-        $box['compose'] . ' run -d --use-aliases --name ' . LOG_STREAMS_OWN_CONTAINER . ' ' . $extra . ' ' . LOG_STREAMS_DAEMON_SERVICE,
+        $box['compose'] . ' run -d --use-aliases --name ' . logStreamsOwnContainer() . ' ' . $extra . ' ' . LOG_STREAMS_DAEMON_SERVICE,
         LOG_STREAMS_STAND_TIMEOUT_SECONDS,
     );
     if (!$ran['ok']) {
@@ -824,7 +850,7 @@ function startOwnContainer(array $box, string $extra): ?string
  */
 function removeOwnContainer(array $box): void
 {
-    runArtifactCommand('docker', 'docker rm -f ' . LOG_STREAMS_OWN_CONTAINER, $box['root'], LOG_STREAMS_COMMAND_TIMEOUT_SECONDS);
+    runArtifactCommand('docker', 'docker rm -f ' . logStreamsOwnContainer(), $box['root'], LOG_STREAMS_COMMAND_TIMEOUT_SECONDS);
 }
 
 /**
@@ -852,7 +878,7 @@ function installProbe(array $box): ?string
     $copied = runArtifactCommand(
         'docker',
         'docker cp ' . escapeshellarg($box['root'] . '/' . LOG_STREAMS_PROBE_SOURCE) . ' '
-            . escapeshellarg(LOG_STREAMS_DAEMON_SERVICE . ':' . LOG_STREAMS_PROBE_TARGET),
+            . escapeshellarg(logStreamsDaemonContainer() . ':' . LOG_STREAMS_PROBE_TARGET),
         $box['root'],
         LOG_STREAMS_COMMAND_TIMEOUT_SECONDS,
     );
@@ -860,13 +886,13 @@ function installProbe(array $box): ?string
         return 'the probe could not be copied into the container: ' . implode('; ', $copied['missing']) . "\n" . $copied['output'];
     }
     $written = containerExec(
-        LOG_STREAMS_DAEMON_SERVICE,
+        logStreamsDaemonContainer(),
         'printf ' . escapeshellarg('auto_prepend_file=' . LOG_STREAMS_PROBE_TARGET . '\n') . ' > ' . escapeshellarg(LOG_STREAMS_PROBE_INI),
     );
     if (!$written['ok']) {
         return 'the probe ini could not be written: ' . $written['note'] . "\n" . $written['output'];
     }
-    $read = containerExec(LOG_STREAMS_DAEMON_SERVICE, 'php -r ' . escapeshellarg('echo ini_get("auto_prepend_file");'));
+    $read = containerExec(logStreamsDaemonContainer(), 'php -r ' . escapeshellarg('echo ini_get("auto_prepend_file");'));
     if (!$read['ok'] || trim($read['output']) !== LOG_STREAMS_PROBE_TARGET) {
         return 'php does not see the probe as auto_prepend_file; it answered: ' . trim($read['output']);
     }
@@ -878,7 +904,7 @@ function installProbe(array $box): ?string
 function removeProbe(): void
 {
     containerExec(
-        LOG_STREAMS_DAEMON_SERVICE,
+        logStreamsDaemonContainer(),
         'rm -f ' . escapeshellarg(LOG_STREAMS_PROBE_INI) . ' ' . escapeshellarg(LOG_STREAMS_PROBE_TARGET),
     );
 }

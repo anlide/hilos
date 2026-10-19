@@ -18,7 +18,7 @@
 #   docker compose -f framework/docker/docker-compose.yml run --rm hilos-cli-test ...
 # Most stacks have composer wrappers (see composer.json).
 
-name: hilos-framework
+name: hilos-framework${HILOS_STAND_SUFFIX:-}
 
 # Shared base for the three Ollama variants: only image / devices / placement
 # differ between CPU, NVIDIA and AMD, so the rest is defined once here.
@@ -170,7 +170,7 @@ services:
   # backup receiver up, which `composer run test:framework:up` is for.
   mysql-framework-test:
     image: mariadb:11.4
-    container_name: hilos-mysql-framework-test
+    container_name: hilos-mysql-framework-test${HILOS_STAND_SUFFIX:-}
     # How the runner's artifact collector finds this container: the stands spell their
     # database service several ways, so it is asked for by role rather than guessed at by
     # name (HIL-841). No app container wears the other label here — the framework stand has
@@ -213,7 +213,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.test-sshd
-    container_name: hilos-sshd-framework-test
+    container_name: hilos-sshd-framework-test${HILOS_STAND_SUFFIX:-}
     environment:
       TZ: UTC
     volumes:
@@ -236,7 +236,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.test-cli
-    container_name: hilos-cli-framework-test
+    container_name: hilos-cli-framework-test${HILOS_STAND_SUFFIX:-}
     volumes:
       - ../..:/hilos
       - composer-cache:/root/.composer/cache
@@ -271,9 +271,10 @@ volumes:
   # Rewritten on every start of sshd-framework-test, so it holds nothing worth
   # keeping and nothing worth protecting beyond the life of the stand. Pinned by
   # name because `test:framework:down-volumes` names it; a project-prefixed
-  # name would leave it behind after a rename.
+  # name would leave it behind after a rename. The stand instance suffix keeps
+  # two instances from rewriting each other's keys (scripts/stand-instance.php).
   ship-keys:
-    name: hilos-framework-ship-keys
+    name: hilos-framework-ship-keys${HILOS_STAND_SUFFIX:-}
   composer-cache:
 
 networks:

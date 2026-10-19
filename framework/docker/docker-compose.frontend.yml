@@ -7,7 +7,7 @@
 # The runner is a tool the steps run inside, not a service of any stand, so it owns
 # the whole of this file and nothing shares the project with it.
 
-name: hilos-frontend
+name: hilos-frontend${HILOS_STAND_SUFFIX:-}
 
 services:
   # --- Frontend SDK Node CLI runner ------------------------------------------
@@ -15,7 +15,7 @@ services:
   # node_modules lands in the project via the bind-mount, where PhpStorm sees it.
   hilos-frontend-cli:
     image: node:24-bookworm-slim
-    container_name: hilos-frontend-cli
+    container_name: hilos-frontend-cli${HILOS_STAND_SUFFIX:-}
     volumes:
       - ../..:/hilos
     working_dir: /hilos/framework/frontend

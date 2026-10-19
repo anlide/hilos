@@ -19,7 +19,7 @@
 # every agent it registers, the framework's cluster probes among them — and publish nothing
 # on the host: the harness reaches them through the cli container.
 
-name: hilos-ecommerce-shop-cluster
+name: hilos-ecommerce-shop-cluster${HILOS_STAND_SUFFIX:-}
 
 # What the shared cluster harness (framework/docker/cluster/cluster.py) reads besides the services
 # below; the nodes, their addresses, roles, room and log directories it takes from the services.
@@ -92,7 +92,7 @@ x-node-env: &node-env
 services:
   ecommerce-shop-cluster-mysql:
     image: mariadb:11.4
-    container_name: ecommerce-shop-cluster-mysql
+    container_name: ecommerce-shop-cluster-mysql${HILOS_STAND_SUFFIX:-}
     # How the runner's artifact collector finds this container: the stands spell their
     # database service several ways, so it is asked for by role rather than guessed at by
     # name (HIL-841).
@@ -107,7 +107,7 @@ services:
     volumes:
       # Host memory keeps this member's data across down/up and kill/start;
       # the harness wipes it on down --volumes (HIL-1327).
-      - /dev/shm/hilos-ecommerce-shop-cluster-mysql-data:/var/lib/mysql
+      - /dev/shm/hilos-ecommerce-shop-cluster-mysql-data${HILOS_STAND_SUFFIX:-}:/var/lib/mysql
       - ../../../framework/docker/mysql/test-stand.cnf:/etc/mysql/conf.d/zz-hilos-test-stand.cnf:ro
       - ./mysql/init-change-log.sh:/docker-entrypoint-initdb.d/init-change-log.sh:ro
       - ./mysql/provision-change-log.sh:/usr/local/bin/provision-change-log.sh:ro
@@ -122,11 +122,11 @@ services:
       start_period: 10s
     networks:
       cluster-net:
-        ipv4_address: 10.222.0.10
+        ipv4_address: 10.${HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER:-222}.0.10
 
   ecommerce-shop-cluster-m1:
     <<: *node-base
-    container_name: ecommerce-shop-cluster-m1
+    container_name: ecommerce-shop-cluster-m1${HILOS_STAND_SUFFIX:-}
     # Found by role for the same reason the database is (HIL-841), and carried by m1 ALONE:
     # the three nodes share one schema (HIL-712), the collector takes the first container
     # wearing the label, and putting it on all three would make which of them answers a
@@ -147,8 +147,8 @@ services:
       # docs/agents/architecture/daemon-lifecycle.md, "Who may carry placed work (HIL-445)"
       # and "Consumable capacity and agent cost (HIL-448)".
       CLUSTER_NODE_CAPABILITIES: ""
-      CLUSTER_PEER_ADVERTISE: "10.222.0.11:8095"
-      CLUSTER_SEEDS: "10.222.0.14:8095,10.222.0.15:8095"
+      CLUSTER_PEER_ADVERTISE: "10.${HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER:-222}.0.11:8095"
+      CLUSTER_SEEDS: "10.${HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER:-222}.0.14:8095,10.${HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER:-222}.0.15:8095"
       WORKER_MIN_MONOPOLISTIC: "0"
     volumes:
       - ..:/app
@@ -158,11 +158,11 @@ services:
       - ../data/logs-cluster/m1:/var/log/hilos
     networks:
       cluster-net:
-        ipv4_address: 10.222.0.11
+        ipv4_address: 10.${HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER:-222}.0.11
 
   ecommerce-shop-cluster-s1:
     <<: *node-base
-    container_name: ecommerce-shop-cluster-s1
+    container_name: ecommerce-shop-cluster-s1${HILOS_STAND_SUFFIX:-}
     environment:
       <<: *node-env
       CLUSTER_NODE_ID: s1
@@ -178,8 +178,8 @@ services:
       # cost their slot and nothing more. Scenario 37 recreates both slaves with slots=16 of
       # their own for its run, few enough to fill, and restarts the stand on this file after.
       CLUSTER_NODE_CAPABILITIES: "worker,ram=10,slots=64"
-      CLUSTER_PEER_ADVERTISE: "10.222.0.14:8095"
-      CLUSTER_SEEDS: "10.222.0.11:8095,10.222.0.15:8095"
+      CLUSTER_PEER_ADVERTISE: "10.${HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER:-222}.0.14:8095"
+      CLUSTER_SEEDS: "10.${HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER:-222}.0.11:8095,10.${HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER:-222}.0.15:8095"
       # Fleet members share these regular workers. A member's synthetic job blocks its
       # worker, so several of them keep the whole fleet ticking even when one node holds
       # it all after a failover.
@@ -193,11 +193,11 @@ services:
       - ../data/logs-cluster/s1:/var/log/hilos
     networks:
       cluster-net:
-        ipv4_address: 10.222.0.14
+        ipv4_address: 10.${HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER:-222}.0.14
 
   ecommerce-shop-cluster-s2:
     <<: *node-base
-    container_name: ecommerce-shop-cluster-s2
+    container_name: ecommerce-shop-cluster-s2${HILOS_STAND_SUFFIX:-}
     environment:
       <<: *node-env
       CLUSTER_NODE_ID: s2
@@ -205,8 +205,8 @@ services:
       CLUSTER_NODE_ROLE: slave
       # Less ram than s1 on purpose, the same slots; see the comment there.
       CLUSTER_NODE_CAPABILITIES: "worker,ram=4,slots=64"
-      CLUSTER_PEER_ADVERTISE: "10.222.0.15:8095"
-      CLUSTER_SEEDS: "10.222.0.11:8095,10.222.0.14:8095"
+      CLUSTER_PEER_ADVERTISE: "10.${HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER:-222}.0.15:8095"
+      CLUSTER_SEEDS: "10.${HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER:-222}.0.11:8095,10.${HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER:-222}.0.14:8095"
       # Regular workers the fleet members share on this node; see s1.
       WORKER_MIN_REGULAR: "5"
       WORKER_MAX_REGULAR: "5"
@@ -218,7 +218,7 @@ services:
       - ../data/logs-cluster/s2:/var/log/hilos
     networks:
       cluster-net:
-        ipv4_address: 10.222.0.15
+        ipv4_address: 10.${HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER:-222}.0.15
 
   # Long-lived CLI container the harness `docker exec`s for test:cluster:inspect,
   # and the one-shot runner for the harness's own chores (profile cli, so it never
@@ -228,7 +228,7 @@ services:
   # HILOS_DAEMON_HOST=<ip>`): the shared harness names the node per call.
   ecommerce-shop-cluster-cli:
     build: .
-    container_name: ecommerce-shop-cluster-cli
+    container_name: ecommerce-shop-cluster-cli${HILOS_STAND_SUFFIX:-}
     working_dir: /app
     command: ["sleep", "infinity"]
     environment:
@@ -256,7 +256,7 @@ services:
 
 networks:
   cluster-net:
-    name: hilos-ecommerce-shop-cluster-net
+    name: hilos-ecommerce-shop-cluster-net${HILOS_STAND_SUFFIX:-}
     driver: bridge
     ipam:
       config:
@@ -267,4 +267,4 @@ networks:
         # race: any other stack whose network came up first may already hold the
         # range, and then the whole cluster fails to start with "Pool overlaps with
         # other one on this address space". 10.0.0.0/8 is never auto-assigned.
-        - subnet: 10.222.0.0/16
+        - subnet: 10.${HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER:-222}.0.0/16

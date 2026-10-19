@@ -16,7 +16,9 @@ declare(strict_types=1);
  *   composeFile  relative to `cwd`.
  *   project      the compose project name, read off the file's own `name:` line. This is
  *                what docker labels every container and network of the stand with, and
- *                therefore what the residue is looked up by.
+ *                therefore what the residue is looked up by. It ends with the suffix of the
+ *                stand instance this process runs in (`scripts/stand-instance.php`), the way
+ *                the `name:` line itself does, so a teardown never reaches another instance.
  *   mode         `project` drops the whole compose project; `profile` drops only the
  *                profiles named below and leaves the rest of the project standing.
  *   profiles     `profile` only: the compose profiles the stand's services sit behind. The
@@ -29,29 +31,32 @@ declare(strict_types=1);
  *                key it carries in the file — hence
  *                `hilos-framework_hilos-framework-test-network` for the key
  *                `hilos-framework-test-network` at
- *                `framework/docker/docker-compose.yml:266`. Empty on a `project` stand, which
+ *                `framework/docker/docker-compose.yml:266`, with the instance suffix after
+ *                the project part. Empty on a `project` stand, which
  *                finds its networks by project label.
  *   holdsDatabase whether the stand holds a database the collector must ask; false
  *                means there is nothing to ask, and is not the same as a database that
  *                failed to come up.
  */
 
+require_once __DIR__ . '/stand-instance.php';
+
 return [
     [
         'id' => 'framework',
         'cwd' => '.',
         'composeFile' => 'framework/docker/docker-compose.yml',
-        'project' => 'hilos-framework',
+        'project' => 'hilos-framework' . standInstanceSuffix(),
         'mode' => 'profile',
         'profiles' => ['test'],
-        'networks' => ['hilos-framework_hilos-framework-test-network'],
+        'networks' => ['hilos-framework' . standInstanceSuffix() . '_hilos-framework-test-network'],
         'holdsDatabase' => true,
     ],
     [
         'id' => 'frontend',
         'cwd' => '.',
         'composeFile' => 'framework/docker/docker-compose.frontend.yml',
-        'project' => 'hilos-frontend',
+        'project' => 'hilos-frontend' . standInstanceSuffix(),
         'mode' => 'project',
         'profiles' => [],
         'networks' => [],
@@ -61,7 +66,7 @@ return [
         'id' => 'chat',
         'cwd' => 'demo/chat',
         'composeFile' => 'docker/docker-compose.test.yml',
-        'project' => 'hilos-chat-test',
+        'project' => 'hilos-chat-test' . standInstanceSuffix(),
         'mode' => 'project',
         'profiles' => [],
         'networks' => [],
@@ -71,7 +76,7 @@ return [
         'id' => 'tasks',
         'cwd' => 'demo/tasks',
         'composeFile' => 'docker/docker-compose.test.yml',
-        'project' => 'hilos-tasks-test',
+        'project' => 'hilos-tasks-test' . standInstanceSuffix(),
         'mode' => 'project',
         'profiles' => [],
         'networks' => [],
@@ -81,7 +86,7 @@ return [
         'id' => 'polls',
         'cwd' => 'demo/polls',
         'composeFile' => 'docker/docker-compose.test.yml',
-        'project' => 'hilos-polls-test',
+        'project' => 'hilos-polls-test' . standInstanceSuffix(),
         'mode' => 'project',
         'profiles' => [],
         'networks' => [],
@@ -91,7 +96,7 @@ return [
         'id' => 'binance-btc-tracker',
         'cwd' => 'demo/binance-btc-tracker',
         'composeFile' => 'docker/docker-compose.test.yml',
-        'project' => 'hilos-binance-btc-tracker-test',
+        'project' => 'hilos-binance-btc-tracker-test' . standInstanceSuffix(),
         'mode' => 'project',
         'profiles' => [],
         'networks' => [],
@@ -101,7 +106,7 @@ return [
         'id' => 'binance-btc-tracker-cluster',
         'cwd' => 'demo/binance-btc-tracker',
         'composeFile' => 'docker/docker-compose.cluster.yml',
-        'project' => 'hilos-binance-btc-tracker-cluster',
+        'project' => 'hilos-binance-btc-tracker-cluster' . standInstanceSuffix(),
         'mode' => 'project',
         'profiles' => [],
         'networks' => [],
@@ -111,7 +116,7 @@ return [
         'id' => 'ecommerce-shop',
         'cwd' => 'demo/ecommerce-shop',
         'composeFile' => 'docker/docker-compose.test.yml',
-        'project' => 'hilos-ecommerce-shop-test',
+        'project' => 'hilos-ecommerce-shop-test' . standInstanceSuffix(),
         'mode' => 'project',
         'profiles' => [],
         'networks' => [],
@@ -121,7 +126,7 @@ return [
         'id' => 'ecommerce-shop-cluster',
         'cwd' => 'demo/ecommerce-shop',
         'composeFile' => 'docker/docker-compose.cluster.yml',
-        'project' => 'hilos-ecommerce-shop-cluster',
+        'project' => 'hilos-ecommerce-shop-cluster' . standInstanceSuffix(),
         'mode' => 'project',
         'profiles' => [],
         'networks' => [],
@@ -131,7 +136,7 @@ return [
         'id' => 'online-testing',
         'cwd' => 'demo/online-testing',
         'composeFile' => 'docker/docker-compose.test.yml',
-        'project' => 'hilos-online-testing-test',
+        'project' => 'hilos-online-testing-test' . standInstanceSuffix(),
         'mode' => 'project',
         'profiles' => [],
         'networks' => [],
@@ -141,7 +146,7 @@ return [
         'id' => 'online-testing-cluster',
         'cwd' => 'demo/online-testing',
         'composeFile' => 'docker/docker-compose.cluster.yml',
-        'project' => 'hilos-online-testing-cluster',
+        'project' => 'hilos-online-testing-cluster' . standInstanceSuffix(),
         'mode' => 'project',
         'profiles' => [],
         'networks' => [],

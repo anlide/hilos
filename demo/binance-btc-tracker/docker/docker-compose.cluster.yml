@@ -23,7 +23,7 @@
 # raises them, and the browser enters through the one entry above, naming its
 # master by the cookie (HIL-1232).
 
-name: hilos-binance-btc-tracker-cluster
+name: hilos-binance-btc-tracker-cluster${HILOS_STAND_SUFFIX:-}
 
 # What the shared cluster harness (framework/docker/cluster/cluster.py) reads besides the services
 # below; the nodes, their addresses, roles, room and log directories it takes from the services.
@@ -117,18 +117,21 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.nginx
-    container_name: binance-btc-tracker-cluster-entry
+    container_name: binance-btc-tracker-cluster-entry${HILOS_STAND_SUFFIX:-}
+    environment:
+      # The upstreams in nginx.cluster.conf.template name node addresses on this network.
+      HILOS_CLUSTER_NET: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}
     volumes:
       - ./nginx.cluster.conf.template:/etc/nginx/nginx.conf.template:ro
       - ../frontend:/srv/frontend:ro
       - data-export:/data_export:ro
     networks:
       cluster-net:
-        ipv4_address: 10.221.0.30
+        ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.30
 
   binance-btc-tracker-cluster-mysql:
     image: mariadb:11.4
-    container_name: binance-btc-tracker-cluster-mysql
+    container_name: binance-btc-tracker-cluster-mysql${HILOS_STAND_SUFFIX:-}
     # How the runner's artifact collector finds this container: the stands spell their
     # database service several ways, so it is asked for by role rather than guessed at by
     # name (HIL-841).
@@ -143,7 +146,7 @@ services:
     volumes:
       # Host memory keeps this member's data across down/up and kill/start;
       # the harness wipes it on down --volumes (HIL-1327).
-      - /dev/shm/hilos-binance-btc-tracker-cluster-mysql-data:/var/lib/mysql
+      - /dev/shm/hilos-binance-btc-tracker-cluster-mysql-data${HILOS_STAND_SUFFIX:-}:/var/lib/mysql
       - ../../../framework/docker/mysql/test-stand.cnf:/etc/mysql/conf.d/zz-hilos-test-stand.cnf:ro
       - ./mysql/init-change-log.sh:/docker-entrypoint-initdb.d/init-change-log.sh:ro
       - ./mysql/provision-change-log.sh:/usr/local/bin/provision-change-log.sh:ro
@@ -158,11 +161,11 @@ services:
       start_period: 10s
     networks:
       cluster-net:
-        ipv4_address: 10.221.0.10
+        ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.10
 
   binance-btc-tracker-cluster-m1:
     <<: *node-base
-    container_name: binance-btc-tracker-cluster-m1
+    container_name: binance-btc-tracker-cluster-m1${HILOS_STAND_SUFFIX:-}
     # Found by role for the same reason the database is (HIL-841), and carried by m1 ALONE:
     # the five nodes share one schema (HIL-712), the collector takes the first container
     # wearing the label, and putting it on all five would make which of them answers a
@@ -175,7 +178,7 @@ services:
       # All nodes bind one demo tree at /app, so a shared backup directory would make an
       # archive visible everywhere. Production keeps each node's archive directory local.
       BACKUP_DIR: /app/data/backup-cluster/m1
-      HILOS_TRUSTED_PROXIES: 10.221.0.30/32
+      HILOS_TRUSTED_PROXIES: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.30/32
       CLUSTER_TLS_CERT_FILE: /app/docker/tls/m1.pem
       CLUSTER_NODE_ROLE: master
       # Empty on purpose: the framework gates placement on what a node DECLARES, never on its
@@ -187,8 +190,8 @@ services:
       # docs/agents/architecture/daemon-lifecycle.md, "Who may carry placed work (HIL-445)"
       # and "Consumable capacity and agent cost (HIL-448)".
       CLUSTER_NODE_CAPABILITIES: ""
-      CLUSTER_PEER_ADVERTISE: "10.221.0.11:8095"
-      CLUSTER_SEEDS: "10.221.0.12:8095,10.221.0.13:8095,10.221.0.14:8095,10.221.0.15:8095"
+      CLUSTER_PEER_ADVERTISE: "10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.11:8095"
+      CLUSTER_SEEDS: "10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.12:8095,10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.13:8095,10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.14:8095,10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.15:8095"
       WORKER_MIN_MONOPOLISTIC: "0"
     volumes:
       - ..:/app
@@ -199,22 +202,22 @@ services:
       - ../data/logs-cluster/m1:/var/log/hilos
     networks:
       cluster-net:
-        ipv4_address: 10.221.0.11
+        ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.11
 
   binance-btc-tracker-cluster-m2:
     <<: *node-base
-    container_name: binance-btc-tracker-cluster-m2
+    container_name: binance-btc-tracker-cluster-m2${HILOS_STAND_SUFFIX:-}
     environment:
       <<: *node-env
       CLUSTER_NODE_ID: m2
       BACKUP_DIR: /app/data/backup-cluster/m2
-      HILOS_TRUSTED_PROXIES: 10.221.0.30/32
+      HILOS_TRUSTED_PROXIES: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.30/32
       CLUSTER_TLS_CERT_FILE: /app/docker/tls/m2.pem
       CLUSTER_NODE_ROLE: master
       # Empty for the same reason m1's is; see the comment there.
       CLUSTER_NODE_CAPABILITIES: ""
-      CLUSTER_PEER_ADVERTISE: "10.221.0.12:8095"
-      CLUSTER_SEEDS: "10.221.0.11:8095,10.221.0.13:8095,10.221.0.14:8095,10.221.0.15:8095"
+      CLUSTER_PEER_ADVERTISE: "10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.12:8095"
+      CLUSTER_SEEDS: "10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.11:8095,10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.13:8095,10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.14:8095,10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.15:8095"
       WORKER_MIN_MONOPOLISTIC: "0"
     volumes:
       - ..:/app
@@ -225,22 +228,22 @@ services:
       - ../data/logs-cluster/m2:/var/log/hilos
     networks:
       cluster-net:
-        ipv4_address: 10.221.0.12
+        ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.12
 
   binance-btc-tracker-cluster-m3:
     <<: *node-base
-    container_name: binance-btc-tracker-cluster-m3
+    container_name: binance-btc-tracker-cluster-m3${HILOS_STAND_SUFFIX:-}
     environment:
       <<: *node-env
       CLUSTER_NODE_ID: m3
       BACKUP_DIR: /app/data/backup-cluster/m3
-      HILOS_TRUSTED_PROXIES: 10.221.0.30/32
+      HILOS_TRUSTED_PROXIES: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.30/32
       CLUSTER_TLS_CERT_FILE: /app/docker/tls/m3.pem
       CLUSTER_NODE_ROLE: master
       # Empty for the same reason m1's is; see the comment there.
       CLUSTER_NODE_CAPABILITIES: ""
-      CLUSTER_PEER_ADVERTISE: "10.221.0.13:8095"
-      CLUSTER_SEEDS: "10.221.0.11:8095,10.221.0.12:8095,10.221.0.14:8095,10.221.0.15:8095"
+      CLUSTER_PEER_ADVERTISE: "10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.13:8095"
+      CLUSTER_SEEDS: "10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.11:8095,10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.12:8095,10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.14:8095,10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.15:8095"
       WORKER_MIN_MONOPOLISTIC: "0"
     volumes:
       - ..:/app
@@ -251,11 +254,11 @@ services:
       - ../data/logs-cluster/m3:/var/log/hilos
     networks:
       cluster-net:
-        ipv4_address: 10.221.0.13
+        ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.13
 
   binance-btc-tracker-cluster-s1:
     <<: *node-base
-    container_name: binance-btc-tracker-cluster-s1
+    container_name: binance-btc-tracker-cluster-s1${HILOS_STAND_SUFFIX:-}
     environment:
       <<: *node-env
       CLUSTER_NODE_ID: s1
@@ -269,8 +272,8 @@ services:
       # anywhere; 64 is far more than the stand places. Nothing on this stand spends ram, so
       # both slaves declare the same; unequal room is the shape of ecommerce-shop's stand.
       CLUSTER_NODE_CAPABILITIES: "worker,ram=10,slots=64"
-      CLUSTER_PEER_ADVERTISE: "10.221.0.14:8095"
-      CLUSTER_SEEDS: "10.221.0.11:8095,10.221.0.12:8095,10.221.0.13:8095,10.221.0.15:8095"
+      CLUSTER_PEER_ADVERTISE: "10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.14:8095"
+      CLUSTER_SEEDS: "10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.11:8095,10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.12:8095,10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.13:8095,10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.15:8095"
       # Fleet members share these regular workers. A member's synthetic job blocks its
       # worker, so several of them keep the whole fleet ticking even when one node holds
       # it all after a failover.
@@ -285,11 +288,11 @@ services:
       - ../data/logs-cluster/s1:/var/log/hilos
     networks:
       cluster-net:
-        ipv4_address: 10.221.0.14
+        ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.14
 
   binance-btc-tracker-cluster-s2:
     <<: *node-base
-    container_name: binance-btc-tracker-cluster-s2
+    container_name: binance-btc-tracker-cluster-s2${HILOS_STAND_SUFFIX:-}
     environment:
       <<: *node-env
       CLUSTER_NODE_ID: s2
@@ -298,8 +301,8 @@ services:
       CLUSTER_NODE_ROLE: slave
       # The same as s1's, and for the same reasons; see the comment there.
       CLUSTER_NODE_CAPABILITIES: "worker,ram=10,slots=64"
-      CLUSTER_PEER_ADVERTISE: "10.221.0.15:8095"
-      CLUSTER_SEEDS: "10.221.0.11:8095,10.221.0.12:8095,10.221.0.13:8095,10.221.0.14:8095"
+      CLUSTER_PEER_ADVERTISE: "10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.15:8095"
+      CLUSTER_SEEDS: "10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.11:8095,10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.12:8095,10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.13:8095,10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.14:8095"
       # Regular workers the fleet members share on this node; see s1.
       WORKER_MIN_REGULAR: "5"
       WORKER_MAX_REGULAR: "5"
@@ -312,7 +315,7 @@ services:
       - ../data/logs-cluster/s2:/var/log/hilos
     networks:
       cluster-net:
-        ipv4_address: 10.221.0.15
+        ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.15
 
   # A stranger on the cluster network (HIL-1034): a node whose certificate is signed by an
   # authority the cluster does not trust. It passes its own start-up check - its trust file is
@@ -321,7 +324,7 @@ services:
   # the cluster; the shared harness's `stranger up|down` drives it. Not in CLUSTER_MASTER_SET.
   binance-btc-tracker-cluster-x1:
     <<: *node-base
-    container_name: binance-btc-tracker-cluster-x1
+    container_name: binance-btc-tracker-cluster-x1${HILOS_STAND_SUFFIX:-}
     profiles:
       - stranger
     environment:
@@ -331,8 +334,8 @@ services:
       CLUSTER_TLS_CA_FILE: /app/docker/tls/stranger-ca.pem
       CLUSTER_NODE_ROLE: slave
       CLUSTER_NODE_CAPABILITIES: ""
-      CLUSTER_PEER_ADVERTISE: "10.221.0.16:8095"
-      CLUSTER_SEEDS: "10.221.0.11:8095,10.221.0.12:8095,10.221.0.13:8095,10.221.0.14:8095,10.221.0.15:8095"
+      CLUSTER_PEER_ADVERTISE: "10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.16:8095"
+      CLUSTER_SEEDS: "10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.11:8095,10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.12:8095,10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.13:8095,10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.14:8095,10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.15:8095"
     volumes:
       - ..:/app
       - data-export:/app/data/data_export
@@ -342,7 +345,7 @@ services:
       - ../data/logs-cluster/x1:/var/log/hilos
     networks:
       cluster-net:
-        ipv4_address: 10.221.0.16
+        ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.16
 
   # Long-lived CLI container the harness `docker exec`s for test:cluster:inspect,
   # and the one-shot runner for the harness's own chores (profile cli, so it never
@@ -352,7 +355,7 @@ services:
   # HILOS_DAEMON_HOST=<ip>`): the shared harness names the node per call.
   binance-btc-tracker-cluster-cli:
     build: .
-    container_name: binance-btc-tracker-cluster-cli
+    container_name: binance-btc-tracker-cluster-cli${HILOS_STAND_SUFFIX:-}
     working_dir: /app
     command: ["sleep", "infinity"]
     environment:
@@ -380,7 +383,7 @@ services:
 
   binance-btc-tracker-cluster-mailpit:
     image: axllent/mailpit:v1.21
-    container_name: binance-btc-tracker-cluster-mailpit
+    container_name: binance-btc-tracker-cluster-mailpit${HILOS_STAND_SUFFIX:-}
     environment:
       MP_SMTP_AUTH_ACCEPT_ANY: "1"
       MP_SMTP_AUTH_ALLOW_INSECURE: "1"
@@ -394,11 +397,11 @@ services:
     profiles: [e2e]
     networks:
       cluster-net:
-        ipv4_address: 10.221.0.20
+        ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.20
 
   binance-btc-tracker-cluster-e2e-runner:
     image: mcr.microsoft.com/playwright:v1.60.0-noble
-    container_name: binance-btc-tracker-cluster-e2e-runner
+    container_name: binance-btc-tracker-cluster-e2e-runner${HILOS_STAND_SUFFIX:-}
     # The browser's scratch lives in memory: chromium runs with
     # --disable-dev-shm-usage, so its shared memory and profile churn land in
     # /tmp - gigabytes per suite written through the container layer to disk.
@@ -423,11 +426,11 @@ volumes:
   # and hourly. The full run may run this cluster step beside e2e. All six nodes share
   # this disk, and the harness's down --volumes clears it with the database each run.
   data-export:
-    name: hilos-binance-btc-tracker-cluster-data-export
+    name: hilos-binance-btc-tracker-cluster-data-export${HILOS_STAND_SUFFIX:-}
 
 networks:
   cluster-net:
-    name: hilos-binance-btc-tracker-cluster-net
+    name: hilos-binance-btc-tracker-cluster-net${HILOS_STAND_SUFFIX:-}
     driver: bridge
     ipam:
       config:
@@ -438,4 +441,4 @@ networks:
         # race: any other stack whose network came up first may already hold the
         # range, and then the whole cluster fails to start with "Pool overlaps with
         # other one on this address space". 10.0.0.0/8 is never auto-assigned.
-        - subnet: 10.221.0.0/16
+        - subnet: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.0/16

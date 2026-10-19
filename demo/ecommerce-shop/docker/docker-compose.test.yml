@@ -9,12 +9,12 @@
 # Frontend services sit behind profiles so the PHP-only test commands never
 # start them.
 
-name: hilos-ecommerce-shop-test
+name: hilos-ecommerce-shop-test${HILOS_STAND_SUFFIX:-}
 
 services:
   ecommerce-shop-mysql-test:
     image: mariadb:11.4
-    container_name: ecommerce-shop-mysql-test
+    container_name: ecommerce-shop-mysql-test${HILOS_STAND_SUFFIX:-}
     # How the runner's artifact collector finds this container: the demos spell
     # their database service differently, so it is asked for by role rather than
     # guessed at by name (HIL-841).
@@ -54,7 +54,7 @@ services:
   # e2e runner reads it here. No host ports: nothing outside the stack talks to it.
   ecommerce-shop-mailpit-test:
     image: axllent/mailpit:v1.21
-    container_name: ecommerce-shop-mailpit-test
+    container_name: ecommerce-shop-mailpit-test${HILOS_STAND_SUFFIX:-}
     environment:
       # A test relay authenticates nobody and encrypts nothing; the daemon
       # connects with MAIL_SMTP_SECURITY=none and no credentials.
@@ -75,7 +75,7 @@ services:
     env_file:
       - path: ../tests/.env
         required: false
-    container_name: ecommerce-shop-daemon-test
+    container_name: ecommerce-shop-daemon-test${HILOS_STAND_SUFFIX:-}
     # Found by role for the same reason the database is (HIL-841): the collector runs
     # this demo's own db:migration:status inside a container that is ALREADY up, never
     # starting one, because a stand it raised is no longer the stand that failed.
@@ -107,7 +107,7 @@ services:
       # as well, and a connection that reaches it without passing through nginx
       # arrives from the docker network's gateway - a peer that must never be
       # trusted to name anyone.
-      - HILOS_TRUSTED_PROXIES=${DOCKER_TEST_NGINX_IP:-10.212.0.12}/32
+      - HILOS_TRUSTED_PROXIES=${DOCKER_TEST_NGINX_IP:-10.${HILOS_STAND_NET_ECOMMERCE_SHOP:-212}.0.12}/32
       # The CLI command channel, the socket admin:create / admin:grant /
       # admin:revoke speak. Reached from inside the stack only - the cli
       # container, or `docker exec` into this one - so no host port is published.
@@ -147,7 +147,7 @@ services:
   # ecommerce-shop-nginx-test serves.
   ecommerce-shop-frontend-cli-test:
     image: node:24-bookworm-slim
-    container_name: ecommerce-shop-frontend-cli-test
+    container_name: ecommerce-shop-frontend-cli-test${HILOS_STAND_SUFFIX:-}
     volumes:
       - ../../..:/hilos
     working_dir: /hilos/demo/ecommerce-shop/frontend
@@ -164,7 +164,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.nginx
-    container_name: ecommerce-shop-nginx-test
+    container_name: ecommerce-shop-nginx-test${HILOS_STAND_SUFFIX:-}
     volumes:
       - ../frontend/dist:/usr/share/nginx/html:ro
       - ../data/data_export:/data_export:ro
@@ -180,14 +180,14 @@ services:
       - e2e
     networks:
       hilos-ecommerce-shop-test-network:
-        ipv4_address: ${DOCKER_TEST_NGINX_IP:-10.212.0.12}
+        ipv4_address: ${DOCKER_TEST_NGINX_IP:-10.${HILOS_STAND_NET_ECOMMERCE_SHOP:-212}.0.12}
 
   ecommerce-shop-cli-test:
     build: .
     env_file:
       - path: ../tests/.env
         required: false
-    container_name: ecommerce-shop-cli-test
+    container_name: ecommerce-shop-cli-test${HILOS_STAND_SUFFIX:-}
     volumes:
       - ..:/app
       - ../../../composer.json:/hilos/composer.json:ro
@@ -225,7 +225,7 @@ services:
   # bind-mount (docs/agents/frontend/build-and-docker.md).
   ecommerce-shop-e2e-runner:
     image: mcr.microsoft.com/playwright:v1.60.0-noble
-    container_name: ecommerce-shop-e2e-runner
+    container_name: ecommerce-shop-e2e-runner${HILOS_STAND_SUFFIX:-}
     # The browser's scratch lives in memory: chromium runs with
     # --disable-dev-shm-usage, so its shared memory and profile churn land in
     # /tmp - gigabytes per suite written through the container layer to disk.
@@ -274,4 +274,4 @@ networks:
         # "Pool overlaps with other one on this address space". 10.0.0.0/8 is never
         # auto-assigned; the column of this demo is 10.2x2
         # (docs/new-project/README.md).
-        - subnet: ${DOCKER_TEST_NETWORK_SUBNET:-10.212.0.0/16}
+        - subnet: ${DOCKER_TEST_NETWORK_SUBNET:-10.${HILOS_STAND_NET_ECOMMERCE_SHOP:-212}.0.0/16}
