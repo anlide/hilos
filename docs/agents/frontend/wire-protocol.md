@@ -13,6 +13,18 @@ message:
 - **actions** — frontend → backend (user actions);
 - **subscribe** — frontend → backend (page and group subscription control).
 
+## Moments on the wire
+
+An absolute moment is a number of **milliseconds since the Unix epoch** or an
+**ISO-8601 UTC string ending in `Z`**. Epoch seconds, a local string without a
+zone and a string with a nonzero offset are not wire forms. Do not add a zone
+offset to an epoch number; the reader's zone changes presentation, not the
+moment.
+
+This is the norm for new payloads, not a claim that all existing payloads have
+been migrated. The canonical [time-zone rule](../architecture/time-zones.md)
+defines the boundaries and lists the remaining migrations and their owners.
+
 ## The handshake is the authorization step
 
 A connection is authorized at the WebSocket handshake — before any signal or

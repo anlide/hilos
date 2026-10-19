@@ -1,6 +1,6 @@
 ---
 name: hilos-code-style-typescript
-description: Apply Hilos code style to frontend TypeScript — relative import paths and the `.js` extension, row-payload key ownership, cross-layer field names, the zero-warning bar and TSDoc, American spelling, scaffold markers, the room a live message or a step takes, painting a surface so it holds in both themes, and where a unit-test file lives. Use when writing, reviewing, or refactoring a `.ts`/`.tsx` file under `framework/frontend/**` or `demo/*/frontend/**`, whatever the view framework, or when creating or moving the test file of a module, when a surface gains a message that appears and disappears, or when reading or displaying refusal words. Vue, React, and Angular add their own wrapper on top of this one; for backend code use `$hilos-code-style-php`.
+description: Apply Hilos code style to frontend TypeScript — relative import paths and the `.js` extension, row-payload key ownership, cross-layer field names, the zero-warning bar and TSDoc, American spelling, scaffold markers, the room a live message or a step takes, painting a surface so it holds in both themes, and where a unit-test file lives. Use when writing, reviewing, or refactoring a `.ts`/`.tsx` file under `framework/frontend/**` or `demo/*/frontend/**`, whatever the view framework, or when creating or moving the test file of a module, when a surface gains a message that appears and disappears, or when reading or displaying refusal words. Use it too when parsing or displaying a moment, or choosing the reader's time zone. Vue, React, and Angular add their own wrapper on top of this one; for backend code use `$hilos-code-style-php`.
 ---
 
 # Hilos Code Style — TypeScript
@@ -21,6 +21,7 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
 | Rule file | Read when... |
 |---|---|
 | `docs/agents/code-style/README.md` | choosing which small rule applies, or the change is not covered below |
+| `docs/agents/architecture/time-zones.md` | parsing or displaying a moment, or choosing the reader's time zone |
 | `docs/agents/code-style/frontend-import-paths.md` | adding or changing a relative import — the explicit `.js` extension, the barrel `index.js`, the "Import can be shortened" warning |
 | `docs/agents/code-style/wire-key-ownership.md` | naming a row-payload key in a frontend admin module — adding or renaming a table column, writing a row resolver, deciding what the core barrel exports |
 | `docs/agents/code-style/warnings-and-ide.md` | silencing a toolchain or IDE warning, or writing a TSDoc block |

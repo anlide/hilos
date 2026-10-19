@@ -84,8 +84,9 @@ tables, including generated `locale_slot`, has the same verdict. Under
 unchanged; under [admin view mode](admin-view-mode.md), the viewer can see
 them all.
 
-Locales have neither `first_week_day` nor `timezone` in this phase. HIL-1424
-decides them (owner's decision, 2026-10-04).
+Locales have no `first_week_day` in this phase; HIL-1424 decides it. A locale
+does not store `timezone` (owner's decision, 2026-10-16). Time-zone selection
+and application belong to HIL-1528; see [time-zones.md](time-zones.md).
 
 ## One Library Holds The Reference
 
@@ -738,7 +739,8 @@ These keys are pointers to later work, not implementation markers:
 - Translation — HIL-1424.
 - Synchronization with restcountries and flags — HIL-1424.
 - Manual reflow, its history, and synchronization in this section — HIL-1424.
-- `first_week_day` and `timezone` — HIL-1424.
+- `first_week_day` — HIL-1424.
+- Time-zone selection and application — HIL-1528; see [time-zones.md](time-zones.md).
 - A working preview — HIL-1424.
 - Multilingual CMS content — HIL-129; SSG language editions — HIL-130.
 

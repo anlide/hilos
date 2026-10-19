@@ -1,4 +1,4 @@
 interface:
   display_name: "Hilos Code Style — PHP"
   short_description: "PHPDoc, exceptions, method contracts, and PHP style rules"
-  default_prompt: "Use $hilos-code-style-php to apply Hilos backend PHP code style and PHPDoc contract rules."
+  default_prompt: "Use $hilos-code-style-php to apply Hilos backend PHP code style and PHPDoc contract rules. When carrying a moment in a payload or server text, choosing a process or project time zone, or calculating cron and retention boundaries, read docs/agents/architecture/time-zones.md."

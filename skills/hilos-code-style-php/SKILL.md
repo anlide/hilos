@@ -1,6 +1,6 @@
 ---
 name: hilos-code-style-php
-description: Apply Hilos code style to backend PHP — PHPDoc and `@throws` contracts, exception choice, method contracts, payload readers (`fromArray`/`fromJson`), static factories, magic values, class member order, local variables, Reflection, and error suppression. Use when writing, reviewing, or refactoring a `.php` file under `framework/backend/**`, `demo/*/backend/**`, `scripts/**`, or `tests/**`, or when a PHP style guard fails. For frontend code use `$hilos-code-style-typescript` and its per-framework wrappers.
+description: Apply Hilos code style to backend PHP — PHPDoc and `@throws` contracts, exception choice, method contracts, payload readers (`fromArray`/`fromJson`), static factories, magic values, class member order, local variables, Reflection, and error suppression. Use when writing, reviewing, or refactoring a `.php` file under `framework/backend/**`, `demo/*/backend/**`, `scripts/**`, or `tests/**`, or when a PHP style guard fails. Use it too when carrying a moment in a payload or server text, choosing a process or project time zone, or calculating cron and retention boundaries. For frontend code use `$hilos-code-style-typescript` and its per-framework wrappers.
 ---
 
 # Hilos Code Style — PHP
@@ -17,6 +17,7 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
 |---|---|
 | `docs/agents/code-style/README.md` | choosing which small rule applies, or the change is not covered below |
 | `docs/agents/framework-development.md` | changing framework-level APIs, facade globals, extension points, or framework subsystem exceptions — via `$hilos-framework-development` |
+| `docs/agents/architecture/time-zones.md` | carrying a moment in a payload or server text, choosing a process or project time zone, or calculating cron and retention boundaries |
 | `docs/agents/code-style/qualified-names.md` | writing a class name in code — a `catch`, a `new`, a base class, a static access, or a type in a signature — or removing a leading backslash from one |
 | `docs/agents/code-style/phpdoc.md` | creating a method, changing a signature, visibility, parameters, return type, or thrown exceptions, overriding a method, adding `@see` links, explaining in a comment why a value can be trusted, or describing in a comment what the screen shows |
 | `docs/agents/code-style/exceptions.md` | choosing an exception class, documenting `@throws`, handling validation or business errors |

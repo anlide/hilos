@@ -1,4 +1,4 @@
 interface:
   display_name: "Hilos Code Style — TypeScript"
   short_description: "Import paths, wire keys, TSDoc, and frontend TS style rules"
-  default_prompt: "Use $hilos-code-style-typescript to apply Hilos frontend TypeScript code style rules. When reading or displaying refusal words or adding a local fallback, read the section A failure reason is a domain sentence, never an engine message in docs/agents/frontend/wire-protocol.md."
+  default_prompt: "Use $hilos-code-style-typescript to apply Hilos frontend TypeScript code style rules. When reading or displaying refusal words or adding a local fallback, read the section A failure reason is a domain sentence, never an engine message in docs/agents/frontend/wire-protocol.md. When parsing or displaying a moment, or choosing the reader's time zone, read docs/agents/architecture/time-zones.md."
