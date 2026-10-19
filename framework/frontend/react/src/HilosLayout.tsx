@@ -171,7 +171,7 @@ const NO_TITLE = createSignal('')
 // field. That is the safe way round — a missing field is fixed by typing the
 // admin url, a field shown where it should not be is the defect this closes.
 const NO_ROUTE = createSignal<PageRouteMatch>({
-  page: '',
+  page: null,
   params: {},
   admin: false,
 })
@@ -383,7 +383,7 @@ export function HilosLayout({
       ? ''
       : formatHilosLegalReconsentBadge(reconsentDue, reconsentNow)
   const frozenShown =
-    frozen && !HILOS_FROZEN_OPEN_PAGES.includes(currentRoute.page)
+    frozen && !HILOS_FROZEN_OPEN_PAGES.includes(currentRoute.page ?? '')
   useEffect(() => {
     if (frozenShown) {
       void hilosLegalReconsent.load()

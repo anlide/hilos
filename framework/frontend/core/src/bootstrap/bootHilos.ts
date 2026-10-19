@@ -30,6 +30,7 @@ import {
   sessionUserIsAdmin,
   type SessionScopeOptions,
 } from '../session/sessionScope.js'
+import { isAuthReturnPath } from '../auth/authRoutes.js'
 import { bindCodeSendProgress } from '../auth/authSendProgress.js'
 import { bindProfileFlows } from '../profile/profileFlows.js'
 import { bindStepUpConfirmed } from '../auth/stepUpConfirmed.js'
@@ -48,7 +49,7 @@ import { hilosToasts } from '../state/toasts.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
 import { bindAccessReaction } from '../subscription/bindAccessReaction.js'
 import { bindPageScope } from '../subscription/bindPageScope.js'
-import { bindPageReady } from '../subscription/pageReadyGate.js'
+import { bindPageReady, openPageReady } from '../subscription/pageReadyGate.js'
 import { bindUploads } from '../uploads/hilosUploads.js'
 
 /** Configuration for {@link bootHilos}. */
@@ -213,8 +214,10 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
         pageKey,
         config.pageTitles ?? {},
         config.appName ?? '',
-        pages.pageIdentity.get()?.label,
-        !pages.pageLoading.get(),
+        // A miss is named before any lookup, so the page being left does not
+        // lend its catalog heading to the route-404 title.
+        pageKey === null ? undefined : pages.pageIdentity.get()?.label,
+        pageKey !== null && !pages.pageLoading.get(),
       ),
     hilosUnbuiltPages(config.viewLayer, config.projectViews),
   )
@@ -247,6 +250,13 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
   config.connection.on('projectSignal', (signal) => {
     if (signal.type === SIGNAL_HANDSHAKE_RESPONSE) {
       pages.releaseOnSession()
+      // A return path subscribed nobody, so the page answer the gate waits on
+      // will never arrive. The session this frame carries is what the relay's
+      // agent action binds to; opening the latch here is that moment, and not
+      // the welcome that precedes it. A plain miss stays shut.
+      if (isAuthReturnPath(hilosRouter.currentPath.get())) {
+        openPageReady()
+      }
     }
   })
   config.connection.connect()

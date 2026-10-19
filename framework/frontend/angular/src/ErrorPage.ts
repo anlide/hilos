@@ -4,7 +4,7 @@
 // message. The connection stays live, so "Back to home" navigates
 // without a refresh. Styling is Bootstrap classes only (styling-rules.md).
 import { ChangeDetectionStrategy, Component, input } from '@angular/core'
-import type { PageSubscriptionError } from '@hilos/core'
+import type { PageError } from '@hilos/core'
 
 import { HilosLink } from './HilosLink.js'
 
@@ -31,6 +31,6 @@ import { HilosLink } from './HilosLink.js'
   `,
 })
 export class ErrorPage {
-  /** The page subscription error the navigator carries. */
-  readonly error = input.required<PageSubscriptionError>()
+  /** The page error the navigator carries. */
+  readonly error = input.required<PageError>()
 }

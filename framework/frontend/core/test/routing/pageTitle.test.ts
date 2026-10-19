@@ -73,6 +73,15 @@ describe('resolvePageTitle', () => {
     expect(resolvePageTitle('nope', {}, 'Chat', undefined, true)).toBe('Chat')
   })
 
+  it('names a route miss immediately, ignoring the catalog and the wait', () => {
+    expect(
+      resolvePageTitle(null, { main: 'Home' }, 'Demo', 'Settings', false),
+    ).toBe('Page Not Found · Demo')
+    expect(resolvePageTitle(null, {}, '', 'Settings', false)).toBe(
+      'Page Not Found',
+    )
+  })
+
   it('yields the bare label when no application name is given', () => {
     expect(
       resolvePageTitle('main', { main: 'Conversations' }, '', undefined, true),

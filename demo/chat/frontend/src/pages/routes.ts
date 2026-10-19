@@ -29,7 +29,7 @@ const APP_ROUTES: Record<string, HilosRouteDeclaration> = {
 /**
  * The chat page router: the application pages plus the framework's own routes,
  * resolving a cold-load URL to its page key and captured route params, and a page
- * key back to its path for the breadcrumb and the dashboard cards. Unknown paths
- * fall back to the main page.
+ * key back to its path for the breadcrumb and the dashboard cards. An address
+ * no route claims resolves to no page.
  */
-export const router = createAppPageRouter(APP_ROUTES, { fallback: PAGE_MAIN })
+export const router = createAppPageRouter(APP_ROUTES)

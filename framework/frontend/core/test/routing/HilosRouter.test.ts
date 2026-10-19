@@ -12,34 +12,29 @@ import {
 } from '../../src/routing/hilosPages.js'
 import { hilosUnbuiltPages } from '../../src/routing/hilosUnbuiltPages.js'
 import { type PageSubscriptionError } from '../../src/protocol/pageError.js'
+import { ROUTE_NOT_FOUND_ERROR } from '../../src/routing/pageError.js'
 import {
   type HilosDashboardSection,
   type HilosPageIdentity,
 } from '../../src/admin/identity/hilosPageIdentity.js'
 import { createSignal } from '../../src/state/signal.js'
 
-const router = createPageRouter(
-  {
-    main: { path: '/', admin: false },
-    dash: { path: '/hilos', admin: true },
-    user: { path: '/user/{id}', admin: false },
-  },
-  { fallback: 'main' },
-)
+const router = createPageRouter({
+  main: { path: '/', admin: false },
+  dash: { path: '/hilos', admin: true },
+  user: { path: '/user/{id}', admin: false },
+})
 
 // A router carrying a page whose own route params name what it shows — the
 // shape replacePath exists for.
-const viewerRouter = createPageRouter(
-  {
-    main: { path: '/', admin: false },
-    dash: { path: '/hilos', admin: true },
-    viewer: {
-      path: '/hilos/logs/view/{nodeId?}/{source?}/{stream?}',
-      admin: true,
-    },
+const viewerRouter = createPageRouter({
+  main: { path: '/', admin: false },
+  dash: { path: '/hilos', admin: true },
+  viewer: {
+    path: '/hilos/logs/view/{nodeId?}/{source?}/{stream?}',
+    admin: true,
   },
-  { fallback: 'main' },
-)
+})
 
 // A fake browser binding: an in-memory pathname plus a single popstate
 // listener, so the navigator is exercised with no DOM. Pushes and replaces are
@@ -94,6 +89,7 @@ function fakePages() {
     undefined,
   )
   let cleared = 0
+  let unsubscribed = 0
   const calledOnPages: string[] = []
   const refused: string[] = []
   const pages: NavigablePages = {
@@ -101,6 +97,9 @@ function fakePages() {
       calls.push({ page, params })
 
       return null
+    },
+    unsubscribe: () => {
+      unsubscribed += 1
     },
     refuseUnbuilt: (page) => {
       refused.push(page)
@@ -121,9 +120,11 @@ function fakePages() {
     pages,
     calls,
     pageError,
+    pageLoading,
     pageIdentity,
     dashboardSections,
     clearedCount: () => cleared,
+    unsubscribeCount: () => unsubscribed,
     calledOnPages,
     refused,
   }
@@ -131,9 +132,7 @@ function fakePages() {
 
 describe('unbuilt pages', () => {
   it('serves the eight i18n URLs in every view layer and keeps translation closed', () => {
-    const i18nRouter = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
-      fallback: HilosPages.DASHBOARD,
-    })
+    const i18nRouter = createPageRouter(HILOS_ROUTE_DECLARATIONS)
     for (const layer of ['vue', 'react', 'angular'] as const) {
       for (const [page, path, params] of [
         [HilosPages.I18N, '/hilos/i18n', {}],
@@ -294,17 +293,20 @@ describe('route parameter roundtrip through navigation', () => {
     navigator.stop()
   })
 
-  it('subscribes only the configured fallback for malformed captures', () => {
+  it('subscribes nothing for a malformed capture', () => {
     const { env } = fakeEnvironment('/user/%ED%A0%80')
-    const { pages, calls } = fakePages()
+    const { pages, calls, unsubscribeCount } = fakePages()
     const navigator = createHilosRouter(router, pages, env)
     navigator.start()
-    expect(calls).toEqual([{ page: 'main', params: {} }])
+    expect(calls).toEqual([])
+    expect(unsubscribeCount()).toBe(1)
     expect(navigator.currentRoute.get()).toEqual({
-      page: 'main',
+      page: null,
       params: {},
       admin: false,
     })
+    expect(navigator.pageError.get()).toBe(ROUTE_NOT_FOUND_ERROR)
+    expect(navigator.pageLoading.get()).toBe(false)
     expect(navigator.resolvePath('user', { id: '\ud800' })).toBeUndefined()
     navigator.stop()
   })
@@ -336,7 +338,7 @@ describe('createHilosRouter', () => {
     const { env, pop } = fakeEnvironment('/')
     const { pages, calls } = fakePages()
     const navigator = createHilosRouter(router, pages, env)
-    const departures: Array<{ page: string; subscriptions: number }> = []
+    const departures: Array<{ page: string | null; subscriptions: number }> = []
     navigator.onLeave(() => {
       departures.push({
         page: navigator.currentRoute.get().page,
@@ -366,7 +368,7 @@ describe('createHilosRouter', () => {
       departures += 1
     })
 
-    navigator.replacePath('/user/42')
+    navigator.replacePath('/')
     navigator.awaitPageAnswer()
     navigator.denyCurrentPage()
     navigator.clearPageError()
@@ -408,11 +410,8 @@ describe('createHilosRouter', () => {
     const { env } = fakeEnvironment('/')
     const { pages } = fakePages()
     const titles: Record<string, string> = { main: 'Home', user: 'User' }
-    const navigator = createHilosRouter(
-      router,
-      pages,
-      env,
-      (page) => titles[page] ?? '',
+    const navigator = createHilosRouter(router, pages, env, (page) =>
+      page === null ? '' : (titles[page] ?? ''),
     )
     navigator.start()
 
@@ -429,6 +428,41 @@ describe('createHilosRouter', () => {
     const navigator = createHilosRouter(router, pages, env)
 
     expect(navigator.currentTitle.get()).toBe('')
+  })
+
+  it('names a miss Page Not Found without a resolver', () => {
+    const { env } = fakeEnvironment('/nope')
+    const { pages } = fakePages()
+    const navigator = createHilosRouter(router, pages, env)
+
+    expect(navigator.currentTitle.get()).toBe('Page Not Found')
+  })
+
+  it('keeps an auth return a miss and does not title it Page Not Found', () => {
+    for (const path of [
+      '/auth/magic',
+      '/auth/callback',
+      '/auth/second-factor/cancel',
+    ]) {
+      const { env } = fakeEnvironment(path)
+      const { pages, calls, unsubscribeCount } = fakePages()
+      const navigator = createHilosRouter(router, pages, env)
+
+      expect(navigator.currentRoute.get()).toEqual({
+        page: null,
+        params: {},
+        admin: false,
+      })
+      expect(navigator.currentTitle.get()).toBe('')
+      expect(navigator.pageLoading.get()).toBe(false)
+      expect(navigator.pageError.get()).toBe(ROUTE_NOT_FOUND_ERROR)
+
+      navigator.start()
+
+      expect(calls).toEqual([])
+      expect(unsubscribeCount()).toBe(1)
+      expect(navigator.pageLoading.get()).toBe(false)
+    }
   })
 
   it('subscribes the current page and attaches popstate on start', () => {
@@ -461,7 +495,7 @@ describe('createHilosRouter', () => {
   })
 
   it('rewrites the address without re-subscribing the page', () => {
-    const { env, replaceCount, pushCount } = fakeEnvironment('/hilos')
+    const { env, replaceCount, pushCount } = fakeEnvironment('/hilos/logs/view')
     const { pages, calls } = fakePages()
     const navigator = createHilosRouter(viewerRouter, pages, env)
     navigator.start()
@@ -620,5 +654,140 @@ describe('createHilosRouter', () => {
     expect(calledOnPages).toEqual(['deny', 'await'])
     // Neither is a navigation: the subscription is not re-sent.
     expect(calls.length).toBe(subscribesBefore)
+  })
+
+  it('shows a route miss before start and never subscribes it', () => {
+    const { env } = fakeEnvironment('/nope')
+    const { pages, calls, unsubscribeCount, pageLoading } = fakePages()
+    const navigator = createHilosRouter(router, pages, env)
+
+    expect(navigator.currentRoute.get()).toEqual({
+      page: null,
+      params: {},
+      admin: false,
+    })
+    expect(navigator.pageError.get()).toEqual(ROUTE_NOT_FOUND_ERROR)
+    expect(navigator.pageLoading.get()).toBe(false)
+    expect(calls).toEqual([])
+
+    pageLoading.set(true)
+    navigator.start()
+
+    expect(calls).toEqual([])
+    expect(unsubscribeCount()).toBe(1)
+    expect(navigator.pageLoading.get()).toBe(false)
+    expect(navigator.pageError.get()).toBe(ROUTE_NOT_FOUND_ERROR)
+  })
+
+  it('navigates from a known page through a miss and back home', () => {
+    const { env, pop, pushCount } = fakeEnvironment('/')
+    const { pages, calls, unsubscribeCount } = fakePages()
+    const navigator = createHilosRouter(router, pages, env)
+    navigator.start()
+
+    navigator.navigate('/nope')
+
+    expect(navigator.currentRoute.get().page).toBeNull()
+    expect(calls).toEqual([{ page: 'main', params: {} }])
+    expect(unsubscribeCount()).toBe(1)
+    expect(navigator.pageError.get()).toEqual(ROUTE_NOT_FOUND_ERROR)
+    expect(navigator.pageLoading.get()).toBe(false)
+
+    navigator.navigate('/')
+
+    expect(navigator.currentRoute.get()).toEqual({
+      page: 'main',
+      params: {},
+      admin: false,
+    })
+    expect(calls).toEqual([
+      { page: 'main', params: {} },
+      { page: 'main', params: {} },
+    ])
+    expect(navigator.pageError.get()).toBeNull()
+    expect(pushCount()).toBe(2)
+
+    pop('/nope')
+    expect(navigator.currentRoute.get().page).toBeNull()
+    expect(calls).toHaveLength(2)
+    expect(unsubscribeCount()).toBe(2)
+    expect(navigator.pageError.get()?.errorCode).toBe('route_not_found')
+  })
+
+  it('keeps the route miss when clear, deny and await run', () => {
+    const { env } = fakeEnvironment('/nope')
+    const { pages, pageError, pageLoading, clearedCount, calledOnPages } =
+      fakePages()
+    pageError.set({
+      page: 'main',
+      httpCode: 403,
+      errorCode: 'forbidden',
+      title: 'Forbidden',
+      message: 'No',
+    })
+    pageLoading.set(true)
+    const navigator = createHilosRouter(router, pages, env)
+    navigator.start()
+
+    navigator.clearPageError()
+    navigator.denyCurrentPage()
+    navigator.awaitPageAnswer()
+
+    expect(navigator.pageError.get()).toBe(ROUTE_NOT_FOUND_ERROR)
+    expect(navigator.pageLoading.get()).toBe(false)
+    expect(clearedCount()).toBe(0)
+    expect(calledOnPages).toEqual([])
+    expect(pageError.get()?.errorCode).toBe('forbidden')
+  })
+
+  it('applies replacePath across pages and misses without pushing history', () => {
+    const { env, pushCount, replaceCount } = fakeEnvironment('/')
+    const { pages, calls, unsubscribeCount } = fakePages()
+    const navigator = createHilosRouter(router, pages, env)
+    navigator.start()
+    let departures = 0
+    navigator.onLeave(() => {
+      departures += 1
+    })
+    const afterStart = calls.length
+
+    navigator.replacePath('/user/7')
+
+    expect(departures).toBe(1)
+    expect(calls.at(-1)).toEqual({ page: 'user', params: { id: '7' } })
+    expect(pushCount()).toBe(0)
+    expect(replaceCount()).toBe(1)
+
+    const subscribes = calls.length
+    navigator.replacePath('/user/8')
+
+    expect(departures).toBe(1)
+    expect(calls).toHaveLength(subscribes)
+    expect(navigator.currentRoute.get().params).toEqual({ id: '8' })
+    expect(pushCount()).toBe(0)
+
+    navigator.replacePath('/nope')
+
+    expect(departures).toBe(2)
+    expect(navigator.currentRoute.get().page).toBeNull()
+    expect(unsubscribeCount()).toBe(1)
+    expect(calls).toHaveLength(subscribes)
+    expect(navigator.pageError.get()).toBe(ROUTE_NOT_FOUND_ERROR)
+    expect(pushCount()).toBe(0)
+
+    navigator.replacePath('/also-missing')
+
+    expect(departures).toBe(2)
+    expect(unsubscribeCount()).toBe(1)
+    expect(navigator.currentPath.get()).toBe('/also-missing')
+
+    navigator.replacePath('/')
+
+    expect(departures).toBe(3)
+    expect(calls.at(-1)).toEqual({ page: 'main', params: {} })
+    expect(navigator.pageError.get()).toBeNull()
+    expect(pushCount()).toBe(0)
+    expect(replaceCount()).toBe(5)
+    expect(calls.length).toBe(afterStart + 2)
   })
 })

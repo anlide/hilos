@@ -87,10 +87,7 @@ function boot(
   actions = new ActionLifecycle(connection as unknown as HilosConnection),
 ) {
   const scopes = new ScopeManager()
-  const router = createAppPageRouter(
-    { main: { path: '/', admin: false } },
-    { fallback: 'main' },
-  )
+  const router = createAppPageRouter({ main: { path: '/', admin: false } })
   const hilosConnection = connection as unknown as HilosConnection
   const hilosRouter = bootHilos({
     viewLayer: 'vue',
@@ -102,6 +99,22 @@ function boot(
   })
 
   return { scopes, hilosRouter }
+}
+
+/**
+ * Whether a promise has settled once the microtask queue drains.
+ *
+ * @param promise The promise to probe without awaiting it.
+ */
+async function isSettled(promise: Promise<void>): Promise<boolean> {
+  let settled = false
+  void promise.then(() => {
+    settled = true
+  })
+  await Promise.resolve()
+  await Promise.resolve()
+
+  return settled
 }
 
 /** A socket driven by open/message events, with every outbound frame recorded. */
@@ -157,10 +170,7 @@ describe('bootHilos', () => {
       actions,
       scopes,
       viewLayer: 'vue',
-      router: createAppPageRouter(
-        { main: { path: '/', admin: false } },
-        { fallback: 'main' },
-      ),
+      router: createAppPageRouter({ main: { path: '/', admin: false } }),
       navigationEnvironment: fakeNavigation('/'),
     })
     const flow = createAuthFlow({
@@ -302,10 +312,7 @@ describe('bootHilos', () => {
         connection: hilosConnection,
         actions: new ActionLifecycle(hilosConnection),
         scopes: new ScopeManager(),
-        router: createAppPageRouter(
-          { main: { path: '/', admin: false } },
-          { fallback: 'main' },
-        ),
+        router: createAppPageRouter({ main: { path: '/', admin: false } }),
         navigationEnvironment: fakeNavigation('/hilos/roles'),
         appName: 'Demo',
       })
@@ -342,10 +349,7 @@ describe('bootHilos', () => {
           connection: hilosConnection,
           actions: new ActionLifecycle(hilosConnection),
           scopes: new ScopeManager(),
-          router: createAppPageRouter(
-            { main: { path: '/', admin: false } },
-            { fallback: 'main' },
-          ),
+          router: createAppPageRouter({ main: { path: '/', admin: false } }),
           navigationEnvironment: fakeNavigation(
             HILOS_ROUTE_DECLARATIONS[page].path,
           ),
@@ -371,10 +375,7 @@ describe('bootHilos', () => {
           connection: hilosConnection,
           actions: new ActionLifecycle(hilosConnection),
           scopes: new ScopeManager(),
-          router: createAppPageRouter(
-            { main: { path: '/', admin: false } },
-            { fallback: 'main' },
-          ),
+          router: createAppPageRouter({ main: { path: '/', admin: false } }),
           navigationEnvironment: fakeNavigation(
             HILOS_ROUTE_DECLARATIONS[page].path,
           ),
@@ -413,10 +414,7 @@ describe('bootHilos', () => {
           connection: hilosConnection,
           actions: new ActionLifecycle(hilosConnection),
           scopes: new ScopeManager(),
-          router: createAppPageRouter(
-            { main: { path: '/', admin: false } },
-            { fallback: 'main' },
-          ),
+          router: createAppPageRouter({ main: { path: '/', admin: false } }),
           navigationEnvironment: fakeNavigation(path),
         })
         expect(router.currentRoute.get()).toMatchObject({
@@ -506,10 +504,7 @@ describe('bootHilos', () => {
   it('resolves the current title from the project titles and app name', () => {
     const connection = fakeConnection()
     const scopes = new ScopeManager()
-    const router = createAppPageRouter(
-      { main: { path: '/', admin: false } },
-      { fallback: 'main' },
-    )
+    const router = createAppPageRouter({ main: { path: '/', admin: false } })
     const hilosConnection = connection as unknown as HilosConnection
     const hilosRouter = bootHilos({
       viewLayer: 'vue',
@@ -532,10 +527,9 @@ describe('bootHilos', () => {
     // page name, two page-change announcements for one navigation.
     const connection = fakeConnection()
     const scopes = new ScopeManager()
-    const router = createAppPageRouter(
-      { [HilosPages.SETTINGS]: { path: '/hilos/settings', admin: true } },
-      { fallback: HilosPages.SETTINGS },
-    )
+    const router = createAppPageRouter({
+      [HilosPages.SETTINGS]: { path: '/hilos/settings', admin: true },
+    })
     const hilosConnection = connection as unknown as HilosConnection
     const hilosRouter = bootHilos({
       viewLayer: 'vue',
@@ -556,6 +550,102 @@ describe('bootHilos', () => {
     })
 
     expect(hilosRouter.currentTitle.get()).toBe('Settings · Demo')
+
+    hilosRouter.navigate('/no-such-address')
+
+    expect(hilosRouter.currentTitle.get()).toBe('Page Not Found · Demo')
+    expect(hilosRouter.pageError.get()?.errorCode).toBe('route_not_found')
+  })
+
+  it('opens the page-ready latch on an auth return once the session answers', async () => {
+    vi.resetModules()
+    const { bootHilos: bootFresh } =
+      await import('../../src/bootstrap/bootHilos.js')
+    const { whenPageReady } =
+      await import('../../src/subscription/pageReadyGate.js')
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    const hilosConnection = connection as unknown as HilosConnection
+    const hilosRouter = bootFresh({
+      viewLayer: 'vue',
+      connection: hilosConnection,
+      actions: new ActionLifecycle(hilosConnection),
+      scopes,
+      router: createAppPageRouter({ main: { path: '/', admin: false } }),
+      navigationEnvironment: fakeNavigation('/auth/magic'),
+      pageTitles: { main: 'Home' },
+      appName: 'Demo',
+    })
+    const waiting = whenPageReady()
+
+    expect(hilosRouter.currentRoute.get()).toEqual({
+      page: null,
+      params: {},
+      admin: false,
+    })
+    expect(hilosRouter.currentTitle.get()).toBe('')
+    expect(hilosRouter.pageLoading.get()).toBe(false)
+
+    expect(await isSettled(waiting)).toBe(false)
+    expect(connection.sent).toEqual([])
+
+    connection.emitProjectSignal('handshake_response', {
+      entities: { currentUser: null },
+    })
+
+    expect(await isSettled(waiting)).toBe(true)
+    expect(connection.sent).toEqual([])
+  })
+
+  it('leaves the page-ready latch shut on a plain miss', async () => {
+    vi.resetModules()
+    const { bootHilos: bootFresh } =
+      await import('../../src/bootstrap/bootHilos.js')
+    const { whenPageReady } =
+      await import('../../src/subscription/pageReadyGate.js')
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    const hilosConnection = connection as unknown as HilosConnection
+    const hilosRouter = bootFresh({
+      viewLayer: 'vue',
+      connection: hilosConnection,
+      actions: new ActionLifecycle(hilosConnection),
+      scopes,
+      router: createAppPageRouter({ main: { path: '/', admin: false } }),
+      navigationEnvironment: fakeNavigation('/nope'),
+      appName: 'Demo',
+    })
+    const waiting = whenPageReady()
+
+    connection.emitProjectSignal('handshake_response', {
+      entities: { currentUser: null },
+    })
+
+    expect(await isSettled(waiting)).toBe(false)
+    expect(hilosRouter.currentTitle.get()).toBe('Page Not Found · Demo')
+    expect(connection.sent).toEqual([])
+  })
+
+  it('titles an unknown address immediately, before the page answers', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    const router = createAppPageRouter({
+      main: { path: '/', admin: false },
+    })
+    const hilosConnection = connection as unknown as HilosConnection
+    const hilosRouter = bootHilos({
+      viewLayer: 'vue',
+      connection: hilosConnection,
+      actions: new ActionLifecycle(hilosConnection),
+      scopes,
+      router,
+      navigationEnvironment: fakeNavigation('/missing'),
+      pageTitles: { main: 'Home' },
+      appName: 'Demo',
+    })
+
+    expect(hilosRouter.currentTitle.get()).toBe('Page Not Found · Demo')
+    expect(hilosRouter.pageLoading.get()).toBe(false)
   })
 
   it('binds the impersonation strip so it follows the handshake', () => {

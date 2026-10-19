@@ -163,7 +163,7 @@ describe('HilosAdminPage', () => {
         },
       ],
     }
-    const matcher = createAppPageRouter({}, { fallback: HilosPages.DASHBOARD })
+    const matcher = createAppPageRouter({})
     const navigation: HilosRouter = {
       ...router(identity),
       currentRoute: createSignal<PageRouteMatch>({

@@ -31,7 +31,7 @@ and implementation status in `docs/agents/architecture/page-head.md`.
    `src/app/pages/`): `keys.ts` (page-key constants) and `routes.ts`
    (`APP_ROUTES` + the exported `router`) always, and `entityTypes.ts` only when
    the app's page payloads carry entity slots.
-2. Build the router with `createAppPageRouter(APP_ROUTES, { fallback })` — it
+2. Build the router with `createAppPageRouter(APP_ROUTES)` — it
    mounts the framework `hilos_*` admin catalog under the app routes. Never
    spread `HILOS_PAGE_ROUTES` by hand; keep `createPageRouter` for the engine.
 3. Bind the page scope with `bindPageScope(connection, scopes, { entityTypes? })`

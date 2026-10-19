@@ -21,7 +21,7 @@
 // (action-case). Action replay after login is out of scope — the user repeats
 // the action (chat pre-disables the composer, so it is a non-issue).
 
-import { type PageSubscriptionError } from '../protocol/pageError.js'
+import { type PageError } from '../routing/pageError.js'
 import {
   createSignal,
   subscribeSignal,
@@ -45,8 +45,8 @@ export const AUTH_SURFACE_HEADING_ID = 'hilos-auth-heading'
  * on a successful upgrade. {@link HilosRouter} satisfies it structurally.
  */
 export interface AuthGateRouter {
-  /** The current page's subscription error, or null while it loads cleanly. */
-  readonly pageError: ReadonlySignal<PageSubscriptionError | null>
+  /** The current page error, or null while the page loads cleanly. */
+  readonly pageError: ReadonlySignal<PageError | null>
   /** Clear the current page's subscription error without navigating. */
   clearPageError(): void
 }

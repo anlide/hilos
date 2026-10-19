@@ -17,7 +17,7 @@ const APP_ROUTES: Record<string, HilosRouteDeclaration> = {
 
 /**
  * The tasks page router: the application pages plus the framework admin catalog,
- * resolving a cold-load URL to its page key and captured route params. Unknown
- * paths fall back to the main page.
+ * resolving a cold-load URL to its page key and captured route params. An
+ * address no route claims resolves to no page.
  */
-export const router = createAppPageRouter(APP_ROUTES, { fallback: PAGE_MAIN })
+export const router = createAppPageRouter(APP_ROUTES)

@@ -1198,8 +1198,8 @@ export {
   type HilosRouteDeclaration,
   type PageRouter,
   type PageRouteMatch,
-  type PageRouterOptions,
 } from './routing/PageRouter.js'
+export { type PageError } from './routing/pageError.js'
 export { createAppPageRouter } from './routing/appPageRouter.js'
 export {
   createHilosRouter,

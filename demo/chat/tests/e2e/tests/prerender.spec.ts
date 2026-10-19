@@ -3,9 +3,11 @@ import { test, expect } from '@playwright/test'
 // SSG (build-and-docker.md): the public footer pages are prerendered to static
 // HTML through Vue's native server renderer, so a crawler — or any no-JS fetch —
 // sees the page content without running the SPA. nginx serves <route>.html for
-// the public routes and falls back to the SPA shell only for the app's own deep
-// links. These checks fetch the raw HTML (request, not a browser), so they
-// assert the prerendered markup itself, not what the client renders afterwards.
+// the public routes and falls back to the SPA shell for the app's own deep
+// links and for an unknown public path. A missing static asset stays HTTP 404
+// and is not that shell. These checks fetch the raw response (request, not a
+// browser), so they assert the served markup itself, not what the client
+// renders afterwards.
 
 test('a public page is prerendered with its content and title', async ({
   request,
@@ -83,4 +85,19 @@ test('an app deep link cold-loads the SPA shell, not a prerender', async ({
   // The SPA shell: an empty mount point the client fills, with no prerendered
   // content — the authed area is never forced through the prerender path.
   expect(await res.text()).toContain('<div id="app"></div>')
+})
+
+test('an unknown public path cold-loads the SPA shell', async ({ request }) => {
+  const res = await request.get('/nope')
+  expect(new URL(res.url()).pathname).toBe('/nope')
+  expect(res.status()).toBe(200)
+  // The shell, not a prerendered page: the app mounts and shows its own 404.
+  expect(await res.text()).toContain('<div id="app"></div>')
+})
+
+test('a missing static asset is not the SPA shell', async ({ request }) => {
+  const res = await request.get('/assets/hil1523-missing.js')
+  expect(new URL(res.url()).pathname).toBe('/assets/hil1523-missing.js')
+  expect(res.status()).toBe(404)
+  expect(await res.text()).not.toContain('<div id="app"></div>')
 })

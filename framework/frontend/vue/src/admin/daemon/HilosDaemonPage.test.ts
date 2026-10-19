@@ -129,7 +129,7 @@ function harness(
     tableWindowDescriptors: () => ({}),
   } as unknown as HilosConnection
   const pages = bindPageScope(connection, scopes)
-  const matcher = createAppPageRouter({}, { fallback: HilosPages.DASHBOARD })
+  const matcher = createAppPageRouter({})
   const unbuilt = new Set(hilosUnbuiltPages('vue'))
   // Exercise the future built Env link and the current production gate separately.
   if (envBuilt) {

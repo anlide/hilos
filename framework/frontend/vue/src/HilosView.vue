@@ -69,7 +69,10 @@ const route = useSignal(router.currentRoute)
 const pageError = useSignal(router.pageError)
 const pageLoading = useSignal(router.pageLoading)
 const modalOpen = useSignal(props.authGate?.modalOpen ?? modalClosed)
-const view = computed(() => props.pages[route.value.page])
+const view = computed(() => {
+  const page = route.value.page
+  return page === null ? undefined : props.pages[page]
+})
 
 const skeletonFlag = createDeferredFlagState(DEFAULT_SKELETON_DELAY_MS)
 const showSkeleton = useSignal(skeletonFlag.shown)
@@ -89,9 +92,14 @@ onMounted(() => {
   }
 })
 onUnmounted(() => unbindPageDeparture?.())
-const skeleton = computed(
-  () => props.pageSkeletons?.[route.value.page] ?? HilosSkeleton,
-)
+const skeleton = computed(() => {
+  const page = route.value.page
+  if (page === null) {
+    return HilosSkeleton
+  }
+
+  return props.pageSkeletons?.[page] ?? HilosSkeleton
+})
 
 // The one place the three outcomes of a navigation are named. The marker element
 // carries it so a test waits for the page to be settled instead of polling for

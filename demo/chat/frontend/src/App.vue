@@ -187,11 +187,12 @@ const pageSkeletons: Record<string, Component> = {
 }
 
 // The magic-link confirm route (HIL-283) and the OAuth callback route (HIL-281).
-// Neither carries a page of its own — the router falls both back to the main
-// subscription so their actions route — so App swaps the framework relay view in
-// for the routed outlet while the path matches, and the relay navigates home once
-// the session upgrades. The paths come from @hilos/core (HIL-409): a mail client
-// and a provider enter them, so both halves have to agree on the strings.
+// Neither carries a page of its own — the address stays a route miss and nothing
+// is subscribed — so App swaps the framework relay view in for the routed outlet
+// while the path matches. The session answer opens the gate the relay dispatches
+// through, and the relay navigates home once the session upgrades. The paths come
+// from @hilos/core (HIL-409): a mail client and a provider enter them, so both
+// halves have to agree on the strings.
 const router = inject(hilosRouterKey)
 if (!router) {
   throw new Error(

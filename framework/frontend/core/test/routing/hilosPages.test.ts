@@ -11,9 +11,7 @@ import {
 
 describe('HILOS_ROUTE_DECLARATIONS', () => {
   it('addresses all five i18n detail pages by code', () => {
-    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
-      fallback: HilosPages.DASHBOARD,
-    })
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
     const addresses = [
       [
         HilosPages.I18N_LANGUAGE,
@@ -71,9 +69,7 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
   })
 
   it('routes Daemon children through a required node segment', () => {
-    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
-      fallback: HilosPages.DASHBOARD,
-    })
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
     const children = [
       [HilosPages.DAEMON_WORKERS, 'workers'],
       [HilosPages.DAEMON_AGENTS, 'agents'],
@@ -92,24 +88,18 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
         params: { nodeId: 'standalone' },
         admin: true,
       })
-      expect(router.match(`/hilos/daemon/${tail}`).page).toBe(
-        HilosPages.DASHBOARD,
-      )
+      expect(router.match(`/hilos/daemon/${tail}`).page).toBeNull()
     }
     expect(router.match('/hilos/daemon/env-mismatch')).toEqual({
       page: HilosPages.DAEMON_ENV_MISMATCH,
       params: {},
       admin: true,
     })
-    expect(router.match('/hilos/daemon/http/old-server').page).toBe(
-      HilosPages.DASHBOARD,
-    )
+    expect(router.match('/hilos/daemon/http/old-server').page).toBeNull()
   })
 
   it('addresses a browser session by its numeric id and opens it in every view layer', () => {
-    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
-      fallback: HilosPages.DASHBOARD,
-    })
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
     const page = HilosPages.ANALYTICS_BROWSER_SESSION
     expect(page).toBe('hilos_analytics_browser_session')
     expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({
@@ -131,9 +121,7 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
   })
 
   it('addresses a person in Analytics by their account id and opens it in every view layer', () => {
-    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
-      fallback: HilosPages.DASHBOARD,
-    })
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
     const page = HilosPages.ANALYTICS_PERSON
     expect(page).toBe('hilos_analytics_person')
     expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({
@@ -148,9 +136,7 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       params: { userId: '7' },
       admin: true,
     })
-    expect(router.match('/hilos/analytics/people').page).toBe(
-      HilosPages.DASHBOARD,
-    )
+    expect(router.match('/hilos/analytics/people').page).toBeNull()
     expect(router.match('/hilos/analytics/browser-sessions/7').page).toBe(
       HilosPages.ANALYTICS_BROWSER_SESSION,
     )
@@ -222,9 +208,7 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
   })
 
   it('keeps the static legal pages ahead of document and revision routes', () => {
-    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
-      fallback: HilosPages.DASHBOARD,
-    })
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
     expect(router.match('/hilos/legal/terms/2026-09-27')).toEqual({
       page: HilosPages.LEGAL_REVISION,
       params: { documentKey: 'terms', revisionId: '2026-09-27' },
@@ -239,9 +223,7 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
   })
 
   it('routes its own templated paths back to their page keys', () => {
-    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
-      fallback: HilosPages.DASHBOARD,
-    })
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
     expect(router.match('/hilos').page).toBe(HilosPages.DASHBOARD)
     expect(router.match('/profile').page).toBe(HilosPages.PROFILE)
     expect(router.match('/about').page).toBe(HilosPages.ABOUT)
@@ -295,9 +277,7 @@ describe('the log viewer route', () => {
   })
 
   it('routes both its bare and its full address to the viewer page', () => {
-    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
-      fallback: HilosPages.DASHBOARD,
-    })
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
     expect(router.match('/hilos/logs/view')).toEqual({
       page: HilosPages.LOGS_VIEW,
       params: {},

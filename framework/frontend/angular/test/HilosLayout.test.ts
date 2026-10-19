@@ -1179,7 +1179,7 @@ function reconsentHandshake(
  * @param page The page key of the current route.
  * @param admin Whether the route is an admin one.
  */
-function routerOn(page: string, admin = false): HilosRouter {
+function routerOn(page: string | null, admin = false): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page,
@@ -1318,6 +1318,21 @@ describe('HilosLayout "the terms have changed" (HIL-500)', () => {
     const root = fixture.nativeElement as HTMLElement
 
     expect(root.querySelector('[data-id="legal-frozen-screen"]')).toBeNull()
+    fixture.destroy()
+  })
+
+  it('covers an address with no page with the freeze screen', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(reconsentHandshake({ ...lapsed, frozen: true }))
+    TestBed.configureTestingModule({
+      providers: [{ provide: HILOS_ROUTER, useValue: routerOn(null) }],
+    })
+
+    const fixture = mountShell()
+    const root = fixture.nativeElement as HTMLElement
+
+    expect(root.querySelector('[data-id="legal-frozen-screen"]')).not.toBeNull()
     fixture.destroy()
   })
 

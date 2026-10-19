@@ -42,7 +42,7 @@ import { HilosPages } from '../../../src/routing/hilosPages.js'
 import { createSignal } from '../../../src/state/signal.js'
 import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 
-const pageRouter = createAppPageRouter({}, { fallback: HilosPages.DASHBOARD })
+const pageRouter = createAppPageRouter({})
 
 /** Any fixed batch, so a timestamp in a fixture means something to read. */
 const BATCH = 1800000000

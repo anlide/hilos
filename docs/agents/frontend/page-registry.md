@@ -82,14 +82,17 @@ path (`./pages/keys`, `./pages/routes`). The folder is small and self-contained.
 Three `@hilos/core` exports carry the half of the wiring that is identical in
 every project, so a project never restates it:
 
-- **`createAppPageRouter(appRoutes, { fallback })`** — builds the app's router
+- **`createAppPageRouter(appRoutes)`** — builds the app's router
   as the framework admin catalog (`HILOS_ROUTE_DECLARATIONS`) overlaid with the
   project's declarations (a project route wins on a key collision, taking over
-  its `admin` flag along with its path). `createPageRouter` stays the pure,
-  project-agnostic matching engine; a project always uses `createAppPageRouter`
-  so the admin section mounts the same way everywhere. An unmatched path resolves
-  to the fallback page and carries **that page's** flag, so a typo in an
-  administrative url is not an administrative surface.
+  its `admin` flag along with its path). `createPageRouter(routes)` stays the
+  pure, project-agnostic matching engine; a project always uses
+  `createAppPageRouter` so the admin section mounts the same way everywhere.
+  Both take only the route map. An unmatched path resolves to
+  `{ page: null, params: {}, admin: false }`: the result stays an object, and
+  `null` is only on `page`. That miss subscribes nobody — no stand-in page, no
+  URL key, and no fallback — so a typo in an administrative url is not an
+  administrative surface, because the miss carries `admin: false`.
   `HILOS_PAGE_ROUTES` remains the page-key → path map, derived from the
   declarations, for the readers that only ever want a URL (the shell's gear and
   footer hrefs, breadcrumb paths, the prerender entries).

@@ -4,11 +4,11 @@ page subscription error (subscription_page_error), displaying its server title a
 message. The connection stays live, so "Back to home" navigates
 without a refresh. -->
 <script setup lang="ts">
-import type { PageSubscriptionError } from '@hilos/core'
+import type { PageError } from '@hilos/core'
 
 import HilosLink from './HilosLink.vue'
 
-defineProps<{ error: PageSubscriptionError }>()
+defineProps<{ error: PageError }>()
 </script>
 
 <template>

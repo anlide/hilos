@@ -29,9 +29,7 @@ import {
  * matching runs on, built over the same declarations, so a path produced here
  * and a path matched at startup cannot drift apart.
  */
-const frameworkRoutes = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
-  fallback: HilosPages.DASHBOARD,
-})
+const frameworkRoutes = createPageRouter(HILOS_ROUTE_DECLARATIONS)
 
 /**
  * Resolve a FRAMEWORK page's cold-load path, substituting each `{param}` from

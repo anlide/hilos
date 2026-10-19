@@ -156,9 +156,7 @@ describe('change-log table section', () => {
 })
 
 describe('change-log record route param', () => {
-  const router = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
-    fallback: HilosPages.DASHBOARD,
-  })
+  const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
 
   function roundTrip(key: readonly (number | string)[]): {
     path: string | undefined

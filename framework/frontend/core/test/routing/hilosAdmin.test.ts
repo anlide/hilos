@@ -54,10 +54,7 @@ describe('admin route links', () => {
   it.each(['node-1', 'node /?#%', '%2F', 'узел🌍'])(
     'roundtrips %s through framework, child and breadcrumb resolvers',
     (nodeId) => {
-      const router = createAppPageRouter(
-        { main: { path: '/', admin: false } },
-        { fallback: 'main' },
-      )
+      const router = createAppPageRouter({ main: { path: '/', admin: false } })
       const params = { nodeId }
       const child = {
         page: HilosPages.DAEMON_WORKERS,

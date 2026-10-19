@@ -93,7 +93,8 @@ export function HilosView({
   const pageError = useSignal(router.pageError)
   const pageLoading = useSignal(router.pageLoading)
   const modalOpen = useSignal(authGate?.modalOpen ?? MODAL_CLOSED)
-  const View = pages[route.page]
+  const page = route.page
+  const View = page === null ? undefined : pages[page]
   const AuthSurface = authSurface
 
   const skeletonFlagRef = useRef<DeferredFlagState | null>(null)
@@ -118,7 +119,8 @@ export function HilosView({
     skeletonFlag.set(pageLoading)
   }, [skeletonFlag, pageLoading])
   useEffect(() => () => skeletonFlag.dispose(), [skeletonFlag])
-  const Skeleton = pageSkeletons?.[route.page] ?? HilosSkeleton
+  const Skeleton =
+    page === null ? HilosSkeleton : (pageSkeletons?.[page] ?? HilosSkeleton)
 
   // The one place the three outcomes of a navigation are named. The marker
   // element carries it so a test waits for the page to be settled instead of

@@ -4,7 +4,13 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { type PageSubscriptionError } from '../../src/protocol/pageError.js'
 import { bindPageDeparture } from '../../src/routing/bindPageDeparture.js'
-import { type HilosRouter } from '../../src/routing/HilosRouter.js'
+import {
+  createHilosRouter,
+  type HilosRouter,
+  type NavigablePages,
+  type NavigationEnvironment,
+} from '../../src/routing/HilosRouter.js'
+import { createPageRouter } from '../../src/routing/PageRouter.js'
 import { createSignal } from '../../src/state/signal.js'
 
 afterEach(() => {
@@ -134,5 +140,52 @@ describe('bindPageDeparture', () => {
     expect(listenerCount()).toBe(0)
     leave()
     expect(departure.childElementCount).toBe(0)
+  })
+
+  it('clears the copy when navigation lands on the local route miss', () => {
+    const pageRouter = createPageRouter({
+      old: { path: '/old', admin: false },
+    })
+    let pathname = '/old'
+    const env: NavigationEnvironment = {
+      pathname: () => pathname,
+      pushState: (next) => {
+        pathname = next
+      },
+      replaceState: (next) => {
+        pathname = next
+      },
+      onPopState: () => () => {},
+    }
+    const pages: NavigablePages = {
+      subscribe: () => null,
+      unsubscribe: () => {},
+      refuseUnbuilt: () => {},
+      pageError: createSignal<PageSubscriptionError | null>(null),
+      pageLoading: createSignal(false),
+      pageIdentity: createSignal(undefined),
+      dashboardSections: createSignal(undefined),
+      clearPageError: () => {},
+      denyCurrentPage: () => {},
+      awaitPageAnswer: () => {},
+    }
+    const navigator = createHilosRouter(pageRouter, pages, env)
+    navigator.start()
+    const slot = document.createElement('div')
+    slot.innerHTML = '<article data-id="old-page">Leaving page</article>'
+    const departure = document.createElement('div')
+    document.body.append(slot, departure)
+    bindPageDeparture({
+      router: navigator,
+      slot,
+      departure,
+      skeletonShown: createSignal(false),
+    })
+
+    navigator.navigate('/missing')
+
+    expect(navigator.pageError.get()?.errorCode).toBe('route_not_found')
+    expect(departure.childElementCount).toBe(0)
+    expect(slot.querySelector('[data-id="old-page"]')).not.toBeNull()
   })
 })

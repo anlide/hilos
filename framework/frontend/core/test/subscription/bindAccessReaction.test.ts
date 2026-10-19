@@ -5,6 +5,10 @@ import {
   PAGE_ERROR_NOT_SERVED,
   type PageSubscriptionError,
 } from '../../src/protocol/pageError.js'
+import {
+  type PageError,
+  ROUTE_NOT_FOUND_ERROR,
+} from '../../src/routing/pageError.js'
 import { type PageRouteMatch } from '../../src/routing/PageRouter.js'
 import { computedSignal, createSignal } from '../../src/state/signal.js'
 
@@ -17,7 +21,10 @@ interface FakeSessionUser {
 /**
  * A navigator double: the two signals the reaction reads, and a log of the two
  * calls it can make. Only those four members are touched, so the rest of
- * HilosRouter is stubbed to nothing.
+ * HilosRouter is stubbed to nothing. The page-error signal holds the
+ * navigator's PageError, including a local route miss, which carries no page
+ * key. A subscription error is accepted too: a fresh literal that still names
+ * its page is excess against PageError alone.
  *
  * The two inputs are DERIVED from one session value rather than set
  * independently, because that is how they behave in the app: both come off the
@@ -40,7 +47,7 @@ function fakeRouter(
   viewModeOn = false,
 ) {
   const currentRoute = createSignal<PageRouteMatch>(route)
-  const pageError = createSignal<PageSubscriptionError | null>(null)
+  const pageError = createSignal<PageError | PageSubscriptionError | null>(null)
   const session = createSignal<FakeSessionUser | null>(user)
   const isAdmin = computedSignal(() => session.get()?.admin === true)
   const userId = computedSignal(() => session.get()?.id ?? null)
@@ -345,6 +352,30 @@ describe('bindAccessReaction', () => {
     session.set(administrator)
 
     expect(calls).toEqual([])
+  })
+
+  it('keeps a local route miss when the admin marker is lost', () => {
+    const { router, pageError, session, isAdmin, userId, viewMode, calls } =
+      fakeRouter({ page: null, params: {}, admin: false }, administrator)
+    pageError.set(ROUTE_NOT_FOUND_ERROR)
+    bindAccessReaction(router, isAdmin, userId, viewMode)
+
+    session.set({ id: 7, admin: false })
+
+    expect(calls).toEqual([])
+    expect(pageError.get()).toBe(ROUTE_NOT_FOUND_ERROR)
+  })
+
+  it('keeps a local route miss when the identity is lost', () => {
+    const { router, pageError, session, isAdmin, userId, viewMode, calls } =
+      fakeRouter({ page: null, params: {}, admin: false }, administrator)
+    pageError.set(ROUTE_NOT_FOUND_ERROR)
+    bindAccessReaction(router, isAdmin, userId, viewMode)
+
+    session.set(null)
+
+    expect(calls).toEqual([])
+    expect(pageError.get()).toBe(ROUTE_NOT_FOUND_ERROR)
   })
 
   it('stops reacting to either input once unbound', () => {

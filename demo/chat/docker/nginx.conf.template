@@ -155,9 +155,12 @@ http {
             try_files /index.html =404;
         }
 
-        # Prerendered/static routes; unknown public paths should stay 404.
+        # A prerendered public page ($uri, $uri.html, $uri/index.html) is
+        # served as static HTML. An unknown public path then cold-loads the
+        # SPA shell; the app shows its own 404. This is not a redirect and
+        # not an HTTP error page.
         location / {
-            try_files $uri $uri.html $uri/index.html =404;
+            try_files $uri $uri.html $uri/index.html /index.html;
         }
 
         # Security headers

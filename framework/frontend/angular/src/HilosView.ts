@@ -184,13 +184,15 @@ export class HilosView {
     this.pageError() ? 'error' : this.pageLoading() ? 'loading' : 'ready',
   )
 
-  protected readonly view = computed<Type<unknown> | null>(
-    () => this.pages()[this.route().page] ?? null,
-  )
+  protected readonly view = computed<Type<unknown> | null>(() => {
+    const page = this.route().page
+    return page === null ? null : (this.pages()[page] ?? null)
+  })
   // The project's own skeleton for the page, or null for the default one.
-  protected readonly skeleton = computed<Type<unknown> | null>(
-    () => this.pageSkeletons()[this.route().page] ?? null,
-  )
+  protected readonly skeleton = computed<Type<unknown> | null>(() => {
+    const page = this.route().page
+    return page === null ? null : (this.pageSkeletons()[page] ?? null)
+  })
   protected readonly authSurfaceType = computed<Type<unknown> | null>(
     () => this.authSurface() ?? null,
   )

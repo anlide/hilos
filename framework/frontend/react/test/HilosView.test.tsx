@@ -9,15 +9,19 @@
 // the page's place instead of white, never before the delay, gone on the answer,
 // and never over a refusal.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
   AUTH_SURFACE_HEADING_ID,
+  createHilosRouter,
+  createPageRouter,
   createSignal,
   DEFAULT_SKELETON_DELAY_MS,
 } from '@hilos/core'
 import type {
   AuthGate,
   HilosRouter,
+  NavigablePages,
+  NavigationEnvironment,
   PageRouteMatch,
   PageSubscriptionError,
   WritableSignal,
@@ -383,5 +387,98 @@ describe('HilosView departure', () => {
     const copied = departure.firstElementChild
     act(() => router.depart())
     expect(departure.firstElementChild).toBe(copied)
+  })
+})
+
+function KnownPage() {
+  return <div data-id="known-page">Known</div>
+}
+
+function navigablePages(): NavigablePages {
+  return {
+    subscribe: () => null,
+    unsubscribe: () => {},
+    refuseUnbuilt: () => {},
+    pageError: createSignal<PageSubscriptionError | null>(null),
+    pageLoading: createSignal(false),
+    pageIdentity: createSignal(undefined),
+    dashboardSections: createSignal(undefined),
+    clearPageError: () => {},
+    denyCurrentPage: () => {},
+    awaitPageAnswer: () => {},
+  }
+}
+
+function navigation(initial: string): NavigationEnvironment {
+  let pathname = initial
+
+  return {
+    pathname: () => pathname,
+    pushState: (next) => {
+      pathname = next
+    },
+    replaceState: (next) => {
+      pathname = next
+    },
+    onPopState: () => () => {},
+  }
+}
+
+describe('HilosView route miss', () => {
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('shows the route error instead of the old page and returns home', () => {
+    const pageRouter = createPageRouter({
+      main: { path: '/', admin: false },
+      known: { path: '/known', admin: false },
+    })
+    const navigator = createHilosRouter(
+      pageRouter,
+      navigablePages(),
+      navigation('/known'),
+    )
+    navigator.start()
+    const { container } = render(
+      <HilosRouterContext.Provider value={navigator}>
+        <HilosView pages={{ main: PAGES.user, known: KnownPage }} />
+      </HilosRouterContext.Provider>,
+    )
+    // PAGES.user is the home component; its marker is user-page.
+    expect(container.querySelector('[data-id="known-page"]')).not.toBeNull()
+
+    act(() => navigator.navigate('/nope'))
+
+    const surface = container.querySelector('[data-id="page-error"]')
+    expect(
+      container
+        .querySelector('[data-id="hilos-page-state"]')
+        ?.getAttribute('data-state'),
+    ).toBe('error')
+    expect(surface).not.toBeNull()
+    expect(container.querySelectorAll('h1')).toHaveLength(1)
+    expect(surface?.querySelector('h1')?.textContent).toBe('404')
+    expect(surface?.textContent).toContain('Page Not Found')
+    expect(surface?.textContent).toContain(
+      'The page you are looking for does not exist.',
+    )
+    expect(container.querySelector('[data-id="known-page"]')).toBeNull()
+    expect(container.querySelector('[data-id="user-page"]')).toBeNull()
+    expect(
+      container.querySelector('[data-id="hilos-page-skeleton"]'),
+    ).toBeNull()
+
+    act(() => {
+      fireEvent.click(surface!.querySelector('[data-id="page-error-home"]')!)
+    })
+
+    expect(container.querySelector('[data-id="user-page"]')).not.toBeNull()
+    expect(container.querySelector('[data-id="page-error"]')).toBeNull()
+    expect(
+      container
+        .querySelector('[data-id="hilos-page-state"]')
+        ?.getAttribute('data-state'),
+    ).toBe('ready')
   })
 })

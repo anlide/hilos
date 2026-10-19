@@ -29,3 +29,25 @@ export const AUTH_OAUTH_CALLBACK_PATH = '/auth/callback'
  * without signing in: the token in the link is the whole proof.
  */
 export const AUTH_SECOND_FACTOR_CANCEL_PATH = '/auth/second-factor/cancel'
+
+/** The three return paths. A miss that is not one of these stays a plain miss. */
+const AUTH_RETURN_PATHS: ReadonlySet<string> = new Set([
+  AUTH_MAGIC_LINK_PATH,
+  AUTH_OAUTH_CALLBACK_PATH,
+  AUTH_SECOND_FACTOR_CANCEL_PATH,
+])
+
+/**
+ * Whether `pathname` is an auth return: a magic link, a provider callback, or a
+ * second-factor cancel link.
+ *
+ * These are paths and not pages. The address stays a route miss, nothing is
+ * subscribed, and the shell draws the relay from the path. The page-ready gate
+ * opens for them when the session answers, because no page answer is coming and
+ * the confirm routes without a page subscription.
+ *
+ * @param pathname The location pathname, without a query.
+ */
+export function isAuthReturnPath(pathname: string): boolean {
+  return AUTH_RETURN_PATHS.has(pathname)
+}

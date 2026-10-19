@@ -7,6 +7,7 @@
 // currentTitle signal.
 
 import { HILOS_FOOTER_LINKS } from './hilosPages.js'
+import { ROUTE_NOT_FOUND_ERROR } from './pageError.js'
 
 /**
  * The framework-owned label for a public footer page, or undefined for any other
@@ -36,19 +37,28 @@ function frameworkPageLabel(pageKey: string): string | undefined {
  * name, which is the title an error surface and a project page outside the
  * catalog get.
  *
- * @param pageKey The current page key (the navigator's route page).
+ * A route miss (`pageKey` null) is named before any of those lookups, from the
+ * local route-404 title, and does not wait for a page answer. An unknown page
+ * key that is still a string is not given that title: only a real miss is.
+ *
+ * @param pageKey The current page key, or null when the address matches no page.
  * @param pageTitles Project page key → title, for the project's own pages.
  * @param appName The application name composed into every title.
  * @param catalogLabel The heading the page's own answer carried, if it has come.
  * @param pageAnswered Whether that answer has landed, either payload or error.
  */
 export function resolvePageTitle(
-  pageKey: string,
+  pageKey: string | null,
   pageTitles: Record<string, string>,
   appName: string,
   catalogLabel: string | undefined,
   pageAnswered: boolean,
 ): string {
+  if (pageKey === null) {
+    const label = ROUTE_NOT_FOUND_ERROR.title
+
+    return appName === '' ? label : `${label} · ${appName}`
+  }
   const label =
     pageTitles[pageKey] ?? frameworkPageLabel(pageKey) ?? catalogLabel
   if (label === undefined) {

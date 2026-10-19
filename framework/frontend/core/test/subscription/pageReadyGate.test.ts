@@ -97,6 +97,16 @@ describe('pageReadyGate', () => {
     expect(await isSettled(waiting)).toBe(false)
   })
 
+  it('opens on request when no page answer is coming', async () => {
+    const { openPageReady, whenPageReady } = await freshGate()
+    const waiting = whenPageReady()
+
+    openPageReady()
+
+    expect(await isSettled(waiting)).toBe(true)
+    expect(await isSettled(whenPageReady())).toBe(true)
+  })
+
   it('releases every parked waiter on the first page response', async () => {
     const { bindPageReady, whenPageReady } = await freshGate()
     const connection = fakeConnection()

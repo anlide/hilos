@@ -9,7 +9,6 @@ import {
   createPageRouter,
   type HilosRouteDeclaration,
   type PageRouter,
-  type PageRouterOptions,
 } from './PageRouter.js'
 import { HILOS_ROUTE_DECLARATIONS } from './hilosPages.js'
 
@@ -17,18 +16,12 @@ import { HILOS_ROUTE_DECLARATIONS } from './hilosPages.js'
  * Build the application's page router: the framework admin catalog overlaid
  * with the project's own route declarations — a project route wins when its key
  * collides with an admin one — resolving a cold-load path to its page key,
- * captured params, and surface type, with the project's fallback page for an
- * unmatched path.
+ * captured params, and surface type. An unmatched path resolves to no page.
  *
  * @param appRoutes The project's own page-key → route-declaration map.
- * @param options Router options, including the fallback page for no match.
  */
 export function createAppPageRouter(
   appRoutes: Record<string, HilosRouteDeclaration>,
-  options: PageRouterOptions,
 ): PageRouter {
-  return createPageRouter(
-    { ...HILOS_ROUTE_DECLARATIONS, ...appRoutes },
-    options,
-  )
+  return createPageRouter({ ...HILOS_ROUTE_DECLARATIONS, ...appRoutes })
 }

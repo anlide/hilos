@@ -39,15 +39,19 @@ The page-ready gate is the part of that sequence a project never sees but a
 return route depends on. `bindPageReady` latches the first page answer — a
 `page_response` or a `subscription_page_error` alike — before the socket opens,
 and `whenPageReady` resolves once it has. A route entered by a full browser load
-(`/auth/magic`, `/auth/callback`) mounts its relay in the same tick the socket
-starts opening, and a frame sent before the socket connects is DROPPED, not
-queued: without the gate the relay reports that the server could not be reached
-for a request the server never received (HIL-607). What is waited on is the
-page's answer rather than the handshake, because an action is routed by the
-backend through the connection's page subscription — the readiness that matters
-is the one that subscription reports. The gate itself never times out; the relay
-screen showing the spinner owns the backstop, since it is the only layer that can
-say what to do next.
+(`/auth/magic`, `/auth/callback`, `/auth/second-factor/cancel`) mounts its relay
+in the same tick the socket starts opening, and a frame sent before the socket
+connects is DROPPED, not queued: without the gate the relay reports that the
+server could not be reached for a request the server never received (HIL-607).
+On a page that is subscribed, what is waited on is that page's answer rather
+than the welcome handshake: the answer arrives only after the session that
+judges the page. A return path is not a page. It subscribes nobody, so no page
+answer is coming, and the confirms it sends are agent actions — they route
+with no page subscription. Boot opens the same latch when the session response
+lands on such a path, which is after the socket can carry a frame and after
+the server has a session to bind the sign-in to. A plain miss is not opened.
+The gate itself never times out; the relay screen showing the spinner owns the
+backstop, since it is the only layer that can say what to do next.
 
 ## Workflow
 

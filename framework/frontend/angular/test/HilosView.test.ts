@@ -4,9 +4,16 @@
 // three demos wait on keeps its three values through all of it.
 import { Component } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
-import { createSignal, DEFAULT_SKELETON_DELAY_MS } from '@hilos/core'
+import {
+  createHilosRouter,
+  createPageRouter,
+  createSignal,
+  DEFAULT_SKELETON_DELAY_MS,
+} from '@hilos/core'
 import type {
   HilosRouter,
+  NavigablePages,
+  NavigationEnvironment,
   PageRouteMatch,
   PageSubscriptionError,
   WritableSignal,
@@ -35,6 +42,12 @@ class MainPage {}
   template: '<div data-id="main-skeleton"></div>',
 })
 class MainSkeleton {}
+
+@Component({
+  selector: 'test-known-page',
+  template: '<div data-id="known-page">Known</div>',
+})
+class KnownPage {}
 
 interface WaitingRouter {
   router: HilosRouter
@@ -284,5 +297,92 @@ describe('HilosView departure', () => {
     const copied = departure.firstElementChild
     state.depart()
     expect(departure.firstElementChild).toBe(copied)
+  })
+})
+
+function navigablePages(): NavigablePages {
+  return {
+    subscribe: () => null,
+    unsubscribe: () => {},
+    refuseUnbuilt: () => {},
+    pageError: createSignal<PageSubscriptionError | null>(null),
+    pageLoading: createSignal(false),
+    pageIdentity: createSignal(undefined),
+    dashboardSections: createSignal(undefined),
+    clearPageError: () => {},
+    denyCurrentPage: () => {},
+    awaitPageAnswer: () => {},
+  }
+}
+
+function navigation(initial: string): NavigationEnvironment {
+  let pathname = initial
+
+  return {
+    pathname: () => pathname,
+    pushState: (next) => {
+      pathname = next
+    },
+    replaceState: (next) => {
+      pathname = next
+    },
+    onPopState: () => () => {},
+  }
+}
+
+describe('HilosView route miss', () => {
+  afterEach(() => TestBed.resetTestingModule())
+
+  it('shows the route error instead of the old page and returns home', () => {
+    const pageRouter = createPageRouter({
+      main: { path: '/', admin: false },
+      known: { path: '/known', admin: false },
+    })
+    const navigator = createHilosRouter(
+      pageRouter,
+      navigablePages(),
+      navigation('/known'),
+    )
+    navigator.start()
+    TestBed.configureTestingModule({
+      providers: [{ provide: HILOS_ROUTER, useValue: navigator }],
+    })
+    const fixture = TestBed.createComponent(HilosView)
+    fixture.componentRef.setInput('pages', { main: MainPage, known: KnownPage })
+    fixture.detectChanges()
+    const root = fixture.nativeElement as HTMLElement
+
+    expect(root.querySelector('[data-id="known-page"]')).not.toBeNull()
+
+    navigator.navigate('/nope')
+    fixture.detectChanges()
+
+    const surface = root.querySelector('[data-id="page-error"]')
+    expect(
+      root
+        .querySelector('[data-id="hilos-page-state"]')
+        ?.getAttribute('data-state'),
+    ).toBe('error')
+    expect(surface).not.toBeNull()
+    expect(root.querySelectorAll('h1')).toHaveLength(1)
+    expect(surface?.querySelector('h1')?.textContent?.trim()).toBe('404')
+    expect(surface?.textContent).toContain('Page Not Found')
+    expect(surface?.textContent).toContain(
+      'The page you are looking for does not exist.',
+    )
+    expect(root.querySelector('[data-id="known-page"]')).toBeNull()
+    expect(root.querySelector('[data-id="main"]')).toBeNull()
+    expect(root.querySelector('[data-id="hilos-page-skeleton"]')).toBeNull()
+
+    surface?.querySelector<HTMLElement>('[data-id="page-error-home"]')?.click()
+    fixture.detectChanges()
+
+    expect(root.querySelector('[data-id="main"]')).not.toBeNull()
+    expect(root.querySelector('[data-id="page-error"]')).toBeNull()
+    expect(
+      root
+        .querySelector('[data-id="hilos-page-state"]')
+        ?.getAttribute('data-state'),
+    ).toBe('ready')
   })
 })

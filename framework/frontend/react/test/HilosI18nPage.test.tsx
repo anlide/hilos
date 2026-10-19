@@ -35,7 +35,7 @@ const IDENTITY: HilosPageIdentity = {
 
 /** Mount the real default root over the existing framework route declarations. */
 function mount(identity: HilosPageIdentity | undefined) {
-  const routes = createAppPageRouter({}, { fallback: HilosPages.DASHBOARD })
+  const routes = createAppPageRouter({})
   const navigate = vi.fn()
   const pageIdentity = createSignal(identity)
   const navigator: HilosRouter = {

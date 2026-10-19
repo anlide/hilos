@@ -4,13 +4,10 @@ import { HilosPages } from '../../src/routing/hilosPages.js'
 
 describe('createAppPageRouter', () => {
   it('shares one codec between project routes and the framework catalog', () => {
-    const router = createAppPageRouter(
-      {
-        main: { path: '/', admin: false },
-        project: { path: '/project/{id}', admin: false },
-      },
-      { fallback: 'main' },
-    )
+    const router = createAppPageRouter({
+      main: { path: '/', admin: false },
+      project: { path: '/project/{id}', admin: false },
+    })
     const value = 'raw /?#%2F🌍'
     for (const [page, params] of [
       ['project', { id: value }],
@@ -25,13 +22,10 @@ describe('createAppPageRouter', () => {
   })
 
   it('matches the project routes it is given', () => {
-    const router = createAppPageRouter(
-      {
-        main: { path: '/', admin: false },
-        profile: { path: '/profile', admin: false },
-      },
-      { fallback: 'main' },
-    )
+    const router = createAppPageRouter({
+      main: { path: '/', admin: false },
+      profile: { path: '/profile', admin: false },
+    })
 
     expect(router.match('/')).toEqual({
       page: 'main',
@@ -46,10 +40,7 @@ describe('createAppPageRouter', () => {
   })
 
   it('mounts the Hilos admin catalog alongside the project routes', () => {
-    const router = createAppPageRouter(
-      { main: { path: '/', admin: false } },
-      { fallback: 'main' },
-    )
+    const router = createAppPageRouter({ main: { path: '/', admin: false } })
 
     expect(router.match('/hilos')).toEqual({
       page: 'hilos',
@@ -64,10 +55,9 @@ describe('createAppPageRouter', () => {
   })
 
   it('lets a project route win when its key collides with an admin one', () => {
-    const router = createAppPageRouter(
-      { hilos: { path: '/home', admin: false } },
-      { fallback: 'main' },
-    )
+    const router = createAppPageRouter({
+      hilos: { path: '/home', admin: false },
+    })
 
     expect(router.match('/home')).toEqual({
       page: 'hilos',
@@ -77,24 +67,25 @@ describe('createAppPageRouter', () => {
   })
 
   it('overrides the surface type along with the path on a key collision', () => {
-    const router = createAppPageRouter(
-      { hilos_profile: { path: '/profile', admin: true } },
-      { fallback: 'main' },
-    )
+    const router = createAppPageRouter({
+      hilos_profile: { path: '/profile', admin: true },
+    })
 
     expect(router.match('/profile').admin).toBe(true)
   })
 
-  it('falls back to the configured page for an unmatched path', () => {
-    const router = createAppPageRouter(
-      { main: { path: '/', admin: false } },
-      { fallback: 'main' },
-    )
+  it('does not turn an unknown path beside the admin catalog into the dashboard', () => {
+    const router = createAppPageRouter({ main: { path: '/', admin: false } })
 
     expect(router.match('/nope')).toEqual({
-      page: 'main',
+      page: null,
       params: {},
       admin: false,
+    })
+    expect(router.match('/hilos')).toEqual({
+      page: 'hilos',
+      params: {},
+      admin: true,
     })
   })
 })

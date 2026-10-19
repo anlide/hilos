@@ -1337,9 +1337,7 @@ describe('a merged account on the card (HIL-1292)', () => {
 })
 
 describe('the card link to the person in Analytics (HIL-1420)', () => {
-  const frameworkRoutes = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
-    fallback: HilosPages.DASHBOARD,
-  })
+  const frameworkRoutes = createPageRouter(HILOS_ROUTE_DECLARATIONS)
   const frameworkPath: HilosPathResolver = (page, params) =>
     frameworkRoutes.path(page, params)
 

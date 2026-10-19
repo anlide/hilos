@@ -42,4 +42,29 @@ describe('ErrorPage', () => {
         ?.textContent?.trim(),
     ).toBe('Back to home')
   })
+
+  it('renders a route miss that carries no page key', () => {
+    const fixture = TestBed.createComponent(ErrorPage)
+    fixture.componentRef.setInput('error', {
+      httpCode: 404,
+      errorCode: 'route_not_found',
+      title: 'Page Not Found',
+      message: 'The page you are looking for does not exist.',
+    })
+    fixture.detectChanges()
+
+    const element = fixture.nativeElement as HTMLElement
+    const surface = element.querySelector('[data-id="page-error"]')
+    expect(element.querySelectorAll('h1')).toHaveLength(1)
+    expect(surface?.querySelector('h1')?.textContent?.trim()).toBe('404')
+    expect(surface?.querySelector('.lead')?.textContent).toBe('Page Not Found')
+    expect(surface?.querySelector('p.text-body-secondary')?.textContent).toBe(
+      'The page you are looking for does not exist.',
+    )
+    expect(
+      surface
+        ?.querySelector('[data-id="page-error-home"]')
+        ?.getAttribute('href'),
+    ).toBe('/')
+  })
 })

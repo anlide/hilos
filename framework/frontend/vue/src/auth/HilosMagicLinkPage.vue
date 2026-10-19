@@ -1,6 +1,6 @@
 <!-- The magic-link confirm relay (HIL-283). The emailed sign-in link opens this
-static SPA route (/auth/magic?email=…&token=…); the app has already opened its
-single live connection (subscribed to the main page through the router fallback),
+static SPA route (/auth/magic?email=…&token=…); the address is not a page, so
+nothing is subscribed, and the page-ready gate opens when the session answers,
 so this view relays the token as the CONFIRM_MAGIC_LINK action the request-only
 auth surface never sends. A valid token upgrades the session on the backend; this
 then navigates home, where the now-authenticated main page renders. A missing or

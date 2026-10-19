@@ -978,10 +978,10 @@ function mintTripKey(): string {
  * Present the trip's key after every reconnect while the exchange is running, so
  * the outcome owed to the old connection reaches the new one (HIL-1044).
  *
- * It is sent once the new connection's page has answered — an action is routed
- * through the page subscription, so that answer is when the connection can carry
- * one; the same arrival the page-ready gate latches. The latch itself is no use
- * here: it is set once and stays set across a reconnect.
+ * It is sent once the new connection's page has answered — on a page that is
+ * subscribed, that answer is when the connection can carry an action; the same
+ * arrival the page-ready gate latches. The latch itself is no use here: it is
+ * set once and stays set across a reconnect.
  *
  * @param context The project auth context the wire dispatches over.
  * @param tripKey The key the exchange was sent under.
@@ -1187,18 +1187,20 @@ function takeOAuthProvider(): string {
  * the trip's arms resolve it. A rejection is the synchronous CSRF/state gate (a
  * bad, expired, or foreign state).
  *
- * {@link whenPageReady} holds the dispatch until a page subscription has been
- * answered (HIL-607). On the hot path that is already true — the window that
- * dispatches never left the page — but the cold path loads a fresh document, and
- * transport `connected` alone is not enough there: a frame is dropped (not queued)
- * before the socket connects, and — the subtler race — a callback dispatched after
+ * {@link whenPageReady} holds the dispatch until the page-ready gate opens
+ * (HIL-607). On the hot path that is already true — the window that dispatches
+ * never left the page — but the cold path loads a fresh document, and transport
+ * `connected` alone is not enough there: a frame is dropped (not queued) before
+ * the socket connects, and — the subtler race — a callback dispatched after
  * `connected` but before the handshake builds its op from a connection with no
  * session yet, so the completed login binds nothing back to this browser and the
- * spinner hangs. The page's answer closes both, and closes them strictly harder
- * than the handshake this used to wait on: a page is only answered after the
- * session that judges it. A connection that never comes up leaves this pending,
- * and the connection's own verdict that the server cannot be reached ends the
- * trip instead (HIL-1044).
+ * spinner hangs. A subscribed page's answer closes both, and closes them
+ * strictly harder than the welcome this used to wait on: a page is only answered
+ * after the session that judges it. A cold return path subscribes no page, so
+ * that answer never comes; boot opens the same latch when the session response
+ * lands, which is that session and not the welcome. A connection that never
+ * comes up leaves this pending, and the connection's own verdict that the server
+ * cannot be reached ends the trip instead (HIL-1044).
  *
  * @param context The project auth context the wire dispatches over.
  * @param provider The provider key the callback belongs to.

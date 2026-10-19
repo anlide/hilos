@@ -118,7 +118,7 @@ export function daemonHarness<T>(
     sendTableRowFocus: vi.fn(),
     sendAction: vi.fn(),
   } as unknown as HilosConnection
-  const matcher = createAppPageRouter({}, { fallback: HilosPages.DASHBOARD })
+  const matcher = createAppPageRouter({})
   const route = createSignal<PageRouteMatch>({
     page,
     params: page === HilosPages.DAEMON ? {} : { nodeId: 'n1' },

@@ -3,14 +3,14 @@
 // subscription error (subscription_page_error), displaying its server title and
 // message. The connection stays live, so "Back to home" navigates
 // without a refresh.
-import type { PageSubscriptionError } from '@hilos/core'
+import type { PageError } from '@hilos/core'
 
 import { HilosLink } from './HilosLink.js'
 
-/** Props for {@link ErrorPage}: the page subscription error to display. */
+/** Props for {@link ErrorPage}: the page error to display. */
 export interface ErrorPageProps {
-  /** The page subscription error the navigator carries. */
-  error: PageSubscriptionError
+  /** The page error the navigator carries. */
+  error: PageError
 }
 
 /**

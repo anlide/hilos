@@ -12,6 +12,7 @@ import {
   type HilosDashboardSection,
   type HilosPageIdentity,
 } from '../admin/identity/hilosPageIdentity.js'
+import { isAuthReturnPath } from '../auth/authRoutes.js'
 import { type PageSubscriptionError } from '../protocol/pageError.js'
 import {
   computedSignal,
@@ -19,6 +20,7 @@ import {
   type ReadonlySignal,
   type Unsubscribe,
 } from '../state/signal.js'
+import { type PageError, ROUTE_NOT_FOUND_ERROR } from './pageError.js'
 import { type PageRouteMatch, type PageRouter } from './PageRouter.js'
 
 /** The page-subscription slice the navigator drives. */
@@ -30,6 +32,12 @@ export interface NavigablePages {
    * @param params Route params for the subscription.
    */
   subscribe(pageKey: string, params?: Record<string, string>): unknown
+  /**
+   * Leave the current page without subscribing another. The navigator calls it
+   * for an address no route claims, so the subscription that was live is told
+   * `page_unsubscribe` and nothing is subscribed in its place.
+   */
+  unsubscribe(): void
   /** Refuse a page the view layer has not built, leaving any live subscription. */
   refuseUnbuilt(pageKey: string): void
   /** The current page's subscription error, or null while it loads cleanly. */
@@ -88,17 +96,20 @@ export interface HilosRouter {
    */
   readonly currentTitle: ReadonlySignal<string>
   /**
-   * The current page's subscription error, or null while it loads cleanly. The
-   * routed outlet (HilosView) shows an error surface for the page while it is
-   * set; it is cleared the moment navigation changes the page.
+   * The current page's error, or null while it loads cleanly. A route miss is
+   * the local route-404, already set before the socket opens and left in place
+   * by a cleared, denied, or awaited subscription. Any other page forwards the
+   * subscription error. The routed outlet (HilosView) shows an error surface
+   * while it is set.
    */
-  readonly pageError: ReadonlySignal<PageSubscriptionError | null>
+  readonly pageError: ReadonlySignal<PageError | null>
   /**
    * True from a navigation until that page's subscription answers, either with
-   * its payload or with an error. The routed outlet holds the page back while it
-   * is set, so a page is never shown and then taken away again by a denial that
-   * was still on the wire, and a test waits on this state instead of racing the
-   * round trip with a visibility assertion.
+   * its payload or with an error. A route miss is never loading. The routed
+   * outlet holds the page back while it is set, so a page is never shown and
+   * then taken away again by a denial that was still on the wire, and a test
+   * waits on this state instead of racing the round trip with a visibility
+   * assertion.
    */
   readonly pageLoading: ReadonlySignal<boolean>
   /**
@@ -164,13 +175,14 @@ export interface HilosRouter {
    */
   navigate(pathname: string): void
   /**
-   * Rewrite the current address to `pathname` — replace the history entry and
-   * swap the route and path signals — WITHOUT re-subscribing the page. It is
-   * for a page whose own route params name what it is showing (the log viewer's
-   * node, source and stream): choosing another file is a different address of
-   * the same page, and re-subscribing would drop everything the subscription
-   * had already delivered. Use {@link HilosRouter.navigate} to go to another
-   * page.
+   * Rewrite the current address to `pathname`, replacing the history entry
+   * rather than pushing one. The same found page only publishes the new params
+   * and leaves the subscription: choosing another file of the log viewer is a
+   * different address of the same page, and re-subscribing would drop what the
+   * subscription had already delivered. A different page, or a move into or out
+   * of a miss, runs the ordinary leave and subscribe cycle so the old
+   * subscription does not stay under the new address. Use
+   * {@link HilosRouter.navigate} when the new address should be a history entry.
    *
    * @param pathname The address to rewrite the current one to.
    */
@@ -179,8 +191,10 @@ export interface HilosRouter {
    * Listen for the moment navigation leaves the current page. Called
    * synchronously at the start of navigate, start, and back/forward, before
    * the next route is published or its page subscribed, so HilosView can copy
-   * the page still on screen. Not called by replacePath, awaitPageAnswer,
-   * denyCurrentPage, clearPageError, or a reconnect's re-subscribe.
+   * the page still on screen. Not called by a replacePath that stays on the
+   * same found page, nor by awaitPageAnswer, denyCurrentPage, clearPageError,
+   * or a reconnect's re-subscribe. A replacePath that changes page, or moves
+   * into or out of a miss, does call it.
    *
    * @param listener Called before the current page changes.
    * @returns A function that removes this listener.
@@ -203,14 +217,16 @@ export interface HilosRouter {
  * @param pages The page subscription the navigator drives.
  * @param env The browser binding; see {@link browserNavigationEnvironment}.
  * @param resolveTitle Maps the current page key to its document title; defaults
- *   to no title (an empty string). `bootHilos` supplies the project resolver.
+ *   to no title for a page key and to the local route-404 title for a miss.
+ *   `bootHilos` supplies the project resolver.
  * @param unbuilt Pages the view layer has not built; bootHilos supplies hilosUnbuiltPages().
  */
 export function createHilosRouter(
   router: PageRouter,
   pages: NavigablePages,
   env: NavigationEnvironment,
-  resolveTitle: (pageKey: string) => string = () => '',
+  resolveTitle: (pageKey: string | null) => string = (pageKey) =>
+    pageKey === null ? ROUTE_NOT_FOUND_ERROR.title : '',
   unbuilt: ReadonlySet<string> = new Set(),
 ): HilosRouter {
   const currentRoute = createSignal<PageRouteMatch>(
@@ -220,8 +236,15 @@ export function createHilosRouter(
   // The title is derived, not set in apply(): it recomputes from the route on
   // every navigation, so a single source feeds both document.title and the
   // page-change live region in the shell.
+  // An auth return is a miss the visitor is not shown as one: the shell draws
+  // the relay from the path. Naming that miss Page Not Found would put the
+  // route-404 title on a sign-in that is in flight. The empty string is the
+  // shell's own "do not replace the document title", so the tab keeps the
+  // title the document already has.
   const currentTitle = computedSignal<string>(() =>
-    resolveTitle(currentRoute.get().page),
+    isAuthReturnPath(currentPath.get())
+      ? ''
+      : resolveTitle(currentRoute.get().page),
   )
   let detachPopState: Unsubscribe | null = null
   const leaveListeners = new Set<() => void>()
@@ -236,39 +259,75 @@ export function createHilosRouter(
   }
 
   // First tell listeners we are leaving, then publish and re-subscribe — shared
-  // by start, navigate, and the popstate listener.
+  // by start, navigate, and the popstate listener. A miss drops the real
+  // subscription and never subscribes a stand-in page.
   const apply = (pathname: string): void => {
     for (const listener of [...leaveListeners]) {
       listener()
     }
     const match = publish(pathname)
-    if (unbuilt.has(match.page)) {
+    if (match.page === null) {
+      pages.unsubscribe()
+    } else if (unbuilt.has(match.page)) {
       pages.refuseUnbuilt(match.page)
     } else {
       pages.subscribe(match.page, match.params)
     }
   }
 
+  // A miss keeps its local 404. Clearing, denying, or awaiting the subscription
+  // underneath it would either erase that surface or raise a wait for a page
+  // that was never subscribed.
+  const onMiss = (): boolean => currentRoute.get().page === null
+
   return {
     currentRoute,
     currentPath,
     currentTitle,
-    pageError: pages.pageError,
-    pageLoading: pages.pageLoading,
+    pageError: computedSignal<PageError | null>(() =>
+      currentRoute.get().page === null
+        ? ROUTE_NOT_FOUND_ERROR
+        : pages.pageError.get(),
+    ),
+    pageLoading: computedSignal<boolean>(() =>
+      currentRoute.get().page === null ? false : pages.pageLoading.get(),
+    ),
     pageIdentity: pages.pageIdentity,
     dashboardSections: pages.dashboardSections,
     resolvePath: (page, params) =>
       unbuilt.has(page) ? undefined : router.path(page, params),
-    clearPageError: () => pages.clearPageError(),
-    denyCurrentPage: () => pages.denyCurrentPage(),
-    awaitPageAnswer: () => pages.awaitPageAnswer(),
+    clearPageError: () => {
+      if (onMiss()) {
+        return
+      }
+      pages.clearPageError()
+    },
+    denyCurrentPage: () => {
+      if (onMiss()) {
+        return
+      }
+      pages.denyCurrentPage()
+    },
+    awaitPageAnswer: () => {
+      if (onMiss()) {
+        return
+      }
+      pages.awaitPageAnswer()
+    },
     navigate: (pathname) => {
       env.pushState(pathname)
       apply(pathname)
     },
     replacePath: (pathname) => {
+      const next = router.match(pathname)
       env.replaceState(pathname)
-      publish(pathname)
+      // Staying on the same found page, including staying on a miss, only
+      // publishes. Entering or leaving a miss is a different page key.
+      if (next.page === currentRoute.get().page) {
+        publish(pathname)
+        return
+      }
+      apply(pathname)
     },
     onLeave: (listener) => {
       leaveListeners.add(listener)

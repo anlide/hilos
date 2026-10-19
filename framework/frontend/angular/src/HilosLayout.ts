@@ -665,7 +665,7 @@ export class HilosLayout {
   // this closes.
   private readonly currentRoute = this.router
     ? hilosSignal(this.router.currentRoute)
-    : signal<PageRouteMatch>({ page: '', params: {}, admin: false })
+    : signal<PageRouteMatch>({ page: null, params: {}, admin: false })
   protected readonly adminSurface = computed(() => this.currentRoute().admin)
 
   // The fourth framework strip (HIL-1260): a viewer of the admin view mode, on
@@ -722,7 +722,7 @@ export class HilosLayout {
   protected readonly frozenShown = computed(
     () =>
       this.frozen() &&
-      !HILOS_FROZEN_OPEN_PAGES.includes(this.currentRoute().page),
+      !HILOS_FROZEN_OPEN_PAGES.includes(this.currentRoute().page ?? ''),
   )
 
   constructor() {

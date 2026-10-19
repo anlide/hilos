@@ -19,6 +19,16 @@
 // the relay screen that shows the spinner owns the retry, and ends the wait on
 // the connection's own verdict that the server cannot be reached
 // ({@link whenPageReadyOrUnreachable}, HIL-1044).
+//
+// An auth return path is the exception to "wait for a page answer". It matches
+// no page, so the navigator subscribes nobody and no page answer will arrive.
+// The confirms it dispatches are agent actions: they route with no page
+// subscription at all ({@link openPageReady}). What they still cannot outrun is
+// the session. Boot opens this latch when the session response lands on such a
+// path — after the socket can carry a frame, and after the server has a session
+// to bind the sign-in to. Opening it on the welcome, or on `connected`, would
+// send that frame into a socket the server has not been told about. A plain
+// miss is not opened: nothing there is waiting to dispatch.
 
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import {
@@ -27,9 +37,10 @@ import {
 } from '../protocol/constants.js'
 
 /**
- * Whether a page subscription on this connection has answered at least once,
- * with a payload or with a refusal alike. Latched by {@link bindPageReady} and
- * read by {@link whenPageReady}.
+ * Whether the connection can carry a relay dispatch. A page answer latches it
+ * ({@link bindPageReady}); an auth return path, which subscribes nobody, is
+ * latched by {@link openPageReady} when the session answers. Read by
+ * {@link whenPageReady}.
  *
  * Module scope, because the two ends are two different callers — the boot
  * sequence latches, a relay view mounted later waits — and a per-closure copy
@@ -39,6 +50,17 @@ let pageReady = false
 
 /** Resolvers parked by {@link whenPageReady} before the first answer landed. */
 const pageReadyWaiters: Array<() => void> = []
+
+/** Open the latch and release everyone parked on it. A second call changes nothing. */
+function openLatch(): void {
+  if (pageReady) {
+    return
+  }
+  pageReady = true
+  while (pageReadyWaiters.length > 0) {
+    pageReadyWaiters.shift()?.()
+  }
+}
 
 /**
  * Latch the page-ready state from the page subscription's first answer, so a
@@ -69,18 +91,29 @@ export function bindPageReady(connection: HilosConnection): () => void {
     ) {
       return
     }
-    pageReady = true
-    while (pageReadyWaiters.length > 0) {
-      pageReadyWaiters.shift()?.()
-    }
+    openLatch()
   })
 }
 
 /**
- * Resolve once a page subscription on this connection has answered. Resolves
- * immediately when one already has; otherwise parks until {@link bindPageReady}
- * latches the next answer. A connection that never answers leaves this pending
- * — the relay screen's own timeout is what keeps its spinner from wedging.
+ * Open the latch when no page answer is coming.
+ *
+ * An auth return path subscribes nobody, so {@link bindPageReady} never fires.
+ * Boot calls this once the session response has landed on such a path: the
+ * confirm, the cancel link and the provider callback are agent actions and
+ * route without a page, and the session response is when that frame can leave.
+ * A page that will answer must not use this — its own response is the latch.
+ */
+export function openPageReady(): void {
+  openLatch()
+}
+
+/**
+ * Resolve once this connection can carry a relay dispatch. Resolves immediately
+ * when it already can; otherwise parks until {@link bindPageReady} or
+ * {@link openPageReady} opens the latch. A connection that never answers leaves
+ * this pending — the relay screen's own timeout is what keeps its spinner from
+ * wedging.
  *
  * @returns A promise that settles when the page is first answered.
  */

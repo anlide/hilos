@@ -3,14 +3,18 @@ import { createAuthGate } from '../../src/auth/authGate.js'
 import { createSignal, type WritableSignal } from '../../src/state/signal.js'
 import { type PageSubscriptionError } from '../../src/protocol/pageError.js'
 import {
+  type PageError,
+  ROUTE_NOT_FOUND_ERROR,
+} from '../../src/routing/pageError.js'
+import {
   SESSION_ACK_PASSWORD_CHANGED,
   SESSION_ACK_REGISTERED,
   SESSION_ACK_SIGNED_IN,
 } from '../../src/session/sessionScope.js'
 
 /** A router double: a writable page-error signal plus a clear() that records. */
-function fakeRouter(pageError: PageSubscriptionError | null = null) {
-  const signal = createSignal<PageSubscriptionError | null>(pageError)
+function fakeRouter(pageError: PageError | null = null) {
+  const signal = createSignal<PageError | null>(pageError)
   let cleared = 0
 
   return {
@@ -20,7 +24,7 @@ function fakeRouter(pageError: PageSubscriptionError | null = null) {
       signal.set(null)
     },
     clearedCount: (): number => cleared,
-    setError: (error: PageSubscriptionError | null): void => signal.set(error),
+    setError: (error: PageError | null): void => signal.set(error),
   }
 }
 
@@ -62,7 +66,7 @@ const FORBIDDEN: PageSubscriptionError = {
   message: 'Access forbidden',
 }
 
-function setup(pageError: PageSubscriptionError | null = null) {
+function setup(pageError: PageError | null = null) {
   const router = fakeRouter(pageError)
   const currentUserId: WritableSignal<number | null> = createSignal<
     number | null
@@ -134,6 +138,16 @@ describe('createAuthGate', () => {
     expect(router.pageError.get()?.httpCode).toBe(403)
   })
 
+  it('leaves a local route miss in place when the session authenticates', () => {
+    const { gate, router, currentUserId } = setup(ROUTE_NOT_FOUND_ERROR)
+
+    currentUserId.set(42)
+
+    expect(router.clearedCount()).toBe(0)
+    expect(router.pageError.get()).toBe(ROUTE_NOT_FOUND_ERROR)
+    expect(gate.modalOpen.get()).toBe(false)
+  })
+
   it('does not resume while the session stays anonymous', () => {
     const { router, currentUserId } = setup(UNAUTHORIZED)
 
@@ -159,7 +173,7 @@ describe('createAuthGate', () => {
 })
 
 describe('createAuthGate with a pending ack', () => {
-  function setupWithAck(pageError: PageSubscriptionError | null = null) {
+  function setupWithAck(pageError: PageError | null = null) {
     const router = fakeRouter(pageError)
     const currentUserId = createSignal<number | null>(null)
     const pendingAck = createSignal<string | null>(null)

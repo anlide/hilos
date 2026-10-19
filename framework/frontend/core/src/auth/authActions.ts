@@ -576,9 +576,11 @@ function cancelRegistration(
  *
  * The route loads cold from a click in an email client, so the connection is
  * still opening when the relay view mounts; {@link whenPageReady} holds the
- * dispatch until a page subscription has answered on it (HIL-607). Without the
- * hold the frame is dropped, not queued, and the person is told the server could
- * not be reached for a click the server never saw.
+ * dispatch until the page-ready gate opens (HIL-607). A subscribed page opens
+ * it with its answer. This route subscribes nobody, so the session answer opens
+ * it instead: the confirm is an agent action and routes without a page. Without
+ * the hold the frame is dropped, not queued, and the person is told the server
+ * could not be reached for a click the server never saw.
  *
  * @param context The project auth context the wire dispatches over.
  * @param email The account email carried in the link.
@@ -606,7 +608,7 @@ async function confirmMagicLink(
  * No sign-in is involved and none results: the token alone names the removal, so
  * the route works in a browser that never signed in. It loads cold from a click
  * in an email client exactly as the magic-link route does, and waits for the
- * connection for the same reason ({@link whenPageReady}). The answer is shown in
+ * page-ready gate for the same reason ({@link whenPageReady}). The answer is shown in
  * place — `ok` is the removal canceled, a refusal is a link that no longer names
  * one.
  *

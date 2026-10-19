@@ -27,10 +27,11 @@ export interface HilosRouteDeclaration {
 
 /**
  * A resolved cold-load route: the page key, its captured URL params, and the
- * surface type declared for it.
+ * surface type declared for it. `page` is null when no template matches, and
+ * the rest of the result stays: empty params and a non-administrative surface.
  */
 export interface PageRouteMatch {
-  page: string
+  page: string | null
   params: Record<string, string>
   admin: boolean
 }
@@ -41,10 +42,10 @@ export interface PageRouter {
    * Resolve the page key, route params, and surface type a pathname names. A
    * static template matches whole; a templated one captures its `{name}`
    * segments into params, and leaves a `{name?}` segment the path stopped short
-   * of out of params entirely. An unmatched path resolves to the configured
-   * fallback page with no params, carrying that page's own declared surface
-   * type. Captures are decoded exactly once after matching the path structure;
-   * malformed percent encoding or UTF-8 resolves to the same fallback.
+   * of out of params entirely. An unmatched path, and a capture whose percent
+   * encoding or UTF-8 cannot be decoded, resolves to no page: `page` null,
+   * empty params, and a non-administrative surface. Captures are decoded
+   * exactly once after matching the path structure.
    *
    * @param pathname The location pathname to resolve.
    */
@@ -65,12 +66,6 @@ export interface PageRouter {
    * @param params The route params to fill the slots from, defaulting to none.
    */
   path(page: string, params?: Record<string, string>): string | undefined
-}
-
-/** Router construction options. */
-export interface PageRouterOptions {
-  /** Page key returned for a pathname no template matches. */
-  fallback: string
 }
 
 /** A compiled static route: the page key it names and its surface type. */
@@ -111,11 +106,9 @@ function escapeSegment(segment: string): string {
  *
  * @param routes Page key to its route declaration; `{name}` marks a route param
  *   and `{name?}` one the path may end without.
- * @param options Router options, including the fallback page for no match.
  */
 export function createPageRouter(
   routes: Record<string, HilosRouteDeclaration>,
-  options: PageRouterOptions,
 ): PageRouter {
   const staticRoutes: Record<string, StaticRoute> = {}
   const paramRoutes: CompiledRoute[] = []
@@ -155,9 +148,13 @@ export function createPageRouter(
     })
   }
 
-  // The fallback answers paths no row claims, so its surface type is its own
-  // declaration's; a fallback key with no row is not an administrative surface.
-  const fallbackAdmin = routes[options.fallback]?.admin ?? false
+  // A path no row claims, and a capture that cannot be decoded, are the same
+  // miss: no page, no params, and not an administrative surface.
+  const miss = (): PageRouteMatch => ({
+    page: null,
+    params: {},
+    admin: false,
+  })
 
   return {
     match(pathname: string): PageRouteMatch {
@@ -181,11 +178,11 @@ export function createPageRouter(
             }
           })
         } catch {
-          return { page: options.fallback, params: {}, admin: fallbackAdmin }
+          return miss()
         }
         return { page: route.page, params, admin: route.admin }
       }
-      return { page: options.fallback, params: {}, admin: fallbackAdmin }
+      return miss()
     },
     path(
       page: string,
