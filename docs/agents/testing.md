@@ -413,27 +413,6 @@ environment overrides before the next scenario. Scenario 44 runs after 5/7/8:
 composer -d demo/binance-btc-tracker run test:cluster:scenarios -- 5 7 8 44
 ```
 
-Scenario 39 on ecommerce-shop proves a person's row and child-set ownership
-through a cold start, ordinary idle, wake-up on another node and active-host
-failover. From that demo, `composer run test:cluster:scenarios -- 39` runs it
-alone on a fresh stand; from the repository root:
-
-```bash
-composer -d demo/ecommerce-shop run test:cluster:scenarios -- 39
-```
-
-It waits for the normal **240-second idle window**, checking the worker log's
-idle reason and the disappearance of the placement without addressing the
-person. Real `admin:grant` / `admin:revoke` row commands and
-`second-factor:unlock` set commands must return the expected replies and persist
-the expected database facts. The cold unlock clears a lock; the later unlocks
-prove the set's Update permission after wake-up and failover by advancing
-`updated_at`, while sentinel fields and a second person's rows stay unchanged.
-Wake-up places the person on the other slave while both libraries stay on the
-first, proving the cross-node path. Cleanup removes the fixtures and restarts
-the same stand without deleting volumes, then requires the full mesh and fleet
-before the matrix continues.
-
 Scenarios **41/42** on binance-btc-tracker prove the i18n startup and default
 language agreement (HIL-1505); its compose gives every node
 `HILOS_DEFAULT_LANGUAGE=en`. Scenario 41 runs first in that stand's matrix,
