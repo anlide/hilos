@@ -265,10 +265,10 @@ $steps = array_merge($steps, [
         'deps' => ['binance-btc-tracker-e2e'],
         'group' => 'binance-btc-tracker-cluster',
         'tags' => ['cluster', 'e2e'],
-        // nova-de, 2026-10-17 (HIL-1505): full fresh-stand browser command, cached images;
-        // 232.773 s rounded to 233; 19 live + 2 after-loss passed, 2 existing skips
-        // (logs overview/rotations), no retries or unstable tests.
-        'seconds' => 233,
+        // nova-de, 2026-10-19 (HIL-1575): Verify run 1301 at seven lanes, 188.1 s rounded
+        // to 188; daemon phase + 12 live + 2 after-loss passed, 9 live skipped, no retries
+        // or unstable tests.
+        'seconds' => 188,
         'downsStand' => true,
     ],
     // The fleet of ecommerce-shop (HIL-1216): one master and two slaves of unequal room, the
