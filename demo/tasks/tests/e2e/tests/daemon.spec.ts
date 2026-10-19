@@ -37,7 +37,7 @@ import {
 // keyboard access, themes, viewer privacy and the shared restart mark.
 // The forged viewer restart request is covered on Vue as a server check.
 // Kit unit tests cover Cron idle/empty and cluster mismatches (P-572);
-// cluster e2e belongs to HIL-1401.
+// cluster coverage lives in binance-btc-tracker's tests/e2e/cluster/daemon/daemon.spec.ts.
 const DATABASE_HOST = 'tasks-mysql-test'
 
 test.describe('daemon overview', () => {
