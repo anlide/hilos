@@ -37,6 +37,7 @@ document.
 | the framework-agnostic core, the signal primitive, Vue / React / Angular adapters, the conformance demos | [multiframework-core.md](multiframework-core.md) |
 | creating, moving, or naming the files of a page — the per-page folder, the view / `…Page` selectors / `…Actions` files, and whether a type is domain or page-local | [page-module-structure.md](page-module-structure.md) |
 | the app's page registry — the `pages/` folder (keys, routes, entity-slot types) and the `bindPageScope` / `PAGE_SIGNAL_SCHEMAS` / `createAppPageRouter` SDK binding | [page-registry.md](page-registry.md) |
+| building or redrawing a section or entity head — catalog identity, breadcrumbs, owner tabs, live name and adoption | [../architecture/page-head.md](../architecture/page-head.md) |
 | the application boot — the thin `src/index.ts` entry, the `bootstrap/` module (connection / session / main), and the `createHilosConnection` / `sessionUserName` / `bootHilos` core boot helpers | [bootstrap-structure.md](bootstrap-structure.md) |
 | which surface an outcome belongs on — a toast, a banner, or a durable record — and the toast store behind the shell's corner stack | [toasts.md](toasts.md) |
 | styling — the Bootstrap-only rule, the Sass customization layer, painting so a surface holds in both themes | [styling-rules.md](styling-rules.md) |
@@ -84,6 +85,9 @@ before editing.
   `pages/` folder (keys, routes, optional entity-slot types) and the three
   `@hilos/core` exports that bind it (the page-scope binder, the page schema,
   and the app router).
+- [../architecture/page-head.md](../architecture/page-head.md) — the shared
+  head's owner, catalog identity, breadcrumb, tabs and live name; the adoption
+  sequence and implementation markers keep legacy owners distinct.
 - [bootstrap-structure.md](bootstrap-structure.md) — the composition root: a
   one-import `src/index.ts` entry, the `bootstrap/` module that owns the
   connection and session singletons and mounts the app, and the boot sequence

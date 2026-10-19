@@ -1,4 +1,4 @@
 interface:
   display_name: "Hilos Page Subscribe"
   short_description: "Page registration, route params, subscribe DTOs, and errors"
-  default_prompt: "Use $hilos-page-subscribe when adding or changing Hilos page registration, subscription routing, or route parameters, or when a page needs one more piece of data to render."
+  default_prompt: "Use $hilos-page-subscribe for page registration, routing, params and first-render data, or for backend catalog identity sent with the page reply; read the page-head canon before an owner's head redraw."

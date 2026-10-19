@@ -155,6 +155,11 @@ the page built, so the client receives them in the same `page_response` instead
 of asking the catalog for them. The client side needs nothing new for any of
 this — `bindPageScope` ingests the one frame that arrives.
 
+For the adopted owner's breadcrumb skeleton and tab row, read
+[page-head.md](../architecture/page-head.md#one-reply-and-live-name). That canon
+marks the pending identity extension; it travels in this same answer, not a
+second catalog exchange.
+
 ### A page declares whether anybody navigates to it
 
 A page answers with `AbstractPage::REACH`, a `PageReach` constant, and the answer is

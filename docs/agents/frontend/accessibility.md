@@ -114,6 +114,10 @@ app-wide a11y structure:
   signal so the browser tab names the current page across no-refresh navigation
   (WCAG 2.4.2). Titles come from `bootHilos({ pageTitles, appName })`; see
   [page-registry.md](page-registry.md) and [bootstrap-structure.md](bootstrap-structure.md).
+  An adopted entity's live instance-name path is specified in
+  [page-head.md](../architecture/page-head.md#one-reply-and-live-name), with
+  implementation markers per view layer. Static project titles remain for
+  the project's own pages; this rule does not adopt legacy owners.
 - **Page-change announcement** — a `visually-hidden` `role="status"
   aria-live="polite"` region re-renders the current title, so a screen reader
   hears the page change the no-refresh route swap would otherwise hide.
@@ -131,6 +135,12 @@ The rules to apply when building a view or an SDK component:
   its own. Mark section titles as `<h2>`/`<h3>` — never fake a heading with a bold
   `<span>` or `<strong>`. A page with no visible title still needs the heading;
   use a `visually-hidden` `<h1>` rather than omit it.
+  When adopting the [shared head](../architecture/page-head.md), keep its
+  section title or entity name as that one heading, with no second entity
+  heading. The canon marks the shared component's implementation status.
+- **Page-head navigation** follows
+  [page-head.md](../architecture/page-head.md#states-and-accessibility): its
+  breadcrumb and page-tab row are named link navigation, not a tab widget.
 - **Never convey meaning by color alone (1.4.1).** A status shown as a colored
   dot or swatch must also carry text. Use a visible text badge where one fits, or
   a `visually-hidden` text span next to a decorative dot; mark the dot
@@ -154,6 +164,10 @@ The rules to apply when building a view or an SDK component:
   buttons named "Page N" and marks the current page with `aria-current="page"`.
   Do not leave a table unnamed; use its declared `title` or the admin page
   heading.
+  Adopting the shared head preserves this heading relationship, including an
+  entity block that supplies the heading; do not create a second heading to
+  name the table. See [page-head.md](../architecture/page-head.md) for the
+  component's pending implementation.
 - **A listbox owns only `option` and `group`.** An intermediate `<li>`
   carries `role="presentation"` so the listbox owns the options directly;
   `HilosDropdown`'s empty row is one `role="option"` with `aria-disabled`; a
@@ -255,8 +269,11 @@ it. See [testing.md](../testing.md).
    keeps the SDK's ARIA cells.
 6. Build from stock Bootstrap classes; add no hand CSS, suppress no focus
    outline, add no `prefers-reduced-motion` override.
-7. If the page has a tab title, it flows from `pageTitles`; add the key there
-   rather than setting `document.title` by hand.
+7. Keep the browser title on the navigator's title path, not a manual
+   `document.title` write: static project titles belong in `pageTitles`, admin
+   identity comes with the page reply, and an adopted entity's live name
+   follows [page-head.md](../architecture/page-head.md), including its
+   implementation markers. Do not put instance names in a static title map.
 8. Extend `a11y.spec.ts` for the new structure where it is worth a guard.
 9. A live region is declared in advance and stands there permanently; the
    visible block showing the same text does not repeat its role.

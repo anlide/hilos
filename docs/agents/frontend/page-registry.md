@@ -68,6 +68,11 @@ view files, which live in `views/<Page>/`:
   page-change live region (WCAG 2.4.2 Page Titled). A project lists only its
   **own** pages — framework admin and footer pages are titled from their
   catalogs. Frontend config, never emitted on the wire.
+  For an adopted entity owner, read
+  [page-head.md](../architecture/page-head.md#one-reply-and-live-name) before
+  binding its title: its instance name follows the page's data instead of a
+  new static name map. The canon marks the pending name/title implementation
+  separately for each view layer; owners not adopted keep their current path.
 
 Do **not** add a barrel `index.ts` inside `pages/` — import each file by its own
 path (`./pages/keys`, `./pages/routes`). The folder is small and self-contained.

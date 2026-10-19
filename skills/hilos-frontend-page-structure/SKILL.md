@@ -1,6 +1,6 @@
 ---
 name: hilos-frontend-page-structure
-description: Organize frontend page files into one folder per page and place page types correctly. Use when creating, moving, or reviewing the files of a frontend page (view, selectors, actions, error handling), choosing a page folder or file name across the Vue/React/Angular demos, or deciding whether a TypeScript type belongs in src/types or a page's own types folder. Use it too when a page also needs one more piece of data to render, before wiring anything that fetches it.
+description: Organize frontend page files into one folder per page and place page types correctly. Use when creating, moving, or reviewing the files of a frontend page (view, selectors, actions, error handling), choosing a page folder or file name across the Vue/React/Angular demos, or deciding whether a TypeScript type belongs in src/types or a page's own types folder. Use it too when a page also needs one more piece of data to render, before wiring anything that fetches it, or when building or redrawing a page head and its entity block content.
 ---
 
 # Hilos Frontend Page Module Structure
@@ -11,6 +11,8 @@ frontend page, or when you place a frontend TypeScript type. Start with
 
 ## Read First
 
+- Before building or redrawing a page head or its entity block content:
+  `docs/agents/architecture/page-head.md`
 - Page module structure (canonical rule): `docs/agents/frontend/page-module-structure.md`
 - The render-state rule — a page shows a placeholder until its subscription
   answers, never page content early: `docs/agents/frontend/core-and-connection.md`
@@ -26,6 +28,9 @@ frontend page, or when you place a frontend TypeScript type. Start with
   `-vue` / `-react` / `-angular` wrapper)
 
 ## Workflow
+
+Before a head redraw, read the adoption workflow and implementation status in
+`docs/agents/architecture/page-head.md`, then place the page's block content.
 
 1. Put every page in one folder under `views/` (Angular: `src/app/views/`); the
    folder name is the page key — `PascalCase` for Vue/React, `kebab-case` for

@@ -152,11 +152,10 @@ the framework template ("template extension, not re-implementation").
 
 ## Never a shared page map
 
-A page's identity (its label and place in the navigation tree), its content, and
-its render logic live in that page's own module — never collected into a file
-that enumerates many pages. A single file holding the titles, leads,
-parents/children, or render logic of more than one page — a "page map", an "admin
-map", a `Record<pageKey, …>` of page metadata wired into one shared component
+A page's content and render logic live in that page's own module. Its catalog
+identity (label and place in the navigation tree) arrives in the backend's page
+reply. A single file collecting many pages' content or render logic — a "page
+map", an "admin map", a `Record<pageKey, …>` wired into one shared component
 that renders them all — is a **gross Hilos violation**
 ([rules-and-violations.md](rules-and-violations.md) §F). It re-centralizes
 exactly what one-folder-per-page exists to split, and it mirrors nothing on the
@@ -166,10 +165,11 @@ The line is **catalog of identity** versus **page module**:
 
 - A **catalog of page identity** — a flat key→identity map such as the route
   table (`HILOS_PAGE_ROUTES`), the footer set (`HILOS_FOOTER_LINKS`), or the
-  framework admin tree (`HILOS_ADMIN_PAGES`: key → label / lead / parent) — is a
-  registry, the companion of the route table. One such catalog is allowed and
-  expected; it carries identity only — no page's render logic, no per-page view
-  content.
+  backend admin catalog (`PageCatalogProviderInterface` / `PageCatalogResolver`)
+  — is a registry. Admin identity reaches the page through its `page_response`;
+  do not mirror the catalog in the frontend. A catalog carries identity only,
+  with no page render logic or per-page view content. For head identity and
+  adoption, read [page-head.md](../architecture/page-head.md).
 - A **page module** — how one page looks and behaves (its view, selectors,
   actions, page-local types, and on-page content) — is one-per-file under
   `views/`, never many pages merged into one file.
@@ -177,10 +177,12 @@ The line is **catalog of identity** versus **page module**:
 Reusing *presentation* is not a violation. A page may render through a shared,
 **page-agnostic** component — a breadcrumb, an admin-page shell — as long as that
 component knows nothing about any specific page (it is parametrized by a page key
-and reads the identity catalog) and each page is still its own module mapped
-explicitly in the app shell. The violation is the inverse: a God-component that
-reads the navigator itself, backed by a God-map of every page's content. A
-parametrized shell each page invokes with its own key is the sanctioned form.
+and reads identity from the page's answer) and each page is still its own module
+mapped explicitly in the app shell. The violation is the inverse: a God-component
+that reads the navigator itself, backed by a God-map of every page's content.
+A parametrized shell each page invokes with its own key is the sanctioned form.
+The entity block's content stays in its page module; the shared head's boundary
+and adoption sequence are in [page-head.md](../architecture/page-head.md).
 
 **Default framework views for un-implemented pages.** The framework ships a
 real, one-per-file default page for every admin key under
@@ -195,9 +197,10 @@ pages are deliberately **not** in the map: they are real framework pages that
 need a project-supplied `HilosUsersContext`, so a consumer mounts them directly.
 It is **not** the revoked God-map: every page is its own module file (no page
 content or metadata map in any project), the catalog of identity stays in
-`@hilos/core` (`HILOS_ADMIN_PAGES`), each file renders the page-agnostic shell,
-and the navigator is read only by `HilosView`. To implement a page, replace its
-file's shell body with real content and strike that layer from
+the backend and arrives with the page's answer, each file renders the
+page-agnostic shell, and `HilosView` selects the page from the navigator.
+To implement a page, replace its file's shell body with real content and strike
+that layer from
 `HILOS_UNBUILT_PAGES` in `@hilos/core` (remove the entry when no layers remain);
 a consumer overriding an unbuilt key names it and its section in `bootHilos`
 `projectViews`. An unbuilt page is listed for each layer that has not built it:

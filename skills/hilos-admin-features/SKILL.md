@@ -1,6 +1,6 @@
 ---
 name: hilos-admin-features
-description: Graduate or build a Hilos admin feature — an admin page backed by a browser table and its actions (settings, hilos-users, roles, or a project's own admin table). Use when moving admin table/page/action code between framework and project, deciding the framework/project boundary, choosing framework-owned (activate/configure/use) vs project-owned-by-pattern, abstracting a presence source, or designing extension points for an admin entity, or when an action of the feature changes an entity the page does not own and you need to know what closes it. Use it too when an admin page, table, or action must hold up in the admin view mode — what a non-admin viewer is shown and may not do.
+description: Graduate or build a Hilos admin feature — an admin page backed by a browser table and its actions (settings, hilos-users, roles, or a project's own admin table). Use when moving admin table/page/action code between framework and project, deciding the framework/project boundary, choosing framework-owned (activate/configure/use) vs project-owned-by-pattern, abstracting a presence source, or designing extension points for an admin entity, or when an action of the feature changes an entity the page does not own and you need to know what closes it. Use it too when an admin page, table, or action must hold up in the admin view mode — what a non-admin viewer is shown and may not do — or when redrawing a section or entity head and moving its owner to the shared head.
 ---
 
 # Hilos Admin Features
@@ -10,6 +10,8 @@ read the canonical spec before editing.
 
 ## Read First
 
+- Before redrawing an admin section or entity head or adopting the shared head:
+  `docs/agents/architecture/page-head.md`
 - Graduation spec + the two modes + the framework/project boundary:
   `docs/agents/architecture/admin-features.md`
 - Browser table / source fan-out mechanics:
@@ -41,6 +43,9 @@ read the canonical spec before editing.
   (section "The Admin Section")
 
 ## Workflow
+
+Before moving an owner to the shared head, read the adoption workflow and
+implementation status in `docs/agents/architecture/page-head.md`.
 
 1. Decide the mode. Mode 1 = framework-owned feature (settings / hilos-users /
    roles): the project activates, configures, and uses it. Mode 2 = project-owned

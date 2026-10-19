@@ -135,6 +135,17 @@ Each project pins this check with its own unit test,
 because the framework's `TopologyValidatorTest` only judges invented fixture
 facades.
 
+## Page Catalog And Head
+
+The backend `PageCatalogProviderInterface` declares display identity and
+`PageCatalogResolver` reads it; `AbstractPage::withPageIdentity()` includes it
+in the page's answer. This display catalog is distinct from `Hilos::PAGES`
+(registered page classes) and subscription-agent routing. Before declaring
+head identity or redrawing an owner, read
+[page-head.md](architecture/page-head.md): it owns the catalog/breadcrumb/tab
+rule, adoption sequence and implementation status, without changing that
+routing boundary.
+
 ## Feature Declaration
 
 Framework features — `settings`, `hilos_users`, `backup`, `logs`,

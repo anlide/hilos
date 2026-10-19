@@ -1,6 +1,6 @@
 ---
 name: hilos-page-subscribe
-description: Work with Hilos page subscription params, page registration and routing, PageRouteParams accessors, AbstractPageSubscribeParamsDTO subclasses, onSubscribe/onUpdateSubscription signatures, template method dispatch in abstract pages, and subscription error signals. Use when adding or changing page route params or subscribe handlers, when a page must be served by the agent of one particular entity rather than by an agent of a type, and when a page needs one more piece of data to render and you are deciding where that data comes from.
+description: Work with Hilos page subscription params, page registration and routing, PageRouteParams accessors, AbstractPageSubscribeParamsDTO subclasses, onSubscribe/onUpdateSubscription signatures, template method dispatch in abstract pages, and subscription error signals. Use when adding or changing page route params or subscribe handlers, when a page must be served by the agent of one particular entity rather than by an agent of a type, and when a page needs one more piece of data to render and you are deciding where that data comes from. Use it too when declaring backend catalog identity for a page-head redraw and sending it with the page reply.
 ---
 
 # Hilos Page Subscribe Params
@@ -12,6 +12,8 @@ signals back to their source.
 
 ## Read First
 
+- Before declaring backend catalog identity or including it in a head redraw's
+  page reply: `docs/agents/architecture/page-head.md`
 - Page registration and subscription routing:
   `docs/agents/app-topology.md`
 - A page served by the agent of ONE entity — how the instance is named, when the
@@ -32,6 +34,9 @@ signals back to their source.
   releases what the page holds")
 
 ## Workflow
+
+Before changing catalog identity carried by a page reply, read the adoption
+workflow and implementation status in `docs/agents/architecture/page-head.md`.
 
 1. Decide whether the page has real route params. If it has none, add no
    subscribe hook at all and rely on `AbstractPage::onSubscribe()` unless the

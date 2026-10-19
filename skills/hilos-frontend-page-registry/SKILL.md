@@ -1,6 +1,6 @@
 ---
 name: hilos-frontend-page-registry
-description: Set up and review a frontend project's page registry — the pages/ folder (page keys, routes, entity-slot types) and its @hilos/core binding. Use when adding or moving page keys or routes, wiring the page scope (bindPageScope), declaring page entity types, building the app router (createAppPageRouter), or registering the page_response schema (PAGE_SIGNAL_SCHEMAS) across the Vue/React/Angular demos.
+description: Set up and review a frontend project's page registry — the pages/ folder (page keys, routes, entity-slot types) and its @hilos/core binding. Use when adding or moving page keys or routes, wiring the page scope (bindPageScope), declaring page entity types, building the app router (createAppPageRouter), or registering the page_response schema (PAGE_SIGNAL_SCHEMAS) across the Vue/React/Angular demos. Use it too when declaring page identity, breadcrumbs, owner tabs or dynamic titles for a page-head redraw.
 ---
 
 # Hilos Frontend Page Registry
@@ -13,6 +13,8 @@ canonical rule.
 
 ## Read First
 
+- Before declaring head identity, breadcrumbs, owner tabs or dynamic titles:
+  `docs/agents/architecture/page-head.md`
 - Page registry (canonical rule): `docs/agents/frontend/page-registry.md`
 - One page's view files (the related but separate rule): `docs/agents/frontend/page-module-structure.md`
 - Frontend routing matrix and overview: `docs/agents/frontend/README.md`
@@ -21,6 +23,9 @@ canonical rule.
   (and its `-vue` / `-react` / `-angular` wrapper)
 
 ## Workflow
+
+Before binding an owner's head identity or title, read the adoption workflow
+and implementation status in `docs/agents/architecture/page-head.md`.
 
 1. Keep the app's page topology in one `pages/` folder under `src/` (Angular:
    `src/app/pages/`): `keys.ts` (page-key constants) and `routes.ts`

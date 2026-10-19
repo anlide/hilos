@@ -360,6 +360,11 @@ mounts them with a thin context. Two follow-ups are tracked, not done here:
 See [frontend/sdk-packaging.md](../frontend/sdk-packaging.md) and
 [frontend/page-module-structure.md](../frontend/page-module-structure.md).
 
+Redrawing a section or entity includes adopting its shared head for that owner
+and all its tabs. Read [page-head.md](page-head.md) before that step: it gives
+the adoption order and marks the pending implementation. This does not move
+the feature's framework/project boundary or adopt neighboring owners.
+
 ## Contract Gate
 
 Graduating an admin feature moves the framework/project boundary and touches
