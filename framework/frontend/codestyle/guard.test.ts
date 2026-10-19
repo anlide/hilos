@@ -93,16 +93,18 @@ const EXPLANATION =
  * either time, and proving so took a second run.
  *
  * The number is generous because generosity is free: a ceiling is only ever
- * waited on when it is hit, so a scan that ends in five seconds ends in five
- * seconds whatever stands here. Raising it therefore buys the honest margin
- * without lengthening a single green run.
+ * waited on when it is hit, so a scan that ends in twenty seconds ends in
+ * twenty seconds whatever stands here. Raising it therefore buys the honest
+ * margin without lengthening a single green run.
  *
- * What it still catches is the failure worth catching. Half a minute is not a
- * slow tree — it is a rule that stopped terminating or a walk that left the
- * repository — so a guard that reaches this limit has found a defect, and the
- * cure is the rule that hangs, never a larger number written here.
+ * Since TYPE-CHECK the scan also compiles the codestyle roots: about twenty
+ * seconds on the line, and 36.5 at seven lanes on a busy host, which a half
+ * minute ceiling turned into a red run with no violation (2026-10-19). What a
+ * minute still catches is the failure worth catching — a rule that stopped
+ * terminating or a walk that left the repository — and the cure for that is
+ * the rule that hangs, not a larger number written here.
  */
-const GUARD_TIMEOUT_MS = 30_000
+const GUARD_TIMEOUT_MS = 60_000
 
 it(
   'carries no code-style violation the baseline does not already own',
