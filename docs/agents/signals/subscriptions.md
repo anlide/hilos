@@ -295,6 +295,8 @@ From daemon's `dispatchSignals()`, `getDestinations()` resolves:
 
 ## Sending to subscribers
 
+A stream of changes to an open page goes through its declared source, not send helpers in a loop → [work-in-portions.md](work-in-portions.md).
+
 From an agent:
 ```php
 // To one connection

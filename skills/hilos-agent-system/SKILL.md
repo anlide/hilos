@@ -12,6 +12,7 @@ Use this skill for agent business logic and registration work. Start by reading 
 - Adding a new agent type: `docs/agents/agent-system/adding-agent.md`
 - Writing or reviewing `onTick()`: `docs/agents/agent-system/ontick-rule.md`
 - Truth sources, shared state, long operations: `docs/agents/agent-system/monopolistic-agent.md`
+- Work spread over several ticks — what the screen sees meanwhile and what a new attempt does after a failure: `docs/agents/signals/work-in-portions.md`
 - Declaring what an agent owns and what it reads, the operations a claim
   carries, and its width — the whole collection, named keys, or one set of the
   table: `docs/agents/architecture/truth-source.md`

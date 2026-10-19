@@ -65,6 +65,7 @@ in-memory queue where it arrives, and read the database in `onStart()` only for 
 **Option 2: Monopolistic agent** — run the heavy work in a dedicated monopolistic worker that has no time pressure from WS signals.
 
 **Option 3: Chunked processing** — process one item per tick, keep a queue.
+What the screen sees between chunks and what happens after a failure → [work-in-portions.md](../signals/work-in-portions.md).
 
 **Option 4: Cron** — schedule infrequent heavy work via daemon cron, send signal to agent.
 

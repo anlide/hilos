@@ -125,6 +125,8 @@ project may mark its transactions; the `NESTABLE-TRANSACTION` guard reads
 
 ## The transaction ends with its handler
 
+Work that outlives one handler keeps everything tied to one item in one portion → [work-in-portions.md](../signals/work-in-portions.md).
+
 A handler is one unit of a worker's tick — a daemon message, the project's tick,
 an agent's tick together with its stop, the signal dispatch, the analytics tick —
 or one CLI command. It is declared, not inferred: `Database::handlerStart()`

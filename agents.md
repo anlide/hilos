@@ -125,6 +125,7 @@ approval gate below.
 | [signals/subscriptions.md](docs/agents/signals/subscriptions.md) | page/group subscriptions, sendToUser/sendToGroup, a page needs one more piece of data to render |
 | [signals/dto-convention.md](docs/agents/signals/dto-convention.md) | creating signal payload DTOs, agent-to-agent signals, declaring an action payload's secret fields |
 | [signals/screen-invalidation.md](docs/agents/signals/screen-invalidation.md) | a fact you just wrote devalues a screen someone is looking at now — an access verdict, a flow step in another tab, an answer a page is waiting for |
+| [signals/work-in-portions.md](docs/agents/signals/work-in-portions.md) | work over several ticks or handlers, a stream of changes to an open page, records that only make sense together: what the screen may see before the end, and what a new attempt does after a failure |
 
 ## ORM
 

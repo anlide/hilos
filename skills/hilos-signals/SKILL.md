@@ -21,6 +21,7 @@ Use this skill for every change that affects signal shape, route, subscription, 
 - Page/group subscriptions, send helpers, and the rule that one page
   subscription answers with everything the page renders:
   `docs/agents/signals/subscriptions.md`
+- A stream of changes to an open page, or work whose part reaches a screen before it ends: `docs/agents/signals/work-in-portions.md`
 - Writing, carrying or reading the words of a server refusal:
   `docs/agents/frontend/wire-protocol.md`
   (section "A failure reason is a domain sentence, never an engine message")

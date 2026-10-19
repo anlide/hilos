@@ -121,6 +121,13 @@ final class HilosDaemonWorkersTable extends TableDefinition implements ViewportT
             return [];
         }
 
+        // TODO: This payload uses the first portion of the cluster picture before the full snapshot;
+        // a node missing from that portion reads as absent. Known exception to
+        // docs/agents/signals/work-in-portions.md, "Part Or Whole".
+        // The owner chose (17.10.2026, HIL-1529) to see it live before deciding between waiting
+        // for the full snapshot, as the Daemon overview does in
+        // framework/backend/Pages/Daemon/DTO/HilosDaemonOverviewData.php::fromPicture(),
+        // and marking the portion as "still gathering".
         $roster = ClusterDaemonPictureMirror::picture()?->node(trim($node))?->slot?->picture->processes;
         if ($roster === null) {
             return [];
