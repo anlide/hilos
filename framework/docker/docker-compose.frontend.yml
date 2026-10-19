@@ -22,3 +22,7 @@ services:
     environment:
       # Silence npm's update-notifier; the version is pinned by the image.
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
+    # A crashing Node (an out-of-memory abort in a test worker) must not drop a
+    # multi-gigabyte, root-owned core file into the bind-mounted project.
+    ulimits:
+      core: 0
