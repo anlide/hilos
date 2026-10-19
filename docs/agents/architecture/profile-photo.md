@@ -11,8 +11,14 @@ upload target `hilos_profile_photo` and image variant `hilos_avatar`; a project
 must not declare either name in its own catalogs. The target accepts a JPEG up
 to 512 KiB, checks the MIME type from its bytes, requires sign-in, and
 publishes the file as `public`. The 256×256 WEBP COVER variant is the one used
-for display. A project may set `Hilos::PROFILE_PHOTO_CHECKER` to a registered
-agent type; null publishes immediately.
+for display. Today's transitional checker is `Hilos::PROFILE_PHOTO_CHECKER`,
+a registered agent type; null publishes immediately.
+
+The target is [framework moderation](moderation.md): with `MODERATION`, the
+photo uses the `hilos_profile_photo` kind and the common check door; without
+it, a valid upload publishes immediately. The project checker seam and the
+separate check queue are replaced in HIL-1625, not already removed.
+(not in the code yet — HIL-1625)
 
 When HILOS_USERS is enabled too, bind the framework browser table
 `HilosUserPhotoBrowserTable` to the user card. Its `photo` field is personal:
@@ -29,20 +35,29 @@ new file, removes the former one and refreshes sessions. Erasure removes the
 row at the holder. Restore anonymization purges the table whole. A file absent
 after a restore leaves the browser's initials as the visible fallback.
 
-When a checker is configured, the users library keeps one pending check per
-connection in `hilosProfilePhotoChecks`, with accept key, user id, upload id and
-start time. It exists only until the verdict or the connection closes. The
+In the transitional checker path, the users library keeps one pending check
+per connection in `hilosProfilePhotoChecks`, with accept key, user id, upload id
+and start time. It exists only until the verdict or the connection closes. The
 checker reads the completed upload and sends `hilos_profile_photo_verdict` back
 to the users library. A second submission on that connection is refused while
 the check exists. Closing the photo dialog does not stop the check; closing the
 connection makes the library sweep its pending row and the uploads agent clean
 up the upload.
 
+`hilosProfilePhotoChecks` and `hilos_profile_photo_verdict` remain current until
+the common moderation lifecycle replaces them; its exact fields and verdict
+contract belong to HIL-1625. Keep the old photo visible until approval.
+(not in the code yet — HIL-1625)
+
 ## Wire And Publication
 
 The browser submits `hilos_profile_photo_set` with `clientUploadId`, or
-`hilos_profile_photo_remove` with no client fields. `hilos_profile_photo_check`
-reports the pending flag to that connection. Approval asks the files registry
+`hilos_profile_photo_remove` with no client fields. The transitional
+`hilos_profile_photo_check` reports the pending flag to that connection.
+The common moderation progress path replaces that checker-specific frame.
+(not in the code yet — HIL-1625)
+
+Approval asks the files registry
 to publish; its `hilos_profile_photo_published` answer carries the registry
 file id. The write and the removal go to the person's agent as
 `hilos_user_photo_put` and `hilos_user_photo_remove`. After the write the new

@@ -12,10 +12,12 @@ engine that implements it is HIL-257. Where a name is given (`LlmProfile`,
 `LlmRouter`, `LLM_PROFILES`) it is the target name, not a claim the class
 already exists.
 
-## Why this exists
+## Why this exists — historical motivation
 
-Today provider selection is a single process-wide env switch. `ClientFactory`
-reads `LLM_CHAT_PROVIDER` and returns one provider for the whole daemon:
+At the time of HIL-256, provider selection was a single process-wide env switch.
+The branches below record that starting point, not instructions for adding a
+moderator today. `ClientFactory` read `LLM_CHAT_PROVIDER` and returned one
+provider for the whole daemon:
 
 ```php
 $provider = Hilos::$env[EnvConstants::LLM_CHAT_PROVIDER]->string();
@@ -58,7 +60,7 @@ A profile is a named, fully-resolved recipe for one LLM conversation role:
 
 ```
 LlmProfile {
-  key:        string        // 'chat.bot', 'chat.moderation', 'chat.analyzer'
+  key:        string        // e.g. 'chat.bot', 'chat.analyzer'
   provider:   LlmProvider   // enum: LOCAL | EXTERNAL — explicit, not derived
   url:        string        // endpoint base
   model:      string
@@ -74,6 +76,15 @@ LlmProfile {
 enumerates the **fields** a profile resolves to. Provider is an explicit enum on
 the profile — resolving `{provider: EXTERNAL, apiKey: null}` is a configuration
 error surfaced as `LLMConfigurationException`, never a silent fallback to local.
+
+The framework owns `hilos.moderation.text` for `TEXT` / `TEXT_WITH_FILES` and
+`hilos.moderation.image` for `IMAGE`; use them for the common
+[moderator](moderation.md). (not in the code yet — HIL-1625)
+
+Today's `chat.moderation` and `chat.photo_moderation`, declared in
+`demo/chat/backend/Environment/ChatLlmProfileCatalog.php`, are transitional;
+HIL-1627 removes them when chat becomes a consumer of framework moderation.
+(not in the code yet — HIL-1627)
 
 ### 2. Resolution: env defaults, settings override
 
@@ -92,6 +103,15 @@ Resolution is pure and deterministic given (env, settings); it performs no I/O
 to the LLM. Credentials still come only from env/secret, never from a settings
 row written by a browser user — a settings override may switch *which* keyed
 credential a profile uses, but not inline a secret value.
+
+For framework moderation, both the text model and the image model have
+framework settings over env defaults. Read them for the next check, so a change
+takes effect without restarting the moderator; secrets remain in env. HIL-1625
+chooses the exact env and settings constants.
+(not in the code yet — HIL-1625)
+
+Today's transitional chat override source overrides `chat.moderation` but lets
+`chat.photo_moderation` pass through from env.
 
 ### 3. The router API — one seam above `ClientFactory`
 
@@ -148,15 +168,19 @@ same-process execution.
 
 ## What migrates
 
-The three chat agents move onto profiles. Their per-agent provider branches
-collapse to a single `chatClientFor('chat.bot' | 'chat.moderation' |
-'chat.analyzer')` call. The `CHAT_*_PROVIDER/URL/MODEL/TIMEOUT` env + settings
-keys become the override source for those three profiles' fields — no behaviour
-change for the demo, one abstraction instead of three copies. `ModeratorAgent`
-has no test swap: on the test stand the `chat.moderation` profile resolves to the
-model emulator (see `docs/agents/stand-services.md`), so a test rides the same
-router and the same client production does, and a refusal is something a run can
-see. What carries the stand's address there is the resolution rule above taken
+The original migration moved chat's bot, moderator and analyzer onto named
+profiles, replacing their copied provider branches. Chat's present moderation
+profiles are a transition, not the activation recipe for a new project:
+HIL-1627 removes them and the project moderator in favor of the common door.
+(not in the code yet — HIL-1627)
+
+The transitional `ModeratorAgent` has no test swap: on the test stand its
+`chat.moderation` profile resolves to the model emulator (see
+[stand-services.md](../stand-services.md)), so a test rides the same router and
+client production does. Framework moderation keeps that path for both its
+profiles. (not in the code yet — HIL-1625)
+
+What carries the stand's address there is the resolution rule above taken
 literally — "absent an override, the env default stands": an EMPTY URL setting is
 an absent override, so the local address the env profile resolved stands, the
 role's `CHAT_*_URL` and then `LLM_LOCAL_URL`

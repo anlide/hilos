@@ -1,8 +1,9 @@
 # Architecture: Admin Feature Scaffold
 
 Read this before generating the activation of a framework-owned admin feature —
-settings, hilos-users, Analytics and future ones like roles — in a project. This
-is a generation recipe for an AI agent: given a framework admin feature, produce
+settings, hilos-users, Analytics, Moderation and future ones like roles — in a
+project. Moderation's recipe below marks the code still owned by future leaves.
+This is a generation recipe for an AI agent: given a framework admin feature, produce
 the project-side code that activates it. The normative boundary and the two
 modes live in [admin-features.md](admin-features.md); this file is the
 per-feature generation order.
@@ -644,6 +645,49 @@ only the four framework tables. Chat and binance-btc-tracker mount all three Vue
 of the section. The remaining view mounts keep the leaf boundaries above. Where
 Backup is already active, name `ChangeLogTablesWithoutEntity` under connection
 1 in its catalog; activating the journal does not activate Backup.
+
+### moderation — the Moderation section
+
+Framework-owned: the project activates the mechanism and supplies its own
+kinds, never a copy of the moderator or admin engine. Read
+[moderation.md](moderation.md) for the rules and current implementation status.
+The target activation order is:
+
+1. Declare `HilosFeature::MODERATION` in `FEATURES`. This does not enable
+   `PROFILE_PHOTO`. (not in the code yet — HIL-1623)
+2. Bind the framework kind directory, or a project subclass retaining its
+   parent entries and adding the project's kinds.
+   (not in the code yet — HIL-1623)
+3. Activate the framework rules migration/ORM and its designated writer. Use
+   the migration and writer contract HIL-1624 supplies, without inventing a
+   project storage path. (not in the code yet — HIL-1624)
+4. Register the moderator's agent/daemon pair and wire the framework profiles
+   and settings. HIL-1625 defines their exact declarations; this recipe adds no
+   extra required agents. (not in the code yet — HIL-1625)
+5. Register the two framework browser tables, kinds and rules.
+   (not in the code yet — HIL-1628)
+   Register the section root page. (not in the code yet — HIL-1629)
+   Register the kind Overview page. (not in the code yet — HIL-1630)
+   Register the kind Rules page. (not in the code yet — HIL-1631)
+6. Mount the chosen frontend's SDK views through thin project bindings:
+   Vue/chat mounts the root. (not in the code yet — HIL-1629)
+   It mounts Overview. (not in the code yet — HIL-1630)
+   It mounts Rules. (not in the code yet — HIL-1631)
+   Its Add dialog follows. (not in the code yet — HIL-1632)
+   Its Edit dialog follows. (not in the code yet — HIL-1633)
+   Its Delete dialog follows. (not in the code yet — HIL-1634)
+   React/tasks receives the section. (not in the code yet — HIL-1636)
+   Angular/polls receives the section. (not in the code yet — HIL-1637)
+
+The name window's framework wiring and `Checking your name…` line are separate
+from mounting the admin section. (not in the code yet — HIL-1635)
+Profile photos in tasks are separate work. (not in the code yet — HIL-1644)
+Profile photos in polls are separate work. (not in the code yet — HIL-1645)
+
+Apply the [admin view mode](admin-view-mode.md) with each surface: the viewer
+looks without mutation, with the framework controls and server refusal. Do not
+generate against unbuilt class names: each marked leaf supplies its concrete
+contract, and the detailed behavior stays in [moderation.md](moderation.md).
 
 ### a future framework feature (roles, …)
 

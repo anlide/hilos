@@ -12,6 +12,16 @@ The OAuth provider has moved in (HIL-923) and the three demos sign in through it
 than described here. How to run the suites is [testing.md](testing.md), not
 here.
 
+The [framework moderator](architecture/moderation.md) uses this same local
+model resident for both `hilos.moderation.text` and `hilos.moderation.image`
+on the chat stand, through the ordinary router and client; the spec dictates
+the answer. (not in the code yet — HIL-1625)
+Tasks wires those roles on its stand. (not in the code yet — HIL-1636)
+Polls wires those roles on its stand. (not in the code yet — HIL-1637)
+This reuses `/model`; it does not introduce a moderator stub or a new container.
+The external-provider emulator is separate HIL-263 work, not a resident this
+moderation change supplies or claims already exists.
+
 ## Why a Stand Emulates Rather Than Stubs
 
 An in-process stub sends no byte. It proves what the code does with an answer it
@@ -349,13 +359,21 @@ turns red on the defect ten runs out of ten (HIL-929).
 
 The three demos reach the gateway as `https://stand-gateway:18000`
 (`SMS_ENDPOINT_URL`, `TELEGRAM_GATEWAY_ENDPOINT_URL` in each demo's
-`docker/docker-compose.{local,dev,test}.yml`; `CHAT_MODERATION_URL` on the chat
-test stack; `OAUTH_ENDPOINT_URL` on the test stacks of all three).
+`docker/docker-compose.{local,dev,test}.yml`; the transitional
+`CHAT_MODERATION_URL` and `CHAT_PHOTO_MODERATION_URL` on the chat test stack;
+`OAUTH_ENDPOINT_URL` on the test stacks of all three).
 `stand-gateway` is a network alias the gateway service carries in every stack,
 and it is also the name its certificate is issued for: the daemon checks the
 name of the peer it reaches, so the service name, which differs from stack to
 stack, cannot be the address. One name means one certificate, and a new demo
 does not reissue it.
+
+Both framework moderation profiles resolve to
+`https://stand-gateway:18000/model` on the chat stand. HIL-1625 chooses their
+env names; the current chat URL keys are not the future framework contract.
+(not in the code yet — HIL-1625)
+Tasks uses that same address for both roles. (not in the code yet — HIL-1636)
+Polls uses that same address for both roles. (not in the code yet — HIL-1637)
 
 The certificate is fixed and lives in the repository
 (`framework/docker/stand-gateway/tls/`: `server.pem` is what the gateway
@@ -534,11 +552,15 @@ and name it before writing.
    emulator's** — the way `SMS_ENDPOINT_URL` and `TELEGRAM_GATEWAY_ENDPOINT_URL`
    do. The switch is one address in the daemon's configuration, not a DNS trick
    and not a code path that knows it is on a stand. Where the product reads the
-   address per role, the role's key is the one to set: the local model is
-   `CHAT_MODERATION_URL=https://stand-gateway:18000/model` on the chat test stack,
-   not the global `LLM_LOCAL_URL`, which the bot and the context analyzer fall back
-   to as well — a global address would move them onto the emulator silently. An
-   address the environment gives one role reaches that role's agent only if the
+   address per role, set that role's key. Today's transitional chat moderation
+   keys are `CHAT_MODERATION_URL` and `CHAT_PHOTO_MODERATION_URL`, both set to
+   `https://stand-gateway:18000/model`. Do not set the global `LLM_LOCAL_URL` to
+   move only moderation: the bot and context analyzer also fall back to it.
+   Framework moderation supplies two role addresses for this same resident,
+   with env names chosen by HIL-1625. (not in the code yet — HIL-1625)
+   Tasks wires both roles. (not in the code yet — HIL-1636)
+   Polls wires both roles. (not in the code yet — HIL-1637)
+   An address the environment gives one role reaches that role's agent only if the
    project's settings layer, finding its own URL setting empty, falls back to the
    profile env resolved rather than to the global address. Chat's does since
    HIL-927 (`demo/chat/backend/Environment/ChatLlmProfileOverrideSource.php`);
