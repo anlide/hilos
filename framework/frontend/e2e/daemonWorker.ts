@@ -14,7 +14,14 @@ function record(value: unknown): Record<string, unknown> {
 }
 
 /**
- * Read the selected worker only from the real Workers page's table window.
+ * Read the selected worker only from the real Workers page's table windows.
+ *
+ * The table shows one page of rows at a time, ordered by worker index, and a
+ * node can run more workers than one page holds. While the worker has not
+ * arrived and the page shown says more rows follow, press Next as a person
+ * would. The page's first answer carries an empty window before the table asks
+ * for its rows, and Next may first echo the page it leaves, so only a window
+ * with rows that starts no earlier than the last one counts.
  *
  * @param page An administrator's page, before navigation to Workers.
  * @param agentId The one agent whose monopolistic worker is selected.
@@ -28,6 +35,9 @@ export async function readMonopolisticWorker(
   waitFor: (predicate: () => boolean) => Promise<void>,
 ): Promise<MonopolisticWorker> {
   let worker: MonopolisticWorker | undefined
+  // Rows of the set before the latest page shown, or -1 until one arrives.
+  let pageStart = -1
+  let morePages = false
   const watch = (socket: WebSocket) => {
     socket.on('framereceived', (frame) => {
       if (typeof frame.payload !== 'string') return
@@ -47,6 +57,16 @@ export async function readMonopolisticWorker(
             ? data
             : {}
       if (!Array.isArray(window.rows)) return
+      if (
+        window.rows.length > 0 &&
+        window.totalExact === true &&
+        typeof window.rowsBefore === 'number' &&
+        typeof window.totalCount === 'number' &&
+        window.rowsBefore >= pageStart
+      ) {
+        pageStart = window.rowsBefore
+        morePages = window.rowsBefore + window.rows.length < window.totalCount
+      }
       for (const row of window.rows) {
         const fields = record(record(record(row).slots).worker)
         if (
@@ -79,7 +99,12 @@ export async function readMonopolisticWorker(
   page.on('websocket', watch)
   try {
     await gotoWorkers(page)
-    await waitFor(() => worker !== undefined)
+    await waitFor(() => worker !== undefined || pageStart >= 0)
+    while (worker === undefined && morePages) {
+      const left = pageStart
+      await page.getByTestId('hilos-table-next').click()
+      await waitFor(() => worker !== undefined || pageStart > left)
+    }
     if (worker === undefined)
       throw new Error('The selected monopolistic worker never arrived')
     return worker
