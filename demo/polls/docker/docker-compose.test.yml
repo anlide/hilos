@@ -320,6 +320,11 @@ services:
   polls-e2e-runner:
     image: mcr.microsoft.com/playwright:v1.60.0-noble
     container_name: polls-e2e-runner
+    # The browser's scratch lives in memory: chromium runs with
+    # --disable-dev-shm-usage, so its shared memory and profile churn land in
+    # /tmp - gigabytes per suite written through the container layer to disk.
+    tmpfs:
+      - /tmp
     volumes:
       - ../../..:/hilos
     working_dir: /hilos/demo/polls/tests/e2e
