@@ -12,7 +12,7 @@ import {
   type HilosAppearanceSettingRow,
   type ThemePosition,
 } from '@hilos/core'
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, defineComponent, h, onMounted, onUnmounted } from 'vue'
 import ConflictActions from '../../ConflictActions.vue'
 import ConflictHeader from '../../ConflictHeader.vue'
 import HilosActionError from '../../HilosActionError.vue'
@@ -23,10 +23,36 @@ import HilosHideable from '../../HilosHideable.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import LoadingButton from '../../LoadingButton.vue'
+import { useLookOnly } from '../../hilosAdminViewMode.js'
 import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
 
 const props = defineProps<{ context: HilosAppearanceContext }>()
+
+/**
+ * The form of one window: Enter saves the way the Save button does, and stays
+ * still wherever that button is locked (useLookOnly). It renders inside the
+ * admin shell, which provides the lock; this page's own script stands outside
+ * the shell and cannot see it.
+ */
+const AppearanceForm = defineComponent({
+  emits: ['save'],
+  setup(_props, { emit, slots }) {
+    const { locked } = useLookOnly()
+
+    return () =>
+      h(
+        'form',
+        {
+          onSubmit: (event: Event) => {
+            event.preventDefault()
+            if (!locked.value) emit('save')
+          },
+        },
+        slots.default?.(),
+      )
+  },
+})
 const table = createHilosAppearanceTable(props.context)
 const actions = createHilosAppearanceActions(props.context)
 const editor = createHilosAppearanceSwitchingEdit(table.controller, actions)
@@ -207,7 +233,7 @@ function valueLabel(value: boolean | string): string {
         />
       </template>
       <HilosActionError :action="editAction" details-title="Couldn't save" />
-      <form v-if="editRow" @submit.prevent="submitEdit">
+      <AppearanceForm v-if="editRow" @save="submitEdit">
         <HilosHiddenMark v-if="editHidden" />
         <template v-else>
           <div class="form-check form-switch mb-2">
@@ -249,7 +275,7 @@ function valueLabel(value: boolean | string): string {
           :text="noticeText"
           data-id="appearance-switching-notice"
         />
-      </form>
+      </AppearanceForm>
       <template #actions="{ requestClose }">
         <ConflictActions
           :conflict="state.conflict"
@@ -301,7 +327,7 @@ function valueLabel(value: boolean | string): string {
         :action="defaultThemeAction"
         details-title="Couldn't save"
       />
-      <form v-if="defaultThemeRow" @submit.prevent="submitDefaultThemeEdit">
+      <AppearanceForm v-if="defaultThemeRow" @save="submitDefaultThemeEdit">
         <HilosHiddenMark v-if="defaultThemeHidden" />
         <template v-else>
           <fieldset
@@ -351,7 +377,7 @@ function valueLabel(value: boolean | string): string {
           :text="defaultThemeNoticeText"
           data-id="appearance-default-theme-notice"
         />
-      </form>
+      </AppearanceForm>
       <template #actions="{ requestClose }">
         <ConflictActions
           :conflict="defaultThemeState.conflict"

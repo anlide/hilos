@@ -435,13 +435,39 @@ describe('Appearance page', () => {
     save().click()
     await nextTick()
     expect(h.sent).toEqual([])
+    // Enter submits the form; a viewer's stays as still as the locked Save.
+    submitWindowForm()
+    await nextTick()
+    expect(h.sent).toEqual([])
     expect(
       document.querySelector<HTMLButtonElement>(
         '[data-id="appearance-switching-cancel"]',
       )!.disabled,
     ).toBe(false)
   })
+
+  it("saves on an administrator's Enter the way Save does", async () => {
+    const h = harness()
+    await openEdit(h)
+    await choose(false)
+    submitWindowForm()
+    await nextTick()
+    expect(h.sent).toEqual([
+      {
+        action: 'appearance_theme_switching_set',
+        payload: { enabled: false },
+        requestId: expect.any(String),
+      },
+    ])
+  })
 })
+
+/** Submit the open window's form, as Enter in one of its fields does. */
+function submitWindowForm(): void {
+  document
+    .querySelector('[data-id="modal"] form')!
+    .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+}
 
 function themeRadio(position: ThemePosition): HTMLInputElement {
   return document.querySelector<HTMLInputElement>(
@@ -707,6 +733,9 @@ describe('Appearance default theme window', () => {
       )!.disabled,
     ).toBe(false)
     themeSave().click()
+    await nextTick()
+    expect(h.sent).toEqual([])
+    submitWindowForm()
     await nextTick()
     expect(h.sent).toEqual([])
   })
