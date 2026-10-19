@@ -7,6 +7,9 @@ vendor/
 # Node
 node_modules/
 
+# Python bytecode cache
+__pycache__/
+
 # Build-time snapshots written into a project's source tree by a framework
 # generator: the license inventory each demo's prebuild/predev/precheck hook
 # writes from that project's own lockfiles (HIL-838). Generated, never edited,
