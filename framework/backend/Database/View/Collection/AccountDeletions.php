@@ -17,6 +17,10 @@ use Hilos\Database\View\Item\AccountDeletion;
  * Read-facing representation of the framework-owned hilos_account_deletion table.
  *
  * @extends DbCollection<AccountDeletion, ObjectAccountDeletions>
+ * @method ObjectAccountDeletions|null getObjectCollection()
+ * @method AccountDeletion|null first()
+ * @method AccountDeletion|null last()
+ * @method AccountDeletion|null offsetGet(mixed $offset)
  */
 class AccountDeletions extends DbCollection
 {

@@ -30,6 +30,10 @@ use Hilos\Database\View\Item\Identity;
  * delegating the hash-at-rest insert to the object collection.
  *
  * @extends DbCollection<Identity, ObjectIdentities>
+ * @method ObjectIdentities|null getObjectCollection()
+ * @method Identity|null first()
+ * @method Identity|null last()
+ * @method Identity|null offsetGet(mixed $offset)
  */
 class Identities extends DbCollection
 {

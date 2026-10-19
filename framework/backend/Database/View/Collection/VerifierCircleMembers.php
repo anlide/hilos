@@ -19,6 +19,10 @@ use Hilos\Database\View\Item\VerifierCircleMember;
  * a member and the item action removes one.
  *
  * @extends DbCollection<VerifierCircleMember, ObjectVerifierCircleMembers>
+ * @method ObjectVerifierCircleMembers|null getObjectCollection()
+ * @method VerifierCircleMember|null first()
+ * @method VerifierCircleMember|null last()
+ * @method VerifierCircleMember|null offsetGet(mixed $offset)
  */
 class VerifierCircleMembers extends DbCollection
 {

@@ -22,6 +22,10 @@ use Hilos\Database\View\Item\UserVerification;
  * because the verification mechanism never surfaces to the frontend.
  *
  * @extends DbCollection<UserVerification, ObjectUserVerifications>
+ * @method ObjectUserVerifications|null getObjectCollection()
+ * @method UserVerification|null first()
+ * @method UserVerification|null last()
+ * @method UserVerification|null offsetGet(mixed $offset)
  */
 class UserVerifications extends DbCollection
 {

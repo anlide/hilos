@@ -35,6 +35,10 @@ use Hilos\Hilos;
  * HIL-404.
  *
  * @extends DbCollection<PasskeyCredential, ObjectPasskeyCredentials>
+ * @method ObjectPasskeyCredentials|null getObjectCollection()
+ * @method PasskeyCredential|null first()
+ * @method PasskeyCredential|null last()
+ * @method PasskeyCredential|null offsetGet(mixed $offset)
  */
 class PasskeyCredentials extends DbCollection
 {

@@ -22,6 +22,10 @@ use Hilos\Database\View\Item\AuthBlock;
  * delegating to the object collection's primitives.
  *
  * @extends DbCollection<AuthBlock, ObjectAuthBlocks>
+ * @method ObjectAuthBlocks|null getObjectCollection()
+ * @method AuthBlock|null first()
+ * @method AuthBlock|null last()
+ * @method AuthBlock|null offsetGet(mixed $offset)
  */
 class AuthBlocks extends DbCollection
 {

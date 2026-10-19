@@ -17,6 +17,9 @@ use Hilos\Database\Object\Objects;
  * Rendered registry copies, loaded by original file rather than as a whole table.
  *
  * @extends Objects<ObjectFileVariant>
+ * @method ObjectFileVariant|null first()
+ * @method ObjectFileVariant|null last()
+ * @method ObjectFileVariant|null get(int|string $key)
  * @method ObjectFileVariant|null offsetGet(mixed $offset)
  */
 class FileVariants extends Objects

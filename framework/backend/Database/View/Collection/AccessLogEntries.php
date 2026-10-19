@@ -14,6 +14,10 @@ use Hilos\Database\View\Item\AccessLogEntry;
  * AccessLogEntries Db collection - the account access log (HIL-1174).
  *
  * @extends DbCollection<AccessLogEntry, ObjectAccessLogEntries>
+ * @method ObjectAccessLogEntries|null getObjectCollection()
+ * @method AccessLogEntry|null first()
+ * @method AccessLogEntry|null last()
+ * @method AccessLogEntry|null offsetGet(mixed $offset)
  */
 class AccessLogEntries extends DbCollection
 {

@@ -19,6 +19,10 @@ use Hilos\Database\View\Item\RegistrationReservation;
  * held only by submitting it, never by reading the holds.
  *
  * @extends DbCollection<RegistrationReservation, ObjectRegistrationReservations>
+ * @method ObjectRegistrationReservations|null getObjectCollection()
+ * @method RegistrationReservation|null first()
+ * @method RegistrationReservation|null last()
+ * @method RegistrationReservation|null offsetGet(mixed $offset)
  */
 class RegistrationReservations extends DbCollection
 {

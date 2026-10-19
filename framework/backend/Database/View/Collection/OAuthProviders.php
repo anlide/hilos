@@ -20,6 +20,9 @@ use Hilos\Database\View\Item\OAuthProvider;
  * configured in the admin.
  *
  * @extends DbCollection<OAuthProvider, ObjectOAuthProviders>
+ * @method ObjectOAuthProviders|null getObjectCollection()
+ * @method OAuthProvider|null first()
+ * @method OAuthProvider|null last()
  * @property-read OAuthProvidersActions $actions
  */
 class OAuthProviders extends DbCollection
