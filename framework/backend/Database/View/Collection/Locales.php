@@ -18,6 +18,9 @@ use Hilos\Database\View\Item\Locale;
  *
  * @extends DbCollection<Locale, ObjectLocales>
  * @property-read LocalesActions $actions
+ * @method ObjectLocales|null getObjectCollection()
+ * @method Locale|null first()
+ * @method Locale|null last()
  */
 class Locales extends DbCollection
 {

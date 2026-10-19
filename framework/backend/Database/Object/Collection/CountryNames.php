@@ -11,11 +11,15 @@ use Hilos\Database\Entity\Collection\CountryNames as EntityCountryNames;
 use Hilos\Database\Entity\Item\CountryName as EntityCountryName;
 use Hilos\Database\Object\Item\CountryName as ObjectCountryName;
 use Hilos\Database\Object\Objects;
+use Hilos\HilosException;
 
 /**
  * Translated country names, loaded as a whole on first read.
  *
  * @extends Objects<ObjectCountryName>
+ * @method ObjectCountryName|null first()
+ * @method ObjectCountryName|null last()
+ * @method ObjectCountryName|null get(int|string $key)
  * @method ObjectCountryName|null offsetGet(mixed $offset)
  */
 class CountryNames extends Objects
@@ -39,24 +43,25 @@ class CountryNames extends Objects
 
     /**
      * @param int $languageId Writing language primary id
-     * @return list<ObjectCountryName> All unlocked base names written in the language
+     * @return static All unlocked base names written in the language, indexed by primary id
      * @throws DatabaseException When the query fails
      * @throws InvalidArgumentException When the query is invalid
+     * @throws HilosException When the empty collection refuses direct initialization
      */
-    public function unlockedBaseNamesInLanguage(int $languageId): array
+    public function unlockedBaseNamesInLanguage(int $languageId): static
     {
         $rows = static::entityClass()::get(
             '`' . EntityCountryName::language_id . '` = ? AND `' . EntityCountryName::locked . '` = ?'
                 . ' AND `' . EntityCountryName::locale_id . '` IS NULL',
             [$languageId, 0],
         );
-        $names = [];
+        $names = static::initEmpty();
         foreach ($rows as $row) {
             if ($row->id !== null) {
                 if (!isset($this->objects[$row->id])) {
                     $this->hydrate($row->id, static::OBJECT_CLASS::fromEntity($row));
                 }
-                $names[] = $this->objects[$row->id];
+                $names->hydrate($row->id, $this->objects[$row->id]);
             }
         }
         return $names;
@@ -114,24 +119,25 @@ class CountryNames extends Objects
     /**
      * @param int $countryId Named country id
      * @param int $languageId Writing language id
-     * @return list<ObjectCountryName> Overrides for this base
+     * @return static Overrides for this base, indexed by primary id
      * @throws DatabaseException When the query fails
      * @throws InvalidArgumentException When the query is invalid
+     * @throws HilosException When the empty collection refuses direct initialization
      */
-    public function overridesFor(int $countryId, int $languageId): array
+    public function overridesFor(int $countryId, int $languageId): static
     {
         $rows = static::entityClass()::get(
             '`' . EntityCountryName::country_id . '` = ? AND `' . EntityCountryName::language_id . '` = ?'
                 . ' AND `' . EntityCountryName::locale_id . '` IS NOT NULL',
             [$countryId, $languageId],
         );
-        $names = [];
+        $names = static::initEmpty();
         foreach ($rows as $row) {
             if ($row->id !== null) {
                 if (!isset($this->objects[$row->id])) {
                     $this->hydrate($row->id, static::OBJECT_CLASS::fromEntity($row));
                 }
-                $names[] = $this->objects[$row->id];
+                $names->hydrate($row->id, $this->objects[$row->id]);
             }
         }
         return $names;

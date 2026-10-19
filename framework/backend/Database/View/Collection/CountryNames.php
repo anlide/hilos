@@ -8,17 +8,22 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Actions\Collection\CountryNamesActions;
 use Hilos\Database\DatabaseException;
-use Hilos\Database\Exception\CollectionNotManualException;
+use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Collection\CountryNames as ObjectCountryNames;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\CountryName as ObjectCountryName;
 use Hilos\Database\View\Item\CountryName;
+use Hilos\HilosException;
 
 /**
  * Translated country names use primary ids as offsets.
  *
  * @extends DbCollection<CountryName, ObjectCountryNames>
  * @property-read CountryNamesActions $actions
+ * @method ObjectCountryNames|null getObjectCollection()
+ * @method CountryName|null first()
+ * @method CountryName|null last()
+ * @method CountryName|null offsetGet(mixed $offset)
  */
 class CountryNames extends DbCollection
 {
@@ -53,18 +58,21 @@ class CountryNames extends DbCollection
 
     /**
      * @param int $languageId Writing language primary id
-     * @return list<CountryName> All unlocked base names written in the language
+     * @return static All unlocked base names written in the language, indexed by primary id
      * @throws DatabaseException When the query fails
      * @throws LogicException When collection classes are not configured
      * @throws InvalidArgumentException When the query is invalid or a loaded object has the wrong type
+     * @throws HilosException When the empty collection refuses direct initialization
+     * @throws ObjectGetIdStringNotImplementedException When a name has no object key contract
+     * @throws CollectionNotManualException When the manual collection refuses an item
      */
-    public function unlockedBaseNamesInLanguage(int $languageId): array
+    public function unlockedBaseNamesInLanguage(int $languageId): static
     {
-        $names = [];
+        $names = static::initEmpty();
         foreach ($this->objectCollection->unlockedBaseNamesInLanguage($languageId) as $object) {
             $name = $this->wrap($object);
             if ($name !== null) {
-                $names[] = $name;
+                $names->add($name);
             }
         }
         return $names;
@@ -120,18 +128,21 @@ class CountryNames extends DbCollection
     /**
      * @param int $countryId Named country id
      * @param int $languageId Writing language id
-     * @return list<CountryName> Overrides of the base
+     * @return static Overrides of the base, indexed by primary id
      * @throws DatabaseException When the query fails
      * @throws LogicException When collection classes are not configured
      * @throws InvalidArgumentException When a loaded object has the wrong type
+     * @throws HilosException When the empty collection refuses direct initialization
+     * @throws ObjectGetIdStringNotImplementedException When a name has no object key contract
+     * @throws CollectionNotManualException When the manual collection refuses an item
      */
-    public function overridesFor(int $countryId, int $languageId): array
+    public function overridesFor(int $countryId, int $languageId): static
     {
-        $names = [];
+        $names = static::initEmpty();
         foreach ($this->objectCollection->overridesFor($countryId, $languageId) as $object) {
             $name = $this->wrap($object);
             if ($name !== null) {
-                $names[] = $name;
+                $names->add($name);
             }
         }
         return $names;

@@ -11,11 +11,15 @@ use Hilos\Database\Entity\Collection\LanguageNames as EntityLanguageNames;
 use Hilos\Database\Entity\Item\LanguageName as EntityLanguageName;
 use Hilos\Database\Object\Item\LanguageName as ObjectLanguageName;
 use Hilos\Database\Object\Objects;
+use Hilos\HilosException;
 
 /**
  * Translated language names, loaded as a whole on first read.
  *
  * @extends Objects<ObjectLanguageName>
+ * @method ObjectLanguageName|null first()
+ * @method ObjectLanguageName|null last()
+ * @method ObjectLanguageName|null get(int|string $key)
  * @method ObjectLanguageName|null offsetGet(mixed $offset)
  */
 class LanguageNames extends Objects
@@ -80,24 +84,25 @@ class LanguageNames extends Objects
     /**
      * @param int $languageId Named language id
      * @param int $inLanguageId Writing language id
-     * @return list<ObjectLanguageName> Overrides for this base
+     * @return static Overrides for this base, indexed by primary id
      * @throws DatabaseException When the query fails
      * @throws InvalidArgumentException When the query is invalid
+     * @throws HilosException When the empty collection refuses direct initialization
      */
-    public function overridesFor(int $languageId, int $inLanguageId): array
+    public function overridesFor(int $languageId, int $inLanguageId): static
     {
         $rows = static::entityClass()::get(
             '`' . EntityLanguageName::language_id . '` = ? AND `' . EntityLanguageName::in_language_id . '` = ?'
                 . ' AND `' . EntityLanguageName::locale_id . '` IS NOT NULL',
             [$languageId, $inLanguageId],
         );
-        $names = [];
+        $names = static::initEmpty();
         foreach ($rows as $row) {
             if ($row->id !== null) {
                 if (!isset($this->objects[$row->id])) {
                     $this->hydrate($row->id, static::OBJECT_CLASS::fromEntity($row));
                 }
-                $names[] = $this->objects[$row->id];
+                $names->hydrate($row->id, $this->objects[$row->id]);
             }
         }
         return $names;

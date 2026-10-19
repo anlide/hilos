@@ -8,17 +8,22 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Actions\Collection\LanguageNamesActions;
 use Hilos\Database\DatabaseException;
-use Hilos\Database\Exception\CollectionNotManualException;
+use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Collection\LanguageNames as ObjectLanguageNames;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\LanguageName as ObjectLanguageName;
 use Hilos\Database\View\Item\LanguageName;
+use Hilos\HilosException;
 
 /**
  * Translated language names use primary ids as offsets.
  *
  * @extends DbCollection<LanguageName, ObjectLanguageNames>
  * @property-read LanguageNamesActions $actions
+ * @method ObjectLanguageNames|null getObjectCollection()
+ * @method LanguageName|null first()
+ * @method LanguageName|null last()
+ * @method LanguageName|null offsetGet(mixed $offset)
  */
 class LanguageNames extends DbCollection
 {
@@ -91,18 +96,21 @@ class LanguageNames extends DbCollection
     /**
      * @param int $languageId Named language id
      * @param int $inLanguageId Writing language id
-     * @return list<LanguageName> Overrides of the base
+     * @return static Overrides of the base, indexed by primary id
      * @throws DatabaseException When the query fails
      * @throws LogicException When collection classes are not configured
      * @throws InvalidArgumentException When a loaded object has the wrong type
+     * @throws HilosException When the empty collection refuses direct initialization
+     * @throws ObjectGetIdStringNotImplementedException When a name has no object key contract
+     * @throws CollectionNotManualException When the manual collection refuses an item
      */
-    public function overridesFor(int $languageId, int $inLanguageId): array
+    public function overridesFor(int $languageId, int $inLanguageId): static
     {
-        $names = [];
+        $names = static::initEmpty();
         foreach ($this->objectCollection->overridesFor($languageId, $inLanguageId) as $object) {
             $name = $this->wrap($object);
             if ($name !== null) {
-                $names[] = $name;
+                $names->add($name);
             }
         }
         return $names;

@@ -30,6 +30,8 @@ use Hilos\Database\Entity\Item\Language as EntityLanguage;
 use Hilos\Database\Entity\Item\LanguageName as EntityLanguageName;
 use Hilos\Database\Entity\Item\CountryName as EntityCountryName;
 use Hilos\Database\Entity\Item\Locale as EntityLocale;
+use Hilos\Database\Object\Collection\CountryNames as ObjectCountryNames;
+use Hilos\Database\Object\Collection\LanguageNames as ObjectLanguageNames;
 use Hilos\Database\Object\Item\Locale as ObjectLocale;
 use Hilos\Database\View\Collection\LanguageNames;
 use Hilos\Database\View\Collection\Locales;
@@ -717,7 +719,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         self::assertNotNull($restored);
         self::assertSame(BuiltInI18nCatalog::countryName('us', 'en'), $restored->name);
         self::assertFalse($restored->locked);
-        self::assertSame([], Hilos::$db->countryNames->overridesFor($country->id, $language->id));
+        self::assertCount(0, Hilos::$db->countryNames->overridesFor($country->id, $language->id));
         foreach ($oldIds as $id) {
             self::assertNull(Hilos::$db->countryNames[$id]);
         }
@@ -749,7 +751,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         Hilos::$db->countryNames->actions->createManual($country, $language, $locale, 'Own correction');
         $base->actions->deleteAndRestoreCatalog();
         self::assertNull(Hilos::$db->countryNames->findBase($country->id, $language->id));
-        self::assertSame([], Hilos::$db->countryNames->overridesFor($country->id, $language->id));
+        self::assertCount(0, Hilos::$db->countryNames->overridesFor($country->id, $language->id));
     }
 
     /** @throws HilosException When fixture setup or an ordinary deletion fails */
@@ -856,7 +858,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         $base->actions->deleteAndRestoreCatalog();
         self::assertSame(BuiltInI18nCatalog::countryName($countryCode, 'en'),
             Hilos::$db->countryNames->findBase($country->id, $language->id)?->name);
-        self::assertSame([], Hilos::$db->countryNames->overridesFor($country->id, $language->id));
+        self::assertCount(0, Hilos::$db->countryNames->overridesFor($country->id, $language->id));
     }
 
     /** @return iterable<string, array{bool}> Both locale address shapes */
@@ -1120,6 +1122,267 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         foreach (self::TABLES as $table) {
             self::assertSame($rows[$table], Database::sql("SELECT * FROM `{$table}` ORDER BY `id`")->rows());
         }
+    }
+
+    /** @throws HilosException When fixture setup or queries fail */
+    public function testCountryNamesUnlockedBaseNamesInLanguageSubsetsBothLayers(): void
+    {
+        $emptyLang = Hilos::$db->languages->actions->create('qk', 'Empty', false);
+
+        $emptyObj = Hilos::$db->countryNames->getObjectCollection()->unlockedBaseNamesInLanguage($emptyLang->id);
+        self::assertInstanceOf(ObjectCountryNames::class, $emptyObj);
+        self::assertCount(0, $emptyObj);
+        self::assertNull($emptyObj->first());
+
+        $emptyView = Hilos::$db->countryNames->unlockedBaseNamesInLanguage($emptyLang->id);
+        self::assertInstanceOf(CountryNames::class, $emptyView);
+        self::assertCount(0, $emptyView);
+        self::assertNull($emptyView->first());
+
+        $en = Hilos::$db->languages->actions->create('en', 'English', false);
+        $fr = Hilos::$db->languages->actions->create('fr', 'French', false);
+        $us = Hilos::$db->countries->actions->create('us', '$', 'USD');
+        $ca = Hilos::$db->countries->actions->create('ca', '$', 'CAD');
+        $gb = Hilos::$db->countries->actions->create('gb', '£', 'GBP');
+
+        $usEn = Hilos::$db->countryNames->actions->createManual($us, $en, null, 'United States');
+        Database::sqlRun('UPDATE `hilos_country_name` SET `locked` = 0 WHERE `id` = ?', [$usEn->id]);
+        $usEn->getObject()->locked = false;
+
+        $caEn = Hilos::$db->countryNames->actions->createManual($ca, $en, null, 'Canada');
+        Database::sqlRun('UPDATE `hilos_country_name` SET `locked` = 0 WHERE `id` = ?', [$caEn->id]);
+        $caEn->getObject()->locked = false;
+
+        $gbEnLocked = Hilos::$db->countryNames->actions->createManual($gb, $en, null, 'Great Britain');
+
+        $usLocale = self::createLocale($en, $us);
+        $usEnOverride = Hilos::$db->countryNames->actions->createManual($us, $en, $usLocale, 'USA');
+        Database::sqlRun('UPDATE `hilos_country_name` SET `locked` = 0 WHERE `id` = ?', [$usEnOverride->id]);
+        $usEnOverride->getObject()->locked = false;
+
+        $usFr = Hilos::$db->countryNames->actions->createManual($us, $fr, null, 'États-Unis');
+        Database::sqlRun('UPDATE `hilos_country_name` SET `locked` = 0 WHERE `id` = ?', [$usFr->id]);
+        $usFr->getObject()->locked = false;
+
+        $beforeChanges = $this->changes->count;
+        $objRes = Hilos::$db->countryNames->getObjectCollection()->unlockedBaseNamesInLanguage($en->id);
+        $viewRes = Hilos::$db->countryNames->unlockedBaseNamesInLanguage($en->id);
+        self::assertSame($beforeChanges, $this->changes->count);
+
+        self::assertInstanceOf(ObjectCountryNames::class, $objRes);
+        self::assertInstanceOf(CountryNames::class, $viewRes);
+        self::assertCount(2, $objRes);
+        self::assertCount(2, $viewRes);
+
+        $expectedIds = [$usEn->id, $caEn->id];
+        self::assertSame($expectedIds, array_keys(iterator_to_array($objRes)));
+        self::assertSame($expectedIds, array_keys(iterator_to_array($viewRes)));
+
+        self::assertSame($usEn->getObject(), $objRes->first());
+        self::assertSame($caEn->getObject(), $objRes->last());
+        foreach ($objRes as $id => $item) {
+            self::assertSame($item, Hilos::$db->countryNames->getObjectCollection()[$id]);
+            self::assertSame($id, $item->id);
+        }
+
+        self::assertSame($usEn->getObject(), $viewRes->first()?->getObject());
+        self::assertSame($caEn->getObject(), $viewRes->last()?->getObject());
+        foreach ($viewRes as $id => $item) {
+            self::assertSame($item->getObject(), Hilos::$db->countryNames[$id]->getObject());
+            self::assertSame($id, $item->id);
+        }
+
+        self::assertArrayNotHasKey($gbEnLocked->id, $objRes);
+        self::assertArrayNotHasKey($usEnOverride->id, $objRes);
+        self::assertArrayNotHasKey($usFr->id, $objRes);
+        self::assertFalse(isset($objRes[$gbEnLocked->id]));
+
+        self::assertArrayNotHasKey($gbEnLocked->id, $viewRes);
+        self::assertArrayNotHasKey($usEnOverride->id, $viewRes);
+        self::assertArrayNotHasKey($usFr->id, $viewRes);
+        self::assertFalse(isset($viewRes[$gbEnLocked->id]));
+
+        self::assertCount(2, $objRes);
+        count($objRes);
+        foreach ($objRes as $unused) {}
+        self::assertCount(2, $objRes);
+
+        self::assertCount(2, $viewRes);
+        count($viewRes);
+        foreach ($viewRes as $unused) {}
+        self::assertCount(2, $viewRes);
+    }
+
+    /** @throws HilosException When fixture setup or queries fail */
+    public function testCountryNamesOverridesForSubsetsBothLayers(): void
+    {
+        $emptyCountry = Hilos::$db->countries->actions->create('qk', '$', 'QKD');
+        $emptyLang = Hilos::$db->languages->actions->create('qk', 'Empty', false);
+
+        $emptyObj = Hilos::$db->countryNames->getObjectCollection()->overridesFor($emptyCountry->id, $emptyLang->id);
+        self::assertInstanceOf(ObjectCountryNames::class, $emptyObj);
+        self::assertCount(0, $emptyObj);
+        self::assertNull($emptyObj->first());
+
+        $emptyView = Hilos::$db->countryNames->overridesFor($emptyCountry->id, $emptyLang->id);
+        self::assertInstanceOf(CountryNames::class, $emptyView);
+        self::assertCount(0, $emptyView);
+        self::assertNull($emptyView->first());
+
+        $country = Hilos::$db->countries->actions->create('us', '$', 'USD');
+        $otherCountry = Hilos::$db->countries->actions->create('ca', '$', 'CAD');
+        $lang = Hilos::$db->languages->actions->create('en', 'English', false);
+        $otherLang = Hilos::$db->languages->actions->create('es', 'Spanish', false);
+
+        $locale1 = self::createLocale($lang, $country);
+        $locale2 = self::createLocale($lang, null);
+
+        $base = Hilos::$db->countryNames->actions->createManual($country, $lang, null, 'United States');
+        $ov1 = Hilos::$db->countryNames->actions->createManual($country, $lang, $locale1, 'USA');
+        $ov2 = Hilos::$db->countryNames->actions->createManual($country, $lang, $locale2, '');
+        Database::sqlRun('UPDATE `hilos_country_name` SET `locked` = 0 WHERE `id` = ?', [$ov2->id]);
+        $ov2->getObject()->locked = false;
+
+        Hilos::$db->countryNames->actions->createManual($otherCountry, $lang, null, 'Canada');
+        $ovOtherCountry = Hilos::$db->countryNames->actions->createManual($otherCountry, $lang, $locale1, 'Other');
+
+        $otherLocale = self::createLocale($otherLang, null);
+        Hilos::$db->countryNames->actions->createManual($country, $otherLang, null, 'Estados Unidos');
+        $ovOtherLang = Hilos::$db->countryNames->actions->createManual($country, $otherLang, $otherLocale, 'EE. UU.');
+
+        $beforeChanges = $this->changes->count;
+        $objRes = Hilos::$db->countryNames->getObjectCollection()->overridesFor($country->id, $lang->id);
+        $viewRes = Hilos::$db->countryNames->overridesFor($country->id, $lang->id);
+        self::assertSame($beforeChanges, $this->changes->count);
+
+        self::assertInstanceOf(ObjectCountryNames::class, $objRes);
+        self::assertInstanceOf(CountryNames::class, $viewRes);
+        self::assertCount(2, $objRes);
+        self::assertCount(2, $viewRes);
+
+        $expectedIds = [$ov1->id, $ov2->id];
+        self::assertSame($expectedIds, array_keys(iterator_to_array($objRes)));
+        self::assertSame($expectedIds, array_keys(iterator_to_array($viewRes)));
+
+        self::assertSame($ov1->getObject(), $objRes->first());
+        self::assertSame($ov2->getObject(), $objRes->last());
+        foreach ($objRes as $id => $item) {
+            self::assertSame($item, Hilos::$db->countryNames->getObjectCollection()[$id]);
+            self::assertSame($id, $item->id);
+        }
+
+        self::assertSame($ov1->getObject(), $viewRes->first()?->getObject());
+        self::assertSame($ov2->getObject(), $viewRes->last()?->getObject());
+        foreach ($viewRes as $id => $item) {
+            self::assertSame($item->getObject(), Hilos::$db->countryNames[$id]->getObject());
+            self::assertSame($id, $item->id);
+        }
+
+        self::assertArrayNotHasKey($base->id, $objRes);
+        self::assertArrayNotHasKey($ovOtherCountry->id, $objRes);
+        self::assertArrayNotHasKey($ovOtherLang->id, $objRes);
+        self::assertFalse(isset($objRes[$base->id]));
+
+        self::assertArrayNotHasKey($base->id, $viewRes);
+        self::assertArrayNotHasKey($ovOtherCountry->id, $viewRes);
+        self::assertArrayNotHasKey($ovOtherLang->id, $viewRes);
+        self::assertFalse(isset($viewRes[$base->id]));
+
+        self::assertCount(2, $objRes);
+        count($objRes);
+        foreach ($objRes as $unused) {}
+        self::assertCount(2, $objRes);
+
+        self::assertCount(2, $viewRes);
+        count($viewRes);
+        foreach ($viewRes as $unused) {}
+        self::assertCount(2, $viewRes);
+    }
+
+    /** @throws HilosException When fixture setup or queries fail */
+    public function testLanguageNamesOverridesForSubsetsBothLayers(): void
+    {
+        $emptyLang = Hilos::$db->languages->actions->create('qk', 'Empty', false);
+        $emptyInLang = Hilos::$db->languages->actions->create('ql', 'Empty In', false);
+
+        $emptyObj = Hilos::$db->languageNames->getObjectCollection()->overridesFor($emptyLang->id, $emptyInLang->id);
+        self::assertInstanceOf(ObjectLanguageNames::class, $emptyObj);
+        self::assertCount(0, $emptyObj);
+        self::assertNull($emptyObj->first());
+
+        $emptyView = Hilos::$db->languageNames->overridesFor($emptyLang->id, $emptyInLang->id);
+        self::assertInstanceOf(LanguageNames::class, $emptyView);
+        self::assertCount(0, $emptyView);
+        self::assertNull($emptyView->first());
+
+        $fr = Hilos::$db->languages->actions->create('fr', 'French', false);
+        $en = Hilos::$db->languages->actions->create('en', 'English', false);
+        $de = Hilos::$db->languages->actions->create('de', 'German', false);
+        $us = Hilos::$db->countries->actions->create('us', '$', 'USD');
+
+        $locale1 = self::createLocale($en, null);
+        $locale2 = self::createLocale($en, $us);
+
+        $base = Hilos::$db->languageNames->actions->createManual($fr, $en, null, 'French');
+        $ov1 = Hilos::$db->languageNames->actions->createManual($fr, $en, $locale1, 'French (Intl)');
+        $ov2 = Hilos::$db->languageNames->actions->createManual($fr, $en, $locale2, '');
+        Database::sqlRun('UPDATE `hilos_language_name` SET `locked` = 0 WHERE `id` = ?', [$ov2->id]);
+        $ov2->getObject()->locked = false;
+
+        Hilos::$db->languageNames->actions->createManual($de, $en, null, 'German');
+        $ovOtherLang = Hilos::$db->languageNames->actions->createManual($de, $en, $locale1, 'German (Intl)');
+
+        $deLocale = self::createLocale($de, null);
+        Hilos::$db->languageNames->actions->createManual($fr, $de, null, 'Französisch');
+        $ovOtherInLang = Hilos::$db->languageNames->actions->createManual($fr, $de, $deLocale, 'Französisch (AT)');
+
+        $beforeChanges = $this->changes->count;
+        $objRes = Hilos::$db->languageNames->getObjectCollection()->overridesFor($fr->id, $en->id);
+        $viewRes = Hilos::$db->languageNames->overridesFor($fr->id, $en->id);
+        self::assertSame($beforeChanges, $this->changes->count);
+
+        self::assertInstanceOf(ObjectLanguageNames::class, $objRes);
+        self::assertInstanceOf(LanguageNames::class, $viewRes);
+        self::assertCount(2, $objRes);
+        self::assertCount(2, $viewRes);
+
+        $expectedIds = [$ov1->id, $ov2->id];
+        self::assertSame($expectedIds, array_keys(iterator_to_array($objRes)));
+        self::assertSame($expectedIds, array_keys(iterator_to_array($viewRes)));
+
+        self::assertSame($ov1->getObject(), $objRes->first());
+        self::assertSame($ov2->getObject(), $objRes->last());
+        foreach ($objRes as $id => $item) {
+            self::assertSame($item, Hilos::$db->languageNames->getObjectCollection()[$id]);
+            self::assertSame($id, $item->id);
+        }
+
+        self::assertSame($ov1->getObject(), $viewRes->first()?->getObject());
+        self::assertSame($ov2->getObject(), $viewRes->last()?->getObject());
+        foreach ($viewRes as $id => $item) {
+            self::assertSame($item->getObject(), Hilos::$db->languageNames[$id]->getObject());
+            self::assertSame($id, $item->id);
+        }
+
+        self::assertArrayNotHasKey($base->id, $objRes);
+        self::assertArrayNotHasKey($ovOtherLang->id, $objRes);
+        self::assertArrayNotHasKey($ovOtherInLang->id, $objRes);
+        self::assertFalse(isset($objRes[$base->id]));
+
+        self::assertArrayNotHasKey($base->id, $viewRes);
+        self::assertArrayNotHasKey($ovOtherLang->id, $viewRes);
+        self::assertArrayNotHasKey($ovOtherInLang->id, $viewRes);
+        self::assertFalse(isset($viewRes[$base->id]));
+
+        self::assertCount(2, $objRes);
+        count($objRes);
+        foreach ($objRes as $unused) {}
+        self::assertCount(2, $objRes);
+
+        self::assertCount(2, $viewRes);
+        count($viewRes);
+        foreach ($viewRes as $unused) {}
+        self::assertCount(2, $viewRes);
     }
 
     /**

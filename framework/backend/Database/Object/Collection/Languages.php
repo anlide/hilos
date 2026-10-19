@@ -23,6 +23,9 @@ use Hilos\I18n\DTO\LanguageCardSummary;
  * Languages loaded whole on first read.
  *
  * @extends Objects<ObjectLanguage>
+ * @method ObjectLanguage|null first()
+ * @method ObjectLanguage|null last()
+ * @method ObjectLanguage|null get(int|string $key)
  * @method ObjectLanguage|null offsetGet(mixed $offset)
  */
 class Languages extends Objects

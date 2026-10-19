@@ -16,6 +16,9 @@ use Hilos\Database\Object\Objects;
  * Countries loaded whole on first read.
  *
  * @extends Objects<ObjectCountry>
+ * @method ObjectCountry|null first()
+ * @method ObjectCountry|null last()
+ * @method ObjectCountry|null get(int|string $key)
  * @method ObjectCountry|null offsetGet(mixed $offset)
  */
 class Countries extends Objects

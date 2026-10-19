@@ -13,6 +13,9 @@ use Hilos\Database\Object\Objects;
  * The one-row record of the catalog reflow, loaded whole on first read.
  *
  * @extends Objects<ObjectI18nReflow>
+ * @method ObjectI18nReflow|null first()
+ * @method ObjectI18nReflow|null last()
+ * @method ObjectI18nReflow|null get(int|string $key)
  * @method ObjectI18nReflow|null offsetGet(mixed $offset)
  */
 class I18nReflows extends Objects

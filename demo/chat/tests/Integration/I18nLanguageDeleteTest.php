@@ -323,10 +323,12 @@ final class I18nLanguageDeleteTest extends IntegrationTestCase
         $names = Hilos::$db->countryNames->unlockedBaseNamesInLanguage(Hilos::$db->languages['fr']->id);
 
         self::assertCount(1, $names);
-        self::assertSame($base->id, $names[0]->id);
-        self::assertSame('Royaume-Uni', $names[0]->name);
-        self::assertNull($names[0]->localeId);
-        self::assertFalse($names[0]->locked);
+        $name = $names->first();
+        self::assertNotNull($name);
+        self::assertSame($base->id, $name->id);
+        self::assertSame('Royaume-Uni', $name->name);
+        self::assertNull($name->localeId);
+        self::assertFalse($name->locked);
     }
 
     /** @throws HilosException When the fixtures or transaction fails */

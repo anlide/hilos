@@ -16,6 +16,9 @@ use Hilos\Database\Object\Objects;
  * Locales loaded whole on first read.
  *
  * @extends Objects<ObjectLocale>
+ * @method ObjectLocale|null first()
+ * @method ObjectLocale|null last()
+ * @method ObjectLocale|null get(int|string $key)
  * @method ObjectLocale|null offsetGet(mixed $offset)
  */
 class Locales extends Objects

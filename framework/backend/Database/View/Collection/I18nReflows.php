@@ -17,6 +17,10 @@ use Hilos\Database\View\Item\I18nReflow;
  *
  * @extends DbCollection<I18nReflow, ObjectI18nReflows>
  * @property-read I18nReflowsActions $actions
+ * @method ObjectI18nReflows|null getObjectCollection()
+ * @method I18nReflow|null first()
+ * @method I18nReflow|null last()
+ * @method I18nReflow|null offsetGet(mixed $offset)
  */
 class I18nReflows extends DbCollection
 {

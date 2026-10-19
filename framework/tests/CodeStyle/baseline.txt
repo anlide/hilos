@@ -2,30 +2,18 @@
 #     <RULE-ID> <path from repository root> <count> # <HIL-nnn>
 # The ticket is mandatory: it names the leaf that removes the record.
 # Regenerate with CODESTYLE_BASELINE_UPDATE=1 on the framework unit run.
-COLLECTION-ITEM-NARROWING framework/backend/Database/Object/Collection/Countries.php 3 # HIL-1550
-COLLECTION-ITEM-NARROWING framework/backend/Database/Object/Collection/CountryNames.php 3 # HIL-1550
 COLLECTION-ITEM-NARROWING framework/backend/Database/Object/Collection/DataExports.php 4 # HIL-1553
 COLLECTION-ITEM-NARROWING framework/backend/Database/Object/Collection/FileVariants.php 3 # HIL-1552
-COLLECTION-ITEM-NARROWING framework/backend/Database/Object/Collection/I18nReflows.php 3 # HIL-1550
-COLLECTION-ITEM-NARROWING framework/backend/Database/Object/Collection/LanguageNames.php 3 # HIL-1550
-COLLECTION-ITEM-NARROWING framework/backend/Database/Object/Collection/Languages.php 3 # HIL-1550
 COLLECTION-ITEM-NARROWING framework/backend/Database/Object/Collection/LegalAcceptanceExports.php 4 # HIL-1553
 COLLECTION-ITEM-NARROWING framework/backend/Database/Object/Collection/LegalAcceptances.php 4 # HIL-1553
-COLLECTION-ITEM-NARROWING framework/backend/Database/Object/Collection/Locales.php 3 # HIL-1550
 COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/AccessLogEntries.php 4 # HIL-1552
 COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/AccountDeletions.php 4 # HIL-1552
 COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/AuthBlocks.php 4 # HIL-1552
-COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/Countries.php 3 # HIL-1550
-COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/CountryNames.php 4 # HIL-1550
 COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/DataExports.php 4 # HIL-1553
 COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/FileVariants.php 2 # HIL-1552
-COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/I18nReflows.php 4 # HIL-1550
 COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/Identities.php 4 # HIL-1552
-COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/LanguageNames.php 4 # HIL-1550
-COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/Languages.php 3 # HIL-1550
 COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/LegalAcceptanceExports.php 4 # HIL-1553
 COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/LegalAcceptances.php 4 # HIL-1553
-COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/Locales.php 3 # HIL-1550
 COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/NotificationDeliveries.php 4 # HIL-1553
 COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/NotificationPreferences.php 4 # HIL-1553
 COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/Notifications.php 4 # HIL-1553
@@ -45,12 +33,10 @@ COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/VerifierCir
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/AccessLogEntries.php 2 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/AccountDeletions.php 2 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/AuthBlocks.php 1 # HIL-1531
-COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/CountryNames.php 2 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/DataExports.php 3 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/FileVariants.php 2 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/Files.php 2 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/Identities.php 2 # HIL-1531
-COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/LanguageNames.php 1 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/LegalAcceptanceExports.php 4 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/LegalAcceptances.php 2 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/Notifications.php 1 # HIL-1531
@@ -67,12 +53,10 @@ COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/VerifierCirc
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/AccessLogEntries.php 1 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/AccountDeletions.php 1 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/AuthBlocks.php 1 # HIL-1531
-COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/CountryNames.php 2 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/DataExports.php 2 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/FileVariants.php 1 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/Files.php 1 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/Identities.php 2 # HIL-1531
-COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/LanguageNames.php 1 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/LegalAcceptanceExports.php 5 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/LegalAcceptances.php 1 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/PasskeyCredentials.php 1 # HIL-1531

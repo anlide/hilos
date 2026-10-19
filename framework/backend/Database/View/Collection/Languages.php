@@ -19,6 +19,9 @@ use Hilos\I18n\DTO\LanguageCardSummary;
  *
  * @extends DbCollection<Language, ObjectLanguages>
  * @property-read LanguagesActions $actions
+ * @method ObjectLanguages|null getObjectCollection()
+ * @method Language|null first()
+ * @method Language|null last()
  */
 class Languages extends DbCollection
 {

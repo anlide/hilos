@@ -25,6 +25,9 @@ use Hilos\I18n\DefaultLanguage;
  *
  * @extends DbCollection<Country, ObjectCountries>
  * @property-read CountriesActions $actions
+ * @method ObjectCountries|null getObjectCollection()
+ * @method Country|null first()
+ * @method Country|null last()
  */
 class Countries extends DbCollection
 {
