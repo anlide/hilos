@@ -91,6 +91,7 @@ x-node-env: &node-env
 
 services:
   ecommerce-shop-cluster-mysql:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     image: mariadb:11.4
     container_name: ecommerce-shop-cluster-mysql${HILOS_STAND_SUFFIX:-}
     # How the runner's artifact collector finds this container: the stands spell their
@@ -125,6 +126,7 @@ services:
         ipv4_address: 10.${HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER:-222}.0.10
 
   ecommerce-shop-cluster-m1:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     <<: *node-base
     container_name: ecommerce-shop-cluster-m1${HILOS_STAND_SUFFIX:-}
     # Found by role for the same reason the database is (HIL-841), and carried by m1 ALONE:
@@ -161,6 +163,7 @@ services:
         ipv4_address: 10.${HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER:-222}.0.11
 
   ecommerce-shop-cluster-s1:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     <<: *node-base
     container_name: ecommerce-shop-cluster-s1${HILOS_STAND_SUFFIX:-}
     environment:
@@ -196,6 +199,7 @@ services:
         ipv4_address: 10.${HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER:-222}.0.14
 
   ecommerce-shop-cluster-s2:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     <<: *node-base
     container_name: ecommerce-shop-cluster-s2${HILOS_STAND_SUFFIX:-}
     environment:
@@ -227,6 +231,7 @@ services:
   # three nodes in turn, so the caller names the node (`docker exec -e
   # HILOS_DAEMON_HOST=<ip>`): the shared harness names the node per call.
   ecommerce-shop-cluster-cli:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     build: .
     container_name: ecommerce-shop-cluster-cli${HILOS_STAND_SUFFIX:-}
     working_dir: /app

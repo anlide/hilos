@@ -169,6 +169,7 @@ services:
   # depends_on so unit tests run without DB; integration tests need the DB and the
   # backup receiver up, which `composer run test:framework:up` is for.
   mysql-framework-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     image: mariadb:11.4
     container_name: hilos-mysql-framework-test${HILOS_STAND_SUFFIX:-}
     # How the runner's artifact collector finds this container: the stands spell their
@@ -210,6 +211,7 @@ services:
   # known_hosts line it pins are generated on start into ship-keys, which is why
   # hilos-cli-test mounts the same volume.
   sshd-framework-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     build:
       context: .
       dockerfile: Dockerfile.test-sshd
@@ -233,6 +235,7 @@ services:
     profiles: [test]
 
   hilos-cli-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     build:
       context: .
       dockerfile: Dockerfile.test-cli

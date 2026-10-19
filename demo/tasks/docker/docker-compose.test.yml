@@ -12,6 +12,7 @@ name: hilos-tasks-test${HILOS_STAND_SUFFIX:-}
 
 services:
   tasks-mysql-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     image: mariadb:11.4
     container_name: tasks-mysql-test${HILOS_STAND_SUFFIX:-}
     # How the runner's artifact collector finds this container: the three demos spell
@@ -54,6 +55,7 @@ services:
   # for the day it does, and meanwhile it gives a stray message somewhere to land
   # other than the work tree. No host ports: nothing outside the stack talks to it.
   tasks-mailpit-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     image: axllent/mailpit:v1.21
     container_name: tasks-mailpit-test${HILOS_STAND_SUFFIX:-}
     environment:
@@ -79,6 +81,7 @@ services:
   # Built from the framework so all three demos can adopt it unchanged. No host
   # ports: nothing outside the stack talks to it.
   tasks-stand-gateway-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     build:
       context: ../../../framework/docker/stand-gateway
     container_name: tasks-stand-gateway-test${HILOS_STAND_SUFFIX:-}
@@ -110,6 +113,7 @@ services:
           - stand-gateway
 
   tasks-daemon-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     build: .
     env_file:
       - path: ../tests/.env
@@ -228,6 +232,7 @@ services:
   # `composer run test:e2e-build` to produce the dist that tasks-nginx-test
   # serves.
   tasks-frontend-cli-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     image: node:24-bookworm-slim
     container_name: tasks-frontend-cli-test${HILOS_STAND_SUFFIX:-}
     volumes:
@@ -244,6 +249,7 @@ services:
   # only for manual inspection and default away from the chat test stack's
   # 8086/8446.
   tasks-nginx-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     build:
       context: .
       dockerfile: Dockerfile.nginx
@@ -267,6 +273,7 @@ services:
         ipv4_address: ${DOCKER_TEST_NGINX_IP:-10.${HILOS_STAND_NET_TASKS:-187}.0.12}
 
   tasks-cli-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     build: .
     env_file:
       - path: ../tests/.env
@@ -311,6 +318,7 @@ services:
   # side effect of running tests. node_modules installs onto the host
   # bind-mount (docs/agents/frontend/build-and-docker.md).
   tasks-e2e-runner:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     image: mcr.microsoft.com/playwright:v1.60.0-noble
     container_name: tasks-e2e-runner${HILOS_STAND_SUFFIX:-}
     # The browser's scratch lives in memory: chromium runs with

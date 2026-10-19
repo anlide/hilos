@@ -13,6 +13,7 @@ name: hilos-ecommerce-shop-test${HILOS_STAND_SUFFIX:-}
 
 services:
   ecommerce-shop-mysql-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     image: mariadb:11.4
     container_name: ecommerce-shop-mysql-test${HILOS_STAND_SUFFIX:-}
     # How the runner's artifact collector finds this container: the demos spell
@@ -53,6 +54,7 @@ services:
   # check of a registration and the code of a recovery - leaves by mail, and the
   # e2e runner reads it here. No host ports: nothing outside the stack talks to it.
   ecommerce-shop-mailpit-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     image: axllent/mailpit:v1.21
     container_name: ecommerce-shop-mailpit-test${HILOS_STAND_SUFFIX:-}
     environment:
@@ -71,6 +73,7 @@ services:
       - hilos-ecommerce-shop-test-network
 
   ecommerce-shop-daemon-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     build: .
     env_file:
       - path: ../tests/.env
@@ -146,6 +149,7 @@ services:
   # `composer run test:e2e-build` to produce the dist that
   # ecommerce-shop-nginx-test serves.
   ecommerce-shop-frontend-cli-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     image: node:24-bookworm-slim
     container_name: ecommerce-shop-frontend-cli-test${HILOS_STAND_SUFFIX:-}
     volumes:
@@ -161,6 +165,7 @@ services:
   # e2e runner reaches it in-network as https://ecommerce-shop-nginx-test;
   # host ports are only for manual inspection.
   ecommerce-shop-nginx-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     build:
       context: .
       dockerfile: Dockerfile.nginx
@@ -183,6 +188,7 @@ services:
         ipv4_address: ${DOCKER_TEST_NGINX_IP:-10.${HILOS_STAND_NET_ECOMMERCE_SHOP:-212}.0.12}
 
   ecommerce-shop-cli-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     build: .
     env_file:
       - path: ../tests/.env
@@ -224,6 +230,7 @@ services:
   # side effect of running tests. node_modules installs onto the host
   # bind-mount (docs/agents/frontend/build-and-docker.md).
   ecommerce-shop-e2e-runner:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     image: mcr.microsoft.com/playwright:v1.60.0-noble
     container_name: ecommerce-shop-e2e-runner${HILOS_STAND_SUFFIX:-}
     # The browser's scratch lives in memory: chromium runs with

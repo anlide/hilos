@@ -114,6 +114,7 @@ x-node-env: &node-env
 
 services:
   binance-btc-tracker-cluster-entry:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     build:
       context: .
       dockerfile: Dockerfile.nginx
@@ -130,6 +131,7 @@ services:
         ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.30
 
   binance-btc-tracker-cluster-mysql:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     image: mariadb:11.4
     container_name: binance-btc-tracker-cluster-mysql${HILOS_STAND_SUFFIX:-}
     # How the runner's artifact collector finds this container: the stands spell their
@@ -164,6 +166,7 @@ services:
         ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.10
 
   binance-btc-tracker-cluster-m1:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     <<: *node-base
     container_name: binance-btc-tracker-cluster-m1${HILOS_STAND_SUFFIX:-}
     # Found by role for the same reason the database is (HIL-841), and carried by m1 ALONE:
@@ -205,6 +208,7 @@ services:
         ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.11
 
   binance-btc-tracker-cluster-m2:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     <<: *node-base
     container_name: binance-btc-tracker-cluster-m2${HILOS_STAND_SUFFIX:-}
     environment:
@@ -231,6 +235,7 @@ services:
         ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.12
 
   binance-btc-tracker-cluster-m3:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     <<: *node-base
     container_name: binance-btc-tracker-cluster-m3${HILOS_STAND_SUFFIX:-}
     environment:
@@ -257,6 +262,7 @@ services:
         ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.13
 
   binance-btc-tracker-cluster-s1:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     <<: *node-base
     container_name: binance-btc-tracker-cluster-s1${HILOS_STAND_SUFFIX:-}
     environment:
@@ -291,6 +297,7 @@ services:
         ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.14
 
   binance-btc-tracker-cluster-s2:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     <<: *node-base
     container_name: binance-btc-tracker-cluster-s2${HILOS_STAND_SUFFIX:-}
     environment:
@@ -323,6 +330,7 @@ services:
   # scenario 17 asserts that nobody admits it. Profile `stranger`, so it never comes up with
   # the cluster; the shared harness's `stranger up|down` drives it. Not in CLUSTER_MASTER_SET.
   binance-btc-tracker-cluster-x1:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     <<: *node-base
     container_name: binance-btc-tracker-cluster-x1${HILOS_STAND_SUFFIX:-}
     profiles:
@@ -354,6 +362,7 @@ services:
   # five nodes in turn, so the caller names the node (`docker exec -e
   # HILOS_DAEMON_HOST=<ip>`): the shared harness names the node per call.
   binance-btc-tracker-cluster-cli:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     build: .
     container_name: binance-btc-tracker-cluster-cli${HILOS_STAND_SUFFIX:-}
     working_dir: /app
@@ -382,6 +391,7 @@ services:
       - cluster-net
 
   binance-btc-tracker-cluster-mailpit:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     image: axllent/mailpit:v1.21
     container_name: binance-btc-tracker-cluster-mailpit${HILOS_STAND_SUFFIX:-}
     environment:
@@ -400,6 +410,7 @@ services:
         ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.20
 
   binance-btc-tracker-cluster-e2e-runner:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     image: mcr.microsoft.com/playwright:v1.60.0-noble
     container_name: binance-btc-tracker-cluster-e2e-runner${HILOS_STAND_SUFFIX:-}
     # The browser's scratch lives in memory: chromium runs with

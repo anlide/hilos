@@ -303,6 +303,11 @@ that pins a name, a subnet, an address or a host path takes `${HILOS_STAND_SUFFI
 or its stand's `HILOS_STAND_NET_*` octet the same way; the table of octets lives in
 [`scripts/stand-instance.php`](../../scripts/stand-instance.php).
 
+**CPU weight of a stand.** Every stand service reads `cpu_shares` from
+`HILOS_STAND_CPU_SHARES`; unset, it is `0`, which docker reads as its own default.
+A check run beside a full run on another instance lowers it, so the full run keeps
+the processor when both want it. A new stand service takes the same line.
+
 **Any cluster fleet may run beside any e2e step.** No edge keeps them apart and the
 order does not either; a fleet leaves with its own step (`downsStand`), which is
 hygiene rather than separation. A red step beside a fleet is read like any other —

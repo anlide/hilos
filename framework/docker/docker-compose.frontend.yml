@@ -14,6 +14,7 @@ services:
   # Install, build, lint and unit tests run here — never on the host Node.
   # node_modules lands in the project via the bind-mount, where PhpStorm sees it.
   hilos-frontend-cli:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     image: node:24-bookworm-slim
     container_name: hilos-frontend-cli${HILOS_STAND_SUFFIX:-}
     volumes:

@@ -102,6 +102,7 @@ x-node-env: &node-env
 
 services:
   online-testing-cluster-entry:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     build:
       context: .
       dockerfile: Dockerfile.nginx
@@ -118,6 +119,7 @@ services:
         ipv4_address: 10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.30
 
   online-testing-cluster-mysql:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     image: mariadb:11.4
     container_name: online-testing-cluster-mysql${HILOS_STAND_SUFFIX:-}
     # How the runner's artifact collector finds this container: the stands spell their
@@ -152,6 +154,7 @@ services:
         ipv4_address: 10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.10
 
   online-testing-cluster-m1:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     <<: *node-base
     container_name: online-testing-cluster-m1${HILOS_STAND_SUFFIX:-}
     # Found by role for the same reason the database is (HIL-841), and carried by m1 ALONE:
@@ -185,6 +188,7 @@ services:
         ipv4_address: 10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.11
 
   online-testing-cluster-m2:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     <<: *node-base
     container_name: online-testing-cluster-m2${HILOS_STAND_SUFFIX:-}
     environment:
@@ -207,6 +211,7 @@ services:
         ipv4_address: 10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.12
 
   online-testing-cluster-m3:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     <<: *node-base
     container_name: online-testing-cluster-m3${HILOS_STAND_SUFFIX:-}
     environment:
@@ -235,6 +240,7 @@ services:
   # three nodes in turn, so the caller names the node (`docker exec -e
   # HILOS_DAEMON_HOST=<ip>`): the shared harness names the node per call.
   online-testing-cluster-cli:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     build: .
     container_name: online-testing-cluster-cli${HILOS_STAND_SUFFIX:-}
     working_dir: /app
@@ -263,6 +269,7 @@ services:
       - cluster-net
 
   online-testing-cluster-mailpit:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     image: axllent/mailpit:v1.21
     container_name: online-testing-cluster-mailpit${HILOS_STAND_SUFFIX:-}
     environment:
@@ -281,6 +288,7 @@ services:
         ipv4_address: 10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.20
 
   online-testing-cluster-e2e-runner:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     image: mcr.microsoft.com/playwright:v1.60.0-noble
     container_name: online-testing-cluster-e2e-runner${HILOS_STAND_SUFFIX:-}
     # The browser's scratch lives in memory: chromium runs with

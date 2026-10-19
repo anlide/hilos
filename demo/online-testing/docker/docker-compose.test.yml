@@ -13,6 +13,7 @@ name: hilos-online-testing-test${HILOS_STAND_SUFFIX:-}
 
 services:
   online-testing-mysql-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     image: mariadb:11.4
     container_name: online-testing-mysql-test${HILOS_STAND_SUFFIX:-}
     # How the runner's artifact collector finds this container: the demos spell
@@ -53,6 +54,7 @@ services:
   # check of a registration and the code of a recovery - leaves by mail, and the
   # e2e runner reads it here. No host ports: nothing outside the stack talks to it.
   online-testing-mailpit-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     image: axllent/mailpit:v1.21
     container_name: online-testing-mailpit-test${HILOS_STAND_SUFFIX:-}
     environment:
@@ -71,6 +73,7 @@ services:
       - hilos-online-testing-test-network
 
   online-testing-daemon-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     build: .
     env_file:
       - path: ../tests/.env
@@ -146,6 +149,7 @@ services:
   # `composer run test:e2e-build` to produce the dist that
   # online-testing-nginx-test serves.
   online-testing-frontend-cli-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     image: node:24-bookworm-slim
     container_name: online-testing-frontend-cli-test${HILOS_STAND_SUFFIX:-}
     volumes:
@@ -168,6 +172,7 @@ services:
   # e2e runner reaches it in-network as https://online-testing-nginx-test;
   # host ports are only for manual inspection.
   online-testing-nginx-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     build:
       context: .
       dockerfile: Dockerfile.nginx
@@ -190,6 +195,7 @@ services:
         ipv4_address: ${DOCKER_TEST_NGINX_IP:-10.${HILOS_STAND_NET_ONLINE_TESTING:-213}.0.12}
 
   online-testing-cli-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     build: .
     env_file:
       - path: ../tests/.env
@@ -231,6 +237,7 @@ services:
   # side effect of running tests. node_modules installs onto the host
   # bind-mount (docs/agents/frontend/build-and-docker.md).
   online-testing-e2e-runner:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     image: mcr.microsoft.com/playwright:v1.60.0-noble
     container_name: online-testing-e2e-runner${HILOS_STAND_SUFFIX:-}
     # The browser's scratch lives in memory: chromium runs with
