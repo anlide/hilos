@@ -18,6 +18,10 @@ use Hilos\Database\View\Item\SecondFactor;
  * {@see unconfirmedOf()}; writes go through the collection and item actions.
  *
  * @extends DbCollection<SecondFactor, ObjectSecondFactors>
+ * @method ObjectSecondFactors|null getObjectCollection()
+ * @method SecondFactor|null first()
+ * @method SecondFactor|null last()
+ * @method SecondFactor|null offsetGet(mixed $offset)
  */
 class SecondFactors extends DbCollection
 {

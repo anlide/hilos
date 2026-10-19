@@ -17,6 +17,10 @@ use Hilos\Database\View\Item\SecondFactorReset;
  * Read-facing representation of the framework-owned hilos_second_factor_reset table.
  *
  * @extends DbCollection<SecondFactorReset, ObjectSecondFactorResets>
+ * @method ObjectSecondFactorResets|null getObjectCollection()
+ * @method SecondFactorReset|null first()
+ * @method SecondFactorReset|null last()
+ * @method SecondFactorReset|null offsetGet(mixed $offset)
  */
 class SecondFactorResets extends DbCollection
 {

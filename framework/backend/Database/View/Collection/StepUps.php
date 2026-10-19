@@ -13,6 +13,10 @@ use Hilos\Database\View\Item\StepUp;
  * StepUps Db collection - operation-level confirmations (HIL-495).
  *
  * @extends DbCollection<StepUp, ObjectStepUps>
+ * @method ObjectStepUps|null getObjectCollection()
+ * @method StepUp|null first()
+ * @method StepUp|null last()
+ * @method StepUp|null offsetGet(mixed $offset)
  */
 class StepUps extends DbCollection
 {

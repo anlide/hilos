@@ -18,6 +18,10 @@ use Hilos\Database\View\Item\SecondFactorTrust;
  * one question asked of it is {@see isTrusted()}.
  *
  * @extends DbCollection<SecondFactorTrust, ObjectSecondFactorTrusts>
+ * @method ObjectSecondFactorTrusts|null getObjectCollection()
+ * @method SecondFactorTrust|null first()
+ * @method SecondFactorTrust|null last()
+ * @method SecondFactorTrust|null offsetGet(mixed $offset)
  */
 class SecondFactorTrusts extends DbCollection
 {

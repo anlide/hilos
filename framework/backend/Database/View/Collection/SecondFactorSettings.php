@@ -19,6 +19,10 @@ use Hilos\Database\View\Item\SecondFactorSetting;
  * or null when they never chose a wait of their own.
  *
  * @extends DbCollection<SecondFactorSetting, ObjectSecondFactorSettings>
+ * @method ObjectSecondFactorSettings|null getObjectCollection()
+ * @method SecondFactorSetting|null first()
+ * @method SecondFactorSetting|null last()
+ * @method SecondFactorSetting|null offsetGet(mixed $offset)
  */
 class SecondFactorSettings extends DbCollection
 {

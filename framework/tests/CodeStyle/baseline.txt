@@ -21,13 +21,7 @@ COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/OAuthProvid
 COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/PasskeyCredentials.php 4 # HIL-1552
 COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/PushSubscriptions.php 4 # HIL-1553
 COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/RegistrationReservations.php 4 # HIL-1552
-COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/SecondFactorBackupCodes.php 4 # HIL-1551
-COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/SecondFactorResets.php 4 # HIL-1551
-COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/SecondFactorSettings.php 4 # HIL-1551
-COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/SecondFactorTrusts.php 4 # HIL-1551
-COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/SecondFactors.php 4 # HIL-1551
 COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/Settings.php 3 # HIL-1553
-COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/StepUps.php 4 # HIL-1551
 COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/UserVerifications.php 4 # HIL-1552
 COLLECTION-ITEM-NARROWING framework/backend/Database/View/Collection/VerifierCircleMembers.php 4 # HIL-1552
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/AccessLogEntries.php 2 # HIL-1531

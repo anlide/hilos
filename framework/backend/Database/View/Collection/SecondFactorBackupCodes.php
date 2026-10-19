@@ -19,6 +19,10 @@ use Hilos\Database\View\Item\SecondFactorBackupCode;
  * and the set as the "Show" screen lists it - are answered here rather than off the items.
  *
  * @extends DbCollection<SecondFactorBackupCode, ObjectSecondFactorBackupCodes>
+ * @method ObjectSecondFactorBackupCodes|null getObjectCollection()
+ * @method SecondFactorBackupCode|null first()
+ * @method SecondFactorBackupCode|null last()
+ * @method SecondFactorBackupCode|null offsetGet(mixed $offset)
  */
 class SecondFactorBackupCodes extends DbCollection
 {
