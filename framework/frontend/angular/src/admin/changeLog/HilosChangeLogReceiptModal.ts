@@ -232,16 +232,15 @@ import { HILOS_ROUTER } from '../../hilosRouterToken.js'
                             <div class="small text-body-secondary mb-1">
                               {{ copy.oldValue }}
                             </div>
-                            <!-- The tail is grouped so the name does not end in a
-                            quote: SHELL-PARITY reads an expression that starts and
-                            ends with one as a single literal, and would miss the
-                            hilos-change-log-value- prefix. -->
                             <hilos-long-text
                               kind="output"
                               [text]="field.oldValue.text"
                               [dataId]="
                                 'hilos-change-log-value-' +
-                                (entry.entryId + '-' + field.field + '-old')
+                                entry.entryId +
+                                '-' +
+                                field.field +
+                                '-old'
                               "
                             />
                           </div>
@@ -255,7 +254,10 @@ import { HILOS_ROUTER } from '../../hilosRouterToken.js'
                                 [text]="newValue.text"
                                 [dataId]="
                                   'hilos-change-log-value-' +
-                                  (entry.entryId + '-' + field.field + '-new')
+                                  entry.entryId +
+                                  '-' +
+                                  field.field +
+                                  '-new'
                                 "
                               />
                             </div>

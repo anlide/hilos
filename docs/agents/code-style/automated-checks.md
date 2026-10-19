@@ -48,6 +48,7 @@ rule.
 | `VUE-TEMPLATE-REF` | Inside the `<template>` block of a `.vue` file, a field of a ref-bearing value is read through `.value` and never bare: Vue unwraps a ref that is a top-level binding of `<script setup>` and unwraps nothing a level below it, so a ref held as a field of a plain object stays an object — and an object is always truthy. Ref-bearing is named, not inferred: a value assigned from a composable the rule lists (`useTrackedAction`), and a prop declared with a type it lists (`TrackedAction`); widening the rule is one line in one of those two lists. A call is not a read, so `action.run(handle)` is silent. The whole template is judged, interpolations included, where Vue would have unwrapped by itself — the exception is real and a rule saying "bare in the moustaches, `.value` in an attribute" is one nobody holds in their head. Two blind spots the rule declares: a value that reached the file any other way — destructured, imported, injected — and a composable or type nobody listed. Frontend only, `.vue` only; neither other view layer has the shape. | [vue-template-refs.md](vue-template-refs.md) |
 | `SHELL-PARITY` | A surface represented in Vue has a counterpart in React and Angular. One traversal of each framework SDK `src` reads `.vue`, `.ts`, `.tsx` and `.html`, excluding tests, specs, dependency/build directories and the checker's exact fixture path; demos are outside the scan. It compares static `data-id`, Vue `:data-id` / `v-bind:data-id`, Angular `[attr.data-id]` and React `data-id={…}` sites, and the `dataId` prop through which React and Angular hand a name to an SDK component that Vue passes as a `data-id` attribute — static `dataId="…"`, Angular `[dataId]="…"`, React `dataId={…}` — preserving exact literals and reducing a template or Angular concatenation with a literal prefix to `prefix-*`; opaque expressions and a template beginning with interpolation are skipped. It also compares UpperCamelCase value exports from each package's root `index.ts`, ignoring type and lowercase exports. Vue is the one-way reference, so a surface first added outside Vue is invisible, and every unmatched Vue occurrence is reported separately. A page's own files — its Vue view, every file under `vue/src/admin/` that view reaches by relative import without leaving `admin/`, and a root export resolving to one of them — are not compared in a layer where `HILOS_UNBUILT_PAGES` lists every page reaching them; the registry and page keys are read from `core/src/routing`, and views are recognized the way `UNBUILT-PAGE` recognizes them. Everything outside `vue/src/admin/` is always compared. Other declared blind spots are Angular `templateUrl`, opaque handles, behavioral drift behind equal handles, a dynamic `import()`, which is not followed and so leaves the file compared, an SDK file placed under `vue/src/admin/`, which is judged as a page file, and a name handed over as a `dataId` prop, which is taken on trust: nothing checks that the component renders it. TypeScript only. | [multiframework-core.md](../frontend/multiframework-core.md) |
 | `UNBUILT-PAGE` | Unbuilt admin pages are listed per view layer: a listed page has no built view, an absent view or bare leaf/section with only unbuilt children is listed, and every child of a listed section is listed; entries name admin keys and nonempty, distinct Vue/React/Angular layers. A built child stays under an unbuilt parent only through a row of `STAGED_CHILDREN` (`framework/frontend/codestyle/stagedChildren.ts`) naming its layer, parent, child and leaf; a row excusing nothing — the parent built in that layer, or the child listed unbuilt again — is reported as spent, and a row naming no catalog child of an admin page, an unknown layer or no `HIL-<n>` leaf is reported as malformed. Reads the registry and view sources of all three SDK layers, `STAGED_CHILDREN`, and the PHP catalog text as tree data; the built `HilosSettingPresetsPage` wrapper counts as content. Views outside the recognized shell-template shapes and project views/`projectViews` are not judged. | [page-module-structure.md](../frontend/page-module-structure.md) |
+| `TYPE-CHECK` | Type errors in the roots of `framework/frontend/codestyle`. The config `framework/frontend/codestyle/tsconfig.json` extends `../tsconfig.base.json`, sets `noEmit` and `types: ['node']`, includes the `*.ts` and `*.mts` files of the `codestyle` directory itself, and excludes `fixtures`. A new file in that directory is included by those globs. `framework/frontend/scripts`, the SDK sources and the demos are outside these roots. One `ts.Program` per run, the compiler's syntactic and semantic diagnostics, and no emit. `transpileModule` is not the mechanism, and neither is a parse that only calls `createSourceFile`. A setup refusal — a missing or unreadable tsconfig, an empty root set, an unresolved required type, or a diagnostic with no checked file — is thrown and never becomes a baseline record. `skipLibCheck` is inherited from the base config, and this config does not relax `strict`. The report line is `TYPE-CHECK <path>:<line> — TS<code>: <message> (see docs/agents/code-style/automated-checks.md)`. The ordinary entry is the `fe-checks` step, `composer run test:framework:frontend`: its unit half is `npm run test`, which runs `framework/frontend/codestyle/guard.test.ts`. The check has no target of its own, and `npm run check` of the other SDK packages is unchanged. | [automated-checks.md](automated-checks.md) |
 | `DOC-ROUTE` | Every file of this catalog, at any depth, is mentioned by at least one `skills/*/SKILL.md`, or declines a route in itself and says why. A file that is both routed and declining is reported the same way. | [rule-authoring.md](../rule-authoring.md) |
 | `DOC-LINK` | A local reference in the agent docs names something that exists. In a skill wrapper both a markdown link and a backticked path count as one; in a document only a markdown link does. | [rule-authoring.md](../rule-authoring.md) |
 | `SKILL-HEADER` | Only the header of `skills/*/SKILL.md` is judged. Non-empty `name` and `description` are required. An unquoted value must not carry `: ` or ` #`, must not end with a colon, and must not open with a YAML indicator. Quoted values and block scalars are legal and are not judged inside. Extra keys are not forbidden. No baseline. | [rule-authoring.md](../rule-authoring.md) |
@@ -550,6 +551,17 @@ is read and dealt with, not frozen. Cascading debt that a leaf induces elsewhere
 is work the leaf answers for, which is exactly why the tool refuses to file it
 away silently.
 
+For `TYPE-CHECK`, the owner authorized a one-time initial freeze on 2026-10-19
+under the label `# HIL-1513`. The measurement of the codestyle roots found no
+errors, so `framework/frontend/codestyle/baseline.txt` carries no `TYPE-CHECK`
+record and this paragraph is the policy, not a list of owed files. A record of
+that freeze is paid off by the next change to its file, which lowers or
+removes the record. Subsequent updates remain shrink-only, and
+`CODESTYLE_BASELINE_UPDATE=1` still only lowers a count or drops a record. The
+count is per file, so one error replaced by another in the same file at the
+same count is invisible to this baseline; review must refuse that substitution
+and enforce payoff when the file is touched.
+
 ## Adding a rule
 
 1. Write or extend the canonical rule in `docs/agents/*` first, and add
@@ -585,12 +597,14 @@ line so a report reads the same whichever produced it.
 
 The TypeScript half lives in `framework/frontend/codestyle/`, a vitest project of
 its own like `framework/frontend/scripts/` and, like it, not an npm workspace: it
-ships no package and is not type-checked by `npm run check`. Register it by
+ships no package and does not join `npm run check`. Register it by
 adding its directory to `projects` in `framework/frontend/vitest.config.mts`; from
 then on it runs inside `test:framework:frontend:unit` with no target of its own.
 Read sources through the TypeScript compiler API (`ts.createSourceFile`) for the
 same reason the PHP half reads tokens — a name quoted inside a string or written
-in a comment is not a declaration.
+in a comment is not a declaration. The types of the codestyle roots are checked
+by the shared guard, as `TYPE-CHECK`. `framework/frontend/scripts` is still
+outside that mechanism.
 
 The exception is a rule whose subject is the text itself — every comment, string
 and name, the way `SPELLING` judges them. There is nothing for the parser to

@@ -545,9 +545,11 @@ function normalizeDataId(
   }
 
   const expression = value.text.trim()
-  const literal = /^(['"])([\s\S]*)\1$/.exec(expression)
-  if (literal !== null) {
-    return literal[2]
+  const quote = expression[0]
+  const closing =
+    quote === "'" || quote === '"' ? quotedLiteralEnd(expression, quote) : null
+  if (closing === expression.length - 1) {
+    return expression.slice(1, closing)
   }
 
   if (expression.startsWith('`') && expression.endsWith('`')) {
@@ -562,9 +564,39 @@ function normalizeDataId(
     return prefix === '' ? null : `${prefix}*`
   }
 
-  const concatenation = /^(['"])(.*?)\1\s*\+/.exec(expression)
-  if (concatenation !== null && concatenation[2] !== '') {
-    return `${concatenation[2]}*`
+  if (closing !== null && /^\s*\+/.test(expression.slice(closing + 1))) {
+    const prefix = expression.slice(1, closing)
+
+    return prefix === '' ? null : `${prefix}*`
+  }
+
+  return null
+}
+
+/**
+ * A backslash escapes the next character, so a concatenation that finishes on
+ * a quote is not itself one literal.
+ *
+ * @param expression Expression opening with `quote`
+ * @param quote Quote character that opened the literal
+ * @returns Index of the unescaped closing quote, or null when it never closes
+ */
+function quotedLiteralEnd(expression: string, quote: string): number | null {
+  let escaped = false
+
+  for (let index = 1; index < expression.length; index += 1) {
+    const character = expression[index]
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (character === '\\') {
+      escaped = true
+      continue
+    }
+    if (character === quote) {
+      return index
+    }
   }
 
   return null
