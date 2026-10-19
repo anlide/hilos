@@ -341,7 +341,7 @@ final class InMemoryTableFilter
     }
 
     /**
-     * Compares two values of the sorted column, nulls first ascending.
+     * Compares two values of the sorted column, nulls last ascending.
      *
      * @param mixed $a Value of the sorted field in the left row, or null when the row has none
      * @param mixed $b Value of the sorted field in the right row, or null when the row has none
