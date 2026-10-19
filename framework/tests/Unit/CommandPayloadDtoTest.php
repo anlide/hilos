@@ -123,7 +123,6 @@ final class CommandPayloadDtoTest extends TestCase
     }
 }
 
-
 /**
  * Test payload DTO requiring a non-empty 'value' field.
  */

@@ -2024,7 +2024,6 @@ abstract class WorkerManager extends BaseManager implements PageResender
                             ),
                             static fn () => $agent->onSignalCommand($parsedCommandData, $source, $name),
                         );
-
                     } catch (InvalidCommandPayloadException $e) {
                         Logger::logAgentError($agent->getId(), "Command payload validation failed: {$e->getMessage()}");
                         $agent->replyToCommand(CommandReplyDTO::error($signalData->correlationId, $e->getMessage()));

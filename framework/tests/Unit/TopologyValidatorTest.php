@@ -2440,7 +2440,6 @@ final class TopologyAssocCommandAddressAgentDaemon extends TopologyTestAgentDaem
 
 final class TopologyInvalidAgentHttpRouteAgent extends TopologyTestAgent
 
-
 {
     public const string AGENT_TYPE = 'invalid_agent_http_route_agent';
 
@@ -3391,7 +3390,6 @@ final class TopologyAssocCommandAddressHilos extends HilosFacade
         ],
     ];
 
-
     /**
      * Creates a no-op DB context for tests.
      *
@@ -3402,7 +3400,6 @@ final class TopologyAssocCommandAddressHilos extends HilosFacade
         return new TopologyTestDbContext();
     }
 }
-
 
 final class TopologyPageAgentSignalConflictHilos extends HilosFacade
 {

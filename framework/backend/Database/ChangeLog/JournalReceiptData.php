@@ -62,7 +62,6 @@ final readonly class JournalReceiptData
         return new self(null, null, null, 'cli', $command, $agent, $source);
     }
 
-
     /**
      * @param string $direction Migration direction, up or down
      * @param int $index Migration number

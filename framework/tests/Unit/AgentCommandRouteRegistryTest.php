@@ -112,4 +112,3 @@ final class CommandConfigRouteAgent extends AbstractAgent
     {
     }
 }
-

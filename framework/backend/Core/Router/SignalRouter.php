@@ -2096,7 +2096,6 @@ class SignalRouter
         return $address;
     }
 
-
     /**
      * Creates the typed payload DTO for a client action owned by the given agent.
      *

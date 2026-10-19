@@ -991,7 +991,6 @@ abstract class Hilos implements TruthSourceOwner
         return AgentCommandRouteRegistry::addressRoutes(static::AGENTS);
     }
 
-
     /**
      * Returns page-owned non-action signal routes declared by registered page classes.
      *

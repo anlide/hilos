@@ -3000,7 +3000,6 @@ final class TopologyValidator
                     }
                 }
 
-
                 $this->recordDeclaredCommandRoute($key, $agentType, $declaredRoutes, $errors);
             }
         }

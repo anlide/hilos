@@ -41,4 +41,3 @@ final class AgentCommandConfigKey
      */
     public const string ADDRESS = 'address';
 }
-
