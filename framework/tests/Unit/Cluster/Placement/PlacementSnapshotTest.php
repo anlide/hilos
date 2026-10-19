@@ -13,7 +13,7 @@ use Hilos\Cluster\Placement\PlacementState;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-/** Unit coverage of complete placement snapshot codecs before their peer transport is connected (HIL-446). */
+/** Unit coverage of complete placement snapshot codecs (HIL-446). */
 final class PlacementSnapshotTest extends TestCase
 {
     /** @return iterable<string, array{PlacementRecord}> Valid records spanning every state and nullable field */

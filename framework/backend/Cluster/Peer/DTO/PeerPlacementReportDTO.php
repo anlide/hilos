@@ -23,7 +23,7 @@ use Hilos\Cluster\Placement\PlacementSnapshot;
  * would therefore have the rest taken away from it, silently — the whole set or nothing.
  * The required placementSnapshot key separately carries the last confirmed complete registry,
  * or null if none is known. Its records are never a substitute for what the sender actually hosts;
- * an authoritative empty snapshot is distinct from null. Donor import is not implemented yet.
+ * an authoritative empty snapshot is distinct from null.
  */
 final class PeerPlacementReportDTO extends PeerDTO
 {
