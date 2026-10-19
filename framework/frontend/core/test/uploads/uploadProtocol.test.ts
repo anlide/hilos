@@ -4,6 +4,9 @@ import {
   mintUploadId,
   signUploadChunk,
   uploadStateSchema,
+  uploadCreditSchema,
+  UPLOAD_SIGNAL_SCHEMAS,
+  SIGNAL_UPLOAD_CREDIT,
 } from '../../src/uploads/uploadProtocol.js'
 
 describe('upload id', () => {
@@ -75,4 +78,26 @@ describe('upload state frame', () => {
       errorMessage: null,
     })
   })
+})
+
+describe('upload credit frame', () => {
+  it('registers the credit parser beside upload state', () => {
+    expect(UPLOAD_SIGNAL_SCHEMAS[SIGNAL_UPLOAD_CREDIT]).toBe(uploadCreditSchema)
+    expect(
+      uploadCreditSchema.parse({ clientUploadId: 'u', sendUpToBytes: 0 }),
+    ).toEqual({
+      clientUploadId: 'u',
+      sendUpToBytes: 0,
+    })
+  })
+
+  it.each([-1, 1.5, '3', null, undefined, NaN, Infinity])(
+    'refuses invalid credit %j',
+    (sendUpToBytes) => {
+      expect(
+        uploadCreditSchema.safeParse({ clientUploadId: 'u', sendUpToBytes })
+          .success,
+      ).toBe(false)
+    },
+  )
 })

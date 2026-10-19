@@ -117,6 +117,18 @@ use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Files\Upload\UploadMemoryMaster;
+use Hilos\Files\Upload\UploadMemoryTestDoor;
+use Hilos\Files\Upload\UploadMemoryTestDelivery;
+use Hilos\Files\Upload\DTO\UploadMemoryTestRequest;
+use Hilos\Cluster\Probe\ClusterProbe;
+use Hilos\Files\Upload\UploadPhase;
+use Hilos\Core\Feature\HilosFeature;
+use Hilos\Utils\Helpers\RandomHelper;
+use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
+use Hilos\Files\Upload\DTO\UploadCreditRequestSignalData;
+use Hilos\Files\Upload\DTO\UploadStateSignalData;
+use Hilos\Runtime\State\Item\HilosUpload as StateHilosUpload;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketEnvelopeAware;
@@ -176,6 +188,7 @@ use Hilos\TruthSource\RtReplicaOriginMap;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Environment\NonProductionGate;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Socket\Client\ClientInterface;
@@ -244,6 +257,7 @@ use Throwable;
  * node up/down defaults also drive placement failover, so an override must call the parent.
  */
 abstract class DaemonManager extends BaseManager implements
+    UploadMemoryTestDoor,
     MembershipObserver,
     LeadershipObserver,
     RtClaimSink,
@@ -366,6 +380,9 @@ abstract class DaemonManager extends BaseManager implements
     private const float MEASUREMENT_SAMPLE_SECONDS = 5.0;
     private const float MEASUREMENT_REANNOUNCE_SECONDS = 60.0;
 
+    /** Random bytes distinguishing one upload ledger master boot from every other. */
+    private const int UPLOAD_MASTER_ID_BYTES = 16;
+
     /** @var list<ServerInterface> registered servers */
     protected array $servers = [];
 
@@ -430,6 +447,9 @@ abstract class DaemonManager extends BaseManager implements
 
     /** @var list<ParkedSignal> Signals held until the identity behind their connection arrives (HIL-627) */
     private array $parkedSignals = [];
+
+    /** Sole process-private upload ledger; test-only activation also works without the product feature. */
+    private ?UploadMemoryMaster $uploadMemory = null;
 
     /** @var list<ParkedAgentSignal> Frames held until the agent they address is up (HIL-629) */
     private array $parkedAgentSignals = [];
@@ -694,6 +714,7 @@ abstract class DaemonManager extends BaseManager implements
      * one step here that never refuses the start.
      *
      * @param DaemonContext $context Resolved path context passed to every hook
+     * @throws RandomException When upload activation cannot mint its master ledger incarnation
      * @throws BackupScheduleException When the project backup schedule is malformed
      * @throws ClusterConfigurationException When a cluster policy is registered after the transport took it
      * @throws EnvException When a backup env value or the daemon log path cannot be read
@@ -1721,6 +1742,8 @@ abstract class DaemonManager extends BaseManager implements
      * Register server
      *
      * @param ServerInterface $server Server instance
+     * @throws HilosException When upload activation cannot resolve its node or bind a registered worker
+     * @throws RandomException When entropy for the master ledger incarnation is unavailable
      */
     public function registerServer(ServerInterface $server): void
     {
@@ -1737,6 +1760,22 @@ abstract class DaemonManager extends BaseManager implements
         // takes off holds the dead client until the master goes down.
         $server->setClientSocketDetacher($this);
 
+        if (Hilos::hasFeature(HilosFeature::UPLOADS)
+            && ($server instanceof WorkerServer || $server instanceof PeerServer || $server instanceof WebSocketServer)) {
+            $this->uploadMemory ??= new UploadMemoryMaster(sprintf(
+                '%s:%d:%s',
+                Hilos::$cluster?->localNodeId()
+                    ?? (Hilos::$env[EnvConstants::CLUSTER_NODE_ID]->string() ?: StateHilosClusterNode::STANDALONE_NODE_ID),
+                getmypid(),
+                RandomHelper::secureHex(self::UPLOAD_MASTER_ID_BYTES),
+            ));
+            if ($server instanceof WorkerServer || $server instanceof WebSocketServer) {
+                $server->setUploadMemoryPoolSink($this->uploadMemory);
+            } elseif ($server instanceof PeerServer) {
+                $server->setUploadMemoryMaster($this->uploadMemory);
+            }
+        }
+
         // The command channel needs the master to force-close a WebSocket connection for the
         // test-only drop command; wire this manager in as the dropper so the handler stays
         // decoupled from the concrete manager.
@@ -1752,6 +1791,7 @@ abstract class DaemonManager extends BaseManager implements
             // that in a cluster may be answering from another node entirely.
             $server->setDaemonStatusSource($this);
             $server->setAgentRestartDoor($this);
+            $server->setUploadMemoryTestDoor($this);
         }
 
         // The HTTP server parks a request for an agent the way the command channel parks a
@@ -3031,6 +3071,22 @@ abstract class DaemonManager extends BaseManager implements
      */
     private function dispatchSignals(): void
     {
+        try {
+            $this->drainSignals();
+        } finally {
+            $this->uploadMemory?->afterDispatch();
+        }
+    }
+
+    /**
+     * Drain the real router and agent-start queues; payload locals end before receipt cleanup.
+     *
+     * @throws InvalidArgumentException When a queued signal cannot be named
+     * @throws EnvException When destination configuration is invalid
+     * @throws ClusterConfigurationException When a node-addressed destination cannot resolve its node
+     */
+    private function drainSignals(): void
+    {
         $workerServer = $this->findWorkerServer();
         if ($workerServer === null) {
             // No WorkerServer available
@@ -3092,6 +3148,14 @@ abstract class DaemonManager extends BaseManager implements
             $signal = $wasParked ? array_shift($released) : Hilos::$sr->getNextQueuedSignal();
             if ($signal === null) {
                 break;
+            }
+
+            if ($signal->signalType->getType() === SignalTypeConstants::UPLOAD_CREDIT_REQUEST) {
+                if ($signal->signalSource->getSource() === SignalSource::WEBSOCKET
+                    && $signal->data instanceof UploadCreditRequestSignalData) {
+                    $this->uploadMemory?->requestCredit($signal->data);
+                }
+                continue;
             }
 
             if (!$wasParked && $this->parkUntilIdentified($signal)) {
@@ -3200,6 +3264,14 @@ abstract class DaemonManager extends BaseManager implements
                         'dispatchSignals - by-session re-decision carries invalid data: ' . get_class($signal->data),
                     );
                 }
+            }
+
+            if ($signal->data instanceof WebSocketSignalData
+                && $signal->data->data instanceof UploadStateSignalData
+                && $signal->data->targetAcceptKey !== null
+                && ($signal->data->data->phase === null || $signal->data->data->phase === UploadPhase::FAILED->value)) {
+                $this->uploadMemory?->cancel($signal->data->targetAcceptKey, $signal->data->data->clientUploadId);
+                $this->uploadMemory?->onUploadsChanged();
             }
 
             // Get destinations for signal
@@ -3781,6 +3853,10 @@ abstract class DaemonManager extends BaseManager implements
             ),
             default => null,
         };
+        if ($signal->data instanceof RtSyncSignalDataInterface
+            && $signal->data->collectionKey === StateHilosUpload::RT_COLLECTION) {
+            $this->uploadMemory?->onUploadsChanged();
+        }
     }
 
     /**
@@ -4112,6 +4188,9 @@ abstract class DaemonManager extends BaseManager implements
             $originMap->forget($collectionKey, $stateId);
         }
         $this->clearStaleness($collectionKey, array_merge($arrived, $swept));
+        if ($collectionKey === StateHilosUpload::RT_COLLECTION) {
+            $this->uploadMemory?->onUploadsChanged();
+        }
 
         $workerServer = $this->findWorkerServer();
         if ($workerServer === null) {
@@ -4871,6 +4950,9 @@ abstract class DaemonManager extends BaseManager implements
     {
         $wasFrozen = array_intersect($stateIds, array_keys(RtStaleness::staleRows($collectionKey)));
         RtStaleness::clear($collectionKey, $stateIds);
+        if ($collectionKey === StateHilosUpload::RT_COLLECTION && $wasFrozen !== []) {
+            $this->uploadMemory?->onUploadsChanged();
+        }
         if ($wasFrozen === []) {
             return;
         }
@@ -7013,6 +7095,77 @@ abstract class DaemonManager extends BaseManager implements
                 case AgentDeliveryOutcome::Delivered:
                     break;
             }
+        }
+    }
+
+    /**
+     * @param CommandRequestDTO $request Request admitted by the command server's test:* gate
+     * @return CommandReplyDTO Exact current pool snapshot or one refusal
+     */
+    public function answerUploadPoolTest(CommandRequestDTO $request): CommandReplyDTO
+    {
+        try {
+            if (!NonProductionGate::admitted()) {
+                throw new InvalidFormatException('Upload pool test driver requires a non-production environment');
+            }
+            $test = UploadMemoryTestRequest::fromArray($request->payload);
+            if ($this->uploadMemory === null) {
+                $this->uploadMemory = new UploadMemoryMaster(sprintf('%s:%d:%s',
+                    Hilos::$cluster?->localNodeId() ?? StateHilosClusterNode::STANDALONE_NODE_ID,
+                    getmypid(), RandomHelper::secureHex(self::UPLOAD_MASTER_ID_BYTES)));
+                foreach ($this->servers as $server) {
+                    if ($server instanceof WorkerServer) {
+                        $server->setUploadMemoryPoolSink($this->uploadMemory);
+                    } elseif ($server instanceof PeerServer) {
+                        $server->setUploadMemoryMaster($this->uploadMemory);
+                    }
+                }
+            }
+            if ($test->operation === UploadMemoryTestRequest::LIMIT) {
+                $this->uploadMemory->setTestLimit($test->memoryPoolBytes);
+            } elseif ($test->operation === UploadMemoryTestRequest::ENQUEUE) {
+                $entry = Hilos::appClass()::AGENTS[$test->agentType] ?? null;
+                if ($entry === null || !ClusterProbe::isProbe(AgentRegistry::workerClass($entry))) {
+                    throw new InvalidFormatException('Upload fixture target must be a registered test probe agent');
+                }
+                $destination = Hilos::$sr->placeAgentDestination(new AgentDestination($test->agentType, $test->agentIndex));
+                $localNodeId = Hilos::$cluster?->localNodeId();
+                if ($destination instanceof RemoteAgentDestination) {
+                    $started = false;
+                    foreach (Hilos::$cluster?->placement()?->placementSnapshot()?->records ?? [] as $record) {
+                        if ($record->agentType === $test->agentType && $record->agentIndex === $test->agentIndex
+                            && $record->nodeId === $test->targetNodeId && $record->state === PlacementState::Started) {
+                            $started = true;
+                            break;
+                        }
+                    }
+                    if (!$started || $destination->nodeId !== $test->targetNodeId
+                        || $this->findPeerServer()?->uploadLinkToNode($test->targetNodeId) === null) {
+                        throw new InvalidFormatException('Upload fixture target has no matching live node');
+                    }
+                } elseif (!$destination instanceof AgentDestination || $test->targetNodeId !== $localNodeId
+                    || !$this->agentManagerDaemon->isAgentStarted($this->agentManagerDaemon->buildAgentId($test->agentType, $test->agentIndex))) {
+                    throw new InvalidFormatException('Upload fixture target is not a live agent on that node');
+                }
+                $this->uploadMemory->enqueueTest($test->targetNodeId, $test->agentType, $test->agentIndex, $test->bytes,
+                    function (UploadMemoryTestDelivery $delivery, SignalDTO $signal): void {
+                        $workers = $this->findWorkerServer();
+                        if ($workers === null) {
+                            return;
+                        }
+                        $destination = Hilos::$sr->placeAgentDestination(new AgentDestination($delivery->agentType, $delivery->agentIndex));
+                        if (($destination instanceof RemoteAgentDestination && $destination->nodeId !== $delivery->targetNodeId)
+                            || ($destination instanceof AgentDestination && $delivery->targetNodeId !== Hilos::$cluster?->localNodeId())
+                            || $destination instanceof UnknownAgentDestination) {
+                            return;
+                        }
+                        $this->deliverToAgentDestination($workers, $this->findPeerServer(), $destination, $signal);
+                    });
+            }
+
+            return CommandReplyDTO::ok($request->correlationId, $this->uploadMemory->inspect());
+        } catch (HilosException | RandomException $e) {
+            return CommandReplyDTO::error($request->correlationId, $e->getMessage());
         }
     }
 

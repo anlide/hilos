@@ -187,6 +187,16 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 continue;
             }
 
+            if ($request->command === CommandConstants::COMMAND_TEST_UPLOAD_POOL) {
+                try {
+                    $reply = $this->server->answerUploadPoolTest($request);
+                } catch (HilosException $e) {
+                    $reply = CommandReplyDTO::error($request->correlationId, $e->getMessage());
+                }
+                $this->writeBuffer .= $reply->toJson() . "\n";
+                continue;
+            }
+
             if ($request->command === CliCommands::CLUSTER_TEST_INSPECT) {
                 // Test-only read of the master's cluster/consensus/placement view.
                 // A misconfigured cluster must reply an error, not throw inside the master loop.

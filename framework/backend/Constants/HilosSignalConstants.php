@@ -2290,6 +2290,9 @@ final class HilosSignalConstants
      */
     public const string HILOS_UPLOAD_STATE = 'hilos_upload_state';
 
+    /** @var string Cumulative raw-byte permission from the master upload ledger */
+    public const string HILOS_UPLOAD_CREDIT = 'hilos_upload_credit';
+
     /** Users library → one connection: whether its submitted photo awaits a verdict. */
     public const string HILOS_PROFILE_PHOTO_CHECK = 'hilos_profile_photo_check';
 

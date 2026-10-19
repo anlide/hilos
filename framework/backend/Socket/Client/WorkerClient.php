@@ -20,6 +20,8 @@ use Hilos\Cluster\Exception\ClusterDisabledException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Database\ReHydrateRound;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Files\Upload\UploadMemoryPoolSink;
+use Hilos\Files\Upload\UploadMemoryDeliverySink;
 use Hilos\Log\LogWriteLevelApplier;
 use Hilos\ProtectedMode\ProtectedModeEntryGate;
 use Hilos\Runtime\RtSnapshot;
@@ -67,6 +69,8 @@ use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
+use Hilos\Socket\Worker\DTO\WorkerUploadConsumedDTO;
+use Hilos\Socket\Worker\DTO\WorkerUploadSettingsDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Utils\LogLevel;
 use Hilos\Utils\Logger;
@@ -99,6 +103,9 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
 
     /** @var array<string, true> Agents this link was sent agent_stop for, not yet reported stopped by the worker */
     private array $stopsAwaitingReport = [];
+
+    /** The production master supplies the same pool sink to both transport servers. */
+    private ?UploadMemoryPoolSink $uploadMemoryPoolSink = null;
 
     /**
      * Create worker client with socket and agent manager.
@@ -181,6 +188,21 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     }
 
     /**
+     * @param UploadMemoryPoolSink $sink Master-owned receiver for this channel's upload reports
+     */
+    public function setUploadMemoryPoolSink(UploadMemoryPoolSink $sink): void
+    {
+        $this->uploadMemoryPoolSink = $sink;
+    }
+
+    /** Delete this departed channel's raw IPC buffers before its owner records queue deletion. */
+    public function discardUploadBuffers(): void
+    {
+        $this->readBuffer = '';
+        $this->writeBuffer = '';
+    }
+
+    /**
      * Extract complete JSON messages from the read buffer and dispatch worker protocol handlers.
      *
      * @throws SocketException When read buffer or JSON depth exceeds limits
@@ -215,6 +237,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      * @throws EnvException When a page restart cannot read the local cluster configuration
      * @throws ClusterConfigurationException When the local cluster identity is invalid
      * @throws ClusterDisabledException When an enabled cluster refuses its identity
+     * @throws HilosException When the master upload owner cannot apply a control report
      */
     private function processMessage(string $message): void
     {
@@ -229,6 +252,8 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             $workerDTO instanceof WorkerRegisterDTO => $this->handleWorkerRegisterMessage($workerDTO),
             $workerDTO instanceof WorkerLogWriteLevelDTO => $this->handleWorkerLogWriteLevelMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModeSettingsDTO => $this->handleWorkerProtectedModeSettingsMessage($workerDTO),
+            $workerDTO instanceof WorkerUploadSettingsDTO => $this->handleWorkerUploadSettingsMessage($workerDTO),
+            $workerDTO instanceof WorkerUploadConsumedDTO => $this->handleWorkerUploadConsumedMessage($workerDTO),
             $workerDTO instanceof WorkerAgentStartedDTO => $this->handleAgentStartedMessage($workerDTO),
             $workerDTO instanceof WorkerAgentStartFailedDTO => $this->handleAgentStartFailedMessage($workerDTO),
             $workerDTO instanceof WorkerAgentStoppedDTO => $this->handleAgentStoppedMessage($workerDTO),
@@ -277,12 +302,16 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      * Handle worker register message
      *
      * @param WorkerRegisterDTO $dto Signal data
+     * @throws LogicException When the active upload ledger cannot bind this process incarnation
      */
     private function handleWorkerRegisterMessage(WorkerRegisterDTO $dto): void
     {
         $this->setWorkerIndex($dto->workerIndex);
         $this->setIsMonopolistic($dto->monopolistic);
         $this->isRegistered = true;
+        if ($this->uploadMemoryPoolSink instanceof UploadMemoryDeliverySink) {
+            $this->workerServer->registerUploadWorker($this);
+        }
 
         // Log worker registration on daemon side
         $workerType = $dto->monopolistic ? WorkerConstants::TYPE_MONOPOLISTIC : WorkerConstants::TYPE_REGULAR;
@@ -327,6 +356,34 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     private function handleWorkerProtectedModeSettingsMessage(WorkerProtectedModeSettingsDTO $dto): void
     {
         Hilos::$cluster?->protectedModeSettingsSink()?->onProtectedModeSettings($dto->manualRestartIsNormal);
+    }
+
+    /**
+     * @param WorkerUploadSettingsDTO $dto Effective budget reported by this channel
+     * @throws HilosException When the master upload owner cannot apply the report
+     * @throws InvalidFormatException When an unregistered connection presents the control frame
+     */
+    private function handleWorkerUploadSettingsMessage(WorkerUploadSettingsDTO $dto): void
+    {
+        if (!$this->isRegistered) {
+            throw new InvalidFormatException('Upload settings require a registered worker');
+        }
+
+        $this->uploadMemoryPoolSink?->onUploadSettings($this, $dto->memoryPoolBytes);
+    }
+
+    /**
+     * @param WorkerUploadConsumedDTO $dto Terminal receipts reported by this channel
+     * @throws HilosException When the master upload owner cannot apply the report
+     * @throws InvalidFormatException When an unregistered connection presents the control frame
+     */
+    private function handleWorkerUploadConsumedMessage(WorkerUploadConsumedDTO $dto): void
+    {
+        if (!$this->isRegistered) {
+            throw new InvalidFormatException('Upload consumption requires a registered worker');
+        }
+
+        $this->uploadMemoryPoolSink?->onUploadConsumed($this, $dto->receiptIds);
     }
 
     /**
@@ -922,6 +979,10 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      */
     protected function onClose(): void
     {
+        // No upload receipt is released here: EOF does not prove the process has exited.
+        // Delete transport payloads before WorkerServer records the queue-deletion fact.
+        $this->discardUploadBuffers();
+
         // Log worker disconnection on daemon side
         if ($this->workerIndex > 0) {
             $workerType = $this->isMonopolistic ? WorkerConstants::TYPE_MONOPOLISTIC : WorkerConstants::TYPE_REGULAR;

@@ -10,6 +10,7 @@ use Hilos\Socket\Server\AbstractServer;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use ReflectionProperty;
+use SplQueue;
 
 /** A departing master holds its peer links until queued frames are written (HIL-1207). */
 final class PeerServerShutdownReadinessTest extends TestCase
@@ -18,6 +19,8 @@ final class PeerServerShutdownReadinessTest extends TestCase
     {
         $server = new ReflectionClass(PeerServer::class)->newInstanceWithoutConstructor();
         $link = new ReflectionClass(PeerLink::class)->newInstanceWithoutConstructor();
+        new ReflectionProperty(PeerLink::class, 'outboundSegments')->setValue($link, new SplQueue());
+        new ReflectionProperty(PeerLink::class, 'stagedOutbound')->setValue($link, new SplQueue());
         new ReflectionProperty(AbstractServer::class, 'clients')->setValue($server, [$link]);
 
         $this->assertTrue($server->isReadyToShutdown());

@@ -599,6 +599,77 @@ def freeze_worker(stand, node_id):
     return Outcome(0, f"cluster: SIGSTOPped worker pid {outcome.out.strip()} inside {node.container}\n", outcome.err)
 
 
+# These identities belong to the host harness, never to the daemon. A worker index
+# alone is reusable; container id + pid + /proc start ticks identify one process.
+WorkerProcess = namedtuple("WorkerProcess", "node container index pid start_ticks")
+
+WORKER_PROCESS_PHP = r'''
+$index = getenv("HILOS_TEST_WORKER_INDEX");
+$pid = getenv("HILOS_TEST_WORKER_PID");
+$signal = getenv("HILOS_TEST_WORKER_SIGNAL");
+$files = $pid === false ? (glob("/proc/[0-9]*/cmdline") ?: []) : ["/proc/" . $pid . "/cmdline"];
+foreach ($files as $file) {
+    if (!is_file($file)) {
+        continue;
+    }
+    $arguments = explode("\0", file_get_contents($file));
+    $worker = false;
+    foreach ($arguments as $argument) {
+        $worker = $worker || str_ends_with($argument, "Bootstrap/worker.php");
+    }
+    if (!$worker || !in_array("--worker-id=" . $index, $arguments, true)) {
+        continue;
+    }
+    $candidate = (int)basename(dirname($file));
+    $stat = file_get_contents("/proc/" . $candidate . "/stat");
+    $fields = explode(" ", substr($stat, strrpos($stat, ")") + 2));
+    $birth = $fields[19];
+    if ($pid !== false && $birth !== getenv("HILOS_TEST_WORKER_BIRTH")) {
+        continue;
+    }
+    if ($signal !== false && !posix_kill($candidate, (int)$signal)) {
+        fwrite(STDERR, "could not signal captured worker\n");
+        exit(1);
+    }
+    echo json_encode(["pid" => $candidate, "startTicks" => $birth, "state" => $fields[0]]), "\n";
+    exit(0);
+}
+echo "null\n";
+'''
+
+
+def worker_process(stand, node_id, index):
+    """Match a current placement's logged worker to a live process, not a stale log alone."""
+    node = stand.member(node_id)
+    container = container_id(stand, node_id).out.strip()
+    outcome = _run(["docker", "exec", "-e", f"HILOS_TEST_WORKER_INDEX={index}", node.container,
+                    "php", "-d", "display_errors=stderr", "-r", WORKER_PROCESS_PHP])
+    assert outcome.code == 0, f"cannot inspect worker #{index} on {node_id}: {outcome}"
+    row = json.loads(outcome.out)
+    assert container and row, f"no live worker #{index} on {node_id}: {outcome}"
+    return WorkerProcess(node_id, container, index, row["pid"], row["startTicks"])
+
+
+def signal_worker_process(stand, process, signal=None):
+    """Signal only the captured incarnation; a dead/replaced process answers `null`.
+
+    Callers capture BEFORE STOP and arrange CONT in finally. Checking the container
+    prevents a pid/start-tick coincidence after container recreation from matching.
+    """
+    node = stand.member(process.node)
+    current = _run(["docker", "inspect", "-f", "{{.Id}} {{.State.Running}}", node.container])
+    if current.out.strip() != f"{process.container} true":
+        # A stopped container has no live processes, even when its id is retained.
+        return Outcome(0, "null\n", "")
+    flags = ["-e", f"HILOS_TEST_WORKER_INDEX={process.index}",
+             "-e", f"HILOS_TEST_WORKER_PID={process.pid}",
+             "-e", f"HILOS_TEST_WORKER_BIRTH={process.start_ticks}"]
+    if signal is not None:
+        flags.extend(["-e", f"HILOS_TEST_WORKER_SIGNAL={signal}"])
+    return _run(["docker", "exec", *flags, node.container,
+                 "php", "-d", "display_errors=stderr", "-r", WORKER_PROCESS_PHP])
+
+
 def partition(stand, node_id):
     node = stand.member(node_id)
     return _said(_run(["docker", "network", "disconnect", stand.network, node.container]),

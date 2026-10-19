@@ -40,6 +40,7 @@ use Hilos\Core\CLI\Commands\ClusterTlsCaCommand;
 use Hilos\Core\CLI\Commands\ClusterTlsIssueCommand;
 use Hilos\Core\CLI\Commands\ClusterTlsTrustCommand;
 use Hilos\Core\CLI\Commands\ClusterTestInspectCommand;
+use Hilos\Core\CLI\Commands\ClusterTestUploadPoolCommand;
 use Hilos\Core\CLI\Commands\CommandChannelClientTrait;
 use Hilos\Core\CLI\Commands\CommandExecution;
 use Hilos\Core\CLI\Commands\CommandTestEchoCommand;
@@ -183,6 +184,7 @@ class CliManager
         $this->commands[CliCommands::CLUSTER_TLS_ISSUE] = new ClusterTlsIssueCommand();
         $this->commands[CliCommands::CLUSTER_TLS_TRUST] = new ClusterTlsTrustCommand();
         $this->commands[CliCommands::CLUSTER_TEST_INSPECT] = new ClusterTestInspectCommand();
+        $this->commands[CliCommands::CLUSTER_TEST_UPLOAD_POOL] = new ClusterTestUploadPoolCommand();
         $this->commands[CliCommands::CLUSTER_TEST_CLIENT_ATTACH] = new ClusterTestClientAttachCommand();
         $this->commands[CliCommands::CLUSTER_TEST_CLIENT_DETACH] = new ClusterTestClientDetachCommand();
         $this->commands[CliCommands::CLUSTER_TEST_CLIENT_SEND] = new ClusterTestClientSendCommand();

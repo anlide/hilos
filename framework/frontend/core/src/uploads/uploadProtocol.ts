@@ -9,6 +9,12 @@ export const UPLOAD_ACTION_CANCEL = 'hilos_upload_cancel'
 /** Signal `type` for upload state (PHP `HilosSignalConstants::HILOS_UPLOAD_STATE`). */
 export const SIGNAL_UPLOAD_STATE = 'hilos_upload_state'
 
+/** Browser demand for a cumulative raw-byte window (PHP `UPLOAD_CREDIT_REQUEST`). */
+export const SIGNAL_UPLOAD_CREDIT_REQUEST = 'hilos_upload_credit_request'
+
+/** Master permission for a cumulative raw-byte window (PHP `HILOS_UPLOAD_CREDIT`). */
+export const SIGNAL_UPLOAD_CREDIT = 'hilos_upload_credit'
+
 /** Client-only phase before the server knows about an upload. */
 export const UPLOAD_PHASE_QUEUED = 'queued'
 
@@ -60,9 +66,16 @@ export const uploadStateSchema = z.looseObject({
   errorMessage: z.string().nullable().default(null),
 })
 
+/** Cumulative upload permission from the master ledger. */
+export const uploadCreditSchema = z.looseObject({
+  clientUploadId: z.string(),
+  sendUpToBytes: z.number().int().nonnegative(),
+})
+
 /** Project signal schemas understood by the browser upload client. */
 export const UPLOAD_SIGNAL_SCHEMAS = {
   [SIGNAL_UPLOAD_STATE]: uploadStateSchema,
+  [SIGNAL_UPLOAD_CREDIT]: uploadCreditSchema,
 }
 
 /** File bytes carried by one binary upload frame. */

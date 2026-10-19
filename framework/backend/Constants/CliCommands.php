@@ -58,6 +58,8 @@ final class CliCommands
     /** @var string Command: Inspect the daemon's cluster/consensus/placement state (test-only) */
     public const string CLUSTER_TEST_INSPECT = 'test:cluster:inspect';
 
+    public const string CLUSTER_TEST_UPLOAD_POOL = 'test:cluster:upload-pool';
+
     /** @var string Command: Index an accept key as a browser attached to this node (test-only) */
     public const string CLUSTER_TEST_CLIENT_ATTACH = 'test:cluster:client:attach';
 

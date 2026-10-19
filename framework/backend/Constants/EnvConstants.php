@@ -155,7 +155,7 @@ enum EnvConstants
     /** @var string WebSocket server port */
     case WEBSOCKET_PORT;
 
-    /** @var string Socket read buffer size in bytes */
+    /** @var string Maximum bytes one read() takes from one socket */
     case SOCKET_READ_BUFFER_SIZE;
 
     /** @var string Minimum number of regular worker processes to run */

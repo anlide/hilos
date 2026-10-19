@@ -63,6 +63,10 @@ use Hilos\Cluster\Peer\DTO\PeerRtSnapshotQueryDTO;
 use Hilos\Cluster\Peer\DTO\PeerDbSyncDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
 use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
+use Hilos\Cluster\Peer\DTO\PeerUploadReserveDTO;
+use Hilos\Cluster\Peer\DTO\PeerUploadGrantedDTO;
+use Hilos\Cluster\Peer\DTO\PeerUploadAcceptedDTO;
+use Hilos\Cluster\Peer\DTO\PeerUploadReleaseDTO;
 use Hilos\Cluster\Peer\DTO\PeerSourceInterestDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
@@ -79,6 +83,7 @@ use Hilos\Socket\Client\AbstractClient;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\Transport\SocketTransportInterface;
 use Hilos\Utils\Logger;
+use SplQueue;
 
 /**
  * One framed connection to a remote cluster node, either dialed or accepted.
@@ -167,6 +172,20 @@ final class PeerLink extends AbstractClient
     /** @var float Microtime the last keepalive ping was sent, to space pings by the interval */
     private float $lastPingAt = 0.0;
 
+    private int $uploadQueuedPosition = 0;
+
+    private int $uploadRemovedPosition = 0;
+
+    /** @var SplQueue<PeerOutboundSegment> Serialized FIFO spans, including the native buffer */
+    private SplQueue $outboundSegments;
+
+    /** @var SplQueue<PeerOutboundSegment> Spans waiting for native transport room */
+    private SplQueue $stagedOutbound;
+
+    private int $ordinaryOutboundBytes = 0;
+
+    private int $nativeAppendedBytes = 0;
+
     /**
      * @param resource|object $socket Connected peer socket
      * @param PeerServer $server Owning peer server for membership fan-out
@@ -189,6 +208,8 @@ final class PeerLink extends AbstractClient
         $this->linkTimeoutSec = Hilos::$env[EnvConstants::CLUSTER_LINK_TIMEOUT_MS]->int() / TimeConstants::MS_PER_SECOND;
         $this->maxWriteBufferBytes = self::MAX_WRITE_BUFFER_BYTES;
         $this->lastHeardAt = microtime(true);
+        $this->outboundSegments = new SplQueue();
+        $this->stagedOutbound = new SplQueue();
     }
 
     /**
@@ -214,6 +235,11 @@ final class PeerLink extends AbstractClient
     public function sendFrame(PeerDTO $frame): void
     {
         if ($this->draining && !$frame instanceof PeerDrainDTO) {
+            if ($frame instanceof PeerUploadReserveDTO || $frame instanceof PeerUploadGrantedDTO
+                || $frame instanceof PeerUploadAcceptedDTO || $frame instanceof PeerUploadReleaseDTO
+                || ($frame instanceof PeerSignalDTO && $frame->uploadReservation !== null)) {
+                return;
+            }
             $nodeId = $this->remoteIdentity?->nodeId;
             if ($nodeId !== null) {
                 $this->server->sendToNode($nodeId, $frame);
@@ -221,7 +247,7 @@ final class PeerLink extends AbstractClient
             return;
         }
 
-        $this->sendEncodedFrame($frame->toJson());
+        $this->queueOutbound($frame->toJson(), $frame instanceof PeerSignalDTO && $frame->uploadReservation !== null);
     }
 
     /**
@@ -237,7 +263,66 @@ final class PeerLink extends AbstractClient
      */
     public function sendEncodedFrame(string $frameJson): void
     {
-        $this->writeBuffer .= $frameJson . "\n";
+        $this->queueOutbound($frameJson, false);
+    }
+
+    /** @return int Absolute FIFO end, including staged bytes that have not reached the native buffer */
+    public function uploadOutboundPosition(): int
+    {
+        return $this->uploadQueuedPosition;
+    }
+
+    /**
+     * @param int $position End of a particular serialized portion
+     * @return bool Whether transport no longer retains any bytes of that portion
+     */
+    public function hasRemovedUploadThrough(int $position): bool
+    {
+        return $this->uploadRemovedPosition >= $position;
+    }
+
+    /**
+     * Move staged bytes only as transport room opens; count only actual native removal.
+     *
+     * @throws SocketException When transport writing fails
+     * @throws HilosException When a transport callback cannot complete
+     */
+    public function write(): void
+    {
+        $this->fillOutboundBuffer();
+        $beforeBytes = strlen($this->writeBuffer);
+        $beforeAppendedBytes = $this->nativeAppendedBytes;
+        $closeWhenDrained = $this->closeWhenOutputDrained;
+        $this->closeWhenOutputDrained = false;
+        try {
+            parent::write();
+        } finally {
+            $this->recordOutboundRemoval($beforeBytes + $this->nativeAppendedBytes - $beforeAppendedBytes - strlen($this->writeBuffer));
+            if ($this->shouldClose) {
+                $this->discardOutbound();
+            }
+            $this->closeWhenOutputDrained = $closeWhenDrained;
+            if ($closeWhenDrained && !$this->hasPendingWrite()) {
+                $this->closeWhenOutputDrained = false;
+                $this->markShouldClose();
+            }
+        }
+    }
+
+    /** @return bool Whether native or staged serialized bytes still need transport */
+    public function hasPendingWrite(): bool
+    {
+        return parent::hasPendingWrite() || !$this->stagedOutbound->isEmpty();
+    }
+
+    /** Close after the entire FIFO, including deferred upload spans, has drained. */
+    public function closeOnceWritten(): void
+    {
+        if (!$this->hasPendingWrite()) {
+            $this->markShouldClose();
+            return;
+        }
+        $this->closeWhenOutputDrained = true;
     }
 
     /**
@@ -260,6 +345,12 @@ final class PeerLink extends AbstractClient
     public function certifiedPeerName(): ?string
     {
         return $this->transport->verifiedPeerName();
+    }
+
+    /** @return bool Whether the old incarnation is draining before replacement */
+    public function isDraining(): bool
+    {
+        return $this->draining;
     }
 
     /** @param NodeIdentity $remote Certified identity of the new active link */
@@ -415,10 +506,91 @@ final class PeerLink extends AbstractClient
 
     /**
      * Notifies the server so it can mark the peer offline.
+     *
+     * @throws HilosException When unused upload peer capacity cannot be canceled
      */
     protected function onClose(): void
     {
+        $this->shouldClose = true;
+        $this->readBuffer = '';
+        $this->discardOutbound();
         $this->server->onLinkClosed($this);
+    }
+
+    /** @return int All pending ordinary bytes; upload spans remain charged to the existing raw pool */
+    protected function outboundBackpressureBytes(): int
+    {
+        return $this->ordinaryOutboundBytes;
+    }
+
+    /**
+     * Preserve one FIFO for data, releases and drain markers. Its cursors include staging,
+     * so a later portion never inherits the end of an earlier native append.
+     *
+     * @param string $frameJson Packed peer frame
+     * @param bool $budgeted Whether both upload grants already cover the raw portion
+     */
+    private function queueOutbound(string $frameJson, bool $budgeted): void
+    {
+        $bytes = $frameJson . "\n";
+        $this->uploadQueuedPosition += strlen($bytes);
+        $segment = new PeerOutboundSegment($bytes, $this->uploadQueuedPosition, $budgeted);
+        $this->outboundSegments->enqueue($segment);
+        if (!$budgeted) {
+            $this->ordinaryOutboundBytes += strlen($bytes);
+        }
+        if ($this->stagedOutbound->isEmpty() && strlen($this->writeBuffer) + strlen($bytes) <= self::MAX_WRITE_BUFFER_BYTES) {
+            $this->writeBuffer .= $bytes;
+            $this->nativeAppendedBytes += strlen($bytes);
+            $segment->bytes = '';
+        } else {
+            $this->stagedOutbound->enqueue($segment);
+        }
+    }
+
+    /** Refill only an empty native buffer, preserving frame bytes across partial writes. */
+    private function fillOutboundBuffer(): void
+    {
+        if ($this->writeBuffer !== '' || $this->shouldClose) {
+            return;
+        }
+        while (!$this->stagedOutbound->isEmpty() && strlen($this->writeBuffer) < self::MAX_WRITE_BUFFER_BYTES) {
+            $segment = $this->stagedOutbound->bottom();
+            $bytes = substr($segment->bytes, 0, self::MAX_WRITE_BUFFER_BYTES - strlen($this->writeBuffer));
+            $this->writeBuffer .= $bytes;
+            $this->nativeAppendedBytes += strlen($bytes);
+            $segment->bytes = substr($segment->bytes, strlen($bytes));
+            if ($segment->bytes === '') {
+                $this->stagedOutbound->dequeue();
+            }
+        }
+    }
+
+    /** @param int $bytes Bytes actually removed by the parent writer, including a final native discard */
+    private function recordOutboundRemoval(int $bytes): void
+    {
+        while ($bytes > 0 && !$this->outboundSegments->isEmpty()) {
+            $segment = $this->outboundSegments->bottom();
+            $removed = min($bytes, $segment->endPosition - $this->uploadRemovedPosition);
+            if (!$segment->budgeted) {
+                $this->ordinaryOutboundBytes -= $removed;
+            }
+            $this->uploadRemovedPosition += $removed;
+            $bytes -= $removed;
+            if ($this->uploadRemovedPosition === $segment->endPosition) {
+                $this->outboundSegments->dequeue();
+            }
+        }
+    }
+
+    /** Delete every serialized reference before the link's pool owner may release source debts. */
+    private function discardOutbound(): void
+    {
+        $this->writeBuffer = '';
+        $this->stagedOutbound = new SplQueue();
+        $this->outboundSegments = new SplQueue();
+        $this->ordinaryOutboundBytes = 0;
+        $this->uploadRemovedPosition = $this->uploadQueuedPosition;
     }
 
     /**
@@ -452,6 +624,8 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerAgentRestartDTO => $this->onAgentRestart($frame),
             $frame instanceof PeerPlacementVerdictDTO => $this->onPlacementVerdict($frame),
             $frame instanceof PeerSignalDTO => $this->onSignal($frame),
+            $frame instanceof PeerUploadReserveDTO, $frame instanceof PeerUploadGrantedDTO,
+            $frame instanceof PeerUploadAcceptedDTO, $frame instanceof PeerUploadReleaseDTO => $this->onUploadControl($frame),
             $frame instanceof PeerRtSyncDTO => $this->onRtSync($frame),
             $frame instanceof PeerDbSyncDTO => $this->onDbSync($frame),
             $frame instanceof PeerRtSnapshotDTO => $this->onRtSnapshot($frame),
@@ -841,6 +1015,17 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('signal');
         $this->server->onSignalReceived($this, $frame);
+    }
+
+    /**
+     * @param PeerDTO $frame Upload control frame on its original established link
+     * @throws PeerTransportException When control arrives before identity establishment or is malformed
+     * @throws HilosException When the owning master cannot reconcile its ledger
+     */
+    private function onUploadControl(PeerDTO $frame): void
+    {
+        $this->requireHandshaked('upload control');
+        $this->server->onUploadControlReceived($this, $frame);
     }
 
     /**

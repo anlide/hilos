@@ -1,0 +1,5 @@
+# Only the running browser runner sees the test daemon's worker processes.
+# Install, check and build still run without a daemon or a shared PID namespace.
+services:
+  chat-e2e-runner:
+    pid: service:chat-test

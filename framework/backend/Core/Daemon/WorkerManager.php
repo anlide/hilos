@@ -126,6 +126,7 @@ use Hilos\Socket\Worker\DTO\WorkerRtSnapshotMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtStalenessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbInterestReadyMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
+use Hilos\Socket\Worker\DTO\WorkerUploadConsumedDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
@@ -161,6 +162,8 @@ use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeVerifySignalData;
 use Hilos\ProtectedMode\VerifierCircleSnapshot;
 use Hilos\ProtectedMode\ProtectedModeSettingsReporter;
+use Hilos\Core\Feature\HilosFeature;
+use Hilos\Files\Upload\UploadMemorySettingsReporter;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
@@ -199,6 +202,9 @@ abstract class WorkerManager extends BaseManager implements PageResender
     /** Address of the analytics tick in a contained failure, in the unit's own terms. */
     private const string ADDRESS_ANALYTICS_TICK = 'analytics tick';
 
+    /** Address of the terminal upload receipt batch in a contained failure. */
+    private const string ADDRESS_UPLOAD_RECEIPTS = 'upload receipts';
+
     /** Worker index assigned by the daemon supervisor. */
     protected int $workerIndex;
 
@@ -210,6 +216,12 @@ abstract class WorkerManager extends BaseManager implements PageResender
 
     /** @var ?ProtectedModeSettingsReporter Subscriber registered once for this worker process */
     private ?ProtectedModeSettingsReporter $protectedModeSettingsReporter = null;
+
+    /** Channel-local reporting state, subscribed once and rebound on each registration. */
+    private ?UploadMemorySettingsReporter $uploadMemorySettingsReporter = null;
+
+    /** @var array<int|string, string> Deduplicated terminal ids, private to this worker's current daemon channel */
+    private array $pendingUploadReceiptIds = [];
 
     /** Pid of the daemon that forked this worker, or null before the loop starts. */
     protected ?int $daemonPid = null;
@@ -412,6 +424,14 @@ abstract class WorkerManager extends BaseManager implements PageResender
                     }
                 }
 
+                // The queue and released frames have finished their units; reading or parking
+                // them alone never completes a raw-byte delivery.
+                try {
+                    $this->flushUploadReceipts();
+                } catch (Throwable $failure) {
+                    $this->containFailure(WorkerTickUnit::SIGNAL_DISPATCH, self::ADDRESS_UPLOAD_RECEIPTS, $failure);
+                }
+
                 // Call tick method (only when connected)
                 $this->setCurrentAgentId(null);
                 Database::handlerStart();
@@ -547,6 +567,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
      */
     protected function connectToDaemon(): void
     {
+        $this->pendingUploadReceiptIds = [];
         $this->daemonClient = new WorkerDaemonClient();
         $this->daemonClient->connect();
 
@@ -641,7 +662,11 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 if ($data->signal->data instanceof WebSocketAcceptKeySignalDTO) {
                     ExecutionContext::setCurrentAcceptKey($data->signal->data->getAcceptKey());
                 }
-                $this->handleAgentMessage($data);
+                try {
+                    $this->handleAgentMessage($data);
+                } finally {
+                    $this->collectUploadReceipt($data);
+                }
                 break;
 
             case WorkerConstants::MESSAGE_DAEMON_WORKER_SIGNAL:
@@ -863,6 +888,14 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 SourceChangeBus::subscribe($this->protectedModeSettingsReporter);
             }
             $this->protectedModeSettingsReporter->report();
+
+            if (Hilos::hasFeature(HilosFeature::UPLOADS)) {
+                if ($this->uploadMemorySettingsReporter === null) {
+                    $this->uploadMemorySettingsReporter = new UploadMemorySettingsReporter();
+                    SourceChangeBus::subscribe($this->uploadMemorySettingsReporter);
+                }
+                $this->uploadMemorySettingsReporter->onRegistered($this->daemonClient);
+            }
         }
 
         // The framework declared its own readers while mounting, long before there was a link to
@@ -1120,8 +1153,8 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * The drop comes before the mark, and the order is the whole of the guarantee: between the
      * two this worker must not answer a read, and a mark set first would let it answer one out
      * of exactly the cache that is about to be thrown away.
-     * The protected-mode setting reporter makes its first DB read only after this mark. Its
-     * registration-time call may have deferred while the settings source was not ready.
+     * The settings reporters make their first DB read only after this mark. Their
+     * registration-time calls may have deferred while the settings source was not ready.
      *
      * @param WorkerDbInterestReadyMessageDTO $data Confirmation naming the collection
      * @throws LogicException When the collection entity class is not configured (eager reload)
@@ -1133,6 +1166,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
         SourceInterestRegistry::markReady(SourceChange::KIND_DB, $data->collectionKey);
         if ($data->collectionKey === HilosDbContext::settings) {
             $this->protectedModeSettingsReporter?->report();
+            $this->uploadMemorySettingsReporter?->report();
         }
     }
 
@@ -2892,8 +2926,38 @@ abstract class WorkerManager extends BaseManager implements PageResender
             return;
         }
 
+        $frames = $this->parkedFrames[$consumerId];
         unset($this->parkedSources[$consumerId], $this->parkedSince[$consumerId], $this->parkedFrames[$consumerId]);
+        foreach ($frames as $message) {
+            if ($message instanceof DaemonAgentMessageDTO) {
+                $this->collectUploadReceipt($message);
+            }
+        }
         $this->releaseSourceInterest($consumerId);
+    }
+
+    /**
+     * Called only after binary dispatch has ended or the retained frame was finally dropped.
+     * The ids need no replicated state: only this worker/channel's next batch reads them.
+     *
+     * @param DaemonAgentMessageDTO $message Terminal delivery, including missing-agent and failure drops
+     */
+    private function collectUploadReceipt(DaemonAgentMessageDTO $message): void
+    {
+        if ($message->uploadReceiptId !== null && $message->signal->signalType->getType() === SignalTypeConstants::FRAME_BINARY) {
+            $this->pendingUploadReceiptIds[$message->uploadReceiptId] = $message->uploadReceiptId;
+        }
+    }
+
+    /** Flushes one metadata-only batch after the daemon queue, retaining ids if enqueueing fails. */
+    private function flushUploadReceipts(): void
+    {
+        if ($this->pendingUploadReceiptIds === [] || $this->daemonClient === null) {
+            return;
+        }
+
+        $this->daemonClient->send(new WorkerUploadConsumedDTO(array_values($this->pendingUploadReceiptIds)));
+        $this->pendingUploadReceiptIds = [];
     }
 
     /**
@@ -3256,6 +3320,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             }
             $this->daemonClient = null;
         }
+        $this->pendingUploadReceiptIds = [];
     }
 
     /**

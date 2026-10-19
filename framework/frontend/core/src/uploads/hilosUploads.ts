@@ -15,6 +15,9 @@ import {
 } from '../state/signal.js'
 import {
   SIGNAL_UPLOAD_STATE,
+  SIGNAL_UPLOAD_CREDIT,
+  SIGNAL_UPLOAD_CREDIT_REQUEST,
+  uploadCreditSchema,
   UPLOAD_ACTION_CANCEL,
   UPLOAD_ACTION_INIT,
   UPLOAD_BUFFER_HIGH_WATER_BYTES,
@@ -54,6 +57,10 @@ interface UploadEntry {
   readonly file: File
   announced: boolean
   streamVersion: number
+  sentBytes: number
+  allowedUpTo: number
+  creditRequested: boolean
+  readonly creditWaiters: Set<() => void>
 }
 
 const uploadList = createSignal<readonly HilosUpload[]>([])
@@ -83,6 +90,10 @@ function replaceUpload(
 }
 
 function removeUpload(clientUploadId: string): void {
+  const entry = entries.get(clientUploadId)
+  if (entry !== undefined) {
+    resetCredit(entry)
+  }
   entries.delete(clientUploadId)
   if (activeUploadId === clientUploadId) {
     activeUploadId = null
@@ -124,6 +135,7 @@ function dispatchCancel(
 
 function failUnreadable(entry: UploadEntry): void {
   entry.streamVersion += 1
+  resetCredit(entry)
   replaceUpload(entry, {
     phase: UPLOAD_PHASE_FAILED,
     errorCode: UPLOAD_ERROR_UNREADABLE,
@@ -151,7 +163,13 @@ async function streamUpload(
     return
   }
 
-  for (let offset = 0; offset < entry.file.size; offset += UPLOAD_CHUNK_BYTES) {
+  while (entry.sentBytes < entry.file.size) {
+    while (entry.sentBytes >= entry.allowedUpTo) {
+      await new Promise<void>((resolve) => entry.creditWaiters.add(resolve))
+      if (!mayStream(entry, generation, streamVersion)) {
+        return
+      }
+    }
     while (connection.bufferedAmount > UPLOAD_BUFFER_HIGH_WATER_BYTES) {
       await waitForBuffer()
       if (!mayStream(entry, generation, streamVersion)) {
@@ -162,10 +180,15 @@ async function streamUpload(
       return
     }
 
+    const byteCount = Math.min(
+      UPLOAD_CHUNK_BYTES,
+      entry.file.size - entry.sentBytes,
+      entry.allowedUpTo - entry.sentBytes,
+    )
     let bytes: ArrayBuffer
     try {
       bytes = await entry.file
-        .slice(offset, offset + UPLOAD_CHUNK_BYTES)
+        .slice(entry.sentBytes, entry.sentBytes + byteCount)
         .arrayBuffer()
     } catch {
       if (mayStream(entry, generation, streamVersion)) {
@@ -184,6 +207,7 @@ async function streamUpload(
     ) {
       return
     }
+    entry.sentBytes += byteCount
   }
 
   if (!mayStream(entry, generation, streamVersion)) {
@@ -265,6 +289,16 @@ function pumpQueue(): void {
       if (!mayStream(entry, generation, streamVersion)) {
         return
       }
+      if (entry.file.size > 0) {
+        entry.creditRequested = true
+        boundConnection?.send(
+          JSON.stringify({
+            type: SIGNAL_UPLOAD_CREDIT_REQUEST,
+            clientUploadId: entry.upload.clientUploadId,
+            bytes: entry.file.size,
+          }),
+        )
+      }
       void streamUpload(entry, generation, streamVersion)
     })
     .catch((error: unknown) => onInitFailure(entry, error))
@@ -276,6 +310,7 @@ function onConnectionLost(): void {
   activeUploadId = null
   for (const [clientUploadId, entry] of [...entries]) {
     entry.streamVersion += 1
+    resetCredit(entry)
     entry.announced = false
     if (entry.upload.canceling) {
       entries.delete(clientUploadId)
@@ -324,6 +359,7 @@ function onUploadState(signal: ProjectSignal): void {
       entry.upload.phase === UPLOAD_PHASE_UPLOADING
     ) {
       entry.streamVersion += 1
+      resetCredit(entry)
       replaceUpload(entry, {
         phase: UPLOAD_PHASE_FAILED,
         errorCode: UPLOAD_ERROR_INTERRUPTED,
@@ -346,11 +382,36 @@ function onUploadState(signal: ProjectSignal): void {
   })
   if (data.phase === UPLOAD_PHASE_FAILED) {
     entry.streamVersion += 1
+    resetCredit(entry)
     if (activeUploadId === data.clientUploadId) {
       activeUploadId = null
     }
     pumpQueue()
   }
+}
+
+function wakeCredit(entry: UploadEntry): void {
+  for (const resolve of entry.creditWaiters) {
+    resolve()
+  }
+  entry.creditWaiters.clear()
+}
+
+function resetCredit(entry: UploadEntry): void {
+  entry.sentBytes = 0
+  entry.allowedUpTo = 0
+  entry.creditRequested = false
+  wakeCredit(entry)
+}
+
+function onUploadCredit(signal: ProjectSignal): void {
+  const data = uploadCreditSchema.parse(signal.data)
+  const entry = entries.get(data.clientUploadId)
+  if (entry === undefined || !entry.creditRequested || entry.upload.canceling) {
+    return
+  }
+  entry.allowedUpTo = Math.max(entry.allowedUpTo, data.sendUpToBytes)
+  wakeCredit(entry)
 }
 
 /**
@@ -388,6 +449,8 @@ export function bindUploads(
       onConnectionReady(currentUserId)
     } else if (signal.type === SIGNAL_UPLOAD_STATE) {
       onUploadState(signal)
+    } else if (signal.type === SIGNAL_UPLOAD_CREDIT) {
+      onUploadCredit(signal)
     }
   })
   const stopUser = subscribeSignal(currentUserId, (nextUserId) => {
@@ -399,6 +462,7 @@ export function bindUploads(
       return
     }
     for (const entry of entries.values()) {
+      resetCredit(entry)
       if (entry.announced) {
         dispatchCancel(entry.upload.clientUploadId, false)
       }
@@ -422,6 +486,9 @@ export function bindUploads(
     queueOwner = undefined
     activeUploadId = null
     connectionGeneration += 1
+    for (const entry of entries.values()) {
+      resetCredit(entry)
+    }
     entries.clear()
     publish()
   }
@@ -460,6 +527,10 @@ export function uploadFile(target: string, file: File): string {
     file,
     announced: false,
     streamVersion: 0,
+    sentBytes: 0,
+    allowedUpTo: 0,
+    creditRequested: false,
+    creditWaiters: new Set(),
   })
   publish()
   pumpQueue()
@@ -491,6 +562,7 @@ export function cancelUpload(clientUploadId: string): void {
   }
 
   entry.streamVersion += 1
+  resetCredit(entry)
   replaceUpload(entry, { canceling: true })
   dispatchCancel(clientUploadId, true)
 }

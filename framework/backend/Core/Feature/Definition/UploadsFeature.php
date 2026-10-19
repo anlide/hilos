@@ -9,6 +9,7 @@ use Hilos\Core\Feature\FeatureDefinition;
 use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Files\Upload\UploadsAgent;
+use Hilos\Files\Upload\UploadsSettingsCatalog;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\State\Collection\HilosUploads as StateHilosUploads;
 use Hilos\Runtime\State\Item\HilosUpload as StateHilosUpload;
@@ -24,6 +25,7 @@ use Hilos\Runtime\View\Context\RtContext;
  * The project owes this feature the agent pair that owns the uploads and at least one upload
  * target in UPLOAD_TARGETS; no page, because an upload lives on the connection and is driven
  * by agent actions and frame_binary chunks whatever page is open.
+ * The budget setting also requires its catalog fragment and the shared settings library.
  *
  * The collection is mounted here rather than by the project for the reason AUTH_THROTTLE mounts
  * its counters: it is written by exactly one agent ({@see UploadsAgent}) and read wherever a
@@ -40,12 +42,14 @@ final class UploadsFeature extends FeatureDefinition
     }
 
     /**
-     * @return FeatureRequirements The uploads agent pair and a presence source
+     * @return FeatureRequirements Uploads and settings agents, budget catalog and a presence source
      */
     public function requirements(): FeatureRequirements
     {
         return new FeatureRequirements(
             requiredAgents: [HilosAgentType::HILOS_UPLOADS],
+            requiredSharedAgents: [HilosAgentType::HILOS_SETTINGS_LIBRARY],
+            requiredCatalogFragments: [UploadsSettingsCatalog::class],
             requiresPresenceSource: true,
         );
     }

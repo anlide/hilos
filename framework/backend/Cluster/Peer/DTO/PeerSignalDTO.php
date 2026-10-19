@@ -6,6 +6,7 @@ namespace Hilos\Cluster\Peer\DTO;
 
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Files\Upload\DTO\UploadMemoryReservationData;
 use Throwable;
 
 /**
@@ -48,6 +49,7 @@ final class PeerSignalDTO extends PeerDTO
      * @param string $agentType Resolved target agent type
      * @param ?string $agentIndex Resolved target agent index, or null for a singleton agent
      * @param SignalDTO $signal Application signal to deliver on the target node
+     * @param ?UploadMemoryReservationData $uploadReservation Pre-granted receiver window, omitted for ordinary signals
      */
     public function __construct(
         public readonly string $originNodeId,
@@ -55,6 +57,7 @@ final class PeerSignalDTO extends PeerDTO
         public readonly string $agentType,
         public readonly ?string $agentIndex,
         public readonly SignalDTO $signal,
+        public readonly ?UploadMemoryReservationData $uploadReservation = null,
     ) {
     }
 
@@ -82,6 +85,7 @@ final class PeerSignalDTO extends PeerDTO
             self::FIELD_AGENT_TYPE => $this->agentType,
             self::FIELD_AGENT_INDEX => $this->agentIndex,
             self::FIELD_SIGNAL => $this->signal->toArray(),
+            ...($this->uploadReservation === null ? [] : ['uploadReservation' => $this->uploadReservation->toArray()]),
         ];
     }
 
@@ -116,6 +120,9 @@ final class PeerSignalDTO extends PeerDTO
 
         try {
             $signal = SignalDTO::fromArray($signalRaw);
+            $uploadReservation = array_key_exists('uploadReservation', $data)
+                ? UploadMemoryReservationData::fromArray(self::requireArray($data, 'uploadReservation'))
+                : null;
         } catch (Throwable $e) {
             throw new PeerTransportException('Peer signal carries a malformed inner signal: ' . $e->getMessage());
         }
@@ -128,6 +135,7 @@ final class PeerSignalDTO extends PeerDTO
             agentType: $agentType,
             agentIndex: is_string($agentIndex) && $agentIndex !== '' ? $agentIndex : null,
             signal: $signal,
+            uploadReservation: $uploadReservation,
         );
     }
 }

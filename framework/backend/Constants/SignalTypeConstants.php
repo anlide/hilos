@@ -179,6 +179,9 @@ final class SignalTypeConstants
     /** @var string Binary frame signal type */
     public const string FRAME_BINARY = 'frame_binary';
 
+    /** @var string Browser demand served by the master upload ledger */
+    public const string UPLOAD_CREDIT_REQUEST = 'hilos_upload_credit_request';
+
     /** @var string Cron signal type */
     public const string CRON = 'cron';
 

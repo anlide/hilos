@@ -26,6 +26,7 @@ use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Files\FilesSettingsCatalog;
+use Hilos\Files\Upload\UploadsSettingsCatalog;
 use Hilos\Files\FileVisibility;
 use Hilos\Files\Library\AbstractFilesLibraryAgent;
 use Hilos\Files\Library\AbstractFilesLibraryAgentDaemon;
@@ -223,6 +224,22 @@ final class FeatureActivationValidatorTest extends TestCase
         FeatureActivationUploadsHilos::validateFeatureActivation();
 
         $this->addToAssertionCount(1);
+    }
+
+    public function testUploadsWithoutTheBudgetCatalogIsReported(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage(UploadsSettingsCatalog::MEMORY_POOL_BYTES_KEY);
+        FeatureActivationUploadsWithoutCatalogHilos::validateFeatureActivation();
+    }
+
+    public function testUploadsWithoutTheSettingsLibraryIsReported(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage(
+            'HilosFeature::UPLOADS is declared but agent ' . HilosAgentType::HILOS_SETTINGS_LIBRARY . ' is not registered in AGENTS',
+        );
+        FeatureActivationUploadsWithoutSettingsLibraryHilos::validateFeatureActivation();
     }
 
     public function testDeclaredUploadsWithoutItsAgentIsReported(): void
@@ -1077,6 +1094,8 @@ class FeatureActivationUploadsHilos extends FeatureActivationValidHilos
 {
     protected const array FEATURES = [HilosFeature::SETTINGS, HilosFeature::UPLOADS];
 
+    protected const string SETTINGS_CATALOG = UploadsSettingsCatalog::class;
+
     public const array AGENTS = [
         FeatureActivationTestAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => FeatureActivationTestAgent::class,
@@ -1085,6 +1104,10 @@ class FeatureActivationUploadsHilos extends FeatureActivationValidHilos
         UploadsAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => UploadsAgent::class,
             AgentRegistryKey::DAEMON => UploadsAgentDaemon::class,
+        ],
+        HilosAgentType::HILOS_SETTINGS_LIBRARY => [
+            AgentRegistryKey::WORKER => SettingsLibraryAgent::class,
+            AgentRegistryKey::DAEMON => SettingsLibraryAgentDaemon::class,
         ],
     ];
 
@@ -1115,6 +1138,27 @@ final class FeatureActivationUploadsAgentOnlyHilos extends FeatureActivationUplo
 final class FeatureActivationUploadsWithoutTargetsHilos extends FeatureActivationUploadsHilos
 {
     public const array UPLOAD_TARGETS = [];
+}
+
+/** Uploads without the newly required budget fragment. */
+final class FeatureActivationUploadsWithoutCatalogHilos extends FeatureActivationUploadsHilos
+{
+    protected const string SETTINGS_CATALOG = FeatureActivationBareCatalog::class;
+}
+
+/** Uploads without the library that owns its settings. */
+final class FeatureActivationUploadsWithoutSettingsLibraryHilos extends FeatureActivationUploadsHilos
+{
+    public const array AGENTS = [
+        FeatureActivationTestAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => FeatureActivationTestAgent::class,
+            AgentRegistryKey::DAEMON => FeatureActivationTestAgentDaemon::class,
+        ],
+        UploadsAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => UploadsAgent::class,
+            AgentRegistryKey::DAEMON => UploadsAgentDaemon::class,
+        ],
+    ];
 }
 
 /**

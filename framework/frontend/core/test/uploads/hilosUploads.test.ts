@@ -20,6 +20,8 @@ import {
 } from '../../src/uploads/hilosUploads.js'
 import {
   SIGNAL_UPLOAD_STATE,
+  SIGNAL_UPLOAD_CREDIT,
+  SIGNAL_UPLOAD_CREDIT_REQUEST,
   UPLOAD_ACTION_CANCEL,
   UPLOAD_ACTION_INIT,
   UPLOAD_BUFFER_POLL_MS,
@@ -65,6 +67,8 @@ class FakeActions {
 class FakeConnection {
   bufferedAmount = 0
   binaryAllowed = true
+  autoCredit = true
+  readonly textFrames: string[] = []
   readonly binaryFrames: ArrayBuffer[] = []
   private readonly stateListeners: Array<(state: ConnectionState) => void> = []
   private readonly projectListeners: Array<(signal: ProjectSignal) => void> = []
@@ -83,6 +87,23 @@ class FakeConnection {
         listeners.splice(index, 1)
       }
     }
+  }
+
+  send(text: string): boolean {
+    this.textFrames.push(text)
+    const request = JSON.parse(text) as {
+      type: string
+      clientUploadId: string
+      bytes: number
+    }
+    if (this.autoCredit && request.type === SIGNAL_UPLOAD_CREDIT_REQUEST) {
+      this.signal(SIGNAL_UPLOAD_CREDIT, {
+        clientUploadId: request.clientUploadId,
+        sendUpToBytes: request.bytes,
+      })
+    }
+
+    return true
   }
 
   sendBinary(frame: ArrayBuffer): boolean {
@@ -546,5 +567,142 @@ describe('file reads', () => {
       action: UPLOAD_ACTION_CANCEL,
       data: { clientUploadId },
     })
+  })
+})
+
+describe('upload memory credit', () => {
+  it('waits before reading and consumes cumulative partial windows without polling', async () => {
+    const { connection, actions } = setup()
+    connection.autoCredit = false
+    const source = file('credit.bin', 8)
+    const slice = vi.spyOn(source, 'slice')
+    const id = uploadFile('message', source)
+    ready(connection)
+    actions.pending[0]?.resolve()
+    await settle()
+
+    expect(connection.textFrames.map((text) => JSON.parse(text))).toEqual([
+      { type: SIGNAL_UPLOAD_CREDIT_REQUEST, clientUploadId: id, bytes: 8 },
+    ])
+    expect(slice).not.toHaveBeenCalled()
+    expect(connection.binaryFrames).toEqual([])
+
+    connection.signal(SIGNAL_UPLOAD_CREDIT, {
+      clientUploadId: 'foreign',
+      sendUpToBytes: 8,
+    })
+    connection.signal(SIGNAL_UPLOAD_CREDIT, {
+      clientUploadId: id,
+      sendUpToBytes: 0,
+    })
+    await settle()
+    expect(slice).not.toHaveBeenCalled()
+
+    connection.signal(SIGNAL_UPLOAD_CREDIT, {
+      clientUploadId: id,
+      sendUpToBytes: 3,
+    })
+    await vi.waitFor(() => expect(connection.binaryFrames).toHaveLength(1))
+    expect(slice).toHaveBeenNthCalledWith(1, 0, 3)
+    expect(frameBytes(connection.binaryFrames[0] as ArrayBuffer)).toHaveLength(
+      3,
+    )
+    connection.signal(SIGNAL_UPLOAD_CREDIT, {
+      clientUploadId: id,
+      sendUpToBytes: 3,
+    })
+    connection.signal(SIGNAL_UPLOAD_CREDIT, {
+      clientUploadId: id,
+      sendUpToBytes: 1,
+    })
+    await settle()
+    expect(slice).toHaveBeenCalledTimes(1)
+    connection.signal(SIGNAL_UPLOAD_CREDIT, {
+      clientUploadId: id,
+      sendUpToBytes: 4,
+    })
+    await vi.waitFor(() => expect(connection.binaryFrames).toHaveLength(2))
+    expect(slice).toHaveBeenNthCalledWith(2, 3, 4)
+    connection.signal(SIGNAL_UPLOAD_CREDIT, {
+      clientUploadId: id,
+      sendUpToBytes: 8,
+    })
+    await vi.waitFor(() => expect(connection.binaryFrames).toHaveLength(3))
+    expect(slice).toHaveBeenNthCalledWith(3, 4, 8)
+    expect(connection.textFrames).toHaveLength(1)
+  })
+
+  it.each(['cancel', 'disconnect', 'release', 'user'] as const)(
+    'ends a credit wait on %s and cannot resurrect its old stream',
+    async (ending) => {
+      const { connection, actions, currentUserId } = setup()
+      connection.autoCredit = false
+      const source = file('waiting.bin', 3)
+      const slice = vi.spyOn(source, 'slice')
+      const id = uploadFile('message', source)
+      ready(connection)
+      actions.pending[0]?.resolve()
+      await settle()
+      if (ending === 'cancel') {
+        cancelUpload(id)
+      } else if (ending === 'disconnect') {
+        connection.state('reconnecting')
+      } else if (ending === 'user') {
+        currentUserId.set(2)
+      } else {
+        release?.()
+      }
+      connection.signal(SIGNAL_UPLOAD_CREDIT, {
+        clientUploadId: id,
+        sendUpToBytes: 3,
+      })
+      await settle()
+      expect(slice).not.toHaveBeenCalled()
+      expect(connection.binaryFrames).toEqual([])
+    },
+  )
+
+  it('reinitializes with a new boundary after reconnect and ignores credit before the new init', async () => {
+    const { connection, actions } = setup()
+    connection.autoCredit = false
+    const source = file('reconnect.bin', 4)
+    const slice = vi.spyOn(source, 'slice')
+    const id = uploadFile('message', source)
+    ready(connection)
+    actions.pending[0]?.resolve()
+    await settle()
+    connection.signal(SIGNAL_UPLOAD_CREDIT, {
+      clientUploadId: id,
+      sendUpToBytes: 1,
+    })
+    await vi.waitFor(() => expect(connection.binaryFrames).toHaveLength(1))
+    connection.state('reconnecting')
+    connection.signal(SIGNAL_UPLOAD_CREDIT, {
+      clientUploadId: id,
+      sendUpToBytes: 4,
+    })
+    ready(connection)
+    await settle()
+    expect(slice).toHaveBeenCalledTimes(1)
+    actions.pending[1]?.resolve()
+    await settle()
+    expect(connection.textFrames).toHaveLength(2)
+    expect(slice).toHaveBeenCalledTimes(1)
+    connection.signal(SIGNAL_UPLOAD_CREDIT, {
+      clientUploadId: id,
+      sendUpToBytes: 4,
+    })
+    await vi.waitFor(() => expect(connection.binaryFrames).toHaveLength(2))
+    expect(slice).toHaveBeenNthCalledWith(2, 0, 4)
+  })
+
+  it('keeps zero-byte declarations free of credit requests', async () => {
+    const { connection, actions } = setup()
+    uploadFile('message', file('empty.txt', 0))
+    ready(connection)
+    actions.pending[0]?.resolve()
+    await settle()
+    expect(connection.textFrames).toEqual([])
+    expect(connection.binaryFrames).toEqual([])
   })
 })

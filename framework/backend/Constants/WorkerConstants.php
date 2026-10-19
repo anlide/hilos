@@ -44,6 +44,12 @@ final class WorkerConstants
     /** @var string Worker registration confirmation */
     public const string MESSAGE_WORKER_REGISTERED = 'worker_registered';
 
+    /** Effective upload memory budget reported by a registered worker. */
+    public const string MESSAGE_UPLOAD_SETTINGS = 'worker_upload_settings';
+
+    /** Binary deliveries processed or finally discarded by a registered worker. */
+    public const string MESSAGE_UPLOAD_CONSUMED = 'worker_upload_consumed';
+
     /** @var string Agent start signal */
     public const string MESSAGE_AGENT_START = 'agent_start';
 

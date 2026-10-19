@@ -36,6 +36,43 @@ Client sockets still leave only through `dropClient()`; do not close one outside
 
 Callbacks are wrapped in try/catch — exceptions are logged but do not crash the loop.
 
+## Read Budget And Upload Memory
+
+`SOCKET_READ_BUFFER_SIZE` (default 65,536 bytes in `EnvCatalogStub`) bounds
+**one `AbstractClient::read()` call**. That call gathers transport reads up to
+the budget or until would-block, EOF or error, then parses the gathered bytes
+once, before handling EOF/error. TLS may return only a record's worth of data
+(up to 16 KiB) per transport read; several reads can fill the same budget.
+
+`EventLoop::tick()` uses `EventBase::LOOP_NONBLOCK`. Libevent can call a
+persistently readable socket's callback repeatedly before returning to the
+master's `dispatchSignals()`. The read budget therefore bounds neither all
+callbacks in a pass, the signal queue, nor accumulated upload memory. It is
+not a per-tick allowance; the loop does not use `LOOP_ONCE`.
+
+`WorkerDaemonClient::read()` has a different job: drain the daemon socket
+until would-block, in 65,536-byte chunks, then parse the gathered input before
+handling EOF or reset. Already parsed messages remain available after link
+loss. This does not change the worker's idle/readability timing below.
+
+The string XOR in `WebSocketClient::parseFrame()` repeats the mask key over
+the payload. The structural `strcspn()` scan in
+`AbstractSocket::extractCompleteJsonMessage()` skips spans that cannot change
+JSON framing state. Both reduce CPU work while preserving payload bytes,
+escape/string/depth state and existing framing limits; neither creates a
+flow-control budget.
+
+Upload memory is bounded by the per-node raw-byte pool described in
+[uploads.md](uploads.md#the-raw-byte-pool). The master reserves capacity before
+granting a browser window; accepted bytes stay charged through queues and
+partial writes until processing or final discard. A worker reports the live
+setting and completed receipts; a remote receiver first reserves its own
+capacity. These are byte obligations, not RSS measurements: base64/JSON,
+string copies and transport overhead occupy additional memory. Reducing the
+setting preserves issued windows and stops new grants while the pool has no
+room. Keep reading worker, peer and control sockets when it is full: their
+facts are what release the capacity.
+
 ## What blocks the loop
 
 Any synchronous blocking operation in a callback or `onTick()` blocks all I/O:

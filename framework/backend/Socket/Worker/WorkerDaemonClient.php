@@ -27,6 +27,9 @@ use Hilos\Socket\SocketOperation;
  */
 class WorkerDaemonClient extends AbstractSocket
 {
+    /** Bytes requested per socket read while draining the daemon connection. */
+    private const int READ_CHUNK_BYTES = 65536;
+
     /** Connection lifecycle state; LOST is terminal until close() resets it. */
     protected DaemonConnectionState $state = DaemonConnectionState::IDLE;
 
@@ -165,7 +168,7 @@ class WorkerDaemonClient extends AbstractSocket
     }
 
     /**
-     * Read data from socket.
+     * Drain available socket bytes and parse them once, before reporting EOF or a read error.
      *
      * An empty read means the daemon closed its end: the connection goes to the
      * terminal LOST state, and already parsed messages stay in the queue.
@@ -181,22 +184,26 @@ class WorkerDaemonClient extends AbstractSocket
             return;
         }
 
-        // warning-suppressed: a false return goes to handleSocketError(), which reads the error code
-        $data = @socket_read($this->socket, 8192, PHP_BINARY_READ);
+        $data = '';
+        do {
+            // warning-suppressed: a false return goes to handleSocketError(), which reads the error code
+            $chunk = @socket_read($this->socket, self::READ_CHUNK_BYTES, PHP_BINARY_READ);
+            if ($chunk === '' || $chunk === false) {
+                break;
+            }
+            $data .= $chunk;
+        } while (true);
 
-        if ($data === '') {
-            $this->loseConnection();
-            return;
+        if ($data !== '') {
+            $this->readBuffer .= $data;
+            $this->processReadBuffer();
         }
 
-        if ($data === false) {
-            // handleSocketError will handle ERR_WOULDBLOCK/WSA_WOULDBLOCK
+        if ($chunk === false) {
             $this->handleSocketError(SocketOperation::READ);
-            return;
+        } else {
+            $this->loseConnection();
         }
-
-        $this->readBuffer .= $data;
-        $this->processReadBuffer();
     }
 
     /**

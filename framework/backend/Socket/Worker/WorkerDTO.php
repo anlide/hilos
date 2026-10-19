@@ -52,6 +52,8 @@ use Hilos\Socket\Worker\DTO\WorkerRtSnapshotMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtStalenessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceReleasedDTO;
 use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
+use Hilos\Socket\Worker\DTO\WorkerUploadConsumedDTO;
+use Hilos\Socket\Worker\DTO\WorkerUploadSettingsDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
@@ -109,6 +111,8 @@ abstract class WorkerDTO extends BaseDTO
             WorkerRegisterDTO::MESSAGE_TYPE => WorkerRegisterDTO::fromArray($data),
             WorkerLogWriteLevelDTO::MESSAGE_TYPE => WorkerLogWriteLevelDTO::fromArray($data),
             WorkerProtectedModeSettingsDTO::MESSAGE_TYPE => WorkerProtectedModeSettingsDTO::fromArray($data),
+            WorkerUploadSettingsDTO::MESSAGE_TYPE => WorkerUploadSettingsDTO::fromArray($data),
+            WorkerUploadConsumedDTO::MESSAGE_TYPE => WorkerUploadConsumedDTO::fromArray($data),
             WorkerAgentStartedDTO::MESSAGE_TYPE => WorkerAgentStartedDTO::fromArray($data),
             WorkerAgentStartFailedDTO::MESSAGE_TYPE => WorkerAgentStartFailedDTO::fromArray($data),
             WorkerAgentStoppedDTO::MESSAGE_TYPE => WorkerAgentStoppedDTO::fromArray($data),

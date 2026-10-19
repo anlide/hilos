@@ -13,6 +13,8 @@ use Hilos\Core\Daemon\DaemonStatusSource;
 use Hilos\Core\Daemon\ProtectedModeSnapshotSource;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\HilosException;
+use Hilos\Core\Exception\LogicException;
+use Hilos\Files\Upload\UploadMemoryTestDoor;
 use Hilos\ProtectedMode\ProtectedModeCommandConstants;
 use Hilos\Socket\Client\CommandClient;
 use Hilos\Socket\Client\Interface\CommandClientInterface;
@@ -56,6 +58,26 @@ class CommandServer extends AbstractServer
 
     /** @var ?AgentRestartDoor Master seam that restarts an agent */
     private ?AgentRestartDoor $agentRestartDoor = null;
+
+    private ?UploadMemoryTestDoor $uploadMemoryTestDoor = null;
+
+
+    /** @param UploadMemoryTestDoor $door The real master owning the node pool */
+    public function setUploadMemoryTestDoor(UploadMemoryTestDoor $door): void
+    {
+        $this->uploadMemoryTestDoor = $door;
+    }
+
+    /**
+     * @param CommandRequestDTO $request Already environment-gated test request
+     * @return CommandReplyDTO The master's snapshot or refusal
+     * @throws LogicException When the command server has no master pool door
+     */
+    public function answerUploadPoolTest(CommandRequestDTO $request): CommandReplyDTO
+    {
+        return ($this->uploadMemoryTestDoor ?? throw new LogicException('Command server has no upload pool owner'))
+            ->answerUploadPoolTest($request);
+    }
 
     /**
      * Called when a new command client connection is accepted.

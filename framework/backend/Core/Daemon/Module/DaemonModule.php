@@ -7,6 +7,7 @@ namespace Hilos\Core\Daemon\Module;
 use Hilos\Core\Daemon\DaemonContext;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\HilosException;
+use Random\RandomException;
 
 /**
  * An opt-in daemon subsystem: a self-contained unit that a daemon lists in
@@ -31,6 +32,7 @@ interface DaemonModule
      *
      * @param DaemonManager $daemon Daemon to register server(s) on
      * @param DaemonContext $context Resolved path context
+     * @throws RandomException When upload server registration cannot mint its master ledger incarnation
      * @throws HilosException When the module cannot be built or registered
      */
     public function register(DaemonManager $daemon, DaemonContext $context): void;

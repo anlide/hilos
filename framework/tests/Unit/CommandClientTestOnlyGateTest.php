@@ -70,6 +70,7 @@ final class CommandClientTestOnlyGateTest extends TestCase
     {
         return [
             [CliCommands::CLUSTER_TEST_INSPECT],
+            [CliCommands::CLUSTER_TEST_UPLOAD_POOL],
             [CliCommands::CLUSTER_TEST_CLIENT_ATTACH],
             [CliCommands::CLUSTER_TEST_CLIENT_DETACH],
             [CliCommands::CLUSTER_TEST_CLIENT_SEND],

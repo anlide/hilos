@@ -349,12 +349,17 @@ abstract class AbstractSocket
         $startPos = -1; // Start position of JSON object
 
         for ($i = 0; $i < $length; $i++) {
-            $char = $buffer[$i];
-
             if ($escapeNext) {
                 $escapeNext = false;
                 continue;
             }
+
+            // Consume an escaped byte before skipping spans that cannot change framing state.
+            $i += strcspn($buffer, '{}[]"\\', $i);
+            if ($i === $length) {
+                break;
+            }
+            $char = $buffer[$i];
 
             if ($char === '\\') {
                 $escapeNext = true;

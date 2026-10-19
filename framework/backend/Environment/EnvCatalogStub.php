@@ -106,7 +106,7 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::WEBSOCKET_PORT->name => self::required(EnvCatalogConstants::TYPE_INTEGER),
             EnvConstants::SOCKET_READ_BUFFER_SIZE->name => self::entry(
                 EnvCatalogConstants::TYPE_INTEGER,
-                8192,
+                65536,
                 emptyIsMissing: true,
             ),
             EnvConstants::WORKER_MIN_REGULAR->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 3, emptyIsMissing: true),

@@ -51,6 +51,9 @@ use Hilos\Core\Exception\Process\FailedToSetStdErrException;
 use Hilos\Core\Exception\Process\FailedToTerminateProcessException;
 use Hilos\Core\Exception\Process\FailedToWriteStdInException;
 use Hilos\Core\Process;
+use Hilos\Files\Upload\UploadMemoryDeliverySink;
+use Hilos\Files\Upload\UploadMemoryWorkerLifetime;
+use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
@@ -106,6 +109,11 @@ abstract class WorkerServer extends AbstractServer implements
      *     "type:index"), values: WorkerConstants::FIELD_WORKER_*
      */
     private array $workers = [];
+
+    private ?UploadMemoryDeliverySink $uploadMemoryPoolSink = null;
+
+    /** @var array<int, UploadMemoryWorkerLifetime> Registered process/connection pairs retained through both exit facts */
+    private array $uploadWorkerLifetimes = [];
 
     /** Live worker membership revision for the master's process roster. */
     private int $rosterRevision = 0;
@@ -297,7 +305,47 @@ abstract class WorkerServer extends AbstractServer implements
      */
     protected function onCreateClient($socket): WorkerClientInterface
     {
-        return new WorkerClient($socket, $this->agentManager, $this);
+        $client = new WorkerClient($socket, $this->agentManager, $this);
+        if ($this->uploadMemoryPoolSink !== null) {
+            $client->setUploadMemoryPoolSink($this->uploadMemoryPoolSink);
+        }
+        return $client;
+    }
+
+    /**
+     * @param UploadMemoryDeliverySink $sink The same owner injected into the WebSocket server
+     * @throws FrameworkLogicException When an already registered channel has no tracked process
+     */
+    public function setUploadMemoryPoolSink(UploadMemoryDeliverySink $sink): void
+    {
+        $this->uploadMemoryPoolSink = $sink;
+        foreach ($this->clients as $client) {
+            if ($client instanceof WorkerClient) {
+                $client->setUploadMemoryPoolSink($sink);
+                if ($client->isRegistered()) {
+                    $this->registerUploadWorker($client);
+                }
+            }
+        }
+    }
+
+    /**
+     * Capture the process at registration, before its index can ever be recycled.
+     *
+     * @param WorkerClient $worker Newly registered real channel
+     * @throws FrameworkLogicException When the registered channel has no tracked process
+     */
+    public function registerUploadWorker(WorkerClient $worker): void
+    {
+        if ($this->uploadMemoryPoolSink === null) {
+            return;
+        }
+        $processKey = $this->buildWorkerKey($worker->isMonopolistic(), $worker->getWorkerIndex());
+        $process = $this->workers[$processKey][WorkerConstants::FIELD_WORKER_PROCESS] ?? null;
+        if ($process === null) {
+            throw new FrameworkLogicException('Upload worker registration needs its tracked process incarnation');
+        }
+        $this->uploadWorkerLifetimes[spl_object_id($worker)] ??= new UploadMemoryWorkerLifetime($worker, $process);
     }
 
     /**
@@ -740,6 +788,15 @@ abstract class WorkerServer extends AbstractServer implements
     {
         parent::removeClient($client);
 
+        if ($client instanceof WorkerClient) {
+            $client->discardUploadBuffers();
+            $lifetime = $this->uploadWorkerLifetimes[spl_object_id($client)] ?? null;
+            if ($lifetime !== null) {
+                $lifetime->queuesDiscarded = true;
+                $this->settleExitedUploadWorkers();
+            }
+        }
+
         if ($this->preparingShutdown) {
             return;
         }
@@ -783,6 +840,17 @@ abstract class WorkerServer extends AbstractServer implements
         }
     }
 
+    /** Release only after BOTH facts for the exact captured process and connection. */
+    private function settleExitedUploadWorkers(): void
+    {
+        foreach ($this->uploadWorkerLifetimes as $id => $lifetime) {
+            if ($lifetime->queuesDiscarded && $lifetime->processExited) {
+                $this->uploadMemoryPoolSink?->discardUploadWorker($lifetime->worker);
+                unset($this->uploadWorkerLifetimes[$id]);
+            }
+        }
+    }
+
     /**
      * Tick single worker process - check status and read output
      *
@@ -797,6 +865,15 @@ abstract class WorkerServer extends AbstractServer implements
 
         // Check if process is still running
         $status = $process->getStatus();
+
+        if (!$status[Process::STATUS_RUNNING]) {
+            foreach ($this->uploadWorkerLifetimes as $lifetime) {
+                if ($lifetime->process === $process) {
+                    $lifetime->processExited = true;
+                }
+            }
+            $this->settleExitedUploadWorkers();
+        }
 
         // Read and save stdout/stderr to files (after status check to ensure we capture final output)
         $this->saveWorkerOutput($process, $type, $index);
@@ -2015,6 +2092,17 @@ abstract class WorkerServer extends AbstractServer implements
                 ?? throw new WorkerClientNotFoundException($agentId, $workerInfo->workerIndex, $workerInfo->isMonopolistic);
 
             $agentDaemon->setWorkerClient($workerClient);
+        }
+
+        if ($this->uploadMemoryPoolSink !== null && $messageDto->signal->data instanceof WebSocketFrameBinarySignalDTO) {
+            $lifetime = $this->uploadWorkerLifetimes[spl_object_id($workerClient)] ?? null;
+            if ($lifetime === null || $lifetime->processExited) {
+                throw new FrameworkLogicException('Upload worker delivery needs its registered live process incarnation');
+            }
+            $receiptId = $this->uploadMemoryPoolSink->assignUploadFrame($messageDto->signal->data, $workerClient);
+            if ($receiptId !== null) {
+                $messageDto = new DaemonAgentMessageDTO($agentId, $messageDto->signal, $receiptId);
+            }
         }
 
         // Agent exists and is linked, send message DTO immediately

@@ -54,6 +54,8 @@ final class CommandExecutionRoleTest extends TestCase
     {
         $executions = new CliManager([])->executions();
 
+        $this->assertSame(CommandExecutionSite::DAEMON, $executions[CliCommands::CLUSTER_TEST_UPLOAD_POOL]->site);
+        $this->assertNull($executions[CliCommands::CLUSTER_TEST_UPLOAD_POOL]->reason);
         $this->assertSame(CommandExecutionSite::DAEMON, $executions[CliCommands::DAEMON_PING]->site);
         $this->assertNull($executions[CliCommands::DAEMON_PING]->reason);
     }

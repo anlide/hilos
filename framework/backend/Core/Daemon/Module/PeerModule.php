@@ -19,6 +19,7 @@ use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DatabaseMarker;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\HilosException;
 use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\Fs\ClusterDirectoryMarker;
 use Hilos\Fs\Exception\DirectoryCreateException;
@@ -27,6 +28,7 @@ use Hilos\Fs\Exception\FileWriteException;
 use Hilos\Hilos;
 use Hilos\I18n\DefaultLanguage;
 use Hilos\Utils\Logger;
+use Random\RandomException;
 
 /**
  * Cluster peer transport module: binds the peer port that forms the mesh, runs
@@ -76,6 +78,8 @@ final class PeerModule implements DaemonModule
      *
      * @param DaemonManager $daemon Daemon to register the peer server on
      * @param DaemonContext $context Resolved path context (unused; peer wiring is env-driven)
+     * @throws HilosException When the daemon cannot register its server
+     * @throws RandomException When upload server registration cannot mint its master ledger incarnation
      * @throws ClusterDisabledException When cluster mode is disabled
      * @throws ClusterConfigurationException When enabled but node config or its TLS files are missing or invalid
      * @throws EnvException When a cluster env value or the default language cannot be read

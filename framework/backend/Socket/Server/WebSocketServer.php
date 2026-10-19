@@ -6,6 +6,8 @@ namespace Hilos\Socket\Server;
 
 use Hilos\Core\Daemon\ConnectionDropper;
 use Hilos\Core\Daemon\ProtectedModeAdmissionRecorder;
+use Hilos\Core\Exception\LogicException;
+use Hilos\Files\Upload\UploadMemoryPoolSink;
 use Hilos\HilosException;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
@@ -30,6 +32,9 @@ abstract class WebSocketServer extends AbstractServer
 
     /** @var ?ProtectedModeAdmissionRecorder Master seam that records an admitted verifier, wired at registration */
     private ?ProtectedModeAdmissionRecorder $protectedModeAdmissionRecorder = null;
+
+    /** @var ?UploadMemoryPoolSink Admission seam injected by production registerServer */
+    private ?UploadMemoryPoolSink $uploadMemoryPoolSink = null;
 
     /**
      * Called when a new WebSocket client connection is accepted.
@@ -70,6 +75,17 @@ abstract class WebSocketServer extends AbstractServer
     }
 
     /**
+     * registerServer mounts the same master ledger on both transport servers.
+     * Projects keep their existing client factories and constructor signatures.
+     *
+     * @param UploadMemoryPoolSink $sink The daemon's sole upload ledger owner
+     */
+    public function setUploadMemoryPoolSink(UploadMemoryPoolSink $sink): void
+    {
+        $this->uploadMemoryPoolSink = $sink;
+    }
+
+    /**
      * Accepts a connection and hands the new client the connection-drop seam.
      *
      * A client needs it for exactly one thing: dropping the other connections of a session
@@ -79,6 +95,7 @@ abstract class WebSocketServer extends AbstractServer
      * @return ?ClientInterface New client or null when no connection is pending
      * @throws SocketException When socket operations fail
      * @throws HilosException When the concrete client refuses to be constructed
+     * @throws LogicException When a constructed client is already bound to another upload ledger
      */
     public function acceptConnection(): ?ClientInterface
     {
@@ -88,6 +105,9 @@ abstract class WebSocketServer extends AbstractServer
         }
         if ($client instanceof WebSocketClient && $this->protectedModeAdmissionRecorder !== null) {
             $client->setProtectedModeAdmissionRecorder($this->protectedModeAdmissionRecorder);
+        }
+        if ($client instanceof WebSocketClient && $this->uploadMemoryPoolSink !== null) {
+            $client->setUploadMemoryPoolSink($this->uploadMemoryPoolSink);
         }
 
         return $client;

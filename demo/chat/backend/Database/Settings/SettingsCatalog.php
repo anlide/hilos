@@ -20,6 +20,7 @@ use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Analytics\AnalyticsSettingsCatalog;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Files\FilesSettingsCatalog;
+use Hilos\Files\Upload\UploadsSettingsCatalog;
 use Hilos\Log\LogSettingsCatalog;
 use Hilos\Legal\LegalSettingsCatalog;
 use Hilos\Notification\Delivery\ChannelSettingsCatalog;
@@ -137,6 +138,7 @@ final class SettingsCatalog implements CatalogProviderInterface
             ChannelSettingsCatalog::entriesFor(ChatDeliveryChannelRegistry::all()),
             DeliveryLogSettingsCatalog::getCatalog(),
             FilesSettingsCatalog::getCatalog(),
+            UploadsSettingsCatalog::getCatalog(),
             LogSettingsCatalog::getCatalog(),
             ThemeSettingsCatalog::getCatalog(),
             AnalyticsSettingsCatalog::getCatalog(),

@@ -26,7 +26,7 @@ use TypeError;
  */
 abstract class AbstractClient extends AbstractSocket implements ClientInterface
 {
-    /** @var int Read buffer size in bytes (can be overridden in child classes or via config) */
+    /** @var int Maximum bytes one read() takes from this socket */
     protected int $readBufferSize;
 
     /** @var string Buffer for incoming data */
@@ -78,7 +78,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     }
 
     /**
-     * Read data from client socket.
+     * Collect up to readBufferSize bytes and parse them once, before reporting EOF or a read error.
      *
      * While a handshake still stands before the first application byte, a read only moves it on.
      *
@@ -105,27 +105,26 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
             return;
         }
 
-        $data = $this->transport->read($this->readBufferSize);
-
-        // An empty read closes the connection only when the transport says the stream ended.
-        // On a bare socket it always has; on an encrypted stream the socket also turns readable
-        // for protocol bytes that decrypt to nothing, and closing there would cut a live
-        // connection short - the mirror of the false end of a response in HIL-732.
-        if ($data === '') {
-            if ($this->transport->isEndOfStream()) {
-                $this->shouldClose = true;
+        $data = '';
+        do {
+            $chunk = $this->transport->read($this->readBufferSize - strlen($data));
+            if ($chunk === '' || $chunk === false) {
+                break;
             }
-            return;
+            $data .= $chunk;
+        } while (strlen($data) < $this->readBufferSize);
+
+        if ($data !== '') {
+            $this->readBuffer .= $data;
+            $this->processReadBuffer();
         }
 
-        // False means error occurred
-        if ($data === false) {
+        if ($chunk === false) {
             $this->handleSocketError(SocketOperation::READ);
-            return;
+        } elseif ($chunk === '' && $this->transport->isEndOfStream()) {
+            // TLS protocol bytes may produce an empty read without ending the stream.
+            $this->shouldClose = true;
         }
-
-        $this->readBuffer .= $data;
-        $this->processReadBuffer();
     }
 
     /**
@@ -158,7 +157,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
         // Backpressure: a capped client whose peer has stopped draining is dropped
         // rather than buffered to the process memory limit. Closing the one bad link
         // is recoverable (the mesh re-dials); an OOM takes the whole daemon down.
-        if ($this->maxWriteBufferBytes > 0 && strlen($this->writeBuffer) > $this->maxWriteBufferBytes) {
+        if ($this->maxWriteBufferBytes > 0 && $this->outboundBackpressureBytes() > $this->maxWriteBufferBytes) {
             Logger::warning(
                 "Outbound buffer exceeded {$this->maxWriteBufferBytes} bytes; dropping the link to shed backpressure",
             );
@@ -206,6 +205,12 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
      */
     protected function onAfterOutboundDrained(): void
     {
+    }
+
+    /** @return int Pending bytes protected by this client's ordinary outbound cap */
+    protected function outboundBackpressureBytes(): int
+    {
+        return strlen($this->writeBuffer);
     }
 
     /**

@@ -13,6 +13,8 @@ use Hilos\Core\Daemon\DaemonContext;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\Module\DaemonModule;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\HilosException;
+use Random\RandomException;
 
 /**
  * Serves the built frontend HTML from dist. Active only when a built dist directory is
@@ -41,6 +43,8 @@ final class FrontendHtmlModule implements DaemonModule
      *
      * @param DaemonManager $daemon Daemon to register the frontend-html server on
      * @param DaemonContext $context Resolved path context (unused; dist path is held on the module)
+     * @throws HilosException When the daemon cannot register its server
+     * @throws RandomException When upload server registration cannot mint its master ledger incarnation
      * @throws EnvException When a frontend-html env value cannot be read
      */
     public function register(DaemonManager $daemon, DaemonContext $context): void

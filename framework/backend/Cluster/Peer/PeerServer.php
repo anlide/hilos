@@ -101,6 +101,8 @@ use Hilos\Database\ReHydrateBarrierSink;
 use Hilos\Database\ReHydrateRound;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\Files\Upload\UploadMemoryMaster;
+use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\HilosException;
 use Hilos\ProtectedMode\ClusterProtectedMode;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
@@ -204,6 +206,9 @@ final class PeerServer extends AbstractTlsServer implements
 
     /** @var ?AgentRestartDoor Master receiving peer restart requests */
     private ?AgentRestartDoor $agentRestartDoor = null;
+
+    /** @var ?UploadMemoryMaster The sole master ledger, injected alongside worker/command transports */
+    private ?UploadMemoryMaster $uploadMemory = null;
 
     /** @var ?ProtectedModeCoordinator Protected-mode freeze handler, registered by the leader-orchestration slice; null until then */
     private ?ProtectedModeCoordinator $protectedMode = null;
@@ -805,6 +810,7 @@ final class PeerServer extends AbstractTlsServer implements
     public function onHandshakeComplete(PeerLink $link, NodeIdentity $remote): void
     {
         $this->activeLinks[$remote->nodeId] = $link;
+        $this->uploadMemory?->onPeerChanged();
         $registry = $this->registry();
         if ($registry === null) {
             return;
@@ -975,6 +981,7 @@ final class PeerServer extends AbstractTlsServer implements
         }
 
         $old->beginDrain();
+        $this->uploadMemory?->onPeerChanged();
         Logger::info("Replaced duplicate peer link to {$remote->nodeId}");
         $registry = $this->registry();
         if ($registry !== null && $this->onlineNodeById($registry, $remote->nodeId) === null) {
@@ -1929,9 +1936,11 @@ final class PeerServer extends AbstractTlsServer implements
      * Candidate and draining-link closes leave membership and reader interest intact.
      *
      * @param PeerLink $link Link that closed
+     * @throws HilosException When unused upload capacity is inconsistent
      */
     public function onLinkClosed(PeerLink $link): void
     {
+        $this->uploadMemory?->onPeerClosed($link);
         foreach ($this->candidateLinks as $nodeId => $candidate) {
             if ($candidate === $link) {
                 unset($this->candidateLinks[$nodeId]);
@@ -2129,6 +2138,38 @@ final class PeerServer extends AbstractTlsServer implements
         );
     }
 
+    /** @param UploadMemoryMaster $master Existing node-wide upload owner */
+    public function setUploadMemoryMaster(UploadMemoryMaster $master): void
+    {
+        $this->uploadMemory = $master;
+        $master->setPeerServer($this, $this->localIdentity->nodeId);
+    }
+
+    /**
+     * @param string $nodeId Receiver identity captured by ordered acquisition
+     * @return ?PeerLink Current real incarnation, or null while unlinked/draining
+     */
+    public function uploadLinkToNode(string $nodeId): ?PeerLink
+    {
+        $link = $this->activeLinkToNode($nodeId);
+
+        return $link !== null && !$link->isDraining() ? $link : null;
+    }
+
+    /**
+     * @param PeerLink $link Actual handshaked incarnation
+     * @param PeerDTO $frame Upload control metadata
+     * @throws PeerTransportException When upload budgeting is unavailable or the request is invalid
+     * @throws HilosException When the owning master cannot reconcile its ledger
+     */
+    public function onUploadControlReceived(PeerLink $link, PeerDTO $frame): void
+    {
+        if ($this->uploadMemory === null) {
+            throw new PeerTransportException('Peer upload control has no master ledger');
+        }
+        $this->uploadMemory->onPeerControl($link, $frame);
+    }
+
     /**
      * Sends a frame to every handshaked peer, master or slave alike.
      *
@@ -2191,6 +2232,20 @@ final class PeerServer extends AbstractTlsServer implements
      */
     public function sendSignalToNode(string $targetNodeId, string $agentType, ?string $agentIndex, SignalDTO $signal): bool
     {
+        if ($signal->data instanceof WebSocketFrameBinarySignalDTO && $this->uploadMemory?->isBudgeted($signal->data)) {
+            $link = $this->activeLinkToNode($targetNodeId);
+            if ($link === null) {
+                return false;
+            }
+            try {
+                $this->uploadMemory->sendPeerSignal($link, $agentType, $agentIndex, $signal);
+            } catch (HilosException $e) {
+                Logger::warning('Budgeted upload peer delivery refused: ' . $e->getMessage());
+                return false;
+            }
+            return true;
+        }
+
         return $this->sendToNode($targetNodeId, new PeerSignalDTO(
             $this->localIdentity->nodeId,
             $targetNodeId,
@@ -2221,13 +2276,20 @@ final class PeerServer extends AbstractTlsServer implements
             return;
         }
 
-        $sink = Hilos::$cluster?->agentSignalSink();
-        if ($sink === null) {
-            Logger::warning("Dropping peer signal for agent '{$frame->agentType}': no local agent signal sink registered");
-            return;
-        }
-
         try {
+            if ($frame->uploadReservation !== null) {
+                if ($link->remoteIdentity()?->nodeId !== $frame->originNodeId || $this->uploadMemory === null) {
+                    throw new PeerTransportException('Budgeted peer upload has no matching link identity or master ledger');
+                }
+                if ($this->uploadMemory->acceptPeerSignal($link, $frame) === null) {
+                    return;
+                }
+            }
+            $sink = Hilos::$cluster?->agentSignalSink();
+            if ($sink === null) {
+                Logger::warning("Dropping peer signal for agent '{$frame->agentType}': no local agent signal sink registered");
+                return;
+            }
             $sink->deliverSignalToAgent($frame->agentType, $frame->agentIndex, $frame->signal);
         } catch (Throwable $e) {
             Logger::warning("Failed to deliver peer signal to agent '{$frame->agentType}': {$e->getMessage()}");

@@ -60,6 +60,8 @@ final class TestOnlyNameContractTest extends TestCase
     {
         $classes = new CliManager([])->commandClasses();
 
+        $this->assertArrayHasKey(CliCommands::CLUSTER_TEST_UPLOAD_POOL, $classes);
+        $this->assertTrue(is_subclass_of($classes[CliCommands::CLUSTER_TEST_UPLOAD_POOL], TestOnlyCommand::class));
         $this->assertArrayHasKey(CliCommands::DB_TEST_RESET, $classes);
         $this->assertTrue(is_subclass_of($classes[CliCommands::DB_TEST_RESET], TestOnlyCommand::class));
         $this->assertArrayHasKey(CliCommands::DAEMON_PING, $classes);

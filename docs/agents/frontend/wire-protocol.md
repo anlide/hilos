@@ -428,10 +428,67 @@ With `HilosFeature::UPLOADS` the channel has a protocol of its own: the
 tracked actions `hilos_upload_init` (declare a file) and `hilos_upload_cancel`,
 every chunk signed `[1 byte L][L bytes clientUploadId][file bytes]`, and the
 `hilos_upload_state` frame carrying the whole state of one upload (`phase: null`
-= gone). See [architecture/uploads.md](../architecture/uploads.md).
+= gone). Nonempty uploads also use the two credit control frames below.
+The signed binary payload, init/cancel action contracts and upload-state frame
+keep their existing shapes. Projects without `UPLOADS` keep their ordinary
+`frame_binary` behavior. See [architecture/uploads.md](../architecture/uploads.md).
 In the browser this protocol is spoken by `hilosUploads` from `@hilos/core`;
 project code hands it a `File` and does not assemble action or binary frames.
 See [The Browser Client](../architecture/uploads.md#the-browser-client).
+
+### Upload credit
+
+After the tracked init succeeds, the browser sends one text control request
+for the **full declared raw file size**, not the next chunk size. Browser →
+master, for a 200,000-byte file:
+
+```json
+{"type":"hilos_upload_credit_request","clientUploadId":"upload_1","bytes":200000}
+```
+
+These fields are top-level, with no `data` wrapper. This is not an action:
+there is no `action`, `requestId` or action acknowledgement. The master stamps
+`UploadCreditRequestSignalData` with the real WebSocket's internal `acceptKey`;
+the browser neither supplies nor chooses it. A repeated demand must keep the
+same full size, and the master checks the live upload's declared size,
+receiving phase and owner before granting it.
+
+Master → that browser connection, in the standard signal envelope:
+
+```json
+{"type":"hilos_upload_credit","data":{"clientUploadId":"upload_1","sendUpToBytes":65536}}
+```
+
+`sendUpToBytes` is an exclusive cumulative **raw file byte offset** from the
+start of this upload on this connection. It excludes the upload-id signature
+and WebSocket headers. The example permits offsets `[0, 65536)`. If 65,536
+bytes have already been sent, a later boundary of 131,072 permits another
+65,536; it does not grant an additional 131,072. The SDK keeps
+`max(previousBoundary, receivedBoundary)`, so duplicate or older smaller
+credits add no capacity. The signal has no page key or request correlation.
+
+The client must not send binary bytes beyond that boundary. Before each
+`File.slice()` it chooses
+`min(65536, file.size - sentBytes, sendUpToBytes - sentBytes)` raw bytes.
+With no remaining credit it waits for a credit event, without reading the
+next slice. It also observes the existing socket `bufferedAmount` check.
+A window may cover many chunks or the whole remaining file; this is not a
+browser roundtrip per binary frame. An empty file needs no credit request,
+reservation or credit wait: its ordinary init outcome is unchanged (the
+current built-in `SizeLimitCheck` refuses it as `empty_file`).
+
+Cancel, failure/gone, disconnect and a new connection/stream generation reset
+the SDK's old permission and wake its waiters so the old stream stops. A
+replacement socket declares eligible queued files again and requests fresh
+credit. A gone/interrupted upload after owner loss does not carry its old
+window to another owner.
+
+The server validates signed raw input against current permission before
+unbudgeted routing or worker/peer serialization, including admission of a
+physical frame before waiting for its tail. Exhaustion withholds new upload
+grants while worker, peer and control sockets continue to be read. Reservation,
+processing receipts, shrink behavior and two-node ownership are defined once
+in [The Raw-Byte Pool](../architecture/uploads.md#the-raw-byte-pool).
 
 ## Build-version check and forced refresh
 

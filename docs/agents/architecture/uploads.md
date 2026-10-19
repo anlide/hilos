@@ -52,6 +52,14 @@ FS context configures no tmp directory — chunks are kept there. Tmp is the
 cluster's, so the library and a project's check read a complete upload from any
 node ([filesystem.md](filesystem.md)).
 
+Activation also requires the `UploadsSettingsCatalog` fragment in the project's
+settings catalog, the shared `hilos_settings_library` agent pair, and the
+project's presence source (`UploadsFeature::requirements()`). The catalog
+declares `uploads.memory_pool_bytes`: a positive integer, default
+2,147,483,648 bytes (2 GiB). It applies separately to each node's daemon and
+all of its workers, shared across connections and people. It limits raw bytes
+in flight, independently of a target's `maxBytes()` or the disk storage limit.
+
 ## Targets And Checks
 
 A target (`AbstractUploadTarget`) is the policy of one kind of file:
@@ -131,7 +139,8 @@ browsers declare `application/octet-stream` for everything they do not know.
 ## Declaring, Refusing, Sending
 
 `hilos_upload_init {target, clientUploadId, filename, mimeType, size}` is a
-tracked action; success means "send the chunks". It is refused, with no row
+tracked action; success accepts the declaration. A nonempty file then needs
+upload credit before any chunks are sent. It is refused, with no row
 left behind, in this order: a malformed payload (the reader: an id outside
 1–64 of `[A-Za-z0-9_-]`, an empty or over-255-character name once its path is
 cut, a negative size); a look-only state (a view-only takeover, a freeze) — the
@@ -162,6 +171,142 @@ project check's own).
 Phases: `ready → uploading → complete | failed` (`UploadPhase`). A failed upload
 keeps its row to say why and has no file; a complete one keeps its file in the
 tmp directory until it is published into the files registry or goes.
+
+## The Raw-Byte Pool
+
+`DaemonManager` owns one `UploadMemoryMaster` and its `UploadMemoryPool`.
+The ledger is private to that master process and its live channels: workers
+and peers report facts, never read or mutate the object. Its metadata dies
+with the daemon and the queues it accounts for. This is process-private
+transport state under [framework-first.md](../framework-first.md), not a
+second shared upload store. `Hilos::$rt->hilosUploads` remains the uploads
+agent's replicated FSM and throttled progress; it cannot be an exact
+pre-queue byte counter. See [What The Browser Sees](#what-the-browser-sees).
+
+`UploadMemorySettingsReporter` reads the ordinary settings accessor on worker
+passes, on registration and after relevant source changes, and reports only a
+changed value on that channel (`worker_upload_settings`). It waits until the
+accessor and settings source are ready. The master starts with no capacity and does no
+DB work to obtain the setting: new grants wait for that report while other
+traffic continues. An increase wakes capacity waiters. A decrease does not
+revoke an issued window or discard bytes; `usedBytes` may temporarily exceed
+the new limit, with no new grants until capacity becomes available.
+
+The browser requests its full declared file size once, after init succeeds.
+The master validates the demand against the live upload and its placement.
+Waiting holds metadata, not an unreserved file payload. Local demands take
+FIFO turns: a turn reserves whatever fits, even one byte, up to the whole
+remaining file, and an unfinished upload rejoins the tail after publication.
+A file larger than the pool advances through successive windows. Publication
+turns the reservation into cumulative browser permission; it does not allocate
+another copy of the reserved bytes. The exact JSON and offset rules are in
+[wire-protocol.md](../frontend/wire-protocol.md#upload-credit).
+
+The ledger's `usedBytes` is the sum of unpublished holds, unused issued
+permission and accepted bytes pending processing or discard. On admission,
+unused permission becomes an accepted portion with a distinct receipt; this
+transition does not change `usedBytes`. Once the WebSocket parser knows a
+signed upload's id and physical-frame length, it conservatively admits the
+**full declared raw portion of that physical frame before waiting for its
+tail**. Re-reading incomplete input does not charge twice. Fragmented input
+accumulates these obligations and coalesces them into one logical-message
+receipt without adding a second charge. Cancellation cannot release admitted
+incomplete input while its parser still retains it. Admission precedes routing
+or serialization into a worker/peer queue.
+
+For a local worker, the master binds the receipt to the actual worker-channel
+incarnation and sends its id as `DaemonAgentMessageDTO::uploadReceiptId`.
+Reading IPC, entering the message queue, parking for source readiness, and a
+partial socket write do not consume the portion. `WorkerManager` collects the
+receipt in `finally` after `handleAgentMessage(FRAME_BINARY)`, including a
+handler failure or missing-agent drop; finally deleted parked frames also
+collect their receipts. A batch `worker_upload_consumed` carries ids only.
+The master takes byte counts from its ledger and settles only receipts of
+that exact registered channel. Duplicate, foreign or old receipts cannot
+release the same bytes again. Worker death releases its remaining obligations
+only after its queues are discarded and that process has exited; a disconnect
+notification alone is insufficient.
+
+Cancel, failed/gone state and connection closure stop new grants and return
+unused permission. Accepted portions remain charged until processing or
+actual deletion, including removal of retained raw references. Closing the
+browser deletes its parser input before releasing that input, while queued
+and worker-bound portions keep their receipts. Completion leaves no reserve
+waiting for later publication of the temporary file: processed bytes no
+longer occupy the pool.
+
+### Across Two Nodes
+
+When the uploads agent is remote, the browser window needs reservations on
+both source and receiver nodes. `UploadMemoryRemoteUpload` acquires them in
+lexicographic `nodeId` order, the same for both directions: it never holds the
+higher node's capacity while waiting for the lower node. The initial
+`peer_upload_reserve` / `peer_upload_granted` exchange contains metadata only.
+If the second reservation is smaller, the excess of the first is returned
+before the browser sees the window.
+
+Each budgeted `PeerSignalDTO` carries `uploadReservation` with the receiver's
+already granted `reservationId`, a distinct source `receiptId` and raw `bytes`.
+The receiver checks the original link/generation, reservation and remaining
+capacity, accepts the portion into its own ledger, then sends
+`peer_upload_accepted`. The source settles only after that acceptance **and**
+actual removal of its staged/native transport bytes and retained raw objects.
+The receiver keeps its obligation until its own worker receipt or final drop;
+source acceptance is not receiver consumption.
+
+Completed peer metadata is retired on the still-live link. After enqueueing a
+window's last portion, the sender queues its existing `release(0)` behind that
+portion and forgets the outgoing grant and that file's window. The receiver
+forgets a released window but retains each received envelope until its own
+pool receipt is consumed or finally discarded. Source transfers independently
+retain the acceptance, transport-removal and raw-reference obligations above.
+
+Two constant-size sequence frontiers replace completed-ID tombstones. Window
+IDs already end in `:window:<sequence>`: `request()` increments and queues them
+synchronously, and the link's single FIFO delivers every reserve in that order.
+An older still-live window is looked up before the frontier; a retired reserve
+is ignored, including a changed repeat. New reserves must follow the same
+boot/link/recipient prefix and the next sequence. Receipt IDs already carry
+the source pool's boot prefix and sequence. `sendPeerSignal()` always calls
+`splitPending()` immediately before synchronous FIFO enqueue, even for an
+older parked or coalesced input. Only these new portion IDs advance the receipt
+frontier. Pool allocations for other work may leave gaps; no link waits for
+those IDs, and no claim is made about admission-ID delivery order.
+
+An exact duplicate whose envelope is still retained receives the old accepted
+ack without another delivery; a changed live envelope is refused. After that
+receipt's retirement, an unknown old portion is refused **without an ack**,
+including an unseen ID in a gap. It cannot spend a live window or acknowledge
+an unknown obligation. The first acceptance already queued its ack on this
+reliable FIFO; there is no application retransmit or lost-ack recovery on a
+live link. EOF follows the cleanup rule below. Late grants, accepted facts and
+absolute releases for absent IDs do nothing; cancellation before a grant
+already queued its release after the reserve. None can resurrect retired work.
+The frontiers and all remaining peer metadata belong only to that exact link;
+received pool debt survives forgetting a closed peer.
+
+`peer_upload_release` sets `remainingBytes` to an absolute unused upper bound,
+not a subtraction. Repeated or older larger bounds cannot free bytes twice,
+and release never frees an accepted portion. Loss of the link cancels unused
+grants/waits of that generation; already accepted receiver bytes survive peer
+EOF until processed or discarded. Source-side deletion after link loss still
+waits for all its retained references to go. Loss or change of the upload's
+owner interrupts it through the existing gone/interrupted path: old windows
+are not transferred to a new owner, and their portions are not replayed there.
+
+Budgeted peer output spans remain covered by the raw pool while staged or
+partially written. Ordinary peer output retains its existing 8 MiB cap.
+Pool exhaustion stops upload grants, not reads of worker, peer or control
+sockets: those channels must deliver the facts that release reservations.
+
+### Raw Bytes And Process Memory
+
+The pool counts raw file bytes once per node obligation, not encoded message
+length or RSS. Signed-frame headers, base64/JSON, PHP string copies, native
+buffers and other process allocations add overhead. A raw-byte limit is
+therefore not a byte-for-byte RSS ceiling or a limit on outgoing page payloads.
+The socket read budget and parser CPU optimizations are separate mechanisms;
+see [event-loop.md](event-loop.md#read-budget-and-upload-memory).
 
 ## Picture Metadata
 
@@ -231,9 +376,14 @@ Files run one at a time. The client does not declare the next file until its
 turn, and does not stream until the declaration succeeds. It regards the first
 `page_response` or `subscription_page_error` after a connection opens as the
 readiness cue: actions route through that page subscription, so an open socket
-alone is not enough. Each chunk contains at most 64 KiB of file bytes, and the
-client waits while the socket's `bufferedAmount` is above 1 MiB rather than
-letting the whole file accumulate in browser memory.
+alone is not enough. After init, a nonempty file requests credit and waits for
+the master's permission before reading or sending bytes. Each chunk contains
+at most 64 KiB of file bytes and fits the remaining credit. The socket's
+`bufferedAmount` high-water mark of 1 MiB is an additional browser backlog
+check, not the server's upload budget. Waiting for credit is event-driven;
+cancel, failure, gone or connection-generation change clears the old
+permission and wakes its waiters to stop. Credit is private to the existing
+browser entries map. See [Upload credit](../frontend/wire-protocol.md#upload-credit).
 
 The server remains authoritative for every phase and received-byte count. The
 client owns only `queued`, before a declaration; it replaces each public record

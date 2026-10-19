@@ -241,3 +241,9 @@ export {
   type ClusterInspection,
   type ClusterNodeLogMark,
 } from './cluster.js'
+
+export {
+  readMonopolisticWorker,
+  type MonopolisticWorker,
+} from './daemonWorker.js'
+export { watchUploadFrames } from './uploadFrames.js'

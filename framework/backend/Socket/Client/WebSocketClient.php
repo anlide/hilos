@@ -21,11 +21,16 @@ use Hilos\Core\Daemon\ProtectedModeAdmissionRecorder;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Files\Upload\UploadFrame;
+use Hilos\Files\Upload\UploadMemoryInput;
+use Hilos\Files\Upload\UploadMemoryPoolSink;
+use Hilos\Files\Upload\DTO\UploadCreditRequestSignalData;
 use Hilos\ProtectedMode\ProtectedModeAdmissionConstants;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
@@ -145,6 +150,9 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /** @var int Byte length of the minted connection identifier (128-bit) */
     private const int ACCEPT_KEY_RANDOM_BYTES = 16;
 
+    /** Length byte plus the longest upload id; file bytes never need copying for early admission. */
+    private const int UPLOAD_SIGNATURE_PREFIX_BYTES = 1 + UploadFrame::MAX_ID_LENGTH;
+
     /**
      * Replacement for the rotation ticket in the burn refusal log line. The ticket is still live
      * at the sessions agent and on peer nodes during this moment, while the log is visible to
@@ -209,6 +217,25 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /** @var string Accumulated payload for fragmented message */
     private string $fragmentedPayload = '';
 
+    /** @var ?UploadMemoryPoolSink Null keeps unbound probes and hosts without UPLOADS on the legacy path */
+    private ?UploadMemoryPoolSink $uploadMemoryPoolSink = null;
+
+    private ?UploadMemoryInput $uploadMemoryInput = null;
+
+    /**
+     * The server injects this before the handshake, without changing project constructors.
+     *
+     * @param UploadMemoryPoolSink $sink Master owner of the single raw-byte ledger
+     * @throws LogicException When a live socket is rebound to another ledger owner
+     */
+    public function setUploadMemoryPoolSink(UploadMemoryPoolSink $sink): void
+    {
+        if ($this->uploadMemoryPoolSink !== null && $this->uploadMemoryPoolSink !== $sink) {
+            throw new LogicException('Cannot replace a WebSocket upload ledger owner');
+        }
+        $this->uploadMemoryPoolSink = $sink;
+    }
+
     /**
      * Process read buffer - parse WebSocket frames
      *
@@ -225,6 +252,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @throws RandomException When the secure random source refuses a handshake secret
      * @throws InvalidFormatException When the upgrade request's query string carries a non-string value
      * @throws InvalidArgumentException When a signal the frame turns into cannot be named
+     * @throws LogicException When upload admission metadata or ledger ownership is inconsistent
      */
     protected function processReadBuffer(): void
     {
@@ -233,13 +261,23 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             return;
         }
 
-        while (strlen($this->readBuffer) >= self::HEADER_LEN_BASE) {
-            $frame = $this->parseFrame();
-            if ($frame === null) {
-                break;
-            }
+        try {
+            while (strlen($this->readBuffer) >= self::HEADER_LEN_BASE) {
+                $frame = $this->parseFrame();
+                if ($frame === null) {
+                    break;
+                }
 
-            $this->handleFrame($frame);
+                $this->handleFrame($frame);
+            }
+        } catch (InvalidFrameException $failure) {
+            // Delete raw input before releasing its pending receipts; cancel may have removed
+            // all unused windows while this incomplete/fragmented input was still retained.
+            unset($frame);
+            if ($this->uploadMemoryPoolSink !== null) {
+                $this->discardUploadInput();
+            }
+            throw $failure;
         }
     }
 
@@ -253,6 +291,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @throws InvalidFrameException When text/binary payload is invalid
      * @throws AgentUnknownActionException When action name is not allowed
      * @throws UnsupportedOperationException When an internal signal branch is unreachable
+     * @throws LogicException When admitted binary message parts were prematurely settled or assigned
      */
     private function handleFrame(WebSocketFrameDTO $frame): void
     {
@@ -936,6 +975,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * Parse WebSocket frame
      *
      * @return ?WebSocketFrameDTO Frame data or null if frame is incomplete (waiting for more data)
+     * @throws InvalidFrameException When a signed physical frame exceeds its raw-byte permission
+     * @throws LogicException When the pool identity sequence is exhausted
      */
     private function parseFrame(): ?WebSocketFrameDTO
     {
@@ -978,6 +1019,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
 
         // Payload
         $payloadStart = $headerLen + $maskLen;
+        $this->admitUploadInput($opcode, $payloadStart, $payloadLen, $maskKey);
         if (strlen($this->readBuffer) < $payloadStart + $payloadLen) {
             return null; // Incomplete frame
         }
@@ -989,11 +1031,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
 
         // Unmask payload if needed
         if ($masked) {
-            $unmasked = '';
-            for ($i = 0; $i < strlen($payload); $i++) {
-                $unmasked .= $payload[$i] ^ $maskKey[$i % self::MASK_KEY_LENGTH];
-            }
-            $payload = $unmasked;
+            // String XOR keeps the payload's length when the repeated key has a partial tail.
+            $payload ^= str_repeat($maskKey, intdiv($payloadLen + self::MASK_KEY_LENGTH - 1, self::MASK_KEY_LENGTH));
         }
 
         return new WebSocketFrameDTO(
@@ -1002,6 +1041,53 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             masked: $masked,
             payload: $payload,
         );
+    }
+
+    /**
+     * Inspect a small unmasked prefix before retaining an incomplete frame or another fragment.
+     * A physical frame is admitted at its full declared raw length exactly once; repeated reads
+     * of its tail keep the same pending obligation, including after an asynchronous cancel.
+     *
+     * @param int $opcode Physical frame opcode
+     * @param int $payloadStart Offset of the wire payload after header and optional mask
+     * @param int $payloadLen Declared physical payload length
+     * @param string $maskKey Optional physical-frame mask
+     * @throws InvalidFrameException When the signed input exceeds current permission
+     * @throws LogicException When the pool identity sequence is exhausted
+     */
+    private function admitUploadInput(int $opcode, int $payloadStart, int $payloadLen, string $maskKey): void
+    {
+        if ($this->uploadMemoryPoolSink === null) {
+            return;
+        }
+        $continuation = $opcode === self::OPCODE_CONTINUATION
+            && $this->isReceivingFragmented && $this->fragmentedOpcode === self::OPCODE_BINARY;
+        if ($opcode !== self::OPCODE_BINARY && !$continuation) {
+            return;
+        }
+        $previousBytes = $continuation ? strlen($this->fragmentedPayload) : 0;
+        $previousPrefix = substr($this->fragmentedPayload, 0, min($previousBytes, self::UPLOAD_SIGNATURE_PREFIX_BYTES));
+        $prefixBytes = min(
+            self::UPLOAD_SIGNATURE_PREFIX_BYTES - strlen($previousPrefix),
+            $payloadLen,
+            strlen($this->readBuffer) - $payloadStart,
+        );
+        $prefix = substr($this->readBuffer, $payloadStart, $prefixBytes);
+        if ($maskKey !== '' && $prefixBytes > 0) {
+            $prefix ^= str_repeat($maskKey, intdiv($prefixBytes + self::MASK_KEY_LENGTH - 1, self::MASK_KEY_LENGTH));
+        }
+        $this->uploadMemoryInput ??= $this->uploadMemoryPoolSink->getUploadInput($this->acceptKey);
+        $this->uploadMemoryInput->observe($previousPrefix . $prefix, $previousBytes + $payloadLen);
+    }
+
+    /** Delete raw input before its metadata obligation, including after a rejected continuation. */
+    private function discardUploadInput(): void
+    {
+        $this->readBuffer = '';
+        $this->isReceivingFragmented = false;
+        $this->fragmentedOpcode = 0;
+        $this->fragmentedPayload = '';
+        $this->uploadMemoryInput?->discardMessage();
     }
 
     /**
@@ -1079,6 +1165,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      *
      * @param string $payload Frame payload (UTF-8 text)
      * @throws InvalidFrameException When JSON or signal fields are invalid
+     * @throws LogicException When the upload owner refuses the real socket identity
      * @throws AgentUnknownActionException When action name is not allowed
      * @throws UnsupportedOperationException When an internal signal branch is unreachable
      * @throws InvalidArgumentException When the signal the frame turns into cannot be named
@@ -1097,6 +1184,28 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         }
 
         switch ($type) {
+            case SignalTypeConstants::UPLOAD_CREDIT_REQUEST: {
+                if ($this->uploadMemoryPoolSink === null) {
+                    throw new InvalidFrameException('Upload credit is unavailable');
+                }
+                $this->uploadMemoryInput ??= $this->uploadMemoryPoolSink->getUploadInput($acceptKey);
+                try {
+                    $dto = UploadCreditRequestSignalData::fromArray([
+                        ...$decoded,
+                        'acceptKey' => $acceptKey,
+                    ]);
+                } catch (InvalidFormatException $failure) {
+                    throw new InvalidFrameException($failure->getMessage());
+                }
+                Hilos::$sr->queueSignal(
+                    new SignalSource(SignalSource::WEBSOCKET),
+                    new SignalType(SignalTypeConstants::UPLOAD_CREDIT_REQUEST),
+                    new SignalName(SignalTypeConstants::UPLOAD_CREDIT_REQUEST),
+                    $dto,
+                );
+                break;
+            }
+
             case SignalTypeConstants::ACTION: {
                 $actionName = isset($decoded[SignalPayloadConstants::FIELD_ACTION])
                     && is_string($decoded[SignalPayloadConstants::FIELD_ACTION])
@@ -1504,6 +1613,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      *
      * @param string $payload Frame payload (binary data)
      * @throws InvalidArgumentException When the signal the frame turns into cannot be named
+     * @throws LogicException When the parser's admitted message parts were prematurely settled or assigned
      */
     protected function onFrameBinary(string $payload): void
     {
@@ -1511,6 +1621,11 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             acceptKey: $this->acceptKey,
             payload: $payload,
         );
+
+        $receipt = $this->uploadMemoryInput?->finishMessage();
+        if ($receipt !== null) {
+            $this->uploadMemoryPoolSink->onUploadFrameQueued($dto, $receipt);
+        }
 
         Hilos::$sr->queueSignal(
             new SignalSource(SignalSource::WEBSOCKET),
@@ -1612,7 +1727,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /**
      * Called when socket connection is successfully closed.
      *
-     * Announces the close and nothing more. The subscriptions the accept key held are
+     * Deletes socket input and releases its obligations, then announces the close.
+     * The subscriptions the accept key held are
      * dropped by the master's own dispatch, after the close has been routed
      * ({@see DaemonManager::forgetSubscriptionsAfterRouting()}): the records name the
      * agent instances serving this connection, and dropping them here would erase the
@@ -1622,13 +1738,19 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * which is the only side that knows which page that was.
      *
      * @throws InvalidArgumentException When the close signal cannot be named
+     * @throws LogicException When an internal unused-capacity invariant is broken
+     * @throws HilosException When unused peer upload grants cannot be canceled
      */
     protected function onClose(): void
     {
-        // Reset fragmented message state
-        $this->isReceivingFragmented = false;
-        $this->fragmentedOpcode = 0;
-        $this->fragmentedPayload = '';
+        if ($this->uploadMemoryPoolSink !== null && $this->acceptKey !== '') {
+            $this->uploadMemoryInput ??= $this->uploadMemoryPoolSink->getUploadInput($this->acceptKey);
+        }
+        $this->discardUploadInput();
+        $this->uploadMemoryInput?->close();
+        if ($this->acceptKey !== '') {
+            $this->uploadMemoryPoolSink?->onUploadConnectionClosed($this->acceptKey);
+        }
 
         // WebSocket client cleanup if needed
         // Can be overridden in child classes

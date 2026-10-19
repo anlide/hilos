@@ -354,9 +354,43 @@ scenario on a single shape is retired (HIL-1218).
 
 | Demo | View | Hilos cluster | MariaDB | Scenarios |
 |---|---|---|---|---|
-| binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server, primary + derived journal | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes, 23 verifier circle on every master, 25 freeze settles on every master, 29 a node with a cluster directory of its own refused on both ends, 30 a ready data export copy outlives the node its agent lived on, 32 a node with another admin view mode refused on both ends, 33 every master takes browsers, 34 a tab is the same on every master under protected mode, 35 rt row deleted while cut off is swept, 36 a slave cut off with its leader stops its work before it runs elsewhere, 38 manual maintenance from any node, 41 i18n catalog taken once and skipped after holder restart, 42 a node with another default language refused on both ends, 44 replicated waiting fleet survives leader death and quorum loss, then starts when slots return without another ask |
+| binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server, primary + derived journal | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes, 23 verifier circle on every master, 25 freeze settles on every master, 29 a node with a cluster directory of its own refused on both ends, 30 a ready data export copy outlives the node its agent lived on, 32 a node with another admin view mode refused on both ends, 33 every master takes browsers, 34 a tab is the same on every master under protected mode, 35 rt row deleted while cut off is swept, 36 a slave cut off with its leader stops its work before it runs elsewhere, 38 manual maintenance from any node, 41 i18n catalog taken once and skipped after holder restart, 42 a node with another default language refused on both ends, 44 replicated waiting fleet survives leader death and quorum loss, then starts when slots return without another ask, 45 upload pool across nodes: reservations, worker receipts, crossing waits and peer generations |
 | ecommerce-shop | React | one master and two slaves of unequal room, `ram=10` and `ram=4`, each with `slots=64` | one server, primary + derived journal | 3 placement, 4 slave-kill failover, 6 hot-join, 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused, 16 recreated node leaves no phantom fleet (parked, P-441/2), 18 capacity is consumed, 19 worker death on a live node, 37 costless agents consume slots, 39 person agents across nodes, 43 waiting ballast retries after a slave returns without another ask (cleanup checked with `composer -d demo/ecommerce-shop run test:cluster:scenarios -- 43 37 18`) |
 | online-testing | Angular | three equal masters that host work themselves | one server, primary + derived journal | 11 cross-node db fact, 15 db interest addressing, 21 schema rolled out once by nodes that start together, 22 a node reading another database refused on both ends, 24 a cut-off leader stops its work before it runs elsewhere, 40 journal triggers installed once and unchanged on ordinary restart |
+
+Scenario **45** on binance-btc-tracker proves the
+[upload raw-byte pool](architecture/uploads.md#the-raw-byte-pool) on real
+nodes (`scenario_45_upload_pool_across_nodes` in
+[`scenarios.py`](../../framework/docker/cluster/scenarios.py)). Its actual
+shape guard is `Need(masters=2, slaves=2)`: the WORKER fleet probes run on
+both slaves of this carrier. From the repository root, use the pointed run
+while changing that path and the carrier's whole matrix before merge:
+
+```bash
+composer -d demo/binance-btc-tracker run test:cluster:scenarios -- 45
+composer -d demo/binance-btc-tracker run test:cluster:scenarios
+```
+
+The test-only `test:cluster:upload-pool` driver uses `inspect`, `limit` and
+`enqueue`, behind the ordinary CLI and daemon production guards. Its oracle
+has exactly four fields: `limitBytes`, `usedBytes`, `waitingUploads` and
+`pendingPeerReservations`: the installed node limit, charged raw bytes,
+unfinished credit demands plus driver metadata, and incoming/outgoing reserve waits.
+`pendingPeerReservations` does not count every received worker receipt.
+The driver's zero limit suspends grants for the proof; the production setting
+remains positive. These live counters do not prove RSS or payload contents.
+
+With 131,072-byte node pools and 65,536-byte portions, the scenario proves
+reservation before data, local plus remote debt under one cap, overlapping
+crossing demands and fresh control roundtrips while capacity waits. It captures
+an exact worker incarnation before STOP, checks its stopped state, and restores
+that incarnation with CONT in `finally`. Real worker death, peer EOF and a new
+peer generation prove final cleanup without releasing accepted receiver debt
+early. The original stand is restored and checked before the matrix proceeds.
+Actual browser credit/binary bytes, files larger than the pool and exact
+downloaded contents are covered separately by chat's
+[`attachment.spec.ts`](../../demo/chat/tests/e2e/tests/attachment.spec.ts),
+under `the shared browser upload pool`.
 
 Scenarios **43/44** prove waiting-placement recovery (HIL-446). Ecommerce-shop's
 43 returns a slave to waiting ballast; binance-btc-tracker's 44 first gives both

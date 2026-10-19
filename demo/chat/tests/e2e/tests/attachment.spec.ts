@@ -1,7 +1,17 @@
-import { test, expect, type Page } from '@playwright/test'
+import { createHash } from 'node:crypto'
+import { writeFile } from 'node:fs/promises'
+import {
+  test,
+  expect,
+  type BrowserContext,
+  type TestInfo,
+  type Page,
+} from '@playwright/test'
 
 import {
   armSocketDrop,
+  readMonopolisticWorker,
+  watchUploadFrames,
   dropFiles,
   dropSocket,
   isSessionCookie,
@@ -18,10 +28,18 @@ import {
 } from '../helpers/session'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation'
+import { setAdmin } from '../helpers/adminGrant.js'
+import { chatUploadPool } from '../helpers/uploadPool.js'
+import {
+  UPLOADS_WORKER_AGENT,
+  withStoppedUploadWorker,
+} from '../../../../../framework/frontend/scripts/stoppedUploadWorker.mjs'
 
 // spec-owner: demo — files attached to chat's messages
 
 const ATTACHMENT_MIME = 'image/png'
+const SPEED_FILE_BYTES = 5_070_675
+const READY_WITHIN_MS = 2_000
 
 /**
  * A valid 1x1 PNG image (70 bytes). A real image is required because the test
@@ -35,6 +53,20 @@ const ATTACHMENT_PNG = Buffer.from(
 
 /** Bytes of a zip archive's head: content that is neither a picture, a PDF nor text. */
 const ZIP_BYTES = Buffer.from('504b0304140000000800', 'hex')
+
+/** Generate the same printable ASCII lines for every upload speed measurement. */
+function speedFile(): Buffer {
+  const buffer = Buffer.alloc(SPEED_FILE_BYTES)
+  let seed = 1527
+  for (let offset = 0; offset < buffer.length; offset++) {
+    seed = (Math.imul(seed, 1_664_525) + 1_013_904_223) >>> 0
+    buffer[offset] =
+      (offset + 1) % 80 === 0 || offset === buffer.length - 1
+        ? 10
+        : 32 + (seed % 95)
+  }
+  return buffer
+}
 
 /**
  * Pick one PNG through the composer's file input and wait for its chip to read
@@ -65,6 +97,32 @@ async function expectReceived(page: Page, filename: string): Promise<void> {
   )
   await expect(page.getByTestId('attachments-file-name')).toHaveText(filename)
 }
+
+test('a 5 MB file is ready on the composer within two seconds', async ({
+  page,
+}) => {
+  const file = {
+    name: 'upload-speed.txt',
+    mimeType: 'text/plain',
+    buffer: speedFile(),
+  }
+  await signUp(page)
+
+  const t0 = Date.now()
+  await page.getByTestId('attach-button-input').setInputFiles(file)
+  await expect(page.getByTestId('attachments-file')).toHaveAttribute(
+    'data-state',
+    'received',
+    { timeout: 30_000 },
+  )
+  const elapsed = Date.now() - t0
+  test
+    .info()
+    .annotations.push({ type: 'upload-ms', description: String(elapsed) })
+  expect(elapsed, `The file was ready after ${elapsed} ms`).toBeLessThanOrEqual(
+    READY_WITHIN_MS,
+  )
+})
 
 // Attachment lifecycle and authorization e2e (HIL-1035, HIL-144): the file
 // travels through the framework uploads client and is served by the files
@@ -254,4 +312,424 @@ test('signing out drops the files waiting for a message', async ({ page }) => {
 
   await expect(page.getByTestId('self-user')).toHaveText(user.name)
   await expect(page.getByTestId('attachments-file')).toHaveCount(0)
+})
+
+const SMALL_POOL_BYTES = 131_072
+const DEFAULT_POOL_BYTES = 2_147_483_648
+
+/** Distinct printable content accepted by chat's content sniff and duplicate check. */
+function poolFile(seed: number, size: number) {
+  const buffer = Buffer.alloc(size)
+  for (let offset = 0; offset < size; offset++) {
+    buffer[offset] =
+      (offset + 1) % 80 === 0 ? 10 : 32 + ((offset * 17 + seed) % 95)
+  }
+  return { name: `${modelKey()}.txt`, mimeType: 'text/plain', buffer }
+}
+
+/** Read the live uploads holder after its registration/settings source is ready. */
+async function uploadWorker(page: Page) {
+  return readMonopolisticWorker(
+    page,
+    UPLOADS_WORKER_AGENT,
+    (page) => gotoPage(page, '/hilos/daemon/standalone/workers'),
+    async (predicate) => {
+      await expect.poll(predicate).toBe(true)
+    },
+  )
+}
+
+/** Check bytes at the observed SDK boundary and the server's final state. */
+function expectWholeUpload(
+  trace: ReturnType<typeof watchUploadFrames>,
+  file: ReturnType<typeof poolFile>,
+) {
+  expect(trace.errors).toEqual([])
+  expect(trace.uploads.size).toBe(1)
+  const upload = [...trace.uploads.values()][0]!
+  expect(upload.filename).toBe(file.name)
+  expect(upload.size).toBe(file.buffer.length)
+  expect(upload.requestIds).toHaveLength(1)
+  expect(upload.requestIds[0]).toMatch(/^\d+$/)
+  expect(upload.demands).toEqual([file.buffer.length])
+  expect(Buffer.concat(upload.chunks)).toEqual(file.buffer)
+  expect(Math.max(...upload.grants)).toBe(file.buffer.length)
+  expect(new Set(upload.grants).size).toBeGreaterThan(1)
+  expect(upload.states).toContainEqual(
+    expect.objectContaining({
+      phase: 'complete',
+      receivedBytes: file.buffer.length,
+      declaredSize: file.buffer.length,
+    }),
+  )
+}
+
+/** Publish under the actual author and compare the product download's complete body. */
+async function publishPoolFile(
+  page: Page,
+  author: string,
+  file: ReturnType<typeof poolFile>,
+  record: (event: Record<string, unknown>) => void,
+) {
+  const key = file.name.slice(0, -4)
+  const text = `pool attachment ${key}`
+  await dictateModerationVerdict(key, true, 'ok')
+  await typeInto(page.getByTestId('message-input'), text)
+  await clickSubmit(page.getByTestId('message-send'))
+  await expect(page.getByTestId('attachments-file')).toHaveCount(0)
+  const event = page
+    .getByTestId('event')
+    .filter({ has: page.getByTestId('event-text').filter({ hasText: text }) })
+  await expect(event.getByTestId('event-author')).toHaveText(author)
+  const attachment = event.getByTestId('event-attachment')
+  await expect(attachment).toHaveAttribute('download', file.name)
+  const href = await attachment.getAttribute('href')
+  expect(href).toContain('/_hilos/file?')
+  if (!href) throw new Error('The published attachment has no product download')
+  const response = await page.request.get(href)
+  expect(response.status()).toBe(200)
+  const body = await response.body()
+  expect(body).toEqual(file.buffer)
+  record({
+    kind: 'published-download',
+    author,
+    text,
+    filename: file.name,
+    href,
+    status: response.status(),
+    bytes: body.length,
+    sha256: createHash('sha256').update(body).digest('hex'),
+    expectedSha256: createHash('sha256').update(file.buffer).digest('hex'),
+  })
+}
+
+/** Cleanup failure is a failed test, with the complete attempt attached even then. */
+async function cleanupPoolProof(
+  contexts: BrowserContext[],
+  pool: ReturnType<typeof chatUploadPool>,
+  original: number | undefined,
+  traces: ReturnType<typeof watchUploadFrames>[],
+  events: Record<string, unknown>[],
+  info: TestInfo,
+) {
+  const failures: unknown[] = []
+  const closed = await Promise.allSettled(
+    contexts.map((context) => context.close()),
+  )
+  for (const result of closed)
+    if (result.status === 'rejected') failures.push(result.reason)
+  try {
+    if (original !== undefined) {
+      await pool.limit(original)
+      await expect
+        .poll(() => pool.inspect())
+        .toEqual({
+          limitBytes: original,
+          usedBytes: 0,
+          waitingUploads: 0,
+          pendingPeerReservations: 0,
+        })
+    }
+  } catch (error) {
+    failures.push(error)
+  }
+  events.push({ kind: 'cleanup', errors: failures.map(String) })
+  const proofPath = info.outputPath('upload-pool-proof.json')
+  await writeFile(
+    proofPath,
+    JSON.stringify(
+      {
+        retry: info.retry,
+        events,
+        participants: traces.map((trace) => ({
+          connections: trace.connections(),
+          errors: trace.errors,
+          uploads: trace.summary(),
+        })),
+      },
+      null,
+      2,
+    ),
+  )
+  await info.attach('upload-pool-proof', {
+    path: proofPath,
+    contentType: 'application/json',
+  })
+
+  if (failures.length)
+    throw new AggregateError(failures, 'Upload pool proof cleanup failed')
+}
+
+test.describe('the shared browser upload pool', () => {
+  // A controlled process pause is judged on its first attempt, as in daemon restart.
+  test.describe.configure({ retries: 0 })
+
+  test('two people resume files larger than one pool and download every original byte', async ({
+    browser,
+  }, info) => {
+    const contexts: BrowserContext[] = []
+    const events: Record<string, unknown>[] = []
+    const record = (event: Record<string, unknown>) => {
+      events.push({ at: Date.now(), ...event })
+    }
+    const pool = chatUploadPool(record)
+    const traces: ReturnType<typeof watchUploadFrames>[] = []
+    let original: number | undefined
+    try {
+      const first = await browser.newContext()
+      contexts.push(first)
+      const second = await browser.newContext()
+      contexts.push(second)
+      const a = await first.newPage()
+      const b = await second.newPage()
+      const ta = watchUploadFrames(a, 'first-person', record)
+      traces.push(ta)
+      const tb = watchUploadFrames(b, 'second-person', record)
+      traces.push(tb)
+      const ua = await signUp(a)
+      const ub = await signUp(b)
+      expect(ua.userId).not.toBe(ub.userId)
+      record({ kind: 'people', people: [ua, ub] })
+      await setAdmin(ua.userId, true)
+      const admin = await first.newPage()
+      const worker = await uploadWorker(admin)
+      // A nonzero initial value can only come from the ready settings reporter.
+      await expect
+        .poll(async () => (await pool.inspect()).limitBytes)
+        .toBe(DEFAULT_POOL_BYTES)
+      original = (await pool.inspect()).limitBytes
+      expect(await pool.inspect()).toEqual({
+        limitBytes: original,
+        usedBytes: 0,
+        waitingUploads: 0,
+        pendingPeerReservations: 0,
+      })
+      const initialConnections = [ta.connections(), tb.connections()]
+      record({
+        kind: 'connections-before-pool',
+        participants: initialConnections,
+      })
+      await pool.limit(0)
+      const fa = poolFile(11, SMALL_POOL_BYTES * 3 + 17)
+      const fb = poolFile(29, SMALL_POOL_BYTES * 4 + 31)
+      await a.getByTestId('attach-button-input').setInputFiles(fa)
+      await b.getByTestId('attach-button-input').setInputFiles(fb)
+      await expect
+        .poll(() => [ta.summary()[0]?.demands, tb.summary()[0]?.demands])
+        .toEqual([[fa.buffer.length], [fb.buffer.length]])
+      await expect
+        .poll(() => pool.inspect())
+        .toEqual({
+          limitBytes: 0,
+          usedBytes: 0,
+          waitingUploads: 2,
+          pendingPeerReservations: 0,
+        })
+      expect(ta.sentBytes() + tb.sentBytes()).toBe(0)
+      await withStoppedUploadWorker(worker, record, async (held) => {
+        await pool.limit(SMALL_POOL_BYTES)
+        await expect
+          .poll(() => ta.sentBytes() + tb.sentBytes())
+          .toBe(SMALL_POOL_BYTES)
+        // Four new control roundtrips, with the worker still T on both sides.
+        for (let roundtrip = 1; roundtrip <= 4; roundtrip++) {
+          await held.assertStopped()
+          expect(await pool.inspect()).toEqual({
+            limitBytes: SMALL_POOL_BYTES,
+            usedBytes: SMALL_POOL_BYTES,
+            waitingUploads: 2,
+            pendingPeerReservations: 0,
+          })
+          expect(ta.grantedBytes() + tb.grantedBytes()).toBe(SMALL_POOL_BYTES)
+          expect(ta.sentBytes() + tb.sentBytes()).toBe(SMALL_POOL_BYTES)
+          for (const [page, trace] of [
+            [a, ta],
+            [b, tb],
+          ] as const) {
+            await expect(page.getByTestId('conn-state')).toHaveText('connected')
+            await expect(
+              page.getByTestId('attachments-file'),
+            ).not.toHaveAttribute('data-state', 'received')
+            expect(
+              trace
+                .summary()[0]
+                ?.states.some((state) => state.phase === 'complete'),
+            ).toBe(false)
+            expect(trace.errors).toEqual([])
+          }
+          record({ kind: 'full-pool-control-roundtrip', roundtrip })
+          await held.assertStopped()
+        }
+      })
+      await expect
+        .poll(async () => {
+          await pool.inspect()
+          return [ta, tb].every((trace) =>
+            trace
+              .summary()[0]
+              ?.states.some((state) => state.phase === 'complete'),
+          )
+        })
+        .toBe(true)
+      await expectReceived(a, fa.name)
+      await expectReceived(b, fb.name)
+      expectWholeUpload(ta, fa)
+      expectWholeUpload(tb, fb)
+      await expect
+        .poll(() => pool.inspect())
+        .toEqual({
+          limitBytes: SMALL_POOL_BYTES,
+          usedBytes: 0,
+          waitingUploads: 0,
+          pendingPeerReservations: 0,
+        })
+      await publishPoolFile(a, ua.name, fa, record)
+      await publishPoolFile(b, ub.name, fb, record)
+      expect([ta.connections(), tb.connections()]).toEqual(initialConnections)
+    } finally {
+      await cleanupPoolProof(contexts, pool, original, traces, events, info)
+    }
+  })
+
+  test('disconnect releases unused credit while accepted bytes remain until worker resume', async ({
+    browser,
+  }, info) => {
+    const contexts: BrowserContext[] = []
+    const events: Record<string, unknown>[] = []
+    const record = (event: Record<string, unknown>) => {
+      events.push({ at: Date.now(), ...event })
+    }
+    const pool = chatUploadPool(record)
+    const traces: ReturnType<typeof watchUploadFrames>[] = []
+    let original: number | undefined
+    try {
+      const accepted = await browser.newContext()
+      contexts.push(accepted)
+      const unused = await browser.newContext()
+      contexts.push(unused)
+      const waiting = await browser.newContext()
+      contexts.push(waiting)
+      const a = await accepted.newPage()
+      const b = await unused.newPage()
+      const c = await waiting.newPage()
+      const ta = watchUploadFrames(a, 'accepted-debt', record)
+      traces.push(ta)
+      const tb = watchUploadFrames(b, 'unused-credit', record)
+      traces.push(tb)
+      const tc = watchUploadFrames(c, 'waiting-person', record)
+      traces.push(tc)
+      const unusedCredits = await tb.holdCredits()
+      const ua = await signUp(a)
+      const ub = await signUp(b)
+      const uc = await signUp(c)
+      expect(new Set([ua.userId, ub.userId, uc.userId]).size).toBe(3)
+      record({ kind: 'people', people: [ua, ub, uc] })
+      await setAdmin(uc.userId, true)
+      const admin = await waiting.newPage()
+      const worker = await uploadWorker(admin)
+      await expect
+        .poll(async () => (await pool.inspect()).limitBytes)
+        .toBe(DEFAULT_POOL_BYTES)
+      original = (await pool.inspect()).limitBytes
+      await pool.limit(0)
+      const fa = poolFile(37, SMALL_POOL_BYTES / 2)
+      const fb = poolFile(43, SMALL_POOL_BYTES * 3 + 7)
+      const fc = poolFile(61, SMALL_POOL_BYTES * 3 + 23)
+      for (const [page, file, trace] of [
+        [a, fa, ta],
+        [b, fb, tb],
+        [c, fc, tc],
+      ] as const) {
+        await page.getByTestId('attach-button-input').setInputFiles(file)
+        await expect
+          .poll(() => trace.summary()[0]?.demands)
+          .toEqual([file.buffer.length])
+      }
+      await expect
+        .poll(() => pool.inspect())
+        .toEqual({
+          limitBytes: 0,
+          usedBytes: 0,
+          waitingUploads: 3,
+          pendingPeerReservations: 0,
+        })
+      await withStoppedUploadWorker(worker, record, async (held) => {
+        await pool.limit(SMALL_POOL_BYTES)
+        await expect.poll(() => ta.sentBytes()).toBe(fa.buffer.length)
+        const unusedId = [...tb.uploads.keys()][0]!
+        await expect
+          .poll(() => unusedCredits.credits)
+          .toEqual([
+            { clientUploadId: unusedId, sendUpToBytes: SMALL_POOL_BYTES / 2 },
+          ])
+        expect(unusedCredits.errors).toEqual([])
+        expect(tb.grantedBytes()).toBe(SMALL_POOL_BYTES / 2)
+        expect(tb.sentBytes()).toBe(0)
+        expect(tc.grantedBytes()).toBe(0)
+        expect(await pool.inspect()).toEqual({
+          limitBytes: SMALL_POOL_BYTES,
+          usedBytes: SMALL_POOL_BYTES,
+          waitingUploads: 2,
+          pendingPeerReservations: 0,
+        })
+        await held.assertStopped()
+        await accepted.close()
+        // EOF cannot free the 65536 bytes already delivered to the held worker.
+        for (let roundtrip = 1; roundtrip <= 2; roundtrip++) {
+          expect(await pool.inspect()).toEqual({
+            limitBytes: SMALL_POOL_BYTES,
+            usedBytes: SMALL_POOL_BYTES,
+            waitingUploads: 2,
+            pendingPeerReservations: 0,
+          })
+          expect(tc.grantedBytes()).toBe(0)
+          await held.assertStopped()
+          record({
+            kind: 'accepted-eof-debt-retained',
+            roundtrip,
+            acceptedBytes: ta.sentBytes(),
+            unusedBytes: unusedCredits.credits[0]!.sendUpToBytes,
+          })
+        }
+        await unused.close()
+        record({ kind: 'unused-context-closed' })
+        await expect.poll(() => tc.sentBytes()).toBe(SMALL_POOL_BYTES / 2)
+        expect(tc.grantedBytes()).toBe(SMALL_POOL_BYTES / 2)
+        expect(tb.sentBytes()).toBe(0)
+        expect(await pool.inspect()).toEqual({
+          limitBytes: SMALL_POOL_BYTES,
+          usedBytes: SMALL_POOL_BYTES,
+          waitingUploads: 1,
+          pendingPeerReservations: 0,
+        })
+        await expect(c.getByTestId('conn-state')).toHaveText('connected')
+        await expect(c.getByTestId('attachments-file')).not.toHaveAttribute(
+          'data-state',
+          'received',
+        )
+        await held.assertStopped()
+        record({
+          kind: 'unused-reassigned-with-accepted-debt',
+          acceptedBytes: ta.sentBytes(),
+          successorBytes: tc.sentBytes(),
+        })
+      })
+      await expectReceived(c, fc.name)
+      expectWholeUpload(tc, fc)
+      for (const trace of traces) expect(trace.errors).toEqual([])
+      await expect
+        .poll(() => pool.inspect())
+        .toEqual({
+          limitBytes: SMALL_POOL_BYTES,
+          usedBytes: 0,
+          waitingUploads: 0,
+          pendingPeerReservations: 0,
+        })
+      await clickSubmit(c.getByTestId('attachments-file-remove'))
+      await expect(c.getByTestId('attachments-file')).toHaveCount(0)
+      expect(tc.summary()[0]?.canceled).toBe(1)
+    } finally {
+      await cleanupPoolProof(contexts, pool, original, traces, events, info)
+    }
+  })
 })

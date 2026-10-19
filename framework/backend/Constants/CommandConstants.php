@@ -142,4 +142,6 @@ final class CommandConstants
      * @var int Poll sleep between client ticks, in microseconds
      */
     public const int POLL_INTERVAL_US = 10000;
+    public const string COMMAND_TEST_UPLOAD_POOL = CliCommands::CLUSTER_TEST_UPLOAD_POOL;
+
 }

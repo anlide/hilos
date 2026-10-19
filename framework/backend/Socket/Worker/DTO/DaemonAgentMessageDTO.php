@@ -21,6 +21,7 @@ use Hilos\Socket\Worker\WorkerDTO;
 class DaemonAgentMessageDTO extends WorkerDTO
 {
     public const string SIGNAL = 'signal';
+    public const string UPLOAD_RECEIPT_ID = 'uploadReceiptId';
 
     // Message type (daemon -> worker; distinct from WorkerAgentMessageDTO for worker -> daemon)
     public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_DAEMON_AGENT_MESSAGE;
@@ -30,10 +31,12 @@ class DaemonAgentMessageDTO extends WorkerDTO
      *
      * @param string $agentId Agent ID
      * @param SignalDTO $signal Signal payload
+     * @param ?string $uploadReceiptId Raw-byte receipt completed only after binary processing or final drop
      */
     public function __construct(
         public readonly string $agentId,
         public readonly SignalDTO $signal,
+        public readonly ?string $uploadReceiptId = null,
     ) {
     }
 
@@ -54,11 +57,16 @@ class DaemonAgentMessageDTO extends WorkerDTO
      */
     public function toArray(): array
     {
-        return [
+        $data = [
             self::TYPE => $this->getType(),
             AgentConstants::FIELD_AGENT_ID => $this->agentId,
             self::SIGNAL => $this->signal->toArray(),
         ];
+        if ($this->uploadReceiptId !== null) {
+            $data[self::UPLOAD_RECEIPT_ID] = $this->uploadReceiptId;
+        }
+
+        return $data;
     }
 
     /**
@@ -71,10 +79,10 @@ class DaemonAgentMessageDTO extends WorkerDTO
      * process, without a serialization round trip, arrives as the object and is
      * taken as it is.
      *
-     * @param array<string, mixed> $data Source data (agentId, signal)
+     * @param array<string, mixed> $data Source data (agentId, signal, optional uploadReceiptId)
      * @return static DTO instance
      * @throws InvalidArgumentException When the signal names an empty signal
-     * @throws InvalidFormatException When the payload carries no agent id or no signal
+     * @throws InvalidFormatException When required fields or the optional receipt have invalid types
      * @throws HilosException When the inner signal payload refuses to be restored
      */
     public static function fromArray(array $data): static
@@ -87,6 +95,7 @@ class DaemonAgentMessageDTO extends WorkerDTO
         return new static(
             agentId: self::requireString($data, AgentConstants::FIELD_AGENT_ID),
             signal: $signal,
+            uploadReceiptId: self::optionalString($data, self::UPLOAD_RECEIPT_ID),
         );
     }
 }

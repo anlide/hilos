@@ -106,6 +106,9 @@ Plus scenarios beyond that matrix:
     a node returns             without another placement ask, and keeps one record (HIL-446)
  44 waiting work survives       a replicated Unplaced fleet member survives a leader's death and
     leadership changes         quorum loss, then starts when slots return without an ask (HIL-446)
+ 45 upload pool across nodes    small real node pools, stopped workers, crossing requests, control
+                               progress, worker death and peer replacement retain exact raw debt
+                               until receipts/drop; original stand restored (HIL-1527)
  31 replica keeps up with       a replica took every write the preceding scenarios made, stays
     the primary                read-only and is reached by nobody (HIL-1229)
 
@@ -1346,6 +1349,313 @@ def scenario_44_waiting_work_survives_leadership_changes():
     return (f"{target} replicated to every surviving master, survived leader death and quorum loss/rebuild "
             f"(terms {old_term}->{inherited['term']}->{recovered_term}), then started and wrote on {host} without "
             f"another ask; {len(extras)} extras ran, live slots {held}; full stand restored")
+
+
+def scenario_45_upload_pool_across_nodes():
+    """Real node pools retain worker debt through contention, exit and peer replacement.
+
+    The oracle is the four driver counters plus actual process/link/receipt facts,
+    not RSS, JSON size or payload contents. Every STOP is captured before signaling
+    and has a finally CONT of that exact incarnation. Pool liveness/invariant failures
+    are hard assertions: the matrix's convergence retry cannot hide a stuck delivery.
+    """
+    pool_bytes, chunk_bytes = 131072, 65536
+    # Mirrors UploadsSettingsCatalog::MEMORY_POOL_BYTES default, not a test policy.
+    default_bytes = 2147483648
+    route = "test:cluster:upload-pool"
+    frozen, attached, floors = [], [], {}
+    marks = {node: node_log_mark(node) for node in ALL_NODES}
+    phase = "prepare"
+
+    def trace(event, **data):
+        print("    upload-pool " + json.dumps(dict(event=event, phase=phase,
+                                                  time=time.monotonic(), **data), sort_keys=True), flush=True)
+
+    def command(node, operation, *args):
+        result = control.client(STAND, node, route, operation, *args)
+        trace("command", node=node, operation=operation, args=args,
+              rc=result.code, stdout=result.out, stderr=result.err)
+        assert result.code == 0, f"{phase}: {node} {operation}: {result}"
+        row = json.loads(result.out)
+        assert set(row) == {"limitBytes", "usedBytes", "waitingUploads", "pendingPeerReservations"}, row
+        assert all(type(value) is int and value >= 0 for value in row.values()), row
+        assert row["usedBytes"] <= row["limitBytes"], f"{node} exceeded its raw byte budget: {row}"
+        assert row["usedBytes"] >= floors.get(node, 0), f"{node} freed a stopped worker's debt early: {row}"
+        return row
+
+    def limit(node, size):
+        return command(node, "limit", f"--memory-pool-bytes={size}")
+
+    def snapshot(nodes):
+        return {node: command(node, "inspect") for node in nodes}
+
+    def await_pool(nodes, predicate, description):
+        last = {}
+
+        def ready(_views):
+            last.update(snapshot(nodes))
+            return predicate(last)
+
+        try:
+            wait_until(ready, CONVERGE_TIMEOUT, description, nodes=[])
+        except ScenarioTimeout as error:
+            raise AssertionError(f"{phase}: delivery failed to progress: {description}; {last}") from error
+        trace("condition", description=description, pools=last)
+        return last
+
+    def idle(nodes):
+        return await_pool(nodes, lambda rows: all(all(row[key] == 0 for key in
+                          ("usedBytes", "waitingUploads", "pendingPeerReservations")) for row in rows.values()),
+                          "all receipts, demands and peer waits drained without another enqueue")
+
+    def target(node, views):
+        members = hosted_by(views, node)
+        workers = fleet_workers_on(node, members)
+        assert workers, f"no current fleet worker on {node}: {members}"
+        index, agents = max(workers.items(), key=lambda item: len(item[1]))
+        agent = sorted(agents)[0]
+        process = control.worker_process(STAND, node, index)
+        assert placement_row(inspect_all(), agent).get("nodeId") == node, f"{agent} moved during process capture"
+        trace("target", agent=agent, process=process._asdict())
+        return agent, process
+
+    def signal(process, number):
+        outcome = control.signal_worker_process(STAND, process, number)
+        trace("process", process=process._asdict(), signal=number,
+              rc=outcome.code, stdout=outcome.out, stderr=outcome.err)
+        assert outcome.code == 0, f"could not signal captured process: {outcome}"
+        return json.loads(outcome.out)
+
+    def stop(process):
+        # Register before STOP, including a failure between signal and confirmation.
+        frozen.append(process)
+        assert signal(process, 19) is not None, f"worker vanished before STOP: {process}"
+        try:
+            wait_until(lambda _v: (signal(process, None) or {}).get("state") == "T",
+                       CONVERGE_TIMEOUT, "captured worker is stopped", nodes=[])
+        except ScenarioTimeout as error:
+            raise AssertionError(f"worker did not stop: {process}") from error
+
+    def resume(process):
+        floors.pop(process.node, None)
+        signal(process, 18)  # null means gone, never signal its replacement.
+
+    def enqueue(source, destination, agent):
+        return command(source, "enqueue", f"--target-node-id={destination}",
+                       f"--agent-type={WORKER_AGENT_TYPE}", f"--agent-index={agent.split(':', 1)[1]}",
+                       f"--bytes={chunk_bytes}")
+
+    def control_progress(source, receiver):
+        # A NEW index fact and addressed reply, on the actual pair while pools wait.
+        key = f"pool45-{uuid.uuid4().hex}"
+        before = inspect_all([source, receiver])
+        count = indexed_for(before, source, receiver)
+        deliveries = client_deliveries(before, receiver)
+        attached.append((receiver, key))
+        assert client(receiver, "test:cluster:client:attach", key), "could not attach fresh control fixture"
+        wait_until(lambda v: indexed_for(v, source, receiver) > count, CONVERGE_TIMEOUT,
+                   "fresh connection fact crosses the contended peer", nodes=[source, receiver])
+        assert client(source, "test:cluster:client:send", key, key), "could not send fresh control reply"
+        wait_until(lambda v: client_deliveries(v, receiver) > deliveries
+                   and (v.get(receiver) or {}).get("lastClientAcceptKey") == key,
+                   CONVERGE_TIMEOUT, "fresh addressed control reply delivered", nodes=[source, receiver])
+        for node in ALL_NODES:
+            assert inspect(node) is not None, f"{node} inspect stopped during pool contention"
+            result = control.client(STAND, node, "daemon:ping")
+            trace("ping", node=node, rc=result.code, stdout=result.out, stderr=result.err)
+            assert result.code == 0, f"{node} daemon control stopped: {result}"
+        assert client(receiver, "test:cluster:client:detach", key), "could not detach control fixture"
+        attached.remove((receiver, key))
+        wait_until(lambda v: indexed_for(v, source, receiver) == count, CONVERGE_TIMEOUT,
+                   "fresh control fixture removed from peer index", nodes=[source])
+        trace("control-roundtrip", source=source, receiver=receiver, key=key)
+
+    try:
+        wait_converge(ALL_NODES)
+        views = wait_until(fleet_started, CONVERGE_TIMEOUT, "fleet started before pool perturbation")
+        pair = SLAVES[:2]
+        views = spread_fleet_over(pair, views)
+        a, b = sorted(pair)
+        agents, processes = {}, {}
+        for node in pair:
+            agents[node], processes[node] = target(node, views)
+        trace("participants", nodes=pair, agents=agents, need=dict(masters=2, slaves=2))
+        for node in ALL_NODES:
+            limit(node, pool_bytes)
+        idle(ALL_NODES)
+
+        phase = "reservation-before-data"
+        stop(processes[b])
+        limit(b, 0)
+        enqueue(a, b, agents[b])
+        await_pool(pair, lambda r: r[b]["usedBytes"] == 0 and r[a]["waitingUploads"] == 1
+                   and r[b]["pendingPeerReservations"] > 0, "receiver has metadata wait and no unreserved bytes")
+        control_progress(a, b)
+        assert command(b, "inspect")["usedBytes"] == 0, "unreserved input reached worker"
+        limit(b, pool_bytes)
+        await_pool(pair, lambda r: r[b]["usedBytes"] == chunk_bytes and r[a]["usedBytes"] == 0
+                   and r[a]["waitingUploads"] == 0 and r[b]["pendingPeerReservations"] == 0,
+                   "remote accepted: source transport settled, receiver worker still owes one portion")
+        floors[b] = chunk_bytes
+
+        phase = "local-plus-remote-full"
+        enqueue(b, b, agents[b])
+        await_pool(pair, lambda r: r[b]["usedBytes"] == pool_bytes, "one node holds LOCAL + REMOTE raw portions")
+        floors[b] = pool_bytes
+        enqueue(a, b, agents[b])
+        await_pool(pair, lambda r: r[b]["usedBytes"] == pool_bytes and r[a]["waitingUploads"] == 1
+                   and r[b]["pendingPeerReservations"] > 0, "third portion waits behind the shared node cap")
+        control_progress(a, b)
+        snapshot(pair)
+        resume(processes[b])
+        idle(pair)
+
+        phase = "crossing-intents"
+        for node in pair:
+            stop(processes[node])
+            limit(node, chunk_bytes)
+            enqueue(node, node, agents[node])
+            await_pool([node], lambda r, node=node: r[node]["usedBytes"] == chunk_bytes,
+                       "local accepted portion fills stopped worker pool")
+            floors[node] = chunk_bytes
+        barrier = threading.Barrier(2)
+        errors = []
+
+        def cross(source, receiver):
+            try:
+                barrier.wait(timeout=CONVERGE_TIMEOUT)
+                enqueue(source, receiver, agents[receiver])
+            except BaseException as error:
+                errors.append(error)
+
+        threads = [threading.Thread(target=cross, args=direction) for direction in ((a, b), (b, a))]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(CONVERGE_TIMEOUT)
+        assert all(not thread.is_alive() for thread in threads), "crossing CLI callers never returned"
+        assert not errors, f"crossing caller failed: {errors}"
+        await_pool(pair, lambda r: all(r[n]["waitingUploads"] == 1 and r[n]["usedBytes"] == chunk_bytes for n in pair),
+                   "BOTH crossing intents overlap while each node is full")
+        control_progress(a, b)
+        for node in pair:
+            limit(node, pool_bytes)
+        await_pool(pair, lambda r: any(r[n]["waitingUploads"] == 0 for n in pair),
+                   "ordered acquisition advances a direction after capacity increase")
+        for node in pair:
+            resume(processes[node])
+        idle(pair)
+
+        phase = "worker-death"
+        stop(processes[b])
+        enqueue(a, b, agents[b])
+        await_pool(pair, lambda r: r[b]["usedBytes"] == chunk_bytes and r[a]["usedBytes"] == 0,
+                   "receiver ALREADY ACCEPTED debt before worker death")
+        floors[b] = chunk_bytes
+        death_mark = node_log_size(b)
+        floors.pop(b)
+        assert signal(processes[b], 9) is not None, "worker died before deliberate SIGKILL"
+        idle(pair)
+        wait_until(lambda _v: any(int(m.group(1)) == processes[b].index for m in
+                   WORKER_DIED_HOSTING.finditer(node_log(b, death_mark))),
+                   CONVERGE_TIMEOUT, "master reports captured worker death", nodes=[b])
+        views = wait_until(fleet_started, FAILOVER_TIMEOUT, "fleet started after worker exit")
+        # Re-resolve holder and process from CURRENT placement; it may have moved.
+        host = placement_row(views, agents[b])["nodeId"]
+        new_agent, replacement = target(host, views)
+        assert replacement != processes[b], "worker incarnation did not change"
+        assert signal(processes[b], None) is None, "killed incarnation is still present"
+        stop(replacement)
+        enqueue(host, host, new_agent)
+        await_pool([host], lambda r: r[host]["usedBytes"] == chunk_bytes,
+                   "replacement worker accounts a new accepted delivery")
+        floors[host] = chunk_bytes
+        # Late cleanup of old process must not release replacement bytes.
+        signal(processes[b], 18)
+        assert command(host, "inspect")["usedBytes"] == chunk_bytes
+        resume(replacement)
+        idle(pair)
+
+        phase = "peer-loss"
+        views = wait_until(fleet_started, CONVERGE_TIMEOUT, "fleet ready before peer loss")
+        views = spread_fleet_over(pair, views)
+        agents[b], receiver = target(b, views)
+        stop(receiver)
+        enqueue(a, b, agents[b])
+        await_pool(pair, lambda r: r[b]["usedBytes"] == chunk_bytes and r[a]["usedBytes"] == 0,
+                   "receiver ALREADY ACCEPTED debt before peer EOF")
+        floors[b] = chunk_bytes
+        # No shrink of issued windows: the sole retained debt equals this smaller cap.
+        limit(b, chunk_bytes)
+        enqueue(a, b, agents[b])
+        await_pool(pair, lambda r: r[a]["waitingUploads"] == 1 and r[b]["pendingPeerReservations"] > 0,
+                   "unused peer request waits beside accepted receiver debt")
+        outcome = control.execute(STAND, "kill", a)
+        trace("peer-kill", node=a, rc=outcome.code, stdout=outcome.out, stderr=outcome.err)
+        assert outcome.code == 0, outcome
+        await_pool([b], lambda r: r[b]["pendingPeerReservations"] == 0 and r[b]["usedBytes"] == chunk_bytes,
+                   "peer EOF deletes unused waits, preserves live receiver debt")
+        outcome = control.execute(STAND, "start", a)
+        assert outcome.code == 0, outcome
+        wait_converge(ALL_NODES)
+        limit(a, pool_bytes)
+        limit(b, pool_bytes)
+        enqueue(a, b, agents[b])
+        await_pool(pair, lambda r: r[a]["usedBytes"] == 0 and r[a]["waitingUploads"] == 0
+                   and r[b]["usedBytes"] == pool_bytes, "new peer generation adds debt beside the old accepted portion")
+        floors[b] = pool_bytes
+        control_progress(a, b)
+        snapshot(pair)
+        resume(receiver)
+        idle(pair)
+        trace("proof-complete")
+    finally:
+        # Evidence is emitted BEFORE restart rotates/clears logs, even on a hard failure.
+        failed = sys.exc_info()[0] is not None
+        errors = []
+        for process in frozen:
+            try:
+                resume(process)
+            except Exception as error:
+                errors.append(str(error))
+        for node, key in attached:
+            try:
+                assert client(node, "test:cluster:client:detach", key), f"detach failed: {node}/{key}"
+            except Exception as error:
+                errors.append(str(error))
+        if failed:
+            for node in ALL_NODES:
+                trace("failure-node", node=node, inspect=inspect(node),
+                      activeLog=node_log_since(node, marks[node]), containerLog=container_log(node))
+        for node in ALL_NODES:
+            try:
+                restored = limit(node, default_bytes)
+                if not failed:
+                    assert restored == dict(limitBytes=default_bytes, usedBytes=0,
+                                            waitingUploads=0, pendingPeerReservations=0), restored
+            except Exception as error:
+                # A killed node may be unreachable; the full restart removes its test state too.
+                trace("restore-limit", node=node, error=str(error))
+                if not failed:
+                    errors.append(str(error))
+        code = control.restart(STAND, f"{sys.argv[0]} {STAND.compose}")
+        assert code == 0, f"scenario 45 full original stand restart failed: {code}; {errors}"
+        wait_converge(ALL_NODES)
+        wait_until(lambda v: fleet_started(v) and fleet_rows_where_read(v), CONVERGE_TIMEOUT,
+                   "original stand mesh and ordinary fleet restored")
+        phase = "restored"
+        for node in ALL_NODES:
+            row = command(node, "inspect")
+            # This carrier has no product UPLOADS. A fresh driver-only master starts
+            # suspended at zero (UploadMemoryMaster::__construct); its test overrides
+            # must disappear on restart. The catalog default was restored above.
+            assert row == dict(limitBytes=0, usedBytes=0, waitingUploads=0, pendingPeerReservations=0), row
+        trace("cleanup", restored=True, errors=errors)
+        assert not errors, f"scenario 45 process/fixture cleanup failed: {errors}"
+
+    return ("131072-byte node pools: reservation-before-data, local+remote cap, receipts, "
+            "overlapping crossing intents, control roundtrips, worker exit and peer replacement; "
+            "all stopped incarnations resumed/gone, full original stand/defaults restored")
 
 
 def scenario_9_daemon_crash_selfheal():
@@ -4814,6 +5124,8 @@ SCENARIOS = [
     # re-election and quorum loss, then restart the whole stand before its later scenarios.
     Scenario("44 waiting work survives leadership changes", scenario_44_waiting_work_survives_leadership_changes,
              Need(masters=3, slaves=2)),
+    # After startup observers and 44; its full restart restores the original stand too.
+    Scenario("45 upload pool across nodes", scenario_45_upload_pool_across_nodes, Need(masters=2, slaves=2)),
     # Beside 8: both cut the network and recreate whom they cut; it needs the fleet placed, not as
     # the first placement laid it.
     Scenario("36 slave cut off with its leader stops its work",

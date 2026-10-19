@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidStateException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\UnsupportedOperationException;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Socket\Client\WebSocketClient;
@@ -90,6 +92,23 @@ final class WebSocketClientTestProbe extends WebSocketClient
     public function outboundBytes(): string
     {
         return $this->writeBuffer;
+    }
+
+    /** @return string Raw bytes still retained by the actual parser */
+    public function inputBytes(): string
+    {
+        return $this->readBuffer;
+    }
+
+    /**
+     * Announce the socketless close through the real parser's cleanup entrypoint.
+     *
+     * @throws InvalidArgumentException When the close signal cannot be named
+     * @throws LogicException When an internal unused-capacity invariant is broken
+     */
+    public function announceClose(): void
+    {
+        $this->onClose();
     }
 
     /**

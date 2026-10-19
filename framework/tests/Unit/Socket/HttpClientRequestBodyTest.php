@@ -217,6 +217,7 @@ final class HttpClientRequestBodyTest extends TestCase
     {
         $pair = [];
         socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $pair);
+        $this->assertTrue(socket_set_nonblock($pair[0]));
         $this->sockets[] = $pair[0];
         $this->sockets[] = $pair[1];
 
