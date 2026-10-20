@@ -16,6 +16,10 @@ use Hilos\Database\View\Item\PushSubscription;
  * action applies a device subscribe/unsubscribe.
  *
  * @extends DbCollection<PushSubscription, ObjectPushSubscriptions>
+ * @method ObjectPushSubscriptions|null getObjectCollection()
+ * @method PushSubscription|null first()
+ * @method PushSubscription|null last()
+ * @method PushSubscription|null offsetGet(mixed $offset)
  */
 class PushSubscriptions extends DbCollection
 {

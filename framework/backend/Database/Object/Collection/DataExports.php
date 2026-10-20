@@ -19,6 +19,10 @@ use Hilos\HilosException;
  * Durable requests, ordered by request time with the id breaking ties.
  *
  * @extends Objects<ObjectDataExport>
+ * @method ObjectDataExport|null first()
+ * @method ObjectDataExport|null last()
+ * @method ObjectDataExport|null get(int|string $key)
+ * @method ObjectDataExport|null offsetGet(mixed $offset)
  */
 class DataExports extends Objects
 {
@@ -55,7 +59,7 @@ class DataExports extends Objects
      */
     public function ofUser(int $userId): ?ObjectDataExport
     {
-        return $this->hydrateAll(static::entityClass()::get([EntityDataExport::user_id => $userId]))[0] ?? null;
+        return $this->hydrateAll(static::entityClass()::get([EntityDataExport::user_id => $userId]))->first();
     }
 
     /**
@@ -69,35 +73,36 @@ class DataExports extends Objects
             [],
             [EntityDataExport::requested_at => SqlSortDirection::ASC, EntityDataExport::id => SqlSortDirection::ASC],
             1,
-        ))[0] ?? null;
+        ))->first();
     }
 
     /**
      * @param string $now Expiry boundary in SQL UTC
-     * @return list<ObjectDataExport> Rows for the expiry sweep
+     * @return static Rows for the expiry sweep
      * @throws HilosException When the query fails
      */
-    public function expiredBy(string $now): array
+    public function expiredBy(string $now): static
     {
         return $this->hydrateAll(static::entityClass()::get('`expires_at` <= ?', [$now]));
     }
 
     /**
-     * @return list<ObjectDataExport> Ready rows for startup file reconciliation
+     * @return static Ready rows for startup file reconciliation
      * @throws HilosException When the query fails
      */
-    public function allReady(): array
+    public function allReady(): static
     {
         return $this->hydrateAll(static::entityClass()::get([EntityDataExport::state => DataExportState::READY]));
     }
 
     /**
      * @param EntityCollection<EntityDataExport> $entities Rows returned by the database
-     * @return list<ObjectDataExport> Queue rows in query order
+     * @return static Queue rows in query order
+     * @throws HilosException When the empty collection refuses direct initialization
      */
-    private function hydrateAll(EntityCollection $entities): array
+    private function hydrateAll(EntityCollection $entities): static
     {
-        $result = [];
+        $result = static::initEmpty();
         foreach ($entities as $entity) {
             if ($entity->id === null) {
                 continue;
@@ -105,7 +110,7 @@ class DataExports extends Objects
             if (!isset($this->objects[$entity->id])) {
                 $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
             }
-            $result[] = $this->objects[$entity->id];
+            $result->hydrate($entity->id, $this->objects[$entity->id]);
         }
 
         return $result;

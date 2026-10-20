@@ -8,8 +8,11 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Actions\Collection\SettingsActions;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Collection\Settings as ObjectSettings;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\View\Item\Setting;
+use Hilos\HilosException;
 
 /**
  * Settings Db collection.
@@ -18,6 +21,9 @@ use Hilos\Database\View\Item\Setting;
  * Integer offsets are still treated as DB primary keys.
  *
  * @extends DbCollection<Setting, ObjectSettings>
+ * @method ObjectSettings|null getObjectCollection()
+ * @method Setting|null first()
+ * @method Setting|null last()
  * @property-read SettingsActions $actions
  */
 class Settings extends DbCollection
@@ -101,19 +107,22 @@ class Settings extends DbCollection
      * Returns orphans (settings in DB whose key is not in catalog).
      *
      * @param array<string, array<string, mixed>> $catalog Catalog: key => [type, default_value]
-     * @return list<Setting> Orphan Db items
+     * @return static Orphan Db items
      * @throws DatabaseException On database error while loading settings
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
+     * @throws HilosException When the empty object collection refuses direct initialization
+     * @throws ObjectGetIdStringNotImplementedException If DbItem's Object does not implement getIdString()
+     * @throws CollectionNotManualException When add() rejects the item on a non-manual collection
      */
-    public function getOrphans(array $catalog): array
+    public function getOrphans(array $catalog): static
     {
         $objectOrphans = $this->objectCollection->getOrphans($catalog);
-        $result = [];
+        $result = static::initEmpty();
         foreach ($objectOrphans as $objectSetting) {
             $item = $this->getItemForKey($objectSetting->id);
             if ($item !== null) {
-                $result[] = $item;
+                $result->add($item);
             }
         }
         return $result;

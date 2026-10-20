@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database\View\Collection;
 
+use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Collection\DataExports as ObjectDataExports;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\DataExport as ObjectDataExport;
 use Hilos\Database\View\Item\DataExport;
 use Hilos\HilosException;
@@ -13,6 +15,10 @@ use Hilos\HilosException;
  * Array access uses the request id; ofUser() finds the person's one request.
  *
  * @extends DbCollection<DataExport, ObjectDataExports>
+ * @method ObjectDataExports|null getObjectCollection()
+ * @method DataExport|null first()
+ * @method DataExport|null last()
+ * @method DataExport|null offsetGet(mixed $offset)
  */
 class DataExports extends DbCollection
 {
@@ -40,16 +46,18 @@ class DataExports extends DbCollection
 
     /**
      * @param string $now Expiry boundary in SQL UTC
-     * @return list<DataExport> Matching queue rows for the agent's file sweep
+     * @return static Matching queue rows for the agent's file sweep
      * @throws HilosException When the query or wrapper creation fails
+     * @throws ObjectGetIdStringNotImplementedException If DbItem's Object does not implement getIdString()
+     * @throws CollectionNotManualException When add() rejects the item on a non-manual collection
      */
-    public function expiredBy(string $now): array
+    public function expiredBy(string $now): static
     {
-        $result = [];
+        $result = static::initEmpty();
         foreach ($this->objectCollection->expiredBy($now) as $object) {
             $item = $this->itemFor($object);
             if ($item !== null) {
-                $result[] = $item;
+                $result->add($item);
             }
         }
 
@@ -57,16 +65,18 @@ class DataExports extends DbCollection
     }
 
     /**
-     * @return list<DataExport> Matching queue rows for the agent's file sweep
+     * @return static Matching queue rows for the agent's file sweep
      * @throws HilosException When the query or wrapper creation fails
+     * @throws ObjectGetIdStringNotImplementedException If DbItem's Object does not implement getIdString()
+     * @throws CollectionNotManualException When add() rejects the item on a non-manual collection
      */
-    public function allReady(): array
+    public function allReady(): static
     {
-        $result = [];
+        $result = static::initEmpty();
         foreach ($this->objectCollection->allReady() as $object) {
             $item = $this->itemFor($object);
             if ($item !== null) {
-                $result[] = $item;
+                $result->add($item);
             }
         }
 

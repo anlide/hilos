@@ -10,9 +10,11 @@ use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Database\Context\HilosDbContext;
-use Hilos\Pages\Legal\LegalAdminAudience;
-use Hilos\Tables\Legal\AbstractHilosLegalAcceptancesTable;
 use Hilos\Database\Database;
+use Hilos\Database\Object\Collection\LegalAcceptances as ObjectLegalAcceptances;
+use Hilos\Database\Object\Item\LegalAcceptance as ObjectLegalAcceptance;
+use Hilos\Database\View\Collection\LegalAcceptances as ViewLegalAcceptances;
+use Hilos\Database\View\Item\LegalAcceptance as ViewLegalAcceptance;
 use Hilos\Hilos;
 use Hilos\Legal\DTO\LegalAgreementsStateSignalData;
 use Hilos\Legal\Exception\UnknownRevisionException;
@@ -22,6 +24,8 @@ use Hilos\Legal\LegalDocument;
 use Hilos\Legal\LegalRevision;
 use Hilos\Legal\LegalSignificance;
 use Hilos\Legal\LegalTally;
+use Hilos\Pages\Legal\LegalAdminAudience;
+use Hilos\Tables\Legal\AbstractHilosLegalAcceptancesTable;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /** Acceptance writes use the real users-library entry and database, with its group frames captured. */
@@ -79,7 +83,7 @@ final class LegalAcceptanceIntegrationTest extends ProfileIntegrationTestCase
             $this->library->legalAcceptanceCommands()->accept(self::USER_ID, ['terms' => 'old', 'privacy' => 'unknown']);
             self::fail('The unknown revision must refuse the batch');
         } catch (UnknownRevisionException) {
-            self::assertSame([], Hilos::$db->legalAcceptances->ofUser(self::USER_ID));
+            self::assertCount(0, Hilos::$db->legalAcceptances->ofUser(self::USER_ID));
             self::assertSame([], $this->states());
         }
         $this->library->legalAcceptanceCommands()->accept(self::USER_ID, ['terms' => 'old', 'privacy' => 'privacy']);
@@ -96,7 +100,7 @@ final class LegalAcceptanceIntegrationTest extends ProfileIntegrationTestCase
         } finally {
             Database::transactionRollback();
         }
-        self::assertSame([], Hilos::$db->legalAcceptances->ofUser(self::USER_ID));
+        self::assertCount(0, Hilos::$db->legalAcceptances->ofUser(self::USER_ID));
     }
 
     public function testUndeclaredRowsAreHiddenAndAcceptedHistoryUsesDeclarationOrder(): void
@@ -268,6 +272,87 @@ final class LegalAcceptanceIntegrationTest extends ProfileIntegrationTestCase
         ], LegalAdminAudience::filters()->documents);
     }
 
+    public function testOfUserReturnsStaticCollectionWithIdKeysAndExactOrderAndSameObjectUnderWrapper(): void
+    {
+        Database::sql(
+            'INSERT INTO `hilos_legal_acceptance` (`user_id`, `document`, `revision_id`, `accepted_at`) VALUES (?, ?, ?, ?)',
+            [self::USER_ID, 'terms', 'old', '2026-02-01 10:00:00'],
+        );
+        $firstId = Database::lastInsertId();
+
+        Database::sql(
+            'INSERT INTO `hilos_legal_acceptance` (`user_id`, `document`, `revision_id`, `accepted_at`) VALUES (?, ?, ?, ?)',
+            [self::USER_ID, 'terms', 'wording', '2026-02-02 12:00:00'],
+        );
+        $secondId = Database::lastInsertId();
+
+        Database::sql(
+            'INSERT INTO `hilos_legal_acceptance` (`user_id`, `document`, `revision_id`, `accepted_at`) VALUES (?, ?, ?, ?)',
+            [self::USER_ID, 'privacy', 'privacy', '2026-02-02 12:00:00'],
+        );
+        $thirdId = Database::lastInsertId();
+
+        Database::sql(
+            'INSERT INTO `hilos_legal_acceptance` (`user_id`, `document`, `revision_id`, `accepted_at`) VALUES (?, ?, ?, ?)',
+            [self::OTHER_USER_ID, 'terms', 'old', '2026-02-01 09:00:00'],
+        );
+
+        $viewCollection = Hilos::$db->legalAcceptances->ofUser(self::USER_ID);
+        self::assertInstanceOf(ViewLegalAcceptances::class, $viewCollection);
+        self::assertCount(3, $viewCollection);
+        self::assertSame([$firstId, $secondId, $thirdId], array_keys(iterator_to_array($viewCollection)));
+
+        $firstItem = $viewCollection->first();
+        self::assertInstanceOf(ViewLegalAcceptance::class, $firstItem);
+        self::assertSame($firstId, $firstItem->id);
+
+        $lastItem = $viewCollection->last();
+        self::assertInstanceOf(ViewLegalAcceptance::class, $lastItem);
+        self::assertSame($thirdId, $lastItem->id);
+
+        $objectCollection = Hilos::$db->legalAcceptances->getObjectCollection()->ofUser(self::USER_ID);
+        self::assertInstanceOf(ObjectLegalAcceptances::class, $objectCollection);
+        self::assertCount(3, $objectCollection);
+        self::assertSame([$firstId, $secondId, $thirdId], array_keys(iterator_to_array($objectCollection)));
+
+        foreach ([$firstId, $secondId, $thirdId] as $id) {
+            $viewItem = $viewCollection[$id];
+            $objectItem = $objectCollection[$id];
+            self::assertInstanceOf(ViewLegalAcceptance::class, $viewItem);
+            self::assertInstanceOf(ObjectLegalAcceptance::class, $objectItem);
+            self::assertSame($id, $viewItem->id);
+            self::assertSame($id, $objectItem->id);
+            self::assertSame(self::USER_ID, $viewItem->userId);
+            self::assertSame(self::USER_ID, $objectItem->userId);
+            self::assertSame($objectItem, $viewItem->getObject());
+        }
+
+        $findOneView = Hilos::$db->legalAcceptances->findOne(self::USER_ID, LegalDocument::TERMS, 'old');
+        $findOneObject = Hilos::$db->legalAcceptances->getObjectCollection()->findOne(self::USER_ID, LegalDocument::TERMS, 'old');
+        self::assertInstanceOf(ViewLegalAcceptance::class, $findOneView);
+        self::assertInstanceOf(ObjectLegalAcceptance::class, $findOneObject);
+        self::assertSame($firstId, $findOneView->id);
+        self::assertSame($firstId, $findOneObject->id);
+        self::assertSame($findOneObject, $findOneView->getObject());
+    }
+
+    public function testEmptyCatalogReturnsEmptyProjectionsEarlyWithoutHittingDatabase(): void
+    {
+        AcceptanceEmptyCatalogHilos::initBrowser();
+        try {
+            $state = LegalAgreementsProjector::stateFor(self::USER_ID, '2026-09-27');
+            self::assertSame([], $state->documents);
+
+            $texts = LegalAgreementsProjector::textsFor(self::USER_ID, '2026-09-27');
+            self::assertSame([], $texts[LegalAgreementsStateSignalData::documents]);
+
+            $terms = LegalAgreementsProjector::terms(self::USER_ID, '2026-09-27');
+            self::assertNull($terms);
+        } finally {
+            AcceptanceIntegrationHilos::initBrowser();
+        }
+    }
+
     /** @return list<LegalAgreementsStateSignalData> Acceptance states queued for this person */
     private function states(): array
     {
@@ -349,4 +434,20 @@ final class AcceptanceBrokenCatalog implements LegalCatalogProviderInterface
 abstract class AcceptanceBrokenCatalogHilos extends Hilos
 {
     protected const ?string LEGAL_CATALOG = AcceptanceBrokenCatalog::class;
+}
+
+/** Exercises early empty returns when no legal documents are declared. */
+final class AcceptanceEmptyCatalog implements LegalCatalogProviderInterface
+{
+    /** @return array<string, list<LegalRevision>> Empty declarations */
+    public static function revisions(): array
+    {
+        return [];
+    }
+}
+
+/** Binds the empty legal catalog. */
+abstract class AcceptanceEmptyCatalogHilos extends Hilos
+{
+    protected const ?string LEGAL_CATALOG = AcceptanceEmptyCatalog::class;
 }

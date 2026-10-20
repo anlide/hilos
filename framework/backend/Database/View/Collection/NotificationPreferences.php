@@ -16,6 +16,10 @@ use Hilos\Database\View\Item\NotificationPreference;
  * the collection action applies an opt in/out.
  *
  * @extends DbCollection<NotificationPreference, ObjectNotificationPreferences>
+ * @method ObjectNotificationPreferences|null getObjectCollection()
+ * @method NotificationPreference|null first()
+ * @method NotificationPreference|null last()
+ * @method NotificationPreference|null offsetGet(mixed $offset)
  */
 class NotificationPreferences extends DbCollection
 {

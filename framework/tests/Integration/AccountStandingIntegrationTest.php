@@ -775,13 +775,12 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
             LegalHoldCommandConstants::FIELD_FROZEN => false,
         ], $reply->payload);
 
-        $revisions = array_map(
-            static fn ($acceptance): string => $acceptance->revisionId,
-            array_values(array_filter(
-                Hilos::$db->legalAcceptances->ofUser(self::USER_ID),
-                static fn ($acceptance): bool => $acceptance->document === 'terms',
-            )),
-        );
+        $revisions = [];
+        foreach (Hilos::$db->legalAcceptances->ofUser(self::USER_ID) as $acceptance) {
+            if ($acceptance->document === 'terms') {
+                $revisions[] = $acceptance->revisionId;
+            }
+        }
         self::assertContains('first', $revisions);
         self::assertContains('second', $revisions);
     }

@@ -211,8 +211,11 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
         $this->assertNull($reply, 'A landing is answered by the session holder, not by the submit');
 
         $userId = $this->theOnlyUser();
-        self::assertCount(1, Hilos::$db->legalAcceptances->ofUser($userId));
-        self::assertSame('2026-09-17', Hilos::$db->legalAcceptances->ofUser($userId)[0]->revisionId);
+        $acceptances = Hilos::$db->legalAcceptances->ofUser($userId);
+        self::assertCount(1, $acceptances);
+        $acceptance = $acceptances->first();
+        self::assertNotNull($acceptance);
+        self::assertSame('2026-09-17', $acceptance->revisionId);
         $this->assertSame(strstr($email, '@', true), $this->displayNameOf($userId));
         $address = Hilos::$db->identities->findByIdentity(IdentityType::MAGIC_LINK, $email);
         $this->assertSame($userId, $address?->userId, 'The proven address lands as the account\'s own');
@@ -262,8 +265,11 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
         $userId = $this->theOnlyUser();
         Database::sql('SELECT `theme_pick` FROM `hilos_user` WHERE `id` = ?', [$userId]);
         self::assertSame('system', Database::row()['theme_pick']);
-        self::assertCount(1, Hilos::$db->legalAcceptances->ofUser($userId));
-        self::assertSame('2026-09-17', Hilos::$db->legalAcceptances->ofUser($userId)[0]->revisionId);
+        $acceptances = Hilos::$db->legalAcceptances->ofUser($userId);
+        self::assertCount(1, $acceptances);
+        $acceptance = $acceptances->first();
+        self::assertNotNull($acceptance);
+        self::assertSame('2026-09-17', $acceptance->revisionId);
         $name = $options->publicKeyOptions['user']['name'];
         $this->assertMatchesRegularExpression('/^User[1-9]\d{5}$/', $name);
         $this->assertSame($name, $options->publicKeyOptions['user']['displayName']);

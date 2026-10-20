@@ -16,13 +16,19 @@ use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
+use Hilos\Core\Source\SourceChangeProvenance;
+use Hilos\Core\Source\SourceMirrorSubscriberInterface;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Database\Database;
+use Hilos\Database\Object\Collection\LegalAcceptanceExports as ObjectLegalAcceptanceExports;
+use Hilos\Database\Object\Item\LegalAcceptanceExport as ObjectLegalAcceptanceExport;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\Settings\SettingsAccessor;
+use Hilos\Database\View\Collection\LegalAcceptanceExports as ViewLegalAcceptanceExports;
 use Hilos\Database\View\Item\LegalAcceptanceExport;
 use Hilos\Fs\ClusterDirectoryMarker;
 use Hilos\Fs\Context\FsContext;
@@ -690,6 +696,162 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
     }
 
     /**
+     * Target case for Object/View allReady, expiredBy, and allFinished returning static collections
+     * with exact subsets, primary keys, empty results, instance identity, and no source changes.
+     *
+     * @throws HilosException When creating fixtures or querying collections fails
+     */
+    public function testCollectionsReturnStaticSubsetsWithoutPublishingSourceChanges(): void
+    {
+        mkdir($this->directory);
+        $past = '2026-01-01 00:00:00';
+        $now = '2026-06-01 00:00:00';
+        $future = '2026-12-01 00:00:00';
+
+        $exports = Hilos::$db->legalAcceptanceExports->actions;
+
+        // 1. PREPARING order
+        $preparing = $exports->order(self::ADMIN_ID, null, null, null, $past);
+        $preparingId = $preparing->id;
+        self::assertIsInt($preparingId);
+
+        // 2. READY order, expired (expiresAt <= $now)
+        $readyExpired = $exports->order(self::OTHER_ADMIN_ID, null, null, null, $past);
+        $readyExpired->actions->finishReady('ready-expired.csv', 10, 100, $past, '2026-05-01 00:00:00');
+        $readyExpiredId = $readyExpired->id;
+        self::assertIsInt($readyExpiredId);
+
+        // 3. READY order, active (expiresAt > $now)
+        $readyActive = $exports->order(self::THIRD_ADMIN_ID, null, null, null, $past);
+        $readyActive->actions->finishReady('ready-active.csv', 20, 200, $past, $future);
+        $readyActiveId = $readyActive->id;
+        self::assertIsInt($readyActiveId);
+
+        // 4. FAILED order, expired (expiresAt <= $now)
+        $failedExpired = $exports->order(self::PERSON_ID, null, null, null, $past);
+        $failedExpired->actions->finishFailed($past, '2026-04-01 00:00:00');
+        $failedExpiredId = $failedExpired->id;
+        self::assertIsInt($failedExpiredId);
+
+        // Cache view items and object items
+        $heldPreparingView = Hilos::$db->legalAcceptanceExports[$preparingId];
+        $heldReadyExpiredView = Hilos::$db->legalAcceptanceExports[$readyExpiredId];
+        $heldReadyActiveView = Hilos::$db->legalAcceptanceExports[$readyActiveId];
+        $heldFailedExpiredView = Hilos::$db->legalAcceptanceExports[$failedExpiredId];
+
+        self::assertInstanceOf(LegalAcceptanceExport::class, $heldPreparingView);
+        self::assertInstanceOf(LegalAcceptanceExport::class, $heldReadyExpiredView);
+        self::assertInstanceOf(LegalAcceptanceExport::class, $heldReadyActiveView);
+        self::assertInstanceOf(LegalAcceptanceExport::class, $heldFailedExpiredView);
+
+        $objectCollection = Hilos::$db->legalAcceptanceExports->getObjectCollection();
+        self::assertInstanceOf(ObjectLegalAcceptanceExports::class, $objectCollection);
+
+        $heldPreparingObj = $objectCollection[$preparingId];
+        $heldReadyExpiredObj = $objectCollection[$readyExpiredId];
+        $heldReadyActiveObj = $objectCollection[$readyActiveId];
+        $heldFailedExpiredObj = $objectCollection[$failedExpiredId];
+
+        self::assertInstanceOf(ObjectLegalAcceptanceExport::class, $heldPreparingObj);
+        self::assertInstanceOf(ObjectLegalAcceptanceExport::class, $heldReadyExpiredObj);
+        self::assertInstanceOf(ObjectLegalAcceptanceExport::class, $heldReadyActiveObj);
+        self::assertInstanceOf(ObjectLegalAcceptanceExport::class, $heldFailedExpiredObj);
+
+        // Subscribe test mirror to SourceChangeBus after fixture setup
+        $mirror = new LegalAcceptancesExportTestMirror();
+        SourceChangeBus::subscribe($mirror);
+
+        // Test allReady (View and Object)
+        $viewReady = Hilos::$db->legalAcceptanceExports->allReady();
+        self::assertInstanceOf(ViewLegalAcceptanceExports::class, $viewReady);
+        self::assertCount(2, $viewReady);
+        self::assertTrue(isset($viewReady[$readyExpiredId]));
+        self::assertTrue(isset($viewReady[$readyActiveId]));
+        self::assertFalse(isset($viewReady[$preparingId]));
+        self::assertFalse(isset($viewReady[$failedExpiredId]));
+        self::assertSame($heldReadyExpiredView, $viewReady[$readyExpiredId]);
+        self::assertSame($heldReadyActiveView, $viewReady[$readyActiveId]);
+
+        $objectReady = $objectCollection->allReady();
+        self::assertInstanceOf(ObjectLegalAcceptanceExports::class, $objectReady);
+        self::assertCount(2, $objectReady);
+        self::assertTrue(isset($objectReady[$readyExpiredId]));
+        self::assertTrue(isset($objectReady[$readyActiveId]));
+        self::assertFalse(isset($objectReady[$preparingId]));
+        self::assertFalse(isset($objectReady[$failedExpiredId]));
+        self::assertSame($heldReadyExpiredObj, $objectReady[$readyExpiredId]);
+        self::assertSame($heldReadyActiveObj, $objectReady[$readyActiveId]);
+
+        // Test expiredBy (View and Object)
+        $viewExpired = Hilos::$db->legalAcceptanceExports->expiredBy($now);
+        self::assertInstanceOf(ViewLegalAcceptanceExports::class, $viewExpired);
+        self::assertCount(2, $viewExpired);
+        self::assertTrue(isset($viewExpired[$readyExpiredId]));
+        self::assertTrue(isset($viewExpired[$failedExpiredId]));
+        self::assertFalse(isset($viewExpired[$preparingId]));
+        self::assertFalse(isset($viewExpired[$readyActiveId]));
+        self::assertSame($heldReadyExpiredView, $viewExpired[$readyExpiredId]);
+        self::assertSame($heldFailedExpiredView, $viewExpired[$failedExpiredId]);
+
+        $objectExpired = $objectCollection->expiredBy($now);
+        self::assertInstanceOf(ObjectLegalAcceptanceExports::class, $objectExpired);
+        self::assertCount(2, $objectExpired);
+        self::assertTrue(isset($objectExpired[$readyExpiredId]));
+        self::assertTrue(isset($objectExpired[$failedExpiredId]));
+        self::assertFalse(isset($objectExpired[$preparingId]));
+        self::assertFalse(isset($objectExpired[$readyActiveId]));
+        self::assertSame($heldReadyExpiredObj, $objectExpired[$readyExpiredId]);
+        self::assertSame($heldFailedExpiredObj, $objectExpired[$failedExpiredId]);
+
+        // Test allFinished (View and Object)
+        $viewFinished = Hilos::$db->legalAcceptanceExports->allFinished();
+        self::assertInstanceOf(ViewLegalAcceptanceExports::class, $viewFinished);
+        self::assertCount(3, $viewFinished);
+        self::assertTrue(isset($viewFinished[$readyExpiredId]));
+        self::assertTrue(isset($viewFinished[$readyActiveId]));
+        self::assertTrue(isset($viewFinished[$failedExpiredId]));
+        self::assertFalse(isset($viewFinished[$preparingId]));
+        self::assertSame($heldReadyExpiredView, $viewFinished[$readyExpiredId]);
+        self::assertSame($heldReadyActiveView, $viewFinished[$readyActiveId]);
+        self::assertSame($heldFailedExpiredView, $viewFinished[$failedExpiredId]);
+
+        $objectFinished = $objectCollection->allFinished();
+        self::assertInstanceOf(ObjectLegalAcceptanceExports::class, $objectFinished);
+        self::assertCount(3, $objectFinished);
+        self::assertTrue(isset($objectFinished[$readyExpiredId]));
+        self::assertTrue(isset($objectFinished[$readyActiveId]));
+        self::assertTrue(isset($objectFinished[$failedExpiredId]));
+        self::assertFalse(isset($objectFinished[$preparingId]));
+        self::assertSame($heldReadyExpiredObj, $objectFinished[$readyExpiredId]);
+        self::assertSame($heldReadyActiveObj, $objectFinished[$readyActiveId]);
+        self::assertSame($heldFailedExpiredObj, $objectFinished[$failedExpiredId]);
+
+        // Test empty result
+        $viewEmpty = Hilos::$db->legalAcceptanceExports->expiredBy('2000-01-01 00:00:00');
+        self::assertInstanceOf(ViewLegalAcceptanceExports::class, $viewEmpty);
+        self::assertCount(0, $viewEmpty);
+        self::assertNull($viewEmpty->first());
+        $viewEmptyYielded = false;
+        foreach ($viewEmpty as $item) {
+            $viewEmptyYielded = true;
+        }
+        self::assertFalse($viewEmptyYielded);
+
+        $objectEmpty = $objectCollection->expiredBy('2000-01-01 00:00:00');
+        self::assertInstanceOf(ObjectLegalAcceptanceExports::class, $objectEmpty);
+        self::assertCount(0, $objectEmpty);
+        self::assertNull($objectEmpty->first());
+        $objectEmptyYielded = false;
+        foreach ($objectEmpty as $item) {
+            $objectEmptyYielded = true;
+        }
+        self::assertFalse($objectEmptyYielded);
+
+        // Verify mirror saw NO source changes
+        self::assertSame([], $mirror->changes, 'Assembling static collections must not publish source changes');
+    }
+
+    /**
      * @return LegalExportIntegrationAgent A legal agent past its start
      * @throws HilosException When the start fails
      */
@@ -1202,5 +1364,21 @@ final class LegalExportIntegrationConnection extends HilosSessionConnection
      */
     protected function applyOwnDiff(array $diff): void
     {
+    }
+}
+
+/** Synchronous mirror to detect unwanted mutations published during collection assembly. */
+final class LegalAcceptancesExportTestMirror implements SourceMirrorSubscriberInterface
+{
+    /** @var list<SourceChange> */
+    public array $changes = [];
+
+    /**
+     * @param SourceChange $change Announced change
+     * @param SourceChangeProvenance $provenance Announced provenance
+     */
+    public function onSourceChange(SourceChange $change, SourceChangeProvenance $provenance): void
+    {
+        $this->changes[] = $change;
     }
 }

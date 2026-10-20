@@ -15,6 +15,10 @@ use Hilos\Database\View\Item\NotificationDelivery;
  * them through the object collection; the delivery-logs UI (HIL-201) reads them.
  *
  * @extends DbCollection<NotificationDelivery, ObjectNotificationDeliveries>
+ * @method ObjectNotificationDeliveries|null getObjectCollection()
+ * @method NotificationDelivery|null first()
+ * @method NotificationDelivery|null last()
+ * @method NotificationDelivery|null offsetGet(mixed $offset)
  */
 class NotificationDeliveries extends DbCollection
 {

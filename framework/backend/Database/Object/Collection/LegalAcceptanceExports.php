@@ -19,6 +19,10 @@ use Hilos\Legal\Export\LegalAcceptancesExportState;
  * Durable orders of acceptance files, ordered by request time with the id breaking ties.
  *
  * @extends Objects<ObjectLegalAcceptanceExport>
+ * @method ObjectLegalAcceptanceExport|null first()
+ * @method ObjectLegalAcceptanceExport|null last()
+ * @method ObjectLegalAcceptanceExport|null get(int|string $key)
+ * @method ObjectLegalAcceptanceExport|null offsetGet(mixed $offset)
  */
 class LegalAcceptanceExports extends Objects
 {
@@ -61,7 +65,7 @@ class LegalAcceptanceExports extends Objects
      */
     public function ofUser(int $userId): ?ObjectLegalAcceptanceExport
     {
-        return $this->hydrateAll(static::entityClass()::get([EntityLegalAcceptanceExport::user_id => $userId]))[0] ?? null;
+        return $this->hydrateAll(static::entityClass()::get([EntityLegalAcceptanceExport::user_id => $userId]))->first();
     }
 
     /**
@@ -75,33 +79,33 @@ class LegalAcceptanceExports extends Objects
             [],
             [EntityLegalAcceptanceExport::requested_at => SqlSortDirection::ASC, EntityLegalAcceptanceExport::id => SqlSortDirection::ASC],
             1,
-        ))[0] ?? null;
+        ))->first();
     }
 
     /**
      * @param string $now Expiry boundary in SQL UTC
-     * @return list<ObjectLegalAcceptanceExport> Rows for the expiry sweep
+     * @return static Rows for the expiry sweep
      * @throws HilosException When the query fails
      */
-    public function expiredBy(string $now): array
+    public function expiredBy(string $now): static
     {
         return $this->hydrateAll(static::entityClass()::get('`expires_at` <= ?', [$now]));
     }
 
     /**
-     * @return list<ObjectLegalAcceptanceExport> Ready rows for file reconciliation
+     * @return static Ready rows for file reconciliation
      * @throws HilosException When the query fails
      */
-    public function allReady(): array
+    public function allReady(): static
     {
         return $this->hydrateAll(static::entityClass()::get([EntityLegalAcceptanceExport::state => LegalAcceptancesExportState::READY]));
     }
 
     /**
-     * @return list<ObjectLegalAcceptanceExport> Ready and failed rows, for the erasure of an account
+     * @return static Ready and failed rows, for the erasure of an account
      * @throws HilosException When the query fails
      */
-    public function allFinished(): array
+    public function allFinished(): static
     {
         return $this->hydrateAll(static::entityClass()::get(
             '`state` IN (?, ?)',
@@ -111,11 +115,12 @@ class LegalAcceptanceExports extends Objects
 
     /**
      * @param EntityCollection<EntityLegalAcceptanceExport> $entities Rows returned by the database
-     * @return list<ObjectLegalAcceptanceExport> Order rows in query order
+     * @return static Order rows in query order
+     * @throws HilosException When the empty collection refuses direct initialization
      */
-    private function hydrateAll(EntityCollection $entities): array
+    private function hydrateAll(EntityCollection $entities): static
     {
-        $result = [];
+        $result = static::initEmpty();
         foreach ($entities as $entity) {
             if ($entity->id === null) {
                 continue;
@@ -123,7 +128,7 @@ class LegalAcceptanceExports extends Objects
             if (!isset($this->objects[$entity->id])) {
                 $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
             }
-            $result[] = $this->objects[$entity->id];
+            $result->hydrate($entity->id, $this->objects[$entity->id]);
         }
 
         return $result;

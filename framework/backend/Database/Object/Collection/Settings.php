@@ -12,6 +12,7 @@ use Hilos\Database\Object\Item\Setting as ObjectSetting;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Objects;
+use Hilos\HilosException;
 
 /**
  * Settings object collection.
@@ -77,21 +78,22 @@ class Settings extends Objects
      * Returns orphans (settings in DB whose key is not in catalog).
      *
      * @param array<string, array<string, mixed>> $catalog Catalog: key => [type, default_value]
-     * @return list<ObjectSetting> Orphan settings
+     * @return static Orphan settings
      * @throws LogicException When the entity collection class is not configured
      * @throws DatabaseException When loading all settings from the database fails
+     * @throws HilosException When the empty collection refuses direct initialization
      */
-    public function getOrphans(array $catalog): array
+    public function getOrphans(array $catalog): static
     {
         // The same read as any other first read of the collection: a row findByKey() already
         // holds keeps its instance under the wrapper handed out for it.
         $this->loadWholeIfPromised();
-        $orphans = [];
+        $result = static::initEmpty();
         foreach ($this->objects as $object) {
             if ($object instanceof ObjectSetting && $object->isOrphan($catalog)) {
-                $orphans[] = $object;
+                $result->hydrate($object->id, $object);
             }
         }
-        return $orphans;
+        return $result;
     }
 }

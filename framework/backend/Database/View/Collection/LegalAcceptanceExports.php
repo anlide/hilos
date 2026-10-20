@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database\View\Collection;
 
+use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Collection\LegalAcceptanceExports as ObjectLegalAcceptanceExports;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\LegalAcceptanceExport as ObjectLegalAcceptanceExport;
 use Hilos\Database\View\Item\LegalAcceptanceExport;
 use Hilos\HilosException;
@@ -13,6 +15,10 @@ use Hilos\HilosException;
  * Array access uses the order id; ofUser() finds the administrator's one order.
  *
  * @extends DbCollection<LegalAcceptanceExport, ObjectLegalAcceptanceExports>
+ * @method ObjectLegalAcceptanceExports|null getObjectCollection()
+ * @method LegalAcceptanceExport|null first()
+ * @method LegalAcceptanceExport|null last()
+ * @method LegalAcceptanceExport|null offsetGet(mixed $offset)
  */
 class LegalAcceptanceExports extends DbCollection
 {
@@ -40,44 +46,52 @@ class LegalAcceptanceExports extends DbCollection
 
     /**
      * @param string $now Expiry boundary in SQL UTC
-     * @return list<LegalAcceptanceExport> Matching orders for the agent's file sweep
+     * @return static Matching orders for the agent's file sweep
      * @throws HilosException When the query or wrapper creation fails
+     * @throws ObjectGetIdStringNotImplementedException If DbItem's Object does not implement getIdString()
+     * @throws CollectionNotManualException When add() rejects the item on a non-manual collection
      */
-    public function expiredBy(string $now): array
+    public function expiredBy(string $now): static
     {
         return $this->itemsFor($this->objectCollection->expiredBy($now));
     }
 
     /**
-     * @return list<LegalAcceptanceExport> Ready orders for the agent's file sweep
+     * @return static Ready orders for the agent's file sweep
      * @throws HilosException When the query or wrapper creation fails
+     * @throws ObjectGetIdStringNotImplementedException If DbItem's Object does not implement getIdString()
+     * @throws CollectionNotManualException When add() rejects the item on a non-manual collection
      */
-    public function allReady(): array
+    public function allReady(): static
     {
         return $this->itemsFor($this->objectCollection->allReady());
     }
 
     /**
-     * @return list<LegalAcceptanceExport> Ready and failed orders for the erasure of an account
+     * @return static Ready and failed orders for the erasure of an account
      * @throws HilosException When the query or wrapper creation fails
+     * @throws ObjectGetIdStringNotImplementedException If DbItem's Object does not implement getIdString()
+     * @throws CollectionNotManualException When add() rejects the item on a non-manual collection
      */
-    public function allFinished(): array
+    public function allFinished(): static
     {
         return $this->itemsFor($this->objectCollection->allFinished());
     }
 
     /**
-     * @param list<ObjectLegalAcceptanceExport> $objects Loaded orders
-     * @return list<LegalAcceptanceExport> Their view wrappers
+     * @param ObjectLegalAcceptanceExports $exports Loaded orders
+     * @return static Their view wrappers
      * @throws HilosException When the collection cannot wrap a row
+     * @throws ObjectGetIdStringNotImplementedException If DbItem's Object does not implement getIdString()
+     * @throws CollectionNotManualException When add() rejects the item on a non-manual collection
      */
-    private function itemsFor(array $objects): array
+    private function itemsFor(ObjectLegalAcceptanceExports $exports): static
     {
-        $result = [];
-        foreach ($objects as $object) {
+        $result = static::initEmpty();
+        foreach ($exports as $object) {
             $item = $this->itemFor($object);
             if ($item !== null) {
-                $result[] = $item;
+                $result->add($item);
             }
         }
 

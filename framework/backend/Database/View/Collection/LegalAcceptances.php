@@ -8,8 +8,8 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Actions\Collection\LegalAcceptancesActions;
 use Hilos\Database\DatabaseException;
-use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Collection\LegalAcceptances as ObjectLegalAcceptances;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\View\Item\LegalAcceptance;
 use Hilos\Legal\LegalDocument;
 
@@ -17,6 +17,10 @@ use Hilos\Legal\LegalDocument;
  * Acceptance records keyed by their primary id; composite lookups use findOne().
  *
  * @extends DbCollection<LegalAcceptance, ObjectLegalAcceptances>
+ * @method ObjectLegalAcceptances|null getObjectCollection()
+ * @method LegalAcceptance|null first()
+ * @method LegalAcceptance|null last()
+ * @method LegalAcceptance|null offsetGet(mixed $offset)
  * @property-read LegalAcceptancesActions $actions
  */
 class LegalAcceptances extends DbCollection
@@ -26,17 +30,18 @@ class LegalAcceptances extends DbCollection
 
     /**
      * @param int $userId Person whose history to read
-     * @return list<LegalAcceptance> Acceptance records for a wire projection, in timestamp/id order
+     * @return static Acceptance records for a wire projection, in timestamp/id order
      * @throws DatabaseException When the query fails
      * @throws InvalidArgumentException When the query or object type is invalid
      * @throws ObjectGetIdStringNotImplementedException When a persisted object lacks its primary key
      * @throws LogicException When collection class constants are not configured
      */
-    public function ofUser(int $userId): array
+    public function ofUser(int $userId): static
     {
-        $acceptances = [];
+        $acceptances = static::initEmpty();
         foreach ($this->objectCollection->ofUser($userId) as $object) {
-            $acceptances[] = $this->getOrCreateItemForLoadedObject($object->getIdString(), $object);
+            $item = $this->getOrCreateItemForLoadedObject($object->getIdString(), $object);
+            $acceptances->add($item);
         }
 
         return $acceptances;

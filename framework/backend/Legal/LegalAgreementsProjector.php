@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Legal;
 
+use Hilos\Database\View\Collection\LegalAcceptances;
 use Hilos\Database\View\Item\LegalAcceptance;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -28,7 +29,10 @@ final class LegalAgreementsProjector
     public static function stateFor(int $userId, string $today): LegalAgreementsStateSignalData
     {
         $documents = LegalCatalogResolver::documents();
-        $acceptances = $documents === [] ? [] : Hilos::$db->legalAcceptances->ofUser($userId);
+        if ($documents === []) {
+            return new LegalAgreementsStateSignalData([]);
+        }
+        $acceptances = Hilos::$db->legalAcceptances->ofUser($userId);
         $state = [];
         foreach ($documents as $document) {
             $records = self::acceptedByRevision($document, $acceptances);
@@ -62,7 +66,10 @@ final class LegalAgreementsProjector
     public static function textsFor(int $userId, string $today): array
     {
         $documents = LegalCatalogResolver::documents();
-        $acceptances = $documents === [] ? [] : Hilos::$db->legalAcceptances->ofUser($userId);
+        if ($documents === []) {
+            return [LegalAgreementsStateSignalData::documents => []];
+        }
+        $acceptances = Hilos::$db->legalAcceptances->ofUser($userId);
         $texts = [];
         foreach ($documents as $document) {
             $current = LegalCatalogResolver::latestRevision($document);
@@ -153,10 +160,10 @@ final class LegalAgreementsProjector
 
     /**
      * @param LegalDocument $document Document whose acceptance records to index
-     * @param list<LegalAcceptance> $acceptances Persisted rows read for the wire boundary
+     * @param LegalAcceptances $acceptances Persisted rows read for the wire boundary
      * @return array<string, LegalAcceptance> Records keyed by revision id
      */
-    private static function acceptedByRevision(LegalDocument $document, array $acceptances): array
+    private static function acceptedByRevision(LegalDocument $document, LegalAcceptances $acceptances): array
     {
         $records = [];
         foreach ($acceptances as $acceptance) {

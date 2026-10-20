@@ -16,6 +16,10 @@ use Hilos\Database\View\Item\Notification;
  * marks a recipient's notifications read.
  *
  * @extends DbCollection<Notification, ObjectNotifications>
+ * @method ObjectNotifications|null getObjectCollection()
+ * @method Notification|null first()
+ * @method Notification|null last()
+ * @method Notification|null offsetGet(mixed $offset)
  */
 class Notifications extends DbCollection
 {

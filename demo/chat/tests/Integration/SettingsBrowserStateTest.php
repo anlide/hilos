@@ -21,9 +21,12 @@ use Hilos\Core\Table\TableConstants;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Object\Collection\Settings as ObjectSettings;
 use Hilos\Database\Object\Item\Setting as ObjectSetting;
 use Hilos\Database\Settings\Exception\SettingNotInCatalogException;
 use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Database\View\Collection\Settings as ViewSettings;
+use Hilos\Database\View\Item\Setting as ViewSetting;
 use Hilos\HilosException;
 use Hilos\Tables\Settings\HilosSettingTableRow;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -67,6 +70,56 @@ final class SettingsBrowserStateTest extends IntegrationTestCase
             $orphan = $this->settingsSource($orphanRow);
             $this->assertSame($orphanKey, $orphan[HilosSettingTableRow::key]);
             $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_ORPHAN, $orphan[HilosSettingTableRow::valueSource]);
+
+            $catalog = SettingsCatalog::getCatalog();
+
+            $heldViewSetting = Hilos::$db->settings[$orphanKey];
+            $this->assertInstanceOf(ViewSetting::class, $heldViewSetting);
+            $orphanId = $heldViewSetting->id;
+            $this->assertIsInt($orphanId);
+
+            $objectCollection = Hilos::$db->settings->getObjectCollection();
+            $this->assertInstanceOf(ObjectSettings::class, $objectCollection);
+            $heldObjectSetting = $objectCollection->findByKey($orphanKey);
+            $this->assertInstanceOf(ObjectSetting::class, $heldObjectSetting);
+            $this->assertSame($orphanId, $heldObjectSetting->id);
+
+            $viewOrphans = Hilos::$db->settings->getOrphans($catalog);
+            $this->assertInstanceOf(ViewSettings::class, $viewOrphans);
+            $this->assertTrue(isset($viewOrphans[$orphanId]));
+            $this->assertSame($heldViewSetting, $viewOrphans[$orphanId]);
+            $this->assertSame($orphanKey, $viewOrphans[$orphanId]->key);
+            foreach ($viewOrphans as $key => $orphan) {
+                $this->assertInstanceOf(ViewSetting::class, $orphan);
+                $this->assertSame($orphan->id, (int) $key);
+                $this->assertArrayNotHasKey($orphan->key, $catalog);
+            }
+
+            $objectOrphans = $objectCollection->getOrphans($catalog);
+            $this->assertInstanceOf(ObjectSettings::class, $objectOrphans);
+            $this->assertTrue(isset($objectOrphans[$orphanId]));
+            $this->assertSame($heldObjectSetting, $objectOrphans[$orphanId]);
+            $this->assertSame($orphanKey, $objectOrphans[$orphanId]->key);
+            foreach ($objectOrphans as $key => $orphan) {
+                $this->assertInstanceOf(ObjectSetting::class, $orphan);
+                $this->assertSame($orphan->id, (int) $key);
+                $this->assertArrayNotHasKey($orphan->key, $catalog);
+            }
+
+            $coveringCatalog = $catalog;
+            foreach ($viewOrphans as $orphan) {
+                $coveringCatalog[$orphan->key] = [
+                    SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
+                    SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => '',
+                ];
+            }
+            $emptyViewOrphans = Hilos::$db->settings->getOrphans($coveringCatalog);
+            $this->assertInstanceOf(ViewSettings::class, $emptyViewOrphans);
+            $this->assertCount(0, $emptyViewOrphans);
+
+            $emptyObjectOrphans = $objectCollection->getOrphans($coveringCatalog);
+            $this->assertInstanceOf(ObjectSettings::class, $emptyObjectOrphans);
+            $this->assertCount(0, $emptyObjectOrphans);
         } finally {
             Hilos::$rt->connections->actions->clear();
             RtTruthSourceRegistry::unregisterAgent(self::TEST_SETTINGS_AGENT_ID);

@@ -24,12 +24,24 @@ use Hilos\Legal\LegalDocument;
  * Persisted acceptance queries, including rows not held in the lazy cache.
  *
  * @extends Objects<ObjectLegalAcceptance>
+ * @method ObjectLegalAcceptance|null first()
+ * @method ObjectLegalAcceptance|null last()
+ * @method ObjectLegalAcceptance|null get(int|string $key)
+ * @method ObjectLegalAcceptance|null offsetGet(mixed $offset)
  */
 class LegalAcceptances extends Objects
 {
     public const string OBJECT_CLASS = ObjectLegalAcceptance::class;
     public const string ENTITY_COLLECTION_CLASS = EntityLegalAcceptances::class;
     public const string COLLECTION_KEY = HilosDbContext::legalAcceptances;
+
+    /**
+     * @return static Empty collection instance
+     */
+    public static function initEmpty(): static
+    {
+        return new static();
+    }
 
     /**
      * @param int $userId Person accepting
@@ -63,11 +75,11 @@ class LegalAcceptances extends Objects
 
     /**
      * @param int $userId Person whose history to read
-     * @return list<ObjectLegalAcceptance> Acceptance rows in timestamp/id order for the projection boundary
+     * @return static Acceptance rows in timestamp/id order for the projection boundary
      * @throws DatabaseException When the query fails
      * @throws InvalidArgumentException When the query order is invalid
      */
-    public function ofUser(int $userId): array
+    public function ofUser(int $userId): static
     {
         return $this->hydrateAll(static::entityClass()::get(
             [EntityLegalAcceptance::user_id => $userId],
@@ -197,7 +209,7 @@ class LegalAcceptances extends Objects
             EntityLegalAcceptance::user_id => $userId,
             EntityLegalAcceptance::document => $document->value,
             EntityLegalAcceptance::revision_id => $revisionId,
-        ]))[0] ?? null;
+        ]))->first();
     }
 
     /**
@@ -243,11 +255,11 @@ class LegalAcceptances extends Objects
 
     /**
      * @param EntityCollection<EntityLegalAcceptance> $entities Queried rows
-     * @return list<ObjectLegalAcceptance> Loaded rows in query order
+     * @return static Loaded rows in query order
      */
-    private function hydrateAll(EntityCollection $entities): array
+    private function hydrateAll(EntityCollection $entities): static
     {
-        $acceptances = [];
+        $acceptances = static::initEmpty();
         foreach ($entities as $entity) {
             if ($entity->id === null) {
                 continue;
@@ -255,7 +267,7 @@ class LegalAcceptances extends Objects
             if (!isset($this->objects[$entity->id])) {
                 $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
             }
-            $acceptances[] = $this->objects[$entity->id];
+            $acceptances->hydrate($entity->id, $this->objects[$entity->id]);
         }
 
         return $acceptances;
