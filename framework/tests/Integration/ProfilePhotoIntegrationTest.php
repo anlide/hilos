@@ -114,7 +114,7 @@ final class ProfilePhotoIntegrationTest extends ProfileIntegrationTestCase
         $this->seedFile(self::FIRST_FILE_ID);
         $this->deliverPublished('u1', self::FIRST_FILE_ID);
         $this->settleProfileFlows();
-        self::assertSame(self::FIRST_FILE_ID, Hilos::$db->userPhotos[self::USER_ID]?->fileId);
+        self::assertSame(self::FIRST_FILE_ID, Hilos::$db->userPhotos[self::USER_ID]->fileId);
         self::assertCount(1, $this->signalsNamed(HilosSignalConstants::HILOS_FILE_BIND));
         $restate = $this->signalsNamed(HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE);
         self::assertCount(1, $restate);
@@ -125,13 +125,13 @@ final class ProfilePhotoIntegrationTest extends ProfileIntegrationTestCase
         $this->seedFile(self::SECOND_FILE_ID);
         $this->deliverPublished('u2', self::SECOND_FILE_ID);
         $this->settleProfileFlows();
-        self::assertSame(self::SECOND_FILE_ID, Hilos::$db->userPhotos[self::USER_ID]?->fileId);
+        self::assertSame(self::SECOND_FILE_ID, Hilos::$db->userPhotos[self::USER_ID]->fileId);
         self::assertCount(1, $this->signalsNamed(HilosSignalConstants::HILOS_FILE_REMOVE));
         self::assertCount(1, $this->signalsNamed(HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE));
 
         $this->submit(HilosSignalConstants::PROFILE_PHOTO_REMOVE, new ProfilePhotoRemoveActionDTO());
         $this->settleProfileFlows();
-        self::assertNull(Hilos::$db->userPhotos[self::USER_ID]);
+        self::assertArrayNotHasKey(self::USER_ID, Hilos::$db->userPhotos);
         self::assertCount(1, $this->signalsNamed(HilosSignalConstants::HILOS_FILE_REMOVE));
         self::assertCount(1, $this->signalsNamed(HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE));
     }
@@ -143,7 +143,7 @@ final class ProfilePhotoIntegrationTest extends ProfileIntegrationTestCase
         $this->seedCompleteUpload('u1');
         $this->submit(HilosSignalConstants::PROFILE_PHOTO_SET, new ProfilePhotoSetActionDTO('u1'));
         self::assertSame('u1', Hilos::$rt->hilosProfilePhotoChecks[self::ACCEPT_KEY]?->clientUploadId);
-        self::assertNull(Hilos::$db->userPhotos[self::USER_ID]);
+        self::assertArrayNotHasKey(self::USER_ID, Hilos::$db->userPhotos);
         self::assertCount(1, $this->signalsNamed(HilosSignalConstants::HILOS_PROFILE_PHOTO_CHECK));
 
         try {
@@ -181,7 +181,7 @@ final class ProfilePhotoIntegrationTest extends ProfileIntegrationTestCase
             'test',
             HilosSignalConstants::HILOS_PROFILE_PHOTO_VERDICT,
         );
-        self::assertNull(Hilos::$db->userPhotos[self::USER_ID]);
+        self::assertArrayNotHasKey(self::USER_ID, Hilos::$db->userPhotos);
         $notices = $this->signalsNamed(HilosSignalConstants::HILOS_NOTIFICATION_EMIT);
         self::assertCount(1, $notices);
         self::assertInstanceOf(AgentSignalData::class, $notices[0]->data);
@@ -227,7 +227,7 @@ final class ProfilePhotoIntegrationTest extends ProfileIntegrationTestCase
         }
 
         $this->settleProfileFlows();
-        self::assertNull(Hilos::$db->userPhotos[self::USER_ID]);
+        self::assertArrayNotHasKey(self::USER_ID, Hilos::$db->userPhotos);
         $acks = $this->signalsNamed(SignalConstants::ACTION_SUCCESS);
         self::assertCount(1, $acks);
         self::assertInstanceOf(WebSocketSignalData::class, $acks[0]->data);
@@ -248,7 +248,7 @@ final class ProfilePhotoIntegrationTest extends ProfileIntegrationTestCase
         $this->deliverPublished('u1', self::FIRST_FILE_ID);
         $this->settleProfileFlows();
 
-        self::assertNull(Hilos::$db->userPhotos[self::USER_ID]);
+        self::assertArrayNotHasKey(self::USER_ID, Hilos::$db->userPhotos);
         $errors = $this->signalsNamed(SignalConstants::ACTION_ERROR);
         self::assertCount(1, $errors);
         self::assertInstanceOf(WebSocketSignalData::class, $errors[0]->data);
@@ -297,14 +297,14 @@ final class ProfilePhotoIntegrationTest extends ProfileIntegrationTestCase
         $this->deliverPublished('u1', self::FIRST_FILE_ID);
         $this->settleProfileFlows();
         $this->drainSignals();
-        self::assertSame(self::FIRST_FILE_ID, Hilos::$db->userPhotos[self::USER_ID]?->fileId);
+        self::assertSame(self::FIRST_FILE_ID, Hilos::$db->userPhotos[self::USER_ID]->fileId);
 
         $this->seedFile(self::SECOND_FILE_ID);
         $this->submit(HilosSignalConstants::PROFILE_PHOTO_REMOVE, new ProfilePhotoRemoveActionDTO());
         $this->deliverPublished('u2', self::SECOND_FILE_ID);
         $this->settleProfileFlows();
 
-        self::assertSame(self::SECOND_FILE_ID, Hilos::$db->userPhotos[self::USER_ID]?->fileId);
+        self::assertSame(self::SECOND_FILE_ID, Hilos::$db->userPhotos[self::USER_ID]->fileId);
     }
 
     /**
@@ -318,7 +318,7 @@ final class ProfilePhotoIntegrationTest extends ProfileIntegrationTestCase
         $this->deliverPublished('u1', self::FIRST_FILE_ID);
         $this->settleProfileFlows();
 
-        $photo = Hilos::$db->userPhotos[self::USER_ID]?->photo;
+        $photo = Hilos::$db->userPhotos[self::USER_ID]->photo;
         self::assertSame(HilosFiles::downloadPath(self::FIRST_FILE_ID, ProfilePhotoUploadTarget::VARIANT), $photo);
         self::assertStringContainsString('variant=' . ProfilePhotoUploadTarget::VARIANT, $photo);
     }

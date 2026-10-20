@@ -120,8 +120,8 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         $this->assertSame('en', $language->code);
         $this->assertSame('English', $language->nativeName);
         $this->assertFalse($language->enabled);
-        $this->assertSame($language->id, Hilos::$db->languages['en']?->id);
-        $this->assertSame($language->id, Hilos::$db->languages[$language->id]?->id);
+        $this->assertSame($language->id, Hilos::$db->languages['en']->id);
+        $this->assertSame($language->id, Hilos::$db->languages[$language->id]->id);
     }
 
     /** @throws HilosException When a database or action fails unexpectedly */
@@ -132,7 +132,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
                 Hilos::$db->languages->actions->create($code, 'English', false);
                 $this->fail("Expected malformed language code {$code} to be refused");
             } catch (ValidationException) {
-                $this->assertNull(Hilos::$db->languages[$code]);
+                $this->assertArrayNotHasKey($code, Hilos::$db->languages);
             }
         }
 
@@ -218,8 +218,8 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         self::assertInstanceOf(Locales::class, $locales);
         self::assertCount(1, $locales);
         self::assertSame(Hilos::$db->locales[$regionalId], $locales[$regionalId]);
-        self::assertNull($locales[$bare->id]);
-        self::assertNull($locales[$foreignLocale->id]);
+        self::assertArrayNotHasKey($bare->id, $locales);
+        self::assertArrayNotHasKey($foreignLocale->id, $locales);
         self::assertCount(0, Hilos::$db->countries[$empty->id]->locales);
         self::assertCount(0, Hilos::$db->locales->forCountryId(null));
         self::assertCount(0, new Country(ObjectCountry::fromEntity(new EntityCountry()))->locales);
@@ -259,10 +259,10 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         $this->assertSame(MeasurementSystem::METRIC, $regional->measurementSystem);
         $this->assertFalse($country->enabled);
         $this->assertFalse($regional->enabled);
-        $this->assertSame($country->id, Hilos::$db->countries['gb']?->id);
-        $this->assertSame($country->id, Hilos::$db->countries[$country->id]?->id);
-        $this->assertSame($regional->id, Hilos::$db->locales['en-GB']?->id);
-        $this->assertSame($regional->id, Hilos::$db->locales[$regional->id]?->id);
+        $this->assertSame($country->id, Hilos::$db->countries['gb']->id);
+        $this->assertSame($country->id, Hilos::$db->countries[$country->id]->id);
+        $this->assertSame($regional->id, Hilos::$db->locales['en-GB']->id);
+        $this->assertSame($regional->id, Hilos::$db->locales[$regional->id]->id);
     }
 
     /** @throws HilosException When a database or action fails unexpectedly */
@@ -273,7 +273,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
                 Hilos::$db->countries->actions->create($code, '£', 'GBP');
                 $this->fail("Expected malformed country code {$code} to be refused");
             } catch (ValidationException) {
-                $this->assertNull(Hilos::$db->countries[$code]);
+                $this->assertArrayNotHasKey($code, Hilos::$db->countries);
             }
         }
         foreach (['usd', 'USDD'] as $currencyCode) {
@@ -281,7 +281,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
                 Hilos::$db->countries->actions->create('us', '$', $currencyCode);
                 $this->fail("Expected malformed currency code {$currencyCode} to be refused");
             } catch (ValidationException) {
-                $this->assertNull(Hilos::$db->countries['us']);
+                $this->assertArrayNotHasKey('us', Hilos::$db->countries);
             }
         }
 
@@ -291,7 +291,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
             $this->fail('Expected a duplicate country code to be refused');
         } catch (ValidationException $error) {
             $this->assertSame("Country 'gb' already exists.", $error->getMessage());
-            $this->assertSame($country->id, Hilos::$db->countries['gb']?->id);
+            $this->assertSame($country->id, Hilos::$db->countries['gb']->id);
         }
         $country->actions->switchOn();
         try {
@@ -321,7 +321,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
             $this->fail('Expected a second countryless locale to be refused');
         } catch (ValidationException $error) {
             $this->assertSame("Locale 'en' already exists.", $error->getMessage());
-            $this->assertSame($locale->id, Hilos::$db->locales['en']?->id);
+            $this->assertSame($locale->id, Hilos::$db->locales['en']->id);
         }
 
         $country = Hilos::$db->countries->actions->create('gb', '£', 'GBP');
@@ -331,7 +331,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
             $this->fail('Expected a second locale of one language-country pair to be refused');
         } catch (ValidationException $error) {
             $this->assertSame("Locale 'en-GB' already exists.", $error->getMessage());
-            $this->assertSame($regional->id, Hilos::$db->locales['en-GB']?->id);
+            $this->assertSame($regional->id, Hilos::$db->locales['en-GB']->id);
         }
 
         $otherCountry = Hilos::$db->countries->actions->create('us', '$', 'USD');
@@ -343,7 +343,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
             $this->fail('Expected an empty format to be refused');
         } catch (ValidationException $error) {
             $this->assertSame("Date format '' is not recognized: expected one of the known templates.", $error->getMessage());
-            $this->assertNull(Hilos::$db->locales['en-US']);
+            $this->assertArrayNotHasKey('en-US', Hilos::$db->locales);
         }
 
         $locale->actions->switchOn();
@@ -412,23 +412,23 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
                 "Locale 'en-QX' is the country's default: choose another locale for the country first.",
                 $failure->getMessage(),
             );
-            $this->assertNotNull(Hilos::$db->locales[$locale->id]);
+            $this->assertArrayHasKey($locale->id, Hilos::$db->locales);
         }
         try {
             $language->actions->delete();
             $this->fail('Expected a language with a locale to be protected');
         } catch (ValidationException $failure) {
             $this->assertSame("Language 'en' cannot be deleted: it has locales.", $failure->getMessage());
-            $this->assertNotNull(Hilos::$db->languages[$language->id]);
+            $this->assertArrayHasKey($language->id, Hilos::$db->languages);
         }
 
         $country->actions->update('£', 'GBP', null);
         $locale->actions->delete();
-        $this->assertNull(Hilos::$db->locales[$locale->id]);
+        $this->assertArrayNotHasKey($locale->id, Hilos::$db->locales);
         $language->actions->delete();
-        $this->assertNull(Hilos::$db->languages[$language->id]);
+        $this->assertArrayNotHasKey($language->id, Hilos::$db->languages);
         $country->actions->delete();
-        $this->assertNull(Hilos::$db->countries[$country->id]);
+        $this->assertArrayNotHasKey($country->id, Hilos::$db->countries);
     }
 
     /** @throws HilosException When a database or action fails unexpectedly */
@@ -468,7 +468,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         $this->assertSame($named->id, $base->language->id);
         $this->assertSame($writing->id, $base->inLanguage->id);
         $this->assertSame($base->id, Hilos::$db->languageNames->findBase($named->id, $writing->id)?->id);
-        $this->assertSame($base->id, Hilos::$db->languageNames[$base->id]?->id);
+        $this->assertSame($base->id, Hilos::$db->languageNames[$base->id]->id);
 
         $override = Hilos::$db->languageNames->actions->createManual($named, $writing, $locale, 'French');
         $this->assertSame($locale->id, $override->locale?->id);
@@ -479,13 +479,13 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         $override->actions->edit('');
         $this->assertSame('', $override->name);
         $override->actions->delete();
-        $this->assertNull(Hilos::$db->languageNames[$override->id]);
-        $this->assertNotNull(Hilos::$db->languageNames[$base->id]);
+        $this->assertArrayNotHasKey($override->id, Hilos::$db->languageNames);
+        $this->assertArrayHasKey($base->id, Hilos::$db->languageNames);
 
         $another = Hilos::$db->languageNames->actions->createManual($named, $writing, $locale, 'Français');
         $base->actions->delete();
-        $this->assertNull(Hilos::$db->languageNames[$base->id]);
-        $this->assertNull(Hilos::$db->languageNames[$another->id]);
+        $this->assertArrayNotHasKey($base->id, Hilos::$db->languageNames);
+        $this->assertArrayNotHasKey($another->id, Hilos::$db->languageNames);
     }
 
     /** @throws HilosException When a database or action fails unexpectedly */
@@ -522,7 +522,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
             $this->assertSame('UK', $override->name);
         }
         $base->actions->delete();
-        $this->assertNull(Hilos::$db->countryNames[$override->id]);
+        $this->assertArrayNotHasKey($override->id, Hilos::$db->countryNames);
     }
 
     /** @throws HilosException When a database or action fails unexpectedly */
@@ -613,7 +613,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
                 Database::sqlRun("DELETE FROM `{$table}` WHERE `id` = ?", [$id]);
                 $this->fail('A name must protect its referenced parent');
             } catch (ForeignKeyConstraintException) {
-                $this->assertNotNull(Hilos::$db->languageNames[$languageName->id]);
+                $this->assertArrayHasKey($languageName->id, Hilos::$db->languageNames);
             }
         }
 
@@ -668,8 +668,8 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
                 $base->actions->delete();
                 $this->fail('A restricted base deletion must roll back its override deletion');
             } catch (ForeignKeyConstraintException) {
-                $this->assertSame($base->id, Hilos::$db->countryNames[$base->id]?->id);
-                $this->assertSame($override->id, Hilos::$db->countryNames[$override->id]?->id);
+                $this->assertSame($base->id, Hilos::$db->countryNames[$base->id]->id);
+                $this->assertSame($override->id, Hilos::$db->countryNames[$override->id]->id);
                 $this->assertSame($override->id, Hilos::$db->countryNames->findOverride(
                     $country->id, $language->id, $locale->id,
                 )?->id);
@@ -721,7 +721,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         self::assertFalse($restored->locked);
         self::assertCount(0, Hilos::$db->countryNames->overridesFor($country->id, $language->id));
         foreach ($oldIds as $id) {
-            self::assertNull(Hilos::$db->countryNames[$id]);
+            self::assertArrayNotHasKey($id, Hilos::$db->countryNames);
         }
         foreach ([$language, $country, $gbLocale, $usLocale] as $parent) {
             self::assertTrue($parent->enabled);
@@ -893,7 +893,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         Database::transactionStart();
         try {
             $locale->actions->delete();
-            self::assertNull(Hilos::$db->locales[$id]);
+            self::assertArrayNotHasKey($id, Hilos::$db->locales);
             self::assertSame($before, $this->changes->count);
             Database::transactionCommit();
         } catch (HilosException $failure) {
@@ -907,8 +907,8 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         self::assertSame(HilosDbContext::locales, $change->sourceKey);
         self::assertSame((string) $id, $change->sourceId);
         self::assertSame(TableMutationType::Delete, $change->mutationType);
-        self::assertNull(Hilos::$db->locales[$id]);
-        self::assertNull(Hilos::$db->locales[$code]);
+        self::assertArrayNotHasKey($id, Hilos::$db->locales);
+        self::assertArrayNotHasKey($code, Hilos::$db->locales);
         self::assertNull(Hilos::$db->locales->getObjectCollection()[$id]);
         self::assertSame(0, EntityLocale::count([EntityLocale::id => $id]));
         self::assertSame($other->getObject(), Hilos::$db->locales[$other->id]->getObject());
@@ -950,7 +950,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         $override->actions->delete();
         self::assertNull($locale->deleteReason());
         $locale->actions->delete();
-        self::assertNull(Hilos::$db->locales['en-GB']);
+        self::assertArrayNotHasKey('en-GB', Hilos::$db->locales);
     }
 
     /** @return iterable<string, array{bool, string, bool}> Every referenced name protects the locale */
@@ -1002,7 +1002,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         $override->actions->delete();
         self::assertNull($locale->deleteReason());
         $locale->actions->delete();
-        self::assertNull(Hilos::$db->locales['en-GB']);
+        self::assertArrayNotHasKey('en-GB', Hilos::$db->locales);
         self::assertSame($baseObject, $collection[$base->id]->getObject());
         self::assertSame('Base', $collection[$base->id]->name);
     }
@@ -1034,8 +1034,8 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         $countryName = Hilos::$db->countryNames->actions->createManual($country, $language, $locale, 'Correction');
         self::assertSame(Hilos::$db->languageNames[$languageName->id], $locale->languageNames[$languageName->id]);
         self::assertSame(Hilos::$db->countryNames[$countryName->id], $locale->countryNames[$countryName->id]);
-        self::assertNull($locale->languageNames[$foreignLanguageName->id]);
-        self::assertNull($locale->countryNames[$foreignCountryName->id]);
+        self::assertArrayNotHasKey($foreignLanguageName->id, $locale->languageNames);
+        self::assertArrayNotHasKey($foreignCountryName->id, $locale->countryNames);
         self::assertSame($country->getObject(), $locale->country->getObject());
         $before = (int) Database::sql("SHOW SESSION STATUS LIKE 'Com_select'")->firstRow()['Value'];
         self::assertCount(1, $locale->languageNames);
@@ -1200,7 +1200,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         self::assertArrayNotHasKey($gbEnLocked->id, $viewRes);
         self::assertArrayNotHasKey($usEnOverride->id, $viewRes);
         self::assertArrayNotHasKey($usFr->id, $viewRes);
-        self::assertFalse(isset($viewRes[$gbEnLocked->id]));
+        self::assertArrayNotHasKey($gbEnLocked->id, $viewRes);
 
         self::assertCount(2, $objRes);
         count($objRes);
@@ -1286,7 +1286,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         self::assertArrayNotHasKey($base->id, $viewRes);
         self::assertArrayNotHasKey($ovOtherCountry->id, $viewRes);
         self::assertArrayNotHasKey($ovOtherLang->id, $viewRes);
-        self::assertFalse(isset($viewRes[$base->id]));
+        self::assertArrayNotHasKey($base->id, $viewRes);
 
         self::assertCount(2, $objRes);
         count($objRes);
@@ -1372,7 +1372,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         self::assertArrayNotHasKey($base->id, $viewRes);
         self::assertArrayNotHasKey($ovOtherLang->id, $viewRes);
         self::assertArrayNotHasKey($ovOtherInLang->id, $viewRes);
-        self::assertFalse(isset($viewRes[$base->id]));
+        self::assertArrayNotHasKey($base->id, $viewRes);
 
         self::assertCount(2, $objRes);
         count($objRes);

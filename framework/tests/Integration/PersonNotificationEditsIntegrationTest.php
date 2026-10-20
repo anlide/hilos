@@ -132,7 +132,7 @@ final class PersonNotificationEditsIntegrationTest extends HilosSessionIntegrati
         try {
             ExecutionContext::run(
                 new ExecutionFrame(agentId: $this->library->getId()),
-                static fn () => Hilos::$db->notifications[$notificationId]?->actions->markRead(),
+                static fn () => Hilos::$db->notifications[$notificationId]->actions->markRead(),
             );
             self::fail('The library must not mark a letter read');
         } catch (WriteNotAllowedException $refusal) {

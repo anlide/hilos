@@ -125,7 +125,8 @@ final class LogWriteLevelPropagationTest extends FrameworkIntegrationTestCase
         $id = $this->writeWriteLevel(LogLevel::Warning);
 
         // The second context holds its own copy of the row, as a second worker would.
-        $this->assertNotNull($this->rival?->settings[LogSettingsCatalog::WRITE_LEVEL]);
+        $this->assertArrayHasKey(LogSettingsCatalog::WRITE_LEVEL, $this->rival->settings);
+        $this->rival->settings[LogSettingsCatalog::WRITE_LEVEL];
 
         Logger::setWriteLevel(LogLevel::Info);
         $this->applyRivalFrame($id, [ObjectSetting::value => LogLevel::Error->value]);
@@ -147,8 +148,10 @@ final class LogWriteLevelPropagationTest extends FrameworkIntegrationTestCase
 
         $rival = $this->rival;
         $this->assertNotNull($rival);
-        $this->assertNotNull($rival->settings[LogSettingsCatalog::WRITE_LEVEL]);
-        $this->assertNotNull($rival->settings[LogSettingsCatalog::ROTATION_CRON]);
+        $this->assertArrayHasKey(LogSettingsCatalog::WRITE_LEVEL, $rival->settings);
+        $rival->settings[LogSettingsCatalog::WRITE_LEVEL];
+        $this->assertArrayHasKey(LogSettingsCatalog::ROTATION_CRON, $rival->settings);
+        $rival->settings[LogSettingsCatalog::ROTATION_CRON];
 
         Logger::setWriteLevel(LogLevel::Info);
         $this->applyRivalFrame($cronId, [ObjectSetting::value => '0 4 * * *']);

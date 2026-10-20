@@ -123,7 +123,7 @@ final class PersonDeletionPhotoEditsIntegrationTest extends HilosSessionIntegrat
         } catch (WriteNotAllowedException $refusal) {
             self::assertStringContainsString($this->users->getId(), $refusal->getMessage());
         }
-        self::assertNull(Hilos::$db->userPhotos[$userId]);
+        self::assertArrayNotHasKey($userId, Hilos::$db->userPhotos);
     }
 
     /**
@@ -158,7 +158,7 @@ final class PersonDeletionPhotoEditsIntegrationTest extends HilosSessionIntegrat
         ));
         self::assertInstanceOf(UserPhotoPutDoneSignalData::class, $put);
         self::assertNull($put->error);
-        self::assertSame(self::FILE_ID, Hilos::$db->userPhotos[$userId]?->fileId);
+        self::assertSame(self::FILE_ID, Hilos::$db->userPhotos[$userId]->fileId);
 
         $removed = $this->carry(HilosSignalConstants::HILOS_USER_PHOTO_REMOVE, new UserPhotoRemoveSignalData(
             userId: $userId,
@@ -171,7 +171,7 @@ final class PersonDeletionPhotoEditsIntegrationTest extends HilosSessionIntegrat
         self::assertInstanceOf(UserPhotoRemoveDoneSignalData::class, $removed);
         self::assertNull($removed->error);
         self::assertSame(self::FILE_ID, $removed->fileId);
-        self::assertNull(Hilos::$db->userPhotos[$userId]);
+        self::assertArrayNotHasKey($userId, Hilos::$db->userPhotos);
     }
 
     /**

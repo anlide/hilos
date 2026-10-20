@@ -255,7 +255,7 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
                 AccountMergeCommandConstants::FIELD_SECOND_FACTOR_FATE => SecondFactorFate::BOTH->value,
             ]), '', '');
             $this->drain();
-            $this->assertSame(self::USER_ID, Hilos::$db->userMerges[78]?->survivorUserId);
+            $this->assertSame(self::USER_ID, Hilos::$db->userMerges[78]->survivorUserId);
             $this->grant();
             $this->assertNull($this->lastStateFrame()?->userId);
             $this->assertSame(SecondFactorPendingMode::VERIFY, Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)?->pendingSecondFactorMode);

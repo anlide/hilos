@@ -159,11 +159,11 @@ final class CollectionPointMutationCacheTest extends TestCase
         $objects = $this->mountedDb();
         $objects['1'] = PointMutationObject::fromEntity(PointMutationEntity::withId(1, 'first'));
         $view = $this->dbView();
-        $this->assertSame('first', $view['1']?->mark());
+        $this->assertSame('first', $view['1']->mark());
 
         $objects['1'] = PointMutationObject::fromEntity(PointMutationEntity::withId(1, 'second'));
 
-        $this->assertSame('second', $view['1']?->mark());
+        $this->assertSame('second', $view['1']->mark());
     }
 
     /**
@@ -175,11 +175,18 @@ final class CollectionPointMutationCacheTest extends TestCase
         $objects['1'] = PointMutationObject::fromEntity(PointMutationEntity::withId(1, 'first'));
         $view = $this->dbView();
         // The read is the point: it puts a wrapper for '1' into the cache the removal must clear.
-        $this->assertNotNull($view['1']);
+        $this->assertArrayHasKey('1', $view);
+        $cached = $view['1'];
 
         unset($objects['1']);
 
-        $this->assertNull($view['1']);
+        $this->assertArrayNotHasKey('1', $view);
+
+        $freshObject = PointMutationObject::fromEntity(PointMutationEntity::withId(1, 'second'));
+        $objects->load('1', $freshObject);
+
+        $this->assertSame($freshObject, $view['1']->getObject());
+        $this->assertNotSame($cached, $view['1']);
     }
 
     /**
@@ -203,8 +210,8 @@ final class CollectionPointMutationCacheTest extends TestCase
             array_column($view->toArray(), 'mark'),
         );
 
-        $this->assertSame('first', $view['1']?->mark());
-        $this->assertSame('second', $view['2']?->mark());
+        $this->assertSame('first', $view['1']->mark());
+        $this->assertSame('second', $view['2']->mark());
     }
 
     /**
@@ -221,11 +228,18 @@ final class CollectionPointMutationCacheTest extends TestCase
         $objects['1'] = PointMutationObject::fromEntity(PointMutationEntity::withId(1, 'first'));
         $view = $this->dbView();
         // The read is the point: it puts a wrapper for '1' into the cache the drop must clear.
-        $this->assertNotNull($view['1']);
+        $this->assertArrayHasKey('1', $view);
+        $cached = $view['1'];
 
         $objects->forget('1');
 
-        $this->assertNull($view['1']);
+        $this->assertArrayNotHasKey('1', $view);
+
+        $freshObject = PointMutationObject::fromEntity(PointMutationEntity::withId(1, 'second'));
+        $objects->load('1', $freshObject);
+
+        $this->assertSame($freshObject, $view['1']->getObject());
+        $this->assertNotSame($cached, $view['1']);
     }
 
     /**
@@ -241,8 +255,8 @@ final class CollectionPointMutationCacheTest extends TestCase
         $objects = $this->mountedDb();
         $objects['1'] = PointMutationObject::fromEntity(PointMutationEntity::withId(1, 'first'));
         $view = $this->dbView();
+        $this->assertArrayHasKey('1', $view);
         $cached = $view['1'];
-        $this->assertNotNull($cached);
 
         $objects->load('1', PointMutationObject::fromEntity(PointMutationEntity::withId(1, 'second')));
 

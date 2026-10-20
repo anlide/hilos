@@ -115,9 +115,9 @@ final class SecondFactorPersonEditsIntegrationTest extends HilosSessionIntegrati
             'a step taken' => static fn () => $factor->actions->acceptStep(Totp::stepAt(time())),
             'an app confirmed' => static fn () => $factor->actions->confirm('Renamed'),
             'a backup code burned' => static fn () => $code?->actions->spend(),
-            'a removal canceled' => static fn () => $resetRow?->actions->cancel(),
-            'a removal carried out' => static fn () => $resetRow?->actions->complete(),
-            'a reminder marked' => static fn () => $resetRow?->actions->remind(self::FUTURE),
+            'a removal canceled' => static fn () => $resetRow->actions->cancel(),
+            'a removal carried out' => static fn () => $resetRow->actions->complete(),
+            'a reminder marked' => static fn () => $resetRow->actions->remind(self::FUTURE),
             'the wait chosen' => static fn () => Hilos::$db->secondFactorSettings->actions->setResetWait($userId, 20, null, null),
             'a wrong code counted' => static fn () => Hilos::$db->secondFactorSettings->actions->countAppCodeMiss($userId, 86400),
             'the settings removed' => static fn () => Hilos::$db->secondFactorSettings->actions->deleteForUser($userId),
@@ -131,7 +131,7 @@ final class SecondFactorPersonEditsIntegrationTest extends HilosSessionIntegrati
             }
         }
 
-        self::assertNull(Hilos::$db->secondFactorSettings[$userId]);
+        self::assertArrayNotHasKey($userId, Hilos::$db->secondFactorSettings);
         self::assertNotNull(Hilos::$db->secondFactorBackupCodes->findUnused($userId, 'abcdefghjk'));
         self::assertNotNull(Hilos::$db->secondFactorResets->liveOf($userId));
     }
@@ -176,14 +176,14 @@ final class SecondFactorPersonEditsIntegrationTest extends HilosSessionIntegrati
         $replayed = $this->prove($userId, $code, backupCode: false);
         self::assertSame(SecondFactorMessages::INVALID_CODE, $replayed->error);
         self::assertTrue($replayed->missed);
-        self::assertSame(1, Hilos::$db->secondFactorSettings[$userId]?->appCodeMisses, 'The replay was counted');
+        self::assertSame(1, Hilos::$db->secondFactorSettings[$userId]->appCodeMisses, 'The replay was counted');
 
         $burned = $this->prove($userId, BackupCodeGenerator::display('abcdefghjk'), backupCode: true);
         self::assertNull($burned->error);
         $again = $this->prove($userId, BackupCodeGenerator::display('abcdefghjk'), backupCode: true);
         self::assertSame(SecondFactorMessages::INVALID_CODE, $again->error);
         self::assertTrue($again->missed);
-        self::assertSame(1, Hilos::$db->secondFactorSettings[$userId]?->appCodeMisses, 'A backup code is not counted');
+        self::assertSame(1, Hilos::$db->secondFactorSettings[$userId]->appCodeMisses, 'A backup code is not counted');
     }
 
     /**
@@ -196,12 +196,12 @@ final class SecondFactorPersonEditsIntegrationTest extends HilosSessionIntegrati
     {
         $userId = self::seedPerson();
         self::seedApp($userId, self::SECRET_BYTES);
-        self::assertNull(Hilos::$db->secondFactorSettings[$userId]);
+        self::assertArrayNotHasKey($userId, Hilos::$db->secondFactorSettings);
 
         $missed = $this->prove($userId, self::wrongCode(), backupCode: false);
         self::assertTrue($missed->missed);
         self::assertNull($missed->lockMisses);
-        self::assertSame(1, Hilos::$db->secondFactorSettings[$userId]?->appCodeMisses, 'The agent created the row on the first miss');
+        self::assertSame(1, Hilos::$db->secondFactorSettings[$userId]->appCodeMisses, 'The agent created the row on the first miss');
 
         for ($miss = 2; $miss < self::CEILING; $miss++) {
             self::assertSame(SecondFactorMessages::INVALID_CODE, $this->prove($userId, self::wrongCode(), backupCode: false)->error);
@@ -217,8 +217,8 @@ final class SecondFactorPersonEditsIntegrationTest extends HilosSessionIntegrati
         self::assertFalse($underLock->missed, 'A code under the lock is not checked');
         self::assertNull($underLock->lockMisses);
         $setting = Hilos::$db->secondFactorSettings[$userId];
-        self::assertSame(0, $setting?->appCodeMisses);
-        self::assertSame(1, $setting?->appCodeLockStep);
+        self::assertSame(0, $setting->appCodeMisses);
+        self::assertSame(1, $setting->appCodeLockStep);
     }
 
     /**
@@ -272,7 +272,7 @@ final class SecondFactorPersonEditsIntegrationTest extends HilosSessionIntegrati
         $kept = self::seedPerson();
         self::seedApp($kept, self::SECRET_BYTES);
         $canceled = Hilos::$db->secondFactorResets->actions->request($kept, self::FUTURE, "cancel-{$kept}");
-        Hilos::$db->secondFactorResets[(int)$canceled->id]?->actions->cancel();
+        Hilos::$db->secondFactorResets[(int)$canceled->id]->actions->cancel();
 
         $lost = $this->carryOut($kept, (int)$canceled->id);
         self::assertNull($lost->error);

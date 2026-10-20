@@ -152,7 +152,7 @@ final class OrmForgetIntegrationTest extends FrameworkIntegrationTestCase
         self::assertInstanceOf(OrmForgetItemActions::class, $fresh->actions);
         self::assertSame($objects[1], $fresh->getObject());
         self::assertSame('after', $fresh->label());
-        self::assertNull($view[2]);
+        self::assertArrayNotHasKey(2, $view);
         self::assertSame('new', $view[3]->label());
         self::assertNotSame($viewOnlyHeld, $viewOnly[1], 'A view-only registry entry loses its cached wrapper');
         self::assertSame('after', $viewOnly[1]->label());

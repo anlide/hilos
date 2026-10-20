@@ -106,9 +106,9 @@ final class DataExportQueueIntegrationTest extends HilosSessionIntegrationTestCa
         $viewAllReady = Hilos::$db->dataExports->allReady();
         self::assertInstanceOf(ViewDataExports::class, $viewAllReady);
         self::assertCount(1, $viewAllReady);
-        self::assertTrue(isset($viewAllReady[$readyId]));
-        self::assertFalse(isset($viewAllReady[$failedId]));
-        self::assertFalse(isset($viewAllReady[$pendingId]));
+        self::assertArrayHasKey($readyId, $viewAllReady);
+        self::assertArrayNotHasKey($failedId, $viewAllReady);
+        self::assertArrayNotHasKey($pendingId, $viewAllReady);
         self::assertSame($heldReady, $viewAllReady[$readyId]);
         self::assertSame($readyId, $viewAllReady[$readyId]->id);
         self::assertSame($heldReady, $viewAllReady->first());
@@ -150,9 +150,9 @@ final class DataExportQueueIntegrationTest extends HilosSessionIntegrationTestCa
         $viewExpired = Hilos::$db->dataExports->expiredBy('2026-09-08 00:00:00');
         self::assertInstanceOf(ViewDataExports::class, $viewExpired);
         self::assertCount(2, $viewExpired);
-        self::assertTrue(isset($viewExpired[$readyId]));
-        self::assertTrue(isset($viewExpired[$failedId]));
-        self::assertFalse(isset($viewExpired[$pendingId]));
+        self::assertArrayHasKey($readyId, $viewExpired);
+        self::assertArrayHasKey($failedId, $viewExpired);
+        self::assertArrayNotHasKey($pendingId, $viewExpired);
         self::assertSame($heldReady, $viewExpired[$readyId]);
         self::assertSame($heldFailed, $viewExpired[$failedId]);
         self::assertSame($readyId, $viewExpired[$readyId]->id);

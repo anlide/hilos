@@ -138,10 +138,10 @@ final class PersonSignInEditsIntegrationTest extends HilosSessionIntegrationTest
         $credential = self::seedPasskey($userId);
 
         $edits = [
-            'a new password hash' => static fn () => Hilos::$db->identities[$passwordId]?->setPasswordHash(
+            'a new password hash' => static fn () => Hilos::$db->identities[$passwordId]->setPasswordHash(
                 ObjectIdentity::hashPassword(self::NEW_PASSWORD),
             ),
-            'the verified mark' => static fn () => Hilos::$db->identities[$passwordId]?->markVerified(),
+            'the verified mark' => static fn () => Hilos::$db->identities[$passwordId]->markVerified(),
             'a passkey use' => static fn () => $credential->recordUse(self::SIGN_COUNT + 1),
         ];
         foreach ($edits as $edit => $write) {

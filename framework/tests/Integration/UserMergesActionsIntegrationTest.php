@@ -64,8 +64,8 @@ final class UserMergesActionsIntegrationTest extends HilosSessionIntegrationTest
         $this->assertSame($survivor, (int)$row['survivor_user_id']);
         $this->assertNotNull($row['merged_at']);
 
-        $this->assertSame($survivor, Hilos::$db->userMerges[$loser]?->survivorUserId);
-        $this->assertNull(Hilos::$db->userMerges[$survivor]);
+        $this->assertSame($survivor, Hilos::$db->userMerges[$loser]->survivorUserId);
+        $this->assertArrayNotHasKey($survivor, Hilos::$db->userMerges);
     }
 
     /**
@@ -83,9 +83,8 @@ final class UserMergesActionsIntegrationTest extends HilosSessionIntegrationTest
             [$loser, $survivor],
         );
 
+        $this->assertArrayHasKey($loser, Hilos::$db->userMerges);
         $merge = Hilos::$db->userMerges[$loser];
-
-        $this->assertNotNull($merge);
         $this->assertSame($survivor, $merge->survivorUserId);
         $this->assertNull($merge->mergedAt);
     }
@@ -210,7 +209,7 @@ final class UserMergesActionsIntegrationTest extends HilosSessionIntegrationTest
         Hilos::$db->userMerges->actions->deleteForUser($survivor);
 
         $this->assertCount(0, EntityUserMerge::get([EntityUserMerge::user_id => $loser]));
-        $this->assertNull(Hilos::$db->userMerges[$loser]);
+        $this->assertArrayNotHasKey($loser, Hilos::$db->userMerges);
         // Nothing holds the person's row any more
         Database::sqlRun('DELETE FROM `hilos_user` WHERE `id` = ?', [$loser]);
     }

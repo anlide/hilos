@@ -185,8 +185,8 @@ final class OAuthProviderConfigIntegrationTest extends FrameworkIntegrationTestC
         $this->assertNull($resolved->value);
         $this->assertTrue($resolved->isSet);
 
+        $this->assertArrayHasKey(OAuthProviderPreset::GITHUB->value, Hilos::$db->oauthProviders);
         $reread = Hilos::$db->oauthProviders[OAuthProviderPreset::GITHUB->value];
-        $this->assertNotNull($reread);
         $this->assertNotContains('admin-secret', $reread->toArray());
     }
 
@@ -425,15 +425,15 @@ final class OAuthProviderConfigIntegrationTest extends FrameworkIntegrationTestC
     public function testAProviderRowIsAnsweredFromMemoryAfterTheFirstLookup(): void
     {
         $github = $this->row();
-        $this->assertSame($github->id, Hilos::$db->oauthProviders[OAuthProviderPreset::GITHUB->value]?->id);
+        $this->assertSame($github->id, Hilos::$db->oauthProviders[OAuthProviderPreset::GITHUB->value]->id);
 
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::string(self::UNHELD_PROVIDER_KEY));
         Database::sql('INSERT INTO `hilos_oauth_provider` (`provider_key`) VALUES (?)', $params);
-        $this->assertNull(Hilos::$db->oauthProviders[self::UNHELD_PROVIDER_KEY]);
+        $this->assertArrayNotHasKey(self::UNHELD_PROVIDER_KEY, Hilos::$db->oauthProviders);
 
         $google = Hilos::$db->oauthProviders->actions->add(OAuthProviderPreset::GOOGLE->value);
-        $this->assertSame($google->id, Hilos::$db->oauthProviders[OAuthProviderPreset::GOOGLE->value]?->id);
+        $this->assertSame($google->id, Hilos::$db->oauthProviders[OAuthProviderPreset::GOOGLE->value]->id);
     }
 
     /**

@@ -219,9 +219,9 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
 
         self::assertNull(self::sessionRow(self::SIGNED_IN_TOKEN));
         self::assertNull(self::sessionRow(self::TAKEOVER_TOKEN));
-        self::assertNotNull(Hilos::$db->sessions[$signedInId], 'The session stays, as a guest');
+        self::assertArrayHasKey($signedInId, Hilos::$db->sessions, 'The session stays, as a guest');
         self::assertNull(Hilos::$db->sessions[$signedInId]->userId);
-        self::assertNotNull(Hilos::$db->sessions[$takeoverId]);
+        self::assertArrayHasKey($takeoverId, Hilos::$db->sessions);
         self::assertNull(Hilos::$db->sessions[$takeoverId]->userId, 'The takeover the person ran is ended');
         self::assertNull(Hilos::$db->sessions[$takeoverId]->impersonatorUserId);
         self::assertNull(self::pendingSecondFactorOf(self::WAITING_TOKEN), 'The sign-in waiting on their factor is let go');
@@ -432,11 +432,13 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
     {
         $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
         Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::PAST);
-        self::assertNotNull(Hilos::$db->users[self::USER_ID], 'The holder knows the person before the sweep');
+        self::assertArrayHasKey(self::USER_ID, Hilos::$db->users, 'The holder knows the person before the sweep');
+        // Warm the View wrapper before the sweep; the membership assertion only calls offsetExists().
+        Hilos::$db->users[self::USER_ID];
 
         $this->runSweep();
 
-        self::assertNull(Hilos::$db->users[self::USER_ID]);
+        self::assertArrayNotHasKey(self::USER_ID, Hilos::$db->users);
         $this->expectException(ItemNotFoundForUpdateException::class);
         $this->expectExceptionMessage('No such user: ' . self::USER_ID);
         AddressablePerson::require(self::USER_ID);
@@ -670,9 +672,9 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         self::assertNull($row['canceled_at']);
         self::assertNull(self::sessionRow(self::SIGNED_IN_TOKEN));
         self::assertNull(self::sessionRow(self::TAKEOVER_TOKEN));
-        self::assertNotNull(Hilos::$db->sessions[$signedInId], 'The session stays, as a guest');
+        self::assertArrayHasKey($signedInId, Hilos::$db->sessions, 'The session stays, as a guest');
         self::assertNull(Hilos::$db->sessions[$signedInId]->userId);
-        self::assertNotNull(Hilos::$db->sessions[$takeoverId]);
+        self::assertArrayHasKey($takeoverId, Hilos::$db->sessions);
         self::assertNull(Hilos::$db->sessions[$takeoverId]->userId, 'The takeover the person ran is ended');
         self::assertNull(Hilos::$db->sessions[$takeoverId]->impersonatorUserId);
         self::assertNull(self::userOf(self::NEIGHBOUR_TOKEN));

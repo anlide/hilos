@@ -175,7 +175,7 @@ final class FileSweepTest extends FrameworkIntegrationTestCase
         self::assertFalse(self::rowExists($old));
         self::assertSame([], Hilos::$db->fileVariants->forFile($old));
         foreach ($copies as $copy) {
-            self::assertNull(Hilos::$db->fileVariants[$copy->id], 'Deleted copies leave the item cache too');
+            self::assertArrayNotHasKey($copy->id, Hilos::$db->fileVariants, 'Deleted copies leave the item cache too');
         }
         self::assertFileDoesNotExist($this->filesPath . '/old.bin');
         self::assertFileDoesNotExist($this->filesPath . '/old-thumb.webp');
@@ -257,7 +257,7 @@ final class FileSweepTest extends FrameworkIntegrationTestCase
     {
         $young = $this->publish('young.bin', hoursAgo: 0);
         $bound = $this->publish('bound.bin', hoursAgo: self::OLD_HOURS);
-        Hilos::$db->files[$bound]?->actions->markBound();
+        Hilos::$db->files[$bound]->actions->markBound();
 
         $this->runSweep();
 
@@ -379,7 +379,7 @@ final class FileSweepTest extends FrameworkIntegrationTestCase
     {
         $bound = $this->publish('bound.bin', hoursAgo: 0);
         $other = $this->publish('other.bin', hoursAgo: 0);
-        Hilos::$db->files[$bound]?->actions->markBound();
+        Hilos::$db->files[$bound]->actions->markBound();
         $this->keepVariant($bound, 'thumb', 'bound-thumb.webp');
         $this->keepVariant($bound, 'preview', 'bound-preview.webp');
 

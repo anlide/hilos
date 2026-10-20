@@ -378,8 +378,8 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
         $state = $frames[HilosSignalConstants::HILOS_SESSION_STATE][0] ?? null;
         self::assertInstanceOf(SessionStateSignalData::class, $state);
         self::assertSame(self::ADMIN_USER_ID, $state->userId);
-        self::assertSame(self::ADMIN_USER_ID, Hilos::$db->sessions[$state->sessionId]?->userId);
-        self::assertNull(Hilos::$db->sessions[$state->sessionId]?->impersonatorUserId);
+        self::assertSame(self::ADMIN_USER_ID, Hilos::$db->sessions[$state->sessionId]->userId);
+        self::assertNull(Hilos::$db->sessions[$state->sessionId]->impersonatorUserId);
     }
 
     public function testAFrozenPersonsSubscriptionIsRefusedWithTheFreezesCode(): void

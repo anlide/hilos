@@ -992,12 +992,12 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
             self::secondFactorRowCount('hilos_second_factor_backup_code', self::SURVIVOR_USER_ID),
         );
         if ($fate === SecondFactorFate::BOTH) {
-            self::assertSame(20, Hilos::$db->secondFactorSettings[self::SURVIVOR_USER_ID]?->resetWaitDays);
-            self::assertNull(Hilos::$db->secondFactorSettings[self::SURVIVOR_USER_ID]?->pendingResetWaitDays);
+            self::assertSame(20, Hilos::$db->secondFactorSettings[self::SURVIVOR_USER_ID]->resetWaitDays);
+            self::assertNull(Hilos::$db->secondFactorSettings[self::SURVIVOR_USER_ID]->pendingResetWaitDays);
             self::assertNull(Hilos::$db->secondFactorBackupCodes->findUnused(self::SURVIVOR_USER_ID, 'spent12'));
             self::assertNotNull(Hilos::$db->secondFactorBackupCodes->findUnused(self::SURVIVOR_USER_ID, 'live12'));
         } else {
-            self::assertNull(Hilos::$db->secondFactorSettings[self::SURVIVOR_USER_ID]);
+            self::assertArrayNotHasKey(self::SURVIVOR_USER_ID, Hilos::$db->secondFactorSettings);
         }
         self::assertSame(
             $outcome === SecondFactorOutcome::LOSER ? null : self::SURVIVOR_USER_ID,
@@ -1071,7 +1071,7 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         self::assertCount(1, Hilos::$db->secondFactors->confirmedOf(self::LOSER_USER_ID));
         self::assertCount(0, Hilos::$db->secondFactors->confirmedOf(self::SURVIVOR_USER_ID));
         self::assertSame(1, self::secondFactorRowCount('hilos_second_factor_backup_code', self::LOSER_USER_ID));
-        self::assertNull(Hilos::$db->secondFactorSettings[self::SURVIVOR_USER_ID]);
+        self::assertArrayNotHasKey(self::SURVIVOR_USER_ID, Hilos::$db->secondFactorSettings);
     }
 
     /** @throws HilosException When seeding or merging fails */
@@ -1142,7 +1142,7 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
             ExecutionContext::run(new ExecutionFrame(agentId: $agent->getId()), function (): void {
                 Hilos::$db->secondFactorSettings->actions->setResetWait(self::SURVIVOR_USER_ID, 20, null, null);
                 Hilos::$db->secondFactorSettings->actions->setResetWait(self::SURVIVOR_USER_ID, 30, null, null);
-                self::assertSame(30, Hilos::$db->secondFactorSettings[self::SURVIVOR_USER_ID]?->resetWaitDays);
+                self::assertSame(30, Hilos::$db->secondFactorSettings[self::SURVIVOR_USER_ID]->resetWaitDays);
                 $this->expectException(WriteNotAllowedException::class);
                 Hilos::$db->secondFactorSettings->actions->deleteForUser(self::SURVIVOR_USER_ID);
             });

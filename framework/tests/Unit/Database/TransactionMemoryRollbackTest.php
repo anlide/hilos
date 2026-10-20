@@ -165,14 +165,21 @@ final class TransactionMemoryRollbackTest extends TestCase
         $object = MemoryRollbackObject::fresh('first');
         $object->sync();
         $objects[MemoryRollbackEntity::MINTED_ID] = $object;
-        $this->assertNotNull($view[MemoryRollbackEntity::MINTED_ID], 'The read caches a wrapper the rollback must drop');
+        $this->assertArrayHasKey(MemoryRollbackEntity::MINTED_ID, $view, 'The read caches a wrapper the rollback must drop');
+        $cached = $view[MemoryRollbackEntity::MINTED_ID];
         Database::transactionRollback();
 
         $this->assertFalse($object->isRelated());
         $this->assertNull($object->id());
         $this->assertSame('first', $object->mark());
         $this->assertFalse(isset($objects[MemoryRollbackEntity::MINTED_ID]));
-        $this->assertNull($view[MemoryRollbackEntity::MINTED_ID]);
+        $this->assertArrayNotHasKey(MemoryRollbackEntity::MINTED_ID, $view);
+
+        $freshObject = MemoryRollbackObject::stored(MemoryRollbackEntity::MINTED_ID, 'second');
+        $objects->load(MemoryRollbackEntity::MINTED_ID, $freshObject);
+
+        $this->assertSame($freshObject, $view[MemoryRollbackEntity::MINTED_ID]->getObject());
+        $this->assertNotSame($cached, $view[MemoryRollbackEntity::MINTED_ID]);
         $this->assertSame([], $this->reaction->seen);
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal(), 'No frame leaves for a rolled-back insert');
     }
@@ -1031,6 +1038,17 @@ final class MemoryRollbackObjects extends Objects
     public function forget(int $key): void
     {
         unset($this[$key]);
+    }
+
+    /**
+     * Loads a stored row without announcing a membership change.
+     *
+     * @param int|string $key Key the row is stored under
+     * @param MemoryRollbackObject $object Object standing for the stored row
+     */
+    public function load(int|string $key, MemoryRollbackObject $object): void
+    {
+        $this->hydrate($key, $object);
     }
 
     protected function lazyLoadObject(int|string|null $key): ?Object_

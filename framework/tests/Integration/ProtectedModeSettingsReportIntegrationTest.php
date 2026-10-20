@@ -117,7 +117,8 @@ final class ProtectedModeSettingsReportIntegrationTest extends FrameworkIntegrat
 
         $rival = new ProtectedModeSettingsTestDbContext();
         $rival->configure();
-        $this->assertNotNull($rival->settings[ProtectedModeSettingsCatalog::MANUAL_RESTART_IS_NORMAL]);
+        $this->assertArrayHasKey(ProtectedModeSettingsCatalog::MANUAL_RESTART_IS_NORMAL, $rival->settings);
+        $rival->settings[ProtectedModeSettingsCatalog::MANUAL_RESTART_IS_NORMAL];
         $id = $setting->id;
         $this->assertNotNull($id);
         Database::sql('UPDATE `hilos_setting` SET `value` = ? WHERE `id` = ?', ['1', $id]);

@@ -189,7 +189,7 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
         }
         $this->assertRefused(SecondFactorMessages::INVALID_CODE, fn () => $this->operationCode($this->wrongCode()));
         $this->assertRefused(SecondFactorMessages::INVALID_CODE, fn () => $this->operationCode($this->wrongCode()));
-        $this->assertSame(self::CEILING - 1, Hilos::$db->secondFactorSettings[self::USER_ID]?->appCodeMisses);
+        $this->assertSame(self::CEILING - 1, Hilos::$db->secondFactorSettings[self::USER_ID]->appCodeMisses);
 
         $this->assertRefused($this->lockedFor('15 min'), fn () => $this->operationCode($this->wrongCode()));
 
@@ -197,8 +197,8 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
         $this->assertRefused($this->lockedFor('15 min'), fn () => $this->profileCode($this->currentCode()));
         $this->assertRefused($this->lockedFor('15 min'), fn () => $this->operationCode($this->currentCode()));
         $setting = Hilos::$db->secondFactorSettings[self::USER_ID];
-        $this->assertSame(0, $setting?->appCodeMisses, 'Nothing counts under the lock');
-        $this->assertSame(1, $setting?->appCodeLockStep);
+        $this->assertSame(0, $setting->appCodeMisses, 'Nothing counts under the lock');
+        $this->assertSame(1, $setting->appCodeLockStep);
         $session = Hilos::$db->sessions->findByToken(self::SIGN_IN_TOKEN);
         $this->assertSame(self::USER_ID, $session?->pendingSecondFactorUserId, 'The lock does not end the wait');
         $this->assertSame(self::WAIT_MISSES, $session?->pendingSecondFactorAttempts, 'Nor is it a miss of the wait');
@@ -223,7 +223,7 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
 
         $this->holdSignIn();
         $this->assertSame(0, Hilos::$db->sessions->findByToken(self::SIGN_IN_TOKEN)?->pendingSecondFactorAttempts);
-        $this->assertSame(self::WAIT_MISSES, Hilos::$db->secondFactorSettings[self::USER_ID]?->appCodeMisses);
+        $this->assertSame(self::WAIT_MISSES, Hilos::$db->secondFactorSettings[self::USER_ID]->appCodeMisses);
         for ($miss = 0; $miss < self::WAIT_MISSES; $miss++) {
             $this->assertRefused(SecondFactorMessages::INVALID_CODE, fn () => $this->signInCode($this->wrongCode()));
         }
@@ -247,7 +247,12 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
         for ($miss = 0; $miss < 3; $miss++) {
             $this->assertRefused(SecondFactorMessages::INVALID_CODE, fn () => $this->profileCode('ZZZZZ-ZZZZZ', backupCode: true));
         }
-        $this->assertSame(0, (int)Hilos::$db->secondFactorSettings[self::USER_ID]?->appCodeMisses);
+        $this->assertSame(
+            0,
+            (int)(isset(Hilos::$db->secondFactorSettings[self::USER_ID])
+                ? Hilos::$db->secondFactorSettings[self::USER_ID]->appCodeMisses
+                : null),
+        );
 
         $this->lockByProfile();
         $this->assertRefused(SecondFactorMessages::INVALID_CODE, fn () => $this->profileCode('ZZZZZ-ZZZZZ', backupCode: true));
@@ -279,7 +284,7 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
             );
         }
 
-        $this->assertNull(Hilos::$db->secondFactorSettings[self::USER_ID], 'No miss was counted, so no row was made');
+        $this->assertArrayNotHasKey(self::USER_ID, Hilos::$db->secondFactorSettings, 'No miss was counted, so no row was made');
     }
 
     /**
@@ -290,17 +295,17 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
     public function testTheLadderClimbsWithinADayAndStartsAgainAfterOne(): void
     {
         $this->lockByProfile();
-        $this->assertSame(1, Hilos::$db->secondFactorSettings[self::USER_ID]?->appCodeLockStep);
+        $this->assertSame(1, Hilos::$db->secondFactorSettings[self::USER_ID]->appCodeLockStep);
 
         $this->endLockSecondsAgo(3600);
         $this->lockByProfile('1 h');
         $setting = Hilos::$db->secondFactorSettings[self::USER_ID];
-        $this->assertSame(2, $setting?->appCodeLockStep);
-        $this->assertEqualsWithDelta(time() + 3600, strtotime((string)$setting?->appCodeLockedUntil), 5);
+        $this->assertSame(2, $setting->appCodeLockStep);
+        $this->assertEqualsWithDelta(time() + 3600, strtotime((string)$setting->appCodeLockedUntil), 5);
 
         $this->endLockSecondsAgo(86400 + 60);
         $this->lockByProfile();
-        $this->assertSame(1, Hilos::$db->secondFactorSettings[self::USER_ID]?->appCodeLockStep);
+        $this->assertSame(1, Hilos::$db->secondFactorSettings[self::USER_ID]->appCodeLockStep);
         $this->assertSame(3, $this->lockNotices());
     }
 
@@ -334,7 +339,7 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
 
         $this->assertTrue($actions->lockAppCodes(self::USER_ID, self::CEILING, 1, $until));
         $this->assertFalse($actions->lockAppCodes(self::USER_ID, self::CEILING, 1, $until));
-        $this->assertSame(0, Hilos::$db->secondFactorSettings[self::USER_ID]?->appCodeMisses);
+        $this->assertSame(0, Hilos::$db->secondFactorSettings[self::USER_ID]->appCodeMisses);
     }
 
     /**
@@ -363,7 +368,7 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
     public function testTheCommandLiftsTheLockAndTheAppCodePassesAgain(): void
     {
         $this->lockByProfile();
-        $until = Hilos::$db->secondFactorSettings[self::USER_ID]?->appCodeLockedUntil;
+        $until = Hilos::$db->secondFactorSettings[self::USER_ID]->appCodeLockedUntil;
         $this->assertNotNull($until);
 
         $reply = $this->unlock(self::USER_ID);
@@ -376,10 +381,10 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
         ], $reply->payload);
         $setting = Hilos::$db->secondFactorSettings[self::USER_ID];
         $this->assertSame([0, null, 0, null], [
-            $setting?->appCodeMisses,
-            $setting?->appCodeMissesFrom,
-            $setting?->appCodeLockStep,
-            $setting?->appCodeLockedUntil,
+            $setting->appCodeMisses,
+            $setting->appCodeMissesFrom,
+            $setting->appCodeLockStep,
+            $setting->appCodeLockedUntil,
         ]);
         $this->profileCode($this->currentCode());
         $this->assertSame(1, $this->lockNotices(), 'The lift is not announced');
@@ -395,7 +400,7 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
         $reply = $this->unlock(self::USER_ID);
         $this->assertTrue($reply->isOk());
         $this->assertFalse($reply->payload[SecondFactorUnlockCommandConstants::FIELD_WAS_LOCKED] ?? null);
-        $this->assertNull(Hilos::$db->secondFactorSettings[self::USER_ID], 'A person with no row gets none');
+        $this->assertArrayNotHasKey(self::USER_ID, Hilos::$db->secondFactorSettings, 'A person with no row gets none');
 
         for ($miss = 0; $miss < 3; $miss++) {
             $this->assertRefused(SecondFactorMessages::INVALID_CODE, fn () => $this->profileCode($this->wrongCode()));
@@ -407,7 +412,7 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
             SecondFactorUnlockCommandConstants::FIELD_WAS_LOCKED => false,
             SecondFactorUnlockCommandConstants::FIELD_LOCKED_UNTIL => null,
         ], $reply->payload);
-        $this->assertSame(0, Hilos::$db->secondFactorSettings[self::USER_ID]?->appCodeMisses);
+        $this->assertSame(0, Hilos::$db->secondFactorSettings[self::USER_ID]->appCodeMisses);
     }
 
     /**

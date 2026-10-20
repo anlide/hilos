@@ -765,10 +765,10 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
         $viewReady = Hilos::$db->legalAcceptanceExports->allReady();
         self::assertInstanceOf(ViewLegalAcceptanceExports::class, $viewReady);
         self::assertCount(2, $viewReady);
-        self::assertTrue(isset($viewReady[$readyExpiredId]));
-        self::assertTrue(isset($viewReady[$readyActiveId]));
-        self::assertFalse(isset($viewReady[$preparingId]));
-        self::assertFalse(isset($viewReady[$failedExpiredId]));
+        self::assertArrayHasKey($readyExpiredId, $viewReady);
+        self::assertArrayHasKey($readyActiveId, $viewReady);
+        self::assertArrayNotHasKey($preparingId, $viewReady);
+        self::assertArrayNotHasKey($failedExpiredId, $viewReady);
         self::assertSame($heldReadyExpiredView, $viewReady[$readyExpiredId]);
         self::assertSame($heldReadyActiveView, $viewReady[$readyActiveId]);
 
@@ -786,10 +786,10 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
         $viewExpired = Hilos::$db->legalAcceptanceExports->expiredBy($now);
         self::assertInstanceOf(ViewLegalAcceptanceExports::class, $viewExpired);
         self::assertCount(2, $viewExpired);
-        self::assertTrue(isset($viewExpired[$readyExpiredId]));
-        self::assertTrue(isset($viewExpired[$failedExpiredId]));
-        self::assertFalse(isset($viewExpired[$preparingId]));
-        self::assertFalse(isset($viewExpired[$readyActiveId]));
+        self::assertArrayHasKey($readyExpiredId, $viewExpired);
+        self::assertArrayHasKey($failedExpiredId, $viewExpired);
+        self::assertArrayNotHasKey($preparingId, $viewExpired);
+        self::assertArrayNotHasKey($readyActiveId, $viewExpired);
         self::assertSame($heldReadyExpiredView, $viewExpired[$readyExpiredId]);
         self::assertSame($heldFailedExpiredView, $viewExpired[$failedExpiredId]);
 
@@ -807,10 +807,10 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
         $viewFinished = Hilos::$db->legalAcceptanceExports->allFinished();
         self::assertInstanceOf(ViewLegalAcceptanceExports::class, $viewFinished);
         self::assertCount(3, $viewFinished);
-        self::assertTrue(isset($viewFinished[$readyExpiredId]));
-        self::assertTrue(isset($viewFinished[$readyActiveId]));
-        self::assertTrue(isset($viewFinished[$failedExpiredId]));
-        self::assertFalse(isset($viewFinished[$preparingId]));
+        self::assertArrayHasKey($readyExpiredId, $viewFinished);
+        self::assertArrayHasKey($readyActiveId, $viewFinished);
+        self::assertArrayHasKey($failedExpiredId, $viewFinished);
+        self::assertArrayNotHasKey($preparingId, $viewFinished);
         self::assertSame($heldReadyExpiredView, $viewFinished[$readyExpiredId]);
         self::assertSame($heldReadyActiveView, $viewFinished[$readyActiveId]);
         self::assertSame($heldFailedExpiredView, $viewFinished[$failedExpiredId]);
@@ -1242,7 +1242,11 @@ final class LegalExportIntegrationTable extends AbstractHilosLegalAcceptancesTab
     {
         $names = [];
         foreach ($userIds as $userId) {
-            $name = Hilos::$db->users[$userId]?->name;
+            if (!isset(Hilos::$db->users[$userId])) {
+                continue;
+            }
+
+            $name = Hilos::$db->users[$userId]->name;
             if ($name !== null) {
                 $names[$userId] = $name;
             }

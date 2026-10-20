@@ -27,8 +27,8 @@ final class NullableCollectionOffsetTest extends TestCase
         $objectCollection = ObjectCollection::empty();
         $entityCollection = EntityCollection::empty();
 
-        $this->assertFalse(isset($dbCollection[null]));
-        $this->assertNull($dbCollection[null]);
+        $this->assertArrayNotHasKey(null, $dbCollection);
+        $this->assertNull($dbCollection[null] ?? null);
         unset($dbCollection[null]);
 
         $this->assertFalse(isset($objects[null]));

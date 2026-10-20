@@ -273,14 +273,14 @@ final class PersonStepUpTrustEditsIntegrationTest extends HilosSessionIntegratio
         $blocked = $this->carry($this->sessions, HilosSignalConstants::HILOS_USER_BLOCK_WRITE, $this->blockWrite($userId, true));
         self::assertInstanceOf(UserBlockWriteDoneSignalData::class, $blocked);
         self::assertNull($blocked->error);
-        self::assertTrue(Hilos::$db->users[$userId]?->block);
+        self::assertTrue(Hilos::$db->users[$userId]->block);
         self::assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($sessionId, $userId, self::TRUST_DAYS));
 
         $this->trust(self::SESSION_TOKEN, $userId);
         $lifted = $this->carry($this->sessions, HilosSignalConstants::HILOS_USER_BLOCK_WRITE, $this->blockWrite($userId, false));
         self::assertInstanceOf(UserBlockWriteDoneSignalData::class, $lifted);
         self::assertNull($lifted->error);
-        self::assertFalse(Hilos::$db->users[$userId]?->block);
+        self::assertFalse(Hilos::$db->users[$userId]->block);
         self::assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($sessionId, $userId, self::TRUST_DAYS));
     }
 

@@ -230,7 +230,7 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
             $credentials[0]->userHandle,
             'The key is stored under the handle the device prompt was given',
         );
-        $this->assertNotNull(Hilos::$db->identities[$credentials[0]->identityId], 'The key has its identity anchor');
+        $this->assertArrayHasKey($credentials[0]->identityId, Hilos::$db->identities, 'The key has its identity anchor');
         $this->assertNull(
             $this->reservations()->findActiveForSession(self::SESSION_TOKEN),
             'The hold has served its purpose',

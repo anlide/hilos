@@ -223,15 +223,15 @@ final class I18nCatalogTakeInIntegrationTest extends FrameworkIntegrationTestCas
             }
         }
         $us = Hilos::$db->countries['us'];
-        $this->assertSame('$', $us?->currencySymbol);
-        $this->assertSame('USD', $us?->currencyCode);
-        $this->assertSame($germanyLocale->id, Hilos::$db->countries['de']?->defaultLocaleId);
-        $this->assertSame('€', Hilos::$db->countries['de']?->currencySymbol);
-        $this->assertTrue(Hilos::$db->countries['fr']?->enabled);
-        $this->assertSame('$', Hilos::$db->countries['fr']?->currencySymbol);
-        $this->assertSame('USD', Hilos::$db->countries['fr']?->currencyCode);
-        $this->assertSame('Z', Hilos::$db->countries[$own->id]?->currencySymbol);
-        $this->assertSame('ZZZ', Hilos::$db->countries[$own->id]?->currencyCode);
+        $this->assertSame('$', $us->currencySymbol);
+        $this->assertSame('USD', $us->currencyCode);
+        $this->assertSame($germanyLocale->id, Hilos::$db->countries['de']->defaultLocaleId);
+        $this->assertSame('€', Hilos::$db->countries['de']->currencySymbol);
+        $this->assertTrue(Hilos::$db->countries['fr']->enabled);
+        $this->assertSame('$', Hilos::$db->countries['fr']->currencySymbol);
+        $this->assertSame('USD', Hilos::$db->countries['fr']->currencyCode);
+        $this->assertSame('Z', Hilos::$db->countries[$own->id]->currencySymbol);
+        $this->assertSame('ZZZ', Hilos::$db->countries[$own->id]->currencyCode);
 
         $before = $this->changes->count;
         Hilos::$db->countries->actions->takeFromCatalog();
@@ -254,28 +254,28 @@ final class I18nCatalogTakeInIntegrationTest extends FrameworkIntegrationTestCas
         Hilos::$db->languages->actions->refreshFromCatalog();
         Hilos::$db->locales->actions->refreshFromCatalog();
 
-        $this->assertSame('English', Hilos::$db->languages['en']?->nativeName);
-        $this->assertFalse(Hilos::$db->languages['en']?->rtl);
-        $this->assertSame('Arabic', Hilos::$db->languages['ar']?->nativeName);
-        $this->assertFalse(Hilos::$db->languages['ar']?->rtl);
-        $this->assertSame('Own', Hilos::$db->languages[$own->id]?->nativeName);
-        $this->assertNull(Hilos::$db->languages['fr']);
+        $this->assertSame('English', Hilos::$db->languages['en']->nativeName);
+        $this->assertFalse(Hilos::$db->languages['en']->rtl);
+        $this->assertSame('Arabic', Hilos::$db->languages['ar']->nativeName);
+        $this->assertFalse(Hilos::$db->languages['ar']->rtl);
+        $this->assertSame('Own', Hilos::$db->languages[$own->id]->nativeName);
+        $this->assertArrayNotHasKey('fr', Hilos::$db->languages);
         $this->assertCount(3, iterator_to_array(Hilos::$db->languages));
 
         $catalogEnglish = BuiltInI18nCatalog::locale('en');
         $this->assertNotNull($catalogEnglish);
         $refreshed = Hilos::$db->locales[$englishLocale->id];
-        $this->assertSame($catalogEnglish->dateFormat, $refreshed?->dateFormat);
-        $this->assertSame($catalogEnglish->timeFormat, $refreshed?->timeFormat);
-        $this->assertSame($catalogEnglish->numberFormat, $refreshed?->numberFormat);
-        $this->assertSame($catalogEnglish->phoneFormat, $refreshed?->phoneFormat);
-        $this->assertSame($catalogEnglish->addressFormat, $refreshed?->addressFormat);
-        $this->assertSame($catalogEnglish->measurementSystem, $refreshed?->measurementSystem->value);
-        $this->assertSame($catalogEnglish->collation, $refreshed?->collation);
-        $this->assertSame('YYYY-MM-DD', Hilos::$db->locales['en-GB']?->dateFormat);
-        $this->assertSame('YYYY-MM-DD', Hilos::$db->locales[$ownLocale->id]?->dateFormat);
-        $this->assertNull(Hilos::$db->locales['en-US']);
-        $this->assertNull(Hilos::$db->locales['ar']);
+        $this->assertSame($catalogEnglish->dateFormat, $refreshed->dateFormat);
+        $this->assertSame($catalogEnglish->timeFormat, $refreshed->timeFormat);
+        $this->assertSame($catalogEnglish->numberFormat, $refreshed->numberFormat);
+        $this->assertSame($catalogEnglish->phoneFormat, $refreshed->phoneFormat);
+        $this->assertSame($catalogEnglish->addressFormat, $refreshed->addressFormat);
+        $this->assertSame($catalogEnglish->measurementSystem, $refreshed->measurementSystem->value);
+        $this->assertSame($catalogEnglish->collation, $refreshed->collation);
+        $this->assertSame('YYYY-MM-DD', Hilos::$db->locales['en-GB']->dateFormat);
+        $this->assertSame('YYYY-MM-DD', Hilos::$db->locales[$ownLocale->id]->dateFormat);
+        $this->assertArrayNotHasKey('en-US', Hilos::$db->locales);
+        $this->assertArrayNotHasKey('ar', Hilos::$db->locales);
 
         $before = $this->changes->count;
         Hilos::$db->languages->actions->refreshFromCatalog();
@@ -290,10 +290,10 @@ final class I18nCatalogTakeInIntegrationTest extends FrameworkIntegrationTestCas
         $own = Hilos::$db->languages->actions->create('xx', 'Own', false);
         Hilos::$db->countries->actions->takeFromCatalog();
         $ownCountry = Hilos::$db->countries->actions->create('zz', 'Z', 'ZZZ');
+        $this->assertArrayHasKey('gb', Hilos::$db->countries);
+        $this->assertArrayHasKey('de', Hilos::$db->countries);
         $britain = Hilos::$db->countries['gb'];
         $germany = Hilos::$db->countries['de'];
-        $this->assertNotNull($britain);
-        $this->assertNotNull($germany);
         $stale = Hilos::$db->countryNames->actions->createCatalogBase($britain, $english, 'Britain');
         $locked = Hilos::$db->countryNames->actions->createManual($germany, $english, null, 'Deutschland');
         $override = Hilos::$db->countryNames->actions->createManual(
@@ -308,8 +308,8 @@ final class I18nCatalogTakeInIntegrationTest extends FrameworkIntegrationTestCas
         Hilos::$db->countryNames->actions->takeFromCatalog($ownCountry, $english);
 
         foreach (BuiltInI18nCatalog::countries() as $definition) {
+            $this->assertArrayHasKey($definition->code, Hilos::$db->countries, $definition->code);
             $country = Hilos::$db->countries[$definition->code];
-            $this->assertNotNull($country);
             $base = Hilos::$db->countryNames->findBase((int)$country->id, (int)$english->id);
             $this->assertNotNull($base, $definition->code);
             if ($definition->code === 'de') {
@@ -319,10 +319,10 @@ final class I18nCatalogTakeInIntegrationTest extends FrameworkIntegrationTestCas
             $this->assertFalse($base->locked, $definition->code);
         }
         $this->assertSame($stale->id, Hilos::$db->countryNames->findBase((int)$britain->id, (int)$english->id)?->id);
-        $this->assertSame('United Kingdom', Hilos::$db->countryNames[$stale->id]?->name);
-        $this->assertSame('Deutschland', Hilos::$db->countryNames[$locked->id]?->name);
-        $this->assertTrue(Hilos::$db->countryNames[$locked->id]?->locked);
-        $this->assertSame('UK', Hilos::$db->countryNames[$override->id]?->name);
+        $this->assertSame('United Kingdom', Hilos::$db->countryNames[$stale->id]->name);
+        $this->assertSame('Deutschland', Hilos::$db->countryNames[$locked->id]->name);
+        $this->assertTrue(Hilos::$db->countryNames[$locked->id]->locked);
+        $this->assertSame('UK', Hilos::$db->countryNames[$override->id]->name);
         $this->assertSame(0, EntityCountryName::count([EntityCountryName::language_id => $own->id]));
         $this->assertSame(0, EntityCountryName::count([EntityCountryName::country_id => $ownCountry->id]));
         $this->assertSame(self::CATALOG_COUNTRIES + 1, EntityCountryName::count());

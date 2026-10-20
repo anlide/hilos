@@ -788,7 +788,7 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
     private function bind(int $fileId): void
     {
         ExecutionContext::setCurrentAgentId(HilosAgentType::HILOS_FILES_LIBRARY);
-        Hilos::$db->files[$fileId]?->actions->markBound();
+        Hilos::$db->files[$fileId]->actions->markBound();
         ExecutionContext::setCurrentAgentId(HilosAgentType::HILOS_UPLOADS);
         self::assertSame(1, (int)self::row($fileId)['bound']);
     }
