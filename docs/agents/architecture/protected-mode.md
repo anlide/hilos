@@ -333,6 +333,13 @@ leaves nothing to pick up: the restore engine settles every pending row of the
 restored journal as failed, since whether it went out is not known, and a person
 decides with retry (`BackupRestorer`, `RestoredDeliveries`).
 
+Status's continuing file publisher owes the same DB silence and forgetting:
+only the sanitized public snapshot and freeze fact remain available for its
+files and heartbeat. No DB read/write, DB action or durable delivery runs while
+`silencesUnstoppedWriters()` holds; resume reacquires permitted DB data and a
+fresh Daemon picture. See [status-page.md](status-page.md#freeze-and-disconnection).
+(not in the code yet — HIL-1690)
+
 ## Entry Is Fail-Closed In Both Branches
 
 A node that cannot freeze refuses loudly; it never stands inert while reporting
@@ -443,6 +450,12 @@ dropped when the freeze silences unstopped writers and refused until it lets go
 dead exactly when it is needed. **The log line comes first and always** — it is
 the one report that cannot fail, and a delivery failure never changes the
 watchdog's own state.
+
+The file half of Status needs the same two-sided start/stop exception so its
+heartbeat continues during Maintenance. This is not present in the gates yet;
+it permits public file publication only, never ordinary ORM writes or durable
+mail. The exact boundary is [Status under freeze](status-page.md#freeze-and-disconnection).
+(not in the code yet — HIL-1690)
 
 ### The Freeze Survives A Restart And A Leader Change
 
@@ -641,6 +654,14 @@ what enforces this rather than an assumption about the row: the accept key and
 the session hash are recorded on the way in and outlive the freeze until the
 lift, the way `admits()` is enforced by the phase rather than by the emptiness of
 its list.
+
+The public `/status` file reader is the sole page exception: nginx serves it
+without a page subscription, including on a cold load in full freeze. It stays
+outside the maintenance stub, which links to it as **Service status**. This
+opens no application subscription or mutation; see [status-page.md](status-page.md).
+(not in the code yet — HIL-1690)
+The same browser exception belongs in React (not in the code yet — HIL-1695)
+and Angular (not in the code yet — HIL-1696).
 
 **Both halves of the rule are keyed by the browser, and for the same reason
 (HIL-666).** The verifier reads a code out once and then behaves like a person:

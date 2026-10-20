@@ -77,6 +77,12 @@ two reasons: its agent is a cluster singleton that removes on start every ready
 export whose file it cannot see, and the file is sent by the nginx of the
 browser's node.
 
+A Status installation also registers reserved logical name `status`
+(`FsContext::STATUS`, `Hilos::$fs->status`) as `CLUSTER`: one publisher and every
+node's nginx share its files. The public allowlist and publication contract are
+in [status-page.md](status-page.md#static-publication).
+(not in the code yet — HIL-1690)
+
 A temporary file is handed to another agent twice: the assembled upload
 (`hilos_file_publish`, field `tmpIndex`) and the drawn image copy
 (`hilos_image_rendered`, field `tmpIndex`), both to the files library, which
@@ -145,6 +151,12 @@ not derived from anything: a node with an empty directory of its own would
 derive the same name and pass. The context lists the directories it covers with
 `clusterDirectories()` — tmp first, then the registration order; two names on
 one path read one file.
+
+The Status directory keeps this same mandatory marker and format. Its public
+nginx locations expose only `status.json` and `heartbeat.json`, never the marker,
+temporary files or directory listings; the marker's node id stays private.
+See [Status publication](status-page.md#intervals-hint-and-http-addresses).
+(not in the code yet — HIL-1690)
 
 **Who reads it, and when.** Only the start of a cluster node's daemon, once,
 right after the database marker and before the peer port opens

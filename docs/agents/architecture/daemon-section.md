@@ -193,6 +193,13 @@ Use the whole-copy chain in [logs.md](logs.md), *The Circulation*:
   is folded into zero.
 - While nobody watches the section, no frames travel above the node.
 
+Status adds a permanent internal consumer: it renews its own collector lease
+independently of admin viewers. With that consumer present, “nobody watches”
+does not mean there is no interest or that the collector may stop its delivery.
+Use the existing whole-node picture chain, not the placement table or page
+mirror as a source; see [status-page.md](status-page.md#facts-and-ownership).
+(not in the code yet — HIL-1688)
+
 Keep the collector and page agent separate: the source of the cluster picture
 and the surface that shows it are different owners. On a standalone installation
 `standing.clustered` is false and carries no consensus, so the picture has no

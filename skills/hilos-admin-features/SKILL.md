@@ -1,6 +1,6 @@
 ---
 name: hilos-admin-features
-description: Graduate or build a Hilos admin feature — an admin page backed by a browser table and its actions (settings, hilos-users, roles, or a project's own admin table). Use when moving admin table/page/action code between framework and project, deciding the framework/project boundary, choosing framework-owned (activate/configure/use) vs project-owned-by-pattern, abstracting a presence source, or designing extension points for an admin entity, or when an action of the feature changes an entity the page does not own and you need to know what closes it. Use it too when an admin page, table, or action must hold up in the admin view mode — what a non-admin viewer is shown and may not do — or when redrawing a section or entity head and moving its owner to the shared head.
+description: Graduate or build a Hilos admin feature — an admin page backed by a browser table and its actions (settings, hilos-users, roles, or a project's own admin table). Use when moving admin table/page/action code between framework and project, deciding the framework/project boundary, choosing framework-owned (activate/configure/use) vs project-owned-by-pattern, abstracting a presence source, or designing extension points for an admin entity, or when an action of the feature changes an entity the page does not own and you need to know what closes it. Use it too when an admin page, table, or action must hold up in the admin view mode — what a non-admin viewer is shown and may not do — or when redrawing a section or entity head and moving its owner to the shared head. Also use when working on Status components, the outage machine, or public file reading under freeze and disconnection beside its gated admin mutations.
 ---
 
 # Hilos Admin Features
@@ -41,6 +41,8 @@ read the canonical spec before editing.
 - The Analytics section — what its screens read, whose browser session they
   name, and what they never show: `docs/agents/architecture/analytics.md`
   (section "The Admin Section")
+- Status components, outage ownership and the public file reader under freeze:
+  `docs/agents/architecture/status-page.md`
 
 ## Workflow
 
@@ -51,6 +53,9 @@ implementation status in `docs/agents/architecture/page-head.md`.
    roles): the project activates, configures, and uses it. Mode 2 = project-owned
    table by pattern (the chat demo's bots table): the project owns the entity
    over shared bases.
+   For Status, distinguish public file reading from ADMIN-gated mutations;
+   follow `docs/agents/architecture/status-page.md` and its implementation
+   markers before changing either surface.
 2. Keep the generic engine (table merge, page subscribe, action lifecycle) in the
    framework; put only content-binding in the project — catalog, extra fields, a
    bound collection, one `SUBSCRIPTION_AGENT_TYPE`, topology registration.

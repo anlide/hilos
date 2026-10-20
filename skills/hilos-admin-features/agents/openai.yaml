@@ -1,4 +1,4 @@
 interface:
   display_name: "Hilos Admin Features"
-  short_description: "Graduate or build a Hilos admin feature (table+page+actions)"
-  default_prompt: "Use $hilos-admin-features for admin pages, tables, ownership and action gates, or to redraw a section or entity head and move its owner to the shared head after reading the page-head canon."
+  short_description: "Hilos admin features and public Status under freeze"
+  default_prompt: "Use $hilos-admin-features for admin pages, tables, ownership and action gates, or to redraw a section or entity head and move its owner to the shared head after reading the page-head canon. For Status, read the status-page canon to distinguish public file reading under freeze or disconnection from gated admin mutations."

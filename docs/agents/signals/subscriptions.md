@@ -100,6 +100,13 @@ second request in order to render the page it just subscribed to: the reply to
 placeholder — see [core-and-connection.md](../frontend/core-and-connection.md),
 "A page shows a placeholder until its subscription answers".
 
+The sole public-file exception is `/status`: nginx files supply its first
+render and every later read, even with a live connection; `page_response` is
+neither its source nor a condition of reading. See
+[status-page.md](../architecture/status-page.md#reading-status). This does not
+permit a second data action on any subscribed page.
+(not in the code yet — HIL-1690)
+
 The rule is absolute rather than a preference because the cost of breaking it is
 not one extra request. A page that needs `N` answers has `2^N` intermediate
 states: someone draws a placeholder for each, someone writes a test for each, and
@@ -228,6 +235,12 @@ without it?** If yes, the rule does not apply. Three standing cases answer yes:
 
 The **first** window of a table is not one of them: a page is not complete
 without the first screen of rows of the table it shows.
+
+`/status` is a different, explicitly bounded exception: its complete public
+picture comes from the coherent file pair, not an extra request beside a page
+subscription. Its empty change hint only asks the reader to reread those files;
+see [the Status contract](../architecture/status-page.md#static-publication).
+(not in the code yet — HIL-1690)
 
 ### The first table window rides in the answer
 

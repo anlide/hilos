@@ -89,6 +89,16 @@ in all three view layers — Vue, React and Angular.
 For what the backend reads and the later pages show,
 see [analytics.md](analytics.md#the-admin-section), *The Admin Section*.
 
+Status is another Mode-1 feature: the project declares activation and public
+components, while the framework owns the outage machine. Read
+[status-page.md](status-page.md) before binding it.
+(not in the code yet — HIL-1688)
+Its admin mutations retain the ADMIN gate and the view-mode restrictions.
+(not in the code yet — HIL-1689)
+The public `/status` surface reads nginx files even under freeze; it is separate
+from the admin table and does not read its mirror or wait for `page_response`.
+(not in the code yet — HIL-1690)
+
 The project must NOT copy the table query, the catalog-merge, the value-source
 logic, or the action routing. Those are framework-owned.
 

@@ -45,6 +45,14 @@ operation in flight, and the operator gets one thing on top of it — the restor
 panel, addressed to their own session, which is the only view of their operation
 they have left while their pages are shut.
 
+The narrow page exception is the public `/status` file reader: nginx serves its
+built shell and public files on a cold load without daemon, handshake or
+subscription. Freeze does not replace it with the stub; the stub links to it as
+**Service status**. See [status-page.md](../architecture/status-page.md#freeze-and-disconnection).
+(not in the code yet — HIL-1690)
+This exception also applies in React (not in the code yet — HIL-1695)
+and Angular (not in the code yet — HIL-1696).
+
 **The ways in belong to the verification phase, and there are two of them.** By
 then the operation is over and the agents are back up, so there is a live system
 behind the door. The browser that started the operation is let back in by its
@@ -156,6 +164,12 @@ answer arrives, discarding any state it gathered — the profile sign-in form th
 what shows: the placeholder gives way to content on a snapshot, or to the
 auth-gate surface on a 401 — the gate, not the page, owns the sign-in form.
 
+The public `/status` reader waits for a coherent nginx file pair, never for
+`page_response`; the [Status canon](../architecture/status-page.md#reading-status)
+defines what it shows without a valid pair. This grants no early render to another
+subscribed page.
+(not in the code yet — HIL-1690)
+
 The gate stays as it is, and a frame sent ahead of the answer is no longer lost
 to it. A page that ships its own state frame before `page_response` is heard: the
 connection holds the last frame of each `subscription_page_*` type and hands it
@@ -204,6 +218,13 @@ The framework provides **both** disconnect modes, and the project picks per view
 A long-lived view that is safe to keep visible favors read-only; a view where
 acting on stale data is dangerous favors hard-block.
 
+`/status` keeps reading its files on a timer without usable live connection,
+including under freeze; no disconnect overlay may block it. The shell may mark
+the break. See [Status reading](../architecture/status-page.md#reading-status).
+(not in the code yet — HIL-1690)
+Its subscription button is absent without usable live connection.
+(not in the code yet — HIL-1691)
+
 ## Stale data
 
 When on-screen data may be stale — the connection dropped, or a nudge was
@@ -214,6 +235,13 @@ Projects and components may add extra connection-status indicators (not
 forbidden). And never show staleness **timestamps** ("synced 3 min ago"): with a
 connection the data is current, so a timestamp only deceives — not-current is
 surfaced only by the banner.
+
+For `/status` alone, the heartbeat's age determines current knowledge even
+with a live socket. A stale heartbeat means **not responding since** `<aliveAt>`
+and Unknown components; the [Status reader](../architecture/status-page.md#reading-status)
+defines coherent rereads and the fresh-heartbeat/disconnected case. This is the
+explicit exception to the ordinary banner and timestamp rule.
+(not in the code yet — HIL-1690)
 
 ## Identity-driven rendering
 
