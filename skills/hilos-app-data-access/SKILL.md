@@ -81,9 +81,11 @@ switch to the focused data-layer skill first.
 - Collection access is for loading and querying groups of items.
 - Item access is for reading one loaded model and its item-level calculated
   properties.
-- DB collection reads and RT View collection reads treat `null` offsets as
-  missing optional keys. Caller code should guard when an item is required, not
-  just to protect `[]` from a nullable key.
+- For a documented DB View key, read a required row with `[$id]`; use `isset`
+  before an optional read or `?? null` for a nullable item value. Follow
+  `docs/agents/orm/accessor-contracts.md`, including nullable bridges.
+- Object/Entity and RT View reads keep their nullable contracts; optional RT
+  backing state uses `get()`. Do not extend the DB View rule to those layers.
 - Collection actions are for create/register/ensure and true collection-wide or
   bulk writes.
 - Item actions are for changing or deleting one loaded item.
@@ -141,7 +143,8 @@ switch to the focused data-layer skill first.
 
 | Need | Prefer |
 |---|---|
-| Load a known DB item | `Hilos::$db->collection[$id]` when supported |
+| Load a required DB item by documented key | `Hilos::$db->collection[$id]` |
+| Read an optional DB item by documented key | `isset` before reading; `Hilos::$db->collection[$id] ?? null` for a nullable item value |
 | Load by business key | Array access only when documented; otherwise an existing accessor such as `findByToken()` |
 | Read key-based settings | `Hilos::$db->settings[$dto->key]` only when settings documents key-based offsets |
 | Create a DB item | `Hilos::$db->collection->actions->create(...)` |
@@ -161,8 +164,14 @@ first.
 
 ## Examples
 
+Read a required DB row directly by its documented key:
+
+```php
+Hilos::$db->users[$userId]->name;
+```
+
 Read settings through the collection contract instead of rebuilding a lookup in
-the page. If the key-based collection documents array access, use that contract:
+the page. This caller permits an absent setting and uses the documented key:
 
 ```php
 if (!isset(Hilos::$db->settings[$dto->key])) {
@@ -178,7 +187,7 @@ Use a named accessor only when the lookup is not a documented collection offset:
 Hilos::$db->sessions->findByToken($token);
 ```
 
-Use actions for writes:
+Use actions for writes; this caller permits the setting to be absent:
 
 ```php
 if (!isset(Hilos::$db->settings[$dto->key])) {
@@ -188,7 +197,8 @@ if (!isset(Hilos::$db->settings[$dto->key])) {
 Hilos::$db->settings[$dto->key]->actions->updateValue($dto->value);
 ```
 
-Do not add a helper when a result or item accessor already exposes the value:
+Do not add a helper when a result or item accessor already exposes the value.
+These callers permit an absent user or setting:
 
 ```php
 if (!isset(Hilos::$db->users[$userId])) {
@@ -223,7 +233,8 @@ foreach (Hilos::$db->users as $user) {
 }
 ```
 
-Use an item-level bridge when the frontend row needs DB plus RT state:
+Use an item-level bridge when the frontend row needs DB plus RT state. This
+caller permits the user to be absent:
 
 ```php
 use Demo\Chat\Tables\AdminUser\AdminUserTableRow;
@@ -274,6 +285,9 @@ then call that API from the table/page.
 - Search existing magic/accessor results before adding a new finder or helper.
 - Do not use `[$key]` blindly; verify that the collection documents the offset
   key you plan to use.
+- Do not add a DB View `get()` or `require*()` wrapper, or use `instanceof`
+  narrowing for standard key reads; use the required/optional forms in
+  `docs/agents/orm/accessor-contracts.md`.
 - Do not call `getStateCollection()`, `getStateItem()`,
   `RtContext::getStateCollection()`, `RtContext::getStateItem()`, or
   `$this->stateCollection` outside files under `Database/` or `Runtime/`.

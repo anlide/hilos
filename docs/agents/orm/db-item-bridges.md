@@ -34,6 +34,10 @@ Use bridge properties for direct relations:
 | One-to-many children | collection | `$event->attachments`, `$eventMessage->attachments` |
 | Runtime overlay for one DB item | nullable RT item or collection | `$user->chatUserState`, `$user->connections` |
 
+A nullable DB item bridge reads `Hilos::$db->collection[$key] ?? null`, using
+the collection's documented offset. See
+[required and optional DB View reads](accessor-contracts.md#db-view-required-and-optional-reads).
+
 Name bridges after the related model when the relation is unambiguous:
 `event`, `user`, `bot`, `eventMessage`. Preserve the foreign-key role when the
 scalar field name has one: `authorUserId` becomes `authorUser`,
@@ -81,7 +85,7 @@ Use the normal naming rule for both directions:
 
 ```php
 // Runtime/View/Item/BotAgentStatus.php
-ChatDbContext::bot => Hilos::$db->bots[$this->_state->botId],
+ChatDbContext::bot => Hilos::$db->bots[$this->_state->botId] ?? null,
 
 // Database/View/Item/Bot.php
 self::agentStatus => Hilos::$rt->botAgentStatuses[$this->_object->id],
@@ -106,11 +110,9 @@ final class Event extends DbItem
 
     public function __get(string $name): mixed
     {
-        $eventId = $this->_object->id;
-
         return match ($name) {
-            ChatDbContext::eventMessage => Hilos::$db->eventMessages[$eventId],
-            self::attachments => Hilos::$db->eventAttachments->forEventId($eventId),
+            ChatDbContext::eventMessage => Hilos::$db->eventMessages[$this->_object->id] ?? null,
+            self::attachments => Hilos::$db->eventAttachments->forEventId($this->_object->id),
             default => parent::__get($name),
         };
     }
@@ -145,7 +147,7 @@ fields only to pass them into bridge lookups. Keep the source field visible in
 the branch:
 
 ```php
-ChatDbContext::eventMessage => Hilos::$db->eventMessages[$this->_object->id],
+ChatDbContext::eventMessage => Hilos::$db->eventMessages[$this->_object->id] ?? null,
 self::attachments => Hilos::$db->eventAttachments->forEventId($this->_object->id),
 ```
 
@@ -155,7 +157,7 @@ Do not write:
 $eventId = $this->_object->id;
 
 return match ($name) {
-    ChatDbContext::eventMessage => Hilos::$db->eventMessages[$eventId],
+    ChatDbContext::eventMessage => Hilos::$db->eventMessages[$eventId] ?? null,
     self::attachments => Hilos::$db->eventAttachments->forEventId($eventId),
 };
 ```
@@ -167,21 +169,20 @@ follow the same naming and fallback rules. For example,
 `HilosFiles::downloadPath($fileId)` (the second with the chat's thumbnail
 variant) because `fileId` belongs to the attachment itself, while
 `EventAttachment->file` is an ordinary relation bridge to the registry row,
-`Hilos::$db->files[$this->_object->fileId]`.
+`Hilos::$db->files[$this->_object->fileId] ?? null`.
 
 ## Null And Empty Semantics
 
 - Nullable ID or missing optional one-to-one relation returns `null`.
 - Missing optional many-to-one relation returns `null`.
 - Empty one-to-many relation returns an empty typed collection, not `null`.
-- DB collection array access treats a `null` offset as a missing optional key:
-  `Hilos::$db->collection[$nullableId]` already returns `null`.
+- A nullable DB bridge uses `Hilos::$db->collection[$nullableId] ?? null` for
+  both missing and `null` keys, following [accessor contracts](accessor-contracts.md).
+- DB-to-RT bridges retain the RT View collection's nullable `[]` contract.
 - DB collection filter helpers for nullable relation keys should return empty
   typed collections when the key is `null`.
 - Do not add `Hilos::$db !== null` checks inside DB View item bridge code; DB
   View items are used in DB context.
-- Do not add `?? null` to DB View collection lookups only to force nullable
-  bridge semantics; the collection offset contract already owns that behavior.
 
 ## Collection Contracts
 
@@ -190,8 +191,8 @@ means:
 
 ```php
 /**
- * Array access uses event_id, so eventMessages[$eventId] returns the
- * message detail for that parent event when it exists.
+ * Array access uses event_id. A nullable bridge reads
+ * eventMessages[$eventId] ?? null for that parent event's optional detail.
  */
 final class EventMessages extends DbCollection
 {
@@ -199,7 +200,9 @@ final class EventMessages extends DbCollection
 ```
 
 Use array access only for documented collection keys. If the lookup is not the
-collection key, add or use a named collection method:
+collection key, add or use a named collection method. An existing key still
+has to match that offset contract; do not introduce a finder to bypass the
+standard optional read by a documented key:
 
 ```php
 Hilos::$db->eventAttachments->forEventId($eventId);

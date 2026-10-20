@@ -116,9 +116,11 @@ Before writing DB-backed code:
 
 ## Reads
 
-Use `Hilos::$db->{collection}` from agents, pages, and handlers:
+Use `Hilos::$db->{collection}` from agents, pages, and handlers. Read a required
+row directly; the guards below are for callers that permit absence:
 
 ```php
+Hilos::$db->users[$userId]->name; // Required row
 Hilos::$db->sessions->findByToken($token);
 
 if (!isset(Hilos::$db->settings[$key])) {
@@ -138,10 +140,14 @@ foreach (Hilos::$db->events as $event) {
 }
 ```
 
-DB collection read access treats a `null` key as absent. `isset($collection[null])`
-is false, `$collection[null]` returns `null`, and unset with `null` is a no-op.
-Use this for nullable relation keys in View item bridges instead of adding
-caller-side guards around every collection access.
+Follow [required and optional DB View reads](accessor-contracts.md#db-view-required-and-optional-reads):
+use `[$id]` for a required row, `isset($collection[$id])` before a read that
+permits absence, and `$collection[$id] ?? null` for a nullable item value or
+bridge. `isset` and `??` already support absent and `null` keys; they do not
+suppress DB or configuration errors. Direct DB View `[]` returns an item or
+throws an exception from the `DatabaseException` family for a missing or `null`
+key. (not in the code yet — HIL-1702)
+Unset with `null` remains a no-op.
 
 Put reusable lookups on the collection layer instead of rebuilding the same
 filter in pages or tables. Example: `Sessions::findByToken()` delegates to the
@@ -162,7 +168,7 @@ A concrete View or Object collection names its own item in the readers it
 inherits. PhpStorm does not substitute `T` from
 `@extends DbCollection<Item, ObjectCollection>` or
 `@extends Objects<ObjectItem>` into those readers; it falls back on the native
-`?DbItem` / `?Object_`, and a property read by key —
+base type (currently `?DbItem` / `?Object_`), and a property read by key —
 `Hilos::$db->users[$userId]->name` — is flagged "Potentially polymorphic call".
 The collection names the item once, in its own docblock, and every caller reads
 it typed.
@@ -175,9 +181,13 @@ The readers to name, by layer:
 - an Object collection: `first()`, `last()`, `get()`, and `offsetGet()` to the
   class in `OBJECT_CLASS`.
 
-The shape is the class-level `@method` block of
+The class-level `@method` blocks live in
 `framework/backend/Database/View/Collection/Users.php` and
-`framework/backend/Database/Object/Collection/Users.php`:
+`framework/backend/Database/Object/Collection/Users.php`.
+The View example below documents a nonnullable `offsetGet()` result.
+(not in the code yet — HIL-1702)
+View `first()`, `last()`, and `getObjectCollection()` keep their nullable
+results, as do the Object readers, including `get()` and `offsetGet()`.
 
 ```php
 /**
@@ -185,7 +195,7 @@ The shape is the class-level `@method` block of
  * @method ObjectUsers|null getObjectCollection()
  * @method User|null first()
  * @method User|null last()
- * @method User|null offsetGet(mixed $offset)
+ * @method User offsetGet(mixed $offset)
  */
 class Users extends DbCollection
 {
@@ -193,12 +203,15 @@ class Users extends DbCollection
     public const string OBJECT_COLLECTION_CLASS = ObjectUsers::class;
 ```
 
-A real method with the narrow native return type counts the same —
-`offsetGet(mixed $offset): ?Language` in
-`framework/backend/Database/View/Collection/Languages.php` — and is the shape
-when the reader also changes behavior. The type is exactly the class the
-constant names, nullable: a base class, a foreign class, or an extra union
-branch does not narrow. `current()` is not required. An abstract base that does
+A real method with the narrow native return type counts the same and is the
+shape when the reader also changes behavior. In
+`framework/backend/Database/View/Collection/Languages.php`, the corresponding
+View override is `offsetGet(mixed $offset): Language`.
+(not in the code yet — HIL-1702)
+That override currently returns `?Language`. The item type is exactly the class
+the constant names, with nullability governed by the reader's layer and contract:
+a base class, a foreign class, or an extra union branch does not narrow.
+`current()` is not required. An abstract base that does
 not declare the constant, or leaves it empty, names no item and is not judged;
 the concrete collection that sets the constant is. A runtime state collection
 narrows with real methods instead — see [rt-state.md](../runtime/rt-state.md).

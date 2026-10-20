@@ -12,13 +12,13 @@ result, or collection value. Start with `agents.md`, then read
 ## Mental Model
 
 - Accessor shape is part of the collection or item contract.
-- `Hilos::$db->collection[$id]` and `Hilos::$rt->collection[$id]` are preferred
-  for known collection keys when the collection documents that key.
-- DB collection reads and RT View collection reads treat `null` offsets as
-  missing optional keys. Do not add caller-side guards only to protect `[]`
-  access from a nullable key.
-- RT backing `RtStates` keep `[]` as required-row access; use `get($nullableId)`
-  for optional state lookups.
+- For a documented DB View key, use `[$id]` for a required row, `isset` before
+  an optional read, and `?? null` for a nullable item value or bridge. Follow
+  `docs/agents/orm/accessor-contracts.md`; do not add a DB View `get()`.
+- Object/Entity and RT View reads keep their nullable contracts, including
+  `null` keys. Object-layer `get()` remains valid.
+- RT backing `RtStates` use `get($nullableId)` for optional state lookups;
+  required `[]` depends on the concrete state collection's contract.
 - Key-based array access such as `Hilos::$db->settings[$key]` is preferred when
   the collection explicitly supports that business key as its offset.
 - Caller code with a settings key must use `Hilos::$db->settings[$key]`; if the
@@ -46,9 +46,10 @@ internal targets, external code boundaries and the delete/recreate review.
 1. Identify the key or value the caller has: primary id, collection key,
    business key, composite criteria, or a value already present on a result.
 2. Inspect the View collection and item PHPDoc/methods for `offsetGet()`,
-   `get()`, `__get()`, item properties, `toArray()`, and existing `findBy*()`
+   `__get()`, item properties, `toArray()`, and existing `findBy*()`
    methods.
-3. Inspect the Object or State collection when the View layer delegates there.
+3. Inspect the Object or State collection when the View layer delegates there,
+   including that layer's existing `get()` contract.
 4. For direct DB item relations, read `docs/agents/orm/db-item-bridges.md` and
    prefer an existing bridge property before adding a finder.
 5. Prefer the smallest existing contract that matches the value exactly.
@@ -63,7 +64,13 @@ internal targets, external code boundaries and the delete/recreate review.
 
 ## Examples
 
-Prefer collection key access when the key is the documented offset:
+Read a required DB row by its documented key:
+
+```php
+Hilos::$db->users[$userId]->name;
+```
+
+These callers permit absence and check existence before using the item:
 
 ```php
 if (!isset(Hilos::$db->users[$userId])) {
@@ -81,7 +88,7 @@ Hilos::$rt->connections[$acceptKey]->actions->unregister();
 
 Prefer key-based settings access only if the settings collection documents the
 setting key as its offset. If that contract is absent, add and document it on
-the settings collection before changing caller code:
+the settings collection before changing caller code. This caller permits absence:
 
 ```php
 if (!isset(Hilos::$db->settings[$dto->key])) {
@@ -113,8 +120,13 @@ if (!isset(Hilos::$db->users[$userId])) {
 }
 
 count(Hilos::$db->users[$userId]->connections);
-Hilos::$db->events[$eventId]?->eventMessage?->message;
-Hilos::$db->eventMessages[$eventId]?->message; // null $eventId returns null
+
+if (!isset(Hilos::$db->events[$eventId])) {
+    return;
+}
+
+Hilos::$db->events[$eventId]->eventMessage?->message;
+Hilos::$db->eventMessages[$eventId] ?? null; // Nullable item value
 
 if (!isset(Hilos::$db->settings[$dto->key])) {
     return;
@@ -130,14 +142,18 @@ Use or add a named method instead of magic/array access when:
 - the collection offset is a different key than the value you have;
 - the lookup has multiple criteria, filtering, sorting, permissions, or lazy
   loading behavior that needs a name;
-- null/missing semantics are not the standard collection semantics;
+- a specialized lookup needs semantics beyond the standard required/optional
+  forms; ordinary optional DB View reads are not a reason to add `get()`;
 - the accessor would hide a DB/RT aggregation that belongs in a typed collection
   method, item bridge, DTO, or signal payload.
 
 ## Hard Rules
 
-- Do not add `findById()` or a page-local helper when `[$id]`, `get($id)`, or a
-  typed item accessor already expresses the contract.
+- Do not add `findById()` or a page-local helper when the documented key or
+  typed item accessor already expresses the contract. Object/state `get()`
+  remains a separate layer's API.
+- Do not add DB View `get()` or `require*()` wrappers, or use `instanceof`
+  narrowing for standard reads by a documented key; follow the canonical forms.
 - Do not call `Hilos::$db->settings->findByKey($key)` outside the settings
   collection. Use `Hilos::$db->settings[$key]`; if needed, first add and
   document the settings key offset contract.

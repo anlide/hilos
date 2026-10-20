@@ -60,7 +60,9 @@ touched ORM surfaces.
   `DbCollection` wrappers such as `Hilos::$db->users` or
   `Hilos::$db->settings`.
 - `DbCollection` is the read/query facade for a table-backed object collection.
-  DB collection reads treat `null` offsets as missing optional relation keys.
+  Use `[$id]` for a required DB View row, `isset` before an optional read, and
+  `?? null` for a nullable item value or bridge; follow
+  `docs/agents/orm/accessor-contracts.md`. Object-layer `get()` stays separate.
 - `DbItem` is the read-only item facade returned from a `DbCollection`.
 - Entity classes mirror raw DB rows; Object classes hold enriched or transformed
   view data; View collection/item classes expose the app-facing DB API.
@@ -90,8 +92,9 @@ touched ORM surfaces.
 7. Put direct relations from loaded DB items on View item bridge properties;
    keep parent View items limited to their own scalar fields plus bridge
    properties. Do not add pass-through bridges through another bridge item.
-   Document collection offset semantics when a bridge uses `[]`. Do not add
-   caller-side guards only to protect DB collection access from nullable keys.
+   Document collection offset semantics when a bridge uses `[]`. A nullable
+   DB item bridge reads `Hilos::$db->collection[$key] ?? null`; retain each
+   RT bridge's own contract.
    For direct one-to-one DB/RT overlays, add both View-item bridge directions
    immediately. If the overlay/status model starts with the parent model name,
    name the reverse bridge by the remaining semantic suffix, such as
@@ -154,8 +157,10 @@ Hilos::$db->sessions->findByToken($token);
 - Never bypass the DB layer with raw SQL or manual mutation logic in page/table
   layers when a collection/item/action exists or should own the behavior.
 - Never add a `findById()` or caller-local helper when the collection already
-  documents `[$id]`, `get($id)`, or a typed item/result accessor for the same
-  value.
+  documents `[$id]` or a typed item/result accessor for the same value.
+- Do not add DB View `get()` or `require*()` wrappers, or use `instanceof`
+  narrowing for standard key reads; follow the required/optional canon.
+  This does not forbid Object-layer `get()`.
 - Never replace a named finder with `[$key]` unless the collection documents
   that offset as the same key.
 - Never use `actions` for read-only helpers; actions are write APIs.

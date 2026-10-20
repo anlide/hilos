@@ -18,12 +18,13 @@ lookup API only on the owning layer when no contract exists.
 
 1. Identify the value the caller has: primary id, collection key, business key,
    composite criteria, or a value already present on a result/item.
-2. Inspect the View collection and item first: PHPDoc, `offsetGet()`, `get()`,
+2. Inspect the View collection and item first: PHPDoc, `offsetGet()`,
    `__get()`, item properties, `toArray()`, and existing `findBy*()` methods.
 3. Inspect the Object collection or Runtime State collection when the View layer
-   delegates there.
+   delegates there, including that layer's existing `get()` contract.
 4. Choose the smallest existing accessor that matches the exact key semantics.
 5. Use array access only when the collection documents the offset semantics.
+   For DB View reads, distinguish a required row from permitted absence below.
 6. Use a named finder when the lookup is not the collection key, has complex
    query semantics, or needs a clear business name.
 7. If no reusable accessor exists, add it to the owning collection/item layer
@@ -33,7 +34,8 @@ lookup API only on the owning layer when no contract exists.
 
 | Caller has | Prefer |
 |---|---|
-| Documented DB collection key | `Hilos::$db->collection[$id]` |
+| Documented DB View collection key, required row | `Hilos::$db->collection[$id]` |
+| Documented DB View collection key, optional row | `isset(Hilos::$db->collection[$id])` before reading, or `Hilos::$db->collection[$id] ?? null` for a nullable item value |
 | Documented RT View collection key | `Hilos::$rt->collection[$id]` |
 | Documented key-based setting offset | `Hilos::$db->settings[$key]` |
 | Business key without array-offset contract | Existing named method such as `findByToken($token)` |
@@ -45,7 +47,7 @@ lookup API only on the owning layer when no contract exists.
 ## Settings Example
 
 Prefer key-based array access only when the settings collection explicitly
-documents the setting key as its offset:
+documents the setting key as its offset. This caller permits an absent setting:
 
 ```php
 if (!isset(Hilos::$db->settings[$dto->key])) {
@@ -73,17 +75,93 @@ Hilos::$db->sessions->findByToken($token);
 This rule is about using the existing model clearly. It does not require magic
 access blindly.
 
+## DB View: Required And Optional Reads
+
+DB View `[$id]` returns the collection's typed item or throws an exception from
+the `DatabaseException` family when the row is absent.
+(not in the code yet — HIL-1702)
+Direct DB View `[null]` also throws an exception from that family.
+(not in the code yet — HIL-1702)
+
+When the row is required, read it directly:
+
+```php
+Hilos::$db->users[$id]->name;
+```
+
+When absence is allowed and the statement can return early, check existence,
+then read directly:
+
+```php
+if (!isset(Hilos::$db->users[$id])) {
+    return;
+}
+
+Hilos::$db->users[$id]->name;
+```
+
+For a bare nullable item value, use `?? null`. This is also the shape inside a
+nullable DB bridge or an existing method returning `?User`:
+
+```php
+return Hilos::$db->users[$id] ?? null;
+```
+
+For a chain without a convenient early return, use an existence ternary:
+
+```php
+isset(Hilos::$db->users[$id]) ? Hilos::$db->users[$id]->name : null;
+```
+
+Do not use `Hilos::$db->users[$id]?->name` or
+`(Hilos::$db->users[$id] ?? null)?->name` for that chain. A nullable bridge
+after the DB item still uses `?->`:
+
+```php
+if (!isset(Hilos::$db->events[$eventId])) {
+    return;
+}
+
+Hilos::$db->events[$eventId]->eventMessage?->message;
+```
+
+The same rules apply to a collection held in a variable: `$users[$id]->name`
+for a required row, `isset($users[$id])` before an optional read, and
+`$users[$id] ?? null` for a nullable item value.
+
+In PHPUnit, assert existence through the collection's array contract:
+
+```php
+$this->assertArrayNotHasKey($id, Hilos::$db->users);
+$this->assertArrayHasKey($id, Hilos::$db->users);
+```
+
+Use these assertions with `$users` as well. Do not use
+`assertNull(Hilos::$db->users[$id])` or
+`assertFalse(isset(Hilos::$db->users[$id]))` to assert absence.
+
+Do not add a DB View `get()`, a `require*()` wrapper, or an `instanceof` check
+to narrow a standard read by its documented key. Required and optional reads
+already have their forms above; named finders for other criteria remain valid.
+
 ## Nullable Keys
 
-DB collections, DB object/entity collections, and RT View collections treat a
-`null` offset as a missing optional relation key: `isset($collection[null])` is
-false and `$collection[null]` returns `null`. Do not add caller-side guards only
-to protect array access from `null`; let the owning collection express that
-contract.
+For DB View collections, `isset($collection[$id])` calls `offsetExists()`;
+`$collection[$id] ?? null` calls it too, then calls `offsetGet()` only if the
+key exists. When the key is absent, including a `null` key, `isset` is false
+and `?? null` returns `null` without a missing-row refusal. With an existing
+key, `??` reads the item through `offsetGet()`. Neither form suppresses DB or
+configuration errors. These optional forms work already; see PHP's
+[ArrayAccess behavior](https://wiki.php.net/rfc/container-offset-behaviour#userland_classes_that_implement_arrayaccess).
 
-RT backing `RtStates` collections are stricter. Use `get($nullableId)` for
-optional state lookups; use `$stateCollection[$id]` only when the row must
-already exist.
+DB Object/Entity collections keep their nullable read contracts, including
+direct `[null]` returning `null`. Object-layer `get()` remains valid.
+RT View collections also keep nullable `[]`: a missing or `null` key returns
+`null`. The DB View required-read rule does not extend to those layers.
+
+RT backing `RtStates::get(?string $id): ?RtState` remains the optional state
+lookup. Concrete state collections may declare required `[]`; follow that
+collection's contract rather than assuming all `RtStates` reads are strict.
 
 ## Result And Item Accessors
 
@@ -117,7 +195,8 @@ Use or add a named method instead of magic/array access when:
 
 - the collection offset is a different key than the value the caller has;
 - the lookup combines multiple criteria, sorting, filtering, or permissions;
-- null/missing semantics differ from the collection default;
+- a specialized lookup has null/missing semantics beyond the required/optional
+  forms above; ordinary optional DB View reads do not justify a new `get()`;
 - the lookup triggers behavior that should be visible in the method name;
 - the API would otherwise hide DB/RT aggregation that belongs in a typed
   collection, item bridge, DTO, or signal payload.
