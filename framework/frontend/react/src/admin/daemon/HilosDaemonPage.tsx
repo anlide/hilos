@@ -29,10 +29,14 @@ import { HilosDaemonPlacement } from './HilosDaemonPlacement.js'
 /** Props for the Daemon section root. */
 export interface HilosDaemonPageProps {
   context: HilosDaemonContext
+  showLogLinks?: boolean
 }
 
 /** @param props The project's connection and page scope. */
-export function HilosDaemonPage({ context }: HilosDaemonPageProps) {
+export function HilosDaemonPage({
+  context,
+  showLogLinks = true,
+}: HilosDaemonPageProps) {
   const daemon = useMemo(() => createHilosDaemonOverview(context), [context])
   const placement = useMemo(
     () => createHilosDaemonPlacementView(context, daemon.overview),
@@ -346,7 +350,11 @@ export function HilosDaemonPage({ context }: HilosDaemonPageProps) {
           </p>
         </section>
         {overview && selectedNode && (
-          <HilosDaemonNodeInspector overview={overview} node={selectedNode} />
+          <HilosDaemonNodeInspector
+            overview={overview}
+            node={selectedNode}
+            showLogLinks={showLogLinks}
+          />
         )}
       </div>
     </HilosAdminPage>

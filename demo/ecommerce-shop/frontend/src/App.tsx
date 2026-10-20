@@ -24,6 +24,13 @@ import HilosBackup from './views/Hilos/Backup/Backup.js'
 import HilosChangeLog from './views/Hilos/ChangeLog/ChangeLog.js'
 import HilosChangeLogTables from './views/Hilos/ChangeLog/ChangeLogTables.js'
 import HilosChangeLogTable from './views/Hilos/ChangeLog/ChangeLogTable.js'
+import HilosDaemon from './views/Hilos/Daemon/Daemon.js'
+import HilosDaemonWorkers from './views/Hilos/Daemon/Workers.js'
+import HilosDaemonCron from './views/Hilos/Daemon/Cron.js'
+import HilosDaemonAgents from './views/Hilos/Daemon/Agents.js'
+import HilosDaemonHttp from './views/Hilos/Daemon/Http.js'
+import HilosDaemonEnv from './views/Hilos/Daemon/Env.js'
+import HilosDaemonEnvMismatch from './views/Hilos/Daemon/EnvMismatch.js'
 import HilosI18nLanguages from './views/Hilos/I18n/Languages/Languages.js'
 import HilosI18nLanguage from './views/Hilos/I18n/Language/Language.js'
 import HilosI18nLanguageNames from './views/Hilos/I18n/LanguageNames/LanguageNames.js'
@@ -67,6 +74,13 @@ const pages: Record<string, ComponentType> = {
   [HilosPages.I18N_COUNTRIES]: HilosI18nCountries,
   [HilosPages.I18N_COUNTRY]: HilosI18nCountry,
   [HilosPages.I18N_COUNTRY_NAMES]: HilosI18nCountryNames,
+  [HilosPages.DAEMON]: HilosDaemon,
+  [HilosPages.DAEMON_WORKERS]: HilosDaemonWorkers,
+  [HilosPages.DAEMON_CRON]: HilosDaemonCron,
+  [HilosPages.DAEMON_AGENTS]: HilosDaemonAgents,
+  [HilosPages.DAEMON_HTTP_SERVER]: HilosDaemonHttp,
+  [HilosPages.DAEMON_ENV]: HilosDaemonEnv,
+  [HilosPages.DAEMON_ENV_MISMATCH]: HilosDaemonEnvMismatch,
   // The framework settings admin page, activated configure-only: the framework
   // owns the table and the add/update/delete lifecycle; the project binds only its
   // scope stores + action lifecycle (views/Hilos/Settings) and its catalog on the backend.

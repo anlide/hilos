@@ -28,4 +28,7 @@ final class AgentType
 
     /** @var string Hilos notifications library agent type (owns the rows and the bell's group) */
     public const string HILOS_NOTIFICATIONS_LIBRARY = HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY;
+
+    /** Daemon section page agent type. */
+    public const string HILOS_DAEMON = HilosAgentType::HILOS_DAEMON;
 }

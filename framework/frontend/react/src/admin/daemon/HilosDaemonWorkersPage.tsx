@@ -31,11 +31,13 @@ import { HilosDaemonNodeLine } from './HilosDaemonNodeLine.js'
 /** Props for the framework's workers page. */
 export interface HilosDaemonWorkersPageProps {
   context: HilosDaemonWorkersContext
+  showLogLinks?: boolean
 }
 
 /** @param props The project's connection and page scope. */
 export function HilosDaemonWorkersPage({
   context,
+  showLogLinks = true,
 }: HilosDaemonWorkersPageProps) {
   const router = useContext(HilosRouterContext)
   if (!router)
@@ -99,15 +101,16 @@ export function HilosDaemonWorkersPage({
             </span>
           ),
           [DAEMON_WORKER_MEMORY_FIELD]: (row) => formatDaemonWorkerMemory(row),
-          actions: (row) => (
-            <HilosLink
-              to={daemonWorkerLogPath(nodeId, row)}
-              className="btn btn-sm btn-outline-secondary text-nowrap"
-              data-id={`hilos-daemon-worker-log-${row.rowKey}`}
-            >
-              Log
-            </HilosLink>
-          ),
+          actions: (row) =>
+            showLogLinks ? (
+              <HilosLink
+                to={daemonWorkerLogPath(nodeId, row)}
+                className="btn btn-sm btn-outline-secondary text-nowrap"
+                data-id={`hilos-daemon-worker-log-${row.rowKey}`}
+              >
+                Log
+              </HilosLink>
+            ) : null,
         }}
         details={{
           [DAEMON_WORKER_AGENT_IDS_FIELD]: (row) => (

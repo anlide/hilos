@@ -24,6 +24,7 @@ use Hilos\Core\Analytics\DTO\AnalyticsJournalReadySignalData;
 use Demo\EcommerceShop\Agents\EcommerceShopAgent;
 use Demo\EcommerceShop\Agents\Hilos\DataExportAgent;
 use Demo\EcommerceShop\Agents\Hilos\DemoHilosAgent;
+use Demo\EcommerceShop\Agents\Hilos\DemoHilosDaemonAgent;
 use Demo\EcommerceShop\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\SessionsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\UserAgent;
@@ -32,6 +33,7 @@ use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Constants\PageConstants;
 use Demo\EcommerceShop\Core\Agent\Daemon\EcommerceShopAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
+use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosDaemonAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\UserAgentDaemon;
@@ -45,6 +47,14 @@ use Demo\EcommerceShop\Pages\Hilos\Backup\BackupPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTablePage;
+use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonAgentsPage;
+use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonCronPage;
+use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonEnvMismatchPage;
+use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonEnvPage;
+use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonHttpServerPage;
+use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonPage;
+use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonWebsocketsPage;
+use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonWorkersPage;
 use Demo\EcommerceShop\Pages\Hilos\DashboardPage;
 use Demo\EcommerceShop\Pages\Hilos\LicensePage;
 use Demo\EcommerceShop\Pages\Hilos\Maintenance\MaintenancePage;
@@ -76,6 +86,10 @@ use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
+use Hilos\Core\Agent\Daemon\DaemonCollectorAgentDaemon;
+use Hilos\Core\Agent\Daemon\DaemonNodeAgentDaemon;
+use Hilos\Core\Agent\Hilos\DaemonCollectorAgent;
+use Hilos\Core\Agent\Hilos\DaemonNodeAgent;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
@@ -98,6 +112,15 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
+use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
+use Hilos\Tables\Daemon\HilosDaemonCronTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvDivergedTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvSourcesDifferTable;
+use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
+use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
+use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Page\PageAccessLevel;
@@ -185,6 +208,14 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
             ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
             MaintenancePage::PAGE => MaintenancePage::class,
+            DaemonPage::PAGE => DaemonPage::class,
+            DaemonWorkersPage::PAGE => DaemonWorkersPage::class,
+            DaemonAgentsPage::PAGE => DaemonAgentsPage::class,
+            DaemonCronPage::PAGE => DaemonCronPage::class,
+            DaemonWebsocketsPage::PAGE => DaemonWebsocketsPage::class,
+            DaemonHttpServerPage::PAGE => DaemonHttpServerPage::class,
+            DaemonEnvPage::PAGE => DaemonEnvPage::class,
+            DaemonEnvMismatchPage::PAGE => DaemonEnvMismatchPage::class,
             SettingsPage::PAGE => SettingsPage::class,
             AppearancePage::PAGE => AppearancePage::class,
             I18nPage::PAGE => I18nPage::class,
@@ -209,10 +240,14 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         $this->assertSame(array_keys(Hilos::PAGES), array_keys(Hilos::getPageRoutes()));
     }
 
-    /** No page is served by the agent of one entity instance. */
-    public function testNoPageIsServedByTheAgentOfOneInstance(): void
+    /** The Daemon environment page names the node whose replica serves it. */
+    public function testOnlyDaemonEnvironmentPageUsesNodeAddressedSubscription(): void
     {
-        $this->assertSame([], Hilos::getPageAgentIndexRoutes());
+        $routes = Hilos::getPageAgentIndexRoutes();
+        $this->assertSame([DaemonEnvPage::PAGE], array_keys($routes));
+        $this->assertSame('node_param', $routes[DaemonEnvPage::PAGE]->source->value);
+        $this->assertSame('nodeId', $routes[DaemonEnvPage::PAGE]->param);
+        $this->assertSame(HilosAgentType::HILOS_DAEMON, $routes[DaemonEnvPage::PAGE]->fallbackAgentType);
     }
 
     public function testPageRegistryKeysMatchPageClassConstants(): void
@@ -262,6 +297,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             AgentType::HILOS_CHANGE_LOG,
             HilosAgentType::HILOS_ANALYTICS_JOURNAL,
             HilosAgentType::HILOS_ANALYTICS_WRITER,
+            AgentType::HILOS_DAEMON,
             HilosAgentType::HILOS_DATA_EXPORT,
             HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosAgentType::HILOS_USER,
@@ -272,6 +308,8 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             HilosAgentType::HILOS_MAIL,
             HilosAgentType::HILOS_AUTH_THROTTLE,
             HilosAgentType::HILOS_BACKUP,
+            HilosAgentType::HILOS_DAEMON_NODE,
+            HilosAgentType::HILOS_DAEMON_COLLECTOR,
             HilosAgentType::HILOS_PROBE_FLEET,
             HilosAgentType::HILOS_PROBE_CLAIMER,
             HilosAgentType::HILOS_PROBE_BALLAST,
@@ -431,6 +469,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
                 HilosSignalConstants::ANALYTICS_JOURNAL_LOADED => HilosAgentType::HILOS_ANALYTICS_JOURNAL,
                 HilosSignalConstants::ANALYTICS_JOURNAL_PORTION => HilosAgentType::HILOS_ANALYTICS_WRITER,
                 HilosSignalConstants::ANALYTICS_JOURNAL_READY => HilosAgentType::HILOS_ANALYTICS_WRITER,
+                HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION => HilosAgentType::HILOS_DAEMON,
                 HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER => HilosAgentType::HILOS_DATA_EXPORT,
                 // The other half of the seam, and the endings the users library hands over:
                 // what a sign-in became reaches the library that owns the session.
@@ -567,6 +606,14 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
                 HilosSignalConstants::BACKUP_AGENT_REOPEN => HilosAgentType::HILOS_BACKUP,
                 HilosSignalConstants::BACKUP_AGENT_SESSIONS_CARRIED => HilosAgentType::HILOS_BACKUP,
                 HilosSignalConstants::BACKUP_AGENT_NOTICES_SENT => HilosAgentType::HILOS_BACKUP,
+                HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER => HilosAgentType::HILOS_DAEMON_NODE,
+                HilosSignalConstants::DAEMON_MASTER_CRON => HilosAgentType::HILOS_DAEMON_NODE,
+                HilosSignalConstants::DAEMON_MASTER_STANDING => HilosAgentType::HILOS_DAEMON_NODE,
+                HilosSignalConstants::DAEMON_MASTER_HTTP => HilosAgentType::HILOS_DAEMON_NODE,
+                HilosSignalConstants::DAEMON_MASTER_MEASUREMENTS => HilosAgentType::HILOS_DAEMON_NODE,
+                HilosSignalConstants::DAEMON_AGENT_CRON => HilosAgentType::HILOS_DAEMON_NODE,
+                HilosSignalConstants::DAEMON_NODE_PICTURE_REPORT => HilosAgentType::HILOS_DAEMON_COLLECTOR,
+                HilosSignalConstants::DAEMON_PICTURE_WATCH => HilosAgentType::HILOS_DAEMON_COLLECTOR,
             ],
             Hilos::getAgentSignalRoutes(),
         );
@@ -587,6 +634,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             HilosFeature::AUTH_THROTTLE,
             HilosFeature::BACKUP,
             HilosFeature::CHANGE_LOG,
+            HilosFeature::DAEMON,
             HilosFeature::SETTINGS,
             HilosFeature::I18N,
             HilosFeature::HILOS_USERS,
@@ -990,6 +1038,83 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame(PersonPage::class, Hilos::PAGES[PersonPage::PAGE]);
         self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[PersonPage::PAGE]);
         self::assertSame([EcommerceShopTableContext::hilosAnalyticsBrowserSessions => []], Hilos::PAGE_TABLES[PersonPage::PAGE]);
+    }
+
+    /** Pins the Daemon feature, eight pages and all three agent placements. */
+    public function testDaemonAdminFeatureIsActivated(): void
+    {
+        $this->assertContains(HilosFeature::DAEMON, Hilos::features());
+        foreach ([
+            DaemonPage::class,
+            DaemonWorkersPage::class,
+            DaemonAgentsPage::class,
+            DaemonCronPage::class,
+            DaemonWebsocketsPage::class,
+            DaemonHttpServerPage::class,
+            DaemonEnvMismatchPage::class,
+        ] as $page) {
+            $this->assertSame($page, Hilos::PAGES[$page::PAGE]);
+            $this->assertSame(AgentType::HILOS_DAEMON, Hilos::getPageRoutes()[$page::PAGE]);
+        }
+        $this->assertSame(DaemonEnvPage::class, Hilos::PAGES[DaemonEnvPage::PAGE]);
+        $this->assertSame(HilosAgentType::HILOS_DAEMON_NODE, Hilos::getPageRoutes()[DaemonEnvPage::PAGE]);
+
+        $pageAgent = Hilos::AGENTS[AgentType::HILOS_DAEMON];
+        $this->assertSame(DemoHilosDaemonAgent::class, AgentRegistry::workerClass($pageAgent));
+        $this->assertSame(DemoHilosDaemonAgentDaemon::class, AgentRegistry::daemonClass($pageAgent));
+        $this->assertSame(AgentScope::CLUSTER, AgentRegistry::scope($pageAgent));
+        $this->assertSame(AgentPlacement::LEADER, AgentRegistry::placement($pageAgent));
+        $this->assertFalse((new DemoHilosDaemonAgentDaemon())->requiresMonopolisticProcess());
+
+        $nodeAgent = Hilos::AGENTS[HilosAgentType::HILOS_DAEMON_NODE];
+        $this->assertSame(DaemonNodeAgent::class, AgentRegistry::workerClass($nodeAgent));
+        $this->assertSame(DaemonNodeAgentDaemon::class, AgentRegistry::daemonClass($nodeAgent));
+        $this->assertSame(AgentScope::NODE, AgentRegistry::scope($nodeAgent));
+        $this->assertFalse((new DaemonNodeAgentDaemon())->requiresMonopolisticProcess());
+
+        $collector = Hilos::AGENTS[HilosAgentType::HILOS_DAEMON_COLLECTOR];
+        $this->assertSame(DaemonCollectorAgent::class, AgentRegistry::workerClass($collector));
+        $this->assertSame(DaemonCollectorAgentDaemon::class, AgentRegistry::daemonClass($collector));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($collector));
+        $this->assertFalse((new DaemonCollectorAgentDaemon())->requiresMonopolisticProcess());
+
+        $this->assertSame(HilosDaemonCronTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosDaemonCron]);
+        $this->assertSame(HilosDaemonWorkersTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosDaemonWorkers]);
+        $this->assertSame(HilosDaemonEnvKeysTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosDaemonEnvKeys]);
+        $this->assertSame(HilosDaemonEnvOrphansTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosDaemonEnvOrphans]);
+        $this->assertSame(HilosDaemonAgentsTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosDaemonAgents]);
+        $this->assertSame(HilosDaemonEnvDivergedTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosDaemonEnvDiverged]);
+        $this->assertSame(HilosDaemonEnvSourcesDifferTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosDaemonEnvSourcesDiffer]);
+        $this->assertSame(HilosDaemonHttpRoutesTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosDaemonHttpRoutes]);
+        $this->assertSame(HilosDaemonPlacementTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosDaemonPlacement]);
+
+        $this->assertSame([EcommerceShopTableContext::hilosDaemonPlacement => []], Hilos::PAGE_TABLES[DaemonPage::PAGE]);
+        $this->assertSame([EcommerceShopTableContext::hilosDaemonWorkers => []], Hilos::PAGE_TABLES[DaemonWorkersPage::PAGE]);
+        $this->assertSame([EcommerceShopTableContext::hilosDaemonAgents => []], Hilos::PAGE_TABLES[DaemonAgentsPage::PAGE]);
+        $this->assertSame([EcommerceShopTableContext::hilosDaemonCron => []], Hilos::PAGE_TABLES[DaemonCronPage::PAGE]);
+        $this->assertSame([
+            EcommerceShopTableContext::hilosDaemonEnvKeys => [],
+            EcommerceShopTableContext::hilosDaemonEnvOrphans => [],
+        ], Hilos::PAGE_TABLES[DaemonEnvPage::PAGE]);
+        $this->assertSame([
+            EcommerceShopTableContext::hilosDaemonEnvDiverged => [],
+            EcommerceShopTableContext::hilosDaemonEnvSourcesDiffer => [],
+        ], Hilos::PAGE_TABLES[DaemonEnvMismatchPage::PAGE]);
+        $this->assertSame([EcommerceShopTableContext::hilosDaemonHttpRoutes => []], Hilos::PAGE_TABLES[DaemonHttpServerPage::PAGE]);
+
+        $this->assertSame(
+            DaemonAgentsPage::PAGE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_DAEMON_AGENT_RESTART],
+        );
+        $this->assertSame(
+            AgentType::HILOS_DAEMON,
+            Hilos::getActionAgentRoutes()[HilosSignalConstants::HILOS_DAEMON_AGENT_RESTART],
+        );
+        $this->assertSame(
+            DaemonAgentsPage::PAGE,
+            Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL]
+                [HilosSignalConstants::DAEMON_AGENT_RESTART_DONE],
+        );
     }
 
     public function testDeclaredFeaturesAreFullyActivated(): void

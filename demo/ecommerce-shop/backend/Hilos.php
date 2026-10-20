@@ -9,6 +9,7 @@ use Demo\EcommerceShop\Agents\Hilos\DataExportAgent;
 use Demo\EcommerceShop\Agents\Hilos\DemoHilosAgent;
 use Demo\EcommerceShop\Agents\Hilos\DemoHilosAnalyticsAgent;
 use Demo\EcommerceShop\Agents\Hilos\DemoHilosChangeLogAgent;
+use Demo\EcommerceShop\Agents\Hilos\DemoHilosDaemonAgent;
 use Demo\EcommerceShop\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\SessionsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\UserAgent;
@@ -20,6 +21,7 @@ use Demo\EcommerceShop\Core\Agent\Daemon\EcommerceShopAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
+use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosDaemonAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\UserAgentDaemon;
@@ -36,6 +38,14 @@ use Demo\EcommerceShop\Pages\Hilos\Backup\BackupPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTablePage;
+use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonAgentsPage;
+use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonCronPage;
+use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonEnvMismatchPage;
+use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonEnvPage;
+use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonHttpServerPage;
+use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonPage;
+use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonWebsocketsPage;
+use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonWorkersPage;
 use Demo\EcommerceShop\Pages\Hilos\DashboardPage;
 use Demo\EcommerceShop\Pages\Hilos\AnalyticsPage;
 use Demo\EcommerceShop\Pages\Hilos\Analytics\BrowserSessionPage;
@@ -71,6 +81,10 @@ use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
+use Hilos\Core\Agent\Daemon\DaemonCollectorAgentDaemon;
+use Hilos\Core\Agent\Daemon\DaemonNodeAgentDaemon;
+use Hilos\Core\Agent\Hilos\DaemonCollectorAgent;
+use Hilos\Core\Agent\Hilos\DaemonNodeAgent;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Analytics\AnalyticsJournalAgent;
 use Hilos\Core\Analytics\AnalyticsJournalAgentDaemon;
@@ -99,6 +113,15 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
+use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
+use Hilos\Tables\Daemon\HilosDaemonCronTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvDivergedTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvSourcesDifferTable;
+use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
+use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
+use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\I18n\HilosI18nCountriesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
@@ -156,6 +179,7 @@ final class Hilos extends HilosFacade
         HilosFeature::AUTH_THROTTLE,
         HilosFeature::BACKUP,
         HilosFeature::CHANGE_LOG,
+        HilosFeature::DAEMON,
         HilosFeature::SETTINGS,
         HilosFeature::I18N,
         HilosFeature::HILOS_USERS,
@@ -178,6 +202,14 @@ final class Hilos extends HilosFacade
         ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
         ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
+        DaemonPage::PAGE => DaemonPage::class,
+        DaemonWorkersPage::PAGE => DaemonWorkersPage::class,
+        DaemonAgentsPage::PAGE => DaemonAgentsPage::class,
+        DaemonCronPage::PAGE => DaemonCronPage::class,
+        DaemonWebsocketsPage::PAGE => DaemonWebsocketsPage::class,
+        DaemonHttpServerPage::PAGE => DaemonHttpServerPage::class,
+        DaemonEnvPage::PAGE => DaemonEnvPage::class,
+        DaemonEnvMismatchPage::PAGE => DaemonEnvMismatchPage::class,
         SettingsPage::PAGE => SettingsPage::class,
         AppearancePage::PAGE => AppearancePage::class,
         I18nPage::PAGE => I18nPage::class,
@@ -226,6 +258,10 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::WORKER => AnalyticsWriterAgent::class,
             AgentRegistryKey::DAEMON => AnalyticsWriterAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        DemoHilosDaemonAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosDaemonAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosDaemonAgentDaemon::class,
         ],
         DataExportAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DataExportAgent::class,
@@ -280,6 +316,16 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::DAEMON => BackupAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
+        DaemonNodeAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DaemonNodeAgent::class,
+            AgentRegistryKey::DAEMON => DaemonNodeAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+        DaemonCollectorAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DaemonCollectorAgent::class,
+            AgentRegistryKey::DAEMON => DaemonCollectorAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
         // The probes of this demo's cluster stand - scenarios 3, 4, 9, 12, 14, 16 and 19 read the
         // fleet, 37 asks for more of it than the slaves have slots for, 14 stages a second owner of
         // its collection with the claimer, 18 fills the slaves with the ballast. A probe starts
@@ -321,6 +367,15 @@ final class Hilos extends HilosFacade
         EcommerceShopTableContext::hilosI18nCountries => HilosI18nCountriesTable::class,
         EcommerceShopTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
         EcommerceShopTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
+        EcommerceShopTableContext::hilosDaemonCron => HilosDaemonCronTable::class,
+        EcommerceShopTableContext::hilosDaemonWorkers => HilosDaemonWorkersTable::class,
+        EcommerceShopTableContext::hilosDaemonEnvKeys => HilosDaemonEnvKeysTable::class,
+        EcommerceShopTableContext::hilosDaemonEnvOrphans => HilosDaemonEnvOrphansTable::class,
+        EcommerceShopTableContext::hilosDaemonAgents => HilosDaemonAgentsTable::class,
+        EcommerceShopTableContext::hilosDaemonEnvDiverged => HilosDaemonEnvDivergedTable::class,
+        EcommerceShopTableContext::hilosDaemonEnvSourcesDiffer => HilosDaemonEnvSourcesDifferTable::class,
+        EcommerceShopTableContext::hilosDaemonHttpRoutes => HilosDaemonHttpRoutesTable::class,
+        EcommerceShopTableContext::hilosDaemonPlacement => HilosDaemonPlacementTable::class,
     ];
 
     public const array BROWSER_DATA = [
@@ -398,6 +453,29 @@ final class Hilos extends HilosFacade
         ],
         CountryNamesPage::PAGE => [
             EcommerceShopTableContext::hilosI18nCountryNames => [],
+        ],
+        DaemonCronPage::PAGE => [
+            EcommerceShopTableContext::hilosDaemonCron => [],
+        ],
+        DaemonWorkersPage::PAGE => [
+            EcommerceShopTableContext::hilosDaemonWorkers => [],
+        ],
+        DaemonEnvPage::PAGE => [
+            EcommerceShopTableContext::hilosDaemonEnvKeys => [],
+            EcommerceShopTableContext::hilosDaemonEnvOrphans => [],
+        ],
+        DaemonPage::PAGE => [
+            EcommerceShopTableContext::hilosDaemonPlacement => [],
+        ],
+        DaemonAgentsPage::PAGE => [
+            EcommerceShopTableContext::hilosDaemonAgents => [],
+        ],
+        DaemonEnvMismatchPage::PAGE => [
+            EcommerceShopTableContext::hilosDaemonEnvDiverged => [],
+            EcommerceShopTableContext::hilosDaemonEnvSourcesDiffer => [],
+        ],
+        DaemonHttpServerPage::PAGE => [
+            EcommerceShopTableContext::hilosDaemonHttpRoutes => [],
         ],
     ];
 

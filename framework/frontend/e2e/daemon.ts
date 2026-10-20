@@ -40,7 +40,9 @@ export async function expectStandaloneOverview(
   expect: Expect,
   page: Page,
   databaseHost: string,
+  options: { showLogLinks?: boolean } = {},
 ): Promise<void> {
+  const { showLogLinks = true } = options
   await expectDaemonPage(expect, page, 'hilos_daemon')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Daemon')
   const node = page.getByTestId('hilos-daemon-node-standalone')
@@ -129,10 +131,14 @@ export async function expectStandaloneOverview(
     'href',
     DAEMON_WORKERS_PATH,
   )
-  await expect(page.getByTestId('hilos-daemon-node-log')).toHaveAttribute(
-    'href',
-    '/hilos/logs/view/standalone/live',
-  )
+  if (showLogLinks) {
+    await expect(page.getByTestId('hilos-daemon-node-log')).toHaveAttribute(
+      'href',
+      '/hilos/logs/view/standalone/live',
+    )
+  } else {
+    await expect(page.getByTestId('hilos-daemon-node-log')).toHaveCount(0)
+  }
   await expect(page.getByTestId('hilos-daemon-placement-tab')).toBeEnabled()
   await expect(page.getByTestId('hilos-daemon-placement-tab')).toHaveAttribute(
     'aria-pressed',

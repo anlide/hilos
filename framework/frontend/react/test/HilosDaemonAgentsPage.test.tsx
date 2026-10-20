@@ -25,7 +25,7 @@ import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
 const releases: Array<() => void> = []
 
-function harness() {
+function harness(showLogLinks?: boolean) {
   let resolve: (value: ActionResult) => void = () => {}
   let reject: (reason: unknown) => void = () => {}
   const loading = createSignal(false)
@@ -90,6 +90,7 @@ function harness() {
           scopes,
           actions: { dispatch } as unknown as ActionLifecycle,
         }}
+        showLogLinks={showLogLinks}
       />
     </HilosRouterContext.Provider>,
   )
@@ -257,6 +258,12 @@ describe('HilosDaemonAgentsPage', () => {
     expect(h.find('hilos-daemon-agent-log-room:12')?.getAttribute('href')).toBe(
       '/hilos/logs/view/n1/live/room-12.log',
     )
+    expect(
+      h
+        .find('hilos-table-card-room:12')
+        ?.querySelector('[data-id="hilos-daemon-agent-log-room:12"]')
+        ?.getAttribute('href'),
+    ).toBe('/hilos/logs/view/n1/live/room-12.log')
     h.heading(SILENT)
     expect(h.find('hilos-daemon-agents-silent')?.textContent).toContain(
       'last report',
@@ -471,4 +478,55 @@ describe('HilosDaemonAgentsPage', () => {
       )
     },
   )
+
+  it('omits agent log links in rows and cards when showLogLinks is false while keeping restart lifecycle and retaining flag across node changes', async () => {
+    const h = harness(false)
+    h.heading({ clustered: true, state: 'leader', silentSince: null })
+    h.reported(true)
+    h.window([agent()])
+
+    const row = h.find('hilos-table-row-room:12')!
+    expect(
+      [...row.querySelectorAll('td')]
+        .slice(0, 5)
+        .map((cell) => cell.textContent),
+    ).toEqual(['room:12', 'w0', 'Node replica', 'rooms · set', 'users · rows'])
+
+    expect(h.find('hilos-daemon-agent-log-room:12')).toBeNull()
+    const card = h.find('hilos-table-card-room:12')!
+    expect(card).not.toBeNull()
+    expect(
+      card.querySelector('[data-id="hilos-daemon-agent-log-room:12"]'),
+    ).toBeNull()
+
+    const restartBtn = h.find('hilos-daemon-agent-restart-room:12')!
+    expect(restartBtn).not.toBeNull()
+    expect(
+      card.querySelector('[data-id="hilos-daemon-agent-restart-room:12"]'),
+    ).not.toBeNull()
+
+    fireEvent.click(restartBtn)
+    expect(h.find('hilos-daemon-restart-agent')?.textContent).toBe('room:12')
+    fireEvent.click(button(h, 'hilos-daemon-restart-confirm'))
+    expect(h.dispatch).toHaveBeenCalled()
+    await h.success()
+    expect(h.find('hilos-daemon-restart-agent')).toBeNull()
+
+    act(() =>
+      h.currentRoute.set({
+        page: HilosPages.DAEMON_AGENTS,
+        params: { nodeId: 'n2' },
+        admin: true,
+      }),
+    )
+    h.window([agent({ rowKey: 'room:99', agentId: 'room:99' })])
+    expect(h.find('hilos-daemon-node-id')?.textContent).toBe('n2')
+    expect(h.find('hilos-daemon-agent-log-room:99')).toBeNull()
+    expect(
+      h
+        .find('hilos-table-card-room:99')
+        ?.querySelector('[data-id="hilos-daemon-agent-log-room:99"]'),
+    ).toBeNull()
+    expect(h.find('hilos-daemon-agent-restart-room:99')).not.toBeNull()
+  })
 })

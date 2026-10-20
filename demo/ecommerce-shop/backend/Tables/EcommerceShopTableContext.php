@@ -13,6 +13,15 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
+use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
+use Hilos\Tables\Daemon\HilosDaemonCronTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvDivergedTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvSourcesDifferTable;
+use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
+use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
+use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\I18n\HilosI18nCountriesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
@@ -46,6 +55,15 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * @property-read HilosI18nLanguageLocalesTable $hilosI18nLanguageLocales
  * @property-read HilosAnalyticsActionsTable $hilosAnalyticsActions
  * @property-read HilosAnalyticsBrowserSessionsTable $hilosAnalyticsBrowserSessions
+ * @property-read HilosDaemonCronTable $hilosDaemonCron
+ * @property-read HilosDaemonWorkersTable $hilosDaemonWorkers
+ * @property-read HilosDaemonEnvKeysTable $hilosDaemonEnvKeys
+ * @property-read HilosDaemonEnvOrphansTable $hilosDaemonEnvOrphans
+ * @property-read HilosDaemonAgentsTable $hilosDaemonAgents
+ * @property-read HilosDaemonEnvDivergedTable $hilosDaemonEnvDiverged
+ * @property-read HilosDaemonEnvSourcesDifferTable $hilosDaemonEnvSourcesDiffer
+ * @property-read HilosDaemonHttpRoutesTable $hilosDaemonHttpRoutes
+ * @property-read HilosDaemonPlacementTable $hilosDaemonPlacement
  */
 final class EcommerceShopTableContext extends TableContext
 {
@@ -64,6 +82,15 @@ final class EcommerceShopTableContext extends TableContext
     public const string hilosI18nLanguageLocales = HilosI18nLanguageLocalesTable::TABLE;
     public const string hilosAnalyticsActions = HilosAnalyticsActionsTable::TABLE;
     public const string hilosAnalyticsBrowserSessions = HilosAnalyticsBrowserSessionsTable::TABLE;
+    public const string hilosDaemonCron = HilosDaemonCronTable::TABLE;
+    public const string hilosDaemonWorkers = HilosDaemonWorkersTable::TABLE;
+    public const string hilosDaemonEnvKeys = HilosDaemonEnvKeysTable::TABLE;
+    public const string hilosDaemonEnvOrphans = HilosDaemonEnvOrphansTable::TABLE;
+    public const string hilosDaemonAgents = HilosDaemonAgentsTable::TABLE;
+    public const string hilosDaemonEnvDiverged = HilosDaemonEnvDivergedTable::TABLE;
+    public const string hilosDaemonEnvSourcesDiffer = HilosDaemonEnvSourcesDifferTable::TABLE;
+    public const string hilosDaemonHttpRoutes = HilosDaemonHttpRoutesTable::TABLE;
+    public const string hilosDaemonPlacement = HilosDaemonPlacementTable::TABLE;
 
     /**
      * Registers this demo's table definitions from the project topology registry.

@@ -31,12 +31,14 @@ import { HilosRouterContext } from '../../hilosRouterContext.js'
 interface HilosDaemonNodeInspectorProps {
   overview: HilosDaemonOverviewData
   node: HilosDaemonOverviewNode
+  showLogLinks?: boolean
 }
 
 /** @param props The selected node and the picture containing it. */
 export function HilosDaemonNodeInspector({
   overview,
   node,
+  showLogLinks = true,
 }: HilosDaemonNodeInspectorProps) {
   const router = useContext(HilosRouterContext)
   if (!router)
@@ -102,7 +104,7 @@ export function HilosDaemonNodeInspector({
               Single installation
             </span>
           )}
-          {logPath && (
+          {showLogLinks && logPath && (
             <HilosLink
               to={logPath}
               className="small ms-auto"

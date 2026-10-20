@@ -12,7 +12,7 @@ import {
 import { HilosDaemonWorkersPage } from '../src/admin/daemon/HilosDaemonWorkersPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
-function harness() {
+function harness(showLogLinks?: boolean) {
   const scopes = new ScopeManager()
   const scope = scopes.openPage(HilosPages.DAEMON_WORKERS)
   const currentRoute = createSignal<PageRouteMatch>({
@@ -59,7 +59,10 @@ function harness() {
   } as unknown as HilosConnection
   const view = render(
     <HilosRouterContext.Provider value={router}>
-      <HilosDaemonWorkersPage context={{ connection, scopes }} />
+      <HilosDaemonWorkersPage
+        context={{ connection, scopes }}
+        showLogLinks={showLogLinks}
+      />
     </HilosRouterContext.Provider>,
   )
   return {
@@ -177,6 +180,12 @@ describe('HilosDaemonWorkersPage', () => {
     expect(
       h.find('hilos-daemon-worker-log-regular:1')?.getAttribute('href'),
     ).toBe('/hilos/logs/view/n1/live/worker-regular-1.log')
+    expect(
+      h
+        .find('hilos-table-card-regular:1')
+        ?.querySelector('[data-id="hilos-daemon-worker-log-regular:1"]')
+        ?.getAttribute('href'),
+    ).toBe('/hilos/logs/view/n1/live/worker-regular-1.log')
     fireEvent.click(h.find('hilos-table-expand-regular:1')!)
     expect(
       h.find('hilos-daemon-worker-agents-regular:1')?.textContent,
@@ -227,5 +236,28 @@ describe('HilosDaemonWorkersPage', () => {
     expect([...h.listeners.values()].every((group) => group.size === 0)).toBe(
       true,
     )
+  })
+
+  it('omits worker log links in rows and cards when showLogLinks is false while retaining data and expansion', () => {
+    const h = harness(false)
+    h.heading({ clustered: true, state: 'leader', silentSince: null })
+    h.reported(true)
+    h.window([worker()])
+    const regular = h.find('hilos-table-row-regular:1')!
+    expect(
+      [...regular.querySelectorAll('td')]
+        .slice(0, 5)
+        .map((cell) => cell.textContent),
+    ).toEqual(['w1', 'Ordinary', '1234', '2', '2.0 KB'])
+    expect(h.find('hilos-daemon-worker-log-regular:1')).toBeNull()
+    const card = h.find('hilos-table-card-regular:1')!
+    expect(card).not.toBeNull()
+    expect(
+      card.querySelector('[data-id="hilos-daemon-worker-log-regular:1"]'),
+    ).toBeNull()
+    fireEvent.click(h.find('hilos-table-expand-regular:1')!)
+    expect(
+      h.find('hilos-daemon-worker-agents-regular:1')?.textContent,
+    ).toContain('room:12')
   })
 })

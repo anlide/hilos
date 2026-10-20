@@ -92,6 +92,7 @@ function harness(
   envBuilt = true,
   initial?: HilosDaemonOverviewData,
   initialRows?: readonly TableRow[],
+  showLogLinks?: boolean,
 ) {
   const scopes = new ScopeManager()
   const sendAction = vi.fn()
@@ -229,7 +230,10 @@ function harness(
   )
   const view = render(
     <HilosRouterContext.Provider value={router}>
-      <HilosDaemonPage context={{ scopes, connection }} />
+      <HilosDaemonPage
+        context={{ scopes, connection }}
+        showLogLinks={showLogLinks}
+      />
     </HilosRouterContext.Provider>,
   )
   const find = (
@@ -339,6 +343,9 @@ describe('HilosDaemonPage', () => {
     )
     expect(h.find('hilos-daemon-inspector')?.getAttribute('data-node-id')).toBe(
       'n2',
+    )
+    expect(h.find('hilos-daemon-node-log')?.getAttribute('href')).toBe(
+      '/hilos/logs/view/n2/live',
     )
     expect(
       h.find('hilos-admin-child-hilos_daemon_workers')?.getAttribute('href'),
@@ -611,5 +618,14 @@ describe('HilosDaemonPage', () => {
     h.click('hilos-daemon-placement-collapse')
     expect(h.find(PANEL)).toBeNull()
     act(() => release())
+  })
+
+  it('omits node log link when showLogLinks is false while retaining real inspector values', () => {
+    const h = harness(false, picture([node('n1')]), undefined, false)
+    expect(h.find('hilos-daemon-inspector')?.getAttribute('data-node-id')).toBe(
+      'n1',
+    )
+    expect(h.find('hilos-daemon-cores')?.textContent).toContain('2')
+    expect(h.find('hilos-daemon-node-log')).toBeNull()
   })
 })

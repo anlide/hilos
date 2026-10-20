@@ -36,10 +36,14 @@ import { HilosDaemonNodeLine } from './HilosDaemonNodeLine.js'
 /** Props for the framework's agents page. */
 export interface HilosDaemonAgentsPageProps {
   context: HilosDaemonAgentsContext
+  showLogLinks?: boolean
 }
 
 /** @param props The project's connection, page scope and action lifecycle. */
-export function HilosDaemonAgentsPage({ context }: HilosDaemonAgentsPageProps) {
+export function HilosDaemonAgentsPage({
+  context,
+  showLogLinks = true,
+}: HilosDaemonAgentsPageProps) {
   const router = useContext(HilosRouterContext)
   if (!router)
     throw new Error('HilosDaemonAgentsPage requires a provided Hilos router.')
@@ -47,7 +51,12 @@ export function HilosDaemonAgentsPage({ context }: HilosDaemonAgentsPageProps) {
   const nodeId = route.params.nodeId ?? ''
   return (
     <HilosAdminPage page={HilosPages.DAEMON_AGENTS}>
-      <Agents key={nodeId} context={context} nodeId={nodeId} />
+      <Agents
+        key={nodeId}
+        context={context}
+        nodeId={nodeId}
+        showLogLinks={showLogLinks}
+      />
     </HilosAdminPage>
   )
 }
@@ -58,6 +67,7 @@ export function HilosDaemonAgentsPage({ context }: HilosDaemonAgentsPageProps) {
 function Agents({
   context,
   nodeId,
+  showLogLinks,
 }: HilosDaemonAgentsPageProps & { nodeId: string }) {
   const agents = useMemo(
     () => createHilosDaemonAgentsTable(context, nodeId),
@@ -186,13 +196,15 @@ function Agents({
           ),
           actions: (row) => (
             <>
-              <HilosLink
-                to={daemonAgentLogPath(nodeId, row)}
-                className="small me-2"
-                data-id={`hilos-daemon-agent-log-${row.rowKey}`}
-              >
-                Log
-              </HilosLink>
+              {showLogLinks && (
+                <HilosLink
+                  to={daemonAgentLogPath(nodeId, row)}
+                  className="small me-2"
+                  data-id={`hilos-daemon-agent-log-${row.rowKey}`}
+                >
+                  Log
+                </HilosLink>
+              )}
               <LoadingButton
                 className="btn-sm btn-outline-secondary"
                 disabled={busy || row.restarting || unavailable}
