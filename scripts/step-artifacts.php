@@ -915,9 +915,9 @@ function collectDockerArtifacts(string $root, array $stand, array $probe, string
  * The log file a container's stdout is kept under, unique within this snapshot.
  *
  * A service that appears once keeps the name the collector has always used. Two
- * runners of the same service — the frontend stand's parallel fe-build and
- * fe-checks — would otherwise overwrite each other, and which one kept the bare
- * name would depend on the order `ps` listed them.
+ * runners of the same service — two steps of one stand overlapping in time —
+ * would otherwise overwrite each other, and which one kept the bare name would
+ * depend on the order `ps` listed them.
  *
  * @param array<int, array<string, mixed>> $containers What `docker compose ps` listed.
  * @param array<string, mixed> $container The one row whose file is being named.

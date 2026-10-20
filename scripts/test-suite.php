@@ -223,7 +223,13 @@ $steps = array_merge($steps, [
         'command' => 'composer run test:framework:frontend',
         'cwd' => '.',
         'stand' => 'frontend',
-        'deps' => ['fe-install'],
+        // READS fe-build's OUTPUT — NOT an ordering preference. The initial bundle
+        // budget suite resolves the real @hilos/angular package, whose exports live
+        // only in the APF manifest ng-packagr writes to angular/dist, and ng-packagr
+        // deletes that directory before it rebuilds. Beside a running fe-build the
+        // suite found no manifest ("missing generated Angular APF exports") in runs
+        // 1340 and 1342; alone it read a dist left by an older build.
+        'deps' => ['fe-install', 'fe-build'],
         'group' => null,
         'tags' => ['framework', 'frontend'],
         'seconds' => 87,
