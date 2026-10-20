@@ -710,6 +710,9 @@ final class DaemonOverviewTestResender implements PageResender
     /** @var list<array{string, string}> Whole-page attempts, including contained refusals and failures */
     public array $attempts = [];
 
+    /** @var list<array{string, string}> Deletion refusals asked of this double */
+    public array $deletions = [];
+
     public function __construct(private readonly PageSignalRouter $router)
     {
     }
@@ -718,6 +721,20 @@ final class DaemonOverviewTestResender implements PageResender
     {
         $this->attempts[] = [$page, $acceptKey];
         return $this->router->resendPage($page, $acceptKey, $params);
+    }
+
+    /**
+     * The deletion port is not this double. It forms no refusal frame of its own.
+     *
+     * @param string $page Page the subscription stands on
+     * @param string $acceptKey Connection the refusal would be addressed to
+     * @return PageResendOutcome Unserved, because this double does not refuse a deleted row
+     */
+    public function refuseDeletedResource(string $page, string $acceptKey): PageResendOutcome
+    {
+        $this->deletions[] = [$page, $acceptKey];
+
+        return PageResendOutcome::Unserved;
     }
 }
 

@@ -421,14 +421,19 @@ abstract class AbstractPage implements ActionHostInterface
      * name of its entity where the catalog holds a static caption.
      * Sending this full answer pays any page debt, including when an update calls this method.
      *
+     * The row the page is about, when it has one, is resolved before that work and bound only
+     * after this one frame is queued, before the after-response hook. Null is a page that names
+     * no row. A refusal before the frame is queued binds nothing.
+     *
      * @param string $acceptKey WebSocket accept key
      * @param PageRouteParams $params Route params from page subscription
-     * @throws PageSubscriptionException When the before-response hook or the browser snapshot refuses the subscription
+     * @throws PageSubscriptionException When the resource hook, the before-response hook or the browser snapshot refuses
      * @throws InvalidArgumentException When the page-response or the facet-counts signal cannot be named
-     * @throws HilosException Whatever else the before-response hook, the page's payload build or the browser part raises
+     * @throws HilosException Whatever else the resource hook, the before-response hook, the payload build or the browser part raises
      */
     final public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
+        $pageResource = $this->resolvePageResource($acceptKey, $params);
         $this->onSubscribeBeforeResponse($acceptKey, $params);
         $own = $this->withPageIdentity($this->buildPagePayload($acceptKey, $params), $acceptKey);
         $snapshot = Hilos::$browser?->buildSubscribeSnapshot(static::PAGE, $acceptKey, $params) ?? new PagePayload();
@@ -437,6 +442,7 @@ abstract class AbstractPage implements ActionHostInterface
             $acceptKey,
             new PageResponseSignalData(static::PAGE, $own->over($snapshot)),
         );
+        Hilos::$sr?->bindPageResource($acceptKey, $pageResource);
         Hilos::$sr?->clearPageDeliveryFailure($acceptKey);
         Hilos::$browser?->sendSnapshotFacetCounts(static::PAGE, $acceptKey, $snapshot);
         $this->onSubscribeAfterResponse($acceptKey, $params);
@@ -488,6 +494,23 @@ abstract class AbstractPage implements ActionHostInterface
     protected function dataFields(): array
     {
         return [];
+    }
+
+    /**
+     * Names the one DB row this open page is about, or null when the page names none.
+     *
+     * Called before the payload and the before-response work, so a refusal there never
+     * binds a row the answer did not ship. The default names nothing.
+     *
+     * @param string $acceptKey WebSocket accept key
+     * @param PageRouteParams $params Route params from page subscription
+     * @return ?PageResource The row this page is about, or null when it names none
+     * @throws PageSubscriptionException When the override refuses the subscription on its own terms
+     * @throws HilosException Whatever else the override's own work raises
+     */
+    protected function resolvePageResource(string $acceptKey, PageRouteParams $params): ?PageResource
+    {
+        return null;
     }
 
     /**

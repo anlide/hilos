@@ -1,6 +1,15 @@
 import type { Expect, Locator, Page } from '@playwright/test'
 
+import type { PageErrorFrameLog } from './pageErrorFrames.js'
 import { shownByTestId } from './table.js'
+
+// The country card's page key and the server's 404 catalog. This folder does
+// not import the core, so the words are copied. A live deletion adds the line
+// on the frame; a later subscribe omits the key. The screen does not draw it.
+const COUNTRY_CARD_PAGE = 'hilos_i18n_country'
+const COUNTRY_NOT_FOUND_TITLE = 'Page Not Found'
+const COUNTRY_NOT_FOUND_MESSAGE = 'The page you are looking for does not exist.'
+const COUNTRY_DELETED_LINE = 'It was deleted just now.'
 
 // The rows and checks of the languages and countries section that all three kits
 // perform alike, because the section's data-id controls match across the SDKs.
@@ -152,4 +161,102 @@ export async function expectNoOtherLanguageNames(
   await expect(
     page.locator('table').getByTestId('hilos-table-empty-title'),
   ).toHaveText('No other languages yet')
+}
+
+/** The country-card 404 fields, or undefined when this frame is another refusal. */
+function countryNotFound(
+  frame: PageErrorFrameLog,
+): Record<string, unknown> | undefined {
+  const data = frame.data
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+    return undefined
+  }
+  const fields = data as Record<string, unknown>
+  if (
+    frame.type !== 'subscription_page_error' ||
+    fields.page !== COUNTRY_CARD_PAGE ||
+    fields.httpCode !== 404 ||
+    fields.errorCode !== 'not_found' ||
+    fields.title !== COUNTRY_NOT_FOUND_TITLE ||
+    fields.message !== COUNTRY_NOT_FOUND_MESSAGE
+  ) {
+    return undefined
+  }
+  return fields
+}
+
+/** The server 404 on the same country address. The deletion line is not drawn. */
+async function expectCountryNotFoundScreen(
+  expect: Expect,
+  page: Page,
+  countryCode: string,
+): Promise<void> {
+  await expect(page).toHaveURL(
+    new RegExp(`/hilos/i18n/countries/${countryCode}$`),
+  )
+  await expect(page.getByTestId('hilos-page-state')).toHaveAttribute(
+    'data-state',
+    'error',
+  )
+  const error = page.getByTestId('page-error')
+  await expect(error).toBeVisible()
+  await expect(error).toHaveAttribute('data-error-code', '404')
+  await expect(error).toContainText(COUNTRY_NOT_FOUND_TITLE)
+  await expect(error).toContainText(COUNTRY_NOT_FOUND_MESSAGE)
+  await expect(page.getByTestId('country-card-unavailable')).toHaveCount(0)
+}
+
+/**
+ * A second window whose country was just deleted: the address stays, the
+ * screen is the server 404, and the live frame carries the deletion line.
+ *
+ * @param expect The spec's expect.
+ * @param page The window that was open on the country card.
+ * @param frames Frames observed on that window since before it opened.
+ * @param countryCode The deleted country's code, still in the address.
+ */
+export async function expectDeletedCountryCard(
+  expect: Expect,
+  page: Page,
+  frames: readonly PageErrorFrameLog[],
+  countryCode: string,
+): Promise<void> {
+  await expectCountryNotFoundScreen(expect, page, countryCode)
+  await expect
+    .poll(() =>
+      frames.some((frame) => {
+        const fields = countryNotFound(frame)
+        return fields?.transitionMessage === COUNTRY_DELETED_LINE
+      }),
+    )
+    .toBe(true)
+}
+
+/**
+ * The same 404 after a reload. The new frame omits the deletion-line key.
+ *
+ * @param expect The spec's expect.
+ * @param page The window reloaded on the deleted country's address.
+ * @param frames Frames observed on that window, including the reload.
+ * @param countryCode The deleted country's code, still in the address.
+ * @param loggedBeforeReload How many frames the log held before the reload.
+ */
+export async function expectDeletedCountryCardReloaded(
+  expect: Expect,
+  page: Page,
+  frames: readonly PageErrorFrameLog[],
+  countryCode: string,
+  loggedBeforeReload: number,
+): Promise<void> {
+  await expectCountryNotFoundScreen(expect, page, countryCode)
+  await expect
+    .poll(() =>
+      frames.slice(loggedBeforeReload).some((frame) => {
+        const fields = countryNotFound(frame)
+        return (
+          fields !== undefined && !Object.hasOwn(fields, 'transitionMessage')
+        )
+      }),
+    )
+    .toBe(true)
 }

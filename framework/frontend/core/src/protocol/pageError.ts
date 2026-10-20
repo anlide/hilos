@@ -15,6 +15,8 @@ export const PAGE_ERROR_NOT_SERVED = 'not_served'
  * the page the error is for — so a late one for a page already left is dropped,
  * mirroring page_response — plus the HTTP status, a machine-readable code, and
  * ready-to-display title and message. Both text fields are required and non-empty.
+ * `transitionMessage`, when the server sends it, is a non-empty ready phrase.
+ * Ordinary refusals omit the key; the client does not invent one from the status.
  */
 export const pageSubscriptionErrorSchema = z.looseObject({
   page: z.string().min(1),
@@ -22,6 +24,7 @@ export const pageSubscriptionErrorSchema = z.looseObject({
   errorCode: z.string(),
   title: z.string().min(1),
   message: z.string().min(1),
+  transitionMessage: z.string().min(1).optional(),
 })
 
 export type PageSubscriptionError = z.infer<typeof pageSubscriptionErrorSchema>

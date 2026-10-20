@@ -143,13 +143,29 @@ the shared Vue head (not in the code yet — HIL-1602).
 
 ## Deleted While Open
 
-When the entity is deleted in another window, the server moves the open page
-to the same ordinary 404 as a fresh visit. Only that live transition carries
-one server-authored line saying it was deleted just now, without the name; F5
-does not carry that line. The server mechanism and wording build on HIL-1516;
-this document specifies no error key or new delivery mechanism. Own deletion
-and any redirect remain for HIL-1600's interview
-(not in the code yet — HIL-1600).
+Country Overview and Names name their row through
+`AbstractPage::resolvePageResource`, returning `PageResource::db` of the
+countries collection and the row's primary id. That id is the primary key.
+The country code and the display name are not the reference. The subscription
+keeps the link in `SubscriptionRegistry`. The hook's default names no row, so
+a page that does not override it is outside this path.
+
+Whoever was already on the page stays there, and the initiator of the action
+makes the transition. That is the owner's decision. The initiator of a
+successful deletion is the connection whose accept key equals the change's
+`origin` and whose `originRequestId` is non-empty. That connection is not sent
+a 404. Its action acknowledgement stays, the resource link is dropped, and the
+successful deletion takes it to the country list. Every other open window,
+including another window of the same person, stays on the previous address and
+becomes the ordinary 404 (`not_found`). Only that live transition carries
+`transitionMessage`, the server phrase "It was deleted just now.", and the
+phrase does not include the name. A fresh subscribe and F5 carry the ordinary
+404 and omit the field. The catalog wording is HIL-1516's. The flush match is
+in [browser-source-fanout.md](browser-source-fanout.md#a-deleted-row-before-grouping),
+the release in
+[page-access-control.md](page-access-control.md#a-refusal-releases-what-the-page-holds),
+and the field on the wire in
+[wire-protocol.md](../frontend/wire-protocol.md#page-subscriptions-01).
 
 On all three frontends, that live 404 replaces the page and removes its head,
 breadcrumb and row, while an already-open modal keeps its draft above the
@@ -237,7 +253,7 @@ sequence without studying these files. They do not specify a future API.
 | Vue head and country | `framework/frontend/vue/src/HilosAdminPage.vue`; `framework/frontend/vue/src/admin/i18n/details/HilosI18nCountryHeader.vue`, `HilosI18nCountryPage.vue`, `HilosI18nCountryNamesPage.vue` | Shared head/block/row and both country tabs using it (not in the code yet — HIL-1602) |
 | React parity | `framework/frontend/react/src/HilosAdminPage.tsx` and its country page modules | Equivalent head, states, accessibility, live name and title (not in the code yet — HIL-1604) |
 | Angular parity | `framework/frontend/angular/src/HilosAdminPage.ts` and its country page modules | Equivalent head, states, accessibility, live name and title (not in the code yet — HIL-1605) |
-| Live 404, server | The existing page refusal path and HIL-1516 | Live refusal with a server-authored, name-free transition line (not in the code yet — HIL-1600) |
+| Live 404, server | `AbstractPage::resolvePageResource`, `PageResource::db`, `BrowserContext::refuseDeletedPageResources`, `PageSignalRouter::refuseDeletedResource` | In the code: other open windows get `not_found` and `transitionMessage`; the initiator keeps its acknowledgement and goes to the country list |
 | Live 404, clients | The page error surfaces in all three view layers | Show that line, remove the head and preserve an open modal draft (not in the code yet — HIL-1603) |
 | Adoption gate | HIL-1606 | Shared e2e navigation coverage before other owners' redraws (not in the code yet — HIL-1606) |
 

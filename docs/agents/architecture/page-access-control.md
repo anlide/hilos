@@ -437,6 +437,17 @@ What stays is the subscription registration, and the debt a failed answer
 owes. A later admission does not revive what was released; the next
 `onSubscribe` registers it again.
 
+A live refusal of a row deleted while the page was open uses this same
+release. `PageSignalRouter::refuseDeletedResource` calls
+`releaseUnservedConnection` before the frame. The method runs
+`onUnsubscribe` and drops the resource link through
+`SubscriptionRegistry::clearPageResource`. The subscription registration
+stays. A 401, 403 or 503 from the access gate or the browser guards goes
+out as that status and carries no deletion line. Every other result of
+those guards is the ordinary 404 with the line. The page's own subscribe
+is not called. Which flush decides to refuse is in
+[browser-source-fanout.md](browser-source-fanout.md#a-deleted-row-before-grouping).
+
 The window and the limit are named, and neither is closed. The window runs
 from the write that removes the rights until the stop reaches the file owner:
 the time the signals are in flight, tens to hundreds of milliseconds. The

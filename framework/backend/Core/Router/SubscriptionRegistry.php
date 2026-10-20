@@ -9,6 +9,7 @@ use Hilos\API\Router\Exception\PageSubscriptionMismatchException;
 use Hilos\API\Router\Exception\PageSubscriptionNotFoundException;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Core\Group\Config\GroupAddressSource;
+use Hilos\Core\Page\PageResource;
 
 /**
  * SubscriptionRegistry - Worker-local store of client page and group subscriptions.
@@ -61,6 +62,16 @@ final class SubscriptionRegistry
     private array $pageDeliveryFailures = [];
 
     /**
+     * @var array<string, PageResource> DB row an open page is about, keyed by accept key
+     *
+     * Worker-local, like the page debt beside it. The row is private to this connection's
+     * answer and is not read by another worker or node, so it does not belong in runtime
+     * state. subscribeToPage() does not drop it: that write runs after the answer has
+     * already bound the row.
+     */
+    private array $pageResources = [];
+
+    /**
      * @var array<string, array<string, true>> Windows owed whole, keyed by accept key, then table key
      *
      * One debt per window, whoever set it: a freeze of the live road (HIL-1139) or a refusal of the
@@ -97,6 +108,8 @@ final class SubscriptionRegistry
         // case and the method in framework/backend/Core/Daemon/WorkerManager.php), so a reset here
         // would erase the debt the answer just set. The page debt follows the same ordering:
         // the worker clears the old debt before dispatch, and this write preserves the new answer's debt.
+        // The page resource follows the page debt. The answer binds it before this write, so
+        // dropping it here would forget the row the frame just named.
     }
 
     /**
@@ -190,6 +203,7 @@ final class SubscriptionRegistry
         unset($this->tableFacetRequests[$acceptKey]);
         unset($this->tableFocus[$acceptKey]);
         unset($this->pageDeliveryFailures[$acceptKey]);
+        unset($this->pageResources[$acceptKey]);
         unset($this->tableWindowDebts[$acceptKey]);
     }
 
@@ -313,6 +327,7 @@ final class SubscriptionRegistry
         unset($this->tableFacetRequests[$acceptKey]);
         unset($this->tableFocus[$acceptKey]);
         unset($this->pageDeliveryFailures[$acceptKey]);
+        unset($this->pageResources[$acceptKey]);
         unset($this->tableWindowDebts[$acceptKey]);
     }
 
@@ -368,6 +383,49 @@ final class SubscriptionRegistry
         unset($this->pageDeliveryFailures[$acceptKey]);
 
         return true;
+    }
+
+    /**
+     * Binds the DB row an open page is about, or clears it when the page names none.
+     *
+     * An empty accept key is ignored, the way a page subscription for one is.
+     *
+     * @param string $acceptKey Client accept key
+     * @param ?PageResource $resource Row the answer named, or null when the page names none
+     */
+    public function bindPageResource(string $acceptKey, ?PageResource $resource): void
+    {
+        if ($acceptKey === '') {
+            return;
+        }
+        if ($resource === null) {
+            unset($this->pageResources[$acceptKey]);
+
+            return;
+        }
+
+        $this->pageResources[$acceptKey] = $resource;
+    }
+
+    /**
+     * Returns the DB row an open page is about, or null when the page names none.
+     *
+     * @param string $acceptKey Client accept key
+     * @return ?PageResource Bound row, or null when this connection's page names none
+     */
+    public function pageResource(string $acceptKey): ?PageResource
+    {
+        return $this->pageResources[$acceptKey] ?? null;
+    }
+
+    /**
+     * Drops the DB row bound to a connection's open page.
+     *
+     * @param string $acceptKey Client accept key
+     */
+    public function clearPageResource(string $acceptKey): void
+    {
+        unset($this->pageResources[$acceptKey]);
     }
 
     /**

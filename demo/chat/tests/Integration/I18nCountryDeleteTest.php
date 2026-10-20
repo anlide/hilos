@@ -6,26 +6,30 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\I18n\Details\CountryDetailPage;
+use Demo\Chat\Pages\Hilos\I18n\Details\CountryNamesPage;
 use Demo\Chat\Pages\Hilos\I18n\Lists\CountriesListPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
-use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
+use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Page\HilosPageFactory;
-use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Page\PageErrorMessages;
 use Hilos\Core\Page\PageSignalRouter;
+use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
-use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
-use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Actions\Item\CountryActions;
@@ -52,6 +56,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 /** Both page doors and direct item removal share the country's current deletion policy. */
 final class I18nCountryDeleteTest extends IntegrationTestCase
 {
+    private I18nCountryServingWorker $worker;
     private I18nLibraryAgent $agent;
     private string|false $previousDefaultLanguage;
 
@@ -59,11 +64,12 @@ final class I18nCountryDeleteTest extends IntegrationTestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->worker = new I18nCountryServingWorker();
+        $this->agent = $this->worker->library();
         Hilos::initBrowser();
-        Hilos::$sr = new SignalRouter();
+        Hilos::$browser->bindPageResender($this->worker);
         $this->previousDefaultLanguage = getenv(EnvConstants::HILOS_DEFAULT_LANGUAGE->name);
         putenv(EnvConstants::HILOS_DEFAULT_LANGUAGE->name . '=en');
-        $this->agent = new I18nLibraryAgent();
         foreach ([
             HilosDbContext::languages,
             HilosDbContext::countries,
@@ -82,6 +88,11 @@ final class I18nCountryDeleteTest extends IntegrationTestCase
     protected function tearDown(): void
     {
         Hilos::$rt->connections->actions->clear();
+        foreach (['delete-ak', 'delete-second', 'delete-names'] as $acceptKey) {
+            SourceInterestRegistry::releaseConsumer(SourceConsumer::page($acceptKey));
+        }
+        ExecutionContext::setCurrentAgentId(null);
+        ExecutionContext::setCurrentAcceptKey(null);
         RtTruthSourceRegistry::unregisterAgent($this->agent->getId());
         $this->clearFixtures();
         TruthSourceRegistry::unregisterAgent($this->agent->getId());
@@ -296,34 +307,65 @@ final class I18nCountryDeleteTest extends IntegrationTestCase
     {
         $this->createFixture();
         $this->registerAdmin();
-        Hilos::$rt->connections->actions->register(
-            'delete-second', Hilos::$rt->connections['delete-ak']->userId,
-            Hilos::$rt->connections['delete-ak']->sessionToken, Hilos::$rt->connections['delete-ak']->sessionId,
-        );
+        $this->registerSameAdmin('delete-second');
+        $this->registerSameAdmin('delete-names');
+        $countryId = Hilos::$db->countries['qx']->id;
         foreach (['delete-ak', 'delete-second'] as $acceptKey) {
             $this->subscribe($acceptKey, 'qx');
             $cards = $this->drainCardResponses();
             self::assertCount(1, $cards);
             self::assertSame('qx', $this->cardOf($cards[0])['code']);
+            $this->assertBoundCountry($acceptKey, $countryId);
         }
-        $countryId = Hilos::$db->countries['qx']->id;
-        $this->remove('card', 'qx');
-        Hilos::$browser->record(SourceChange::dbDeleted(
-            HilosDbContext::countries, (string) $countryId, [ObjectCountry::code => 'qx'],
-        ));
+        $this->subscribe('delete-names', 'qx', CountryNamesPage::class);
+        $names = $this->drainCardResponses();
+        self::assertCount(1, $names);
+        self::assertSame('qx', $this->cardOf($names[0])['code']);
+        $this->assertBoundCountry('delete-names', $countryId);
+
+        $action = HilosSignalConstants::HILOS_I18N_COUNTRY_DELETE;
+        $this->worker->deliver(
+            SignalTypeConstants::ACTION,
+            new WebSocketActionSignalDTO('delete-ak', $action, ['countryId' => $countryId], 'delete-tracked'),
+            $action,
+        );
+        $this->worker->recordCommittedSync();
         self::assertSame([], Hilos::$browser->flushToSignalRouter());
-        $cards = $this->drainCardResponses();
-        self::assertCount(2, $cards);
-        foreach ($cards as $card) {
-            self::assertSame([], $this->cardOf($card));
-        }
+        self::assertNull(Hilos::$db->countries[$countryId]);
+
+        $byKey = $this->drainByAcceptKey();
+        $success = $this->soleSuccess($byKey['delete-ak'] ?? []);
+        self::assertSame('delete-tracked', $success->requestId);
+        self::assertSame('Country qx deleted.', $success->message);
+        self::assertNull($success->reply);
+        self::assertNull(Hilos::$sr?->pageResource('delete-ak'));
+        self::assertFalse(Hilos::$sr?->hasPageDeliveryFailure('delete-ak'));
+        $this->assertLiveDeletion($byKey['delete-second'] ?? [], CountryDetailPage::PAGE);
+        $this->assertLiveDeletion($byKey['delete-names'] ?? [], CountryNamesPage::PAGE);
+        self::assertNull(Hilos::$sr?->pageResource('delete-second'));
+        self::assertNull(Hilos::$sr?->pageResource('delete-names'));
+        self::assertTrue(Hilos::$sr?->hasPageDeliveryFailure('delete-second'));
+        self::assertTrue(Hilos::$sr?->hasPageDeliveryFailure('delete-names'));
+
+        $this->subscribe('delete-second', 'qx');
+        $resent = $this->drainByAcceptKey()['delete-second'] ?? [];
+        self::assertSame([], $this->framesNamed($resent, SignalTypeConstants::PAGE_RESPONSE));
+        $errors = $this->framesNamed($resent, SignalConstants::SUBSCRIPTION_PAGE_ERROR);
+        self::assertCount(1, $errors);
+        self::assertInstanceOf(WebSocketSignalData::class, $errors[0]->data);
+        self::assertInstanceOf(PageSubscriptionErrorSignalData::class, $errors[0]->data->data);
+        $this->assertPlainNotFound($errors[0]->data->data, CountryDetailPage::PAGE);
     }
 
     /** @throws HilosException When the fixture or removal raises an unexpected failure */
     public function testLateForeignKeyReferenceSurvivesAndDoesNotEvictTheCountry(): void
     {
         $this->createFixture();
+        $this->registerAdmin();
+        $this->subscribe('delete-ak', 'qx');
+        self::assertCount(1, $this->drainCardResponses());
         $cached = Hilos::$db->countries['qx'];
+        $this->assertBoundCountry('delete-ak', $cached->id);
         $late = I18nCountryDeleteLateReference::fromEntity(EntityCountry::get([EntityCountry::id => $cached->id])->first());
         $view = new Country($late);
         $view->setCollection(Hilos::$db->countries);
@@ -340,6 +382,47 @@ final class I18nCountryDeleteTest extends IntegrationTestCase
         self::assertSame(1, EntityCountry::count([EntityCountry::id => $cached->id]));
         self::assertSame('Late reference', Hilos::$db->countryNames->findBase($cached->id, Hilos::$db->languages['en']->id)->name);
         self::assertSame(1, EntityCountryName::count([EntityCountryName::country_id => $cached->id]));
+        $this->worker->recordCommittedSync();
+        self::assertSame([], Hilos::$browser->flushToSignalRouter());
+        self::assertSame(
+            [],
+            $this->framesNamed($this->drainByAcceptKey()['delete-ak'] ?? [], SignalConstants::SUBSCRIPTION_PAGE_ERROR),
+        );
+        $this->assertBoundCountry('delete-ak', $cached->id);
+    }
+
+    /** @throws HilosException When a recreated country is refused for the row it replaced */
+    public function testARecreatedCountryDoesNotReceiveTheOldDelete(): void
+    {
+        $this->createFixture();
+        $this->registerAdmin();
+        $oldId = Hilos::$db->countries['qx']->id;
+        $this->subscribe('delete-ak', 'qx');
+        self::assertCount(1, $this->drainCardResponses());
+        $this->assertBoundCountry('delete-ak', $oldId);
+
+        $this->underAgent($this->agent, static function (): void {
+            Hilos::$db->countries['qx']->actions->delete();
+            Hilos::$db->countries->actions->create('qx', '¤', 'XQX');
+        });
+        $newId = Hilos::$db->countries['qx']->id;
+        self::assertNotSame($oldId, $newId);
+        $this->registerSameAdmin('delete-second');
+        $this->subscribe('delete-second', 'qx');
+        $this->worker->recordCommittedSync();
+        self::assertSame([], Hilos::$browser->flushToSignalRouter());
+
+        $byKey = $this->drainByAcceptKey();
+        $this->assertLiveDeletion($byKey['delete-ak'] ?? [], CountryDetailPage::PAGE);
+        self::assertNull(Hilos::$sr?->pageResource('delete-ak'));
+        $recreated = $byKey['delete-second'] ?? [];
+        self::assertSame([], $this->framesNamed($recreated, SignalConstants::SUBSCRIPTION_PAGE_ERROR));
+        $this->assertBoundCountry('delete-second', $newId);
+        $responses = $this->framesNamed($recreated, SignalTypeConstants::PAGE_RESPONSE);
+        self::assertNotEmpty($responses);
+        self::assertInstanceOf(WebSocketSignalData::class, $responses[0]->data);
+        self::assertInstanceOf(PageResponseSignalData::class, $responses[0]->data->data);
+        self::assertSame('qx', $this->cardOf($responses[0]->data->data)['code']);
     }
 
     /**
@@ -442,6 +525,17 @@ final class I18nCountryDeleteTest extends IntegrationTestCase
         Hilos::$rt->connections->actions->register('delete-ak', $admin->id, $session->token, $session->id);
     }
 
+    /** @throws HilosException When the second connection cannot join the administrator's session */
+    private function registerSameAdmin(string $acceptKey): void
+    {
+        Hilos::$rt->connections->actions->register(
+            $acceptKey,
+            Hilos::$rt->connections['delete-ak']->userId,
+            Hilos::$rt->connections['delete-ak']->sessionToken,
+            Hilos::$rt->connections['delete-ak']->sessionId,
+        );
+    }
+
     /**
      * @param bool $fromList Whether the request comes from the list
      * @return string Page-owned action name
@@ -479,18 +573,113 @@ final class I18nCountryDeleteTest extends IntegrationTestCase
     /**
      * @param string $acceptKey Subscribing connection
      * @param string $code Country route address
+     * @param class-string<CountryDetailPage|CountryNamesPage> $pageClass Page class to subscribe to
      * @throws HilosException When subscription setup or its response fails
      */
-    private function subscribe(string $acceptKey, string $code): void
-    {
-        $params = ['countryCode' => $code];
-        Hilos::$sr->subscribeToPage(
-            CountryDetailPage::PAGE,
-            new WebSocketPageSubscribeSignalDTO($acceptKey, CountryDetailPage::PAGE, $params),
+    private function subscribe(
+        string $acceptKey,
+        string $code,
+        string $pageClass = CountryDetailPage::class,
+    ): void {
+        $this->worker->deliver(
+            SignalTypeConstants::PAGE_SUBSCRIBE,
+            new WebSocketPageSubscribeSignalDTO($acceptKey, $pageClass::PAGE, ['countryCode' => $code]),
+            $pageClass::PAGE,
         );
-        ExecutionContext::run(new ExecutionFrame(acceptKey: $acceptKey), function () use ($acceptKey, $params): void {
-            new CountryDetailPage($this->agent)->onSubscribe($acceptKey, new PageRouteParams($params));
-        });
+    }
+
+    /**
+     * @param string $acceptKey Connection whose answer named the country
+     * @param int|string $countryId Primary id that answer bound
+     */
+    private function assertBoundCountry(string $acceptKey, int|string $countryId): void
+    {
+        $resource = Hilos::$sr?->pageResource($acceptKey);
+        self::assertNotNull($resource);
+        self::assertSame(HilosDbContext::countries, $resource->collectionKey);
+        self::assertSame((string) $countryId, $resource->idString);
+    }
+
+    /**
+     * @return array<string, list<SignalDTO>> Frames addressed to a connection, in queue order
+     */
+    private function drainByAcceptKey(): array
+    {
+        $byKey = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if (!$signal->data instanceof WebSocketSignalData || $signal->data->targetAcceptKey === null) {
+                continue;
+            }
+            $byKey[$signal->data->targetAcceptKey][] = $signal;
+        }
+
+        return $byKey;
+    }
+
+    /**
+     * @param list<SignalDTO> $signals Frames addressed to one connection
+     * @param string $name Signal name to keep
+     * @return list<SignalDTO> Frames of that name, in the order they were queued
+     */
+    private function framesNamed(array $signals, string $name): array
+    {
+        return array_values(array_filter(
+            $signals,
+            static fn (SignalDTO $signal): bool => $signal->signalName->getName() === $name,
+        ));
+    }
+
+    /**
+     * @param list<SignalDTO> $signals Frames addressed to the initiator
+     * @return PageActionSuccessSignalData The one tracked acknowledgement
+     */
+    private function soleSuccess(array $signals): PageActionSuccessSignalData
+    {
+        self::assertCount(1, $signals);
+        self::assertSame(SignalConstants::ACTION_SUCCESS, $signals[0]->signalName->getName());
+        self::assertInstanceOf(WebSocketSignalData::class, $signals[0]->data);
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $signals[0]->data->data);
+
+        return $signals[0]->data->data;
+    }
+
+    /**
+     * @param list<SignalDTO> $signals Frames addressed to one connection
+     * @param string $page Page the refusal names
+     */
+    private function assertLiveDeletion(array $signals, string $page): void
+    {
+        self::assertCount(1, $signals);
+        self::assertSame(SignalConstants::SUBSCRIPTION_PAGE_ERROR, $signals[0]->signalName->getName());
+        self::assertInstanceOf(WebSocketSignalData::class, $signals[0]->data);
+        self::assertInstanceOf(PageSubscriptionErrorSignalData::class, $signals[0]->data->data);
+        $missing = new PageResourceNotFoundException();
+        $text = PageErrorMessages::forStatus($missing->httpCode);
+        self::assertSame([
+            'page' => $page,
+            'httpCode' => $missing->httpCode,
+            'errorCode' => $missing->errorCode,
+            'title' => $text->title,
+            'message' => $text->message,
+            PageSubscriptionErrorSignalData::transitionMessage => PageErrorMessages::RESOURCE_DELETED_MESSAGE,
+        ], $signals[0]->data->data->toArray());
+    }
+
+    /**
+     * @param PageSubscriptionErrorSignalData $error Refusal of a subscribe to a missing country
+     * @param string $page Page the refusal names
+     */
+    private function assertPlainNotFound(PageSubscriptionErrorSignalData $error, string $page): void
+    {
+        $missing = new PageResourceNotFoundException();
+        $text = PageErrorMessages::forStatus($missing->httpCode);
+        self::assertSame([
+            'page' => $page,
+            'httpCode' => $missing->httpCode,
+            'errorCode' => $missing->errorCode,
+            'title' => $text->title,
+            'message' => $text->message,
+        ], $error->toArray());
     }
 
     /** @throws HilosException When fixture cleanup or cache hydration fails */

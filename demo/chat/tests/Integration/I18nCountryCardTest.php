@@ -10,14 +10,19 @@ use Demo\Chat\Pages\Hilos\I18n\Details\CountryNamesPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Execution\ExecutionContext;
-use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\PageRouteParams;
-use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
+use Hilos\Core\Page\Exception\PageResourceNotFoundException;
+use Hilos\Core\Page\PageErrorMessages;
+use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
@@ -37,17 +42,19 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 /** The country card reads its name, default locale and deletion verdict from persisted rows. */
 final class I18nCountryCardTest extends IntegrationTestCase
 {
+    private I18nCountryServingWorker $worker;
     private I18nLibraryAgent $agent;
     private string|false $previousDefaultLanguage;
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->worker = new I18nCountryServingWorker();
+        $this->agent = $this->worker->library();
         Hilos::initBrowser();
-        Hilos::$sr = new SignalRouter();
+        Hilos::$browser->bindPageResender($this->worker);
         $this->previousDefaultLanguage = getenv(EnvConstants::HILOS_DEFAULT_LANGUAGE->name);
         putenv(EnvConstants::HILOS_DEFAULT_LANGUAGE->name . '=en');
-        $this->agent = new I18nLibraryAgent();
         foreach ([
             HilosDbContext::languages,
             HilosDbContext::countries,
@@ -65,6 +72,11 @@ final class I18nCountryCardTest extends IntegrationTestCase
     protected function tearDown(): void
     {
         Hilos::$rt->connections->actions->clear();
+        foreach (['card-one', 'card-two', 'card-viewer', 'card-detail', 'card-names'] as $acceptKey) {
+            SourceInterestRegistry::releaseConsumer(SourceConsumer::page($acceptKey));
+        }
+        ExecutionContext::setCurrentAgentId(null);
+        ExecutionContext::setCurrentAcceptKey(null);
         RtTruthSourceRegistry::unregisterAgent($this->agent->getId());
         $this->clearFixtures();
         TruthSourceRegistry::unregisterAgent($this->agent->getId());
@@ -218,11 +230,13 @@ final class I18nCountryCardTest extends IntegrationTestCase
             Hilos::$db->languages->actions->create('en', 'English', false);
             Hilos::$db->countries->actions->create('qx', '¤', 'XQX');
         });
+        $countryId = Hilos::$db->countries['qx']->id;
         foreach (['card-one', 'card-two'] as $acceptKey) {
             $this->subscribe($acceptKey, 'qx');
             $responses = $this->drainCardResponses();
             self::assertCount(1, $responses);
             self::assertSame('XQX', $this->cardOf($responses[0])['currencyCode']);
+            $this->assertBoundCountry($acceptKey, $countryId);
         }
 
         $country = Hilos::$db->countries['qx'];
@@ -352,19 +366,39 @@ final class I18nCountryCardTest extends IntegrationTestCase
         self::assertSame([], Hilos::$browser->flushToSignalRouter());
         $this->assertCardsForBoth(['summary' => ['name' => null, 'canDelete' => true, 'deleteReason' => null]]);
 
-        $this->underAgent($this->agent, static function (): void {
-            Hilos::$db->countries['qx']->actions->delete();
-        });
-        Hilos::$browser->record(SourceChange::dbDeleted(
-            HilosDbContext::countries,
-            (string)$country->id,
-            [EntityCountry::id => $country->id, EntityCountry::code => 'qx'],
-        ));
-        self::assertSame([], Hilos::$browser->flushToSignalRouter());
-        $responses = $this->drainCardResponses();
-        self::assertCount(2, $responses);
-        foreach ($responses as $response) {
-            self::assertSame([], $this->cardOf($response));
+        $viewer = Hilos::$db->users->actions->createWithName('Country disappearance viewer');
+        $viewerSession = Hilos::$db->sessions->actions->createAnonymous(substr(hash('sha256', __METHOD__ . 'viewer'), 0, 32));
+        $viewerSession->actions->bindUser((int) $viewer->id);
+        Hilos::$rt->connections->actions->register(
+            'card-viewer',
+            (int) $viewer->id,
+            $viewerSession->token,
+            (int) $viewerSession->id,
+        );
+        RtTruthSourceRegistry::registerDaemon(AdminViewModeRuntime::RT_ITEM);
+        Hilos::$rt->hilosAdminViewModeRuntime?->actions->set(true);
+        try {
+            $this->subscribe('card-viewer', 'qx');
+            $opened = $this->drainCardResponses();
+            self::assertCount(1, $opened);
+            self::assertSame('qx', $this->cardOf($opened[0])['code']);
+            $this->assertBoundCountry('card-viewer', $country->id);
+
+            $this->underAgent($this->agent, static function (): void {
+                Hilos::$db->countries['qx']->actions->delete();
+            });
+            $this->worker->recordCommittedSync();
+            self::assertSame([], Hilos::$browser->flushToSignalRouter());
+            $byKey = $this->drainByAcceptKey();
+            $this->assertLiveDeletion($byKey['card-one'] ?? [], CountryDetailPage::PAGE);
+            $this->assertLiveDeletion($byKey['card-two'] ?? [], CountryDetailPage::PAGE);
+            $this->assertLiveDeletion($byKey['card-viewer'] ?? [], CountryDetailPage::PAGE);
+            self::assertNull(Hilos::$sr?->pageResource('card-one'));
+            self::assertNull(Hilos::$sr?->pageResource('card-two'));
+            self::assertNull(Hilos::$sr?->pageResource('card-viewer'));
+        } finally {
+            Hilos::$rt->hilosAdminViewModeRuntime?->actions->set(false);
+            RtTruthSourceRegistry::unregisterDaemon(AdminViewModeRuntime::RT_ITEM);
         }
     }
 
@@ -428,15 +462,18 @@ final class I18nCountryCardTest extends IntegrationTestCase
             Hilos::$db->countries->actions->create('qx', '¤', 'XQX');
         });
 
+        $countryId = Hilos::$db->countries['qx']->id;
         $this->subscribe('card-detail', 'qx', CountryDetailPage::class);
         $detailResponses = $this->drainCardResponses();
         self::assertCount(1, $detailResponses);
         $detailCard = $this->cardOf($detailResponses[0]);
+        $this->assertBoundCountry('card-detail', $countryId);
 
         $this->subscribe('card-names', 'qx', CountryNamesPage::class);
         $namesResponses = $this->drainCardResponses();
         self::assertCount(1, $namesResponses);
         $namesCard = $this->cardOf($namesResponses[0]);
+        $this->assertBoundCountry('card-names', $countryId);
 
         self::assertSame($detailCard, $namesCard);
         self::assertSame('XQX', $namesCard['currencyCode']);
@@ -474,17 +511,13 @@ final class I18nCountryCardTest extends IntegrationTestCase
             $name->actions->delete();
             $country->actions->delete();
         });
-        Hilos::$browser->record(SourceChange::dbDeleted(
-            HilosDbContext::countries,
-            (string)$country->id,
-            [EntityCountry::id => $country->id, EntityCountry::code => 'qx'],
-        ));
+        $this->worker->recordCommittedSync();
         self::assertSame([], Hilos::$browser->flushToSignalRouter());
-        $responses = $this->drainCardResponses();
-        self::assertCount(2, $responses);
-        foreach ($responses as $response) {
-            self::assertSame([], $this->cardOf($response));
-        }
+        $byKey = $this->drainByAcceptKey();
+        $this->assertLiveDeletion($byKey['card-detail'] ?? [], CountryDetailPage::PAGE);
+        $this->assertLiveDeletion($byKey['card-names'] ?? [], CountryNamesPage::PAGE);
+        self::assertNull(Hilos::$sr?->pageResource('card-detail'));
+        self::assertNull(Hilos::$sr?->pageResource('card-names'));
     }
 
     /**
@@ -497,14 +530,61 @@ final class I18nCountryCardTest extends IntegrationTestCase
         string $code,
         string $pageClass = CountryDetailPage::class,
     ): void {
-        $params = ['countryCode' => $code];
-        Hilos::$sr->subscribeToPage(
+        $this->worker->deliver(
+            SignalTypeConstants::PAGE_SUBSCRIBE,
+            new WebSocketPageSubscribeSignalDTO($acceptKey, $pageClass::PAGE, ['countryCode' => $code]),
             $pageClass::PAGE,
-            new WebSocketPageSubscribeSignalDTO($acceptKey, $pageClass::PAGE, $params),
         );
-        ExecutionContext::run(new ExecutionFrame(acceptKey: $acceptKey), function () use ($acceptKey, $params, $pageClass): void {
-            new $pageClass($this->agent)->onSubscribe($acceptKey, new PageRouteParams($params));
-        });
+    }
+
+    /**
+     * @param string $acceptKey Connection whose answer named the country
+     * @param int|string $countryId Primary id that answer bound
+     */
+    private function assertBoundCountry(string $acceptKey, int|string $countryId): void
+    {
+        $resource = Hilos::$sr?->pageResource($acceptKey);
+        self::assertNotNull($resource);
+        self::assertSame(HilosDbContext::countries, $resource->collectionKey);
+        self::assertSame((string) $countryId, $resource->idString);
+    }
+
+    /**
+     * @return array<string, list<SignalDTO>> Frames addressed to a connection, in queue order
+     */
+    private function drainByAcceptKey(): array
+    {
+        $byKey = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if (!$signal->data instanceof WebSocketSignalData || $signal->data->targetAcceptKey === null) {
+                continue;
+            }
+            $byKey[$signal->data->targetAcceptKey][] = $signal;
+        }
+
+        return $byKey;
+    }
+
+    /**
+     * @param list<SignalDTO> $signals Frames addressed to one connection
+     * @param string $page Page the refusal names
+     */
+    private function assertLiveDeletion(array $signals, string $page): void
+    {
+        self::assertCount(1, $signals);
+        self::assertSame(SignalConstants::SUBSCRIPTION_PAGE_ERROR, $signals[0]->signalName->getName());
+        self::assertInstanceOf(WebSocketSignalData::class, $signals[0]->data);
+        self::assertInstanceOf(PageSubscriptionErrorSignalData::class, $signals[0]->data->data);
+        $missing = new PageResourceNotFoundException();
+        $text = PageErrorMessages::forStatus($missing->httpCode);
+        self::assertSame([
+            'page' => $page,
+            'httpCode' => $missing->httpCode,
+            'errorCode' => $missing->errorCode,
+            'title' => $text->title,
+            'message' => $text->message,
+            PageSubscriptionErrorSignalData::transitionMessage => PageErrorMessages::RESOURCE_DELETED_MESSAGE,
+        ], $signals[0]->data->data->toArray());
     }
 
     /** @return list<PageResponseSignalData> Responses queued since the last call */

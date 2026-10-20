@@ -549,6 +549,9 @@ final class DeliveryErrorRecordingResender implements PageResender
     /** @var list<array{0: string, 1: string, 2: array<string, mixed>}> Page, connection and params of each re-send asked for */
     public array $calls = [];
 
+    /** @var list<array{0: string, 1: string}> Page and connection of each deletion refusal asked for */
+    public array $deletions = [];
+
     /**
      * @param PageResendOutcome $outcome What every re-send comes back with
      */
@@ -580,6 +583,20 @@ final class DeliveryErrorRecordingResender implements PageResender
         }
 
         return $this->outcome;
+    }
+
+    /**
+     * The deletion port is not this double. It forms no refusal frame of its own.
+     *
+     * @param string $page Page the subscription stands on
+     * @param string $acceptKey Connection the refusal would be addressed to
+     * @return PageResendOutcome Unserved, because this double does not refuse a deleted row
+     */
+    public function refuseDeletedResource(string $page, string $acceptKey): PageResendOutcome
+    {
+        $this->deletions[] = [$page, $acceptKey];
+
+        return PageResendOutcome::Unserved;
     }
 }
 

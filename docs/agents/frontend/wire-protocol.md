@@ -265,6 +265,13 @@ and daemon producers use that same catalog. The frontend renders those fields;
 message remains a journal diagnostic, even if it names keys, ids or collections;
 the page catalog does not publish it through the action marker.
 
+The same frame may carry an optional `transitionMessage`: a non-empty phrase
+the server has already written. `PageSubscriptionErrorSignalData::toArray()`
+writes the key only when the value is not null, so an ordinary refusal has no
+key. A fresh subscribe and F5 are that ordinary refusal and omit it. The
+client displays the phrase it received and does not assemble one from
+`httpCode` or `errorCode`.
+
 For auth replies, the server's `AuthMessages` supplies a default only when no
 explicit message was given. Preserve a received message through the selected
 step and its replay. Where a reply or pending auth step declares a required
@@ -432,6 +439,12 @@ and then taken away again by a denial still in flight. A subscription that is
 refused answers with `subscription_page_error` instead, and the client waits on
 that the same way; a page that answered neither would leave the client with
 nothing to wait for.
+
+When that refusal is a row deleted while the page was open, the same
+`subscription_page_error` may carry `transitionMessage`, a non-empty server
+phrase. `PageSubscriptionErrorSignalData::toArray()` omits the key when the
+phrase is null. An ordinary refusal, a fresh subscribe and F5 omit the key.
+The client does not assemble the phrase from the status or the error code.
 
 **A frame a page sends under its own name before `page_response` is held for the
 view that was not there yet.** The view is mounted only after the answer

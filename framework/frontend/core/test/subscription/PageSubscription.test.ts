@@ -871,6 +871,75 @@ describe('PageSubscription', () => {
     expect(pages.pageError.get()?.message).toBe('Server chose this description')
   })
 
+  it('keeps a server transition line, then lets the initiator move on', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    const pages = new PageSubscription(connection, scopes)
+    pages.releaseOnSession()
+    pages.subscribe('hilos_i18n_country', { id: '7' })
+    pages.ingestPageResponse('hilos_i18n_country', { data: { name: 'France' } })
+    const forgotten = connection.forgotPageFrames
+
+    const recorded = pages.handleSubscriptionError({
+      page: 'hilos_i18n_country',
+      httpCode: 404,
+      errorCode: 'not_found',
+      title: 'Page Not Found',
+      message: 'The page you are looking for does not exist.',
+      transitionMessage: 'It was deleted just now.',
+    })
+
+    expect(recorded).toBe(true)
+    expect(pages.pageError.get()?.transitionMessage).toBe(
+      'It was deleted just now.',
+    )
+    expect(pages.pageKey()).toBe('hilos_i18n_country')
+    expect(scopes.page()?.data.signal('name').get()).toBeUndefined()
+    expect(connection.forgotPageFrames).toBe(forgotten + 1)
+    expect(
+      pages.handleSubscriptionError({
+        page: 'hilos_i18n_country_names',
+        httpCode: 404,
+        errorCode: 'not_found',
+        title: 'Page Not Found',
+        message: 'The page you are looking for does not exist.',
+        transitionMessage: 'Late for another page.',
+      }),
+    ).toBe(false)
+    expect(pages.pageError.get()?.transitionMessage).toBe(
+      'It was deleted just now.',
+    )
+
+    pages.subscribe('main')
+    expect(pages.pageKey()).toBe('main')
+    expect(pages.pageError.get()).toBeNull()
+    expect(
+      pages.handleSubscriptionError({
+        page: 'hilos_i18n_country',
+        httpCode: 404,
+        errorCode: 'not_found',
+        title: 'Page Not Found',
+        message: 'The page you are looking for does not exist.',
+        transitionMessage: 'It was deleted just now.',
+      }),
+    ).toBe(false)
+    expect(pages.pageError.get()).toBeNull()
+
+    pages.handleSubscriptionError({
+      page: 'main',
+      httpCode: 404,
+      errorCode: 'not_found',
+      title: 'Page Not Found',
+      message: 'The page you are looking for does not exist.',
+      transitionMessage: 'It was deleted just now.',
+    })
+    const applied = pages.ingestPageResponse('main', {
+      data: { title: 'Home' },
+    })
+    expect(applied).toBe(true)
+    expect(pages.pageError.get()).toBeNull()
+  })
+
   it('drops a subscription error for a page the client has left', () => {
     const pages = new PageSubscription(fakeConnection(), new ScopeManager())
     pages.subscribe('user', { id: '9' })

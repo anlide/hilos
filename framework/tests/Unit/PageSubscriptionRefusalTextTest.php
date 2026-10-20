@@ -72,6 +72,9 @@ final class PageSubscriptionRefusalTextTest extends TestCase
         $this->assertSame('Authentication is required.', $frame->message);
         $this->assertSame(401, $frame->httpCode);
         $this->assertSame('unauthorized', $frame->errorCode);
+        $this->assertNull($frame->transitionMessage);
+        $this->assertArrayNotHasKey('transitionMessage', $frame->toArray());
+        $this->assertStringNotContainsString('Authentication required', $frame->toJson());
     }
 
     public function testTheRefusedWordsStayInTheJournal(): void
@@ -135,6 +138,10 @@ final class PageSubscriptionRefusalTextTest extends TestCase
         $this->assertSame(PageErrorCode::NOT_SERVED, $frame->errorCode);
         $this->assertSame('Page Not Found', $frame->title);
         $this->assertSame('The page you are looking for does not exist.', $frame->message);
+        $this->assertNull($frame->transitionMessage);
+        $this->assertArrayNotHasKey('transitionMessage', $frame->toArray());
+        $this->assertStringNotContainsString('Unknown page', $frame->toJson());
+        $this->assertStringNotContainsString('Page not found:', $frame->toJson());
     }
 
     public function testTheFamilyDoorIsShutForSubscriptionExceptions(): void

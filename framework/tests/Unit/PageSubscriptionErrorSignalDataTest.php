@@ -14,6 +14,7 @@ use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\Exception\PageUnauthorizedException;
+use Hilos\Core\Page\PageErrorMessages;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -40,6 +41,11 @@ final class PageSubscriptionErrorSignalDataTest extends TestCase
         $this->assertSame('not_found', $data->errorCode);
         $this->assertSame('A server title', $data->title);
         $this->assertSame('A server description', $data->message);
+        $this->assertNull($data->transitionMessage);
+        $this->assertArrayNotHasKey(
+            PageSubscriptionErrorSignalData::transitionMessage,
+            $data->toArray(),
+        );
         $this->assertSame($data->toArray(), PageSubscriptionErrorSignalData::fromArray($data->toArray())->toArray());
         $this->assertSame($data->toArray(), PageSubscriptionErrorSignalData::fromJson($data->toJson())->toArray());
     }
@@ -62,6 +68,94 @@ final class PageSubscriptionErrorSignalDataTest extends TestCase
 
         $this->expectException(InvalidFormatException::class);
         PageSubscriptionErrorSignalData::fromArray($payload);
+    }
+
+    /**
+     * An arbitrary deletion line survives the wire, and a 404 without one does not grow the key.
+     */
+    public function testTransitionMessageRoundTripsOnlyWhenTheCallerPassesIt(): void
+    {
+        $this->assertSame('It was deleted just now.', PageErrorMessages::RESOURCE_DELETED_MESSAGE);
+
+        $ordinary = PageSubscriptionErrorSignalData::forStatus('hilos_i18n_country', 404, 'not_found');
+        $this->assertNull($ordinary->transitionMessage);
+        $this->assertArrayNotHasKey(PageSubscriptionErrorSignalData::transitionMessage, $ordinary->toArray());
+
+        $phrase = 'Moved on purpose.';
+        $data = new PageSubscriptionErrorSignalData(
+            page: 'test_page',
+            httpCode: 404,
+            errorCode: 'not_found',
+            title: 'A server title',
+            message: 'A server description',
+            transitionMessage: $phrase,
+        );
+        $this->assertSame($phrase, $data->transitionMessage);
+        $this->assertSame($data->toArray(), PageSubscriptionErrorSignalData::fromArray($data->toArray())->toArray());
+        $this->assertSame($data->toArray(), PageSubscriptionErrorSignalData::fromJson($data->toJson())->toArray());
+
+        $live = PageSubscriptionErrorSignalData::forStatus(
+            'hilos_i18n_country',
+            404,
+            'not_found',
+            PageErrorMessages::RESOURCE_DELETED_MESSAGE,
+        );
+        $this->assertSame([
+            'page' => 'hilos_i18n_country',
+            'httpCode' => 404,
+            'errorCode' => 'not_found',
+            'title' => 'Page Not Found',
+            'message' => 'The page you are looking for does not exist.',
+            'transitionMessage' => 'It was deleted just now.',
+        ], $live->toArray());
+        $names = PageSubscriptionErrorSignalData::forStatus(
+            'hilos_i18n_country_names',
+            404,
+            'not_found',
+            PageErrorMessages::RESOURCE_DELETED_MESSAGE,
+        );
+        $this->assertSame('It was deleted just now.', $names->toArray()['transitionMessage']);
+    }
+
+    /**
+     * A missing deletion line is a normal refusal, not a broken payload.
+     */
+    public function testTransitionMessageMayBeAbsent(): void
+    {
+        $data = PageSubscriptionErrorSignalData::fromArray([
+            'page' => 'test_page',
+            'httpCode' => 404,
+            'errorCode' => 'not_found',
+            'title' => 'Server title',
+            'message' => 'Server description',
+        ]);
+
+        $this->assertNull($data->transitionMessage);
+        $this->assertArrayNotHasKey(PageSubscriptionErrorSignalData::transitionMessage, $data->toArray());
+    }
+
+    #[DataProvider('malformedTransitionMessage')]
+    public function testRejectsMalformedTransitionMessage(mixed $value): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        PageSubscriptionErrorSignalData::fromArray([
+            'page' => 'test_page',
+            'httpCode' => 404,
+            'errorCode' => 'not_found',
+            'title' => 'Server title',
+            'message' => 'Server description',
+            PageSubscriptionErrorSignalData::transitionMessage => $value,
+        ]);
+    }
+
+    /** @return iterable<string, array{mixed}> Present null, mistyped and empty deletion lines */
+    public static function malformedTransitionMessage(): iterable
+    {
+        yield 'null' => [null];
+        yield 'integer' => [404];
+        yield 'boolean' => [false];
+        yield 'array' => [[]];
+        yield 'empty' => [''];
     }
 
     /** @return iterable<string, array{string, bool, mixed}> Missing, mistyped and empty public text */

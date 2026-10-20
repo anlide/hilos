@@ -1,10 +1,13 @@
 import { expect, test, type Page } from '@playwright/test'
 import {
   dismissToasts,
+  expectDeletedCountryCard,
+  expectDeletedCountryCardReloaded,
   i18nLocaleRow,
   settleRemovedRow,
   shownByTestId,
   sidewaysOverflow,
+  watchPageErrorFrames,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import { gotoPage, PAGE_READY } from '../helpers/page.js'
@@ -53,6 +56,7 @@ test('deletes a custom country from the list and updates a second subscribed car
   await expect(opener).toHaveAccessibleName('Delete country QX')
 
   const other = await context.newPage()
+  const frames = watchPageErrorFrames(other)
   await gotoPage(other, '/hilos/i18n/countries/qx', PAGE_READY)
   await expect(other.getByTestId('country-card-code')).toHaveText('qx')
 
@@ -72,10 +76,16 @@ test('deletes a custom country from the list and updates a second subscribed car
     'Country qx deleted.',
   )
   await expect(page).toHaveURL(/\/hilos\/i18n\/countries$/)
-  await expect(other.getByTestId('country-card-unavailable')).toHaveText(
-    'Country details are no longer available.',
+  await expectDeletedCountryCard(expect, other, frames, 'qx')
+  const loggedBeforeReload = frames.length
+  await other.reload()
+  await expectDeletedCountryCardReloaded(
+    expect,
+    other,
+    frames,
+    'qx',
+    loggedBeforeReload,
   )
-  await expect(other.getByTestId('country-card-main')).toHaveCount(0)
 
   // The ordinary table removal gate may leave Apply, then a placeholder or an empty window.
   await dismissToasts(page)
@@ -85,10 +95,15 @@ test('deletes a custom country from the list and updates a second subscribed car
 
 test('deletes a custom country from State and returns to the list after success', async ({
   page,
+  context,
 }) => {
   await signUpAdmin(page)
   await addCountry(page, 'qy')
   await gotoPage(page, '/hilos/i18n/countries/qy', PAGE_READY)
+  const other = await context.newPage()
+  const frames = watchPageErrorFrames(other)
+  await gotoPage(other, '/hilos/i18n/countries/qy', PAGE_READY)
+  await expect(other.getByTestId('country-card-code')).toHaveText('qy')
   const open = page.getByTestId('country-card-delete')
   await clickSubmit(open)
   const confirm = page.getByTestId('i18n-country-delete-confirm')
@@ -98,6 +113,7 @@ test('deletes a custom country from State and returns to the list after success'
   await expect(page.getByTestId('hilos-toast-success')).toContainText(
     'Country qy deleted.',
   )
+  await expectDeletedCountryCard(expect, other, frames, 'qy')
   const search = page.getByTestId('hilos-table-search')
   await search.fill('')
   await search.pressSequentially('qy', { delay: 10 })
@@ -106,6 +122,7 @@ test('deletes a custom country from State and returns to the list after success'
       .getByTestId(/^hilos-table-row-/)
       .filter({ has: page.getByTestId('i18n-countries-link-qy') }),
   ).toHaveCount(0)
+  await other.close()
 })
 
 test('shows accessible blocked deletion for a custom country with a locale and a known country', async ({

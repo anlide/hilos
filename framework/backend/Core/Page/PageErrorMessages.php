@@ -9,6 +9,9 @@ use Hilos\Constants\HttpConstants;
 /** Public page-refusal wording, independent of exception diagnostics. */
 final class PageErrorMessages
 {
+    /** Ready line a live deletion may add under a 404. Ordinary refusals omit it. */
+    public const string RESOURCE_DELETED_MESSAGE = 'It was deleted just now.';
+
     /**
      * @param int $httpCode HTTP status of the refusal
      * @return PageErrorText Public wording, including the fallback for an unmapped status

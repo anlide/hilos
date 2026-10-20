@@ -20,6 +20,7 @@ use Hilos\Core\Group\GroupMembership;
 use Hilos\Core\Group\GroupNameMatch;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Page\Config\PageAgentIndexRoute;
+use Hilos\Core\Page\PageResource;
 use Hilos\Core\Router\Destination\AgentAddressedDestination;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\AllClientsDestination;
@@ -791,6 +792,38 @@ class SignalRouter
     public function bindPageAgent(string $acceptKey, string $page, string $agentType, ?string $agentIndex, ?string $agentNode = null): void
     {
         $this->subscriptions->bindPageAgent($acceptKey, $page, $agentType, $agentIndex, $agentNode);
+    }
+
+    /**
+     * Binds the DB row an open page is about, or clears it when the page names none.
+     *
+     * @param string $acceptKey Accept key identifier
+     * @param ?PageResource $resource Row the answer named, or null when the page names none
+     */
+    public function bindPageResource(string $acceptKey, ?PageResource $resource): void
+    {
+        $this->subscriptions->bindPageResource($acceptKey, $resource);
+    }
+
+    /**
+     * Returns the DB row an open page is about, or null when the page names none.
+     *
+     * @param string $acceptKey Accept key identifier
+     * @return ?PageResource Bound row, or null when this connection's page names none
+     */
+    public function pageResource(string $acceptKey): ?PageResource
+    {
+        return $this->subscriptions->pageResource($acceptKey);
+    }
+
+    /**
+     * Drops the DB row bound to a connection's open page.
+     *
+     * @param string $acceptKey Accept key identifier
+     */
+    public function clearPageResource(string $acceptKey): void
+    {
+        $this->subscriptions->clearPageResource($acceptKey);
     }
 
     /**

@@ -48,6 +48,59 @@ This worker-local fan-out prevents duplicate frontend broadcasts: a connection
 is served by one worker, and each worker targets only accept keys present in
 its local subscription mirror.
 
+Before grouping, that flush also refuses an open page whose row a raw DB
+delete or clear removed
+([A deleted row, before grouping](#a-deleted-row-before-grouping)).
+
+### A deleted row, before grouping
+
+`flushToSignalRouter()` matches deletions to open pages before it groups the
+buffer (`refuseDeletedPageResources()`). Grouping can fold a delete into a
+later create of the same id and hide it, so the refusal reads the raw facts
+first. The pass is another look at this buffer. It leaves the snapshot, the
+debt and the full answer below as they stand.
+
+The walk is the subscription mirror and each connection's page resource. A
+DB `Delete` matches the resource's collection and primary id (`sourceId`).
+A DB `Clear` matches the collection. The business code and the display name
+are not the id this pass compares. An RT fact matches nothing. A page with
+no resource link is not affected: it never answered, the row was already
+refused, or the connection has left.
+
+The connection that authored the delete is the one whose accept key equals
+the change's `origin` and whose `originRequestId` is non-empty. That
+connection is not sent a live 404, and the action acknowledgement already
+queued for it stays. `clearPageResource` drops its link, so a later fact
+about the old row does not find the page still bound to it. Another
+connection of the same account is not that author.
+
+A page that already owes a whole delivery is not sent the deletion line.
+The flush drops its link for the same reason and leaves the debt. Dropping
+the link means a later delete of that row does not skip the connection on
+every following flush. After this flush the full-page debt is still
+standing. A partial delta does not pay it. A later complete `page_response`
+can, as [What A Debt Is Paid With](#what-a-debt-is-paid-with) defines. A
+connection that is sent the refusal is told `subscription_page_error`.
+Whether that owes the page whole stays the rule in
+[What Is Owed](#what-is-owed). This flush does not pay it with a partial
+delta.
+
+Every connection the pass touched is skipped until the flush ends, including
+one whose port could not serve the page. For the rest of the flush they
+receive no browser delta, window, mutation, facet count, staleness move or
+debt probe. The skip is `skippedForDeletedResource`,
+memory of this one flush on this worker. Nothing else reads it, so it stays
+on the browser context rather than in a runtime collection, and the
+`finally` of `flushToSignalRouter()` drops it with the buffer. It is a
+different set from `setAsideThisFlush`.
+
+The frame is asked through `PageResender::refuseDeletedResource`. The
+production port is `WorkerManager`, which forms it on
+`PageSignalRouter::refuseDeletedResource`. What that refusal releases is in
+[page-access-control.md](page-access-control.md#a-refusal-releases-what-the-page-holds).
+The optional line is in
+[wire-protocol.md](../frontend/wire-protocol.md#page-subscriptions-01).
+
 ## Subscription Mirror
 
 The daemon still owns the global subscription registry for WebSocket routing.

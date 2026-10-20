@@ -872,6 +872,45 @@ abstract class WorkerManager extends BaseManager implements PageResender
     }
 
     /**
+     * Refuses one live subscription because the row it was about has just been deleted.
+     *
+     * The walk is the re-send's. The subscription mirror names the agent, that agent is
+     * already running in this worker, and the refusal runs under it and under the
+     * connection, synchronously. No agent is started for it and no other worker's registry
+     * is scanned. Unserved means this worker has no such owner. A failure to name the
+     * error frame is not reported as the deletion.
+     *
+     * @param string $page Page the subscription stands on
+     * @param string $acceptKey Connection the refusal is addressed to
+     * @return PageResendOutcome Refused when the frame was formed; Unserved when no agent of this worker serves it
+     * @throws InvalidArgumentException When the subscription-error signal cannot be named
+     * @throws FramePopOrderException When the page leaves the execution stack imbalanced
+     * @throws HilosException When the access gate cannot read standing or the administrator lookup
+     */
+    public function refuseDeletedResource(string $page, string $acceptKey): PageResendOutcome
+    {
+        $subscription = Hilos::$sr?->pageSubscription($acceptKey);
+        if ($subscription === null || $subscription->page !== $page || $subscription->agentType === null) {
+            return PageResendOutcome::Unserved;
+        }
+
+        $agentId = $this->agentManager->buildAgentId($subscription->agentType, $subscription->agentIndex);
+        $agent = $agentId === null ? null : $this->agentManager->getAgent($agentId);
+        if ($agentId === null || $agent === null) {
+            return PageResendOutcome::Unserved;
+        }
+
+        try {
+            return ExecutionContext::run(
+                new ExecutionFrame(agentId: $agentId, acceptKey: $acceptKey),
+                fn (): PageResendOutcome => $this->getPageSignalRouter($agentId, $agent)->refuseDeletedResource($page, $acceptKey),
+            );
+        } catch (PageSignalRouterNotFoundException) {
+            return PageResendOutcome::Unserved;
+        }
+    }
+
+    /**
      * Marks the daemon connection as registered and logs the worker session.
      *
      * @param WorkerRegisteredDTO $data Worker registration acknowledgement
@@ -1933,9 +1972,11 @@ abstract class WorkerManager extends BaseManager implements PageResender
                         $this->parkBehind($data, $pageConsumer);
                         break;
                     }
-                    // A real subscribe starts a new answer. Registration follows that answer and
-                    // must preserve any debt it sets, including one set later by a parked frame.
+                    // A real subscribe starts a new answer, including a same-page reconnect and a
+                    // parked frame admitted here. Registration follows that answer and must preserve
+                    // any debt it sets, and the row the answer binds. A silent resend is not this path.
                     Hilos::$sr?->clearPageDeliveryFailure($signalData->acceptKey);
+                    Hilos::$sr?->clearPageResource($signalData->acceptKey);
                     $agent->onSignalPageSubscribe($signalData, $source, $name);
                     $this->getPageSignalRouter($agentId, $agent)->dispatchPageSubscribe($signalData, $source, $name);
                     $this->rememberPageSubscriptionAfterSubscribe($signalData, $name, $agent);
@@ -2376,7 +2417,8 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * The write is unconditional, unlike the update's: a refused subscribe stays alive and
      * gets promoted into the real page the moment its guard starts passing, so the params
      * it was refused on are exactly the ones the next fan-out has to be judged by.
-     * Registration preserves any page or window debt set by the answer just dispatched.
+     * Registration preserves any page or window debt set by the answer just dispatched,
+     * and the DB row that answer bound. subscribeToPage() does not drop either.
      *
      * The agent that served the subscribe is written beside it - until HIL-1236 only the
      * master wrote it, into its own registry - because a page re-sent after a failed delivery

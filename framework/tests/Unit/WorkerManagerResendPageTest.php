@@ -37,15 +37,21 @@ use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Page\Exception\PageServiceUnavailableException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
+use Hilos\Core\Page\Exception\PageUnauthorizedException;
 use Hilos\Core\Page\PageAccessLevel;
+use Hilos\Core\Page\PageErrorMessages;
 use Hilos\Core\Page\PageResendOutcome;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalNameInterface;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\Router\SignalTypeInterface;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\Interest\SourceConsumer;
@@ -74,6 +80,7 @@ use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 /**
  * Tests the worker's half of the re-send after a failed delivery (HIL-1236), including first-answer debt (HIL-1351).
@@ -173,6 +180,137 @@ final class WorkerManagerResendPageTest extends TestCase
 
         $this->assertSame(PageResendOutcome::Unserved, $manager->resendPage(ResendWorkerTestPage::PAGE, 'ak-1', []));
         $this->assertSame([], $this->drainQueue());
+    }
+
+    /**
+     * The deletion refusal runs under the serving agent, releases the page, then sends the line.
+     */
+    public function testTheDeletionRefusalRunsUnderTheServingAgentAndReleasesBeforeTheFrame(): void
+    {
+        $manager = $this->subscribedManager(ResendWorkerTestManager::FIRST, ['countryCode' => 'se']);
+        $page = $this->servedPage($manager, ResendWorkerTestManager::FIRST);
+        $this->assertSame([SignalTypeConstants::PAGE_RESPONSE], $this->drainQueue());
+        $manager->signals->marks = [];
+        Hilos::$browser->guardParams = null;
+
+        $outcome = $manager->refuseDeletedResource(ResendWorkerTestPage::PAGE, 'ak-1');
+
+        $this->assertSame(PageResendOutcome::Refused, $outcome);
+        $this->assertSame(1, $page->subscribeCount);
+        $this->assertSame(1, $page->unsubscribeCount);
+        $this->assertSame(
+            [ResendWorkerTestAgent::AGENT_TYPE . ':' . ResendWorkerTestManager::FIRST, 'ak-1'],
+            $page->releaseFrame,
+        );
+        $this->assertSame(0, $this->servedPage($manager, ResendWorkerTestManager::SECOND)->unsubscribeCount);
+        $this->assertSame(['release', SignalConstants::SUBSCRIPTION_PAGE_ERROR], $manager->signals->marks);
+        $this->assertSame(['countryCode' => 'se'], Hilos::$browser->guardParams);
+        $missing = new PageResourceNotFoundException();
+        $this->assertSubscriptionError(
+            $missing->httpCode,
+            $missing->errorCode,
+            PageErrorMessages::RESOURCE_DELETED_MESSAGE,
+        );
+        $this->assertTrue(Hilos::$sr->hasPageDeliveryFailure('ak-1'));
+        $this->assertSame(ResendWorkerTestPage::PAGE, Hilos::$sr->pageSubscription('ak-1')?->page);
+        $this->assertSame(['countryCode' => 'se'], Hilos::$sr->pageSubscription('ak-1')?->params);
+    }
+
+    public function testADeletionRefusalForAConnectionWithNoSubscriptionHereIsUnserved(): void
+    {
+        $manager = $this->subscribedManager(ResendWorkerTestManager::FIRST);
+        $this->drainQueue();
+
+        $this->assertSame(
+            PageResendOutcome::Unserved,
+            $manager->refuseDeletedResource(ResendWorkerTestPage::PAGE, 'ak-other'),
+        );
+        $this->assertSame([], $this->drainQueue());
+        $this->assertSame(0, $this->servedPage($manager, ResendWorkerTestManager::FIRST)->unsubscribeCount);
+    }
+
+    public function testADeletionRefusalForAnotherPageIsUnserved(): void
+    {
+        $manager = $this->subscribedManager(ResendWorkerTestManager::FIRST);
+        $this->drainQueue();
+
+        $this->assertSame(PageResendOutcome::Unserved, $manager->refuseDeletedResource('resend_worker_other_page', 'ak-1'));
+        $this->assertSame(PageResendOutcome::Unserved, $manager->refuseDeletedResource('', 'ak-1'));
+        $this->assertSame([], $this->drainQueue());
+        $this->assertSame(0, $this->servedPage($manager, ResendWorkerTestManager::FIRST)->unsubscribeCount);
+    }
+
+    public function testADeletionRefusalWhoseAgentIsGoneIsUnserved(): void
+    {
+        $manager = $this->subscribedManager(ResendWorkerTestManager::FIRST);
+        $manager->removeAgent(ResendWorkerTestManager::FIRST);
+        $this->drainQueue();
+
+        $this->assertSame(PageResendOutcome::Unserved, $manager->refuseDeletedResource(ResendWorkerTestPage::PAGE, 'ak-1'));
+        $this->assertSame([], $this->drainQueue());
+    }
+
+    /**
+     * A fresh resource denial and a later refresh of the same key carry no deletion line.
+     */
+    public function testAFreshDenialAndARefreshCarryNoDeletionLine(): void
+    {
+        $manager = new ResendWorkerTestManager();
+        $page = $this->servedPage($manager, ResendWorkerTestManager::FIRST);
+        $page->failureCode = 404;
+        $this->handle($manager, ResendWorkerTestManager::FIRST, SignalTypeConstants::PAGE_SUBSCRIBE);
+        $missing = new PageResourceNotFoundException();
+        $this->assertSubscriptionError($missing->httpCode, $missing->errorCode, null);
+
+        $page->failureCode = null;
+        $this->handle($manager, ResendWorkerTestManager::FIRST, SignalTypeConstants::PAGE_SUBSCRIBE);
+        $this->wholeAnswer();
+        $this->assertSame(
+            PageResendOutcome::Refused,
+            $manager->refuseDeletedResource(ResendWorkerTestPage::PAGE, 'ak-1'),
+        );
+        $this->assertSubscriptionError(
+            $missing->httpCode,
+            $missing->errorCode,
+            PageErrorMessages::RESOURCE_DELETED_MESSAGE,
+        );
+
+        $page->failureCode = 404;
+        $this->handle($manager, ResendWorkerTestManager::FIRST, SignalTypeConstants::PAGE_SUBSCRIBE);
+        $this->assertSubscriptionError($missing->httpCode, $missing->errorCode, null);
+    }
+
+    /** A cleanup failure is logged and the deletion frame still goes out. */
+    public function testAThrowingCleanupStillSendsTheDeletionRefusal(): void
+    {
+        $manager = $this->subscribedManager(ResendWorkerTestManager::FIRST);
+        $page = $this->servedPage($manager, ResendWorkerTestManager::FIRST);
+        $this->drainQueue();
+        $manager->signals->marks = [];
+        $page->throwOnUnsubscribe = true;
+        $logged = file_get_contents($this->logFile);
+
+        $this->assertSame(
+            PageResendOutcome::Refused,
+            $manager->refuseDeletedResource(ResendWorkerTestPage::PAGE, 'ak-1'),
+        );
+
+        $this->assertSame(1, $page->subscribeCount);
+        $this->assertSame(['release', SignalConstants::SUBSCRIPTION_PAGE_ERROR], $manager->signals->marks);
+        $missing = new PageResourceNotFoundException();
+        $this->assertSubscriptionError(
+            $missing->httpCode,
+            $missing->errorCode,
+            PageErrorMessages::RESOURCE_DELETED_MESSAGE,
+        );
+        $this->assertTrue(Hilos::$sr->hasPageDeliveryFailure('ak-1'));
+        $this->assertNotNull(Hilos::$sr->pageSubscription('ak-1'));
+        $this->assertStringContainsString(
+            'Page release after a refusal failed: page=' . ResendWorkerTestPage::PAGE
+            . ', acceptKey=ak-1, release failed',
+            (string)file_get_contents($this->logFile),
+        );
+        $this->assertNotSame($logged, file_get_contents($this->logFile));
     }
 
     /** @return iterable<string, array{int, string}> First errors crossed with the two source roads */
@@ -288,6 +426,59 @@ final class WorkerManagerResendPageTest extends TestCase
         $this->assertError(401);
         $this->assertNotNull(Hilos::$sr->pageSubscription('ak-1'));
         $this->assertFalse(Hilos::$sr->hasPageDeliveryFailure('ak-1'));
+    }
+
+    /** An auth denial reached through the deletion port sets no page debt and carries no deletion line. */
+    public function testADeletionRefusalYieldsToAuthWithoutDebtOrALine(): void
+    {
+        $manager = $this->subscribedManager(ResendWorkerTestManager::FIRST);
+        $page = $this->servedPage($manager, ResendWorkerTestManager::FIRST);
+        $this->assertSame([SignalTypeConstants::PAGE_RESPONSE], $this->drainQueue());
+        Hilos::$browser->identity = ConnectionIdentity::resolved(null);
+
+        $this->assertSame(
+            PageResendOutcome::Refused,
+            $manager->refuseDeletedResource(ResendWorkerTestPage::PAGE, 'ak-1'),
+        );
+
+        $this->assertSame(1, $page->subscribeCount);
+        $denial = new PageUnauthorizedException();
+        $this->assertSubscriptionError($denial->httpCode, $denial->errorCode, null);
+        $this->assertFalse(Hilos::$sr->hasPageDeliveryFailure('ak-1'));
+        $this->assertSame(ResendWorkerTestPage::PAGE, Hilos::$sr->pageSubscription('ak-1')?->page);
+    }
+
+    /** @return iterable<string, array{class-string<PageSubscriptionException>}> Guard refusals that outrank a deletion */
+    public static function rightsAboveTheResource(): iterable
+    {
+        yield 'forbidden' => [PageForbiddenException::class];
+        yield 'unavailable' => [PageServiceUnavailableException::class];
+    }
+
+    /**
+     * A 403 or 503 from the guards goes out as that status, with no deletion line, and the page stays owed.
+     *
+     * @param class-string<PageSubscriptionException> $refusalClass Guard refusal to plant
+     */
+    #[DataProvider('rightsAboveTheResource')]
+    public function testADeletionRefusalYieldsToARightWithoutTheDeletionLine(string $refusalClass): void
+    {
+        $manager = $this->subscribedManager(ResendWorkerTestManager::FIRST);
+        $page = $this->servedPage($manager, ResendWorkerTestManager::FIRST);
+        $this->assertSame([SignalTypeConstants::PAGE_RESPONSE], $this->drainQueue());
+        $refusal = new $refusalClass();
+        $this->assertInstanceOf(PageSubscriptionException::class, $refusal);
+        Hilos::$browser->guardRefusal = $refusal;
+
+        $this->assertSame(
+            PageResendOutcome::Refused,
+            $manager->refuseDeletedResource(ResendWorkerTestPage::PAGE, 'ak-1'),
+        );
+
+        $this->assertSame(1, $page->subscribeCount);
+        $this->assertSubscriptionError($refusal->httpCode, $refusal->errorCode, null);
+        $this->assertTrue(Hilos::$sr->hasPageDeliveryFailure('ak-1'));
+        $this->assertNotNull(Hilos::$sr->pageSubscription('ak-1'));
     }
 
     /** Successful real resubscribe starts clean, then ordinary source delivery stays incremental. */
@@ -456,6 +647,42 @@ final class WorkerManagerResendPageTest extends TestCase
         $this->assertSame([], $this->drainQueue());
     }
 
+    /**
+     * Asserts the queue holds one subscription error and nothing after it.
+     *
+     * @param int $httpCode Expected status
+     * @param string $errorCode Expected machine-readable code
+     * @param ?string $transitionMessage Expected deletion line, or null when the frame has none
+     * @return PageSubscriptionErrorSignalData The refusal the connection was sent
+     */
+    private function assertSubscriptionError(
+        int $httpCode,
+        string $errorCode,
+        ?string $transitionMessage,
+    ): PageSubscriptionErrorSignalData {
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        $this->assertSame(SignalConstants::SUBSCRIPTION_PAGE_ERROR, $signal?->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertSame('ak-1', $signal->data->targetAcceptKey);
+        $this->assertInstanceOf(PageSubscriptionErrorSignalData::class, $signal->data->data);
+        $error = $signal->data->data;
+        $text = PageErrorMessages::forStatus($httpCode);
+        $this->assertSame($httpCode, $error->httpCode);
+        $this->assertSame($errorCode, $error->errorCode);
+        $this->assertSame($text->title, $error->title);
+        $this->assertSame($text->message, $error->message);
+        $this->assertSame($transitionMessage, $error->transitionMessage);
+        $payload = $error->toArray();
+        if ($transitionMessage === null) {
+            $this->assertArrayNotHasKey(PageSubscriptionErrorSignalData::transitionMessage, $payload);
+        } else {
+            $this->assertSame($transitionMessage, $payload[PageSubscriptionErrorSignalData::transitionMessage]);
+        }
+        $this->assertSame([], $this->drainQueue());
+
+        return $error;
+    }
+
     /** @return PagePayload The sole complete response, including the catalog's four identity fields */
     private function wholeAnswer(): PagePayload
     {
@@ -480,12 +707,13 @@ final class WorkerManagerResendPageTest extends TestCase
      * Builds a manager whose connection 'ak-1' holds the fixture page, served by the named instance.
      *
      * @param string $index Index of the agent instance the subscribe reaches
+     * @param array<string, string> $params Route params the subscription keeps
      * @return ResendWorkerTestManager Manager with a live subscription
      */
-    private function subscribedManager(string $index): ResendWorkerTestManager
+    private function subscribedManager(string $index, array $params = []): ResendWorkerTestManager
     {
         $manager = new ResendWorkerTestManager();
-        $this->handle($manager, $index, SignalTypeConstants::PAGE_SUBSCRIBE);
+        $this->handle($manager, $index, SignalTypeConstants::PAGE_SUBSCRIBE, $params);
 
         return $manager;
     }
@@ -512,8 +740,9 @@ final class WorkerManagerResendPageTest extends TestCase
      * @param WorkerManager $manager Manager under test
      * @param string $index Index of the agent instance the frame is addressed to
      * @param string $type Signal type of the frame
+     * @param array<string, string> $params Route params of a subscribe frame
      */
-    private function handle(WorkerManager $manager, string $index, string $type): void
+    private function handle(WorkerManager $manager, string $index, string $type, array $params = []): void
     {
         $signal = new SignalDTO(
             new SignalSource(SignalSource::WEBSOCKET),
@@ -523,7 +752,7 @@ final class WorkerManagerResendPageTest extends TestCase
                 SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION => new WebSocketPageUpdateSubscriptionSignalDTO('ak-1', ResendWorkerTestPage::PAGE),
                 SignalTypeConstants::PAGE_UNSUBSCRIBE => new WebSocketPageUnsubscribeSignalDTO('ak-1', ResendWorkerTestPage::PAGE),
                 SignalTypeConstants::CONNECTION_CLOSE => new WebSocketCloseSignalDTO('ak-1'),
-                default => new WebSocketPageSubscribeSignalDTO('ak-1', ResendWorkerTestPage::PAGE),
+                default => new WebSocketPageSubscribeSignalDTO('ak-1', ResendWorkerTestPage::PAGE, $params),
             },
         );
         $handle = Closure::bind(
@@ -557,6 +786,43 @@ final class WorkerManagerResendPageTest extends TestCase
     }
 }
 
+/**
+ * Records a page release beside the names of the frames queued around it.
+ */
+final class ResendWorkerRecordingRouter extends SignalRouter
+{
+    /** Mark written when the page releases a connection, ahead of any frame that follows. */
+    public const string RELEASED = 'release';
+
+    /** @var list<string> Release mark and signal names, oldest first */
+    public array $marks = [];
+
+    /** Notes that the page released the connection. */
+    public function markReleased(): void
+    {
+        $this->marks[] = self::RELEASED;
+    }
+
+    /**
+     * Records the signal name, then queues it.
+     *
+     * @param SignalSourceInterface $signalSource Signal source identifier
+     * @param SignalTypeInterface $signalType Signal type
+     * @param SignalNameInterface $signalName Signal name
+     * @param SignalDataInterface $signalData Signal data DTO
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function queueSignal(
+        SignalSourceInterface $signalSource,
+        SignalTypeInterface $signalType,
+        SignalNameInterface $signalName,
+        SignalDataInterface $signalData,
+    ): void {
+        $this->marks[] = $signalName->getName();
+        parent::queueSignal($signalSource, $signalType, $signalName, $signalData);
+    }
+}
+
 final class ResendWorkerTestManager extends WorkerManager
 {
     /** Index of the instance a subscribe reaches first. */
@@ -564,6 +830,8 @@ final class ResendWorkerTestManager extends WorkerManager
 
     /** Index of the instance a re-decision may hand the subscription to. */
     public const string SECOND = '8';
+
+    public ResendWorkerRecordingRouter $signals;
 
     /** @var array<string, ResendWorkerTestPageFactory> Page factory of each agent instance, by index */
     private array $pageFactories = [];
@@ -616,7 +884,9 @@ final class ResendWorkerTestManager extends WorkerManager
      */
     protected function createSignalRouter(): SignalRouter
     {
-        return new SignalRouter();
+        $this->signals = new ResendWorkerRecordingRouter();
+
+        return $this->signals;
     }
 
     /**
@@ -723,6 +993,14 @@ final class ResendWorkerTestPage extends AbstractPage
     /** @var ?array{0: ?string, 1: ?string} Agent and connection of the frame the last answer ran under */
     public ?array $lastFrame = null;
 
+    /** How many times a refusal released this page. */
+    public int $unsubscribeCount = 0;
+
+    public bool $throwOnUnsubscribe = false;
+
+    /** @var ?array{0: ?string, 1: ?string} Agent and connection of the frame the release ran under */
+    public ?array $releaseFrame = null;
+
     /**
      * Updates that rebuild their answer enter onSubscribe directly, without the subscribe dispatcher.
      *
@@ -735,6 +1013,24 @@ final class ResendWorkerTestPage extends AbstractPage
     public function onUpdateSubscription(string $acceptKey, PageRouteParams $params): void
     {
         $this->onSubscribe($acceptKey, $params);
+    }
+
+    /**
+     * Records the frame the release ran under, and fails the cleanup when the case asks.
+     *
+     * @param string $acceptKey WebSocket accept key
+     * @throws RuntimeException When the case asks the release to fail
+     */
+    public function onUnsubscribe(string $acceptKey): void
+    {
+        $this->unsubscribeCount++;
+        $this->releaseFrame = [ExecutionContext::currentAgentId(), ExecutionContext::currentAcceptKey()];
+        if (Hilos::$sr instanceof ResendWorkerRecordingRouter) {
+            Hilos::$sr->markReleased();
+        }
+        if ($this->throwOnUnsubscribe) {
+            throw new RuntimeException('release failed');
+        }
     }
 
     /**
@@ -790,11 +1086,34 @@ final class ResendWorkerTestBrowser extends BrowserContext
 
     public ConnectionIdentity $identity;
 
+    public ?PageSubscriptionException $guardRefusal = null;
+
+    /** @var ?array<string, string> Params the latest guard check was handed */
+    public ?array $guardParams = null;
+
     /** Starts with an identified subscriber; tests may park or revoke that identity. */
     public function __construct()
     {
         parent::__construct();
         $this->identity = ConnectionIdentity::resolved(5);
+    }
+
+    /**
+     * Records the params a refusal hands the guards, and plants a guard refusal when the case asks.
+     *
+     * @param string $page Page name from the subscription mirror
+     * @param string $acceptKey Subscribing connection
+     * @param PageRouteParams $params Route params the caller already held
+     * @throws PageSubscriptionException When the case plants a guard refusal, or a param or a guard rejects the subscription
+     */
+    public function assertSubscriptionAccess(string $page, string $acceptKey, PageRouteParams $params): void
+    {
+        $this->guardParams = $params->toArray();
+        if ($this->guardRefusal !== null) {
+            throw $this->guardRefusal;
+        }
+
+        parent::assertSubscriptionAccess($page, $acceptKey, $params);
     }
 
     /**

@@ -44,6 +44,7 @@ use Hilos\Core\Page\Exception\PageAccountFrozenException;
 use Hilos\Core\Page\Exception\PageForbiddenException;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageNotFoundException;
+use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\Exception\PageUnauthorizedException;
 use Hilos\Core\Router\ActionErrorSignalDataInterface;
@@ -302,6 +303,75 @@ class PageSignalRouter
         }
 
         return $outcome;
+    }
+
+    /**
+     * Refuses a live subscription because the row it was about has just been deleted.
+     *
+     * The verdict a subscribe reaches before onSubscribe is asked again, on the params
+     * the subscription already holds: the access gate, then the browser guards, which
+     * carry the freeze. A 401, 403 or 503 from that verdict goes out as that ordinary
+     * status. Any other result of those guards is a 404 whose codes come from
+     * PageResourceNotFoundException and whose ready line is the deletion sentence.
+     * The page's own subscribe stays uncalled, and the stored params are handed to the
+     * guards as they stand. What the page holds is released before the frame; a cleanup
+     * failure is logged and the frame still goes. The subscription registration stays.
+     * A failure to queue the frame leaves this method instead of coming back as Refused.
+     *
+     * @param string $page Page the subscription stands on
+     * @param string $acceptKey Connection the refusal is addressed to
+     * @return PageResendOutcome Refused when the frame was formed, Unserved when this agent does not hold the subscription
+     * @throws InvalidArgumentException When the subscription-error signal cannot be named
+     * @throws HilosException When the access gate cannot read standing or the administrator lookup
+     */
+    public function refuseDeletedResource(string $page, string $acceptKey): PageResendOutcome
+    {
+        if ($page === '' || $acceptKey === '') {
+            return PageResendOutcome::Unserved;
+        }
+
+        $subscription = Hilos::$sr?->pageSubscription($acceptKey);
+        if ($subscription === null || $subscription->page !== $page) {
+            return PageResendOutcome::Unserved;
+        }
+
+        $pageInstance = $this->resolvePage($page, false);
+        if ($pageInstance === null) {
+            return PageResendOutcome::Unserved;
+        }
+
+        $missing = new PageResourceNotFoundException();
+        $httpCode = $missing->httpCode;
+        $errorCode = $missing->errorCode;
+        $transitionMessage = PageErrorMessages::RESOURCE_DELETED_MESSAGE;
+        try {
+            PageAccessGate::assert($pageInstance::class, $acceptKey);
+            Hilos::$browser?->assertSubscriptionAccess($page, $acceptKey, new PageRouteParams($subscription->params));
+        } catch (PageSubscriptionException $refusal) {
+            // Rights and the freeze outrank the row. Their 401, 403 and 503 go out as
+            // that ordinary status. Every other verdict of these guards is the deletion.
+            if (
+                $refusal->httpCode === HttpConstants::HTTP_UNAUTHORIZED
+                || $refusal->httpCode === HttpConstants::HTTP_FORBIDDEN
+                || $refusal->httpCode === HttpConstants::HTTP_SERVICE_UNAVAILABLE
+            ) {
+                $httpCode = $refusal->httpCode;
+                $errorCode = $refusal->errorCode;
+                $transitionMessage = null;
+            }
+        }
+
+        $this->releaseUnservedConnection($pageInstance, $acceptKey);
+        $this->sendSubscriptionError(
+            $pageInstance->getAgent()->getAgentSignalSource(),
+            $page,
+            $acceptKey,
+            $httpCode,
+            $errorCode,
+            $transitionMessage,
+        );
+
+        return PageResendOutcome::Refused;
     }
 
     /**
@@ -2511,9 +2581,11 @@ class PageSignalRouter
      * Releases what a page holds for a connection answered with something other than the page.
      *
      * Called before the refusal frame, so a channel's stop is queued before the browser hears
-     * the refusal. A failure of the release is logged and swallowed: the browser's refusal
-     * matters more than the cleanup, and an exception here would take the worker down with
-     * every connection it serves.
+     * the refusal. The DB row the last answer bound is dropped too, including on a silent
+     * failed probe; the subscription registration stays, so a refused subscription can still
+     * be promoted. A failure of the page's own release is logged and swallowed: the browser's
+     * refusal matters more than that cleanup, and an exception here would take the worker
+     * down with every connection it serves.
      *
      * @param AbstractPage $page Page that was judged
      * @param string $acceptKey Connection the answer is addressed to
@@ -2527,6 +2599,8 @@ class PageSignalRouter
                 "Page release after a refusal failed: page={$page->getPageName()}, acceptKey={$acceptKey}, {$e->getMessage()}",
             );
         }
+
+        Hilos::$sr?->clearPageResource($acceptKey);
     }
 
     /**
@@ -2541,6 +2615,8 @@ class PageSignalRouter
      * @param string $acceptKey Target connection acceptKey
      * @param int $httpCode HTTP status code for the error
      * @param string $errorCode Machine-readable error code
+     * @param ?string $transitionMessage Ready deletion line, or null when the refusal has none
+     * @throws InvalidArgumentException When the subscription-error signal cannot be named
      */
     private function sendSubscriptionError(
         SignalSourceInterface $signalSource,
@@ -2548,6 +2624,7 @@ class PageSignalRouter
         string $acceptKey,
         int $httpCode,
         string $errorCode,
+        ?string $transitionMessage = null,
     ): void {
         Hilos::$sr->queueSignal(
             signalSource: $signalSource,
@@ -2558,6 +2635,7 @@ class PageSignalRouter
                     page: $page,
                     httpCode: $httpCode,
                     errorCode: $errorCode,
+                    transitionMessage: $transitionMessage,
                 ),
                 targetAcceptKey: $acceptKey,
             ),

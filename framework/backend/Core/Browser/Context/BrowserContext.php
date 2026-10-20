@@ -56,6 +56,7 @@ use Hilos\Core\Page\Exception\PageUnauthorizedException;
 use Hilos\Core\Page\PageAccessGate;
 use Hilos\Core\Page\PageResendOutcome;
 use Hilos\Core\Page\PageResender;
+use Hilos\Core\Page\PageResource;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
@@ -209,6 +210,20 @@ abstract class BrowserContext
      * @var array<string, true>
      */
     private array $skippedThisFlush = [];
+
+    /**
+     * Accept keys whose open page was about a row deleted in this flush, until the flush ends.
+     *
+     * Not {@see self::$setAsideThisFlush} (one window of one table) and not
+     * {@see self::$skippedThisFlush} (one unbuilt change, journaled once). This set is the
+     * flush's own memory on this worker: no browser delta, window, mutation, facet, staleness
+     * move or debt probe is sent to these connections on top of the refusal. Nothing else
+     * reads it, so it stays on the context rather than in a runtime collection, and the
+     * finally of {@see self::flushToSignalRouter()} drops it with the buffer.
+     *
+     * @var array<string, true>
+     */
+    private array $skippedForDeletedResource = [];
 
     /** Fact 2, the database came back, is recorded and waits for the flush; cleared the moment it is tried. */
     private bool $databaseBack = false;
@@ -1547,6 +1562,11 @@ abstract class BrowserContext
      * The database coming back ({@see self::recordDatabaseBack()}) runs the flush on its own,
      * with no change and no freshness move beside it: the fact is what tries the debts.
      *
+     * Before grouping, a raw DB delete or clear of a row an open page is about refuses that
+     * page ({@see self::refuseDeletedPageResources()}). Grouping can fold a delete into a
+     * later create of the same id and hide it; the refusal has to see the delete first. It
+     * is another look at this buffer, not a second fan-out.
+     *
      * @return list<ContainedFailure> Subscriptions whose fan-out failed, in the order they failed
      * @throws InvalidArgumentException When a fanned-out signal cannot be named
      */
@@ -1557,9 +1577,10 @@ abstract class BrowserContext
         }
 
         try {
+            $contained = $this->refuseDeletedPageResources();
             $this->groupSourceChanges();
 
-            return $this->emitBrowserSignals();
+            return [...$contained, ...$this->emitBrowserSignals()];
         } finally {
             // Dropped however the flush ended. A set held back because something threw is
             // the same frame again on the next tick, and on every tick after that one.
@@ -1569,7 +1590,206 @@ abstract class BrowserContext
             $this->facetRecounts = [];
             $this->setAsideThisFlush = [];
             $this->skippedThisFlush = [];
+            $this->skippedForDeletedResource = [];
         }
+    }
+
+    /**
+     * Refuses open pages whose row a raw change of this flush deleted, before grouping hides it.
+     *
+     * Walks the subscription mirror and each connection's page resource, not every account.
+     * A DB delete matches on collection and primary id; a DB clear matches the collection.
+     * An RT fact matches nothing. No binding means nothing: the page never answered, the
+     * row was already refused, or the connection left. One subscription is moved once.
+     *
+     * The connection that authored the delete — its accept key is the change's origin and
+     * the action request id is set — is not sent a live 404, and the acknowledgement already
+     * queued for that action is left alone. Its resource link is dropped so a later fact
+     * about the old row does not find the page still bound to it. Another connection of the
+     * same account is not that author.
+     *
+     * A page that already owes a whole delivery is not redrawn with the deletion sentence.
+     * Its link is dropped for the same reason. Every connection this pass touched is skipped
+     * for the rest of the flush, including one whose port could not serve the page.
+     *
+     * @return list<ContainedFailure> Subscriptions whose refusal failed, in the order they failed
+     */
+    private function refuseDeletedPageResources(): array
+    {
+        if (Hilos::$sr === null) {
+            return [];
+        }
+
+        $deletions = $this->rawResourceDeletions();
+        if ($deletions === []) {
+            return [];
+        }
+
+        $contained = [];
+        foreach (Hilos::$sr->getPageSubscriptions() as $acceptKey => $subscription) {
+            $subscriber = (string) $acceptKey;
+            $resource = Hilos::$sr->pageResource($subscriber);
+            if ($resource === null) {
+                continue;
+            }
+
+            $matched = $this->deletionsOfResource($deletions, $resource);
+            if ($matched === []) {
+                continue;
+            }
+
+            $this->skippedForDeletedResource[$subscriber] = true;
+            $page = (string) $subscription[SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY];
+            if ($this->deletionAuthoredBy($matched, $subscriber) || Hilos::$sr->hasPageDeliveryFailure($subscriber)) {
+                // The link is what a later old fact would match. The page debt, when one
+                // stands, stays: a partial delta does not pay it, and a later full answer can.
+                Hilos::$sr->clearPageResource($subscriber);
+
+                continue;
+            }
+
+            $contained = [...$contained, ...$this->refuseOneDeletedPage($page, $subscriber)];
+        }
+
+        return $contained;
+    }
+
+    /**
+     * Raw DB deletes and clears in the buffer, before grouping folds a lifecycle away.
+     *
+     * @return list<SourceChange> DB deletes and clears, in buffer order
+     */
+    private function rawResourceDeletions(): array
+    {
+        $deletions = [];
+        foreach ($this->changes->all() as $change) {
+            if ($change->kind !== SourceChange::KIND_DB) {
+                continue;
+            }
+            if ($change->mutationType !== TableMutationType::Delete && $change->mutationType !== TableMutationType::Clear) {
+                continue;
+            }
+
+            $deletions[] = $change;
+        }
+
+        return $deletions;
+    }
+
+    /**
+     * Changes in one raw deletion list that remove the row a page is about.
+     *
+     * @param list<SourceChange> $deletions Raw DB deletes and clears of this flush
+     * @param PageResource $resource Row the page's last answer named
+     * @return list<SourceChange> Changes that remove that row, in buffer order
+     */
+    private function deletionsOfResource(array $deletions, PageResource $resource): array
+    {
+        $matched = [];
+        foreach ($deletions as $change) {
+            if ($change->sourceKey !== $resource->collectionKey) {
+                continue;
+            }
+            if (
+                $change->mutationType === TableMutationType::Clear
+                || $change->sourceId === $resource->idString
+            ) {
+                $matched[] = $change;
+            }
+        }
+
+        return $matched;
+    }
+
+    /**
+     * Whether one of the matching changes is this connection's own successful action.
+     *
+     * Origin is the accept key, not the user id. A change with no origin, or with no
+     * action request id, is not that action: every matching viewer is then refused.
+     *
+     * @param list<SourceChange> $matched Changes that remove the page's row
+     * @param string $acceptKey Connection being judged
+     * @return bool True when this connection authored one of those changes
+     */
+    private function deletionAuthoredBy(array $matched, string $acceptKey): bool
+    {
+        foreach ($matched as $change) {
+            if ($change->origin === $acceptKey && $change->originRequestId !== null && $change->originRequestId !== '') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Asks the bound port to refuse one subscription, and contains a miss per subscription.
+     *
+     * Refused means the port formed the frame and cleared the link. Unserved, and a throw,
+     * are the delivery-failure path: the subscriber is told the page could not be delivered,
+     * the worker is handed one contained failure, and this pass does not invent a 404 of its own.
+     *
+     * @param string $page Page the subscription stands on
+     * @param string $acceptKey Connection the refusal is addressed to
+     * @return list<ContainedFailure> One failure when the port could not refuse, else empty
+     */
+    private function refuseOneDeletedPage(string $page, string $acceptKey): array
+    {
+        try {
+            $outcome = $this->pageResender?->refuseDeletedResource($page, $acceptKey) ?? PageResendOutcome::Unserved;
+        } catch (Throwable $failure) {
+            $contained = $this->containedRefusalFailure($page, $acceptKey, $failure);
+            $this->tellPageDeliveryFailed($page, $acceptKey);
+
+            return $contained;
+        }
+
+        if ($outcome === PageResendOutcome::Refused) {
+            return [];
+        }
+
+        // Read the debt before telling: telling is what sets it, and a page already told
+        // must not be handed to the worker as a new failure.
+        $contained = $this->containedRefusalFailure(
+            $page,
+            $acceptKey,
+            new LogicException("Browser could not refuse a deleted page nobody serves here: page={$page}, acceptKey={$acceptKey}"),
+        );
+        $this->tellPageDeliveryFailed($page, $acceptKey);
+
+        return $contained;
+    }
+
+    /**
+     * One contained failure for a refusal this worker could not finish, unless the page was already told.
+     *
+     * @param string $page Page the subscription stands on
+     * @param string $acceptKey Connection the refusal was addressed to
+     * @param Throwable $failure Why the refusal did not finish
+     * @return list<ContainedFailure> The failure to hand the worker, or empty when the page was already told
+     */
+    private function containedRefusalFailure(string $page, string $acceptKey, Throwable $failure): array
+    {
+        if (Hilos::$sr?->hasPageDeliveryFailure($acceptKey) === true) {
+            return [];
+        }
+
+        return [new ContainedFailure(
+            WorkerTickUnit::BROWSER_SUBSCRIPTION,
+            "page={$page} acceptKey={$acceptKey}",
+            $failure,
+        )];
+    }
+
+    /**
+     * Whether this flush already refused the page, so no later delta of the flush may reach it.
+     *
+     * @param string $acceptKey Connection to check
+     * @return bool True when the page's row was deleted in this flush
+     */
+    private function isSkippedForDeletedResource(string $acceptKey): bool
+    {
+        return isset($this->skippedForDeletedResource[$acceptKey]);
     }
 
     /**
@@ -1713,7 +1933,7 @@ abstract class BrowserContext
         $failedSubscriptions = [];
         foreach ($this->changes->all() as $change) {
             foreach (Hilos::$sr->getPageSubscriptions() as $acceptKey => $subscription) {
-                if (isset($failedSubscriptions[$acceptKey])) {
+                if (isset($failedSubscriptions[$acceptKey]) || $this->isSkippedForDeletedResource((string) $acceptKey)) {
                     continue;
                 }
 
@@ -1745,7 +1965,7 @@ abstract class BrowserContext
 
         foreach ($this->staleness as $collectionKey => $stateIds) {
             foreach (Hilos::$sr->getPageSubscriptions() as $acceptKey => $subscription) {
-                if (isset($failedSubscriptions[$acceptKey])) {
+                if (isset($failedSubscriptions[$acceptKey]) || $this->isSkippedForDeletedResource((string) $acceptKey)) {
                     continue;
                 }
 
@@ -1784,11 +2004,10 @@ abstract class BrowserContext
         $this->recountMarkedWindows($failedSubscriptions);
 
         foreach ($this->buildBrowserPayloads($signalTables) as $acceptKey => $pages) {
-            if (isset($failedSubscriptions[$acceptKey])) {
-                // Rows this subscription collected BEFORE it failed, and they are not going out.
-                // It has been told its page could not be delivered, so a delta behind that frame
-                // would land on the scope the client just wiped; and the mark it is holding must
-                // survive the flush, or the next one would tell it the same thing all over again.
+            if (isset($failedSubscriptions[$acceptKey]) || $this->isSkippedForDeletedResource((string) $acceptKey)) {
+                // Rows collected before the page was told it failed, or before this flush refused
+                // it for a deleted row, are not going out behind that frame. The failure mark
+                // stays, or the next flush would tell the page the same thing again.
                 continue;
             }
 
@@ -3924,7 +4143,11 @@ abstract class BrowserContext
         }
 
         foreach (Hilos::$sr->getPageSubscriptions() as $acceptKey => $subscription) {
-            if (isset($failedSubscriptions[$acceptKey]) || ($guardAllows[$acceptKey] ?? null) === false) {
+            if (
+                isset($failedSubscriptions[$acceptKey])
+                || $this->isSkippedForDeletedResource((string) $acceptKey)
+                || ($guardAllows[$acceptKey] ?? null) === false
+            ) {
                 continue;
             }
 
@@ -5023,7 +5246,7 @@ abstract class BrowserContext
         }
 
         foreach ($allWindows as $acceptKey => $tables) {
-            if (isset($failedSubscriptions[$acceptKey])) {
+            if (isset($failedSubscriptions[$acceptKey]) || $this->isSkippedForDeletedResource((string) $acceptKey)) {
                 continue;
             }
 

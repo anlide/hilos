@@ -189,12 +189,18 @@ export {
 
 export {
   expectDefaultLanguageHeader,
+  expectDeletedCountryCard,
+  expectDeletedCountryCardReloaded,
   expectI18nName,
   expectNoOtherLanguageNames,
   i18nLocaleRow,
   i18nNameRow,
   watchI18nLivePages,
 } from './i18n.js'
+export {
+  watchPageErrorFrames,
+  type PageErrorFrameLog,
+} from './pageErrorFrames.js'
 export {
   DARK_FRAME,
   LIGHT_FRAME,
