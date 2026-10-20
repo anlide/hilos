@@ -167,6 +167,7 @@ describe('HilosProfileSessions (Vue)', () => {
 
   it('keeps modal open and displays refusal on action failure', async () => {
     let rejectAction = true
+    let rejectPending!: (reason: unknown) => void
     const { endOtherSessions } = setup(
       [makeSession(1, { current: true }), makeSession(2)],
       () =>
@@ -178,7 +179,9 @@ describe('HilosProfileSessions (Vue)', () => {
                 'Denied by policy',
               ),
             )
-          : new Promise<{ reply: null }>(() => {}),
+          : new Promise<{ reply: null }>((_resolve, reject) => {
+              rejectPending = reject
+            }),
     )
     byId('profile-sessions-end-others').click()
     await nextTick()
@@ -207,6 +210,8 @@ describe('HilosProfileSessions (Vue)', () => {
     ).not.toBeNull()
     const visibleError = byId('profile-sessions-end-others-error')
     expect(visibleError.textContent).toContain('Denied by policy')
+    expect(visibleError.hasAttribute('role')).toBe(false)
+    expect(visibleError.hasAttribute('aria-live')).toBe(false)
     expect(slot.textContent).toContain('Denied by policy')
     expect(byId('profile-sessions-end-others-error-slot')).toBe(slot)
 
@@ -224,10 +229,25 @@ describe('HilosProfileSessions (Vue)', () => {
     ).toBeNull()
     expect(slot.textContent?.trim()).toBe('')
     expect(byId('profile-sessions-end-others-error-slot')).toBe(slot)
+
+    rejectPending(
+      new ActionError('hilos_sessions_end_others', 'fail', 'Try again later'),
+    )
+    await flushPromises()
+    await nextTick()
+
+    const nextError = byId('profile-sessions-end-others-error')
+    expect(nextError.textContent).toContain('Try again later')
+    expect(nextError.hasAttribute('role')).toBe(false)
+    expect(nextError.hasAttribute('aria-live')).toBe(false)
+    expect(slot.textContent).toContain('Try again later')
+    expect(slot.textContent).not.toContain('Denied by policy')
+    expect(byId('profile-sessions-end-others-error-slot')).toBe(slot)
   })
 
   it('keeps End session modal open and displays refusal on action failure with permanent live region', async () => {
     let rejectAction = true
+    let rejectPending!: (reason: unknown) => void
     const { endSession } = setup(
       [makeSession(1, { current: true }), makeSession(2)],
       () => Promise.resolve({ reply: null }),
@@ -240,7 +260,9 @@ describe('HilosProfileSessions (Vue)', () => {
                 'Failed to end session',
               ),
             )
-          : new Promise<{ reply: null }>(() => {}),
+          : new Promise<{ reply: null }>((_resolve, reject) => {
+              rejectPending = reject
+            }),
     )
     byId('profile-session-revoke').click()
     await nextTick()
@@ -269,6 +291,8 @@ describe('HilosProfileSessions (Vue)', () => {
     ).not.toBeNull()
     const visibleError = byId('profile-session-end-error')
     expect(visibleError.textContent).toContain('Failed to end session')
+    expect(visibleError.hasAttribute('role')).toBe(false)
+    expect(visibleError.hasAttribute('aria-live')).toBe(false)
     expect(slot.textContent).toContain('Failed to end session')
     expect(byId('profile-session-end-error-slot')).toBe(slot)
 
@@ -285,6 +309,20 @@ describe('HilosProfileSessions (Vue)', () => {
       slot.querySelector('[data-id="profile-session-end-error"]'),
     ).toBeNull()
     expect(slot.textContent?.trim()).toBe('')
+    expect(byId('profile-session-end-error-slot')).toBe(slot)
+
+    rejectPending(
+      new ActionError('hilos_sessions_end', 'fail', 'Session is still busy'),
+    )
+    await flushPromises()
+    await nextTick()
+
+    const nextError = byId('profile-session-end-error')
+    expect(nextError.textContent).toContain('Session is still busy')
+    expect(nextError.hasAttribute('role')).toBe(false)
+    expect(nextError.hasAttribute('aria-live')).toBe(false)
+    expect(slot.textContent).toContain('Session is still busy')
+    expect(slot.textContent).not.toContain('Failed to end session')
     expect(byId('profile-session-end-error-slot')).toBe(slot)
   })
 

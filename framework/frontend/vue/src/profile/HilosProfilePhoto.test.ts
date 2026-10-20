@@ -167,8 +167,14 @@ it('preserves refusal slot identity and live region across error states and step
   const visibleError = byId('profile-photo-error')
   expect(visibleError).not.toBeNull()
   expect(visibleError?.textContent).toContain('Photo was rejected')
+  expect(visibleError?.hasAttribute('role')).toBe(false)
+  expect(visibleError?.hasAttribute('aria-live')).toBe(false)
   expect(slot.textContent).toContain('Photo was rejected')
   expect(byId('profile-photo-error-slot')).toBe(slot)
+  const voice = byId('profile-photo-live-assertive')
+  expect(voice?.getAttribute('role')).toBe('status')
+  expect(voice?.getAttribute('aria-live')).toBe('polite')
+  expect(voice?.textContent?.trim()).toBe('')
 
   flow.refusal.set(null)
   await nextTick()
@@ -184,6 +190,21 @@ it('preserves refusal slot identity and live region across error states and step
   await nextTick()
   expect(byId('profile-photo-preview')).not.toBeNull()
   expect(byId('profile-photo-error-slot')).toBe(slot)
+
+  flow.refusal.set('Photo needs a visible face')
+  await nextTick()
+
+  const nextError = byId('profile-photo-error')
+  expect(nextError?.textContent).toContain('Photo needs a visible face')
+  expect(nextError?.hasAttribute('role')).toBe(false)
+  expect(nextError?.hasAttribute('aria-live')).toBe(false)
+  expect(slot.textContent).toContain('Photo needs a visible face')
+  expect(slot.textContent).not.toContain('Photo was rejected')
+  expect(byId('profile-photo-error-slot')).toBe(slot)
+  expect(byId('profile-photo-live-assertive')?.textContent?.trim()).toBe('')
+
+  flow.refusal.set(null)
+  await nextTick()
 
   step.set('current')
   await nextTick()
