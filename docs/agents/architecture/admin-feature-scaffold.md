@@ -30,6 +30,14 @@ denies everyone. `isAdmin()` is answered by the framework from
 `hilos_user.admin`; the project wires nothing for it. See
 [page-access-control.md](page-access-control.md).
 
+For framework SQL in an existing catalog-initialized project, declare the feature,
+run `db:framework:pull`, then review and commit the generated up/down pairs before
+applying them through the normal project migrator. Use the
+[migration authoring and activation canon](../orm/migrations.md#framework-tables-in-a-project-hil-1326),
+including its initial-adoption boundary. The command selects the required units;
+do not copy stubs by hand. Current stubs, Entity metadata, personal-data verdicts
+and generated journal trigger files remain required.
+
 ## Generate against the contract
 
 Each framework feature ships base classes plus the extension points a project
@@ -119,9 +127,10 @@ requires, in dependency order (the table merges sources that must exist first):
    startup; the presence source in step 3 is checked by the project's topology
    test, since a runtime collection is not visible in the constants. The test
    checks no block source: there is none to check.
-2. **The people table.** Copy the framework's migration stub
-   `create_hilos_user.sql` among the project's migrations, like every framework
-   table's; no entity is generated — the person is the framework's `hilos_user`.
+2. **The people table.** Run `db:framework:pull` and apply its generated pairs
+   through the project migrator. The core `user` unit supplies the current
+   `create_hilos_user.sql` form if it is not already covered; no entity is
+   generated — the person is the framework's `hilos_user`.
    A project that needs columns of its own adds them by subclassing the whole
    ORM chain and mounting it under the
    framework's `users` key ([../orm/inheritance.md](../orm/inheritance.md));
@@ -191,10 +200,12 @@ also registers those. Generate, in any order:
    ([../runtime/rt-context.md](../runtime/rt-context.md), *Feature-Owned Runtime
    State*). The verifier circle's table is no part of this activation: it
    belongs to the freeze ([protected-mode.md](protected-mode.md)), so every
-   installation that can freeze carries it, backup or not — a copy of the stub
-   `create_hilos_verifier_circle.sql` among the project's migrations, as with
-   settings, which the project's own topology unit test asks for — and its
-   surface is a section of its own, `hilos_maintenance` (see *a framework-owned
+   installation that can freeze carries it, backup or not. `db:framework:pull`
+   selects `verifier_circle` when the facade has a runtime factory and brings
+   the `create_hilos_verifier_circle.sql` form into the project track; apply
+   the generated pairs as above. The project's topology unit test also asks
+   for this table. Its surface is a section of its own, `hilos_maintenance`
+   (see *a framework-owned
    section with no feature switch* below).
 2. A backup catalog — `final class … implements
    Hilos\Core\Catalog\CatalogProviderInterface` — bound through the
@@ -527,7 +538,9 @@ name and an indeterminate bar — and a run that outlives its estimate is told i
 
 Configure-only: the framework owns the five reference tables, their library and the section's pages. The languages browser table is registered in all six demos (HIL-1474), and so is the countries table (HIL-1475).
 The project lists the feature in `Hilos::FEATURES` and registers the library's agent pair in `Hilos::AGENTS`.
-It registers three thin section pages in the server topology and migrates the five framework stubs (HIL-1470).
+It registers three thin section pages in the server topology (HIL-1470).
+Run `db:framework:pull` and apply the generated project migrations for the required
+units: the five reference tables and the library's reflow record.
 Vue, React and Angular serve the root and seven reference pages. React exports
 `HilosI18nLanguagesPage`, `HilosI18nLanguagePage`, `HilosI18nLanguageNamesPage`,
 `HilosI18nLanguageLocalesPage`, `HilosI18nCountriesPage`, `HilosI18nCountryPage`
@@ -539,7 +552,7 @@ language and country contexts. The context-required pages stay outside
 `hilosAdminViews()`; the root remains the self-contained default shell, showing
 Languages and Countries.
 It supplies `HILOS_DEFAULT_LANGUAGE` with an exact built-in code.
-Startup refuses a missing page or agent; topology tests check the five migrations.
+Startup refuses a missing page or agent; topology tests check the required migrations.
 For the section's rules and activation details, read [languages-and-countries.md](languages-and-countries.md), *Switching The Section On*.
 
 ### daemon — the Daemon section
@@ -557,8 +570,9 @@ For the section's rules, read [daemon-section.md](daemon-section.md), *Switching
 
 ### analytics — the Analytics section
 
-Declare `HilosFeature::ANALYTICS` in `FEATURES` and migrate the current
-`create_hilos_analytics.sql` stub with its down file. Fold
+Declare `HilosFeature::ANALYTICS` in `FEATURES`, run `db:framework:pull` and apply
+the generated project migrations. The `analytics` unit keeps the aggregate
+`create_hilos_analytics.sql` stub and its down file intact. Fold
 `AnalyticsSettingsCatalog` into the project settings catalog, register
 `FsContext::ANALYTICS_JOURNAL` as a `DirectoryScope::NODE` directory, and publish
 a current Privacy revision declaring the `standard.deletion` exception for
@@ -600,9 +614,11 @@ For its data and privacy boundaries, read
 
 1. Declare `HilosFeature::CHANGE_LOG` in `FEATURES`. It mounts no runtime row
    and does not depend on Backup.
-2. Copy the current `create_hilos_change_log.sql` stub and its down file into
-   the project's primary migration track. The stub targets the derived schema;
-   never start a second migrator on connection 1.
+2. Run `db:framework:pull` to bring the aggregate `change_log` unit into the
+   project's primary migration track. Its current `create_hilos_change_log.sql`
+   form uses `{{change_log_database}}` for the derived schema. Apply the generated
+   pairs after provisioning it in step 3; never start a second migrator on
+   connection 1.
 3. Provision `<primary>-change-log` on the same server and grant the application
    access. Configure/connect index 1 through `ChangeLogDatabase` after the
    primary connection and schema, before `if ($initHilos)`, keeping primary

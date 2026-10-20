@@ -391,7 +391,12 @@ GRANT ALL PRIVILEGES ON `<escaped-main>-change-log`.* TO '<app-user>'@'<app-host
 ```
 
 Without the schema or its grant, connection 1 refuses startup and names the
-needed database. The primary migrations copy the current framework journal stub:
+needed database. For catalog-initialized projects, run `db:framework:pull` and
+apply its generated pairs through the primary project migrator, following the
+[migration canon](../orm/migrations.md#framework-tables-in-a-project-hil-1326).
+The `change_log` unit keeps the aggregate `create_hilos_change_log.sql` and its
+down file intact, using `{{change_log_database}}` for the derived schema.
+The earlier primary migrations already brought that six-table form:
 039 in binance-btc-tracker, 038 in ecommerce-shop, 051 in tasks, 038 in
 online-testing and 051 in polls. Each creates the same six tables, including
 `open_handovers`, and its down file refuses any nonempty journal table. There
@@ -614,8 +619,10 @@ quoted derived database name only for execution and live-catalog comparison.
 The files live in the project's `backend/Database/Migration/Triggers` directory,
 including triggers on framework tables. `JournalTriggerGenerator` reads the Entity
 chain mounted by the project and its database's real column types; the migration
-number belongs to the project. Framework migration stubs are copied into numbered
-project migrations.
+number belongs to the project. `db:framework:pull` delivers framework SQL as
+numbered project migration pairs; it does not generate trigger files. A framework
+table change still needs its immutable catalog delta, current stubs, Entity and
+personal-data metadata, and each affected project's current generated triggers.
 
 Only `db:change-log:generate` writes service trigger files. Run it after applying
 project migrations; it refuses pending or failed migrations, a mismatched live

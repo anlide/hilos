@@ -53,6 +53,7 @@
         }
     },
     "scripts": {
+        "db:framework:pull": "@php scripts/framework-migrations.php",
         "ollama:start": "docker compose -f framework/docker/docker-compose.yml --profile ollama up -d",
         "ollama:start-gpu-nvidia": "docker compose -f framework/docker/docker-compose.yml --profile ollama-gpu-nvidia up -d",
         "ollama:start-gpu-amd": "docker compose -f framework/docker/docker-compose.yml --profile ollama-gpu-amd up -d",

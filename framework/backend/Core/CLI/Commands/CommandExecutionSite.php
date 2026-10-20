@@ -15,7 +15,7 @@ use Hilos\Core\CLI\CliApplication;
  * itself, or did both. Naming the site turns that reading into a declaration every command
  * makes about itself, and lets {@see CliApplication} act on it.
  *
- * Three of the four cases are departures from the rule, and each one is a decision somebody
+ * Four of the five cases are departures from the rule, and each one is a decision somebody
  * made for a reason - which is why {@see CommandExecution} carries that reason for them and
  * why a guard test refuses a departure that does not state one.
  */
@@ -32,4 +32,7 @@ enum CommandExecutionSite: string
 
     /** Work in the CLI process that WRITES state; admissible only while the daemon is not running. */
     case CLI_OFFLINE_WRITE = 'cli-offline-write';
+
+    /** Versioned source generation before deployment; no running daemon owns these files. */
+    case CLI_SOURCE_WRITE = 'cli-source-write';
 }

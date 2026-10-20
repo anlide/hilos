@@ -51,9 +51,12 @@ public const array AGENTS = [
 
 `FilesLibraryAgent` and its daemon are empty subclasses of
 `AbstractFilesLibraryAgent` / `AbstractFilesLibraryAgentDaemon`: the registry
-has no project half. The project also copies the migration stubs
-`create_hilos_file.sql` and `create_hilos_file_variant.sql`, folds
-`FilesSettingsCatalog::getCatalog()` into its settings catalog, and registers
+has no project half. Run `db:framework:pull` and apply the generated project
+migrations for the required `file` and `file_variant` units, whose current forms
+are `create_hilos_file.sql` and `create_hilos_file_variant.sql` with their down
+stubs; follow the [migration canon](../orm/migrations.md#framework-tables-in-a-project-hil-1326).
+The project folds `FilesSettingsCatalog::getCatalog()` into its settings catalog
+and registers
 the files directory in its FS context:
 
 ```php

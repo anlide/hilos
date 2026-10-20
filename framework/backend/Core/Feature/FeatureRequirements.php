@@ -59,6 +59,7 @@ final readonly class FeatureRequirements
      *     demo test)
      * @param list<string> $requiredCliCommands CLI command names the feature is driven by (checked by the demo test)
      * @param bool $requiresPresenceSource Whether a runtime collection must report user presence (checked by the demo test)
+     * @param list<string> $requiredSchemaUnits Schema unit keys outside the primary DB table requirements
      */
     public function __construct(
         public array $requiredPages = [],
@@ -73,6 +74,7 @@ final readonly class FeatureRequirements
         public array $requiredDbTables = [],
         public array $requiredCliCommands = [],
         public bool $requiresPresenceSource = false,
+        public array $requiredSchemaUnits = [],
     ) {
     }
 }

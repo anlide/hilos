@@ -7,12 +7,14 @@ namespace Hilos\Tests\Unit\Core\CLI;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\CliApplication;
+use Hilos\Core\CLI\Commands\CommandExecution;
 use Hilos\Core\CLI\Commands\CommandExecutionSite;
 use Hilos\Core\CLI\DaemonPresence;
 use Hilos\Core\CLI\DaemonPresenceProbe;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
 
 /**
  * The gate that keeps a second writer away from state the daemon owns.
@@ -29,6 +31,31 @@ use PHPUnit\Framework\TestCase;
 final class OfflineWriteGateTest extends TestCase
 {
     private const string ADDRESS = '127.0.0.1:8094';
+
+    public function testSourceWritePassesWithoutAPresenceAddress(): void
+    {
+        $previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
+        $previousHost = getenv('HILOS_DAEMON_HOST');
+        $previousPort = getenv('COMMAND_PORT');
+        putenv('HILOS_DAEMON_HOST');
+        putenv('COMMAND_PORT');
+        Hilos::$env = new EnvAccessor();
+        try {
+            self::assertNull(DaemonPresenceProbe::address());
+            $this->expectOutputString('');
+            self::assertNull(new ReflectionMethod(CliApplication::class, 'refuseOfflineWriteBesideALiveDaemon')->invoke(
+                null,
+                CommandExecution::cliSourceWrite('writes versioned sources'),
+                CliCommands::DB_FRAMEWORK_PULL,
+            ));
+        } finally {
+            $previousHost === false ? putenv('HILOS_DAEMON_HOST') : putenv('HILOS_DAEMON_HOST=' . $previousHost);
+            $previousPort === false ? putenv('COMMAND_PORT') : putenv('COMMAND_PORT=' . $previousPort);
+            if ($previousEnv !== null) {
+                Hilos::$env = $previousEnv;
+            }
+        }
+    }
 
     public function testANamedCommandRunsWhileNoDaemonAnswers(): void
     {

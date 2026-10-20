@@ -1,0 +1,10 @@
+{
+    "projects": [
+        {"root": "demo/chat", "facade": "Demo\\Chat\\Hilos"},
+        {"root": "demo/tasks", "facade": "Demo\\Tasks\\Hilos"},
+        {"root": "demo/polls", "facade": "Demo\\Polls\\Hilos"},
+        {"root": "demo/binance-btc-tracker", "facade": "Demo\\BinanceBtcTracker\\Hilos"},
+        {"root": "demo/ecommerce-shop", "facade": "Demo\\EcommerceShop\\Hilos"},
+        {"root": "demo/online-testing", "facade": "Demo\\OnlineTesting\\Hilos"}
+    ]
+}

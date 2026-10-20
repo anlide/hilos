@@ -9,6 +9,7 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Feature\FeatureDefinition;
 use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Database\Migration\FrameworkSchemaCatalog;
 use Hilos\Pages\ChangeLog\AbstractHilosChangeLogDashboardPage;
 use Hilos\Pages\ChangeLog\AbstractHilosChangeLogTablePage;
 use Hilos\Pages\ChangeLog\AbstractHilosChangeLogTablesPage;
@@ -42,6 +43,7 @@ final class ChangeLogFeature extends FeatureDefinition
                 AbstractHilosChangeLogTablePage::class => HilosChangeLogHistoryTable::class,
             ],
             requiredCliCommands: [CliCommands::CHANGE_LOG_GENERATE],
+            requiredSchemaUnits: [FrameworkSchemaCatalog::CHANGE_LOG],
         );
     }
 }

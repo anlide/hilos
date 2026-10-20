@@ -66,6 +66,11 @@ final class CommandExecutionRoleTest extends TestCase
 
         $this->assertSame(CommandExecutionSite::CLI_READ, $executions[CliCommands::BACKUP_VERIFY]->site);
         $this->assertSame(CommandExecutionSite::CLI_READ, $executions[CliCommands::DB_WAIT]->site);
+        $this->assertSame(CommandExecutionSite::CLI_SOURCE_WRITE, $executions[CliCommands::DB_FRAMEWORK_PULL]->site);
+        $this->assertSame(
+            'writes versioned project migration sources before deployment; no running daemon owns these files',
+            $executions[CliCommands::DB_FRAMEWORK_PULL]->reason,
+        );
         $this->assertSame(CommandExecutionSite::CLI_OFFLINE_WRITE, $executions[CliCommands::MIGRATION_UP]->site);
         // Run in the container of a node waiting on a dead holder's claim, before its daemon exists.
         $this->assertSame(CommandExecutionSite::CLI_OFFLINE_WRITE, $executions[CliCommands::MIGRATION_RELEASE]->site);

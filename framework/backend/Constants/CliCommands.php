@@ -114,6 +114,9 @@ final class CliCommands
     /** @var string Command: Generate service trigger files for the change log */
     public const string CHANGE_LOG_GENERATE = 'db:change-log:generate';
 
+    /** @var string Command: Pull missing framework migration sources into project tracks */
+    public const string DB_FRAMEWORK_PULL = 'db:framework:pull';
+
     /** @var string Command: Apply database seeds */
     public const string SEED_APPLY = 'db:seed:apply';
 

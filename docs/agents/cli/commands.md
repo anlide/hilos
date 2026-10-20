@@ -7,7 +7,7 @@ command has not declared is refused with exit 2, before the daemon is asked and
 before the database is connected.
 
 Every command below carries a **site**: the process its work actually happens in. `daemon`
-is the rule and needs no explanation; the other three are departures, each with a written
+is the rule and needs no explanation; the other four are departures, each with a written
 reason in its `execution()` declaration. See
 [command-execution.md](command-execution.md) for the rule, the guard behind it, and why a
 `cli-offline-write` command refuses to start while a daemon is running.
@@ -16,11 +16,28 @@ reason in its `execution()` declaration. See
 
 | Command | Site | Description |
 |---|---|---|
+| `db:framework:pull [--projects=<path>]` | `cli-source-write` | Copy missing framework SQL pairs into versioned project tracks without applying SQL or contacting a daemon |
 | `db:migration:up` | `cli-offline-write` | Apply all pending migrations |
 | `db:migration:down` | `cli-offline-write` | Roll back last applied migration |
 | `db:migration:status` | `cli-read` | Show applied / pending migrations |
 | `db:migration:retry` | `cli-offline-write` | Retry a failed migration |
 | `db:migration:release` | `cli-offline-write` | Release a schema rollout claim a dead holder left |
+
+`db:framework:pull` defaults to the current project's configured Schema track and facade.
+`--projects=<path>` reads an explicit JSON object with a `projects` list of `root` and
+`facade` strings. Each root is relative to the registry file and names a project directory;
+its Composer `autoload.psr-4` paths load the facade without installing dependencies,
+reading `.env`, initializing a database, or switching the active facade. The repository's
+`composer db:framework:pull` uses `scripts/framework-migrations.php`, the same CLI manager
+and command, and `framework-projects.json` to address all six demos.
+
+The command supports origin-aware tracks. It does not infer provenance from an unknown
+legacy track. It checks every target before publishing, then rechecks under each track's
+source lock. It prints created files or skipped targets on stdout and failures on stderr;
+any failure returns nonzero. Publication is per file, not a transaction across projects:
+after an I/O failure, keep the reported files and repeat to complete a valid partial pair.
+Commit the generated SQL before deploying and applying migrations through the existing
+offline path. No presence address is needed to generate these source files.
 
 ## Schema / Entity commands
 
@@ -205,7 +222,8 @@ way. `CliApplication` asks `CliManager::requiresDatabase()` and skips the connec
 unregistered command name skips it too, so a typo answers `Unknown command` instead of a
 connection failure.
 
-Marked today: `db:wait` (its poll *is* the connect, and it has to run before the server
+Marked today: `db:framework:pull` (writes source files without reading a database),
+`db:wait` (its poll *is* the connect, and it has to run before the server
 answers), `agent:restart` (the master coordinates the stop and start over its command
 socket, and the CLI process has no database work), `test:orm:forget` (only the addressed
 live process forgets ORM state; see [the test-only canon](../testing.md#forgetting-loaded-orm-state)),

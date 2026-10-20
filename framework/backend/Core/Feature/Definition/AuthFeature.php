@@ -13,8 +13,10 @@ use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Entity\Item\AccessLogEntry;
 use Hilos\Database\Entity\Item\AccountDeletion;
 use Hilos\Database\Entity\Item\LegalAcceptance;
+use Hilos\Database\Entity\Item\LegalAcceptanceExport;
 use Hilos\Database\Entity\Item\DataExport;
 use Hilos\Database\Entity\Item\Identity;
+use Hilos\Database\Entity\Item\OAuthProvider;
 use Hilos\Database\Entity\Item\PasskeyCredential;
 use Hilos\Database\Entity\Item\RegistrationReservation;
 use Hilos\Database\Entity\Item\SecondFactor;
@@ -114,6 +116,8 @@ final class AuthFeature extends FeatureDefinition
                 DataExport::_table,
                 UserRename::_table,
                 UserMerge::_table,
+                OAuthProvider::_table,
+                LegalAcceptanceExport::_table,
             ],
         );
     }

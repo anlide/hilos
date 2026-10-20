@@ -52,6 +52,7 @@ use Hilos\Core\TruthSource\TruthSourceOwner;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseGuarantee;
 use Hilos\Database\DatabaseGuaranteeStartupGuard;
+use Hilos\Database\Migration\FrameworkMigrationStartupGuard;
 use Hilos\Database\Pages\PageCatalogProviderInterface;
 use Hilos\Database\Pages\PageCatalogResolver;
 use Hilos\Database\Pages\PageCatalogStub;
@@ -742,6 +743,17 @@ abstract class Hilos implements TruthSourceOwner
     }
 
     /**
+     * Asks the factory without configuring, mounting or installing the returned context.
+     *
+     * @param class-string<Hilos> $hilosClass Facade whose runtime boundary is being read
+     * @return bool Whether the project creates a runtime context
+     */
+    public static function usesRuntimeOf(string $hilosClass): bool
+    {
+        return $hilosClass::createRuntime() !== null;
+    }
+
+    /**
      * Reads the database promises of a facade class that is not the running one.
      *
      * The startup guard needs exactly this, for the reason {@see featuresOf()} exists: it judges
@@ -1144,6 +1156,7 @@ abstract class Hilos implements TruthSourceOwner
      */
     public static function init(): void
     {
+        FrameworkMigrationStartupGuard::assertAppliedIfStarting();
         static::validateTopology();
         static::validateFeatureActivation();
 
@@ -1544,6 +1557,7 @@ abstract class Hilos implements TruthSourceOwner
      *     source, when a project that serves pages keeps its connections off the framework base, or when a project
      *     that can freeze migrates no verifier circle table
      * @throws LogicException When the PCRE engine refuses to strip a migration file's comments
+     * @throws DatabaseException When a required schema unit or its catalog metadata is invalid
      * @throws StateCollectionNotFoundException When building the runtime context represents an unmounted collection
      */
     public static function validateDeferredFeatureRequirements(

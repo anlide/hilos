@@ -60,9 +60,10 @@ the recipe before generating code.
    `SettingsLibraryAgentDaemon` in `AGENTS` with `PLACEMENT => POLICY` (the single
    writer of the settings collection; one entry, shared with the `LOGS` and
    `NOTIFICATION_DELIVERY` features), mount the SDK view.
-4. Bound: generate in dependency order — the `create_hilos_user.sql` stub copied
-   among the project's migrations (no entity, no block source: the person is the
-   framework's table) → RT presence source (implements `HilosPresenceSource`) →
+4. Bound: generate in dependency order — run `db:framework:pull` and apply its
+   generated project migrations per `docs/agents/orm/migrations.md` (no entity,
+   no block source: the person is the framework's table) → RT presence source
+   (implements `HilosPresenceSource`) →
    table subclass (the presence hooks) → thin page → topology + SDK view mount.
    The recipe names which of these steps are still today's project code until
    their leaves land; follow the recipe, not this summary.

@@ -21,8 +21,10 @@ The person is the framework's table `hilos_user`, with the columns `id`, `name`,
 `Entity::SET_STANDALONE` with `_setRoot = true` — a person belongs to
 nobody's set and is the root other tables hang their sets on — and the verdict
 `FAKE_NAME` on `name`. The collection key `users` is mounted by
-`HilosDbContext`. A project carries the migration stub
-`create_hilos_user.sql` among its own migrations, like every framework table.
+`HilosDbContext`. The core `user` schema unit is selected independently of admin
+features. In a catalog-initialized project, run `db:framework:pull` and apply its
+generated project migrations for the current `create_hilos_user.sql` form and
+subsequent changes; see the [migration canon](../orm/migrations.md#framework-tables-in-a-project-hil-1326).
 The three demos migrate their former `user` tables to this shape. The shared
 columns and indexes match the stub: `name` is `VARCHAR(255)`, while the code
 keeps the rename limit at 64 characters.

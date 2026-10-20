@@ -14,6 +14,10 @@ use Hilos\Core\Feature\FeatureRegistry;
 use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Migration\FrameworkSchemaCatalog;
+use Hilos\Database\Schema\ChangeLogTablesWithoutEntity;
+use Hilos\Fs\FsPath;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\State\Collection\HilosConnections;
@@ -272,6 +276,79 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
+    public function testPrimarySchemaUnitIsCheckedFromTheSharedCatalog(): void
+    {
+        $unit = new FrameworkSchemaCatalog()->unit('oauth_provider');
+        new DeferredFeatureRequirementsValidator(new DeferredSchemaTestRegistry(
+            new FeatureRequirements(requiredSchemaUnits: ['oauth_provider']),
+        ))->validate(
+            DeferredSchemaTestHilos::class,
+            $this->migrationsPath(['001.sql' => FsPath::read($unit->upPath)]),
+            'NoSuchCliManagerClass',
+            null,
+        );
+        $this->addToAssertionCount(1);
+    }
+
+    public function testDerivedJournalTokenSatisfiesTheJournalUnit(): void
+    {
+        $unit = new FrameworkSchemaCatalog()->unit(FrameworkSchemaCatalog::CHANGE_LOG);
+        $this->validateJournal(['001.sql' => FsPath::read($unit->upPath)]);
+        $this->addToAssertionCount(1);
+    }
+
+    public function testJournalTablesInThePrimaryOrAnUnrelatedSchemaDoNotSatisfyTheJournalUnit(): void
+    {
+        $sql = '';
+        foreach (ChangeLogTablesWithoutEntity::tables() as $table) {
+            $sql .= "CREATE TABLE `{$table}` (`id` INT);\nCREATE TABLE `elsewhere`.`{$table}` (`id` INT);\n";
+        }
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage('requires schema unit change_log');
+        $this->validateJournal(['001.sql' => $sql]);
+    }
+
+    public function testJournalUnitNeedsEveryTableAndDoesNotCountDownOrComments(): void
+    {
+        $unit = new FrameworkSchemaCatalog()->unit(FrameworkSchemaCatalog::CHANGE_LOG);
+        $sql = FsPath::read($unit->upPath);
+        $tables = ChangeLogTablesWithoutEntity::tables();
+        $missing = array_pop($tables);
+        $incomplete = '';
+        foreach ($tables as $table) {
+            $incomplete .= "CREATE TABLE {{change_log_database}}.`{$table}` (`id` INT);\n";
+        }
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage("creates table {$missing} on connection 1");
+        $this->validateJournal(['001.sql' => $incomplete . "/*\n{$sql}\n*/", '002_down.sql' => $sql]);
+    }
+
+    public function testBootstrapOwnedRequirementsNeedNoStub(): void
+    {
+        new DeferredFeatureRequirementsValidator(new DeferredSchemaTestRegistry(new FeatureRequirements(
+            requiredDbTables: ['migration', 'hilos_migration_claim', 'hilos_admin_view_mode_latch', 'hilos_database_marker'],
+            requiredSchemaUnits: ['migration', 'migration_claim', 'admin_view_mode_latch', 'database_marker'],
+        )))->validate(DeferredSchemaTestHilos::class, '/no/track', 'NoSuchCliManagerClass', null);
+        $this->addToAssertionCount(1);
+    }
+
+    public function testUnknownSchemaUnitIsRefused(): void
+    {
+        $this->expectException(DatabaseException::class);
+        $this->expectExceptionMessage('Unknown framework schema unit unknown');
+        new DeferredFeatureRequirementsValidator(new DeferredSchemaTestRegistry(new FeatureRequirements(
+            requiredSchemaUnits: ['unknown'],
+        )))->validate(DeferredSchemaTestHilos::class, '/no/track', 'NoSuchCliManagerClass', null);
+    }
+
+    /** @param array<string, string> $files Journal migration fixture */
+    private function validateJournal(array $files): void
+    {
+        new DeferredFeatureRequirementsValidator(new DeferredSchemaTestRegistry(new FeatureRequirements(
+            requiredSchemaUnits: [FrameworkSchemaCatalog::CHANGE_LOG],
+        )))->validate(DeferredSchemaTestHilos::class, $this->migrationsPath($files), 'NoSuchCliManagerClass', null);
+    }
+
     /**
      * Writes a temporary migration directory with the given files.
      *
@@ -291,6 +368,45 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
         }
 
         return $path;
+    }
+}
+
+/** Facade selecting the configurable schema-only synthetic feature. */
+final class DeferredSchemaTestHilos extends DeferredRequirementsValidHilos
+{
+    protected const array FEATURES = [HilosFeature::SETTINGS];
+}
+
+/** Requirements remain synthetic while schema units come from the real metadata catalog. */
+final class DeferredSchemaTestRegistry extends FeatureRegistry
+{
+    /** @param FeatureRequirements $requirements Obligations of the synthetic feature */
+    public function __construct(private readonly FeatureRequirements $requirements)
+    {
+        parent::__construct();
+    }
+
+    /** @return list<FeatureDefinition> One synthetic schema feature */
+    protected function buildDefinitions(): array
+    {
+        return [new class ($this->requirements) extends FeatureDefinition {
+            /** @param FeatureRequirements $requirements Test obligations */
+            public function __construct(private readonly FeatureRequirements $requirements)
+            {
+            }
+
+            /** @return HilosFeature Synthetic case */
+            public function feature(): HilosFeature
+            {
+                return HilosFeature::SETTINGS;
+            }
+
+            /** @return FeatureRequirements Test obligations */
+            public function requirements(): FeatureRequirements
+            {
+                return $this->requirements;
+            }
+        }];
     }
 }
 

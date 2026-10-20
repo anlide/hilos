@@ -1,0 +1,215 @@
+{
+    "format": 1,
+    "units": [
+        {
+            "unit": "migration",
+            "upSha256": null,
+            "downSha256": null
+        },
+        {
+            "unit": "migration_claim",
+            "upSha256": null,
+            "downSha256": null
+        },
+        {
+            "unit": "admin_view_mode_latch",
+            "upSha256": null,
+            "downSha256": null
+        },
+        {
+            "unit": "database_marker",
+            "upSha256": null,
+            "downSha256": null
+        },
+        {
+            "unit": "user",
+            "upSha256": "05dbb70141293efa65fac3c5f769f32e43bf3f69c333bb6647e794f711f88ef5",
+            "downSha256": "c51fdef7a88ead7047c9c14f60f39df9955251291c267b7cca94927fa318df35"
+        },
+        {
+            "unit": "session",
+            "upSha256": "66584ff15f204478879fc8c5eb333e8b232c110c5b863f152b0ca5313d81afb0",
+            "downSha256": "266759368da3c7656ed84f4435275d2a140c539aea98a2165606e465d3f12128"
+        },
+        {
+            "unit": "setting",
+            "upSha256": "4cb4b7e51be701981f1d16441c6d748a3f71ae618fd6141c050e0aa599a4e72b",
+            "downSha256": "3b37c59669bdd5b36adc58994fb6a050ef6d4cbda92e7b44568a8250c1729830"
+        },
+        {
+            "unit": "notification",
+            "upSha256": "bc7ae8b74c1686e9d4cdeaae502a9bfcc5fa252757088d140c0936e07c417845",
+            "downSha256": "a530cd0dd754ecea0ee7cfce643de1b14e22b7e3c8db39f985033a4a6e39e956"
+        },
+        {
+            "unit": "notification_preference",
+            "upSha256": "039e1e383f7b52ac009ec70c90520796a4ed96ddb6bc88e65e4b0ef53590d91c",
+            "downSha256": "f125423331d45751b7fcccf82e41d5c9b81844313d30db78df0012472557600b"
+        },
+        {
+            "unit": "push_subscription",
+            "upSha256": "de9392fd3b11f0a16bbfa9630fb659caa38dd81046a4265ea75bc91846a33f90",
+            "downSha256": "854eda7a426d1cf2cb89d4680c1642f819de5281b275d4927cce08c47613e067"
+        },
+        {
+            "unit": "notification_delivery",
+            "upSha256": "83e883f283b670f9f1cc4894cda604d608599304b9638d3964c2011bf0e8d52a",
+            "downSha256": "20060db3a4041f04299235dde117ac4e656020570c73a687d810c8247ab18b6b"
+        },
+        {
+            "unit": "auth_block",
+            "upSha256": "ab98be68d00e948e573947b30aeb92e7cb2fd27c730c22d441b6793fce41d5c0",
+            "downSha256": "91fcb28d04011680c145d30175c8220c8ef459778799558ebf97ed81eb4a8c8c"
+        },
+        {
+            "unit": "user_verification",
+            "upSha256": "19ac63618f3d73109badee4f9f1b8bbeb9bfb090a9504fd7a8bcb2e78f022bf3",
+            "downSha256": "d40881239b63e861a6c23190f5636b855a524f18fcee49a75a7f8d132e93d54f"
+        },
+        {
+            "unit": "identity",
+            "upSha256": "1a4546cb782b5f0d278c234c45080385bdd4384a3957c445542247e989cd98ef",
+            "downSha256": "ae26767a5e05d5e4cd4f72841dd95a73c3f42f7c0a78eaae3cb593bc33874436"
+        },
+        {
+            "unit": "passkey_credential",
+            "upSha256": "a5a3eb2f1c3a79200bfad8b2bfb2f1c28fb306cee7e30381ae312f584f08913c",
+            "downSha256": "e960ce225937d8485e6183d71874084e8e16a83373f61d864a50b42d2ff14054"
+        },
+        {
+            "unit": "registration_reservation",
+            "upSha256": "c29d2a801cdd83ac72839d44c74a2cabdf2022bdd580ea8cb76be145a01f1d84",
+            "downSha256": "658409dcf258de5d2ca3f65277646bf3958ec382d483f0a4b08a3c42c4606a4e"
+        },
+        {
+            "unit": "second_factor",
+            "upSha256": "c52955f7293cc97caf8dd7f97befa49b1d4f3d1f6b25baa2462846e826bd7fce",
+            "downSha256": "7e8dae363f4a01ab648929a41ec2bcc44ff4f714cd71b737c1e6d5e8c8c71544"
+        },
+        {
+            "unit": "second_factor_backup_code",
+            "upSha256": "a05695728a647629ad6f0cf24253d94d4b5f95bb59cf5c6fffe2d6b2445ae96f",
+            "downSha256": "a4793c47b5e99334f8b918fe36b3c04b177be37e774674c2609975a994775a1f"
+        },
+        {
+            "unit": "second_factor_trust",
+            "upSha256": "3214efa24daeb2da55f76ae8d71581345edac38eba3089dc43efcd9fba36f5f5",
+            "downSha256": "0c93c04f06655b62c05128a1c6c5e71e1a0dfce9a951a4ab88c99202ca6ad477"
+        },
+        {
+            "unit": "second_factor_reset",
+            "upSha256": "15f34b5a2b74d5420f2590c2d516b2009bfc2138139d47e5d5c0aa15a09a37fc",
+            "downSha256": "5f64a912bcd28b9ca21b023806d6b1da931768d7384750c231053981bef94054"
+        },
+        {
+            "unit": "second_factor_setting",
+            "upSha256": "dbcf4ef1c05b29bbb5af1d4ed0e5e6c91221b3a41979e68f1854784489c8334f",
+            "downSha256": "a537a86d68493b21610b6d058565024d2c1aa5528606b98f42bdc68e6beb765a"
+        },
+        {
+            "unit": "step_up",
+            "upSha256": "068830c7e8419dccc84d9019421caf304e6c832e63c3ed794f08bb6c2cf62985",
+            "downSha256": "c8df915c92f502a8cd236b88c3549386b6276dcbccc6cd42aea61d41e64b97ac"
+        },
+        {
+            "unit": "access_log",
+            "upSha256": "e7162c5876f2b5dca6a2f25268b63883fdcaabeee701ab7a8e12c6b711e57ed7",
+            "downSha256": "386c67bc69ed9721fbc5aba5a69132d35fc1b262c65316fa166a8174f39bee1f"
+        },
+        {
+            "unit": "account_deletion",
+            "upSha256": "7acfabcb73d411e97cf92cc08ce9e28781ebe5451a83f0dc78070c664aedff92",
+            "downSha256": "95ee233624f2203cf94b2814b79fab0c2e5564a5e7ac8235715e25b9342ae230"
+        },
+        {
+            "unit": "legal_acceptance",
+            "upSha256": "a77f48443f5239c27320efe5d18458aab4b1d39c31d36ffb3c6d0f7075533cea",
+            "downSha256": "8a0ae2af4e594f95fe18fd47ca422e1d863173ede780aeb30b2836ec63175ddd"
+        },
+        {
+            "unit": "data_export",
+            "upSha256": "8e518d9a256f91ca210540a5bf4a2b58de2606f36cb96c7d0a4780af8a0a277c",
+            "downSha256": "ae85831c32a4e031fc2659d042a1d62bcdcfc0510a0ad3ffc032ae9d840a2aea"
+        },
+        {
+            "unit": "user_rename",
+            "upSha256": "ac113d5c366707665b1907f3c468cf8557d4bdcbc658b4e8153272b59cda4c47",
+            "downSha256": "e3ce6e122f15a16880fbfa92fb4e7b2113b539c61ff9a06760def5033bb72ac4"
+        },
+        {
+            "unit": "user_merge",
+            "upSha256": "e2cf687afaf77dcf30ea73898757ad88d495f3a2a4c12b5a7e167a7fb4153203",
+            "downSha256": "5ed595cc5e9d92e6a0f0bc54958d1789379550ca5f8b5bae46c65c48468a074d"
+        },
+        {
+            "unit": "oauth_provider",
+            "upSha256": "04353bad1214d738efe8f07bebcfdb5578aa81b408ae5f4895e16e9290c01bb9",
+            "downSha256": "fc6499840a3ab2258c08a7d0991278b371aaefd49e66809df2a7704d1c6f7351"
+        },
+        {
+            "unit": "legal_acceptance_export",
+            "upSha256": "09d96afc623f1c1a0f167b34461b7ae21c1453648a9cd57df2f115c6987d793a",
+            "downSha256": "91e01bc5e4644b68fd947865690013329b2838beb59fdb54521fef732884bd5a"
+        },
+        {
+            "unit": "language",
+            "upSha256": "f7e320c123bc14fe1018804f7e4c91f0ee6a08a45c18388de11ade23ca930e06",
+            "downSha256": "39aee9561b9a4e794e407cf52f6ee12864dd3a2a8518eefbff57da762ee7927a"
+        },
+        {
+            "unit": "country",
+            "upSha256": "25ed3560321cdc1279ca5d8e92cf05fe0f56b592d0fb70d7ff1526d12e65b1f8",
+            "downSha256": "dce69d0008c6c29000fa451f70a827910aa5f564041806dd7f11ef1fd897fdd5"
+        },
+        {
+            "unit": "locale",
+            "upSha256": "29d466f582d85898d4f51aeeba11365ed91d55686ff8de8d7823bd7ddad69bfd",
+            "downSha256": "f21be167fe7013150aa9818091b54fea81949834cf99724422d4131066c0e61c"
+        },
+        {
+            "unit": "language_name",
+            "upSha256": "397398bd6b4f9c1488f9889d21a3f8250efa85cab1c8d8f099a636b77e74c26a",
+            "downSha256": "80a114f3d14238a081689eacec95ce20af3aceaefe13a4f5e69045aa5084932d"
+        },
+        {
+            "unit": "country_name",
+            "upSha256": "febdac923060d0034faf3c409041d01fedb21c99dcf101a5577cd04c95d4d685",
+            "downSha256": "0cb75a713962970ad9bb8a54ea6964a498aec4fea814dc5b8e53abdf7bdd336f"
+        },
+        {
+            "unit": "i18n_reflow",
+            "upSha256": "b878e13016de17f9a3e7d04724ca0690007d8dbc4ecab51f2cf17979432030a5",
+            "downSha256": "e81850e1092940f326fcd42663ca8b85536f92bad3a175713c239240ed177f8b"
+        },
+        {
+            "unit": "file",
+            "upSha256": "9235fbfc7ec909dae6bfb6570b5c0081c2fad554f7aa77f7453f8c9d41b75d68",
+            "downSha256": "f2a940077724421dee78ff78528db41420284ce04e1e8019ca3648f2e327dc99"
+        },
+        {
+            "unit": "file_variant",
+            "upSha256": "042fbfa9065f745375a2323bb266d04a64cc9a55828cab8f4b372afd0441c3c5",
+            "downSha256": "798523b36b0eebbed81733fa6aab098fd74da550ed42a5454271d607969f76d5"
+        },
+        {
+            "unit": "user_photo",
+            "upSha256": "5945b97dbb6b6d5cb527bf030d934e1fe0df6ac1dc9c2141f5fa7ff971555b63",
+            "downSha256": "4feeb8e998677755913e57b0f676462b79c6e48c61214deecbf177daae484049"
+        },
+        {
+            "unit": "verifier_circle",
+            "upSha256": "a94852f3003a5f91902171372f6dd071fb781f8a08a6bbaa3a013c26a1eb08f5",
+            "downSha256": "a073f64f51f73d43412547b7b8ae005a68114ec5ec66822ce6c5d68211eb3db9"
+        },
+        {
+            "unit": "analytics",
+            "upSha256": "b46d933c3758d37dd00e2f37efd8c867e5042297cf291b25917ac119a8e7960f",
+            "downSha256": "099ef20cfa0adccd9f5c727f307bda3b10fa443178ff5f5ab4ed717c34802695"
+        },
+        {
+            "unit": "change_log",
+            "upSha256": "42f8a91ffd23eab9c76915794fbdca6cb83a0f0657e5d376a3fac895f09ae56a",
+            "downSha256": "fb9828f509bdf71a6be348b2e837e033e2c5a82e2cc3aa1e96707f600d27f804"
+        }
+    ]
+}

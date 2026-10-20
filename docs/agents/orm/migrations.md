@@ -163,35 +163,129 @@ in each demo).
 
 ## Framework Tables In A Project (HIL-1326)
 
-**Today.** A framework table reaches a project as a copy in the project's own track. The
-stub `framework/backend/Database/Migration/Stub/create_<table>.sql` (and its `_down`) holds
-the table's current form and is edited in place: the framework keeps no history of its own
-changes. A change to a framework table is therefore also written into every project that
-carries the table, as a numbered migration of that project (and its `_down`) holding the
-framework's DDL only — never mixed with the project's own DDL in one file. The copies of one
-change differ only by the set of framework tables each project carries (commit `a7b849b53`,
-`NNN_add_person_foreign_keys.sql` in six demos). What the project adds to a framework table —
-a column ([inheritance.md](inheritance.md), *the project's columns arrive by a project
-migration*), an index, its own rows moved into it — is a separate project migration. Reaching
-a framework table the project does not carry raises `TableNotActivatedException`
-(`framework/backend/Database/Exception/TableNotActivatedException.php`), which names the stub
-to copy.
+A framework table reaches a project through `db:framework:pull`, as numbered SQL up/down
+pairs in the project's own `Schema` track. The framework writes each change once; the
+command creates the project copies. Keep framework SQL separate from project SQL. What
+the project adds to a framework table — a column ([inheritance.md](inheritance.md),
+*the project's columns arrive by a project migration*), an index, its own rows moved into
+it — remains a separate project migration.
 
-**Decided (2026-10-08).** The framework keeps, beside the stubs, a catalog of changes: a
-change to a framework table is written in the framework once. A framework command brings a
-project the catalog changes it lacks — only for the tables of the features it declares
-(`Hilos::FEATURES`, through a feature → tables map the framework keeps) — each file marked
-with its origin, so that running the command again copies nothing twice; and a node does not
-start while the code expects a catalog change that is not in the project's track — it names
-the command instead (not in the code yet — HIL-1518). A new project receives its framework
-tables as one composite baseline in their current form, marked with the catalog version it
-was built from (not in the code yet — HIL-1519). Existing projects stay as they are: their
-history is the catalog's starting point, and the next changes reach them by the same command.
-The model is Rails engines: `rails <engine>:install:migrations` copies the engine's
-migrations into the application, marks each with its source, and skips the ones already
-copied. The names of the command, of the catalog and of the origin mark are not chosen here:
-the interviews of HIL-1518 and HIL-1519 decide them and write them into this section as they
-clear their markers. This section describes the behavior.
+### Schema units and immutable changes
+
+The sources live under `framework/backend/Database/Migration/`:
+
+- `FrameworkSchemaCatalog` defines stable schema units, their tables, stub pairs,
+  dependencies and connections. Selection uses `FeatureRegistry` requirements:
+  `requiredDbTables`, metadata-only `requiredSchemaUnits`, and feature dependencies.
+  It also includes core `user`/`session` and the four bootstrap-owned units
+  (`migration`, `migration_claim`, `admin_view_mode_latch`, `database_marker`).
+  `verifier_circle` is selected when the facade has a runtime factory, independently of
+  `BACKUP`. Bootstrap-owned DDL remains with migration initialization, without stubs.
+- `Stub/create_<table>.sql` and its `_down` hold the current form. The `analytics`
+  and `change_log` units each keep their aggregate stub intact. Journal SQL travels in
+  the primary track with `{{change_log_database}}` targeting the derived database;
+  there is no migrator on the journal connection.
+- `catalog.json` fixes the genesis stub hashes. `FrameworkMigrationCatalog` reads it
+  and the immutable `Change/<id>/change.json` groups with their plain up/down SQL parts.
+  A part belongs to one schema unit; a shared table stays one unit even when several
+  features require it. Selection is the union of units, not the name of an SQL folder.
+
+For the next framework table change:
+
+1. Append an immutable change group with a UTC timestamp, ticket key and slug. Declare
+   one part per affected unit, exact `requires` dependencies and the resulting stub hashes.
+   Follow the [change-source format](../../../framework/backend/Database/Migration/Change/README.md)
+   for the manifest, origin and canonical UTF-8/LF hashing; do not invent another format.
+2. Update the current stub pair once, together with the Entity metadata and personal-data
+   verdict. Keep the [journal trigger files](../architecture/change-log.md#triggers-are-files)
+   current for every affected project. Do not rewrite genesis, published changes or old
+   project migrations. A stub differing from genesis or its last declared change is refused
+   as `Framework stub drift for unit <unit>; declare its immutable change part`.
+3. Run pull for the projects that carry the unit, review and commit the generated pairs,
+   then apply them through the ordinary project migrator. Do not hand-write the same
+   framework delta into each project.
+
+Parts are identified by `(changeId, unit)` with explicit dependencies. A later timestamp
+does not prove coverage. A newly installed unit copies its current form and records the
+parts that form already includes; it does not replay past ALTER statements. Existing
+copies keep their fixed body hashes when the current stub changes.
+
+### Pull sources before deployment
+
+```bash
+php cli.php db:framework:pull  # current project's configured Schema track and facade
+php cli.php db:framework:pull --projects=/path/to/framework-projects.json
+composer db:framework:pull    # repository root: all six demos
+```
+
+`FrameworkMigrationPullCommand` is a database-free `CLI_SOURCE_WRITE` command. It writes
+versioned source files, without applying SQL or contacting a daemon. The repository
+wrapper `scripts/framework-migrations.php` uses the same `CliManager` and command with
+`framework-projects.json`. An explicit registry is a JSON object with a `projects` list
+of `{root, facade}` entries; roots resolve relative to that file. The registry loads
+project PSR-4 paths from `composer.json`, without `initEnv`, DB initialization or dependency
+installation. See [CLI commands](../cli/commands.md#migration-commands) and the
+[execution-site rule](../cli/command-execution.md#todays-departures) for that boundary;
+applying SQL retains the existing offline-write guard.
+
+`FrameworkMigrationInstaller` preflights all targets before publishing SQL, then replans
+under each track's exclusive `.hilos-framework.lock`. It appends new numbers after every
+occupied number, including orphan directions, and never replaces an existing destination.
+A complete, verified origin pair is skipped on repeat. After an interrupted publication,
+repeat the command: it completes only an exact matching half-pair at its existing number;
+an unknown or damaged half-pair is refused. Publication is per file and track, without a
+transaction across projects. Failures return nonzero and report the files actually created;
+keep that report and complete the partial result before deployment.
+
+Both directions carry the same first-line `-- hilos-framework: ` JSON header, format 1,
+parsed by `FrameworkMigrationOrigin`. Kinds are `adopt`, `install`, `change` and `baseline`.
+It records exact units, part identities and hashes, plus the two SQL body hashes excluding
+the header. Coverage is the verified set of parts in these actual files, never a maximum
+change id. Duplicate installation or part coverage is refused. The full field and hashing
+contract belongs to the change-source format linked above.
+
+### Source coverage and applied coverage are separate gates
+
+`EntrypointPrelude::run()` calls `FrameworkMigrationStartupGuard::prepare()` after env
+and track configuration, before persistence initialization. Under the shared source lock
+it verifies the actual origin headers, body hashes, complete pairs, selected units and
+exact change coverage. A missing unit, part or pair direction names what is missing:
+`Framework migration <unit, part or file> is missing from this project; run db:framework:pull`.
+It neither copies files nor applies SQL.
+
+At the entrance to `Hilos::init()`, before typed application reads, the applied gate checks
+every prepared origin file's exact number against successful rows of the primary
+`migration` table. A higher successful level does not cover a missing or failed row.
+An absent migration table supplies no successful rows, without creating it; other read
+errors still fail. The refusal is `Framework migration <file> is not applied; run
+db:migration:up`. Docker can run its normal `migrateUp()` between preparation and Hilos
+initialization. The CLI uses `initEnvironment()` alone and does not arm these startup
+gates, so pull and migration repair stay reachable. Startup does not repair sources or
+waive either gate.
+
+`TableNotActivatedException` still names the missing `create_<table>.sql` stub and says
+to copy it. For a catalog-initialized project, use pull and then apply the generated
+migrations; do not take that older wording as a second source-delivery recipe.
+
+### Initial adoption and future baselines
+
+The catalog was connected to the six reviewed demos by an appended no-op `adopt` up/down
+pair in each project. Existing migration history stays unchanged. Adoption records only
+the verified framework composition already present in that project, not every known unit.
+Binance-btc-tracker, ecommerce-shop and online-testing also received separate `install`
+pairs for the two missing AUTH units, `oauth_provider` and `legal_acceptance_export`;
+chat, tasks and polls already had those tables. Adoption and installation together cover
+the selected composition without overlap. Subsequent changes use pull.
+
+An unknown legacy external track is refused: `This project has no framework catalog
+origin; only projects initialized for this catalog are supported`. Pull does not infer an
+adoption from table names or certify an external schema. There is no general legacy
+adoption procedure here.
+
+A new project receives its framework tables as one composite baseline in their current
+form, marked with the catalog version it was built from (not in the code yet — HIL-1519).
+The origin parser already accepts multiple units and parts for that future baseline;
+it is not a baseline generator. Do not use pull as a new-project generator.
 
 **Why not a migration track of the framework's own.** Considered, and set aside by the owner
 on 2026-10-08. A track of its own needs a track in the `migration` journal, two levels in
@@ -203,22 +297,14 @@ framework is finished — earlier it is inconvenient, later it is problematic.* 
 `migration` journal, the level, the archives, the restore gate, the journal triggers and the
 receipts keep one track per database; the copies stay, and the command brings them.
 
-**Which tables.** Those of the project's declared features. A table smaller than its feature
-(`hilos_oauth_provider`, `hilos_legal_acceptance_export`) comes with the feature whole and
-stays empty in a project that does not use it; a change that touches tables of several
-features is written in parts, one per feature. The checks that read "the table exists" as
-"the feature is on" — `Schema::getTable(...) !== null` in
-`framework/backend/Auth/Library/AbstractSessionsLibraryAgent.php`,
-`framework/backend/DataExport/FrameworkDataExportSections.php`,
-`framework/backend/Database/Object/Collection/NotificationPreferences.php`,
-`framework/backend/Database/Object/Collection/PushSubscriptions.php` and
-`framework/backend/Notification/Delivery/AbstractDeliveryChannelAgent.php` — stay true:
-a project carries a table exactly when it declares the table's feature
-(not in the code yet — HIL-1518).
+**Feature composition.** A table smaller than its feature (`hilos_oauth_provider`,
+`hilos_legal_acceptance_export`) comes with the feature whole and may stay empty when the
+project does not use it. Source selection follows the requirements above; turning a
+feature off does not remove previously installed tables or rewrite migration history.
 
 ## Seeds
 
-Seeds populate initial data. Located in `backend/Database/seeds/`.
+Seeds populate initial data. Located in `backend/Database/Migration/Seed/`.
 
 ```bash
 php cli.php db:seed:apply 001

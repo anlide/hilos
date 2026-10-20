@@ -62,6 +62,19 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
     }
 
     /**
+     * @return list<string> Analytics tables from the existing verdict, excluding migration bootstrap tables
+     */
+    public static function analyticsTables(): array
+    {
+        return array_values(array_diff(self::tables(), [
+            'migration',
+            MigrationClaim::TABLE,
+            AdminViewModeLatchTable::TABLE,
+            DatabaseMarker::TABLE,
+        ]));
+    }
+
+    /**
      * Returns the personal-data verdict of the framework's tables outside the ORM.
      *
      * Kept in step with the DDL the framework ships:

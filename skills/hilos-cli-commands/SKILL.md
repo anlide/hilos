@@ -12,7 +12,7 @@ canonical rule before writing or moving command code.
 
 - Before considering ORM forget by CLI, API, or helper:
   [Forgetting loaded ORM state](../../docs/agents/testing.md#forgetting-loaded-orm-state).
-- The rule, the four sites, and the guard: `docs/agents/cli/command-execution.md`
+- The rule, the five sites (including source generation), and the guard: `docs/agents/cli/command-execution.md`
 - The command catalog and how a project registers its own: `docs/agents/cli/commands.md`
 - The transport a `daemon` command rides: `docs/agents/architecture/command-server.md`
 - Where an agent answers a command: `docs/agents/architecture/agent-lifecycle.md`
@@ -48,6 +48,8 @@ canonical rule before writing or moving command code.
 7. A `cli-offline-write` command must be reachable in the environments that run it: the CLI
    container needs `HILOS_DAEMON_HOST` and `COMMAND_PORT`, because the gate in front of it
    is fail-closed and refuses when it cannot check.
+   For versioned source generation, follow the `cli-source-write` boundary in
+   `docs/agents/cli/command-execution.md`; the installation-state gate remains unchanged.
 8. For a test-only command, name it `test:*` — the prefix is the whole declaration, and
    `extends TestOnlyCommand` is what has to match it. `TestOnlyNameContractTest` fails
    either way round. Extending `AbstractCommandChannelTestCommand` gives the round-trip, the

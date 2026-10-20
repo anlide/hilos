@@ -16,7 +16,7 @@ use Hilos\Core\CLI\CliManager;
  *
  * The reason belongs to the DEPARTURES and not to the rule. {@see CommandExecutionSite::DAEMON}
  * is what every command is expected to be, so it owes no explanation and carries null - the
- * three named constructors below make the difference impossible to get wrong, because the only
+ * four named constructors below make the difference impossible to get wrong, because the only
  * way to build a departure is to pass its reason as an argument.
  */
 final readonly class CommandExecution
@@ -75,5 +75,14 @@ final readonly class CommandExecution
     public static function cliOfflineWrite(string $reason): self
     {
         return new self(CommandExecutionSite::CLI_OFFLINE_WRITE, $reason);
+    }
+
+    /**
+     * @param string $reason Why versioned source files are written before deployment in the CLI
+     * @return self Execution declaring the source-writing site
+     */
+    public static function cliSourceWrite(string $reason): self
+    {
+        return new self(CommandExecutionSite::CLI_SOURCE_WRITE, $reason);
     }
 }

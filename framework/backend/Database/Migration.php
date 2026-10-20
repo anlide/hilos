@@ -12,6 +12,7 @@ use Hilos\AdminViewMode\AdminViewModeStartup;
 use Hilos\Database\Exception\MigrationMarkedFailedException;
 use Hilos\Database\Exception\MigrationNumberTakenTwiceException;
 use Hilos\Database\Exception\MigrationSkippedBelowLevelException;
+use Hilos\Database\Exception\SqlRuntime\TableNotFoundException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
@@ -55,6 +56,47 @@ class Migration
     public static function setMigrationName(string $name): void
     {
         self::$migrationName = $name;
+    }
+
+    /**
+     * @return string Configured source track directory, without initializing a database
+     * @throws DatabaseException When the migration list path has not been configured
+     */
+    public static function trackPath(): string
+    {
+        if (self::$migrationListPath === null) {
+            throw new DatabaseException('Migration list path is not configured');
+        }
+
+        return self::$migrationListPath . '/' . self::$migrationName;
+    }
+
+    /**
+     * Reads the primary track without creating bootstrap tables or inferring rows from MAX.
+     * An absent migration table has no successful indices.
+     *
+     * @return list<int> Exact successful primary migration indices, ascending
+     * @throws DatabaseException When the primary connection or its migration rows cannot be read
+     */
+    public static function appliedIndices(): array
+    {
+        $previous = Database::getCurrentIndex();
+        Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        try {
+            try {
+                Database::sql('SELECT `index` FROM `migration` WHERE `failed` = 0 ORDER BY `index`');
+            } catch (TableNotFoundException) {
+                return [];
+            }
+            $indices = [];
+            while ($row = Database::row()) {
+                $indices[] = (int)$row['index'];
+            }
+
+            return $indices;
+        } finally {
+            Database::useConnection($previous);
+        }
     }
 
     /**

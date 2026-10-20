@@ -82,6 +82,11 @@ integration suite): it applies the migration stubs and audits every Entity again
 live schema through `Hilos\Database\Schema\EntitySchemaAudit`, comparing the declared
 `_types` against the raw column type via `PhpType::forMysqlType()`. Add both migration
 stub files (`create_<table>.sql` and its `_down`) when adding a framework Entity.
+For a framework table change, append the immutable catalog delta and update the current
+stub pair once; `db:framework:pull` creates the numbered project copies. Follow
+[migrations.md](migrations.md#framework-tables-in-a-project-hil-1326) for schema units,
+origin coverage and activation. Entity metadata, personal-data verdicts and generated
+journal trigger files still change with the schema.
 
 An index declaration names the **direction** of each of its columns. An element of
 `_indexes[<name>][Entity::INDEX_COLUMNS]` is either a column name, which declares that

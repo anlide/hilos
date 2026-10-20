@@ -4,9 +4,12 @@ Read this before enabling or changing a person's published photo (HIL-1205).
 
 ## Activation
 
-`HilosFeature::PROFILE_PHOTO` requires AUTH, FILES, UPLOADS and IMAGES. Copy
-`create_hilos_user_photo.sql` and its down stub into the project's migration
-track. The feature mounts `hilosProfilePhotoChecks` and adds the framework
+`HilosFeature::PROFILE_PHOTO` requires AUTH, FILES, UPLOADS and IMAGES. Declare
+the feature, run `db:framework:pull` and apply its generated project migrations
+for `user_photo` and the dependency units, following the
+[migration canon](../orm/migrations.md#framework-tables-in-a-project-hil-1326).
+The unit's current form is `create_hilos_user_photo.sql` with its down stub.
+The feature mounts `hilosProfilePhotoChecks` and adds the framework
 upload target `hilos_profile_photo` and image variant `hilos_avatar`; a project
 must not declare either name in its own catalogs. The target accepts a JPEG up
 to 512 KiB, checks the MIME type from its bytes, requires sign-in, and

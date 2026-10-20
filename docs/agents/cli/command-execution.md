@@ -21,7 +21,7 @@ re-decision to the pages that show it, the master closes the connection it holds
 process that edited the same files or rows would leave every one of those follow-ups
 undone.
 
-## The four sites
+## The five sites
 
 A command declares exactly one, through `CommandInterface::execution()`:
 
@@ -31,6 +31,7 @@ A command declares exactly one, through `CommandInterface::execution()`:
 | `daemon-spawned` | A child process the daemon starts itself; no operator at its entrance. | yes |
 | `cli-read` | Work in the CLI process that changes nothing. | yes |
 | `cli-offline-write` | Work in the CLI process that WRITES state; admissible only while no daemon runs. | yes |
+| `cli-source-write` | Writes versioned project sources before deployment; no running daemon owns these files. | yes |
 
 A `daemon-spawned` declaration is the entrance of a child the daemon already starts; it is not a licence to move new long work into one — see [../antipatterns/child-process-for-long-work.md](../antipatterns/child-process-for-long-work.md).
 
@@ -47,7 +48,7 @@ public function execution(): CommandExecution
 ```
 
 `daemon` owes nothing because it is the rule rather than an exception to it;
-`CommandExecution::daemon()` takes no argument, and its `reason` is null. The three
+`CommandExecution::daemon()` takes no argument, and its `reason` is null. The four
 departures cannot be built without one — the argument is required by the factory, and a
 reason that is blank fails `CommandExecutionRoleTest`.
 
@@ -87,7 +88,7 @@ admission costs a database with two writers. The consequence is real and worth s
 an environment that names no command channel cannot run migrations at all, so a container
 that runs them has to be told the address even when no daemon exists there yet.
 
-The other three sites are never probed. `daemon-spawned` least of all: a restore child
+The other four sites are never probed. `daemon-spawned` least of all: a restore child
 writes to the database *while the daemon is up*, legitimately, under protected mode, and
 there is no operator in front of it to read a refusal.
 
@@ -144,6 +145,13 @@ hand.
 
 **`daemon-spawned`** — `backup:run` and `backup:restore-run`, both spawned by the backup
 agent (HIL-729 brought them in from chat; before that the framework had none).
+
+**`cli-source-write`** — `db:framework:pull` writes versioned project migration sources
+before deployment. It declares `CommandExecution::cliSourceWrite()` with the reason
+`writes versioned project migration sources before deployment; no running daemon owns these files`.
+It is database-free and needs no command-channel address or presence probe. This site
+does not admit writes to installation state: migrations, seeds and fixtures retain
+their existing `cli-offline-write` gate.
 
 ## When a command's daemon half is missing
 

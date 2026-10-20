@@ -47,6 +47,7 @@ final class CliManagerDatabaseGateTest extends TestCase
 
     public function testMarkedCommandsSkipTheBootstrapConnect(): void
     {
+        $this->assertFalse($this->manager->requiresDatabase(CliCommands::DB_FRAMEWORK_PULL));
         $this->assertFalse($this->manager->requiresDatabase(CliCommands::ORM_TEST_FORGET));
         $this->assertFalse($this->manager->requiresDatabase(CliCommands::DB_WAIT));
         $this->assertFalse($this->manager->requiresDatabase(CliCommands::DB_TEST_RESET));

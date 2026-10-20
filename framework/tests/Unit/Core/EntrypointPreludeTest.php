@@ -4,17 +4,28 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Core;
 
+use FilesystemIterator;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Bootstrap\EntrypointPrelude;
+use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
+use Hilos\Database\Migration\FrameworkMigrationOrigin;
+use Hilos\Database\Migration\FrameworkMigrationPair;
+use Hilos\Database\Migration\FrameworkMigrationStartupGuard;
 use Hilos\Environment\EnvAccessor;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Environment\Exception\EnvInvalidValueException;
+use Hilos\Fs\Exception\LfsPointerException;
+use Hilos\Fs\FsException;
 use Hilos\Hilos;
 use Hilos\LLM\Routing\LlmRouter;
 use Hilos\Utils\Helpers\TimeHelper;
 use PHPUnit\Framework\TestCase;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
 use ReflectionProperty;
 
 /**
@@ -50,9 +61,11 @@ final class EntrypointPreludeTest extends TestCase
 
     private string|false $previousZone;
 
+    /** Saves process globals and isolates each scenario from an earlier prepared startup. */
     protected function setUp(): void
     {
         parent::setUp();
+        FrameworkMigrationStartupGuard::resetForTests();
         $this->previousEnv = Hilos::$env;
         $this->previousLlm = Hilos::$llm;
         $this->previousCluster = Hilos::$cluster;
@@ -81,8 +94,10 @@ final class EntrypointPreludeTest extends TestCase
         $this->assertNotSame('+00:00', date('P'));
     }
 
+    /** Disarms startup, restores process globals and removes the temporary project including its source lock. */
     protected function tearDown(): void
     {
+        FrameworkMigrationStartupGuard::resetForTests();
         if ($this->saved) {
             Hilos::$env = $this->previousEnv;
             Hilos::$llm = $this->previousLlm;
@@ -132,9 +147,18 @@ final class EntrypointPreludeTest extends TestCase
         );
     }
 
+    /**
+     * @throws EnvException When the fixture environment cannot be loaded
+     * @throws EnvInvalidValueException When the override supplies an invalid project zone
+     * @throws LfsPointerException When framework data has not been materialized
+     * @throws FsException When startup sources cannot be read or locked
+     * @throws DatabaseException When the fixture origin or catalog coverage is invalid
+     * @throws IncompleteFeatureActivationException When the fixture facade selects an incomplete feature
+     */
     public function testRunCallsPersistenceInUtcAfterTheTestOverride(): void
     {
         $this->writeEnv("HILOS_PROJECT_TIME_ZONE=Not/AZone\n", "HILOS_PROJECT_TIME_ZONE=Europe/Kyiv\n");
+        $this->writeFrameworkSources();
         $called = false;
 
         EntrypointPrelude::run(
@@ -153,9 +177,18 @@ final class EntrypointPreludeTest extends TestCase
         $this->assertTrue($called);
     }
 
+    /**
+     * @throws EnvException When the fixture environment cannot be loaded
+     * @throws EnvInvalidValueException When the catalog default is not a valid project zone
+     * @throws LfsPointerException When framework data has not been materialized
+     * @throws FsException When startup sources cannot be read or locked
+     * @throws DatabaseException When the fixture origin or catalog coverage is invalid
+     * @throws IncompleteFeatureActivationException When the fixture facade selects an incomplete feature
+     */
     public function testRunUsesTheCatalogDefaultWhenTheOverrideOmitsTheZone(): void
     {
         $this->writeEnv("HILOS_PROJECT_TIME_ZONE=Not/AZone\n", "APP_ENV=test\n");
+        $this->writeFrameworkSources();
         $called = false;
 
         EntrypointPrelude::run(
@@ -224,6 +257,38 @@ final class EntrypointPreludeTest extends TestCase
         }
     }
 
+    /**
+     * Supplies the facade's core and bootstrap genesis composition to the real source gate, without opening a database.
+     *
+     * @throws DatabaseException When the no-op adoption pair is invalid
+     */
+    private function writeFrameworkSources(): void
+    {
+        $track = $this->root() . '/backend/Database/Migration/Schema';
+        if (!mkdir($track, 0775, true) && !is_dir($track)) {
+            $this->fail("Cannot create {$track}");
+        }
+        $body = "SELECT 1;\n";
+        $pair = new FrameworkMigrationPair(
+            'adopt_framework_catalog',
+            FrameworkMigrationOrigin::forBodies(
+                FrameworkMigrationOrigin::ADOPT,
+                ['migration', 'migration_claim', 'admin_view_mode_latch', 'database_marker', 'user', 'session'],
+                [],
+                $body,
+                $body,
+            ),
+            $body,
+            $body,
+        );
+        if (file_put_contents($track . '/001_' . $pair->name . '.sql', $pair->upSql) === false) {
+            $this->fail('Cannot write framework adoption up source');
+        }
+        if (file_put_contents($track . '/001_' . $pair->name . '_down.sql', $pair->downSql) === false) {
+            $this->fail('Cannot write framework adoption down source');
+        }
+    }
+
     private function root(): string
     {
         if ($this->root === null) {
@@ -238,17 +303,17 @@ final class EntrypointPreludeTest extends TestCase
         if ($this->root === null) {
             return;
         }
-        $testEnv = $this->root . '/tests/.env';
-        if (is_file($testEnv)) {
-            unlink($testEnv);
-        }
-        if (is_dir($this->root . '/tests')) {
-            rmdir($this->root . '/tests');
-        }
-        if (is_file($this->root . '/.env')) {
-            unlink($this->root . '/.env');
-        }
         if (is_dir($this->root)) {
+            foreach (new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator($this->root, FilesystemIterator::SKIP_DOTS),
+                RecursiveIteratorIterator::CHILD_FIRST,
+            ) as $entry) {
+                if ($entry->isDir() && !$entry->isLink()) {
+                    rmdir($entry->getPathname());
+                } else {
+                    unlink($entry->getPathname());
+                }
+            }
             rmdir($this->root);
         }
         $this->root = null;

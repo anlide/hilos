@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Core\CLI;
 
 use Hilos\Constants\ExitCode;
+use Hilos\Constants\CliCommands;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\CLI\Commands\CommandExecution;
 use Hilos\Core\CLI\Commands\CommandInterface;
@@ -171,6 +172,32 @@ final class CliManagerOptionGateTest extends TestCase
     public function testTheHelpCommandNamesTheShortFlag(): void
     {
         self::assertStringContainsString("  php cli.php [command] -h\n", (new HelpCommand())->getHelp());
+    }
+
+    public function testPullProjectsOptionPassesWithoutReadingTheRegistry(): void
+    {
+        $manager = $this->manager([CliCommands::DB_FRAMEWORK_PULL, '--projects=/nonexistent/registry.json']);
+        self::assertNull($manager->answerWithoutRunning());
+        self::assertSame([], $manager->standardError);
+    }
+
+    public function testPullHelpDoesNotReadProjectSources(): void
+    {
+        $manager = $this->manager([CliCommands::DB_FRAMEWORK_PULL, '--projects=/nonexistent/registry.json', '--help']);
+        [$answered, $stdout] = $this->capture(fn (): ?int => $manager->answerWithoutRunning());
+        self::assertSame(ExitCode::SUCCESS, $answered);
+        self::assertStringContainsString('Command: db:framework:pull', $stdout);
+        self::assertSame([], $manager->standardError);
+    }
+
+    public function testPullUnknownOptionIsRefusedBeforeSourcesAreRead(): void
+    {
+        $manager = $this->manager([CliCommands::DB_FRAMEWORK_PULL, '--projects=/nonexistent/registry.json', '--adopt']);
+        self::assertSame(ExitCode::INVALID_ARGUMENT, $manager->answerWithoutRunning());
+        self::assertSame(
+            ['Unknown option --adopt for db:framework:pull; see php cli.php help db:framework:pull'],
+            $manager->standardError,
+        );
     }
 
     /**

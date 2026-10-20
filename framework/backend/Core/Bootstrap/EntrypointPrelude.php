@@ -6,7 +6,10 @@ namespace Hilos\Core\Bootstrap;
 
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\TimeConstants;
+use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
+use Hilos\Database\Migration\FrameworkMigrationStartupGuard;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\Environment\ProjectTimeZoneStartupGuard;
@@ -50,6 +53,8 @@ final class EntrypointPrelude
      * @throws EnvInvalidValueException When the project time zone is not an exact IANA name
      * @throws LfsPointerException When the framework data contains a Git LFS pointer
      * @throws FsException When the framework data directory or a file cannot be read
+     * @throws DatabaseException When framework migration sources are incomplete or invalid
+     * @throws IncompleteFeatureActivationException When a declared feature has no definition
      */
     public static function run(string $hilosClass, string $projectRoot, callable $persistenceInit): void
     {
@@ -57,6 +62,7 @@ final class EntrypointPrelude
         FrameworkData::assertMaterialized();
         self::initEnvironment($hilosClass, $projectRoot);
         ProjectTimeZoneStartupGuard::assertConfigured();
+        FrameworkMigrationStartupGuard::prepare($hilosClass, $projectRoot);
 
         $persistenceInit();
     }

@@ -10,6 +10,7 @@ use Hilos\Core\Analytics\AnalyticsSettingsCatalog;
 use Hilos\Core\Feature\FeatureDefinition;
 use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Database\Schema\FrameworkTablesWithoutEntity;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Pages\AbstractHilosAnalyticsPage;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
@@ -49,6 +50,7 @@ final class AnalyticsFeature extends FeatureDefinition
             ],
             requiredCatalogFragments: [AnalyticsSettingsCatalog::class],
             requiredTables: [HilosAnalyticsActionsTable::class, HilosAnalyticsBrowserSessionsTable::class],
+            requiredDbTables: FrameworkTablesWithoutEntity::analyticsTables(),
         );
     }
 }

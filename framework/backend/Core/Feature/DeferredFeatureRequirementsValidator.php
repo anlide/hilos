@@ -8,7 +8,11 @@ use Hilos\Core\CLI\CliApplication;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
+use Hilos\Database\ChangeLog\ChangeLogDatabase;
+use Hilos\Database\DatabaseConnectionDefaults;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\VerifierCircleMember;
+use Hilos\Database\Migration\FrameworkSchemaCatalog;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
 use Hilos\Hilos;
@@ -70,6 +74,7 @@ final class DeferredFeatureRequirementsValidator
      *     source, when a project that serves pages keeps its connections off the framework base, or when a project
      *     that can freeze migrates no verifier circle table
      * @throws LogicException When the PCRE engine refuses to strip a migration file's comments
+     * @throws DatabaseException When a required schema unit or its catalog metadata is invalid
      * @throws StateCollectionNotFoundException When building the runtime context represents an unmounted collection
      */
     public function validate(
@@ -81,6 +86,13 @@ final class DeferredFeatureRequirementsValidator
         $errors = [];
         $createdTables = null;
         $cliManager = null;
+        $schema = new FrameworkSchemaCatalog($this->registry);
+        $bootstrapTables = [];
+        foreach ($schema->allUnits() as $unit) {
+            if ($unit->bootstrapOwned) {
+                array_push($bootstrapTables, ...$unit->tables);
+            }
+        }
         $definitions = array_map(
             fn(HilosFeature $feature): FeatureDefinition => $this->registry->definition($feature),
             $this->declaredFeatures($hilosClass),
@@ -94,9 +106,26 @@ final class DeferredFeatureRequirementsValidator
             $name = 'HilosFeature::' . $definition->feature()->name;
 
             foreach ($requirements->requiredDbTables as $table) {
+                if (in_array($table, $bootstrapTables, true)) {
+                    continue;
+                }
                 $createdTables ??= $this->createdTables($migrationsPath);
-                if (!in_array($table, $createdTables, true)) {
+                if (!in_array($table, $createdTables[DatabaseConnectionDefaults::PRIMARY_INDEX], true)) {
                     $errors[] = "{$name} is declared but no migration in {$migrationsPath} creates table {$table}";
+                }
+            }
+
+            foreach ($requirements->requiredSchemaUnits as $key) {
+                $unit = $schema->unit($key);
+                if ($unit->bootstrapOwned) {
+                    continue;
+                }
+                $createdTables ??= $this->createdTables($migrationsPath);
+                foreach ($unit->tables as $table) {
+                    if (!in_array($table, $createdTables[$unit->connection] ?? [], true)) {
+                        $errors[] = "{$name} requires schema unit {$key}, but no migration in {$migrationsPath}"
+                            . " creates table {$table} on connection {$unit->connection}";
+                    }
                 }
             }
 
@@ -122,7 +151,7 @@ final class DeferredFeatureRequirementsValidator
 
         if ($rtContextClass !== null) {
             $createdTables ??= $this->createdTables($migrationsPath);
-            if (!in_array(VerifierCircleMember::_table, $createdTables, true)) {
+            if (!in_array(VerifierCircleMember::_table, $createdTables[DatabaseConnectionDefaults::PRIMARY_INDEX], true)) {
                 $errors[] = "{$rtContextClass} lets this project freeze, but no migration in {$migrationsPath}"
                     . ' creates table ' . VerifierCircleMember::_table;
             }
@@ -190,12 +219,12 @@ final class DeferredFeatureRequirementsValidator
      * check whose whole worth is that it cannot be satisfied by an intention.
      *
      * @param string $migrationsPath Directory holding the project's schema migrations
-     * @return list<string> Table names created by the migrations
+     * @return array<int, list<string>> Table names by primary or derived journal connection
      * @throws LogicException When the PCRE engine refuses to strip a migration file's comments
      */
     private function createdTables(string $migrationsPath): array
     {
-        $tables = [];
+        $tables = [DatabaseConnectionDefaults::PRIMARY_INDEX => [], ChangeLogDatabase::CONNECTION_INDEX => []];
         foreach (glob(rtrim($migrationsPath, '/') . '/*.sql') ?: [] as $file) {
             if (str_ends_with($file, self::DOWN_SUFFIX)) {
                 continue;
@@ -211,16 +240,29 @@ final class DeferredFeatureRequirementsValidator
             // its comments. Read as an empty statement list it would say "these migrations
             // create no table at all" — the one answer this validator must never invent,
             // since its whole worth is that an intention cannot satisfy it.
-            $statements = preg_replace('/--[^\n]*/', '', $sql);
+            $statements = preg_replace('/\/\*.*?\*\/|--[^\n]*/s', '', $sql);
             if ($statements === null) {
                 throw new LogicException(
                     "Cannot strip the comments of migration file {$file}: " . preg_last_error_msg(),
                 );
             }
 
-            preg_match_all('/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`?(\w+)`?/i', $statements, $matches);
-            foreach ($matches[1] as $table) {
-                $tables[] = $table;
+            preg_match_all(
+                '/\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?'
+                    . '(?:(\{\{change_log_database\}\}|`?\w+`?)\s*\.\s*)?`?(\w+)`?\s*\(/i',
+                $statements,
+                $matches,
+                PREG_SET_ORDER,
+            );
+            foreach ($matches as $match) {
+                $connection = match ($match[1]) {
+                    '' => DatabaseConnectionDefaults::PRIMARY_INDEX,
+                    '{{change_log_database}}' => ChangeLogDatabase::CONNECTION_INDEX,
+                    default => null,
+                };
+                if ($connection !== null) {
+                    $tables[$connection][] = $match[2];
+                }
             }
         }
 

@@ -7,6 +7,7 @@ namespace Hilos\Fs;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\Exception\DirectoryCreateException;
 use Hilos\Fs\Exception\DirectoryNotFoundException;
+use Hilos\Fs\Exception\FileAlreadyExistsException;
 use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Fs\Exception\FileMoveException;
 use Hilos\Fs\Exception\FileNotFoundException;
@@ -218,6 +219,43 @@ final class FsPath
     }
 
     /**
+     * Hold a blocking advisory lock for the callback, then close its private handle to release it.
+     * The lock file is created if absent, never truncated, and retained so all callers lock the same inode.
+     * The callback receives no handle; its return value and exceptions pass through.
+     *
+     * @template T
+     *
+     * @param string $lockPath Absolute lock file path, in an existing writable directory
+     * @param bool $exclusive True for an exclusive lock, false for a shared lock
+     * @param callable(): T $callback Work performed while the lock is held
+     * @return T Whatever the callback returned
+     *
+     * @throws FileWriteException If the lock file cannot be opened, locked, or closed
+     */
+    public static function withLock(string $lockPath, bool $exclusive, callable $callback): mixed
+    {
+        // warning-suppressed: false becomes FileWriteException on the next line
+        $handle = @fopen($lockPath, 'c');
+        if ($handle === false) {
+            throw new FileWriteException("Cannot open lock file: {$lockPath}");
+        }
+
+        try {
+            // warning-suppressed: false becomes FileWriteException on the next line
+            if (!@flock($handle, $exclusive ? LOCK_EX : LOCK_SH)) {
+                throw new FileWriteException("Cannot lock file: {$lockPath}");
+            }
+
+            return $callback();
+        } finally {
+            // warning-suppressed: false becomes FileWriteException on the next line
+            if (!@fclose($handle)) {
+                throw new FileWriteException("Cannot close lock file: {$lockPath}");
+            }
+        }
+    }
+
+    /**
      * @param string $sourcePath Absolute source path
      * @param string $targetPath Absolute target path
      *
@@ -286,6 +324,35 @@ final class FsPath
             }
 
             throw $move;
+        }
+    }
+
+    /**
+     * Atomically expose a finished temp file through a hard link, without replacing any existing target.
+     * The caller must finish writing before publication. A failed link keeps the temp file; success removes it.
+     * If temp removal fails, both names remain and FileMoveException reports the already published target.
+     *
+     * @param string $tmpPath Absolute path of the finished temp file, on the same filesystem as the target
+     * @param string $finalPath Absolute target path, in an existing directory
+     *
+     * @throws FileAlreadyExistsException If any entry already occupies the target, including a dangling symlink
+     * @throws FileMoveException If the hard link fails for another reason, or the published temp cannot be removed
+     */
+    public static function publishExclusive(string $tmpPath, string $finalPath): void
+    {
+        // warning-suppressed: false becomes FileAlreadyExistsException or FileMoveException below
+        if (!@link($tmpPath, $finalPath)) {
+            clearstatcache(true, $finalPath);
+            if (file_exists($finalPath) || is_link($finalPath)) {
+                throw new FileAlreadyExistsException("File already exists: {$finalPath}");
+            }
+
+            throw new FileMoveException("Cannot publish {$tmpPath} to {$finalPath}");
+        }
+
+        // warning-suppressed: false becomes FileMoveException on the next line; the published target is retained
+        if (!@unlink($tmpPath)) {
+            throw new FileMoveException("File published at {$finalPath}, but cannot remove temp file: {$tmpPath}");
         }
     }
 
