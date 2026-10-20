@@ -33,6 +33,10 @@ export {
   Watched,
 } from './geometry.js'
 export { armSocketDrop, countSentFrames, dropSocket } from './socket.js'
+export {
+  watchHandshakeFrames,
+  type HandshakeFrameLog,
+} from './handshakeFrames.js'
 export { openFirstFrame } from './firstFrame.js'
 export {
   PASSKEY_PLATFORMS,

@@ -277,6 +277,14 @@ enum EnvConstants
     case HILOS_DEFAULT_LANGUAGE;
 
     /**
+     * IANA time zone of the project clock.
+     *
+     * Absent means UTC. An explicit empty value is not a default: startup refuses
+     * it. The process clock stays UTC either way.
+     */
+    case HILOS_PROJECT_TIME_ZONE;
+
+    /**
      * Whether a non-admin may open the admin section to look and change nothing (HIL-1249).
      *
      * The mode works in production: it was made for the demos, and the demos live in

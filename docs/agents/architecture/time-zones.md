@@ -37,11 +37,28 @@ defaults are already explicit UTC.
 ## Server UTC And The Project Zone
 
 Set the daemon, workers, CLI and database connections explicitly to UTC,
-independently of the container's `TZ`. Declare the project's IANA time zone in
-env; an absent declaration means UTC, an invalid explicit declaration refuses
-startup. Expose it through the framework's env accessor and deliver the project
-zone to the browser. The env key, accessor and delivery shape belong to the
-implementation leaf. (not in the code yet — HIL-1577)
+independently of the container's `TZ`. `EntrypointPrelude::run()` and
+`EntrypointPrelude::initEnvironment()` both begin with
+`date_default_timezone_set(TimeConstants::UTC_TIME_ZONE)`. `DaemonApplication`,
+`WorkerApplication` and `DockerApplication` call `run()`; `CliApplication`
+calls `initEnvironment()` only. A fresh database handle runs
+`DatabaseSql::SESSION_TIME_ZONE_UTC` (`SET SESSION time_zone = '+00:00'`)
+before it is published, and the same statement runs on the two direct
+`mysqli_connect` paths in `DbWaitCommand` and `DbTestResetCommand`.
+
+The project's IANA time zone is the env key `HILOS_PROJECT_TIME_ZONE`. An
+absent value is the catalog default `UTC`. An explicit empty string stays
+empty and does not become that default. Read the zone only through
+`Hilos::$env[EnvConstants::HILOS_PROJECT_TIME_ZONE]->string()`.
+`ProjectTimeZoneStartupGuard::assertConfigured()` runs only inside
+`EntrypointPrelude::run()`, after `.env` and the test override and before the
+persistence callback, and refuses a value that is not an exact IANA name. The
+CLI calls `initEnvironment()` and stays available when the project zone is
+wrong; its PHP clock is still UTC. The welcome delivers that string as
+`data.projectTimeZone`. `HandshakeWelcomeSignalData` requires the field and
+has no constructor default; `WebSocketClient` passes the accessor's value.
+The process reads the env value at start. A changed value applies on the next
+start.
 
 Apply the project zone explicitly to cron and backup retention buckets; do not
 switch the process zone to switch the project clock. UTC process state must not

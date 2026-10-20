@@ -6,6 +6,7 @@ namespace Hilos\Environment;
 
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LLMConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Log\LogSettingsCatalog;
@@ -240,6 +241,12 @@ final class EnvCatalogStub implements CatalogProviderInterface
             // named variable in each deployment and says exactly what is missing.
             EnvConstants::APP_ENV->name => self::required(EnvCatalogConstants::TYPE_STRING),
             EnvConstants::HILOS_DEFAULT_LANGUAGE->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            // Absent falls through to UTC. An explicit empty string stays empty: startup refuses it.
+            EnvConstants::HILOS_PROJECT_TIME_ZONE->name => self::entry(
+                EnvCatalogConstants::TYPE_STRING,
+                TimeConstants::UTC_TIME_ZONE,
+                emptyIsMissing: false,
+            ),
             EnvConstants::HILOS_ADMIN_VIEW_MODE_ENABLED->name => self::entry(
                 EnvCatalogConstants::TYPE_BOOLEAN,
                 false,

@@ -7,6 +7,7 @@ namespace Hilos\Core\CLI\Commands;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
+use Hilos\Database\DatabaseSql;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use mysqli_sql_exception;
@@ -124,12 +125,17 @@ HELP;
             $conn = null;
             try {
                 $conn = mysqli_connect($host, $user, $pass, '', $port);
+                mysqli_query($conn, DatabaseSql::SESSION_TIME_ZONE_UTC);
             } catch (mysqli_sql_exception) {
-                // Not up yet: the timeout below decides between waiting and giving up
+                if ($conn !== null) {
+                    mysqli_close($conn);
+                    $conn = null;
+                }
+                // Not up yet, or the session clock could not be set: the timeout below decides
             }
 
-            // Only the connect answers the question this command asks, so the teardown stays
-            // outside the catch: a link that opened means ready, whatever closing it says.
+            // Ready means the server accepted a link and its session clock is UTC.
+            // A failed SET is closed above and does not count as ready.
             if ($conn !== null) {
                 mysqli_close($conn);
                 echo "MySQL is ready ({$attempt} attempt(s))\n";

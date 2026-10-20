@@ -779,7 +779,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * Append the framework welcome frame right behind the 101 response bytes.
      *
      * First frame of every connection:
-     * {type: 'handshake', data: {build, sessionCookieName, protectedMode}}.
+     * {type: 'handshake', data: {build, sessionCookieName, projectTimeZone, protectedMode}}.
      * `build` carries the HILOS_BUILD_TIMESTAMP env value the frontend compares on every
      * (re)connect to force a page refresh on mismatch; `protectedMode.active` tells a
      * connection caught by a cluster freeze that it is locked out, and the copy beside it
@@ -792,13 +792,15 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * light; the copy comes from a facade constant, not the database, which a restore is
      * rewriting underneath us. `sessionCookieName` is the name of the cookie this same 101
      * just set, told to the frontend so a token rotation can write the auxiliary cookie
-     * beside it (HIL-582).
+     * beside it (HIL-582). `projectTimeZone` is the installation's zone, read from the
+     * environment on this same path and from nowhere else: no database, no runtime row,
+     * no file.
      * Written directly to the write buffer so the 101 response and the welcome leave in
      * one flush.
      *
      * @param string $acceptKey This connection's accept key, compared against the initiator's inside the verification window
      * @param string $sessionCookieName Name of this deployment's session cookie
-     * @throws EnvException When the build timestamp env value cannot be read
+     * @throws EnvException When the build timestamp or the project time zone cannot be read
      */
     private function sendHandshakeWelcome(string $acceptKey, string $sessionCookieName): void
     {
@@ -812,6 +814,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $welcome = new HandshakeWelcomeSignalData(
             build: Hilos::$env[EnvConstants::HILOS_BUILD_TIMESTAMP]->string(),
             sessionCookieName: $sessionCookieName,
+            projectTimeZone: Hilos::$env[EnvConstants::HILOS_PROJECT_TIME_ZONE]->string(),
             protectedModeActive: $locksOut,
             protectedModeOperation: $operation,
             // The two audiences are exclusive, and so are their sentences: the surface copy goes

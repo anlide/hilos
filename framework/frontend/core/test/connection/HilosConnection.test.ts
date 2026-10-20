@@ -654,6 +654,37 @@ describe('signal routing', () => {
     expect(signals).toEqual(['handshake'])
   })
 
+  it('keeps the project time zone from the last welcome and clears it when a later one omits the field', () => {
+    const { connection } = createConnection()
+    expect(connection.projectTimeZone).toBeUndefined()
+
+    const seenInHandler: Array<string | undefined> = []
+    connection.on('handshake', () => {
+      seenInHandler.push(connection.projectTimeZone)
+    })
+
+    connection.connect()
+    MockWebSocket.last.open()
+    MockWebSocket.last.message(
+      '{"type":"handshake","data":{"build":"build-a","projectTimeZone":"Europe/Kyiv"}}',
+    )
+    expect(seenInHandler).toEqual(['Europe/Kyiv'])
+    expect(connection.projectTimeZone).toBe('Europe/Kyiv')
+
+    MockWebSocket.last.message(
+      '{"type":"handshake","data":{"build":"build-a","projectTimeZone":"Europe/Warsaw"}}',
+    )
+    expect(connection.projectTimeZone).toBe('Europe/Warsaw')
+
+    MockWebSocket.last.drop()
+    vi.advanceTimersByTime(1000)
+    MockWebSocket.last.open()
+    MockWebSocket.last.message(WELCOME_A)
+
+    expect(connection.projectTimeZone).toBeUndefined()
+    expect(seenInHandler).toEqual(['Europe/Kyiv', 'Europe/Warsaw', undefined])
+  })
+
   it('emits projectSignal for a schema-validated project type', () => {
     const { connection } = createConnection({
       projectSchemas: { greet: z.looseObject({ who: z.string() }) },

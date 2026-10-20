@@ -44,6 +44,12 @@ final class DatabaseSql
     public const string SESSION_MAX_STATEMENT_TIME_SET = 'SET SESSION max_statement_time = %d';
 
     /**
+     * Session clock for a handle that is not published yet. The offset does not
+     * need the server's time-zone tables; a named zone would.
+     */
+    public const string SESSION_TIME_ZONE_UTC = "SET SESSION time_zone = '+00:00'";
+
+    /**
      * @param string $sql SQL template, before parameter values are inserted
      * @return bool Whether the statement only reads by its first keyword
      */

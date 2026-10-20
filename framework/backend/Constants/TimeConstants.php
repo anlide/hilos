@@ -5,12 +5,17 @@ declare(strict_types=1);
 namespace Hilos\Constants;
 
 /**
- * Conversion factors between the time units the framework mixes.
+ * Conversion factors between the time units the framework mixes, and the
+ * UTC zone name every process sets itself to.
  *
  * A bare `* 1000` next to a `microtime()` call does not say which of the two
  * conversions it is, and the reader has to reconstruct the unit from the variable
  * name. These constants say it in the expression itself; see
  * docs/agents/code-style/magic-values.md, test UNIT.
+ *
+ * UTC_TIME_ZONE is not a conversion factor. It is the one spelling of UTC the
+ * process clock and the project-zone default share, so neither site writes the
+ * name on its own.
  */
 final class TimeConstants
 {
@@ -46,4 +51,7 @@ final class TimeConstants
 
     /** @var int Seconds in one day, the unit a retention period is usually stated in */
     public const int SECONDS_PER_DAY = 24 * self::SECONDS_PER_HOUR;
+
+    /** @var string IANA name of the zone every Hilos process sets itself to */
+    public const string UTC_TIME_ZONE = 'UTC';
 }

@@ -90,6 +90,8 @@ export type ParsedSignal =
       build: string
       /** Session cookie name of this deployment; absent from an older daemon's welcome. */
       sessionCookieName: string | undefined
+      /** Project time zone from the welcome; absent, or dropped when the field is empty or not a string. */
+      projectTimeZone: string | undefined
       protectedMode: ProtectedModeStatus
       envelope: SignalEnvelope
     }
@@ -351,6 +353,7 @@ export function parseSignal(
           kind: 'handshake',
           build: data.data.build,
           sessionCookieName: data.data.sessionCookieName,
+          projectTimeZone: data.data.projectTimeZone,
           protectedMode: toProtectedModeStatus(data.data.protectedMode),
           envelope: envelope.data,
         },

@@ -392,6 +392,8 @@ export class HilosConnection {
   private latchedBuild: string | undefined
   /** Session cookie name from the last welcome; the auxiliary cookie's name derives from it. */
   private sessionCookieNameValue: string | undefined
+  /** Project time zone from the last welcome; cleared when a welcome omits the field. */
+  private projectTimeZoneValue: string | undefined
   /**
    * Correlation ids of the tracked actions this socket has sent and not seen answered.
    * The transport's own count of what is still on the wire — the reply lifecycle keeps
@@ -555,6 +557,18 @@ export class HilosConnection {
    */
   get sessionCookieName(): string | undefined {
     return this.sessionCookieNameValue
+  }
+
+  /**
+   * The project time zone named by the last welcome.
+   *
+   * Undefined until the first welcome. Every welcome after that replaces it,
+   * including one that names no zone: a reconnect that omits the field clears
+   * the zone the previous welcome stored. The value lives on this connection
+   * only.
+   */
+  get projectTimeZone(): string | undefined {
+    return this.projectTimeZoneValue
   }
 
   /**
@@ -1127,6 +1141,9 @@ export class HilosConnection {
     if (signal.sessionCookieName !== undefined) {
       this.sessionCookieNameValue = signal.sessionCookieName
     }
+    // An omitted zone is an answer, unlike the cookie above: a welcome that
+    // names none clears the zone the previous welcome stored.
+    this.projectTimeZoneValue = signal.projectTimeZone
     // A reconnect lands here: the welcome is how a connection that came back
     // learns the freeze it slept through, or that it is over.
     this.syncProtectedMode(signal.protectedMode)

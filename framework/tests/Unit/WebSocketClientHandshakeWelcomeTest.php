@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Auth\Session\SessionCookieName;
+use Hilos\Constants\EnvConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Constants\WebSocketConstants;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
@@ -14,8 +16,8 @@ use PHPUnit\Framework\TestCase;
 /**
  * Unit tests for the framework handshake welcome frame and the minted accept key.
  *
- * The welcome `{type: 'handshake', data: {build, protectedMode}}` must be the
- * first frame behind the 101 response; the accept key must be a random
+ * The welcome `{type: 'handshake', data: {build, sessionCookieName, projectTimeZone, protectedMode}}`
+ * must be the first frame behind the 101 response; the accept key must be a random
  * server-minted identifier, not the client-derivable RFC 6455 Sec-WebSocket-Accept
  * value. With no protected-mode runtime mounted the freeze flag reads inert (false).
  * The session cookie riding the same 101 has its own suite,
@@ -33,6 +35,7 @@ final class WebSocketClientHandshakeWelcomeTest extends TestCase
         Hilos::$sr = new SignalRouter();
         $this->previousEnv = Hilos::$env;
         Hilos::$env = new EnvAccessor();
+        putenv(EnvConstants::HILOS_PROJECT_TIME_ZONE->name);
     }
 
     protected function tearDown(): void
@@ -41,6 +44,7 @@ final class WebSocketClientHandshakeWelcomeTest extends TestCase
         Hilos::$env = $this->previousEnv;
         putenv('HILOS_BUILD_TIMESTAMP');
         putenv('HILOS_SESSION_COOKIE_NAME');
+        putenv(EnvConstants::HILOS_PROJECT_TIME_ZONE->name);
     }
 
     public function testWelcomeIsTheFirstFrameAfterThe101Response(): void
@@ -54,6 +58,7 @@ final class WebSocketClientHandshakeWelcomeTest extends TestCase
                 'data' => [
                     'build' => 'dev',
                     'sessionCookieName' => SessionCookieName::resolve(),
+                    'projectTimeZone' => TimeConstants::UTC_TIME_ZONE,
                     'protectedMode' => [
                         'active' => false,
                         'operation' => null,
@@ -77,6 +82,24 @@ final class WebSocketClientHandshakeWelcomeTest extends TestCase
 
         $welcome = $this->decodeFirstFrameAfter101($probe->outboundBytes());
         $this->assertSame('custom_session_token', $welcome['data']['sessionCookieName'] ?? null);
+    }
+
+    public function testWelcomeCarriesUtcWhenTheProjectZoneIsUnset(): void
+    {
+        putenv(EnvConstants::HILOS_PROJECT_TIME_ZONE->name);
+
+        $welcome = $this->decodeFirstFrameAfter101($this->handshakenProbe()->outboundBytes());
+
+        $this->assertSame(TimeConstants::UTC_TIME_ZONE, $welcome['data']['projectTimeZone'] ?? null);
+    }
+
+    public function testWelcomeCarriesAConfiguredProjectTimeZone(): void
+    {
+        putenv(EnvConstants::HILOS_PROJECT_TIME_ZONE->name . '=Europe/Kyiv');
+
+        $welcome = $this->decodeFirstFrameAfter101($this->handshakenProbe()->outboundBytes());
+
+        $this->assertSame('Europe/Kyiv', $welcome['data']['projectTimeZone'] ?? null);
     }
 
     public function testWelcomeCarriesTheConfiguredBuildTimestamp(): void

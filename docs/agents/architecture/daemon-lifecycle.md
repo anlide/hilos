@@ -4,6 +4,21 @@
 
 ## Startup sequence
 
+Before the numbered checks, the shared prelude sets the process clock and
+judges the project zone. `DaemonApplication`, `WorkerApplication` and
+`DockerApplication` call `EntrypointPrelude::run()`. Its first action is
+`date_default_timezone_set(TimeConstants::UTC_TIME_ZONE)`. After `.env` and
+the test override, and before the persistence callback,
+`ProjectTimeZoneStartupGuard::assertConfigured()` reads
+`Hilos::$env[EnvConstants::HILOS_PROJECT_TIME_ZONE]->string()` and refuses a
+value that is not an exact IANA name, raising `EnvInvalidValueException`.
+That check stands earlier than the required-name check in step 1.
+
+The CLI repair path is `EntrypointPrelude::initEnvironment()`, which
+`CliApplication` calls without the guard. A wrong project zone still lets the
+CLI start, and its PHP clock is still UTC. `MissingRequiredEnvironmentException`
+is the daemon's own check of required names, in step 1, after the prelude.
+
 1. `DaemonApplication::run()` checks the process environment against the project's env
    catalog and refuses to start when a required value has no answer, naming **every**
    missing name in one `MissingRequiredEnvironmentException`. Reading a value only when

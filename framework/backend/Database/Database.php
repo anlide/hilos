@@ -226,11 +226,16 @@ class Database
     }
 
     /**
+     * Opens a connection and sets its session time zone to UTC before the handle is published.
+     *
+     * The time zone is set on every index, including a reconnect. A failed SET closes the
+     * fresh handle and is reported as a connection error; that handle is not stored.
+     *
      * @param ?int $index Connection index (defaults to current)
      * @param bool $retryOnConnectionError Whether to retry temporary connection errors
      * @param ?int $maxRetries Max attempts (uses config when null)
      * @param ?int $retryDelaySeconds Delay between retries in seconds (uses config when null)
-     * @throws DatabaseConnectionException When connection index is not configured or charset setup fails
+     * @throws DatabaseConnectionException When the index is not configured, or charset or session time zone setup fails
      * @throws CantConnectToMysqlServerException When retries are exhausted on temporary errors
      */
     public static function connect(
@@ -316,6 +321,19 @@ class Database
                         mysqli_close($mysqli);
                         MysqlExceptionMapper::connectionException($errno, $error);
                     }
+                }
+
+                // Every fresh handle, whichever index, before it is published.
+                try {
+                    mysqli_query($mysqli, DatabaseSql::SESSION_TIME_ZONE_UTC);
+                } catch (mysqli_sql_exception $e) {
+                    self::markUnreachable($index, $e->getCode());
+                    $errno = $e->getCode();
+                    $error = $e->getMessage();
+                    mysqli_close($mysqli);
+
+                    // Session time zone errors are not retryable
+                    MysqlExceptionMapper::connectionException($errno, $error);
                 }
 
                 self::$connections[$index] = $mysqli;

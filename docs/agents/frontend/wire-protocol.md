@@ -151,11 +151,20 @@ The first frame the server sends on every connection — directly behind the 101
 upgrade response, before anything else — is the framework welcome:
 
 ```json
-{"type": "handshake", "data": {"build": "<HILOS_BUILD_TIMESTAMP>"}}
+{"type": "handshake", "data": {"build": "<HILOS_BUILD_TIMESTAMP>", "projectTimeZone": "<HILOS_PROJECT_TIME_ZONE>"}}
 ```
 
 `build` is the daemon's `HILOS_BUILD_TIMESTAMP` environment value (`dev` when
-unset); it feeds the build-version check below.
+unset); it feeds the build-version check below. `build` stays required.
+
+`projectTimeZone` is the project zone from the env key
+`HILOS_PROJECT_TIME_ZONE`, the string
+`Hilos::$env[EnvConstants::HILOS_PROJECT_TIME_ZONE]->string()` returns. A
+current server sends a non-empty string. An older welcome that omits the
+field, an empty string, and a non-string value are all accepted: the welcome
+is kept, and `HilosConnection.projectTimeZone` stays `undefined`. The getter
+stores the last welcome's zone and clears it when a later welcome omits the
+field.
 
 ### Discriminated-union parsing (layered)
 

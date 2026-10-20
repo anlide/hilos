@@ -21,12 +21,17 @@ final class HandshakeWelcomeSignalDataTest extends TestCase
 {
     public function testWelcomeDefaultsToProtectedModeInactive(): void
     {
-        $welcome = new HandshakeWelcomeSignalData(build: 'dev', sessionCookieName: 'hilos_session_token');
+        $welcome = new HandshakeWelcomeSignalData(
+            build: 'dev',
+            sessionCookieName: 'hilos_session_token',
+            projectTimeZone: 'UTC',
+        );
 
         $this->assertSame(
             [
                 HandshakeWelcomeSignalData::BUILD => 'dev',
                 HandshakeWelcomeSignalData::SESSION_COOKIE_NAME => 'hilos_session_token',
+                HandshakeWelcomeSignalData::PROJECT_TIME_ZONE => 'UTC',
                 HandshakeWelcomeSignalData::PROTECTED_MODE => [
                     HandshakeWelcomeSignalData::PROTECTED_MODE_ACTIVE => false,
                     HandshakeWelcomeSignalData::PROTECTED_MODE_OPERATION => null,
@@ -48,6 +53,7 @@ final class HandshakeWelcomeSignalDataTest extends TestCase
         $welcome = new HandshakeWelcomeSignalData(
             build: '20260101',
             sessionCookieName: 'hilos_session_token',
+            projectTimeZone: 'UTC',
             protectedModeActive: false,
             protectedModeOperation: 'restore',
             protectedModeAcceptsPass: true,
@@ -68,6 +74,7 @@ final class HandshakeWelcomeSignalDataTest extends TestCase
         $welcome = new HandshakeWelcomeSignalData(
             build: '20260101',
             sessionCookieName: 'hilos_session_token',
+            projectTimeZone: 'UTC',
             protectedModeActive: true,
         );
 
@@ -82,6 +89,7 @@ final class HandshakeWelcomeSignalDataTest extends TestCase
         $welcome = new HandshakeWelcomeSignalData(
             build: '20260101',
             sessionCookieName: 'hilos_session_token',
+            projectTimeZone: 'UTC',
             protectedModeActive: true,
             protectedModeOperation: 'restore',
             protectedModeTitle: 'Maintenance in progress',
@@ -99,7 +107,11 @@ final class HandshakeWelcomeSignalDataTest extends TestCase
     {
         // The one thing on the frame the frontend needs in order to WRITE a cookie rather
         // than read one: without the name, a rotation ticket has nowhere to go (HIL-582).
-        $welcome = new HandshakeWelcomeSignalData(build: 'dev', sessionCookieName: 'renamed_session');
+        $welcome = new HandshakeWelcomeSignalData(
+            build: 'dev',
+            sessionCookieName: 'renamed_session',
+            projectTimeZone: 'UTC',
+        );
 
         $restored = HandshakeWelcomeSignalData::fromArray($welcome->toArray());
 
@@ -113,6 +125,7 @@ final class HandshakeWelcomeSignalDataTest extends TestCase
         $restored = HandshakeWelcomeSignalData::fromArray([
             HandshakeWelcomeSignalData::BUILD => 'dev',
             HandshakeWelcomeSignalData::SESSION_COOKIE_NAME => 'hilos_session_token',
+            HandshakeWelcomeSignalData::PROJECT_TIME_ZONE => 'UTC',
             HandshakeWelcomeSignalData::PROTECTED_MODE => [
                 HandshakeWelcomeSignalData::PROTECTED_MODE_ACTIVE => false,
                 HandshakeWelcomeSignalData::PROTECTED_MODE_ACCEPTS_PASS => false,
@@ -135,6 +148,7 @@ final class HandshakeWelcomeSignalDataTest extends TestCase
         HandshakeWelcomeSignalData::fromArray([
             HandshakeWelcomeSignalData::BUILD => 'dev',
             HandshakeWelcomeSignalData::SESSION_COOKIE_NAME => 'hilos_session_token',
+            HandshakeWelcomeSignalData::PROJECT_TIME_ZONE => 'UTC',
             HandshakeWelcomeSignalData::PROTECTED_MODE => [
                 HandshakeWelcomeSignalData::PROTECTED_MODE_ACTIVE => true,
                 HandshakeWelcomeSignalData::PROTECTED_MODE_ACCEPTS_PASS => false,
@@ -154,6 +168,7 @@ final class HandshakeWelcomeSignalDataTest extends TestCase
         HandshakeWelcomeSignalData::fromArray([
             HandshakeWelcomeSignalData::BUILD => 'dev',
             HandshakeWelcomeSignalData::SESSION_COOKIE_NAME => 'hilos_session_token',
+            HandshakeWelcomeSignalData::PROJECT_TIME_ZONE => 'UTC',
         ]);
     }
 
@@ -164,6 +179,7 @@ final class HandshakeWelcomeSignalDataTest extends TestCase
         HandshakeWelcomeSignalData::fromArray([
             HandshakeWelcomeSignalData::BUILD => 'dev',
             HandshakeWelcomeSignalData::SESSION_COOKIE_NAME => 'hilos_session_token',
+            HandshakeWelcomeSignalData::PROJECT_TIME_ZONE => 'UTC',
             HandshakeWelcomeSignalData::PROTECTED_MODE => 'not-an-array',
         ]);
     }
@@ -175,6 +191,7 @@ final class HandshakeWelcomeSignalDataTest extends TestCase
         $welcome = new HandshakeWelcomeSignalData(
             build: 'dev',
             sessionCookieName: 'hilos_session_token',
+            projectTimeZone: 'UTC',
             protectedModeActive: true,
             protectedModeAcceptsPass: true,
             protectedModePassIssued: true,
@@ -191,6 +208,7 @@ final class HandshakeWelcomeSignalDataTest extends TestCase
         $welcome = new HandshakeWelcomeSignalData(
             build: 'dev',
             sessionCookieName: 'hilos_session_token',
+            projectTimeZone: 'UTC',
             protectedModeActive: true,
             protectedModeAcceptsPass: true,
         );
@@ -212,9 +230,63 @@ final class HandshakeWelcomeSignalDataTest extends TestCase
         HandshakeWelcomeSignalData::fromArray([
             HandshakeWelcomeSignalData::BUILD => 'dev',
             HandshakeWelcomeSignalData::SESSION_COOKIE_NAME => 'hilos_session_token',
+            HandshakeWelcomeSignalData::PROJECT_TIME_ZONE => 'UTC',
             HandshakeWelcomeSignalData::PROTECTED_MODE => [
                 HandshakeWelcomeSignalData::PROTECTED_MODE_ACTIVE => true,
                 HandshakeWelcomeSignalData::PROTECTED_MODE_ACCEPTS_PASS => true,
+            ],
+        ]);
+    }
+
+    public function testWelcomeRoundTripsTheProjectTimeZone(): void
+    {
+        $welcome = new HandshakeWelcomeSignalData(
+            build: 'dev',
+            sessionCookieName: 'hilos_session_token',
+            projectTimeZone: 'Europe/Kyiv',
+        );
+
+        $restored = HandshakeWelcomeSignalData::fromArray($welcome->toArray());
+
+        $this->assertSame('Europe/Kyiv', $restored->projectTimeZone);
+        $this->assertSame(
+            'Europe/Kyiv',
+            $restored->toArray()[HandshakeWelcomeSignalData::PROJECT_TIME_ZONE],
+        );
+    }
+
+    public function testWelcomeFromArrayRefusesAFrameWithoutItsProjectTimeZone(): void
+    {
+        // A welcome that does not name a zone is not a welcome saying UTC: the
+        // installation's answer is what the frame carries, and a missing field is
+        // a broken frame.
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(HandshakeWelcomeSignalData::PROJECT_TIME_ZONE);
+
+        HandshakeWelcomeSignalData::fromArray([
+            HandshakeWelcomeSignalData::BUILD => 'dev',
+            HandshakeWelcomeSignalData::SESSION_COOKIE_NAME => 'hilos_session_token',
+            HandshakeWelcomeSignalData::PROTECTED_MODE => [
+                HandshakeWelcomeSignalData::PROTECTED_MODE_ACTIVE => false,
+                HandshakeWelcomeSignalData::PROTECTED_MODE_ACCEPTS_PASS => false,
+                HandshakeWelcomeSignalData::PROTECTED_MODE_PASS_ISSUED => false,
+            ],
+        ]);
+    }
+
+    public function testWelcomeFromArrayRefusesAProjectTimeZoneThatIsNotText(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(HandshakeWelcomeSignalData::PROJECT_TIME_ZONE);
+
+        HandshakeWelcomeSignalData::fromArray([
+            HandshakeWelcomeSignalData::BUILD => 'dev',
+            HandshakeWelcomeSignalData::SESSION_COOKIE_NAME => 'hilos_session_token',
+            HandshakeWelcomeSignalData::PROJECT_TIME_ZONE => 42,
+            HandshakeWelcomeSignalData::PROTECTED_MODE => [
+                HandshakeWelcomeSignalData::PROTECTED_MODE_ACTIVE => false,
+                HandshakeWelcomeSignalData::PROTECTED_MODE_ACCEPTS_PASS => false,
+                HandshakeWelcomeSignalData::PROTECTED_MODE_PASS_ISSUED => false,
             ],
         ]);
     }

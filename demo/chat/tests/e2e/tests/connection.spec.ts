@@ -1,18 +1,40 @@
 import { test, expect } from '@playwright/test'
 
 import {
-  isSessionCookie,
   SESSION_COOKIE_PREFIX,
+  armSocketDrop,
+  dropSocket,
+  isSessionCookie,
+  watchHandshakeFrames,
+  type HandshakeFrameLog,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { orphanSessionToken, signUp } from '../helpers/session'
 import { gotoPage } from '../helpers/page'
 
 // Step-7.1 transport e2e (testing-strategy.md): the built app reaches the
 // live daemon through the test nginx /ws WebSocket upgrade proxy, and the
-// Connection machine reports `connected` on the page.
+// Connection machine reports `connected` on the page. The guest's live
+// welcome names the stand's project time zone, and the welcome after a
+// dropped socket does too. Chat leaves the zone unset, so both frames carry
+// the catalog default UTC. A non-UTC zone is proved by the backend tests.
 test('websocket transport reaches connected', async ({ page }) => {
+  await armSocketDrop(page)
+  const welcomes = watchHandshakeFrames(page)
+
   await gotoPage(page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await expect
+    .poll(() => welcomes.map(welcomeProjectTimeZone))
+    .toEqual([STAND_PROJECT_TIME_ZONE])
+
+  const seen = welcomes.length
+  const reconnected = page.waitForEvent('websocket')
+  await dropSocket(page)
+  await reconnected
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await expect
+    .poll(() => welcomes.slice(seen).map(welcomeProjectTimeZone))
+    .toEqual([STAND_PROJECT_TIME_ZONE])
 })
 
 // Session bootstrap e2e: the client-minted cookie rides the handshake and the
@@ -103,3 +125,15 @@ test('subscribes the URL page on load', async ({ page }) => {
     )
     .toBe(true)
 })
+
+/** Chat stand default: the catalog answer when the project zone is unset. */
+const STAND_PROJECT_TIME_ZONE = 'UTC'
+
+// A missing or unreadable zone stays undefined, so a malformed welcome fails
+// the UTC check instead of dropping out of it.
+function welcomeProjectTimeZone(frame: HandshakeFrameLog): unknown {
+  const data = frame.data
+  if (typeof data !== 'object' || data === null) return undefined
+  if (!('projectTimeZone' in data)) return undefined
+  return data.projectTimeZone
+}

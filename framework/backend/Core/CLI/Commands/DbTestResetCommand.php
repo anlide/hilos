@@ -12,6 +12,7 @@ use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\Database\ChangeLog\ChangeLogPartitions;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
+use Hilos\Database\DatabaseSql;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\DatabaseConnectionException;
 use Hilos\Database\Exception\DatabaseRuntimeException;
@@ -107,7 +108,7 @@ HELP;
      * @param list<string> $args Positional args (unused)
      * @return int Exit code (0 on success)
      * @throws EnvException When DB env variables are missing or invalid, or CLUSTER_NODE_ID for the rollout claim
-     * @throws DatabaseConnectionException When database connect or SET NAMES fails
+     * @throws DatabaseConnectionException When database connect, session time zone, or SET NAMES fails
      * @throws CantConnectToMysqlServerException When MySQL is unreachable
      * @throws DatabaseRuntimeException When SET NAMES query fails
      * @throws DatabaseException When migration or seed execution fails
@@ -132,6 +133,13 @@ HELP;
             $conn = mysqli_connect($host, $user, $pass, '', $port);
         } catch (mysqli_sql_exception $e) {
             MysqlExceptionMapper::connectionException($e->getCode(), $e->getMessage());
+        }
+
+        try {
+            mysqli_query($conn, DatabaseSql::SESSION_TIME_ZONE_UTC);
+        } catch (mysqli_sql_exception $failure) {
+            mysqli_close($conn);
+            MysqlExceptionMapper::connectionException($failure->getCode(), $failure->getMessage());
         }
 
         try {

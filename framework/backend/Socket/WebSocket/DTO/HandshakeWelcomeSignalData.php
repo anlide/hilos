@@ -30,12 +30,17 @@ use Hilos\ProtectedMode\ProtectedModeStubCopy;
  * whose name is derived from it ({@see SessionRotationTicket::cookieName()}). The name is
  * a property of the deployment rather than of the rotation, so it rides the welcome every
  * connection already gets instead of the rotation signal almost none of them ever see.
+ *
+ * The same frame names the project time zone. The startup guard has already refused a
+ * name that is not an IANA zone; this payload requires the field to be present and a
+ * string, and the sender passes the installation's answer.
  */
 class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
 {
     // Field name constants
     public const string BUILD = 'build';
     public const string SESSION_COOKIE_NAME = 'sessionCookieName';
+    public const string PROJECT_TIME_ZONE = 'projectTimeZone';
     public const string PROTECTED_MODE = 'protectedMode';
     public const string PROTECTED_MODE_ACTIVE = 'active';
     public const string PROTECTED_MODE_OPERATION = 'operation';
@@ -48,6 +53,7 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
     /**
      * @param string $build Daemon build timestamp ('dev' when not configured)
      * @param string $sessionCookieName Name of this deployment's session cookie
+     * @param string $projectTimeZone Project time zone this welcome tells the client
      * @param bool $protectedModeActive Whether this connection is locked out by an active protected-mode freeze
      * @param ?string $protectedModeOperation Operation the freeze protects; null when no freeze holds
      * @param ?string $protectedModeTitle Heading of the maintenance surface; null when no freeze holds
@@ -71,6 +77,7 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
     public function __construct(
         public readonly string $build,
         public readonly string $sessionCookieName,
+        public readonly string $projectTimeZone,
         public readonly bool $protectedModeActive = false,
         public readonly ?string $protectedModeOperation = null,
         public readonly ?string $protectedModeTitle = null,
@@ -89,6 +96,7 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
         return [
             self::BUILD => $this->build,
             self::SESSION_COOKIE_NAME => $this->sessionCookieName,
+            self::PROJECT_TIME_ZONE => $this->projectTimeZone,
             self::PROTECTED_MODE => [
                 self::PROTECTED_MODE_ACTIVE => $this->protectedModeActive,
                 self::PROTECTED_MODE_OPERATION => $this->protectedModeOperation,
@@ -110,10 +118,14 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
      * freeze holds - and each of the two audiences leaves the other's null even while one
      * does - so they are read as the optional text they are, and a value
      * of another type is refused rather than quietly dropped, which is what the
-     * private reader this replaced used to do.
+     * private reader this replaced used to do. The project time zone is required the
+     * same way the build is: absent or not a string, the frame is refused. An empty
+     * string is still a string; the startup guard is what refuses a zone the
+     * installation cannot use.
      *
-     * @param array<string, mixed> $data
-     * @throws InvalidFormatException When the welcome carries no build, session cookie name or protected-mode block
+     * @param array<string, mixed> $data Wire payload of one welcome
+     * @return static Welcome restored from that payload
+     * @throws InvalidFormatException When the welcome carries no build, session cookie name, project time zone, or protected-mode block
      */
     public static function fromArray(array $data): static
     {
@@ -125,6 +137,9 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
             // frame the frontend could not rotate on, and an empty name would produce an
             // auxiliary cookie called `_rotate` on every deployment that ever saw one.
             sessionCookieName: self::requireString($data, self::SESSION_COOKIE_NAME),
+            // Presence and type only. A name that is not an IANA zone never reaches a
+            // live welcome: the startup guard refuses it before the process accepts work.
+            projectTimeZone: self::requireString($data, self::PROJECT_TIME_ZONE),
             protectedModeActive: self::requireBool($protectedMode, self::PROTECTED_MODE_ACTIVE),
             protectedModeOperation: self::optionalString($protectedMode, self::PROTECTED_MODE_OPERATION),
             protectedModeTitle: self::optionalString($protectedMode, self::PROTECTED_MODE_TITLE),

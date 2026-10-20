@@ -115,7 +115,38 @@ describe('parseSignal', () => {
       expect(result.signal).toMatchObject({
         kind: 'handshake',
         build: '1718000000',
+        projectTimeZone: undefined,
       })
+    }
+  })
+
+  it('reads a project time zone and drops an unusable one without losing the welcome', () => {
+    const withZone = parseSignal(
+      '{"type":"handshake","data":{"build":"1718000000","projectTimeZone":"Europe/Kyiv"}}',
+    )
+    expect(withZone.ok).toBe(true)
+    if (withZone.ok) {
+      expect(withZone.signal).toMatchObject({
+        kind: 'handshake',
+        build: '1718000000',
+        projectTimeZone: 'Europe/Kyiv',
+      })
+    }
+
+    for (const raw of [
+      '{"type":"handshake","data":{"build":"1718000000"}}',
+      '{"type":"handshake","data":{"build":"1718000000","projectTimeZone":""}}',
+      '{"type":"handshake","data":{"build":"1718000000","projectTimeZone":3}}',
+    ]) {
+      const result = parseSignal(raw)
+      expect(result.ok, raw).toBe(true)
+      if (result.ok) {
+        expect(result.signal, raw).toMatchObject({
+          kind: 'handshake',
+          build: '1718000000',
+          projectTimeZone: undefined,
+        })
+      }
     }
   })
 

@@ -33,10 +33,14 @@ export type SignalEnvelope = z.infer<typeof signalEnvelopeSchema>
  * required: an older daemon sends none, and a half-built one must not cost the
  * client its welcome — the build check and the session it opens matter more than
  * the freeze notice, which the pushed frame would repeat anyway.
+ * `projectTimeZone` is the same kind of extra field: an older welcome sends none,
+ * and an empty or non-string value becomes undefined rather than costing the
+ * welcome. The build stays required.
  */
 export const handshakeSignalDataSchema = z.looseObject({
   build: z.string().min(1),
   sessionCookieName: z.string().min(1).optional().catch(undefined),
+  projectTimeZone: z.string().min(1).optional().catch(undefined),
   protectedMode: protectedModeBlockSchema.optional().catch(undefined),
 })
 
