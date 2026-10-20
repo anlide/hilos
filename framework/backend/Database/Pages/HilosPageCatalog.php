@@ -514,8 +514,8 @@ final class HilosPageCatalog
      */
     public const array DASHBOARD_SECTIONS = [
         [
-            PageCatalogConstants::SECTION_TITLE => 'Access & identity',
-            PageCatalogConstants::SECTION_DESCRIPTION => 'Users and the roles that grant them panel access.',
+            PageCatalogConstants::SECTION_TITLE => 'People',
+            PageCatalogConstants::SECTION_DESCRIPTION => 'Who uses the project, what they may do, and what they agreed to.',
             PageCatalogConstants::SECTION_ITEMS => [
                 HilosPageConstants::HILOS_USERS,
                 HilosPageConstants::HILOS_ROLES,
@@ -523,41 +523,48 @@ final class HilosPageCatalog
             ],
         ],
         [
-            PageCatalogConstants::SECTION_TITLE => 'Localization',
-            PageCatalogConstants::SECTION_DESCRIPTION => 'Languages, countries, and translation screens.',
+            PageCatalogConstants::SECTION_TITLE => 'Product',
+            PageCatalogConstants::SECTION_DESCRIPTION =>
+                'What the project offers outward: content, search, messaging, sign-in, languages, and integrations.',
             PageCatalogConstants::SECTION_ITEMS => [
+                HilosPageConstants::HILOS_COMMUNICATIONS,
+                HilosPageConstants::HILOS_SECURITY,
                 HilosPageConstants::HILOS_I18N,
             ],
         ],
         [
-            PageCatalogConstants::SECTION_TITLE => 'Product & integrations',
-            PageCatalogConstants::SECTION_DESCRIPTION => 'Messaging, identity, and commerce configuration.',
-            PageCatalogConstants::SECTION_ITEMS => [
-                HilosPageConstants::HILOS_COMMUNICATIONS,
-                HilosPageConstants::HILOS_SECURITY,
-                HilosPageConstants::HILOS_BILLING,
-            ],
-        ],
-        [
-            PageCatalogConstants::SECTION_TITLE => 'Platform operations',
-            PageCatalogConstants::SECTION_DESCRIPTION => 'Runtime, maintenance, backups, and observability.',
+            PageCatalogConstants::SECTION_TITLE => 'Platform',
+            PageCatalogConstants::SECTION_DESCRIPTION => 'Settings, releases, files, backups, and keeping the system up.',
             PageCatalogConstants::SECTION_ITEMS => [
                 HilosPageConstants::HILOS_SETTINGS,
                 HilosPageConstants::HILOS_APPEARANCE,
-                HilosPageConstants::HILOS_DAEMON,
-                HilosPageConstants::HILOS_LOGS,
-                HilosPageConstants::HILOS_CHANGE_LOG,
                 HilosPageConstants::HILOS_BACKUP,
                 HilosPageConstants::HILOS_MAINTENANCE,
             ],
         ],
         [
-            PageCatalogConstants::SECTION_TITLE => 'Automation & intelligence',
-            PageCatalogConstants::SECTION_DESCRIPTION => 'Analytics, AI tooling, and elevated automation.',
+            PageCatalogConstants::SECTION_TITLE => 'Observability',
+            PageCatalogConstants::SECTION_DESCRIPTION => 'What the system and its visitors are doing, now and over time.',
             PageCatalogConstants::SECTION_ITEMS => [
+                HilosPageConstants::HILOS_DAEMON,
+                HilosPageConstants::HILOS_LOGS,
+                HilosPageConstants::HILOS_CHANGE_LOG,
                 HilosPageConstants::HILOS_ANALYTICS,
+            ],
+        ],
+        [
+            PageCatalogConstants::SECTION_TITLE => 'Intelligence',
+            PageCatalogConstants::SECTION_DESCRIPTION => 'AI tooling, watchdogs, and automation.',
+            PageCatalogConstants::SECTION_ITEMS => [
                 HilosPageConstants::HILOS_MCP_SKILLS,
                 HilosPageConstants::HILOS_SIL,
+            ],
+        ],
+        [
+            PageCatalogConstants::SECTION_TITLE => 'Money',
+            PageCatalogConstants::SECTION_DESCRIPTION => 'What people pay the project, and what its AI costs.',
+            PageCatalogConstants::SECTION_ITEMS => [
+                HilosPageConstants::HILOS_BILLING,
             ],
         ],
     ];

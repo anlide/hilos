@@ -226,8 +226,12 @@ final class AbstractPagePageResponseEmitTest extends TestCase
         $sections = $data[PageCatalogConstants::WIRE_DASHBOARD_SECTIONS];
 
         $this->assertSame('Hilos', $data[PageCatalogConstants::WIRE_PAGE_LABEL]);
-        $this->assertCount(5, $sections);
-        $this->assertSame('Access & identity', $sections[0][PageCatalogConstants::SECTION_TITLE]);
+        $this->assertCount(4, $sections);
+        $this->assertSame(
+            ['People', 'Product', 'Platform', 'Observability'],
+            array_column($sections, PageCatalogConstants::SECTION_TITLE),
+        );
+        $this->assertSame('People', $sections[0][PageCatalogConstants::SECTION_TITLE]);
         $this->assertSame(
             [
                 PageCatalogConstants::WIRE_ITEM_PAGE => HilosPageConstants::HILOS_USERS,
@@ -237,6 +241,18 @@ final class AbstractPagePageResponseEmitTest extends TestCase
                 PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-people',
             ],
             $sections[0][PageCatalogConstants::SECTION_ITEMS][0],
+        );
+        $this->assertSame(
+            [HilosPageConstants::HILOS_SECURITY, HilosPageConstants::HILOS_I18N],
+            array_column($sections[1][PageCatalogConstants::SECTION_ITEMS], PageCatalogConstants::WIRE_ITEM_PAGE),
+        );
+        $this->assertSame(
+            [HilosPageConstants::HILOS_SETTINGS],
+            array_column($sections[2][PageCatalogConstants::SECTION_ITEMS], PageCatalogConstants::WIRE_ITEM_PAGE),
+        );
+        $this->assertSame(
+            [HilosPageConstants::HILOS_ANALYTICS],
+            array_column($sections[3][PageCatalogConstants::SECTION_ITEMS], PageCatalogConstants::WIRE_ITEM_PAGE),
         );
     }
 
@@ -274,7 +290,11 @@ final class AbstractPagePageResponseEmitTest extends TestCase
             [PageCatalogConstants::WIRE_DASHBOARD_SECTIONS];
 
         $this->assertCount(1, $sections);
-        $this->assertSame('Access & identity', $sections[0][PageCatalogConstants::SECTION_TITLE]);
+        $this->assertSame('People', $sections[0][PageCatalogConstants::SECTION_TITLE]);
+        $this->assertSame(
+            [HilosPageConstants::HILOS_USERS],
+            array_column($sections[0][PageCatalogConstants::SECTION_ITEMS], PageCatalogConstants::WIRE_ITEM_PAGE),
+        );
     }
 
     /**

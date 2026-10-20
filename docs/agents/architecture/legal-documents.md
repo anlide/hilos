@@ -331,7 +331,7 @@ surface*).
 
 ## Admin section
 
-The `Legal` section under Access & identity is closed by `ADMIN`. Activate it by
+The `Legal` section under People is closed by `ADMIN`. Activate it by
 registering its five pages and tables and a project subclass of
 `AbstractHilosLegalAgent`, the `legal_export` directory
 (`FsContext::LEGAL_EXPORT`, `DirectoryScope::CLUSTER`) and the

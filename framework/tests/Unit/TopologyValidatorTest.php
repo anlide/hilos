@@ -1204,7 +1204,7 @@ final class TopologyValidatorTest extends TestCase
             static function (): void {
                 TopologyPageCatalogSectionHilos::validateTopology();
             },
-            ['PAGE_CATALOG dashboard section 5 lists an item with no catalog entry'],
+            ['PAGE_CATALOG dashboard section 6 lists an item with no catalog entry'],
         );
     }
 
@@ -1219,9 +1219,9 @@ final class TopologyValidatorTest extends TestCase
                 TopologyPageCatalogSectionHilos::validateTopology();
             },
             [
-                'PAGE_CATALOG dashboard section 6[' . PageCatalogConstants::SECTION_TITLE
+                'PAGE_CATALOG dashboard section 7[' . PageCatalogConstants::SECTION_TITLE
                     . '] must be a non-empty string',
-                'PAGE_CATALOG dashboard section 6[' . PageCatalogConstants::SECTION_DESCRIPTION
+                'PAGE_CATALOG dashboard section 7[' . PageCatalogConstants::SECTION_DESCRIPTION
                     . '] must be a non-empty string',
             ],
         );

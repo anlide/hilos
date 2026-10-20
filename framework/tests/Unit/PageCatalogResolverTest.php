@@ -231,11 +231,12 @@ final class PageCatalogResolverTest extends TestCase
 
         self::assertSame(
             [
-                'Access & identity',
-                'Localization',
-                'Product & integrations',
-                'Platform operations',
-                'Automation & intelligence',
+                'People',
+                'Product',
+                'Platform',
+                'Observability',
+                'Intelligence',
+                'Money',
                 'Moderation',
             ],
             array_column(PageCatalogResolver::dashboardSections(), PageCatalogConstants::SECTION_TITLE),

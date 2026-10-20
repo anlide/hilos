@@ -34,8 +34,8 @@ final class HilosPageCatalogTest extends TestCase
      */
     private const int CATALOG_ENTRIES = 86;
 
-    /** Number of dashboard sections carried over in the same transfer. */
-    private const int TRANSFERRED_SECTIONS = 5;
+    /** Number of dashboard sections: the six admin groups from the design system mockup. */
+    private const int TRANSFERRED_SECTIONS = 6;
 
     public function testEveryKeyNamesADeclaredPage(): void
     {
@@ -119,6 +119,77 @@ final class HilosPageCatalogTest extends TestCase
     {
         self::assertCount(self::CATALOG_ENTRIES, HilosPageCatalog::CATALOG);
         self::assertCount(self::TRANSFERRED_SECTIONS, HilosPageCatalog::DASHBOARD_SECTIONS);
+    }
+
+    /**
+     * Dashboard sections match the six groups and 17 cards specified by the admin mockup (HIL-1648).
+     */
+    public function testDashboardSectionsMatchMockupSpecification(): void
+    {
+        $expected = [
+            [
+                PageCatalogConstants::SECTION_TITLE => 'People',
+                PageCatalogConstants::SECTION_DESCRIPTION => 'Who uses the project, what they may do, and what they agreed to.',
+                PageCatalogConstants::SECTION_ITEMS => [
+                    HilosPageConstants::HILOS_USERS,
+                    HilosPageConstants::HILOS_ROLES,
+                    HilosPageConstants::HILOS_LEGAL,
+                ],
+            ],
+            [
+                PageCatalogConstants::SECTION_TITLE => 'Product',
+                PageCatalogConstants::SECTION_DESCRIPTION =>
+                    'What the project offers outward: content, search, messaging, sign-in, languages, and integrations.',
+                PageCatalogConstants::SECTION_ITEMS => [
+                    HilosPageConstants::HILOS_COMMUNICATIONS,
+                    HilosPageConstants::HILOS_SECURITY,
+                    HilosPageConstants::HILOS_I18N,
+                ],
+            ],
+            [
+                PageCatalogConstants::SECTION_TITLE => 'Platform',
+                PageCatalogConstants::SECTION_DESCRIPTION => 'Settings, releases, files, backups, and keeping the system up.',
+                PageCatalogConstants::SECTION_ITEMS => [
+                    HilosPageConstants::HILOS_SETTINGS,
+                    HilosPageConstants::HILOS_APPEARANCE,
+                    HilosPageConstants::HILOS_BACKUP,
+                    HilosPageConstants::HILOS_MAINTENANCE,
+                ],
+            ],
+            [
+                PageCatalogConstants::SECTION_TITLE => 'Observability',
+                PageCatalogConstants::SECTION_DESCRIPTION => 'What the system and its visitors are doing, now and over time.',
+                PageCatalogConstants::SECTION_ITEMS => [
+                    HilosPageConstants::HILOS_DAEMON,
+                    HilosPageConstants::HILOS_LOGS,
+                    HilosPageConstants::HILOS_CHANGE_LOG,
+                    HilosPageConstants::HILOS_ANALYTICS,
+                ],
+            ],
+            [
+                PageCatalogConstants::SECTION_TITLE => 'Intelligence',
+                PageCatalogConstants::SECTION_DESCRIPTION => 'AI tooling, watchdogs, and automation.',
+                PageCatalogConstants::SECTION_ITEMS => [
+                    HilosPageConstants::HILOS_MCP_SKILLS,
+                    HilosPageConstants::HILOS_SIL,
+                ],
+            ],
+            [
+                PageCatalogConstants::SECTION_TITLE => 'Money',
+                PageCatalogConstants::SECTION_DESCRIPTION => 'What people pay the project, and what its AI costs.',
+                PageCatalogConstants::SECTION_ITEMS => [
+                    HilosPageConstants::HILOS_BILLING,
+                ],
+            ],
+        ];
+
+        self::assertSame($expected, HilosPageCatalog::DASHBOARD_SECTIONS);
+
+        $allItems = array_merge(
+            ...array_column(HilosPageCatalog::DASHBOARD_SECTIONS, PageCatalogConstants::SECTION_ITEMS),
+        );
+        self::assertCount(17, $allItems);
+        self::assertSame($allItems, array_values(array_unique($allItems)));
     }
 
     public function testDaemonEnvironmentPagesBelongToTheSection(): void
