@@ -30,7 +30,7 @@ rule.
 | `WIRE-KEY-CASE` | A field key that crosses PHP → wire → TS is spelled camelCase. Two halves under one id: PHP judges a constant named in camelCase, TypeScript a constant named `<NAME>_FIELD` and the entries of an `as const` `*RowKey` map. A value that is a reference to another constant is judged where the key is spelled out. | [cross-layer-field-names.md](cross-layer-field-names.md) |
 | `LINE-LENGTH` | A PHP line is wider than 150 characters. Width is counted in characters and not in bytes, so a multi-byte dash costs one column. A line inside a heredoc or nowdoc body is not checked: a break there would land in the string itself. | [line-length.md](line-length.md) |
 | `MEMBER-INDENT` | A member of a class, interface, trait, enum, or anonymous class body — visibility, abstract, final, static, readonly, var, function, const, enum case, trait use, attribute, docblock — is indented by exactly four spaces relative to the line that opened the body; a tab is a violation. | [code-style.md](../../code-style.md) |
-| `THROWS-PROPAGATION` | An exception a callee documents is named by the caller's own `@throws` too, unless an enclosing `catch` swallows it; and an implementation does not document an exception the declaration it overrides is silent about. A `throw new X` is judged as its own callee. Only calls whose target is known without inferring a type; an index on such a receiver counts as the call it is, reaching one of the four `ArrayAccess` methods; a magic property's class may be named by a constant on its receiver or by a class-level `@property-read` or `@property` tag, the record on the class itself outranking the one it inherits; a static tag only narrows a real static declaration; a private helper is walked through rather than trusted. Production backend and script roots are judged, including `demo/*/backend`; suite roots stay outside the cross-file index. | [phpdoc.md](phpdoc.md) |
+| `THROWS-PROPAGATION` | An exception a callee documents is named by the caller's own `@throws` too, unless an enclosing `catch` swallows it; and an implementation does not document an exception the declaration it overrides is silent about. A `throw new X` is judged as its own callee. Only calls whose target is known without inferring a type; an index on such a receiver counts as the call it is, reaching one of the four `ArrayAccess` methods; a magic property's class may be named by a constant on its receiver or by a class-level `@property-read` or `@property` tag, the record on the class itself outranking the one it inherits; a static tag only narrows a real static declaration; a private helper is walked through rather than trusted. Production backend and script roots are judged, including `demo/*/backend`; suite roots stay outside the cross-file index by decision — a test owes no `@throws` ([phpdoc.md](phpdoc.md)). | [phpdoc.md](phpdoc.md) |
 | `THROWS-ORPHAN` | A method does not document an exception its body cannot throw: every `@throws` tag is related, through the exception hierarchy in either direction, to something the body lets out — a callee's contract, a `throw new`, a private helper walked through. The claim is made only where the body was read whole, so the rule is silent on four grounds, and the row names them because a green run is otherwise read as coverage: a call that did not resolve, which includes every entry the index sees and cannot follow — a function, a closure, a call on what an expression returned, a callee, member or class held in a variable, a `throw` of anything but `new` — as well as a magic step whose class declares no `__get()`, and an undeclared static step; a body with no call, `new` or `throw`, which is an extension point; a tag the inherited contract declares; a tag that covers the tag of an override. A magic reader's `@throws`, inherited or declared locally, joins the reachable exceptions before the enclosing `catch` is subtracted, including through a private helper. A tag covered by a wide `__get()` contract counts as alive — `HilosException` can back any tag in its hierarchy — without asking callers to propagate that contract. A constructor and a private method get the first two grounds only: nothing inherits a constructor's contract, and nothing overrides a private method. A trait method is judged in each class using it and reported where its tag is written; a trait no class uses is not recognized as one and is judged on its own body. Every production root. | [phpdoc.md](phpdoc.md) |
 | `PAGE-REACH` | Every concrete page says whether the browser navigates to it, and a page that says it does not may not lean on `READS_DB` or `READS_RT`. The answer is the `REACH` constant, resolved up the parent chain, so a base answers for its whole branch. Four findings: a page for which nothing resolves, an `ACTION_HOST` whose `READS_DB` resolves to a non-empty list — that list is taken up on a page subscription only, so those reads belong in `DbContext::processWideReadCollections()` — an `ACTION_HOST` whose `READS_RT` resolves to a non-empty list, which is taken up on the same subscription that never comes and has nowhere else to go, since the frozen-replica mark it exists for has no screen to mark — and one of the two common roots carrying anything but `UNDECLARED`, which would declare the whole repository at once. Abstract classes are never required to answer. No baseline and no in-comment marker: the two roots are a line in the rule, with their reason. Every production root. | [subscriptions.md](../signals/subscriptions.md) |
 | `CLI-OPTIONS-DECLARED` | A concrete command names in `OPTIONS` every option it reads. `OPTIONS` is resolved up the parent chain, and `...parent::OPTIONS` is expanded. Three findings: a name that is read and not declared, compared by value; a key that is neither a literal nor a constant; and `$options` handed whole to a foreign call. Abstract classes are never required to answer. Not judged: an option that is declared and never read, and an options variable under another name. No baseline. Every production root. | [commands.md](../cli/commands.md) |
@@ -269,9 +269,14 @@ record.
 
 The remaining demo backend debt is paid: the THROWS-PROPAGATION baseline now has
 zero records. The rule judges `demo/*/backend` alongside framework backend and
-scripts, including project facade tags on real static properties. Demo suite
-roots remain outside this cross-file index; their separate coverage is not a
-claim made by a green run here.
+scripts, including project facade tags on real static properties. Suite roots —
+`framework/tests` and every `demo/*/tests` — stay outside this index by decision,
+not as pending work: a test method's only caller is PHPUnit, which catches
+everything, so a tag there has no reader and a suite owes none
+([phpdoc.md](phpdoc.md)). Including the demo suites was measured once (P-504):
+4,819 report lines — chat 4,285, tasks 181, polls 175, online-testing 60,
+ecommerce-shop 59, binance-btc-tracker 59. The count did not decide it; the
+missing reader did.
 
 The two markdown rules are narrower than their document as well, and each in a
 way worth knowing before you argue with a hit.
@@ -319,16 +324,20 @@ file of the repository stays outside every root on purpose:
 `framework/Stubs/event.php`, a type stub for an IDE that is never executed.
 
 The kind states a property of the code and not the name of the directory holding it.
-A production root is judged by every rule; a suite is judged by every rule but the
-six a suite is allowed to break — `ERROR-SUPPRESSION`, `FS-SEAM`, `RANDOM-SOURCE`,
-`MAGIC-REPEAT`, `WIRING-REFUSAL-SWALLOWED` and `TRUTH-SOURCE-CLAIM`, the six marked
-*Production roots only* in the table above. The last of them is there because a suite
-legitimately lays a claim down in a call: an agent a test starts outside
-`WorkerManager` gets nothing from the declaration on its class, since the resolver
-runs on the worker's start path. A rule
-cannot draw that line for itself: it is handed the path relative to the scanned
-root, so `framework/tests/Unit/X.php` arrives as `Unit/X.php` and reads exactly like
-a backend file.
+A production root is judged by every rule; a suite is judged by every single-file
+rule but the six a suite is allowed to break — `ERROR-SUPPRESSION`, `FS-SEAM`,
+`RANDOM-SOURCE`, `MAGIC-REPEAT`, `WIRING-REFUSAL-SWALLOWED` and
+`TRUTH-SOURCE-CLAIM`, the six marked *Production roots only* in the table above.
+The last of them is there because a suite legitimately lays a claim down in a
+call: an agent a test starts outside `WorkerManager` gets nothing from the
+declaration on its class, since the resolver runs on the worker's start path. A
+rule cannot draw that line for itself: it is handed the path relative to the
+scanned root, so `framework/tests/Unit/X.php` arrives as `Unit/X.php` and reads
+exactly like a backend file. The rules that read the tree through the cross-file
+index — `THROWS-PROPAGATION`, `THROWS-ORPHAN`, `PAGE-REACH` and
+`CLI-OPTIONS-DECLARED` — do not read a suite at all: their index is built over the
+production and standalone roots (`CodeStyleGuardTest::indexedRoots()`), by the
+decision recorded in the `THROWS-PROPAGATION` row above.
 
 A standalone root is judged as production is, by every rule, and withholds exactly
 one thing: the third sign of `FS-SEAM`, nothing else. The kind names production code

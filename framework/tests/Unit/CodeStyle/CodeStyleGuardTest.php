@@ -183,8 +183,9 @@ final class CodeStyleGuardTest extends TestCase
      * The index spans every root that runs — production and standalone alike — and the
      * throws rule now judges all of it: a demo calls the framework, so an index cut down
      * to part of the tree would answer "no contract" for half the calls inside it and
-     * pass them in silence. A suite is left out because nothing the rule judges calls
-     * into one.
+     * pass them in silence. A suite is left out on two grounds: nothing the rule judges
+     * calls into one, and by decision a suite owes no `@throws` — its only caller is
+     * PHPUnit, which catches everything (docs/agents/code-style/phpdoc.md).
      *
      * @return array<int, string> Roots the cross-file index is built over, relative to the repository root
      */

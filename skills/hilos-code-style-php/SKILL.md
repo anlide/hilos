@@ -50,8 +50,10 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
 ## Hard Rules
 
 - Audit every direct callee before finalizing a docblock and propagate its
-  documented `@throws`; no guard checks propagation, so green tests prove nothing
-  here (`phpdoc.md`).
+  documented `@throws`; the `THROWS-PROPAGATION` guard fails `test:framework:unit`
+  on the call forms it resolves in production and script roots, and the audit
+  answers for the rest. A suite root (`framework/tests`, `demo/*/tests`) owes no
+  `@throws` by decision (`phpdoc.md`).
 - Two quantities that merely happen to be equal get two constants, and a repeated
   number is cured by a name carrying the unit, never the digits (`magic-values.md`).
 - A constant named in camelCase declares a wire field key, so its value is

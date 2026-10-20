@@ -15,7 +15,8 @@ Read this when writing or changing PHPDoc in project PHP code.
    - `@return` for each non-void method; omit for `void` methods and for ordinary
      constructors
    - `@throws` for each exception the method throws directly or propagates without
-     catching or converting
+     catching or converting — except in a test suite root, which owes none (see
+     "A test suite owes no `@throws`" below)
    Every `@param`, `@return`, and `@throws` line must include a very short comment
    after the type. Repeating the native return type in `@return` is intentional
    and required for consistency.
@@ -177,7 +178,8 @@ on a static step narrows only a real static property declared on the class, a tr
 or an ancestor. A tag cannot create a static property, and a tag naming a class
 no scanned root declares leaves that receiver outside the check. A
 green run answers for those forms wherever they sit, and the audit above answers
-for everything else.
+for everything else outside a suite root, which owes no `@throws` at all
+(below).
 `THROWS-PROPAGATION` judges tags a call requires; `THROWS-ORPHAN` judges the other
 half, a tag left behind after a call is removed, but only in a body read whole. It
 stops at a call that does not resolve — a function, a closure, a call on what an
@@ -196,6 +198,27 @@ Before finishing, review the full direct-callee audit and every added or
 changed `@throws`. Verify where each exception originates, whether the callee
 documents it, whether the caller can act on it, and whether any kept summary
 still describes the local behavior.
+
+### A test suite owes no `@throws`
+
+Code under a suite root — `framework/tests` and every `demo/*/tests` — owes no
+`@throws`, by decision (P-504, HIL-1517) and not as debt waiting for a leaf. A
+tag is written for the caller, so that it knows what to catch, and a test method
+has one caller: PHPUnit, which catches everything. Nothing but PHPUnit loads a
+suite, so a shared helper, a base `TestCase`, a trait or a test double has no
+reader either: the whole root is covered, with no file left out. Neither the
+callee audit above nor `THROWS-PROPAGATION` applies there.
+
+A tag already in a suite is left as it stands when its method is edited: not
+extended, not corrected, not removed. Fixtures under
+`framework/tests/CodeStyle/Fixtures/` are not contracts but the input the rules
+are tested on, so a fixture carries exactly the tags its case needs.
+
+PhpStorm's "Unhandled exception" inspection flags a call to a documented
+`@throws` that a test neither catches nor declares, because `HilosException`
+extends `Exception`. That is IDE friction, not a reader: mute the inspection for
+the test scope on your machine ([warnings-and-ide.md](warnings-and-ide.md),
+step 2) rather than answer it with a tag.
 
 ### Why this rule is the one that rots
 
