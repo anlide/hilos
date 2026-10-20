@@ -232,11 +232,12 @@ A project may render its own stack by creating an independent store
     each card expiring and pulling in the next.
   - **The service line** reads "N more waiting · M missed" and does not count
     toward the height cap; it goes away once nothing is waiting and nothing is
-    owed. The "M missed" half is a control (`hilos-toast-missed`, named
-    "M missed, show one"): a press puts the oldest missed notice on screen at
-    once, **over the cap** — the cap bounds what arrives unasked, and this was
-    asked for. "N more waiting" stays plain text: queued errors arrive by
-    themselves and need no door. When the press takes the last missed notice,
+    owed. The hourglass stands inside the "N more waiting" half, so a line with
+    only "M missed" carries no clock. The "M missed" half is a control
+    (`hilos-toast-missed`, named "M missed, show one"): a press puts the oldest
+    missed notice on screen at once, **over the cap** — the cap bounds what
+    arrives unasked, and this was asked for. "N more waiting" stays plain text:
+    queued errors arrive by themselves and need no door. When the press takes the last missed notice,
     focus moves to that card's close button.
   - **A returned notice gets a full, fresh countdown** — it never had one, and
     the countdown measures reading time.
@@ -295,25 +296,42 @@ A project may render its own stack by creating an independent store
 
 ## Where the stack sits
 
-Bottom right by default; on a narrow screen the corner is always the top
-right — the bottom of a phone is occupied by the form's buttons, and the
-keyboard rises from there. A project may move the corner **once, at build
-time**, never per call: different corners in different sections of one product
-is a reliable way to make the notices stop being noticed. The stack sits above
-a modal and is not covered by its backdrop. While a modal is open the stack
-takes no pointer: a card that lands on the dialog's footer — any window narrower
-than about 1230px puts the bottom-right corner there — would otherwise take the
-click meant for the dialog's button (HIL-1097). The cost is accepted: while a
-modal is open a card cannot be closed, followed or held by the pointer — it lives
-out its twenty seconds, and an error waits for the modal to close.
+On a wide screen the stack sits in the corner the project picked — bottom right
+by default. A project may move the corner **once, at build time**, never per
+call: different corners in different sections of one product is a reliable way
+to make the notices stop being noticed. The stack sits above a modal and is not
+covered by its backdrop.
+
+Below 768px the corner no longer applies. The stack sits at the **bottom across
+the width**, cards included, and moves to the **top only while a modal is
+open** — a bottom sheet there; when the last modal has closed it returns to the
+bottom. The reason is that the bottom of a phone is free: every form is a modal,
+and a narrow modal is a bottom sheet, so the bottom is taken only for as long as
+a sheet is open. The stack is not put at the top of a narrow screen for good,
+and no centered position is added. The 768px line is Bootstrap's `md`, and the
+modal is read from `body.modal-open`, which the core scroll lock holds until
+the last modal releases it.
+
+While a modal is open the stack takes no pointer: a card that lands on the
+dialog's footer — on a wide screen, any window narrower than about 1230px puts
+the bottom-right corner there — would otherwise take the click meant for the
+dialog's button (HIL-1097). The rule is one and holds on every width. The cost
+is accepted: while a modal is open a card cannot be closed, followed or held by
+the pointer — it lives out its twenty seconds, and an error waits for the modal
+to close.
 
 ## Accessibility
 
-The live region is declared **in advance, on the stack itself** —
-`role="status" aria-live="polite"` — not on the card that just appeared: a
-role attached to a freshly inserted element leaves part of the screen readers
-silent. An error is the only notice allowed to interrupt:
-`role="alert" aria-live="assertive"`.
+There are two live regions, declared **in advance beside the stack** rather
+than on the card that just appeared: a role attached to a freshly inserted
+element leaves part of the screen readers silent. An error is the only notice
+allowed to interrupt, so it has a region of its own —
+`role="alert" aria-live="assertive"` — and every other notice goes to
+`role="status" aria-live="polite"`. They stand outside the container of the
+cards: inside it they would double every visible line for a search by text,
+which is how the demo suites find a notice. A notice reaches them only once its
+card is measured. This is the existing wiring of the three hosts, not a new
+announcing rule.
 
 The lifetime rules above are how the timing criterion (2.2.1 Timing
 Adjustable) is met: the countdown freezes while the stack is being read, and
@@ -351,7 +369,12 @@ an error waits indefinitely. See [accessibility.md](accessibility.md).
   asserting them through a browser would mean a spec that sits still for 20
   seconds to prove a toast is still there — slow, and flaky the moment the box
   is loaded.
-- E2E asserts only that a notice appears at all, and inside the stack —
+- E2E asserts that a notice appears at all, and inside the stack —
   `page.getByTestId('hilos-toasts').getByText('Password changed.')`. Remember
   the notice expires: assert it before the lifetime elapses, and never assert
   its absence as proof that an action failed.
+- E2E also asserts where the stack stands: `expectToastPlacement()` in
+  `framework/frontend/e2e/toasts.ts`, driven by the maintenance scenario of
+  `demo/ecommerce-shop` — bottom across the width on a narrow screen, top while
+  the bottom-sheet dialog is open, the corner from 768px. That is position, not
+  timing, so the rule above stands.

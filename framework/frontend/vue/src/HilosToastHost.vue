@@ -1,5 +1,8 @@
-<!-- HilosToastHost — the framework toast stack: transient notices in a fixed
-bottom-end corner, newest at the bottom, each self-expiring on the store's timer.
+<!-- HilosToastHost — the framework toast stack: transient notices in one corner
+of a wide screen (bottom-end unless the shell picks another), newest at the
+bottom, each self-expiring on the store's timer. On a narrow screen the stack
+sits at the bottom across the width whatever the corner, and at the top while a
+modal — a bottom sheet there — is open (hilos-styles.scss).
 It renders the shared core store (hilosToasts), so anything in the SDK or in a
 project can report an outcome without threading a store through props — the shell
 mounts this once (HilosLayout) and every page is covered.
@@ -37,7 +40,11 @@ import { useSignal } from './useSignal.js'
 const props = defineProps<{
   /** The stack to render; defaults to the application-wide store. */
   store?: HilosToastStore
-  /** Which corner the stack sits in; defaults to the bottom end. */
+  /**
+   * Which corner the stack sits in on a wide screen; defaults to the bottom
+   * end. A narrow screen ignores it: the stack sits at the bottom, and at the
+   * top while a modal is open.
+   */
   corner?: HilosToastCorner
 }>()
 
@@ -83,9 +90,11 @@ const TOAST_VISUAL: Record<HilosToastSeverity, ToastVisual> = {
   },
 }
 
-// Where the stack sits: the horizontal edge is a stock Bootstrap utility, the
-// vertical one is not, because the narrow screen overrides it and the stock
-// .bottom-0 carries !important that a media query cannot outrank.
+// Where the stack sits on a wide screen: the horizontal edge is a stock
+// Bootstrap utility, the vertical one is not, because the narrow screen
+// overrides it and the stock .bottom-0 carries !important that a media query
+// cannot outrank. On a narrow screen the full width covers the window from
+// either horizontal edge.
 const corner = computed(() => props.corner ?? 'bottom-end')
 const cornerClasses = computed(() => [
   corner.value.endsWith('-end') ? 'end-0' : 'start-0',
@@ -383,12 +392,12 @@ function dismissIfNavigated(event: MouseEvent, id: number): void {
 </script>
 
 <template>
-  <!-- The two live regions, declared in advance and on the stack rather than on
+  <!-- The two live regions, declared in advance beside the stack rather than on
   the card that just appeared: a role attached to a freshly inserted node leaves
   part of the screen readers silent. Two of them, because only a failure is
-  allowed to interrupt what the listener is hearing. They sit OUTSIDE the stack
-  container: inside, they would double every visible line for a search by text,
-  which is how the demo suites find a notice. -->
+  allowed to interrupt what the listener is hearing. They sit outside the
+  container of the cards: inside, they would double every visible line for a
+  search by text, which is how the demo suites find a notice. -->
   <div
     class="visually-hidden"
     role="alert"
@@ -507,8 +516,8 @@ function dismissIfNavigated(event: MouseEvent, id: number): void {
       class="bg-body border rounded-3 shadow-sm px-2 py-1 small text-body-secondary pe-auto"
       data-id="hilos-toast-overflow"
     >
-      <i class="bi bi-hourglass-split me-1" aria-hidden="true"></i>
       <span v-if="overflow.waiting > 0"
+        ><i class="bi bi-hourglass-split me-1" aria-hidden="true"></i
         >{{ overflow.waiting }} more waiting</span
       >
       <span v-if="overflow.waiting > 0 && overflow.missed > 0"> · </span>

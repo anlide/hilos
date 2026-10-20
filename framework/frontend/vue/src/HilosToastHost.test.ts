@@ -288,6 +288,30 @@ describe('HilosToastHost', () => {
     expect(topStart.classes()).toContain('hilos-toast-stack-top')
   })
 
+  // The corner is the wide screen's setting; what a narrow screen does with it
+  // is a media query, which jsdom does not lay out — the e2e suite owns that.
+  it.each<[HilosToastCorner, string, string]>([
+    ['bottom-end', 'end-0', 'hilos-toast-stack-bottom'],
+    ['bottom-start', 'start-0', 'hilos-toast-stack-bottom'],
+    ['top-end', 'end-0', 'hilos-toast-stack-top'],
+    ['top-start', 'start-0', 'hilos-toast-stack-top'],
+  ])('draws the %s corner with %s and %s', (corner, horizontal, vertical) => {
+    const stack = mountHost(createHilosToastStore(), [], corner).find(
+      '[data-id="hilos-toasts"]',
+    )
+
+    expect(stack.classes()).toContain(horizontal)
+    expect(stack.classes()).toContain(vertical)
+    expect(stack.classes()).not.toContain(
+      horizontal === 'end-0' ? 'start-0' : 'end-0',
+    )
+    expect(stack.classes()).not.toContain(
+      vertical === 'hilos-toast-stack-bottom'
+        ? 'hilos-toast-stack-top'
+        : 'hilos-toast-stack-bottom',
+    )
+  })
+
   it('announces a measured notice, an error apart from the rest', async () => {
     const store = createHilosToastStore()
     store.push('The report could not be built', { severity: 'error' })
@@ -369,6 +393,102 @@ describe('HilosToastHost', () => {
       false,
     )
     expect(wrapper.find('[data-id="hilos-toasts"]').text()).toBe('Saved')
+  })
+
+  // The service line reads what the store counted: the hourglass belongs to the
+  // waiting errors and stands right before their number, the missed piece is
+  // the one control, and the separator stands only between two numbers.
+  describe('service line', () => {
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('draws nothing while nothing waits and nothing was missed', async () => {
+      const store = createHilosToastStore()
+      store.push('Saved', { severity: 'success' })
+      const wrapper = mountHost(store)
+      await nextTick()
+
+      expect(store.overflow.get()).toEqual({ waiting: 0, missed: 0 })
+      expect(wrapper.find('[data-id="hilos-toast-overflow"]').exists()).toBe(
+        false,
+      )
+      expect(wrapper.find('.bi-hourglass-split').exists()).toBe(false)
+    })
+
+    it('puts the hourglass right before the waiting count when both are there', async () => {
+      const store = createHilosToastStore()
+      overfill(store)
+      const wrapper = mountHost(store)
+      await nextTick()
+
+      const line = wrapper.find('[data-id="hilos-toast-overflow"]')
+      expect(line.text()).toBe('1 more waiting · 1 missed')
+      const hourglasses = line.findAll('.bi-hourglass-split')
+      expect(hourglasses).toHaveLength(1)
+      const hourglass = hourglasses[0].element
+      expect(hourglass.getAttribute('aria-hidden')).toBe('true')
+      expect(hourglass.previousSibling).toBeNull()
+      expect(hourglass.nextSibling?.textContent?.trim()).toBe('1 more waiting')
+      expect(hourglass.parentElement?.textContent?.trim()).toBe(
+        '1 more waiting',
+      )
+    })
+
+    it('says only what waits, with the hourglass, once nothing is missed', async () => {
+      const store = createHilosToastStore()
+      overfill(store)
+      const wrapper = mountHost(store)
+      await nextTick()
+
+      // The press brings the one missed notice back and leaves the queued
+      // error waiting — the store's own way to that state, no fixture of its own.
+      await wrapper.find('[data-id="hilos-toast-missed"]').trigger('click')
+      expect(store.overflow.get()).toEqual({ waiting: 1, missed: 0 })
+
+      const line = wrapper.find('[data-id="hilos-toast-overflow"]')
+      expect(line.text()).toBe('1 more waiting')
+      expect(line.findAll('.bi-hourglass-split')).toHaveLength(1)
+      expect(
+        line
+          .find('.bi-hourglass-split')
+          .element.nextSibling?.textContent?.trim(),
+      ).toBe('1 more waiting')
+      expect(line.find('[data-id="hilos-toast-missed"]').exists()).toBe(false)
+      expect(line.text()).not.toContain('·')
+    })
+
+    it('says only what was missed, without the hourglass, as the same control', async () => {
+      // Two cards fill a third of jsdom's 768-pixel window; the third misses.
+      // Without a height every box measures zero, and the store would take
+      // every missed notice back at once.
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
+        new DOMRect(0, 0, 100, 100),
+      )
+      const store = createHilosToastStore()
+      store.push('One', { severity: 'info' })
+      store.push('Two', { severity: 'info' })
+      const wrapper = mountHost(store)
+      await nextTick()
+      store.push('Three', { severity: 'info' })
+      await nextTick()
+      await nextTick()
+      expect(store.overflow.get()).toEqual({ waiting: 0, missed: 1 })
+
+      const line = wrapper.find('[data-id="hilos-toast-overflow"]')
+      expect(line.text()).toBe('1 missed')
+      expect(line.find('.bi-hourglass-split').exists()).toBe(false)
+      expect(line.text()).not.toContain('·')
+      const control = line.find('[data-id="hilos-toast-missed"]')
+      expect(control.element.tagName).toBe('BUTTON')
+      expect(control.attributes('aria-label')).toBe('1 missed, show one')
+
+      await control.trigger('click')
+      expect(store.toasts.get().map((toast) => toast.message)).toContain(
+        'Three',
+      )
+      expect(store.overflow.get()).toEqual({ waiting: 0, missed: 0 })
+    })
   })
 
   // The holds follow the cards (HIL-916): taken by the engine's mouseover, given

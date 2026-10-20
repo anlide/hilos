@@ -177,28 +177,53 @@
 
 // WHY: the stock .bottom-0 and .top-0 utilities carry !important, so a media
 // query in this layer cannot outrank them without a second one — and the
-// vertical edge of the toast stack has to flip on a narrow screen.
-// WHAT: the bottom corner of the stack, forced to the top on a phone, where the
-// bottom of the screen belongs to the form's buttons and to the keyboard rising
-// from there. The horizontal edge needs none of this and stays a stock utility.
+// vertical edge of the toast stack moves on a narrow screen (below).
+// WHAT: the bottom corner of the stack on a wide screen, the default one. The
+// horizontal edge needs none of this and stays a stock utility.
 .hilos-toast-stack-bottom {
   bottom: 0;
-
-  // 767.98px is Bootstrap's `md` breakpoint less a hair, written out as a
-  // number because the SDK loads Bootstrap compiled (index.ts) and its Sass
-  // variables are not in scope; a full re-compile stays deferred
-  // (styling-rules.md), and this comment is what to find when it happens.
-  @media (max-width: 767.98px) {
-    bottom: auto;
-    top: 0;
-  }
 }
 
 // WHY: same reason as the bottom corner — the stock utility's !important would
 // leave nothing for the narrow screen to override.
-// WHAT: the top corner of the stack, where a narrow screen puts it anyway.
+// WHAT: the top corner of the stack on a wide screen, for a project that picked
+// it.
 .hilos-toast-stack-top {
   top: 0;
+}
+
+// WHY: no stock utility holds only below a breakpoint and only while a modal is
+// open, and the stack's width is not a utility either: Bootstrap draws
+// .toast-container at max-content and each .toast at a fixed 350px.
+// WHAT: on a narrow screen the stack sits at the bottom across the width,
+// whichever corner the project picked. The bottom of a phone is free: every
+// form is a modal, a narrow modal is a bottom sheet (.hilos-modal-sheet below),
+// and the notice of an outcome arrives once the sheet has closed. So the bottom
+// is taken only while a sheet is open, and for that time the stack moves to the
+// top — body.modal-open, held by the core scroll lock
+// (core/src/dom/scrollLock.ts) until the last modal releases it.
+//
+// 767.98px is Bootstrap's `md` breakpoint less a hair, written out as a number
+// because the SDK loads Bootstrap compiled (index.ts) and its Sass variables
+// are not in scope; a full re-compile stays deferred (styling-rules.md), and
+// this comment is what to find when it happens.
+@media (max-width: 767.98px) {
+  .hilos-toast-stack-bottom,
+  .hilos-toast-stack-top {
+    top: auto;
+    bottom: 0;
+    width: 100%;
+
+    > .toast {
+      width: 100%;
+    }
+  }
+
+  body.modal-open .hilos-toast-stack-bottom,
+  body.modal-open .hilos-toast-stack-top {
+    top: 0;
+    bottom: auto;
+  }
 }
 
 // WHY: the stack stands above a modal by rule (docs/agents/frontend/toasts.md),

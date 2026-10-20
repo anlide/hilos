@@ -47,7 +47,11 @@ export {
   type PasskeyPlatform,
 } from './passkeyCreation.js'
 export { addVirtualAuthenticator } from './virtualAuthenticator.js'
-export { dismissToasts } from './toasts.js'
+export {
+  dismissToasts,
+  expectToastPlacement,
+  type ToastPlacement,
+} from './toasts.js'
 export {
   CIRCLE_OFFLINE,
   CIRCLE_ONLINE,
