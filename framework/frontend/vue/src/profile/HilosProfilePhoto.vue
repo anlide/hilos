@@ -240,7 +240,7 @@ function arrow(event: KeyboardEvent): void {
       </div>
       <p class="small text-body-secondary mt-2 mb-0">{{ COPY.removeNote }}</p>
     </div>
-    <HilosFormError :message="refusal" data-id="profile-photo-error" />
+    <HilosFormError :message="refusal" data-id="profile-photo-error" announce />
     <template #actions="{ requestClose }">
       <button
         type="button"

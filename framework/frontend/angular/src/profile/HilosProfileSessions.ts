@@ -149,6 +149,7 @@ import { createHilosTrackedAction } from '../hilosTrackedAction.js'
         <hilos-form-error
           [message]="endError()"
           dataId="profile-session-end-error"
+          [announce]="true"
         />
         <ng-template #modalActions let-requestClose="requestClose">
           <button
@@ -193,6 +194,7 @@ import { createHilosTrackedAction } from '../hilosTrackedAction.js'
         <hilos-form-error
           [message]="endOthersError()"
           dataId="profile-sessions-end-others-error"
+          [announce]="true"
         />
         <ng-template #modalActions let-requestClose="requestClose">
           <button

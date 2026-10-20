@@ -277,7 +277,11 @@ export function HilosProfilePhoto({ flow }: HilosProfilePhotoProps) {
             </p>
           </div>
         ) : null}
-        <HilosFormError message={refusal} dataId="profile-photo-error" />
+        <HilosFormError
+          message={refusal}
+          dataId="profile-photo-error"
+          announce
+        />
       </HilosModal>
     </>
   )

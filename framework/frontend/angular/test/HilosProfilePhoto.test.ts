@@ -128,3 +128,88 @@ it('offers the picker, current-photo actions and an accessible crop canvas', asy
 
   fixture.destroy()
 })
+
+it('preserves refusal slot identity and live region across error states and step transitions', async () => {
+  const step = createSignal<HilosProfilePhotoStep>('pick')
+  const flow = {
+    step,
+    photo: createSignal<string | null>('/photo.webp'),
+    name: createSignal('Ada'),
+    initials: createSignal('A'),
+    preview: createSignal(null),
+    crop: createSignal({ zoom: 1, centerX: 0, centerY: 0 }),
+    zoom: createSignal(1),
+    busy: createSignal(false),
+    checking: createSignal(false),
+    refusal: createSignal<string | null>(null),
+    voice: createSignal(''),
+    open: () => step.set('pick'),
+    pick: vi.fn(async () => {}),
+    setZoom: vi.fn(),
+    move: vi.fn(),
+    save: vi.fn(async () => {}),
+    remove: vi.fn(async () => {}),
+    close: () => step.set('closed'),
+    dispose: vi.fn(),
+  } satisfies HilosProfilePhotoFlow
+
+  const fixture = TestBed.createComponent(HilosProfilePhoto)
+  fixture.componentRef.setInput('flow', flow)
+  fixture.detectChanges()
+  await fixture.whenStable()
+  const byId = (id: string) =>
+    document.querySelector<HTMLElement>(`[data-id="${id}"]`)
+
+  const slot = byId('profile-photo-error-slot')
+  if (!slot) throw new Error('Missing profile-photo-error-slot')
+
+  expect(slot.getAttribute('role')).toBe('alert')
+  expect(slot.getAttribute('aria-live')).toBe('assertive')
+  expect(slot.closest('[role="dialog"][aria-modal="true"]')).not.toBeNull()
+  expect(byId('profile-photo-error')).toBeNull()
+  const idle = byId('profile-photo-error-idle')
+  expect(idle?.getAttribute('aria-hidden')).toBe('true')
+  expect(slot.querySelector('[data-id="profile-photo-error"]')).toBeNull()
+  expect(slot.textContent?.trim()).toBe('')
+
+  flow.refusal.set('Photo was rejected')
+  fixture.detectChanges()
+  await fixture.whenStable()
+
+  const visibleError = byId('profile-photo-error')
+  expect(visibleError).not.toBeNull()
+  expect(visibleError?.textContent).toContain('Photo was rejected')
+  expect(slot.textContent).toContain('Photo was rejected')
+  expect(byId('profile-photo-error-slot')).toBe(slot)
+
+  flow.refusal.set(null)
+  fixture.detectChanges()
+  await fixture.whenStable()
+
+  expect(byId('profile-photo-error')).toBeNull()
+  const idleAfter = byId('profile-photo-error-idle')
+  expect(idleAfter?.getAttribute('aria-hidden')).toBe('true')
+  expect(slot.querySelector('[data-id="profile-photo-error"]')).toBeNull()
+  expect(slot.textContent?.trim()).toBe('')
+  expect(byId('profile-photo-error-slot')).toBe(slot)
+
+  step.set('crop')
+  fixture.detectChanges()
+  await fixture.whenStable()
+  expect(byId('profile-photo-preview')).not.toBeNull()
+  expect(byId('profile-photo-error-slot')).toBe(slot)
+
+  step.set('current')
+  fixture.detectChanges()
+  await fixture.whenStable()
+  expect(byId('profile-photo-remove')).not.toBeNull()
+  expect(byId('profile-photo-error-slot')).toBe(slot)
+
+  step.set('pick')
+  fixture.detectChanges()
+  await fixture.whenStable()
+  expect(byId('profile-photo-input')).not.toBeNull()
+  expect(byId('profile-photo-error-slot')).toBe(slot)
+
+  fixture.destroy()
+})

@@ -52,16 +52,19 @@ function setup(
   ],
   endOtherResult: () => Promise<unknown> = () =>
     Promise.resolve({ reply: null }),
+  endSessionResult: () => Promise<unknown> = () =>
+    Promise.resolve({ reply: null }),
 ) {
+  const endSession = vi.fn(() => makeHandle(endSessionResult()))
   const endOtherSessions = vi.fn(() => makeHandle(endOtherResult()))
   const actions: HilosProfileSessionActions = {
-    endSession: vi.fn(),
+    endSession,
     endOtherSessions,
   }
   const view = render(
     <HilosProfileSessions sessions={initialSessions} actions={actions} />,
   )
-  return { actions, endOtherSessions, view }
+  return { actions, endSession, endOtherSessions, view }
 }
 
 describe('HilosProfileSessions (React)', () => {
@@ -172,20 +175,37 @@ describe('HilosProfileSessions (React)', () => {
   })
 
   it('keeps modal open and displays refusal on action failure', async () => {
+    let rejectAction = true
     const { endOtherSessions } = setup(
       [makeSession(1, { current: true }), makeSession(2)],
       () =>
-        Promise.reject(
-          new ActionError(
-            'hilos_sessions_end_others',
-            'fail',
-            'Denied by policy',
-          ),
-        ),
+        rejectAction
+          ? Promise.reject(
+              new ActionError(
+                'hilos_sessions_end_others',
+                'fail',
+                'Denied by policy',
+              ),
+            )
+          : new Promise<{ reply: null }>(() => {}),
     )
     await act(async () => {
       fireEvent.click(byId('profile-sessions-end-others'))
     })
+
+    const slot = byId('profile-sessions-end-others-error-slot')
+    expect(slot.getAttribute('role')).toBe('alert')
+    expect(slot.getAttribute('aria-live')).toBe('assertive')
+    expect(slot.closest('[role="dialog"][aria-modal="true"]')).not.toBeNull()
+    expect(
+      document.querySelector('[data-id="profile-sessions-end-others-error"]'),
+    ).toBeNull()
+    const idle = byId('profile-sessions-end-others-error-idle')
+    expect(idle.getAttribute('aria-hidden')).toBe('true')
+    expect(
+      slot.querySelector('[data-id="profile-sessions-end-others-error"]'),
+    ).toBeNull()
+    expect(slot.textContent?.trim()).toBe('')
 
     await act(async () => {
       fireEvent.click(byId('profile-sessions-end-others-confirm'))
@@ -195,9 +215,90 @@ describe('HilosProfileSessions (React)', () => {
     expect(
       document.querySelector('[data-id="profile-sessions-end-others-confirm"]'),
     ).not.toBeNull()
-    expect(byId('profile-sessions-end-others-error').textContent).toContain(
-      'Denied by policy',
+    const visibleError = byId('profile-sessions-end-others-error')
+    expect(visibleError.textContent).toContain('Denied by policy')
+    expect(slot.textContent).toContain('Denied by policy')
+    expect(byId('profile-sessions-end-others-error-slot')).toBe(slot)
+
+    rejectAction = false
+    await act(async () => {
+      fireEvent.click(byId('profile-sessions-end-others-confirm'))
+    })
+
+    expect(
+      document.querySelector('[data-id="profile-sessions-end-others-error"]'),
+    ).toBeNull()
+    const idleAfter = byId('profile-sessions-end-others-error-idle')
+    expect(idleAfter.getAttribute('aria-hidden')).toBe('true')
+    expect(
+      slot.querySelector('[data-id="profile-sessions-end-others-error"]'),
+    ).toBeNull()
+    expect(slot.textContent?.trim()).toBe('')
+    expect(byId('profile-sessions-end-others-error-slot')).toBe(slot)
+  })
+
+  it('keeps End session modal open and displays refusal on action failure with permanent live region', async () => {
+    let rejectAction = true
+    const { endSession } = setup(
+      [makeSession(1, { current: true }), makeSession(2)],
+      () => Promise.resolve({ reply: null }),
+      () =>
+        rejectAction
+          ? Promise.reject(
+              new ActionError(
+                'hilos_sessions_end',
+                'fail',
+                'Failed to end session',
+              ),
+            )
+          : new Promise<{ reply: null }>(() => {}),
     )
+    await act(async () => {
+      fireEvent.click(byId('profile-session-revoke'))
+    })
+
+    const slot = byId('profile-session-end-error-slot')
+    expect(slot.getAttribute('role')).toBe('alert')
+    expect(slot.getAttribute('aria-live')).toBe('assertive')
+    expect(slot.closest('[role="dialog"][aria-modal="true"]')).not.toBeNull()
+    expect(
+      document.querySelector('[data-id="profile-session-end-error"]'),
+    ).toBeNull()
+    const idle = byId('profile-session-end-error-idle')
+    expect(idle.getAttribute('aria-hidden')).toBe('true')
+    expect(
+      slot.querySelector('[data-id="profile-session-end-error"]'),
+    ).toBeNull()
+    expect(slot.textContent?.trim()).toBe('')
+
+    await act(async () => {
+      fireEvent.click(byId('profile-session-end-confirm'))
+    })
+
+    expect(endSession).toHaveBeenCalledWith(2)
+    expect(
+      document.querySelector('[data-id="profile-session-end-confirm"]'),
+    ).not.toBeNull()
+    const visibleError = byId('profile-session-end-error')
+    expect(visibleError.textContent).toContain('Failed to end session')
+    expect(slot.textContent).toContain('Failed to end session')
+    expect(byId('profile-session-end-error-slot')).toBe(slot)
+
+    rejectAction = false
+    await act(async () => {
+      fireEvent.click(byId('profile-session-end-confirm'))
+    })
+
+    expect(
+      document.querySelector('[data-id="profile-session-end-error"]'),
+    ).toBeNull()
+    const idleAfter = byId('profile-session-end-error-idle')
+    expect(idleAfter.getAttribute('aria-hidden')).toBe('true')
+    expect(
+      slot.querySelector('[data-id="profile-session-end-error"]'),
+    ).toBeNull()
+    expect(slot.textContent?.trim()).toBe('')
+    expect(byId('profile-session-end-error-slot')).toBe(slot)
   })
 
   it('closes modal on Cancel without calling endOtherSessions', async () => {

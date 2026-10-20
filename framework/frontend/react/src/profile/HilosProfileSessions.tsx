@@ -228,7 +228,11 @@ export function HilosProfileSessions({
           needed, the sign-in form takes the place of the content.
         </p>
         <p>Your other sessions are not touched.</p>
-        <HilosFormError message={endError} dataId="profile-session-end-error" />
+        <HilosFormError
+          message={endError}
+          dataId="profile-session-end-error"
+          announce
+        />
       </HilosModal>
 
       <HilosModal
@@ -273,6 +277,7 @@ export function HilosProfileSessions({
         <HilosFormError
           message={endOthersError}
           dataId="profile-sessions-end-others-error"
+          announce
         />
       </HilosModal>
     </section>

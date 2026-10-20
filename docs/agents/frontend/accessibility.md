@@ -220,9 +220,10 @@ The rules to apply when building a view or an SDK component:
   the surface, or inside the dialog when the dialog is `aria-modal` and the page
   under it is not there to be read. A region living inside a form that swaps its
   steps would die with its step, which is the very illness a live region cures.
-  The row's `announce` input makes its own slot the region, and it is set only
-  where the surface under the row is never swapped — that is `HilosActionError`;
-  a form keeps its voice on the surface.
+  The row's `announce` input makes its own slot the region. Set it where that
+  slot stays mounted while the refusal changes, as in `HilosActionError` and the
+  profile's session and photo dialogs; a form that swaps its refusal slot with
+  its steps keeps its voice on the surface.
 - **A timed notice is readable or it does not exist (2.2.1 Timing Adjustable).**
   A toast that expires before it is read is nothing to a screen-reader user, so
   the toast stack lives 20 seconds — an error does not expire until dismissed —

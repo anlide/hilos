@@ -212,7 +212,11 @@ function mirror<T>(
           </p>
         </div>
       }
-      <hilos-form-error [message]="refusal()" dataId="profile-photo-error" />
+      <hilos-form-error
+        [message]="refusal()"
+        dataId="profile-photo-error"
+        [announce]="true"
+      />
       <ng-template #modalActions let-requestClose="requestClose">
         <button
           type="button"

@@ -207,7 +207,11 @@ async function confirmEndOthers(): Promise<void> {
         needed, the sign-in form takes the place of the content.
       </p>
       <p>Your other sessions are not touched.</p>
-      <HilosFormError :message="endError" data-id="profile-session-end-error" />
+      <HilosFormError
+        :message="endError"
+        data-id="profile-session-end-error"
+        announce
+      />
       <template #actions="{ requestClose }">
         <button
           type="button"
@@ -250,6 +254,7 @@ async function confirmEndOthers(): Promise<void> {
       <HilosFormError
         :message="endOthersError"
         data-id="profile-sessions-end-others-error"
+        announce
       />
       <template #actions="{ requestClose }">
         <button
