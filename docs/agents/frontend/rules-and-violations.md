@@ -192,26 +192,35 @@ Topic documents are referenced by filename; several are still being authored.
   A mutation that takes no parameter — a per-row toggle — needs no dialog
   of its own. See [conflict-resolution.md](conflict-resolution.md).
 - **The modal owns a baseline / draft / incoming 3-way merge.** On open, freeze
-  a baseline snapshot and clone it into an editable draft; keep the edited entity
-  live-subscribed so the modal sees incoming committed changes; merge per field
-  against the baseline and surface genuine conflicts to the user. Pages outside
-  the modal always show committed data; uncommitted drafts never smear onto the
-  shared entity. Deviating from this modal-owned merge is a **gross violation**.
-  See [conflict-resolution.md](conflict-resolution.md).
+  a snapshot of the shown values and clone it into an editable draft. This
+  applies to edits and to creation in a place already addressed by the opening
+  button and observed through a live carrier row. Keep that source subscribed;
+  the core row-edit session merges per field, advances the baseline and surfaces
+  conflicts. Occupancy chooses add or update independently of the shown values.
+  A new entity addressed by an entered key or server-assigned id has no such
+  merge; a key collision remains a server refusal. Pages outside the modal
+  always show committed data; uncommitted drafts never smear onto the shared
+  entity. Deviating from this modal-owned merge is a **gross violation**. See
+  [Creation in a known place](conflict-resolution.md#creation-in-a-known-place).
 - **Entity deleted while its edit modal is open.** The modal stays open, save is
   blocked, the primary button reads "Deleted", and the user's draft stays
-  visible and extractable — never silently discarded. See
+  visible and extractable — never silently discarded. Removing the value under
+  an open edit does not return it to creation; an initially empty known place
+  is not a deletion. See
   [conflict-resolution.md](conflict-resolution.md).
 - **Save is unavailable while there is nothing to save.** This holds for any
   button that saves what a form holds — an edit modal, a settings form, an add
   dialog. Nothing to save is an edit whose draft equals what is saved (for a
   modal over a live row, the helper's `dirty` — see
   [conflict-resolution.md](conflict-resolution.md)), an add whose required
-  field is still empty, and a save that is already in flight. Enter in such a
-  form sends nothing either: an untouched edit closes without a round trip to
-  the backend, and an empty write is never the way a dialog gets closed. A live
-  button over an untouched form promises there is something to lose, and an
-  empty write that closes the dialog hides whether anything was saved at all.
+  field is still empty, and a save that is already in flight. A valid creation
+  in a still-empty known place may save its shown initial value, including a
+  prefill or an allowed empty name. Once occupied, an equal saved value leaves
+  nothing to save; unresolved conflicts, permissions and domain prohibitions
+  still block saving. Save and Enter use the same verdict. When that verdict
+  blocks saving, Enter sends nothing either: an untouched edit closes without
+  a round trip to the backend, and a write with nothing to save is never the
+  way a dialog gets closed.
 - **A modal that edits nothing closes with one Close button.** A legend, a
   refusal reason, the output of a command — a surface that only shows something
   carries a single secondary `Close` in the footer, going through

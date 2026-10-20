@@ -9,10 +9,43 @@ the authoritative-backend rule ([data-model.md](data-model.md), [core-and-connec
 
 All editing happens in a modal; inline forms are forbidden. So does any
 other mutation that takes a parameter — a creation or a run with an
-option asks for it in a modal too. The merge below belongs to editing
-alone: a creation has no baseline to merge against. The modal component
-itself is agnostic — the parent owns the form — but every edit session runs
-through a modal precisely so the merge below has one home.
+option asks for it in a modal too. Editing and creation in a known place
+take the row-edit session and its merge below. Creating a new entity by an
+entered key or a server-assigned id, and running with an option, do not.
+The modal component itself is agnostic — the parent owns the form — but
+every edit session runs through a modal so the merge has one home.
+
+### Creation in a known place
+
+Use the core row-edit session when the opening button already addresses the
+place to fill and a live carrier row lets the modal follow that place. The
+place is known before the user types; its value may not exist yet. For example,
+two tabs can open Add for the same missing language name. When one saves, the
+other receives that name through its live row and merges it with its draft.
+
+Keep two independent facts: **whether the place is occupied** chooses add or
+update; **what the form showed on open** supplies the initial merge baseline,
+including an empty field or a catalog prefill. Test record existence explicitly,
+independently of the value's truthiness: `''` is a value, not absence. A place
+that is empty on open is not a deleted carrier row.
+
+The boundary is a **new entity whose key the user enters or whose id the server
+assigns**. That creation has no snapshot to merge against; a key collision
+remains a server refusal. Asking for a run's parameter likewise needs no merge.
+
+The existing example is
+[`createHilosSettingEdit`](../../../framework/frontend/core/src/admin/settings/hilosSettingEdit.ts):
+it follows a catalog key while `overrideValue` starts at `null`, using
+`createHilosRowEdit` and the window's field/form projections. It demonstrates
+the separation of place and value and the standard session. Its `setting_add`
+is idempotent; that property does not extend to other creations.
+
+These windows still need to adopt creation in a known place; each implementing
+leaf removes its own marker in the commit that lands the behavior:
+
+- `createHilosI18nLanguageNameWindow` (not in the code yet — HIL-1641)
+- `createHilosI18nCountryNameWindow` (not in the code yet — HIL-1642)
+- `createHilosI18nLocaleAdd` (not in the code yet — HIL-1643)
 
 ## The modal owns the edit session
 
@@ -20,31 +53,45 @@ The shared entity store always holds the latest **committed** value plus a
 version; pages outside the modal always show that committed data. The edit
 session — and only the edit session — holds the in-flight state, as three layers:
 
-- **baseline** — a snapshot frozen when the modal opens;
+- **baseline** — initially the values the form actually showed on open,
+  including `''` and any reference prefill; the session advances this snapshot
+  after automatic acceptance or a user's choice;
 - **draft** — an editable clone of the baseline the user changes;
 - **incoming** — committed changes that arrive while the modal is open, because
-  the edited entity stays **live-subscribed** for the modal's lifetime.
+  the edited entity or carrier row stays **live-subscribed** for the modal's
+  lifetime. An empty known place is projected as the shown field values, not
+  as a missing carrier row.
+
+The place's occupancy is independent of this field snapshot. An empty place
+can have a prefilled form; a saved record can have an empty value.
 
 Drafts never smear onto the shared entity ([data-model.md](data-model.md)); other views keep
 showing committed data until the user's save commits.
 
 ### The per-field three-way merge
 
-For each field, compare against the open-time baseline:
+For each field, compare against the session's current baseline, starting with
+what the form showed on open:
 
 - `userChanged = draft ≠ baseline`
 - `serverChanged = incoming ≠ baseline`
 
-and resolve:
+| Changes against the baseline | Outcome |
+|---|---|
+| Neither side changed | Keep the field as it is. |
+| Only the user changed | Keep the draft. |
+| Only incoming changed | Take incoming automatically, with an update notice and no choice. |
+| Both changed to the same value | Keep the matching value, mark it updated, and ask for no choice. |
+| Both changed the same field to different values | Mark the conflict, explain "Changed elsewhere", and offer **Keep mine / Take theirs**. |
+| The user and incoming changed different fields | Merge those fields automatically. |
 
-- neither changed → nothing to do;
-- only the user changed it → keep the draft;
-- only the server changed it → take the incoming value automatically;
-- **both changed, to different values → a conflict**, surfaced to the user.
-
-Different fields changed by different users merge automatically (each falls into
-an "only user" or "only server" case). The same field changed to different values
-is the only thing that cannot auto-resolve.
+An untouched prefill is unchanged and does not conflict with incoming. An
+untouched `''` and a user-entered `''` are the same value: if the baseline is
+`''`, new incoming replaces either without a conflict. This also holds where
+an empty name is valid; validity and record existence are separate decisions.
+After automatic acceptance or a choice, the session moves the baseline. Later
+incoming compares against that snapshot, not forever against the initial empty
+field or prefill.
 
 ### Surfacing conflicts
 
@@ -55,7 +102,8 @@ that conflicts.
 
 ### The row-edit session
 
-Every edit modal is the core's **row-edit session**,
+Every edit modal, including creation in a known place, takes the core's
+**row-edit session**,
 `framework/frontend/core/src/conflict/rowEditSession.ts`, not a copy of another
 modal's edit. The merge under it stays pure data in `rowEdit.ts` —
 `openRowEdit`, `resolveRowEdit`, `keepMineRowEdit`, `takeTheirsRowEdit` — and
@@ -87,7 +135,8 @@ of an edit window is written once, not once per window.
   a search, a page turn, a move under the order — so the modal reads it
   wherever it went, and reads `undefined` only when the row is gone
   ([table-subscription.md](table-subscription.md), "A row an open dialog holds
-  in focus").
+  in focus"). A known place's carrier stays live even while the place has no
+  record; do not report that initial absence as `undefined` from the source.
 - **The form and the fields.** The session holds the window's form, and the
   window gives the projection: `fields(row)` from the live row, `form(row)` on
   open, `draft(form, row)` into the edited fields, `take(form, taken, row,
@@ -100,11 +149,12 @@ of an edit window is written once, not once per window.
   window keeps for more than the edit (`formSignal` — a form shared with a
   creation, a draft a flow hands out as its own).
 - **The step** of the merge is applied by the session from `start()` to
-  `dispose()`: a field only the other side changed lands in the form silently
-  and the snapshot moves. The snapshot always holds the last value the person
-  saw as saved, so a second change after a choice compares against that, not
-  against the value the modal opened with. **Keep mine** and **Take theirs**
-  move it the same way.
+  `dispose()`: a field only the other side changed lands in the form without a
+  choice and the snapshot moves. Matching draft and incoming also move it. The
+  snapshot starts with the shown values, then holds the latest saved values
+  accepted automatically or through **Keep mine** / **Take theirs**, so a second
+  change compares against that, not against what the modal opened with. The
+  window supplies projections; the view does not assemble its own merge.
 - **The notice** is one line by precedence deleted › conflict › updated. The
   window gives the conflict's words (`notice.conflict`) and may give its own
   for deleted and updated; the defaults are `HILOS_ROW_EDIT_COPY`. "Updated
@@ -113,22 +163,28 @@ of an edit window is written once, not once per window.
   there is no timer. The modal's messages share **one line of room** under the
   fields, taken before there is anything to say (`HilosEditNotice`, per
   [styling-rules.md](styling-rules.md), "The room a live message takes").
-- **Can save** is one verdict: the window is open, the row is still there, no
-  conflict stands, no save is in flight, the input passes the window's check
-  (`valid` — a name within its bounds, a required field filled), and the draft
-  differs from the live row. The Save button and the form's submit — Enter —
-  read this one verdict; when the row is gone the button reads "Deleted". The
-  lock of the admin view mode stays in the markup (`ConflictActions`); the
-  server refuses a viewer's send on its own.
+- **Can save** is one verdict: the window is open, the carrier row is still
+  there, no deletion or conflict blocks it, no save is in flight, and the input
+  passes the window's check (`valid` — a name within its bounds, a required
+  field filled). A valid creation in a still-empty known place may save even
+  when the draft equals the shown baseline, including a prefill or a permitted
+  empty name. Once the place is occupied, the draft must differ from the saved
+  value. Permissions and domain restrictions still apply: a locale enabled in
+  another tab does not become editable. The Save button and the form's submit
+  — Enter — read the same verdict; deletion makes the button read "Deleted".
+  The lock of the admin view mode stays in the markup (`ConflictActions`); the
+  server refuses a viewer's send on its own. Use the existing session and
+  window projections; this rule adds no API.
 - **One door of the send.** `save(send)` refuses when the verdict says so,
-  closes an unchanged draft without a round-trip, and otherwise sends, is
-  saving until the outcome, and closes on success — the reply of the tracked
-  action for a window over a table. `saveLanded(send, refusal)` is the same
-  door for a window whose project answers over the row and not over the
-  action's reply (the person's name): saving until the live fields read as
-  the draft sent — Take theirs in the meantime rewrites the draft, not what is
-  waited for — or until the refusal turns non-null. The outcome of a save
-  whose window closed in the meantime moves nothing.
+  closes a draft unchanged from an already saved value without a round-trip,
+  and otherwise sends, is saving until the outcome, and closes on success —
+  the reply of the tracked action for a window over a table. A valid creation
+  in an empty place is not that unchanged-edit shortcut.
+  `saveLanded(send, refusal)` is the same door for a window whose project answers
+  over the row and not over the action's reply (the person's name): saving until
+  the live fields read as the draft sent — Take theirs in the meantime rewrites
+  the draft, not what is waited for — or until the refusal turns non-null. The
+  outcome of a save whose window closed in the meantime moves nothing.
 
 **What stays with the window.** The markup; the tracked action
 (`useTrackedAction`, `createHilosTrackedAction`), which draws the loading, the
@@ -153,12 +209,35 @@ emits an action; frontend state changes only when the backend echoes it
 the action's `::fail` ([rules-and-violations.md](rules-and-violations.md)). On a successful echo the store
 updates and the modal closes.
 
+### From Add to Save in a known place
+
+Choose add or update from the place's current occupancy. If another tab fills
+the place, the primary action changes from **Add** to **Save**; keep the title
+the modal opened with, and let the notice explain the event and its merge
+outcome. If the arriving record matches the draft, show an update notice without
+a choice, even when the value also matches the opening prefill; there is nothing
+to save. A conflict needs a choice before saving. Existing permissions and domain
+prohibitions still hold.
+
+An "already exists" refusal protects the instant race between sending add and
+the backend writing the record. Keep the modal live and retain the input; let
+incoming arrive through the same source and produce the same merge outcome as
+any other concurrent creation. Do not blindly retry the save. Success comes
+from the backend's answer, not from seeing the place become occupied. For a
+new entity addressed by an entered key or a server-assigned id, the collision
+remains a refusal; it does not turn the dialog into an edit of another entity.
+
 ## Entity deleted while the modal is open
 
 If the edited entity is deleted while its modal is open, the modal **stays
 open**, save is **blocked**, and the primary button reads **"Deleted"**. The
 user's draft stays visible and **extractable** so unsaved input can be copied out
 — it is never silently discarded.
+
+This includes a value removed from a known place while it is being edited, even
+if its carrier row survives. Do not turn deletion under an open edit back into
+creation. A place that was empty on open is a different case; deletion of its
+carrier row still blocks saving.
 
 ## Live editing indicators
 

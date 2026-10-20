@@ -1,6 +1,6 @@
 ---
 name: hilos-frontend-editing
-description: Implement or change a data-editing surface on the frontend — any form that edits and saves an entity, and equally any mutation that takes a parameter without editing anything (a creation, a run with an option). Use when adding, building, porting, or reviewing an edit/rename/update form or a create/run-with-a-parameter dialog in a Vue/React/Angular view, deciding inline vs modal, or wiring an edit session's draft, merge, and save lifecycle.
+description: Implement or change a frontend edit form or a modal for a mutation with a parameter. Use when adding, porting, or reviewing edit/rename/update forms, known-place creation observed through a live carrier row, new-entity creation, or run-with-an-option dialogs in Vue/React/Angular, deciding inline vs modal, or wiring the draft, merge, and save lifecycle.
 ---
 
 # Hilos Frontend Data Editing
@@ -17,9 +17,10 @@ the canonical rules below. Every edit surface is a modal — never an inline for
   removal waits behind Apply, plus own-change correlation:
   `docs/agents/frontend/table-subscription.md`
 - Mutations and modals (rule catalog, section E): `docs/agents/frontend/rules-and-violations.md`
-- The modal edit session and three-way merge (canonical): `docs/agents/frontend/conflict-resolution.md`
-- The row-edit session every edit modal takes, and the window factories beside
-  the framework modules: `framework/frontend/core/src/conflict/rowEditSession.ts`
+- The modal edit session and three-way merge (canonical), starting with
+  "Creation in a known place": `docs/agents/frontend/conflict-resolution.md`
+- The row-edit session for edits and creation in a known place, and the window
+  factories beside the framework modules: `framework/frontend/core/src/conflict/rowEditSession.ts`
   (`conflict-resolution.md`, "The row-edit session"); the merge under it,
   `rowEdit.ts`, is never assembled by a view
 - The `HilosModal` primitive and per-framework view adapters: `docs/agents/frontend/multiframework-core.md` (component: `framework/frontend/{vue,react,angular}/src/HilosModal.*`)
@@ -38,25 +39,33 @@ the canonical rules below. Every edit surface is a modal — never an inline for
    inside it. Never reveal an inline `<form>` in the page. The parameter of a
    creation or of a run with an option is asked in the same kind of dialog —
    the page keeps no strip of its own for it.
-2. For an edit of an entity (a creation has no baseline, and steps 2, 3 and 5
-   do not apply to it): take the core row-edit session — the window's factory
-   in `@hilos/core` for a framework window, `createHilosRowEdit` for a project
-   window — and never assemble one from `openRowEdit` / `resolveRowEdit` in a
-   view (the linter refuses the import). The session freezes the `baseline`
-   on open, holds the form, keeps the edited row live through its source, and
-   applies the merge's steps from `start()` to `dispose()`.
-3. For an edit of an entity: the session merges per field against the
-   baseline: user-only and server-only changes are taken automatically; a
-   conflict surfaces only when the same field changed to different values, and
-   the view offers Keep mine / Take theirs through `ConflictActions`.
+2. Classify the dialog using "Creation in a known place" in
+   `docs/agents/frontend/conflict-resolution.md`. An edit or creation in a
+   place addressed on open and observed through a live carrier row takes the
+   core row-edit session — the window's factory in `@hilos/core` for a framework
+   window, `createHilosRowEdit` for a project window. Never assemble one from
+   `openRowEdit` / `resolveRowEdit` in a view (the linter refuses the import).
+   A new entity by an entered key or server-assigned id, or a run with an option,
+   stays a modal without this merge; a key collision stays a server refusal.
+3. For edits and creation in a known place, use the session's per-field merge
+   and baseline advancement from `start()` to `dispose()`. The initial snapshot
+   is what the form showed, including empty fields and prefills; occupancy
+   independently chooses add or update. Follow the canonical outcomes, with
+   Keep mine / Take theirs through `ConflictActions` for different changes to
+   the same field. Keep the opening title when Add becomes Save; the notice
+   explains the event. An "already exists" race keeps the draft and live source
+   for the same merge, without a blind retry.
 4. Save is `submit → loading → backend echo`, not the tables' Apply. The view
-   binds `canSave` to the Save button and hands both Save and the form's
-   submit to the session's `save(run)` with the kit's tracked runner; the
-   session closes on success. Validation is backend-only; field errors return
-   on the action's `::fail`.
-5. For an edit of an entity: if the entity is deleted while the modal is open,
-   keep the modal open, block save, set the primary button to "Deleted", and
-   keep the draft extractable — never discard it silently.
+   uses one verdict for the button and Enter. For a row-edit session, bind
+   `canSave` and hand both to `save(run)` with the kit's tracked runner; the
+   session closes on success. A valid creation in an empty known place can
+   save unchanged shown values; after occupation, ordinary saved-value
+   difference, conflict, permission and domain checks apply. Validation is
+   backend-only; field errors return on the action's `::fail`.
+5. If the edited object or its carrier row disappears, keep the modal open,
+   block save, set the primary button to "Deleted", and keep the draft
+   extractable. Removing a value under an open edit does not return it to
+   creation; an initially empty known place is not a deleted row.
 6. When porting the edit view — or the dialog of any mutation with a
    parameter — to another framework, re-check it against section E and
    `conflict-resolution.md`; do not copy an inline form forward.
@@ -72,15 +81,22 @@ the canonical rules below. Every edit surface is a modal — never an inline for
   too — a creation, a run with an option; inline forms are forbidden. Use
   `HilosModal` or a descendant — the parent owns the form. A mutation that
   takes no parameter — a per-row toggle — needs no dialog of its own.
-- The modal owns the baseline / draft / incoming three-way merge, through the
-  core row-edit session; a view that assembles the merge itself is a gross
-  violation, and the linter refuses the import.
+- Edits and creation in a known live place take the core row-edit session for
+  the modal's baseline / draft / incoming merge; a view that assembles the
+  merge itself is a gross violation, and the linter refuses the import. New
+  entities by entered key or server-assigned id, and runs with a parameter,
+  have no such merge.
+- Record existence is independent of value truthiness. The shown values start
+  the baseline, which the session advances; follow the canonical outcomes for
+  empty values, prefills and concurrent creation.
 - Save commits only on the backend echo — never optimistic, never the tables'
   Apply path.
-- Save is unavailable while there is nothing to save — an untouched edit, an
-  empty required input of an add, a save in flight
+- Save and Enter share the verdict. An unchanged valid creation in an empty
+  known place may save; an equal already saved value may not. Conflicts, required
+  inputs, permissions, domain restrictions and a save in flight still gate it
   (`docs/agents/frontend/rules-and-violations.md`, section E).
-- Entity deleted mid-edit: keep the modal open and the draft extractable.
+- Entity or value deleted mid-edit: keep the modal open and the draft
+  extractable, with saving blocked; do not return it to creation.
 
 ## Contract Gate
 

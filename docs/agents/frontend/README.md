@@ -31,7 +31,7 @@ document.
 | tables: viewport subscriptions, the live-change taxonomy and Apply, sort-key window deltas, selection and bulk actions, progress bars, custom filters, search-as-filter | [table-subscription.md](table-subscription.md) |
 | researching departed-record geometry, column-width retention and declared row heights in both table projections — HIL-1321 research, not an implemented contract | [table-row-geometry-research.md](table-row-geometry-research.md) |
 | which sort orders a table may declare, what it refuses when asked for another, and what it answers — the index under every order, the primary key at its end, computed fields, mixed directions, stale sources, in-memory sets | [table-sort-orders.md](table-sort-orders.md) |
-| editing in a modal, the baseline / draft / incoming 3-way merge, surfacing conflicts, entity-deleted-while-open | [conflict-resolution.md](conflict-resolution.md) |
+| editing or creating in a known live place in a modal, the baseline / draft / incoming 3-way merge, surfacing conflicts, entity-deleted-while-open | [conflict-resolution.md](conflict-resolution.md) |
 | SDK packaging, the monorepo workspace, the two-tier component model and slots, Composer / tarball distribution | [sdk-packaging.md](sdk-packaging.md) |
 | adding or upgrading a frontend dependency — how every npm root that carries Angular declares its Angular versions, which ranges are deliberate, how a version moves, and what to do instead of deleting a lockfile on `ERESOLVE` | [sdk-packaging.md](sdk-packaging.md) |
 | the framework-agnostic core, the signal primitive, Vue / React / Angular adapters, the conformance demos | [multiframework-core.md](multiframework-core.md) |
