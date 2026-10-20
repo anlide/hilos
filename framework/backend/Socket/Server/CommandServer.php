@@ -22,6 +22,7 @@ use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\SocketException;
 use Hilos\Utils\Logger;
+use Hilos\Core\Daemon\TestOrmForgetDoor;
 
 /**
  * CommandServer - socket server for the CLI command channel.
@@ -58,6 +59,9 @@ class CommandServer extends AbstractServer
 
     /** @var ?AgentRestartDoor Master seam that restarts an agent */
     private ?AgentRestartDoor $agentRestartDoor = null;
+
+    /** Master seam for the test-only ORM command. */
+    private ?TestOrmForgetDoor $testOrmForgetDoor = null;
 
     private ?UploadMemoryTestDoor $uploadMemoryTestDoor = null;
 
@@ -260,6 +264,18 @@ class CommandServer extends AbstractServer
     public function daemonStatusSnapshot(): ?DaemonStatusDTO
     {
         return $this->daemonStatusSource?->daemonStatusSnapshot();
+    }
+
+    /** @param TestOrmForgetDoor $door Master handling ORM forget requests */
+    public function setTestOrmForgetDoor(TestOrmForgetDoor $door): void
+    {
+        $this->testOrmForgetDoor = $door;
+    }
+
+    /** @return ?TestOrmForgetDoor Master entrance, or null before wiring */
+    public function testOrmForgetDoor(): ?TestOrmForgetDoor
+    {
+        return $this->testOrmForgetDoor;
     }
 
     /** @param AgentRestartDoor $door Master handling the restart request */

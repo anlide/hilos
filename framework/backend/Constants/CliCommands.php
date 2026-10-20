@@ -40,6 +40,9 @@ final class CliCommands
      */
     public const string AGENT_RESTART = 'agent:restart';
 
+    /** Test-only forget of one live process's loaded ORM data. */
+    public const string ORM_TEST_FORGET = 'test:orm:forget';
+
     /** @var string Command: List the cluster nodes the daemon knows about */
     public const string CLUSTER_NODES = 'cluster:nodes';
 

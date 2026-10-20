@@ -110,6 +110,7 @@ use Hilos\Core\CLI\Commands\VerificationTestSweepCommand;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Database\DatabaseException;
 use Throwable;
+use Hilos\Core\CLI\Commands\OrmTestForgetCommand;
 
 /**
  * CliManager - Main CLI management class.
@@ -191,6 +192,7 @@ class CliManager
         $this->commands[CliCommands::CLUSTER_TEST_CLIENT_FANOUT] = new ClusterTestClientFanoutCommand();
         $this->commands[CliCommands::CLUSTER_TEST_DB_ANNOUNCE] = new ClusterTestDbAnnounceCommand();
         $this->commands[CliCommands::CLUSTER_TEST_DB_WRITE] = new ClusterTestDbWriteCommand();
+        $this->commands[CliCommands::ORM_TEST_FORGET] = new OrmTestForgetCommand();
         $this->commands[CliCommands::CLUSTER_TEST_DB_READ] = new ClusterTestDbReadCommand();
         $this->commands[CliCommands::CLUSTER_TEST_RT_WRITE] = new ClusterTestRtWriteCommand();
         $this->commands[CliCommands::CLUSTER_TEST_RT_DELETE] = new ClusterTestRtDeleteCommand();

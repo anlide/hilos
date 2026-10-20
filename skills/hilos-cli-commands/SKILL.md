@@ -1,6 +1,6 @@
 ---
 name: hilos-cli-commands
-description: Place a Hilos CLI command — which process does its work (the daemon does it, the CLI process initiates and prints), which side of the framework/project line the file lives on, and the site plus reason when it departs from that rule. Use when adding or changing a CLI command, declaring the options a command reads, deciding whether a command belongs to the framework or to one project, deciding between doing work in the command and driving an agent over the command channel, writing state from a CLI process that a running daemon also writes, wording what a command prints when the daemon does not answer, or reviewing a command whose body reaches the database or the filesystem directly.
+description: Place a Hilos CLI command — which process does its work (the daemon does it, the CLI process initiates and prints), which side of the framework/project line the file lives on, and the site plus reason when it departs from that rule. Use when adding or changing a CLI command, declaring the options a command reads, deciding whether a command belongs to the framework or to one project, deciding between doing work in the command and driving an agent over the command channel, writing state from a CLI process that a running daemon also writes, wording what a command prints when the daemon does not answer, reviewing a command whose body reaches the database or the filesystem directly, or considering forgetting loaded ORM state through CLI, direct API, or a helper.
 ---
 
 # Hilos CLI Command Placement
@@ -10,6 +10,8 @@ canonical rule before writing or moving command code.
 
 ## Read First
 
+- Before considering ORM forget by CLI, API, or helper:
+  [Forgetting loaded ORM state](../../docs/agents/testing.md#forgetting-loaded-orm-state).
 - The rule, the four sites, and the guard: `docs/agents/cli/command-execution.md`
 - The command catalog and how a project registers its own: `docs/agents/cli/commands.md`
 - The transport a `daemon` command rides: `docs/agents/architecture/command-server.md`
@@ -53,6 +55,9 @@ canonical rule before writing or moving command code.
 
 ## Hard Rules
 
+- Outside tests, do not use or propose ORM forget for approval; use it only
+  when the owner explicitly asks. This covers CLI, direct API, and indirect use;
+  follow the linked canon.
 - Do not write state a running daemon owns from a CLI process. If a command already does,
   move the write to the owner rather than adding a check beside it.
 - Do not word a channel failure or a refusal in a command. `channelFailureText()` and

@@ -317,6 +317,23 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 continue;
             }
 
+            if ($request->command === CliCommands::ORM_TEST_FORGET) {
+                $door = $this->server->testOrmForgetDoor();
+                if ($door === null) {
+                    $this->writeBuffer .= CommandReplyDTO::error(
+                        $request->correlationId,
+                        'This daemon has no ORM forget door',
+                    )->toJson() . "\n";
+                    continue;
+                }
+                $this->heldCorrelationId = $request->correlationId;
+                $this->heldSince = microtime(true);
+                $this->heldCommand = $request->command;
+                $this->server->hold($request->correlationId, $this);
+                $door->requestOrmForget($request);
+                return;
+            }
+
             if ($request->command === CliCommands::AGENT_RESTART) {
                 $door = $this->server->agentRestartDoor();
                 if ($door === null) {

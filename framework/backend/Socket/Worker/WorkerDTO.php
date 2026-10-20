@@ -58,6 +58,8 @@ use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use Hilos\Utils\Logger;
+use Hilos\Socket\Worker\DTO\WorkerTestOrmForgetDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestOrmForgottenDTO;
 
 /**
  * WorkerDTO - Abstract base class for worker DTOs.
@@ -133,6 +135,8 @@ abstract class WorkerDTO extends BaseDTO
             WorkerPageAccessReassessMessageDTO::MESSAGE_TYPE => WorkerPageAccessReassessMessageDTO::fromArray($data),
             WorkerPageAccessReassessConnectionsMessageDTO::MESSAGE_TYPE
                 => WorkerPageAccessReassessConnectionsMessageDTO::fromArray($data),
+            WorkerTestOrmForgetDTO::MESSAGE_TYPE => WorkerTestOrmForgetDTO::fromArray($data),
+            WorkerTestOrmForgottenDTO::MESSAGE_TYPE => WorkerTestOrmForgottenDTO::fromArray($data),
             WorkerDbReHydratedDTO::MESSAGE_TYPE => WorkerDbReHydratedDTO::fromArray($data),
             DbReHydrateCompleteDTO::MESSAGE_TYPE => DbReHydrateCompleteDTO::fromArray($data),
             WorkerRtSyncCreatedMessageDTO::MESSAGE_TYPE => WorkerRtSyncCreatedMessageDTO::fromArray($data),

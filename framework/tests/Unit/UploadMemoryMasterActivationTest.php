@@ -332,7 +332,7 @@ final class UploadMemoryMasterActivationTest extends TestCase
         self::assertNotNull($wire[0]->uploadReceiptId);
         self::assertSame(3, $this->pool->getUsedBytes(), 'Serializing into the actual worker write buffer releases nothing');
 
-        $foreign = new UploadMemoryActivationWorker($this->manager->roster());
+        $foreign = new UploadMemoryActivationWorker($this->manager->roster(), $this->manager->workers);
         $foreign->setUploadMemoryPoolSink($this->memory);
         $foreign->receive(new WorkerUploadConsumedDTO([$wire[0]->uploadReceiptId]));
         self::assertSame(3, $this->pool->getUsedBytes(), 'A replacement with the same worker index is foreign');
@@ -778,7 +778,7 @@ final class UploadMemoryActivationServer extends WorkerServer
         $this->roster = $roster;
         new ReflectionProperty(WorkerServer::class, 'agentManager')->setValue($this, $roster);
         new ReflectionProperty(WorkerServer::class, 'cachedLogDirectory')->setValue($this, '/tmp');
-        $this->worker = new UploadMemoryActivationWorker($roster);
+        $this->worker = new UploadMemoryActivationWorker($roster, $this);
         $this->clients = [$this->worker];
         $this->process = new class extends Process {
             public function __construct()
@@ -828,9 +828,14 @@ final class UploadMemoryActivationServer extends WorkerServer
 
 final class UploadMemoryActivationWorker extends WorkerClient
 {
-    public function __construct(AgentManagerDaemon $roster)
+    /**
+     * @param AgentManagerDaemon $roster Agent ownership exercised by the fixture
+     * @param WorkerServer $server Owner receiving this channel's close notification
+     */
+    public function __construct(AgentManagerDaemon $roster, WorkerServer $server)
     {
         new ReflectionProperty(WorkerClient::class, 'agentManager')->setValue($this, $roster);
+        new ReflectionProperty(WorkerClient::class, 'workerServer')->setValue($this, $server);
         new ReflectionProperty(WorkerClient::class, 'isRegistered')->setValue($this, true);
         $this->setWorkerIndex(1);
     }

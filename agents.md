@@ -271,6 +271,7 @@ rule — still goes back to the interview.
 9. If a DB/RT item key is known, update/delete that one item through `Hilos::$db/$rt->collection[$key]->actions`, not through collection actions that accept the key
 10. A page subscription answers in **one** `page_response` with everything that page needs for its first render — no second action, companion signal, or standalone catalog request to draw it; assemble it in that page's `buildPagePayload()` / `onSubscribe()` (see [signals/subscriptions.md](docs/agents/signals/subscriptions.md))
 11. When you land behavior a doc marks as not written yet, clear its markers in the same commit — grep `docs/` for your `HIL-<n>` key (see [rule-authoring.md](docs/agents/rule-authoring.md))
+12. Outside tests, do not use or propose ORM forget for approval; use it only when the owner explicitly asks. This covers CLI, direct API, and indirect use; see [Forgetting loaded ORM state](docs/agents/testing.md#forgetting-loaded-orm-state).
 
 ## Project docs (existing)
 

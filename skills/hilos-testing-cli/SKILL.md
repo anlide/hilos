@@ -1,6 +1,6 @@
 ---
 name: hilos-testing-cli
-description: Run or choose Hilos test, migration, schema, DB reset, monitoring, and CLI commands. Use when validating Hilos changes, running framework or demo tests, checking migrations, resetting test databases, running frontend tests, or deciding the correct composer script.
+description: Run or choose Hilos test, migration, schema, DB reset, monitoring, and CLI commands. Use when validating Hilos changes, running framework or demo tests, checking migrations, resetting test databases, running frontend tests, deciding the correct composer script, or considering forgetting loaded ORM state through CLI, direct API, or a helper.
 ---
 
 # Hilos Testing CLI
@@ -9,6 +9,8 @@ Use this skill whenever validation or CLI commands are needed. Start with `agent
 
 ## Read First
 
+- Before considering ORM forget by CLI, API, or helper:
+  [Forgetting loaded ORM state](../../docs/agents/testing.md#forgetting-loaded-orm-state).
 - Test commands and test-writing rules: `docs/agents/testing.md`
 - The full run — the step graph, lanes, and the re-run rule for red under
   concurrency: `docs/agents/testing.md`, section "The full run — one graph, a
@@ -42,6 +44,9 @@ Use this skill whenever validation or CLI commands are needed. Start with `agent
 
 ## Hard Rules
 
+- Outside tests, do not use or propose ORM forget for approval; use it only
+  when the owner explicitly asks. This covers CLI, direct API, and indirect use;
+  follow the linked canon.
 - Never run `git commit` or `git push`.
 - A unit test may spawn a second process only as the last step of the ladder in
   `docs/agents/testing.md`, section "A cross-process defect is an e2e defect

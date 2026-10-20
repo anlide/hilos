@@ -175,6 +175,12 @@ use Hilos\Utils\Logger;
 use Hilos\WiringRefusal;
 use Hilos\Utils\WorkerTickFailureLog;
 use Throwable;
+use Hilos\Database\OrmTestConstants;
+use Hilos\Environment\NonProductionGate;
+use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
+use Hilos\Socket\Worker\DTO\WorkerTestOrmForgetDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestOrmForgottenDTO;
+use Hilos\Constants\CliCommands;
 
 /**
  * Base process manager for worker processes.
@@ -735,6 +741,14 @@ abstract class WorkerManager extends BaseManager implements PageResender
                     break;
                 }
                 $this->handleDbSyncClearedMessage($data);
+                break;
+
+            case WorkerConstants::MESSAGE_TEST_ORM_FORGET:
+                if (!$data instanceof WorkerTestOrmForgetDTO) {
+                    Logger::error('handleTestOrmForget - unexpected type: ' . get_class($data));
+                    break;
+                }
+                $this->handleTestOrmForget($data);
                 break;
 
             case WorkerConstants::MESSAGE_DB_REHYDRATE:
@@ -3982,5 +3996,33 @@ abstract class WorkerManager extends BaseManager implements PageResender
         }
 
         return $expectedClass::fromArray($data->toArray());
+    }
+
+    /**
+     * This control frame does no agent work and enters no receipt or restore barrier.
+     *
+     * @param WorkerTestOrmForgetDTO $request Master request to answer once
+     * @throws HilosException When the acknowledgement refuses its correlation or outcome
+     */
+    private function handleTestOrmForget(WorkerTestOrmForgetDTO $request): void
+    {
+        $error = null;
+        try {
+            if (!NonProductionGate::admitted()) {
+                $error = TestOnlyCommandOnProductionException::message(CliCommands::ORM_TEST_FORGET);
+            } elseif (Hilos::$db === null) {
+                $error = OrmTestConstants::NO_CONTEXT;
+            } elseif (Database::hasOpenTransactions()) {
+                $error = OrmTestConstants::OPEN_TRANSACTIONS;
+            } else {
+                Hilos::$db->forgetLoadedDataForTest();
+            }
+        } catch (Throwable $failure) {
+            $error = $failure->getMessage();
+            if ($error === '') {
+                $error = 'ORM forget failed';
+            }
+        }
+        $this->daemonClient->send(new WorkerTestOrmForgottenDTO($request->correlationId, $error === null, $error));
     }
 }

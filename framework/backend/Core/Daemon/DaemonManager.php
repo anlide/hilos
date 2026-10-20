@@ -235,6 +235,7 @@ use Hilos\Utils\ClientReadFailureLog;
 use Hilos\Utils\Logger;
 use Random\RandomException;
 use Throwable;
+use Hilos\Socket\Worker\DTO\WorkerTestOrmForgottenDTO;
 
 /**
  * Abstract base for daemon processes. run() owns the main loop: it drains ready
@@ -269,6 +270,7 @@ abstract class DaemonManager extends BaseManager implements
     ContainedFailureSink,
     AbandonedCommandSink,
     AgentRestartDoor,
+    TestOrmForgetDoor,
     PageAgentRestartDoor,
     AgentSignalSink,
     PlacementVerdictSink,
@@ -507,6 +509,9 @@ abstract class DaemonManager extends BaseManager implements
     /** Open restarts of agents hosted by this master. */
     private readonly AgentRestarts $agentRestarts;
 
+    /** Connection-bound test-only ORM waits owned by this master. */
+    private readonly TestOrmForgetRequests $testOrmForgetRequests;
+
     /** Browser waiters, separate from the restart records and console connections. */
     private readonly PageAgentRestarts $pageAgentRestarts;
 
@@ -619,6 +624,12 @@ abstract class DaemonManager extends BaseManager implements
             fn (): ?WorkerServer => $this->findWorkerServer(),
             $this->commandReplyOrigins,
             fn (): ?PeerServer => $this->findPeerServer(),
+        );
+        $this->testOrmForgetRequests = new TestOrmForgetRequests(
+            fn (): ?WorkerServer => $this->findWorkerServer(),
+            function (CommandReplyDTO $reply): void {
+                $this->findCommandServer()?->deliver($reply->correlationId, $reply);
+            },
         );
         $this->pageAgentRestarts = new PageAgentRestarts($this, $this, $this->onCommandAbandoned(...));
         // The freeze watchdog has to hear an agent stop as it happens: the agent-start gate lets an
@@ -1019,6 +1030,7 @@ abstract class DaemonManager extends BaseManager implements
             // minute-long whole-frame repair is due. The fast path reads four scalars.
             $this->tickProcessRoster($loopStartTime);
             $this->agentRestarts->tick($loopStartTime);
+            $this->testOrmForgetRequests->tick($loopStartTime);
             $this->pageAgentRestarts->tick($loopStartTime);
             $this->tickCronFrame($loopStartTime);
             $this->tickStanding($loopStartTime);
@@ -1784,6 +1796,7 @@ abstract class DaemonManager extends BaseManager implements
             // master's own, so the command branch reads them here instead of asking an agent
             // that in a cluster may be answering from another node entirely.
             $server->setDaemonStatusSource($this);
+            $server->setTestOrmForgetDoor($this);
             $server->setAgentRestartDoor($this);
             $server->setUploadMemoryTestDoor($this);
         }
@@ -1809,6 +1822,7 @@ abstract class DaemonManager extends BaseManager implements
         // to be told which sockets are still on the wire (HIL-664), and only the master knows.
         if ($server instanceof WorkerServer) {
             $server->setLiveConnectionRoster($this);
+            $server->setTestOrmForgetDoor($this);
             $server->setPageAgentRestartDoor($this);
         }
     }
@@ -2068,8 +2082,30 @@ abstract class DaemonManager extends BaseManager implements
      */
     public function onCommandAbandoned(string $correlationId): void
     {
+        $this->testOrmForgetRequests->abandon($correlationId);
         $this->agentRestarts->onCommandAbandoned($correlationId);
         $this->dropParkedCommandSignals($correlationId);
+    }
+
+    /** @param CommandRequestDTO $request Held test-only ORM request */
+    public function requestOrmForget(CommandRequestDTO $request): void
+    {
+        $this->testOrmForgetRequests->request($request);
+    }
+
+    /**
+     * @param WorkerClient $worker Connection that delivered the outcome
+     * @param WorkerTestOrmForgottenDTO $ack Parsed acknowledgement
+     */
+    public function acceptOrmForgotten(WorkerClient $worker, WorkerTestOrmForgottenDTO $ack): void
+    {
+        $this->testOrmForgetRequests->accept($worker, $ack);
+    }
+
+    /** @param WorkerClient $worker Closed worker connection */
+    public function ormForgetWorkerGone(WorkerClient $worker): void
+    {
+        $this->testOrmForgetRequests->workerGone($worker);
     }
 
     /** @param CommandRequestDTO $request Held operator request for an agent restart */

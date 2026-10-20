@@ -40,6 +40,7 @@ reason in its `execution()` declaration. See
 | Command | Site | Description |
 |---|---|---|
 | `test:db:reset` | `cli-offline-write` | DROP all tables → migrate → seed (test env only) — runs before the database exists, but needs the server up |
+| `test:orm:forget daemon` / `test:orm:forget worker <workerId>` | `daemon` | Forget loaded ORM state in one live process; test-only use and owner restriction: [Forgetting loaded ORM state](../testing.md#forgetting-loaded-orm-state) |
 | `db:wait` | `cli-read` | Wait until MySQL is accepting connections — runs while the server is still down |
 
 ## System commands
@@ -206,7 +207,9 @@ connection failure.
 
 Marked today: `db:wait` (its poll *is* the connect, and it has to run before the server
 answers), `agent:restart` (the master coordinates the stop and start over its command
-socket, and the CLI process has no database work), `test:db:reset` (opens its own
+socket, and the CLI process has no database work), `test:orm:forget` (only the addressed
+live process forgets ORM state; see [the test-only canon](../testing.md#forgetting-loaded-orm-state)),
+`test:db:reset` (opens its own
 server-level connection, because it drops and recreates the database `DB_DATABASE`
 names), `help` (prints the registry it was handed),
 `test:cluster:inspect` (talks only to the local command socket, so the multi-node harness

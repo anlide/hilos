@@ -74,6 +74,7 @@ use Hilos\Socket\Worker\DTO\WorkerUploadSettingsDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Utils\LogLevel;
 use Hilos\Utils\Logger;
+use Hilos\Socket\Worker\DTO\WorkerTestOrmForgottenDTO;
 
 /**
  * WorkerClient - Represents a single worker connection.
@@ -267,6 +268,8 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
                 => $this->handleWorkerPageAccessReassessMessage($workerDTO),
             $workerDTO instanceof WorkerPageAccessReassessConnectionsMessageDTO
                 => $this->handleWorkerPageAccessReassessConnectionsMessage($workerDTO),
+            $workerDTO instanceof WorkerTestOrmForgottenDTO && $this->isRegistered
+                => $this->workerServer->testOrmForgetDoor()?->acceptOrmForgotten($this, $workerDTO),
             $workerDTO instanceof WorkerDbReHydratedDTO => $this->handleWorkerDbReHydratedMessage($workerDTO),
             $workerDTO instanceof WorkerRtSyncCreatedMessageDTO => $this->handleWorkerRtSyncCreatedMessage($workerDTO),
             $workerDTO instanceof WorkerRtSyncUpdatedMessageDTO => $this->handleWorkerRtSyncUpdatedMessage($workerDTO),
@@ -979,6 +982,8 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      */
     protected function onClose(): void
     {
+        $this->workerServer->testOrmForgetDoor()?->ormForgetWorkerGone($this);
+
         // No upload receipt is released here: EOF does not prove the process has exited.
         // Delete transport payloads before WorkerServer records the queue-deletion fact.
         $this->discardUploadBuffers();

@@ -1138,6 +1138,23 @@ class Database
     }
 
     /**
+     * Reads every connection's stack without opening a connection or changing the active index.
+     * A failed level is still open until its caller rolls it back.
+     *
+     * @return bool Whether any connection holds a transaction level
+     */
+    public static function hasOpenTransactions(): bool
+    {
+        foreach (self::$transactions as $levels) {
+            if ($levels !== []) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Opens a handler: from here to {@see self::handlerEnd()} a commit holds the failure of an
      * announcement it released instead of raising it.
      *

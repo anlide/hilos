@@ -44,6 +44,12 @@ final class WorkerConstants
     /** @var string Worker registration confirmation */
     public const string MESSAGE_WORKER_REGISTERED = 'worker_registered';
 
+    /** Test-only ORM forget request, master to one worker. */
+    public const string MESSAGE_TEST_ORM_FORGET = 'test_orm_forget';
+
+    /** Test-only ORM forget outcome on the same worker connection. */
+    public const string MESSAGE_TEST_ORM_FORGOTTEN = 'test_orm_forgotten';
+
     /** Effective upload memory budget reported by a registered worker. */
     public const string MESSAGE_UPLOAD_SETTINGS = 'worker_upload_settings';
 

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Hilos\Database\Object;
 
 use ArrayAccess;
@@ -25,7 +27,9 @@ use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\CollectionNotFullyLoadedException;
+use Hilos\Database\Exception\OrmForgetRefusedException;
 use Hilos\Database\Exception\UnknownLazyStrategyException;
+use Hilos\Environment\NonProductionGate;
 use Hilos\Hilos;
 use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\Entity\Item\Entity;
@@ -96,8 +100,8 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      *
      * A flag of its own and not the strategy, because LAZY_STRATEGY_NONE is what the strategy
      * property holds by default: a collection built by initEmpty() and a FilteredCollection are
-     * in exactly that state, and neither has a table to read. Only initDB() under that strategy
-     * makes the promise (HIL-1144).
+     * in exactly that state, and neither has a table to read. initDB() under that strategy
+     * makes the promise; a test reset also retains it for a collection previously loaded whole.
      *
      * @var bool
      */
@@ -267,7 +271,8 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * The promise is its own flag rather than the strategy, because LAZY_STRATEGY_NONE is what
      * the strategy property holds by default: a collection built by {@see self::initEmpty()} and
      * a {@see FilteredCollection} are in exactly that state, and neither has a table to read.
-     * Only {@see self::initDB()} under that strategy makes the promise.
+     * {@see self::initDB()} under that strategy makes the promise, and
+     * {@see self::forgetLoadedDataForTest()} preserves it for a previously full collection too.
      *
      * The read fills in what memory does not hold rather than clearing and re-reading, so a row
      * already held - put there by a lookup by key or by a write on this node - keeps its instance
@@ -1193,6 +1198,28 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
         if ($wasAllLoaded) {
             $this->loadAllFromDB();
         }
+    }
+
+    /**
+     * Drops loaded rows for tests without reading the table or publishing a source change.
+     * A previously full collection keeps its promise to read whole on the next access,
+     * including across repeated resets before that access. Existing row references stay detached.
+     *
+     * @throws OrmForgetRefusedException When the environment is not admitted or any transaction is open
+     */
+    public function forgetLoadedDataForTest(): void
+    {
+        if (!NonProductionGate::admitted()) {
+            throw OrmForgetRefusedException::forEnvironment();
+        }
+        if (Database::hasOpenTransactions()) {
+            throw OrmForgetRefusedException::forOpenTransaction();
+        }
+
+        $this->_loadsWholeOnFirstRead = $this->_loadsWholeOnFirstRead || $this->_allLoaded;
+        $this->objects = [];
+        $this->_allLoaded = false;
+        $this->_allowLazyLoading = $this->_lazyStrategy !== self::LAZY_STRATEGY_NONE;
     }
 
     /**

@@ -1,4 +1,4 @@
 interface:
   display_name: "Hilos Testing CLI"
   short_description: "Composer test, migration, and CLI command choices"
-  default_prompt: "Use $hilos-testing-cli to choose and run Hilos validation commands."
+  default_prompt: "Use $hilos-testing-cli to choose and run Hilos validation commands or read the ORM forget canon before considering its CLI, API, or indirect use."

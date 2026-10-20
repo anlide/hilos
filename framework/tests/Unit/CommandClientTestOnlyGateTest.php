@@ -19,6 +19,7 @@ use Hilos\Utils\Helpers\JsonHelper;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Socket;
+use Hilos\Core\Daemon\TestOrmForgetDoor;
 
 /**
  * Tests the command socket refusing a test-only command on a production-like node (HIL-566).
@@ -69,6 +70,7 @@ final class CommandClientTestOnlyGateTest extends TestCase
     public static function masterTestOnlyCommands(): array
     {
         return [
+            [CliCommands::ORM_TEST_FORGET],
             [CliCommands::CLUSTER_TEST_INSPECT],
             [CliCommands::CLUSTER_TEST_UPLOAD_POOL],
             [CliCommands::CLUSTER_TEST_CLIENT_ATTACH],
@@ -217,6 +219,43 @@ final class CommandClientTestOnlyGateTest extends TestCase
         );
     }
 
+    /**
+     * @param string $env Process environment
+     * @param array<string, mixed> $payload Exact daemon or worker target
+     * @param bool $admitted Whether the master door may be called
+     */
+    #[DataProvider('ormEnvironments')]
+    public function testOrmTargetsPassTheSharedGateBeforeTheMasterDoor(string $env, array $payload, bool $admitted): void
+    {
+        $server = new CommandServer('127.0.0.1', 0);
+        $door = $this->createMock(TestOrmForgetDoor::class);
+        $door->expects($admitted ? $this->once() : $this->never())->method('requestOrmForget');
+        $server->setTestOrmForgetDoor($door);
+        $client = $this->clientOn($env, $server);
+        $client->feed([
+            'correlationId' => 'orm-gate', 'command' => CliCommands::ORM_TEST_FORGET, 'payload' => $payload,
+        ]);
+        if ($admitted) {
+            self::assertSame([], $client->lastReply(), 'The command remains held until the master answers');
+        } else {
+            self::assertSame('error', $client->lastReply()['status']);
+            self::assertSame(
+                TestOnlyCommandOnProductionException::message(CliCommands::ORM_TEST_FORGET),
+                $client->lastReply()['payload']['message'],
+            );
+        }
+    }
+
+    /** @return iterable<array{string, array<string, mixed>, bool}> Both targets across the environment gate */
+    public static function ormEnvironments(): iterable
+    {
+        foreach (['test', 'local', 'dev', 'prod', 'staging', 'unknown', ''] as $env) {
+            foreach ([['process' => 'daemon'], ['process' => 'worker', 'workerId' => -3]] as $payload) {
+                yield [$env, $payload, in_array($env, ['test', 'local', 'dev'], true)];
+            }
+        }
+    }
+
     public function testAnAgentOwnedTestOnlyCommandIsParkedOnATestNode(): void
     {
         GateFixtureHilos::initEnv(dirname(__DIR__));
@@ -274,9 +313,10 @@ final class CommandClientTestOnlyGateTest extends TestCase
      * Builds a command client over a socket pair the test owns, on the named environment.
      *
      * @param string $appEnv APP_ENV value the node reports
+     * @param ?CommandServer $server Optional server with a wired master door
      * @return CommandClientTestOnlyGateTestClient Client under test
      */
-    private function clientOn(string $appEnv): CommandClientTestOnlyGateTestClient
+    private function clientOn(string $appEnv, ?CommandServer $server = null): CommandClientTestOnlyGateTestClient
     {
         putenv("APP_ENV={$appEnv}");
         Hilos::$env = new EnvAccessor();
@@ -286,7 +326,7 @@ final class CommandClientTestOnlyGateTest extends TestCase
         $this->sockets[] = $pair[0];
         $this->sockets[] = $pair[1];
 
-        return new CommandClientTestOnlyGateTestClient($pair[0], new CommandServer('127.0.0.1', 0));
+        return new CommandClientTestOnlyGateTestClient($pair[0], $server ?? new CommandServer('127.0.0.1', 0));
     }
 }
 

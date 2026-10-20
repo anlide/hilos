@@ -77,6 +77,8 @@ use Hilos\Utils\Logger;
 use Random\RandomException;
 use Throwable;
 use LogicException;
+use Hilos\Core\Daemon\TestOrmForgetDoor;
+use Hilos\Socket\Worker\DTO\WorkerTestOrmForgetDTO;
 
 /**
  * WorkerServer - Worker communication server implementation.
@@ -209,6 +211,9 @@ abstract class WorkerServer extends AbstractServer implements
     /** @var int Placeholder worker index before agent is linked to a worker */
     private const int UNLINKED_WORKER_INDEX = 0;
 
+    /** Master owning the test-only ORM waits on this server. */
+    private ?TestOrmForgetDoor $testOrmForgetDoor = null;
+
     /** @var ?float Last time worker processes were ticked (null = never) */
     private ?float $lastWorkerProcessesTick = null;
 
@@ -279,6 +284,35 @@ abstract class WorkerServer extends AbstractServer implements
     public function setLiveConnectionRoster(LiveConnectionRoster $liveConnectionRoster): void
     {
         $this->liveConnectionRoster = $liveConnectionRoster;
+    }
+
+    /** @param TestOrmForgetDoor $door Master owning the command waits */
+    public function setTestOrmForgetDoor(TestOrmForgetDoor $door): void
+    {
+        $this->testOrmForgetDoor = $door;
+    }
+
+    /** @return ?TestOrmForgetDoor Master entrance, or null before wiring */
+    public function testOrmForgetDoor(): ?TestOrmForgetDoor
+    {
+        return $this->testOrmForgetDoor;
+    }
+
+    /**
+     * Queues only on an existing registered channel; it never starts a worker.
+     *
+     * @param int $workerId Signed regular or monopolistic worker id
+     * @param WorkerTestOrmForgetDTO $request Request to queue
+     * @return ?WorkerClient Exact channel used, or null when no live target exists
+     */
+    public function sendTestOrmForget(int $workerId, WorkerTestOrmForgetDTO $request): ?WorkerClient
+    {
+        $worker = $this->findWorkerClientById($workerId);
+        if ($worker === null || !$worker->isRegistered() || $worker->shouldClose()) {
+            return null;
+        }
+        $worker->send($request->toJson());
+        return $worker;
     }
 
     /** @param PageAgentRestartDoor $door This server's master entrance for admitted page requests */

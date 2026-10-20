@@ -19,6 +19,7 @@ use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\CollectionAlreadyMountedException;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Exception\InvalidMountedCollectionException;
+use Hilos\Database\Exception\OrmForgetRefusedException;
 use Hilos\Database\Exception\UnknownLazyStrategyException;
 use Hilos\Database\Exception\View\CloneNotAllowedException;
 use Hilos\Database\Exception\View\CollectionNotFoundException;
@@ -26,6 +27,7 @@ use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\DbCollection;
+use Hilos\Environment\NonProductionGate;
 use Hilos\HilosException;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Utils\Logger;
@@ -298,6 +300,30 @@ abstract class DbContext
         foreach ($this->_objectCollections as $name => $objectCollection) {
             $objectCollection->reHydrate();
             ($this->_dbItemCollections[$name] ?? null)?->clearCache();
+        }
+    }
+
+    /**
+     * Forgets this process's loaded ORM rows for tests, without SQL or announcements.
+     * Mounted collections, actions and the generation baseline stay in place. Previously
+     * handed-out rows and detached selections must be obtained again by the caller.
+     *
+     * @throws OrmForgetRefusedException When the environment is not admitted or any transaction is open
+     */
+    public function forgetLoadedDataForTest(): void
+    {
+        if (!NonProductionGate::admitted()) {
+            throw OrmForgetRefusedException::forEnvironment();
+        }
+        if (Database::hasOpenTransactions()) {
+            throw OrmForgetRefusedException::forOpenTransaction();
+        }
+
+        foreach ($this->_objectCollections as $objectCollection) {
+            $objectCollection->forgetLoadedDataForTest();
+        }
+        foreach ($this->_dbItemCollections as $dbItemCollection) {
+            $dbItemCollection->clearCache();
         }
     }
 
