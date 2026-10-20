@@ -499,44 +499,44 @@ export function HilosProfileSecurityPage({
                   Your administrator requires two-step verification.
                 </p>
               ) : null}
-              <ul className="list-group mb-3" data-id="profile-2fa-apps">
-                {apps.map((app) => (
-                  <li
-                    key={app.id}
-                    className="list-group-item d-flex align-items-center gap-3"
-                    data-id={`profile-2fa-app-${app.id}`}
-                  >
-                    <i
-                      className="bi bi-phone-vibrate fs-5"
-                      aria-hidden="true"
-                    />
-                    <div className="flex-grow-1">
-                      <div className="fw-semibold">{app.label}</div>
-                      <div className="small text-body-secondary">
-                        Connected {formatCalendarDate(app.createdAt)}
-                      </div>
-                      {removalLocked ? (
-                        <div
-                          className="small text-body-secondary"
-                          data-id="profile-2fa-remove-locked"
-                        >
-                          Your administrator requires two-step verification, so
-                          the last app stays.
-                        </div>
-                      ) : null}
-                    </div>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-outline-danger"
-                      disabled={removalLocked}
-                      data-id={`profile-2fa-remove-${app.id}`}
-                      onClick={() => openRemove(app)}
+              {factorOn ? (
+                <ul className="list-group mb-3" data-id="profile-2fa-apps">
+                  {apps.map((app) => (
+                    <li
+                      key={app.id}
+                      className="list-group-item d-flex align-items-center gap-3"
+                      data-id={`profile-2fa-app-${app.id}`}
                     >
-                      Remove
-                    </button>
-                  </li>
-                ))}
-                {factorOn ? (
+                      <i
+                        className="bi bi-phone-vibrate fs-5"
+                        aria-hidden="true"
+                      />
+                      <div className="flex-grow-1">
+                        <div className="fw-semibold">{app.label}</div>
+                        <div className="small text-body-secondary">
+                          Connected {formatCalendarDate(app.createdAt)}
+                        </div>
+                        {removalLocked ? (
+                          <div
+                            className="small text-body-secondary"
+                            data-id="profile-2fa-remove-locked"
+                          >
+                            Your administrator requires two-step verification,
+                            so the last app stays.
+                          </div>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-danger"
+                        disabled={removalLocked}
+                        data-id={`profile-2fa-remove-${app.id}`}
+                        onClick={() => openRemove(app)}
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
                   <li className="list-group-item d-flex align-items-center gap-3">
                     <i className="bi bi-key fs-5" aria-hidden="true" />
                     <div className="flex-grow-1">
@@ -557,16 +557,16 @@ export function HilosProfileSecurityPage({
                       Show
                     </button>
                   </li>
-                ) : (
-                  <li
-                    className="list-group-item text-body-secondary small"
-                    data-id="profile-2fa-off"
-                  >
-                    Two-step verification is off. Connect an authenticator app
-                    to turn it on.
-                  </li>
-                )}
-              </ul>
+                </ul>
+              ) : (
+                <p
+                  className="small text-body-secondary mb-3"
+                  data-id="profile-2fa-off"
+                >
+                  Two-step verification is off. Connect an authenticator app to
+                  turn it on.
+                </p>
+              )}
               <LoadingButton
                 className="btn-sm btn-outline-primary mb-4"
                 loading={enrollStep === 'opening'}

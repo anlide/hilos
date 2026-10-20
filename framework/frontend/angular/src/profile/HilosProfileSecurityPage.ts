@@ -166,40 +166,40 @@ function focusStep(form: HTMLFormElement | undefined): void {
               Your administrator requires two-step verification.
             </p>
           }
-          <ul class="list-group mb-3" data-id="profile-2fa-apps">
-            @for (app of section.authenticators; track app.id) {
-              <li
-                class="list-group-item d-flex align-items-center gap-3"
-                [attr.data-id]="'profile-2fa-app-' + app.id"
-              >
-                <i class="bi bi-phone-vibrate fs-5" aria-hidden="true"></i>
-                <div class="flex-grow-1">
-                  <div class="fw-semibold">{{ app.label }}</div>
-                  <div class="small text-body-secondary">
-                    Connected {{ day(app.createdAt) }}
-                  </div>
-                  @if (removalLocked()) {
-                    <div
-                      class="small text-body-secondary"
-                      data-id="profile-2fa-remove-locked"
-                    >
-                      Your administrator requires two-step verification, so the
-                      last app stays.
-                    </div>
-                  }
-                </div>
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-danger"
-                  [disabled]="removalLocked()"
-                  [attr.data-id]="'profile-2fa-remove-' + app.id"
-                  (click)="openRemove(app)"
+          @if (factorOn()) {
+            <ul class="list-group mb-3" data-id="profile-2fa-apps">
+              @for (app of section.authenticators; track app.id) {
+                <li
+                  class="list-group-item d-flex align-items-center gap-3"
+                  [attr.data-id]="'profile-2fa-app-' + app.id"
                 >
-                  Remove
-                </button>
-              </li>
-            }
-            @if (factorOn()) {
+                  <i class="bi bi-phone-vibrate fs-5" aria-hidden="true"></i>
+                  <div class="flex-grow-1">
+                    <div class="fw-semibold">{{ app.label }}</div>
+                    <div class="small text-body-secondary">
+                      Connected {{ day(app.createdAt) }}
+                    </div>
+                    @if (removalLocked()) {
+                      <div
+                        class="small text-body-secondary"
+                        data-id="profile-2fa-remove-locked"
+                      >
+                        Your administrator requires two-step verification, so
+                        the last app stays.
+                      </div>
+                    }
+                  </div>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-danger"
+                    [disabled]="removalLocked()"
+                    [attr.data-id]="'profile-2fa-remove-' + app.id"
+                    (click)="openRemove(app)"
+                  >
+                    Remove
+                  </button>
+                </li>
+              }
               <li class="list-group-item d-flex align-items-center gap-3">
                 <i class="bi bi-key fs-5" aria-hidden="true"></i>
                 <div class="flex-grow-1">
@@ -221,16 +221,13 @@ function focusStep(form: HTMLFormElement | undefined): void {
                   Show
                 </button>
               </li>
-            } @else {
-              <li
-                class="list-group-item text-body-secondary small"
-                data-id="profile-2fa-off"
-              >
-                Two-step verification is off. Connect an authenticator app to
-                turn it on.
-              </li>
-            }
-          </ul>
+            </ul>
+          } @else {
+            <p class="small text-body-secondary mb-3" data-id="profile-2fa-off">
+              Two-step verification is off. Connect an authenticator app to turn
+              it on.
+            </p>
+          }
           <button
             hilosLoadingButton
             type="button"

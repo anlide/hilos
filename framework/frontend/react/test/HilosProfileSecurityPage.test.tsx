@@ -168,6 +168,46 @@ it('asks a second app for a code from the connected one after the name, as befor
   expect(dispatch).toHaveBeenCalledTimes(1)
 })
 
+it('switches between the empty paragraph and the apps list when factors change', () => {
+  const { node, push } = setup(REPLIES, SECTION_OFF)
+
+  const off = node('profile-2fa-off')
+  expect(off).not.toBeNull()
+  expect(off?.tagName).toBe('P')
+  expect(off?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+    'Two-step verification is off. Connect an authenticator app to turn it on.',
+  )
+  expect(off?.closest('ul')).toBeNull()
+  expect(off?.closest('.list-group')).toBeNull()
+  expect(node('profile-2fa-apps')).toBeNull()
+  expect(node('profile-2fa-codes-left')).toBeNull()
+  expect(node('profile-2fa-add')).not.toBeNull()
+
+  push(SECTION_ON)
+
+  expect(node('profile-2fa-off')).toBeNull()
+  const apps = node('profile-2fa-apps')
+  expect(apps).not.toBeNull()
+  expect(apps?.tagName).toBe('UL')
+  expect(node('profile-2fa-app-1')).not.toBeNull()
+  expect(node('profile-2fa-codes-left')).not.toBeNull()
+  expect(node('profile-2fa-add')).not.toBeNull()
+
+  push(SECTION_OFF)
+
+  const offRestored = node('profile-2fa-off')
+  expect(offRestored).not.toBeNull()
+  expect(offRestored?.tagName).toBe('P')
+  expect(offRestored?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+    'Two-step verification is off. Connect an authenticator app to turn it on.',
+  )
+  expect(offRestored?.closest('ul')).toBeNull()
+  expect(offRestored?.closest('.list-group')).toBeNull()
+  expect(node('profile-2fa-apps')).toBeNull()
+  expect(node('profile-2fa-codes-left')).toBeNull()
+  expect(node('profile-2fa-add')).not.toBeNull()
+})
+
 it('is one plate while turned off, saying the apps are kept, with no apps, codes, wait or buttons', () => {
   const { node } = setup(REPLIES, { ...SECTION_ON, enabled: false })
 
@@ -176,6 +216,7 @@ it('is one plate while turned off, saying the apps are kept, with no apps, codes
   )
   for (const id of [
     'profile-2fa-apps',
+    'profile-2fa-off',
     'profile-2fa-codes-left',
     'profile-2fa-add',
     'profile-2fa-wait',
@@ -191,6 +232,16 @@ it('says only the first sentence while turned off with no app connected', () => 
   expect(node('hilos-2fa-turned-off')?.textContent).toBe(
     'Your administrator turned two-step verification off.',
   )
+  for (const id of [
+    'profile-2fa-apps',
+    'profile-2fa-off',
+    'profile-2fa-codes-left',
+    'profile-2fa-add',
+    'profile-2fa-wait',
+    'profile-2fa-reset-request',
+  ]) {
+    expect(node(id)).toBeNull()
+  }
 })
 
 it('keeps a removal that stands beside the plate, with its date and Cancel', () => {

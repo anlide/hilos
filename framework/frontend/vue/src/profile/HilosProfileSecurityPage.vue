@@ -505,7 +505,7 @@ watch(view, (current) => {
         >
           Your administrator requires two-step verification.
         </p>
-        <ul class="list-group mb-3" data-id="profile-2fa-apps">
+        <ul v-if="factorOn" class="list-group mb-3" data-id="profile-2fa-apps">
           <li
             v-for="app in apps"
             :key="app.id"
@@ -537,10 +537,7 @@ watch(view, (current) => {
               Remove
             </button>
           </li>
-          <li
-            v-if="factorOn"
-            class="list-group-item d-flex align-items-center gap-3"
-          >
+          <li class="list-group-item d-flex align-items-center gap-3">
             <i class="bi bi-key fs-5" aria-hidden="true" />
             <div class="flex-grow-1">
               <div class="fw-semibold">Backup codes</div>
@@ -560,15 +557,15 @@ watch(view, (current) => {
               Show
             </button>
           </li>
-          <li
-            v-if="!factorOn"
-            class="list-group-item text-body-secondary small"
-            data-id="profile-2fa-off"
-          >
-            Two-step verification is off. Connect an authenticator app to turn
-            it on.
-          </li>
         </ul>
+        <p
+          v-else
+          class="small text-body-secondary mb-3"
+          data-id="profile-2fa-off"
+        >
+          Two-step verification is off. Connect an authenticator app to turn it
+          on.
+        </p>
         <LoadingButton
           class="btn-sm btn-outline-primary mb-4"
           :loading="enrollStep === 'opening'"

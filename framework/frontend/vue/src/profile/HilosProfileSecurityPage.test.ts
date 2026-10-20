@@ -262,6 +262,53 @@ describe('HilosProfileSecurityPage', () => {
     expect(byId('modal-confirm')).toBeTruthy()
     expect(byId('backup-codes-list')).toBeTruthy()
   })
+
+  it('switches between the empty paragraph and the apps list when factors change', async () => {
+    const { wrapper, push } = pageWorld(REPLIES, SECTION_OFF)
+    await nextTick()
+
+    const off = wrapper.find('[data-id="profile-2fa-off"]')
+    expect(off.exists()).toBe(true)
+    expect(off.element.tagName).toBe('P')
+    expect(off.text().replace(/\s+/g, ' ').trim()).toBe(
+      'Two-step verification is off. Connect an authenticator app to turn it on.',
+    )
+    expect(off.element.closest('.list-group')).toBeNull()
+    expect(wrapper.find('[data-id="profile-2fa-apps"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="profile-2fa-codes-left"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-id="profile-2fa-add"]').exists()).toBe(true)
+
+    push(SECTION_ON)
+    await nextTick()
+
+    expect(wrapper.find('[data-id="profile-2fa-off"]').exists()).toBe(false)
+    const apps = wrapper.find('[data-id="profile-2fa-apps"]')
+    expect(apps.exists()).toBe(true)
+    expect(apps.element.tagName).toBe('UL')
+    expect(wrapper.find('[data-id="profile-2fa-app-1"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="profile-2fa-codes-left"]').exists()).toBe(
+      true,
+    )
+    expect(wrapper.find('[data-id="profile-2fa-add"]').exists()).toBe(true)
+
+    push(SECTION_OFF)
+    await nextTick()
+
+    const offRestored = wrapper.find('[data-id="profile-2fa-off"]')
+    expect(offRestored.exists()).toBe(true)
+    expect(offRestored.element.tagName).toBe('P')
+    expect(offRestored.text().replace(/\s+/g, ' ').trim()).toBe(
+      'Two-step verification is off. Connect an authenticator app to turn it on.',
+    )
+    expect(offRestored.element.closest('.list-group')).toBeNull()
+    expect(wrapper.find('[data-id="profile-2fa-apps"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="profile-2fa-codes-left"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-id="profile-2fa-add"]').exists()).toBe(true)
+  })
 })
 
 describe('HilosProfileSecurityPage turned off by the administrator', () => {
@@ -274,6 +321,7 @@ describe('HilosProfileSecurityPage turned off by the administrator', () => {
     )
     for (const id of [
       'profile-2fa-apps',
+      'profile-2fa-off',
       'profile-2fa-codes-left',
       'profile-2fa-add',
       'profile-2fa-wait',
@@ -290,6 +338,16 @@ describe('HilosProfileSecurityPage turned off by the administrator', () => {
     expect(wrapper.find('[data-id="hilos-2fa-turned-off"]').text()).toBe(
       'Your administrator turned two-step verification off.',
     )
+    for (const id of [
+      'profile-2fa-apps',
+      'profile-2fa-off',
+      'profile-2fa-codes-left',
+      'profile-2fa-add',
+      'profile-2fa-wait',
+      'profile-2fa-reset-request',
+    ]) {
+      expect(wrapper.find(`[data-id="${id}"]`).exists()).toBe(false)
+    }
   })
 
   it('keeps a removal that stands beside the plate, with its date and Cancel', async () => {
