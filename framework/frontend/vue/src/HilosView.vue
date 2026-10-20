@@ -5,11 +5,12 @@ subscription error (subscription_page_error) takes precedence over the mapped
 component: the full-page ErrorPage shows instead. An unmapped page renders
 nothing. The router must be provided at the app root (hilosRouterKey).
 
-A page is held back until its subscription answers (router.pageLoading): showing
+A page is held back until its code and subscription answer are ready: showing
 it earlier means showing a page the server may be about to deny, and taking it
-away again one round trip later. The `hilos-page-state` marker names the outcome
-— loading, error or ready — so the state is readable from the DOM rather than
-guessed from whichever element happened to render first.
+away again one round trip later. The core page-view state composes both waits.
+The `hilos-page-state` marker names the outcome — loading, error or ready — so
+the state is readable from the DOM rather than guessed from whichever element
+happened to render first.
 
 What stands in the page's place while it waits is a skeleton, not white (HIL-983):
 the one the project declared for that page key in `pageSkeletons`, or the default
@@ -36,10 +37,11 @@ import {
   AUTH_SURFACE_HEADING_ID,
   bindPageDeparture,
   createDeferredFlagState,
+  createPageViewState,
   createSignal,
   DEFAULT_SKELETON_DELAY_MS,
-} from '@hilos/core'
-import type { AuthGate } from '@hilos/core'
+} from '@hilos/core/base'
+import type { AuthGate, PageView } from '@hilos/core/base'
 
 import ErrorPage from './ErrorPage.vue'
 import HilosModal from './HilosModal.vue'
@@ -48,7 +50,7 @@ import { hilosRouterKey } from './hilosRouterKey.js'
 import { useSignal } from './useSignal.js'
 
 const props = defineProps<{
-  pages: Record<string, Component>
+  pages: Record<string, PageView<Component>>
   /** Page key -> the skeleton that page shows while it waits; HilosSkeleton otherwise. */
   pageSkeletons?: Record<string, Component>
   authSurface?: Component
@@ -66,13 +68,20 @@ if (!router) {
 const modalClosed = createSignal(false)
 
 const route = useSignal(router.currentRoute)
-const pageError = useSignal(router.pageError)
-const pageLoading = useSignal(router.pageLoading)
+const pageViewState = createPageViewState<Component>(router)
+watch(
+  () => [
+    props.pages,
+    route.value.page === null ? undefined : props.pages[route.value.page],
+  ],
+  () => pageViewState.setPages(props.pages),
+  { immediate: true },
+)
+onUnmounted(pageViewState.dispose)
+const pageError = useSignal(pageViewState.error)
+const pageLoading = useSignal(pageViewState.loading)
+const view = useSignal(pageViewState.view)
 const modalOpen = useSignal(props.authGate?.modalOpen ?? modalClosed)
-const view = computed(() => {
-  const page = route.value.page
-  return page === null ? undefined : props.pages[page]
-})
 
 const skeletonFlag = createDeferredFlagState(DEFAULT_SKELETON_DELAY_MS)
 const showSkeleton = useSignal(skeletonFlag.shown)
@@ -88,6 +97,8 @@ onMounted(() => {
       slot: pageSlot.value,
       departure: pageDeparture.value,
       skeletonShown: skeletonFlag.shown,
+      loading: pageViewState.loading,
+      error: pageViewState.error,
     })
   }
 })

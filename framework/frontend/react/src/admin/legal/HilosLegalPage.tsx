@@ -3,18 +3,20 @@ import {
   createHilosLegalDocumentsTable,
   createHilosLegalChecksTable,
   createHilosLegalSettingsTable,
-  HilosPages,
   HilosLegalRowKey,
   HilosLegalSettingKey,
-  HILOS_TABLE_ACTIONS_KEY,
   LEGAL_CATALOG_REFUSAL_SECTION,
   describeHilosLegalCheck,
-  hilosLegalDocumentLabel,
   hilosLegalLapsedHref,
   hilosLegalLapsedLabel,
+} from '@hilos/core/admin/legal'
+import {
+  HilosPages,
+  HILOS_TABLE_ACTIONS_KEY,
+  hilosLegalDocumentLabel,
   resolveHilosPath,
   type HilosLegalContext,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'

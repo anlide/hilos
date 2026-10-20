@@ -1,4 +1,4 @@
-import type { HilosLegalChange, HilosLegalSide } from '@hilos/core'
+import type { HilosLegalChange, HilosLegalSide } from '@hilos/core/base'
 
 export interface HilosLegalChangesProps {
   changes: HilosLegalChange[]

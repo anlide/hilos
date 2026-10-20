@@ -11,19 +11,19 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionLifecycle,
   HilosPages,
-  HilosSecondFactorSettingKey,
   ScopeManager,
   bindAdminAccess,
   bindSessionScope,
   createSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import { HilosSecondFactorSettingKey } from '@hilos/core/admin/security'
 import type {
   HilosConnection,
   HilosRouter,
-  HilosTwoFactorContext,
   PageRouteMatch,
   ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosTwoFactorContext } from '@hilos/core/admin/security'
 
 import HilosSecurity2faPage from './HilosSecurity2faPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'

@@ -11,7 +11,6 @@ import {
 } from '@angular/core'
 import {
   HILOS_LOG_WORKER_TYPE_MONOPOLISTIC,
-  HilosPages,
   createHilosLogWorkersHeader,
   createHilosLogWorkersTable,
   formatLogWorkerState,
@@ -20,18 +19,20 @@ import {
   hasLogWorkerNodes,
   logWorkerViewerPath,
   logWorkersEmptyState,
-  subscribeSignal,
-} from '@hilos/core'
+} from '@hilos/core/admin/logs'
+import { HilosPages, subscribeSignal } from '@hilos/core/base'
 import type {
   HilosLogWorkerRow,
   HilosLogWorkersContext,
-  HilosLogWorkersHeader,
-} from '@hilos/core'
+} from '@hilos/core/admin/logs'
+import type { HilosLogWorkersHeader } from '@hilos/core/base'
 
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosLink } from '../../HilosLink.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
+import {
+  HilosAdminPage,
+  HilosLink,
+  HilosTableCell,
+  HilosViewportTable,
+} from '@hilos/angular/base'
 
 /** The framework by-worker page: the worker stream list and its type distinction. */
 @Component({

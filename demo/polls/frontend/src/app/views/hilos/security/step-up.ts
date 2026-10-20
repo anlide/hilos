@@ -4,7 +4,7 @@
 // context. The table, the row view-model and the switch are the framework's; the
 // project supplies only the context and registers the table on its backend.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosSecurityStepUpPage } from '@hilos/angular'
+import { HilosSecurityStepUpPage } from '@hilos/angular/admin/security'
 
 import { hilosTwoFactorContext } from './hilosTwoFactorContext'
 

@@ -16,7 +16,10 @@
 // and would take an open dialog off the screen with it. The React port of the Vue
 // reference (vue/src/HilosTableSelection.vue), under the same names and words.
 import { useState } from 'react'
-import type { HilosTableBulkAction, TableViewportController } from '@hilos/core'
+import type {
+  HilosTableBulkAction,
+  TableViewportController,
+} from '@hilos/core/base'
 
 import { HilosActionError } from './HilosActionError.js'
 import { HilosModal } from './HilosModal.js'

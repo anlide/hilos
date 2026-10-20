@@ -1,13 +1,5 @@
-// @hilos/core — the framework-agnostic Hilos frontend core.
-//
-// All non-visual logic lives here and never imports a UI framework: the WS
-// transport, the signal/action protocol and its discriminated-union parsers,
-// the subscription manager, the normalized entity store, and the headless
-// table / modal / conflict state machines. Fills in across rewrite step 7;
-// shipped so far: the connection machine, the signal parse boundary with the
-// project-signal schema seam, the reactive signal primitive the stores build
-// on, the scope-partitioned stores, the normalizer ingest boundary, and the
-// page-subscription manager.
+// @hilos/core: compatibility entry retaining every public API.
+// Common startup code uses /base; lazy admin code uses its section entry.
 
 export {
   HILOS_STEP_UP_START_ACTION,
@@ -1213,6 +1205,15 @@ export {
   type PageDepartureBinding,
 } from './routing/bindPageDeparture.js'
 export {
+  lazyPage,
+  type LazyPageView,
+  type PageView,
+} from './routing/pageView.js'
+export {
+  createPageViewState,
+  type PageViewState,
+} from './routing/pageViewState.js'
+export {
   HilosPages,
   HILOS_ROUTE_DECLARATIONS,
   HILOS_PAGE_ROUTES,
@@ -1409,9 +1410,6 @@ export {
   HILOS_USER_LIFECYCLE_COPY,
   HILOS_USER_STANDING_SECTION,
   HILOS_USERS_LAPSED_FILTER,
-  SIGNAL_ACCOUNT_STANDING_STATE,
-  ACCOUNT_STANDING_SIGNAL_SCHEMAS,
-  accountStandingStateSchema,
   hilosStandingBadge,
   hilosUserFrozenRow,
   hilosUserMergedNotice,
@@ -1469,6 +1467,11 @@ export {
   type HilosImpersonate,
 } from './admin/users/hilosUsers.js'
 export {
+  SIGNAL_ACCOUNT_STANDING_STATE,
+  ACCOUNT_STANDING_SIGNAL_SCHEMAS,
+  accountStandingStateSchema,
+} from './protocol/accountStandingSignals.js'
+export {
   createHilosUserRenameEdit,
   HILOS_USER_NAME_MAX,
   HILOS_USER_NAME_MIN,
@@ -1519,15 +1522,6 @@ export {
 } from './admin/appearance/hilosAppearanceDefaultThemeEdit.js'
 export {
   settingPresetsSignalSchemas,
-  createHilosSettingPresets,
-  createHilosSettingPresetsActions,
-  presetsOf,
-  selectedPresetOf,
-  differencesOf,
-  isPresetApplied,
-  hasDifferences,
-  isSelectionUnknown,
-  SETTING_PRESETS_APPLY_ACTION,
   PRESET_GROUP_FIELD,
   PRESET_SELECTED_FIELD,
   PRESET_PRESETS_FIELD,
@@ -1540,6 +1534,17 @@ export {
   type HilosSettingPreset,
   type HilosSettingPresetDifference,
   type HilosSettingPresetsState,
+} from './protocol/settingPresetsSignals.js'
+export {
+  createHilosSettingPresets,
+  createHilosSettingPresetsActions,
+  presetsOf,
+  selectedPresetOf,
+  differencesOf,
+  isPresetApplied,
+  hasDifferences,
+  isSelectionUnknown,
+  SETTING_PRESETS_APPLY_ACTION,
   type HilosSettingPresetsContext,
   type HilosSettingPresetsHandle,
   type HilosSettingPresetsActions,
@@ -1553,11 +1558,7 @@ export {
   formatBackupShipping,
   formatBackupDuration,
   formatBackupSize,
-  formatBackupEta,
-  formatBackupProgressLabel,
   formatBackupRunCaption,
-  backupProgressPercent,
-  createBackupProgressClock,
   isBackupChecksumMismatch,
   isBackupShipFailed,
   isBackupOutOfReach,
@@ -1573,17 +1574,11 @@ export {
   hasBackupFailureDetail,
   hasRestoreOutcome,
   formatRestoreCliCommand,
-  formatRestorePhaseLine,
-  formatRestoreOutcomeLine,
   createHilosBackupsRestoreGate,
   createHilosBackupsReopenGate,
   HILOS_BACKUP_REOPEN_COPY,
   HILOS_BACKUP_CIRCLE_POINTER_COPY,
   HILOS_BACKUP_CIRCLE_POINTER_PATH,
-  createHilosRestoreProgress,
-  elapsedSecondsSince,
-  BACKUP_SIGNAL_SCHEMAS,
-  BACKUP_RESTORE_PROGRESS_SIGNAL,
   HILOS_BACKUP_SCOPES,
   BACKUP_CREATED_AT_FIELD,
   BACKUP_ENV_FIELD,
@@ -1617,11 +1612,12 @@ export {
   type HilosBackupsActions,
   type HilosBackupScopeOption,
   type HilosBackupRestoreGate,
-  type HilosRestoreProgress,
-  type HilosRestoreStatus,
-  type HilosProgressAnchors,
-  type HilosBackupProgressClock,
 } from './admin/backup/hilosBackups.js'
+export {
+  BACKUP_SIGNAL_SCHEMAS,
+  BACKUP_RESTORE_PROGRESS_SIGNAL,
+  type HilosRestoreStatus,
+} from './protocol/backupSignals.js'
 export {
   resolveHilosMaintenanceCircleRow,
   createHilosMaintenanceCircleTable,
@@ -1647,14 +1643,16 @@ export {
   hilosMaintenanceElapsed,
   hilosMaintenanceCard,
   HILOS_MAINTENANCE_STATE_COPY,
-  MAINTENANCE_STATE_SIGNAL,
-  MAINTENANCE_STATE_SIGNAL_SCHEMAS,
-  maintenanceStateSchema,
-  type HilosMaintenanceState,
   type HilosMaintenanceStateHandle,
   type HilosMaintenancePosition,
   type HilosMaintenanceCard,
 } from './admin/maintenance/hilosMaintenance.js'
+export {
+  MAINTENANCE_STATE_SIGNAL,
+  MAINTENANCE_STATE_SIGNAL_SCHEMAS,
+  maintenanceStateSchema,
+  type HilosMaintenanceState,
+} from './protocol/maintenanceSignals.js'
 export {
   resolveHilosChannelRow,
   resolveHilosChannelFieldRow,
@@ -1819,7 +1817,6 @@ export {
   HILOS_LOG_CLASS_DAEMON,
   HILOS_LOG_CLASS_AGENT,
   HILOS_LOG_CLASS_WORKER,
-  KEYS_HEADER_SIGNAL,
   KEY_FILTER_NODE,
   KEY_FILTER_CLASS,
   KEY_NAME_FIELD,
@@ -1827,15 +1824,18 @@ export {
   KEY_BATCH_COUNT_FIELD,
   KEY_BYTES_FIELD,
   KEY_GROWTH_PER_DAY_FIELD,
-  LOGS_KEYS_SIGNAL_SCHEMAS,
   type HilosLogKeyRow,
-  type HilosLogKeysHeader,
   type HilosLogKeysHeaderHandle,
   type HilosLogKeysContext,
   type HilosLogKeysTable,
   type HilosLogKeysEmptyState,
   type HilosLogKeyClassOption,
 } from './admin/logs/hilosLogKeys.js'
+export {
+  KEYS_HEADER_SIGNAL,
+  LOGS_KEYS_SIGNAL_SCHEMAS,
+  type HilosLogKeysHeader,
+} from './protocol/logsSignals.js'
 export {
   createHilosLogsOverview,
   hasLogsOverviewNodes,
@@ -1862,6 +1862,12 @@ export {
   logsOverviewRecentPath,
   RECENT_TAB_ERRORS,
   RECENT_TAB_WARNINGS,
+  type HilosLogsRecentTab,
+  type HilosLogsOverviewContext,
+  type HilosLogsOverviewHandle,
+  type HilosLogsOverviewState,
+} from './admin/logs/hilosLogsOverview.js'
+export {
   LOGS_OVERVIEW_SIGNAL_SCHEMAS,
   OVERVIEW_SIGNAL,
   OVERVIEW_NODE_ID_FIELD,
@@ -1882,11 +1888,7 @@ export {
   type HilosLogsOverview,
   type HilosLogsOverviewNode,
   type HilosLogsOverviewRecentEntry,
-  type HilosLogsRecentTab,
-  type HilosLogsOverviewContext,
-  type HilosLogsOverviewHandle,
-  type HilosLogsOverviewState,
-} from './admin/logs/hilosLogsOverview.js'
+} from './protocol/logsSignals.js'
 export {
   resolveHilosLogWorkerRow,
   createHilosLogWorkersTable,
@@ -1900,7 +1902,6 @@ export {
   formatLogWorkerState,
   HILOS_LOG_WORKER_TYPE_MONOPOLISTIC,
   HILOS_LOG_WORKER_TYPE_REGULAR,
-  WORKERS_HEADER_SIGNAL,
   WORKER_FILTER_NODE,
   WORKER_FILTER_TYPE,
   WORKER_NAME_FIELD,
@@ -1909,14 +1910,17 @@ export {
   WORKER_LIVE_FIELD,
   WORKER_BATCH_COUNT_FIELD,
   WORKER_BYTES_FIELD,
-  LOGS_WORKERS_SIGNAL_SCHEMAS,
   type HilosLogWorkerRow,
-  type HilosLogWorkersHeader,
   type HilosLogWorkersHeaderHandle,
   type HilosLogWorkersContext,
   type HilosLogWorkersTable,
   type HilosLogWorkersEmptyState,
 } from './admin/logs/hilosLogWorkers.js'
+export {
+  WORKERS_HEADER_SIGNAL,
+  LOGS_WORKERS_SIGNAL_SCHEMAS,
+  type HilosLogWorkersHeader,
+} from './protocol/logsSignals.js'
 export {
   DAEMON_OVERVIEW_DATA,
   DAEMON_DATABASE_DATA,
@@ -2367,8 +2371,6 @@ export {
   formatLogRotationSchedule,
   formatLogSizeThreshold,
   formatLogRetentionAge,
-  LOG_SETTINGS_SIGNAL,
-  LOGS_SETTINGS_SIGNAL_SCHEMAS,
   LOG_SETTING_WRITE_LEVEL,
   LOG_SETTING_ROTATION_CRON,
   LOG_SETTING_ROTATION_MAX_LIVE_SIZE,
@@ -2378,6 +2380,10 @@ export {
   LOG_PRESET_NORMAL,
   LOG_PRESET_INVESTIGATION,
 } from './admin/logs/hilosLogSettings.js'
+export {
+  LOG_SETTINGS_SIGNAL,
+  LOGS_SETTINGS_SIGNAL_SCHEMAS,
+} from './protocol/logsSignals.js'
 export {
   resolveHilosLogRotationRow,
   createHilosLogRotationsTable,
@@ -2401,7 +2407,6 @@ export {
   HILOS_ROTATION_STATE_DUE,
   HILOS_ROTATION_STATE_TAKEN,
   HILOS_ROTATION_STATE_CARRYING,
-  ROTATIONS_HEADER_SIGNAL,
   ROTATION_FILTER_NODE,
   ROTATION_FILTER_STATE,
   ROTATION_STATE_PARAM,
@@ -2412,19 +2417,22 @@ export {
   ROTATION_BYTES_FIELD,
   ROTATION_DAEMON_FILE_COUNT_FIELD,
   ROTATION_RETENTION_STATE_FIELD,
-  LOGS_SIGNAL_SCHEMAS,
   LOGS_TAKEOUT_CONFIRM_ACTION,
   LOGS_TAKEOUT_UNDO_ACTION,
   type HilosLogRotationRow,
   type HilosLogRotationsActions,
   type HilosLogRotationsAddress,
-  type HilosLogRotationsHeader,
   type HilosLogRotationsHeaderHandle,
   type HilosLogRotationsContext,
   type HilosLogRotationsTable,
   type HilosRotationsEmptyState,
   type HilosRotationStateOption,
 } from './admin/logs/hilosLogRotations.js'
+export {
+  ROTATIONS_HEADER_SIGNAL,
+  LOGS_SIGNAL_SCHEMAS,
+  type HilosLogRotationsHeader,
+} from './protocol/logsSignals.js'
 export {
   createHilosLogViewer,
   readLogViewerAddress,
@@ -2442,32 +2450,33 @@ export {
   logViewerPendingLabel,
   LOG_VIEWER_PENDING_WIDEST_LABEL,
   HILOS_LOG_LEVEL_OPTIONS,
-  LOG_VIEWER_CATALOG_SIGNAL,
-  LOG_LINES_APPENDED_SIGNAL,
   LOGS_READ_LINES_ACTION,
   LOGS_FOLLOW_START_ACTION,
   LOGS_FOLLOW_STOP_ACTION,
-  LOGS_VIEWER_SIGNAL_SCHEMAS,
   LOG_NODE_SELF_SEGMENT,
   LOG_SOURCE_LIVE,
   type HilosLogViewer,
   type HilosLogViewerAddress,
-  type HilosLogViewerCatalog,
   type HilosLogViewerCatalogState,
   type HilosLogViewerContext,
   type HilosLogViewerEntry,
   type HilosLogViewerFeedItem,
   type HilosLogViewerLine,
-  type HilosLogViewerNode,
   type HilosLogViewerNotice,
   type HilosLogViewerPaneState,
   type HilosLogViewerReadLine,
   type HilosLogViewerRow,
   type HilosLogViewerSelection,
-  type HilosLogViewerStream,
   type HilosLogLevelOption,
 } from './admin/logs/hilosLogViewer.js'
-
+export {
+  LOG_VIEWER_CATALOG_SIGNAL,
+  LOG_LINES_APPENDED_SIGNAL,
+  LOGS_VIEWER_SIGNAL_SCHEMAS,
+  type HilosLogViewerCatalog,
+  type HilosLogViewerNode,
+  type HilosLogViewerStream,
+} from './protocol/logsSignals.js'
 export {
   createHilosProfilePasswordChangeActions,
   createHilosProfilePasswordChangeFlow,
@@ -2482,18 +2491,14 @@ export {
   type HilosProfilePasswordChangeOpening,
   type HilosProfilePasswordChangeStep,
 } from './profile/passwordChange.js'
-
 export * from './profile/dataExport.js'
-
 export * from './legal/legalAgreements.js'
 export * from './legal/legalRevisions.js'
 export * from './legal/legalTerms.js'
-
 export {
   LEGAL_CATALOG_REFUSAL_SECTION,
   LEGAL_DOCUMENT_SECTION,
   LEGAL_REVISION_SECTION,
-  LEGAL_ACCEPTANCES_SIGNAL,
   LEGAL_SETTING_SET,
   LEGAL_DOCUMENT_FILTER,
   LEGAL_REVISION_FILTER,
@@ -2511,14 +2516,11 @@ export {
   legalCatalogRefusalSchema,
   legalAdminDocumentSchema,
   legalAdminRevisionSchema,
-  legalAcceptanceFiltersSchema,
-  LEGAL_ACCEPTANCES_SIGNAL_SCHEMAS,
   resolveHilosLegalDocumentRow,
   resolveHilosLegalCheckRow,
   resolveHilosLegalRevisionRow,
   resolveHilosLegalAcceptanceRow,
   resolveHilosLegalSettingRow,
-  hilosLegalDocumentLabel,
   describeHilosLegalCheck,
   createHilosLegalDocumentsTable,
   createHilosLegalChecksTable,
@@ -2531,7 +2533,6 @@ export {
   hilosLegalLapsedLabel,
   type HilosLegalAdminDocument,
   type HilosLegalAdminRevision,
-  type HilosLegalAcceptanceFilters,
   type HilosLegalDocumentRow,
   type HilosLegalCheckRow,
   type HilosLegalRevisionRow,
@@ -2539,33 +2540,53 @@ export {
   type HilosLegalSettingRow,
   type HilosLegalTable,
 } from './admin/legal/hilosLegal.js'
-
+export {
+  LEGAL_ACCEPTANCES_SIGNAL,
+  legalAcceptanceFiltersSchema,
+  LEGAL_ACCEPTANCES_SIGNAL_SCHEMAS,
+  type HilosLegalAcceptanceFilters,
+} from './protocol/legalAcceptancesSignals.js'
 export {
   createHilosLegalSettingEdit,
   type HilosLegalSettingEditFields,
 } from './admin/legal/hilosLegalSettingsEdit.js'
-
 export {
   LEGAL_ACCEPTANCES_EXPORT_ACTION,
-  LEGAL_ACCEPTANCES_EXPORT_SIGNAL,
   LEGAL_ACCEPTANCES_EXPORT_SECTION,
   LEGAL_ACCEPTANCES_EXPORT_OPERATION,
   LEGAL_ACCEPTANCES_EXPORT_DOWNLOAD_PATH,
-  LEGAL_ACCEPTANCES_EXPORT_SIGNAL_SCHEMAS,
   HILOS_LEGAL_ACCEPTANCES_EXPORT_COPY,
-  legalAcceptancesExportNodeSchema,
-  legalAcceptancesExportStateSchema,
   hilosLegalAcceptancesExportStatus,
   hilosLegalAcceptancesExportStatusRoom,
   hilosLegalAcceptancesExportFilterLine,
   createHilosLegalAcceptancesExportStore,
   createHilosLegalAcceptancesExport,
-  type HilosLegalAcceptancesExportNode,
   type HilosLegalAcceptancesExportFilters,
   type HilosLegalAcceptancesExportStore,
   type HilosLegalAcceptancesExportSource,
   type HilosLegalAcceptancesExport,
 } from './admin/legal/hilosLegalAcceptancesExport.js'
-
+export {
+  LEGAL_ACCEPTANCES_EXPORT_SIGNAL,
+  LEGAL_ACCEPTANCES_EXPORT_SIGNAL_SCHEMAS,
+  legalAcceptancesExportNodeSchema,
+  legalAcceptancesExportStateSchema,
+  type HilosLegalAcceptancesExportNode,
+} from './protocol/legalAcceptancesSignals.js'
 export * from './legal/legalConsent.js'
 export * from './legal/legalReconsent.js'
+export { hilosLegalDocumentLabel } from './legal/legalDocumentLabel.js'
+
+export {
+  backupProgressPercent,
+  createBackupProgressClock,
+  createHilosRestoreProgress,
+  elapsedSecondsSince,
+  formatBackupEta,
+  formatBackupProgressLabel,
+  formatRestoreOutcomeLine,
+  formatRestorePhaseLine,
+  type HilosProgressAnchors,
+  type HilosRestoreProgress,
+  type HilosBackupProgressClock,
+} from './connection/restoreProgress.js'

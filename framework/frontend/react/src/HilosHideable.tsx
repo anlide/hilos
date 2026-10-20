@@ -5,7 +5,7 @@
 // children the value is printed as text. The page reads the field as hideable
 // and hands it here as it is; nothing on the screen tests for the mark itself.
 import type { ReactNode } from 'react'
-import { type Hideable, isHiddenValue } from '@hilos/core'
+import { type Hideable, isHiddenValue } from '@hilos/core/base'
 
 import { HilosHiddenMark } from './HilosHiddenMark.js'
 

@@ -64,6 +64,7 @@
           },
           "configurations": {
             "production": {
+              "statsJson": true,
               "optimization": {
                 "scripts": true,
                 "styles": { "minify": true, "inlineCritical": false },
@@ -73,7 +74,7 @@
                 {
                   "type": "initial",
                   "maximumWarning": "1.5MB",
-                  "maximumError": "3MB"
+                  "maximumError": "2MB"
                 },
                 {
                   "type": "anyComponentStyle",

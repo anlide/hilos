@@ -13,7 +13,7 @@ import {
   hilosPushSubscription,
   type HilosConnection,
   type HilosPushSubscriptionStore,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { useEffect, useId } from 'react'
 
 import { useSignal } from './useSignal.js'

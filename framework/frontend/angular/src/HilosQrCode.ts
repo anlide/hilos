@@ -9,7 +9,7 @@ import {
   computed,
   input,
 } from '@angular/core'
-import { qrMatrix } from '@hilos/core'
+import { qrMatrix } from '@hilos/core/base'
 
 /** Modules of light border every side needs for a scanner to find the code. */
 const QUIET_ZONE = 4

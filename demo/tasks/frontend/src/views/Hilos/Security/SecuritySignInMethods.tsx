@@ -3,7 +3,7 @@
 // app's context. The table, the row view-model and the switch are the framework's;
 // the project supplies only the context and declares its methods on its backend.
 // Bootstrap classes only (styling-rules.md).
-import { HilosSecuritySignInMethodsPage } from '@hilos/react'
+import { HilosSecuritySignInMethodsPage } from '@hilos/react/admin/security'
 
 import { hilosSignInMethodsContext } from './hilosSignInMethodsContext'
 

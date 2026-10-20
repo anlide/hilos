@@ -34,36 +34,37 @@ import {
   HILOS_IMPERSONATION_SCOPE_HINT,
   HILOS_IMPERSONATION_SCOPE_VALUES,
   HILOS_IMPERSONATION_SETTING_COPY,
-  HilosPages,
   createHilosSecurityImpersonationActions,
   createHilosSecurityImpersonationTable,
   hilosImpersonationScopeOf,
   isHilosImpersonationSwitch,
   createHilosImpersonationScopeEdit,
-  hilosRowEditIdle,
-} from '@hilos/core'
+} from '@hilos/core/admin/security'
+import { HilosPages, hilosRowEditIdle } from '@hilos/core/base'
 import type {
   HilosImpersonationScopeEditFields,
   HilosImpersonationScopeEditForm,
   HilosImpersonationContext,
   HilosImpersonationScope,
   HilosImpersonationSettingRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/security'
 
-import { ConflictActions } from '../../ConflictActions.js'
-import { ConflictHeader } from '../../ConflictHeader.js'
-import { HilosActionError } from '../../HilosActionError.js'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosEditNotice } from '../../HilosEditNotice.js'
-import { HilosHiddenMark } from '../../HilosHiddenMark.js'
-import { HilosHideable } from '../../HilosHideable.js'
-import { HilosModal } from '../../HilosModal.js'
-import { HilosSwitch } from '../../HilosSwitch.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { LoadingButton } from '../../LoadingButton.js'
-import { mirrorHilosSignal } from '../../hilosSignal.js'
-import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
+import {
+  ConflictActions,
+  ConflictHeader,
+  HilosActionError,
+  HilosAdminPage,
+  HilosEditNotice,
+  HilosHiddenMark,
+  HilosHideable,
+  HilosModal,
+  HilosSwitch,
+  HilosTableCell,
+  HilosViewportTable,
+  LoadingButton,
+  mirrorHilosSignal,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 
 /** The framework impersonation settings page: six switches and the scope in a modal. */
 @Component({

@@ -66,7 +66,7 @@ import type {
   PageRouteMatch,
   ProtectedModeStatus,
   RtStalenessStatus,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import {
   ACCOUNT_DELETION_TICK_MS,
   ACCOUNT_STANDING_STRIP_COPY,
@@ -104,7 +104,7 @@ import {
   signOut,
   SIGN_OUT_COPY,
   stopImpersonation,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosLink } from './HilosLink.js'
 import { HilosAccountBlocked } from './HilosAccountBlocked.js'

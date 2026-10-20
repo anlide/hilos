@@ -22,15 +22,18 @@ import {
   signal,
 } from '@angular/core'
 import type { WritableSignal } from '@angular/core'
-import { HILOS_I18N_COUNTRY_ADD_COPY, subscribeSignal } from '@hilos/core'
-import type { HilosI18nCountryAdd as CountryAdd } from '@hilos/core'
+import { HILOS_I18N_COUNTRY_ADD_COPY } from '@hilos/core/admin/i18n'
+import { subscribeSignal } from '@hilos/core/base'
+import type { HilosI18nCountryAdd as CountryAdd } from '@hilos/core/admin/i18n'
 
-import { HilosActionError } from '../../../HilosActionError.js'
-import { HilosModal } from '../../../HilosModal.js'
-import { LoadingButton } from '../../../LoadingButton.js'
-import { injectLookOnly } from '../../../hilosLookOnly.js'
-import { mirrorHilosSignal } from '../../../hilosSignal.js'
-import { createHilosTrackedAction } from '../../../hilosTrackedAction.js'
+import {
+  HilosActionError,
+  HilosModal,
+  LoadingButton,
+  injectLookOnly,
+  mirrorHilosSignal,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 import { HilosI18nCountryFields } from '../details/HilosI18nCountryFields.js'
 
 /** The step of the creation flow, as the core holds it. */

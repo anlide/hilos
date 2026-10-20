@@ -4,7 +4,7 @@ import {
   HILOS_I18N_LANGUAGE_NAME_MAX,
   type HilosI18nLanguageNameWindow as NameWindow,
   type HilosI18nLanguageNameTarget,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { ConflictActions } from '../../../ConflictActions.js'
 import { ConflictHeader } from '../../../ConflictHeader.js'
 import { HilosActionError } from '../../../HilosActionError.js'

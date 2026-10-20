@@ -22,7 +22,7 @@ import {
   type HilosAuthContext,
   type HilosProfileAddableWay,
   type HilosProfileSignInMethod,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { HilosProfilePasswordChange } from './HilosProfilePasswordChange.js'
 import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
 import { HilosActionError } from '../HilosActionError.js'

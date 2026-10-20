@@ -1,7 +1,32 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "experimentalDecorators": true
+    "experimentalDecorators": true,
+    "paths": {
+      "@hilos/angular": ["./src/index.ts"],
+      "@hilos/angular/base": ["./src/base/index.ts"],
+      "@hilos/angular/admin-views": ["./src/admin/hilosAdminViews.ts"],
+      "@hilos/angular/admin/analytics": ["./src/admin/analytics/index.ts"],
+      "@hilos/angular/admin/appearance": ["./src/admin/appearance/index.ts"],
+      "@hilos/angular/admin/backup": ["./src/admin/backup/index.ts"],
+      "@hilos/angular/admin/billing": ["./src/admin/billing/index.ts"],
+      "@hilos/angular/admin/change-log": ["./src/admin/changeLog/index.ts"],
+      "@hilos/angular/admin/communications": [
+        "./src/admin/communications/index.ts"
+      ],
+      "@hilos/angular/admin/daemon": ["./src/admin/daemon/index.ts"],
+      "@hilos/angular/admin/dashboard": ["./src/admin/dashboard/index.ts"],
+      "@hilos/angular/admin/i18n": ["./src/admin/i18n/index.ts"],
+      "@hilos/angular/admin/legal": ["./src/admin/legal/index.ts"],
+      "@hilos/angular/admin/logs": ["./src/admin/logs/index.ts"],
+      "@hilos/angular/admin/maintenance": ["./src/admin/maintenance/index.ts"],
+      "@hilos/angular/admin/mcp-skills": ["./src/admin/mcpSkills/index.ts"],
+      "@hilos/angular/admin/roles": ["./src/admin/roles/index.ts"],
+      "@hilos/angular/admin/security": ["./src/admin/security/index.ts"],
+      "@hilos/angular/admin/settings": ["./src/admin/settings/index.ts"],
+      "@hilos/angular/admin/sil": ["./src/admin/sil/index.ts"],
+      "@hilos/angular/admin/users": ["./src/admin/users/index.ts"]
+    }
   },
   "include": ["src", "test"]
 }

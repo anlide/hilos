@@ -16,8 +16,11 @@ import {
   TABLE_ORDER_COPY,
   TABLE_STALENESS_COPY,
   hilosTableOrderMenuNarrowOnly,
-} from '@hilos/core'
-import type { HilosTableFilterView, TableViewportController } from '@hilos/core'
+} from '@hilos/core/base'
+import type {
+  HilosTableFilterView,
+  TableViewportController,
+} from '@hilos/core/base'
 
 import { HilosDropdown } from './HilosDropdown.js'
 import { HilosModal } from './HilosModal.js'

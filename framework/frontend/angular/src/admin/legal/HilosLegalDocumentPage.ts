@@ -9,35 +9,39 @@ import {
 } from '@angular/core'
 import {
   computedSignal,
-  createHilosLegalRevisionsTable,
   createHilosLegalConsentPreview,
   createHilosLegalReconsentPreview,
   hilosLegalDocumentLabel,
   HilosPages,
-  HilosLegalRowKey,
   HILOS_TABLE_ACTIONS_KEY,
-  LEGAL_CATALOG_REFUSAL_SECTION,
-  LEGAL_DOCUMENT_SECTION,
   LEGAL_RECONSENT_COPY,
-  legalAdminDocumentSchema,
   resolveHilosPath,
   subscribeSignal,
   type HilosLegalContext,
   type HilosLegalConsentTerms,
   type HilosLegalDocumentKey,
-  type HilosLegalAdminDocument,
   type HilosLegalReconsentPreview,
   type HilosLegalReconsentView,
-} from '@hilos/core'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosModal } from '../../HilosModal.js'
-import { HilosFormError } from '../../HilosFormError.js'
-import { HilosLegalConsent } from '../../legal/HilosLegalConsent.js'
-import { HilosLegalReconsent } from '../../legal/HilosLegalReconsent.js'
-import { HilosLink } from '../../HilosLink.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { HILOS_ROUTER } from '../../hilosRouterToken.js'
+} from '@hilos/core/base'
+import {
+  createHilosLegalRevisionsTable,
+  HilosLegalRowKey,
+  LEGAL_CATALOG_REFUSAL_SECTION,
+  LEGAL_DOCUMENT_SECTION,
+  legalAdminDocumentSchema,
+  type HilosLegalAdminDocument,
+} from '@hilos/core/admin/legal'
+import {
+  HilosAdminPage,
+  HilosModal,
+  HilosFormError,
+  HilosLegalConsent,
+  HilosLegalReconsent,
+  HilosLink,
+  HilosTableCell,
+  HilosViewportTable,
+  HILOS_ROUTER,
+} from '@hilos/angular/base'
 
 /** A document's adopted standard, deviations and revision history. */
 @Component({

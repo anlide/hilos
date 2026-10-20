@@ -5,14 +5,16 @@ import {
   hilosLegalAcceptancesExportFilterLine,
   hilosLegalAcceptancesExportStatus,
   hilosLegalAcceptancesExportStatusRoom,
-  hilosLegalDocumentLabel,
   HILOS_LEGAL_ACCEPTANCES_EXPORT_COPY as EXPORT_COPY,
+  LEGAL_ACCEPTANCES_EXPORT_DOWNLOAD_PATH,
+} from '@hilos/core/admin/legal'
+import {
+  hilosLegalDocumentLabel,
   HILOS_STEP_UP_COPY,
   HilosPages,
-  LEGAL_ACCEPTANCES_EXPORT_DOWNLOAD_PATH,
   resolveHilosPath,
   type HilosLegalContext,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { computed, onMounted, onUnmounted } from 'vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosFormError from '../../HilosFormError.vue'

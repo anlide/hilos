@@ -13,7 +13,7 @@ import {
   type HilosProfileDeviceActions,
   type HilosProfilePushChannel,
   type HilosPushSubscriptionStore,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosPushDeviceToggle } from '../HilosPushDeviceToggle.js'
 import { LoadingButton } from '../LoadingButton.js'

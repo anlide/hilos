@@ -5,7 +5,7 @@ import {
   DAEMON_WORKER_AGENT_COUNT_FIELD,
   DAEMON_WORKER_MEMORY_FIELD,
   DAEMON_WORKER_AGENT_IDS_FIELD,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
 import { NgClass } from '@angular/common'
 import {
   ChangeDetectionStrategy,
@@ -26,24 +26,27 @@ import {
   formatDaemonWorkerMemory,
   formatDaemonWorkerName,
   formatDaemonWorkerPid,
-  HilosPages,
   readDaemonProcessesReported,
   readHilosDaemonNodeHeading,
   type HilosDaemonWorkersContext,
-} from '@hilos/core'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosLink } from '../../HilosLink.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosTableDetail } from '../../HilosTableDetail.js'
+} from '@hilos/core/admin/daemon'
+import { HilosPages } from '@hilos/core/base'
+import {
+  HilosAdminPage,
+  HilosLink,
+  HilosViewportTable,
+  HilosTableCell,
+  HilosTableDetail,
+  HILOS_ROUTER,
+  hilosSignal,
+  mirrorHilosSignal,
+} from '@hilos/angular/base'
 import { HilosDaemonNodeLine } from './HilosDaemonNodeLine.js'
-import { HILOS_ROUTER } from '../../hilosRouterToken.js'
-import { hilosSignal, mirrorHilosSignal } from '../../hilosSignal.js'
+import type { TableViewportRow } from '@hilos/core/base'
 import type {
-  TableViewportRow,
   HilosDaemonNodeHeading,
   HilosDaemonWorkerRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
 
 /** Angular view of the Daemon WorkersPage. */
 @Component({

@@ -36,13 +36,9 @@ import {
 } from '@angular/core'
 import {
   HILOS_LOG_LEVEL_OPTIONS,
-  HilosPages,
   LOG_SOURCE_LIVE,
   LOG_VIEWER_PENDING_WIDEST_LABEL,
   createHilosLogViewer,
-  createSignal,
-  hilosAdminAccess,
-  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   hasLogViewerNodes,
   isLogViewerPinned,
   logLevelVariant,
@@ -51,25 +47,35 @@ import {
   logViewerPendingLabel,
   logViewerStreamsOf,
   readLogViewerAddress,
+} from '@hilos/core/admin/logs'
+import {
+  HilosPages,
+  createSignal,
+  hilosAdminAccess,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   subscribeSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosLogViewerAddress,
-  HilosLogViewerCatalog,
   HilosLogViewerContext,
   HilosLogViewerEntry,
   HilosLogViewerNotice,
   HilosLogViewerRow,
   HilosLogViewerSelection,
+} from '@hilos/core/admin/logs'
+import type {
+  HilosLogViewerCatalog,
   PageRouteMatch,
   ReadonlySignal,
   Unsubscribe,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosHideable } from '../../HilosHideable.js'
-import { HILOS_ROUTER } from '../../hilosRouterToken.js'
-import { hilosSignal } from '../../hilosSignal.js'
+import {
+  HilosAdminPage,
+  HilosHideable,
+  HILOS_ROUTER,
+  hilosSignal,
+} from '@hilos/angular/base'
 
 /** The icon one note is drawn with; its wording belongs to the headless. */
 const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {

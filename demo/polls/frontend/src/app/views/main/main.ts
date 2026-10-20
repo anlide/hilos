@@ -7,7 +7,7 @@
 // guest name this demo assigned. The `self-user` marker carries whichever name
 // is on screen, so a test can read the line without knowing which branch it is.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { hilosSignal } from '@hilos/angular'
+import { hilosSignal } from '@hilos/angular/base'
 
 import { currentGuestName } from '../../bootstrap/guest'
 import { currentUserId, currentUserName } from '../../bootstrap/session'

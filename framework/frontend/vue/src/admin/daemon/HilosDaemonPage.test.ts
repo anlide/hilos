@@ -9,12 +9,14 @@ import {
   hilosAdminAccess,
   hilosUnbuiltPages,
   type HilosConnection,
+  type ProjectSignal,
+  type TableRow,
+} from '@hilos/core/base'
+import {
   type HilosDaemonOverviewData,
   type HilosDaemonOverviewNode,
   type HilosDaemonDatabaseData,
-  type ProjectSignal,
-  type TableRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
 import { describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 

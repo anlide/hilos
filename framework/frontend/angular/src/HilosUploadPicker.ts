@@ -3,7 +3,10 @@
 // the field, and the input is emptied at once, or the same file could not be
 // chosen twice in a row. The accept filter is a hint to the chooser only: a drop
 // or a paste passes it by, and the server decides.
-import { HILOS_UPLOAD_FIELD_COPY, type HilosUploadField } from '@hilos/core'
+import {
+  HILOS_UPLOAD_FIELD_COPY,
+  type HilosUploadField,
+} from '@hilos/core/base'
 import {
   ChangeDetectionStrategy,
   Component,

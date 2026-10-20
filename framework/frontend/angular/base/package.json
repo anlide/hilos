@@ -1,0 +1,5 @@
+{
+  "main": "../dist/fesm2022/hilos-angular-base.mjs",
+  "module": "../dist/fesm2022/hilos-angular-base.mjs",
+  "types": "../dist/types/hilos-angular-base.d.ts"
+}

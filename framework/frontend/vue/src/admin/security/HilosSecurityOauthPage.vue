@@ -23,12 +23,11 @@ import {
   createHilosOAuthProvidersTable,
   createHilosOAuthRedirect,
   createHilosSecurityOauthActions,
-  HilosPages,
-  resolveHilosPath,
   type HilosOAuthProviderRow,
   type HilosOAuthRedirectRow,
   type HilosSecurityOauthContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/security'
+import { HilosPages, resolveHilosPath } from '@hilos/core/base'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import ConflictActions from '../../ConflictActions.vue'

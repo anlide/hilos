@@ -27,37 +27,38 @@ import {
   input,
   signal,
 } from '@angular/core'
+import { HilosPages, computedSignal, hilosRowEditIdle } from '@hilos/core/base'
 import {
-  HilosPages,
-  computedSignal,
   createHilosChannelFields,
   createHilosCommunicationsActions,
   createHilosChannelFieldEdit,
   hilosChannelDisplayValue,
-  hilosRowEditIdle,
-} from '@hilos/core'
+} from '@hilos/core/admin/communications'
 import type {
   HilosChannelFieldEditFields,
   HilosChannelFieldEditForm,
   ChannelValueSource,
   HilosChannelFieldRow,
   HilosCommunicationsContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/communications'
 
-import { ConflictActions } from '../../ConflictActions.js'
-import { ConflictHeader } from '../../ConflictHeader.js'
-import { HilosActionError } from '../../HilosActionError.js'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosEditNotice } from '../../HilosEditNotice.js'
-import { HilosHiddenMark } from '../../HilosHiddenMark.js'
-import { HilosHideable } from '../../HilosHideable.js'
-import { HilosModal } from '../../HilosModal.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { LoadingButton } from '../../LoadingButton.js'
-import { HILOS_ROUTER } from '../../hilosRouterToken.js'
-import { hilosSignal, mirrorHilosSignal } from '../../hilosSignal.js'
-import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
+import {
+  ConflictActions,
+  ConflictHeader,
+  HilosActionError,
+  HilosAdminPage,
+  HilosEditNotice,
+  HilosHiddenMark,
+  HilosHideable,
+  HilosModal,
+  HilosTableCell,
+  HilosViewportTable,
+  LoadingButton,
+  HILOS_ROUTER,
+  hilosSignal,
+  mirrorHilosSignal,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 
 /** Map a field type to the value input it edits with. */
 function inputType(type: string | undefined): 'text' | 'number' | 'checkbox' {

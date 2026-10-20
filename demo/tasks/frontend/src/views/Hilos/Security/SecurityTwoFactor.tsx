@@ -3,7 +3,7 @@
 // The table, the row view-model and the edit modal are the framework's; the
 // project supplies only the context and registers the table on its backend.
 // Bootstrap classes only (styling-rules.md).
-import { HilosSecurity2faPage } from '@hilos/react'
+import { HilosSecurity2faPage } from '@hilos/react/admin/security'
 
 import { hilosTwoFactorContext } from './hilosTwoFactorContext'
 

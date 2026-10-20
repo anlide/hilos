@@ -7,7 +7,10 @@
 // (HIL-1170).
 import { useEffect, useId, useMemo } from 'react'
 import type { HTMLAttributes, MouseEvent } from 'react'
-import { DEFAULT_SPINNER_DELAY_MS, createLoadingButtonState } from '@hilos/core'
+import {
+  DEFAULT_SPINNER_DELAY_MS,
+  createLoadingButtonState,
+} from '@hilos/core/base'
 
 import { joinDescribedBy, useLookOnly } from './hilosLookOnly.js'
 import { useSignal } from './useSignal.js'

@@ -4,7 +4,7 @@ import {
   DAEMON_AGENT_PLACEMENT_FIELD,
   DAEMON_AGENT_OWNS_RT_FIELD,
   DAEMON_AGENT_OWNS_DB_FIELD,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
 import { NgClass } from '@angular/common'
 import {
   ChangeDetectionStrategy,
@@ -25,28 +25,28 @@ import {
   formatDaemonAgentOwnership,
   formatDaemonAgentWorker,
   formatDaemonNodeSilentSince,
-  HilosPages,
   readDaemonProcessesReported,
   readHilosDaemonNodeHeading,
   type HilosDaemonAgentRow,
   type HilosDaemonAgentsContext,
-} from '@hilos/core'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosLink } from '../../HilosLink.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
+} from '@hilos/core/admin/daemon'
+import { HilosPages } from '@hilos/core/base'
+import {
+  HilosAdminPage,
+  HilosLink,
+  HilosViewportTable,
+  HilosTableCell,
+  HILOS_ROUTER,
+  hilosSignal,
+  mirrorHilosSignal,
+  HilosModal,
+  HilosActionError,
+  LoadingButton,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 import { HilosDaemonNodeLine } from './HilosDaemonNodeLine.js'
-import { HILOS_ROUTER } from '../../hilosRouterToken.js'
-import { hilosSignal, mirrorHilosSignal } from '../../hilosSignal.js'
-import type {
-  TableViewportRow,
-  HilosDaemonNodeHeading,
-  HilosTableBody,
-} from '@hilos/core'
-import { HilosModal } from '../../HilosModal.js'
-import { HilosActionError } from '../../HilosActionError.js'
-import { LoadingButton } from '../../LoadingButton.js'
-import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
+import type { TableViewportRow, HilosTableBody } from '@hilos/core/base'
+import type { HilosDaemonNodeHeading } from '@hilos/core/admin/daemon'
 
 /** Angular view of the Daemon AgentsPage. */
 @Component({

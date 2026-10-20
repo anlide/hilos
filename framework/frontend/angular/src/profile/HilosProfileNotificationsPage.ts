@@ -13,7 +13,7 @@ import {
   subscribeSignal,
   type HilosPageCrumb,
   type HilosProfileNotificationsContext,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { HilosNotificationPreferences } from '../HilosNotificationPreferences.js'
 import { HilosPageHeading } from '../HilosPageHeading.js'
 import { HILOS_ROUTER } from '../hilosRouterToken.js'

@@ -4,7 +4,7 @@ and the erase block under the prose are the framework's (HilosPrivacyPage), and
 this demo declares no browser value of its own, so it hands in no `values`.
 See views/About/About.vue. -->
 <script setup lang="ts">
-import { HilosPrivacyPage } from '@hilos/vue'
+import { HilosPrivacyPage } from '@hilos/vue/base'
 
 import { actions, connection } from '../../bootstrap/connection'
 

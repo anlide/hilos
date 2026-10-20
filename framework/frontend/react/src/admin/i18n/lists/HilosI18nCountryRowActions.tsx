@@ -4,7 +4,7 @@ import {
   hilosI18nCountryDeleteLabel,
   hilosI18nCountryDeleteReason,
   type HilosI18nCountryRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 
 /** Each desktop/card projection owns its accessible live deletion reason. */
 export function HilosI18nCountryRowActions({

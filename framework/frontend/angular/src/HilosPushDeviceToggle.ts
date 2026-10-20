@@ -20,7 +20,7 @@ import {
   hilosPushSubscription,
   type HilosConnection,
   type HilosPushSubscriptionStore,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { hilosSignal } from './hilosSignal.js'
 

@@ -30,6 +30,15 @@
 // on a note. A line arriving after a rotation does not belong to the error
 // above it.
 
+import {
+  LOG_VIEWER_CATALOG_SIGNAL,
+  LOG_LINES_APPENDED_SIGNAL,
+  logViewerLineSchema,
+  logsLinesAppendedSchema,
+  type HilosLogViewerCatalog,
+  type HilosLogViewerNode,
+  type HilosLogViewerStream,
+} from '../../protocol/logsSignals.js'
 import { z } from 'zod'
 import {
   type ActionLifecycle,
@@ -40,7 +49,6 @@ import { formatBytes } from '../../format/bytes.js'
 import { resolveHilosPath } from '../../routing/hilosAdmin.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import { type PageRouteMatch } from '../../routing/PageRouter.js'
-import { hideable } from '../../state/hideableSchema.js'
 import { isHiddenValue, type Hideable } from '../../state/hiddenValue.js'
 import {
   computedSignal,
@@ -51,8 +59,14 @@ import {
 } from '../../state/signal.js'
 import { hilosToasts } from '../../state/toasts.js'
 
-/** Server→client signal `type` carrying the catalog (PHP `SUBSCRIPTION_PAGE_HILOS_LOGS_VIEW`). */
-export const LOG_VIEWER_CATALOG_SIGNAL = 'subscription_page_hilos_logs_view'
+export {
+  LOG_VIEWER_CATALOG_SIGNAL,
+  LOG_LINES_APPENDED_SIGNAL,
+  type HilosLogViewerCatalog,
+  type HilosLogViewerNode,
+  type HilosLogViewerStream,
+  LOGS_VIEWER_SIGNAL_SCHEMAS,
+} from '../../protocol/logsSignals.js'
 
 /** The action one page of lines is asked for by (PHP `LOGS_READ_LINES`). */
 export const LOGS_READ_LINES_ACTION = 'logs_read_lines'
@@ -68,9 +82,6 @@ export const LOGS_FOLLOW_START_ACTION = 'logs_follow_start'
 
 /** The action the live tail is ended by (PHP `LOGS_FOLLOW_STOP`). */
 export const LOGS_FOLLOW_STOP_ACTION = 'logs_follow_stop'
-
-/** Server→client signal `type` carrying what happened to the followed file (PHP `LOGS_LINES_APPENDED`). */
-export const LOG_LINES_APPENDED_SIGNAL = 'logs_lines_appended'
 
 /** Source value: the live journal, the file still being written to. */
 export const LOG_SOURCE_LIVE = 'live'
@@ -119,90 +130,6 @@ const LOG_VIEWER_FEED_MAX_LINES = 2000
 
 /** The most lines the buffer beside the feed holds while the reader is above it. */
 const LOG_VIEWER_PENDING_MAX_LINES = 2000
-
-/** One stream of one node: the file, what writes it, and where it can be found. */
-const logViewerStreamSchema = z.looseObject({
-  key: z.string(),
-  class: z.string(),
-  live: z.boolean(),
-  batchTimestamps: z.array(z.number()),
-})
-
-/** One node of the catalog: its name, whether it can be read, and what it holds. */
-const logViewerNodeSchema = z.looseObject({
-  nodeId: z.string(),
-  available: z.boolean(),
-  batches: z.array(z.number()),
-  streams: z.array(logViewerStreamSchema),
-})
-
-/**
- * The catalog of readable sources (PHP `HilosLogsViewCatalogSignalData`).
- *
- * `available` has three answers and they are three different screens: null while
- * no merged picture has arrived, false when it arrived and no node could read its
- * store, true when there is something to open.
- */
-const logViewerCatalogSchema = z.looseObject({
-  available: z.boolean().nullable(),
-  clusterEnabled: z.boolean(),
-  nodes: z.array(logViewerNodeSchema),
-})
-
-/** The catalog as the page answers a subscription with it. */
-export type HilosLogViewerCatalog = z.infer<typeof logViewerCatalogSchema>
-
-/** One node of the catalog. */
-export type HilosLogViewerNode = z.infer<typeof logViewerNodeSchema>
-
-/** One stream of one node. */
-export type HilosLogViewerStream = z.infer<typeof logViewerStreamSchema>
-
-/**
- * One line as the owner of the file sends it, in a read reply and in a follow
- * frame alike (PHP `LogsReadLinesReplyDTO::linesFromPage()`).
- *
- * One shape for both because the browser draws the first page and every frame
- * after it with one renderer; a second shape here would be a second renderer.
- */
-const logViewerLineSchema = z.looseObject({
-  time: z.string().nullable(),
-  text: hideable(z.string()),
-  level: z.string(),
-  isContinuation: z.boolean(),
-})
-
-/**
- * What happened to the followed file since the last frame (PHP
- * `LogsLinesAppendedSignalData`).
- *
- * Four mutually exclusive shapes and never two at once: lines were appended, the
- * file was carried off and reading restarted on the new one, the owner jumped
- * ahead to catch up, or the follow ended on its side. A tick with nothing to say
- * sends no frame at all.
- */
-const logsLinesAppendedSchema = z.looseObject({
-  followId: z.string(),
-  lines: z.array(logViewerLineSchema),
-  rotated: z.boolean(),
-  skippedBytes: z.number().nullable(),
-  stopped: z.boolean(),
-})
-
-/**
- * The log-viewer signal schemas keyed for a connection's `projectSchemas`, so the
- * parse boundary validates the catalog and follow frames
- * {@link createHilosLogViewer} ingests. {@link createHilosConnection} merges them
- * in, so a project never restates them.
- *
- * Named apart from the rotation screen's `LOGS_SIGNAL_SCHEMAS` deliberately: two
- * independent names cost one line in the merge and do not depend on which of the
- * two screens landed first.
- */
-export const LOGS_VIEWER_SIGNAL_SCHEMAS = {
-  [LOG_VIEWER_CATALOG_SIGNAL]: logViewerCatalogSchema,
-  [LOG_LINES_APPENDED_SIGNAL]: logsLinesAppendedSchema,
-}
 
 /** One page of lines as the owner of the file answers a read — and a start — with. */
 const logsReadLinesReplySchema = z.looseObject({

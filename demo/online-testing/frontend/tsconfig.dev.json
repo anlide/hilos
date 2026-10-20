@@ -26,7 +26,107 @@
       "@angular/core": ["./node_modules/@angular/core"],
       "@angular/common": ["./node_modules/@angular/common"],
       "@hilos/angular": ["./node_modules/@hilos/angular/src/index.ts"],
-      "@hilos/core": ["./node_modules/@hilos/core/src/index.ts"]
+      "@hilos/angular/base": [
+        "./node_modules/@hilos/angular/src/base/index.ts"
+      ],
+      "@hilos/angular/admin-views": [
+        "./node_modules/@hilos/angular/src/admin/hilosAdminViews.ts"
+      ],
+      "@hilos/angular/admin/analytics": [
+        "./node_modules/@hilos/angular/src/admin/analytics/index.ts"
+      ],
+      "@hilos/angular/admin/appearance": [
+        "./node_modules/@hilos/angular/src/admin/appearance/index.ts"
+      ],
+      "@hilos/angular/admin/backup": [
+        "./node_modules/@hilos/angular/src/admin/backup/index.ts"
+      ],
+      "@hilos/angular/admin/billing": [
+        "./node_modules/@hilos/angular/src/admin/billing/index.ts"
+      ],
+      "@hilos/angular/admin/change-log": [
+        "./node_modules/@hilos/angular/src/admin/changeLog/index.ts"
+      ],
+      "@hilos/angular/admin/communications": [
+        "./node_modules/@hilos/angular/src/admin/communications/index.ts"
+      ],
+      "@hilos/angular/admin/daemon": [
+        "./node_modules/@hilos/angular/src/admin/daemon/index.ts"
+      ],
+      "@hilos/angular/admin/dashboard": [
+        "./node_modules/@hilos/angular/src/admin/dashboard/index.ts"
+      ],
+      "@hilos/angular/admin/i18n": [
+        "./node_modules/@hilos/angular/src/admin/i18n/index.ts"
+      ],
+      "@hilos/angular/admin/legal": [
+        "./node_modules/@hilos/angular/src/admin/legal/index.ts"
+      ],
+      "@hilos/angular/admin/logs": [
+        "./node_modules/@hilos/angular/src/admin/logs/index.ts"
+      ],
+      "@hilos/angular/admin/maintenance": [
+        "./node_modules/@hilos/angular/src/admin/maintenance/index.ts"
+      ],
+      "@hilos/angular/admin/mcp-skills": [
+        "./node_modules/@hilos/angular/src/admin/mcpSkills/index.ts"
+      ],
+      "@hilos/angular/admin/roles": [
+        "./node_modules/@hilos/angular/src/admin/roles/index.ts"
+      ],
+      "@hilos/angular/admin/security": [
+        "./node_modules/@hilos/angular/src/admin/security/index.ts"
+      ],
+      "@hilos/angular/admin/settings": [
+        "./node_modules/@hilos/angular/src/admin/settings/index.ts"
+      ],
+      "@hilos/angular/admin/sil": [
+        "./node_modules/@hilos/angular/src/admin/sil/index.ts"
+      ],
+      "@hilos/angular/admin/users": [
+        "./node_modules/@hilos/angular/src/admin/users/index.ts"
+      ],
+      "@hilos/core": ["./node_modules/@hilos/core/src/index.ts"],
+      "@hilos/core/base": ["./node_modules/@hilos/core/src/base/index.ts"],
+      "@hilos/core/admin/i18n": [
+        "./node_modules/@hilos/core/src/admin/i18n/index.ts"
+      ],
+      "@hilos/core/admin/users": [
+        "./node_modules/@hilos/core/src/admin/users/index.ts"
+      ],
+      "@hilos/core/admin/settings": [
+        "./node_modules/@hilos/core/src/admin/settings/index.ts"
+      ],
+      "@hilos/core/admin/appearance": [
+        "./node_modules/@hilos/core/src/admin/appearance/index.ts"
+      ],
+      "@hilos/core/admin/backup": [
+        "./node_modules/@hilos/core/src/admin/backup/index.ts"
+      ],
+      "@hilos/core/admin/maintenance": [
+        "./node_modules/@hilos/core/src/admin/maintenance/index.ts"
+      ],
+      "@hilos/core/admin/communications": [
+        "./node_modules/@hilos/core/src/admin/communications/index.ts"
+      ],
+      "@hilos/core/admin/security": [
+        "./node_modules/@hilos/core/src/admin/security/index.ts"
+      ],
+      "@hilos/core/admin/logs": [
+        "./node_modules/@hilos/core/src/admin/logs/index.ts"
+      ],
+      "@hilos/core/admin/daemon": [
+        "./node_modules/@hilos/core/src/admin/daemon/index.ts"
+      ],
+      "@hilos/core/admin/change-log": [
+        "./node_modules/@hilos/core/src/admin/changeLog/index.ts"
+      ],
+      "@hilos/core/admin/analytics": [
+        "./node_modules/@hilos/core/src/admin/analytics/index.ts"
+      ],
+      "@hilos/core/admin/legal": [
+        "./node_modules/@hilos/core/src/admin/legal/index.ts"
+      ]
     }
   },
   "include": [

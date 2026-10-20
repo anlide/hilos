@@ -15,14 +15,14 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosConnection,
   HilosRouter,
-  HilosSecurityOauthContext,
   PageRouteMatch,
   ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosSecurityOauthContext } from '@hilos/core/admin/security'
 
 import HilosSecurityOauthPage from './HilosSecurityOauthPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'

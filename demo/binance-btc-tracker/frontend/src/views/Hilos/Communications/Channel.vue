@@ -4,7 +4,7 @@ context. The fields table, the value/source projection, and the set / reset /
 test round-trips are the framework's; the project supplies only the context.
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { HilosCommunicationsChannelPage } from '@hilos/vue'
+import { HilosCommunicationsChannelPage } from '@hilos/vue/admin/communications'
 
 import { hilosCommunicationsContext } from './hilosCommunicationsContext'
 

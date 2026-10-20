@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { HilosI18nLanguagesPage } from '@hilos/vue'
+import { HilosI18nLanguagesPage } from '@hilos/vue/admin/i18n'
 import { hilosI18nLanguageContext } from '../Language/hilosI18nLanguageContext.js'
 
 defineOptions({ name: 'HilosI18nLanguages' })

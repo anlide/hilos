@@ -9,13 +9,13 @@ import {
   HilosPages,
   ScopeManager,
   createSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosCommunicationsContext } from '@hilos/core/admin/communications'
 import type {
-  HilosCommunicationsContext,
   HilosConnection,
   HilosRouter,
   PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import HilosCommunicationsPage from './HilosCommunicationsPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'

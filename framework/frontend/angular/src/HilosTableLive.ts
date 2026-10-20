@@ -39,7 +39,7 @@ import {
   hilosTableStaleLabel,
   hilosTableStaleSources,
   subscribeSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosTableBulkReport,
   HilosTableColumn,
@@ -50,7 +50,7 @@ import type {
   TableViewportAnnounced,
   TableViewportController,
   TableViewportRow,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosModal } from './HilosModal.js'
 import { HilosTableProgress } from './HilosTableProgress.js'

@@ -4,7 +4,7 @@ The table, the row view-model and the edit modal are the framework's; the projec
 supplies only the context and registers the table on its backend.
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { HilosSecurity2faPage } from '@hilos/vue'
+import { HilosSecurity2faPage } from '@hilos/vue/admin/security'
 
 import { hilosTwoFactorContext } from './hilosTwoFactorContext'
 

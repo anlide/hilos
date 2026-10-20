@@ -3,7 +3,7 @@
 // The table, the row view-model and the edit modal are the framework's; the
 // project supplies only the context and registers the table on its backend.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosSecurity2faPage } from '@hilos/angular'
+import { HilosSecurity2faPage } from '@hilos/angular/admin/security'
 
 import { hilosTwoFactorContext } from './hilosTwoFactorContext'
 

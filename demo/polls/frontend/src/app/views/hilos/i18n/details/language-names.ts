@@ -2,7 +2,7 @@
 // binding of the framework HilosI18nLanguageNamesPage to this app's language
 // context.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosI18nLanguageNamesPage } from '@hilos/angular'
+import { HilosI18nLanguageNamesPage } from '@hilos/angular/admin/i18n'
 
 import { hilosI18nLanguageContext } from '../hilos-i18n-context.js'
 

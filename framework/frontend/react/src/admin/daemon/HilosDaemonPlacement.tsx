@@ -14,7 +14,7 @@ import {
   type HilosDaemonOverviewData,
   type HilosDaemonPlacementRow,
   type HilosDaemonPlacementView,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
 import { HilosSkeleton } from '../../HilosSkeleton.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { useSignal } from '../../useSignal.js'

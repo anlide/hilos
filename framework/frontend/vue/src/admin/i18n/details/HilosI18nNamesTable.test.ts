@@ -1,17 +1,19 @@
 import { mount } from '@vue/test-utils'
 import {
   createHilosI18nNamesTable,
-  createSignal,
   HILOS_I18N_LANGUAGE_NAMES,
   HILOS_I18N_COUNTRY_NAMES,
   type HilosI18nNamesTarget,
+  type HilosI18nNameRow,
+} from '@hilos/core/admin/i18n'
+import {
+  createSignal,
   ScopeManager,
   type ActionLifecycle,
   type HilosConnection,
-  type HilosI18nNameRow,
   type TableRow,
   type TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { describe, expect, it } from 'vitest'
 import { h, nextTick } from 'vue'
 

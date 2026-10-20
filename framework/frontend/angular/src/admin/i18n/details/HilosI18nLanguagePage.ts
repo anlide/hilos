@@ -25,20 +25,22 @@ import {
   HILOS_I18N_LANGUAGE_DELETE_ACTION,
   HILOS_I18N_LANGUAGE_DELETE_COPY,
   HILOS_I18N_LANGUAGE_WINDOW_COPY,
-  HilosPages,
-  computedSignal,
   createHilosI18nLanguageCard,
   createHilosI18nLanguageCardWindow,
   hilosI18nLanguageDelete,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { HilosPages, computedSignal } from '@hilos/core/base'
 import type {
   HilosI18nLanguageCard,
   HilosI18nLanguageContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 
-import { HilosAdminPage } from '../../../HilosAdminPage.js'
-import { HILOS_ROUTER } from '../../../hilosRouterToken.js'
-import { hilosSignal, mirrorHilosSignal } from '../../../hilosSignal.js'
+import {
+  HilosAdminPage,
+  HILOS_ROUTER,
+  hilosSignal,
+  mirrorHilosSignal,
+} from '@hilos/angular/base'
 import { HilosI18nLanguageDelete } from './HilosI18nLanguageDelete.js'
 import type { HilosI18nLanguageDeleteSource } from './HilosI18nLanguageDelete.js'
 import { HilosI18nLanguageHeader } from './HilosI18nLanguageHeader.js'

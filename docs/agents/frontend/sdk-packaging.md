@@ -57,13 +57,69 @@ is `@vue/reactivity` (private — app code never imports it). A real tarball
 install hoists it; the monorepo `file:` link satisfies it from the SDK
 workspace copy and leaves it out of the consumer's `node_modules`. The core's
 `@vue/reactivity` is external to the SDK artifact in both Angular modes (dev
-compiles the core `src`, prod consumes its FESM), so the bare import resolves
+compiles the core `src`, prod consumes its compiled ES modules), so the bare import resolves
 from the consumer root and fails — so an Angular consumer adds `@vue/reactivity`
 as a direct dependency. The Vite-Vue/React demos prebundle it through the
 symlink's real path and need nothing. The same holds for every runtime
 dependency the core takes — today also `qrcode-generator`, the QR library behind
 `qrMatrix` (HIL-494). Full recipe in
 [docs/new-project/frontend-angular.md](../../new-project/frontend-angular.md).
+
+## Public entrypoints and their graph
+
+Use the public subpath that owns the code. The compatibility root (`@hilos/core`,
+`@hilos/vue`, `@hilos/react`, `@hilos/angular`) retains the existing exports and
+their identities; it also reaches the admin implementations. A consumer keeping
+admin code out of its initial graph imports common code from `/base`, default
+view metadata from `/admin-views`, and implementations from `/admin/<section>`
+inside the page module loaded for that section.
+
+| Package | Runtime public subpaths beside the compatibility root |
+|---|---|
+| `@hilos/core` | `/base`; `/admin/analytics`, `/admin/appearance`, `/admin/backup`, `/admin/change-log`, `/admin/communications`, `/admin/daemon`, `/admin/i18n`, `/admin/legal`, `/admin/logs`, `/admin/maintenance`, `/admin/security`, `/admin/settings`, `/admin/users` |
+| Each of `@hilos/vue`, `@hilos/react`, `@hilos/angular` | `/base`, `/admin-views`; `/admin/analytics`, `/admin/appearance`, `/admin/backup`, `/admin/billing`, `/admin/change-log`, `/admin/communications`, `/admin/daemon`, `/admin/dashboard`, `/admin/i18n`, `/admin/legal`, `/admin/logs`, `/admin/maintenance`, `/admin/mcp-skills`, `/admin/roles`, `/admin/security`, `/admin/settings`, `/admin/sil`, `/admin/users` |
+
+Core has no `/admin-views` or view-only billing, dashboard, MCP skills, roles or
+SIL entrypoint. Public `change-log` maps to source `admin/changeLog`; view
+`mcp-skills` maps to `admin/mcpSkills`. The build-only
+`@hilos/core/build/initial-bundle-budget` exports the graph/report tooling and
+its types; it belongs in build configuration, never the browser entry.
+
+The dependency graph is acyclic: sections use base/shared/protocol code;
+`/admin-views` creates `lazyPage` descriptors with dynamic imports of the
+sections; base imports neither the admin implementations, the default map nor
+the compatibility root. A section entry can include several page modules and
+shared dependencies. A page selection is not a promise of exactly one chunk.
+
+Core, Vue and React declare `development`, `types`, `import` and `default`
+conditions for their runtime entries. Development resolves to source; the other
+targets resolve to built JavaScript and declarations. Core preserves its `tsc`
+layout (`dist/base/index.js`, `dist/admin/<source-section>/index.js`). Vue and
+React emit `dist/base.js`, `dist/admin-views.js`, `dist/admin/<public-section>.js`
+and shared chunks; declarations retain the source directory layout. Their Vite
+library builds externalize core **and every core subpath**, plus the view
+framework, so classes, state and tokens have one owner. This externalization is
+for the SDK library build; the consuming application bundles those dependencies.
+CSS imports are injected into the library output automatically.
+
+Angular uses real ng-packagr/APF secondary entries. Its source manifest stays
+plain (`main`/`module`/`types`), and local `base/`, `admin-views/` and
+`admin/<section>/package.json` forwarders point to the corresponding dist FESM
+and declaration. ng-packagr generates the published dist manifest's `types` and
+`default` exports, FESM2022 modules and implementation compiler maps. The pure
+compatibility barrel owns no implementation and has no compiler map. The thin
+`src/base.ts` forwards to `src/base/index.ts` so the APF compilation has one
+source root and one owner of each class/token. Do not add a second implementation
+to make a secondary entry work. Dev uses explicit consumer `paths`, production
+uses APF/AOT; both expose the same public symbols. The source Sass asset remains
+available at `@hilos/angular/src/hilos-styles.scss`.
+
+Built consumers need no SDK source checkout: core carries `dist` and `bin`,
+Vue/React carry dist and provenance, and Angular carries its APF outputs, maps,
+forwarders and Sass asset. Source snapshots and receipts support build proof
+without turning source into a runtime dependency. See
+[build-and-docker.md](build-and-docker.md#initial-client-graph-and-budget) for
+the output graph and the separate permission inventory.
 
 ## Angular versions: exact in every root, a range only in the peers
 
@@ -194,9 +250,10 @@ The Hilos admin pages are the bulk of tier 2. They live under
 `@hilos/vue/src/admin/<section>/` (view) with any headless under
 `@hilos/core/src/admin/<section>/`, grouped by section to mirror the backend
 `Pages/Hilos/<Section>/` layout — one file per page, named `Hilos<Remainder>Page`.
-The framework ships a real default page for every admin key, collected by
-`hilosAdminViews()`, so a project mounts the whole section for free (pages its view layer has not built are hidden through `HILOS_UNBUILT_PAGES`) and overrides
-only the pages it customizes (see
+The framework ships one module per admin page. `hilosAdminViews()` from
+`/admin-views` binds the context-free defaults lazily; a project adds the
+context-bound wrappers and any overrides it needs. Pages its view layer has not
+built are hidden through `HILOS_UNBUILT_PAGES` (see
 [page-module-structure.md](page-module-structure.md)).
 
 The public framework pages are tier 2 as well. A public page is no longer prose
@@ -327,9 +384,11 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   `ng-template` in Angular) or the mark in its place
   ([../architecture/admin-view-mode.md](../architecture/admin-view-mode.md)).
 
-The skeleton is a **data-block** loading state — it fills a block while that
-block's data streams in, not a wait on a code chunk: the app ships as a single
-application chunk with no per-page splitting ([build-and-docker.md](build-and-docker.md)).
+The skeleton fills a data block while its data streams in. At the routed outlet,
+the same delayed skeleton also covers the combined code and first-answer wait
+of a lazy page. The shared state machine, departure copy, refusal and retry
+semantics are in [multiframework-core.md](multiframework-core.md#page-code-and-first-answer-state);
+the production graph is in [build-and-docker.md](build-and-docker.md#lazy-page-code-in-the-client-build).
 
 ## IDE correctness
 

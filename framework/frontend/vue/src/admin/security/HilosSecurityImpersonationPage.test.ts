@@ -10,21 +10,21 @@ import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionLifecycle,
-  HilosImpersonationSettingKey,
   HilosPages,
   ScopeManager,
   bindAdminAccess,
   bindSessionScope,
   createSignal,
   hilosToasts,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import { HilosImpersonationSettingKey } from '@hilos/core/admin/security'
 import type {
   HilosConnection,
-  HilosImpersonationContext,
   HilosRouter,
   PageRouteMatch,
   ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosImpersonationContext } from '@hilos/core/admin/security'
 
 import HilosSecurityImpersonationPage from './HilosSecurityImpersonationPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'

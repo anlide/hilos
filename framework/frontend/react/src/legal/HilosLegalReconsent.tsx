@@ -33,7 +33,7 @@ import {
   type HilosLegalReconsentPreview,
   type HilosLegalReconsentVariant,
   type HilosLegalReconsentView,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosLink } from '../HilosLink.js'
 import { LoadingButton } from '../LoadingButton.js'

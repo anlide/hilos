@@ -3,7 +3,7 @@
 // table and the two empty states are the framework's; the project supplies only the
 // context, and its backend registers nothing further — the overview page and its
 // agent are already there and it owns no table.
-import { HilosLogsPage } from '@hilos/react'
+import { HilosLogsPage } from '@hilos/react/admin/logs'
 
 import { hilosLogsOverviewContext } from './hilosLogsContext'
 

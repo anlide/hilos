@@ -1,0 +1,7 @@
+export { default as HilosSecurity2faPage } from './HilosSecurity2faPage.vue'
+export { default as HilosSecurityImpersonationPage } from './HilosSecurityImpersonationPage.vue'
+export { default as HilosSecurityOauthPage } from './HilosSecurityOauthPage.vue'
+export { default as HilosSecurityOauthProviderPage } from './HilosSecurityOauthProviderPage.vue'
+export { default as HilosSecurityPage } from './HilosSecurityPage.vue'
+export { default as HilosSecuritySignInMethodsPage } from './HilosSecuritySignInMethodsPage.vue'
+export { default as HilosSecurityStepUpPage } from './HilosSecurityStepUpPage.vue'

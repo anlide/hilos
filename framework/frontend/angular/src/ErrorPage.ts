@@ -4,7 +4,7 @@
 // message. The connection stays live, so "Back to home" navigates
 // without a refresh. Styling is Bootstrap classes only (styling-rules.md).
 import { ChangeDetectionStrategy, Component, input } from '@angular/core'
-import type { PageError } from '@hilos/core'
+import type { PageError } from '@hilos/core/base'
 
 import { HilosLink } from './HilosLink.js'
 

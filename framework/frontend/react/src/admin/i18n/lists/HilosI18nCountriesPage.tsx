@@ -11,11 +11,10 @@ import {
   type HilosI18nCountryDeleteTarget,
   HILOS_I18N_COUNTRY_MARKS,
   HILOS_I18N_COUNTRIES_LEGEND,
-  HILOS_TABLE_ACTIONS_KEY,
   HilosI18nCountryRowKey,
-  HilosPages,
   type HilosI18nCountryContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { HILOS_TABLE_ACTIONS_KEY, HilosPages } from '@hilos/core/base'
 import { HilosAdminPage } from '../../../HilosAdminPage.js'
 import { HilosLink } from '../../../HilosLink.js'
 import { HilosViewportTable } from '../../../HilosViewportTable.js'

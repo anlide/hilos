@@ -1,4 +1,4 @@
-import { HilosLegalPage } from '@hilos/react'
+import { HilosLegalPage } from '@hilos/react/admin/legal'
 import { hilosLegalContext } from './hilosLegalContext.js'
 
 export default function Legal() {

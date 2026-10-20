@@ -24,12 +24,17 @@ import {
   HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
   computedSignal,
+} from '@hilos/core/base'
+import {
   createHilosOAuthProviderFields,
   createHilosOAuthProviderSummary,
   createHilosOauthProviderFieldEdit,
   createHilosSecurityOauthActions,
-} from '@hilos/core'
-import type { HilosOAuthFieldRow, HilosSecurityOauthContext } from '@hilos/core'
+} from '@hilos/core/admin/security'
+import type {
+  HilosOAuthFieldRow,
+  HilosSecurityOauthContext,
+} from '@hilos/core/admin/security'
 
 import { ConflictActions } from '../../ConflictActions.js'
 import { ConflictHeader } from '../../ConflictHeader.js'

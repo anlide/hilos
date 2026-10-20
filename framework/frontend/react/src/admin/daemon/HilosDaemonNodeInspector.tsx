@@ -18,10 +18,10 @@ import {
   formatDaemonNumber,
   formatDaemonPercentage,
   formatDaemonUptime,
-  HilosPages,
   type HilosDaemonOverviewData,
   type HilosDaemonOverviewNode,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
+import { HilosPages } from '@hilos/core/base'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosLongText } from '../../HilosLongText.js'
 import { HilosModal } from '../../HilosModal.js'

@@ -19,7 +19,7 @@ import {
   hilosAccountBlockedDataExport,
   dismissAccountBlocked,
   type AccountBlockedNotice,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosDataExport } from './profile/HilosDataExport.js'
 import { hilosSignal } from './hilosSignal.js'

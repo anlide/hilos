@@ -14,8 +14,8 @@ createHilosMaintenanceActions, HILOS_MAINTENANCE_CIRCLE_COPY); this view owns on
 markup, so a project mounts it by passing its HilosMaintenanceContext. Bootstrap
 classes only (styling-rules.md). -->
 <script setup lang="ts">
+import { ActionError, HilosPages, isHiddenValue } from '@hilos/core/base'
 import {
-  ActionError,
   createHilosMaintenanceActions,
   createHilosMaintenanceCircleTable,
   createHilosMaintenanceState,
@@ -24,13 +24,11 @@ import {
   HILOS_MAINTENANCE_ENABLE_COPY,
   HILOS_MAINTENANCE_PASS_COPY,
   HILOS_MAINTENANCE_STATE_COPY,
-  HilosPages,
   hilosMaintenanceCard,
   hilosMaintenancePosition,
-  isHiddenValue,
   type HilosMaintenanceCircleRow,
   type HilosMaintenanceContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/maintenance'
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosActionError from '../../HilosActionError.vue'

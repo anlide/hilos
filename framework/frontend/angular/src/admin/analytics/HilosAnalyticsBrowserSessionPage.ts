@@ -25,25 +25,26 @@ import {
   ANALYTICS_BROWSER_SESSION_COPY,
   ANALYTICS_BROWSER_SESSION_ROUTE_PARAM,
   ANALYTICS_NO_VALUE,
-  computedSignal,
   createHilosAnalyticsActionsTable,
   formatAnalyticsLastSignedIn,
   formatAnalyticsTime,
   hilosAnalyticsBrowserSession,
-  HilosPages,
   readAnalyticsRouteId,
-  type Hideable,
   type HilosAnalyticsBrowserSession,
   type HilosAnalyticsContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/analytics'
+import { computedSignal, HilosPages, type Hideable } from '@hilos/core/base'
 
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosHideable } from '../../HilosHideable.js'
-import { HilosSkeleton } from '../../HilosSkeleton.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { HILOS_ROUTER } from '../../hilosRouterToken.js'
-import { hilosSignal, mirrorHilosSignal } from '../../hilosSignal.js'
+import {
+  HilosAdminPage,
+  HilosHideable,
+  HilosSkeleton,
+  HilosTableCell,
+  HilosViewportTable,
+  HILOS_ROUTER,
+  hilosSignal,
+  mirrorHilosSignal,
+} from '@hilos/angular/base'
 
 /** The browser-session page of the Analytics section: the header and the session's actions. */
 @Component({

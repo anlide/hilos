@@ -1,15 +1,17 @@
 import { useContext, useEffect, useMemo } from 'react'
 import {
   computedSignal,
+  HilosPages,
+  resolveHilosPath,
+  type HilosLegalContext,
+} from '@hilos/core/base'
+import {
   createHilosLegalRevisionsTable,
   createHilosLegalRevisionAcceptanceSummary,
-  HilosPages,
   LEGAL_CATALOG_REFUSAL_SECTION,
   LEGAL_REVISION_SECTION,
   legalAdminRevisionSchema,
-  resolveHilosPath,
-  type HilosLegalContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/legal'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosLegalChanges } from '../../legal/HilosLegalChanges.js'

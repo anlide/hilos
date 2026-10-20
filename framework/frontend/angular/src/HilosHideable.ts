@@ -17,7 +17,7 @@ import {
   contentChild,
   input,
 } from '@angular/core'
-import { type Hideable, isHiddenValue } from '@hilos/core'
+import { type Hideable, isHiddenValue } from '@hilos/core/base'
 
 import { HilosHiddenMark } from './HilosHiddenMark.js'
 

@@ -11,7 +11,7 @@ is what speaks about emptiness. Internal to the Vue view layer on purpose: it is
 not exported from index.ts, for the reason the bar is not. -->
 <script setup lang="ts" generic="R">
 import { computed } from 'vue'
-import type { TableViewportController } from '@hilos/core'
+import type { TableViewportController } from '@hilos/core/base'
 
 import { useSignal } from './useSignal.js'
 

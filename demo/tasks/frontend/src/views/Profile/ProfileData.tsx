@@ -1,5 +1,5 @@
-import { type HilosDataExportContext } from '@hilos/core'
-import { HilosProfileDataPage } from '@hilos/react'
+import { type HilosDataExportContext } from '@hilos/core/base'
+import { HilosProfileDataPage } from '@hilos/react/base'
 import { actions, connection } from '../../bootstrap/connection.js'
 import { scopes } from '../../bootstrap/session.js'
 

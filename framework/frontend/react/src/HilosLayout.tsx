@@ -51,7 +51,7 @@ import type {
   ConnectionState,
   HilosConnection,
   PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import {
   ACCOUNT_DELETION_TICK_MS,
   ACCOUNT_STANDING_STRIP_COPY,
@@ -88,7 +88,7 @@ import {
   signOut,
   SIGN_OUT_COPY,
   stopImpersonation,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 

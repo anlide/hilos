@@ -1,181 +1,22 @@
-// @hilos/angular — the Angular view layer of the Hilos frontend SDK.
-//
-// A thin adapter over @hilos/core: it bridges the core stores into Angular
-// signals and effects. It holds no protocol, store, or table logic of its own
-// (docs/agents/frontend/multiframework-core.md). Fills in across rewrite
-// step 7, tracking each core capability as it lands; shipped so far: the
-// connection-state signal, the core-signal bridge, the entity resolver, the
-// navigation declarables, and the application shell.
-
-export {
-  connectionStateSignal,
-  type ConnectionStateSignalOptions,
-} from './connectionStateSignal.js'
-export {
-  hilosSignal,
-  mirrorHilosSignal,
-  type HilosSignalOptions,
-} from './hilosSignal.js'
-export { entitySignal } from './entitySignal.js'
-export {
-  createHilosTrackedAction,
-  type HilosTrackedAction,
-} from './hilosTrackedAction.js'
-export { HILOS_ROUTER } from './hilosRouterToken.js'
-export { HILOS_VIEW_LAYER } from './hilosViewLayer.js'
-export {
-  HILOS_TABLE_SELECTION_EDGE,
-  type HilosTableSelectionEdge,
-} from './hilosTableSelectionEdge.js'
-export { HILOS_PAGE_HEADING_ID } from './hilosPageHeadingToken.js'
-export {
-  HILOS_TAKEOVER_VIEW_ONLY,
-  injectLookOnly,
-  type LookOnly,
-} from './hilosLookOnly.js'
-export { HILOS_AUTH_GATE } from './auth/hilosAuthGateToken.js'
-export { HilosAuthSurface } from './auth/HilosAuthSurface.js'
-export { HilosMagicLinkPage } from './auth/HilosMagicLinkPage.js'
-export { HilosSecondFactorCancelPage } from './auth/HilosSecondFactorCancelPage.js'
-export { HilosOAuthCallbackPage } from './auth/HilosOAuthCallbackPage.js'
-export { HilosLink } from './HilosLink.js'
-export { HilosView } from './HilosView.js'
-export { HilosSkeleton } from './HilosSkeleton.js'
-export { HilosAvatar } from './HilosAvatar.js'
-export { HilosHiddenMark } from './HilosHiddenMark.js'
-export { HilosHideable, type HilosHideableContext } from './HilosHideable.js'
-export { ErrorPage } from './ErrorPage.js'
-export { HilosMaintenance } from './HilosMaintenance.js'
-export { HilosLayout } from './HilosLayout.js'
-export { HilosThemeMenu } from './HilosThemeMenu.js'
-export { HilosStaticPage } from './HilosStaticPage.js'
-export { HilosAboutPage } from './public/HilosAboutPage.js'
-export { HilosLicensePage } from './public/HilosLicensePage.js'
-export { HilosPrivacyPage } from './public/HilosPrivacyPage.js'
-export { HilosTermsPage } from './public/HilosTermsPage.js'
-export { LoadingButton } from './LoadingButton.js'
-export { HilosSwitch } from './HilosSwitch.js'
-export { HilosBreadcrumb } from './HilosBreadcrumb.js'
-export { ConflictHeader } from './ConflictHeader.js'
-export {
-  ConflictActions,
-  type ConflictSaveButtonContext,
-} from './ConflictActions.js'
-export { HilosAdminPage } from './HilosAdminPage.js'
-export { hilosAdminViews } from './admin/hilosAdminViews.js'
-export { HilosDashboardPage } from './admin/dashboard/HilosDashboardPage.js'
-export { HilosSettingsPage } from './admin/settings/HilosSettingsPage.js'
-export { HilosAppearancePage } from './admin/appearance/HilosAppearancePage.js'
-export { HilosSettingPresetsPage } from './admin/settings/HilosSettingPresetsPage.js'
-export { HilosBackupPage } from './admin/backup/HilosBackupPage.js'
-export { HilosMaintenancePage } from './admin/maintenance/HilosMaintenancePage.js'
-export { HilosLogsPage } from './admin/logs/HilosLogsPage.js'
-export { HilosLogsKeysPage } from './admin/logs/HilosLogsKeysPage.js'
-export { HilosLogsWorkersPage } from './admin/logs/HilosLogsWorkersPage.js'
-export { HilosLogsRotationsPage } from './admin/logs/HilosLogsRotationsPage.js'
-export { HilosLogsViewPage } from './admin/logs/HilosLogsViewPage.js'
-export { HilosLogsSettingsPage } from './admin/logs/HilosLogsSettingsPage.js'
-export { HilosCommunicationsPage } from './admin/communications/HilosCommunicationsPage.js'
-export { HilosCommunicationsChannelPage } from './admin/communications/HilosCommunicationsChannelPage.js'
-export { HilosSecurityOauthPage } from './admin/security/HilosSecurityOauthPage.js'
-export { HilosSecurityOauthProviderPage } from './admin/security/HilosSecurityOauthProviderPage.js'
-export { HilosSecuritySignInMethodsPage } from './admin/security/HilosSecuritySignInMethodsPage.js'
-export { HilosSecurity2faPage } from './admin/security/HilosSecurity2faPage.js'
-export { HilosSecurityStepUpPage } from './admin/security/HilosSecurityStepUpPage.js'
-export { HilosSecurityImpersonationPage } from './admin/security/HilosSecurityImpersonationPage.js'
-export { HilosCommunicationsDeliveriesPage } from './admin/communications/HilosCommunicationsDeliveriesPage.js'
-export { HilosAnalyticsBrowserSessionPage } from './admin/analytics/HilosAnalyticsBrowserSessionPage.js'
-export { HilosAnalyticsPersonPage } from './admin/analytics/HilosAnalyticsPersonPage.js'
-export { HilosChangeLogPage } from './admin/changeLog/HilosChangeLogPage.js'
-export { HilosChangeLogTablesPage } from './admin/changeLog/HilosChangeLogTablesPage.js'
-export { HilosChangeLogTablePage } from './admin/changeLog/HilosChangeLogTablePage.js'
-export {
-  HilosUsersPage,
-  type UsersRowActionsContext,
-} from './admin/users/HilosUsersPage.js'
-export { HilosUserPage } from './admin/users/HilosUserPage.js'
-export { HilosNotificationBell } from './HilosNotificationBell.js'
-export { HilosNotificationPreferences } from './HilosNotificationPreferences.js'
-export { HilosPushDeviceToggle } from './HilosPushDeviceToggle.js'
-export { HilosQrCode } from './HilosQrCode.js'
-export { HilosBackupCodes } from './HilosBackupCodes.js'
-export { HilosAccountDeletion } from './profile/HilosAccountDeletion.js'
-export { HilosProfileSecurityPage } from './profile/HilosProfileSecurityPage.js'
-export { HilosProfileSessions } from './profile/HilosProfileSessions.js'
-export { HilosProfileDevices } from './profile/HilosProfileDevices.js'
-export { HilosModal, type ModalActionsContext } from './HilosModal.js'
-export { HilosLongText } from './HilosLongText.js'
-export { HilosActionError } from './HilosActionError.js'
-export { HilosFormError } from './HilosFormError.js'
-export { HilosSendProgress } from './HilosSendProgress.js'
-export { HilosUploadDrop } from './HilosUploadDrop.js'
-export { HilosUploadFiles } from './HilosUploadFiles.js'
-export { HilosUploadPicker } from './HilosUploadPicker.js'
-export { HilosStepUpStep } from './auth/HilosStepUpStep.js'
-export { HilosEditNotice } from './HilosEditNotice.js'
-export { HilosToastHost } from './HilosToastHost.js'
-export type { HilosToastCorner } from './hilosToastCorner.js'
-export {
-  HilosViewportTable,
-  type BulkUntouchedContext,
-  type ViewportTableProgressContext,
-  type ViewportTableRowProgressContext,
-} from './HilosViewportTable.js'
-export { HilosTableCell, type HilosTableCellContext } from './HilosTableCell.js'
-export { HilosTableDetail } from './HilosTableDetail.js'
-export {
-  HilosDropdown,
-  type DropdownToggleContext,
-  type DropdownOptionContext,
-} from './HilosDropdown.js'
-export type { HilosDropdownOption } from './hilosDropdownOption.js'
-export type { HilosTableColumn } from '@hilos/core'
-
-export { HilosPageHeading } from './HilosPageHeading.js'
-export { HilosProfilePage } from './profile/HilosProfilePage.js'
-export { HilosProfileRename } from './profile/HilosProfileRename.js'
-export { HilosProfilePhoto } from './profile/HilosProfilePhoto.js'
-export { HilosProfileEmailChange } from './profile/HilosProfileEmailChange.js'
-export { HilosProfileTheme } from './profile/HilosProfileTheme.js'
-export { HilosProfileSignInPage } from './profile/HilosProfileSignInPage.js'
-export { HilosProfileNotificationsPage } from './profile/HilosProfileNotificationsPage.js'
-export { HilosProfileDataPage } from './profile/HilosProfileDataPage.js'
-
-export { HilosProfilePasswordChange } from './profile/HilosProfilePasswordChange.js'
-
-export { HilosDataExport } from './profile/HilosDataExport.js'
-
-export { HilosLegalChanges } from './legal/HilosLegalChanges.js'
-
-export { HilosLegalRevisionText } from './legal/HilosLegalRevisionText.js'
-
-export { HilosProfileAgreementsPage } from './profile/HilosProfileAgreementsPage.js'
-
-export { HilosProfileAgreementsHistoryPage } from './profile/HilosProfileAgreementsHistoryPage.js'
-
-export { HilosLegalPage } from './admin/legal/HilosLegalPage.js'
-export { HilosLegalDocumentPage } from './admin/legal/HilosLegalDocumentPage.js'
-export { HilosLegalRevisionPage } from './admin/legal/HilosLegalRevisionPage.js'
-
-export { HilosLegalAcceptancesPage } from './admin/legal/HilosLegalAcceptancesPage.js'
-
-export { HilosLegalSettingsPage } from './admin/legal/HilosLegalSettingsPage.js'
-
-export { HilosLegalConsent } from './legal/HilosLegalConsent.js'
-export { HilosLegalReconsent } from './legal/HilosLegalReconsent.js'
-
-export { HilosDaemonPage } from './admin/daemon/HilosDaemonPage.js'
-export { HilosDaemonWorkersPage } from './admin/daemon/HilosDaemonWorkersPage.js'
-export { HilosDaemonAgentsPage } from './admin/daemon/HilosDaemonAgentsPage.js'
-export { HilosDaemonCronPage } from './admin/daemon/HilosDaemonCronPage.js'
-export { HilosDaemonHttpServerPage } from './admin/daemon/HilosDaemonHttpServerPage.js'
-export { HilosDaemonEnvPage } from './admin/daemon/HilosDaemonEnvPage.js'
-export { HilosDaemonEnvMismatchPage } from './admin/daemon/HilosDaemonEnvMismatchPage.js'
-
-export { HilosI18nLanguagesPage } from './admin/i18n/lists/HilosI18nLanguagesPage.js'
-export { HilosI18nLanguagePage } from './admin/i18n/details/HilosI18nLanguagePage.js'
-export { HilosI18nLanguageNamesPage } from './admin/i18n/details/HilosI18nLanguageNamesPage.js'
-export { HilosI18nLanguageLocalesPage } from './admin/i18n/details/HilosI18nLanguageLocalesPage.js'
-export { HilosI18nCountriesPage } from './admin/i18n/lists/HilosI18nCountriesPage.js'
-export { HilosI18nCountryPage } from './admin/i18n/details/HilosI18nCountryPage.js'
-export { HilosI18nCountryNamesPage } from './admin/i18n/details/HilosI18nCountryNamesPage.js'
+// Compatibility barrel. Performance-sensitive consumers use the public
+// base, admin-views and admin/<section> entrypoints instead.
+export * from '@hilos/angular/base'
+export { hilosAdminViews } from '@hilos/angular/admin-views'
+export * from '@hilos/angular/admin/analytics'
+export * from '@hilos/angular/admin/appearance'
+export * from '@hilos/angular/admin/backup'
+export * from '@hilos/angular/admin/billing'
+export * from '@hilos/angular/admin/change-log'
+export * from '@hilos/angular/admin/communications'
+export * from '@hilos/angular/admin/daemon'
+export * from '@hilos/angular/admin/dashboard'
+export * from '@hilos/angular/admin/i18n'
+export * from '@hilos/angular/admin/legal'
+export * from '@hilos/angular/admin/logs'
+export * from '@hilos/angular/admin/maintenance'
+export * from '@hilos/angular/admin/mcp-skills'
+export * from '@hilos/angular/admin/roles'
+export * from '@hilos/angular/admin/security'
+export * from '@hilos/angular/admin/settings'
+export * from '@hilos/angular/admin/sil'
+export * from '@hilos/angular/admin/users'

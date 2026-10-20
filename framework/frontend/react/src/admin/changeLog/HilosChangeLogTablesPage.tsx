@@ -25,16 +25,15 @@ import {
   CHANGE_LOG_TABLES_OWNER_FIELD,
   CHANGE_LOG_TABLES_UNTRACKED_NOTE,
   CHANGE_LOG_TABLE_ROUTE_PARAM,
-  HILOS_TABLE_ACTIONS_KEY,
-  HilosPages,
   createHilosChangeLogTablesTable,
   formatChangeLogColumnCounts,
   formatChangeLogTableChanges,
   formatChangeLogTableLastChange,
   formatChangeLogTableOwner,
   readHilosChangeLogNoisyColumns,
-} from '@hilos/core'
-import type { HilosChangeLogContext } from '@hilos/core'
+} from '@hilos/core/admin/change-log'
+import { HILOS_TABLE_ACTIONS_KEY, HilosPages } from '@hilos/core/base'
+import type { HilosChangeLogContext } from '@hilos/core/admin/change-log'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'

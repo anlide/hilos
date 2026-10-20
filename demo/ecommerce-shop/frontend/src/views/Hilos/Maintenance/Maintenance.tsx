@@ -1,5 +1,5 @@
 // Mount the framework maintenance section with this project's context.
-import { HilosMaintenancePage } from '@hilos/react'
+import { HilosMaintenancePage } from '@hilos/react/admin/maintenance'
 
 import { hilosMaintenanceContext } from './hilosMaintenanceContext.js'
 

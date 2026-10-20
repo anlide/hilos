@@ -1,6 +1,6 @@
 <!-- Value presentation for one environment reading. -->
 <script setup lang="ts">
-import { type HilosDaemonEnvValueView } from '@hilos/core'
+import { type HilosDaemonEnvValueView } from '@hilos/core/admin/daemon'
 
 import HilosHiddenMark from '../../HilosHiddenMark.vue'
 

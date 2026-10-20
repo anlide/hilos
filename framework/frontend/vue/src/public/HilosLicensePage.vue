@@ -30,7 +30,7 @@ import {
   licenseFilterOptions,
   licenseLanguageLabel,
   renderLicenseCsv,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import HilosLongText from '../HilosLongText.vue'
 import HilosModal from '../HilosModal.vue'

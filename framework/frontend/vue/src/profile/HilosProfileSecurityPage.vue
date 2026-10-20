@@ -32,7 +32,7 @@ import {
   type HilosSecondFactorContext,
   type HilosSecondFactorEnrollment,
   type HilosSecondFactorProof,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import {
   computed,
   nextTick,

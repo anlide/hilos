@@ -27,7 +27,7 @@ bar is here because this screen is now the operator's only view of their own
 restore: the freeze holds every one of their tabs, the backups page included. -->
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import type { HilosConnection, ProtectedModeStatus } from '@hilos/core'
+import type { HilosConnection, ProtectedModeStatus } from '@hilos/core/base'
 import {
   backupProgressPercent,
   createBackupProgressClock,
@@ -37,7 +37,7 @@ import {
   formatRestorePhaseLine,
   PROTECTED_MODE_FALLBACK_COPY,
   PROTECTED_MODE_PASS_COPY,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import HilosFormError from './HilosFormError.vue'
 import { useSignal } from './useSignal.js'

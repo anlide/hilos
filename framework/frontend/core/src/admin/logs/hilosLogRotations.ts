@@ -20,6 +20,10 @@
 // written and removed by the node holding the directory, and the badge repaints
 // when that node's next index arrives rather than when the ack does.
 
+import {
+  ROTATIONS_HEADER_SIGNAL,
+  type HilosLogRotationsHeader,
+} from '../../protocol/logsSignals.js'
 import { z } from 'zod'
 import {
   type ActionHandle,
@@ -28,7 +32,6 @@ import {
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { formatBytes } from '../../format/bytes.js'
 import { formatDurationInWords } from '../../format/duration.js'
-import { hideable } from '../../state/hideableSchema.js'
 import {
   HIDDEN_VALUE,
   isHiddenValue,
@@ -59,6 +62,12 @@ import {
   formatLogRotationSchedule,
   formatLogSizeThreshold,
 } from './hilosLogSettings.js'
+
+export {
+  ROTATIONS_HEADER_SIGNAL,
+  type HilosLogRotationsHeader,
+  LOGS_SIGNAL_SCHEMAS,
+} from '../../protocol/logsSignals.js'
 
 /** One row of the log-rotations table — one archived batch on one node. */
 export interface HilosLogRotationRow {
@@ -100,8 +109,6 @@ export interface HilosLogRotationRow {
 // A project binds its backend to these keys (Hilos::TABLES / PAGE_TABLES).
 const ROTATIONS_TABLE = 'hilosLogRotations'
 const ROTATION_SLOT = 'batch'
-/** Server→client signal `type` carrying the screen header (PHP `SUBSCRIPTION_PAGE_HILOS_LOGS_ROTATIONS`). */
-export const ROTATIONS_HEADER_SIGNAL = 'subscription_page_hilos_logs_rotations'
 
 // Row payload keys of the batch slot. They are declared here because this module
 // owns the view-model they resolve into, and exported where a view also names them
@@ -210,34 +217,6 @@ export const LOGS_TAKEOUT_UNDO_ACTION = 'logs_takeout_undo'
 const logsTakeoutConfirmReplySchema = z.looseObject({
   takenAt: z.number(),
 })
-
-/**
- * Payload of the screen header: whether there is a picture, which nodes it holds,
- * and the rotation and retention rules actually in force (PHP
- * `HilosLogsRotationsSignalData`).
- */
-const rotationsHeaderSchema = z.looseObject({
-  available: z.boolean().nullable(),
-  nodes: z.array(z.string()),
-  rotationCron: hideable(z.string().nullable()),
-  rotationMaxAgeSeconds: hideable(z.number()),
-  rotationMaxLiveSizeBytes: hideable(z.number()),
-  retentionKeepBatches: hideable(z.number()),
-  retentionMaxAgeSeconds: hideable(z.number()),
-})
-
-/** The screen header as the page answers a subscription with it. */
-export type HilosLogRotationsHeader = z.infer<typeof rotationsHeaderSchema>
-
-/**
- * The logs signal schemas keyed for a connection's `projectSchemas`, so the parse
- * boundary validates the header frames {@link createHilosLogRotationsHeader}
- * ingests. {@link createHilosConnection} merges them in, so a project never
- * restates them.
- */
-export const LOGS_SIGNAL_SCHEMAS = {
-  [ROTATIONS_HEADER_SIGNAL]: rotationsHeaderSchema,
-}
 
 /**
  * The project-supplied context the log-rotations admin reads from: the

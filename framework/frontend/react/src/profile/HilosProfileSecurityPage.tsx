@@ -26,14 +26,14 @@ import {
   focusInitial,
   formatCalendarDate,
   HILOS_STEP_UP_COPY,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosBackupCodeEntry,
   HilosSecondFactorAuthenticator,
   HilosSecondFactorContext,
   HilosSecondFactorEnrollment,
   HilosSecondFactorProof,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
 import { HilosActionError } from '../HilosActionError.js'

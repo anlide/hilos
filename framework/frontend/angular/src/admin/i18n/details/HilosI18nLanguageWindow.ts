@@ -22,25 +22,26 @@ import {
 import {
   HILOS_I18N_LANGUAGE_NATIVE_NAME_MAX,
   HILOS_I18N_LANGUAGE_WINDOW_COPY,
-  hilosRowEditIdle,
-  subscribeSignal,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { hilosRowEditIdle, subscribeSignal } from '@hilos/core/base'
 import type {
   HilosI18nLanguageEditFields,
   HilosI18nLanguageEditable,
   HilosI18nLanguageWindow as LanguageWindow,
   HilosI18nLanguageWindowMode,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 
-import { ConflictActions } from '../../../ConflictActions.js'
-import { ConflictHeader } from '../../../ConflictHeader.js'
-import { HilosActionError } from '../../../HilosActionError.js'
-import { HilosEditNotice } from '../../../HilosEditNotice.js'
-import { HilosModal } from '../../../HilosModal.js'
-import { LoadingButton } from '../../../LoadingButton.js'
-import { injectLookOnly } from '../../../hilosLookOnly.js'
-import { mirrorHilosSignal } from '../../../hilosSignal.js'
-import { createHilosTrackedAction } from '../../../hilosTrackedAction.js'
+import {
+  ConflictActions,
+  ConflictHeader,
+  HilosActionError,
+  HilosEditNotice,
+  HilosModal,
+  LoadingButton,
+  injectLookOnly,
+  mirrorHilosSignal,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 
 /** The window's one line about the other side, as the core resolves it. */
 type LanguageWindowNotice = ReturnType<LanguageWindow['notice']['get']>

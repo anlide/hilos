@@ -11,11 +11,11 @@ import {
   formatDaemonHttpRoute,
   formatDaemonHttpSlowest,
   formatDaemonNodeSilentSince,
-  HilosPages,
   readHilosDaemonHttpSummary,
   readHilosDaemonNodeHeading,
   type HilosDaemonHttpContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
+import { HilosPages } from '@hilos/core/base'
 import {
   computed,
   inject,

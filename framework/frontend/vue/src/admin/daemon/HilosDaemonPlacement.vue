@@ -14,7 +14,7 @@ import {
   type HilosDaemonOverviewData,
   type HilosDaemonPlacementRow,
   type HilosDaemonPlacementView,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
 import { computed } from 'vue'
 
 import HilosSkeleton from '../../HilosSkeleton.vue'

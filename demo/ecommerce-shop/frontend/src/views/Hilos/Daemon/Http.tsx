@@ -1,4 +1,4 @@
-import { HilosDaemonHttpServerPage } from '@hilos/react'
+import { HilosDaemonHttpServerPage } from '@hilos/react/admin/daemon'
 
 import { hilosDaemonContext } from './hilosDaemonContext.js'
 

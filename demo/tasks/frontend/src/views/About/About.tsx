@@ -3,7 +3,7 @@
 // the end of the text (HilosAboutPage), and this project owns the content. The
 // page subscribes like any other but the framework page sends no payload, so
 // nothing here depends on the socket.
-import { HilosAboutPage } from '@hilos/react'
+import { HilosAboutPage } from '@hilos/react/base'
 
 export default function About() {
   return (

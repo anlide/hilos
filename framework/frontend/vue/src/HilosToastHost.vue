@@ -27,8 +27,8 @@ import type {
   HilosToastSeverity,
   HilosToastStore,
   HilosToastViewer,
-} from '@hilos/core'
-import { hilosToasts, subscribeSignal } from '@hilos/core'
+} from '@hilos/core/base'
+import { hilosToasts, subscribeSignal } from '@hilos/core/base'
 
 import HilosLink from './HilosLink.vue'
 import type { HilosToastCorner } from './hilosToastCorner.js'

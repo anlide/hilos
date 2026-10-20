@@ -6,14 +6,14 @@ import {
   PROTECTED_MODE_INACTIVE,
   PROTECTED_MODE_PASS_COPY,
   RT_STALENESS_FRESH,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   ConnectionState,
   HilosConnection,
   HilosRestoreStatus,
   ProtectedModeStatus,
   RtStalenessStatus,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import HilosLayout from './HilosLayout.vue'
 import HilosMaintenance from './HilosMaintenance.vue'

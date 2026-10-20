@@ -1,7 +1,7 @@
 // The Hilos country card (HilosPages.I18N_COUNTRY): a thin project binding of
 // the framework HilosI18nCountryPage to this app's country context.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosI18nCountryPage } from '@hilos/angular'
+import { HilosI18nCountryPage } from '@hilos/angular/admin/i18n'
 
 import { hilosI18nCountryContext } from '../hilos-i18n-context.js'
 

@@ -19,7 +19,7 @@ import {
   HILOS_PAGE_ROUTES,
   HilosPages,
   resolvePageTitle,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { appName, pageTitles } from '../app/pages/pageTitles'
 import { About } from '../app/views/about/about'

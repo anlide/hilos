@@ -6,7 +6,7 @@ import {
   HILOS_I18N_LANGUAGE_DELETE_COPY,
   hilosI18nLanguageDelete,
   type HilosI18nLanguageRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { computed, useId } from 'vue'
 
 const props = defineProps<{ row: HilosI18nLanguageRow }>()

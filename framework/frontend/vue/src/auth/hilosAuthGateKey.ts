@@ -6,7 +6,7 @@
 //
 // The Symbol description is unchanged from the chat demo's own key, so a project
 // that provided it before the graduation provides the same key now.
-import { type AuthGate } from '@hilos/core'
+import { type AuthGate } from '@hilos/core/base'
 import type { InjectionKey } from 'vue'
 
 export const hilosAuthGateKey: InjectionKey<AuthGate> = Symbol('hilos.authGate')

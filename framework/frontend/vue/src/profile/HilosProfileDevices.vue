@@ -7,7 +7,7 @@ import {
   type HilosProfileDeviceActions,
   type HilosProfilePushChannel,
   type HilosPushSubscriptionStore,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { computed, onMounted } from 'vue'
 
 import HilosPushDeviceToggle from '../HilosPushDeviceToggle.vue'

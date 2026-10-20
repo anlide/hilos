@@ -9,7 +9,7 @@ import {
   THEME_COPY,
   THEME_POSITIONS,
   type ThemePick,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import HilosActionError from '../HilosActionError.vue'
 import HilosModal from '../HilosModal.vue'

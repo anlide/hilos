@@ -15,10 +15,10 @@ import {
   createHilosSecurityStepUpActions,
   createHilosSecurityStepUpTable,
   HILOS_STEP_UP_ADMIN_COPY,
-  HilosPages,
   type HilosStepUpOperationRow,
   type HilosTwoFactorContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/security'
+import { HilosPages } from '@hilos/core/base'
 import { onMounted, onUnmounted, ref } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'

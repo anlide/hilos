@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { HilosProfileAgreementsPage } from '@hilos/vue'
+import { HilosProfileAgreementsPage } from '@hilos/vue/base'
 import { actions, connection } from '../../bootstrap/connection.js'
 import { scopes } from '../../bootstrap/session.js'
 </script>

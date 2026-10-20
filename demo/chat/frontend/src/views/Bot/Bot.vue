@@ -6,7 +6,7 @@ leave. A skeleton shows until the profile entity lands (or when the id is
 unknown and the subscription is rejected). Bootstrap classes only
 (styling-rules.md). -->
 <script setup lang="ts">
-import { useSignal } from '@hilos/vue'
+import { useSignal } from '@hilos/vue/base'
 
 import { botDetail } from './botPage'
 

@@ -15,7 +15,6 @@ import {
   changeLogChannelBadge,
   changeLogFeedEmpty,
   changeLogJournalNote,
-  computedSignal,
   createHilosChangeLogFeedTable,
   createHilosChangeLogReceiptReader,
   formatChangeLogCoverage,
@@ -25,13 +24,16 @@ import {
   formatChangeLogTime,
   formatChangeLogTouched,
   formatChangeLogWho,
-  HilosPages,
-  isHiddenValue,
   readHilosChangeLogOverview,
-  subscribeSignal,
   type HilosChangeLogFeedRow,
   type HilosChangeLogReceiptContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/change-log'
+import {
+  computedSignal,
+  HilosPages,
+  isHiddenValue,
+  subscribeSignal,
+} from '@hilos/core/base'
 import { computed, inject, onMounted, onUnmounted } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'

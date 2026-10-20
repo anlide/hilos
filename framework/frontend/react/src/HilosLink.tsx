@@ -6,8 +6,8 @@
 // WebSocket connection untouched. It marks itself aria-current="page" when it
 // points at the active route.
 import { useContext } from 'react'
-import { createSignal } from '@hilos/core'
-import type { HilosRouter } from '@hilos/core'
+import { createSignal } from '@hilos/core/base'
+import type { HilosRouter } from '@hilos/core/base'
 import type { AnchorHTMLAttributes, MouseEvent, ReactNode } from 'react'
 
 import { HilosRouterContext } from './hilosRouterContext.js'

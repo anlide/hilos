@@ -15,7 +15,7 @@ import {
   type HilosAuthContext,
   type HilosConnection,
   type HilosRouter,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import HilosOAuthCallbackPage from './HilosOAuthCallbackPage.vue'
 import { hilosRouterKey } from '../hilosRouterKey.js'

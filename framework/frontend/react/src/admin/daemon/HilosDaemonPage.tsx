@@ -17,9 +17,9 @@ import {
   formatDaemonNumber,
   formatDaemonPercentage,
   formatDaemonWorkerName,
-  HilosPages,
   type HilosDaemonContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
+import { HilosPages } from '@hilos/core/base'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosSkeleton } from '../../HilosSkeleton.js'
 import { useSignal } from '../../useSignal.js'

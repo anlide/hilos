@@ -10,7 +10,7 @@ import {
   type HilosConnection,
   type ThemePick,
   type ThemeSettings,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'

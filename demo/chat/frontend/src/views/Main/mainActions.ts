@@ -8,7 +8,7 @@
 // moderates and emits the event, never optimistically here. A rejected submit
 // comes back as a framework `action_error`, handled by the core ActionErrorStore
 // (bootstrap/connection.ts); this module just exposes the `message` action's slice.
-import { type ReadonlySignal } from '@hilos/core'
+import { type ReadonlySignal } from '@hilos/core/base'
 
 import { actionErrors, connection } from '../../bootstrap/connection'
 

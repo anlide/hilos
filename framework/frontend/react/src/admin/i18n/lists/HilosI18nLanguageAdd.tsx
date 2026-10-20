@@ -4,7 +4,7 @@ import {
   createHilosI18nBuiltInLanguages,
   type HilosI18nLanguageAdd as LanguageAdd,
   type HilosI18nLanguageContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { HilosActionError } from '../../../HilosActionError.js'
 import { HilosModal } from '../../../HilosModal.js'
 import { LoadingButton } from '../../../LoadingButton.js'

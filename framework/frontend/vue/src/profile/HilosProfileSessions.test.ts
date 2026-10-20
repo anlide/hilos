@@ -4,7 +4,7 @@ import {
   type ActionHandle,
   type HilosProfileSession,
   type HilosProfileSessionActions,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'

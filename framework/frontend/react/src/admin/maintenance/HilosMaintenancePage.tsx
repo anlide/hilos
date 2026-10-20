@@ -10,6 +10,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActionError,
+  HILOS_TABLE_ACTIONS_KEY,
+  HilosPages,
+  isHiddenValue,
+} from '@hilos/core/base'
+import {
   createHilosMaintenanceActions,
   createHilosMaintenanceCircleTable,
   createHilosMaintenanceState,
@@ -18,16 +23,13 @@ import {
   HILOS_MAINTENANCE_ENABLE_COPY,
   HILOS_MAINTENANCE_PASS_COPY,
   HILOS_MAINTENANCE_STATE_COPY,
-  HILOS_TABLE_ACTIONS_KEY,
-  HilosPages,
   hilosMaintenanceCard,
   hilosMaintenancePosition,
-  isHiddenValue,
   MAINTENANCE_CIRCLE_IDENTIFIER_FIELD,
   MAINTENANCE_CIRCLE_ONLINE_FIELD,
   type HilosMaintenanceCircleRow,
   type HilosMaintenanceContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/maintenance'
 
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'

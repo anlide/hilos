@@ -23,15 +23,20 @@ import {
   DELIVERY_NOTIFICATION_TITLE_FIELD,
   DELIVERY_STATUS_FIELD,
   DELIVERY_USER_LABEL_FIELD,
-  HILOS_TABLE_ACTIONS_KEY,
-  HilosPages,
-  computedSignal,
   createHilosDeliveriesActions,
   createHilosDeliveriesTable,
   isDeliveryRetryable,
+} from '@hilos/core/admin/communications'
+import {
+  HILOS_TABLE_ACTIONS_KEY,
+  HilosPages,
+  computedSignal,
   isHiddenValue,
-} from '@hilos/core'
-import type { HilosDeliveriesContext, HilosDeliveryRow } from '@hilos/core'
+} from '@hilos/core/base'
+import type {
+  HilosDeliveriesContext,
+  HilosDeliveryRow,
+} from '@hilos/core/admin/communications'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosHiddenMark } from '../../HilosHiddenMark.js'

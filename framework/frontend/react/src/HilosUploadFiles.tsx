@@ -14,7 +14,7 @@ import {
   HILOS_UPLOAD_FIELD_COPY as COPY,
   type HilosUploadField,
   type HilosUploadFieldFile,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosFormError } from './HilosFormError.js'
 import { useSignal } from './useSignal.js'

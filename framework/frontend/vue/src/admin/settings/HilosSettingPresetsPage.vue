@@ -34,11 +34,11 @@ import {
   isPresetApplied,
   isSelectionUnknown,
   presetsOf,
-  resolveHilosPath,
   selectedPresetOf,
   type HilosSettingPresetsContext,
   type HilosSettingPresetsVocabulary,
-} from '@hilos/core'
+} from '@hilos/core/admin/settings'
+import { resolveHilosPath } from '@hilos/core/base'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosActionError from '../../HilosActionError.vue'

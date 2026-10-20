@@ -53,7 +53,7 @@ import {
   hilosTableStaleColumns,
   hilosTableStaleSources,
   subscribeSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosTableBody,
   HilosTableCard,
@@ -66,7 +66,7 @@ import type {
   TableRemovalReason,
   TableViewportController,
   TableViewportRow,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosTableBar } from './HilosTableBar.js'
 import { HilosTableCell } from './HilosTableCell.js'

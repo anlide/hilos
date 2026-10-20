@@ -23,8 +23,9 @@ Common ground (containers, connection, e2e, stable ids) is in
   `app.config.ts` keeps only `provideBrowserGlobalErrorListeners()`.
 - Flat dist: `outputPath: { "base": "dist", "browser": "" }` so the nginx
   mount stays `../frontend/dist`, uniform with the Vite demos.
-- End `npm run build` after `ng build` with
-  `node node_modules/@hilos/core/bin/theme-head.mjs dist`. In the production
+- After `ng build`, run
+  `node node_modules/@hilos/core/bin/theme-head.mjs dist`, then the initial-bundle
+  CLI below. In the production
   configuration set `optimization.styles.inlineCritical: false` so Bootstrap's
   stylesheet loads before the first themed frame; the theme-head pass refuses
   deferred stylesheets.
@@ -79,7 +80,7 @@ The src root stays thin and the boot wiring lives in `src/app/bootstrap/`
 
 - `src/index.ts`: one import, `./app/bootstrap/main`, and nothing else.
 - `src/app/bootstrap/connection.ts`: `createHilosConnection()` from
-  `@hilos/core` — one connection for the app, on the same-origin `/ws` ONLY
+  `@hilos/core/base` — one connection for the app, on the same-origin `/ws` ONLY
   (Angular has no `import.meta.env` mechanism — see dev-mode below), the
   framework schemas merged and the stale-build reload wired by the call itself.
   It exports `connection` and `actions`.
@@ -99,13 +100,72 @@ The src root stays thin and the boot wiring lives in `src/app/bootstrap/`
   wrapper closing the project's `HilosAuthContext` over the framework
   `HilosAuthSurface`).
 - State in components via `hilosSignal(…)` and `connectionStateSignal(connection)`
-  from `@hilos/angular` — call them in an injection context (e.g. a component
+  from `@hilos/angular/base` — call them in an injection context (e.g. a component
   field initializer) or pass `{ injector }`; they mirror `toSignal` semantics
   and unsubscribe on the injector's `DestroyRef`.
 - The public footer pages are prerendered by Angular's native prerenderer:
   production `outputMode: "static"` with the `src/prerender/main.server.ts`
   server entry, which declares only those pages; every other path cold-loads
   the SPA shell `index.csr.html`, which the nginx template falls back to.
+
+## Lazy admin bindings and the production graph
+
+Common components/tokens come from `@hilos/angular/base`, metadata from
+`@hilos/angular/admin-views`, and the lazy wrapper imports its implementation
+from `@hilos/angular/admin/<section>`. Keep a readonly `pages` field created once
+for the App instance; `HilosView` needs no `@defer` wrapper. This binding excerpt
+omits the surrounding layout/auth wiring; retain the real app's eager Main,
+public/footer and profile keys and its skeleton/auth inputs:
+
+```ts
+import { Component } from '@angular/core'
+import type { Type } from '@angular/core'
+import { HilosPages, lazyPage, type PageView } from '@hilos/core/base'
+import { HilosView } from '@hilos/angular/base'
+import { hilosAdminViews } from '@hilos/angular/admin-views'
+
+@Component({
+  selector: 'app-root',
+  imports: [HilosView],
+  template: `<hilos-view [pages]="pages" />`,
+})
+export class App {
+  protected readonly pages: Record<string, PageView<Type<unknown>>> = {
+    ...hilosAdminViews(),
+    [HilosPages.SETTINGS]: lazyPage(() =>
+      import('./views/hilos/settings/settings.js').then(m => m.Settings),
+    ),
+  }
+}
+```
+
+`Settings` remains a page module mounting `HilosSettingsPage` from
+`@hilos/angular/admin/settings`; its context type comes from
+`@hilos/core/admin/settings`. Eager classes remain valid map values. Construction
+starts no import, and a loaded component mounts only after a permitting server
+reply. The compatibility root still works, while performance consumers use
+subpaths. See [page bindings](../agents/frontend/page-module-structure.md#binding-eager-and-lazy-page-modules)
+and [runtime semantics](../agents/frontend/multiframework-core.md#page-code-and-first-answer-state)
+for the outlet cache, continuous skeleton deadline, refusals and failed-ESM retry
+limits.
+
+In `angular.json` production, set `statsJson: true` and keep the native initial
+budgets `1.5MB` warning / `2MB` error. The ordinary package build script is:
+
+```json
+"build": "ng build && node node_modules/@hilos/core/bin/theme-head.mjs dist && node node_modules/@hilos/core/bin/initial-bundle-budget.mjs angular dist --project-sources src/app/pages/routes.ts src/app/app.ts"
+```
+
+Adapt both source paths to the project. This CLI runs after the production,
+static-prerender and theme passes; it reads the final client HTML, stats and
+bytes, leaving `initial-bundle-report.json`. Require
+`projectProof.status: 'verified'` before asserting project-admin absence;
+`'not-configured'` is legacy measurement/SDK scope only. It counts unique initial
+JS+CSS, reports per-output gzip separately, and refuses eager admin implementations
+even under the byte budget. Native `ng serve` is not gated. The public prerender
+entry stays separate from the client App/admin map. Supported source forms and
+compiler evidence are in
+[build-and-docker.md](../agents/frontend/build-and-docker.md#initial-client-graph-and-budget).
 
 ## SDK primitives
 
@@ -140,7 +200,8 @@ see [../agents/frontend/styling-rules.md](../agents/frontend/styling-rules.md)):
 ```json
 "styles": [
   "node_modules/bootstrap/dist/css/bootstrap.min.css",
-  "node_modules/bootstrap-icons/font/bootstrap-icons.css"
+  "node_modules/bootstrap-icons/font/bootstrap-icons.css",
+  "node_modules/@hilos/angular/src/hilos-styles.scss"
 ]
 ```
 
@@ -171,20 +232,64 @@ Angular reaches the split differently because ng-packagr owns its dist package's
 `exports` and the AOT compiler will not emit declarables for a library it treats
 as pre-compiled:
 
-- **Production** uses `tsconfig.app.json` unchanged — `@hilos/angular` resolves
-  through the package `main`/`types` to its ng-packagr **dist** (FESM). Rebuild
-  the SDK before e2e/prod.
+- **Production** uses the app/server production tsconfigs without SDK source
+  redirects. Local `file:` installs resolve the plain package and secondary-entry
+  forwarders to dist FESMs/types; the published APF dist manifest has generated
+  `types`/`default` exports. Rebuild the SDK before e2e/prod.
 - **Dev** (`ng serve` and the `development` build it drives) uses
   `tsconfig.dev.json`, which `paths`-redirects the SDK to `src`:
 
   ```jsonc
   "paths": {
+    "@angular/core": ["./node_modules/@angular/core"],
+    "@angular/common": ["./node_modules/@angular/common"],
     "@hilos/angular": ["./node_modules/@hilos/angular/src/index.ts"],
-    "@hilos/core": ["./node_modules/@hilos/core/src/index.ts"]
+    "@hilos/angular/base": ["./node_modules/@hilos/angular/src/base/index.ts"],
+    "@hilos/angular/admin-views": ["./node_modules/@hilos/angular/src/admin/hilosAdminViews.ts"],
+    "@hilos/angular/admin/analytics": ["./node_modules/@hilos/angular/src/admin/analytics/index.ts"],
+    "@hilos/angular/admin/appearance": ["./node_modules/@hilos/angular/src/admin/appearance/index.ts"],
+    "@hilos/angular/admin/backup": ["./node_modules/@hilos/angular/src/admin/backup/index.ts"],
+    "@hilos/angular/admin/billing": ["./node_modules/@hilos/angular/src/admin/billing/index.ts"],
+    "@hilos/angular/admin/change-log": ["./node_modules/@hilos/angular/src/admin/changeLog/index.ts"],
+    "@hilos/angular/admin/communications": ["./node_modules/@hilos/angular/src/admin/communications/index.ts"],
+    "@hilos/angular/admin/daemon": ["./node_modules/@hilos/angular/src/admin/daemon/index.ts"],
+    "@hilos/angular/admin/dashboard": ["./node_modules/@hilos/angular/src/admin/dashboard/index.ts"],
+    "@hilos/angular/admin/i18n": ["./node_modules/@hilos/angular/src/admin/i18n/index.ts"],
+    "@hilos/angular/admin/legal": ["./node_modules/@hilos/angular/src/admin/legal/index.ts"],
+    "@hilos/angular/admin/logs": ["./node_modules/@hilos/angular/src/admin/logs/index.ts"],
+    "@hilos/angular/admin/maintenance": ["./node_modules/@hilos/angular/src/admin/maintenance/index.ts"],
+    "@hilos/angular/admin/mcp-skills": ["./node_modules/@hilos/angular/src/admin/mcpSkills/index.ts"],
+    "@hilos/angular/admin/roles": ["./node_modules/@hilos/angular/src/admin/roles/index.ts"],
+    "@hilos/angular/admin/security": ["./node_modules/@hilos/angular/src/admin/security/index.ts"],
+    "@hilos/angular/admin/settings": ["./node_modules/@hilos/angular/src/admin/settings/index.ts"],
+    "@hilos/angular/admin/sil": ["./node_modules/@hilos/angular/src/admin/sil/index.ts"],
+    "@hilos/angular/admin/users": ["./node_modules/@hilos/angular/src/admin/users/index.ts"],
+    "@hilos/core": ["./node_modules/@hilos/core/src/index.ts"],
+    "@hilos/core/base": ["./node_modules/@hilos/core/src/base/index.ts"],
+    "@hilos/core/admin/analytics": ["./node_modules/@hilos/core/src/admin/analytics/index.ts"],
+    "@hilos/core/admin/appearance": ["./node_modules/@hilos/core/src/admin/appearance/index.ts"],
+    "@hilos/core/admin/backup": ["./node_modules/@hilos/core/src/admin/backup/index.ts"],
+    "@hilos/core/admin/change-log": ["./node_modules/@hilos/core/src/admin/changeLog/index.ts"],
+    "@hilos/core/admin/communications": ["./node_modules/@hilos/core/src/admin/communications/index.ts"],
+    "@hilos/core/admin/daemon": ["./node_modules/@hilos/core/src/admin/daemon/index.ts"],
+    "@hilos/core/admin/i18n": ["./node_modules/@hilos/core/src/admin/i18n/index.ts"],
+    "@hilos/core/admin/legal": ["./node_modules/@hilos/core/src/admin/legal/index.ts"],
+    "@hilos/core/admin/logs": ["./node_modules/@hilos/core/src/admin/logs/index.ts"],
+    "@hilos/core/admin/maintenance": ["./node_modules/@hilos/core/src/admin/maintenance/index.ts"],
+    "@hilos/core/admin/security": ["./node_modules/@hilos/core/src/admin/security/index.ts"],
+    "@hilos/core/admin/settings": ["./node_modules/@hilos/core/src/admin/settings/index.ts"],
+    "@hilos/core/admin/users": ["./node_modules/@hilos/core/src/admin/users/index.ts"]
   }
   ```
 
-  and lists the SDK component sources in `include` (by their node_modules path —
+  This is the whole `paths` object, including the Angular pins: a child tsconfig
+  replaces it rather than merging it with its parent. Keep public names explicit;
+  a wildcard cannot translate `change-log` to `changeLog` or `mcp-skills` to
+  `mcpSkills`. Compare the current reference
+  [tsconfig.dev.json](../../demo/online-testing/frontend/tsconfig.dev.json)
+  when copying the configuration.
+
+  The dev config also lists SDK component sources in `include` (by their node_modules path —
   the one `preserveSymlinks` resolves to) so the AOT compiler owns them as
   program inputs (a `*.test.ts` `exclude` keeps `vitest`-importing SDK tests
   out). `angular.json` points the `development` build configuration at this
@@ -236,7 +341,7 @@ do not notice — they prebundle the whole graph through the symlink's real path
 where the SDK-workspace copy sits. The Angular consumer does: the core's
 `@vue/reactivity` import is external to the SDK artifact in both modes — dev
 compiles the core `src` (resolved to its node_modules path under
-`preserveSymlinks`) and production consumes the core FESM — so the bare import
+`preserveSymlinks`) and production consumes the core's compiled ES modules — so the bare import
 resolves from the consumer root, where the link-satisfied dep is absent:
 `Failed to resolve import "@vue/reactivity"`.
 

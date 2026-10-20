@@ -4,11 +4,8 @@ numbers, the text (or an "empty string" chip) otherwise, plus a source badge —
 the referenced key, "default", or "custom" — so the catalog origin is visible at
 a glance. Presentation only; Bootstrap classes (styling-rules.md). -->
 <script setup lang="ts">
-import {
-  type Hideable,
-  isHiddenValue,
-  type SettingValueSource,
-} from '@hilos/core'
+import { type Hideable, isHiddenValue } from '@hilos/core/base'
+import { type SettingValueSource } from '@hilos/core/admin/settings'
 import { computed } from 'vue'
 
 import HilosHiddenMark from '../../HilosHiddenMark.vue'

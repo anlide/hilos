@@ -18,9 +18,8 @@
 // as a toast and leaves the dialog open with the entered value (toasts.md).
 // Bootstrap classes only (styling-rules.md).
 import { useEffect, useMemo, useState } from 'react'
+import { HILOS_TABLE_ACTIONS_KEY, HilosPages } from '@hilos/core/base'
 import {
-  HILOS_TABLE_ACTIONS_KEY,
-  HilosPages,
   SETTING_KEY_FIELD,
   SETTING_VALUE_FIELD,
   createHilosSettingsActions,
@@ -28,8 +27,11 @@ import {
   createHilosSettingsTable,
   hasCustomValue,
   isOrphanSetting,
-} from '@hilos/core'
-import type { HilosSettingRow, HilosSettingsContext } from '@hilos/core'
+} from '@hilos/core/admin/settings'
+import type {
+  HilosSettingRow,
+  HilosSettingsContext,
+} from '@hilos/core/admin/settings'
 
 import { ConflictActions } from '../../ConflictActions.js'
 import { ConflictHeader } from '../../ConflictHeader.js'

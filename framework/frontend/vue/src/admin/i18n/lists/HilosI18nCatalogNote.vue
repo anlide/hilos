@@ -3,7 +3,7 @@ Drawn on list pages (languages, countries) when builtInCatalog data is available
 The note heading tells the tallies known to the framework; the page body supplies
 the explanatory text via the default slot. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { type HilosI18nBuiltInCatalog } from '@hilos/core'
+import { type HilosI18nBuiltInCatalog } from '@hilos/core/admin/i18n'
 
 defineProps<{
   /** The built-in catalog tally with language and country counts. */

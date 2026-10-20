@@ -23,6 +23,12 @@ import {
 } from '@angular/core'
 import {
   ActionError,
+  HilosPages,
+  isHiddenValue,
+  subscribeSignal,
+  type HilosMaintenanceState,
+} from '@hilos/core/base'
+import {
   createHilosMaintenanceActions,
   createHilosMaintenanceCircleTable,
   createHilosMaintenanceState,
@@ -31,26 +37,24 @@ import {
   HILOS_MAINTENANCE_ENABLE_COPY,
   HILOS_MAINTENANCE_PASS_COPY,
   HILOS_MAINTENANCE_STATE_COPY,
-  HilosPages,
   hilosMaintenanceCard,
   hilosMaintenancePosition,
-  isHiddenValue,
-  subscribeSignal,
   type HilosMaintenanceCircleRow,
   type HilosMaintenanceContext,
-  type HilosMaintenanceState,
-} from '@hilos/core'
+} from '@hilos/core/admin/maintenance'
 
-import { HilosActionError } from '../../HilosActionError.js'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosEditNotice } from '../../HilosEditNotice.js'
-import { HilosHiddenMark } from '../../HilosHiddenMark.js'
-import { HilosHideable } from '../../HilosHideable.js'
-import { HilosModal } from '../../HilosModal.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { LoadingButton } from '../../LoadingButton.js'
-import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
+import {
+  HilosActionError,
+  HilosAdminPage,
+  HilosEditNotice,
+  HilosHiddenMark,
+  HilosHideable,
+  HilosModal,
+  HilosTableCell,
+  HilosViewportTable,
+  LoadingButton,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 
 /**
  * How a manual action reports a failure: a refusal in the server's own words,

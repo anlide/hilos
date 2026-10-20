@@ -3,15 +3,17 @@ import {
   createHilosLegalSettingsTable,
   createHilosLegalSettingsActions,
   createHilosLegalSettingEdit,
-  HilosPages,
   HILOS_LEGAL_SETTING_COPY,
   HILOS_LEGAL_VALUE_COPY,
   HILOS_LEGAL_SETTING_PREVIEWS,
   HilosLegalRowKey,
+} from '@hilos/core/admin/legal'
+import {
+  HilosPages,
   HILOS_TABLE_ACTIONS_KEY,
   isHiddenValue,
   type HilosLegalContext,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosHiddenMark } from '../../HilosHiddenMark.js'

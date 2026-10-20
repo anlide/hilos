@@ -39,7 +39,7 @@ import {
   formatCalendarDate,
   HILOS_STEP_UP_COPY,
   subscribeSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosBackupCodeEntry,
   HilosSecondFactorAuthenticator,
@@ -48,7 +48,7 @@ import type {
   HilosSecondFactorProof,
   HilosSecondFactorState,
   HilosSecondFactorView,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
 import { HilosActionError } from '../HilosActionError.js'

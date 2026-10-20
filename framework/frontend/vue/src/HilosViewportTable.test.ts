@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { h } from 'vue'
-import { TableViewportController } from '@hilos/core'
+import { TableViewportController } from '@hilos/core/base'
 import type {
   ActionHandle,
   HilosTableBulkAccepted,
@@ -9,7 +9,7 @@ import type {
   HilosTableFrame,
   HilosTableProgress,
   TableViewportDescriptor,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import HilosViewportTable from './HilosViewportTable.vue'
 import { hilosPageHeadingIdKey } from './hilosPageHeading.js'

@@ -2,7 +2,7 @@ import {
   createSignal,
   type HilosUploadField,
   type HilosUploadFieldFile,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { describe, expect, it, vi } from 'vitest'

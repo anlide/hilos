@@ -1,17 +1,19 @@
 import { enableAutoUnmount, mount } from '@vue/test-utils'
 import {
   createSignal,
-  formatAnalyticsTime,
   HilosPages,
   pageIdentity,
   resolveHilosPath,
   ScopeManager,
-  type HilosAnalyticsActionRow,
   type HilosConnection,
   type HilosRouter,
   type PageRouteMatch,
   type TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  formatAnalyticsTime,
+  type HilosAnalyticsActionRow,
+} from '@hilos/core/admin/analytics'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 

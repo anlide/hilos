@@ -3,8 +3,8 @@
 // never shares a reactivity engine with the core — the mirror is what keeps
 // a duplicated engine copy harmless (multiframework-core.md).
 import { useCallback, useSyncExternalStore } from 'react'
-import { subscribeSignal } from '@hilos/core'
-import type { ReadonlySignal } from '@hilos/core'
+import { subscribeSignal } from '@hilos/core/base'
+import type { ReadonlySignal } from '@hilos/core/base'
 
 /**
  * Mirror a core signal into React state.

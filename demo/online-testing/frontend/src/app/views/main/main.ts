@@ -8,7 +8,7 @@
 // anonymous — the demo hands a guest no name, so the `self-user` marker is
 // absent rather than empty.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { hilosSignal } from '@hilos/angular'
+import { hilosSignal } from '@hilos/angular/base'
 
 import { currentUserId, currentUserName } from '../../bootstrap/session.js'
 

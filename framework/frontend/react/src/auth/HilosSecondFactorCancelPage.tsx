@@ -24,7 +24,7 @@ import {
   createAuthActions,
   whenPageReadyOrUnreachable,
   type HilosAuthContext,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosRouterContext } from '../hilosRouterContext.js'
 

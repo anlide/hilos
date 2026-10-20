@@ -14,7 +14,47 @@
 
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+
+/**
+ * Source and build configuration inputs of one SDK package. Secondary Angular
+ * entrypoints keep ng-package.json below the root; Vite's library config is a
+ * TypeScript file. Neither may leave an old monolithic dist looking current.
+ * Generated output and installed dependencies are never build inputs.
+ *
+ * @param {string} packageDir The package directory.
+ * @returns {string[]}
+ */
+export function buildInputs(packageDir) {
+  const inputs = [
+    join(packageDir, 'src'),
+    join(packageDir, 'bin'),
+    join(dirname(packageDir), 'tsconfig.base.json'),
+    join(dirname(packageDir), 'scripts/prebuild-sdk.mjs'),
+    join(dirname(packageDir), 'scripts/staleness.mjs'),
+  ]
+  function visit(directory) {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name)
+      if (entry.isDirectory()) {
+        if (
+          !['src', 'dist', 'node_modules'].includes(entry.name) &&
+          !entry.name.startsWith('.')
+        )
+          visit(path)
+      } else if (
+        entry.name === 'ng-package.json' ||
+        (directory === packageDir &&
+          (entry.name.endsWith('.json') ||
+            /^vite\.config\.[cm]?[jt]s$/.test(entry.name)))
+      ) {
+        inputs.push(path)
+      }
+    }
+  }
+  visit(packageDir)
+  return inputs
+}
 
 /**
  * Every file at or under `path`, recursively. A path that does not exist yields
@@ -100,6 +140,61 @@ export function isDistStale(sources, distDir) {
     return { stale: true, reason: `${source.file} is newer than ${built.file}` }
   }
   return { stale: false, reason: `${built.file} is newer than every source` }
+}
+
+/**
+ * A fresh timestamp cannot prove that a multi-entry build finished. All public
+ * production/type targets must exist; core also owes a receipt for each tsc
+ * owner, including its compiler map. Fail closed on old or partial outputs.
+ *
+ * @param {string} packageDir The SDK source package directory.
+ * @returns {{ stale: boolean, reason: string }} The build decision and evidence.
+ */
+export function sdkDistStale(packageDir) {
+  const dist = join(packageDir, 'dist')
+  const verdict = isDistStale(buildInputs(packageDir), dist)
+  if (verdict.stale) return verdict
+  try {
+    const manifest = JSON.parse(
+      readFileSync(join(packageDir, 'package.json'), 'utf8'),
+    )
+    function target(value, condition = '') {
+      if (condition === 'development') return
+      if (typeof value === 'string') {
+        if (!existsSync(join(packageDir, value)))
+          throw new Error(`missing public build target: ${value}`)
+      } else if (value && typeof value === 'object') {
+        for (const [key, child] of Object.entries(value)) target(child, key)
+      }
+    }
+    target(manifest.exports)
+    if (manifest.name === '@hilos/core') {
+      const proof = JSON.parse(
+        readFileSync(join(dist, 'core-provenance.json'), 'utf8'),
+      )
+      if (proof.version !== 1 || proof.compiler !== 'tsc')
+        throw new Error('missing tsc build receipts')
+      for (const { file } of walkFiles(join(packageDir, 'src'))) {
+        if (!file.endsWith('.ts') || file.endsWith('.d.ts')) continue
+        const name = file
+          .slice(join(packageDir, 'src').length + 1)
+          .replace(/\.ts$/, '.js')
+        const receipt = proof.files?.[name]
+        if (
+          !receipt ||
+          receipt.source !== `src/${name.replace(/\.js$/, '.ts')}` ||
+          receipt.sourceSha256 !== lockHash(file) ||
+          receipt.outputSha256 !== lockHash(join(dist, name)) ||
+          receipt.mapSha256 !== lockHash(join(dist, `${name}.map`)) ||
+          !existsSync(join(dist, name.replace(/\.js$/, '.d.ts')))
+        )
+          throw new Error(`incomplete tsc owner: ${name}`)
+      }
+    }
+    return verdict
+  } catch (reason) {
+    return { stale: true, reason: `${dist}: ${reason.message}` }
+  }
 }
 
 /**

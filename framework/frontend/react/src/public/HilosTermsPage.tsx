@@ -27,7 +27,7 @@ import {
   sessionAccountStanding,
   TERMS_REVISION_TEXT_ACTION,
   type HilosLegalContext,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
 import { HilosStaticPage } from '../HilosStaticPage.js'

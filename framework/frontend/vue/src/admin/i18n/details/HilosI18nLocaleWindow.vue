@@ -5,7 +5,6 @@ import {
   createHilosI18nLocaleEdit,
   createHilosI18nLocaleSwitchOn,
   createHilosI18nLocaleSwitchOff,
-  focusInitial,
   hilosI18nLocaleCountryLabel,
   hilosI18nLocaleSwitchOff,
   type HilosI18nLanguageCard,
@@ -14,8 +13,8 @@ import {
   type HilosI18nLocaleRow,
   type HilosI18nLocaleTemplates,
   type HilosI18nLocaleWindowMode,
-  type TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { focusInitial, type TableViewportController } from '@hilos/core/base'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import ConflictActions from '../../../ConflictActions.vue'

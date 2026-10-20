@@ -27,7 +27,7 @@ import {
   HILOS_SUPPORT_REFUSAL,
   HILOS_SUPPORT_TIERS,
   type HilosSupportTierKey,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import HilosModal from '../HilosModal.vue'
 

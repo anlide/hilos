@@ -24,7 +24,7 @@ import {
   type HilosRouter,
   type PageRouteMatch,
   type ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'

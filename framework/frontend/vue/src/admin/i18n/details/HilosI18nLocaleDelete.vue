@@ -2,9 +2,9 @@
 <script setup lang="ts">
 import {
   HILOS_I18N_LOCALE_DELETE_COPY,
-  type ActionHandle,
   type HilosI18nLocaleDeleteTarget,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { type ActionHandle } from '@hilos/core/base'
 import { computed, watch } from 'vue'
 
 import HilosActionError from '../../../HilosActionError.vue'

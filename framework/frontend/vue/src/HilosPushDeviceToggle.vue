@@ -14,7 +14,7 @@ import {
   hilosPushSubscription,
   type HilosConnection,
   type HilosPushSubscriptionStore,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { computed, onMounted, useId } from 'vue'
 
 import { useSignal } from './useSignal.js'

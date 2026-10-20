@@ -11,14 +11,14 @@ import {
   entityCollection,
   USER_ENTITY_TYPE,
   userFromFields,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   ActionLifecycleSource,
   Hideable,
   HilosRouter,
-  HilosUsersContext,
   PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosUsersContext } from '@hilos/core/admin/users'
 
 import HilosUsersPage from './HilosUsersPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'

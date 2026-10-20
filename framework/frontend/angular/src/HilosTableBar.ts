@@ -25,14 +25,14 @@ import {
   TABLE_STALENESS_COPY,
   hilosTableOrderMenuNarrowOnly,
   subscribeSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosTableFilterView,
   HilosTableOrderView,
   HilosTableSelectionTarget,
   ReadonlySignal,
   TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosDropdown } from './HilosDropdown.js'
 import { HilosModal } from './HilosModal.js'

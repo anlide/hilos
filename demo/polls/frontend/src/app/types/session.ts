@@ -12,7 +12,7 @@ import {
   readString,
   readStringOrNull,
   type EntityCollection,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { scopes } from '../bootstrap/session.js'
 

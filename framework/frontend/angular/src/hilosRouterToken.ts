@@ -3,7 +3,7 @@
 // (`{ provide: HILOS_ROUTER, useValue: router }`); HilosLink and HilosView
 // inject it.
 import { InjectionToken } from '@angular/core'
-import type { HilosRouter } from '@hilos/core'
+import type { HilosRouter } from '@hilos/core/base'
 
 /** Provide/inject token for the application's {@link HilosRouter}. */
 export const HILOS_ROUTER = new InjectionToken<HilosRouter>('HilosRouter')

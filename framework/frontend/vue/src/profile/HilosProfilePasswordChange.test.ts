@@ -6,7 +6,7 @@ import {
   SIGNAL_PROFILE_FLOWS,
   type ActionLifecycle,
   type HilosConnection,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import HilosProfilePasswordChange from './HilosProfilePasswordChange.vue'

@@ -8,7 +8,7 @@ import {
   SEND_PROGRESS_DETAILS_CLASS,
   SEND_PROGRESS_ROW_CLASS,
   type HilosProfilePasswordChangeFlow,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { computed, nextTick, ref, useId, watch } from 'vue'
 import HilosFormError from '../HilosFormError.vue'
 import HilosModal from '../HilosModal.vue'

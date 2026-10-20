@@ -6,8 +6,8 @@
 import {
   type HilosProfileBinding,
   type HilosProfilePageContext,
-} from '@hilos/core'
-import { HilosProfilePage } from '@hilos/react'
+} from '@hilos/core/base'
+import { HilosProfilePage } from '@hilos/react/base'
 
 import { actions, connection } from '../../bootstrap/connection.js'
 import { currentUserName, scopes } from '../../bootstrap/session.js'

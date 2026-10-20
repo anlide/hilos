@@ -1,0 +1,5 @@
+{
+  "lib": {
+    "entryFile": "../../src/admin/communications/index.ts"
+  }
+}

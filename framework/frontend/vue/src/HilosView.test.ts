@@ -4,22 +4,28 @@
 // three demos wait on keeps its three values through all of it.
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, h, markRaw, nextTick } from 'vue'
+import { defineComponent, h, markRaw, nextTick, shallowReactive } from 'vue'
+import type { Component } from 'vue'
 import {
+  createAuthGate,
   createHilosRouter,
   createPageRouter,
   createSignal,
   DEFAULT_SKELETON_DELAY_MS,
-} from '@hilos/core'
+  lazyPage,
+} from '@hilos/core/base'
 import type {
   HilosRouter,
   NavigablePages,
   NavigationEnvironment,
+  PageError,
   PageRouteMatch,
   PageSubscriptionError,
+  PageView,
   WritableSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
+import ErrorPage from './ErrorPage.vue'
 import HilosView from './HilosView.vue'
 import { hilosRouterKey } from './hilosRouterKey.js'
 
@@ -31,11 +37,18 @@ const NOT_FOUND: PageSubscriptionError = {
   message: 'Not found',
 }
 
-const MainPage = defineComponent(
-  () => () => h('div', { 'data-id': 'main' }, 'Leaving page'),
+const LOCAL_FAILURE: PageError = {
+  httpCode: 503,
+  errorCode: 'page_load_failed',
+  title: 'Page could not be loaded',
+  message: 'Please try opening this page again.',
+}
+
+const MainPage = markRaw(
+  defineComponent(() => () => h('div', { 'data-id': 'main' }, 'Leaving page')),
 )
-const MainSkeleton = defineComponent(
-  () => () => h('div', { 'data-id': 'main-skeleton' }),
+const MainSkeleton = markRaw(
+  defineComponent(() => () => h('div', { 'data-id': 'main-skeleton' })),
 )
 
 interface TestRouter {
@@ -71,7 +84,7 @@ function testRouter(page: string): TestRouter {
       pageLoading,
       pageIdentity: createSignal(undefined),
       dashboardSections: createSignal(undefined),
-      resolvePath: () => undefined,
+      resolvePath: (key) => `/${key}`,
       clearPageError: () => {},
       denyCurrentPage: () => {},
       awaitPageAnswer: () => {},
@@ -100,6 +113,7 @@ function mountView(router: HilosRouter, withSkeletons = false) {
 }
 
 async function outlast(ms: number): Promise<void> {
+  await nextTick()
   vi.advanceTimersByTime(ms)
   await nextTick()
 }
@@ -263,12 +277,17 @@ const KnownPage = defineComponent(
 )
 
 function navigablePages(): NavigablePages {
+  const pageLoading = createSignal(false)
   return {
-    subscribe: () => null,
+    subscribe: () => {
+      pageLoading.set(true)
+      pageLoading.set(false)
+      return null
+    },
     unsubscribe: () => {},
     refuseUnbuilt: () => {},
     pageError: createSignal<PageSubscriptionError | null>(null),
-    pageLoading: createSignal(false),
+    pageLoading,
     pageIdentity: createSignal(undefined),
     dashboardSections: createSignal(undefined),
     clearPageError: () => {},
@@ -338,4 +357,643 @@ describe('HilosView route miss', () => {
       wrapper.find('[data-id="hilos-page-state"]').attributes('data-state'),
     ).toBe('ready')
   })
+})
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (error: Error) => void
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes
+    reject = no
+  })
+  return { promise, resolve, reject }
+}
+
+function trackedPage(id: string) {
+  const mounted = vi.fn()
+  const component = markRaw(
+    defineComponent(() => {
+      mounted()
+      return () => h('div', { 'data-id': id }, id)
+    }),
+  )
+  return { component, mounted }
+}
+
+function waitingRouter(
+  initial = '/',
+  unbuilt: ReadonlySet<string> = new Set(),
+) {
+  const pageLoading = createSignal(false)
+  const pageError = createSignal<PageSubscriptionError | null>(null)
+  const awaitPageAnswer = () => {
+    pageError.set(null)
+    pageLoading.set(true)
+  }
+  const subscribe = vi.fn(awaitPageAnswer)
+  const router = createHilosRouter(
+    createPageRouter({
+      main: { path: '/', admin: false },
+      lazy: { path: '/lazy/{id?}', admin: true },
+      other: { path: '/other', admin: true },
+    }),
+    {
+      ...navigablePages(),
+      pageLoading,
+      pageError,
+      subscribe,
+      unsubscribe: () => {
+        pageLoading.set(false)
+        pageError.set(null)
+      },
+      refuseUnbuilt: (page) => {
+        pageError.set({
+          page,
+          httpCode: 501,
+          errorCode: 'not_built',
+          title: 'Not built',
+          message: 'This page is not built.',
+        })
+        pageLoading.set(false)
+      },
+      clearPageError: () => pageError.set(null),
+      awaitPageAnswer,
+    },
+    navigation(initial),
+    undefined,
+    unbuilt,
+  )
+  router.start()
+  const answer = () => {
+    pageError.set(null)
+    pageLoading.set(false)
+  }
+  return { router, pageLoading, pageError, subscribe, answer }
+}
+
+function mountPages(
+  router: HilosRouter,
+  pages: Record<string, PageView<Component>>,
+) {
+  return mount(HilosView, {
+    props: { pages },
+    global: { provide: { [hilosRouterKey as symbol]: router } },
+  })
+}
+
+async function settleCode(): Promise<void> {
+  await Promise.resolve()
+  await nextTick()
+}
+
+describe('HilosView lazy pages', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('keeps the departure and original skeleton deadline after a fast server answer', async () => {
+    const pending = deferred<Component>()
+    const page = trackedPage('lazy-page')
+    const loader = vi.fn(() => pending.promise)
+    const { router, answer, pageLoading } = waitingRouter()
+    answer()
+    const wrapper = mountPages(router, {
+      main: markRaw(MainPage),
+      lazy: lazyPage(loader),
+    })
+    await wrapper.setProps({ pageSkeletons: { lazy: markRaw(MainSkeleton) } })
+    const departure = wrapper.get('[data-id="hilos-page-departure"]')
+    const frame = departure.element.parentElement!
+    frame.scrollTop = 90
+
+    router.navigate('/lazy')
+    await outlast(100)
+    answer()
+    await nextTick()
+    expect(pageLoading.get()).toBe(false)
+    expect(departure.text()).toBe('Leaving page')
+    expect(departure.attributes('aria-hidden')).toBe('true')
+    expect(departure.attributes()).toHaveProperty('inert')
+    expect(departure.find('[data-id]').exists()).toBe(false)
+    expect(page.mounted).not.toHaveBeenCalled()
+    expect(
+      wrapper.get('[data-id="hilos-page-state"]').attributes('data-state'),
+    ).toBe('loading')
+
+    await outlast(DEFAULT_SKELETON_DELAY_MS - 101)
+    expect(departure.text()).toBe('Leaving page')
+    expect(wrapper.find('[data-id="hilos-page-skeleton"]').exists()).toBe(false)
+    await outlast(1)
+    expect(departure.element.childElementCount).toBe(0)
+    expect(frame.scrollTop).toBe(0)
+    expect(wrapper.find('[data-id="main-skeleton"]').exists()).toBe(true)
+    expect(wrapper.findAll('[role="status"]')).toHaveLength(1)
+    expect(wrapper.get('[role="status"]').text()).toBe('Loading…')
+
+    pending.resolve(page.component)
+    await settleCode()
+    expect(page.mounted).toHaveBeenCalledTimes(1)
+    expect(loader).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-id="lazy-page"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="hilos-page-skeleton"]').exists()).toBe(false)
+    expect(
+      wrapper.get('[data-id="hilos-page-state"]').attributes('data-state'),
+    ).toBe('ready')
+    wrapper.unmount()
+  })
+
+  it('does not mount fast code before the server answers or restart its skeleton timer', async () => {
+    const pending = deferred<Component>()
+    const page = trackedPage('lazy-page')
+    const { router, answer } = waitingRouter('/lazy')
+    const wrapper = mountPages(router, {
+      lazy: lazyPage(() => pending.promise),
+    })
+
+    await outlast(100)
+    pending.resolve(page.component)
+    await settleCode()
+    expect(page.mounted).not.toHaveBeenCalled()
+    expect(
+      wrapper.get('[data-id="hilos-page-state"]').attributes('data-state'),
+    ).toBe('loading')
+    await outlast(DEFAULT_SKELETON_DELAY_MS - 101)
+    expect(wrapper.find('[data-id="hilos-page-skeleton"]').exists()).toBe(false)
+    await outlast(1)
+    expect(wrapper.find('[data-id="hilos-page-skeleton"]').exists()).toBe(true)
+    expect(page.mounted).not.toHaveBeenCalled()
+
+    answer()
+    await nextTick()
+    expect(page.mounted).toHaveBeenCalledTimes(1)
+    expect(
+      wrapper.get('[data-id="hilos-page-state"]').attributes('data-state'),
+    ).toBe('ready')
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it.each(['resolve', 'reject'] as const)(
+    'keeps one deadline through a second navigation and ignores a late %s',
+    async (outcome) => {
+      const first = deferred<Component>()
+      const second = deferred<Component>()
+      const stale = trackedPage('stale-page')
+      const current = trackedPage('current-page')
+      const { router, answer } = waitingRouter()
+      answer()
+      const wrapper = mountPages(router, {
+        main: markRaw(MainPage),
+        lazy: lazyPage(() => first.promise),
+        other: lazyPage(() => second.promise),
+      })
+      const departure = wrapper.get('[data-id="hilos-page-departure"]')
+
+      router.navigate('/lazy')
+      await outlast(200)
+      const copied = departure.element.firstElementChild
+      router.navigate('/other')
+      answer()
+      await nextTick()
+      expect(departure.element.firstElementChild).toBe(copied)
+      expect(departure.text()).toBe('Leaving page')
+      await outlast(DEFAULT_SKELETON_DELAY_MS - 201)
+      expect(wrapper.find('[data-id="hilos-page-skeleton"]').exists()).toBe(
+        false,
+      )
+      await outlast(1)
+      expect(wrapper.find('[data-id="hilos-page-skeleton"]').exists()).toBe(
+        true,
+      )
+      expect(departure.element.childElementCount).toBe(0)
+
+      if (outcome === 'resolve') {
+        first.resolve(stale.component)
+      } else {
+        first.reject(new Error('Old chunk failed'))
+      }
+      await settleCode()
+      expect(stale.mounted).not.toHaveBeenCalled()
+      expect(current.mounted).not.toHaveBeenCalled()
+      expect(wrapper.find('[data-id="page-error"]').exists()).toBe(false)
+      expect(
+        wrapper.get('[data-id="hilos-page-state"]').attributes('data-state'),
+      ).toBe('loading')
+
+      second.resolve(current.component)
+      await settleCode()
+      expect(current.mounted).toHaveBeenCalledTimes(1)
+      expect(
+        wrapper.get('[data-id="hilos-page-state"]').attributes('data-state'),
+      ).toBe('ready')
+      wrapper.unmount()
+    },
+  )
+
+  it('removes the departure as soon as code and data are ready without flashing a skeleton', async () => {
+    const pending = deferred<Component>()
+    const page = trackedPage('lazy-page')
+    const { router, answer } = waitingRouter()
+    answer()
+    const wrapper = mountPages(router, {
+      main: markRaw(MainPage),
+      lazy: lazyPage(() => pending.promise),
+    })
+
+    router.navigate('/lazy')
+    await outlast(100)
+    answer()
+    pending.resolve(page.component)
+    await settleCode()
+    expect(
+      wrapper.get('[data-id="hilos-page-departure"]').element.childElementCount,
+    ).toBe(0)
+    expect(page.mounted).toHaveBeenCalledTimes(1)
+    await outlast(DEFAULT_SKELETON_DELAY_MS)
+    expect(wrapper.find('[data-id="hilos-page-skeleton"]').exists()).toBe(false)
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows the safe local error, returns home by SPA navigation and retries only on revisit', async () => {
+    const first = deferred<Component>()
+    const retry = deferred<Component>()
+    const page = trackedPage('lazy-page')
+    const loader = vi
+      .fn()
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(retry.promise)
+    const { router, answer, subscribe } = waitingRouter()
+    answer()
+    const wrapper = mountPages(router, {
+      main: markRaw(MainPage),
+      lazy: lazyPage(loader),
+    })
+
+    router.navigate('/lazy')
+    await nextTick()
+    first.reject(new Error('secret engine message /assets/chunk.js'))
+    await settleCode()
+    expect(wrapper.findComponent(ErrorPage).props('error')).toEqual(
+      LOCAL_FAILURE,
+    )
+    expect(
+      wrapper.get('[data-id="page-error"]').attributes('data-error-code'),
+    ).toBe('503')
+    expect(wrapper.text()).toContain('Page could not be loaded')
+    expect(wrapper.text()).toContain('Please try opening this page again.')
+    expect(wrapper.text()).not.toContain('secret engine message')
+    expect(wrapper.text()).not.toContain('/assets/chunk.js')
+    expect(
+      wrapper.get('[data-id="hilos-page-state"]').attributes('data-state'),
+    ).toBe('error')
+    expect(
+      wrapper.get('[data-id="hilos-page-departure"]').element.childElementCount,
+    ).toBe(0)
+    await outlast(DEFAULT_SKELETON_DELAY_MS)
+    expect(loader).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-id="hilos-page-skeleton"]').exists()).toBe(false)
+
+    await wrapper.get('[data-id="page-error-home"]').trigger('click')
+    expect(router.currentPath.get()).toBe('/')
+    expect(subscribe).toHaveBeenLastCalledWith('main', {})
+    answer()
+    await nextTick()
+    expect(wrapper.find('[data-id="main"]').exists()).toBe(true)
+    router.navigate('/lazy')
+    expect(loader).toHaveBeenCalledTimes(2)
+    answer()
+    retry.resolve(page.component)
+    await settleCode()
+    expect(page.mounted).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-id="page-error"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it.each([
+    { httpCode: 401, auth: true },
+    { httpCode: 401, auth: false },
+    { httpCode: 403, auth: true },
+    { httpCode: 404, auth: true },
+  ])(
+    'shows the server refusal immediately ($httpCode, auth=$auth) over a late import failure',
+    async ({ httpCode, auth }) => {
+      const pending = deferred<Component>()
+      const page = trackedPage('lazy-page')
+      const authSurface = markRaw(
+        defineComponent(
+          () => () => h('div', { 'data-id': 'auth-surface' }, 'Sign in'),
+        ),
+      )
+      const { router, answer, pageError } = waitingRouter()
+      answer()
+      const wrapper = mountPages(router, {
+        main: markRaw(MainPage),
+        lazy: lazyPage(() => pending.promise),
+      })
+      if (auth) {
+        await wrapper.setProps({ authSurface })
+      }
+      router.navigate('/lazy')
+      await nextTick()
+      const refusal = {
+        ...NOT_FOUND,
+        page: 'lazy',
+        httpCode,
+        title: 'Server title',
+        message: 'Server refusal words',
+      }
+      pageError.set(refusal)
+      await nextTick()
+      expect(
+        wrapper.get('[data-id="hilos-page-departure"]').element
+          .childElementCount,
+      ).toBe(0)
+      expect(
+        wrapper.get('[data-id="hilos-page-state"]').attributes('data-state'),
+      ).toBe('error')
+      expect(wrapper.find('[data-id="auth-surface"]').exists()).toBe(
+        httpCode === 401 && auth,
+      )
+      if (httpCode !== 401 || !auth) {
+        expect(wrapper.findComponent(ErrorPage).props('error')).toEqual(refusal)
+        expect(wrapper.text()).toContain('Server refusal words')
+      }
+      pending.reject(new Error('Chunk failed'))
+      await settleCode()
+      await outlast(DEFAULT_SKELETON_DELAY_MS)
+      expect(page.mounted).not.toHaveBeenCalled()
+      expect(wrapper.find('[data-id="hilos-page-skeleton"]').exists()).toBe(
+        false,
+      )
+      expect(wrapper.find('[data-id="auth-surface"]').exists()).toBe(
+        httpCode === 401 && auth,
+      )
+      if (httpCode !== 401 || !auth) {
+        expect(wrapper.findComponent(ErrorPage).props('error')).toEqual(refusal)
+      }
+      wrapper.unmount()
+    },
+  )
+
+  it('keeps a resolved component gated by 401 and reuses it after authentication', async () => {
+    const pending = deferred<Component>()
+    const page = trackedPage('lazy-page')
+    const loader = vi.fn(() => pending.promise)
+    const { router, pageError, pageLoading, answer } = waitingRouter('/lazy')
+    const currentUserId = createSignal<number | null>(null)
+    const gate = createAuthGate({ router, currentUserId })
+    const authSurface = markRaw(
+      defineComponent(
+        () => () => h('div', { 'data-id': 'auth-surface' }, 'Sign in'),
+      ),
+    )
+    const wrapper = mountPages(router, { lazy: lazyPage(loader) })
+    await wrapper.setProps({ authSurface, authGate: gate })
+
+    pageError.set({ ...NOT_FOUND, page: 'lazy', httpCode: 401 })
+    pageLoading.set(false)
+    gate.requireAuth()
+    pending.resolve(page.component)
+    await settleCode()
+    expect(wrapper.findAll('[data-id="auth-surface"]')).toHaveLength(1)
+    expect(wrapper.findComponent(ErrorPage).exists()).toBe(false)
+    expect(page.mounted).not.toHaveBeenCalled()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+
+    router.awaitPageAnswer()
+    currentUserId.set(42)
+    await nextTick()
+    expect(page.mounted).not.toHaveBeenCalled()
+    answer()
+    await nextTick()
+    expect(page.mounted).toHaveBeenCalledTimes(1)
+    expect(loader).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-id="auth-surface"]').exists()).toBe(false)
+    expect(gate.modalOpen.get()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('lets a later server refusal replace the local load error', async () => {
+    const pending = deferred<Component>()
+    const { router, pageError } = waitingRouter('/lazy')
+    const wrapper = mountPages(router, {
+      lazy: lazyPage(() => pending.promise),
+    })
+    pending.reject(new Error('Chunk failed'))
+    await settleCode()
+    expect(wrapper.findComponent(ErrorPage).props('error')).toEqual(
+      LOCAL_FAILURE,
+    )
+
+    const refusal = { ...NOT_FOUND, page: 'lazy', httpCode: 403 }
+    pageError.set(refusal)
+    await nextTick()
+    expect(wrapper.findComponent(ErrorPage).props('error')).toEqual(refusal)
+    wrapper.unmount()
+  })
+
+  it('replaces a descriptor at the same key and ignores the old resolution', async () => {
+    const old = deferred<Component>()
+    const replacement = deferred<Component>()
+    const stale = trackedPage('stale-page')
+    const current = trackedPage('current-page')
+    const firstLoader = vi.fn(() => old.promise)
+    const nextLoader = vi.fn(() => replacement.promise)
+    const { router, answer } = waitingRouter('/lazy')
+    const wrapper = mountPages(router, { lazy: lazyPage(firstLoader) })
+    answer()
+    await outlast(100)
+    await wrapper.setProps({ pages: { lazy: lazyPage(nextLoader) } })
+    old.resolve(stale.component)
+    await settleCode()
+    expect(stale.mounted).not.toHaveBeenCalled()
+    expect(firstLoader).toHaveBeenCalledTimes(1)
+    expect(nextLoader).toHaveBeenCalledTimes(1)
+    await outlast(DEFAULT_SKELETON_DELAY_MS - 100)
+    expect(wrapper.find('[data-id="hilos-page-skeleton"]').exists()).toBe(true)
+    replacement.resolve(current.component)
+    await settleCode()
+    expect(current.mounted).toHaveBeenCalledTimes(1)
+
+    await wrapper.setProps({ pages: { lazy: markRaw(KnownPage) } })
+    expect(wrapper.find('[data-id="known-page"]').exists()).toBe(true)
+    await wrapper.setProps({ pages: {} })
+    expect(wrapper.find('[data-id="known-page"]').exists()).toBe(false)
+    expect(
+      wrapper.get('[data-id="hilos-page-state"]').attributes('data-state'),
+    ).toBe('ready')
+    wrapper.unmount()
+  })
+
+  it('notices an entry replacement inside the same reactive map', async () => {
+    const pending = deferred<Component>()
+    const stale = trackedPage('stale-page')
+    const pages = shallowReactive<Record<string, PageView<Component>>>({
+      lazy: lazyPage(() => pending.promise),
+    })
+    const { router, answer } = waitingRouter('/lazy')
+    const wrapper = mountPages(router, pages)
+    answer()
+    pages.lazy = markRaw(KnownPage)
+    await nextTick()
+    expect(wrapper.find('[data-id="known-page"]').exists()).toBe(true)
+    pending.resolve(stale.component)
+    await settleCode()
+    expect(stale.mounted).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-id="known-page"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('keeps an in-flight descriptor across map updates and releases its cache on unmount', async () => {
+    const pending = deferred<Component>()
+    const page = trackedPage('lazy-page')
+    const loader = vi.fn(() => pending.promise)
+    const descriptor = lazyPage(loader)
+    const { router, answer } = waitingRouter('/lazy')
+    const wrapper = mountPages(router, { lazy: descriptor })
+    await wrapper.setProps({
+      pages: { lazy: descriptor, main: markRaw(MainPage) },
+    })
+    expect(loader).toHaveBeenCalledTimes(1)
+    pending.resolve(page.component)
+    answer()
+    await settleCode()
+    expect(page.mounted).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+
+    const remounted = mountPages(router, { lazy: descriptor })
+    expect(loader).toHaveBeenCalledTimes(2)
+    await settleCode()
+    expect(page.mounted).toHaveBeenCalledTimes(2)
+    remounted.unmount()
+  })
+
+  it.each(['resolve', 'reject'] as const)(
+    'does not replace a ready eager page with a departed import %s',
+    async (outcome) => {
+      const pending = deferred<Component>()
+      const stale = trackedPage('stale-page')
+      const { router, answer } = waitingRouter('/lazy')
+      const wrapper = mountPages(router, {
+        lazy: lazyPage(() => pending.promise),
+        main: markRaw(MainPage),
+      })
+      router.navigate('/')
+      answer()
+      await nextTick()
+      expect(wrapper.find('[data-id="main"]').exists()).toBe(true)
+
+      if (outcome === 'resolve') {
+        pending.resolve(stale.component)
+      } else {
+        pending.reject(new Error('Departed chunk failed'))
+      }
+      await settleCode()
+      expect(stale.mounted).not.toHaveBeenCalled()
+      expect(wrapper.find('[data-id="main"]').exists()).toBe(true)
+      expect(wrapper.find('[data-id="page-error"]').exists()).toBe(false)
+      expect(wrapper.find('[data-id="hilos-page-skeleton"]').exists()).toBe(
+        false,
+      )
+      expect(
+        wrapper.get('[data-id="hilos-page-state"]').attributes('data-state'),
+      ).toBe('ready')
+      wrapper.unmount()
+    },
+  )
+
+  it('reuses the descriptor across maps and parameters while waiting for each server answer', async () => {
+    const pending = deferred<Component>()
+    const page = trackedPage('lazy-page')
+    const loader = vi.fn(() => pending.promise)
+    const descriptor = lazyPage(loader)
+    const { router, answer } = waitingRouter('/lazy/1')
+    const wrapper = mountPages(router, { lazy: descriptor })
+    pending.resolve(page.component)
+    answer()
+    await settleCode()
+    await wrapper.setProps({
+      pages: { lazy: descriptor, main: markRaw(MainPage) },
+    })
+    expect(page.mounted).toHaveBeenCalledTimes(1)
+
+    router.navigate('/lazy/2')
+    await nextTick()
+    expect(wrapper.find('[data-id="lazy-page"]').exists()).toBe(false)
+    expect(
+      wrapper.get('[data-id="hilos-page-state"]').attributes('data-state'),
+    ).toBe('loading')
+    answer()
+    await nextTick()
+    expect(page.mounted).toHaveBeenCalledTimes(2)
+    router.navigate('/')
+    answer()
+    await nextTick()
+    router.navigate('/lazy/3')
+    answer()
+    await nextTick()
+    expect(page.mounted).toHaveBeenCalledTimes(3)
+    expect(loader).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it.each(['resolve', 'reject'] as const)(
+    'disposes listeners and timers before a late %s',
+    async (outcome) => {
+      const pending = deferred<Component>()
+      const page = trackedPage('lazy-page')
+      const otherLoader = vi.fn(() => Promise.resolve(markRaw(KnownPage)))
+      const { router, answer } = waitingRouter()
+      answer()
+      const pages = shallowReactive<Record<string, PageView<Component>>>({
+        main: markRaw(MainPage),
+        lazy: lazyPage(() => pending.promise),
+        other: lazyPage(otherLoader),
+      })
+      const wrapper = mountPages(router, pages)
+      router.navigate('/lazy')
+      await nextTick()
+      const departure = wrapper.get('[data-id="hilos-page-departure"]').element
+      expect(departure.childElementCount).toBe(1)
+      wrapper.unmount()
+      expect(departure.childElementCount).toBe(0)
+      expect(vi.getTimerCount()).toBe(0)
+
+      if (outcome === 'resolve') {
+        pending.resolve(page.component)
+      } else {
+        pending.reject(new Error('Disposed chunk failed'))
+      }
+      pages.lazy = lazyPage(otherLoader)
+      router.navigate('/other')
+      answer()
+      await settleCode()
+      expect(otherLoader).not.toHaveBeenCalled()
+      expect(page.mounted).not.toHaveBeenCalled()
+      expect(departure.childElementCount).toBe(0)
+      expect(vi.getTimerCount()).toBe(0)
+    },
+  )
+
+  it.each(['unbuilt', 'unknown', 'refused'] as const)(
+    'does not start a loader for a known %s page',
+    async (kind) => {
+      const loader = vi.fn(() => Promise.resolve(markRaw(KnownPage)))
+      const { router, pageError } = waitingRouter(
+        kind === 'unknown' ? '/unknown' : '/lazy',
+        new Set(kind === 'unbuilt' ? ['lazy'] : []),
+      )
+      if (kind === 'refused') {
+        pageError.set({ ...NOT_FOUND, page: 'lazy' })
+      }
+      const wrapper = mountPages(router, { lazy: lazyPage(loader) })
+      await settleCode()
+      expect(loader).not.toHaveBeenCalled()
+      expect(wrapper.find('[data-id="page-error"]').exists()).toBe(true)
+      expect(wrapper.find('[data-id="hilos-page-skeleton"]').exists()).toBe(
+        false,
+      )
+      wrapper.unmount()
+    },
+  )
 })

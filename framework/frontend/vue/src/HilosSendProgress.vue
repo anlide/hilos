@@ -7,7 +7,7 @@ import {
   sendAgainLocked,
   sendProgressLine,
   type CodeSendProgress,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { computed, onUnmounted, ref, watch } from 'vue'
 
 import HilosLongText from './HilosLongText.vue'

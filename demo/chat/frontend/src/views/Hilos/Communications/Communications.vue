@@ -5,7 +5,7 @@ framework's; the project supplies only the context (its scope stores + live
 connection + action lifecycle) and registers the channel registry on its backend.
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { HilosCommunicationsPage } from '@hilos/vue'
+import { HilosCommunicationsPage } from '@hilos/vue/admin/communications'
 
 import { hilosCommunicationsContext } from './hilosCommunicationsContext'
 

@@ -5,7 +5,7 @@ import {
   inject,
   input,
 } from '@angular/core'
-import { hilosCrumbLinks } from '@hilos/core'
+import { hilosCrumbLinks } from '@hilos/core/base'
 import { HilosBreadcrumb } from './HilosBreadcrumb.js'
 import { HILOS_ROUTER } from './hilosRouterToken.js'
 import { hilosSignal } from './hilosSignal.js'

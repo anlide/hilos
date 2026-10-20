@@ -5,9 +5,9 @@
 // shell's slot to replace its default body. Bootstrap classes only
 // (styling-rules.md).
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosPages } from '@hilos/core'
+import { HilosPages } from '@hilos/core/base'
 
-import { HilosAdminPage } from '../../../HilosAdminPage.js'
+import { HilosAdminPage } from '@hilos/angular/base'
 
 /** The I18n Ui Page admin page: the framework default shell for its key. */
 @Component({

@@ -7,8 +7,8 @@ import { ChangeDetectionStrategy, Component } from '@angular/core'
 import {
   type HilosProfileBinding,
   type HilosProfilePageContext,
-} from '@hilos/core'
-import { HilosProfilePage } from '@hilos/angular'
+} from '@hilos/core/base'
+import { HilosProfilePage } from '@hilos/angular/base'
 
 import { actions, connection } from '../../bootstrap/connection.js'
 import { currentUserName, scopes } from '../../bootstrap/session.js'

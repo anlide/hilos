@@ -41,23 +41,24 @@ import {
   isPresetApplied,
   isSelectionUnknown,
   presetsOf,
-  resolveHilosPath,
   selectedPresetOf,
-  subscribeSignal,
-} from '@hilos/core'
+} from '@hilos/core/admin/settings'
+import { resolveHilosPath, subscribeSignal } from '@hilos/core/base'
 import type {
   HilosSettingPresetsContext,
-  HilosSettingPresetsState,
   HilosSettingPresetsVocabulary,
-} from '@hilos/core'
+} from '@hilos/core/admin/settings'
+import type { HilosSettingPresetsState } from '@hilos/core/base'
 
-import { HilosActionError } from '../../HilosActionError.js'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosHideable } from '../../HilosHideable.js'
-import { HilosLink } from '../../HilosLink.js'
-import { HilosModal } from '../../HilosModal.js'
-import { LoadingButton } from '../../LoadingButton.js'
-import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
+import {
+  HilosActionError,
+  HilosAdminPage,
+  HilosHideable,
+  HilosLink,
+  HilosModal,
+  LoadingButton,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 
 /** The framework setting-presets screen: a section's settings as a few named sets. */
 @Component({

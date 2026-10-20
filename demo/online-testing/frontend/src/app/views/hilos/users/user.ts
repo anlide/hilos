@@ -4,7 +4,7 @@
 // only the shared HilosUsersContext (its scopes, connection, and user collection).
 // Bootstrap classes only (styling-rules.md).
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosUserPage } from '@hilos/angular'
+import { HilosUserPage } from '@hilos/angular/admin/users'
 
 import { hilosUsersContext } from './hilosUsersContext.js'
 

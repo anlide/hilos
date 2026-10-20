@@ -3,7 +3,7 @@ import {
   HILOS_I18N_LANGUAGE_NATIVE_NAME_MAX,
   HILOS_I18N_LANGUAGE_WINDOW_COPY,
   type HilosI18nLanguageWindow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { computed, onMounted, onUnmounted, watch } from 'vue'
 
 import ConflictActions from '../../../ConflictActions.vue'

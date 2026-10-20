@@ -25,22 +25,23 @@ import {
   ANALYTICS_BROWSER_SESSION_ROUTE_PARAM,
   ANALYTICS_NO_VALUE,
   ANALYTICS_PERSON_ROUTE_PARAM,
-  computedSignal,
   createHilosAnalyticsBrowserSessionsTable,
   formatAnalyticsSessionNumber,
   formatAnalyticsTime,
-  HilosPages,
   readAnalyticsRouteId,
   type HilosAnalyticsContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/analytics'
+import { computedSignal, HilosPages } from '@hilos/core/base'
 
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosHideable } from '../../HilosHideable.js'
-import { HilosLink } from '../../HilosLink.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { HILOS_ROUTER } from '../../hilosRouterToken.js'
-import { hilosSignal } from '../../hilosSignal.js'
+import {
+  HilosAdminPage,
+  HilosHideable,
+  HilosLink,
+  HilosTableCell,
+  HilosViewportTable,
+  HILOS_ROUTER,
+  hilosSignal,
+} from '@hilos/angular/base'
 
 /** The person page of the Analytics section: the browser sessions in which the person in the address signed in last. */
 @Component({

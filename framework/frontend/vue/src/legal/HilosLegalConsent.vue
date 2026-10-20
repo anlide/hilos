@@ -6,7 +6,7 @@ import {
   hilosLegalDocumentLabel,
   type HilosLegalConsentTerms,
   type HilosLegalDocumentKey,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import HilosLegalRevisionText from './HilosLegalRevisionText.vue'
 
 const props = defineProps<{

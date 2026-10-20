@@ -11,7 +11,7 @@ import {
   input,
   linkedSignal,
 } from '@angular/core'
-import { formatInitials, type HilosAvatarMark } from '@hilos/core'
+import { formatInitials, type HilosAvatarMark } from '@hilos/core/base'
 
 /** A decorative circle with an icon, the person's photo or initials, or a person icon. */
 @Component({

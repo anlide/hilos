@@ -87,7 +87,7 @@ import {
   type OAuthTripOutcome,
   type PendingAuthStep,
   type ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosLegalConsent } from '../legal/HilosLegalConsent.js'
 import { HilosBackupCodes } from '../HilosBackupCodes.js'

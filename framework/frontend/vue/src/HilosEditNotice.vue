@@ -19,7 +19,7 @@ the slot itself, the same reasoning as `announce` on HilosFormError; the row
 carries no role of its own, or the reader would say it twice (accessibility.md,
 "Live regions"). -->
 <script setup lang="ts">
-import type { RowEditNoticeKind } from '@hilos/core'
+import type { RowEditNoticeKind } from '@hilos/core/base'
 import { ref, watch } from 'vue'
 
 import HilosLongText from './HilosLongText.vue'

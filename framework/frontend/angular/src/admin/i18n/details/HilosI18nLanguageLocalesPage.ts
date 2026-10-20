@@ -32,30 +32,35 @@ import {
 } from '@angular/core'
 import {
   HILOS_I18N_LOCALE_COPY,
-  HILOS_TABLE_ACTIONS_KEY,
   HilosI18nLocaleRowKey,
-  HilosPages,
-  computedSignal,
   createHilosI18nLanguageCard,
   createHilosI18nLanguageLocalesTable,
   createHilosI18nLocaleDelete,
   createHilosI18nLocaleTemplates,
   hilosI18nLocaleCountryLabel,
   hilosI18nLocaleWindowMode,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import {
+  HILOS_TABLE_ACTIONS_KEY,
+  HilosPages,
+  computedSignal,
+} from '@hilos/core/base'
 import type {
   HilosI18nLanguageCard,
   HilosI18nLanguageContext,
   HilosI18nLocaleDeleteTarget,
   HilosI18nLocaleRow,
   HilosI18nLocaleTemplates,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 
-import { HilosAdminPage } from '../../../HilosAdminPage.js'
-import { HilosTableCell } from '../../../HilosTableCell.js'
-import { HilosViewportTable } from '../../../HilosViewportTable.js'
-import { HILOS_ROUTER } from '../../../hilosRouterToken.js'
-import { hilosSignal, mirrorHilosSignal } from '../../../hilosSignal.js'
+import {
+  HilosAdminPage,
+  HilosTableCell,
+  HilosViewportTable,
+  HILOS_ROUTER,
+  hilosSignal,
+  mirrorHilosSignal,
+} from '@hilos/angular/base'
 import { HilosI18nLanguageHeader } from './HilosI18nLanguageHeader.js'
 import { HilosI18nLocaleDelete } from './HilosI18nLocaleDelete.js'
 import { HilosI18nLocaleWindow } from './HilosI18nLocaleWindow.js'

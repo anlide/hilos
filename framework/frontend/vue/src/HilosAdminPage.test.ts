@@ -7,14 +7,14 @@ import {
   bindSessionScope,
   createSignal,
   createAppPageRouter,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosConnection,
   HilosPageIdentity,
   HilosRouter,
   PageRouteMatch,
   ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { defineComponent, h } from 'vue'
 
 import HilosAdminPage from './HilosAdminPage.vue'

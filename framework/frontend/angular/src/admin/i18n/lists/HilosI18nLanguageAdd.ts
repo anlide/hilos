@@ -21,20 +21,22 @@ import type { WritableSignal } from '@angular/core'
 import {
   HILOS_I18N_LANGUAGE_ADD_COPY,
   createHilosI18nBuiltInLanguages,
-  subscribeSignal,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { subscribeSignal } from '@hilos/core/base'
 import type {
   HilosI18nBuiltInLanguage,
   HilosI18nLanguageAdd as LanguageAdd,
   HilosI18nLanguageContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 
-import { HilosActionError } from '../../../HilosActionError.js'
-import { HilosModal } from '../../../HilosModal.js'
-import { LoadingButton } from '../../../LoadingButton.js'
-import { injectLookOnly } from '../../../hilosLookOnly.js'
-import { mirrorHilosSignal } from '../../../hilosSignal.js'
-import { createHilosTrackedAction } from '../../../hilosTrackedAction.js'
+import {
+  HilosActionError,
+  HilosModal,
+  LoadingButton,
+  injectLookOnly,
+  mirrorHilosSignal,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 
 /** The step of the creation flow, as the core holds it. */
 type LanguageAddStep = ReturnType<LanguageAdd['step']['get']>

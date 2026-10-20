@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import {
   computedSignal,
+  HilosPages,
+  resolveHilosPath,
+  type HilosLegalContext,
+} from '@hilos/core/base'
+import {
   createHilosLegalRevisionsTable,
   createHilosLegalRevisionAcceptanceSummary,
-  HilosPages,
   LEGAL_CATALOG_REFUSAL_SECTION,
   LEGAL_REVISION_SECTION,
   legalAdminRevisionSchema,
-  resolveHilosPath,
-  type HilosLegalContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/legal'
 import { computed, inject, onMounted, onUnmounted } from 'vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosLink from '../../HilosLink.vue'

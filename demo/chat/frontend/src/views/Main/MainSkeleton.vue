@@ -4,7 +4,7 @@ the "who is here" line, the event stream in the wide column, participants and
 bots in the narrow one, the composer below — so nothing moves when the page
 lands. Decorative from end to end: the outlet announces the wait once. -->
 <script setup lang="ts">
-import { HilosSkeleton } from '@hilos/vue'
+import { HilosSkeleton } from '@hilos/vue/base'
 </script>
 
 <template>

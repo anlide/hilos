@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { HilosI18nBuiltInCatalog } from '@hilos/core'
+import type { HilosI18nBuiltInCatalog } from '@hilos/core/admin/i18n'
 
 /** The list's built-in catalog tallies, with the page's explanation. */
 export function HilosI18nCatalogNote({

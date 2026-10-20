@@ -1,5 +1,8 @@
 // One source vocabulary for environment cells and the reading ladder.
-import { daemonEnvSourceBadge, type HilosDaemonEnvSource } from '@hilos/core'
+import {
+  daemonEnvSourceBadge,
+  type HilosDaemonEnvSource,
+} from '@hilos/core/admin/daemon'
 
 /** @param props The source reported by the node. */
 export function HilosDaemonEnvSourceBadge({

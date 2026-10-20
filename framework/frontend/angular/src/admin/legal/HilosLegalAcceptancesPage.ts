@@ -12,27 +12,31 @@ import {
   hilosLegalAcceptancesExportFilterLine,
   hilosLegalAcceptancesExportStatus,
   hilosLegalAcceptancesExportStatusRoom,
-  hilosLegalDocumentLabel,
   HILOS_LEGAL_ACCEPTANCES_EXPORT_COPY,
-  HILOS_STEP_UP_COPY,
   HilosLegalRowKey,
+  LEGAL_ACCEPTANCES_EXPORT_DOWNLOAD_PATH,
+} from '@hilos/core/admin/legal'
+import {
+  hilosLegalDocumentLabel,
+  HILOS_STEP_UP_COPY,
   HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
-  LEGAL_ACCEPTANCES_EXPORT_DOWNLOAD_PATH,
   resolveHilosPath,
   subscribeSignal,
   type HilosLegalAcceptancesExportNode,
   type HilosLegalContext,
-} from '@hilos/core'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosFormError } from '../../HilosFormError.js'
-import { HilosHideable } from '../../HilosHideable.js'
-import { HilosLink } from '../../HilosLink.js'
-import { HilosModal } from '../../HilosModal.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { LoadingButton } from '../../LoadingButton.js'
-import { HilosStepUpStep } from '../../auth/HilosStepUpStep.js'
+} from '@hilos/core/base'
+import {
+  HilosAdminPage,
+  HilosFormError,
+  HilosHideable,
+  HilosLink,
+  HilosModal,
+  HilosTableCell,
+  HilosViewportTable,
+  LoadingButton,
+  HilosStepUpStep,
+} from '@hilos/angular/base'
 
 /** Immutable acceptance records with the complete server-supplied filter vocabulary, and their export. */
 @Component({

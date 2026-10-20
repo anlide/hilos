@@ -5,7 +5,7 @@
 // lifecycle too) and registers the hilosLogRotations table against this page on its
 // backend.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosLogsRotationsPage } from '@hilos/angular'
+import { HilosLogsRotationsPage } from '@hilos/angular/admin/logs'
 
 import { hilosLogsContext } from './hilosLogsContext'
 

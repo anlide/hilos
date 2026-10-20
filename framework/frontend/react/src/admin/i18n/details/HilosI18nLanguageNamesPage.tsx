@@ -1,17 +1,16 @@
 import { useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { computedSignal, HilosPages } from '@hilos/core/base'
 import {
-  computedSignal,
   createHilosI18nLanguageCard,
   createHilosI18nLanguageNameWindow,
   createHilosI18nNamesTable,
   HILOS_I18N_LANGUAGE_NAMES,
   HILOS_I18N_LANGUAGE_NAME_COPY,
   HILOS_I18N_LANGUAGE_NAME_DELETE_COPY,
-  HilosPages,
   type HilosI18nLanguageContext,
   type HilosI18nLanguageNameDeleteTarget,
   type HilosI18nNameRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { HilosAdminPage } from '../../../HilosAdminPage.js'
 import { LoadingButton } from '../../../LoadingButton.js'
 import { HilosRouterContext } from '../../../hilosRouterContext.js'

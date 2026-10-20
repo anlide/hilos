@@ -10,7 +10,7 @@
 // is what speaks about emptiness. Internal to the React view layer on purpose: it
 // is not exported from index.ts, for the reason the bar is not. The React port of
 // the Vue reference (vue/src/HilosTableFooter.vue), under the same names and words.
-import type { TableViewportController } from '@hilos/core'
+import type { TableViewportController } from '@hilos/core/base'
 
 import { useSignal } from './useSignal.js'
 

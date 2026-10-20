@@ -18,16 +18,15 @@ modal is the core row-edit session over the focused row
 what happened elsewhere on one line of room held in advance (HilosEditNotice);
 this view binds the input. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
+import { computedSignal, HilosPages } from '@hilos/core/base'
 import {
-  computedSignal,
   createHilosChannelFieldEdit,
   createHilosChannelFields,
   createHilosCommunicationsActions,
   hilosChannelDisplayValue,
-  HilosPages,
   type HilosChannelFieldRow,
   type HilosCommunicationsContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/communications'
 import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 
 import ConflictActions from '../../ConflictActions.vue'

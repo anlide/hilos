@@ -18,7 +18,7 @@ import {
   type HilosProfilePhotoStep,
   type ReadonlySignal,
   type Unsubscribe,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { HilosAvatar } from '../HilosAvatar.js'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'

@@ -3,7 +3,7 @@ import {
   hilosNotificationAddressSection,
   startHilosNotificationPreferences,
   type HilosProfileNotificationsContext,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { computed, inject, onMounted, onUnmounted } from 'vue'
 import HilosNotificationPreferences from '../HilosNotificationPreferences.vue'
 import HilosPageHeading from '../HilosPageHeading.vue'

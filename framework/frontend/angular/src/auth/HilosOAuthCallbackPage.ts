@@ -28,8 +28,8 @@ import {
   input,
   signal,
 } from '@angular/core'
-import { createOAuthLogin, OAUTH_RETURN_MESSAGE_TYPE } from '@hilos/core'
-import type { HilosAuthContext, OAuthReturnMessage } from '@hilos/core'
+import { createOAuthLogin, OAUTH_RETURN_MESSAGE_TYPE } from '@hilos/core/base'
+import type { HilosAuthContext, OAuthReturnMessage } from '@hilos/core/base'
 
 import { HILOS_ROUTER } from '../hilosRouterToken.js'
 

@@ -13,7 +13,7 @@ import {
   hilosLegalDocumentLabel,
   type HilosLegalConsentTerms,
   type HilosLegalDocumentKey,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { HilosLegalRevisionText } from './HilosLegalRevisionText.js'
 
 /** The same document body serves live registration and its read-only admin preview. */

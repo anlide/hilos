@@ -1,0 +1,37 @@
+// @hilos/core/admin/maintenance: lazy section APIs.
+
+export {
+  resolveHilosMaintenanceCircleRow,
+  createHilosMaintenanceCircleTable,
+  createHilosMaintenanceActions,
+  HILOS_MAINTENANCE_CIRCLE_COPY,
+  HILOS_MAINTENANCE_DISABLE_COPY,
+  HILOS_MAINTENANCE_ENABLE_COPY,
+  MAINTENANCE_DISABLE_ACTION,
+  MAINTENANCE_PASS_ACTION,
+  maintenancePassReplySchema,
+  HILOS_MAINTENANCE_PASS_COPY,
+  type HilosMaintenancePassReply,
+  MAINTENANCE_ENABLE_ACTION,
+  MAINTENANCE_CIRCLE_IDENTIFIER_FIELD,
+  MAINTENANCE_CIRCLE_ONLINE_FIELD,
+  type HilosMaintenanceActions,
+  type HilosMaintenanceCircleRow,
+  type HilosMaintenanceCircleTable,
+  type HilosMaintenanceCircleTableView,
+  type HilosMaintenanceContext,
+  createHilosMaintenanceState,
+  hilosMaintenancePosition,
+  hilosMaintenanceElapsed,
+  hilosMaintenanceCard,
+  HILOS_MAINTENANCE_STATE_COPY,
+  type HilosMaintenanceStateHandle,
+  type HilosMaintenancePosition,
+  type HilosMaintenanceCard,
+} from './hilosMaintenance.js'
+export {
+  MAINTENANCE_STATE_SIGNAL,
+  MAINTENANCE_STATE_SIGNAL_SCHEMAS,
+  maintenanceStateSchema,
+  type HilosMaintenanceState,
+} from '../../protocol/maintenanceSignals.js'

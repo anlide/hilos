@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import type { HilosCrumb } from '@hilos/core'
+import type { HilosCrumb } from '@hilos/core/base'
 
 import HilosBreadcrumb from './HilosBreadcrumb.vue'
 

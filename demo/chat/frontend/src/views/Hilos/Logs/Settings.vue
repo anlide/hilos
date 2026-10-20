@@ -5,7 +5,7 @@ hand-made edits are the framework's; the project supplies only the context (the 
 connection and action lifecycle the other Hilos pages use) and registers the
 LogsSettingsPage on its backend. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { HilosLogsSettingsPage } from '@hilos/vue'
+import { HilosLogsSettingsPage } from '@hilos/vue/admin/logs'
 
 import { hilosLogSettingsContext } from './hilosLogsContext'
 

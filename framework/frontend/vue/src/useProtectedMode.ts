@@ -5,7 +5,7 @@
 // (multiframework-core.md).
 import { onScopeDispose, shallowReadonly, shallowRef } from 'vue'
 import type { Ref } from 'vue'
-import type { HilosConnection, ProtectedModeStatus } from '@hilos/core'
+import type { HilosConnection, ProtectedModeStatus } from '@hilos/core/base'
 
 /**
  * Expose a connection's protected-mode state as a readonly reactive ref.

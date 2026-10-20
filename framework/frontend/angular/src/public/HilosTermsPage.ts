@@ -40,7 +40,7 @@ import {
   type HilosLegalRevisionDialog,
   type HilosLegalTerms,
   type HilosLegalTermsStore,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
 import { hilosSignal } from '../hilosSignal.js'

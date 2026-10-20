@@ -31,7 +31,6 @@ import {
   HILOS_I18N_COUNTRIES_LEGEND,
   HILOS_I18N_COUNTRY_MARKS,
   HILOS_I18N_COUNTRY_WINDOW_COPY,
-  HilosPages,
   createHilosI18nBuiltInCatalog,
   createHilosI18nBuiltInCountryCodes,
   createHilosI18nCountriesTable,
@@ -39,20 +38,23 @@ import {
   createHilosI18nCountryRowDelete,
   createHilosI18nCountryRowWindow,
   hilosI18nCountryDeleteFromRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { HilosPages } from '@hilos/core/base'
 import type {
   HilosI18nBuiltInCatalog,
   HilosI18nCountryContext,
   HilosI18nCountryDeleteTarget,
   HilosI18nCountryRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 
-import { HilosAdminPage } from '../../../HilosAdminPage.js'
-import { HilosLink } from '../../../HilosLink.js'
-import { HilosTableCell } from '../../../HilosTableCell.js'
-import { HilosViewportTable } from '../../../HilosViewportTable.js'
-import { HILOS_ROUTER } from '../../../hilosRouterToken.js'
-import { mirrorHilosSignal } from '../../../hilosSignal.js'
+import {
+  HilosAdminPage,
+  HilosLink,
+  HilosTableCell,
+  HilosViewportTable,
+  HILOS_ROUTER,
+  mirrorHilosSignal,
+} from '@hilos/angular/base'
 import { HilosI18nCountryDelete } from '../details/HilosI18nCountryDelete.js'
 import { HilosI18nCountryWindow } from '../details/HilosI18nCountryWindow.js'
 import { HilosI18nCatalogNote } from './HilosI18nCatalogNote.js'

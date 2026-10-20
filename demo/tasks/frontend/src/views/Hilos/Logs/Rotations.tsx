@@ -4,7 +4,7 @@
 // the framework's; the project supplies only the context (the same connection and
 // scope stores the other Hilos pages use) and registers the rotations table on its
 // backend.
-import { HilosLogsRotationsPage } from '@hilos/react'
+import { HilosLogsRotationsPage } from '@hilos/react/admin/logs'
 
 import { hilosLogsContext } from './hilosLogsContext'
 

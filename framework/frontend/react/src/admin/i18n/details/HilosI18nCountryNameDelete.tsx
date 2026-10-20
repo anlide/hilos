@@ -5,7 +5,7 @@ import {
   type HilosI18nCountryContext,
   type HilosI18nCountryNameDeleteTarget,
   type HilosI18nNameRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { HilosActionError } from '../../../HilosActionError.js'
 import { HilosEditNotice } from '../../../HilosEditNotice.js'
 import { HilosModal } from '../../../HilosModal.js'

@@ -18,7 +18,7 @@ import {
   type HilosProfileRenameFlow,
   type HilosProfileRenameStep,
   type HilosStepUpOpening,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { ConflictActions } from '../ConflictActions.js'
 import { ConflictHeader } from '../ConflictHeader.js'
 import { HilosEditNotice } from '../HilosEditNotice.js'

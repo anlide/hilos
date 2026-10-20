@@ -20,12 +20,11 @@
 // owns only the markup, so a project mounts it by passing its HilosLogRotationsContext.
 // Bootstrap classes only (styling-rules.md).
 import { useContext, useEffect, useMemo, useState } from 'react'
+import { HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core/base'
 import {
-  HILOS_PAGE_ROUTES,
   HILOS_ROTATION_STATE_CARRYING,
   HILOS_ROTATION_STATE_DUE,
   HILOS_ROTATION_STATE_TAKEN,
-  HilosPages,
   ROTATION_FILTER_NODE,
   ROTATION_FILTER_STATE,
   createHilosLogRotationsActions,
@@ -42,8 +41,11 @@ import {
   rotationTakeoutNotice,
   rotationUndoNotice,
   rotationsEmptyState,
-} from '@hilos/core'
-import type { HilosLogRotationRow, HilosLogRotationsContext } from '@hilos/core'
+} from '@hilos/core/admin/logs'
+import type {
+  HilosLogRotationRow,
+  HilosLogRotationsContext,
+} from '@hilos/core/admin/logs'
 
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'

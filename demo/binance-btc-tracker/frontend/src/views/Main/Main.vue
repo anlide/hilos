@@ -6,7 +6,7 @@ guest no name, so the `self-user` marker is absent rather than empty. Rendered b
 HilosView when the navigator's route is the main page. -->
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useSignal } from '@hilos/vue'
+import { useSignal } from '@hilos/vue/base'
 
 import { currentUserId, currentUserName } from '../../bootstrap/session'
 

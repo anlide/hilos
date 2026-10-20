@@ -25,27 +25,27 @@ import {
   input,
   signal,
 } from '@angular/core'
+import { HilosPages, resolveHilosPath, subscribeSignal } from '@hilos/core/base'
 import {
-  HilosPages,
   createHilosSignInMethodsActions,
   createHilosSignInMethodsTable,
   isSignInMethodOn,
-  resolveHilosPath,
-  subscribeSignal,
-} from '@hilos/core'
+} from '@hilos/core/admin/security'
+import type { Hideable } from '@hilos/core/base'
 import type {
-  Hideable,
   HilosSignInMethodRow,
   HilosSignInMethodsContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/security'
 
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosHideable } from '../../HilosHideable.js'
-import { HilosLink } from '../../HilosLink.js'
-import { HilosSwitch } from '../../HilosSwitch.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
+import {
+  HilosAdminPage,
+  HilosHideable,
+  HilosLink,
+  HilosSwitch,
+  HilosTableCell,
+  HilosViewportTable,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 
 /** Numbers the passkey hint of each mounted page, so two pages never share an id. */
 let passkeyHintSeq = 0

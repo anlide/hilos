@@ -1,7 +1,7 @@
 import { NgClass } from '@angular/common'
 import { ChangeDetectionStrategy, Component, input } from '@angular/core'
-import type { HilosDaemonEnvValueView } from '@hilos/core'
-import { HilosHiddenMark } from '../../HilosHiddenMark.js'
+import type { HilosDaemonEnvValueView } from '@hilos/core/admin/daemon'
+import { HilosHiddenMark } from '@hilos/angular/base'
 
 /** Angular view of the Daemon EnvValue. */
 @Component({

@@ -11,7 +11,7 @@
 // work with no provider — on a 401 it stands IN PLACE of the page, where there
 // may be no gate at all.
 import { createContext } from 'react'
-import type { AuthGate } from '@hilos/core'
+import type { AuthGate } from '@hilos/core/base'
 
 /** Provides the application's {@link AuthGate} to the sign-in surface. */
 export const HilosAuthGateContext = createContext<AuthGate | null>(null)

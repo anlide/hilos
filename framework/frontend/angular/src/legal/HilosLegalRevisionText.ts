@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core'
-import type { HilosLegalClause } from '@hilos/core'
+import type { HilosLegalClause } from '@hilos/core/base'
 
 /** Numbered effective clauses and the origin of each project deviation. */
 @Component({

@@ -15,16 +15,19 @@
 import { NgTemplateOutlet } from '@angular/common'
 import { ChangeDetectionStrategy, Component, input } from '@angular/core'
 import type { TemplateRef } from '@angular/core'
-import { HILOS_TABLE_ACTIONS_KEY, HilosI18nNameRowKey } from '@hilos/core'
+import { HILOS_TABLE_ACTIONS_KEY } from '@hilos/core/base'
+import { HilosI18nNameRowKey } from '@hilos/core/admin/i18n'
 import type {
   HilosI18nNameCorrection,
   HilosI18nNameRow,
-  TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import type { TableViewportController } from '@hilos/core/base'
 
-import { HilosTableCell } from '../../../HilosTableCell.js'
-import { HilosTableDetail } from '../../../HilosTableDetail.js'
-import { HilosViewportTable } from '../../../HilosViewportTable.js'
+import {
+  HilosTableCell,
+  HilosTableDetail,
+  HilosViewportTable,
+} from '@hilos/angular/base'
 
 /** What the template of a row's own actions receives. */
 export interface HilosI18nNameActionsContext {

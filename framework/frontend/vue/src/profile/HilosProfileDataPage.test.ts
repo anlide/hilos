@@ -5,7 +5,7 @@ import {
   type HilosConnection,
   type HilosRouter,
   type ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { flushPromises, mount } from '@vue/test-utils'
 import { expect, it } from 'vitest'
 import { hilosRouterKey } from '../hilosRouterKey.js'

@@ -67,7 +67,7 @@ import {
   type ModalLayerOwner,
   type ScrollLockOwner,
   unlockBodyScroll,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { hilosSignal } from './hilosSignal.js'
 

@@ -6,12 +6,9 @@ setting-presets screen's; everything this page adds is which section it is — i
 page key, its signal and its vocabulary. A project mounts it by passing its
 HilosSettingPresetsContext. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import {
-  hilosLogSettingsVocabulary,
-  HilosPages,
-  LOG_SETTINGS_SIGNAL,
-  type HilosSettingPresetsContext,
-} from '@hilos/core'
+import { hilosLogSettingsVocabulary } from '@hilos/core/admin/logs'
+import { HilosPages, LOG_SETTINGS_SIGNAL } from '@hilos/core/base'
+import { type HilosSettingPresetsContext } from '@hilos/core/admin/settings'
 
 import HilosSettingPresetsPage from '../settings/HilosSettingPresetsPage.vue'
 

@@ -9,7 +9,27 @@
   "types": "./dist/types/hilos-angular.d.ts",
   "files": [
     "dist",
-    "src/hilos-styles.scss"
+    "src/hilos-styles.scss",
+    "base/package.json",
+    "admin-views/package.json",
+    "admin/analytics/package.json",
+    "admin/appearance/package.json",
+    "admin/backup/package.json",
+    "admin/billing/package.json",
+    "admin/change-log/package.json",
+    "admin/communications/package.json",
+    "admin/daemon/package.json",
+    "admin/dashboard/package.json",
+    "admin/i18n/package.json",
+    "admin/legal/package.json",
+    "admin/logs/package.json",
+    "admin/maintenance/package.json",
+    "admin/mcp-skills/package.json",
+    "admin/roles/package.json",
+    "admin/security/package.json",
+    "admin/settings/package.json",
+    "admin/sil/package.json",
+    "admin/users/package.json"
   ],
   "scripts": {
     "check": "npm run check:types && npm run check:templates",
@@ -17,7 +37,9 @@
     "check:templates": "ngc --noEmit -p tsconfig.build.json",
     "test": "vitest run",
     "prebuild": "node ../scripts/prebuild-sdk.mjs core",
-    "build": "ng-packagr -p ng-package.json -c tsconfig.build.json"
+    "build": "ng-packagr -p ng-package.json -c tsconfig.build.json",
+    "test:dist": "node test/packaging.smoke.mjs",
+    "test:dist:consumer": "node test/packaging.consumer.mjs"
   },
   "dependencies": {
     "@hilos/core": "*",

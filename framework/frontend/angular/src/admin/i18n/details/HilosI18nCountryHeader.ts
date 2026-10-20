@@ -11,11 +11,10 @@ import {
   inject,
   input,
 } from '@angular/core'
-import { HilosPages } from '@hilos/core'
-import type { HilosI18nCountryCard } from '@hilos/core'
+import { HilosPages } from '@hilos/core/base'
+import type { HilosI18nCountryCard } from '@hilos/core/admin/i18n'
 
-import { HilosLink } from '../../../HilosLink.js'
-import { HILOS_ROUTER } from '../../../hilosRouterToken.js'
+import { HilosLink, HILOS_ROUTER } from '@hilos/angular/base'
 
 /** The pages of one country, in tab order. */
 const COUNTRY_TABS = [

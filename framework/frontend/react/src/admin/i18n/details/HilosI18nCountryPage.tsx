@@ -7,10 +7,10 @@ import {
   HILOS_I18N_COUNTRY_DELETE_COPY,
   hilosI18nCountryDeleteFromCard,
   hilosI18nCountryDeleteReason,
-  HilosPages,
   type HilosI18nCountryContext,
   type HilosI18nCountryDeleteTarget,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { HilosPages } from '@hilos/core/base'
 import { HilosAdminPage } from '../../../HilosAdminPage.js'
 import { HilosRouterContext } from '../../../hilosRouterContext.js'
 import { useSignal } from '../../../useSignal.js'

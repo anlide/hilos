@@ -28,13 +28,15 @@ import {
 } from '@angular/core'
 import {
   HilosPages,
+  resolveHilosPath,
+  hilosRowEditIdle,
+} from '@hilos/core/base'
+import {
   createHilosOAuthProvidersTable,
   createHilosOAuthRedirect,
   createHilosSecurityOauthActions,
-  resolveHilosPath,
   createHilosOauthRedirectEdit,
-  hilosRowEditIdle,
-} from '@hilos/core'
+} from '@hilos/core/admin/security'
 import type {
   HilosOauthRedirectEditFields,
   HilosOauthRedirectEditForm,
@@ -42,23 +44,25 @@ import type {
   HilosOAuthRedirectRow,
   HilosSecurityOauthContext,
   OAuthValueSource,
-  TableViewportRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/security'
+import type { TableViewportRow } from '@hilos/core/base'
 
-import { ConflictActions } from '../../ConflictActions.js'
-import { ConflictHeader } from '../../ConflictHeader.js'
-import { HilosActionError } from '../../HilosActionError.js'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosEditNotice } from '../../HilosEditNotice.js'
-import { HilosHiddenMark } from '../../HilosHiddenMark.js'
-import { HilosHideable } from '../../HilosHideable.js'
-import { HilosLink } from '../../HilosLink.js'
-import { HilosModal } from '../../HilosModal.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { LoadingButton } from '../../LoadingButton.js'
-import { mirrorHilosSignal } from '../../hilosSignal.js'
-import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
+import {
+  ConflictActions,
+  ConflictHeader,
+  HilosActionError,
+  HilosAdminPage,
+  HilosEditNotice,
+  HilosHiddenMark,
+  HilosHideable,
+  HilosLink,
+  HilosModal,
+  HilosTableCell,
+  HilosViewportTable,
+  LoadingButton,
+  mirrorHilosSignal,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 
 /** The source badge label: where a value comes from. */
 const SOURCE_LABEL: Record<OAuthValueSource, string> = {

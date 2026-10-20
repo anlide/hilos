@@ -1,8 +1,6 @@
 import { mount } from '@vue/test-utils'
 import {
   createSignal,
-  DAEMON_ENV_ENVIRONMENT_DATA,
-  DAEMON_ENV_NODE_SILENT_DATA,
   HIDDEN_VALUE,
   HilosPages,
   ingest,
@@ -10,7 +8,11 @@ import {
   type HilosConnection,
   type HilosRouter,
   type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  DAEMON_ENV_ENVIRONMENT_DATA,
+  DAEMON_ENV_NODE_SILENT_DATA,
+} from '@hilos/core/admin/daemon'
 import { describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 

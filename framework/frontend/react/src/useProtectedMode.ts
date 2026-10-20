@@ -4,7 +4,7 @@
 // useSyncExternalStore. The core owns the state; this hook only subscribes to
 // it (multiframework-core.md).
 import { useCallback, useSyncExternalStore } from 'react'
-import type { HilosConnection, ProtectedModeStatus } from '@hilos/core'
+import type { HilosConnection, ProtectedModeStatus } from '@hilos/core/base'
 
 /**
  * Expose a connection's protected-mode state as React state.

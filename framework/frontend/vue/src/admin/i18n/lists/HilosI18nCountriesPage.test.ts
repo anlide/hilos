@@ -1,19 +1,21 @@
 import { enableAutoUnmount, mount } from '@vue/test-utils'
 import {
   BUILT_IN_CATALOG_DATA,
-  createSignal,
   HILOS_I18N_COUNTRIES_TABLE,
+  type HilosI18nCountryContext,
+  type HilosI18nCountryLocaleChoice,
+} from '@hilos/core/admin/i18n'
+import {
+  createSignal,
   HilosPages,
   ScopeManager,
   hilosToasts,
   type ActionLifecycle,
   type ActionResult,
   type HilosConnection,
-  type HilosI18nCountryContext,
-  type HilosI18nCountryLocaleChoice,
   type HilosRouter,
   type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 

@@ -195,3 +195,140 @@ it('does not let an empty prefix or an opaque expression cover a Vue surface', (
     `SHELL-PARITY framework/frontend/vue/src/Widget.vue:10 — the surface 'unread-two' has no counterpart in react, angular ${DOC}`,
   ])
 })
+
+/** Apply an ownership mutation to the fixture that already contains lazy views. */
+function reportDriftedCopy(edit: (root: string) => void): string[] {
+  const root = mkdtempSync(join(tmpdir(), 'hilos-shell-parity-lazy-'))
+  try {
+    cpSync(join(REPOSITORY_ROOT, FIXTURES, 'drifted'), root, {
+      recursive: true,
+    })
+    edit(root)
+    return checkTree(root)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+}
+
+it('compares a literal lazy dependency as soon as one of its owners is built in that layer', () => {
+  const report = reportDriftedCopy((root) => {
+    insertBefore(
+      root,
+      'framework/frontend/vue/src/admin/late/HilosLatePage.vue',
+      '</script>',
+      "const detail = () => import('@hilos/vue/admin/billing').then(m => m.LazyDetail)\n",
+    )
+  })
+  expect(report).toHaveLength(17)
+  expect(report.filter((line) => line.includes('/admin/billing/'))).toEqual([
+    `SHELL-PARITY framework/frontend/vue/src/admin/billing/HilosLazyDetail.vue:2 — the surface 'lazy-detail' has no counterpart in react ${DOC}`,
+  ])
+})
+
+it('resolves a root export through the selected public section export without exempting its neighbors', () => {
+  const report = reportDriftedCopy((root) => {
+    const path = join(root, 'framework/frontend/vue/src/index.ts')
+    writeFileSync(
+      path,
+      readFileSync(path, 'utf8') +
+        "export { StagedPage, LatePage, OrphanDetail } from '@hilos/vue/admin/billing'\n",
+    )
+  })
+  expect(report).toHaveLength(18)
+  expect(
+    report.filter((line) =>
+      /'LatePage'|'OrphanDetail'|'StagedPage'/.test(line),
+    ),
+  ).toEqual([
+    `SHELL-PARITY framework/frontend/vue/src/index.ts:7 — the component 'LatePage' is exported by vue and not by react ${DOC}`,
+    `SHELL-PARITY framework/frontend/vue/src/index.ts:7 — the component 'OrphanDetail' is exported by vue and not by react, angular ${DOC}`,
+  ])
+})
+
+it('keeps opaque dynamic dependencies compared while reading only literal named selections', () => {
+  const report = reportDriftedCopy((root) => {
+    const path = join(
+      root,
+      'framework/frontend/vue/src/admin/staged/HilosStagedPage.vue',
+    )
+    writeFileSync(
+      path,
+      readFileSync(path, 'utf8').replace(
+        "import('@hilos/vue/admin/billing').then((m) => m.LazyDetail)",
+        'import(target).then(m => m.LazyDetail)',
+      ),
+    )
+  })
+  expect(report).toHaveLength(17)
+  expect(report.filter((line) => line.includes('/admin/billing/'))).toEqual([
+    `SHELL-PARITY framework/frontend/vue/src/admin/billing/HilosLazyDetail.vue:2 — the surface 'lazy-detail' has no counterpart in react, angular ${DOC}`,
+  ])
+})
+
+it.each([
+  [
+    "import('@hilos/vue/admin/absent').then(m => m.StagedPage)",
+    "cannot resolve value export 'StagedPage' from '@hilos/vue/admin/absent'",
+  ],
+  [
+    "import('@hilos/vue/admin/billing').then(m => m.Missing)",
+    "cannot resolve value export 'Missing' from '@hilos/vue/admin/billing'",
+  ],
+  [
+    "import('@hilos/vue/admin/billing').then(m => m['StagedPage'])",
+    "needs a static imported view or lazyPage(() => import('literal').then(m => m.NamedExport))",
+  ],
+])(
+  'refuses an unreadable lazy map before applying any parity exemptions: %s',
+  (expression, reason) => {
+    expect(() =>
+      reportParityCopy((root) => {
+        const path = join(
+          root,
+          'framework/frontend/vue/src/admin/hilosAdminViews.ts',
+        )
+        writeFileSync(
+          path,
+          readFileSync(path, 'utf8').replace(
+            "import('@hilos/vue/admin/billing').then((m) => m.StagedPage)",
+            expression,
+          ),
+        )
+      }),
+    ).toThrow(
+      `framework/frontend/vue/src/admin/hilosAdminViews.ts:3: 'hilos_staged' ${reason}`,
+    )
+  },
+)
+
+it('refuses a different existing page export before applying its ownership exemptions', () => {
+  expect(() =>
+    reportDriftedCopy((root) => {
+      const path = join(
+        root,
+        'framework/frontend/vue/src/admin/hilosAdminViews.ts',
+      )
+      writeFileSync(
+        path,
+        readFileSync(path, 'utf8').replace('m.StagedPage', 'm.LatePage'),
+      )
+    }),
+  ).toThrow(
+    "framework/frontend/vue/src/admin/hilosAdminViews.ts:3: 'hilos_staged' selects 'LatePage' from '@hilos/vue/admin/billing', which binds a different page key",
+  )
+})
+
+it('does not inherit page exemptions for a missing root export from a real page file', () => {
+  const report = reportDriftedCopy((root) => {
+    const path = join(root, 'framework/frontend/vue/src/index.ts')
+    writeFileSync(
+      path,
+      readFileSync(path, 'utf8') +
+        "export { Missing as StagedMissing } from './admin/staged/HilosStagedPage.vue'\n",
+    )
+  })
+  expect(report).toHaveLength(17)
+  expect(report.filter((line) => line.includes("'StagedMissing'"))).toEqual([
+    `SHELL-PARITY framework/frontend/vue/src/index.ts:7 — the component 'StagedMissing' is exported by vue and not by react, angular ${DOC}`,
+  ])
+})

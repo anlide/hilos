@@ -8,7 +8,7 @@ import {
   copyToClipboard,
   downloadTextFile,
   isClipboardAvailable,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { ref, useId } from 'vue'
 
 const props = defineProps<{

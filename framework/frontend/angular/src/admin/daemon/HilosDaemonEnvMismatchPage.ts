@@ -7,25 +7,25 @@ import {
   input,
   signal,
 } from '@angular/core'
+import { computedSignal, HilosPages, subscribeSignal } from '@hilos/core/base'
 import {
-  computedSignal,
   createHilosDaemonEnvMismatchTables,
   daemonEnvMismatchEmptyState,
   daemonEnvMismatchNodeColumnKey,
   daemonEnvMismatchNodes,
   DAEMON_ENV_SENSITIVE_HINT,
   DAEMON_ENV_MISMATCH_KEY_FIELD,
-  HilosPages,
   readHilosDaemonEnvMismatchSummary,
-  subscribeSignal,
   type HilosDaemonEnvMismatchContext,
   type HilosDaemonEnvMismatchSummary,
-} from '@hilos/core'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosSkeleton } from '../../HilosSkeleton.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { mirrorHilosSignal } from '../../hilosSignal.js'
+} from '@hilos/core/admin/daemon'
+import {
+  HilosAdminPage,
+  HilosSkeleton,
+  HilosViewportTable,
+  HilosTableCell,
+  mirrorHilosSignal,
+} from '@hilos/angular/base'
 import { HilosDaemonEnvMismatchCell } from './HilosDaemonEnvMismatchCell.js'
 
 /** Angular view of the Daemon EnvMismatchPage. */

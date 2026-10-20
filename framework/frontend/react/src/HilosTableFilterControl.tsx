@@ -13,7 +13,7 @@ import type {
   HilosTableFacetCount,
   HilosTableFilterView,
   TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosDropdown } from './HilosDropdown.js'
 import type { HilosDropdownOption } from './hilosDropdown.js'

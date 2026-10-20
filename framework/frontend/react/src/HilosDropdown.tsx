@@ -18,7 +18,7 @@
 // projected templates in Angular (multiframework-core.md).
 // Bootstrap classes only — no CSS of its own.
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { isDisplayed } from '@hilos/core'
+import { isDisplayed } from '@hilos/core/base'
 
 import type { HilosDropdownOption } from './hilosDropdown.js'
 

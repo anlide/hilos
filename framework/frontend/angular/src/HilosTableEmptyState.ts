@@ -27,8 +27,11 @@ import {
   signal,
 } from '@angular/core'
 import type { TemplateRef } from '@angular/core'
-import { subscribeSignal } from '@hilos/core'
-import type { HilosTableFilterView, TableViewportController } from '@hilos/core'
+import { subscribeSignal } from '@hilos/core/base'
+import type {
+  HilosTableFilterView,
+  TableViewportController,
+} from '@hilos/core/base'
 
 /**
  * How one active filter reads in the sentence — the forms the control in the bar

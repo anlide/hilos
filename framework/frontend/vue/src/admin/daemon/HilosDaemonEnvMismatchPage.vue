@@ -1,17 +1,16 @@
 <!-- Environment mismatch between nodes of the cluster. Displays standalone notice,
 waiting indicator, or comparison summary with tiles and verdict tables. -->
 <script setup lang="ts">
+import { computedSignal, HilosPages } from '@hilos/core/base'
 import {
-  computedSignal,
   createHilosDaemonEnvMismatchTables,
   daemonEnvMismatchEmptyState,
   daemonEnvMismatchNodeColumnKey,
   daemonEnvMismatchNodes,
   DAEMON_ENV_SENSITIVE_HINT,
-  HilosPages,
   readHilosDaemonEnvMismatchSummary,
   type HilosDaemonEnvMismatchContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
 import { computed, onMounted, onUnmounted, watch } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'

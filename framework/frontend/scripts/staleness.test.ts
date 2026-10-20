@@ -8,12 +8,19 @@ import {
   rmSync,
   utimesSync,
   writeFileSync,
+  readFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 
-import { installDecision, isDistStale } from './staleness.mjs'
+import {
+  buildInputs,
+  installDecision,
+  isDistStale,
+  lockHash,
+  sdkDistStale,
+} from './staleness.mjs'
 
 /** Seconds since the epoch; each helper is handed one so order is explicit. */
 const OLD = 1_000_000
@@ -87,6 +94,136 @@ it('treats a half-written dist as stale on its oldest file', () => {
   writeAt('pkg/dist/types/index.d.ts', OLD - 1)
 
   expect(isDistStale(sources(), distDir())).toMatchObject({ stale: true })
+})
+
+it.each([
+  'vite.config.ts',
+  'vite.config.mts',
+  'tsconfig.build.json',
+  'base/ng-package.json',
+  'admin-views/ng-package.json',
+  'admin/change-log/ng-package.json',
+  'src/base/index.ts',
+  'src/admin/users/index.ts',
+  'bin/core-provenance.mjs',
+  'bin/core-initial-sources.json',
+])('rebuilds an old dist after changing %s', (config) => {
+  writePackage(OLD, OLD)
+  const touched = writeAt(`pkg/${config}`, NEW)
+
+  const verdict = isDistStale(buildInputs(join(dir, 'pkg')), distDir())
+
+  expect(verdict.stale).toBe(true)
+  expect(verdict.reason).toContain(touched)
+})
+
+it('skips a current multi-entry build despite newer generated and installed files', () => {
+  writePackage(OLD, NEW)
+  writeAt('pkg/vite.config.ts', OLD)
+  writeAt('pkg/admin/settings/ng-package.json', OLD)
+  writeAt('pkg/dist/admin/settings.js', NEW)
+  writeAt('pkg/dist/ng-package.json', NEW + 1)
+  writeAt('pkg/node_modules/other/ng-package.json', NEW + 1)
+
+  expect(isDistStale(buildInputs(join(dir, 'pkg')), distDir())).toMatchObject({
+    stale: false,
+  })
+})
+
+it.each([
+  'tsconfig.base.json',
+  'scripts/prebuild-sdk.mjs',
+  'scripts/staleness.mjs',
+])('invalidates SDK outputs after shared input %s changes', (name) => {
+  writePackage(OLD, OLD)
+  const touched = writeAt(name, NEW)
+  expect(isDistStale(buildInputs(join(dir, 'pkg')), distDir())).toMatchObject({
+    stale: true,
+    reason: expect.stringContaining(touched),
+  })
+})
+
+/** A completed core output with newer mtimes and one receipt for each owner. */
+function completedCore(): void {
+  writePackage(OLD, NEW)
+  writeFileSync(
+    join(dir, 'pkg/package.json'),
+    JSON.stringify({
+      name: '@hilos/core',
+      exports: {
+        '.': {
+          development: './src/index.ts',
+          types: './dist/index.d.ts',
+          import: './dist/index.js',
+        },
+        './base': {
+          types: './dist/base/index.d.ts',
+          import: './dist/base/index.js',
+        },
+      },
+    }),
+  )
+  utimesSync(join(dir, 'pkg/package.json'), OLD, OLD)
+  writeAt('pkg/src/base/index.ts', OLD)
+  const files: Record<string, object> = {}
+  for (const name of ['index', 'base/index']) {
+    writeAt(`pkg/dist/${name}.js`, NEW)
+    writeAt(`pkg/dist/${name}.d.ts`, NEW)
+    writeAt(`pkg/dist/${name}.js.map`, NEW)
+    files[`${name}.js`] = {
+      source: `src/${name}.ts`,
+      sourceSha256: lockHash(join(dir, `pkg/src/${name}.ts`)),
+      outputSha256: lockHash(join(dir, `pkg/dist/${name}.js`)),
+      mapSha256: lockHash(join(dir, `pkg/dist/${name}.js.map`)),
+    }
+  }
+  writeAt('pkg/dist/core-provenance.json', NEW)
+  writeFileSync(
+    join(dir, 'pkg/dist/core-provenance.json'),
+    JSON.stringify({ version: 1, compiler: 'tsc', files }),
+  )
+}
+
+it('skips a completed current core build with every public target and tsc owner', () => {
+  completedCore()
+  expect(sdkDistStale(join(dir, 'pkg')).stale).toBe(false)
+})
+
+it.each([
+  'base/index.js',
+  'base/index.d.ts',
+  'base/index.js.map',
+  'core-provenance.json',
+])('rebuilds fresh but incomplete core output missing %s', (name) => {
+  completedCore()
+  rmSync(join(dir, 'pkg/dist', name))
+  expect(sdkDistStale(join(dir, 'pkg')).stale).toBe(true)
+})
+
+it.each([
+  'missing owner',
+  'old compiler',
+  'corrupt output',
+  'corrupt map',
+  'corrupt source',
+  'new owner',
+])('rebuilds fresh core output with %s', (fault) => {
+  completedCore()
+  const file = join(dir, 'pkg/dist/core-provenance.json')
+  const proof = JSON.parse(readFileSync(file, 'utf8'))
+  if (fault === 'missing owner') delete proof.files['base/index.js']
+  if (fault === 'old compiler') proof.compiler = 'other'
+  writeFileSync(file, JSON.stringify(proof))
+  if (fault === 'corrupt output')
+    writeFileSync(join(dir, 'pkg/dist/base/index.js'), 'changed')
+  if (fault === 'corrupt map')
+    writeFileSync(join(dir, 'pkg/dist/base/index.js.map'), 'changed')
+  if (fault === 'corrupt source') {
+    writeFileSync(join(dir, 'pkg/src/base/index.ts'), 'changed')
+    utimesSync(join(dir, 'pkg/src/base/index.ts'), OLD, OLD)
+  }
+  if (fault === 'new owner') writeAt('pkg/src/protocol/new.ts', OLD)
+  expect(sdkDistStale(join(dir, 'pkg')).stale).toBe(true)
 })
 
 /** The lockfile/stamp quartet `installDecision` is asked about. */

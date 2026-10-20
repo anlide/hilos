@@ -17,7 +17,7 @@ import {
   type HilosConnection,
   type HilosOAuthLogin,
   type ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { nextTick } from 'vue'
 
 import HilosOAuthWaitModal from './HilosOAuthWaitModal.vue'

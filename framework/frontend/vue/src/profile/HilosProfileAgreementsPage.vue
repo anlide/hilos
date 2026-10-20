@@ -11,7 +11,7 @@ import {
   type HilosLegalChange,
   type HilosLegalClause,
   type HilosLegalContext,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import HilosLink from '../HilosLink.vue'
 import HilosModal from '../HilosModal.vue'
 import HilosPageHeading from '../HilosPageHeading.vue'

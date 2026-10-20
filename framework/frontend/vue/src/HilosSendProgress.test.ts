@@ -1,4 +1,4 @@
-import { type CodeSendProgress } from '@hilos/core'
+import { type CodeSendProgress } from '@hilos/core/base'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'

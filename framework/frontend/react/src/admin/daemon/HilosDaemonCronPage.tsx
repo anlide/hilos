@@ -14,11 +14,11 @@ import {
   formatDaemonCronLastRun,
   formatDaemonCronNextRun,
   formatDaemonNodeSilentSince,
-  HilosPages,
   readDaemonCronReported,
   readHilosDaemonNodeHeading,
   type HilosDaemonCronContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
+import { HilosPages } from '@hilos/core/base'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'

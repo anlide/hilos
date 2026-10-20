@@ -4,7 +4,7 @@
 // context. The table, the row view-model and the switch are the framework's; the
 // project supplies only the context and registers the table on its backend.
 // Bootstrap classes only (styling-rules.md).
-import { HilosSecurityStepUpPage } from '@hilos/react'
+import { HilosSecurityStepUpPage } from '@hilos/react/admin/security'
 
 import { hilosTwoFactorContext } from './hilosTwoFactorContext'
 

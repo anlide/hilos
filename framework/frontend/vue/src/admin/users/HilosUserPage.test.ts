@@ -29,13 +29,13 @@ import {
   entityCollection,
   USER_ENTITY_TYPE,
   userFromFields,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosConnection,
   HilosRouter,
-  HilosUsersContext,
   PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosUsersContext } from '@hilos/core/admin/users'
 
 import HilosUserPage from './HilosUserPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'

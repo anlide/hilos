@@ -64,7 +64,7 @@ import {
   type HilosConnection,
   type ProjectSignal,
   type WebSocketLike,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { markRaw } from 'vue'

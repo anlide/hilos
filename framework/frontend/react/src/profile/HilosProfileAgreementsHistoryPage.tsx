@@ -8,7 +8,7 @@ import {
   hilosLegalDocumentLabel,
   hilosLegalRevisionHistory,
   type HilosLegalContext,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
 import { HilosPageHeading } from '../HilosPageHeading.js'

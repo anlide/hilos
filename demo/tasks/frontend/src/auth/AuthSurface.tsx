@@ -4,7 +4,7 @@
 // wrapper is what closes it, the same way Settings mounts HilosSettingsPage. The
 // framework owns the machine, the wire, the screens and the copy; the project
 // owns only what hilosAuthContext declares.
-import { HilosAuthSurface } from '@hilos/react'
+import { HilosAuthSurface } from '@hilos/react/base'
 
 import { hilosAuthContext } from './hilosAuthContext'
 

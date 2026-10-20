@@ -1,4 +1,4 @@
-import { type HilosAnalyticsContext } from '@hilos/core'
+import { type HilosAnalyticsContext } from '@hilos/core/admin/analytics'
 import { connection } from '../../../bootstrap/connection.js'
 import { scopes } from '../../../bootstrap/session.js'
 

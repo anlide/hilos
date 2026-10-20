@@ -5,8 +5,14 @@
 // from @hilos/core, so a fixture tree carries its own declarations and a report
 // line points at the author's file and line.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { dirname, join, relative, sep } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import ts from 'typescript'
+import {
+  importedValue,
+  namedDynamicImport,
+  resolveReference,
+  type ModuleReference,
+} from './adminModules.js'
 
 /** The SDK view layers, in report order. */
 export const LAYERS = ['vue', 'react', 'angular'] as const
@@ -211,36 +217,70 @@ export function readViews(
   }
   const map = files.get(`${directory}/hilosAdminViews.ts`)
   if (map) {
-    const imports = new Map<string, string>()
-    for (const statement of map.statements) {
-      if (
-        !ts.isImportDeclaration(statement) ||
-        !ts.isStringLiteral(statement.moduleSpecifier)
-      )
-        continue
-      const specifier = statement.moduleSpecifier.text
-      if (!specifier.startsWith('.')) continue
-      const path = join(dirname(map.fileName), specifier).split(sep).join('/')
-      const target = [
-        path,
-        path.replace(/\.js$/, '.tsx'),
-        path.replace(/\.js$/, '.ts'),
-      ].find((candidate) => files.has(candidate))
-      if (!target) continue
-      if (statement.importClause?.name)
-        imports.set(statement.importClause.name.text, target)
-      const bindings = statement.importClause?.namedBindings
-      if (bindings && ts.isNamedImports(bindings)) {
-        for (const binding of bindings.elements)
-          imports.set(binding.name.text, target)
-      }
-    }
     const visit = (node: ts.Node): void => {
-      if (ts.isPropertyAssignment(node) && ts.isIdentifier(node.initializer)) {
+      if (ts.isPropertyAssignment(node)) {
         const key = pages.find((page) => page.name === keyName(node))?.key
-        const target = imports.get(node.initializer.text)
-        if (key && target && !views.has(key))
-          views.set(key, { path: target, line: 1, bare: false })
+        if (key) {
+          const value = unwrap(node.initializer)
+          let reference: ModuleReference | undefined
+          if (ts.isIdentifier(value)) {
+            reference = importedValue(map, value.text)
+          } else if (
+            ts.isCallExpression(value) &&
+            ts.isIdentifier(value.expression) &&
+            value.expression.text === 'lazyPage' &&
+            value.arguments.length === 1 &&
+            ts.isArrowFunction(value.arguments[0]) &&
+            value.arguments[0].parameters.length === 0
+          ) {
+            reference = namedDynamicImport(value.arguments[0].body)
+          }
+          const location = site(map, node)
+          const failure = (reason: string): Error => {
+            return new Error(
+              `${location.path}:${location.line}: '${key}' ${reason}`,
+            )
+          }
+          if (!reference) {
+            throw failure(
+              "needs a static imported view or lazyPage(() => import('literal').then(m => m.NamedExport))",
+            )
+          }
+          const target = resolveReference(root, map.fileName, reference)
+          if (!target) {
+            throw failure(
+              `cannot resolve value export '${reference.name}' from '${reference.specifier}'`,
+            )
+          }
+          const file = files.get(target.path)
+          if (!file)
+            throw failure(
+              `resolves outside the ${layer} admin source tree: '${target.path}'`,
+            )
+          const bindings =
+            layer === 'react'
+              ? reactBindings(target.node?.getSourceFile() ?? file, target.node)
+              : templateBindings(
+                  target.node?.getSourceFile() ?? file,
+                  layer,
+                  target.node,
+                )
+          const matching = bindings.filter(
+            (binding) =>
+              pages.find((page) => page.name === binding.name)?.key === key,
+          )
+          if (bindings.length > 0 && matching.length === 0) {
+            throw failure(
+              `selects '${reference.name}' from '${reference.specifier}', which binds a different page key`,
+            )
+          }
+          views.set(key, {
+            path: target.path,
+            line: matching[0]?.line ?? 1,
+            bare:
+              matching.length > 0 && matching.every((binding) => binding.bare),
+          })
+        }
       }
       ts.forEachChild(node, visit)
     }
@@ -250,7 +290,7 @@ export function readViews(
 }
 
 /** JSX syntax makes comments and string examples invisible to the shell reader. */
-function reactBindings(file: ts.SourceFile): Binding[] {
+function reactBindings(file: ts.SourceFile, scope: ts.Node = file): Binding[] {
   const bindings: Binding[] = []
   const visit = (node: ts.Node): void => {
     if (
@@ -285,7 +325,7 @@ function reactBindings(file: ts.SourceFile): Binding[] {
     }
     ts.forEachChild(node, visit)
   }
-  visit(file)
+  visit(scope)
   return bindings
 }
 
@@ -293,6 +333,7 @@ function reactBindings(file: ts.SourceFile): Binding[] {
 function templateBindings(
   file: ts.SourceFile,
   layer: 'vue' | 'angular',
+  scope: ts.Node = file,
 ): Binding[] {
   const templates: Array<{
     text: string
@@ -308,7 +349,9 @@ function templateBindings(
         fields: new Map(),
       })
   } else {
-    for (const statement of file.statements) {
+    for (const statement of ts.isSourceFile(scope)
+      ? scope.statements
+      : [scope]) {
       if (!ts.isClassDeclaration(statement)) continue
       const fields = new Map<string, string>()
       for (const member of statement.members) {

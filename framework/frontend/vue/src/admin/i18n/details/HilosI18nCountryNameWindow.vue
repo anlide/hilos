@@ -3,7 +3,7 @@ import {
   HILOS_I18N_COUNTRY_NAME_COPY,
   HILOS_I18N_COUNTRY_NAME_MAX,
   type HilosI18nCountryNameWindow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { computed, onMounted, onUnmounted, shallowRef, watch } from 'vue'
 
 import ConflictActions from '../../../ConflictActions.vue'

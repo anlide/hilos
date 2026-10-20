@@ -4,7 +4,7 @@
 // owns the providers / fields / return-address tables, their view-models, and the
 // set / reset round-trips; the project supplies only where the data lives — and,
 // on its backend, the provider directory.
-import { type HilosSecurityOauthContext } from '@hilos/core'
+import { type HilosSecurityOauthContext } from '@hilos/core/admin/security'
 
 import { actions, connection } from '../../../bootstrap/connection'
 import { scopes } from '../../../bootstrap/session'

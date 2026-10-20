@@ -5,8 +5,12 @@
 // navigator as HILOS_ROUTER (docs/agents/frontend/bootstrap-structure.md).
 import { mergeApplicationConfig } from '@angular/core'
 import { bootstrapApplication } from '@angular/platform-browser'
-import { HILOS_VIEW_LAYER, HILOS_AUTH_GATE, HILOS_ROUTER } from '@hilos/angular'
-import { bootHilos, createAuthGate } from '@hilos/core'
+import {
+  HILOS_VIEW_LAYER,
+  HILOS_AUTH_GATE,
+  HILOS_ROUTER,
+} from '@hilos/angular/base'
+import { bootHilos, createAuthGate } from '@hilos/core/base'
 
 import { App } from '../app.js'
 import { appConfig } from '../app.config.js'

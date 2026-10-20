@@ -1,5 +1,6 @@
 import { useContext } from 'react'
-import { HilosPages, type HilosI18nLanguageCard } from '@hilos/core'
+import { HilosPages } from '@hilos/core/base'
+import { type HilosI18nLanguageCard } from '@hilos/core/admin/i18n'
 import { HilosLink } from '../../../HilosLink.js'
 import { HilosRouterContext } from '../../../hilosRouterContext.js'
 

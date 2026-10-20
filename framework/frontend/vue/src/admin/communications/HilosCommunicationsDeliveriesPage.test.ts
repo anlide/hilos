@@ -12,14 +12,14 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosConnection,
-  HilosDeliveriesContext,
   HilosRouter,
   PageRouteMatch,
   ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosDeliveriesContext } from '@hilos/core/admin/communications'
 
 import HilosCommunicationsDeliveriesPage from './HilosCommunicationsDeliveriesPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'

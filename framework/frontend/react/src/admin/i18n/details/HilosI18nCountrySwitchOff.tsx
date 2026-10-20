@@ -5,7 +5,7 @@ import {
   hilosI18nCountryLabel,
   type HilosI18nCountryCard,
   type HilosI18nCountryContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { HilosActionError } from '../../../HilosActionError.js'
 import { HilosEditNotice } from '../../../HilosEditNotice.js'
 import { HilosModal } from '../../../HilosModal.js'

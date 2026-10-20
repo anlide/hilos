@@ -1,6 +1,9 @@
 <!-- Source indicator badge for one environment key reading. -->
 <script setup lang="ts">
-import { daemonEnvSourceBadge, type HilosDaemonEnvSource } from '@hilos/core'
+import {
+  daemonEnvSourceBadge,
+  type HilosDaemonEnvSource,
+} from '@hilos/core/admin/daemon'
 import { computed } from 'vue'
 
 const props = defineProps<{

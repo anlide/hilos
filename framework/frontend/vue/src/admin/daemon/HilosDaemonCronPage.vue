@@ -10,11 +10,11 @@ import {
   formatDaemonCronLastRun,
   formatDaemonCronNextRun,
   formatDaemonNodeSilentSince,
-  HilosPages,
   readDaemonCronReported,
   readHilosDaemonNodeHeading,
   type HilosDaemonCronContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
+import { HilosPages } from '@hilos/core/base'
 import { computed, inject, onMounted, onUnmounted } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'

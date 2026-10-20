@@ -6,9 +6,9 @@
 // page renders nothing. The router must be provided at the app root
 // (HILOS_ROUTER).
 //
-// A page is held back until its subscription answers (router.pageLoading):
-// showing it earlier means showing a page the server may be about to deny, and
-// taking it away again one round trip later. The `hilos-page-state` marker names
+// A page is held back until its code and subscription answer are ready: showing
+// it earlier means showing a page the server may be about to deny, and taking
+// it away again one round trip later. Core composes both waits. The marker names
 // the outcome — loading, error or ready — so the state is readable from the DOM
 // rather than guessed from whichever element happened to render first.
 //
@@ -50,10 +50,11 @@ import {
   AUTH_SURFACE_HEADING_ID,
   bindPageDeparture,
   createDeferredFlagState,
+  createPageViewState,
   DEFAULT_SKELETON_DELAY_MS,
   subscribeSignal,
-} from '@hilos/core'
-import type { AuthGate } from '@hilos/core'
+} from '@hilos/core/base'
+import type { AuthGate, PageView } from '@hilos/core/base'
 
 import { ErrorPage } from './ErrorPage.js'
 import { HilosModal } from './HilosModal.js'
@@ -82,7 +83,7 @@ import { HILOS_ROUTER } from './hilosRouterToken.js'
       } @else if (pageError(); as error) {
         <hilos-error-page [error]="error" />
       } @else if (!pageLoading()) {
-        <ng-container [ngComponentOutlet]="view()" />
+        <ng-container [ngComponentOutlet]="view() ?? null" />
       } @else if (showSkeleton()) {
         <div class="h-100" data-id="hilos-page-skeleton">
           <span class="visually-hidden" role="status">Loading…</span>
@@ -143,7 +144,7 @@ import { HILOS_ROUTER } from './hilosRouterToken.js'
 })
 export class HilosView {
   /** Maps a page key to the component rendered while that page is current. */
-  readonly pages = input.required<Record<string, Type<unknown>>>()
+  readonly pages = input.required<Record<string, PageView<Type<unknown>>>>()
   /**
    * Maps a page key to the skeleton that page shows while it waits for its first
    * answer; a page not in the map shows HilosSkeleton.
@@ -169,8 +170,12 @@ export class HilosView {
   private readonly pageDeparture =
     viewChild.required<ElementRef<HTMLElement>>('pageDeparture')
   private readonly route = hilosSignal(this.router.currentRoute)
-  protected readonly pageError = hilosSignal(this.router.pageError)
-  protected readonly pageLoading = hilosSignal(this.router.pageLoading)
+  private readonly pageViewState = createPageViewState<Type<unknown>>(
+    this.router,
+  )
+  protected readonly view = hilosSignal(this.pageViewState.view)
+  protected readonly pageError = hilosSignal(this.pageViewState.error)
+  protected readonly pageLoading = hilosSignal(this.pageViewState.loading)
   private readonly skeletonFlag = createDeferredFlagState(
     DEFAULT_SKELETON_DELAY_MS,
   )
@@ -184,10 +189,6 @@ export class HilosView {
     this.pageError() ? 'error' : this.pageLoading() ? 'loading' : 'ready',
   )
 
-  protected readonly view = computed<Type<unknown> | null>(() => {
-    const page = this.route().page
-    return page === null ? null : (this.pages()[page] ?? null)
-  })
   // The project's own skeleton for the page, or null for the default one.
   protected readonly skeleton = computed<Type<unknown> | null>(() => {
     const page = this.route().page
@@ -214,13 +215,19 @@ export class HilosView {
         slot: this.pageSlot().nativeElement,
         departure: this.pageDeparture().nativeElement,
         skeletonShown: this.skeletonFlag.shown,
+        loading: this.pageViewState.loading,
+        error: this.pageViewState.error,
       })
       this.destroyRef.onDestroy(unbind)
+    })
+    effect(() => {
+      this.pageViewState.setPages(this.pages())
     })
     effect(() => {
       this.skeletonFlag.set(this.pageLoading())
     })
     this.destroyRef.onDestroy(() => {
+      this.pageViewState.dispose()
       this.skeletonFlag.dispose()
     })
     effect((onCleanup) => {

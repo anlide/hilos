@@ -3,11 +3,8 @@
 // for numbers, the text (or an "empty string" chip) otherwise, plus a source
 // badge — the referenced key, "default", or "custom" — so the catalog origin is
 // visible at a glance. Presentation only; Bootstrap classes (styling-rules.md).
-import {
-  isHiddenValue,
-  type Hideable,
-  type SettingValueSource,
-} from '@hilos/core'
+import { isHiddenValue, type Hideable } from '@hilos/core/base'
+import { type SettingValueSource } from '@hilos/core/admin/settings'
 
 import { HilosHiddenMark } from '../../HilosHiddenMark.js'
 

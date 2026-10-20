@@ -40,11 +40,18 @@ import {
 
 import {
   ACCOUNT_DELETION_TICK_MS,
+  focusInitial,
+  HILOS_STEP_UP_COPY,
+  type HilosStepUpOpenOutcome,
+  HilosPages,
+  hiddenAsWord,
+  isHiddenValue,
+  sessionUserId,
+} from '@hilos/core/base'
+import {
   createHilosImpersonate,
   createHilosUserCardStepUp,
   createHilosUserLifecycle,
-  focusInitial,
-  HILOS_STEP_UP_COPY,
   createHilosUserStanding,
   HILOS_USER_IMPERSONATION_COPY,
   HILOS_USER_MERGED_COPY,
@@ -60,7 +67,6 @@ import {
   hilosUserLifecyclePrompt,
   hilosUserLifecyclePromptOffered,
   submitHilosUserLifecycle,
-  type HilosStepUpOpenOutcome,
   type HilosUserImpersonationSection,
   type HilosUserLifecycleChoice,
   type HilosUserLifecyclePrompt,
@@ -74,18 +80,14 @@ import {
   hilosSecondFactorFateChoices,
   type HilosSecondFactorFate,
   hilosPasswordFateChoices,
-  HilosPages,
   createHilosUserRenameEdit,
-  hiddenAsWord,
   HILOS_USER_NAME_MAX,
   HILOS_USER_NAME_MIN,
-  isHiddenValue,
-  sessionUserId,
   type HilosMergeCandidateIdentity,
   type HilosMergeCandidateRow,
   type HilosPasswordFate,
   type HilosUsersContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/users'
 
 import HilosStepUpStep from '../../auth/HilosStepUpStep.vue'
 import ConflictActions from '../../ConflictActions.vue'

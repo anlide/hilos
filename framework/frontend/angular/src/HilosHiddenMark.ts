@@ -9,7 +9,7 @@
 // HilosHideable, which puts this mark in its place. Bootstrap classes only
 // (styling-rules.md).
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HILOS_VIEW_MODE_COPY } from '@hilos/core'
+import { HILOS_VIEW_MODE_COPY } from '@hilos/core/base'
 
 /** The mark of a value the server keeps from a viewer of the admin view mode. */
 @Component({

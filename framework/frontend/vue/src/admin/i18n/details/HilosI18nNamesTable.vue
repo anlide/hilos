@@ -10,10 +10,8 @@ chevron and which rows get one are the framework's (createHilosI18nNamesTable);
 there are no buttons here — the action leaves put them in. Bootstrap classes only,
 painted with classes that follow the theme (styling-rules.md). -->
 <script setup lang="ts">
-import {
-  type HilosI18nNameRow,
-  type TableViewportController,
-} from '@hilos/core'
+import { type HilosI18nNameRow } from '@hilos/core/admin/i18n'
+import { type TableViewportController } from '@hilos/core/base'
 
 import HilosViewportTable from '../../../HilosViewportTable.vue'
 

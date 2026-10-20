@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import {
   HILOS_I18N_COUNTRY_ADD_COPY,
   type HilosI18nCountryAdd as CountryAdd,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { HilosActionError } from '../../../HilosActionError.js'
 import { HilosModal } from '../../../HilosModal.js'
 import { LoadingButton } from '../../../LoadingButton.js'

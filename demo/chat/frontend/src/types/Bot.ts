@@ -9,7 +9,7 @@ import {
   readStringOrNull,
   type Entity,
   type EntityCollection,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { scopes } from '../bootstrap/session'
 

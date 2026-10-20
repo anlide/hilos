@@ -19,11 +19,11 @@ import {
   formatChangeLogTableChanges,
   formatChangeLogTableLastChange,
   formatChangeLogTableOwner,
-  HilosPages,
   readHilosChangeLogNoisyColumns,
   type HilosChangeLogContext,
   type HilosChangeLogTablesRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/change-log'
+import { HilosPages } from '@hilos/core/base'
 import { computed, inject, onMounted, onUnmounted, useId } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'

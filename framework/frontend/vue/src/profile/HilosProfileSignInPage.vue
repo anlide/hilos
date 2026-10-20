@@ -23,7 +23,7 @@ import {
   type HilosAuthContext,
   type HilosProfileAddableWay,
   type HilosProfileSignInMethod,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { computed, nextTick, onUnmounted, ref, useId, watch } from 'vue'
 
 import HilosProfilePasswordChange from './HilosProfilePasswordChange.vue'

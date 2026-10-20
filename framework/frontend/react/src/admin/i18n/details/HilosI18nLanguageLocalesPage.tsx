@@ -1,6 +1,6 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { computedSignal, HilosPages } from '@hilos/core/base'
 import {
-  computedSignal,
   createHilosI18nLanguageCard,
   createHilosI18nLanguageLocalesTable,
   createHilosI18nLocaleDelete,
@@ -9,12 +9,11 @@ import {
   hilosI18nLocaleWindowMode,
   HILOS_I18N_LOCALE_COPY,
   HilosI18nLocaleRowKey,
-  HilosPages,
   type HilosI18nLanguageContext,
   type HilosI18nLocaleDeleteTarget,
   type HilosI18nLocaleRow,
   type HilosI18nLocaleWindowMode,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { HilosAdminPage } from '../../../HilosAdminPage.js'
 import { HilosViewportTable } from '../../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../../hilosRouterContext.js'

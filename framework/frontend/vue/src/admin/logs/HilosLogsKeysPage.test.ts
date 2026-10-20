@@ -6,13 +6,13 @@ import {
   ScopeManager,
   createSignal,
   KEYS_HEADER_SIGNAL,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosConnection,
   HilosLogKeysHeader,
   HilosRouter,
   PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import HilosLogsKeysPage from './HilosLogsKeysPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'

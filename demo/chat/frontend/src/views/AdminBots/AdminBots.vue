@@ -25,12 +25,12 @@ import {
   LoadingButton,
   useSignal,
   useTrackedAction,
-} from '@hilos/vue'
+} from '@hilos/vue/base'
 import {
   createHilosRowEdit,
   createSignal,
   hilosTableRowEditSource,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import {

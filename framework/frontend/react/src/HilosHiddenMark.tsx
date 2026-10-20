@@ -8,7 +8,7 @@
 // place (hiddenAsWord). A value that may be hidden is drawn through
 // HilosHideable, which puts this mark in its place. Bootstrap classes only, no
 // style block (styling-rules.md).
-import { HILOS_VIEW_MODE_COPY } from '@hilos/core'
+import { HILOS_VIEW_MODE_COPY } from '@hilos/core/base'
 
 /** The mark drawn in place of a value a viewer of the admin view mode may not see. */
 export function HilosHiddenMark() {

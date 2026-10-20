@@ -9,7 +9,7 @@ import {
   signal,
 } from '@angular/core'
 import type { Signal } from '@angular/core'
-import type { ConnectionState, HilosConnection } from '@hilos/core'
+import type { ConnectionState, HilosConnection } from '@hilos/core/base'
 
 /** Options for {@link connectionStateSignal}. */
 export interface ConnectionStateSignalOptions {

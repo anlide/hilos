@@ -19,7 +19,7 @@ HilosUploadPicker is the paperclip, and HilosUploadFiles draws each file's chip
 and the line of the last refusal. A feed image shows as its thumbnail and opens the original. Rendered by HilosView when the navigator's route is the main page. -->
 <script setup lang="ts">
 import { computed, inject, nextTick, onUnmounted, ref, watch } from 'vue'
-import { createHilosUploadField } from '@hilos/core'
+import { createHilosUploadField } from '@hilos/core/base'
 import {
   HilosAvatar,
   HilosUploadDrop,
@@ -28,7 +28,7 @@ import {
   hilosAuthGateKey,
   useConnectionState,
   useSignal,
-} from '@hilos/vue'
+} from '@hilos/vue/base'
 
 import { connection } from '../../bootstrap/connection'
 import { currentUserId, currentUserName } from '../../bootstrap/session'

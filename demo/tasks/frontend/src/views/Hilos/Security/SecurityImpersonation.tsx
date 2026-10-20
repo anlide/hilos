@@ -4,7 +4,7 @@
 // the row view-model, the switches and the scope's modal are the framework's;
 // the project supplies only the context and registers the table on its backend.
 // Bootstrap classes only (styling-rules.md).
-import { HilosSecurityImpersonationPage } from '@hilos/react'
+import { HilosSecurityImpersonationPage } from '@hilos/react/admin/security'
 
 import { hilosImpersonationContext } from './hilosImpersonationContext'
 

@@ -4,15 +4,17 @@ import {
   createHilosLegalDocumentsTable,
   createHilosLegalSettingsTable,
   describeHilosLegalCheck,
-  hilosLegalDocumentLabel,
   hilosLegalLapsedHref,
   hilosLegalLapsedLabel,
   HilosLegalSettingKey,
-  HilosPages,
   LEGAL_CATALOG_REFUSAL_SECTION,
+} from '@hilos/core/admin/legal'
+import {
+  hilosLegalDocumentLabel,
+  HilosPages,
   resolveHilosPath,
   type HilosLegalContext,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { computed, onMounted, onUnmounted } from 'vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosLink from '../../HilosLink.vue'

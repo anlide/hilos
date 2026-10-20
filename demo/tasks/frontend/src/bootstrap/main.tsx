@@ -3,12 +3,12 @@
 // the session and page scopes, builds the navigator, opens the socket, and
 // applies the URL; this module supplies the project inputs and provides the
 // navigator through HilosRouterContext (docs/agents/frontend/bootstrap-structure.md).
-import { bootHilos, createAuthGate, createOAuthLogin } from '@hilos/core'
+import { bootHilos, createAuthGate, createOAuthLogin } from '@hilos/core/base'
 import {
   HILOS_VIEW_LAYER,
   HilosAuthGateContext,
   HilosRouterContext,
-} from '@hilos/react'
+} from '@hilos/react/base'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 

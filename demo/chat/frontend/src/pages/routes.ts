@@ -9,7 +9,10 @@
 // them by construction. Their page keys do not change with the address — a
 // key is identity on the wire, a path is not. The people list is the
 // framework's /hilos/users.
-import { createAppPageRouter, type HilosRouteDeclaration } from '@hilos/core'
+import {
+  createAppPageRouter,
+  type HilosRouteDeclaration,
+} from '@hilos/core/base'
 
 import { PAGE_MAIN, PAGE_USER, PAGE_BOT, PAGE_ADMIN_BOTS } from './keys'
 

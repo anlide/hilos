@@ -9,7 +9,7 @@
 // A component and not a function for the same reason: what HilosView takes is a
 // component type it instantiates itself.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosAuthSurface } from '@hilos/angular'
+import { HilosAuthSurface } from '@hilos/angular/base'
 
 import { hilosAuthContext } from './hilosAuthContext.js'
 

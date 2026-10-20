@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   HILOS_TABLE_OPENING_ORDER_KEY,
   TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   ActionHandle,
   HilosTableBulkAccepted,
@@ -12,7 +12,7 @@ import type {
   HilosTableSortOrder,
   TableSortOrder,
   TableViewportDescriptor,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import HilosModal from './HilosModal.vue'
 import HilosTableBar from './HilosTableBar.vue'

@@ -6,7 +6,7 @@ import {
   type HilosProfileDeviceActions,
   type HilosProfilePushChannel,
   type HilosPushSubscriptionStore,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { useEffect } from 'react'
 
 import { HilosPushDeviceToggle } from '../HilosPushDeviceToggle.js'

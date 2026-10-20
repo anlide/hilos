@@ -30,12 +30,12 @@ import {
   HILOS_IMPERSONATION_SCOPE_VALUES,
   HILOS_IMPERSONATION_SETTING_COPY,
   hilosImpersonationScopeOf,
-  HilosPages,
   isHilosImpersonationSwitch,
   type HilosImpersonationContext,
   type HilosImpersonationScope,
   type HilosImpersonationSettingRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/security'
+import { HilosPages } from '@hilos/core/base'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import ConflictActions from '../../ConflictActions.vue'

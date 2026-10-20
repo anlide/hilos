@@ -2,7 +2,7 @@
 // transport state delivered through useSyncExternalStore. The core owns the
 // machine; this hook only subscribes to it (multiframework-core.md).
 import { useCallback, useSyncExternalStore } from 'react'
-import type { ConnectionState, HilosConnection } from '@hilos/core'
+import type { ConnectionState, HilosConnection } from '@hilos/core/base'
 
 /**
  * Expose a connection's machine state as React state.

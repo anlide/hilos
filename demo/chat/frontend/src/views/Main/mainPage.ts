@@ -9,7 +9,7 @@ import {
   readStringOrNull,
   type EntityRef,
   type ReadonlySignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { scopes } from '../../bootstrap/session'
 import {

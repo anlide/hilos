@@ -15,7 +15,6 @@
 // silence or a crash would make it unfree.
 
 import {
-  settingPresetsSignalSchemas,
   type HilosSettingPresetDifference,
   type HilosSettingPresetsVocabulary,
 } from '../settings/hilosSettingPresets.js'
@@ -23,19 +22,10 @@ import { HilosPages } from '../../routing/hilosPages.js'
 import { formatDurationInWords } from '../../format/duration.js'
 import { isHiddenValue } from '../../state/hiddenValue.js'
 
-/** Server→client signal `type` carrying the group (PHP `SUBSCRIPTION_PAGE_HILOS_LOGS_SETTINGS`). */
-export const LOG_SETTINGS_SIGNAL = 'subscription_page_hilos_logs_settings'
-
-/**
- * The logging-mode signal schema keyed for a connection's `projectSchemas`, so the
- * parse boundary validates the frames the screen ingests. {@link createHilosConnection}
- * merges it in, so a project never restates it.
- *
- * A set of its own rather than an entry in a neighbouring log screen's: two
- * independent screens must not depend on which of them landed first.
- */
-export const LOGS_SETTINGS_SIGNAL_SCHEMAS =
-  settingPresetsSignalSchemas(LOG_SETTINGS_SIGNAL)
+export {
+  LOG_SETTINGS_SIGNAL,
+  LOGS_SETTINGS_SIGNAL_SCHEMAS,
+} from '../../protocol/logsSignals.js'
 
 // The setting keys the logging modes write, mirroring the backend catalog
 // (LogSettingsCatalog). They are declared here because this module is the one that

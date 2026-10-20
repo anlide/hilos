@@ -1,4 +1,4 @@
-import { HilosDaemonWorkersPage } from '@hilos/react'
+import { HilosDaemonWorkersPage } from '@hilos/react/admin/daemon'
 import { hilosDaemonContext } from './hilosDaemonContext.js'
 
 /** Mount the framework's Workers page with the tasks connection and scope. */

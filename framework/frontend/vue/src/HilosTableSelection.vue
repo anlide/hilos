@@ -19,7 +19,7 @@ import { computed, ref } from 'vue'
 import {
   type HilosTableBulkAction,
   type TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import HilosActionError from './HilosActionError.vue'
 import HilosModal from './HilosModal.vue'

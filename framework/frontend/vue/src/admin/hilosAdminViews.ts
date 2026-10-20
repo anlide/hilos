@@ -1,4 +1,4 @@
-// The default Hilos admin views: a page-key → component map over the whole Hilos
+// The default Hilos admin views: a page-key → lazy descriptor map over the whole Hilos
 // admin section. Each entry is a real, one-per-file page component under admin/
 // (the folders mirror the backend Pages/Hilos/ section grouping) — a thin default
 // that renders the shared HilosAdminPage shell for its key until the page grows
@@ -26,40 +26,7 @@
 // shell, and HilosView is the one component that reads the navigator.
 
 import type { Component } from 'vue'
-import { HilosPages } from '@hilos/core'
-
-import HilosDashboardPage from './dashboard/HilosDashboardPage.vue'
-import HilosRolesPage from './roles/HilosRolesPage.vue'
-import HilosI18nPage from './i18n/HilosI18nPage.vue'
-import HilosI18nEntitiesPage from './i18n/lists/HilosI18nEntitiesPage.vue'
-import HilosI18nUiPagesPage from './i18n/lists/HilosI18nUiPagesPage.vue'
-import HilosI18nGroupsPage from './i18n/lists/HilosI18nGroupsPage.vue'
-import HilosI18nActionsPage from './i18n/lists/HilosI18nActionsPage.vue'
-import HilosI18nEmailsPage from './i18n/lists/HilosI18nEmailsPage.vue'
-import HilosI18nUiPagePage from './i18n/details/HilosI18nUiPagePage.vue'
-import HilosI18nGroupPage from './i18n/details/HilosI18nGroupPage.vue'
-import HilosI18nActionPage from './i18n/details/HilosI18nActionPage.vue'
-import HilosI18nTranslateEntityPage from './i18n/translate/HilosI18nTranslateEntityPage.vue'
-import HilosI18nTranslateUiPagePage from './i18n/translate/HilosI18nTranslateUiPagePage.vue'
-import HilosI18nTranslateUiPageItemPage from './i18n/translate/HilosI18nTranslateUiPageItemPage.vue'
-import HilosI18nTranslateGroupPage from './i18n/translate/HilosI18nTranslateGroupPage.vue'
-import HilosI18nTranslateGroupItemPage from './i18n/translate/HilosI18nTranslateGroupItemPage.vue'
-import HilosI18nTranslateActionErrorPage from './i18n/translate/HilosI18nTranslateActionErrorPage.vue'
-import HilosI18nTranslateEmailPage from './i18n/translate/HilosI18nTranslateEmailPage.vue'
-import HilosSecurityPage from './security/HilosSecurityPage.vue'
-import HilosBillingPage from './billing/HilosBillingPage.vue'
-import HilosBillingProviderPage from './billing/HilosBillingProviderPage.vue'
-import HilosBillingPaymentsPage from './billing/HilosBillingPaymentsPage.vue'
-import HilosBillingRefundsPage from './billing/HilosBillingRefundsPage.vue'
-import HilosDaemonWebsocketsPage from './daemon/HilosDaemonWebsocketsPage.vue'
-import HilosAnalyticsPage from './analytics/HilosAnalyticsPage.vue'
-import HilosMcpSkillsPage from './mcpSkills/HilosMcpSkillsPage.vue'
-import HilosMcpSkillsMcpPage from './mcpSkills/HilosMcpSkillsMcpPage.vue'
-import HilosMcpSkillsMcpLogsPage from './mcpSkills/HilosMcpSkillsMcpLogsPage.vue'
-import HilosMcpSkillsMcpLogsViewPage from './mcpSkills/HilosMcpSkillsMcpLogsViewPage.vue'
-import HilosSilPage from './sil/HilosSilPage.vue'
-import HilosSilRequestsPage from './sil/HilosSilRequestsPage.vue'
-import HilosSilUserHistoryPage from './sil/HilosSilUserHistoryPage.vue'
+import { HilosPages, lazyPage, type PageView } from '@hilos/core/base'
 
 /**
  * The default admin view map: every framework admin page key (except users/user)
@@ -68,33 +35,85 @@ import HilosSilUserHistoryPage from './sil/HilosSilUserHistoryPage.vue'
  * pages with a 404 and no cards; a project implementing one overrides its key
  * and names it in bootHilos projectViews.
  */
-export function hilosAdminViews(): Record<string, Component> {
+export function hilosAdminViews(): Record<string, PageView<Component>> {
   return {
-    [HilosPages.DASHBOARD]: HilosDashboardPage,
-    [HilosPages.ROLES]: HilosRolesPage,
-    [HilosPages.I18N]: HilosI18nPage,
+    [HilosPages.DASHBOARD]: lazyPage(() =>
+      import('@hilos/vue/admin/dashboard').then((m) => m.HilosDashboardPage),
+    ),
+    [HilosPages.ROLES]: lazyPage(() =>
+      import('@hilos/vue/admin/roles').then((m) => m.HilosRolesPage),
+    ),
+    [HilosPages.I18N]: lazyPage(() =>
+      import('@hilos/vue/admin/i18n').then((m) => m.HilosI18nPage),
+    ),
     // I18N_LANGUAGES and I18N_COUNTRIES are real framework pages: their tables
     // read a live connection, so a project mounts them directly with its context.
-    [HilosPages.I18N_ENTITIES]: HilosI18nEntitiesPage,
-    [HilosPages.I18N_UI_PAGES]: HilosI18nUiPagesPage,
-    [HilosPages.I18N_GROUPS]: HilosI18nGroupsPage,
-    [HilosPages.I18N_ACTIONS]: HilosI18nActionsPage,
-    [HilosPages.I18N_EMAILS]: HilosI18nEmailsPage,
-    [HilosPages.I18N_UI_PAGE]: HilosI18nUiPagePage,
-    [HilosPages.I18N_GROUP]: HilosI18nGroupPage,
-    [HilosPages.I18N_ACTION]: HilosI18nActionPage,
-    [HilosPages.I18N_TRANSLATE_ENTITY]: HilosI18nTranslateEntityPage,
-    [HilosPages.I18N_TRANSLATE_UI_PAGE]: HilosI18nTranslateUiPagePage,
-    [HilosPages.I18N_TRANSLATE_UI_PAGE_ITEM]: HilosI18nTranslateUiPageItemPage,
-    [HilosPages.I18N_TRANSLATE_GROUP]: HilosI18nTranslateGroupPage,
-    [HilosPages.I18N_TRANSLATE_GROUP_ITEM]: HilosI18nTranslateGroupItemPage,
-    [HilosPages.I18N_TRANSLATE_ACTION_ERROR]: HilosI18nTranslateActionErrorPage,
-    [HilosPages.I18N_TRANSLATE_EMAIL]: HilosI18nTranslateEmailPage,
+    [HilosPages.I18N_ENTITIES]: lazyPage(() =>
+      import('@hilos/vue/admin/i18n').then((m) => m.HilosI18nEntitiesPage),
+    ),
+    [HilosPages.I18N_UI_PAGES]: lazyPage(() =>
+      import('@hilos/vue/admin/i18n').then((m) => m.HilosI18nUiPagesPage),
+    ),
+    [HilosPages.I18N_GROUPS]: lazyPage(() =>
+      import('@hilos/vue/admin/i18n').then((m) => m.HilosI18nGroupsPage),
+    ),
+    [HilosPages.I18N_ACTIONS]: lazyPage(() =>
+      import('@hilos/vue/admin/i18n').then((m) => m.HilosI18nActionsPage),
+    ),
+    [HilosPages.I18N_EMAILS]: lazyPage(() =>
+      import('@hilos/vue/admin/i18n').then((m) => m.HilosI18nEmailsPage),
+    ),
+    [HilosPages.I18N_UI_PAGE]: lazyPage(() =>
+      import('@hilos/vue/admin/i18n').then((m) => m.HilosI18nUiPagePage),
+    ),
+    [HilosPages.I18N_GROUP]: lazyPage(() =>
+      import('@hilos/vue/admin/i18n').then((m) => m.HilosI18nGroupPage),
+    ),
+    [HilosPages.I18N_ACTION]: lazyPage(() =>
+      import('@hilos/vue/admin/i18n').then((m) => m.HilosI18nActionPage),
+    ),
+    [HilosPages.I18N_TRANSLATE_ENTITY]: lazyPage(() =>
+      import('@hilos/vue/admin/i18n').then(
+        (m) => m.HilosI18nTranslateEntityPage,
+      ),
+    ),
+    [HilosPages.I18N_TRANSLATE_UI_PAGE]: lazyPage(() =>
+      import('@hilos/vue/admin/i18n').then(
+        (m) => m.HilosI18nTranslateUiPagePage,
+      ),
+    ),
+    [HilosPages.I18N_TRANSLATE_UI_PAGE_ITEM]: lazyPage(() =>
+      import('@hilos/vue/admin/i18n').then(
+        (m) => m.HilosI18nTranslateUiPageItemPage,
+      ),
+    ),
+    [HilosPages.I18N_TRANSLATE_GROUP]: lazyPage(() =>
+      import('@hilos/vue/admin/i18n').then(
+        (m) => m.HilosI18nTranslateGroupPage,
+      ),
+    ),
+    [HilosPages.I18N_TRANSLATE_GROUP_ITEM]: lazyPage(() =>
+      import('@hilos/vue/admin/i18n').then(
+        (m) => m.HilosI18nTranslateGroupItemPage,
+      ),
+    ),
+    [HilosPages.I18N_TRANSLATE_ACTION_ERROR]: lazyPage(() =>
+      import('@hilos/vue/admin/i18n').then(
+        (m) => m.HilosI18nTranslateActionErrorPage,
+      ),
+    ),
+    [HilosPages.I18N_TRANSLATE_EMAIL]: lazyPage(() =>
+      import('@hilos/vue/admin/i18n').then(
+        (m) => m.HilosI18nTranslateEmailPage,
+      ),
+    ),
     // COMMUNICATIONS, COMMUNICATIONS_CHANNEL, and COMMUNICATIONS_DELIVERIES are real
     // framework pages that need a project-supplied context (like settings / backup):
     // the deliveries journal reads a live connection for its table, so a project
     // mounts them directly rather than through this context-free default map.
-    [HilosPages.SECURITY]: HilosSecurityPage,
+    [HilosPages.SECURITY]: lazyPage(() =>
+      import('@hilos/vue/admin/security').then((m) => m.HilosSecurityPage),
+    ),
     // SECURITY_2FA is a real framework page since HIL-494: its table reads a
     // live connection, so a project mounts HilosSecurity2faPage directly with its
     // context. So is its child SECURITY_STEP_UP since HIL-1204: a project mounts
@@ -108,11 +127,27 @@ export function hilosAdminViews(): Record<string, Component> {
     // SECURITY_SIGN_IN_METHODS is one too since HIL-427: its table and its live
     // method set read the connection and the session scope, so a project mounts
     // HilosSecuritySignInMethodsPage directly with its context.
-    [HilosPages.BILLING]: HilosBillingPage,
-    [HilosPages.BILLING_PROVIDER]: HilosBillingProviderPage,
-    [HilosPages.BILLING_PAYMENTS]: HilosBillingPaymentsPage,
-    [HilosPages.BILLING_REFUNDS]: HilosBillingRefundsPage,
-    [HilosPages.DAEMON_WEBSOCKETS]: HilosDaemonWebsocketsPage,
+    [HilosPages.BILLING]: lazyPage(() =>
+      import('@hilos/vue/admin/billing').then((m) => m.HilosBillingPage),
+    ),
+    [HilosPages.BILLING_PROVIDER]: lazyPage(() =>
+      import('@hilos/vue/admin/billing').then(
+        (m) => m.HilosBillingProviderPage,
+      ),
+    ),
+    [HilosPages.BILLING_PAYMENTS]: lazyPage(() =>
+      import('@hilos/vue/admin/billing').then(
+        (m) => m.HilosBillingPaymentsPage,
+      ),
+    ),
+    [HilosPages.BILLING_REFUNDS]: lazyPage(() =>
+      import('@hilos/vue/admin/billing').then((m) => m.HilosBillingRefundsPage),
+    ),
+    [HilosPages.DAEMON_WEBSOCKETS]: lazyPage(() =>
+      import('@hilos/vue/admin/daemon').then(
+        (m) => m.HilosDaemonWebsocketsPage,
+      ),
+    ),
     // LOGS, LOGS_KEYS, LOGS_WORKERS, LOGS_ROTATIONS, LOGS_SETTINGS and LOGS_VIEW are
     // absent for the same reason as the deliveries journal: the stream lists and the
     // rotation history each read a live connection for their table and their header,
@@ -126,13 +161,35 @@ export function hilosAdminViews(): Record<string, Component> {
     // CHANGE_LOG, CHANGE_LOG_TABLES and CHANGE_LOG_TABLE read a live connection
     // and page scope, so a project mounts HilosChangeLogPage,
     // HilosChangeLogTablesPage and HilosChangeLogTablePage directly.
-    [HilosPages.ANALYTICS]: HilosAnalyticsPage,
-    [HilosPages.MCP_SKILLS]: HilosMcpSkillsPage,
-    [HilosPages.MCP_SKILLS_MCP]: HilosMcpSkillsMcpPage,
-    [HilosPages.MCP_SKILLS_MCP_LOGS]: HilosMcpSkillsMcpLogsPage,
-    [HilosPages.MCP_SKILLS_MCP_LOGS_VIEW]: HilosMcpSkillsMcpLogsViewPage,
-    [HilosPages.SIL]: HilosSilPage,
-    [HilosPages.SIL_REQUESTS]: HilosSilRequestsPage,
-    [HilosPages.SIL_USER_HISTORY]: HilosSilUserHistoryPage,
+    [HilosPages.ANALYTICS]: lazyPage(() =>
+      import('@hilos/vue/admin/analytics').then((m) => m.HilosAnalyticsPage),
+    ),
+    [HilosPages.MCP_SKILLS]: lazyPage(() =>
+      import('@hilos/vue/admin/mcp-skills').then((m) => m.HilosMcpSkillsPage),
+    ),
+    [HilosPages.MCP_SKILLS_MCP]: lazyPage(() =>
+      import('@hilos/vue/admin/mcp-skills').then(
+        (m) => m.HilosMcpSkillsMcpPage,
+      ),
+    ),
+    [HilosPages.MCP_SKILLS_MCP_LOGS]: lazyPage(() =>
+      import('@hilos/vue/admin/mcp-skills').then(
+        (m) => m.HilosMcpSkillsMcpLogsPage,
+      ),
+    ),
+    [HilosPages.MCP_SKILLS_MCP_LOGS_VIEW]: lazyPage(() =>
+      import('@hilos/vue/admin/mcp-skills').then(
+        (m) => m.HilosMcpSkillsMcpLogsViewPage,
+      ),
+    ),
+    [HilosPages.SIL]: lazyPage(() =>
+      import('@hilos/vue/admin/sil').then((m) => m.HilosSilPage),
+    ),
+    [HilosPages.SIL_REQUESTS]: lazyPage(() =>
+      import('@hilos/vue/admin/sil').then((m) => m.HilosSilRequestsPage),
+    ),
+    [HilosPages.SIL_USER_HISTORY]: lazyPage(() =>
+      import('@hilos/vue/admin/sil').then((m) => m.HilosSilUserHistoryPage),
+    ),
   }
 }

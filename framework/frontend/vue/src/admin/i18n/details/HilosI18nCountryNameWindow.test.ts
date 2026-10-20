@@ -1,16 +1,18 @@
 import { mount, type VueWrapper } from '@vue/test-utils'
 import {
   ActionError,
-  createHilosI18nCountryNameWindow,
   createSignal,
   type ActionHandle,
   type ActionLifecycle,
   type ActionResult,
+  type TableViewportController,
+} from '@hilos/core/base'
+import {
+  createHilosI18nCountryNameWindow,
   type HilosI18nCountryCard,
   type HilosI18nCountryContext,
   type HilosI18nNameRow,
-  type TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { afterEach, describe, expect, it } from 'vitest'
 import { nextTick, ref } from 'vue'
 

@@ -5,7 +5,7 @@ round-trip are the framework's; the project supplies only the context (the same
 connection / scope stores / action lifecycle the channel pages use) and registers
 the deliveries table on its backend. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { HilosCommunicationsDeliveriesPage } from '@hilos/vue'
+import { HilosCommunicationsDeliveriesPage } from '@hilos/vue/admin/communications'
 
 import { hilosCommunicationsContext } from './hilosCommunicationsContext'
 

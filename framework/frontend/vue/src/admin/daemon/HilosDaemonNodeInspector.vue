@@ -19,10 +19,10 @@ import {
   formatDaemonNumber,
   formatDaemonPercentage,
   formatDaemonUptime,
-  HilosPages,
   type HilosDaemonOverviewData,
   type HilosDaemonOverviewNode,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
+import { HilosPages } from '@hilos/core/base'
 import { computed, inject, ref } from 'vue'
 
 import HilosLink from '../../HilosLink.vue'

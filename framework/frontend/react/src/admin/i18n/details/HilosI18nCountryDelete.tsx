@@ -2,9 +2,9 @@ import { useEffect, useRef } from 'react'
 import {
   HILOS_I18N_COUNTRY_DELETE_COPY,
   hilosI18nCountryDeleteLabel,
-  type ActionHandle,
   type HilosI18nCountryDeleteTarget,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { type ActionHandle } from '@hilos/core/base'
 import { HilosActionError } from '../../../HilosActionError.js'
 import { HilosEditNotice } from '../../../HilosEditNotice.js'
 import { HilosModal } from '../../../HilosModal.js'

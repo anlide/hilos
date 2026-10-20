@@ -28,18 +28,20 @@ import {
   HILOS_I18N_LANGUAGE_DELETE_COPY,
   HILOS_I18N_LANGUAGE_ROW_DELETE_ACTION,
   createHilosI18nLanguageDelete,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import type {
   HilosI18nLanguageContext,
   HilosI18nLanguageRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 
-import { HilosActionError } from '../../../HilosActionError.js'
-import { HilosEditNotice } from '../../../HilosEditNotice.js'
-import { HilosModal } from '../../../HilosModal.js'
-import { LoadingButton } from '../../../LoadingButton.js'
-import { injectLookOnly } from '../../../hilosLookOnly.js'
-import { createHilosTrackedAction } from '../../../hilosTrackedAction.js'
+import {
+  HilosActionError,
+  HilosEditNotice,
+  HilosModal,
+  LoadingButton,
+  injectLookOnly,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 
 /** What the confirmation reads of the language it deletes. */
 export type HilosI18nLanguageDeleteSource = Pick<

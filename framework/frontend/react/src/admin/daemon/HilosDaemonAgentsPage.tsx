@@ -15,12 +15,12 @@ import {
   formatDaemonAgentOwnership,
   formatDaemonAgentWorker,
   formatDaemonNodeSilentSince,
-  HilosPages,
   readDaemonProcessesReported,
   readHilosDaemonNodeHeading,
   type HilosDaemonAgentRow,
   type HilosDaemonAgentsContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
+import { HilosPages } from '@hilos/core/base'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'

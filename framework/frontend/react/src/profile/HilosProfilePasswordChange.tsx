@@ -7,7 +7,7 @@ import {
   SEND_PROGRESS_DETAILS_CLASS,
   SEND_PROGRESS_ROW_CLASS,
   type HilosProfilePasswordChangeFlow,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
 import { HilosSendProgress } from '../HilosSendProgress.js'

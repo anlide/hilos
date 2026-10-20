@@ -4,7 +4,7 @@
 // overwriting hand-made edits are the framework's; the project supplies only the
 // context (the same connection and action lifecycle the other Hilos pages use) and
 // registers the LogsSettingsPage on its backend.
-import { HilosLogsSettingsPage } from '@hilos/react'
+import { HilosLogsSettingsPage } from '@hilos/react/admin/logs'
 
 import { hilosLogSettingsContext } from './hilosLogsContext'
 

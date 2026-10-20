@@ -3,26 +3,28 @@ import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ActionLifecycle,
-  CHANGE_LOG_TABLE_COPY,
-  CHANGE_LOG_TABLE_SECTION,
-  CHANGE_LOG_TABLES_UNTRACKED_NOTE,
-  HILOS_CHANGE_LOG_RECEIPT_READ,
   HilosPages,
   ScopeManager,
   bindAdminAccess,
   bindSessionScope,
   createSignal,
-  formatChangeLogTableActivity,
   hilosAdminAccess,
   type ActionErrorSignal,
   type ActionLifecycleSource,
   type ActionSuccessSignal,
   type ConnectionState,
-  type HilosChangeLogReceiptContext,
   type HilosPageIdentity,
   type HilosRouter,
   type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  CHANGE_LOG_TABLE_COPY,
+  CHANGE_LOG_TABLE_SECTION,
+  CHANGE_LOG_TABLES_UNTRACKED_NOTE,
+  HILOS_CHANGE_LOG_RECEIPT_READ,
+  formatChangeLogTableActivity,
+  type HilosChangeLogReceiptContext,
+} from '@hilos/core/admin/change-log'
 
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import HilosChangeLogTablePage from './HilosChangeLogTablePage.vue'

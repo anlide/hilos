@@ -8,7 +8,7 @@ import {
   createSignal,
   type ActionLifecycle,
   type HilosProfileRename,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 import { nextTick } from 'vue'

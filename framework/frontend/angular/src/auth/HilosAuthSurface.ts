@@ -87,7 +87,7 @@ import {
   TELEGRAM_CODE_CHANNEL,
   subscribeSignal,
   toFlowPatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   AuthFlow,
   AuthConsentState,
@@ -109,7 +109,7 @@ import type {
   ProjectSignal,
   ReadonlySignal,
   SecondFactorStepData,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosLegalConsent } from '../legal/HilosLegalConsent.js'
 import { HilosBackupCodes } from '../HilosBackupCodes.js'

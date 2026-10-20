@@ -9,6 +9,7 @@ import {
   type Unsubscribe,
 } from '../state/signal.js'
 import { type HilosRouter } from './HilosRouter.js'
+import { type PageError } from './pageError.js'
 
 /** The page slot and inert departure container owned by one routed view. */
 export interface PageDepartureBinding {
@@ -16,6 +17,10 @@ export interface PageDepartureBinding {
   slot: Element
   departure: Element
   skeletonShown: ReadonlySignal<boolean>
+  /** Composed code/data wait; defaults to the router's server-only wait. */
+  loading?: ReadonlySignal<boolean>
+  /** Composed server/import error; defaults to the router's error. */
+  error?: ReadonlySignal<PageError | null>
 }
 
 /**
@@ -31,6 +36,8 @@ export interface PageDepartureBinding {
  */
 export function bindPageDeparture(binding: PageDepartureBinding): Unsubscribe {
   const { router, slot, departure, skeletonShown } = binding
+  const loading = binding.loading ?? router.pageLoading
+  const error = binding.error ?? router.pageError
 
   const clear = (): void => {
     if (departure.childElementCount === 0) {
@@ -48,18 +55,18 @@ export function bindPageDeparture(binding: PageDepartureBinding): Unsubscribe {
   }
 
   const offLeave = router.onLeave(() => {
-    if (router.pageLoading.get()) {
+    if (loading.get()) {
       return
     }
     copyPageInto(slot, departure)
   })
-  const offLoading = subscribeSignal(router.pageLoading, (loading) => {
-    if (!loading) {
+  const offLoading = subscribeSignal(loading, (waiting) => {
+    if (!waiting) {
       clear()
     }
   })
-  const offError = subscribeSignal(router.pageError, (error) => {
-    if (error !== null) {
+  const offError = subscribeSignal(error, (failure) => {
+    if (failure !== null) {
       clear()
     }
   })

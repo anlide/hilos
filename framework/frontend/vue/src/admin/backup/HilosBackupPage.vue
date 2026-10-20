@@ -46,7 +46,6 @@ import {
   HILOS_BACKUP_CIRCLE_POINTER_PATH,
   HILOS_BACKUP_REOPEN_COPY,
   HILOS_BACKUP_SCOPES,
-  HilosPages,
   isBackupChecksumMismatch,
   isBackupShipFailed,
   isBackupDeletable,
@@ -55,12 +54,11 @@ import {
   isBackupOutOfReach,
   isBackupRestorable,
   isBackupSubsystemBusy,
-  isHiddenValue,
   offersBackupRestore,
-  type Hideable,
   type HilosBackupRow,
   type HilosBackupsContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/backup'
+import { HilosPages, isHiddenValue, type Hideable } from '@hilos/core/base'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosActionError from '../../HilosActionError.vue'

@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { type HilosI18nLanguageRow } from '@hilos/core'
+import { type HilosI18nLanguageRow } from '@hilos/core/admin/i18n'
 import { describe, expect, it } from 'vitest'
 import { defineComponent, h } from 'vue'
 

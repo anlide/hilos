@@ -4,7 +4,7 @@ import {
   daemonNodeDiagramPath,
   formatDaemonNodeState,
   type HilosDaemonNodeHeading,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
 

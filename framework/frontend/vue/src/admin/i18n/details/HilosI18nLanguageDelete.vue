@@ -6,7 +6,7 @@ import {
   createHilosI18nLanguageDelete,
   type HilosI18nLanguageContext,
   type HilosI18nLanguageRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { computed, ref, watch } from 'vue'
 
 import HilosActionError from '../../../HilosActionError.vue'

@@ -52,6 +52,103 @@ Each framework gets a thin adapter over the core:
 The reference resolver (`useEntity` in Vue) is a per-framework wrapper over the
 same plain-function core selector ([data-model.md](data-model.md)).
 
+## Page code and first-answer state
+
+`@hilos/core/base` owns the runtime page descriptor and the outlet state:
+
+```ts
+interface LazyPageView<T> {
+  readonly kind: 'lazy-page'
+  readonly load: () => Promise<T>
+}
+type PageView<T> = T | LazyPageView<T>
+// lazyPage<T>(load: () => Promise<T>): LazyPageView<T>
+// createPageViewState<T>(router: HilosRouter): PageViewState<T>
+```
+
+`lazyPage(() => import('./views/Settings/Settings.js').then(m => m.default))`
+constructs a descriptor without invoking the loader. An eager component remains
+an ordinary `T`, including a React function component: callability is never the
+loader heuristic. Create descriptors once at module scope or once per component
+instance (Vue setup, Angular field), outside repeated rendering. Cache identity
+is the descriptor object, not the page key, URL or loader function.
+
+`PageViewState<T>` exposes `view: ReadonlySignal<T | undefined>`,
+`loading: ReadonlySignal<boolean>` and `error: ReadonlySignal<PageError | null>`,
+plus `setPages(pages: Readonly<Record<string, PageView<T>>>): void` and
+`dispose(): void`. All three `HilosView` implementations adapt this one core
+machine to their framework's signals and render it; no `React.lazy`/`Suspense`,
+`defineAsyncComponent` or Angular `@defer` wrapper is required.
+
+Each outlet instance owns its cache. Selections sharing a descriptor share an
+in-flight promise; successful components are reused on return. A late completion
+may fill that outlet's cache but cannot publish over a newer selection: a
+generation and the selected descriptor guard publication. `setPages` notices a
+replacement descriptor at the active key. Rejected entries leave the cache;
+after leaving and selecting the page again, core invokes the loader again.
+`dispose` detaches subscriptions, clears the cache and prevents late publication.
+It does not cancel a JavaScript import or create a process-wide component cache.
+
+`HilosRouter.pageLoading` still means waiting for a server answer. The composed
+outlet state waits for **both** code and the first permitting page reply before
+exposing `view`. The router calls `onLeave` before publishing the next route;
+core keeps the previous view settled until all departure listeners have copied
+it. `bindPageDeparture` accepts optional composed `loading` and `error` signals
+(defaulting to the router's server-only signals). The adapters supply them, so
+the inert, `aria-hidden` copy stays until readiness, refusal or the existing
+300 ms delayed skeleton replaces it. One continuous code/data wait has one
+skeleton deadline: finishing code while data is pending, or vice versa, does
+not restart the timer. A reconnect resubscription does not hide an already shown
+page or raise a fresh skeleton.
+
+The server's page error wins over a loader outcome. An import can start while
+the access verdict is unknown; it grants no permission to mount, and its late
+success cannot erase a refusal. An anonymous 401 uses the registered auth
+surface; other errors use `ErrorPage`. Unknown addresses, unbuilt pages and
+known refusals need no artificial loader to show their existing outcome.
+
+A loader rejection uses the existing local `PageError` presentation shape:
+`httpCode: 503`, `errorCode: 'page_load_failed'`,
+`title: 'Page could not be loaded'`,
+`message: 'Please try opening this page again.'`. Raw `Error.message` never
+reaches this fallback. Like `ROUTE_NOT_FOUND_ERROR`, it carries a `TODO(i18n)`
+at its definition; it is not a signal or a new wire DTO. The existing ErrorPage
+and SPA home navigation handle it, without a new Retry control or forced reload.
+
+Invoking the loader again does not promise another HTTP fetch. In Chromium's
+native failed-ESM module map, importing the same failed URL can reject again
+without a request; this was observed against all six production artifacts.
+Core retries the loader on a later selection, not the browser's module cache.
+The build-mismatch whole-app refresh remains a separate, unchanged mechanism
+([build-and-docker.md](build-and-docker.md#lazy-page-code-in-the-client-build)).
+
+## Eager protocol and shared ownership
+
+`createHilosConnection` merges every framework schema group before it returns
+the unopened connection, hence before the socket or a first admin visit. Project
+schemas are spread last. Lazy admin code does not delay registration or change
+schema shapes, permissiveness, values or merge order.
+
+Existing mixed definitions have their single implementation under `protocol/`:
+backup, logs, maintenance, legal-acceptance and account-standing signals, plus
+setting-preset schemas. Root and former direct-module exports reexport those
+same values/types; they do not build new schema objects. Shared shell selectors
+still live at `admin/identity/hilosPageIdentity.ts` and `admin/viewMode.ts` — an
+`admin/` directory name alone does not make a module a lazy implementation.
+Restore progress and its formatters/clock have their common owner at
+`connection/restoreProgress.ts`, reexported by base, root, `admin/backup` and the
+former `hilosBackups` module. The root-facing `hilosLegalDocumentLabel` has its
+separate owner at `legal/legalDocumentLabel.ts`, shared by root/base/legal section
+and the former direct admin module. The distinct label inside `legalAgreements`
+retains its existing behavior. Each implementation has one `tsc` owner.
+
+Controllers, models, table factories and page-only validators remain with their
+lazy admin sections. There is no blanket exemption for anything called
+headless or protocol: the initial-graph proof checks actual source bodies,
+compiled owners and static edges. See
+[sdk-packaging.md](sdk-packaging.md#public-entrypoints-and-their-graph) and
+[build-and-docker.md](build-and-docker.md#initial-client-graph-and-budget).
+
 ## Templates cannot be shared
 
 An honest constraint: templates **cannot** be shared across Vue, React, and

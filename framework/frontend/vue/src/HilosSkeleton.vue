@@ -11,7 +11,7 @@ exactly one announcement for the whole frame, never one per bar
 (accessibility.md). -->
 <script setup lang="ts">
 import { computed } from 'vue'
-import { HILOS_SKELETON_LINES } from '@hilos/core'
+import { HILOS_SKELETON_LINES } from '@hilos/core/base'
 
 const props = defineProps<{
   /** Bar widths in Bootstrap columns (1..12); the core default when omitted. */

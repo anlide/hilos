@@ -16,7 +16,7 @@
 // ones it is answered by — OAuth, passkey, auth-converge — are the framework's
 // and are merged by createHilosConnection itself, like every other framework
 // signal (HIL-1150).
-import { createHilosConnection } from '@hilos/core'
+import { createHilosConnection } from '@hilos/core/base'
 
 export const { connection, actionErrors, actions } = createHilosConnection({
   url: import.meta.env.VITE_WS_URL,

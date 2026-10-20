@@ -1,16 +1,18 @@
 import { enableAutoUnmount, mount } from '@vue/test-utils'
 import {
   ActionError,
-  createHilosI18nCountryCardWindow,
   createSignal,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   hilosToasts,
   type ActionHandle,
   type ActionLifecycle,
   type ActionResult,
+} from '@hilos/core/base'
+import {
+  createHilosI18nCountryCardWindow,
   type HilosI18nCountryCard,
   type HilosI18nCountryContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { afterEach, describe, expect, it } from 'vitest'
 import { nextTick, ref } from 'vue'
 import { hilosAdminViewModeKey } from '../../../hilosAdminViewMode.js'

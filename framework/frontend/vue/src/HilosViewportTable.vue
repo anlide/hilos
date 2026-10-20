@@ -45,7 +45,7 @@ import {
   hilosTableSortPositionLabel,
   hilosTableStaleColumns,
   hilosTableStaleSources,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosTableColumn,
   // Aliased because the component drawing one of these carries the same name.
@@ -53,7 +53,7 @@ import type {
   TableSort,
   TableViewportController,
   TableViewportRow,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import HilosTableBar from './HilosTableBar.vue'
 import HilosTableEmptyState from './HilosTableEmptyState.vue'

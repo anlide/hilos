@@ -25,15 +25,20 @@ import {
   createHilosI18nCountrySwitchOn,
   hilosI18nCountryLabel,
   hilosI18nCountrySwitchOn,
-} from '@hilos/core'
-import type { HilosI18nCountryCard, HilosI18nCountryContext } from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import type {
+  HilosI18nCountryCard,
+  HilosI18nCountryContext,
+} from '@hilos/core/admin/i18n'
 
-import { HilosActionError } from '../../../HilosActionError.js'
-import { HilosEditNotice } from '../../../HilosEditNotice.js'
-import { HilosModal } from '../../../HilosModal.js'
-import { LoadingButton } from '../../../LoadingButton.js'
-import { injectLookOnly } from '../../../hilosLookOnly.js'
-import { createHilosTrackedAction } from '../../../hilosTrackedAction.js'
+import {
+  HilosActionError,
+  HilosEditNotice,
+  HilosModal,
+  LoadingButton,
+  injectLookOnly,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 
 /** The country-card switch-on control and its live confirmation. */
 @Component({

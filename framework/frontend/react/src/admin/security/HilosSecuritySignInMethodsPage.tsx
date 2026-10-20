@@ -16,20 +16,18 @@
 // The screen is built from text: the mockup has no node for it yet (D-093), nor
 // for the passkey block (D-122). Bootstrap classes only (styling-rules.md).
 import { useEffect, useId, useMemo, useState } from 'react'
+import { HilosPages, isHiddenValue, resolveHilosPath } from '@hilos/core/base'
 import {
-  HilosPages,
   HilosSignInMethodRowKey,
   createHilosSignInMethodsActions,
   createHilosSignInMethodsTable,
-  isHiddenValue,
   isSignInMethodOn,
-  resolveHilosPath,
-} from '@hilos/core'
+} from '@hilos/core/admin/security'
+import type { Hideable } from '@hilos/core/base'
 import type {
-  Hideable,
   HilosSignInMethodRow,
   HilosSignInMethodsContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/security'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosHiddenMark } from '../../HilosHiddenMark.js'

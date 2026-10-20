@@ -11,7 +11,7 @@ import {
   createHilosAuthContext,
   type CodeChannelDescriptor,
   type HilosAuthContext,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { actions, connection } from '../bootstrap/connection'
 import { scopes } from '../bootstrap/session'

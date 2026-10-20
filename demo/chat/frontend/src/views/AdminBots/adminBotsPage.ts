@@ -13,7 +13,7 @@ import {
   type HilosTableColumnOf,
   type HilosTableFrame,
   type TableRow,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { connection } from '../../bootstrap/connection'
 import { scopes } from '../../bootstrap/session'

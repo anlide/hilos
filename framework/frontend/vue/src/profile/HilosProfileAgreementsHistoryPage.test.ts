@@ -2,7 +2,7 @@ import {
   ActionError,
   type ActionLifecycle,
   type ActionResult,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, expect, it, vi } from 'vitest'
 import {

@@ -17,10 +17,10 @@ import {
   hilosI18nLanguageDelete,
   HILOS_I18N_LANGUAGE_MARKS,
   HILOS_I18N_LANGUAGES_LEGEND,
-  HilosPages,
   type HilosI18nLanguageContext,
   type HilosI18nLanguageRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { HilosPages } from '@hilos/core/base'
 import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import HilosAdminPage from '../../../HilosAdminPage.vue'

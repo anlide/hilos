@@ -14,15 +14,20 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   CHANNEL_ENABLED_FIELD,
-  HILOS_TABLE_ACTIONS_KEY,
   HilosChannelRowKey,
-  HilosPages,
   createHilosChannelsTable,
   createHilosCommunicationsActions,
+} from '@hilos/core/admin/communications'
+import {
+  HILOS_TABLE_ACTIONS_KEY,
+  HilosPages,
   isHiddenValue,
   resolveHilosPath,
-} from '@hilos/core'
-import type { HilosChannelRow, HilosCommunicationsContext } from '@hilos/core'
+} from '@hilos/core/base'
+import type {
+  HilosChannelRow,
+  HilosCommunicationsContext,
+} from '@hilos/core/admin/communications'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosHiddenMark } from '../../HilosHiddenMark.js'

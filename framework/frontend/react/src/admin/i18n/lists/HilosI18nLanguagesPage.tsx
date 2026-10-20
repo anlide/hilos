@@ -9,11 +9,10 @@ import {
   hilosI18nLanguageDelete,
   HILOS_I18N_LANGUAGE_MARKS,
   HILOS_I18N_LANGUAGES_LEGEND,
-  HILOS_TABLE_ACTIONS_KEY,
   HilosI18nLanguageRowKey,
-  HilosPages,
   type HilosI18nLanguageContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { HILOS_TABLE_ACTIONS_KEY, HilosPages } from '@hilos/core/base'
 import { HilosAdminPage } from '../../../HilosAdminPage.js'
 import { HilosLink } from '../../../HilosLink.js'
 import { HilosViewportTable } from '../../../HilosViewportTable.js'

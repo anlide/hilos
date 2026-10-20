@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import type { HilosTableProgress } from '@hilos/core'
+import type { HilosTableProgress } from '@hilos/core/base'
 
 import HilosTableProgressBar from './HilosTableProgress.vue'
 

@@ -1,0 +1,234 @@
+// @hilos/react/base — the React view layer of the Hilos frontend SDK.
+//
+// A thin adapter over @hilos/core: it subscribes React to the core stores via
+// useSyncExternalStore and wraps the core selectors as hooks. It holds no
+// protocol, store, or table logic of its own
+// (docs/agents/frontend/multiframework-core.md). Fills in across rewrite
+// step 7, tracking each core capability as it lands; shipped so far: the
+// connection-state hook, the core-signal bridge, the entity resolver, the
+// navigation components, and the application shell.
+
+// The SDK ships Bootstrap so every consumer is styled transitively and never
+// imports it itself (styling-rules.md). The library build inlines this
+// stylesheet into the bundle, so the import covers both the dev (source) and the
+// built (dist) resolution paths.
+import 'bootstrap/dist/css/bootstrap.min.css'
+import 'bootstrap-icons/font/bootstrap-icons.css'
+// The Hilos custom style layer: the one home for declarations stock Bootstrap
+// utilities cannot express (styling-rules.md). Loaded after Bootstrap so its
+// utilities win on equal specificity.
+import '../hilos-styles.scss'
+
+export { useConnectionState } from '../useConnectionState.js'
+export { useProtectedMode } from '../useProtectedMode.js'
+export { useRtStaleness } from '../useRtStaleness.js'
+export { useReconnectDragging } from '../useReconnectDragging.js'
+export { useFirstFrameHold } from '../useFirstFrameHold.js'
+export { useSignal } from '../useSignal.js'
+export { useEntity } from '../useEntity.js'
+export { useTrackedAction, type TrackedAction } from '../useTrackedAction.js'
+export { HilosRouterContext } from '../hilosRouterContext.js'
+export { HILOS_VIEW_LAYER } from '../hilosViewLayer.js'
+export {
+  HilosTableSelectionEdgeContext,
+  type HilosTableSelectionEdge,
+} from '../hilosTableSelectionEdge.js'
+export { HilosPageHeadingIdContext } from '../hilosPageHeadingContext.js'
+export {
+  HilosAdminViewModeContext,
+  HilosTakeoverViewOnlyContext,
+  useLookOnly,
+  type LookOnly,
+} from '../hilosLookOnly.js'
+export { HilosLink, type HilosLinkProps } from '../HilosLink.js'
+export { HilosView, type HilosViewProps } from '../HilosView.js'
+export { HilosSkeleton, type HilosSkeletonProps } from '../HilosSkeleton.js'
+export { HilosAvatar, type HilosAvatarProps } from '../HilosAvatar.js'
+export { HilosHiddenMark } from '../HilosHiddenMark.js'
+export { HilosHideable, type HilosHideableProps } from '../HilosHideable.js'
+export { ErrorPage, type ErrorPageProps } from '../ErrorPage.js'
+export {
+  HilosMaintenance,
+  type HilosMaintenanceProps,
+} from '../HilosMaintenance.js'
+export { HilosLayout, type HilosLayoutProps } from '../HilosLayout.js'
+export { HilosThemeMenu } from '../HilosThemeMenu.js'
+export {
+  HilosStaticPage,
+  type HilosStaticPageProps,
+} from '../HilosStaticPage.js'
+export {
+  HilosAboutPage,
+  type HilosAboutPageProps,
+} from '../public/HilosAboutPage.js'
+export {
+  HilosLicensePage,
+  type HilosLicensePageProps,
+} from '../public/HilosLicensePage.js'
+export {
+  HilosPrivacyPage,
+  type HilosPrivacyPageProps,
+} from '../public/HilosPrivacyPage.js'
+export {
+  HilosTermsPage,
+  type HilosTermsPageProps,
+} from '../public/HilosTermsPage.js'
+export { LoadingButton, type LoadingButtonProps } from '../LoadingButton.js'
+export { HilosSwitch, type HilosSwitchProps } from '../HilosSwitch.js'
+export {
+  HilosBreadcrumb,
+  type HilosBreadcrumbProps,
+} from '../HilosBreadcrumb.js'
+export { ConflictHeader, type ConflictHeaderProps } from '../ConflictHeader.js'
+export {
+  ConflictActions,
+  type ConflictActionsProps,
+} from '../ConflictActions.js'
+export { HilosAdminPage, type HilosAdminPageProps } from '../HilosAdminPage.js'
+export {
+  HilosNotificationBell,
+  type HilosNotificationBellProps,
+} from '../HilosNotificationBell.js'
+export {
+  HilosNotificationPreferences,
+  type HilosNotificationPreferencesProps,
+} from '../HilosNotificationPreferences.js'
+export {
+  HilosPushDeviceToggle,
+  type HilosPushDeviceToggleProps,
+} from '../HilosPushDeviceToggle.js'
+export { HilosQrCode, type HilosQrCodeProps } from '../HilosQrCode.js'
+export {
+  HilosBackupCodes,
+  type HilosBackupCodesProps,
+} from '../HilosBackupCodes.js'
+export {
+  HilosAccountDeletion,
+  type HilosAccountDeletionProps,
+} from '../profile/HilosAccountDeletion.js'
+export {
+  HilosProfileSecurityPage,
+  type HilosProfileSecurityPageProps,
+} from '../profile/HilosProfileSecurityPage.js'
+export {
+  HilosProfileSessions,
+  type HilosProfileSessionsProps,
+} from '../profile/HilosProfileSessions.js'
+export {
+  HilosProfileDevices,
+  type HilosProfileDevicesProps,
+} from '../profile/HilosProfileDevices.js'
+export { HilosModal, type HilosModalProps } from '../HilosModal.js'
+export { HilosLongText, type HilosLongTextProps } from '../HilosLongText.js'
+export {
+  HilosActionError,
+  type HilosActionErrorProps,
+} from '../HilosActionError.js'
+export { HilosFormError, type HilosFormErrorProps } from '../HilosFormError.js'
+export {
+  HilosSendProgress,
+  type HilosSendProgressProps,
+} from '../HilosSendProgress.js'
+export {
+  HilosUploadDrop,
+  type HilosUploadDropProps,
+} from '../HilosUploadDrop.js'
+export {
+  HilosUploadFiles,
+  type HilosUploadFilesProps,
+} from '../HilosUploadFiles.js'
+export {
+  HilosUploadPicker,
+  type HilosUploadPickerProps,
+} from '../HilosUploadPicker.js'
+export {
+  HilosStepUpStep,
+  type HilosStepUpStepProps,
+} from '../auth/HilosStepUpStep.js'
+export {
+  HilosEditNotice,
+  type HilosEditNoticeProps,
+} from '../HilosEditNotice.js'
+export { HilosToastHost, type HilosToastHostProps } from '../HilosToastHost.js'
+export type { HilosToastCorner } from '../hilosToastCorner.js'
+export {
+  HilosViewportTable,
+  type HilosViewportTableProps,
+} from '../HilosViewportTable.js'
+export { HilosDropdown, type HilosDropdownProps } from '../HilosDropdown.js'
+export type { HilosDropdownOption } from '../hilosDropdown.js'
+export {
+  HilosAuthSurface,
+  type HilosAuthSurfaceProps,
+} from '../auth/HilosAuthSurface.js'
+export {
+  HilosMagicLinkPage,
+  type HilosMagicLinkPageProps,
+} from '../auth/HilosMagicLinkPage.js'
+export {
+  HilosSecondFactorCancelPage,
+  type HilosSecondFactorCancelPageProps,
+} from '../auth/HilosSecondFactorCancelPage.js'
+export {
+  HilosOAuthCallbackPage,
+  type HilosOAuthCallbackPageProps,
+} from '../auth/HilosOAuthCallbackPage.js'
+export { HilosAuthGateContext } from '../auth/hilosAuthGateContext.js'
+export type { HilosTableColumn } from '@hilos/core/base'
+
+export { HilosPageHeading } from '../HilosPageHeading.js'
+export {
+  HilosProfilePage,
+  type HilosProfilePageProps,
+} from '../profile/HilosProfilePage.js'
+export {
+  HilosProfileRename,
+  type HilosProfileRenameProps,
+} from '../profile/HilosProfileRename.js'
+export {
+  HilosProfilePhoto,
+  type HilosProfilePhotoProps,
+} from '../profile/HilosProfilePhoto.js'
+export {
+  HilosProfileEmailChange,
+  type HilosProfileEmailChangeProps,
+} from '../profile/HilosProfileEmailChange.js'
+export { HilosProfileSignInPage } from '../profile/HilosProfileSignInPage.js'
+export { HilosProfileNotificationsPage } from '../profile/HilosProfileNotificationsPage.js'
+export { HilosProfileDataPage } from '../profile/HilosProfileDataPage.js'
+
+export {
+  HilosProfilePasswordChange,
+  type HilosProfilePasswordChangeProps,
+} from '../profile/HilosProfilePasswordChange.js'
+
+export {
+  HilosDataExport,
+  type HilosDataExportProps,
+} from '../profile/HilosDataExport.js'
+
+export {
+  HilosLegalChanges,
+  type HilosLegalChangesProps,
+} from '../legal/HilosLegalChanges.js'
+
+export {
+  HilosLegalRevisionText,
+  type HilosLegalRevisionTextProps,
+} from '../legal/HilosLegalRevisionText.js'
+
+export {
+  HilosProfileAgreementsPage,
+  type HilosProfileAgreementsPageProps,
+} from '../profile/HilosProfileAgreementsPage.js'
+
+export {
+  HilosProfileAgreementsHistoryPage,
+  type HilosProfileAgreementsHistoryPageProps,
+} from '../profile/HilosProfileAgreementsHistoryPage.js'
+
+export { HilosLegalConsent } from '../legal/HilosLegalConsent.js'
+export {
+  HilosLegalReconsent,
+  type HilosLegalReconsentProps,
+} from '../legal/HilosLegalReconsent.js'

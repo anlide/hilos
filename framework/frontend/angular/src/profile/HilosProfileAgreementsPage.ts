@@ -20,7 +20,7 @@ import {
   type HilosLegalChange,
   type HilosLegalClause,
   type HilosLegalContext,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { HilosLink } from '../HilosLink.js'
 import { HilosModal } from '../HilosModal.js'
 import { HilosPageHeading } from '../HilosPageHeading.js'

@@ -34,16 +34,15 @@ import {
   rotationTakeoutCommand,
   rotationTakeoutNotice,
   rotationUndoNotice,
-  HILOS_PAGE_ROUTES,
   HILOS_ROTATION_STATE_CARRYING,
   HILOS_ROTATION_STATE_DUE,
   HILOS_ROTATION_STATE_TAKEN,
-  HilosPages,
   ROTATION_FILTER_NODE,
   ROTATION_FILTER_STATE,
   type HilosLogRotationRow,
   type HilosLogRotationsContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/logs'
+import { HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core/base'
 import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosActionError from '../../HilosActionError.vue'

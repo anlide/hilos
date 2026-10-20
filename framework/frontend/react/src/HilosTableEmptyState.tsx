@@ -18,7 +18,10 @@
 // index.ts, for the reason the bar is not. The React port of the Vue reference
 // (vue/src/HilosTableEmptyState.vue), under the same names and words.
 import type { ReactNode } from 'react'
-import type { HilosTableFilterView, TableViewportController } from '@hilos/core'
+import type {
+  HilosTableFilterView,
+  TableViewportController,
+} from '@hilos/core/base'
 
 import { useSignal } from './useSignal.js'
 

@@ -29,7 +29,7 @@ import {
   hilosTableStaleColumns,
   hilosTableStaleLabel,
   hilosTableStaleSources,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosTableBulkReport,
   HilosTableColumn,
@@ -37,7 +37,7 @@ import type {
   // Aliased because the component drawing one of these carries the same name.
   HilosTableProgress as TableProgressBar,
   TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosModal } from './HilosModal.js'
 import { HilosTableProgress } from './HilosTableProgress.js'

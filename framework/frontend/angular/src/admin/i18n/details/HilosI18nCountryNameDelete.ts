@@ -30,19 +30,21 @@ import {
 import {
   HILOS_I18N_COUNTRY_NAME_DELETE_COPY,
   createHilosI18nCountryNameDelete,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import type {
   HilosI18nCountryContext,
   HilosI18nCountryNameDeleteTarget,
   HilosI18nNameRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 
-import { HilosActionError } from '../../../HilosActionError.js'
-import { HilosEditNotice } from '../../../HilosEditNotice.js'
-import { HilosModal } from '../../../HilosModal.js'
-import { LoadingButton } from '../../../LoadingButton.js'
-import { injectLookOnly } from '../../../hilosLookOnly.js'
-import { createHilosTrackedAction } from '../../../hilosTrackedAction.js'
+import {
+  HilosActionError,
+  HilosEditNotice,
+  HilosModal,
+  LoadingButton,
+  injectLookOnly,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 
 /** The delete confirmation of a base name or of one locale correction. */
 @Component({

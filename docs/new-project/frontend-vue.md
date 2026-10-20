@@ -42,7 +42,7 @@ The src root stays thin and the boot wiring lives in `src/bootstrap/`
 
 - `src/index.ts`: one import, `./bootstrap/main`, and nothing else.
 - `src/bootstrap/connection.ts`: `createHilosConnection({ url:
-  import.meta.env.VITE_WS_URL })` from `@hilos/core` — one connection for the
+  import.meta.env.VITE_WS_URL })` from `@hilos/core/base` — one connection for the
   app, the same-origin `/ws` by default, the framework schemas merged and the
   stale-build reload wired by the call itself. It exports `connection`,
   `actionErrors` and `actions`.
@@ -61,7 +61,80 @@ The src root stays thin and the boot wiring lives in `src/bootstrap/`
   `AuthSurface` (a wrapper closing the project's `HilosAuthContext` over the
   framework `HilosAuthSurface`).
 - State in components via `useSignal(…)` and `useConnectionState(connection)`
-  from `@hilos/vue` (each a `Readonly<Ref<…>>`; unsubscribes on scope dispose).
+  from `@hilos/vue/base` (each a `Readonly<Ref<…>>`; unsubscribes on scope dispose).
+
+## Lazy admin bindings and the production graph
+
+In the existing `App.vue` setup, keep the page map stable for that App instance.
+Common components come from `/base`, defaults from `/admin-views`, and the
+project's admin wrappers are explicit loaders. This is a binding excerpt; retain
+the app's eager Main, public/footer and profile bindings and its auth/skeleton
+props:
+
+```vue
+<script setup lang="ts">
+import type { Component } from 'vue'
+import { HilosPages, lazyPage, type PageView } from '@hilos/core/base'
+import { HilosView } from '@hilos/vue/base'
+import { hilosAdminViews } from '@hilos/vue/admin-views'
+
+const pages: Record<string, PageView<Component>> = {
+  ...hilosAdminViews(),
+  [HilosPages.SETTINGS]: lazyPage(() =>
+    import('./views/Hilos/Settings/Settings.vue').then(m => m.default),
+  ),
+}
+</script>
+
+<template>
+  <HilosView :pages="pages" />
+</template>
+```
+
+The wrapper imports `HilosSettingsPage` from `@hilos/vue/admin/settings` and its
+context type from `@hilos/core/admin/settings`. It remains one page module;
+titles and navigation identity still arrive from the backend. An eager component
+is also a valid map value. The old root imports remain compatible, but production
+performance consumers use the public subpaths. Descriptor construction starts no
+import; `HilosView` composes code and the first server answer, with the existing
+delayed skeleton and refusal surface. See
+[page-module-structure.md](../agents/frontend/page-module-structure.md#binding-eager-and-lazy-page-modules)
+and [runtime semantics](../agents/frontend/multiframework-core.md#page-code-and-first-answer-state)
+for cache, access and failed-import retry limits.
+
+Add the build-only plugin to the existing `vite.config.ts` (preserve the proxy
+and timestamp plugin). A complete performance configuration includes both source
+anchors:
+
+```ts
+import vue from '@vitejs/plugin-vue'
+import { initialBundleBudget } from '@hilos/core/build/initial-bundle-budget'
+import { defineConfig } from 'vite'
+
+export default defineConfig(({ command, isSsrBuild }) => ({
+  plugins: [
+    vue(),
+    command === 'build' && !isSsrBuild && initialBundleBudget({
+      warningBytes: 1500000,
+      errorBytes: 2000000,
+      projectSources: {
+        routes: 'src/pages/routes.ts',
+        views: 'src/App.vue',
+      },
+    }),
+  ],
+}))
+```
+
+Use the project's actual route/outlet paths. The report must say
+`projectProof.status: 'verified'` to prove project-admin absence as well as SDK
+scope. Missing configuration is legacy `'not-configured'`, not that proof.
+The gate counts unique initial JS+CSS, reports per-output gzip separately and
+refuses eager admin implementations regardless of size. Keep the client report
+through the separate public SSR/SSG and theme-head passes; public prerender does
+not import the client App/admin map. The supported declaration forms, evidence
+and budget rules are in
+[build-and-docker.md](../agents/frontend/build-and-docker.md#initial-client-graph-and-budget).
 
 ## SDK primitives
 

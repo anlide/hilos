@@ -15,7 +15,7 @@
 import {
   hilosDashboardLinks,
   type HilosDashboardLinkSection,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import {
   ChangeDetectionStrategy,
   Component,
@@ -23,9 +23,7 @@ import {
   inject,
 } from '@angular/core'
 
-import { HilosLink } from '../../HilosLink.js'
-import { HILOS_ROUTER } from '../../hilosRouterToken.js'
-import { hilosSignal } from '../../hilosSignal.js'
+import { HilosLink, HILOS_ROUTER, hilosSignal } from '@hilos/angular/base'
 
 /** Placeholder cards drawn while the sections are still on the wire. */
 const SKELETON_CARDS: readonly number[] = [0, 1, 2, 3, 4, 5]

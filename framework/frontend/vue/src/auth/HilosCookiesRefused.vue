@@ -8,7 +8,7 @@ HilosMagicLinkPage), not exported from the package. The words are the core's
 COOKIES_REFUSED_COPY, one set for the three view packages.
 Bootstrap classes only, no CSS of its own (styling-rules.md). -->
 <script setup lang="ts">
-import { COOKIES_REFUSED_COPY } from '@hilos/core'
+import { COOKIES_REFUSED_COPY } from '@hilos/core/base'
 
 withDefaults(
   defineProps<{

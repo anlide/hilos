@@ -21,13 +21,15 @@ import {
   type HilosDaemonPlacementView,
   type HilosDaemonPlacementNode,
   type HilosDaemonPlacementSelection,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
 
-import { HilosSkeleton } from '../../HilosSkeleton.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosTableDetail } from '../../HilosTableDetail.js'
-import { mirrorHilosSignal } from '../../hilosSignal.js'
+import {
+  HilosSkeleton,
+  HilosViewportTable,
+  HilosTableCell,
+  HilosTableDetail,
+  mirrorHilosSignal,
+} from '@hilos/angular/base'
 
 /** The root's matrix window, with one inline detail owned by its headless view. */
 @Component({

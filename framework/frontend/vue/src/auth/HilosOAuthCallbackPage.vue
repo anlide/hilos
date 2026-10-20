@@ -23,7 +23,7 @@ import {
   OAUTH_RETURN_MESSAGE_TYPE,
   type HilosAuthContext,
   type OAuthReturnMessage,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { hilosRouterKey } from '../hilosRouterKey.js'
 
 defineOptions({ name: 'HilosOAuthCallbackPage' })

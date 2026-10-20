@@ -5,7 +5,7 @@ empty state are the framework's; the project supplies only the connection the
 catalog arrives on and the action lifecycle the reads go over. Bootstrap classes
 only (styling-rules.md). -->
 <script setup lang="ts">
-import { HilosLogsViewPage } from '@hilos/vue'
+import { HilosLogsViewPage } from '@hilos/vue/admin/logs'
 
 import { hilosLogViewerContext } from './hilosLogsContext'
 

@@ -6,7 +6,7 @@
 import type {
   HilosI18nCountryContext,
   HilosI18nLanguageContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 
 import { actions, connection } from '../../../bootstrap/connection.js'
 import { scopes } from '../../../bootstrap/session.js'

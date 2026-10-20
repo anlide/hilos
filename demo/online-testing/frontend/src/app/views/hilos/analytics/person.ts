@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosAnalyticsPersonPage } from '@hilos/angular'
+import { HilosAnalyticsPersonPage } from '@hilos/angular/admin/analytics'
 import { hilosAnalyticsContext } from './hilosAnalyticsContext.js'
 @Component({
   selector: 'app-analytics-person',

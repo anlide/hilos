@@ -5,7 +5,7 @@ the row view-model, the switches and the scope's modal are the framework's; the
 project supplies only the context and registers the table on its backend.
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { HilosSecurityImpersonationPage } from '@hilos/vue'
+import { HilosSecurityImpersonationPage } from '@hilos/vue/admin/security'
 
 import { hilosImpersonationContext } from './hilosImpersonationContext'
 

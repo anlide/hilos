@@ -14,12 +14,12 @@
 // A page's own files are not compared in a layer where HILOS_UNBUILT_PAGES lists
 // every page whose Vue view reaches them: the view that binds a page key, read
 // the way UNBUILT-PAGE reads it, and every file under vue/src/admin/ it reaches
-// by relative import without leaving admin/, together with a root index.ts
-// export resolving to one of them. A dynamic import() is not followed, so the
-// file it loads stays compared; an SDK file placed under vue/src/admin/ is
-// judged as a page file. Everything outside admin/ is always compared.
+// by imports without leaving admin/, together with a root index.ts export
+// resolving to one of them. Literal import().then(m => m.NamedExport) selects
+// only that export, including through public section entrypoints; opaque dynamic
+// imports stay compared. Everything outside admin/ is always compared.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { dirname, join, relative, sep } from 'node:path'
+import { join, relative, sep } from 'node:path'
 
 import ts from 'typescript'
 
@@ -34,6 +34,14 @@ import {
   type Entry,
   type View,
 } from './adminPages.js'
+import {
+  importedValue,
+  moduleSource,
+  namedDynamicImport,
+  resolveModule,
+  resolveReference,
+  type ModuleReference,
+} from './adminModules.js'
 
 /** Rule id, listed once in automated-checks.md. */
 export const SHELL_PARITY_RULE_ID = 'SHELL-PARITY'
@@ -71,19 +79,12 @@ const EXCLUDED_PATHS = ['framework/frontend/codestyle/fixtures']
 /** The directory whose files belong to the pages whose Vue views reach them. */
 const ADMIN_ROOT = `${shellRoot(REFERENCE_SHELL)}/admin`
 
-/** The script blocks of a Vue single-file component, whose imports are read. */
-const SFC_SCRIPT = /<script\b[^>]*>([\s\S]*?)<\/script>/g
-
 /** Every spelling in which the three view layers author or pass a data-id. */
 const DATA_ID_ATTRIBUTE =
   /(^|\s)(data-id|dataId|:data-id|v-bind:data-id|\[attr\.data-id\]|\[dataId\])\s*=\s*/g
 
 /** Spellings whose quoted value is the handle itself rather than an expression. */
 const LITERAL_SPELLINGS = ['data-id', 'dataId']
-
-/** A public re-export block in a package's root index, with its module. */
-const EXPORT_BLOCK =
-  /\bexport\s+(type\s+)?\{([\s\S]*?)\}\s+from\s+['"]([^'"]+)['"]/g
 
 /** A component name, as distinct from a hook, key, or other adapter idiom. */
 const COMPONENT_NAME = /^[A-Z][A-Za-z0-9]*$/
@@ -106,7 +107,7 @@ interface ExportSite {
   name: string
   path: string
   line: number
-  /** The file its module resolves to; null unless the module is relative. */
+  /** The selected value implementation; null when the export is unresolved. */
   source: string | null
 }
 
@@ -188,7 +189,7 @@ function readShell(root: string, shell: Shell): ShellInventory {
     const text = readFileSync(join(root, path), 'utf8')
     inventory.surfaces.push(...surfaceSites(path, text))
     if (path === `${relativeRoot}/index.ts`) {
-      inventory.exports.push(...exportSites(path, text))
+      inventory.exports.push(...exportSites(root, path, text))
     }
   }
 
@@ -262,10 +263,7 @@ function pageFileExemptions(
   )
   const edges = new Map<string, string[]>()
   for (const path of files) {
-    edges.set(
-      path,
-      importedAdminFiles(path, readFileSync(join(root, path), 'utf8'), files),
-    )
+    edges.set(path, importedAdminFiles(root, path, files))
   }
 
   const owners = new Map<string, Set<string>>()
@@ -299,61 +297,75 @@ function pageFileExemptions(
 }
 
 /**
- * @param path Path of a file under the Vue admin directory, from the tree root
- * @param text Its source text
- * @param files Every file under the Vue admin directory, from the tree root
- * @returns Files it reaches by relative import or re-export inside admin/
+ * @param root Absolute root of the checked tree
+ * @param path File under the Vue admin directory, from the tree root
+ * @param files Every file under the Vue admin directory
+ * @returns Selected import targets inside admin/, with no barrel siblings
  */
 function importedAdminFiles(
+  root: string,
   path: string,
-  text: string,
   files: Set<string>,
 ): string[] {
-  const scripts = path.endsWith('.vue')
-    ? [...text.matchAll(SFC_SCRIPT)].map((block) => block[1])
-    : [text]
-  const targets: string[] = []
-
-  for (const script of scripts) {
-    const file = ts.createSourceFile(
-      path.endsWith('.vue') ? `${path}.ts` : path,
-      script,
-      ts.ScriptTarget.Latest,
-      true,
-    )
-    for (const statement of file.statements) {
-      const specifier =
-        (ts.isImportDeclaration(statement) ||
-          ts.isExportDeclaration(statement)) &&
-        statement.moduleSpecifier &&
-        ts.isStringLiteral(statement.moduleSpecifier)
-          ? statement.moduleSpecifier.text
-          : null
-      if (specifier === null) continue
-      const target = resolvedModule(path, specifier)
-      if (target !== null && files.has(target)) {
-        targets.push(target)
+  const file = moduleSource(root, path)
+  const targets = new Set<string>()
+  const add = (reference: ModuleReference): void => {
+    const target = resolveReference(root, path, reference)?.path
+    if (target && files.has(target)) targets.add(target)
+  }
+  for (const statement of file.statements) {
+    if (
+      ts.isImportDeclaration(statement) &&
+      !statement.importClause?.isTypeOnly &&
+      ts.isStringLiteral(statement.moduleSpecifier)
+    ) {
+      const clause = statement.importClause
+      const bindings = clause?.namedBindings
+      const names = [
+        clause?.name,
+        ...(bindings && ts.isNamedImports(bindings)
+          ? bindings.elements
+              .filter((binding) => !binding.isTypeOnly)
+              .map((binding) => binding.name)
+          : []),
+      ]
+      for (const name of names) {
+        if (!name) continue
+        const reference = importedValue(file, name.text)
+        if (reference) add(reference)
+      }
+      if (!clause || (bindings && ts.isNamespaceImport(bindings))) {
+        const target = resolveModule(root, path, statement.moduleSpecifier.text)
+        if (target && files.has(target)) targets.add(target)
+      }
+    }
+    if (
+      ts.isExportDeclaration(statement) &&
+      !statement.isTypeOnly &&
+      statement.moduleSpecifier &&
+      ts.isStringLiteral(statement.moduleSpecifier)
+    ) {
+      if (statement.exportClause && ts.isNamedExports(statement.exportClause)) {
+        for (const binding of statement.exportClause.elements) {
+          if (!binding.isTypeOnly)
+            add({
+              specifier: statement.moduleSpecifier.text,
+              name: (binding.propertyName ?? binding.name).text,
+            })
+        }
+      } else if (!statement.exportClause) {
+        const target = resolveModule(root, path, statement.moduleSpecifier.text)
+        if (target && files.has(target)) targets.add(target)
       }
     }
   }
-
-  return targets
-}
-
-/**
- * @param path Path of the importing file, from the tree root
- * @param specifier The module specifier as written
- * @returns The file it resolves to, from the tree root; null unless relative
- */
-function resolvedModule(path: string, specifier: string): string | null {
-  if (!specifier.startsWith('.')) {
-    return null
+  const visit = (node: ts.Node): void => {
+    const reference = namedDynamicImport(node)
+    if (reference) add(reference)
+    ts.forEachChild(node, visit)
   }
-
-  return join(dirname(path), specifier)
-    .split(sep)
-    .join('/')
-    .replace(/\.js$/, '.ts')
+  visit(file)
+  return [...targets]
 }
 
 /**
@@ -458,77 +470,51 @@ function markupBlock(
 }
 
 /**
+ * @param root Absolute root of the checked tree
  * @param relativePath Root index path relative to the checked tree
  * @param source Source text
- * @returns UpperCamelCase value exports in source order
+ * @returns UpperCamelCase value exports and their selected implementation files
  */
-function exportSites(relativePath: string, source: string): ExportSite[] {
-  const text = withoutComments(relativePath, source)
-  const starts = lineStarts(text)
+function exportSites(
+  root: string,
+  relativePath: string,
+  source: string,
+): ExportSite[] {
+  const file = ts.createSourceFile(
+    relativePath,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+  )
   const sites: ExportSite[] = []
-  EXPORT_BLOCK.lastIndex = 0
-
-  let block = EXPORT_BLOCK.exec(text)
-  while (block !== null) {
-    if (block[1] === undefined) {
-      const contents = block[2]
-      const contentsStart = block.index + block[0].indexOf(contents)
-      const resolved = resolvedModule(relativePath, block[3])
-      for (const entry of commaSeparated(contents)) {
-        const name = exportedName(entry.text)
-        if (name !== null && COMPONENT_NAME.test(name)) {
-          const nameOffset = entry.text.lastIndexOf(name)
-          sites.push({
-            name,
-            path: relativePath,
-            line: lineAt(starts, contentsStart + entry.start + nameOffset),
-            source: resolved,
-          })
-        }
+  for (const statement of file.statements) {
+    if (
+      !ts.isExportDeclaration(statement) ||
+      statement.isTypeOnly ||
+      !statement.exportClause ||
+      !ts.isNamedExports(statement.exportClause) ||
+      !statement.moduleSpecifier ||
+      !ts.isStringLiteral(statement.moduleSpecifier)
+    )
+      continue
+    for (const binding of statement.exportClause.elements) {
+      if (binding.isTypeOnly || !COMPONENT_NAME.test(binding.name.text))
+        continue
+      const reference = {
+        specifier: statement.moduleSpecifier.text,
+        name: (binding.propertyName ?? binding.name).text,
       }
+      sites.push({
+        name: binding.name.text,
+        path: relativePath,
+        line:
+          file.getLineAndCharacterOfPosition(binding.name.getStart(file)).line +
+          1,
+        source: resolveReference(root, relativePath, reference)?.path ?? null,
+      })
     }
-    block = EXPORT_BLOCK.exec(text)
   }
-
   return sites
-}
-
-/**
- * @param text Comma-separated export entries
- * @returns Entries with their offsets in the handed text
- */
-function commaSeparated(text: string): { text: string; start: number }[] {
-  const entries: { text: string; start: number }[] = []
-  let start = 0
-
-  for (let index = 0; index <= text.length; index += 1) {
-    if (index === text.length || text[index] === ',') {
-      entries.push({ text: text.slice(start, index), start })
-      start = index + 1
-    }
-  }
-
-  return entries
-}
-
-/**
- * @param entry One entry inside an export block
- * @returns Its public value name, or null for a type or unreadable entry
- */
-function exportedName(entry: string): string | null {
-  const trimmed = entry.trim()
-  if (trimmed === '' || trimmed.startsWith('type ')) {
-    return null
-  }
-
-  const alias = /\bas\s+([A-Za-z_$][\w$]*)$/.exec(trimmed)
-  if (alias !== null) {
-    return alias[1]
-  }
-
-  const direct = /^([A-Za-z_$][\w$]*)$/.exec(trimmed)
-
-  return direct?.[1] ?? null
 }
 
 /**

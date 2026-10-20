@@ -1,19 +1,21 @@
 import { mount, type VueWrapper } from '@vue/test-utils'
 import {
   ActionError,
-  BUILT_IN_LANGUAGES_DATA,
-  HILOS_I18N_LANGUAGE_ADD_ACTION,
   HilosPages,
   ScopeManager,
-  createHilosI18nBuiltInLanguages,
-  createHilosI18nLanguageAdd,
   createSignal,
   type ActionHandle,
   type ActionLifecycle,
   type ActionResult,
   type HilosConnection,
+} from '@hilos/core/base'
+import {
+  BUILT_IN_LANGUAGES_DATA,
+  HILOS_I18N_LANGUAGE_ADD_ACTION,
+  createHilosI18nBuiltInLanguages,
+  createHilosI18nLanguageAdd,
   type HilosI18nLanguageContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { afterEach, describe, expect, it } from 'vitest'
 import { nextTick, ref } from 'vue'
 

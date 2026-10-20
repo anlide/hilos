@@ -9,18 +9,20 @@ import {
   HilosPages,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   ScopeManager,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   ActionHandle,
   ActionResult,
   HilosConnection,
   HilosRouter,
-  HilosSettingPresetsContext,
   HilosSettingPresetsState,
-  HilosSettingPresetsVocabulary,
   PageRouteMatch,
   ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type {
+  HilosSettingPresetsContext,
+  HilosSettingPresetsVocabulary,
+} from '@hilos/core/admin/settings'
 
 import HilosSettingPresetsPage from './HilosSettingPresetsPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'

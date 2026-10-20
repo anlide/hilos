@@ -1,11 +1,11 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import { TableViewportController } from '@hilos/core'
+import { TableViewportController } from '@hilos/core/base'
 import type {
   HilosTableFilter,
   HilosTableFilterView,
   TableViewportDescriptor,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import HilosTableFilterControl from './HilosTableFilterControl.vue'
 

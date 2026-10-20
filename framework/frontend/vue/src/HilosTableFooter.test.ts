@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import { TableViewportController } from '@hilos/core'
-import type { TableRow, TableViewportDescriptor } from '@hilos/core'
+import { TableViewportController } from '@hilos/core/base'
+import type { TableRow, TableViewportDescriptor } from '@hilos/core/base'
 
 import HilosTableFooter from './HilosTableFooter.vue'
 

@@ -13,15 +13,14 @@
 // (HIL-1292). Bootstrap classes only (styling-rules.md).
 import { useContext, useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
+import { HILOS_TABLE_ACTIONS_KEY, HilosPages } from '@hilos/core/base'
 import {
-  HILOS_TABLE_ACTIONS_KEY,
-  HilosPages,
   USER_ONLINE_SESSION_COUNT_FIELD,
   USER_PRESENCE_FIELD,
   createHilosUsersTable,
   hilosStandingBadge,
-} from '@hilos/core'
-import type { HilosUserRow, HilosUsersContext } from '@hilos/core'
+} from '@hilos/core/admin/users'
+import type { HilosUserRow, HilosUsersContext } from '@hilos/core/admin/users'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosHideable } from '../../HilosHideable.js'

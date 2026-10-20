@@ -10,7 +10,7 @@
 // COOKIES_REFUSED_COPY, one set for the three view packages.
 // Bootstrap classes only, no CSS of its own (styling-rules.md).
 import { ChangeDetectionStrategy, Component, input } from '@angular/core'
-import { COOKIES_REFUSED_COPY } from '@hilos/core'
+import { COOKIES_REFUSED_COPY } from '@hilos/core/base'
 
 @Component({
   selector: 'hilos-cookies-refused',

@@ -10,24 +10,28 @@ import {
   createHilosLegalDocumentsTable,
   createHilosLegalChecksTable,
   createHilosLegalSettingsTable,
-  HilosPages,
   HilosLegalRowKey,
   HilosLegalSettingKey,
   HILOS_LEGAL_LAPSED_COPY,
-  HILOS_TABLE_ACTIONS_KEY,
   LEGAL_CATALOG_REFUSAL_SECTION,
   describeHilosLegalCheck,
-  hilosLegalDocumentLabel,
   hilosLegalLapsedHref,
   hilosLegalLapsedLabel,
+} from '@hilos/core/admin/legal'
+import {
+  HilosPages,
+  HILOS_TABLE_ACTIONS_KEY,
+  hilosLegalDocumentLabel,
   resolveHilosPath,
   subscribeSignal,
   type HilosLegalContext,
-} from '@hilos/core'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosLink } from '../../HilosLink.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
+} from '@hilos/core/base'
+import {
+  HilosAdminPage,
+  HilosLink,
+  HilosTableCell,
+  HilosViewportTable,
+} from '@hilos/angular/base'
 
 /** Read-only legal declarations and acceptance tallies. */
 @Component({

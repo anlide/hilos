@@ -22,7 +22,7 @@ import {
   type HilosConnection,
   type HilosNotification,
   type HilosNotificationStore,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId } from 'vue'
 
 import { useSignal } from './useSignal.js'

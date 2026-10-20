@@ -38,43 +38,47 @@ import {
   HILOS_SECOND_FACTOR_REQUIRED_COPY,
   HILOS_SECOND_FACTOR_REQUIRED_VALUES,
   HILOS_SECOND_FACTOR_SETTING_COPY,
-  HILOS_STEP_UP_COPY,
   HILOS_TWO_FACTOR_DISABLE_COPY,
-  HilosPages,
   HilosSecondFactorSettingKey,
   createHilosSecurityTwoFactorActions,
   createHilosSecurityTwoFactorTable,
   createHilosTwoFactorDisable,
   describeHilosSecondFactorSetting,
   createHilosTwoFactorSettingEdit,
+  isHilosSecondFactorSwitch,
+} from '@hilos/core/admin/security'
+import {
+  HILOS_STEP_UP_COPY,
+  HilosPages,
   focusInitial,
   hilosRowEditIdle,
-  isHilosSecondFactorSwitch,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosTwoFactorDisableStep,
   HilosTwoFactorSettingEditFields,
   HilosTwoFactorSettingEditForm,
   HilosTwoFactorContext,
   HilosTwoFactorSettingRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/security'
 
-import { ConflictActions } from '../../ConflictActions.js'
-import { ConflictHeader } from '../../ConflictHeader.js'
-import { HilosActionError } from '../../HilosActionError.js'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosEditNotice } from '../../HilosEditNotice.js'
-import { HilosFormError } from '../../HilosFormError.js'
-import { HilosHiddenMark } from '../../HilosHiddenMark.js'
-import { HilosHideable } from '../../HilosHideable.js'
-import { HilosModal } from '../../HilosModal.js'
-import { HilosSwitch } from '../../HilosSwitch.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { LoadingButton } from '../../LoadingButton.js'
-import { HilosStepUpStep } from '../../auth/HilosStepUpStep.js'
-import { mirrorHilosSignal } from '../../hilosSignal.js'
-import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
+import {
+  ConflictActions,
+  ConflictHeader,
+  HilosActionError,
+  HilosAdminPage,
+  HilosEditNotice,
+  HilosFormError,
+  HilosHiddenMark,
+  HilosHideable,
+  HilosModal,
+  HilosSwitch,
+  HilosTableCell,
+  HilosViewportTable,
+  LoadingButton,
+  HilosStepUpStep,
+  mirrorHilosSignal,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 
 /**
  * The framework two-step verification page: two switches, the window that

@@ -6,7 +6,7 @@
 // account it shows the account's name from the session scope, without one the
 // guest name this demo assigned. The `self-user` marker carries whichever name
 // is on screen, so a test can read the line without knowing which branch it is.
-import { useSignal } from '@hilos/react'
+import { useSignal } from '@hilos/react/base'
 
 import { currentGuestName } from '../../bootstrap/guest'
 import { currentUserId, currentUserName } from '../../bootstrap/session'

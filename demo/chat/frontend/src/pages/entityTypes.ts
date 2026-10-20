@@ -6,7 +6,7 @@
 // entity wherever it appears — the `bot` type lets the event stream resolve a
 // message author against the bot the `mainBots` list delivered. The binder
 // (`bindPageScope`) applies this to every page payload's slots.
-import { USER_ENTITY_TYPE } from '@hilos/core'
+import { USER_ENTITY_TYPE } from '@hilos/core/base'
 
 import {
   BOT_TYPE,

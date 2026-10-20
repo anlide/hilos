@@ -6,7 +6,7 @@ import {
   type CodeSendProgress,
   type HilosStepUpMethod,
   type HilosStepUpStep as StepController,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import HilosStepUpStep from './HilosStepUpStep.vue'
 

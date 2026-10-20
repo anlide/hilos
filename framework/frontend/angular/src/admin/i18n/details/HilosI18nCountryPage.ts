@@ -24,23 +24,25 @@ import {
 import {
   HILOS_I18N_COUNTRY_DELETE_COPY,
   HILOS_I18N_COUNTRY_WINDOW_COPY,
-  HilosPages,
-  computedSignal,
   createHilosI18nCountryCard,
   createHilosI18nCountryCardWindow,
   createHilosI18nCountryDelete,
   hilosI18nCountryDeleteFromCard,
   hilosI18nCountryDeleteReason,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { HilosPages, computedSignal } from '@hilos/core/base'
 import type {
   HilosI18nCountryCard,
   HilosI18nCountryContext,
   HilosI18nCountryDeleteTarget,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 
-import { HilosAdminPage } from '../../../HilosAdminPage.js'
-import { HILOS_ROUTER } from '../../../hilosRouterToken.js'
-import { hilosSignal, mirrorHilosSignal } from '../../../hilosSignal.js'
+import {
+  HilosAdminPage,
+  HILOS_ROUTER,
+  hilosSignal,
+  mirrorHilosSignal,
+} from '@hilos/angular/base'
 import { HilosI18nCountryDelete } from './HilosI18nCountryDelete.js'
 import { HilosI18nCountryHeader } from './HilosI18nCountryHeader.js'
 import { HilosI18nCountrySwitchOff } from './HilosI18nCountrySwitchOff.js'

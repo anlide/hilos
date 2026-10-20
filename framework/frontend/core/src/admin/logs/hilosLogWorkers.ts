@@ -16,7 +16,10 @@
 // has grown, "all the workers grew" and "the single worker holding the shared work
 // grew" have different causes and different cures.
 
-import { z } from 'zod'
+import {
+  WORKERS_HEADER_SIGNAL,
+  type HilosLogWorkersHeader,
+} from '../../protocol/logsSignals.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { formatBytes } from '../../format/bytes.js'
 import { HilosPages } from '../../routing/hilosPages.js'
@@ -34,6 +37,12 @@ import { HILOS_TABLE_ACTIONS_KEY } from '../../table/hilosTableColumn.js'
 import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 import { LOG_SOURCE_LIVE, logViewerPath } from './hilosLogViewer.js'
+
+export {
+  WORKERS_HEADER_SIGNAL,
+  type HilosLogWorkersHeader,
+  LOGS_WORKERS_SIGNAL_SCHEMAS,
+} from '../../protocol/logsSignals.js'
 
 /** One row of the log-workers table — one worker stream on one node. */
 export interface HilosLogWorkerRow {
@@ -59,8 +68,6 @@ export interface HilosLogWorkerRow {
 // A project binds its backend to these keys (Hilos::TABLES / PAGE_TABLES).
 const WORKERS_TABLE = 'hilosLogWorkers'
 const WORKER_SLOT = 'stream'
-/** Server→client signal `type` carrying the screen header (PHP `SUBSCRIPTION_PAGE_HILOS_LOGS_WORKERS`). */
-export const WORKERS_HEADER_SIGNAL = 'subscription_page_hilos_logs_workers'
 
 // Row payload keys of the stream slot. They are declared here because this module
 // owns the view-model they resolve into, and exported where a view also names them
@@ -98,31 +105,6 @@ export const HILOS_LOG_WORKER_TYPE_MONOPOLISTIC = 'monopolistic'
 
 /** Worker kind: the stream of an ordinary worker, of which there may be any number. */
 export const HILOS_LOG_WORKER_TYPE_REGULAR = 'regular'
-
-/**
- * Payload of the screen header: whether there is a picture and which nodes it holds
- * (PHP `HilosLogsWorkersSignalData`).
- */
-const workersHeaderSchema = z.looseObject({
-  available: z.boolean().nullable(),
-  nodes: z.array(z.string()),
-})
-
-/** The screen header as the page answers a subscription with it. */
-export type HilosLogWorkersHeader = z.infer<typeof workersHeaderSchema>
-
-/**
- * The by-worker signal schemas keyed for a connection's `projectSchemas`, so the
- * parse boundary validates the header frames {@link createHilosLogWorkersHeader}
- * ingests. {@link createHilosConnection} merges them in, so a project never restates
- * them.
- *
- * A set of its own rather than an entry in the by-key one: two independent screens
- * must not depend on which of them landed first.
- */
-export const LOGS_WORKERS_SIGNAL_SCHEMAS = {
-  [WORKERS_HEADER_SIGNAL]: workersHeaderSchema,
-}
 
 /**
  * The project-supplied context the log-workers admin reads from: the

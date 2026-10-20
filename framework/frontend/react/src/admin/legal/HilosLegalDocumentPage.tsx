@@ -1,21 +1,23 @@
 import { useContext, useEffect, useMemo, useState } from 'react'
 import {
   computedSignal,
-  createHilosLegalRevisionsTable,
   createHilosLegalConsentPreview,
   createHilosLegalReconsentPreview,
   hilosLegalDocumentLabel,
   HilosPages,
-  HilosLegalRowKey,
   HILOS_TABLE_ACTIONS_KEY,
-  LEGAL_CATALOG_REFUSAL_SECTION,
-  LEGAL_DOCUMENT_SECTION,
   LEGAL_RECONSENT_COPY,
-  legalAdminDocumentSchema,
   resolveHilosPath,
   type HilosLegalContext,
   type HilosLegalDocumentKey,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  createHilosLegalRevisionsTable,
+  HilosLegalRowKey,
+  LEGAL_CATALOG_REFUSAL_SECTION,
+  LEGAL_DOCUMENT_SECTION,
+  legalAdminDocumentSchema,
+} from '@hilos/core/admin/legal'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosFormError } from '../../HilosFormError.js'

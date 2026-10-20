@@ -4,7 +4,7 @@
 // and the revision history. This project supplies only the introduction above
 // the text.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosTermsPage } from '@hilos/angular'
+import { HilosTermsPage } from '@hilos/angular/base'
 
 import { actions, connection } from '../../bootstrap/connection'
 import { scopes } from '../../bootstrap/session'

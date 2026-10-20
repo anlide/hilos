@@ -3,7 +3,7 @@
 // context. The fields table, the recipe, and the set / reset round-trips are the
 // framework's; the project supplies only the shared HilosSecurityOauthContext.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosSecurityOauthProviderPage } from '@hilos/angular'
+import { HilosSecurityOauthProviderPage } from '@hilos/angular/admin/security'
 
 import { hilosSecurityOauthContext } from './hilosSecurityOauthContext'
 

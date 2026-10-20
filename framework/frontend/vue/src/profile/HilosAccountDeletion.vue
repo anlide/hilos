@@ -24,7 +24,7 @@ import {
   HILOS_PAGE_ROUTES,
   HilosPages,
   type HilosSecondFactorContext,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import HilosFormError from '../HilosFormError.vue'

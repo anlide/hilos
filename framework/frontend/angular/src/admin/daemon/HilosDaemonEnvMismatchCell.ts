@@ -9,7 +9,7 @@ import {
   daemonEnvMismatchFromExample,
   daemonEnvMismatchStandsOut,
   type HilosDaemonEnvMismatchRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
 import { HilosDaemonEnvValue } from './HilosDaemonEnvValue.js'
 import { HilosDaemonEnvSourceBadge } from './HilosDaemonEnvSourceBadge.js'
 

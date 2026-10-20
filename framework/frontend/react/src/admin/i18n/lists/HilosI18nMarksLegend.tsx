@@ -1,4 +1,4 @@
-import type { HilosI18nLegendRow } from '@hilos/core'
+import type { HilosI18nLegendRow } from '@hilos/core/admin/i18n'
 
 /** The shared explanation of the marks below an i18n list. */
 export function HilosI18nMarksLegend({

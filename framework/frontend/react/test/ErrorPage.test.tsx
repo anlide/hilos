@@ -108,7 +108,7 @@ function routerWith(pageError: PageSubscriptionError | null): HilosRouter {
     pageLoading: createSignal(false),
     pageIdentity: createSignal(undefined),
     dashboardSections: createSignal(undefined),
-    resolvePath: () => undefined,
+    resolvePath: () => '/user',
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},

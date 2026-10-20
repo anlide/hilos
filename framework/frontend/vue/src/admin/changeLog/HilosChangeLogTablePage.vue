@@ -14,7 +14,6 @@ import {
   changeLogChannelBadge,
   changeLogColumnModeCard,
   changeLogRecordRouteParam,
-  computedSignal,
   createHilosChangeLogHistoryTable,
   createHilosChangeLogReceiptReader,
   formatChangeLogColumnStorage,
@@ -27,15 +26,18 @@ import {
   formatChangeLogTime,
   formatChangeLogTrigger,
   formatChangeLogWho,
-  HilosPages,
-  isHiddenValue,
   readChangeLogRecordRouteParam,
   readHilosChangeLogTable,
-  subscribeSignal,
   type HilosChangeLogHistoryRow,
   type HilosChangeLogHistoryTable,
   type HilosChangeLogReceiptContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/change-log'
+import {
+  computedSignal,
+  HilosPages,
+  isHiddenValue,
+  subscribeSignal,
+} from '@hilos/core/base'
 import {
   computed,
   inject,

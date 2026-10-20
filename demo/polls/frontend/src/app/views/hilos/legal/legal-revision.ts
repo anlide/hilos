@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosLegalRevisionPage } from '@hilos/angular'
+import { HilosLegalRevisionPage } from '@hilos/angular/admin/legal'
 import { hilosLegalContext } from './hilosLegalContext.js'
 
 @Component({

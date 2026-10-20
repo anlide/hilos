@@ -1,0 +1,5 @@
+{
+  "main": "../../dist/fesm2022/hilos-angular-admin-settings.mjs",
+  "module": "../../dist/fesm2022/hilos-angular-admin-settings.mjs",
+  "types": "../../dist/types/hilos-angular-admin-settings.d.ts"
+}

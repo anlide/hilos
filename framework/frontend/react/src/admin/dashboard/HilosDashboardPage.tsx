@@ -11,7 +11,7 @@
 // why no literal is left. Until it does the heading and the cards are placeholders —
 // an empty grid would jump the layout on every visit. Bootstrap classes only
 // (styling-rules.md).
-import { hilosDashboardLinks } from '@hilos/core'
+import { hilosDashboardLinks } from '@hilos/core/base'
 import { useContext } from 'react'
 import type { ReactNode } from 'react'
 

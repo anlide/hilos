@@ -13,7 +13,7 @@ the layout on every visit.
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import { computed, inject } from 'vue'
-import { hilosDashboardLinks } from '@hilos/core'
+import { hilosDashboardLinks } from '@hilos/core/base'
 
 import HilosLink from '../../HilosLink.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'

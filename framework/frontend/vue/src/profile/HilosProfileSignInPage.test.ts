@@ -11,7 +11,7 @@ import {
   type HilosConnection,
   type HilosProfileSignInMethod,
   type ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import HilosProfileSignInPage from './HilosProfileSignInPage.vue'

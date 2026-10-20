@@ -35,11 +35,19 @@ import {
 } from 'react'
 import {
   ACCOUNT_DELETION_TICK_MS,
+  focusInitial,
+  HILOS_STEP_UP_COPY,
+  type HilosStepUpOpenOutcome,
+  HILOS_TABLE_ACTIONS_KEY,
+  HilosPages,
+  hiddenAsWord,
+  isHiddenValue,
+  sessionUserId,
+} from '@hilos/core/base'
+import {
   createHilosImpersonate,
   createHilosUserCardStepUp,
   createHilosUserLifecycle,
-  focusInitial,
-  HILOS_STEP_UP_COPY,
   createHilosUserStanding,
   HILOS_USER_ANALYTICS_LINK_LABEL,
   HILOS_USER_IMPERSONATION_COPY,
@@ -55,16 +63,11 @@ import {
   hilosUserLifecyclePrompt,
   hilosUserLifecyclePromptOffered,
   submitHilosUserLifecycle,
-  type HilosStepUpOpenOutcome,
   type HilosUserImpersonationSection,
   type HilosUserLifecycleChoice,
   type HilosUserLifecyclePrompt,
-  HILOS_TABLE_ACTIONS_KEY,
-  HilosPages,
-  hiddenAsWord,
   HILOS_USER_NAME_MAX,
   HILOS_USER_NAME_MIN,
-  isHiddenValue,
   USER_IDENTITIES_FIELD,
   createHilosAccountMerge,
   createHilosMergeCandidates,
@@ -77,14 +80,13 @@ import {
   hilosSecondFactorFateChoices,
   type HilosSecondFactorFate,
   hilosPasswordFateChoices,
-  sessionUserId,
-} from '@hilos/core'
+} from '@hilos/core/admin/users'
 import type {
   HilosMergeCandidateIdentity,
   HilosMergeCandidateRow,
   HilosPasswordFate,
   HilosUsersContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/users'
 
 import { HilosStepUpStep } from '../../auth/HilosStepUpStep.js'
 import { ConflictActions } from '../../ConflictActions.js'

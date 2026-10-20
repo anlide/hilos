@@ -6,7 +6,7 @@
 import {
   HILOS_UPLOAD_FIELD_COPY as COPY,
   type HilosUploadField,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { useRef } from 'react'
 import type { ChangeEvent } from 'react'
 

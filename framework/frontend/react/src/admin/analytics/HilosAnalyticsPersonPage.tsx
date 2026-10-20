@@ -20,10 +20,10 @@ import {
   createHilosAnalyticsBrowserSessionsTable,
   formatAnalyticsSessionNumber,
   formatAnalyticsTime,
-  HilosPages,
   readAnalyticsRouteId,
   type HilosAnalyticsContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/analytics'
+import { HilosPages } from '@hilos/core/base'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosHideable } from '../../HilosHideable.js'

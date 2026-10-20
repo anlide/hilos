@@ -2,7 +2,7 @@
 // (@hilos/angular HilosAppearancePage) to this project's connection, scope
 // stores and action lifecycle. The framework owns the table, the windows and the
 // writes; the settings themselves are the framework's theme catalog.
-import { type HilosAppearanceContext } from '@hilos/core'
+import { type HilosAppearanceContext } from '@hilos/core/admin/appearance'
 
 import { actions, connection } from '../../../bootstrap/connection.js'
 import { scopes } from '../../../bootstrap/session.js'

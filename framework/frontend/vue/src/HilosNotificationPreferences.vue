@@ -25,7 +25,7 @@ import {
   type HilosNotificationPreferencesStore,
   type HilosPageCrumb,
   type HilosPushSubscriptionStore,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { useId } from 'vue'
 
 import HilosLink from './HilosLink.vue'

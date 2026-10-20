@@ -2,7 +2,7 @@
 // page; this project supplies the content — the root LICENSE file and dependency
 // inventory through the build-time snapshot. See views/about/about.ts.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosLicensePage } from '@hilos/angular'
+import { HilosLicensePage } from '@hilos/angular/base'
 
 import { hilosLicenseInventory } from '../../../generated/hilosLicenseInventory.js'
 

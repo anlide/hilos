@@ -9,7 +9,7 @@
 // and the footer are not — outside a table it means nothing. The React port of the
 // Vue reference (vue/src/HilosTableProgress.vue), under the same names and words.
 import type { CSSProperties } from 'react'
-import type { HilosTableProgress as HilosTableProgressState } from '@hilos/core'
+import type { HilosTableProgress as HilosTableProgressState } from '@hilos/core/base'
 
 /** Props for {@link HilosTableProgress}. */
 export interface HilosTableProgressProps {

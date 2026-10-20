@@ -62,10 +62,16 @@ npm-publishable later, so it carries no bundler; `@hilos/prerender` (the static
 render orchestrator) builds the same way. `@hilos/vue` and `@hilos/react` build
 with Vite library mode plus a declaration-only `vue-tsc` / `tsc` pass, and
 `@hilos/angular` builds with `ng-packagr`, the Angular Package Format tool an
-Angular consumer expects. All emit an entry module plus its `.d.ts`.
+Angular consumer expects. Core emits a JS/declaration/map per source owner plus
+compiler receipts. Vue/React have multiple public entries, shared chunks,
+automatically imported CSS, declarations and module provenance. Angular emits
+real APF secondary entries, FESM2022 modules, declarations and compiler maps;
+its classes and injection tokens have one owner across root/base/section paths.
 
-Unit tests are vitest, colocated with the source as `*.test.ts`
-(`docs/agents/frontend/testing-strategy.md`). The workspace-root
+Unit tests use vitest: Vue SFC tests sit beside the SFC; other implementation
+tests live in their package's `test/` mirror; source-less scripts/codestyle
+packages keep their tests beside the module
+([testing-strategy.md](../../docs/agents/frontend/testing-strategy.md)). The workspace-root
 `vitest.config.mts` aggregates each package as a test project, so one run
 covers the whole SDK; the build tsconfigs exclude test files, so nothing
 test-related reaches `dist/`.
@@ -80,10 +86,42 @@ resolution works on a fresh clone. When to use which is in
 
 ## Dev versus build resolution
 
-A `development` export condition resolves each package to its `src`, so a
-consumer developed alongside the SDK gets HMR into source; every other condition
-resolves to the built `dist`, so a vendored consumer and the IDE get the typed
-package. `dist/` and `dist-pack/` are build artifacts and are gitignored.
+A `development` export condition resolves core/Vue/React runtime entrypoints to
+source; `types`, `import` and `default` resolve to built dist targets. Angular's
+source manifest stays plain, with local secondary-entry forwarders into dist;
+ng-packagr generates the published APF manifest's `types`/`default` exports.
+Angular consumers redirect every runtime subpath with explicit dev tsconfig
+`paths`, including their single-copy `@angular/core`/`common` pins; production
+uses dist/AOT. See the [Angular guide](../../docs/new-project/frontend-angular.md#dev-source-consumption).
+`dist/` and `dist-pack/` are build artifacts and are gitignored.
+
+## Common code, metadata and lazy sections
+
+Use `@hilos/core/base` and the view kit's `/base` for common APIs/components,
+`@hilos/<view>/admin-views` for `hilosAdminViews()` metadata, and
+`@hilos/<package>/admin/<section>` inside the page implementation. Root `.`
+exports remain compatible. The complete subpath lists and graph ownership are in
+[SDK and Packaging](../../docs/agents/frontend/sdk-packaging.md#public-entrypoints-and-their-graph).
+Sections depend on base/shared/protocol; metadata dynamically imports sections;
+base depends on neither the default map, implementations nor root.
+
+`PageView<T>` accepts a ready component or an explicit
+`lazyPage(() => import(...).then(...))` descriptor, created once outside render.
+`createPageViewState<T>(router)` owns the per-outlet cache and combines code
+readiness with the first permitting server reply; `HilosView` adapts that state
+in Vue/React/Angular. Server refusals take precedence; local import failure uses
+the existing safe 503 ErrorPage. See [runtime semantics](../../docs/agents/frontend/multiframework-core.md#page-code-and-first-answer-state)
+for departure/skeleton timing, disposal and native failed-ESM retry limits.
+
+Production graph tooling is build-only:
+`@hilos/core/build/initial-bundle-budget`. Vite uses the client-build plugin with
+`projectSources: { routes, views }`; Angular uses production stats and the Node
+CLI with `--project-sources <routes> <views>` after SSG/theme. The retained
+`initial-bundle-report.json` counts unique initial JS+CSS, separates lazy/SSR
+outputs and carries provenance plus `projectProof`. A verified project proof is
+required to assert project-admin absence; omitted anchors mean legacy
+`not-configured` scope. Budgets stay 1,500,000 warning / 2,000,000 error bytes.
+See [build proof and configuration](../../docs/agents/frontend/build-and-docker.md#initial-client-graph-and-budget).
 
 ## Distribution (a Composer-vendored tarball)
 

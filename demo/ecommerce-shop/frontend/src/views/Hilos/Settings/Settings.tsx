@@ -3,7 +3,7 @@
 // add / update / delete lifecycle (@hilos/react HilosSettingsPage); this project
 // binds only its scope stores and action lifecycle through hilosSettingsContext,
 // and declares the catalog on its backend.
-import { HilosSettingsPage } from '@hilos/react'
+import { HilosSettingsPage } from '@hilos/react/admin/settings'
 
 import { hilosSettingsContext } from './hilosSettingsContext.js'
 

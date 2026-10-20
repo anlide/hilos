@@ -15,7 +15,7 @@ import {
   bindSessionScope,
   createSignal,
   hilosToasts,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   ActionHandle,
   ActionLifecycle,
@@ -24,7 +24,7 @@ import type {
   HilosRouter,
   PageRouteMatch,
   ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import HilosSecuritySignInMethodsPage from './HilosSecuritySignInMethodsPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'

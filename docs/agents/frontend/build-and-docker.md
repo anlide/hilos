@@ -130,25 +130,150 @@ unsolvable. The order to try:
 Adopt whichever works. The environment contract is unchanged either way: dev is
 the only environment that uses the dev server.
 
-## A single application chunk (no per-page code-splitting)
+## Lazy page code in the client build
 
-Each demo ships as **one application chunk** — there is no per-page splitting.
-Route components are resolved **statically** through the page registry:
-`createAppPageRouter` builds a page-key → path map from the pages declared in
-`@hilos/core`, and there is no dynamic `import()` anywhere in the source, so the
-bundler emits a single chunk (measured 2026-07-27: polls ~596 KB, chat
-~336 KB, tasks similar). For demos this size a single chunk is the right
-default; there is no per-page chunk and no chunk-fetch loading state.
+All six demos defer their admin page implementations with explicit
+`lazyPage(() => import(...).then(...))` bindings. Common shell code comes from
+the SDK's `/base`, default lazy metadata from `/admin-views`, and a wrapper's
+admin implementation from `/admin/<section>`. The compatibility root remains
+available, but reaches more code than an initial performance consumer wants.
+The package graph and conditions are in
+[sdk-packaging.md](sdk-packaging.md#public-entrypoints-and-their-graph).
 
-The build-version → forced-refresh check ([wire-protocol.md](wire-protocol.md))
-is a **separate, whole-app** mechanism, unrelated to code-splitting: a build
-timestamp carried in the handshake welcome frame is compared on every connect, and
-a mismatch (a long-lived SPA outliving a backend redeploy) forces a page refresh
-onto the new build.
+`createAppPageRouter` still declares routes and access flags; it does not load
+components. `HilosView` waits for the selected code and its first permitting
+server answer, using the departure copy and delayed skeleton described in
+[multiframework-core.md](multiframework-core.md#page-code-and-first-answer-state).
+Several pages of a logical SDK section can load together, with shared chunks;
+neither the descriptor nor the build promises one chunk per page. Public/footer,
+Profile, User and Bot views outside the admin migration remain static imports.
 
-Per-page code-splitting as a real framework capability — lazy route chunks for
-genuinely large apps, not demos — is a possible future addition, not something the
-current build does.
+The build-version forced-refresh check ([wire-protocol.md](wire-protocol.md))
+is still separate: a welcome reporting a different build refreshes the whole
+application. It does not guarantee a successful same-URL import retry after a
+chunk failure. This change adds no service worker, prefetch or HTTP-cache policy.
+
+## Initial client graph and budget
+
+The build-only `@hilos/core/build/initial-bundle-budget` export provides
+`initialBundleBudget(options?: InitialBundleOptions)` for Vite and the graph,
+measurement and verdict APIs (`viteBundleGraph`, `angularBundleGraph`,
+`measureInitialBundle`, `checkInitialBundleBudget`, `runInitialBundleBudget`).
+It uses Node during the build, not a client runtime dependency. Vue and React
+install the plugin only for a client build; it also checks `build.ssr` itself:
+
+```ts
+import { initialBundleBudget } from '@hilos/core/build/initial-bundle-budget'
+
+// Inside defineConfig's factory; keep the other plugins in this array.
+command === 'build' && !isSsrBuild && initialBundleBudget({
+  warningBytes: 1500000,
+  errorBytes: 2000000,
+  projectSources: {
+    routes: 'src/pages/routes.ts',
+    views: 'src/App.vue', // React: 'src/App.tsx'
+  },
+})
+```
+
+Angular production enables `statsJson: true` and retains its native `initial`
+budgets `maximumWarning: '1.5MB'`, `maximumError: '2MB'`. After the ordinary
+`ng build` (including static prerender) and theme-head pass, its build script
+runs the same graph policy through the shipped CLI:
+
+```sh
+node node_modules/@hilos/core/bin/initial-bundle-budget.mjs angular dist --project-sources src/app/pages/routes.ts src/app/app.ts
+```
+
+The raw budget is **1,500,000 warning / 2,000,000 error bytes**, for the unique
+static JS+CSS closure from final client HTML. Script, modulepreload and stylesheet
+roots and their static dependencies count once; dynamic entries are reported
+separately with files already initial removed from each lazy closure. SSR outputs,
+maps, fonts and images are excluded from the byte sum. Gzip is the sum of each
+output independently compressed and is informational. A single chunk filename,
+the size of `main`, or Vite's `chunkSizeWarningLimit` cannot establish this total.
+Chat, tasks and polls currently exceed the warning threshold; that is a warning,
+not a reason to raise the thresholds.
+
+The build retains `initial-bundle-report.json`: roots, initial and lazy files,
+static/dynamic edges, raw/gzip totals, input modules, expanded SDK source evidence,
+forbidden modules, project proof and budget verdict. A Vite SSR pass does not
+overwrite the client report, and serve does not run this gate. Angular reads
+`stats.json`, final `index.csr.html` (or `index.html`) and the actual emitted
+bytes. Missing, malformed or unresolved roots, edges or provenance refuse the
+build instead of appearing clean. Preserve the report with the production
+artifact when assessing its graph.
+
+### Project binding proof
+
+Both `InitialBundleOptions.projectSources` and
+`InitialBundleGraph.projectSources` accept `{ routes: string, views: string }`,
+paths to existing declaration files relative to the consumer root. Adapt the
+paths to the project; this is not another page catalog. The reader obtains
+TypeScript from the consumer's installed build toolchain with
+`createRequire(consumer/package.json)` and inspects syntax. It executes neither
+routes nor loaders and adds no browser dependency.
+
+The supported build-reader shape is deliberately narrower than the runtime
+`PageView` API:
+
+- The installed production core supplies its verified framework route flags.
+  The configured project route input has one direct, imported
+  `createAppPageRouter(map)` call (core root or base), with a literal map or a
+  same-file `const` map. Every route has literal `path` and `admin` values;
+  keys can resolve through stable constants/imports.
+- The configured outlet input has exactly one literal `const pages` (Vue/React)
+  or `readonly pages` property (Angular), bound to exactly one imported
+  `HilosView` from the view kit's `/base`. Vue/Angular use `:pages="pages"` /
+  `[pages]="pages"`; React uses `pages={pages}`. The allowed spread is the
+  imported `/admin-views` `hilosAdminViews()` factory.
+- Explicit bindings are eager value identifiers or
+  `lazyPage(() => import('relative-literal').then(m => m.NamedExport))`
+  (including `m.default`). Import/const aliases and named/default/star reexports
+  resolve to the actual component owner; `.js` references can resolve their
+  `.ts`/`.tsx`/`.vue` source. Keep the declarations stable, without mutations or
+  escaping references.
+- Configured routes/outlet and resolved components must be actual client inputs.
+  Missing, dynamic, ambiguous, cyclic, type-only, external or escaping targets,
+  unsupported source forms, and decoy declarations beside another included
+  router/outlet refuse proof. Every project route needs a binding. Unsupported
+  runtime forms are not thereby invalid runtime API; they need a supported
+  declaration shape to use this build proof.
+
+Only the resolved component owner inherits its route's `admin: true` verdict;
+shared profile/legal contexts do not inherit it from a directory or importer.
+The report records `projectProof.status: 'verified'`, source hashes, route and
+binding lines, resolved owner/export/mode, and concrete owner chains in refusals.
+All six ordinary demo configurations supply these anchors. Omitting
+`projectSources` preserves legacy raw measurement and SDK-only scope, labelled
+`'not-configured'`; zero errors in that scope do **not** prove the project's
+admin implementations absent. A declared but bad configuration refuses.
+
+### Compiled SDK evidence
+
+The proof follows actual modules, aliases, shared chunks, source snapshots and
+static edges. SDK roots and admin implementations/section entries are forbidden
+in initial, even below the byte threshold. Vue/React record
+`module-provenance.json`; APF contributes compiler maps and source snapshots;
+core's real `tsc` output contributes maps with inline sources and
+`core-provenance.json` receipts. A source-less installed SDK still has this
+evidence. Shared/headless/protocol names alone grant no permission.
+
+An Angular compiler chunk with empty `inputs` is attributable only when its
+actual `entryPoint` is a verified generated APF public input and the entire
+output is a pure forwarding wrapper. Export names must match the APF and stats;
+imported names must exist in the target outputs; static edges must match the
+compiler graph, with valid maps/snapshots. Unknown or executable wrappers refuse.
+Attribution grants no exemption to an initial root or admin entry, and a filename
+is never proof of its contents.
+
+Core's generated receipts are distinct from the checked-in
+`core/bin/core-initial-sources.json` permission inventory. An ordinary build
+records compiler evidence; it does **not** refresh that inventory. When eager
+sources or compiler outputs change, review their owners, bodies, static edges
+and actual `tsc` outputs, then update exactly the affected source/output
+fingerprints. Rehashing the whole inventory merely to make a build green loses
+the check it exists to provide.
 
 ## SSG and the public surface
 
@@ -249,6 +374,12 @@ Every demo build ends with `node node_modules/@hilos/core/bin/theme-head.mjs
 It inserts the first-frame theme script and refuses an absent or unreadable
 output directory, no HTML pages, a missing `</head>`, or a deferred stylesheet.
 
+The public prerender entry imports only its static public component map, not the
+client App/admin map. Adding lazy admin views does not change footer discovery,
+public HTML content or the guest-view contract. In Angular the budget CLI follows
+the theme pass; in Vite the client plugin writes its report before the separate
+SSR/SSG/theme steps, which retain it.
+
 ## Building a demo against the vendored SDK
 
 A demo vendors `@hilos/core` and its view layer via `file:` dependencies that npm
@@ -285,12 +416,26 @@ Verify run walks the SDK past four consumers — the workspace itself and three
 demos — and without the guards it built the SDK four times and installed the same
 unchanged lockfiles four more, for about two minutes of the run (HIL-519).
 
-A `dist` is stale when it is missing, empty, or when the newest of the package's
-sources — `src/**` plus every `*.json` at the package root, so `tsconfig*.json`
-and `ng-package.json` are covered without enumerating them — is newer than the
-**oldest** file inside `dist`. Oldest, not newest: a build that died halfway
-leaves fresh files beside stale ones, and only the oldest of them reports that
-the artifact as a whole predates its sources. An install is skippable when
+A `dist` must be both current **and complete**. The inputs include `src/**`,
+`bin/**` (proof helpers and permission inventory included), root JSON/package
+exports and Vite configuration, nested Angular `ng-package.json` files, shared
+`tsconfig.base.json`, and the prebuild/staleness scripts. A missing/empty dist or
+an input newer than the **oldest** dist file rebuilds. The oldest timestamp
+catches a build that left fresh files beside old ones; it is not sufficient
+evidence of completion by itself.
+
+`sdkDistStale` also checks every public production/type target in package exports
+and, for core, every source owner's JS, declaration, map and receipt with matching
+source/output/map hashes. Missing or uncertain evidence in those checks rebuilds.
+This completeness check follows the source manifest's `exports`: Angular's plain
+source manifest has none, so it does not independently enumerate all secondary
+FESMs/types. Installed APF targets, compiler maps and source snapshots are checked
+by the production graph proof and package smoke checks. The prebuild skip alone
+is not that proof. The Angular layer's `prebuild-sdk.mjs core` mode never installs:
+it runs inside the workspace build already in progress and only builds core if
+needed.
+
+An install is skippable when
 `node_modules` carries a stamp naming the sha256 of the current
 `package-lock.json` *and* the npm mode (`ci` or `install`) that produced it. The
 modes are **ordered, not merely different**: `npm ci` wipes `node_modules` and

@@ -3,7 +3,7 @@ import {
   HilosPageHeading,
   HilosProfileSessions,
   hilosSignal,
-} from '@hilos/angular'
+} from '@hilos/angular/base'
 
 import { profileSessionActions, profileSessions } from './profileSessions.js'
 

@@ -31,7 +31,7 @@ import {
   whenPageReadyOrUnreachable,
   type HilosAuthContext,
   type HilosConnection,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosRouterContext } from '../hilosRouterContext.js'
 import { HilosCookiesRefused } from './HilosCookiesRefused.js'

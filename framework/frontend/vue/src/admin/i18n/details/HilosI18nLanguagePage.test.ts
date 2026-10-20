@@ -1,18 +1,20 @@
 import { mount } from '@vue/test-utils'
 import {
   createSignal,
-  HILOS_I18N_LANGUAGE_DELETE_ACTION,
   HilosPages,
-  LANGUAGE_CARD_DATA,
   ScopeManager,
   type ActionLifecycle,
   type ActionResult,
   type HilosConnection,
-  type HilosI18nLanguageCard,
-  type HilosI18nLanguageContext,
   type HilosRouter,
   type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  HILOS_I18N_LANGUAGE_DELETE_ACTION,
+  LANGUAGE_CARD_DATA,
+  type HilosI18nLanguageCard,
+  type HilosI18nLanguageContext,
+} from '@hilos/core/admin/i18n'
 import { describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 

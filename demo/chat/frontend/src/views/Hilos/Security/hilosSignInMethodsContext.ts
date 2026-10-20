@@ -3,7 +3,7 @@
 // connection, scope stores, and action lifecycle. The framework owns the table,
 // its view-model, the live enabled set and the switch; the project supplies only
 // where the data lives — and, on its backend, the method directory.
-import { type HilosSignInMethodsContext } from '@hilos/core'
+import { type HilosSignInMethodsContext } from '@hilos/core/admin/security'
 
 import { actions, connection } from '../../../bootstrap/connection'
 import { scopes } from '../../../bootstrap/session'

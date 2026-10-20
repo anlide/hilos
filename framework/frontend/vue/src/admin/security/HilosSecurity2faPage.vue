@@ -32,18 +32,16 @@ import {
   createHilosTwoFactorDisable,
   createHilosTwoFactorSettingEdit,
   describeHilosSecondFactorSetting,
-  focusInitial,
   HILOS_SECOND_FACTOR_REQUIRED_COPY,
   HILOS_SECOND_FACTOR_REQUIRED_VALUES,
   HILOS_SECOND_FACTOR_SETTING_COPY,
-  HILOS_STEP_UP_COPY,
   HILOS_TWO_FACTOR_DISABLE_COPY as DISABLE_COPY,
-  HilosPages,
   HilosSecondFactorSettingKey,
   isHilosSecondFactorSwitch,
   type HilosTwoFactorContext,
   type HilosTwoFactorSettingRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/security'
+import { focusInitial, HILOS_STEP_UP_COPY, HilosPages } from '@hilos/core/base'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import ConflictActions from '../../ConflictActions.vue'

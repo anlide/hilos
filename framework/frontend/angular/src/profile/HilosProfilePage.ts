@@ -24,7 +24,7 @@ import {
   subscribeSignal,
   type HilosProfileBinding,
   type HilosProfilePageContext,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { HilosAvatar } from '../HilosAvatar.js'
 import { HilosLink } from '../HilosLink.js'
 import { HilosPageHeading } from '../HilosPageHeading.js'

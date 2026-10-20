@@ -8,8 +8,8 @@
 // a table echo (which is why a no-op save no longer hangs: the `::success` ack
 // always arrives, even when the row did not change).
 import { useCallback, useRef, useState } from 'react'
-import { ActionError, hilosToasts, subscribeSignal } from '@hilos/core'
-import type { ActionHandle } from '@hilos/core'
+import { ActionError, hilosToasts, subscribeSignal } from '@hilos/core/base'
+import type { ActionHandle } from '@hilos/core/base'
 
 /** How a tracked action reports a failure. */
 export interface TrackedActionOptions {

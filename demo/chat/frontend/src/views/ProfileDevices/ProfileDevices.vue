@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue'
-import { HilosPageHeading, HilosProfileDevices, useSignal } from '@hilos/vue'
+import {
+  HilosPageHeading,
+  HilosProfileDevices,
+  useSignal,
+} from '@hilos/vue/base'
 
 import { connection } from '../../bootstrap/connection.js'
-import { startHilosNotificationPreferences } from '@hilos/core'
+import { startHilosNotificationPreferences } from '@hilos/core/base'
 import { scopes } from '../../bootstrap/session.js'
 import {
   profileDeviceActions,

@@ -5,7 +5,7 @@ import {
   hilosI18nLanguageSwitchOn,
   type HilosI18nLanguageCard,
   type HilosI18nLanguageContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { HilosActionError } from '../../../HilosActionError.js'
 import { HilosEditNotice } from '../../../HilosEditNotice.js'
 import { HilosModal } from '../../../HilosModal.js'

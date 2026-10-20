@@ -28,7 +28,7 @@ import {
   type HilosNotificationPreferencesStore,
   type HilosPageCrumb,
   type HilosPushSubscriptionStore,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosLink } from './HilosLink.js'
 import { hilosSignal } from './hilosSignal.js'

@@ -8,9 +8,9 @@ import {
   HILOS_I18N_LANGUAGE_DELETE_ACTION,
   HILOS_I18N_LANGUAGE_DELETE_COPY,
   hilosI18nLanguageDelete,
-  HilosPages,
   type HilosI18nLanguageContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { HilosPages } from '@hilos/core/base'
 import { computed, inject, ref } from 'vue'
 
 import HilosAdminPage from '../../../HilosAdminPage.vue'

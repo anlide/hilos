@@ -10,8 +10,8 @@ import {
   signal,
 } from '@angular/core'
 import type { Signal } from '@angular/core'
-import { subscribeSignal } from '@hilos/core'
-import type { ReadonlySignal, Unsubscribe } from '@hilos/core'
+import { subscribeSignal } from '@hilos/core/base'
+import type { ReadonlySignal, Unsubscribe } from '@hilos/core/base'
 
 /** Options for {@link hilosSignal} and the selector wrappers built on it. */
 export interface HilosSignalOptions {

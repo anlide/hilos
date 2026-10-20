@@ -4,7 +4,7 @@ import {
   createHilosI18nBuiltInLanguages,
   type HilosI18nLanguageAdd,
   type HilosI18nLanguageContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { computed, watch } from 'vue'
 
 import HilosActionError from '../../../HilosActionError.vue'

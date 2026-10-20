@@ -29,7 +29,6 @@ import {
   hasLogsOverviewNodes,
   hasLogsOverviewRecent,
   HILOS_ROTATION_STATE_DUE,
-  HilosPages,
   logLevelVariant,
   logRotationsPath,
   logsOverviewBatchesNote,
@@ -49,18 +48,18 @@ import {
   logsOverviewTakeoutHeadline,
   RECENT_TAB_ERRORS,
   RECENT_TAB_WARNINGS,
-  subscribeSignal,
-} from '@hilos/core'
+} from '@hilos/core/admin/logs'
+import { HilosPages, subscribeSignal } from '@hilos/core/base'
 import type {
   HilosLogsOverview,
-  HilosLogsOverviewContext,
   HilosLogsOverviewRecentEntry,
+} from '@hilos/core/base'
+import type {
+  HilosLogsOverviewContext,
   HilosLogsRecentTab,
-} from '@hilos/core'
+} from '@hilos/core/admin/logs'
 
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosHideable } from '../../HilosHideable.js'
-import { HilosLink } from '../../HilosLink.js'
+import { HilosAdminPage, HilosHideable, HilosLink } from '@hilos/angular/base'
 
 /** The framework logs overview: tiles, the takeout banner and the per-node table. */
 @Component({

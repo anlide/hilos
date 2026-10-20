@@ -4,7 +4,7 @@ resolves the heading, lead, breadcrumb, and any sub-section cards from the
 @hilos/core admin tree. Implement the page by replacing the shell's default body
 through its default slot. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { HilosPages } from '@hilos/core'
+import { HilosPages } from '@hilos/core/base'
 
 import HilosAdminPage from '../../../HilosAdminPage.vue'
 </script>

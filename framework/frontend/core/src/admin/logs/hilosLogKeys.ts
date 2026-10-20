@@ -14,7 +14,10 @@
 // The screen answers "how much is taken, and by which stream": it starts on the
 // heaviest, and it commands nothing.
 
-import { z } from 'zod'
+import {
+  KEYS_HEADER_SIGNAL,
+  type HilosLogKeysHeader,
+} from '../../protocol/logsSignals.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { formatBytes } from '../../format/bytes.js'
 import { HilosPages } from '../../routing/hilosPages.js'
@@ -32,6 +35,12 @@ import { TableViewportController } from '../../table/TableViewportController.js'
 import { HILOS_TABLE_ACTIONS_KEY } from '../../table/hilosTableColumn.js'
 import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { LOG_SOURCE_LIVE, logViewerPath } from './hilosLogViewer.js'
+
+export {
+  KEYS_HEADER_SIGNAL,
+  type HilosLogKeysHeader,
+  LOGS_KEYS_SIGNAL_SCHEMAS,
+} from '../../protocol/logsSignals.js'
 
 /** One row of the log-keys table — one log stream on one node. */
 export interface HilosLogKeyRow {
@@ -62,8 +71,6 @@ export interface HilosLogKeyRow {
 // A project binds its backend to these keys (Hilos::TABLES / PAGE_TABLES).
 const KEYS_TABLE = 'hilosLogKeys'
 const KEY_SLOT = 'stream'
-/** Server→client signal `type` carrying the screen header (PHP `SUBSCRIPTION_PAGE_HILOS_LOGS_KEYS`). */
-export const KEYS_HEADER_SIGNAL = 'subscription_page_hilos_logs_keys'
 
 // Row payload keys of the stream slot. They are declared here because this module
 // owns the view-model they resolve into, and exported where a view also names them
@@ -121,30 +128,6 @@ export const HILOS_LOG_CLASS_AGENT = 'agent'
  * ordinary ones — that split is the neighbouring workers screen (HIL-386).
  */
 export const HILOS_LOG_CLASS_WORKER = 'worker'
-
-/**
- * Payload of the screen header: whether there is a picture and which nodes it holds
- * (PHP `HilosLogsKeysSignalData`).
- */
-const keysHeaderSchema = z.looseObject({
-  available: z.boolean().nullable(),
-  nodes: z.array(z.string()),
-})
-
-/** The screen header as the page answers a subscription with it. */
-export type HilosLogKeysHeader = z.infer<typeof keysHeaderSchema>
-
-/**
- * The by-key signal schemas keyed for a connection's `projectSchemas`, so the parse
- * boundary validates the header frames {@link createHilosLogKeysHeader} ingests.
- * {@link createHilosConnection} merges them in, so a project never restates them.
- *
- * A set of its own rather than an entry in the rotations one: two independent screens
- * must not depend on which of them landed first.
- */
-export const LOGS_KEYS_SIGNAL_SCHEMAS = {
-  [KEYS_HEADER_SIGNAL]: keysHeaderSchema,
-}
 
 /**
  * The project-supplied context the log-keys admin reads from: the scope-partitioned

@@ -13,6 +13,94 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./base": {
+      "development": "./src/base/index.ts",
+      "types": "./dist/base/index.d.ts",
+      "import": "./dist/base/index.js",
+      "default": "./dist/base/index.js"
+    },
+    "./admin/i18n": {
+      "development": "./src/admin/i18n/index.ts",
+      "types": "./dist/admin/i18n/index.d.ts",
+      "import": "./dist/admin/i18n/index.js",
+      "default": "./dist/admin/i18n/index.js"
+    },
+    "./admin/users": {
+      "development": "./src/admin/users/index.ts",
+      "types": "./dist/admin/users/index.d.ts",
+      "import": "./dist/admin/users/index.js",
+      "default": "./dist/admin/users/index.js"
+    },
+    "./admin/settings": {
+      "development": "./src/admin/settings/index.ts",
+      "types": "./dist/admin/settings/index.d.ts",
+      "import": "./dist/admin/settings/index.js",
+      "default": "./dist/admin/settings/index.js"
+    },
+    "./admin/appearance": {
+      "development": "./src/admin/appearance/index.ts",
+      "types": "./dist/admin/appearance/index.d.ts",
+      "import": "./dist/admin/appearance/index.js",
+      "default": "./dist/admin/appearance/index.js"
+    },
+    "./admin/backup": {
+      "development": "./src/admin/backup/index.ts",
+      "types": "./dist/admin/backup/index.d.ts",
+      "import": "./dist/admin/backup/index.js",
+      "default": "./dist/admin/backup/index.js"
+    },
+    "./admin/maintenance": {
+      "development": "./src/admin/maintenance/index.ts",
+      "types": "./dist/admin/maintenance/index.d.ts",
+      "import": "./dist/admin/maintenance/index.js",
+      "default": "./dist/admin/maintenance/index.js"
+    },
+    "./admin/communications": {
+      "development": "./src/admin/communications/index.ts",
+      "types": "./dist/admin/communications/index.d.ts",
+      "import": "./dist/admin/communications/index.js",
+      "default": "./dist/admin/communications/index.js"
+    },
+    "./admin/security": {
+      "development": "./src/admin/security/index.ts",
+      "types": "./dist/admin/security/index.d.ts",
+      "import": "./dist/admin/security/index.js",
+      "default": "./dist/admin/security/index.js"
+    },
+    "./admin/logs": {
+      "development": "./src/admin/logs/index.ts",
+      "types": "./dist/admin/logs/index.d.ts",
+      "import": "./dist/admin/logs/index.js",
+      "default": "./dist/admin/logs/index.js"
+    },
+    "./admin/daemon": {
+      "development": "./src/admin/daemon/index.ts",
+      "types": "./dist/admin/daemon/index.d.ts",
+      "import": "./dist/admin/daemon/index.js",
+      "default": "./dist/admin/daemon/index.js"
+    },
+    "./admin/change-log": {
+      "development": "./src/admin/changeLog/index.ts",
+      "types": "./dist/admin/changeLog/index.d.ts",
+      "import": "./dist/admin/changeLog/index.js",
+      "default": "./dist/admin/changeLog/index.js"
+    },
+    "./admin/analytics": {
+      "development": "./src/admin/analytics/index.ts",
+      "types": "./dist/admin/analytics/index.d.ts",
+      "import": "./dist/admin/analytics/index.js",
+      "default": "./dist/admin/analytics/index.js"
+    },
+    "./admin/legal": {
+      "development": "./src/admin/legal/index.ts",
+      "types": "./dist/admin/legal/index.d.ts",
+      "import": "./dist/admin/legal/index.js",
+      "default": "./dist/admin/legal/index.js"
+    },
+    "./build/initial-bundle-budget": {
+      "types": "./bin/initial-bundle-budget.d.mts",
+      "import": "./bin/initial-bundle-budget.mjs"
     }
   },
   "files": [
@@ -27,6 +115,6 @@
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "build": "tsc -p tsconfig.build.json"
+    "build": "tsc -p tsconfig.build.json && node bin/core-provenance.mjs"
   }
 }

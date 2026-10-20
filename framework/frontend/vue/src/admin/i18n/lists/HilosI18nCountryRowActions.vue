@@ -5,7 +5,7 @@ import {
   hilosI18nCountryDeleteLabel,
   hilosI18nCountryDeleteReason,
   type HilosI18nCountryRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { useId } from 'vue'
 
 const props = defineProps<{ row: HilosI18nCountryRow }>()

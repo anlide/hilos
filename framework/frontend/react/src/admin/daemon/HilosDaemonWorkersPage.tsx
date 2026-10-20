@@ -16,11 +16,11 @@ import {
   formatDaemonWorkerMemory,
   formatDaemonWorkerName,
   formatDaemonWorkerPid,
-  HilosPages,
   readDaemonProcessesReported,
   readHilosDaemonNodeHeading,
   type HilosDaemonWorkersContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
+import { HilosPages } from '@hilos/core/base'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'

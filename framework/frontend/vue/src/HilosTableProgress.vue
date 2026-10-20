@@ -9,7 +9,7 @@ view layer on purpose: it is not exported from index.ts, for the reason the bar
 and the footer are not — outside a table it means nothing. -->
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { HilosTableProgress } from '@hilos/core'
+import type { HilosTableProgress } from '@hilos/core/base'
 
 const props = defineProps<{
   /** The bar to draw, with the fraction already worked out by the core. */

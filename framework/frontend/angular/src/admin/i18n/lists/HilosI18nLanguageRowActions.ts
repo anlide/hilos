@@ -16,8 +16,8 @@ import {
   HILOS_I18N_LANGUAGE_DELETE_COPY,
   HILOS_I18N_LANGUAGE_WINDOW_COPY,
   hilosI18nLanguageDelete,
-} from '@hilos/core'
-import type { HilosI18nLanguageRow } from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import type { HilosI18nLanguageRow } from '@hilos/core/admin/i18n'
 
 // Distinct ids so the row and the card copy of one language never share one.
 let languageRowActionsSeq = 0

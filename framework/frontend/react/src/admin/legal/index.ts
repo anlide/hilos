@@ -1,0 +1,5 @@
+export { HilosLegalAcceptancesPage } from './HilosLegalAcceptancesPage.js'
+export { HilosLegalDocumentPage } from './HilosLegalDocumentPage.js'
+export { HilosLegalPage } from './HilosLegalPage.js'
+export { HilosLegalRevisionPage } from './HilosLegalRevisionPage.js'
+export { HilosLegalSettingsPage } from './HilosLegalSettingsPage.js'

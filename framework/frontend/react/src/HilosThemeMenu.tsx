@@ -21,7 +21,7 @@ import {
   THEME_COPY,
   THEME_POSITIONS,
   type ThemePick,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { useEffect, useId, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 

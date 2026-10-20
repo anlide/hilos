@@ -4,13 +4,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createSignal,
   HilosPages,
+  type HilosRouter,
+  type PageRouteMatch,
+} from '@hilos/core/base'
+import {
   type HilosChangeLogEntry,
   type HilosChangeLogReceiptDialog,
   type HilosChangeLogReceiptHeader,
   type HilosChangeLogReceiptReader,
-  type HilosRouter,
-  type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/admin/change-log'
 
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import HilosChangeLogReceiptModal from './HilosChangeLogReceiptModal.vue'

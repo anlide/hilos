@@ -15,7 +15,7 @@ import {
   oauthTrip,
   oauthTripMessage,
   oauthTripTitle,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosModal } from '../HilosModal.js'
 import { useSignal } from '../useSignal.js'

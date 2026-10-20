@@ -3,7 +3,7 @@ import {
   NOTIFICATION_ACTION_MARK_ALL_READ,
   NOTIFICATION_ACTION_MARK_READ,
   type HilosConnection,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 

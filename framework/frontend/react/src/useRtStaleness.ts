@@ -3,7 +3,7 @@
 // source node this one cannot reach, delivered through useSyncExternalStore. The
 // core owns the state; this hook only subscribes to it (multiframework-core.md).
 import { useCallback, useSyncExternalStore } from 'react'
-import type { HilosConnection, RtStalenessStatus } from '@hilos/core'
+import type { HilosConnection, RtStalenessStatus } from '@hilos/core/base'
 
 /**
  * Expose a connection's frozen-replica state as React state.

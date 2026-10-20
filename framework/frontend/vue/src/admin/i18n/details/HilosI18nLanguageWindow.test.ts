@@ -1,16 +1,18 @@
 import { mount, type VueWrapper } from '@vue/test-utils'
 import {
   ActionError,
-  createHilosI18nLanguageRowWindow,
   createSignal,
-  HILOS_I18N_LANGUAGE_ROW_UPDATE_ACTION,
   type ActionHandle,
   type ActionLifecycle,
   type ActionResult,
+  type TableViewportController,
+} from '@hilos/core/base'
+import {
+  createHilosI18nLanguageRowWindow,
+  HILOS_I18N_LANGUAGE_ROW_UPDATE_ACTION,
   type HilosI18nLanguageContext,
   type HilosI18nLanguageRow,
-  type TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { afterEach, describe, expect, it } from 'vitest'
 import { nextTick, ref } from 'vue'
 

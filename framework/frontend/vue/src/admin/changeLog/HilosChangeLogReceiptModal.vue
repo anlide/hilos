@@ -14,12 +14,11 @@ import {
   changeLogRecordRouteParam,
   formatChangeLogReceiptTitle,
   formatChangeLogTime,
-  HilosPages,
-  isHiddenValue,
   type HilosChangeLogEntry,
   type HilosChangeLogReceiptDialog,
   type HilosChangeLogReceiptReader,
-} from '@hilos/core'
+} from '@hilos/core/admin/change-log'
+import { HilosPages, isHiddenValue } from '@hilos/core/base'
 import { computed, inject, nextTick, ref } from 'vue'
 
 import HilosFormError from '../../HilosFormError.vue'

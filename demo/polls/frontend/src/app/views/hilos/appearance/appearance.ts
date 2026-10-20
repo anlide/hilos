@@ -3,7 +3,7 @@
 // (@hilos/angular HilosAppearancePage); this project binds only its scope
 // stores and action lifecycle through hilosAppearanceContext.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosAppearancePage } from '@hilos/angular'
+import { HilosAppearancePage } from '@hilos/angular/admin/appearance'
 
 import { hilosAppearanceContext } from './hilosAppearanceContext.js'
 

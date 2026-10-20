@@ -4,7 +4,7 @@ app's context. The table, the row view-model and the switch are the framework's;
 the project supplies only the context and declares its methods on its backend.
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { HilosSecuritySignInMethodsPage } from '@hilos/vue'
+import { HilosSecuritySignInMethodsPage } from '@hilos/vue/admin/security'
 
 import { hilosSignInMethodsContext } from './hilosSignInMethodsContext'
 

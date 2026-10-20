@@ -9,7 +9,7 @@ import {
   THEME_COPY,
   THEME_POSITIONS,
   type ThemePick,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { useEffect, useRef, useState } from 'react'
 
 import { HilosActionError } from '../HilosActionError.js'

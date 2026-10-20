@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { createDeferredFlagState } from '../../src/primitives/deferredFlag.js'
+import { DEFAULT_SKELETON_DELAY_MS } from '../../src/primitives/skeleton.js'
 import { type PageSubscriptionError } from '../../src/protocol/pageError.js'
 import { bindPageDeparture } from '../../src/routing/bindPageDeparture.js'
 import {
@@ -11,13 +13,20 @@ import {
   type NavigationEnvironment,
 } from '../../src/routing/HilosRouter.js'
 import { createPageRouter } from '../../src/routing/PageRouter.js'
-import { createSignal } from '../../src/state/signal.js'
+import {
+  type PageError,
+  PAGE_LOAD_FAILED_ERROR,
+} from '../../src/routing/pageError.js'
+import { lazyPage } from '../../src/routing/pageView.js'
+import { createPageViewState } from '../../src/routing/pageViewState.js'
+import { createSignal, subscribeSignal } from '../../src/state/signal.js'
 
 afterEach(() => {
   document.body.replaceChildren()
+  vi.useRealTimers()
 })
 
-function mountBinding() {
+function mountBinding(composed = false) {
   const listeners = new Set<() => void>()
   const pageLoading = createSignal(false)
   const pageError = createSignal<PageSubscriptionError | null>(null)
@@ -51,7 +60,15 @@ function mountBinding() {
   const departure = document.createElement('div')
   wrapper.append(slot, departure)
   document.body.append(wrapper)
-  const off = bindPageDeparture({ router, slot, departure, skeletonShown })
+  const loading = createSignal(false)
+  const error = createSignal<PageError | null>(null)
+  const off = bindPageDeparture({
+    router,
+    slot,
+    departure,
+    skeletonShown,
+    ...(composed ? { loading, error } : {}),
+  })
 
   return {
     wrapper,
@@ -60,6 +77,8 @@ function mountBinding() {
     pageLoading,
     pageError,
     skeletonShown,
+    loading,
+    error,
     off,
     leave: () => {
       for (const listener of [...listeners]) {
@@ -140,6 +159,116 @@ describe('bindPageDeparture', () => {
     expect(listenerCount()).toBe(0)
     leave()
     expect(departure.childElementCount).toBe(0)
+  })
+
+  it('keeps the copy through the server answer and a second departure while code loads', () => {
+    const { departure, pageLoading, loading, leave, slot } = mountBinding(true)
+    leave()
+    loading.set(true)
+    pageLoading.set(true)
+    pageLoading.set(false)
+    slot.replaceChildren()
+    leave()
+
+    expect(departure.textContent).toBe('Leaving page')
+    loading.set(false)
+    expect(departure.childElementCount).toBe(0)
+  })
+
+  it('clears the copy on a local error even while composed loading stays true', () => {
+    const { departure, loading, error, leave } = mountBinding(true)
+    leave()
+    loading.set(true)
+
+    error.set(PAGE_LOAD_FAILED_ERROR)
+
+    expect(departure.childElementCount).toBe(0)
+  })
+
+  it('clears the copy at the original skeleton deadline while only the import remains', () => {
+    vi.useFakeTimers()
+    const { departure, loading, pageLoading, skeletonShown, leave } =
+      mountBinding(true)
+    const flag = createDeferredFlagState(DEFAULT_SKELETON_DELAY_MS)
+    const offLoading = subscribeSignal(loading, flag.set)
+    const offShown = subscribeSignal(flag.shown, skeletonShown.set)
+    leave()
+    loading.set(true)
+    pageLoading.set(true)
+    vi.advanceTimersByTime(150)
+    pageLoading.set(false)
+    vi.advanceTimersByTime(149)
+    expect(departure.textContent).toBe('Leaving page')
+
+    vi.advanceTimersByTime(1)
+
+    expect(departure.childElementCount).toBe(0)
+    offLoading()
+    offShown()
+    flag.dispose()
+  })
+
+  it('copies before the composed state hides the settled component on route publication', () => {
+    const currentRoute = createSignal({ page: 'old', params: {}, admin: false })
+    const pageLoading = createSignal(false)
+    const listeners = new Set<() => void>()
+    const settled = () => 'Leaving page'
+    const router: HilosRouter = {
+      currentRoute,
+      currentPath: createSignal('/old'),
+      currentTitle: createSignal('Old'),
+      pageLoading,
+      pageError: createSignal(null),
+      pageIdentity: createSignal(undefined),
+      dashboardSections: createSignal(undefined),
+      resolvePath: (page) => `/${page}`,
+      clearPageError: () => {},
+      denyCurrentPage: () => {},
+      awaitPageAnswer: () => {},
+      navigate: () => {},
+      replacePath: () => {},
+      start: () => {},
+      stop: () => {},
+      onLeave: (listener) => {
+        listeners.add(listener)
+        return () => {
+          listeners.delete(listener)
+        }
+      },
+    }
+    const state = createPageViewState<() => string>(router)
+    state.setPages({
+      old: settled,
+      next: lazyPage(() => new Promise(() => {})),
+    })
+    const slot = document.createElement('div')
+    const article = document.createElement('article')
+    article.textContent = state.view.get()?.() ?? ''
+    slot.append(article)
+    const departure = document.createElement('div')
+    // A synchronous consumer makes an early loading publication observable.
+    const offView = subscribeSignal(state.view, () => {
+      slot.replaceChildren()
+    })
+    const offDeparture = bindPageDeparture({
+      router,
+      slot,
+      departure,
+      skeletonShown: createSignal(false),
+      loading: state.loading,
+      error: state.error,
+    })
+
+    for (const listener of listeners) listener()
+    currentRoute.set({ page: 'next', params: {}, admin: false })
+    pageLoading.set(true)
+    pageLoading.set(false)
+
+    expect(slot.childElementCount).toBe(0)
+    expect(departure.textContent).toBe('Leaving page')
+    offView()
+    offDeparture()
+    state.dispose()
   })
 
   it('clears the copy when navigation lands on the local route miss', () => {

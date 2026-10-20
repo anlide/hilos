@@ -1,5 +1,5 @@
-import { HILOS_STEP_UP_COPY } from '@hilos/core'
-import type { HilosStepUpStep as HilosStepUpController } from '@hilos/core'
+import { HILOS_STEP_UP_COPY } from '@hilos/core/base'
+import type { HilosStepUpStep as HilosStepUpController } from '@hilos/core/base'
 
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosSendProgress } from '../HilosSendProgress.js'

@@ -5,7 +5,7 @@
 // row dedupe against the same entity wherever it appears. The binder
 // (`bindPageScope`, applied inside bootHilos) applies this to every page payload's
 // slots — here, the `users` slot of the Hilos users/user admin pages.
-import { USER_ENTITY_TYPE } from '@hilos/core'
+import { USER_ENTITY_TYPE } from '@hilos/core/base'
 
 /** Per-slot canonical entity types for the tasks demo's page payloads. */
 export const pageEntityTypes: Record<string, string> = {

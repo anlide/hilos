@@ -4,7 +4,6 @@
 import { useEffect, useMemo } from 'react'
 import {
   HILOS_LOG_WORKER_TYPE_MONOPOLISTIC,
-  HilosPages,
   createHilosLogWorkersHeader,
   createHilosLogWorkersTable,
   formatLogWorkerState,
@@ -13,8 +12,12 @@ import {
   hasLogWorkerNodes,
   logWorkerViewerPath,
   logWorkersEmptyState,
-} from '@hilos/core'
-import type { HilosLogWorkerRow, HilosLogWorkersContext } from '@hilos/core'
+} from '@hilos/core/admin/logs'
+import { HilosPages } from '@hilos/core/base'
+import type {
+  HilosLogWorkerRow,
+  HilosLogWorkersContext,
+} from '@hilos/core/admin/logs'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'

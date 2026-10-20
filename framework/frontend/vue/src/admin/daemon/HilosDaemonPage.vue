@@ -17,9 +17,9 @@ import {
   formatDaemonNumber,
   formatDaemonPercentage,
   formatDaemonWorkerName,
-  HilosPages,
   type HilosDaemonContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
+import { HilosPages } from '@hilos/core/base'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'

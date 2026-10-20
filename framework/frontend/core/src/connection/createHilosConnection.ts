@@ -4,14 +4,16 @@
 // project's connection bootstrap (docs/agents/frontend/bootstrap-structure.md).
 import { DATA_EXPORT_SIGNAL_SCHEMAS } from '../profile/dataExport.js'
 
-import { BACKUP_SIGNAL_SCHEMAS } from '../admin/backup/hilosBackups.js'
-import { LOGS_KEYS_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogKeys.js'
-import { LOGS_SETTINGS_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogSettings.js'
-import { LOGS_OVERVIEW_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogsOverview.js'
-import { LOGS_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogRotations.js'
-import { LOGS_VIEWER_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogViewer.js'
-import { LOGS_WORKERS_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogWorkers.js'
-import { MAINTENANCE_STATE_SIGNAL_SCHEMAS } from '../admin/maintenance/hilosMaintenance.js'
+import { BACKUP_SIGNAL_SCHEMAS } from '../protocol/backupSignals.js'
+import {
+  LOGS_KEYS_SIGNAL_SCHEMAS,
+  LOGS_SETTINGS_SIGNAL_SCHEMAS,
+  LOGS_OVERVIEW_SIGNAL_SCHEMAS,
+  LOGS_SIGNAL_SCHEMAS,
+  LOGS_VIEWER_SIGNAL_SCHEMAS,
+  LOGS_WORKERS_SIGNAL_SCHEMAS,
+} from '../protocol/logsSignals.js'
+import { MAINTENANCE_STATE_SIGNAL_SCHEMAS } from '../protocol/maintenanceSignals.js'
 import { AUTH_CONVERGE_SIGNAL_SCHEMAS } from '../auth/authConvergeSignals.js'
 import { OAUTH_SIGNAL_SCHEMAS } from '../auth/oauthSignals.js'
 import { PASSKEY_SIGNAL_SCHEMAS } from '../auth/passkeySignals.js'
@@ -19,9 +21,11 @@ import { browserValue } from '../browser/browserValue.js'
 import { NOTIFICATION_SIGNAL_SCHEMAS } from '../notifications/notificationCenter.js'
 import { NOTIFICATION_PREFERENCE_SIGNAL_SCHEMAS } from '../notifications/notificationPreferences.js'
 import { LEGAL_AGREEMENTS_SIGNAL_SCHEMAS } from '../legal/legalAgreements.js'
-import { LEGAL_ACCEPTANCES_SIGNAL_SCHEMAS } from '../admin/legal/hilosLegal.js'
-import { LEGAL_ACCEPTANCES_EXPORT_SIGNAL_SCHEMAS } from '../admin/legal/hilosLegalAcceptancesExport.js'
-import { ACCOUNT_STANDING_SIGNAL_SCHEMAS } from '../admin/users/hilosUsers.js'
+import {
+  LEGAL_ACCEPTANCES_SIGNAL_SCHEMAS,
+  LEGAL_ACCEPTANCES_EXPORT_SIGNAL_SCHEMAS,
+} from '../protocol/legalAcceptancesSignals.js'
+import { ACCOUNT_STANDING_SIGNAL_SCHEMAS } from '../protocol/accountStandingSignals.js'
 import { ACCOUNT_DELETION_SIGNAL_SCHEMAS } from '../profile/accountDeletion.js'
 import { SECOND_FACTOR_SIGNAL_SCHEMAS } from '../profile/secondFactor.js'
 import { PROFILE_PASSWORD_SIGNAL_SCHEMAS } from '../profile/signInMethods.js'

@@ -21,20 +21,22 @@ import {
   APPEARANCE_DEFAULT_VALUE_FIELD,
   APPEARANCE_ROW_KEY_FIELD,
   APPEARANCE_VALUE_FIELD,
-  HILOS_TABLE_ACTIONS_KEY,
   HilosAppearanceSettingKey,
-  HilosPages,
-  THEME_POSITIONS,
   createHilosAppearanceActions,
   createHilosAppearanceDefaultThemeEdit,
   createHilosAppearanceSwitchingEdit,
   createHilosAppearanceTable,
+} from '@hilos/core/admin/appearance'
+import {
+  HILOS_TABLE_ACTIONS_KEY,
+  HilosPages,
+  THEME_POSITIONS,
   isHiddenValue,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosAppearanceContext,
   HilosAppearanceSettingRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/appearance'
 
 import { ConflictActions } from '../../ConflictActions.js'
 import { ConflictHeader } from '../../ConflictHeader.js'

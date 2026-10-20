@@ -13,20 +13,19 @@ with the main language page and language names page) stand above the locales tab
 with three states matching the main page. Bootstrap classes only, painted with classes
 that follow the theme (styling-rules.md). -->
 <script setup lang="ts">
+import { computedSignal, HilosPages } from '@hilos/core/base'
 import {
-  computedSignal,
   createHilosI18nLanguageCard,
   createHilosI18nLanguageLocalesTable,
   createHilosI18nLocaleDelete,
   createHilosI18nLocaleTemplates,
   hilosI18nLocaleCountryLabel,
   HILOS_I18N_LOCALE_COPY,
-  HilosPages,
   type HilosI18nLanguageContext,
   type HilosI18nLocaleDeleteTarget,
   type HilosI18nLocaleRow,
   type HilosI18nLocaleWindowMode,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosAdminPage from '../../../HilosAdminPage.vue'

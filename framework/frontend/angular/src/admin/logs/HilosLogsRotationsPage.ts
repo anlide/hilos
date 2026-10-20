@@ -30,10 +30,13 @@ import {
 } from '@angular/core'
 import {
   HILOS_PAGE_ROUTES,
+  HilosPages,
+  subscribeSignal,
+} from '@hilos/core/base'
+import {
   HILOS_ROTATION_STATE_CARRYING,
   HILOS_ROTATION_STATE_DUE,
   HILOS_ROTATION_STATE_TAKEN,
-  HilosPages,
   ROTATION_FILTER_NODE,
   ROTATION_FILTER_STATE,
   createHilosLogRotationsActions,
@@ -50,26 +53,27 @@ import {
   rotationTakeoutNotice,
   rotationUndoNotice,
   rotationsEmptyState,
-  subscribeSignal,
-} from '@hilos/core'
+} from '@hilos/core/admin/logs'
 import type {
   HilosLogRotationRow,
   HilosLogRotationsContext,
-  HilosLogRotationsHeader,
-} from '@hilos/core'
+} from '@hilos/core/admin/logs'
+import type { HilosLogRotationsHeader } from '@hilos/core/base'
 
-import { HilosActionError } from '../../HilosActionError.js'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosEditNotice } from '../../HilosEditNotice.js'
-import { HilosHideable } from '../../HilosHideable.js'
-import { HilosLink } from '../../HilosLink.js'
-import { HilosLongText } from '../../HilosLongText.js'
-import { HilosModal } from '../../HilosModal.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { LoadingButton } from '../../LoadingButton.js'
-import { HILOS_ROUTER } from '../../hilosRouterToken.js'
-import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
+import {
+  HilosActionError,
+  HilosAdminPage,
+  HilosEditNotice,
+  HilosHideable,
+  HilosLink,
+  HilosLongText,
+  HilosModal,
+  HilosTableCell,
+  HilosViewportTable,
+  LoadingButton,
+  HILOS_ROUTER,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 
 // The retention badge: a batch on its way is in motion and not in trouble, a
 // recommendation is a warning and not a fault, a taken batch is settled, and a kept

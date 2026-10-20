@@ -28,7 +28,11 @@ stands here (hilosAdminAccess is 'view', HIL-1253): the controls of the mode
 read that themselves and stand plainly disabled (HIL-1261).
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { hilosAdminAccess, hilosChildLinks, hilosCrumbLinks } from '@hilos/core'
+import {
+  hilosAdminAccess,
+  hilosChildLinks,
+  hilosCrumbLinks,
+} from '@hilos/core/base'
 import { computed, inject, provide, useId } from 'vue'
 
 import HilosBreadcrumb from './HilosBreadcrumb.vue'

@@ -4,7 +4,7 @@ view-model, and the live in-progress row are the framework's; the project suppli
 only the context (its scope stores + live connection) and produces the backup
 index on its backend. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { HilosBackupPage } from '@hilos/vue'
+import { HilosBackupPage } from '@hilos/vue/admin/backup'
 
 import { hilosBackupsContext } from './hilosBackupsContext'
 

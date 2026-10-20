@@ -15,8 +15,11 @@
 // it. The rows of the access section and the badge in the card's header are
 // drawn from it, so what the rows say and what the badge shows cannot differ.
 
+import {
+  SIGNAL_ACCOUNT_STANDING_STATE,
+  accountStandingStateSchema,
+} from '../../protocol/accountStandingSignals.js'
 import { z } from 'zod'
-
 import {
   createHilosStepUpActions,
   createHilosStepUpStep,
@@ -91,6 +94,12 @@ import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 import { ANALYTICS_PERSON_ROUTE_PARAM } from '../analytics/hilosAnalyticsPerson.js'
 import { hiddenAsWord } from '../viewMode.js'
+
+export {
+  SIGNAL_ACCOUNT_STANDING_STATE,
+  accountStandingStateSchema,
+  ACCOUNT_STANDING_SIGNAL_SCHEMAS,
+} from '../../protocol/accountStandingSignals.js'
 
 /** A user's connection presence; a string union so a third state extends it. */
 export type HilosPresence = 'online' | 'offline'
@@ -318,31 +327,6 @@ export const HILOS_USERS_LAPSED_FILTER = 'lapsed'
  * `AbstractHilosUserPage::ACCOUNT_STANDING`, HIL-945).
  */
 export const HILOS_USER_STANDING_SECTION = 'accountStanding'
-
-/**
- * Server→client (WS_USER): the standing of the person a card shows, whenever it
- * changed (PHP `HilosSignalConstants::HILOS_ACCOUNT_STANDING_STATE`, HIL-945).
- */
-export const SIGNAL_ACCOUNT_STANDING_STATE = 'hilos_account_standing_state'
-
-/**
- * The live standing frame (PHP `AccountStandingStateSignalData`). Both members
- * are read past the parse boundary rather than at it: a viewer of the admin
- * view mode is sent hidden marks in their place, and such a frame is still one
- * to take — it says the standing cannot be read ({@link readHilosAccountStanding}).
- */
-export const accountStandingStateSchema = z.looseObject({
-  userId: z.unknown(),
-  accountStanding: z.unknown(),
-})
-
-/**
- * The live standing frame keyed for a connection's `projectSchemas`.
- * {@link createHilosConnection} merges it in.
- */
-export const ACCOUNT_STANDING_SIGNAL_SCHEMAS = {
-  [SIGNAL_ACCOUNT_STANDING_STATE]: accountStandingStateSchema,
-}
 
 /**
  * Row slot key of the inline connection summary.

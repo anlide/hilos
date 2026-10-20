@@ -1,4 +1,4 @@
-import { type HilosI18nCountryContext } from '@hilos/core'
+import { type HilosI18nCountryContext } from '@hilos/core/admin/i18n'
 import { actions, connection } from '../../../../bootstrap/connection.js'
 import { scopes } from '../../../../bootstrap/session.js'
 

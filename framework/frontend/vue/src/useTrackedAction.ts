@@ -13,7 +13,7 @@ import {
   hilosToasts,
   subscribeSignal,
   type ActionHandle,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 /** How a tracked action reports a failure. */
 export interface TrackedActionOptions {

@@ -5,7 +5,7 @@ context. The table, the row view-model and the switch are the framework's; the
 project supplies only the context and registers the table on its backend.
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { HilosSecurityStepUpPage } from '@hilos/vue'
+import { HilosSecurityStepUpPage } from '@hilos/vue/admin/security'
 
 import { hilosTwoFactorContext } from './hilosTwoFactorContext'
 

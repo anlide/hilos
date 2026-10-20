@@ -1,0 +1,5 @@
+{
+  "main": "../../dist/fesm2022/hilos-angular-admin-daemon.mjs",
+  "module": "../../dist/fesm2022/hilos-angular-admin-daemon.mjs",
+  "types": "../../dist/types/hilos-angular-admin-daemon.d.ts"
+}

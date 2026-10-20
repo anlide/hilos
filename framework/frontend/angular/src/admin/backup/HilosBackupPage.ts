@@ -33,25 +33,19 @@ import {
   HILOS_BACKUP_CIRCLE_POINTER_PATH,
   HILOS_BACKUP_REOPEN_COPY,
   HILOS_BACKUP_SCOPES,
-  HilosPages,
   backupMigrationBehind,
   backupMigrationNotes,
-  backupProgressPercent,
-  createBackupProgressClock,
   createHilosBackupsActions,
   createHilosBackupsReopenGate,
   createHilosBackupsRestoreGate,
   createHilosBackupsTable,
-  createHilosRestoreProgress,
   formatBackupDuration,
   formatBackupChecksum,
   formatBackupOutOfReach,
   formatBackupShipping,
-  formatBackupProgressLabel,
   formatBackupRunCaption,
   formatBackupSize,
   formatRestoreCliCommand,
-  formatRestoreOutcomeLine,
   hasBackupFailureDetail,
   hasRestoreOutcome,
   isBackupChecksumMismatch,
@@ -62,31 +56,43 @@ import {
   isBackupOutOfReach,
   isBackupRestorable,
   isBackupSubsystemBusy,
-  isHiddenValue,
   offersBackupRestore,
+} from '@hilos/core/admin/backup'
+import {
+  HilosPages,
+  backupProgressPercent,
+  createBackupProgressClock,
+  createHilosRestoreProgress,
+  formatBackupProgressLabel,
+  formatRestoreOutcomeLine,
+  isHiddenValue,
   subscribeSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   Hideable,
+  HilosRestoreStatus,
+  HilosTableProgress,
+} from '@hilos/core/base'
+import type {
   HilosBackupRestoreGate,
   HilosBackupRow,
   HilosBackupsContext,
-  HilosRestoreStatus,
-  HilosTableProgress,
-} from '@hilos/core'
+} from '@hilos/core/admin/backup'
 
-import { HilosActionError } from '../../HilosActionError.js'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosHiddenMark } from '../../HilosHiddenMark.js'
-import { HilosHideable } from '../../HilosHideable.js'
-import { HilosLink } from '../../HilosLink.js'
-import { HilosLongText } from '../../HilosLongText.js'
-import { HilosModal } from '../../HilosModal.js'
-import { HilosSwitch } from '../../HilosSwitch.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { LoadingButton } from '../../LoadingButton.js'
-import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
+import {
+  HilosActionError,
+  HilosAdminPage,
+  HilosHiddenMark,
+  HilosHideable,
+  HilosLink,
+  HilosLongText,
+  HilosModal,
+  HilosSwitch,
+  HilosTableCell,
+  HilosViewportTable,
+  LoadingButton,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 
 /** The framework backup admin page: the searchable list with create / delete / keep. */
 @Component({

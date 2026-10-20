@@ -20,7 +20,7 @@ import {
   THEME_COPY,
   THEME_POSITIONS,
   type ThemePick,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosActionError } from '../HilosActionError.js'
 import { HilosModal } from '../HilosModal.js'

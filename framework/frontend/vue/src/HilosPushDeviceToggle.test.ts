@@ -4,7 +4,7 @@ import {
   type HilosPushEnvironment,
   type HilosPushPermission,
   type HilosPushSubscriptionSnapshot,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 

@@ -42,7 +42,7 @@ only and the shell carries no CSS of its own (styling-rules.md); the status and
 admin icons are Bootstrap Icons (`bi-*`), shipped with the view layer
 (src/index.ts) like Bootstrap. -->
 <script setup lang="ts">
-import type { ConnectionState, HilosConnection } from '@hilos/core'
+import type { ConnectionState, HilosConnection } from '@hilos/core/base'
 import {
   ACCOUNT_DELETION_TICK_MS,
   ACCOUNT_STANDING_STRIP_COPY,
@@ -77,7 +77,7 @@ import {
   signOut,
   SIGN_OUT_COPY,
   stopImpersonation,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { computed, inject, onUnmounted, ref, watch } from 'vue'
 
 import HilosAccountBlocked from './HilosAccountBlocked.vue'

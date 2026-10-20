@@ -8,7 +8,7 @@ and never the shell itself, so the strip's Stop, "Keep my account" and signing
 out stay live. It draws no element of its own. Internal to the Vue view layer:
 the shell is its one mount. -->
 <script setup lang="ts">
-import { hilosTakeoverViewOnly } from '@hilos/core'
+import { hilosTakeoverViewOnly } from '@hilos/core/base'
 import { provide } from 'vue'
 
 import { hilosTakeoverViewOnlyKey } from './hilosAdminViewMode.js'

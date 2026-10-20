@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { computed, effectScope } from 'vue'
-import { createSignal } from '@hilos/core'
+import { createSignal } from '@hilos/core/base'
 import { useSignal } from '../src/useSignal.js'
 
 describe('useSignal', () => {

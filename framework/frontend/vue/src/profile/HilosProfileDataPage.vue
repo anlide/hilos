@@ -4,7 +4,7 @@ import {
   createHilosProfileDataExport,
   HILOS_DATA_EXPORT_COPY,
   type HilosDataExportContext,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import HilosPageHeading from '../HilosPageHeading.vue'
 import HilosDataExport from './HilosDataExport.vue'
 

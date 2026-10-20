@@ -2,7 +2,7 @@
 // per-framework wrapper over the plain-function core selector. Data lives
 // once in the core stores; references are resolved here, reactively.
 import { useMemo } from 'react'
-import type { EntityRef, EntitySnapshot, ScopeManager } from '@hilos/core'
+import type { EntityRef, EntitySnapshot, ScopeManager } from '@hilos/core/base'
 import { useSignal } from './useSignal.js'
 
 /**

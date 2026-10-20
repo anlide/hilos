@@ -3,7 +3,7 @@
 // action lifecycle. The framework owns the circle table, the row view-model, the live
 // online mark, and the round-trip that names a verifier; the project supplies only
 // where the data lives (the circle is served on its backend by the hilos index agent).
-import { type HilosMaintenanceContext } from '@hilos/core'
+import { type HilosMaintenanceContext } from '@hilos/core/admin/maintenance'
 
 import { actions, connection } from '../../../bootstrap/connection'
 import { scopes } from '../../../bootstrap/session'

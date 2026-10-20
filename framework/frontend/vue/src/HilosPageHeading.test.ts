@@ -2,7 +2,7 @@ import {
   createSignal,
   type HilosPageIdentity,
   type HilosRouter,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import { nextTick } from 'vue'

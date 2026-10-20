@@ -11,7 +11,7 @@
 // `actions` is the requestId-correlated reply lifecycle: an admin modal such as
 // the settings table's edit dialog calls `actions.dispatch(...)` and closes on
 // the returned handle's resolved `done`.
-import { createHilosConnection } from '@hilos/core'
+import { createHilosConnection } from '@hilos/core/base'
 
 import { GUEST_SIGNAL_SCHEMAS } from './guest'
 

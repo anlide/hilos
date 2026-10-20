@@ -3,8 +3,9 @@
 // and search/sort/paging are the framework's; the project supplies the context and
 // fills the trailing actions cell through the `rowActions` render prop — here, a
 // link to the user detail page. Bootstrap classes only (styling-rules.md).
-import { HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core'
-import { HilosLink, HilosUsersPage } from '@hilos/react'
+import { HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core/base'
+import { HilosLink } from '@hilos/react/base'
+import { HilosUsersPage } from '@hilos/react/admin/users'
 
 import { hilosUsersContext } from './hilosUsersContext.js'
 

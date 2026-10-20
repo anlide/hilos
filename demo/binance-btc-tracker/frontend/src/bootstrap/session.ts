@@ -9,7 +9,7 @@ import {
   sessionPendingAuthStep,
   sessionUserId,
   sessionUserName,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 /** The application's scope-partitioned stores. */
 export const scopes = new ScopeManager()

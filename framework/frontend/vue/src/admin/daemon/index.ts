@@ -1,0 +1,8 @@
+export { default as HilosDaemonAgentsPage } from './HilosDaemonAgentsPage.vue'
+export { default as HilosDaemonCronPage } from './HilosDaemonCronPage.vue'
+export { default as HilosDaemonEnvMismatchPage } from './HilosDaemonEnvMismatchPage.vue'
+export { default as HilosDaemonEnvPage } from './HilosDaemonEnvPage.vue'
+export { default as HilosDaemonHttpServerPage } from './HilosDaemonHttpServerPage.vue'
+export { default as HilosDaemonPage } from './HilosDaemonPage.vue'
+export { default as HilosDaemonWebsocketsPage } from './HilosDaemonWebsocketsPage.vue'
+export { default as HilosDaemonWorkersPage } from './HilosDaemonWorkersPage.vue'

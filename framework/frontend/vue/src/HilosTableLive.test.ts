@@ -5,14 +5,14 @@ import {
   TableViewportController,
   createSignal,
   hilosTableFrozenLabel,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   ActionHandle,
   HilosTableBulkAccepted,
   HilosTableBulkAction,
   HilosTableColumn,
   HilosTableProgress,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import HilosTableLive from './HilosTableLive.vue'
 

@@ -46,7 +46,7 @@ The src root stays thin and the boot wiring lives in `src/bootstrap/`
 
 - `src/index.ts`: one import, `./bootstrap/main.js`, and nothing else.
 - `src/bootstrap/connection.ts`: `createHilosConnection({ url:
-  import.meta.env.VITE_WS_URL })` from `@hilos/core` — one connection for the
+  import.meta.env.VITE_WS_URL })` from `@hilos/core/base` — one connection for the
   app, the same-origin `/ws` by default, the framework schemas merged and the
   stale-build reload wired by the call itself. It exports `connection` and
   `actions`.
@@ -66,7 +66,76 @@ The src root stays thin and the boot wiring lives in `src/bootstrap/`
   `AuthSurface` (a wrapper closing the project's `HilosAuthContext` over the
   framework `HilosAuthSurface`).
 - State in components via `useSignal(…)` and `useConnectionState(connection)`
-  from `@hilos/react` (implemented over `useSyncExternalStore`).
+  from `@hilos/react/base` (implemented over `useSyncExternalStore`).
+
+## Lazy admin bindings and the production graph
+
+Keep descriptors at module scope outside `App` rendering. Common components come
+from `/base`, default metadata from `/admin-views`, and admin wrappers load their
+own section. This binding excerpt retains the normal `HilosView` contract; keep
+the real app's eager Main, public/footer and profile keys and auth/skeleton props:
+
+```tsx
+import type { ComponentType } from 'react'
+import { HilosPages, lazyPage, type PageView } from '@hilos/core/base'
+import { HilosView } from '@hilos/react/base'
+import { hilosAdminViews } from '@hilos/react/admin-views'
+
+const pages: Record<string, PageView<ComponentType>> = {
+  ...hilosAdminViews(),
+  [HilosPages.SETTINGS]: lazyPage(() =>
+    import('./views/Hilos/Settings/Settings.js').then(m => m.default),
+  ),
+}
+
+export default function App() {
+  return <HilosView pages={pages} />
+}
+```
+
+The wrapper imports `HilosSettingsPage` from `@hilos/react/admin/settings`;
+its context type comes from `@hilos/core/admin/settings`. Each page stays a real
+module, with identity supplied by the backend. An eager function component is
+still a component, never inferred to be a loader. `lazyPage` does not invoke the
+import until selection, and needs no `React.lazy` or `Suspense`. The compatibility
+root remains available; performance consumers use these subpaths. See
+[page-module-structure.md](../agents/frontend/page-module-structure.md#binding-eager-and-lazy-page-modules)
+and [runtime semantics](../agents/frontend/multiframework-core.md#page-code-and-first-answer-state)
+for the combined loading state, refusals, outlet cache and retry limits.
+
+Add the build-only plugin to the existing Vite configuration, preserving its
+proxy and timestamp plugin. Include both source anchors and the React dedupe:
+
+```ts
+import react from '@vitejs/plugin-react'
+import { initialBundleBudget } from '@hilos/core/build/initial-bundle-budget'
+import { defineConfig } from 'vite'
+
+export default defineConfig(({ command, isSsrBuild }) => ({
+  plugins: [
+    react(),
+    command === 'build' && !isSsrBuild && initialBundleBudget({
+      warningBytes: 1500000,
+      errorBytes: 2000000,
+      projectSources: {
+        routes: 'src/pages/routes.ts',
+        views: 'src/App.tsx',
+      },
+    }),
+  ],
+  resolve: { dedupe: ['react', 'react-dom'] },
+}))
+```
+
+Adapt the paths to the project's actual route/outlet sources. Require
+`projectProof.status: 'verified'` when asserting project-admin absence;
+`'not-configured'` retains only legacy measurement/SDK scope. Initial JS+CSS is
+counted once, gzip is informational, and an eager admin implementation refuses
+even under the byte budget. The client-only plugin retains its report through
+the separate public SSR/SSG and theme passes. The prerender entry stays independent
+of the client App/admin map. See
+[build-and-docker.md](../agents/frontend/build-and-docker.md#initial-client-graph-and-budget)
+for source forms, evidence, report and thresholds.
 
 ## SDK primitives
 

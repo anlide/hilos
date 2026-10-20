@@ -1,12 +1,12 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import { HilosPages, createSignal } from '@hilos/core'
+import { HilosPages, createSignal } from '@hilos/core/base'
 import type {
   HilosDashboardSection,
   HilosPageIdentity,
   HilosRouter,
   PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import HilosDashboardPage from './HilosDashboardPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'

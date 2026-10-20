@@ -12,6 +12,9 @@ import {
 import {
   HILOS_PAGE_ROUTES,
   HilosPages,
+  subscribeSignal,
+} from '@hilos/core/base'
+import {
   createHilosLogKeysHeader,
   createHilosLogKeysTable,
   formatLogKeyClass,
@@ -21,18 +24,19 @@ import {
   hasLogKeyNodes,
   logKeyViewerPath,
   logKeysEmptyState,
-  subscribeSignal,
-} from '@hilos/core'
+} from '@hilos/core/admin/logs'
 import type {
   HilosLogKeyRow,
   HilosLogKeysContext,
-  HilosLogKeysHeader,
-} from '@hilos/core'
+} from '@hilos/core/admin/logs'
+import type { HilosLogKeysHeader } from '@hilos/core/base'
 
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosLink } from '../../HilosLink.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
+import {
+  HilosAdminPage,
+  HilosLink,
+  HilosTableCell,
+  HilosViewportTable,
+} from '@hilos/angular/base'
 
 /** The framework by-key page: the stream list with its filters and empty states. */
 @Component({

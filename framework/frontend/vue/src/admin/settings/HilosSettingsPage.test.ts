@@ -9,15 +9,15 @@ import {
   HilosPages,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   ScopeManager,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   Hideable,
   HilosConnection,
   HilosRouter,
-  HilosSettingsContext,
   PageRouteMatch,
   ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosSettingsContext } from '@hilos/core/admin/settings'
 
 import HilosSettingsPage from './HilosSettingsPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'

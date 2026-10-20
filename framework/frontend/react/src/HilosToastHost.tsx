@@ -22,14 +22,14 @@
 // hilos-styles.scss (styling-rules.md).
 import { useEffect, useRef, useState } from 'react'
 import type { FocusEvent, MouseEvent } from 'react'
-import { hilosToasts, subscribeSignal } from '@hilos/core'
+import { hilosToasts, subscribeSignal } from '@hilos/core/base'
 import type {
   HilosToast,
   HilosToastHoldReason,
   HilosToastSeverity,
   HilosToastStore,
   HilosToastViewer,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosLink } from './HilosLink.js'
 import type { HilosToastCorner } from './hilosToastCorner.js'

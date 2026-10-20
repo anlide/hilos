@@ -21,15 +21,18 @@ import {
   input,
   output,
 } from '@angular/core'
-import { HILOS_I18N_LOCALE_DELETE_COPY } from '@hilos/core'
-import type { ActionHandle, HilosI18nLocaleDeleteTarget } from '@hilos/core'
+import { HILOS_I18N_LOCALE_DELETE_COPY } from '@hilos/core/admin/i18n'
+import type { ActionHandle } from '@hilos/core/base'
+import type { HilosI18nLocaleDeleteTarget } from '@hilos/core/admin/i18n'
 
-import { HilosActionError } from '../../../HilosActionError.js'
-import { HilosEditNotice } from '../../../HilosEditNotice.js'
-import { HilosModal } from '../../../HilosModal.js'
-import { LoadingButton } from '../../../LoadingButton.js'
-import { injectLookOnly } from '../../../hilosLookOnly.js'
-import { createHilosTrackedAction } from '../../../hilosTrackedAction.js'
+import {
+  HilosActionError,
+  HilosEditNotice,
+  HilosModal,
+  LoadingButton,
+  injectLookOnly,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 
 /** The delete confirmation of one locale. */
 @Component({

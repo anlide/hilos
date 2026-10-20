@@ -1,6 +1,6 @@
 import { NgTemplateOutlet } from '@angular/common'
 import { ChangeDetectionStrategy, Component, input } from '@angular/core'
-import type { HilosLegalChange } from '@hilos/core'
+import type { HilosLegalChange } from '@hilos/core/base'
 
 /** Responsive comparison retaining both sides inside each clause. */
 @Component({

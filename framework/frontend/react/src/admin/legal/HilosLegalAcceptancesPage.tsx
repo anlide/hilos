@@ -5,16 +5,18 @@ import {
   hilosLegalAcceptancesExportFilterLine,
   hilosLegalAcceptancesExportStatus,
   hilosLegalAcceptancesExportStatusRoom,
-  hilosLegalDocumentLabel,
   HILOS_LEGAL_ACCEPTANCES_EXPORT_COPY as EXPORT_COPY,
-  HILOS_STEP_UP_COPY,
   HilosLegalRowKey,
+  LEGAL_ACCEPTANCES_EXPORT_DOWNLOAD_PATH,
+} from '@hilos/core/admin/legal'
+import {
+  hilosLegalDocumentLabel,
+  HILOS_STEP_UP_COPY,
   HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
-  LEGAL_ACCEPTANCES_EXPORT_DOWNLOAD_PATH,
   resolveHilosPath,
   type HilosLegalContext,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosFormError } from '../../HilosFormError.js'
 import { HilosHideable } from '../../HilosHideable.js'

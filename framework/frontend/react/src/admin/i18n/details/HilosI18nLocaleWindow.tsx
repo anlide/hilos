@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   HILOS_I18N_LOCALE_COPY,
-  createSignal,
   createHilosI18nLocaleAdd,
   createHilosI18nLocaleEdit,
   createHilosI18nLocaleSwitchOn,
   createHilosI18nLocaleSwitchOff,
-  focusInitial,
   hilosI18nLocaleCountryLabel,
   hilosI18nLocaleSwitchOff,
   hilosI18nLocaleWindowMode,
@@ -16,8 +14,12 @@ import {
   type HilosI18nLocaleRow,
   type HilosI18nLocaleTemplates,
   type HilosI18nLocaleWindowMode,
+} from '@hilos/core/admin/i18n'
+import {
+  createSignal,
+  focusInitial,
   type TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { ConflictActions } from '../../../ConflictActions.js'
 import { ConflictHeader } from '../../../ConflictHeader.js'
 import { HilosActionError } from '../../../HilosActionError.js'

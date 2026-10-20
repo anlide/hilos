@@ -14,11 +14,11 @@ Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   createHilosUsersTable,
-  HilosPages,
   hilosStandingBadge,
   type HilosUserRow,
   type HilosUsersContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/users'
+import { HilosPages } from '@hilos/core/base'
 import { inject, onMounted, onUnmounted } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'

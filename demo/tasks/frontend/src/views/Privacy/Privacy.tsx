@@ -3,7 +3,7 @@
 // heading and the erase block under the prose are the framework's
 // (HilosPrivacyPage), and this demo declares no browser value of its own, so it
 // hands in no `values`. See views/About/About.tsx.
-import { HilosPrivacyPage } from '@hilos/react'
+import { HilosPrivacyPage } from '@hilos/react/base'
 
 import { actions, connection } from '../../bootstrap/connection'
 

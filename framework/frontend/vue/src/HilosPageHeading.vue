@@ -1,6 +1,6 @@
 <!-- The catalog identity carried by the current page's single subscription. -->
 <script setup lang="ts">
-import { hilosCrumbLinks } from '@hilos/core'
+import { hilosCrumbLinks } from '@hilos/core/base'
 import { computed, inject, useId } from 'vue'
 
 import HilosBreadcrumb from './HilosBreadcrumb.vue'

@@ -27,27 +27,29 @@ import {
   HILOS_I18N_LANGUAGE_MARKS,
   HILOS_I18N_LANGUAGE_ROW_DELETE_ACTION,
   HILOS_I18N_LANGUAGES_LEGEND,
-  HilosPages,
   createHilosI18nBuiltInCatalog,
   createHilosI18nBuiltInLanguages,
   createHilosI18nLanguageAdd,
   createHilosI18nLanguageRowWindow,
   createHilosI18nLanguagesTable,
   hilosI18nLanguageDelete,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { HilosPages } from '@hilos/core/base'
 import type {
   HilosI18nBuiltInCatalog,
   HilosI18nBuiltInLanguage,
   HilosI18nLanguageContext,
   HilosI18nLanguageRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 
-import { HilosAdminPage } from '../../../HilosAdminPage.js'
-import { HilosLink } from '../../../HilosLink.js'
-import { HilosTableCell } from '../../../HilosTableCell.js'
-import { HilosViewportTable } from '../../../HilosViewportTable.js'
-import { HILOS_ROUTER } from '../../../hilosRouterToken.js'
-import { mirrorHilosSignal } from '../../../hilosSignal.js'
+import {
+  HilosAdminPage,
+  HilosLink,
+  HilosTableCell,
+  HilosViewportTable,
+  HILOS_ROUTER,
+  mirrorHilosSignal,
+} from '@hilos/angular/base'
 import { HilosI18nLanguageDelete } from '../details/HilosI18nLanguageDelete.js'
 import { HilosI18nLanguageWindow } from '../details/HilosI18nLanguageWindow.js'
 import { HilosI18nCatalogNote } from './HilosI18nCatalogNote.js'

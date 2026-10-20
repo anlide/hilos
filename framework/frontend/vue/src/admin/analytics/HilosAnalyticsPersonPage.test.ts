@@ -1,17 +1,19 @@
 import { enableAutoUnmount, mount } from '@vue/test-utils'
 import {
   createSignal,
-  formatAnalyticsTime,
   HilosPages,
   pageIdentity,
   resolveHilosPath,
   ScopeManager,
-  type HilosAnalyticsBrowserSessionRow,
   type HilosConnection,
   type HilosRouter,
   type PageRouteMatch,
   type TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  formatAnalyticsTime,
+  type HilosAnalyticsBrowserSessionRow,
+} from '@hilos/core/admin/analytics'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 

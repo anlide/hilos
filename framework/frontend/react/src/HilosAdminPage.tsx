@@ -31,8 +31,12 @@
 // classes only.
 import { useContext, useId } from 'react'
 import type { ReactNode } from 'react'
-import { hilosAdminAccess, hilosChildLinks, hilosCrumbLinks } from '@hilos/core'
-import type { HilosAdminChild } from '@hilos/core'
+import {
+  hilosAdminAccess,
+  hilosChildLinks,
+  hilosCrumbLinks,
+} from '@hilos/core/base'
+import type { HilosAdminChild } from '@hilos/core/base'
 
 import { HilosBreadcrumb } from './HilosBreadcrumb.js'
 import { HilosLink } from './HilosLink.js'

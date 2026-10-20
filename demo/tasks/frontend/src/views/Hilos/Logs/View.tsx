@@ -3,7 +3,7 @@
 // sources, the address that names one file, the reading of its lines and every
 // empty state are the framework's; the project supplies only the connection the
 // catalog arrives on and the action lifecycle the reads go over.
-import { HilosLogsViewPage } from '@hilos/react'
+import { HilosLogsViewPage } from '@hilos/react/admin/logs'
 
 import { hilosLogViewerContext } from './hilosLogsContext'
 

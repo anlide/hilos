@@ -29,7 +29,7 @@ import {
   licenseFilterOptions,
   licenseLanguageLabel,
   renderLicenseCsv,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosLongText } from '../HilosLongText.js'
 import { HilosModal } from '../HilosModal.js'

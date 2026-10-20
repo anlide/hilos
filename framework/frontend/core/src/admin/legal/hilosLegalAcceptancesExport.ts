@@ -4,8 +4,13 @@
 // order is the server's alone — the page answer carries it first and the
 // `hilos_legal_acceptances_export_state` frame every change after it, to every
 // tab of that administrator; this module never invents a state of its own.
-import { z } from 'zod'
 
+import {
+  LEGAL_ACCEPTANCES_EXPORT_SIGNAL,
+  legalAcceptancesExportNodeSchema,
+  legalAcceptancesExportStateSchema,
+  type HilosLegalAcceptancesExportNode,
+} from '../../protocol/legalAcceptancesSignals.js'
 import {
   createHilosStepUpActions,
   createHilosStepUpStep,
@@ -26,16 +31,16 @@ import {
   LEGAL_REVISION_FILTER,
 } from './hilosLegal.js'
 
+export {
+  LEGAL_ACCEPTANCES_EXPORT_SIGNAL,
+  legalAcceptancesExportNodeSchema,
+  type HilosLegalAcceptancesExportNode,
+  legalAcceptancesExportStateSchema,
+  LEGAL_ACCEPTANCES_EXPORT_SIGNAL_SCHEMAS,
+} from '../../protocol/legalAcceptancesSignals.js'
+
 /** The page action that orders the export of what the table shows. */
 export const LEGAL_ACCEPTANCES_EXPORT_ACTION = 'legal_acceptances_export'
-
-/**
- * The frame carrying the administrator's export after every change. Not named
- * `subscription_page_…`: the connection keeps such frames by type, and this one
- * would overwrite the filter vocabulary frame of the same page.
- */
-export const LEGAL_ACCEPTANCES_EXPORT_SIGNAL =
-  'hilos_legal_acceptances_export_state'
 
 /** The page answer section carrying the export the page opens with. */
 export const LEGAL_ACCEPTANCES_EXPORT_SECTION = 'legalAcceptancesExport'
@@ -46,59 +51,6 @@ export const LEGAL_ACCEPTANCES_EXPORT_OPERATION = 'export_legal_acceptances'
 /** Where the finished file is downloaded from, by the session cookie. */
 export const LEGAL_ACCEPTANCES_EXPORT_DOWNLOAD_PATH =
   '/_hilos/legal-acceptances-export'
-
-/** The filters and the search an export was ordered under; null where none was set. */
-const exportFiltersShape = {
-  document: z.string().nullable(),
-  revisionId: z.string().nullable(),
-  search: z.string().nullable(),
-}
-
-/** An export on the wire; its moments are server epoch milliseconds. */
-export const legalAcceptancesExportNodeSchema = z.discriminatedUnion('state', [
-  z.object({
-    state: z.literal('preparing'),
-    ...exportFiltersShape,
-    requestedAt: z.number(),
-    finishedAt: z.null(),
-    expiresAt: z.null(),
-    sizeBytes: z.null(),
-    records: z.null(),
-  }),
-  z.object({
-    state: z.literal('ready'),
-    ...exportFiltersShape,
-    requestedAt: z.number(),
-    finishedAt: z.number(),
-    expiresAt: z.number(),
-    sizeBytes: z.number(),
-    records: z.number(),
-  }),
-  z.object({
-    state: z.literal('failed'),
-    ...exportFiltersShape,
-    requestedAt: z.number(),
-    finishedAt: z.number(),
-    expiresAt: z.number(),
-    sizeBytes: z.null(),
-    records: z.null(),
-  }),
-])
-
-/** One administrator's export, as the wire and the store carry it. */
-export type HilosLegalAcceptancesExportNode = z.infer<
-  typeof legalAcceptancesExportNodeSchema
->
-
-/** The payload of {@link LEGAL_ACCEPTANCES_EXPORT_SIGNAL}. */
-export const legalAcceptancesExportStateSchema = z.object({
-  legalAcceptancesExport: legalAcceptancesExportNodeSchema.nullable(),
-})
-
-/** Merged into every connection by `createHilosConnection`. */
-export const LEGAL_ACCEPTANCES_EXPORT_SIGNAL_SCHEMAS = {
-  [LEGAL_ACCEPTANCES_EXPORT_SIGNAL]: legalAcceptancesExportStateSchema,
-}
 
 /** The words of the export, one set for the three frontends. */
 export const HILOS_LEGAL_ACCEPTANCES_EXPORT_COPY = {

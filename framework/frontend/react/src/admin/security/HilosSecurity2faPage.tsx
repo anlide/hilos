@@ -28,22 +28,20 @@ import {
   HILOS_SECOND_FACTOR_REQUIRED_COPY,
   HILOS_SECOND_FACTOR_REQUIRED_VALUES,
   HILOS_SECOND_FACTOR_SETTING_COPY,
-  HILOS_STEP_UP_COPY,
   HILOS_TWO_FACTOR_DISABLE_COPY as DISABLE_COPY,
-  HilosPages,
   HilosSecondFactorSettingKey,
   createHilosSecurityTwoFactorActions,
   createHilosSecurityTwoFactorTable,
   createHilosTwoFactorDisable,
   createHilosTwoFactorSettingEdit,
   describeHilosSecondFactorSetting,
-  focusInitial,
   isHilosSecondFactorSwitch,
-} from '@hilos/core'
+} from '@hilos/core/admin/security'
+import { HILOS_STEP_UP_COPY, HilosPages, focusInitial } from '@hilos/core/base'
 import type {
   HilosTwoFactorContext,
   HilosTwoFactorSettingRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/security'
 
 import { ConflictActions } from '../../ConflictActions.js'
 import { ConflictHeader } from '../../ConflictHeader.js'

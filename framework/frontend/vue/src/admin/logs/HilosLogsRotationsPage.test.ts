@@ -11,7 +11,7 @@ import {
   createSignal,
   ROTATIONS_HEADER_SIGNAL,
   SIGNAL_TYPE_PAGE_RESPONSE,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   ActionHandle,
   ActionLifecycle,
@@ -22,7 +22,7 @@ import type {
   PageRouteMatch,
   ProjectSignal,
   TableViewportDescriptor,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import HilosLogsRotationsPage from './HilosLogsRotationsPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'

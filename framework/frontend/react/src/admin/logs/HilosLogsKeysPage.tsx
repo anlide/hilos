@@ -2,9 +2,8 @@
 // bar, columns, cards, and footer; this page supplies cells and its four empty
 // states. The header names nodes reactively, and Open leads to the stream viewer.
 import { useEffect, useMemo } from 'react'
+import { HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core/base'
 import {
-  HILOS_PAGE_ROUTES,
-  HilosPages,
   createHilosLogKeysHeader,
   createHilosLogKeysTable,
   formatLogKeyClass,
@@ -14,8 +13,11 @@ import {
   hasLogKeyNodes,
   logKeyViewerPath,
   logKeysEmptyState,
-} from '@hilos/core'
-import type { HilosLogKeyRow, HilosLogKeysContext } from '@hilos/core'
+} from '@hilos/core/admin/logs'
+import type {
+  HilosLogKeyRow,
+  HilosLogKeysContext,
+} from '@hilos/core/admin/logs'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { type HilosLegalChange } from '@hilos/core'
+import { type HilosLegalChange } from '@hilos/core/base'
 defineProps<{
   changes: HilosLegalChange[]
   fromLabel: string

@@ -20,21 +20,23 @@ import {
 } from '@angular/core'
 import {
   HILOS_STEP_UP_ADMIN_COPY,
-  HilosPages,
   createHilosSecurityStepUpActions,
   createHilosSecurityStepUpTable,
-} from '@hilos/core'
+} from '@hilos/core/admin/security'
+import { HilosPages } from '@hilos/core/base'
 import type {
   HilosStepUpOperationRow,
   HilosTwoFactorContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/security'
 
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosHideable } from '../../HilosHideable.js'
-import { HilosSwitch } from '../../HilosSwitch.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
+import {
+  HilosAdminPage,
+  HilosHideable,
+  HilosSwitch,
+  HilosTableCell,
+  HilosViewportTable,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 
 /** The framework page of operations that ask for confirmation: a switch per operation. */
 @Component({

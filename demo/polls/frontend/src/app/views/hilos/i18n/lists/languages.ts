@@ -1,7 +1,7 @@
 // The Hilos languages page (HilosPages.I18N_LANGUAGES): a thin project binding of
 // the framework HilosI18nLanguagesPage to this app's language context.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosI18nLanguagesPage } from '@hilos/angular'
+import { HilosI18nLanguagesPage } from '@hilos/angular/admin/i18n'
 
 import { hilosI18nLanguageContext } from '../hilos-i18n-context.js'
 

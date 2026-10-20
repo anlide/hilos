@@ -1,14 +1,14 @@
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createHilosToastStore, createSignal } from '@hilos/core'
+import { createHilosToastStore, createSignal } from '@hilos/core/base'
 import type {
   HilosRouter,
   HilosSessionToast,
   HilosToastSeverity,
   HilosToastStore,
   PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import HilosToastHost from './HilosToastHost.vue'
 import type { HilosToastCorner } from './hilosToastCorner.js'

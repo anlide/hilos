@@ -8,17 +8,19 @@ import {
   createSignal,
   hilosToasts,
   HIDDEN_VALUE,
-  HilosAppearanceSettingKey,
-  HILOS_APPEARANCE_SETTINGS_TABLE,
   HilosPages,
   ScopeManager,
-  type HilosAppearanceContext,
   type HilosConnection,
   type HilosRouter,
   type ProjectSignal,
   type Hideable,
   type ThemePosition,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  HilosAppearanceSettingKey,
+  HILOS_APPEARANCE_SETTINGS_TABLE,
+  type HilosAppearanceContext,
+} from '@hilos/core/admin/appearance'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import HilosAppearancePage from './HilosAppearancePage.vue'
 

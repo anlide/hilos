@@ -6,7 +6,7 @@ in the standing's color and its icon in the corner, the pair of the strip that
 says the same in words — so the mark is decorative too. -->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { formatInitials, type HilosAvatarMark } from '@hilos/core'
+import { formatInitials, type HilosAvatarMark } from '@hilos/core/base'
 
 const props = withDefaults(
   defineProps<{

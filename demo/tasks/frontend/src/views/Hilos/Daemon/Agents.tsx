@@ -1,4 +1,4 @@
-import { HilosDaemonAgentsPage } from '@hilos/react'
+import { HilosDaemonAgentsPage } from '@hilos/react/admin/daemon'
 import { hilosDaemonContext } from './hilosDaemonContext.js'
 
 /** Mount the framework's Agents page with the tasks context. */

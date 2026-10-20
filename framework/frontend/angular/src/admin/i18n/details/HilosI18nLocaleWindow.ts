@@ -42,12 +42,10 @@ import {
   createHilosI18nLocaleEdit,
   createHilosI18nLocaleSwitchOff,
   createHilosI18nLocaleSwitchOn,
-  createSignal,
-  focusInitial,
   hilosI18nLocaleCountryLabel,
   hilosI18nLocaleSwitchOff,
-  hilosRowEditIdle,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { createSignal, focusInitial, hilosRowEditIdle } from '@hilos/core/base'
 import type {
   HilosI18nLanguageCard,
   HilosI18nLanguageContext,
@@ -56,19 +54,23 @@ import type {
   HilosI18nLocaleRow,
   HilosI18nLocaleTemplates,
   HilosI18nLocaleWindowMode,
+} from '@hilos/core/admin/i18n'
+import type {
   RowEditNoticeKind,
   TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
-import { ConflictActions } from '../../../ConflictActions.js'
-import { ConflictHeader } from '../../../ConflictHeader.js'
-import { HilosActionError } from '../../../HilosActionError.js'
-import { HilosEditNotice } from '../../../HilosEditNotice.js'
-import { HilosModal } from '../../../HilosModal.js'
-import { LoadingButton } from '../../../LoadingButton.js'
-import { injectLookOnly } from '../../../hilosLookOnly.js'
-import { mirrorHilosSignal } from '../../../hilosSignal.js'
-import { createHilosTrackedAction } from '../../../hilosTrackedAction.js'
+import {
+  ConflictActions,
+  ConflictHeader,
+  HilosActionError,
+  HilosEditNotice,
+  HilosModal,
+  LoadingButton,
+  injectLookOnly,
+  mirrorHilosSignal,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 
 /** The seven formats of a locale, in the order the form lists them. */
 const FIELDS = [

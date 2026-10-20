@@ -10,7 +10,7 @@
 // exactly one announcement for the whole frame, never one per bar
 // (accessibility.md).
 import { ChangeDetectionStrategy, Component, input } from '@angular/core'
-import { HILOS_SKELETON_LINES } from '@hilos/core'
+import { HILOS_SKELETON_LINES } from '@hilos/core/base'
 
 /** The placeholder bars of a data block that has not arrived. */
 @Component({

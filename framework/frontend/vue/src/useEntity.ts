@@ -2,7 +2,7 @@
 // wrapper over the plain-function core selector. Data lives once in the core
 // stores; references are resolved here, reactively.
 import type { Ref } from 'vue'
-import type { EntityRef, EntitySnapshot, ScopeManager } from '@hilos/core'
+import type { EntityRef, EntitySnapshot, ScopeManager } from '@hilos/core/base'
 import { useSignal } from './useSignal.js'
 
 /**

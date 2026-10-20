@@ -32,12 +32,9 @@ import {
   CHANGE_LOG_TABLE_ROUTE_PARAM,
   CHANGE_LOG_TABLE_SECTION,
   CHANGE_LOG_TABLES_UNTRACKED_NOTE,
-  HILOS_TABLE_ACTIONS_KEY,
-  HilosPages,
   changeLogChannelBadge,
   changeLogColumnModeCard,
   changeLogRecordRouteParam,
-  computedSignal,
   createHilosChangeLogHistoryTable,
   createHilosChangeLogReceiptReader,
   formatChangeLogColumnStorage,
@@ -50,23 +47,31 @@ import {
   formatChangeLogTime,
   formatChangeLogTrigger,
   formatChangeLogWho,
-  isHiddenValue,
   readChangeLogRecordRouteParam,
   readHilosChangeLogTable,
-  subscribeSignal,
   type HilosChangeLogHistoryRow,
   type HilosChangeLogReceiptContext,
   type HilosChangeLogReceiptDialog,
+} from '@hilos/core/admin/change-log'
+import {
+  HILOS_TABLE_ACTIONS_KEY,
+  HilosPages,
+  computedSignal,
+  isHiddenValue,
+  subscribeSignal,
   type HilosRouter,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosHiddenMark } from '../../HilosHiddenMark.js'
-import { HilosLink } from '../../HilosLink.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { HILOS_ROUTER } from '../../hilosRouterToken.js'
-import { hilosSignal, mirrorHilosSignal } from '../../hilosSignal.js'
+import {
+  HilosAdminPage,
+  HilosHiddenMark,
+  HilosLink,
+  HilosTableCell,
+  HilosViewportTable,
+  HILOS_ROUTER,
+  hilosSignal,
+  mirrorHilosSignal,
+} from '@hilos/angular/base'
 import { HilosChangeLogReceiptModal } from './HilosChangeLogReceiptModal.js'
 
 // Distinct ids so two pages in one document never share an aria-labelledby

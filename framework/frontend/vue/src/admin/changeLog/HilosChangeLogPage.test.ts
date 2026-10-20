@@ -3,9 +3,6 @@ import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ActionLifecycle,
-  CHANGE_LOG_OVERVIEW_SECTION,
-  HILOS_CHANGE_LOG_ENTRY_READ,
-  HILOS_CHANGE_LOG_RECEIPT_READ,
   HilosPages,
   ScopeManager,
   createSignal,
@@ -13,14 +10,19 @@ import {
   type ActionErrorSignal,
   type ActionSuccessSignal,
   type ConnectionState,
+  type HilosPageIdentity,
+  type HilosRouter,
+  type PageRouteMatch,
+} from '@hilos/core/base'
+import {
+  CHANGE_LOG_OVERVIEW_SECTION,
+  HILOS_CHANGE_LOG_ENTRY_READ,
+  HILOS_CHANGE_LOG_RECEIPT_READ,
   type HilosChangeLogReceiptContext,
   type HilosChangeLogReceiptHeader,
   type HilosChangeLogEntry,
-  type HilosPageIdentity,
   type HilosChangeLogOverview,
-  type HilosRouter,
-  type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/admin/change-log'
 
 import HilosChangeLogPage from './HilosChangeLogPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'

@@ -7,7 +7,7 @@ import {
   type DataExportNode,
   type HilosDataExportStore,
   type ActionLifecycle,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { mount, enableAutoUnmount, flushPromises } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 import HilosDataExport from './HilosDataExport.vue'

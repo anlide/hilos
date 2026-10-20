@@ -14,16 +14,14 @@ declaration are the core headless's (hilosDeliveries); this view owns only the
 markup, so a project mounts it by passing its HilosDeliveriesContext. Bootstrap
 classes only (styling-rules.md). -->
 <script setup lang="ts">
+import { computedSignal, HilosPages, isHiddenValue } from '@hilos/core/base'
 import {
-  computedSignal,
   createHilosDeliveriesActions,
   createHilosDeliveriesTable,
-  HilosPages,
   isDeliveryRetryable,
-  isHiddenValue,
   type HilosDeliveriesContext,
   type HilosDeliveryRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/communications'
 import { inject, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'

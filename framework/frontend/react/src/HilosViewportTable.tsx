@@ -37,7 +37,7 @@ import {
   hilosTableSortPositionLabel,
   hilosTableStaleColumns,
   hilosTableStaleSources,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosTableCard,
   HilosTableColumn,
@@ -46,7 +46,7 @@ import type {
   TableSort,
   TableViewportController,
   TableViewportRow,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosTableBar } from './HilosTableBar.js'
 import { HilosTableEmptyState } from './HilosTableEmptyState.js'

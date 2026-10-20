@@ -17,7 +17,10 @@ a button. Internal to the Vue view layer on purpose: it is
 not exported from index.ts, for the reason the bar is not. -->
 <script setup lang="ts" generic="R">
 import { computed } from 'vue'
-import type { HilosTableFilterView, TableViewportController } from '@hilos/core'
+import type {
+  HilosTableFilterView,
+  TableViewportController,
+} from '@hilos/core/base'
 
 import { useSignal } from './useSignal.js'
 

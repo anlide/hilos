@@ -5,7 +5,10 @@ import {
   computed,
   input,
 } from '@angular/core'
-import { daemonEnvSourceBadge, type HilosDaemonEnvSource } from '@hilos/core'
+import {
+  daemonEnvSourceBadge,
+  type HilosDaemonEnvSource,
+} from '@hilos/core/admin/daemon'
 
 /** Angular view of the Daemon EnvSourceBadge. */
 @Component({

@@ -13,7 +13,7 @@ import {
   type HilosConnection,
   type HilosRouter,
   type ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it } from 'vitest'
 

@@ -22,18 +22,20 @@ import {
   input,
 } from '@angular/core'
 import type { TemplateRef } from '@angular/core'
+import { HilosPages } from '@hilos/core/base'
 import {
-  HilosPages,
   createHilosUsersTable,
   hilosStandingBadge,
-} from '@hilos/core'
-import type { HilosUserRow, HilosUsersContext } from '@hilos/core'
+} from '@hilos/core/admin/users'
+import type { HilosUserRow, HilosUsersContext } from '@hilos/core/admin/users'
 
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosHideable } from '../../HilosHideable.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { HILOS_ROUTER } from '../../hilosRouterToken.js'
+import {
+  HilosAdminPage,
+  HilosHideable,
+  HilosTableCell,
+  HilosViewportTable,
+  HILOS_ROUTER,
+} from '@hilos/angular/base'
 
 /** The context a HilosUsersPage `#rowActions` template receives. */
 export interface UsersRowActionsContext {

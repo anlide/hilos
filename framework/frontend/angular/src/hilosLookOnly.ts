@@ -28,7 +28,7 @@ import type { Signal } from '@angular/core'
 import {
   HILOS_IMPERSONATION_STRIP_TEXT_ID,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 /**
  * Provide/inject token for whether a viewer of the admin view mode stands on

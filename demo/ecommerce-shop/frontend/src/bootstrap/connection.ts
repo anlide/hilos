@@ -14,7 +14,7 @@
 // No projectSchemas: the demo declares no inbound signal of its own. The sign-in
 // ones it is answered by are the framework's and are merged by
 // createHilosConnection itself, like every other framework signal.
-import { createHilosConnection } from '@hilos/core'
+import { createHilosConnection } from '@hilos/core/base'
 
 export const { connection, actions } = createHilosConnection({
   url: import.meta.env.VITE_WS_URL,

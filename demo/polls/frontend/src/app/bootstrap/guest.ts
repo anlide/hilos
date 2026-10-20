@@ -19,7 +19,7 @@ import {
   type ProjectSignalSchemas,
   type ReadonlySignal,
   type Unsubscribe,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 /** Signal `type` for the guest identity (PHP `PollsSignalConstants::GUEST_IDENTITY`). */
 export const GUEST_IDENTITY_SIGNAL = 'guest_identity'

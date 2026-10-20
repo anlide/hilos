@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { type HilosDataExportContext } from '@hilos/core'
-import { HilosProfileDataPage } from '@hilos/angular'
+import { type HilosDataExportContext } from '@hilos/core/base'
+import { HilosProfileDataPage } from '@hilos/angular/base'
 import { actions, connection } from '../../bootstrap/connection.js'
 import { scopes } from '../../bootstrap/session.js'
 

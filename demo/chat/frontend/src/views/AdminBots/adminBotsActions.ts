@@ -4,7 +4,7 @@
 // `::success` ack and rejects (with the reason) on `::fail` — the view closes
 // the modal on success and surfaces the failure (authoritative-backend, no
 // optimism). The committed row returns separately over the live bots table.
-import { type ActionHandle } from '@hilos/core'
+import { type ActionHandle } from '@hilos/core/base'
 
 import { actions } from '../../bootstrap/connection'
 

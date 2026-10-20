@@ -1,7 +1,11 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ref } from 'vue'
-import { ActionError, TableViewportController, createSignal } from '@hilos/core'
+import {
+  ActionError,
+  TableViewportController,
+  createSignal,
+} from '@hilos/core/base'
 import type {
   ActionHandle,
   HilosTableBulkAccepted,
@@ -9,7 +13,7 @@ import type {
   HilosTableFrame,
   HilosTableSelectionTarget,
   TableViewportDescriptor,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import HilosTableSelection from './HilosTableSelection.vue'
 import { hilosAdminViewModeKey } from './hilosAdminViewMode.js'

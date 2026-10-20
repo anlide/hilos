@@ -1,19 +1,18 @@
 // Cluster comparison renders the existing summary and two verdict windows.
 import { useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
+import { computedSignal, HilosPages } from '@hilos/core/base'
 import {
-  computedSignal,
   createHilosDaemonEnvMismatchTables,
   daemonEnvMismatchEmptyState,
   daemonEnvMismatchNodeColumnKey,
   daemonEnvMismatchNodes,
   DAEMON_ENV_MISMATCH_KEY_FIELD,
   DAEMON_ENV_SENSITIVE_HINT,
-  HilosPages,
   readHilosDaemonEnvMismatchSummary,
   type HilosDaemonEnvMismatchContext,
   type HilosDaemonEnvMismatchRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosSkeleton } from '../../HilosSkeleton.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'

@@ -37,12 +37,12 @@ import {
   formatRestorePhaseLine,
   PROTECTED_MODE_FALLBACK_COPY,
   PROTECTED_MODE_PASS_COPY,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosConnection,
   HilosProgressAnchors,
   ProtectedModeStatus,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosFormError } from './HilosFormError.js'
 import { useSignal } from './useSignal.js'

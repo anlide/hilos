@@ -7,7 +7,7 @@
 // Which ways in the surface offers is not declared here (HIL-427): the backend's
 // method directory names what this project wired — the password and nothing
 // else — and the set reaches the surface with the handshake.
-import { createHilosAuthContext, type HilosAuthContext } from '@hilos/core'
+import { createHilosAuthContext, type HilosAuthContext } from '@hilos/core/base'
 
 import { actions, connection } from '../bootstrap/connection.js'
 import { scopes } from '../bootstrap/session.js'

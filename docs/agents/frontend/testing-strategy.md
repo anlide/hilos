@@ -368,6 +368,22 @@ shared.
 **Look in the toolbox before writing driving code, and prefer what is already
 there** — a helper that exists has already been argued about once.
 
+`lazyBundles.ts`, exported through the toolbox `index.ts`, reads the canonical
+`initial-bundle-report.json`, records real client JS/CSS requests and page replies,
+holds a selected bundle or first reply, and observes outlet/departure presentation.
+Use its `selectLazyBundle`, `holdClientBundle`, `holdPageReply`,
+`watchClientBundles`, `watchPageReplies`, `watchPagePresentation` and shared
+`expectLazy…` checks instead of guessing chunk names or readiness from one DOM
+node. Each demo's `lazy-pages.spec.ts` exercises its built production artifact:
+slow code/data, failure and revisit, sibling isolation, direct/history navigation,
+reconnect and access outcomes, and both themes at a narrow viewport. The six
+artifacts cover Vue, React and Angular. These Chromium checks and the output
+graph/package/AOT checks prove different seams; neither claims Firefox/Safari
+mobile or owner real-device acceptance. Loading and retry limits are in
+[multiframework-core.md](multiframework-core.md#page-code-and-first-answer-state);
+measurement and source-proof scope are in
+[build-and-docker.md](build-and-docker.md#initial-client-graph-and-budget).
+
 **Grow it from the work.** When a spec needs a wait, a sweep or a round trip that
 another demo would need in the same words, put it in a shared home rather than in
 a fourth local copy. The command-channel round trip reached that point in chat:

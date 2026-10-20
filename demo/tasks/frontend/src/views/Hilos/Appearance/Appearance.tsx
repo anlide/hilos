@@ -3,7 +3,7 @@
 // view-model, both edit windows and their writes (@hilos/react
 // HilosAppearancePage); this project binds only its connection, scope stores and
 // action lifecycle through hilosAppearanceContext.
-import { HilosAppearancePage } from '@hilos/react'
+import { HilosAppearancePage } from '@hilos/react/admin/appearance'
 
 import { hilosAppearanceContext } from './hilosAppearanceContext.js'
 

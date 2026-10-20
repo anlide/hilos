@@ -4,7 +4,7 @@
 // row view-model, search/sort/paging, the rename round-trip, and the takeover; the
 // project supplies only where the data lives. Shared by the list and detail wrappers
 // (HilosPages.USERS / USER), which carry the same row slots.
-import { type HilosUsersContext } from '@hilos/core'
+import { type HilosUsersContext } from '@hilos/core/admin/users'
 
 import { actions, connection } from '../../../bootstrap/connection.js'
 import { scopes } from '../../../bootstrap/session.js'

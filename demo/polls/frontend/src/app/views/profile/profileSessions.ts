@@ -9,7 +9,7 @@ import {
   resolveHilosProfileSessions,
   type EntityRef,
   type HilosProfileSelfConnection,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { actions } from '../../bootstrap/connection.js'
 import { scopes } from '../../bootstrap/session.js'

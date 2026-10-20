@@ -3,7 +3,7 @@
 // rename, and the success/fail handling are the framework's; the project supplies
 // only the shared HilosUsersContext (its scopes, connection, and user collection).
 // Bootstrap classes only (styling-rules.md).
-import { HilosUserPage } from '@hilos/react'
+import { HilosUserPage } from '@hilos/react/admin/users'
 
 import { hilosUsersContext } from './hilosUsersContext'
 

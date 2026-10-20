@@ -4,7 +4,7 @@ import {
   drawHilosPhotoPreview,
   HILOS_PROFILE_PHOTO_COPY as COPY,
   type HilosProfilePhotoFlow,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { computed, nextTick, ref, watch } from 'vue'
 import HilosAvatar from '../HilosAvatar.vue'
 import HilosFormError from '../HilosFormError.vue'

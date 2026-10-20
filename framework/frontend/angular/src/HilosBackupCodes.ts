@@ -14,7 +14,7 @@ import {
   copyToClipboard,
   downloadTextFile,
   isClipboardAvailable,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 /** The name the downloaded list is offered under. */
 const FILE_NAME = 'backup-codes.txt'

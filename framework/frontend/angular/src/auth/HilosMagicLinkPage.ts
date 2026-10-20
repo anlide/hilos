@@ -31,12 +31,12 @@ import {
   browserRefusesCookies,
   createAuthActions,
   whenPageReadyOrUnreachable,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosAuthActions,
   HilosAuthContext,
   HilosConnection,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HILOS_ROUTER } from '../hilosRouterToken.js'
 import { HilosCookiesRefused } from './HilosCookiesRefused.js'

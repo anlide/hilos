@@ -3,15 +3,17 @@ import {
   createSignal,
   bindAdminAccess,
   HilosPages,
-  LANGUAGE_CARD_DATA,
   ScopeManager,
   type ActionLifecycle,
   type HilosConnection,
-  type HilosI18nLanguageCard,
-  type HilosI18nLanguageContext,
   type HilosRouter,
   type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  LANGUAGE_CARD_DATA,
+  type HilosI18nLanguageCard,
+  type HilosI18nLanguageContext,
+} from '@hilos/core/admin/i18n'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 

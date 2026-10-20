@@ -3,7 +3,7 @@ body is the text of the Terms revision in force, read from the project's legal
 catalog (backend/Legal/), with the reader's standing and the revision history.
 This project supplies only the introduction above the text. -->
 <script setup lang="ts">
-import { HilosTermsPage } from '@hilos/vue'
+import { HilosTermsPage } from '@hilos/vue/base'
 import { actions, connection } from '../../bootstrap/connection.js'
 import { scopes } from '../../bootstrap/session.js'
 

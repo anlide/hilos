@@ -6,8 +6,8 @@ import { useContext } from 'react'
 import {
   ANALYTICS_OVERVIEW_EMPTY_TEXT,
   ANALYTICS_OVERVIEW_OPEN_USERS_LABEL,
-  HilosPages,
-} from '@hilos/core'
+} from '@hilos/core/admin/analytics'
+import { HilosPages } from '@hilos/core/base'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'

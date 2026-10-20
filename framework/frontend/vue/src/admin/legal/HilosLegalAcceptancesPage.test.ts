@@ -5,12 +5,12 @@ import {
   HIDDEN_VALUE,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   ScopeManager,
-  type HilosLegalAcceptanceRow,
   type HilosLegalAcceptancesExportNode,
   type HilosLegalContext,
   type ProjectSignal,
   type TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import { type HilosLegalAcceptanceRow } from '@hilos/core/admin/legal'
 import { defineComponent, ref, type PropType } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import HilosLegalAcceptancesPage from './HilosLegalAcceptancesPage.vue'

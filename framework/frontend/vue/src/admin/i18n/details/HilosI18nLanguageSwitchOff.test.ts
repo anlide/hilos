@@ -2,13 +2,15 @@ import { mount, type VueWrapper } from '@vue/test-utils'
 import {
   ActionError,
   createSignal,
-  HILOS_I18N_LANGUAGE_SWITCH_OFF_ACTION,
   type ActionHandle,
   type ActionLifecycle,
   type ActionResult,
+} from '@hilos/core/base'
+import {
+  HILOS_I18N_LANGUAGE_SWITCH_OFF_ACTION,
   type HilosI18nLanguageCard,
   type HilosI18nLanguageContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { afterEach, describe, expect, it } from 'vitest'
 import { nextTick, ref } from 'vue'
 

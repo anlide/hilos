@@ -32,13 +32,9 @@ import {
 } from 'react'
 import {
   HILOS_LOG_LEVEL_OPTIONS,
-  HilosPages,
   LOG_SOURCE_LIVE,
   LOG_VIEWER_PENDING_WIDEST_LABEL,
   createHilosLogViewer,
-  createSignal,
-  hilosAdminAccess,
-  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   hasLogViewerNodes,
   isLogViewerPinned,
   logLevelVariant,
@@ -46,14 +42,20 @@ import {
   logViewerPaneState,
   logViewerPendingLabel,
   logViewerStreamsOf,
-} from '@hilos/core'
+} from '@hilos/core/admin/logs'
+import {
+  HilosPages,
+  createSignal,
+  hilosAdminAccess,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
+} from '@hilos/core/base'
 import type {
   HilosLogViewerAddress,
   HilosLogViewerContext,
   HilosLogViewerEntry,
   HilosLogViewerNotice,
-  PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/admin/logs'
+import type { PageRouteMatch } from '@hilos/core/base'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosHideable } from '../../HilosHideable.js'

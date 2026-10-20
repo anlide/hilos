@@ -6,7 +6,7 @@ import type {
   HilosDaemonHttpContext,
   HilosDaemonEnvContext,
   HilosDaemonEnvMismatchContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
 
 import { actions, connection } from '../../../bootstrap/connection.js'
 import { scopes } from '../../../bootstrap/session.js'

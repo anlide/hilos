@@ -10,7 +10,7 @@ import {
   formatProfileDateTime,
   type HilosProfileSession as ProfileSession,
   type HilosProfileSessionActions,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'

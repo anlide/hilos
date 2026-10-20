@@ -1,4 +1,4 @@
-import { ActionError } from '@hilos/core'
+import { ActionError } from '@hilos/core/base'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ref, type Ref } from 'vue'

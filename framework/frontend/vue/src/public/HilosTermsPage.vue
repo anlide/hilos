@@ -32,7 +32,7 @@ import {
   sessionAccountStanding,
   TERMS_REVISION_TEXT_ACTION,
   type HilosLegalContext,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import HilosFormError from '../HilosFormError.vue'
 import HilosModal from '../HilosModal.vue'

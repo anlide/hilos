@@ -7,7 +7,7 @@
 // the chain has to stay whole, and a link to nowhere is worse than no link.
 // Bootstrap classes only (styling-rules.md).
 import { ChangeDetectionStrategy, Component, input } from '@angular/core'
-import type { HilosCrumb } from '@hilos/core'
+import type { HilosCrumb } from '@hilos/core/base'
 
 import { HilosLink } from './HilosLink.js'
 

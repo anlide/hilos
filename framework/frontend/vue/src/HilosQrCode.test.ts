@@ -1,6 +1,6 @@
 // Covers the QR code drawing (HIL-494): an image with a name, a light field with
 // its quiet zone, and the dark modules of the core's matrix in one path.
-import { qrMatrix } from '@hilos/core'
+import { qrMatrix } from '@hilos/core/base'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 

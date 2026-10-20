@@ -5,7 +5,7 @@ the framework's; the project supplies only the context (the same connection and
 scope stores the other Hilos pages use) and registers the rotations table on its
 backend. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { HilosLogsRotationsPage } from '@hilos/vue'
+import { HilosLogsRotationsPage } from '@hilos/vue/admin/logs'
 
 import { hilosLogsContext } from './hilosLogsContext'
 

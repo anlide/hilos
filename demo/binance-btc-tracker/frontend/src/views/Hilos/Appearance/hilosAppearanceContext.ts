@@ -1,4 +1,4 @@
-import { type HilosAppearanceContext } from '@hilos/core'
+import { type HilosAppearanceContext } from '@hilos/core/admin/appearance'
 import { actions, connection } from '../../../bootstrap/connection.js'
 import { scopes } from '../../../bootstrap/session.js'
 

@@ -1,0 +1,5 @@
+export { default as HilosLegalAcceptancesPage } from './HilosLegalAcceptancesPage.vue'
+export { default as HilosLegalDocumentPage } from './HilosLegalDocumentPage.vue'
+export { default as HilosLegalPage } from './HilosLegalPage.vue'
+export { default as HilosLegalRevisionPage } from './HilosLegalRevisionPage.vue'
+export { default as HilosLegalSettingsPage } from './HilosLegalSettingsPage.vue'

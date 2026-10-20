@@ -5,13 +5,15 @@ import {
   createHilosAppearanceSwitchingEdit,
   createHilosAppearanceTable,
   HilosAppearanceSettingKey,
+  type HilosAppearanceContext,
+  type HilosAppearanceSettingRow,
+} from '@hilos/core/admin/appearance'
+import {
   HilosPages,
   isHiddenValue,
   THEME_POSITIONS,
-  type HilosAppearanceContext,
-  type HilosAppearanceSettingRow,
   type ThemePosition,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { computed, defineComponent, h, onMounted, onUnmounted } from 'vue'
 import ConflictActions from '../../ConflictActions.vue'
 import ConflictHeader from '../../ConflictHeader.vue'

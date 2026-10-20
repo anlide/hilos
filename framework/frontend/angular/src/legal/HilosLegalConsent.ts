@@ -15,7 +15,7 @@ import {
   hilosLegalDocumentLabel,
   type HilosLegalConsentTerms,
   type HilosLegalDocumentKey,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { HilosLegalRevisionText } from './HilosLegalRevisionText.js'
 
 /** The current documents, shared by registration and the read-only admin preview. */

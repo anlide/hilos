@@ -15,10 +15,10 @@ import {
   HilosNotificationBell,
   HilosOAuthCallbackPage,
   HilosView,
-  hilosAdminViews,
   hilosRouterKey,
   useSignal,
-} from '@hilos/vue'
+} from '@hilos/vue/base'
+import { hilosAdminViews } from '@hilos/vue/admin-views'
 import {
   AUTH_MAGIC_LINK_PATH,
   AUTH_SECOND_FACTOR_CANCEL_PATH,
@@ -26,8 +26,9 @@ import {
   HILOS_PAGE_ROUTES,
   HilosPages,
   hilosSessionAvatarMark,
-} from '@hilos/core'
-import type { AuthGate } from '@hilos/core'
+  lazyPage,
+} from '@hilos/core/base'
+import type { AuthGate, PageView } from '@hilos/core/base'
 import type { Component } from 'vue'
 
 import AuthSurface from './auth/AuthSurface.vue'
@@ -36,7 +37,6 @@ import { connection } from './bootstrap/connection'
 import { currentUserName, currentUserPhoto } from './bootstrap/session'
 import { PAGE_ADMIN_BOTS, PAGE_BOT, PAGE_MAIN, PAGE_USER } from './pages/keys'
 import About from './views/About/About.vue'
-import AdminBots from './views/AdminBots/AdminBots.vue'
 import Bot from './views/Bot/Bot.vue'
 import License from './views/License/License.vue'
 import Main from './views/Main/Main.vue'
@@ -53,55 +53,6 @@ import ProfileSessions from './views/ProfileSessions/ProfileSessions.vue'
 import ProfileSecurity from './views/Profile/ProfileSecurity.vue'
 import Terms from './views/Terms/Terms.vue'
 import User from './views/User/User.vue'
-// The Hilos admin section. The framework ships a real default page for every
-// admin key (hilosAdminViews), so the demo maps only the pages it implements
-// itself — the rest render the framework default, never recopied per project
-// (page-module-structure.md). Each page is still its own module file.
-import HilosSettings from './views/Hilos/Settings/Settings.vue'
-import HilosAppearance from './views/Hilos/Appearance/Appearance.vue'
-import HilosUsers from './views/Hilos/Users/Users.vue'
-import HilosUser from './views/Hilos/Users/User.vue'
-import HilosBackup from './views/Hilos/Backup/Backup.vue'
-import HilosMaintenance from './views/Hilos/Maintenance/Maintenance.vue'
-import HilosCommunications from './views/Hilos/Communications/Communications.vue'
-import HilosCommunicationsChannel from './views/Hilos/Communications/Channel.vue'
-import HilosCommunicationsDeliveries from './views/Hilos/Communications/Deliveries.vue'
-import HilosSecurityOauth from './views/Hilos/Security/SecurityOauth.vue'
-import HilosSecurityOauthProvider from './views/Hilos/Security/SecurityOauthProvider.vue'
-import HilosSecuritySignInMethods from './views/Hilos/Security/SecuritySignInMethods.vue'
-import HilosSecurityTwoFactor from './views/Hilos/Security/SecurityTwoFactor.vue'
-import HilosSecurityStepUp from './views/Hilos/Security/SecurityStepUp.vue'
-import HilosSecurityImpersonation from './views/Hilos/Security/SecurityImpersonation.vue'
-import HilosAnalyticsBrowserSession from './views/Hilos/Analytics/BrowserSession.vue'
-import HilosAnalyticsPerson from './views/Hilos/Analytics/Person.vue'
-import HilosLegal from './views/Hilos/Legal/Legal.vue'
-import HilosLegalDocument from './views/Hilos/Legal/LegalDocument.vue'
-import HilosLegalRevision from './views/Hilos/Legal/LegalRevision.vue'
-import HilosLegalAcceptances from './views/Hilos/Legal/LegalAcceptances.vue'
-import HilosLegalSettings from './views/Hilos/Legal/LegalSettings.vue'
-import HilosI18nLanguage from './views/Hilos/I18n/Language/Language.vue'
-import HilosI18nLanguages from './views/Hilos/I18n/Languages/Languages.vue'
-import HilosI18nLanguageNames from './views/Hilos/I18n/LanguageNames/LanguageNames.vue'
-import HilosI18nLanguageLocales from './views/Hilos/I18n/LanguageLocales/LanguageLocales.vue'
-import HilosI18nCountries from './views/Hilos/I18n/Countries/Countries.vue'
-import HilosI18nCountry from './views/Hilos/I18n/Country/Country.vue'
-import HilosI18nCountryNames from './views/Hilos/I18n/CountryNames/CountryNames.vue'
-import HilosLogsOverview from './views/Hilos/Logs/Overview.vue'
-import HilosLogsKeys from './views/Hilos/Logs/Keys.vue'
-import HilosLogsWorkers from './views/Hilos/Logs/Workers.vue'
-import HilosLogsRotations from './views/Hilos/Logs/Rotations.vue'
-import HilosLogsSettings from './views/Hilos/Logs/Settings.vue'
-import HilosLogsView from './views/Hilos/Logs/View.vue'
-import HilosDaemon from './views/Hilos/Daemon/Daemon.vue'
-import HilosDaemonWorkers from './views/Hilos/Daemon/Workers.vue'
-import HilosDaemonAgents from './views/Hilos/Daemon/Agents.vue'
-import HilosDaemonCron from './views/Hilos/Daemon/Cron.vue'
-import HilosDaemonHttp from './views/Hilos/Daemon/Http.vue'
-import HilosDaemonEnv from './views/Hilos/Daemon/Env.vue'
-import HilosDaemonEnvMismatch from './views/Hilos/Daemon/EnvMismatch.vue'
-import HilosChangeLog from './views/Hilos/ChangeLog/ChangeLog.vue'
-import HilosChangeLogTables from './views/Hilos/ChangeLog/ChangeLogTables.vue'
-import HilosChangeLogTable from './views/Hilos/ChangeLog/ChangeLogTable.vue'
 
 // The auth gate is created in bootstrap (it needs the navigator, the current
 // user, and the connection) and passed in as a root prop; App wires it and the
@@ -114,11 +65,15 @@ const props = defineProps<{ authGate: AuthGate }>()
 // default map omits — they need a project context, so the demo mounts them
 // directly). Unbuilt framework pages, including guardian, are refused with
 // 404 by the router through HILOS_UNBUILT_PAGES.
-const pages: Record<string, Component> = {
+// Each descriptor is created once for this App instance; selecting a page
+// loads only its project wrapper and SDK section. Public pages stay eager.
+const pages: Record<string, PageView<Component>> = {
   [PAGE_MAIN]: Main,
   [PAGE_USER]: User,
   [PAGE_BOT]: Bot,
-  [PAGE_ADMIN_BOTS]: AdminBots,
+  [PAGE_ADMIN_BOTS]: lazyPage(() =>
+    import('./views/AdminBots/AdminBots.vue').then((m) => m.default),
+  ),
   ...hilosAdminViews(),
   [HilosPages.PROFILE]: Profile,
   [HilosPages.PROFILE_SIGN_IN]: ProfileSignIn,
@@ -133,51 +88,161 @@ const pages: Record<string, Component> = {
   [HilosPages.TERMS]: Terms,
   [HilosPages.PRIVACY]: Privacy,
   [HilosPages.LICENSE]: License,
-  [HilosPages.SETTINGS]: HilosSettings,
-  [HilosPages.APPEARANCE]: HilosAppearance,
-  [HilosPages.USERS]: HilosUsers,
-  [HilosPages.USER]: HilosUser,
-  [HilosPages.BACKUP]: HilosBackup,
-  [HilosPages.MAINTENANCE]: HilosMaintenance,
-  [HilosPages.COMMUNICATIONS]: HilosCommunications,
-  [HilosPages.COMMUNICATIONS_CHANNEL]: HilosCommunicationsChannel,
-  [HilosPages.COMMUNICATIONS_DELIVERIES]: HilosCommunicationsDeliveries,
-  [HilosPages.CHANGE_LOG]: HilosChangeLog,
-  [HilosPages.CHANGE_LOG_TABLES]: HilosChangeLogTables,
-  [HilosPages.CHANGE_LOG_TABLE]: HilosChangeLogTable,
-  [HilosPages.SECURITY_OAUTH]: HilosSecurityOauth,
-  [HilosPages.SECURITY_OAUTH_PROVIDER]: HilosSecurityOauthProvider,
-  [HilosPages.SECURITY_SIGN_IN_METHODS]: HilosSecuritySignInMethods,
-  [HilosPages.SECURITY_2FA]: HilosSecurityTwoFactor,
-  [HilosPages.SECURITY_STEP_UP]: HilosSecurityStepUp,
-  [HilosPages.SECURITY_IMPERSONATION]: HilosSecurityImpersonation,
-  [HilosPages.ANALYTICS_BROWSER_SESSION]: HilosAnalyticsBrowserSession,
-  [HilosPages.ANALYTICS_PERSON]: HilosAnalyticsPerson,
-  [HilosPages.LEGAL]: HilosLegal,
-  [HilosPages.LEGAL_DOCUMENT]: HilosLegalDocument,
-  [HilosPages.LEGAL_REVISION]: HilosLegalRevision,
-  [HilosPages.LEGAL_ACCEPTANCES]: HilosLegalAcceptances,
-  [HilosPages.LEGAL_SETTINGS]: HilosLegalSettings,
-  [HilosPages.I18N_LANGUAGES]: HilosI18nLanguages,
-  [HilosPages.I18N_LANGUAGE]: HilosI18nLanguage,
-  [HilosPages.I18N_LANGUAGE_NAMES]: HilosI18nLanguageNames,
-  [HilosPages.I18N_LANGUAGE_LOCALES]: HilosI18nLanguageLocales,
-  [HilosPages.I18N_COUNTRIES]: HilosI18nCountries,
-  [HilosPages.I18N_COUNTRY]: HilosI18nCountry,
-  [HilosPages.I18N_COUNTRY_NAMES]: HilosI18nCountryNames,
-  [HilosPages.LOGS]: HilosLogsOverview,
-  [HilosPages.LOGS_KEYS]: HilosLogsKeys,
-  [HilosPages.LOGS_WORKERS]: HilosLogsWorkers,
-  [HilosPages.LOGS_ROTATIONS]: HilosLogsRotations,
-  [HilosPages.LOGS_SETTINGS]: HilosLogsSettings,
-  [HilosPages.LOGS_VIEW]: HilosLogsView,
-  [HilosPages.DAEMON]: HilosDaemon,
-  [HilosPages.DAEMON_WORKERS]: HilosDaemonWorkers,
-  [HilosPages.DAEMON_AGENTS]: HilosDaemonAgents,
-  [HilosPages.DAEMON_CRON]: HilosDaemonCron,
-  [HilosPages.DAEMON_HTTP_SERVER]: HilosDaemonHttp,
-  [HilosPages.DAEMON_ENV]: HilosDaemonEnv,
-  [HilosPages.DAEMON_ENV_MISMATCH]: HilosDaemonEnvMismatch,
+  [HilosPages.SETTINGS]: lazyPage(() =>
+    import('./views/Hilos/Settings/Settings.vue').then((m) => m.default),
+  ),
+  [HilosPages.APPEARANCE]: lazyPage(() =>
+    import('./views/Hilos/Appearance/Appearance.vue').then((m) => m.default),
+  ),
+  [HilosPages.USERS]: lazyPage(() =>
+    import('./views/Hilos/Users/Users.vue').then((m) => m.default),
+  ),
+  [HilosPages.USER]: lazyPage(() =>
+    import('./views/Hilos/Users/User.vue').then((m) => m.default),
+  ),
+  [HilosPages.BACKUP]: lazyPage(() =>
+    import('./views/Hilos/Backup/Backup.vue').then((m) => m.default),
+  ),
+  [HilosPages.MAINTENANCE]: lazyPage(() =>
+    import('./views/Hilos/Maintenance/Maintenance.vue').then((m) => m.default),
+  ),
+  [HilosPages.COMMUNICATIONS]: lazyPage(() =>
+    import('./views/Hilos/Communications/Communications.vue').then(
+      (m) => m.default,
+    ),
+  ),
+  [HilosPages.COMMUNICATIONS_CHANNEL]: lazyPage(() =>
+    import('./views/Hilos/Communications/Channel.vue').then((m) => m.default),
+  ),
+  [HilosPages.COMMUNICATIONS_DELIVERIES]: lazyPage(() =>
+    import('./views/Hilos/Communications/Deliveries.vue').then(
+      (m) => m.default,
+    ),
+  ),
+  [HilosPages.CHANGE_LOG]: lazyPage(() =>
+    import('./views/Hilos/ChangeLog/ChangeLog.vue').then((m) => m.default),
+  ),
+  [HilosPages.CHANGE_LOG_TABLES]: lazyPage(() =>
+    import('./views/Hilos/ChangeLog/ChangeLogTables.vue').then(
+      (m) => m.default,
+    ),
+  ),
+  [HilosPages.CHANGE_LOG_TABLE]: lazyPage(() =>
+    import('./views/Hilos/ChangeLog/ChangeLogTable.vue').then((m) => m.default),
+  ),
+  [HilosPages.SECURITY_OAUTH]: lazyPage(() =>
+    import('./views/Hilos/Security/SecurityOauth.vue').then((m) => m.default),
+  ),
+  [HilosPages.SECURITY_OAUTH_PROVIDER]: lazyPage(() =>
+    import('./views/Hilos/Security/SecurityOauthProvider.vue').then(
+      (m) => m.default,
+    ),
+  ),
+  [HilosPages.SECURITY_SIGN_IN_METHODS]: lazyPage(() =>
+    import('./views/Hilos/Security/SecuritySignInMethods.vue').then(
+      (m) => m.default,
+    ),
+  ),
+  [HilosPages.SECURITY_2FA]: lazyPage(() =>
+    import('./views/Hilos/Security/SecurityTwoFactor.vue').then(
+      (m) => m.default,
+    ),
+  ),
+  [HilosPages.SECURITY_STEP_UP]: lazyPage(() =>
+    import('./views/Hilos/Security/SecurityStepUp.vue').then((m) => m.default),
+  ),
+  [HilosPages.SECURITY_IMPERSONATION]: lazyPage(() =>
+    import('./views/Hilos/Security/SecurityImpersonation.vue').then(
+      (m) => m.default,
+    ),
+  ),
+  [HilosPages.ANALYTICS_BROWSER_SESSION]: lazyPage(() =>
+    import('./views/Hilos/Analytics/BrowserSession.vue').then((m) => m.default),
+  ),
+  [HilosPages.ANALYTICS_PERSON]: lazyPage(() =>
+    import('./views/Hilos/Analytics/Person.vue').then((m) => m.default),
+  ),
+  [HilosPages.LEGAL]: lazyPage(() =>
+    import('./views/Hilos/Legal/Legal.vue').then((m) => m.default),
+  ),
+  [HilosPages.LEGAL_DOCUMENT]: lazyPage(() =>
+    import('./views/Hilos/Legal/LegalDocument.vue').then((m) => m.default),
+  ),
+  [HilosPages.LEGAL_REVISION]: lazyPage(() =>
+    import('./views/Hilos/Legal/LegalRevision.vue').then((m) => m.default),
+  ),
+  [HilosPages.LEGAL_ACCEPTANCES]: lazyPage(() =>
+    import('./views/Hilos/Legal/LegalAcceptances.vue').then((m) => m.default),
+  ),
+  [HilosPages.LEGAL_SETTINGS]: lazyPage(() =>
+    import('./views/Hilos/Legal/LegalSettings.vue').then((m) => m.default),
+  ),
+  [HilosPages.I18N_LANGUAGES]: lazyPage(() =>
+    import('./views/Hilos/I18n/Languages/Languages.vue').then((m) => m.default),
+  ),
+  [HilosPages.I18N_LANGUAGE]: lazyPage(() =>
+    import('./views/Hilos/I18n/Language/Language.vue').then((m) => m.default),
+  ),
+  [HilosPages.I18N_LANGUAGE_NAMES]: lazyPage(() =>
+    import('./views/Hilos/I18n/LanguageNames/LanguageNames.vue').then(
+      (m) => m.default,
+    ),
+  ),
+  [HilosPages.I18N_LANGUAGE_LOCALES]: lazyPage(() =>
+    import('./views/Hilos/I18n/LanguageLocales/LanguageLocales.vue').then(
+      (m) => m.default,
+    ),
+  ),
+  [HilosPages.I18N_COUNTRIES]: lazyPage(() =>
+    import('./views/Hilos/I18n/Countries/Countries.vue').then((m) => m.default),
+  ),
+  [HilosPages.I18N_COUNTRY]: lazyPage(() =>
+    import('./views/Hilos/I18n/Country/Country.vue').then((m) => m.default),
+  ),
+  [HilosPages.I18N_COUNTRY_NAMES]: lazyPage(() =>
+    import('./views/Hilos/I18n/CountryNames/CountryNames.vue').then(
+      (m) => m.default,
+    ),
+  ),
+  [HilosPages.LOGS]: lazyPage(() =>
+    import('./views/Hilos/Logs/Overview.vue').then((m) => m.default),
+  ),
+  [HilosPages.LOGS_KEYS]: lazyPage(() =>
+    import('./views/Hilos/Logs/Keys.vue').then((m) => m.default),
+  ),
+  [HilosPages.LOGS_WORKERS]: lazyPage(() =>
+    import('./views/Hilos/Logs/Workers.vue').then((m) => m.default),
+  ),
+  [HilosPages.LOGS_ROTATIONS]: lazyPage(() =>
+    import('./views/Hilos/Logs/Rotations.vue').then((m) => m.default),
+  ),
+  [HilosPages.LOGS_SETTINGS]: lazyPage(() =>
+    import('./views/Hilos/Logs/Settings.vue').then((m) => m.default),
+  ),
+  [HilosPages.LOGS_VIEW]: lazyPage(() =>
+    import('./views/Hilos/Logs/View.vue').then((m) => m.default),
+  ),
+  [HilosPages.DAEMON]: lazyPage(() =>
+    import('./views/Hilos/Daemon/Daemon.vue').then((m) => m.default),
+  ),
+  [HilosPages.DAEMON_WORKERS]: lazyPage(() =>
+    import('./views/Hilos/Daemon/Workers.vue').then((m) => m.default),
+  ),
+  [HilosPages.DAEMON_AGENTS]: lazyPage(() =>
+    import('./views/Hilos/Daemon/Agents.vue').then((m) => m.default),
+  ),
+  [HilosPages.DAEMON_CRON]: lazyPage(() =>
+    import('./views/Hilos/Daemon/Cron.vue').then((m) => m.default),
+  ),
+  [HilosPages.DAEMON_HTTP_SERVER]: lazyPage(() =>
+    import('./views/Hilos/Daemon/Http.vue').then((m) => m.default),
+  ),
+  [HilosPages.DAEMON_ENV]: lazyPage(() =>
+    import('./views/Hilos/Daemon/Env.vue').then((m) => m.default),
+  ),
+  [HilosPages.DAEMON_ENV_MISMATCH]: lazyPage(() =>
+    import('./views/Hilos/Daemon/EnvMismatch.vue').then((m) => m.default),
+  ),
 }
 
 // The pages that draw a skeleton of their own shape while they wait for their

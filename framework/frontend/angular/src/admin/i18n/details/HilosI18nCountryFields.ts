@@ -18,8 +18,8 @@ import {
 import {
   HILOS_I18N_COUNTRY_ADD_COPY,
   HILOS_I18N_COUNTRY_WINDOW_COPY,
-} from '@hilos/core'
-import type { HilosI18nCountryLocaleOption } from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import type { HilosI18nCountryLocaleOption } from '@hilos/core/admin/i18n'
 
 /** The country fields of the creation form and of the edit/view window. */
 @Component({

@@ -4,7 +4,7 @@ import {
   formatProfileDateTime,
   type HilosProfileSession,
   type HilosProfileSessionActions,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { computed, ref } from 'vue'
 
 import HilosFormError from '../HilosFormError.vue'

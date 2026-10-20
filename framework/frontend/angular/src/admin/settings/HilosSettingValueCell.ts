@@ -9,13 +9,10 @@ import {
   computed,
   input,
 } from '@angular/core'
-import {
-  isHiddenValue,
-  type Hideable,
-  type SettingValueSource,
-} from '@hilos/core'
+import { isHiddenValue, type Hideable } from '@hilos/core/base'
+import { type SettingValueSource } from '@hilos/core/admin/settings'
 
-import { HilosHiddenMark } from '../../HilosHiddenMark.js'
+import { HilosHiddenMark } from '@hilos/angular/base'
 
 /** Render one setting value with its catalog-origin badge. */
 @Component({

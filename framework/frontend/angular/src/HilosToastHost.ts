@@ -33,7 +33,7 @@ import {
   viewChild,
   viewChildren,
 } from '@angular/core'
-import { hilosToasts, subscribeSignal } from '@hilos/core'
+import { hilosToasts, subscribeSignal } from '@hilos/core/base'
 import type {
   HilosToast,
   HilosToastHoldReason,
@@ -41,7 +41,7 @@ import type {
   HilosToastSeverity,
   HilosToastStore,
   HilosToastViewer,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosLink } from './HilosLink.js'
 import type { HilosToastCorner } from './hilosToastCorner.js'

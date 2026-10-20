@@ -15,7 +15,7 @@ import {
   type HilosLegalContext,
   type HilosRouter,
   type ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 /** The live window is real; only its transport and the rejected action are replaced. */
 function harness() {

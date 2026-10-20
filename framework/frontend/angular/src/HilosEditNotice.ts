@@ -27,7 +27,7 @@ import {
   input,
   signal,
 } from '@angular/core'
-import type { RowEditNoticeKind } from '@hilos/core'
+import type { RowEditNoticeKind } from '@hilos/core/base'
 
 import { HilosLongText } from './HilosLongText.js'
 import { HilosModal } from './HilosModal.js'

@@ -2,7 +2,7 @@
 // HIL-1138): a thin project binding of the framework HilosProfileSignInPage to
 // this app's auth context. The section and its live copy are the framework's.
 // Bootstrap classes only (styling-rules.md).
-import { HilosProfileSignInPage } from '@hilos/react'
+import { HilosProfileSignInPage } from '@hilos/react/base'
 
 import { hilosAuthContext } from '../../auth/hilosAuthContext.js'
 

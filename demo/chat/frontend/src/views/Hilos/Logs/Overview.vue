@@ -4,7 +4,7 @@ table and the two empty states are the framework's; the project supplies only th
 context, and its backend registers nothing further — the overview page and its agent
 are already there and it owns no table. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { HilosLogsPage } from '@hilos/vue'
+import { HilosLogsPage } from '@hilos/vue/admin/logs'
 
 import { hilosLogsOverviewContext } from './hilosLogsContext'
 

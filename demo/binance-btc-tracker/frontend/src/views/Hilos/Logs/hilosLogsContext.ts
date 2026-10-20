@@ -22,8 +22,8 @@ import {
   type HilosLogRotationsContext,
   type HilosLogWorkersContext,
   type HilosLogViewerContext,
-  type HilosSettingPresetsContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/logs'
+import { type HilosSettingPresetsContext } from '@hilos/core/admin/settings'
 
 import { actions, connection } from '../../../bootstrap/connection'
 import { scopes } from '../../../bootstrap/session'

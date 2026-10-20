@@ -4,7 +4,7 @@ import {
   HILOS_I18N_LANGUAGE_DELETE_COPY,
   hilosI18nLanguageDelete,
   type HilosI18nLanguageRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 
 /** Each table/card projection owns a distinct description of its delete verdict. */
 export function HilosI18nLanguageRowActions({

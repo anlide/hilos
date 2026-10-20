@@ -20,12 +20,9 @@ import {
   CHANGE_LOG_TILE_JOURNAL_LABEL,
   CHANGE_LOG_TILE_TRACKED_LABEL,
   CHANGE_LOG_TILE_TRACKED_NOTE,
-  HILOS_TABLE_ACTIONS_KEY,
-  HilosPages,
   changeLogChannelBadge,
   changeLogFeedEmpty,
   changeLogJournalNote,
-  computedSignal,
   createHilosChangeLogFeedTable,
   createHilosChangeLogReceiptReader,
   formatChangeLogCoverage,
@@ -35,14 +32,19 @@ import {
   formatChangeLogTime,
   formatChangeLogTouched,
   formatChangeLogWho,
-  isHiddenValue,
   readHilosChangeLogOverview,
+} from '@hilos/core/admin/change-log'
+import {
+  HILOS_TABLE_ACTIONS_KEY,
+  HilosPages,
+  computedSignal,
+  isHiddenValue,
   subscribeSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosChangeLogFeedRow,
   HilosChangeLogReceiptContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/change-log'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosHiddenMark } from '../../HilosHiddenMark.js'

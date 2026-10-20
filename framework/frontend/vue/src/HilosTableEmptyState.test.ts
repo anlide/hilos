@@ -1,8 +1,8 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import { h } from 'vue'
-import { TableViewportController } from '@hilos/core'
-import type { HilosTableFrame, TableViewportDescriptor } from '@hilos/core'
+import { TableViewportController } from '@hilos/core/base'
+import type { HilosTableFrame, TableViewportDescriptor } from '@hilos/core/base'
 
 import HilosTableEmptyState from './HilosTableEmptyState.vue'
 

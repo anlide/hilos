@@ -11,8 +11,8 @@
 // writable signals, so a component creates it at field init.
 import { signal } from '@angular/core'
 import type { Signal } from '@angular/core'
-import { ActionError, hilosToasts, subscribeSignal } from '@hilos/core'
-import type { ActionHandle } from '@hilos/core'
+import { ActionError, hilosToasts, subscribeSignal } from '@hilos/core/base'
+import type { ActionHandle } from '@hilos/core/base'
 
 /** How a tracked action reports a failure. */
 export interface HilosTrackedActionOptions {

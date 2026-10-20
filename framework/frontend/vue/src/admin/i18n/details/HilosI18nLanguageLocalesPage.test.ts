@@ -1,19 +1,21 @@
 import { mount, type VueWrapper } from '@vue/test-utils'
 import {
   createSignal,
-  HILOS_I18N_LANGUAGE_LOCALES_TABLE,
-  LOCALE_TEMPLATES_DATA,
   HilosPages,
-  LANGUAGE_CARD_DATA,
   ScopeManager,
   hilosToasts,
   type ActionLifecycle,
   type ActionResult,
   type HilosConnection,
-  type HilosI18nLanguageCard,
   type HilosRouter,
   type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  HILOS_I18N_LANGUAGE_LOCALES_TABLE,
+  LOCALE_TEMPLATES_DATA,
+  LANGUAGE_CARD_DATA,
+  type HilosI18nLanguageCard,
+} from '@hilos/core/admin/i18n'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 

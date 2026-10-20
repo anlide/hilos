@@ -4,7 +4,7 @@ import {
   HILOS_I18N_COUNTRY_NAME_MAX,
   type HilosI18nCountryNameWindow as NameWindow,
   type HilosI18nCountryNameTarget,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { ConflictActions } from '../../../ConflictActions.js'
 import { ConflictHeader } from '../../../ConflictHeader.js'
 import { HilosActionError } from '../../../HilosActionError.js'

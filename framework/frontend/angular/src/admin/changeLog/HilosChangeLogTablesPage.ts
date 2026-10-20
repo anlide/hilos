@@ -35,8 +35,6 @@ import {
   CHANGE_LOG_TABLES_OWNER_FIELD,
   CHANGE_LOG_TABLES_UNTRACKED_NOTE,
   CHANGE_LOG_TABLE_ROUTE_PARAM,
-  HILOS_TABLE_ACTIONS_KEY,
-  HilosPages,
   createHilosChangeLogTablesTable,
   formatChangeLogColumnCounts,
   formatChangeLogTableChanges,
@@ -45,14 +43,17 @@ import {
   readHilosChangeLogNoisyColumns,
   type HilosChangeLogContext,
   type HilosChangeLogTablesRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/change-log'
+import { HILOS_TABLE_ACTIONS_KEY, HilosPages } from '@hilos/core/base'
 
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosLink } from '../../HilosLink.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { HILOS_ROUTER } from '../../hilosRouterToken.js'
-import { mirrorHilosSignal } from '../../hilosSignal.js'
+import {
+  HilosAdminPage,
+  HilosLink,
+  HilosTableCell,
+  HilosViewportTable,
+  HILOS_ROUTER,
+  mirrorHilosSignal,
+} from '@hilos/angular/base'
 
 // Distinct ids so two pages in one document never share an aria-labelledby
 // target — what Vue and React write as useId.

@@ -5,7 +5,7 @@ screen always has and never meets the mark. With no slot the value is printed as
 text. The page reads the field as hideable and hands it here as it is; nothing
 on the screen tests for the mark itself. -->
 <script setup lang="ts" generic="T">
-import { type Hideable, isHiddenValue } from '@hilos/core'
+import { type Hideable, isHiddenValue } from '@hilos/core/base'
 
 import HilosHiddenMark from './HilosHiddenMark.vue'
 

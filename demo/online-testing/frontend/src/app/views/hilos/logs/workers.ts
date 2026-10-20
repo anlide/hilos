@@ -4,7 +4,7 @@
 // the project supplies only the context and registers the hilosLogWorkers table
 // against this page on its backend.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosLogsWorkersPage } from '@hilos/angular'
+import { HilosLogsWorkersPage } from '@hilos/angular/admin/logs'
 
 import { hilosLogWorkersContext } from './hilosLogsContext.js'
 

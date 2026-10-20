@@ -5,7 +5,7 @@ wrapper is what closes it.
 The framework owns the machine, the wire, the screens and the copy; the project
 owns only what hilosAuthContext declares. -->
 <script setup lang="ts">
-import { HilosAuthSurface } from '@hilos/vue'
+import { HilosAuthSurface } from '@hilos/vue/base'
 
 import { hilosAuthContext } from './hilosAuthContext'
 

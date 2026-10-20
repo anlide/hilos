@@ -5,7 +5,7 @@ import {
   HILOS_PROFILE_RENAME_COPY as COPY,
   HILOS_STEP_UP_COPY,
   type HilosProfileRenameFlow,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { computed, nextTick, ref, watch } from 'vue'
 import ConflictActions from '../ConflictActions.vue'
 import ConflictHeader from '../ConflictHeader.vue'

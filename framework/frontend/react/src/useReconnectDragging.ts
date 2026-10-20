@@ -3,7 +3,7 @@
 // reached the ceiling, delivered through useSyncExternalStore. The core owns the
 // state; this hook only subscribes to it (multiframework-core.md).
 import { useCallback, useSyncExternalStore } from 'react'
-import type { HilosConnection } from '@hilos/core'
+import type { HilosConnection } from '@hilos/core/base'
 
 /**
  * Expose a connection's dragging-repair mark as React state.

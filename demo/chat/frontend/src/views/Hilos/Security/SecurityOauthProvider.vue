@@ -2,7 +2,7 @@
 thin project binding of the framework HilosSecurityOauthProviderPage to this app's
 context. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { HilosSecurityOauthProviderPage } from '@hilos/vue'
+import { HilosSecurityOauthProviderPage } from '@hilos/vue/admin/security'
 
 import { hilosSecurityOauthContext } from './hilosSecurityOauthContext'
 

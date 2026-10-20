@@ -3,7 +3,7 @@
 // the Bots collection) and the runtime agent status in the inline
 // `botAgentStatuses` slot; the selector that folds them (adminBotsPage.ts) lives
 // with the page (data-model.md — table-row view-models live in types/tables/).
-import { type HilosPresence } from '@hilos/core'
+import { type HilosPresence } from '@hilos/core/admin/users'
 
 /** One row of the bots admin table. */
 export interface BotRow {

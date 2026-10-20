@@ -26,8 +26,6 @@ import {
   HILOS_BACKUP_CIRCLE_POINTER_PATH,
   HILOS_BACKUP_REOPEN_COPY,
   HILOS_BACKUP_SCOPES,
-  HILOS_TABLE_ACTIONS_KEY,
-  HilosPages,
   BACKUP_CHECKSUM_STATE_FIELD,
   BACKUP_CREATED_AT_FIELD,
   BACKUP_DURATION_SECONDS_FIELD,
@@ -40,22 +38,17 @@ import {
   BACKUP_STATUS_FIELD,
   backupMigrationBehind,
   backupMigrationNotes,
-  backupProgressPercent,
-  createBackupProgressClock,
   createHilosBackupsActions,
   createHilosBackupsReopenGate,
   createHilosBackupsRestoreGate,
   createHilosBackupsTable,
-  createHilosRestoreProgress,
   formatBackupChecksum,
   formatBackupShipping,
   formatBackupDuration,
   formatBackupOutOfReach,
-  formatBackupProgressLabel,
   formatBackupRunCaption,
   formatBackupSize,
   formatRestoreCliCommand,
-  formatRestoreOutcomeLine,
   hasBackupFailureDetail,
   hasRestoreOutcome,
   isBackupChecksumMismatch,
@@ -66,15 +59,23 @@ import {
   isBackupOutOfReach,
   isBackupRestorable,
   isBackupSubsystemBusy,
-  isHiddenValue,
   offersBackupRestore,
-} from '@hilos/core'
+} from '@hilos/core/admin/backup'
+import {
+  HILOS_TABLE_ACTIONS_KEY,
+  HilosPages,
+  backupProgressPercent,
+  createBackupProgressClock,
+  createHilosRestoreProgress,
+  formatBackupProgressLabel,
+  formatRestoreOutcomeLine,
+  isHiddenValue,
+} from '@hilos/core/base'
+import type { Hideable, HilosProgressAnchors } from '@hilos/core/base'
 import type {
-  Hideable,
   HilosBackupRow,
   HilosBackupsContext,
-  HilosProgressAnchors,
-} from '@hilos/core'
+} from '@hilos/core/admin/backup'
 
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'

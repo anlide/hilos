@@ -10,11 +10,11 @@ import {
   formatAnalyticsLastSignedIn,
   formatAnalyticsTime,
   hilosAnalyticsBrowserSession,
-  HilosPages,
   readAnalyticsRouteId,
   type HilosAnalyticsActionsTable,
   type HilosAnalyticsContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/analytics'
+import { HilosPages } from '@hilos/core/base'
 import { computed, inject, onUnmounted, shallowRef, watch } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'

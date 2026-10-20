@@ -8,7 +8,10 @@ the page's area of a takeover that only looks it stands the same way, described
 by the impersonation strip (HIL-1170). -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, useId, watch } from 'vue'
-import { DEFAULT_SPINNER_DELAY_MS, createLoadingButtonState } from '@hilos/core'
+import {
+  DEFAULT_SPINNER_DELAY_MS,
+  createLoadingButtonState,
+} from '@hilos/core/base'
 
 import { useLookOnly } from './hilosAdminViewMode.js'
 import { useSignal } from './useSignal.js'

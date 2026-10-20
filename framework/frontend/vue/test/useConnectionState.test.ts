@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { effectScope } from 'vue'
-import { HilosConnection } from '@hilos/core'
-import type { WebSocketLike } from '@hilos/core'
+import { HilosConnection } from '@hilos/core/base'
+import type { WebSocketLike } from '@hilos/core/base'
 import { useConnectionState } from '../src/useConnectionState.js'
 
 // Scripted stand-in for the browser WebSocket — the adapter tests only drive

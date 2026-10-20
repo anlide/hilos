@@ -34,7 +34,11 @@ import {
   inject,
   input,
 } from '@angular/core'
-import { hilosAdminAccess, hilosChildLinks, hilosCrumbLinks } from '@hilos/core'
+import {
+  hilosAdminAccess,
+  hilosChildLinks,
+  hilosCrumbLinks,
+} from '@hilos/core/base'
 
 import { HilosBreadcrumb } from './HilosBreadcrumb.js'
 import { HilosLink } from './HilosLink.js'

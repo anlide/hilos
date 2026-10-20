@@ -19,19 +19,21 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   HILOS_TABLE_ACTIONS_KEY,
-  HilosOAuthProviderRowKey,
   HilosPages,
+  resolveHilosPath,
+} from '@hilos/core/base'
+import {
+  HilosOAuthProviderRowKey,
   createHilosOAuthProvidersTable,
   createHilosOAuthRedirect,
   createHilosOauthRedirectEdit,
   createHilosSecurityOauthActions,
-  resolveHilosPath,
-} from '@hilos/core'
+} from '@hilos/core/admin/security'
 import type {
   HilosOAuthProviderRow,
   HilosOAuthRedirectRow,
   HilosSecurityOauthContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/security'
 
 import { ConflictActions } from '../../ConflictActions.js'
 import { ConflictHeader } from '../../ConflictHeader.js'

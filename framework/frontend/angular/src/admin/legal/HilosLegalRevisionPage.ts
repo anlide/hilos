@@ -9,22 +9,26 @@ import {
 } from '@angular/core'
 import {
   computedSignal,
-  createHilosLegalRevisionsTable,
-  createHilosLegalRevisionAcceptanceSummary,
   HilosPages,
-  LEGAL_CATALOG_REFUSAL_SECTION,
-  LEGAL_REVISION_SECTION,
-  legalAdminRevisionSchema,
   resolveHilosPath,
   subscribeSignal,
   type HilosLegalContext,
+} from '@hilos/core/base'
+import {
+  createHilosLegalRevisionsTable,
+  createHilosLegalRevisionAcceptanceSummary,
+  LEGAL_CATALOG_REFUSAL_SECTION,
+  LEGAL_REVISION_SECTION,
+  legalAdminRevisionSchema,
   type HilosLegalAdminRevision,
-} from '@hilos/core'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosLink } from '../../HilosLink.js'
-import { HilosLegalChanges } from '../../legal/HilosLegalChanges.js'
-import { HilosLegalRevisionText } from '../../legal/HilosLegalRevisionText.js'
-import { HILOS_ROUTER } from '../../hilosRouterToken.js'
+} from '@hilos/core/admin/legal'
+import {
+  HilosAdminPage,
+  HilosLink,
+  HilosLegalChanges,
+  HilosLegalRevisionText,
+  HILOS_ROUTER,
+} from '@hilos/angular/base'
 
 /** Exact revision text, changes and its live acceptance count. */
 @Component({

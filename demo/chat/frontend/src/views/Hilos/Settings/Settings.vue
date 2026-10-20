@@ -5,7 +5,7 @@ framework's; the project supplies only the context (its scope stores + live
 connection) and declares the actual settings catalog on its backend. Bootstrap
 classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { HilosSettingsPage } from '@hilos/vue'
+import { HilosSettingsPage } from '@hilos/vue/admin/settings'
 
 import { hilosSettingsContext } from './hilosSettingsContext'
 

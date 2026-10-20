@@ -5,11 +5,13 @@ import {
   ingest,
   ScopeManager,
   type HilosConnection,
-  type HilosDaemonHttpSummary,
-  type HilosDaemonNodeHeading,
   type HilosRouter,
   type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  type HilosDaemonHttpSummary,
+  type HilosDaemonNodeHeading,
+} from '@hilos/core/admin/daemon'
 import { describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 

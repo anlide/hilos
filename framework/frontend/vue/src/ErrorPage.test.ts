@@ -1,13 +1,13 @@
 import { mount } from '@vue/test-utils'
 import { markRaw } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
-import { AUTH_SURFACE_HEADING_ID, createSignal } from '@hilos/core'
+import { AUTH_SURFACE_HEADING_ID, createSignal } from '@hilos/core/base'
 import type {
   AuthGate,
   HilosRouter,
   PageRouteMatch,
   PageSubscriptionError,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import ErrorPage from './ErrorPage.vue'
 import HilosView from './HilosView.vue'
@@ -99,7 +99,7 @@ function routerWith(pageError: PageSubscriptionError | null): HilosRouter {
     pageLoading: createSignal(false),
     pageIdentity: createSignal(undefined),
     dashboardSections: createSignal(undefined),
-    resolvePath: () => undefined,
+    resolvePath: () => '/user',
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},

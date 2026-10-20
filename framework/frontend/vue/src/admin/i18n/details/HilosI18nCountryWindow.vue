@@ -2,7 +2,7 @@
 import {
   HILOS_I18N_COUNTRY_WINDOW_COPY,
   type HilosI18nCountryWindow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { computed, watch } from 'vue'
 import ConflictActions from '../../../ConflictActions.vue'
 import ConflictHeader from '../../../ConflictHeader.vue'

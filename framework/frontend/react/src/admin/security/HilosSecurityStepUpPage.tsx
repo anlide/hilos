@@ -13,15 +13,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   HILOS_STEP_UP_ADMIN_COPY,
-  HilosPages,
   createHilosSecurityStepUpActions,
   createHilosSecurityStepUpTable,
-  isHiddenValue,
-} from '@hilos/core'
+} from '@hilos/core/admin/security'
+import { HilosPages, isHiddenValue } from '@hilos/core/base'
 import type {
   HilosStepUpOperationRow,
   HilosTwoFactorContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/security'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosHiddenMark } from '../../HilosHiddenMark.js'

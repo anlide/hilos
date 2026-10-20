@@ -36,7 +36,7 @@ import {
   type HilosLegalReconsentSection,
   type HilosLegalReconsentVariant,
   type HilosLegalReconsentView,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import HilosFormError from '../HilosFormError.vue'
 import HilosLink from '../HilosLink.vue'
 import LoadingButton from '../LoadingButton.vue'

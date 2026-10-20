@@ -2,7 +2,10 @@
 // URL against. The route engine and the framework admin catalog come from
 // @hilos/core, so this file only declares the polls demo's own pages;
 // `createAppPageRouter` mounts the `hilos_*` admin pages under them.
-import { createAppPageRouter, type HilosRouteDeclaration } from '@hilos/core'
+import {
+  createAppPageRouter,
+  type HilosRouteDeclaration,
+} from '@hilos/core/base'
 
 import { PAGE_MAIN } from './keys'
 

@@ -4,7 +4,7 @@
 // context, and its backend registers nothing further — the overview page and its
 // agent are already there and it owns no table.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosLogsPage } from '@hilos/angular'
+import { HilosLogsPage } from '@hilos/angular/admin/logs'
 
 import { hilosLogsOverviewContext } from './hilosLogsContext'
 

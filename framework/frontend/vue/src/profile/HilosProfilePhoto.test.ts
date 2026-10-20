@@ -2,7 +2,7 @@ import {
   createSignal,
   type HilosProfilePhotoFlow,
   type HilosProfilePhotoStep,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { afterEach, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'

@@ -3,7 +3,7 @@
 // this composable only subscribes to it (multiframework-core.md).
 import { onScopeDispose, readonly, shallowRef } from 'vue'
 import type { Ref } from 'vue'
-import type { ConnectionState, HilosConnection } from '@hilos/core'
+import type { ConnectionState, HilosConnection } from '@hilos/core/base'
 
 /**
  * Expose a connection's machine state as a readonly reactive ref.

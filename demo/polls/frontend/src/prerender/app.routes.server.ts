@@ -5,7 +5,7 @@
 // area is never prerendered, so no other route is listed and no server/CSR
 // fallback is declared. The matching @angular/router config lives in main.server.ts.
 import { RenderMode, type ServerRoute } from '@angular/ssr'
-import { HILOS_FOOTER_LINKS, HILOS_PAGE_ROUTES } from '@hilos/core'
+import { HILOS_FOOTER_LINKS, HILOS_PAGE_ROUTES } from '@hilos/core/base'
 
 export const serverRoutes: ServerRoute[] = HILOS_FOOTER_LINKS.flatMap(
   ({ page }) => {

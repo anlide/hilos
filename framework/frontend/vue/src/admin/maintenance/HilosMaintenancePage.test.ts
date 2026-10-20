@@ -3,11 +3,6 @@ import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionError,
-  HILOS_MAINTENANCE_CIRCLE_COPY,
-  HILOS_MAINTENANCE_DISABLE_COPY,
-  HILOS_MAINTENANCE_ENABLE_COPY,
-  HILOS_MAINTENANCE_PASS_COPY,
-  HILOS_MAINTENANCE_STATE_COPY,
   MAINTENANCE_STATE_SIGNAL,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
@@ -16,19 +11,26 @@ import {
   bindSessionScope,
   createSignal,
   hilosToasts,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  HILOS_MAINTENANCE_CIRCLE_COPY,
+  HILOS_MAINTENANCE_DISABLE_COPY,
+  HILOS_MAINTENANCE_ENABLE_COPY,
+  HILOS_MAINTENANCE_PASS_COPY,
+  HILOS_MAINTENANCE_STATE_COPY,
+} from '@hilos/core/admin/maintenance'
 import type {
   ActionHandle,
   ActionLifecycle,
   ActionResult,
   HilosConnection,
-  HilosMaintenanceContext,
   HilosMaintenanceState,
   HilosRouter,
   PageRouteMatch,
   ProjectSignal,
   WritableSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosMaintenanceContext } from '@hilos/core/admin/maintenance'
 
 import HilosMaintenancePage from './HilosMaintenancePage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'

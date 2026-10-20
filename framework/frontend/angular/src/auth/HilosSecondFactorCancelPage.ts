@@ -21,8 +21,8 @@ import {
   input,
   signal,
 } from '@angular/core'
-import { createAuthActions, whenPageReadyOrUnreachable } from '@hilos/core'
-import type { HilosAuthActions, HilosAuthContext } from '@hilos/core'
+import { createAuthActions, whenPageReadyOrUnreachable } from '@hilos/core/base'
+import type { HilosAuthActions, HilosAuthContext } from '@hilos/core/base'
 
 import { HILOS_ROUTER } from '../hilosRouterToken.js'
 

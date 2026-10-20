@@ -26,7 +26,7 @@ import { createContext, useContext } from 'react'
 import {
   HILOS_IMPERSONATION_STRIP_TEXT_ID,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 /**
  * Provides whether a viewer of the admin view mode stands on the admin page

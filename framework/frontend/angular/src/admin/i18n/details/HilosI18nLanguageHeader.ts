@@ -10,11 +10,10 @@ import {
   inject,
   input,
 } from '@angular/core'
-import { HilosPages } from '@hilos/core'
-import type { HilosI18nLanguageCard } from '@hilos/core'
+import { HilosPages } from '@hilos/core/base'
+import type { HilosI18nLanguageCard } from '@hilos/core/admin/i18n'
 
-import { HilosLink } from '../../../HilosLink.js'
-import { HILOS_ROUTER } from '../../../hilosRouterToken.js'
+import { HilosLink, HILOS_ROUTER } from '@hilos/angular/base'
 
 /** The pages of one language, in tab order. */
 const LANGUAGE_TABS = [

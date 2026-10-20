@@ -295,10 +295,13 @@ Topic documents are referenced by filename; several are still being authored.
   ("nothing here"), and error ("failed to load") components are the concrete form
   of "a placeholder for everything"; pages do not reinvent them. See
   [sdk-packaging.md](sdk-packaging.md).
-- **Per-page code-splitting.** Each route component is a dynamic `import()` so
-  the bundler splits a chunk per page; the loading state during chunk fetch is
-  the skeleton, and a stale chunk after redeploy is caught by the build-version
-  check. See [build-and-docker.md](build-and-docker.md).
+- **Explicit lazy page bindings.** `PageView<T>` accepts eager components or
+  stable `lazyPage(() => import(...).then(...))` descriptors. Admin performance
+  consumers defer implementations through public section subpaths; a section
+  can share chunks across pages. The outlet composes code and the first server
+  answer, with the existing delayed skeleton and refusal surface. The separate
+  build-version refresh is not a same-URL chunk-retry guarantee. See
+  [build-and-docker.md](build-and-docker.md#lazy-page-code-in-the-client-build).
 
 ## G. Styling and accessibility
 

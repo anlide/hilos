@@ -15,8 +15,8 @@ import {
   HILOS_I18N_COUNTRY_MARKS,
   hilosI18nCountryDeleteLabel,
   hilosI18nCountryDeleteReason,
-} from '@hilos/core'
-import type { HilosI18nCountryRow } from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import type { HilosI18nCountryRow } from '@hilos/core/admin/i18n'
 
 // Distinct ids so the row and the card copy of one country never share one.
 let countryRowActionsSeq = 0

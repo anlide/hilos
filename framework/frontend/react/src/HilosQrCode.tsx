@@ -3,7 +3,7 @@
 // drawing: one path of dark squares over a light field, with the quiet zone of
 // four modules a scanner needs around it. Light and dark are fixed rather than
 // themed — a code inverted by a dark theme is a code most scanners refuse.
-import { qrMatrix } from '@hilos/core'
+import { qrMatrix } from '@hilos/core/base'
 import { useMemo } from 'react'
 
 /** Props for {@link HilosQrCode}. */

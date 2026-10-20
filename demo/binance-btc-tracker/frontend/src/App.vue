@@ -12,11 +12,11 @@ import {
   HilosLayout,
   HilosNotificationBell,
   HilosView,
-  hilosAdminViews,
   useSignal,
-} from '@hilos/vue'
-import { HilosPages, hilosSessionAvatarMark } from '@hilos/core'
-import type { AuthGate } from '@hilos/core'
+} from '@hilos/vue/base'
+import { hilosAdminViews } from '@hilos/vue/admin-views'
+import { HilosPages, hilosSessionAvatarMark, lazyPage } from '@hilos/core/base'
+import type { AuthGate, PageView } from '@hilos/core/base'
 import type { Component } from 'vue'
 
 import AuthSurface from './auth/AuthSurface.vue'
@@ -30,40 +30,6 @@ import MainSkeleton from './views/Main/MainSkeleton.vue'
 import Privacy from './views/Privacy/Privacy.vue'
 import ProfileNotifications from './views/ProfileNotifications/ProfileNotifications.vue'
 import Terms from './views/Terms/Terms.vue'
-import HilosBackup from './views/Hilos/Backup/Backup.vue'
-import HilosChangeLog from './views/Hilos/ChangeLog/ChangeLog.vue'
-import HilosChangeLogTables from './views/Hilos/ChangeLog/ChangeLogTables.vue'
-import HilosChangeLogTable from './views/Hilos/ChangeLog/ChangeLogTable.vue'
-import HilosCommunications from './views/Hilos/Communications/Communications.vue'
-import HilosCommunicationsChannel from './views/Hilos/Communications/Channel.vue'
-import HilosCommunicationsDeliveries from './views/Hilos/Communications/Deliveries.vue'
-import HilosMaintenance from './views/Hilos/Maintenance/Maintenance.vue'
-import HilosSettings from './views/Hilos/Settings/Settings.vue'
-import HilosAppearance from './views/Hilos/Appearance/Appearance.vue'
-import HilosAnalyticsBrowserSession from './views/Hilos/Analytics/BrowserSession.vue'
-import HilosAnalyticsPerson from './views/Hilos/Analytics/Person.vue'
-import HilosUsers from './views/Hilos/Users/Users.vue'
-import HilosUser from './views/Hilos/Users/User.vue'
-import HilosI18nLanguage from './views/Hilos/I18n/Language/Language.vue'
-import HilosI18nLanguages from './views/Hilos/I18n/Languages/Languages.vue'
-import HilosI18nLanguageNames from './views/Hilos/I18n/LanguageNames/LanguageNames.vue'
-import HilosI18nLanguageLocales from './views/Hilos/I18n/LanguageLocales/LanguageLocales.vue'
-import HilosI18nCountries from './views/Hilos/I18n/Countries/Countries.vue'
-import HilosI18nCountry from './views/Hilos/I18n/Country/Country.vue'
-import HilosI18nCountryNames from './views/Hilos/I18n/CountryNames/CountryNames.vue'
-import HilosLogsOverview from './views/Hilos/Logs/Overview.vue'
-import HilosLogsKeys from './views/Hilos/Logs/Keys.vue'
-import HilosLogsWorkers from './views/Hilos/Logs/Workers.vue'
-import HilosLogsRotations from './views/Hilos/Logs/Rotations.vue'
-import HilosLogsSettings from './views/Hilos/Logs/Settings.vue'
-import HilosLogsView from './views/Hilos/Logs/View.vue'
-import HilosDaemon from './views/Hilos/Daemon/Daemon.vue'
-import HilosDaemonWorkers from './views/Hilos/Daemon/Workers.vue'
-import HilosDaemonAgents from './views/Hilos/Daemon/Agents.vue'
-import HilosDaemonCron from './views/Hilos/Daemon/Cron.vue'
-import HilosDaemonHttp from './views/Hilos/Daemon/Http.vue'
-import HilosDaemonEnv from './views/Hilos/Daemon/Env.vue'
-import HilosDaemonEnvMismatch from './views/Hilos/Daemon/EnvMismatch.vue'
 
 // The auth gate is created in bootstrap (it needs the navigator, the current
 // user, and the connection) and passed in as a root prop; App wires it and the
@@ -78,43 +44,125 @@ const props = defineProps<{ authGate: AuthGate }>()
 // the project's context and hilosAdminViews leaves them out — the one profile
 // page, the person's notification settings, and the four footer pages whose text
 // is this demo's.
-const pages: Record<string, Component> = {
+// Each descriptor is created once for this App instance; selecting a page
+// loads only its project wrapper and SDK section. Public pages stay eager.
+const pages: Record<string, PageView<Component>> = {
   [PAGE_MAIN]: Main,
   ...hilosAdminViews(),
-  [HilosPages.BACKUP]: HilosBackup,
-  [HilosPages.CHANGE_LOG]: HilosChangeLog,
-  [HilosPages.CHANGE_LOG_TABLES]: HilosChangeLogTables,
-  [HilosPages.CHANGE_LOG_TABLE]: HilosChangeLogTable,
-  [HilosPages.MAINTENANCE]: HilosMaintenance,
-  [HilosPages.SETTINGS]: HilosSettings,
-  [HilosPages.APPEARANCE]: HilosAppearance,
-  [HilosPages.ANALYTICS_BROWSER_SESSION]: HilosAnalyticsBrowserSession,
-  [HilosPages.ANALYTICS_PERSON]: HilosAnalyticsPerson,
-  [HilosPages.USERS]: HilosUsers,
-  [HilosPages.USER]: HilosUser,
-  [HilosPages.I18N_LANGUAGES]: HilosI18nLanguages,
-  [HilosPages.I18N_LANGUAGE]: HilosI18nLanguage,
-  [HilosPages.I18N_LANGUAGE_NAMES]: HilosI18nLanguageNames,
-  [HilosPages.I18N_LANGUAGE_LOCALES]: HilosI18nLanguageLocales,
-  [HilosPages.I18N_COUNTRIES]: HilosI18nCountries,
-  [HilosPages.I18N_COUNTRY]: HilosI18nCountry,
-  [HilosPages.I18N_COUNTRY_NAMES]: HilosI18nCountryNames,
-  [HilosPages.LOGS]: HilosLogsOverview,
-  [HilosPages.LOGS_KEYS]: HilosLogsKeys,
-  [HilosPages.LOGS_WORKERS]: HilosLogsWorkers,
-  [HilosPages.LOGS_ROTATIONS]: HilosLogsRotations,
-  [HilosPages.LOGS_SETTINGS]: HilosLogsSettings,
-  [HilosPages.LOGS_VIEW]: HilosLogsView,
-  [HilosPages.DAEMON]: HilosDaemon,
-  [HilosPages.DAEMON_WORKERS]: HilosDaemonWorkers,
-  [HilosPages.DAEMON_AGENTS]: HilosDaemonAgents,
-  [HilosPages.DAEMON_CRON]: HilosDaemonCron,
-  [HilosPages.DAEMON_HTTP_SERVER]: HilosDaemonHttp,
-  [HilosPages.DAEMON_ENV]: HilosDaemonEnv,
-  [HilosPages.DAEMON_ENV_MISMATCH]: HilosDaemonEnvMismatch,
-  [HilosPages.COMMUNICATIONS]: HilosCommunications,
-  [HilosPages.COMMUNICATIONS_CHANNEL]: HilosCommunicationsChannel,
-  [HilosPages.COMMUNICATIONS_DELIVERIES]: HilosCommunicationsDeliveries,
+  [HilosPages.BACKUP]: lazyPage(() =>
+    import('./views/Hilos/Backup/Backup.vue').then((m) => m.default),
+  ),
+  [HilosPages.CHANGE_LOG]: lazyPage(() =>
+    import('./views/Hilos/ChangeLog/ChangeLog.vue').then((m) => m.default),
+  ),
+  [HilosPages.CHANGE_LOG_TABLES]: lazyPage(() =>
+    import('./views/Hilos/ChangeLog/ChangeLogTables.vue').then(
+      (m) => m.default,
+    ),
+  ),
+  [HilosPages.CHANGE_LOG_TABLE]: lazyPage(() =>
+    import('./views/Hilos/ChangeLog/ChangeLogTable.vue').then((m) => m.default),
+  ),
+  [HilosPages.MAINTENANCE]: lazyPage(() =>
+    import('./views/Hilos/Maintenance/Maintenance.vue').then((m) => m.default),
+  ),
+  [HilosPages.SETTINGS]: lazyPage(() =>
+    import('./views/Hilos/Settings/Settings.vue').then((m) => m.default),
+  ),
+  [HilosPages.APPEARANCE]: lazyPage(() =>
+    import('./views/Hilos/Appearance/Appearance.vue').then((m) => m.default),
+  ),
+  [HilosPages.ANALYTICS_BROWSER_SESSION]: lazyPage(() =>
+    import('./views/Hilos/Analytics/BrowserSession.vue').then((m) => m.default),
+  ),
+  [HilosPages.ANALYTICS_PERSON]: lazyPage(() =>
+    import('./views/Hilos/Analytics/Person.vue').then((m) => m.default),
+  ),
+  [HilosPages.USERS]: lazyPage(() =>
+    import('./views/Hilos/Users/Users.vue').then((m) => m.default),
+  ),
+  [HilosPages.USER]: lazyPage(() =>
+    import('./views/Hilos/Users/User.vue').then((m) => m.default),
+  ),
+  [HilosPages.I18N_LANGUAGES]: lazyPage(() =>
+    import('./views/Hilos/I18n/Languages/Languages.vue').then((m) => m.default),
+  ),
+  [HilosPages.I18N_LANGUAGE]: lazyPage(() =>
+    import('./views/Hilos/I18n/Language/Language.vue').then((m) => m.default),
+  ),
+  [HilosPages.I18N_LANGUAGE_NAMES]: lazyPage(() =>
+    import('./views/Hilos/I18n/LanguageNames/LanguageNames.vue').then(
+      (m) => m.default,
+    ),
+  ),
+  [HilosPages.I18N_LANGUAGE_LOCALES]: lazyPage(() =>
+    import('./views/Hilos/I18n/LanguageLocales/LanguageLocales.vue').then(
+      (m) => m.default,
+    ),
+  ),
+  [HilosPages.I18N_COUNTRIES]: lazyPage(() =>
+    import('./views/Hilos/I18n/Countries/Countries.vue').then((m) => m.default),
+  ),
+  [HilosPages.I18N_COUNTRY]: lazyPage(() =>
+    import('./views/Hilos/I18n/Country/Country.vue').then((m) => m.default),
+  ),
+  [HilosPages.I18N_COUNTRY_NAMES]: lazyPage(() =>
+    import('./views/Hilos/I18n/CountryNames/CountryNames.vue').then(
+      (m) => m.default,
+    ),
+  ),
+  [HilosPages.LOGS]: lazyPage(() =>
+    import('./views/Hilos/Logs/Overview.vue').then((m) => m.default),
+  ),
+  [HilosPages.LOGS_KEYS]: lazyPage(() =>
+    import('./views/Hilos/Logs/Keys.vue').then((m) => m.default),
+  ),
+  [HilosPages.LOGS_WORKERS]: lazyPage(() =>
+    import('./views/Hilos/Logs/Workers.vue').then((m) => m.default),
+  ),
+  [HilosPages.LOGS_ROTATIONS]: lazyPage(() =>
+    import('./views/Hilos/Logs/Rotations.vue').then((m) => m.default),
+  ),
+  [HilosPages.LOGS_SETTINGS]: lazyPage(() =>
+    import('./views/Hilos/Logs/Settings.vue').then((m) => m.default),
+  ),
+  [HilosPages.LOGS_VIEW]: lazyPage(() =>
+    import('./views/Hilos/Logs/View.vue').then((m) => m.default),
+  ),
+  [HilosPages.DAEMON]: lazyPage(() =>
+    import('./views/Hilos/Daemon/Daemon.vue').then((m) => m.default),
+  ),
+  [HilosPages.DAEMON_WORKERS]: lazyPage(() =>
+    import('./views/Hilos/Daemon/Workers.vue').then((m) => m.default),
+  ),
+  [HilosPages.DAEMON_AGENTS]: lazyPage(() =>
+    import('./views/Hilos/Daemon/Agents.vue').then((m) => m.default),
+  ),
+  [HilosPages.DAEMON_CRON]: lazyPage(() =>
+    import('./views/Hilos/Daemon/Cron.vue').then((m) => m.default),
+  ),
+  [HilosPages.DAEMON_HTTP_SERVER]: lazyPage(() =>
+    import('./views/Hilos/Daemon/Http.vue').then((m) => m.default),
+  ),
+  [HilosPages.DAEMON_ENV]: lazyPage(() =>
+    import('./views/Hilos/Daemon/Env.vue').then((m) => m.default),
+  ),
+  [HilosPages.DAEMON_ENV_MISMATCH]: lazyPage(() =>
+    import('./views/Hilos/Daemon/EnvMismatch.vue').then((m) => m.default),
+  ),
+  [HilosPages.COMMUNICATIONS]: lazyPage(() =>
+    import('./views/Hilos/Communications/Communications.vue').then(
+      (m) => m.default,
+    ),
+  ),
+  [HilosPages.COMMUNICATIONS_CHANNEL]: lazyPage(() =>
+    import('./views/Hilos/Communications/Channel.vue').then((m) => m.default),
+  ),
+  [HilosPages.COMMUNICATIONS_DELIVERIES]: lazyPage(() =>
+    import('./views/Hilos/Communications/Deliveries.vue').then(
+      (m) => m.default,
+    ),
+  ),
   [HilosPages.PROFILE_NOTIFICATIONS]: ProfileNotifications,
   [HilosPages.ABOUT]: About,
   [HilosPages.TERMS]: Terms,

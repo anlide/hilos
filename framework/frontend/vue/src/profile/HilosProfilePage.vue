@@ -16,7 +16,7 @@ import {
   hilosProfileSectionId,
   type HilosProfileBinding,
   type HilosProfilePageContext,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 import HilosAvatar from '../HilosAvatar.vue'
 import HilosLink from '../HilosLink.vue'

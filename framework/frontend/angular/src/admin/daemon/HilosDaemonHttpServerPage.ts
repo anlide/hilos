@@ -8,19 +8,21 @@ import {
   input,
   signal,
 } from '@angular/core'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
+import {
+  HilosAdminPage,
+  HilosViewportTable,
+  HilosTableCell,
+  HILOS_ROUTER,
+  hilosSignal,
+  mirrorHilosSignal,
+} from '@hilos/angular/base'
 import { HilosDaemonNodeLine } from './HilosDaemonNodeLine.js'
-import { HILOS_ROUTER } from '../../hilosRouterToken.js'
-import { hilosSignal, mirrorHilosSignal } from '../../hilosSignal.js'
 import {
   createHilosDaemonHttpRoutesTable,
   daemonHttpEmptyState,
   DAEMON_NODE_STATE_SILENT,
   formatDaemonHttpPeriod,
   formatDaemonNodeSilentSince,
-  HilosPages,
   readHilosDaemonHttpSummary,
   readHilosDaemonNodeHeading,
   DAEMON_HTTP_ROUTE_PATH_FIELD,
@@ -34,7 +36,8 @@ import {
   type HilosDaemonHttpContext,
   type HilosDaemonNodeHeading,
   type HilosDaemonHttpSummary,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
+import { HilosPages } from '@hilos/core/base'
 
 /** Angular view of the Daemon HttpServerPage. */
 @Component({

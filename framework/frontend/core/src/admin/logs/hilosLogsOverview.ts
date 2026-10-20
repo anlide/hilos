@@ -13,10 +13,19 @@
 // The screen answers "is anything wrong with the logs, and where do I go from here".
 // It commands nothing: every way off it is ordinary navigation.
 
-import { z } from 'zod'
+import {
+  OVERVIEW_SIGNAL,
+  OVERVIEW_NODE_ID_FIELD,
+  OVERVIEW_NODE_AVAILABLE_FIELD,
+  OVERVIEW_NODE_GROWTH_FIELD,
+  OVERVIEW_NODE_FREE_BYTES_FIELD,
+  OVERVIEW_NODE_TOTAL_BYTES_FIELD,
+  OVERVIEW_NODE_THRESHOLD_FIELD,
+  type HilosLogsOverviewRecentEntry,
+  type HilosLogsOverview,
+} from '../../protocol/logsSignals.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { formatBytes } from '../../format/bytes.js'
-import { hideable } from '../../state/hideableSchema.js'
 import {
   HIDDEN_VALUE,
   isHiddenValue,
@@ -25,151 +34,34 @@ import {
 import { createSignal, type ReadonlySignal } from '../../state/signal.js'
 import { LOG_SOURCE_LIVE, logViewerPath } from './hilosLogViewer.js'
 
-/** Server→client signal `type` carrying the whole screen (PHP `SUBSCRIPTION_PAGE_HILOS_LOGS`). */
-export const OVERVIEW_SIGNAL = 'subscription_page_hilos_logs'
-
-// Row payload keys of the per-node table. They are declared here because this module
-// owns the view-model they resolve into, and they are what the schema below is built
-// from, so the wire name has one owner instead of a copy per schema and per view.
-// The header's own keys are not declared this way for the reason the neighbouring
-// screens do not declare theirs: they are fields of one object, not of a row.
-
-/** Row payload key of the node the row speaks for. */
-export const OVERVIEW_NODE_ID_FIELD = 'nodeId'
-
-/** Row payload key of whether that node could read its own log store. */
-export const OVERVIEW_NODE_AVAILABLE_FIELD = 'available'
-
-/** Row payload key of the node's newest rotation, ISO 8601. */
-export const OVERVIEW_NODE_LAST_ROTATION_FIELD = 'lastRotationAt'
-
-/** Row payload key of what the node's live files weigh. */
-export const OVERVIEW_NODE_LIVE_BYTES_FIELD = 'liveBytes'
-
-/** Row payload key of what the node's archive weighs. */
-export const OVERVIEW_NODE_ARCHIVE_BYTES_FIELD = 'archiveBytes'
-
-/** Row payload key of what the node wrote over the last day. */
-export const OVERVIEW_NODE_GROWTH_FIELD = 'growthBytesPerDay'
-
-/** Row payload key of the node's batches past their retention. */
-export const OVERVIEW_NODE_DUE_FIELD = 'batchesDueForTakeout'
-
-/**
- * Row payload key of the free bytes on the filesystem holding that node's log root.
- *
- * Null is "not known" — the node named no directory, or its filesystem did not answer
- * — and the forecast is then not drawn at all rather than guessed at.
- */
-export const OVERVIEW_NODE_FREE_BYTES_FIELD = 'filesystemFreeBytes'
-
-/** Row payload key of the whole size of that same filesystem. */
-export const OVERVIEW_NODE_TOTAL_BYTES_FIELD = 'filesystemTotalBytes'
-
-/** Row payload key of the share of the volume that node keeps free, in percent. */
-export const OVERVIEW_NODE_THRESHOLD_FIELD = 'freeSpaceThresholdPercent'
-
-// Row payload keys of the recent-failures panel. One row shape serves both of its
-// tabs: an error and a warning are the same kind of entry, and only which lines were
-// picked differs between them.
-
-/**
- * Row payload key of the node an entry was written on.
- *
- * Carries the effective node ID even on standalone, so a recent entry links to
- * the exact node and file.
- */
-export const OVERVIEW_RECENT_NODE_ID_FIELD = 'nodeId'
-
-/** Row payload key of the live stream an entry was written to. */
-export const OVERVIEW_RECENT_STREAM_FIELD = 'stream'
-
-/** Row payload key of when an entry was written, ISO 8601 with milliseconds. */
-export const OVERVIEW_RECENT_AT_FIELD = 'at'
-
-/** Row payload key of the entry's text, already cut by the node that read it. */
-export const OVERVIEW_RECENT_MESSAGE_FIELD = 'message'
-
-/** Row payload key of the frames in an entry's stack trace, null when it has none. */
-export const OVERVIEW_RECENT_TRACE_FRAMES_FIELD = 'traceFrames'
+export {
+  OVERVIEW_SIGNAL,
+  OVERVIEW_NODE_ID_FIELD,
+  OVERVIEW_NODE_AVAILABLE_FIELD,
+  OVERVIEW_NODE_LAST_ROTATION_FIELD,
+  OVERVIEW_NODE_LIVE_BYTES_FIELD,
+  OVERVIEW_NODE_ARCHIVE_BYTES_FIELD,
+  OVERVIEW_NODE_GROWTH_FIELD,
+  OVERVIEW_NODE_DUE_FIELD,
+  OVERVIEW_NODE_FREE_BYTES_FIELD,
+  OVERVIEW_NODE_TOTAL_BYTES_FIELD,
+  OVERVIEW_NODE_THRESHOLD_FIELD,
+  OVERVIEW_RECENT_NODE_ID_FIELD,
+  OVERVIEW_RECENT_STREAM_FIELD,
+  OVERVIEW_RECENT_AT_FIELD,
+  OVERVIEW_RECENT_MESSAGE_FIELD,
+  OVERVIEW_RECENT_TRACE_FRAMES_FIELD,
+  type HilosLogsOverviewNode,
+  type HilosLogsOverviewRecentEntry,
+  type HilosLogsOverview,
+  LOGS_OVERVIEW_SIGNAL_SCHEMAS,
+} from '../../protocol/logsSignals.js'
 
 /** The tab of the recent-failures panel that lists errors; the one a screen opens on. */
 export const RECENT_TAB_ERRORS = 'errors'
 
 /** The tab of the recent-failures panel that lists warnings. */
 export const RECENT_TAB_WARNINGS = 'warnings'
-
-/**
- * One row of the per-node table.
- *
- * A node that could not be read keeps its row with null in every figure: a zero
- * there would be a measurement nobody took, and dropping the row would read as a
- * node that never reported at all.
- */
-const overviewNodeSchema = z.looseObject({
-  [OVERVIEW_NODE_ID_FIELD]: z.string(),
-  [OVERVIEW_NODE_AVAILABLE_FIELD]: z.boolean(),
-  [OVERVIEW_NODE_LAST_ROTATION_FIELD]: z.string().nullable(),
-  [OVERVIEW_NODE_LIVE_BYTES_FIELD]: z.number().nullable(),
-  [OVERVIEW_NODE_ARCHIVE_BYTES_FIELD]: z.number().nullable(),
-  [OVERVIEW_NODE_GROWTH_FIELD]: z.number().nullable(),
-  [OVERVIEW_NODE_DUE_FIELD]: z.number().nullable(),
-  [OVERVIEW_NODE_FREE_BYTES_FIELD]: z.number().nullable(),
-  [OVERVIEW_NODE_TOTAL_BYTES_FIELD]: z.number().nullable(),
-  [OVERVIEW_NODE_THRESHOLD_FIELD]: hideable(z.number().nullable()),
-})
-
-/**
- * One row of the recent-failures panel, in either of its tabs.
- *
- * Every field but the frame count is a string the node measured, so none of them is
- * nullable: a row exists because a line was really written. The frame count keeps its
- * null, which is the difference between "there is a stack to look at" and "there is
- * not" — read as a zero it would put a badge on every row.
- */
-const recentEntrySchema = z.looseObject({
-  [OVERVIEW_RECENT_NODE_ID_FIELD]: z.string(),
-  [OVERVIEW_RECENT_STREAM_FIELD]: z.string(),
-  [OVERVIEW_RECENT_AT_FIELD]: z.string(),
-  [OVERVIEW_RECENT_MESSAGE_FIELD]: hideable(z.string()),
-  [OVERVIEW_RECENT_TRACE_FRAMES_FIELD]: z.number().nullable(),
-})
-
-/**
- * Payload of the whole screen: the tiles, the takeout verdict and the per-node table
- * in one frame (PHP `HilosLogsOverviewSignalData`).
- */
-const overviewSchema = z.looseObject({
-  available: z.boolean().nullable(),
-  totalRotationsAllTime: z.number().nullable(),
-  lastRotationAt: z.string().nullable(),
-  logKeysPerDaemon: z.number().nullable(),
-  totalWeightDaemonKeysBytes: z.number().nullable(),
-  logKeysPerAgent: z.number().nullable(),
-  totalWeightAgentKeysBytes: z.number().nullable(),
-  logKeysPerWorker: z.number().nullable(),
-  totalWeightWorkerKeysBytes: z.number().nullable(),
-  growthBytesPerDay: z.number().nullable(),
-  keysWithoutGrowthWindow: z.number().nullable(),
-  batchesDueForTakeout: z.number().nullable(),
-  nodes: z.array(overviewNodeSchema),
-  recentErrors: z.array(recentEntrySchema),
-  recentErrorsCapped: z.boolean(),
-  recentWarnings: z.array(recentEntrySchema),
-  recentWarningsCapped: z.boolean(),
-  // The header half of the same three fields the rows carry: a single-node
-  // installation has no row to put its disk in, a cluster leaves these null and
-  // answers per node. Exactly one half is ever filled.
-  [OVERVIEW_NODE_FREE_BYTES_FIELD]: z.number().nullable(),
-  [OVERVIEW_NODE_TOTAL_BYTES_FIELD]: z.number().nullable(),
-  [OVERVIEW_NODE_THRESHOLD_FIELD]: hideable(z.number().nullable()),
-})
-
-/** One node's row of the per-node table. */
-export type HilosLogsOverviewNode = z.infer<typeof overviewNodeSchema>
-
-/** One entry of the recent-failures panel, an error or a warning. */
-export type HilosLogsOverviewRecentEntry = z.infer<typeof recentEntrySchema>
 
 /**
  * Which tab of the recent-failures panel is open.
@@ -179,21 +71,6 @@ export type HilosLogsOverviewRecentEntry = z.infer<typeof recentEntrySchema>
  */
 export type HilosLogsRecentTab =
   typeof RECENT_TAB_ERRORS | typeof RECENT_TAB_WARNINGS
-
-/** The screen as the page answers a subscription with it. */
-export type HilosLogsOverview = z.infer<typeof overviewSchema>
-
-/**
- * The overview signal schema keyed for a connection's `projectSchemas`, so the parse
- * boundary validates the frames {@link createHilosLogsOverview} ingests.
- * {@link createHilosConnection} merges it in, so a project never restates it.
- *
- * A set of its own rather than an entry in a neighbour's: two independent screens
- * must not depend on which of them landed first.
- */
-export const LOGS_OVERVIEW_SIGNAL_SCHEMAS = {
-  [OVERVIEW_SIGNAL]: overviewSchema,
-}
 
 /**
  * The project-supplied context the logs-overview admin reads from.

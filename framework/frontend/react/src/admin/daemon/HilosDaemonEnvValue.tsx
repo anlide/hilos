@@ -1,5 +1,5 @@
 // Value presentation consumes only the core's masked display model.
-import type { HilosDaemonEnvValueView } from '@hilos/core'
+import type { HilosDaemonEnvValueView } from '@hilos/core/admin/daemon'
 import { HilosHiddenMark } from '../../HilosHiddenMark.js'
 
 /** @param props The permitted value presentation and missing-value emphasis. */

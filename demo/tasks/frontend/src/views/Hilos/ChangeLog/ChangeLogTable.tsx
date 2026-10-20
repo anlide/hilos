@@ -1,5 +1,5 @@
 // Mount the framework Tracked table page with this project's context.
-import { HilosChangeLogTablePage } from '@hilos/react'
+import { HilosChangeLogTablePage } from '@hilos/react/admin/change-log'
 
 import { hilosChangeLogContext } from './hilosChangeLogContext.js'
 

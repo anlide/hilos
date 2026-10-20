@@ -22,7 +22,7 @@ import {
   oauthTrip,
   oauthTripMessage,
   oauthTripTitle,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosModal } from '../HilosModal.js'
 import { hilosSignal } from '../hilosSignal.js'

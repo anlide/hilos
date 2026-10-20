@@ -4,7 +4,7 @@
 // In the header it may carry the mark of the session's standing (HIL-945): a ring
 // in the standing's color and its icon in the corner, the pair of the strip that
 // says the same in words — so the mark is decorative too.
-import { formatInitials, type HilosAvatarMark } from '@hilos/core'
+import { formatInitials, type HilosAvatarMark } from '@hilos/core/base'
 import { useEffect, useState } from 'react'
 
 /** Props for {@link HilosAvatar}. */

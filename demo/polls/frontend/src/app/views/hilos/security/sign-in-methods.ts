@@ -3,7 +3,7 @@
 // app's context. The table, the row view-model and the switch are the framework's;
 // the project supplies only the context and declares its methods on its backend.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosSecuritySignInMethodsPage } from '@hilos/angular'
+import { HilosSecuritySignInMethodsPage } from '@hilos/angular/admin/security'
 
 import { hilosSignInMethodsContext } from './hilosSignInMethodsContext'
 

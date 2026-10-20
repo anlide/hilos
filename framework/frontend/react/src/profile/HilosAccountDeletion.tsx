@@ -21,8 +21,8 @@ import {
   HILOS_DATA_EXPORT_COPY,
   HILOS_PAGE_ROUTES,
   HilosPages,
-} from '@hilos/core'
-import type { HilosSecondFactorContext } from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosSecondFactorContext } from '@hilos/core/base'
 
 import { HilosLink } from '../HilosLink.js'
 import { HilosFormError } from '../HilosFormError.js'

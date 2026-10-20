@@ -17,7 +17,7 @@ import {
   HILOS_PAGE_ROUTES,
   HilosPages,
   resolvePageTitle,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type { ComponentType } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 

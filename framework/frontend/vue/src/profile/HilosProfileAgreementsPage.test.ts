@@ -1,4 +1,4 @@
-import { type ActionLifecycle } from '@hilos/core'
+import { type ActionLifecycle } from '@hilos/core/base'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, expect, it, vi } from 'vitest'
 import { agreement, legalContext } from '../../../core/test/legal/fixtures.js'

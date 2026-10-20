@@ -7,7 +7,7 @@
 // the account from the session scope, without one it says the visit is
 // anonymous — the demo hands a guest no name, so the `self-user` marker is
 // absent rather than empty.
-import { useSignal } from '@hilos/react'
+import { useSignal } from '@hilos/react/base'
 
 import { currentUserId, currentUserName } from '../../bootstrap/session.js'
 

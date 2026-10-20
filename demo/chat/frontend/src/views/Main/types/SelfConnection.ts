@@ -5,7 +5,7 @@
 // a message carries are not here: they are uploads of the framework client
 // (`hilosUploads` in @hilos/core, HIL-144). Wire keys mirror the backend
 // SelfConnectionSignalData / OutboundModerationBrowserPayload.
-import { readNumber, readString, readStringOrNull } from '@hilos/core'
+import { readNumber, readString, readStringOrNull } from '@hilos/core/base'
 
 /** Outbound moderation lifecycle phase (PHP `ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_*`). */
 export type ModerationPhase = 'checking' | 'rejected' | 'unavailable'

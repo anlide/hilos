@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { HilosI18nCountryPage } from '@hilos/vue'
+import { HilosI18nCountryPage } from '@hilos/vue/admin/i18n'
 import { hilosI18nCountryContext } from './hilosI18nCountryContext.js'
 
 defineOptions({ name: 'HilosI18nCountry' })

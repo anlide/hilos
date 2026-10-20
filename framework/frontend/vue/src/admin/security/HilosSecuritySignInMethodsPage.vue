@@ -19,12 +19,11 @@ the passkey block (D-122). Bootstrap classes only (styling-rules.md). -->
 import {
   createHilosSignInMethodsActions,
   createHilosSignInMethodsTable,
-  HilosPages,
   isSignInMethodOn,
-  resolveHilosPath,
   type HilosSignInMethodRow,
   type HilosSignInMethodsContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/security'
+import { HilosPages, resolveHilosPath } from '@hilos/core/base'
 import { onMounted, onUnmounted, ref, useId } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'

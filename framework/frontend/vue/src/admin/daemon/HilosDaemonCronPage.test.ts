@@ -3,14 +3,16 @@ import {
   DAEMON_CRON_IDLE_NOT_LEADER,
   DAEMON_CRON_REPORTED_DATA,
   DAEMON_NODE_DATA,
+  type HilosDaemonNodeHeading,
+} from '@hilos/core/admin/daemon'
+import {
   HilosPages,
   ScopeManager,
   createSignal,
   type HilosConnection,
-  type HilosDaemonNodeHeading,
   type HilosRouter,
   type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { describe, expect, it } from 'vitest'
 import { nextTick } from 'vue'
 

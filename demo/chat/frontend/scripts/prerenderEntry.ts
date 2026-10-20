@@ -17,7 +17,7 @@ import {
   HILOS_PAGE_ROUTES,
   HilosPages,
   resolvePageTitle,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { createSSRApp, h, type Component } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 

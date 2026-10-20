@@ -1,21 +1,23 @@
 import { mount, type VueWrapper } from '@vue/test-utils'
 import {
   ActionError,
-  COUNTRY_CARD_DATA,
   createSignal,
   bindAdminAccess,
-  HILOS_I18N_COUNTRY_NAMES_FILTER,
-  HILOS_I18N_COUNTRY_NAMES_TABLE,
   HilosPages,
   ScopeManager,
   type ActionResult,
   type ActionLifecycle,
   type HilosConnection,
-  type HilosI18nCountryCard,
-  type HilosI18nCountryContext,
   type HilosRouter,
   type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  COUNTRY_CARD_DATA,
+  HILOS_I18N_COUNTRY_NAMES_FILTER,
+  HILOS_I18N_COUNTRY_NAMES_TABLE,
+  type HilosI18nCountryCard,
+  type HilosI18nCountryContext,
+} from '@hilos/core/admin/i18n'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 

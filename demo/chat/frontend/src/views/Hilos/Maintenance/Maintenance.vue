@@ -5,7 +5,7 @@ supplies only the context (its scope stores + live connection) and registers the
 page and the circle table on its backend. Bootstrap classes only
 (styling-rules.md). -->
 <script setup lang="ts">
-import { HilosMaintenancePage } from '@hilos/vue'
+import { HilosMaintenancePage } from '@hilos/vue/admin/maintenance'
 
 import { hilosMaintenanceContext } from './hilosMaintenanceContext'
 

@@ -9,7 +9,7 @@
 // page. A block that loads on its own on a live page passes `label`, and gets
 // exactly one announcement for the whole frame, never one per bar
 // (accessibility.md).
-import { HILOS_SKELETON_LINES } from '@hilos/core'
+import { HILOS_SKELETON_LINES } from '@hilos/core/base'
 
 /** Props for {@link HilosSkeleton}. */
 export interface HilosSkeletonProps {

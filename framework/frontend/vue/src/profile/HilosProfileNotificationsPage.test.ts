@@ -4,7 +4,7 @@ import {
   hilosNotificationPreferences,
   type HilosConnection,
   type HilosRouter,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import { hilosRouterKey } from '../hilosRouterKey.js'

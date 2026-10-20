@@ -1,6 +1,10 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { consentTermsWithClauses } from '../../../../core/test/legal/consentFixture.js'
-import { createSignal, ScopeManager, type HilosLegalContext } from '@hilos/core'
+import {
+  createSignal,
+  ScopeManager,
+  type HilosLegalContext,
+} from '@hilos/core/base'
 import { describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import HilosLegalPage from './HilosLegalPage.vue'

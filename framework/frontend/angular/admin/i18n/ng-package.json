@@ -1,0 +1,5 @@
+{
+  "lib": {
+    "entryFile": "../../src/admin/i18n/index.ts"
+  }
+}

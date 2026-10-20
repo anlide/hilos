@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import type { ComponentType } from 'react'
 import {
   createAppPageRouter,
   createSignal,
   HilosPages,
   type HilosPageIdentity,
   type HilosRouter,
+  type LazyPageView,
   type PageRouteMatch,
 } from '@hilos/core'
 
@@ -34,7 +36,7 @@ const IDENTITY: HilosPageIdentity = {
 }
 
 /** Mount the real default root over the existing framework route declarations. */
-function mount(identity: HilosPageIdentity | undefined) {
+async function mount(identity: HilosPageIdentity | undefined) {
   const routes = createAppPageRouter({})
   const navigate = vi.fn()
   const pageIdentity = createSignal(identity)
@@ -60,7 +62,10 @@ function mount(identity: HilosPageIdentity | undefined) {
     start: () => {},
     stop: () => {},
   }
-  const Root = hilosAdminViews()[HilosPages.I18N]
+  const descriptor = hilosAdminViews()[
+    HilosPages.I18N
+  ] as LazyPageView<ComponentType>
+  const Root = await descriptor.load()
   const rendered = render(
     <HilosRouterContext.Provider value={navigator}>
       <Root />
@@ -72,9 +77,10 @@ function mount(identity: HilosPageIdentity | undefined) {
 describe('HilosI18nPage', () => {
   afterEach(cleanup)
 
-  it('keeps the self-contained root default and requires bindings for its seven pages', () => {
+  it('keeps the self-contained root default and requires bindings for its seven pages', async () => {
     const views = hilosAdminViews()
-    expect(views[HilosPages.I18N]).toBe(HilosI18nPage)
+    const descriptor = views[HilosPages.I18N] as LazyPageView<ComponentType>
+    expect(await descriptor.load()).toBe(HilosI18nPage)
     for (const page of [
       HilosPages.I18N_LANGUAGES,
       HilosPages.I18N_LANGUAGE,
@@ -88,8 +94,8 @@ describe('HilosI18nPage', () => {
     }
   })
 
-  it('renders one heading and exactly the Languages and Countries child links', () => {
-    const { container, navigate } = mount(IDENTITY)
+  it('renders one heading and exactly the Languages and Countries child links', async () => {
+    const { container, navigate } = await mount(IDENTITY)
     expect(container.querySelectorAll('h1')).toHaveLength(1)
     expect(container.querySelector('h1')?.textContent).toBe(IDENTITY.label)
     const cards = container.querySelectorAll('[data-id^="hilos-admin-child-"]')
@@ -106,8 +112,8 @@ describe('HilosI18nPage', () => {
     expect(navigate).toHaveBeenLastCalledWith('/hilos/i18n/countries')
   })
 
-  it('shows the standard placeholder until identity arrives without printing raw keys', () => {
-    const { container, pageIdentity } = mount(undefined)
+  it('shows the standard placeholder until identity arrives without printing raw keys', async () => {
+    const { container, pageIdentity } = await mount(undefined)
     expect(
       container.querySelector('[data-id="hilos-admin-title-skeleton"]'),
     ).not.toBeNull()

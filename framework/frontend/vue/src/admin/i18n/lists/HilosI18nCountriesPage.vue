@@ -21,11 +21,11 @@ import {
   HILOS_I18N_COUNTRIES_LEGEND,
   HILOS_I18N_COUNTRY_MARKS,
   hilosI18nCountryDeleteFromRow,
-  HilosPages,
   type HilosI18nCountryContext,
   type HilosI18nCountryDeleteTarget,
   type HilosI18nCountryRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { HilosPages } from '@hilos/core/base'
 import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import HilosAdminPage from '../../../HilosAdminPage.vue'

@@ -5,7 +5,7 @@ import {
   drawHilosPhotoPreview,
   HILOS_PROFILE_PHOTO_COPY as COPY,
   type HilosProfilePhotoFlow,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { HilosAvatar } from '../HilosAvatar.js'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'

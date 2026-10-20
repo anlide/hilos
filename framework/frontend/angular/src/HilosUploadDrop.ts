@@ -15,7 +15,7 @@ import {
   HILOS_UPLOAD_FIELD_COPY,
   HILOS_UPLOAD_FIELD_OVERLAY_CLASS,
   type HilosUploadField,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import {
   ChangeDetectionStrategy,
   Component,

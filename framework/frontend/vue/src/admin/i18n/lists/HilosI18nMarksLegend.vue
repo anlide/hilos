@@ -2,7 +2,7 @@
 Explains visual badges used across tables of the i18n section.
 Bootstrap classes only, following WCAG 2.1 AA (accessibility.md, styling-rules.md). -->
 <script setup lang="ts">
-import { type HilosI18nLegendRow } from '@hilos/core'
+import { type HilosI18nLegendRow } from '@hilos/core/admin/i18n'
 
 defineProps<{
   /** Rows explaining the marks used in the table. */

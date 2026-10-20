@@ -4,7 +4,7 @@
 // (HilosPrivacyPage), and this demo declares no browser value of its own, so it
 // hands in no `values`. See views/about/about.ts.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosPrivacyPage } from '@hilos/angular'
+import { HilosPrivacyPage } from '@hilos/angular/base'
 
 import { actions, connection } from '../../bootstrap/connection'
 

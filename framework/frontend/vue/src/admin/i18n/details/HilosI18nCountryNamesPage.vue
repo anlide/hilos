@@ -6,19 +6,18 @@ loading skeleton, card with table, and unavailable alert when deleted.
 Bootstrap classes only, painted with classes that follow the theme
 (styling-rules.md). -->
 <script setup lang="ts">
+import { computedSignal, HilosPages } from '@hilos/core/base'
 import {
-  computedSignal,
   createHilosI18nCountryCard,
   createHilosI18nCountryNameWindow,
   createHilosI18nNamesTable,
   HILOS_I18N_COUNTRY_NAMES,
   HILOS_I18N_COUNTRY_NAME_COPY,
   HILOS_I18N_COUNTRY_NAME_DELETE_COPY,
-  HilosPages,
   type HilosI18nCountryContext,
   type HilosI18nCountryNameDeleteTarget,
   type HilosI18nNameRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import {
   computed,
   inject,

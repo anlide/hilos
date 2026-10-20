@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosDaemonEnvMismatchPage } from '@hilos/angular'
+import { HilosDaemonEnvMismatchPage } from '@hilos/angular/admin/daemon'
 
 import { hilosDaemonEnvMismatchContext } from './hilosDaemonContext.js'
 

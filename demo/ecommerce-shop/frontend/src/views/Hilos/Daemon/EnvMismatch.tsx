@@ -1,4 +1,4 @@
-import { HilosDaemonEnvMismatchPage } from '@hilos/react'
+import { HilosDaemonEnvMismatchPage } from '@hilos/react/admin/daemon'
 
 import { hilosDaemonContext } from './hilosDaemonContext.js'
 

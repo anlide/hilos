@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { HILOS_STEP_UP_COPY, type HilosStepUpStep } from '@hilos/core'
+import { HILOS_STEP_UP_COPY, type HilosStepUpStep } from '@hilos/core/base'
 
 import HilosFormError from '../HilosFormError.vue'
 import HilosSendProgress from '../HilosSendProgress.vue'

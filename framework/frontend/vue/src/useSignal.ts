@@ -4,8 +4,8 @@
 // duplicated engine copy harmless (multiframework-core.md).
 import { onScopeDispose, shallowReadonly, shallowRef } from 'vue'
 import type { Ref } from 'vue'
-import { subscribeSignal } from '@hilos/core'
-import type { ReadonlySignal } from '@hilos/core'
+import { subscribeSignal } from '@hilos/core/base'
+import type { ReadonlySignal } from '@hilos/core/base'
 
 /**
  * Mirror a core signal into a readonly reactive ref.

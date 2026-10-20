@@ -16,7 +16,7 @@ import {
   type DataExportNode,
   type HilosDataExportStore,
   type HilosDataExportFlow,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { hilosSignal } from '../hilosSignal.js'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'

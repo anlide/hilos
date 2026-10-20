@@ -22,7 +22,6 @@ import {
   hasLogsOverviewNodes,
   hasLogsOverviewRecent,
   HILOS_ROTATION_STATE_DUE,
-  HilosPages,
   logLevelVariant,
   logRotationsPath,
   logsOverviewBatchesNote,
@@ -44,7 +43,8 @@ import {
   RECENT_TAB_WARNINGS,
   type HilosLogsOverviewContext,
   type HilosLogsRecentTab,
-} from '@hilos/core'
+} from '@hilos/core/admin/logs'
+import { HilosPages } from '@hilos/core/base'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'

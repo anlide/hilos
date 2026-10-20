@@ -24,15 +24,17 @@ import {
   HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
   computedSignal,
+} from '@hilos/core/base'
+import {
   createHilosChannelFieldEdit,
   createHilosChannelFields,
   createHilosCommunicationsActions,
   hilosChannelDisplayValue,
-} from '@hilos/core'
+} from '@hilos/core/admin/communications'
 import type {
   HilosChannelFieldRow,
   HilosCommunicationsContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/communications'
 
 import { ConflictActions } from '../../ConflictActions.js'
 import { ConflictHeader } from '../../ConflictHeader.js'

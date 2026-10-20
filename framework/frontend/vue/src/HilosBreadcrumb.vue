@@ -7,7 +7,7 @@ breadcrumb. A crumb the route map has no address for is drawn as plain text: the
 chain has to stay whole, and a link to nowhere is worse than no link. Bootstrap
 classes only (styling-rules.md). -->
 <script setup lang="ts">
-import type { HilosCrumb } from '@hilos/core'
+import type { HilosCrumb } from '@hilos/core/base'
 
 import HilosLink from './HilosLink.vue'
 

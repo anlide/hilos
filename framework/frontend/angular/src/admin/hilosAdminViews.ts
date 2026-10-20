@@ -25,40 +25,7 @@
 // (HILOS_ADMIN_PAGES), each component renders the page-agnostic HilosAdminPage
 // shell, and HilosView is the one component that reads the navigator.
 import type { Type } from '@angular/core'
-import { HilosPages } from '@hilos/core'
-
-import { HilosDashboardPage } from './dashboard/HilosDashboardPage.js'
-import { HilosRolesPage } from './roles/HilosRolesPage.js'
-import { HilosI18nPage } from './i18n/HilosI18nPage.js'
-import { HilosI18nEntitiesPage } from './i18n/lists/HilosI18nEntitiesPage.js'
-import { HilosI18nUiPagesPage } from './i18n/lists/HilosI18nUiPagesPage.js'
-import { HilosI18nGroupsPage } from './i18n/lists/HilosI18nGroupsPage.js'
-import { HilosI18nActionsPage } from './i18n/lists/HilosI18nActionsPage.js'
-import { HilosI18nEmailsPage } from './i18n/lists/HilosI18nEmailsPage.js'
-import { HilosI18nUiPagePage } from './i18n/details/HilosI18nUiPagePage.js'
-import { HilosI18nGroupPage } from './i18n/details/HilosI18nGroupPage.js'
-import { HilosI18nActionPage } from './i18n/details/HilosI18nActionPage.js'
-import { HilosI18nTranslateEntityPage } from './i18n/translate/HilosI18nTranslateEntityPage.js'
-import { HilosI18nTranslateUiPagePage } from './i18n/translate/HilosI18nTranslateUiPagePage.js'
-import { HilosI18nTranslateUiPageItemPage } from './i18n/translate/HilosI18nTranslateUiPageItemPage.js'
-import { HilosI18nTranslateGroupPage } from './i18n/translate/HilosI18nTranslateGroupPage.js'
-import { HilosI18nTranslateGroupItemPage } from './i18n/translate/HilosI18nTranslateGroupItemPage.js'
-import { HilosI18nTranslateActionErrorPage } from './i18n/translate/HilosI18nTranslateActionErrorPage.js'
-import { HilosI18nTranslateEmailPage } from './i18n/translate/HilosI18nTranslateEmailPage.js'
-import { HilosSecurityPage } from './security/HilosSecurityPage.js'
-import { HilosBillingPage } from './billing/HilosBillingPage.js'
-import { HilosBillingProviderPage } from './billing/HilosBillingProviderPage.js'
-import { HilosBillingPaymentsPage } from './billing/HilosBillingPaymentsPage.js'
-import { HilosBillingRefundsPage } from './billing/HilosBillingRefundsPage.js'
-import { HilosDaemonWebsocketsPage } from './daemon/HilosDaemonWebsocketsPage.js'
-import { HilosAnalyticsPage } from './analytics/HilosAnalyticsPage.js'
-import { HilosMcpSkillsPage } from './mcpSkills/HilosMcpSkillsPage.js'
-import { HilosMcpSkillsMcpPage } from './mcpSkills/HilosMcpSkillsMcpPage.js'
-import { HilosMcpSkillsMcpLogsPage } from './mcpSkills/HilosMcpSkillsMcpLogsPage.js'
-import { HilosMcpSkillsMcpLogsViewPage } from './mcpSkills/HilosMcpSkillsMcpLogsViewPage.js'
-import { HilosSilPage } from './sil/HilosSilPage.js'
-import { HilosSilRequestsPage } from './sil/HilosSilRequestsPage.js'
-import { HilosSilUserHistoryPage } from './sil/HilosSilUserHistoryPage.js'
+import { HilosPages, lazyPage, type PageView } from '@hilos/core/base'
 
 /**
  * The default admin view map: every framework admin page key (except users/user)
@@ -67,11 +34,19 @@ import { HilosSilUserHistoryPage } from './sil/HilosSilUserHistoryPage.js'
  * pages with a 404 and no cards; a project implementing one overrides its key
  * and names it in bootHilos projectViews.
  */
-export function hilosAdminViews(): Record<string, Type<unknown>> {
+export function hilosAdminViews(): Record<string, PageView<Type<unknown>>> {
   return {
-    [HilosPages.DASHBOARD]: HilosDashboardPage,
-    [HilosPages.ROLES]: HilosRolesPage,
-    [HilosPages.I18N]: HilosI18nPage,
+    [HilosPages.DASHBOARD]: lazyPage(() =>
+      import('@hilos/angular/admin/dashboard').then(
+        (m) => m.HilosDashboardPage,
+      ),
+    ),
+    [HilosPages.ROLES]: lazyPage(() =>
+      import('@hilos/angular/admin/roles').then((m) => m.HilosRolesPage),
+    ),
+    [HilosPages.I18N]: lazyPage(() =>
+      import('@hilos/angular/admin/i18n').then((m) => m.HilosI18nPage),
+    ),
     // I18N_LANGUAGES, I18N_LANGUAGE, I18N_LANGUAGE_NAMES, I18N_LANGUAGE_LOCALES,
     // I18N_COUNTRIES, I18N_COUNTRY and I18N_COUNTRY_NAMES are real framework
     // pages since HIL-1503: the lists, the names and the locales read a live
@@ -81,26 +56,72 @@ export function hilosAdminViews(): Record<string, Type<unknown>> {
     // and HilosI18nLanguageLocalesPage directly with its language context, and
     // HilosI18nCountriesPage, HilosI18nCountryPage and HilosI18nCountryNamesPage
     // with its country context. The section root above stays self-contained.
-    [HilosPages.I18N_ENTITIES]: HilosI18nEntitiesPage,
-    [HilosPages.I18N_UI_PAGES]: HilosI18nUiPagesPage,
-    [HilosPages.I18N_GROUPS]: HilosI18nGroupsPage,
-    [HilosPages.I18N_ACTIONS]: HilosI18nActionsPage,
-    [HilosPages.I18N_EMAILS]: HilosI18nEmailsPage,
-    [HilosPages.I18N_UI_PAGE]: HilosI18nUiPagePage,
-    [HilosPages.I18N_GROUP]: HilosI18nGroupPage,
-    [HilosPages.I18N_ACTION]: HilosI18nActionPage,
-    [HilosPages.I18N_TRANSLATE_ENTITY]: HilosI18nTranslateEntityPage,
-    [HilosPages.I18N_TRANSLATE_UI_PAGE]: HilosI18nTranslateUiPagePage,
-    [HilosPages.I18N_TRANSLATE_UI_PAGE_ITEM]: HilosI18nTranslateUiPageItemPage,
-    [HilosPages.I18N_TRANSLATE_GROUP]: HilosI18nTranslateGroupPage,
-    [HilosPages.I18N_TRANSLATE_GROUP_ITEM]: HilosI18nTranslateGroupItemPage,
-    [HilosPages.I18N_TRANSLATE_ACTION_ERROR]: HilosI18nTranslateActionErrorPage,
-    [HilosPages.I18N_TRANSLATE_EMAIL]: HilosI18nTranslateEmailPage,
+    [HilosPages.I18N_ENTITIES]: lazyPage(() =>
+      import('@hilos/angular/admin/i18n').then((m) => m.HilosI18nEntitiesPage),
+    ),
+    [HilosPages.I18N_UI_PAGES]: lazyPage(() =>
+      import('@hilos/angular/admin/i18n').then((m) => m.HilosI18nUiPagesPage),
+    ),
+    [HilosPages.I18N_GROUPS]: lazyPage(() =>
+      import('@hilos/angular/admin/i18n').then((m) => m.HilosI18nGroupsPage),
+    ),
+    [HilosPages.I18N_ACTIONS]: lazyPage(() =>
+      import('@hilos/angular/admin/i18n').then((m) => m.HilosI18nActionsPage),
+    ),
+    [HilosPages.I18N_EMAILS]: lazyPage(() =>
+      import('@hilos/angular/admin/i18n').then((m) => m.HilosI18nEmailsPage),
+    ),
+    [HilosPages.I18N_UI_PAGE]: lazyPage(() =>
+      import('@hilos/angular/admin/i18n').then((m) => m.HilosI18nUiPagePage),
+    ),
+    [HilosPages.I18N_GROUP]: lazyPage(() =>
+      import('@hilos/angular/admin/i18n').then((m) => m.HilosI18nGroupPage),
+    ),
+    [HilosPages.I18N_ACTION]: lazyPage(() =>
+      import('@hilos/angular/admin/i18n').then((m) => m.HilosI18nActionPage),
+    ),
+    [HilosPages.I18N_TRANSLATE_ENTITY]: lazyPage(() =>
+      import('@hilos/angular/admin/i18n').then(
+        (m) => m.HilosI18nTranslateEntityPage,
+      ),
+    ),
+    [HilosPages.I18N_TRANSLATE_UI_PAGE]: lazyPage(() =>
+      import('@hilos/angular/admin/i18n').then(
+        (m) => m.HilosI18nTranslateUiPagePage,
+      ),
+    ),
+    [HilosPages.I18N_TRANSLATE_UI_PAGE_ITEM]: lazyPage(() =>
+      import('@hilos/angular/admin/i18n').then(
+        (m) => m.HilosI18nTranslateUiPageItemPage,
+      ),
+    ),
+    [HilosPages.I18N_TRANSLATE_GROUP]: lazyPage(() =>
+      import('@hilos/angular/admin/i18n').then(
+        (m) => m.HilosI18nTranslateGroupPage,
+      ),
+    ),
+    [HilosPages.I18N_TRANSLATE_GROUP_ITEM]: lazyPage(() =>
+      import('@hilos/angular/admin/i18n').then(
+        (m) => m.HilosI18nTranslateGroupItemPage,
+      ),
+    ),
+    [HilosPages.I18N_TRANSLATE_ACTION_ERROR]: lazyPage(() =>
+      import('@hilos/angular/admin/i18n').then(
+        (m) => m.HilosI18nTranslateActionErrorPage,
+      ),
+    ),
+    [HilosPages.I18N_TRANSLATE_EMAIL]: lazyPage(() =>
+      import('@hilos/angular/admin/i18n').then(
+        (m) => m.HilosI18nTranslateEmailPage,
+      ),
+    ),
     // COMMUNICATIONS, COMMUNICATIONS_CHANNEL, and COMMUNICATIONS_DELIVERIES are real
     // framework pages that need a project-supplied context (like settings / backup):
     // the deliveries journal reads a live connection for its table, so a project
     // mounts them directly rather than through this context-free default map.
-    [HilosPages.SECURITY]: HilosSecurityPage,
+    [HilosPages.SECURITY]: lazyPage(() =>
+      import('@hilos/angular/admin/security').then((m) => m.HilosSecurityPage),
+    ),
     // SECURITY_2FA is a real framework page since HIL-494: its table reads a
     // live connection, so a project mounts HilosSecurity2faPage directly with its
     // context. So is its child SECURITY_STEP_UP since HIL-1204: a project mounts
@@ -114,12 +135,30 @@ export function hilosAdminViews(): Record<string, Type<unknown>> {
     // SECURITY_SIGN_IN_METHODS is one too since HIL-427: its table and its live
     // method set read the connection and the session scope, so a project mounts
     // HilosSecuritySignInMethodsPage directly with its context.
-    [HilosPages.BILLING]: HilosBillingPage,
-    [HilosPages.BILLING_PROVIDER]: HilosBillingProviderPage,
-    [HilosPages.BILLING_PAYMENTS]: HilosBillingPaymentsPage,
-    [HilosPages.BILLING_REFUNDS]: HilosBillingRefundsPage,
+    [HilosPages.BILLING]: lazyPage(() =>
+      import('@hilos/angular/admin/billing').then((m) => m.HilosBillingPage),
+    ),
+    [HilosPages.BILLING_PROVIDER]: lazyPage(() =>
+      import('@hilos/angular/admin/billing').then(
+        (m) => m.HilosBillingProviderPage,
+      ),
+    ),
+    [HilosPages.BILLING_PAYMENTS]: lazyPage(() =>
+      import('@hilos/angular/admin/billing').then(
+        (m) => m.HilosBillingPaymentsPage,
+      ),
+    ),
+    [HilosPages.BILLING_REFUNDS]: lazyPage(() =>
+      import('@hilos/angular/admin/billing').then(
+        (m) => m.HilosBillingRefundsPage,
+      ),
+    ),
     // The seven built Daemon pages require a project context and mount directly.
-    [HilosPages.DAEMON_WEBSOCKETS]: HilosDaemonWebsocketsPage,
+    [HilosPages.DAEMON_WEBSOCKETS]: lazyPage(() =>
+      import('@hilos/angular/admin/daemon').then(
+        (m) => m.HilosDaemonWebsocketsPage,
+      ),
+    ),
     // LOGS, LOGS_KEYS, LOGS_WORKERS, LOGS_ROTATIONS, LOGS_SETTINGS and LOGS_VIEW are
     // absent for the same reason as the deliveries journal: the stream lists and the
     // rotation history each read a live connection for their table and their header,
@@ -133,13 +172,39 @@ export function hilosAdminViews(): Record<string, Type<unknown>> {
     // CHANGE_LOG, CHANGE_LOG_TABLES and CHANGE_LOG_TABLE read a live connection
     // and page scope, so a project mounts HilosChangeLogPage,
     // HilosChangeLogTablesPage and HilosChangeLogTablePage directly.
-    [HilosPages.ANALYTICS]: HilosAnalyticsPage,
-    [HilosPages.MCP_SKILLS]: HilosMcpSkillsPage,
-    [HilosPages.MCP_SKILLS_MCP]: HilosMcpSkillsMcpPage,
-    [HilosPages.MCP_SKILLS_MCP_LOGS]: HilosMcpSkillsMcpLogsPage,
-    [HilosPages.MCP_SKILLS_MCP_LOGS_VIEW]: HilosMcpSkillsMcpLogsViewPage,
-    [HilosPages.SIL]: HilosSilPage,
-    [HilosPages.SIL_REQUESTS]: HilosSilRequestsPage,
-    [HilosPages.SIL_USER_HISTORY]: HilosSilUserHistoryPage,
+    [HilosPages.ANALYTICS]: lazyPage(() =>
+      import('@hilos/angular/admin/analytics').then(
+        (m) => m.HilosAnalyticsPage,
+      ),
+    ),
+    [HilosPages.MCP_SKILLS]: lazyPage(() =>
+      import('@hilos/angular/admin/mcp-skills').then(
+        (m) => m.HilosMcpSkillsPage,
+      ),
+    ),
+    [HilosPages.MCP_SKILLS_MCP]: lazyPage(() =>
+      import('@hilos/angular/admin/mcp-skills').then(
+        (m) => m.HilosMcpSkillsMcpPage,
+      ),
+    ),
+    [HilosPages.MCP_SKILLS_MCP_LOGS]: lazyPage(() =>
+      import('@hilos/angular/admin/mcp-skills').then(
+        (m) => m.HilosMcpSkillsMcpLogsPage,
+      ),
+    ),
+    [HilosPages.MCP_SKILLS_MCP_LOGS_VIEW]: lazyPage(() =>
+      import('@hilos/angular/admin/mcp-skills').then(
+        (m) => m.HilosMcpSkillsMcpLogsViewPage,
+      ),
+    ),
+    [HilosPages.SIL]: lazyPage(() =>
+      import('@hilos/angular/admin/sil').then((m) => m.HilosSilPage),
+    ),
+    [HilosPages.SIL_REQUESTS]: lazyPage(() =>
+      import('@hilos/angular/admin/sil').then((m) => m.HilosSilRequestsPage),
+    ),
+    [HilosPages.SIL_USER_HISTORY]: lazyPage(() =>
+      import('@hilos/angular/admin/sil').then((m) => m.HilosSilUserHistoryPage),
+    ),
   }
 }

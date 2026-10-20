@@ -1,4 +1,4 @@
-import { HilosI18nLanguageNamesPage } from '@hilos/react'
+import { HilosI18nLanguageNamesPage } from '@hilos/react/admin/i18n'
 import { hilosI18nLanguageContext } from '../Language/hilosI18nLanguageContext.js'
 
 /** Bind the framework language names page to this demo's singletons. */

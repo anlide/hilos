@@ -12,10 +12,10 @@ import {
   logWorkerViewerPath,
   logWorkersEmptyState,
   HILOS_LOG_WORKER_TYPE_MONOPOLISTIC,
-  HilosPages,
   type HilosLogWorkerRow,
   type HilosLogWorkersContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/logs'
+import { HilosPages } from '@hilos/core/base'
 import { computed, onMounted, onUnmounted } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'

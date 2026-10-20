@@ -1,4 +1,4 @@
-import { HilosI18nCountryPage } from '@hilos/react'
+import { HilosI18nCountryPage } from '@hilos/react/admin/i18n'
 import { hilosI18nCountryContext } from './hilosI18nCountryContext.js'
 
 /** Bind the framework country card to this demo's singletons. */

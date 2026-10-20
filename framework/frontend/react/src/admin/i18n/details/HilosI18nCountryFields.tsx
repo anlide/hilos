@@ -2,7 +2,7 @@ import {
   HILOS_I18N_COUNTRY_ADD_COPY,
   HILOS_I18N_COUNTRY_WINDOW_COPY,
   type HilosI18nCountryLocaleOption,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 
 /** Fields shared by country creation and the core's edit/view window. */
 export function HilosI18nCountryFields({

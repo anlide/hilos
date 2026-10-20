@@ -5,7 +5,7 @@ import {
   daemonEnvMismatchFromExample,
   daemonEnvMismatchStandsOut,
   type HilosDaemonEnvMismatchRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
 import { computed } from 'vue'
 
 import HilosDaemonEnvSourceBadge from './HilosDaemonEnvSourceBadge.vue'

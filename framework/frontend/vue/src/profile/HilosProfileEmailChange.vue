@@ -6,7 +6,7 @@ import {
   HILOS_PROFILE_EMAIL_CHANGE_STEPS,
   HILOS_STEP_UP_COPY,
   type HilosProfileEmailChangeFlow,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { computed, nextTick, ref, watch } from 'vue'
 import HilosFormError from '../HilosFormError.vue'
 import HilosModal from '../HilosModal.vue'

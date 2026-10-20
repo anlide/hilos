@@ -37,7 +37,7 @@ import {
   THEME_COPY,
   THEME_POSITIONS,
   type ThemePick,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { hilosSignal } from './hilosSignal.js'
 import { createHilosTrackedAction } from './hilosTrackedAction.js'

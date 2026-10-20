@@ -115,14 +115,15 @@ indirection to maintain.
 ## Mounting a framework-owned page
 
 A framework admin page that has graduated to a real implementation is a **tier-2
-page-chunk component** the SDK ships (`@hilos/vue` `HilosUsersPage` /
-`HilosUserPage` / `HilosSettingsPage`; [sdk-packaging.md](sdk-packaging.md)). Its
-view, selectors, and actions are the framework's — the headless lives in
-`@hilos/core` (`createHilosUsersTable` / `createHilosUserDetail` /
-`createHilosUserRename` with the `HilosUserRow` view-model; `createHilosSettingsTable`
-/ `createHilosSettingsActions` with the `HilosSettingRow` view-model), the markup in
-the view package — and are **not** restated per project. The project's page module
-then shrinks to:
+page-chunk component** the SDK ships (`@hilos/vue/admin/users` `HilosUsersPage` /
+`HilosUserPage`, `@hilos/vue/admin/settings` `HilosSettingsPage`;
+[sdk-packaging.md](sdk-packaging.md)). Its view, selectors, and actions are the
+framework's and are **not** restated per project. Headless users APIs
+(`createHilosUsersTable`, `createHilosUserDetail`, `createHilosUserRename`,
+`HilosUserRow`) live in `@hilos/core/admin/users`; settings APIs
+(`createHilosSettingsTable`, `createHilosSettingsActions`, `HilosSettingRow`)
+live in `@hilos/core/admin/settings`. Markup lives in the corresponding view
+section. The project's page module then shrinks to:
 
 - the **view file** — a thin wrapper that mounts the framework page and fills its
   slots (`Users.vue` mounts `HilosUsersPage` and supplies the `#row-actions` cell
@@ -139,16 +140,56 @@ then shrinks to:
 A framework page need not take a project context at all. The dashboard
 (`HilosDashboardPage`) reads only the framework catalog, so it stays in the
 `hilosAdminViews` default map (a project gets it for free) and a project extends it
-purely through a **slot**: the chat demo's `Dashboard.vue` wraps it and fills the
-`#top` slot with its own admin cards (bots, moderation) above the framework
-sections, adding nothing to the framework page. Slot extension and a context are
-independent — a page may use either, both, or neither.
+purely through a **slot**: a wrapper can fill `#top` above the framework sections.
+The current demos use the default dashboard binding. Slot extension and a
+context are independent — a page may use either, both, or neither.
 
 Folder-per-page still holds — each page is its own folder with its own wrapper,
-mapped explicitly in the app shell — and there is still no shared page map. What
-moved is the *implementation level*, not the page count: a project overrides a
+mapped explicitly in the app shell — and there is still no shared content map.
+What moved is the *implementation level*, not the page count: a project overrides a
 framework page by swapping its wrapper or filling more slots, never by copying
 the framework template ("template extension, not re-implementation").
+
+## Binding eager and lazy page modules
+
+The app's `pages` map binds keys to ready components or explicit descriptors;
+it carries no titles, leads, breadcrumbs or page content. Import common SDK
+symbols from `/base`, default bindings from `/admin-views`, and the page's own
+implementation from `/admin/<section>` inside its wrapper. For example, a Vue
+App setup can bind its existing Settings wrapper this way:
+
+```ts
+import type { Component } from 'vue'
+import { HilosPages, lazyPage, type PageView } from '@hilos/core/base'
+import { hilosAdminViews } from '@hilos/vue/admin-views'
+
+const pages: Record<string, PageView<Component>> = {
+  ...hilosAdminViews(),
+  [HilosPages.SETTINGS]: lazyPage(() =>
+    import('./views/Hilos/Settings/Settings.vue').then(m => m.default),
+  ),
+}
+```
+
+`Settings.vue` remains a real module mounting `HilosSettingsPage` from
+`@hilos/vue/admin/settings`; its context type comes from
+`@hilos/core/admin/settings`. React uses `PageView<ComponentType>` and the
+wrapper's `.js` import with its named/default export. Angular uses
+`PageView<Type<unknown>>`, a readonly field and the wrapper's named class export.
+Keep descriptor identities stable: module scope in React, setup scope in Vue,
+or a once-per-instance Angular field. Constructing the descriptor does not start
+its import. Eager components remain valid, including function components.
+
+The default map is spread before explicit project bindings. A project binding
+suppresses the default at that key; its unused loader is not called. This
+override behavior is unit-tested, though the current demos' default and explicit
+admin key sets are disjoint. The existing unknown/unbuilt-page guards recognize
+literal lazy targets and public reexports and still refuse false declarations.
+The router's keys, admin flags, server subscription and first `page_response`
+remain unchanged. Runtime loading/refusal/cache behavior is specified once in
+[multiframework-core.md](multiframework-core.md#page-code-and-first-answer-state);
+the narrower source form accepted by the production proof is in
+[build-and-docker.md](build-and-docker.md#project-binding-proof).
 
 ## Never a shared page map
 
@@ -185,16 +226,22 @@ The entity block's content stays in its page module; the shared head's boundary
 and adoption sequence are in [page-head.md](../architecture/page-head.md).
 
 **Default framework views for un-implemented pages.** The framework ships a
-real, one-per-file default page for every admin key under
+real, one-per-file admin page under
 `@hilos/vue/src/admin/` (grouped by section as above) — each a thin component
 that renders the page-agnostic `HilosAdminPage` shell for its key until it grows
-real content. `hilosAdminViews()` in `@hilos/vue` collects these files into a
-key → component map; a project spreads it into its app page map and overrides a
-key only when it implements that page itself. This keeps the 50-odd
-not-yet-built admin pages in the framework — as real files an author opens and
-fills in — instead of recopying them into every project. The `users` / `user`
-pages are deliberately **not** in the map: they are real framework pages that
-need a project-supplied `HilosUsersContext`, so a consumer mounts them directly.
+real content. `hilosAdminViews()` from the view kit's `/admin-views` returns
+`Record<string, PageView<Component>>` in Vue (React uses `ComponentType`, Angular
+`Type<unknown>`). It creates lazy descriptors importing the public section
+entries; it imports no page implementation eagerly. A project calls it once for
+its stable map and spreads the result before its own bindings.
+
+Pages needing a project context are deliberately absent: for example users/user,
+settings, backup, maintenance, live logs/daemon/communications pages, Change Log,
+Analytics person/browser-session and the built I18n lists/details. The current
+layer's `src/admin/hilosAdminViews.ts` is the exact default-key set, including
+staged defaults; do not infer inclusion from the section name. A consumer mounts
+each context-bound wrapper explicitly. Unbuilt defaults remain real files an
+author can fill, rather than copies in every project.
 It is **not** the revoked God-map: every page is its own module file (no page
 content or metadata map in any project), the catalog of identity stays in the
 backend and arrives with the page's answer, each file renders the page-agnostic

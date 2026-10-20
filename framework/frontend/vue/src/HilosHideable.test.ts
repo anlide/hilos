@@ -1,4 +1,4 @@
-import { HIDDEN_VALUE } from '@hilos/core'
+import { HIDDEN_VALUE } from '@hilos/core/base'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import { h } from 'vue'

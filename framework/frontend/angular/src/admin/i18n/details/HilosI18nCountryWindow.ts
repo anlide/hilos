@@ -22,28 +22,27 @@ import {
   input,
   signal,
 } from '@angular/core'
-import {
-  HILOS_I18N_COUNTRY_WINDOW_COPY,
-  hilosRowEditIdle,
-  subscribeSignal,
-} from '@hilos/core'
+import { HILOS_I18N_COUNTRY_WINDOW_COPY } from '@hilos/core/admin/i18n'
+import { hilosRowEditIdle, subscribeSignal } from '@hilos/core/base'
 import type {
   HilosI18nCountryEditFields,
   HilosI18nCountryEditable,
   HilosI18nCountryLocaleOption,
   HilosI18nCountryWindow as CountryWindow,
   HilosI18nCountryWindowMode,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 
-import { ConflictActions } from '../../../ConflictActions.js'
-import { ConflictHeader } from '../../../ConflictHeader.js'
-import { HilosActionError } from '../../../HilosActionError.js'
-import { HilosEditNotice } from '../../../HilosEditNotice.js'
-import { HilosModal } from '../../../HilosModal.js'
-import { LoadingButton } from '../../../LoadingButton.js'
-import { injectLookOnly } from '../../../hilosLookOnly.js'
-import { mirrorHilosSignal } from '../../../hilosSignal.js'
-import { createHilosTrackedAction } from '../../../hilosTrackedAction.js'
+import {
+  ConflictActions,
+  ConflictHeader,
+  HilosActionError,
+  HilosEditNotice,
+  HilosModal,
+  LoadingButton,
+  injectLookOnly,
+  mirrorHilosSignal,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 import { HilosI18nCountryFields } from './HilosI18nCountryFields.js'
 
 /** The window's one line about the other side, as the core resolves it. */

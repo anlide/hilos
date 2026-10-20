@@ -2,17 +2,19 @@ import { mount, type VueWrapper } from '@vue/test-utils'
 import {
   ActionError,
   createSignal,
-  HILOS_I18N_COUNTRY_NAME_DELETE_ACTION,
-  HILOS_I18N_COUNTRY_NAME_OVERRIDE_DELETE_ACTION,
-  HILOS_I18N_COUNTRY_NAME_DELETE_COPY,
   hilosToasts,
   type ActionHandle,
   type ActionLifecycle,
   type ActionResult,
+} from '@hilos/core/base'
+import {
+  HILOS_I18N_COUNTRY_NAME_DELETE_ACTION,
+  HILOS_I18N_COUNTRY_NAME_OVERRIDE_DELETE_ACTION,
+  HILOS_I18N_COUNTRY_NAME_DELETE_COPY,
   type HilosI18nCountryContext,
   type HilosI18nNameRow,
   type HilosI18nCountryNameDeleteTarget,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { afterEach, describe, expect, it } from 'vitest'
 import { defineComponent, h, nextTick, ref } from 'vue'
 

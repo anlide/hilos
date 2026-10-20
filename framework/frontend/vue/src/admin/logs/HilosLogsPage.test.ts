@@ -6,7 +6,7 @@ import {
   HilosPages,
   createSignal,
   OVERVIEW_SIGNAL,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosConnection,
   HilosLogsOverview,
@@ -14,7 +14,7 @@ import type {
   HilosLogsOverviewNode,
   HilosRouter,
   PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import HilosLogsPage from './HilosLogsPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'

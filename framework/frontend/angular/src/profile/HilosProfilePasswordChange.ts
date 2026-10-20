@@ -21,7 +21,7 @@ import {
   type HilosProfilePasswordChangeStep,
   type HilosProfilePasswordChangeOpening,
   type CodeSendProgress,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
 import { HilosSendProgress } from '../HilosSendProgress.js'

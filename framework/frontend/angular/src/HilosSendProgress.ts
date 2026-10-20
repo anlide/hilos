@@ -6,7 +6,7 @@ import {
   sendAgainLocked,
   sendProgressLine,
   type CodeSendProgress,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import {
   ChangeDetectionStrategy,
   Component,

@@ -1,5 +1,5 @@
 import { useContext, useId } from 'react'
-import { hilosCrumbLinks } from '@hilos/core'
+import { hilosCrumbLinks } from '@hilos/core/base'
 import { HilosBreadcrumb } from './HilosBreadcrumb.js'
 import { HilosRouterContext } from './hilosRouterContext.js'
 import { useSignal } from './useSignal.js'

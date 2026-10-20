@@ -15,7 +15,7 @@ import {
   oauthTrip,
   oauthTripMessage,
   oauthTripTitle,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { computed } from 'vue'
 
 import HilosModal from '../HilosModal.vue'

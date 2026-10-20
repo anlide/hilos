@@ -7,7 +7,7 @@ paste passes it by, and the server decides. -->
 import {
   HILOS_UPLOAD_FIELD_COPY as COPY,
   type HilosUploadField,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { ref } from 'vue'
 
 import { useSignal } from './useSignal.js'

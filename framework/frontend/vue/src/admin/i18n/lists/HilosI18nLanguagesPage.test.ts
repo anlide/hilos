@@ -2,19 +2,21 @@ import { mount } from '@vue/test-utils'
 import {
   BUILT_IN_CATALOG_DATA,
   BUILT_IN_LANGUAGES_DATA,
-  createSignal,
   HILOS_I18N_LANGUAGES_TABLE,
   HILOS_I18N_LANGUAGE_ROW_DELETE_ACTION,
   HILOS_I18N_LANGUAGE_DELETE_COPY,
+  type HilosI18nLanguageContext,
+} from '@hilos/core/admin/i18n'
+import {
+  createSignal,
   HilosPages,
   ScopeManager,
   type ActionLifecycle,
   type ActionResult,
   type HilosConnection,
-  type HilosI18nLanguageContext,
   type HilosRouter,
   type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 

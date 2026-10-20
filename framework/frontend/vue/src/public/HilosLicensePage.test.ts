@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import type { HilosLicenseEntry } from '@hilos/core'
+import type { HilosLicenseEntry } from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import HilosLicensePage from './HilosLicensePage.vue'

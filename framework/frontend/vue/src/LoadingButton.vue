@@ -14,7 +14,10 @@ nor its words. A button marked opensWindow stays live for both (the people
 card, HIL-1263). -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, useAttrs, watch } from 'vue'
-import { DEFAULT_SPINNER_DELAY_MS, createLoadingButtonState } from '@hilos/core'
+import {
+  DEFAULT_SPINNER_DELAY_MS,
+  createLoadingButtonState,
+} from '@hilos/core/base'
 
 import { useLookOnly } from './hilosAdminViewMode.js'
 import { useSignal } from './useSignal.js'

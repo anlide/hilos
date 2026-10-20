@@ -4,7 +4,7 @@
 // hint and the welcome that answers it; this hook only subscribes to it
 // (multiframework-core.md).
 import { useCallback, useSyncExternalStore } from 'react'
-import type { HilosConnection } from '@hilos/core'
+import type { HilosConnection } from '@hilos/core/base'
 
 /**
  * Expose a connection's first-frame hold as React state.

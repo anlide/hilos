@@ -31,41 +31,45 @@ import {
   APPEARANCE_DEFAULT_VALUE_FIELD,
   APPEARANCE_ROW_KEY_FIELD,
   APPEARANCE_VALUE_FIELD,
-  HILOS_TABLE_ACTIONS_KEY,
-  HIDDEN_VALUE,
   HilosAppearanceSettingKey,
-  HilosPages,
-  THEME_POSITIONS,
   createHilosAppearanceActions,
   createHilosAppearanceDefaultThemeEdit,
   createHilosAppearanceSwitchingEdit,
   createHilosAppearanceTable,
+} from '@hilos/core/admin/appearance'
+import {
+  HILOS_TABLE_ACTIONS_KEY,
+  HIDDEN_VALUE,
+  HilosPages,
+  THEME_POSITIONS,
   hilosRowEditIdle,
   isHiddenValue,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosAppearanceContext,
   HilosAppearanceDefaultThemeEditFields,
   HilosAppearanceSettingRow,
   HilosAppearanceSwitchingEditFields,
   HilosAppearanceSwitchingEditForm,
-  ThemePosition,
-} from '@hilos/core'
+} from '@hilos/core/admin/appearance'
+import type { ThemePosition } from '@hilos/core/base'
 
-import { ConflictActions } from '../../ConflictActions.js'
-import { ConflictHeader } from '../../ConflictHeader.js'
-import { HilosActionError } from '../../HilosActionError.js'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosEditNotice } from '../../HilosEditNotice.js'
-import { HilosHiddenMark } from '../../HilosHiddenMark.js'
-import { HilosHideable } from '../../HilosHideable.js'
-import { HilosModal } from '../../HilosModal.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { LoadingButton } from '../../LoadingButton.js'
-import { injectLookOnly } from '../../hilosLookOnly.js'
-import { mirrorHilosSignal } from '../../hilosSignal.js'
-import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
+import {
+  ConflictActions,
+  ConflictHeader,
+  HilosActionError,
+  HilosAdminPage,
+  HilosEditNotice,
+  HilosHiddenMark,
+  HilosHideable,
+  HilosModal,
+  HilosTableCell,
+  HilosViewportTable,
+  LoadingButton,
+  injectLookOnly,
+  mirrorHilosSignal,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 
 /**
  * The form of one window: Enter saves the way the Save button does, and stays

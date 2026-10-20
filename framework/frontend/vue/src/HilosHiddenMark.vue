@@ -8,7 +8,7 @@ word, which is also what a string with no markup says in its place (hiddenAsWord
 A value that may be hidden is drawn through HilosHideable, which puts this mark
 in its place. Bootstrap classes only, no style block (styling-rules.md). -->
 <script setup lang="ts">
-import { HILOS_VIEW_MODE_COPY } from '@hilos/core'
+import { HILOS_VIEW_MODE_COPY } from '@hilos/core/base'
 </script>
 
 <template>

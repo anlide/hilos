@@ -11,10 +11,15 @@ import {
   HilosLayout,
   HilosNotificationBell,
   HilosView,
-  hilosAdminViews,
   hilosSignal,
-} from '@hilos/angular'
-import { HilosPages, hilosSessionAvatarMark } from '@hilos/core'
+} from '@hilos/angular/base'
+import { hilosAdminViews } from '@hilos/angular/admin-views'
+import {
+  HilosPages,
+  lazyPage,
+  hilosSessionAvatarMark,
+  type PageView,
+} from '@hilos/core/base'
 
 import { AuthSurface } from './auth/authSurface.js'
 import { currentUserName } from './bootstrap/session.js'
@@ -22,29 +27,6 @@ import { connection } from './bootstrap/connection.js'
 import { PAGE_MAIN } from './pages/keys.js'
 import { About } from './views/about/about.js'
 import { License } from './views/license/license.js'
-import { I18nCountry } from './views/hilos/i18n/details/country.js'
-import { I18nCountryNames } from './views/hilos/i18n/details/country-names.js'
-import { I18nLanguage } from './views/hilos/i18n/details/language.js'
-import { I18nLanguageLocales } from './views/hilos/i18n/details/language-locales.js'
-import { I18nLanguageNames } from './views/hilos/i18n/details/language-names.js'
-import { I18nCountries } from './views/hilos/i18n/lists/countries.js'
-import { I18nLanguages } from './views/hilos/i18n/lists/languages.js'
-import { LogKeys } from './views/hilos/logs/keys.js'
-import { LogRotations } from './views/hilos/logs/rotations.js'
-import { LogSettings } from './views/hilos/logs/settings.js'
-import { LogViewer } from './views/hilos/logs/view.js'
-import { LogWorkers } from './views/hilos/logs/workers.js'
-import { LogsOverview } from './views/hilos/logs/overview.js'
-import { Maintenance } from './views/hilos/maintenance/maintenance.js'
-import { Settings } from './views/hilos/settings/settings.js'
-import { Appearance } from './views/hilos/appearance/appearance.js'
-import { AnalyticsBrowserSession } from './views/hilos/analytics/browser-session.js'
-import { AnalyticsPerson } from './views/hilos/analytics/person.js'
-import { ChangeLog } from './views/hilos/change-log/change-log.js'
-import { ChangeLogTable } from './views/hilos/change-log/change-log-table.js'
-import { ChangeLogTables } from './views/hilos/change-log/change-log-tables.js'
-import { User } from './views/hilos/users/user.js'
-import { Users } from './views/hilos/users/users.js'
 import { Main } from './views/main/main.js'
 import { MainSkeleton } from './views/main/main-skeleton.js'
 import { Privacy } from './views/privacy/privacy.js'
@@ -122,43 +104,127 @@ export class App {
   // The page-key → view map HilosView renders from. A page with no mapped view
   // renders nothing; a page the backend does not register is refused by the
   // server, and the outlet draws that refusal instead.
-  protected readonly pages: Record<string, Type<unknown>> = {
+  protected readonly pages: Record<string, PageView<Type<unknown>>> = {
     [PAGE_MAIN]: Main,
     // The framework supplies the admin defaults. This demo binds the sections
     // activated by its backend to their Angular contexts and leaves the rest to
     // the defaults.
     ...hilosAdminViews(),
-    [HilosPages.SETTINGS]: Settings,
-    [HilosPages.APPEARANCE]: Appearance,
-    [HilosPages.USERS]: Users,
-    [HilosPages.USER]: User,
+    [HilosPages.SETTINGS]: lazyPage(() =>
+      import('./views/hilos/settings/settings.js').then(
+        (module) => module.Settings,
+      ),
+    ),
+    [HilosPages.APPEARANCE]: lazyPage(() =>
+      import('./views/hilos/appearance/appearance.js').then(
+        (module) => module.Appearance,
+      ),
+    ),
+    [HilosPages.USERS]: lazyPage(() =>
+      import('./views/hilos/users/users.js').then((module) => module.Users),
+    ),
+    [HilosPages.USER]: lazyPage(() =>
+      import('./views/hilos/users/user.js').then((module) => module.User),
+    ),
     // The framework Analytics pages of one browser session and of one person: the
     // framework owns the header, the tables and every word; the project binds its
     // connection and page scope (views/hilos/analytics). The overview comes from
     // hilosAdminViews.
-    [HilosPages.ANALYTICS_BROWSER_SESSION]: AnalyticsBrowserSession,
-    [HilosPages.ANALYTICS_PERSON]: AnalyticsPerson,
+    [HilosPages.ANALYTICS_BROWSER_SESSION]: lazyPage(() =>
+      import('./views/hilos/analytics/browser-session.js').then(
+        (module) => module.AnalyticsBrowserSession,
+      ),
+    ),
+    [HilosPages.ANALYTICS_PERSON]: lazyPage(() =>
+      import('./views/hilos/analytics/person.js').then(
+        (module) => module.AnalyticsPerson,
+      ),
+    ),
     // The framework Change Log section: the framework owns the tiles, the feed,
     // the tables viewport, the history, the receipt modal and every word; the
     // project binds its connection, page scope and action lifecycle
     // (views/hilos/change-log).
-    [HilosPages.CHANGE_LOG]: ChangeLog,
-    [HilosPages.CHANGE_LOG_TABLES]: ChangeLogTables,
-    [HilosPages.CHANGE_LOG_TABLE]: ChangeLogTable,
-    [HilosPages.LOGS]: LogsOverview,
-    [HilosPages.LOGS_KEYS]: LogKeys,
-    [HilosPages.LOGS_WORKERS]: LogWorkers,
-    [HilosPages.LOGS_ROTATIONS]: LogRotations,
-    [HilosPages.LOGS_SETTINGS]: LogSettings,
-    [HilosPages.LOGS_VIEW]: LogViewer,
-    [HilosPages.I18N_LANGUAGES]: I18nLanguages,
-    [HilosPages.I18N_LANGUAGE]: I18nLanguage,
-    [HilosPages.I18N_LANGUAGE_NAMES]: I18nLanguageNames,
-    [HilosPages.I18N_LANGUAGE_LOCALES]: I18nLanguageLocales,
-    [HilosPages.I18N_COUNTRIES]: I18nCountries,
-    [HilosPages.I18N_COUNTRY]: I18nCountry,
-    [HilosPages.I18N_COUNTRY_NAMES]: I18nCountryNames,
-    [HilosPages.MAINTENANCE]: Maintenance,
+    [HilosPages.CHANGE_LOG]: lazyPage(() =>
+      import('./views/hilos/change-log/change-log.js').then(
+        (module) => module.ChangeLog,
+      ),
+    ),
+    [HilosPages.CHANGE_LOG_TABLES]: lazyPage(() =>
+      import('./views/hilos/change-log/change-log-tables.js').then(
+        (module) => module.ChangeLogTables,
+      ),
+    ),
+    [HilosPages.CHANGE_LOG_TABLE]: lazyPage(() =>
+      import('./views/hilos/change-log/change-log-table.js').then(
+        (module) => module.ChangeLogTable,
+      ),
+    ),
+    [HilosPages.LOGS]: lazyPage(() =>
+      import('./views/hilos/logs/overview.js').then(
+        (module) => module.LogsOverview,
+      ),
+    ),
+    [HilosPages.LOGS_KEYS]: lazyPage(() =>
+      import('./views/hilos/logs/keys.js').then((module) => module.LogKeys),
+    ),
+    [HilosPages.LOGS_WORKERS]: lazyPage(() =>
+      import('./views/hilos/logs/workers.js').then(
+        (module) => module.LogWorkers,
+      ),
+    ),
+    [HilosPages.LOGS_ROTATIONS]: lazyPage(() =>
+      import('./views/hilos/logs/rotations.js').then(
+        (module) => module.LogRotations,
+      ),
+    ),
+    [HilosPages.LOGS_SETTINGS]: lazyPage(() =>
+      import('./views/hilos/logs/settings.js').then(
+        (module) => module.LogSettings,
+      ),
+    ),
+    [HilosPages.LOGS_VIEW]: lazyPage(() =>
+      import('./views/hilos/logs/view.js').then((module) => module.LogViewer),
+    ),
+    [HilosPages.I18N_LANGUAGES]: lazyPage(() =>
+      import('./views/hilos/i18n/lists/languages.js').then(
+        (module) => module.I18nLanguages,
+      ),
+    ),
+    [HilosPages.I18N_LANGUAGE]: lazyPage(() =>
+      import('./views/hilos/i18n/details/language.js').then(
+        (module) => module.I18nLanguage,
+      ),
+    ),
+    [HilosPages.I18N_LANGUAGE_NAMES]: lazyPage(() =>
+      import('./views/hilos/i18n/details/language-names.js').then(
+        (module) => module.I18nLanguageNames,
+      ),
+    ),
+    [HilosPages.I18N_LANGUAGE_LOCALES]: lazyPage(() =>
+      import('./views/hilos/i18n/details/language-locales.js').then(
+        (module) => module.I18nLanguageLocales,
+      ),
+    ),
+    [HilosPages.I18N_COUNTRIES]: lazyPage(() =>
+      import('./views/hilos/i18n/lists/countries.js').then(
+        (module) => module.I18nCountries,
+      ),
+    ),
+    [HilosPages.I18N_COUNTRY]: lazyPage(() =>
+      import('./views/hilos/i18n/details/country.js').then(
+        (module) => module.I18nCountry,
+      ),
+    ),
+    [HilosPages.I18N_COUNTRY_NAMES]: lazyPage(() =>
+      import('./views/hilos/i18n/details/country-names.js').then(
+        (module) => module.I18nCountryNames,
+      ),
+    ),
+    [HilosPages.MAINTENANCE]: lazyPage(() =>
+      import('./views/hilos/maintenance/maintenance.js').then(
+        (module) => module.Maintenance,
+      ),
+    ),
     [HilosPages.ABOUT]: About,
     [HilosPages.TERMS]: Terms,
     [HilosPages.PRIVACY]: Privacy,

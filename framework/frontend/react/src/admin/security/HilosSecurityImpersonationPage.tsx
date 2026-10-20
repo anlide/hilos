@@ -25,18 +25,18 @@ import {
   HILOS_IMPERSONATION_SCOPE_HINT,
   HILOS_IMPERSONATION_SCOPE_VALUES,
   HILOS_IMPERSONATION_SETTING_COPY,
-  HilosPages,
   createHilosImpersonationScopeEdit,
   createHilosSecurityImpersonationActions,
   createHilosSecurityImpersonationTable,
   hilosImpersonationScopeOf,
   isHilosImpersonationSwitch,
-} from '@hilos/core'
+} from '@hilos/core/admin/security'
+import { HilosPages } from '@hilos/core/base'
 import type {
   HilosImpersonationContext,
   HilosImpersonationScope,
   HilosImpersonationSettingRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/security'
 
 import { ConflictActions } from '../../ConflictActions.js'
 import { ConflictHeader } from '../../ConflictHeader.js'

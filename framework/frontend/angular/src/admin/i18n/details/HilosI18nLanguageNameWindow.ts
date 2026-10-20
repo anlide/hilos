@@ -23,23 +23,24 @@ import {
 import {
   HILOS_I18N_LANGUAGE_NAME_COPY,
   HILOS_I18N_LANGUAGE_NAME_MAX,
-  hilosRowEditIdle,
-  subscribeSignal,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { hilosRowEditIdle, subscribeSignal } from '@hilos/core/base'
 import type {
   HilosI18nLanguageNameTarget,
   HilosI18nLanguageNameWindow as NameWindow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 
-import { ConflictActions } from '../../../ConflictActions.js'
-import { ConflictHeader } from '../../../ConflictHeader.js'
-import { HilosActionError } from '../../../HilosActionError.js'
-import { HilosEditNotice } from '../../../HilosEditNotice.js'
-import { HilosModal } from '../../../HilosModal.js'
-import { LoadingButton } from '../../../LoadingButton.js'
-import { injectLookOnly } from '../../../hilosLookOnly.js'
-import { mirrorHilosSignal } from '../../../hilosSignal.js'
-import { createHilosTrackedAction } from '../../../hilosTrackedAction.js'
+import {
+  ConflictActions,
+  ConflictHeader,
+  HilosActionError,
+  HilosEditNotice,
+  HilosModal,
+  LoadingButton,
+  injectLookOnly,
+  mirrorHilosSignal,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 
 /** The window's one line about the other side, as the core resolves it. */
 type NameWindowNotice = ReturnType<NameWindow['notice']['get']>

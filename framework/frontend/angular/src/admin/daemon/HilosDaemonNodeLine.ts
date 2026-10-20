@@ -9,10 +9,9 @@ import {
   daemonNodeDiagramPath,
   formatDaemonNodeState,
   type HilosDaemonNodeHeading,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
 
-import { HilosLink } from '../../HilosLink.js'
-import { HILOS_ROUTER } from '../../hilosRouterToken.js'
+import { HilosLink, HILOS_ROUTER } from '@hilos/angular/base'
 
 /** The current node address and the backend's heading verdict. */
 @Component({

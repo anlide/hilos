@@ -46,11 +46,19 @@ import {
 } from '@angular/core'
 import {
   ACCOUNT_DELETION_TICK_MS,
+  focusInitial,
+  HILOS_STEP_UP_COPY,
+  HilosPages,
+  hiddenAsWord,
+  hilosRowEditIdle,
+  isHiddenValue,
+  sessionUserId,
+  subscribeSignal,
+} from '@hilos/core/base'
+import {
   createHilosImpersonate,
   createHilosUserCardStepUp,
   createHilosUserLifecycle,
-  focusInitial,
-  HILOS_STEP_UP_COPY,
   createHilosUserStanding,
   HILOS_USER_ANALYTICS_LINK_LABEL,
   HILOS_USER_IMPERSONATION_COPY,
@@ -70,7 +78,6 @@ import {
   type HilosUserLifecycleChoice,
   type HilosUserLifecyclePrompt,
   type HilosUserLifecycleSection,
-  HilosPages,
   createHilosAccountMerge,
   createHilosMergeCandidates,
   createHilosUserDetail,
@@ -82,53 +89,52 @@ import {
   hilosSecondFactorFateChoices,
   type HilosSecondFactorFate,
   hilosPasswordFateChoices,
-  hiddenAsWord,
   HILOS_USER_NAME_MAX,
   HILOS_USER_NAME_MIN,
-  hilosRowEditIdle,
-  isHiddenValue,
-  sessionUserId,
-  subscribeSignal,
-} from '@hilos/core'
+} from '@hilos/core/admin/users'
 import type {
   HilosUserRenameEdit,
   HilosUserRenameEditFields,
-  Hideable,
   HilosAccountMerge,
-  HilosAccountStanding,
   HilosMergeCandidateIdentity,
   HilosMergeCandidateRow,
   HilosMergeCandidates,
   HilosPasswordFate,
-  HilosStepUpOpenOutcome,
   HilosUserCardStepUp,
   HilosUserDetailRow,
   HilosUserImpersonationSection,
   HilosUserImpersonationSettings,
   HilosUserRename,
   HilosUsersContext,
+} from '@hilos/core/admin/users'
+import type {
+  Hideable,
+  HilosAccountStanding,
+  HilosStepUpOpenOutcome,
   TableViewportController,
   TableViewportRow,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
-import { HilosStepUpStep } from '../../auth/HilosStepUpStep.js'
-import { ConflictActions } from '../../ConflictActions.js'
-import { ConflictHeader } from '../../ConflictHeader.js'
-import { HilosActionError } from '../../HilosActionError.js'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosAvatar } from '../../HilosAvatar.js'
-import { HilosEditNotice } from '../../HilosEditNotice.js'
-import { HilosFormError } from '../../HilosFormError.js'
-import { HilosHiddenMark } from '../../HilosHiddenMark.js'
-import { HilosHideable } from '../../HilosHideable.js'
-import { HilosLink } from '../../HilosLink.js'
-import { HilosModal } from '../../HilosModal.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { LoadingButton } from '../../LoadingButton.js'
-import { HILOS_ROUTER } from '../../hilosRouterToken.js'
-import { mirrorHilosSignal } from '../../hilosSignal.js'
-import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
+import {
+  HilosStepUpStep,
+  ConflictActions,
+  ConflictHeader,
+  HilosActionError,
+  HilosAdminPage,
+  HilosAvatar,
+  HilosEditNotice,
+  HilosFormError,
+  HilosHiddenMark,
+  HilosHideable,
+  HilosLink,
+  HilosModal,
+  HilosTableCell,
+  HilosViewportTable,
+  LoadingButton,
+  HILOS_ROUTER,
+  mirrorHilosSignal,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 
 /**
  * Move the focus into a window whose step changed under it; the modal itself

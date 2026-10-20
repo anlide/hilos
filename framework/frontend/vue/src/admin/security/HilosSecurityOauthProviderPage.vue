@@ -20,16 +20,15 @@ in advance (HilosEditNotice). The secret never reads back, so its live value is
 always empty: there is nothing to merge, and the dialog only says when the row is
 gone. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
+import { computedSignal, HilosPages } from '@hilos/core/base'
 import {
-  computedSignal,
   createHilosOauthProviderFieldEdit,
   createHilosOAuthProviderFields,
   createHilosOAuthProviderSummary,
   createHilosSecurityOauthActions,
-  HilosPages,
   type HilosOAuthFieldRow,
   type HilosSecurityOauthContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/security'
 import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 
 import ConflictActions from '../../ConflictActions.vue'

@@ -7,7 +7,7 @@ import {
   type ActionHandle,
   type ActionLifecycle,
   type HilosConnection,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import HilosPrivacyPage from './HilosPrivacyPage.vue'

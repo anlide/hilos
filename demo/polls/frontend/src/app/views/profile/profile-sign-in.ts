@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosProfileSignInPage } from '@hilos/angular'
+import { HilosProfileSignInPage } from '@hilos/angular/base'
 import { hilosAuthContext } from '../../auth/hilosAuthContext.js'
 
 @Component({

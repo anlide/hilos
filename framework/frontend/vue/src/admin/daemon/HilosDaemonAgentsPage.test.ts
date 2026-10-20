@@ -1,8 +1,6 @@
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import {
   ActionError,
-  DAEMON_NODE_DATA,
-  DAEMON_PROCESSES_REPORTED_DATA,
   HilosPages,
   ScopeManager,
   createSignal,
@@ -11,9 +9,13 @@ import {
   type ActionResult,
   type HilosConnection,
   type HilosRouter,
-  type HilosDaemonNodeHeading,
   type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  DAEMON_NODE_DATA,
+  DAEMON_PROCESSES_REPORTED_DATA,
+  type HilosDaemonNodeHeading,
+} from '@hilos/core/admin/daemon'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 

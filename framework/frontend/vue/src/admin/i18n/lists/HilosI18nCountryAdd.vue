@@ -2,7 +2,7 @@
 import {
   HILOS_I18N_COUNTRY_ADD_COPY,
   type HilosI18nCountryAdd,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { computed, watch } from 'vue'
 
 import HilosActionError from '../../../HilosActionError.vue'

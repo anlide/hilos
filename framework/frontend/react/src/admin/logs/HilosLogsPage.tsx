@@ -22,7 +22,6 @@ import {
   hasLogsOverviewNodes,
   hasLogsOverviewRecent,
   HILOS_ROTATION_STATE_DUE,
-  HilosPages,
   logLevelVariant,
   logRotationsPath,
   logsOverviewBatchesNote,
@@ -42,8 +41,12 @@ import {
   logsOverviewTakeoutHeadline,
   RECENT_TAB_ERRORS,
   RECENT_TAB_WARNINGS,
-} from '@hilos/core'
-import type { HilosLogsOverviewContext, HilosLogsRecentTab } from '@hilos/core'
+} from '@hilos/core/admin/logs'
+import { HilosPages } from '@hilos/core/base'
+import type {
+  HilosLogsOverviewContext,
+  HilosLogsRecentTab,
+} from '@hilos/core/admin/logs'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosHideable } from '../../HilosHideable.js'

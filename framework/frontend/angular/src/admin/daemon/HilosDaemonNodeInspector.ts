@@ -25,14 +25,16 @@ import {
   formatDaemonNumber,
   formatDaemonPercentage,
   formatDaemonUptime,
-  HilosPages,
   type HilosDaemonOverviewData,
   type HilosDaemonOverviewNode,
-} from '@hilos/core'
-import { HilosLink } from '../../HilosLink.js'
-import { HilosLongText } from '../../HilosLongText.js'
-import { HilosModal } from '../../HilosModal.js'
-import { HILOS_ROUTER } from '../../hilosRouterToken.js'
+} from '@hilos/core/admin/daemon'
+import { HilosPages } from '@hilos/core/base'
+import {
+  HilosLink,
+  HilosLongText,
+  HilosModal,
+  HILOS_ROUTER,
+} from '@hilos/angular/base'
 
 /** Angular view of the Daemon NodeInspector. */
 @Component({

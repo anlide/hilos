@@ -15,7 +15,7 @@ import {
   computed,
   input,
 } from '@angular/core'
-import type { HilosTableProgress as HilosTableProgressState } from '@hilos/core'
+import type { HilosTableProgress as HilosTableProgressState } from '@hilos/core/base'
 
 /** The track of one running job. */
 @Component({

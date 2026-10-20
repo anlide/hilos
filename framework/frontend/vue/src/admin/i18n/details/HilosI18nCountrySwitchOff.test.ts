@@ -2,14 +2,16 @@ import { mount, type VueWrapper } from '@vue/test-utils'
 import {
   ActionError,
   createSignal,
-  HILOS_I18N_COUNTRY_SWITCH_OFF_ACTION,
-  HILOS_I18N_COUNTRY_SWITCH_OFF_COPY,
   type ActionHandle,
   type ActionLifecycle,
   type ActionResult,
+} from '@hilos/core/base'
+import {
+  HILOS_I18N_COUNTRY_SWITCH_OFF_ACTION,
+  HILOS_I18N_COUNTRY_SWITCH_OFF_COPY,
   type HilosI18nCountryCard,
   type HilosI18nCountryContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { afterEach, describe, expect, it } from 'vitest'
 import { nextTick, ref } from 'vue'
 

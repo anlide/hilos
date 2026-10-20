@@ -5,9 +5,9 @@
 // precedence over the mapped component: the full-page ErrorPage shows instead.
 // An unmapped page renders nothing. The router must be in context.
 //
-// A page is held back until its subscription answers (router.pageLoading):
-// showing it earlier means showing a page the server may be about to deny, and
-// taking it away again one round trip later. The `hilos-page-state` marker names
+// A page is held back until its code and subscription answer are ready: showing
+// it earlier means showing a page the server may be about to deny, and taking
+// it away again one round trip later. Core composes both waits. The marker names
 // the outcome — loading, error or ready — so the state is readable from the DOM
 // rather than guessed from whichever element happened to render first.
 //
@@ -30,17 +30,20 @@
 // the `authGate`'s modal shows the same surface over the live page for a gated
 // action. Both dismiss and resume through the core gate — no navigation. Omit
 // the pair and behavior is unchanged: a 401 renders ErrorPage like any status.
-import { useContext, useEffect, useLayoutEffect, useRef } from 'react'
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ComponentType, ReactNode } from 'react'
 import {
   AUTH_SURFACE_HEADING_ID,
   bindPageDeparture,
   createDeferredFlagState,
+  createPageViewState,
   createSignal,
   DEFAULT_SKELETON_DELAY_MS,
   type AuthGate,
   type DeferredFlagState,
-} from '@hilos/core'
+  type PageView,
+  type PageViewState,
+} from '@hilos/core/base'
 
 import { ErrorPage } from './ErrorPage.js'
 import { HilosModal } from './HilosModal.js'
@@ -51,10 +54,13 @@ import { useSignal } from './useSignal.js'
 /** A stable closed signal for the modal state when no auth gate is registered. */
 const MODAL_CLOSED = createSignal(false)
 
+/** No component is ready before the outlet's layout effect connects core. */
+const VIEW_EMPTY = createSignal<ComponentType | undefined>(undefined)
+
 /** Props for {@link HilosView}: the page-key → component map and the auth slot. */
 export interface HilosViewProps {
   /** Maps a page key to the component rendered while that page is current. */
-  pages: Record<string, ComponentType>
+  pages: Record<string, PageView<ComponentType>>
   /**
    * Maps a page key to the skeleton that page shows while it waits for its first
    * answer; a page not in the map shows HilosSkeleton.
@@ -90,11 +96,25 @@ export function HilosView({
   }
 
   const route = useSignal(router.currentRoute)
-  const pageError = useSignal(router.pageError)
-  const pageLoading = useSignal(router.pageLoading)
-  const modalOpen = useSignal(authGate?.modalOpen ?? MODAL_CLOSED)
+  // Connect only after mount: an abandoned render must leave no core listeners.
+  // Each effect setup owns its controller, including StrictMode's reconnect
+  // after cleanup; a disposed controller is never attached to a live outlet.
+  const [pageViewState, setPageViewState] =
+    useState<PageViewState<ComponentType> | null>(null)
+  useLayoutEffect(() => {
+    const state = createPageViewState<ComponentType>(router)
+    setPageViewState(state)
+    return () => state.dispose()
+  }, [router])
   const page = route.page
-  const View = page === null ? undefined : pages[page]
+  const selected = page === null ? undefined : pages[page]
+  useLayoutEffect(() => {
+    pageViewState?.setPages(pages)
+  }, [pageViewState, pages, selected])
+  const pageError = useSignal(pageViewState?.error ?? router.pageError)
+  const pageLoading = useSignal(pageViewState?.loading ?? router.pageLoading)
+  const View = useSignal(pageViewState?.view ?? VIEW_EMPTY)
+  const modalOpen = useSignal(authGate?.modalOpen ?? MODAL_CLOSED)
   const AuthSurface = authSurface
 
   const skeletonFlagRef = useRef<DeferredFlagState | null>(null)
@@ -106,15 +126,17 @@ export function HilosView({
   const slotRef = useRef<HTMLDivElement>(null)
   const departureRef = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
-    if (slotRef.current && departureRef.current) {
+    if (pageViewState && slotRef.current && departureRef.current) {
       return bindPageDeparture({
         router,
         slot: slotRef.current,
         departure: departureRef.current,
         skeletonShown: skeletonFlag.shown,
+        loading: pageViewState.loading,
+        error: pageViewState.error,
       })
     }
-  }, [router, skeletonFlag])
+  }, [router, skeletonFlag, pageViewState])
   useEffect(() => {
     skeletonFlag.set(pageLoading)
   }, [skeletonFlag, pageLoading])

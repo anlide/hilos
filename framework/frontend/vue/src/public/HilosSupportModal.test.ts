@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import { HILOS_SUPPORT_REFUSAL } from '@hilos/core'
+import { HILOS_SUPPORT_REFUSAL } from '@hilos/core/base'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import HilosSupportModal from './HilosSupportModal.vue'

@@ -3,13 +3,15 @@ import {
   createHilosLegalSettingsTable,
   createHilosLegalSettingsActions,
   createHilosLegalSettingEdit,
-  HilosPages,
   HILOS_LEGAL_SETTING_COPY,
   HILOS_LEGAL_VALUE_COPY,
   HILOS_LEGAL_SETTING_PREVIEWS,
+} from '@hilos/core/admin/legal'
+import {
+  HilosPages,
   isHiddenValue,
   type HilosLegalContext,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { computed, onMounted, onUnmounted, useId } from 'vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'

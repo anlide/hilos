@@ -16,11 +16,10 @@ import {
   CHANNEL_ENABLED_FIELD,
   createHilosChannelsTable,
   createHilosCommunicationsActions,
-  HilosPages,
-  resolveHilosPath,
   type HilosChannelRow,
   type HilosCommunicationsContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/communications'
+import { HilosPages, resolveHilosPath } from '@hilos/core/base'
 import { onMounted, onUnmounted, ref } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'

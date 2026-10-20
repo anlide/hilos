@@ -21,20 +21,24 @@ import {
 } from '@angular/core'
 import {
   CHANNEL_ENABLED_FIELD,
-  HilosPages,
   createHilosChannelsTable,
   createHilosCommunicationsActions,
-  resolveHilosPath,
-} from '@hilos/core'
-import type { HilosChannelRow, HilosCommunicationsContext } from '@hilos/core'
+} from '@hilos/core/admin/communications'
+import { HilosPages, resolveHilosPath } from '@hilos/core/base'
+import type {
+  HilosChannelRow,
+  HilosCommunicationsContext,
+} from '@hilos/core/admin/communications'
 
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosHideable } from '../../HilosHideable.js'
-import { HilosLink } from '../../HilosLink.js'
-import { HilosSwitch } from '../../HilosSwitch.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
+import {
+  HilosAdminPage,
+  HilosHideable,
+  HilosLink,
+  HilosSwitch,
+  HilosTableCell,
+  HilosViewportTable,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 
 /** The framework communications hub page: the delivery-channels table. */
 @Component({

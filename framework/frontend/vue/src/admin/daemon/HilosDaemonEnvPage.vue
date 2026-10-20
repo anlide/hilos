@@ -18,11 +18,10 @@ import {
   formatDaemonEnvRequired,
   formatDaemonEnvSimilarTo,
   formatDaemonEnvValue,
-  HilosPages,
   readHilosDaemonEnvPage,
-  subscribeSignal,
   type HilosDaemonEnvContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
+import { HilosPages, subscribeSignal } from '@hilos/core/base'
 import {
   computed,
   inject,

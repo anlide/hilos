@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { HilosDaemonWorkersPage } from '@hilos/vue'
+import { HilosDaemonWorkersPage } from '@hilos/vue/admin/daemon'
 import { hilosDaemonWorkersContext } from './hilosDaemonContext.js'
 
 defineOptions({ name: 'HilosDaemonWorkers' })

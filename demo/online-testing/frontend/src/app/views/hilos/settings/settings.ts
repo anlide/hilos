@@ -4,7 +4,7 @@
 // binds only its scope stores and action lifecycle through hilosSettingsContext,
 // and declares the catalog on its backend.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosSettingsPage } from '@hilos/angular'
+import { HilosSettingsPage } from '@hilos/angular/admin/settings'
 
 import { hilosSettingsContext } from './hilosSettingsContext.js'
 

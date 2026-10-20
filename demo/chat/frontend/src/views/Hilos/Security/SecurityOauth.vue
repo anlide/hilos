@@ -4,7 +4,7 @@ tables, the row view-models, and the round-trips are the framework's; the projec
 supplies only the context and declares its providers on its backend.
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { HilosSecurityOauthPage } from '@hilos/vue'
+import { HilosSecurityOauthPage } from '@hilos/vue/admin/security'
 
 import { hilosSecurityOauthContext } from './hilosSecurityOauthContext'
 

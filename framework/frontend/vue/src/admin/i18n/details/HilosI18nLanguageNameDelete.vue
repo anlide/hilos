@@ -5,7 +5,7 @@ import {
   type HilosI18nLanguageContext,
   type HilosI18nLanguageNameDeleteTarget,
   type HilosI18nNameRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { computed, onUnmounted, shallowRef, watch } from 'vue'
 
 import HilosActionError from '../../../HilosActionError.vue'

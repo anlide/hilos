@@ -21,7 +21,7 @@ import {
   PROTECTED_MODE_INACTIVE,
   RT_STALENESS_FRESH,
   ScopeManager,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   ActionErrorSignal,
   ActionLifecycleSource,
@@ -31,7 +31,7 @@ import type {
   PageRouteMatch,
   ProjectSignal,
   ProtectedModeStatus,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { THEME_SETTINGS_STORAGE_KEY } from '../../core/src/theme/themeBrowser.js'
 import { bindThemeState } from '../../core/src/theme/themeState.js'

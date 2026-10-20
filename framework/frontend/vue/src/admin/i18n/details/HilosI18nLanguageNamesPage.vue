@@ -6,19 +6,18 @@ three states matching the main page: loading skeleton, card with table, and
 unavailable alert when deleted (HIL-1479). Bootstrap classes only, painted with
 classes that follow the theme (styling-rules.md). -->
 <script setup lang="ts">
+import { computedSignal, HilosPages } from '@hilos/core/base'
 import {
-  computedSignal,
   createHilosI18nLanguageCard,
   createHilosI18nLanguageNameWindow,
   createHilosI18nNamesTable,
   HILOS_I18N_LANGUAGE_NAMES,
   HILOS_I18N_LANGUAGE_NAME_COPY,
   HILOS_I18N_LANGUAGE_NAME_DELETE_COPY,
-  HilosPages,
   type HilosI18nLanguageContext,
   type HilosI18nLanguageNameDeleteTarget,
   type HilosI18nNameRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import {
   computed,
   inject,

@@ -4,8 +4,9 @@ and search/sort/paging are the framework's; the project supplies the context and
 fills the trailing actions cell through the `#row-actions` slot — here, a link to
 the user detail page. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core'
-import { HilosLink, HilosUsersPage } from '@hilos/vue'
+import { HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core/base'
+import { HilosLink } from '@hilos/vue/base'
+import { HilosUsersPage } from '@hilos/vue/admin/users'
 
 import { hilosUsersContext } from './hilosUsersContext'
 

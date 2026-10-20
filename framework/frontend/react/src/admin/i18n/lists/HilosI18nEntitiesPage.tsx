@@ -3,7 +3,7 @@
 // resolves the heading, lead, breadcrumb, and any sub-section cards from the
 // @hilos/core admin tree. Implement the page by replacing the shell's default
 // body through its children. Bootstrap classes only (styling-rules.md).
-import { HilosPages } from '@hilos/core'
+import { HilosPages } from '@hilos/core/base'
 
 import { HilosAdminPage } from '../../../HilosAdminPage.js'
 

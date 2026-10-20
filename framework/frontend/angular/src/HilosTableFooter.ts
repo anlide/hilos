@@ -19,11 +19,11 @@ import {
   input,
   signal,
 } from '@angular/core'
-import { subscribeSignal } from '@hilos/core'
+import { subscribeSignal } from '@hilos/core/base'
 import type {
   HilosTableFooter as HilosTableFooterState,
   TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 /**
  * One slot of the pager: a page to go to, or the pages passed over between two

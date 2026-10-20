@@ -1,0 +1,5 @@
+{
+  "main": "../../dist/fesm2022/hilos-angular-admin-billing.mjs",
+  "module": "../../dist/fesm2022/hilos-angular-admin-billing.mjs",
+  "types": "../../dist/types/hilos-angular-admin-billing.d.ts"
+}

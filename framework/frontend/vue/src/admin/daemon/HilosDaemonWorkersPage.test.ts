@@ -2,14 +2,16 @@ import { mount } from '@vue/test-utils'
 import {
   DAEMON_NODE_DATA,
   DAEMON_PROCESSES_REPORTED_DATA,
+  type HilosDaemonNodeHeading,
+} from '@hilos/core/admin/daemon'
+import {
   HilosPages,
   ScopeManager,
   createSignal,
   type HilosConnection,
-  type HilosDaemonNodeHeading,
   type HilosRouter,
   type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { describe, expect, it } from 'vitest'
 import { nextTick } from 'vue'
 

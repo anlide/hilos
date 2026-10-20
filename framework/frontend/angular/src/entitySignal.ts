@@ -3,7 +3,7 @@
 // once in the core stores; references are resolved here, reactively.
 import { Injector, assertInInjectionContext, inject } from '@angular/core'
 import type { Signal } from '@angular/core'
-import type { EntityRef, EntitySnapshot, ScopeManager } from '@hilos/core'
+import type { EntityRef, EntitySnapshot, ScopeManager } from '@hilos/core/base'
 import { hilosSignal, type HilosSignalOptions } from './hilosSignal.js'
 
 /**

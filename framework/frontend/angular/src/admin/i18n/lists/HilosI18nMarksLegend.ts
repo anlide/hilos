@@ -4,7 +4,7 @@
 // the spacing class a page puts on it applies. Bootstrap classes only, following
 // WCAG 2.1 AA (accessibility.md, styling-rules.md).
 import { ChangeDetectionStrategy, Component, input } from '@angular/core'
-import type { HilosI18nLegendRow } from '@hilos/core'
+import type { HilosI18nLegendRow } from '@hilos/core/admin/i18n'
 
 /** The legend explaining the marks of an i18n table. */
 @Component({

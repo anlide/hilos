@@ -11,11 +11,11 @@ import {
   formatDaemonWorkerMemory,
   formatDaemonWorkerName,
   formatDaemonWorkerPid,
-  HilosPages,
   readDaemonProcessesReported,
   readHilosDaemonNodeHeading,
   type HilosDaemonWorkersContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
+import { HilosPages } from '@hilos/core/base'
 import { computed, inject, onMounted, onUnmounted } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'

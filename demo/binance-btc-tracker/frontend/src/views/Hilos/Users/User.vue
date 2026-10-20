@@ -4,7 +4,7 @@ rename, and the success/fail handling are the framework's; the project supplies
 only the shared HilosUsersContext (its scopes, connection, and user collection).
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { HilosUserPage } from '@hilos/vue'
+import { HilosUserPage } from '@hilos/vue/admin/users'
 
 import { hilosUsersContext } from './hilosUsersContext'
 

@@ -4,8 +4,12 @@
 // the URL; this module supplies the project inputs and provides the navigator so
 // HilosView and HilosLink resolve the current route
 // (docs/agents/frontend/bootstrap-structure.md).
-import { bootHilos, createAuthGate } from '@hilos/core'
-import { HILOS_VIEW_LAYER, hilosAuthGateKey, hilosRouterKey } from '@hilos/vue'
+import { bootHilos, createAuthGate } from '@hilos/core/base'
+import {
+  HILOS_VIEW_LAYER,
+  hilosAuthGateKey,
+  hilosRouterKey,
+} from '@hilos/vue/base'
 import { createApp } from 'vue'
 
 import App from '../App.vue'

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   HILOS_I18N_LOCALE_DELETE_COPY,
-  type ActionHandle,
   type HilosI18nLocaleDeleteTarget,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { type ActionHandle } from '@hilos/core/base'
 import { HilosActionError } from '../../../HilosActionError.js'
 import { HilosEditNotice } from '../../../HilosEditNotice.js'
 import { HilosModal } from '../../../HilosModal.js'

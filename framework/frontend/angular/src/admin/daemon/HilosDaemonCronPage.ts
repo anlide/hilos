@@ -8,19 +8,21 @@ import {
   input,
   signal,
 } from '@angular/core'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
+import {
+  HilosAdminPage,
+  HilosViewportTable,
+  HilosTableCell,
+  HILOS_ROUTER,
+  hilosSignal,
+  mirrorHilosSignal,
+} from '@hilos/angular/base'
 import { HilosDaemonNodeLine } from './HilosDaemonNodeLine.js'
-import { HILOS_ROUTER } from '../../hilosRouterToken.js'
-import { hilosSignal, mirrorHilosSignal } from '../../hilosSignal.js'
 import {
   createHilosDaemonCronTable,
   daemonCronEmptyState,
   daemonCronHoldsIdleNotice,
   daemonCronIdleNotice,
   formatDaemonNodeSilentSince,
-  HilosPages,
   readDaemonCronReported,
   readHilosDaemonNodeHeading,
   DAEMON_CRON_NAME_FIELD,
@@ -34,8 +36,8 @@ import {
   type HilosDaemonCronContext,
   type HilosDaemonNodeHeading,
   type HilosDaemonCronRow,
-  type TableViewportRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
+import { HilosPages, type TableViewportRow } from '@hilos/core/base'
 
 /** Angular view of the Daemon CronPage. */
 @Component({

@@ -8,18 +8,20 @@ import {
   input,
   signal,
 } from '@angular/core'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
+import {
+  HilosAdminPage,
+  HilosViewportTable,
+  HilosTableCell,
+  HILOS_ROUTER,
+  hilosSignal,
+  mirrorHilosSignal,
+} from '@hilos/angular/base'
 import { HilosDaemonNodeLine } from './HilosDaemonNodeLine.js'
-import { HILOS_ROUTER } from '../../hilosRouterToken.js'
-import { hilosSignal, mirrorHilosSignal } from '../../hilosSignal.js'
 import {
   createHilosDaemonEnvKeysTable,
   createHilosDaemonEnvOrphansTable,
   daemonEnvNodeHeading,
   daemonEnvSummary,
-  HilosPages,
   readHilosDaemonEnvPage,
   formatDaemonEnvValue,
   daemonEnvSourceBadge,
@@ -40,7 +42,8 @@ import {
   DAEMON_ENV_SIMILAR_TO_FIELD,
   type HilosDaemonEnvContext,
   type HilosDaemonEnvPageState,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
+import { HilosPages } from '@hilos/core/base'
 import { HilosDaemonEnvValue } from './HilosDaemonEnvValue.js'
 import { HilosDaemonEnvSourceBadge } from './HilosDaemonEnvSourceBadge.js'
 

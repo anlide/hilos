@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { HilosLegalDocumentPage } from '@hilos/vue'
+import { HilosLegalDocumentPage } from '@hilos/vue/admin/legal'
 import { hilosLegalContext } from './hilosLegalContext.js'
 </script>
 

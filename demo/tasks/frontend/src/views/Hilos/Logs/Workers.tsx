@@ -3,7 +3,7 @@
 // view-model, the filters, the header and the four empty states are the framework's;
 // the project supplies only the context (the same connection and scope stores the
 // other Hilos pages use) and registers the hilosLogWorkers table on its backend.
-import { HilosLogsWorkersPage } from '@hilos/react'
+import { HilosLogsWorkersPage } from '@hilos/react/admin/logs'
 
 import { hilosLogWorkersContext } from './hilosLogsContext'
 

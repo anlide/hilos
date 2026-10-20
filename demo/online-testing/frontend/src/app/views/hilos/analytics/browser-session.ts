@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosAnalyticsBrowserSessionPage } from '@hilos/angular'
+import { HilosAnalyticsBrowserSessionPage } from '@hilos/angular/admin/analytics'
 import { hilosAnalyticsContext } from './hilosAnalyticsContext.js'
 @Component({
   selector: 'app-analytics-browser-session',

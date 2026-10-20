@@ -5,7 +5,7 @@ import {
   HilosConnection,
   type WebSocketLike,
 } from '../../src/connection/HilosConnection.js'
-import * as core from '../../src/index.js'
+import * as base from '../../src/base/index.js'
 import { type ProjectSignalSchemas } from '../../src/protocol/parseSignal.js'
 
 /** Scripted WebSocket stand-in; the test drives open/message explicitly. */
@@ -175,12 +175,48 @@ describe('createHilosConnection', () => {
     expect(unknownCount).toBe(0)
   })
 
-  it('merges every signal schema group @hilos/core exports', () => {
+  it('registers all base schemas before a socket or an admin entry is opened', async () => {
+    const factory = vi.fn((url: string) => new MockWebSocket(url))
+    const { connection } = base.createHilosConnection({
+      url: 'ws://test/ws',
+      webSocketFactory: factory,
+    })
+    expect(factory).not.toHaveBeenCalled()
+    connection.connect()
+    const socket = MockWebSocket.last
+    socket.emit('open')
+    const unknown = vi.fn()
+    connection.on('unknownSignal', unknown)
+
+    const baseGroups = Object.entries(base).filter(([name]) =>
+      name.endsWith('_SIGNAL_SCHEMAS'),
+    ) as [string, ProjectSignalSchemas][]
+    for (const [, schemas] of baseGroups) {
+      for (const type of Object.keys(schemas)) {
+        socket.emit('message', { data: JSON.stringify({ type, data: {} }) })
+      }
+    }
+    expect(unknown).not.toHaveBeenCalled()
+
+    const core = await import('../../src/index.js')
+    const rootGroups = Object.entries(core).filter(([name]) =>
+      name.endsWith('_SIGNAL_SCHEMAS'),
+    )
+    expect(baseGroups.map(([name]) => name).sort()).toEqual(
+      rootGroups.map(([name]) => name).sort(),
+    )
+    for (const [name, schemas] of rootGroups) {
+      expect(base[name as keyof typeof base]).toBe(schemas)
+    }
+  })
+
+  it('merges every signal schema group @hilos/core exports', async () => {
     // The guard of the class: a group the framework declares and the factory
     // does not merge is a silent hang in whichever project forgets it. A merged
     // schema answers an empty payload with projectSignal or parseFailure; only a
     // schema nobody merged answers unknownSignal.
     const { connection, socket } = openConnection()
+    const core = await import('../../src/index.js')
     const groups = Object.entries(core).filter(([name]) =>
       name.endsWith('_SIGNAL_SCHEMAS'),
     ) as [string, ProjectSignalSchemas][]

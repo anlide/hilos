@@ -1,6 +1,6 @@
 // Mount the framework maintenance section with this project's context.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosMaintenancePage } from '@hilos/angular'
+import { HilosMaintenancePage } from '@hilos/angular/admin/maintenance'
 
 import { hilosMaintenanceContext } from './hilosMaintenanceContext.js'
 

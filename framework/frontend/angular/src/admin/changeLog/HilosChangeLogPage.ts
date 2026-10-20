@@ -30,12 +30,9 @@ import {
   CHANGE_LOG_TILE_JOURNAL_LABEL,
   CHANGE_LOG_TILE_TRACKED_LABEL,
   CHANGE_LOG_TILE_TRACKED_NOTE,
-  HILOS_TABLE_ACTIONS_KEY,
-  HilosPages,
   changeLogChannelBadge,
   changeLogFeedEmpty,
   changeLogJournalNote,
-  computedSignal,
   createHilosChangeLogFeedTable,
   createHilosChangeLogReceiptReader,
   formatChangeLogCoverage,
@@ -45,21 +42,28 @@ import {
   formatChangeLogTime,
   formatChangeLogTouched,
   formatChangeLogWho,
-  isHiddenValue,
   readHilosChangeLogOverview,
-  subscribeSignal,
   type HilosChangeLogFeedRow,
   type HilosChangeLogReceiptContext,
   type HilosChangeLogReceiptDialog,
-} from '@hilos/core'
+} from '@hilos/core/admin/change-log'
+import {
+  HILOS_TABLE_ACTIONS_KEY,
+  HilosPages,
+  computedSignal,
+  isHiddenValue,
+  subscribeSignal,
+} from '@hilos/core/base'
 
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosHiddenMark } from '../../HilosHiddenMark.js'
-import { HilosLink } from '../../HilosLink.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { HILOS_ROUTER } from '../../hilosRouterToken.js'
-import { mirrorHilosSignal } from '../../hilosSignal.js'
+import {
+  HilosAdminPage,
+  HilosHiddenMark,
+  HilosLink,
+  HilosTableCell,
+  HilosViewportTable,
+  HILOS_ROUTER,
+  mirrorHilosSignal,
+} from '@hilos/angular/base'
 import { HilosChangeLogReceiptModal } from './HilosChangeLogReceiptModal.js'
 
 /** The Change Log dashboard: the two tiles, the feed and the receipt modal. */

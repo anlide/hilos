@@ -7,8 +7,8 @@ summaries only it keeps. Bootstrap classes only (styling-rules.md). -->
 import {
   type HilosProfileBinding,
   type HilosProfilePageContext,
-} from '@hilos/core'
-import { HilosProfilePage } from '@hilos/vue'
+} from '@hilos/core/base'
+import { HilosProfilePage } from '@hilos/vue/base'
 
 import { actions, connection } from '../../bootstrap/connection.js'
 import { scopes } from '../../bootstrap/session.js'

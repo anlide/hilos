@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { type HilosLegalClause } from '@hilos/core'
+import { type HilosLegalClause } from '@hilos/core/base'
 defineProps<{ clauses: HilosLegalClause[] }>()
 </script>
 

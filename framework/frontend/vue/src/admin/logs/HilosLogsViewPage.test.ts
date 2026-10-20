@@ -9,17 +9,17 @@ import {
   bindSessionScope,
   createSignal,
   HilosPages,
-  LOGS_FOLLOW_START_ACTION,
   LOG_LINES_APPENDED_SIGNAL,
   LOG_VIEWER_CATALOG_SIGNAL,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import { LOGS_FOLLOW_START_ACTION } from '@hilos/core/admin/logs'
 import type {
   HilosConnection,
   HilosLogViewerCatalog,
   HilosRouter,
   PageRouteMatch,
   ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import HilosLogsViewPage from './HilosLogsViewPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'

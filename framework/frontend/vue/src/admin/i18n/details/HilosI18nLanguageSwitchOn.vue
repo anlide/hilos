@@ -5,7 +5,7 @@ import {
   hilosI18nLanguageSwitchOn,
   type HilosI18nLanguageCard,
   type HilosI18nLanguageContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { computed, ref, watch } from 'vue'
 
 import HilosActionError from '../../../HilosActionError.vue'

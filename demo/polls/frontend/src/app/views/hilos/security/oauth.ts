@@ -3,7 +3,7 @@
 // tables, the row view-models, and the round-trips are the framework's; the project
 // supplies only the context and declares its providers on its backend.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosSecurityOauthPage } from '@hilos/angular'
+import { HilosSecurityOauthPage } from '@hilos/angular/admin/security'
 
 import { hilosSecurityOauthContext } from './hilosSecurityOauthContext'
 

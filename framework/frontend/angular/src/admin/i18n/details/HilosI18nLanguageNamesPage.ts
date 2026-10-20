@@ -32,23 +32,25 @@ import {
   HILOS_I18N_LANGUAGE_NAMES,
   HILOS_I18N_LANGUAGE_NAME_COPY,
   HILOS_I18N_LANGUAGE_NAME_DELETE_COPY,
-  HilosPages,
-  computedSignal,
   createHilosI18nLanguageCard,
   createHilosI18nLanguageNameWindow,
   createHilosI18nNamesTable,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { HilosPages, computedSignal } from '@hilos/core/base'
 import type {
   HilosI18nLanguageCard,
   HilosI18nLanguageContext,
   HilosI18nLanguageNameDeleteTarget,
   HilosI18nNameRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 
-import { HilosAdminPage } from '../../../HilosAdminPage.js'
-import { LoadingButton } from '../../../LoadingButton.js'
-import { HILOS_ROUTER } from '../../../hilosRouterToken.js'
-import { hilosSignal, mirrorHilosSignal } from '../../../hilosSignal.js'
+import {
+  HilosAdminPage,
+  LoadingButton,
+  HILOS_ROUTER,
+  hilosSignal,
+  mirrorHilosSignal,
+} from '@hilos/angular/base'
 import { HilosI18nLanguageHeader } from './HilosI18nLanguageHeader.js'
 import { HilosI18nLanguageNameDelete } from './HilosI18nLanguageNameDelete.js'
 import { HilosI18nLanguageNameWindow } from './HilosI18nLanguageNameWindow.js'

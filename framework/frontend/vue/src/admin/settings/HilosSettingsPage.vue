@@ -23,11 +23,11 @@ import {
   createHilosSettingsActions,
   createHilosSettingsTable,
   hasCustomValue,
-  HilosPages,
   isOrphanSetting,
   type HilosSettingRow,
   type HilosSettingsContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/settings'
+import { HilosPages } from '@hilos/core/base'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import ConflictActions from '../../ConflictActions.vue'

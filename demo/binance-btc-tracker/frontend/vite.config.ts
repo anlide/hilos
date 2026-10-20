@@ -1,4 +1,5 @@
 import vue from '@vitejs/plugin-vue'
+import { initialBundleBudget } from '@hilos/core/build/initial-bundle-budget'
 import { defineConfig, loadEnv, type Plugin } from 'vite'
 
 // Stamp the frontend build timestamp into the dist output. The daemon reads
@@ -25,14 +26,27 @@ function buildTimestampPlugin(): Plugin {
 // consumes @hilos/vue. The dev server listens on every interface so the host
 // browser reaches it through the container's port mapping. HMR runs on native
 // filesystem events (see docs/agents/frontend/build-and-docker.md).
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command, isSsrBuild }) => {
   // The proxy targets default to the local daemon service by its compose name;
   // VITE_WS_TARGET / VITE_DATA_EXPORT_TARGET override them. Test and prod use
   // nginx, so both proxies are dev-only.
   const env = loadEnv(mode, '.', 'VITE_')
 
   return {
-    plugins: [vue(), buildTimestampPlugin()],
+    plugins: [
+      vue(),
+      buildTimestampPlugin(),
+      command === 'build' &&
+        !isSsrBuild &&
+        initialBundleBudget({
+          warningBytes: 1500000,
+          errorBytes: 2000000,
+          projectSources: {
+            routes: 'src/pages/routes.ts',
+            views: 'src/App.vue',
+          },
+        }),
+    ],
     server: {
       host: true,
       port: 5173,

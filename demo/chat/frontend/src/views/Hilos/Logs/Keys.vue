@@ -5,7 +5,7 @@ the project supplies only the context (the same connection and scope stores the
 other Hilos pages use) and registers the hilosLogKeys table on its backend.
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { HilosLogsKeysPage } from '@hilos/vue'
+import { HilosLogsKeysPage } from '@hilos/vue/admin/logs'
 
 import { hilosLogKeysContext } from './hilosLogsContext'
 

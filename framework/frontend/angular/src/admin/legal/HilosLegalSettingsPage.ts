@@ -10,30 +10,34 @@ import {
   createHilosLegalSettingsTable,
   createHilosLegalSettingsActions,
   createHilosLegalSettingEdit,
-  HilosPages,
   HILOS_LEGAL_SETTING_COPY,
   HILOS_LEGAL_VALUE_COPY,
   HILOS_LEGAL_SETTING_PREVIEWS,
   HilosLegalRowKey,
+  type HilosLegalSettingEditFields,
+  type HilosLegalSettingRow,
+} from '@hilos/core/admin/legal'
+import {
+  HilosPages,
   HILOS_TABLE_ACTIONS_KEY,
   hilosRowEditIdle,
   isHiddenValue,
   type HilosLegalContext,
-  type HilosLegalSettingEditFields,
-  type HilosLegalSettingRow,
-} from '@hilos/core'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosHiddenMark } from '../../HilosHiddenMark.js'
-import { HilosHideable } from '../../HilosHideable.js'
-import { HilosModal } from '../../HilosModal.js'
-import { HilosActionError } from '../../HilosActionError.js'
-import { HilosEditNotice } from '../../HilosEditNotice.js'
-import { ConflictActions } from '../../ConflictActions.js'
-import { LoadingButton } from '../../LoadingButton.js'
-import { mirrorHilosSignal } from '../../hilosSignal.js'
-import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
+} from '@hilos/core/base'
+import {
+  HilosAdminPage,
+  HilosViewportTable,
+  HilosTableCell,
+  HilosHiddenMark,
+  HilosHideable,
+  HilosModal,
+  HilosActionError,
+  HilosEditNotice,
+  ConflictActions,
+  LoadingButton,
+  mirrorHilosSignal,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 
 let inputSequence = 0
 

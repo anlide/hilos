@@ -2,16 +2,18 @@ import { mount, type VueWrapper } from '@vue/test-utils'
 import {
   ActionError,
   createSignal,
-  HILOS_I18N_LANGUAGE_DELETE_ACTION,
-  HILOS_I18N_LANGUAGE_ROW_DELETE_ACTION,
-  HILOS_I18N_LANGUAGE_DELETE_COPY,
   hilosToasts,
   type ActionHandle,
   type ActionLifecycle,
   type ActionResult,
+} from '@hilos/core/base'
+import {
+  HILOS_I18N_LANGUAGE_DELETE_ACTION,
+  HILOS_I18N_LANGUAGE_ROW_DELETE_ACTION,
+  HILOS_I18N_LANGUAGE_DELETE_COPY,
   type HilosI18nLanguageContext,
   type HilosI18nLanguageRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { afterEach, describe, expect, it } from 'vitest'
 import { defineComponent, h, nextTick, ref } from 'vue'
 

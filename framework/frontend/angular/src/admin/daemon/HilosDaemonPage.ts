@@ -23,19 +23,21 @@ import {
   formatDaemonNumber,
   formatDaemonPercentage,
   formatDaemonWorkerName,
-  HilosPages,
   type HilosDaemonContext,
-} from '@hilos/core'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosSkeleton } from '../../HilosSkeleton.js'
-import { mirrorHilosSignal } from '../../hilosSignal.js'
+} from '@hilos/core/admin/daemon'
+import { HilosPages } from '@hilos/core/base'
+import {
+  HilosAdminPage,
+  HilosSkeleton,
+  mirrorHilosSignal,
+} from '@hilos/angular/base'
 import { HilosDaemonNodeInspector } from './HilosDaemonNodeInspector.js'
 import { HilosDaemonPlacement } from './HilosDaemonPlacement.js'
 import type {
   HilosDaemonOverviewData,
   HilosDaemonDatabaseData,
   HilosDaemonOverviewNode,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
 
 /** Angular view of the Daemon Page. */
 @Component({

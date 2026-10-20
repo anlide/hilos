@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { HilosPages, type HilosI18nCountryCard } from '@hilos/core'
+import { HilosPages } from '@hilos/core/base'
+import { type HilosI18nCountryCard } from '@hilos/core/admin/i18n'
 import { computed, inject } from 'vue'
 
 import HilosLink from '../../../HilosLink.vue'

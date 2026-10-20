@@ -16,17 +16,19 @@ import {
   HilosNotificationBell,
   HilosOAuthCallbackPage,
   HilosView,
-  hilosAdminViews,
   hilosSignal,
-} from '@hilos/angular'
+} from '@hilos/angular/base'
+import { hilosAdminViews } from '@hilos/angular/admin-views'
 import {
   AUTH_MAGIC_LINK_PATH,
   AUTH_SECOND_FACTOR_CANCEL_PATH,
   AUTH_OAUTH_CALLBACK_PATH,
   HILOS_PAGE_ROUTES,
   HilosPages,
+  lazyPage,
+  type PageView,
   hilosSessionAvatarMark,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { AuthSurface } from './auth/authSurface'
 import { hilosAuthContext } from './auth/hilosAuthContext'
@@ -35,41 +37,9 @@ import { currentUserName } from './bootstrap/session'
 import { PAGE_MAIN } from './pages/keys'
 import { About } from './views/about/about'
 import { License } from './views/license/license'
-import { LogKeys } from './views/hilos/logs/keys'
-import { LogRotations } from './views/hilos/logs/rotations'
-import { LogSettings } from './views/hilos/logs/settings'
-import { LogViewer } from './views/hilos/logs/view'
-import { LogWorkers } from './views/hilos/logs/workers'
-import { Daemon } from './views/hilos/daemon/daemon.js'
-import { DaemonWorkers } from './views/hilos/daemon/workers.js'
-import { DaemonAgents } from './views/hilos/daemon/agents.js'
-import { DaemonCron } from './views/hilos/daemon/cron.js'
-import { DaemonHttp } from './views/hilos/daemon/http.js'
-import { DaemonEnv } from './views/hilos/daemon/env.js'
-import { DaemonEnvMismatch } from './views/hilos/daemon/env-mismatch.js'
-import { I18nCountry } from './views/hilos/i18n/details/country.js'
-import { I18nCountryNames } from './views/hilos/i18n/details/country-names.js'
-import { I18nLanguage } from './views/hilos/i18n/details/language.js'
-import { I18nLanguageLocales } from './views/hilos/i18n/details/language-locales.js'
-import { I18nLanguageNames } from './views/hilos/i18n/details/language-names.js'
-import { I18nCountries } from './views/hilos/i18n/lists/countries.js'
-import { I18nLanguages } from './views/hilos/i18n/lists/languages.js'
-import { LogsOverview } from './views/hilos/logs/overview'
-import { Maintenance } from './views/hilos/maintenance/maintenance.js'
 import { Main } from './views/main/main'
 import { MainSkeleton } from './views/main/main-skeleton'
 import { Privacy } from './views/privacy/privacy'
-import { SecurityOauth } from './views/hilos/security/oauth'
-import { SecurityOauthProvider } from './views/hilos/security/oauth-provider'
-import { SecuritySignInMethods } from './views/hilos/security/sign-in-methods'
-import { SecurityTwoFactor } from './views/hilos/security/two-factor'
-import { SecurityStepUp } from './views/hilos/security/step-up'
-import { SecurityImpersonation } from './views/hilos/security/impersonation'
-import { Legal } from './views/hilos/legal/legal.js'
-import { LegalDocument } from './views/hilos/legal/legal-document.js'
-import { LegalRevision } from './views/hilos/legal/legal-revision.js'
-import { LegalAcceptances } from './views/hilos/legal/legal-acceptances.js'
-import { LegalSettings } from './views/hilos/legal/legal-settings.js'
 import { Profile } from './views/profile/profile.js'
 import { ProfileSignIn } from './views/profile/profile-sign-in.js'
 import { ProfileSessions } from './views/profile/profile-sessions.js'
@@ -77,16 +47,7 @@ import { ProfileSecurity } from './views/profile/profile-security.js'
 import { ProfileAgreements } from './views/profile/profile-agreements.js'
 import { ProfileAgreementsHistory } from './views/profile/profile-agreements-history.js'
 import { ProfileData } from './views/profile/profile-data.js'
-import { Settings } from './views/hilos/settings/settings'
-import { Appearance } from './views/hilos/appearance/appearance.js'
 import { Terms } from './views/terms/terms'
-import { AnalyticsBrowserSession } from './views/hilos/analytics/browser-session.js'
-import { AnalyticsPerson } from './views/hilos/analytics/person.js'
-import { ChangeLog } from './views/hilos/change-log/change-log.js'
-import { ChangeLogTable } from './views/hilos/change-log/change-log-table.js'
-import { ChangeLogTables } from './views/hilos/change-log/change-log-tables.js'
-import { User } from './views/hilos/users/user'
-import { Users } from './views/hilos/users/users'
 
 @Component({
   selector: 'app-root',
@@ -193,7 +154,7 @@ export class App {
 
   // The page-key → view map HilosView renders from. Pages without a mapped view
   // (other routes land later) render nothing.
-  protected readonly pages: Record<string, Type<unknown>> = {
+  protected readonly pages: Record<string, PageView<Type<unknown>>> = {
     [PAGE_MAIN]: Main,
     // The Hilos admin section. The framework ships a real default page for every
     // admin key (hilosAdminViews) — including the dashboard — so the demo maps only
@@ -203,49 +164,123 @@ export class App {
     // The framework settings admin page, activated configure-only: the framework
     // owns the table and the add/update/delete lifecycle; the project binds only its
     // scope stores + action lifecycle (views/hilos/settings) and its catalog on the backend.
-    [HilosPages.SETTINGS]: Settings,
+    [HilosPages.SETTINGS]: lazyPage(() =>
+      import('./views/hilos/settings/settings.js').then(
+        (module) => module.Settings,
+      ),
+    ),
     // The framework Appearance page: the framework owns the table, both windows
     // and the writes; the project binds its scope stores and action lifecycle
     // (views/hilos/appearance) and its theme catalog on the backend.
-    [HilosPages.APPEARANCE]: Appearance,
+    [HilosPages.APPEARANCE]: lazyPage(() =>
+      import('./views/hilos/appearance/appearance.js').then(
+        (module) => module.Appearance,
+      ),
+    ),
     // The framework users/user admin pages: the framework owns the table, the
     // detail, and the rename round-trip; the project binds its scope stores,
     // connection, and typed user collection (views/hilos/users) and supplies its user
     // entity + presence sources on the backend.
-    [HilosPages.USERS]: Users,
-    [HilosPages.USER]: User,
+    [HilosPages.USERS]: lazyPage(() =>
+      import('./views/hilos/users/users.js').then((module) => module.Users),
+    ),
+    [HilosPages.USER]: lazyPage(() =>
+      import('./views/hilos/users/user.js').then((module) => module.User),
+    ),
     // The framework Analytics pages of one browser session and of one person: the
     // framework owns the header, the tables and every word; the project binds its
     // connection and page scope (views/hilos/analytics). The overview comes from
     // hilosAdminViews.
-    [HilosPages.ANALYTICS_BROWSER_SESSION]: AnalyticsBrowserSession,
-    [HilosPages.ANALYTICS_PERSON]: AnalyticsPerson,
+    [HilosPages.ANALYTICS_BROWSER_SESSION]: lazyPage(() =>
+      import('./views/hilos/analytics/browser-session.js').then(
+        (module) => module.AnalyticsBrowserSession,
+      ),
+    ),
+    [HilosPages.ANALYTICS_PERSON]: lazyPage(() =>
+      import('./views/hilos/analytics/person.js').then(
+        (module) => module.AnalyticsPerson,
+      ),
+    ),
     // The framework Change Log section: the framework owns the tiles, the feed,
     // the tables viewport, the history, the receipt modal and every word; the
     // project binds its connection, page scope and action lifecycle
     // (views/hilos/change-log).
-    [HilosPages.CHANGE_LOG]: ChangeLog,
-    [HilosPages.CHANGE_LOG_TABLES]: ChangeLogTables,
-    [HilosPages.CHANGE_LOG_TABLE]: ChangeLogTable,
+    [HilosPages.CHANGE_LOG]: lazyPage(() =>
+      import('./views/hilos/change-log/change-log.js').then(
+        (module) => module.ChangeLog,
+      ),
+    ),
+    [HilosPages.CHANGE_LOG_TABLES]: lazyPage(() =>
+      import('./views/hilos/change-log/change-log-tables.js').then(
+        (module) => module.ChangeLogTables,
+      ),
+    ),
+    [HilosPages.CHANGE_LOG_TABLE]: lazyPage(() =>
+      import('./views/hilos/change-log/change-log-table.js').then(
+        (module) => module.ChangeLogTable,
+      ),
+    ),
     // The framework OAuth admin pages (HIL-286): the framework owns the providers,
     // fields and return-address tables and their set / reset round-trips; the
     // project binds its connection, scope stores and action lifecycle
     // (views/hilos/security) and declares its provider directory on the backend.
-    [HilosPages.SECURITY_OAUTH]: SecurityOauth,
-    [HilosPages.SECURITY_OAUTH_PROVIDER]: SecurityOauthProvider,
+    [HilosPages.SECURITY_OAUTH]: lazyPage(() =>
+      import('./views/hilos/security/oauth.js').then(
+        (module) => module.SecurityOauth,
+      ),
+    ),
+    [HilosPages.SECURITY_OAUTH_PROVIDER]: lazyPage(() =>
+      import('./views/hilos/security/oauth-provider.js').then(
+        (module) => module.SecurityOauthProvider,
+      ),
+    ),
     // The framework sign-in methods page (HIL-427): the framework owns the table,
     // the live enabled set and the switch; the project binds its connection, scope
     // stores and action lifecycle (views/hilos/security) and declares its method
     // directory on the backend.
-    [HilosPages.SECURITY_SIGN_IN_METHODS]: SecuritySignInMethods,
-    [HilosPages.SECURITY_2FA]: SecurityTwoFactor,
-    [HilosPages.SECURITY_STEP_UP]: SecurityStepUp,
-    [HilosPages.SECURITY_IMPERSONATION]: SecurityImpersonation,
-    [HilosPages.LEGAL]: Legal,
-    [HilosPages.LEGAL_DOCUMENT]: LegalDocument,
-    [HilosPages.LEGAL_REVISION]: LegalRevision,
-    [HilosPages.LEGAL_ACCEPTANCES]: LegalAcceptances,
-    [HilosPages.LEGAL_SETTINGS]: LegalSettings,
+    [HilosPages.SECURITY_SIGN_IN_METHODS]: lazyPage(() =>
+      import('./views/hilos/security/sign-in-methods.js').then(
+        (module) => module.SecuritySignInMethods,
+      ),
+    ),
+    [HilosPages.SECURITY_2FA]: lazyPage(() =>
+      import('./views/hilos/security/two-factor.js').then(
+        (module) => module.SecurityTwoFactor,
+      ),
+    ),
+    [HilosPages.SECURITY_STEP_UP]: lazyPage(() =>
+      import('./views/hilos/security/step-up.js').then(
+        (module) => module.SecurityStepUp,
+      ),
+    ),
+    [HilosPages.SECURITY_IMPERSONATION]: lazyPage(() =>
+      import('./views/hilos/security/impersonation.js').then(
+        (module) => module.SecurityImpersonation,
+      ),
+    ),
+    [HilosPages.LEGAL]: lazyPage(() =>
+      import('./views/hilos/legal/legal.js').then((module) => module.Legal),
+    ),
+    [HilosPages.LEGAL_DOCUMENT]: lazyPage(() =>
+      import('./views/hilos/legal/legal-document.js').then(
+        (module) => module.LegalDocument,
+      ),
+    ),
+    [HilosPages.LEGAL_REVISION]: lazyPage(() =>
+      import('./views/hilos/legal/legal-revision.js').then(
+        (module) => module.LegalRevision,
+      ),
+    ),
+    [HilosPages.LEGAL_ACCEPTANCES]: lazyPage(() =>
+      import('./views/hilos/legal/legal-acceptances.js').then(
+        (module) => module.LegalAcceptances,
+      ),
+    ),
+    [HilosPages.LEGAL_SETTINGS]: lazyPage(() =>
+      import('./views/hilos/legal/legal-settings.js').then(
+        (module) => module.LegalSettings,
+      ),
+    ),
     [HilosPages.PROFILE]: Profile,
     [HilosPages.PROFILE_SIGN_IN]: ProfileSignIn,
     [HilosPages.PROFILE_SESSIONS]: ProfileSessions,
@@ -254,39 +289,115 @@ export class App {
     [HilosPages.PROFILE_AGREEMENTS_HISTORY]: ProfileAgreementsHistory,
     [HilosPages.PROFILE_DATA]: ProfileData,
     // The three built Daemon screens bind this project to the SDK contexts.
-    [HilosPages.DAEMON]: Daemon,
-    [HilosPages.DAEMON_WORKERS]: DaemonWorkers,
-    [HilosPages.DAEMON_AGENTS]: DaemonAgents,
-    [HilosPages.DAEMON_CRON]: DaemonCron,
-    [HilosPages.DAEMON_HTTP_SERVER]: DaemonHttp,
-    [HilosPages.DAEMON_ENV]: DaemonEnv,
-    [HilosPages.DAEMON_ENV_MISMATCH]: DaemonEnvMismatch,
+    [HilosPages.DAEMON]: lazyPage(() =>
+      import('./views/hilos/daemon/daemon.js').then((module) => module.Daemon),
+    ),
+    [HilosPages.DAEMON_WORKERS]: lazyPage(() =>
+      import('./views/hilos/daemon/workers.js').then(
+        (module) => module.DaemonWorkers,
+      ),
+    ),
+    [HilosPages.DAEMON_AGENTS]: lazyPage(() =>
+      import('./views/hilos/daemon/agents.js').then(
+        (module) => module.DaemonAgents,
+      ),
+    ),
+    [HilosPages.DAEMON_CRON]: lazyPage(() =>
+      import('./views/hilos/daemon/cron.js').then(
+        (module) => module.DaemonCron,
+      ),
+    ),
+    [HilosPages.DAEMON_HTTP_SERVER]: lazyPage(() =>
+      import('./views/hilos/daemon/http.js').then(
+        (module) => module.DaemonHttp,
+      ),
+    ),
+    [HilosPages.DAEMON_ENV]: lazyPage(() =>
+      import('./views/hilos/daemon/env.js').then((module) => module.DaemonEnv),
+    ),
+    [HilosPages.DAEMON_ENV_MISMATCH]: lazyPage(() =>
+      import('./views/hilos/daemon/env-mismatch.js').then(
+        (module) => module.DaemonEnvMismatch,
+      ),
+    ),
     // The framework languages and countries section: the framework owns the two
     // lists, the two cards, their names, the language's locales and every
     // window over them; the project binds its connection, scope stores and
     // action lifecycle (views/hilos/i18n) and, on its backend, the pages, the
     // library agent and the browser tables. The section root stays the
     // framework default.
-    [HilosPages.I18N_LANGUAGES]: I18nLanguages,
-    [HilosPages.I18N_LANGUAGE]: I18nLanguage,
-    [HilosPages.I18N_LANGUAGE_NAMES]: I18nLanguageNames,
-    [HilosPages.I18N_LANGUAGE_LOCALES]: I18nLanguageLocales,
-    [HilosPages.I18N_COUNTRIES]: I18nCountries,
-    [HilosPages.I18N_COUNTRY]: I18nCountry,
-    [HilosPages.I18N_COUNTRY_NAMES]: I18nCountryNames,
+    [HilosPages.I18N_LANGUAGES]: lazyPage(() =>
+      import('./views/hilos/i18n/lists/languages.js').then(
+        (module) => module.I18nLanguages,
+      ),
+    ),
+    [HilosPages.I18N_LANGUAGE]: lazyPage(() =>
+      import('./views/hilos/i18n/details/language.js').then(
+        (module) => module.I18nLanguage,
+      ),
+    ),
+    [HilosPages.I18N_LANGUAGE_NAMES]: lazyPage(() =>
+      import('./views/hilos/i18n/details/language-names.js').then(
+        (module) => module.I18nLanguageNames,
+      ),
+    ),
+    [HilosPages.I18N_LANGUAGE_LOCALES]: lazyPage(() =>
+      import('./views/hilos/i18n/details/language-locales.js').then(
+        (module) => module.I18nLanguageLocales,
+      ),
+    ),
+    [HilosPages.I18N_COUNTRIES]: lazyPage(() =>
+      import('./views/hilos/i18n/lists/countries.js').then(
+        (module) => module.I18nCountries,
+      ),
+    ),
+    [HilosPages.I18N_COUNTRY]: lazyPage(() =>
+      import('./views/hilos/i18n/details/country.js').then(
+        (module) => module.I18nCountry,
+      ),
+    ),
+    [HilosPages.I18N_COUNTRY_NAMES]: lazyPage(() =>
+      import('./views/hilos/i18n/details/country-names.js').then(
+        (module) => module.I18nCountryNames,
+      ),
+    ),
     // The framework logs section, activated whole: the framework owns the six
     // screens, their tables and every phrase on them; the project binds its
     // connection, scope stores and action lifecycle (views/hilos/logs) and, on its
     // backend, the pages, the three agents and the three browser tables.
-    [HilosPages.LOGS]: LogsOverview,
-    [HilosPages.LOGS_KEYS]: LogKeys,
-    [HilosPages.LOGS_WORKERS]: LogWorkers,
-    [HilosPages.LOGS_ROTATIONS]: LogRotations,
-    [HilosPages.LOGS_SETTINGS]: LogSettings,
-    [HilosPages.LOGS_VIEW]: LogViewer,
+    [HilosPages.LOGS]: lazyPage(() =>
+      import('./views/hilos/logs/overview.js').then(
+        (module) => module.LogsOverview,
+      ),
+    ),
+    [HilosPages.LOGS_KEYS]: lazyPage(() =>
+      import('./views/hilos/logs/keys.js').then((module) => module.LogKeys),
+    ),
+    [HilosPages.LOGS_WORKERS]: lazyPage(() =>
+      import('./views/hilos/logs/workers.js').then(
+        (module) => module.LogWorkers,
+      ),
+    ),
+    [HilosPages.LOGS_ROTATIONS]: lazyPage(() =>
+      import('./views/hilos/logs/rotations.js').then(
+        (module) => module.LogRotations,
+      ),
+    ),
+    [HilosPages.LOGS_SETTINGS]: lazyPage(() =>
+      import('./views/hilos/logs/settings.js').then(
+        (module) => module.LogSettings,
+      ),
+    ),
+    [HilosPages.LOGS_VIEW]: lazyPage(() =>
+      import('./views/hilos/logs/view.js').then((module) => module.LogViewer),
+    ),
     // Maintenance has no feature switch: the framework owns the circle and both
     // actions; the project binds its context and registers the page and table.
-    [HilosPages.MAINTENANCE]: Maintenance,
+    [HilosPages.MAINTENANCE]: lazyPage(() =>
+      import('./views/hilos/maintenance/maintenance.js').then(
+        (module) => module.Maintenance,
+      ),
+    ),
     [HilosPages.ABOUT]: About,
     [HilosPages.TERMS]: Terms,
     [HilosPages.PRIVACY]: Privacy,

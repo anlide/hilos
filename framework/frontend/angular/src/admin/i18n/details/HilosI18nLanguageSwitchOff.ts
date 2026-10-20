@@ -23,18 +23,20 @@ import {
   HILOS_I18N_LANGUAGE_SWITCH_OFF_COPY,
   createHilosI18nLanguageSwitchOff,
   hilosI18nLanguageSwitchOff,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import type {
   HilosI18nLanguageCard,
   HilosI18nLanguageContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 
-import { HilosActionError } from '../../../HilosActionError.js'
-import { HilosEditNotice } from '../../../HilosEditNotice.js'
-import { HilosModal } from '../../../HilosModal.js'
-import { LoadingButton } from '../../../LoadingButton.js'
-import { injectLookOnly } from '../../../hilosLookOnly.js'
-import { createHilosTrackedAction } from '../../../hilosTrackedAction.js'
+import {
+  HilosActionError,
+  HilosEditNotice,
+  HilosModal,
+  LoadingButton,
+  injectLookOnly,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 
 /** The language-card switch-off control and its confirmation. */
 @Component({

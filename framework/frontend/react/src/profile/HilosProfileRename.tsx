@@ -4,7 +4,7 @@ import {
   HILOS_PROFILE_RENAME_COPY as COPY,
   HILOS_STEP_UP_COPY,
   type HilosProfileRenameFlow,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { ConflictActions } from '../ConflictActions.js'
 import { ConflictHeader } from '../ConflictHeader.js'
 import { HilosEditNotice } from '../HilosEditNotice.js'

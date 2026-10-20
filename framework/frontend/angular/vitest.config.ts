@@ -116,6 +116,84 @@ function angularJitPlugin() {
 
 export default defineConfig({
   plugins: [angularJitPlugin()],
+  resolve: {
+    alias: {
+      '@hilos/angular/base': resolve(packageDir, 'src/base/index.ts'),
+      '@hilos/angular/admin-views': resolve(
+        packageDir,
+        'src/admin/hilosAdminViews.ts',
+      ),
+      '@hilos/angular/admin/analytics': resolve(
+        packageDir,
+        'src/admin/analytics/index.ts',
+      ),
+      '@hilos/angular/admin/appearance': resolve(
+        packageDir,
+        'src/admin/appearance/index.ts',
+      ),
+      '@hilos/angular/admin/backup': resolve(
+        packageDir,
+        'src/admin/backup/index.ts',
+      ),
+      '@hilos/angular/admin/billing': resolve(
+        packageDir,
+        'src/admin/billing/index.ts',
+      ),
+      '@hilos/angular/admin/change-log': resolve(
+        packageDir,
+        'src/admin/changeLog/index.ts',
+      ),
+      '@hilos/angular/admin/communications': resolve(
+        packageDir,
+        'src/admin/communications/index.ts',
+      ),
+      '@hilos/angular/admin/daemon': resolve(
+        packageDir,
+        'src/admin/daemon/index.ts',
+      ),
+      '@hilos/angular/admin/dashboard': resolve(
+        packageDir,
+        'src/admin/dashboard/index.ts',
+      ),
+      '@hilos/angular/admin/i18n': resolve(
+        packageDir,
+        'src/admin/i18n/index.ts',
+      ),
+      '@hilos/angular/admin/legal': resolve(
+        packageDir,
+        'src/admin/legal/index.ts',
+      ),
+      '@hilos/angular/admin/logs': resolve(
+        packageDir,
+        'src/admin/logs/index.ts',
+      ),
+      '@hilos/angular/admin/maintenance': resolve(
+        packageDir,
+        'src/admin/maintenance/index.ts',
+      ),
+      '@hilos/angular/admin/mcp-skills': resolve(
+        packageDir,
+        'src/admin/mcpSkills/index.ts',
+      ),
+      '@hilos/angular/admin/roles': resolve(
+        packageDir,
+        'src/admin/roles/index.ts',
+      ),
+      '@hilos/angular/admin/security': resolve(
+        packageDir,
+        'src/admin/security/index.ts',
+      ),
+      '@hilos/angular/admin/settings': resolve(
+        packageDir,
+        'src/admin/settings/index.ts',
+      ),
+      '@hilos/angular/admin/sil': resolve(packageDir, 'src/admin/sil/index.ts'),
+      '@hilos/angular/admin/users': resolve(
+        packageDir,
+        'src/admin/users/index.ts',
+      ),
+    },
+  },
   test: {
     name: 'angular',
     environment: 'jsdom',

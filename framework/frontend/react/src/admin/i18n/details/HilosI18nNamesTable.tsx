@@ -2,8 +2,8 @@ import type { ReactNode } from 'react'
 import {
   HilosI18nNameRowKey,
   type HilosI18nNameRow,
-  type TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { type TableViewportController } from '@hilos/core/base'
 import { HilosViewportTable } from '../../../HilosViewportTable.js'
 
 /** The shared names view; each subject page supplies only its action controls. */

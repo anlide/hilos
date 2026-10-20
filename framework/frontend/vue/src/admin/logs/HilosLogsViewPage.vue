@@ -25,8 +25,6 @@ HilosActionError). -->
 <script setup lang="ts">
 import {
   createHilosLogViewer,
-  createSignal,
-  hilosAdminAccess,
   hasLogViewerNodes,
   isLogViewerPinned,
   logLevelVariant,
@@ -35,16 +33,20 @@ import {
   logViewerPendingLabel,
   logViewerStreamsOf,
   HILOS_LOG_LEVEL_OPTIONS,
-  HILOS_VIEW_MODE_STRIP_TEXT_ID,
-  HilosPages,
   LOG_SOURCE_LIVE,
   LOG_VIEWER_PENDING_WIDEST_LABEL,
   type HilosLogViewerAddress,
   type HilosLogViewerContext,
   type HilosLogViewerEntry,
   type HilosLogViewerNotice,
+} from '@hilos/core/admin/logs'
+import {
+  createSignal,
+  hilosAdminAccess,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
+  HilosPages,
   type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import {
   computed,
   inject,

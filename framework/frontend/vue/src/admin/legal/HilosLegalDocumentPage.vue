@@ -1,19 +1,21 @@
 <script setup lang="ts">
 import {
   computedSignal,
-  createHilosLegalRevisionsTable,
   createHilosLegalConsentPreview,
   createHilosLegalReconsentPreview,
   hilosLegalDocumentLabel,
   HilosPages,
-  LEGAL_CATALOG_REFUSAL_SECTION,
-  LEGAL_DOCUMENT_SECTION,
   LEGAL_RECONSENT_COPY,
-  legalAdminDocumentSchema,
   resolveHilosPath,
   type HilosLegalContext,
   type HilosLegalDocumentKey,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  createHilosLegalRevisionsTable,
+  LEGAL_CATALOG_REFUSAL_SECTION,
+  LEGAL_DOCUMENT_SECTION,
+  legalAdminDocumentSchema,
+} from '@hilos/core/admin/legal'
 import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosModal from '../../HilosModal.vue'

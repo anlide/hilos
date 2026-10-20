@@ -3,7 +3,7 @@ import {
   formatProfileDateTime,
   type HilosProfileSession,
   type HilosProfileSessionActions,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { useState } from 'react'
 
 import { HilosFormError } from '../HilosFormError.js'

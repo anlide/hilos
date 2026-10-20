@@ -4,7 +4,7 @@
 // the row view-model, the switches and the scope's modal are the framework's;
 // the project supplies only the context and registers the table on its backend.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosSecurityImpersonationPage } from '@hilos/angular'
+import { HilosSecurityImpersonationPage } from '@hilos/angular/admin/security'
 
 import { hilosImpersonationContext } from './hilosImpersonationContext'
 

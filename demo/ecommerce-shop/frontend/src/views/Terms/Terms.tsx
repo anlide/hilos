@@ -3,7 +3,7 @@
 // from the project's legal catalog (backend/Legal/), with the reader's standing
 // and the revision history. This project supplies only the introduction above
 // the text.
-import { HilosTermsPage } from '@hilos/react'
+import { HilosTermsPage } from '@hilos/react/base'
 
 import { actions, connection } from '../../bootstrap/connection'
 import { scopes } from '../../bootstrap/session'

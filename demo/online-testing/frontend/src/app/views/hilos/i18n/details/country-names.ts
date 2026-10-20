@@ -2,7 +2,7 @@
 // binding of the framework HilosI18nCountryNamesPage to this app's country
 // context.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosI18nCountryNamesPage } from '@hilos/angular'
+import { HilosI18nCountryNamesPage } from '@hilos/angular/admin/i18n'
 
 import { hilosI18nCountryContext } from '../hilos-i18n-context.js'
 

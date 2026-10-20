@@ -3,9 +3,9 @@
 import {
   HILOS_I18N_COUNTRY_DELETE_COPY,
   hilosI18nCountryDeleteLabel,
-  type ActionHandle,
   type HilosI18nCountryDeleteTarget,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { type ActionHandle } from '@hilos/core/base'
 import { computed, watch } from 'vue'
 
 import HilosActionError from '../../../HilosActionError.vue'

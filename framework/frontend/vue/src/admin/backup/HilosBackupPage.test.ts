@@ -9,17 +9,17 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   ActionHandle,
   ActionLifecycle,
   ActionResult,
-  HilosBackupsContext,
   HilosConnection,
   HilosRouter,
   PageRouteMatch,
   ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosBackupsContext } from '@hilos/core/admin/backup'
 
 import HilosBackupPage from './HilosBackupPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'

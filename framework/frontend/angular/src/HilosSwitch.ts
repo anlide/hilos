@@ -15,7 +15,10 @@ import {
   input,
   output,
 } from '@angular/core'
-import { DEFAULT_SPINNER_DELAY_MS, createLoadingButtonState } from '@hilos/core'
+import {
+  DEFAULT_SPINNER_DELAY_MS,
+  createLoadingButtonState,
+} from '@hilos/core/base'
 
 import { injectLookOnly, joinDescribedBy } from './hilosLookOnly.js'
 import { hilosSignal } from './hilosSignal.js'

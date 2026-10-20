@@ -4,7 +4,11 @@
 // Reading the committed name reactively — rather than the one-shot session
 // current user — is what lets the framework's name window detect a rename
 // landing (success) and a concurrent rename from another tab (conflict).
-import { computedSignal, readString, type ReadonlySignal } from '@hilos/core'
+import {
+  computedSignal,
+  readString,
+  type ReadonlySignal,
+} from '@hilos/core/base'
 
 import { scopes } from '../../bootstrap/session.js'
 

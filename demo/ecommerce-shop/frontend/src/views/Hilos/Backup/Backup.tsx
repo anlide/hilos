@@ -4,7 +4,7 @@
 // block are the framework's; the project supplies only the context (its scope
 // stores + live connection) and produces the backup index on its backend.
 // Bootstrap classes only (styling-rules.md).
-import { HilosBackupPage } from '@hilos/react'
+import { HilosBackupPage } from '@hilos/react/admin/backup'
 
 import { hilosBackupsContext } from './hilosBackupsContext.js'
 

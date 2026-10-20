@@ -25,14 +25,14 @@ import {
   signal,
 } from '@angular/core'
 import type { WritableSignal } from '@angular/core'
-import { subscribeSignal } from '@hilos/core'
+import { subscribeSignal } from '@hilos/core/base'
 import type {
   HilosTableBulkAction,
   HilosTableProgress as HilosTableProgressState,
   HilosTableSelectionTarget,
   ReadonlySignal,
   TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosActionError } from './HilosActionError.js'
 import { HilosModal } from './HilosModal.js'

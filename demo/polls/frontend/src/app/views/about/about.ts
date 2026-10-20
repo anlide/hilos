@@ -4,7 +4,7 @@
 // page subscribes like any other but the framework page sends no payload, so
 // nothing here depends on the socket.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosAboutPage } from '@hilos/angular'
+import { HilosAboutPage } from '@hilos/angular/base'
 
 @Component({
   selector: 'app-about',

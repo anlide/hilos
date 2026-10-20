@@ -12,11 +12,10 @@ import {
   hasLogKeyNodes,
   logKeyViewerPath,
   logKeysEmptyState,
-  HILOS_PAGE_ROUTES,
-  HilosPages,
   type HilosLogKeyRow,
   type HilosLogKeysContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/logs'
+import { HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core/base'
 import { computed, onMounted, onUnmounted } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'

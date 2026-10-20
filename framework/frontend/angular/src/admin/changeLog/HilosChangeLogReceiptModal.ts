@@ -28,19 +28,20 @@ import {
   changeLogRecordRouteParam,
   formatChangeLogReceiptTitle,
   formatChangeLogTime,
-  HilosPages,
-  isHiddenValue,
   type HilosChangeLogEntry,
   type HilosChangeLogReceiptDialog,
   type HilosChangeLogReceiptReader,
-} from '@hilos/core'
+} from '@hilos/core/admin/change-log'
+import { HilosPages, isHiddenValue } from '@hilos/core/base'
 
-import { HilosFormError } from '../../HilosFormError.js'
-import { HilosHiddenMark } from '../../HilosHiddenMark.js'
-import { HilosLink } from '../../HilosLink.js'
-import { HilosLongText } from '../../HilosLongText.js'
-import { HilosModal } from '../../HilosModal.js'
-import { HILOS_ROUTER } from '../../hilosRouterToken.js'
+import {
+  HilosFormError,
+  HilosHiddenMark,
+  HilosLink,
+  HilosLongText,
+  HilosModal,
+  HILOS_ROUTER,
+} from '@hilos/angular/base'
 
 /** The read-only receipt dialog over the page's one shared reader. */
 @Component({

@@ -6,7 +6,7 @@
 // (HilosPages.USERS / USER), which carry the same row slots. No account merge on
 // the card: this demo wires none of its seams, and the merge stays on the account
 // side, in chat.
-import { type HilosUsersContext } from '@hilos/core'
+import { type HilosUsersContext } from '@hilos/core/admin/users'
 
 import { actions, connection } from '../../../bootstrap/connection'
 import { scopes } from '../../../bootstrap/session'

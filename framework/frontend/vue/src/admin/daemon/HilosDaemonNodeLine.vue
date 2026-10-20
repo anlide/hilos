@@ -5,7 +5,7 @@ import {
   daemonNodeDiagramPath,
   formatDaemonNodeState,
   type HilosDaemonNodeHeading,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
 import { computed, inject } from 'vue'
 
 import HilosLink from '../../HilosLink.vue'

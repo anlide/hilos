@@ -20,7 +20,7 @@
 // the row carries no role of its own, or the reader would say it twice
 // (accessibility.md, "Live regions").
 import { useEffect, useState } from 'react'
-import type { RowEditNoticeKind } from '@hilos/core'
+import type { RowEditNoticeKind } from '@hilos/core/base'
 
 import { HilosLongText } from './HilosLongText.js'
 import { HilosModal } from './HilosModal.js'

@@ -18,16 +18,15 @@ import {
   changeLogRecordRouteParam,
   formatChangeLogReceiptTitle,
   formatChangeLogTime,
-  HilosPages,
-  isHiddenValue,
-} from '@hilos/core'
+} from '@hilos/core/admin/change-log'
+import { HilosPages, isHiddenValue } from '@hilos/core/base'
 import type {
   HilosChangeLogEntry,
   HilosChangeLogReceiptDialog,
   HilosChangeLogReceiptPerson,
   HilosChangeLogReceiptReader,
-  HilosRouter,
-} from '@hilos/core'
+} from '@hilos/core/admin/change-log'
+import type { HilosRouter } from '@hilos/core/base'
 
 import { HilosFormError } from '../../HilosFormError.js'
 import { HilosHiddenMark } from '../../HilosHiddenMark.js'

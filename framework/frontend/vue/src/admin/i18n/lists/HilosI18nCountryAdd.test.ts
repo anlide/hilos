@@ -1,14 +1,16 @@
 import { mount, type VueWrapper } from '@vue/test-utils'
 import {
   ActionError,
-  createHilosI18nCountryAdd,
   createSignal,
-  HILOS_I18N_COUNTRY_ADD_ACTION,
   type ActionHandle,
   type ActionLifecycle,
   type ActionResult,
+} from '@hilos/core/base'
+import {
+  createHilosI18nCountryAdd,
+  HILOS_I18N_COUNTRY_ADD_ACTION,
   type HilosI18nCountryContext,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { afterEach, describe, expect, it } from 'vitest'
 import { nextTick, ref } from 'vue'
 

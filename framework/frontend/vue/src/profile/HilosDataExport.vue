@@ -8,7 +8,7 @@ import {
   hilosImpersonation,
   type HilosDataExportStore,
   type HilosDataExportFlow,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import HilosFormError from '../HilosFormError.vue'
 import HilosModal from '../HilosModal.vue'
 import LoadingButton from '../LoadingButton.vue'

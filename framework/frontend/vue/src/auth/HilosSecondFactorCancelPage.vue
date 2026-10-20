@@ -17,7 +17,7 @@ import {
   createAuthActions,
   whenPageReadyOrUnreachable,
   type HilosAuthContext,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { inject, onMounted, onUnmounted, ref } from 'vue'
 
 import { hilosRouterKey } from '../hilosRouterKey.js'

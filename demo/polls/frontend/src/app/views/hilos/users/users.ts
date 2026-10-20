@@ -4,8 +4,9 @@
 // fills the trailing actions cell through the `#rowActions` template — here, a link
 // to the user detail page. Bootstrap classes only (styling-rules.md).
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosLink, HilosUsersPage } from '@hilos/angular'
-import { HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core'
+import { HilosLink } from '@hilos/angular/base'
+import { HilosUsersPage } from '@hilos/angular/admin/users'
+import { HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core/base'
 
 import { hilosUsersContext } from './hilosUsersContext'
 

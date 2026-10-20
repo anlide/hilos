@@ -4,7 +4,7 @@
 // framework knows on its own; the page projects its explanatory text into the
 // body. Bootstrap classes only (styling-rules.md).
 import { ChangeDetectionStrategy, Component, input } from '@angular/core'
-import type { HilosI18nBuiltInCatalog } from '@hilos/core'
+import type { HilosI18nBuiltInCatalog } from '@hilos/core/admin/i18n'
 
 /** The built-in catalog callout above an i18n list. */
 @Component({

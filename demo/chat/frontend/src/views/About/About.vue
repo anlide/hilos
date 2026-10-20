@@ -4,7 +4,7 @@ end of the text (HilosAboutPage), and this project owns the content. The page
 subscribes like any other but the framework page sends no payload, so nothing
 here depends on the socket. -->
 <script setup lang="ts">
-import { HilosAboutPage } from '@hilos/vue'
+import { HilosAboutPage } from '@hilos/vue/base'
 
 defineOptions({ name: 'AboutPage' })
 </script>

@@ -6,7 +6,7 @@ import {
   hilosImpersonation,
   type HilosDataExportStore,
   type HilosDataExportFlow,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
 import { LoadingButton } from '../LoadingButton.js'

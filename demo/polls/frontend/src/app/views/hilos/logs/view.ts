@@ -4,7 +4,7 @@
 // supplies only the context (the connection and the action lifecycle the lines are
 // read over) and owns no table for this page.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosLogsViewPage } from '@hilos/angular'
+import { HilosLogsViewPage } from '@hilos/angular/admin/logs'
 
 import { hilosLogViewerContext } from './hilosLogsContext'
 

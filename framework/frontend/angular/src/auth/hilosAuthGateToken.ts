@@ -11,7 +11,7 @@
 // itself — and does so optionally, because on a 401 it stands IN PLACE of the
 // page, where there may be no gate at all.
 import { InjectionToken } from '@angular/core'
-import type { AuthGate } from '@hilos/core'
+import type { AuthGate } from '@hilos/core/base'
 
 /** Provide/inject token for the application's {@link AuthGate}. */
 export const HILOS_AUTH_GATE = new InjectionToken<AuthGate>('HilosAuthGate')

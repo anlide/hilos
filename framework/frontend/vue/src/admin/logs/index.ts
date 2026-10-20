@@ -1,0 +1,6 @@
+export { default as HilosLogsKeysPage } from './HilosLogsKeysPage.vue'
+export { default as HilosLogsPage } from './HilosLogsPage.vue'
+export { default as HilosLogsRotationsPage } from './HilosLogsRotationsPage.vue'
+export { default as HilosLogsSettingsPage } from './HilosLogsSettingsPage.vue'
+export { default as HilosLogsViewPage } from './HilosLogsViewPage.vue'
+export { default as HilosLogsWorkersPage } from './HilosLogsWorkersPage.vue'

@@ -1,4 +1,9 @@
 // Legal administration data and table handles (HIL-941).
+import {
+  LEGAL_ACCEPTANCES_SIGNAL,
+  legalAcceptanceFiltersSchema,
+  type HilosLegalAcceptanceFilters,
+} from '../../protocol/legalAcceptancesSignals.js'
 import { z } from 'zod'
 import { type ActionHandle } from '../../connection/actionLifecycle.js'
 import {
@@ -8,6 +13,7 @@ import {
   type HilosLegalContext,
   type HilosLegalRevision,
 } from '../../legal/legalAgreements.js'
+import { hilosLegalDocumentLabel } from '../../legal/legalDocumentLabel.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import { hilosUsersPath } from '../users/hilosUsers.js'
 import {
@@ -34,11 +40,19 @@ import {
 import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 
+export {
+  LEGAL_ACCEPTANCES_SIGNAL,
+  legalAcceptanceFiltersSchema,
+  LEGAL_ACCEPTANCES_SIGNAL_SCHEMAS,
+  type HilosLegalAcceptanceFilters,
+} from '../../protocol/legalAcceptancesSignals.js'
+
+export { hilosLegalDocumentLabel } from '../../legal/legalDocumentLabel.js'
+
 export const LEGAL_CATALOG_REFUSAL_SECTION = 'legalCatalogRefusal'
 export const LEGAL_DOCUMENT_SECTION = 'legalDocument'
 export const LEGAL_REVISION_SECTION = 'legalRevision'
-export const LEGAL_ACCEPTANCES_SIGNAL =
-  'subscription_page_hilos_legal_acceptances'
+
 export const LEGAL_SETTING_SET = 'legal_setting_set'
 export const LEGAL_DOCUMENT_FILTER = 'document'
 export const LEGAL_REVISION_FILTER = 'revision'
@@ -208,28 +222,9 @@ export const legalAdminRevisionSchema = z.looseObject({
   clauses: z.array(legalClauseSchema).nullable(),
   changes: z.array(legalChangeSchema).nullable(),
 })
-export const legalAcceptanceFiltersSchema = z.looseObject({
-  documents: z.array(
-    z.looseObject({
-      document: z.string(),
-      declared: z.boolean().nullable(),
-      revisions: z.array(
-        z.looseObject({
-          revisionId: z.string(),
-          declared: z.boolean().nullable(),
-        }),
-      ),
-    }),
-  ),
-})
-export const LEGAL_ACCEPTANCES_SIGNAL_SCHEMAS = {
-  [LEGAL_ACCEPTANCES_SIGNAL]: legalAcceptanceFiltersSchema,
-}
+
 export type HilosLegalAdminDocument = z.infer<typeof legalAdminDocumentSchema>
 export type HilosLegalAdminRevision = z.infer<typeof legalAdminRevisionSchema>
-export type HilosLegalAcceptanceFilters = z.infer<
-  typeof legalAcceptanceFiltersSchema
->
 
 export interface HilosLegalDocumentRow {
   readonly rowKey: string
@@ -363,18 +358,6 @@ export function resolveHilosLegalSettingRow(
     rowKey: String(row.rowKey),
     value: readHideableString(slot, HilosLegalRowKey.value),
     defaultValue: readHideableString(slot, HilosLegalRowKey.defaultValue),
-  }
-}
-
-/** Names declared documents while retaining historical project keys. */
-export function hilosLegalDocumentLabel(document: string): string {
-  switch (document) {
-    case 'terms':
-      return 'Terms'
-    case 'privacy':
-      return 'Privacy policy'
-    default:
-      return document
   }
 }
 

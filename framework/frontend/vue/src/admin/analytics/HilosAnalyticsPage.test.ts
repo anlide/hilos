@@ -3,12 +3,14 @@ import { describe, expect, it } from 'vitest'
 import {
   ANALYTICS_OVERVIEW_EMPTY_TEXT,
   ANALYTICS_OVERVIEW_OPEN_USERS_LABEL,
+} from '@hilos/core/admin/analytics'
+import {
   HilosPages,
   createSignal,
   type HilosPageIdentity,
   type HilosRouter,
   type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import HilosAnalyticsPage from './HilosAnalyticsPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'

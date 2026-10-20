@@ -4,7 +4,7 @@
 // never optimistically here. A rejected rename comes back as a framework
 // action_error, held by the core ActionErrorStore; success is state-driven —
 // the committed name arrives over the self-connection data (profilePage.ts).
-import { type HilosProfileRename } from '@hilos/core'
+import { type HilosProfileRename } from '@hilos/core/base'
 
 import { actionErrors, connection } from '../../bootstrap/connection.js'
 

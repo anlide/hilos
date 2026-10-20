@@ -1,15 +1,17 @@
 import { mount } from '@vue/test-utils'
 import {
   createSignal,
-  DAEMON_ENV_MISMATCH_DATA,
-  DAEMON_ENV_SENSITIVE_HINT,
   HilosPages,
   ScopeManager,
   type HilosConnection,
-  type HilosDaemonEnvMismatchSummary,
   type HilosRouter,
   type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  DAEMON_ENV_MISMATCH_DATA,
+  DAEMON_ENV_SENSITIVE_HINT,
+  type HilosDaemonEnvMismatchSummary,
+} from '@hilos/core/admin/daemon'
 import { describe, expect, it } from 'vitest'
 import { nextTick } from 'vue'
 

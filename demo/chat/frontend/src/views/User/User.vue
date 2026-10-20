@@ -12,7 +12,7 @@ sessions and the activity. A skeleton shows until the profile
 entity lands (or when the id is unknown and the subscription is rejected).
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { HilosAvatar, HilosLink, useSignal } from '@hilos/vue'
+import { HilosAvatar, HilosLink, useSignal } from '@hilos/vue/base'
 
 import { PAGE_USER } from '../../pages/keys'
 import { router } from '../../pages/routes'

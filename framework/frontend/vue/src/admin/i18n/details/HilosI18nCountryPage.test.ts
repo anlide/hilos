@@ -1,6 +1,10 @@
 import { enableAutoUnmount, mount } from '@vue/test-utils'
 import {
   COUNTRY_CARD_DATA,
+  type HilosI18nCountryCard,
+  type HilosI18nCountryContext,
+} from '@hilos/core/admin/i18n'
+import {
   createSignal,
   HilosPages,
   ScopeManager,
@@ -9,11 +13,9 @@ import {
   type ActionLifecycle,
   type ActionResult,
   type HilosConnection,
-  type HilosI18nCountryCard,
-  type HilosI18nCountryContext,
   type HilosRouter,
   type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 

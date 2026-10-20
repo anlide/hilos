@@ -32,7 +32,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core'
-import { isDisplayed } from '@hilos/core'
+import { isDisplayed } from '@hilos/core/base'
 
 import type { HilosDropdownOption } from './hilosDropdownOption.js'
 

@@ -3,7 +3,7 @@ import {
   hilosNotificationAddressSection,
   startHilosNotificationPreferences,
   type HilosProfileNotificationsContext,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { HilosNotificationPreferences } from '../HilosNotificationPreferences.js'
 import { HilosPageHeading } from '../HilosPageHeading.js'
 import { HilosRouterContext } from '../hilosRouterContext.js'

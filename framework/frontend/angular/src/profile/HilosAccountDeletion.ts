@@ -33,14 +33,14 @@ import {
   HILOS_PAGE_ROUTES,
   HilosPages,
   subscribeSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosAccountDeletionOpening,
   HilosAccountDeletionState,
   HilosAccountDeletionStep,
   HilosSecondFactorContext,
   CodeSendProgress,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosLink } from '../HilosLink.js'
 import { HilosFormError } from '../HilosFormError.js'

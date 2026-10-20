@@ -2,21 +2,23 @@ import { mount, type VueWrapper } from '@vue/test-utils'
 import {
   ActionError,
   createSignal,
+  type ActionHandle,
+  type ActionLifecycle,
+  type ActionResult,
+  type TableViewportController,
+} from '@hilos/core/base'
+import {
   HILOS_I18N_LOCALE_ADD_ACTION,
   HILOS_I18N_LOCALE_UPDATE_ACTION,
   HILOS_I18N_LOCALE_SWITCH_ON_ACTION,
   HILOS_I18N_LOCALE_SWITCH_OFF_ACTION,
   HILOS_I18N_LOCALE_COPY,
-  type ActionHandle,
-  type ActionLifecycle,
-  type ActionResult,
   type HilosI18nLanguageCard,
   type HilosI18nLanguageContext,
   type HilosI18nLocaleRow,
   type HilosI18nLocaleTemplates,
   type HilosI18nLocaleWindowMode,
-  type TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { afterEach, describe, expect, it } from 'vitest'
 import { nextTick, ref } from 'vue'
 

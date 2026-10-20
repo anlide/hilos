@@ -5,7 +5,7 @@
 // context (the same connection and action lifecycle the other Hilos pages use) and
 // registers the LogsSettingsPage on its backend.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosLogsSettingsPage } from '@hilos/angular'
+import { HilosLogsSettingsPage } from '@hilos/angular/admin/logs'
 
 import { hilosLogSettingsContext } from './hilosLogsContext.js'
 

@@ -34,7 +34,7 @@ import {
   type ActionLifecycle,
   type HilosBrowserValue,
   type HilosConnection,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import HilosStaticPage from '../HilosStaticPage.vue'
 import { useTrackedAction } from '../useTrackedAction.js'

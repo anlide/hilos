@@ -19,32 +19,16 @@
 
 import { spawnSync } from 'node:child_process'
 import console from 'node:console'
-import { readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
-import { isDistStale } from './staleness.mjs'
+import { sdkDistStale } from './staleness.mjs'
 
 /** The SDK workspace root — resolved from this file, so callers pass no paths. */
 const workspaceDir = dirname(dirname(fileURLToPath(import.meta.url)))
 
 const VIEW_PACKAGES = { vue: 'vue', react: 'react', angular: 'angular' }
-
-/**
- * The build inputs of one SDK package: its sources plus every config file at its
- * root — `package.json`, the `tsconfig*.json` family, and `ng-package.json` for
- * the Angular layer, without having to enumerate which package has which.
- *
- * @param {string} packageDir The package directory.
- * @returns {string[]}
- */
-function buildInputs(packageDir) {
-  const configs = readdirSync(packageDir)
-    .filter((entry) => entry.endsWith('.json'))
-    .map((entry) => join(packageDir, entry))
-  return [join(packageDir, 'src'), ...configs]
-}
 
 /**
  * Run a command, letting its output through, and end this process on failure so a
@@ -69,12 +53,7 @@ if (view !== 'core' && VIEW_PACKAGES[view] === undefined) {
 
 const packages = view === 'core' ? ['core'] : ['core', VIEW_PACKAGES[view]]
 const stale = packages
-  .map((name) =>
-    isDistStale(
-      buildInputs(join(workspaceDir, name)),
-      join(workspaceDir, name, 'dist'),
-    ),
-  )
+  .map((name) => sdkDistStale(join(workspaceDir, name)))
   .filter((verdict) => verdict.stale)
 
 if (stale.length === 0) {

@@ -22,26 +22,29 @@ import {
   input,
   signal,
 } from '@angular/core'
+import { HilosPages, computedSignal, isHiddenValue } from '@hilos/core/base'
 import {
-  HilosPages,
-  computedSignal,
   createHilosDeliveriesActions,
   createHilosDeliveriesTable,
   isDeliveryRetryable,
-  isHiddenValue,
-} from '@hilos/core'
-import type { HilosDeliveriesContext, HilosDeliveryRow } from '@hilos/core'
+} from '@hilos/core/admin/communications'
+import type {
+  HilosDeliveriesContext,
+  HilosDeliveryRow,
+} from '@hilos/core/admin/communications'
 
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosHiddenMark } from '../../HilosHiddenMark.js'
-import { HilosHideable } from '../../HilosHideable.js'
-import { HilosTableCell } from '../../HilosTableCell.js'
-import { HilosTableDetail } from '../../HilosTableDetail.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { LoadingButton } from '../../LoadingButton.js'
-import { HILOS_ROUTER } from '../../hilosRouterToken.js'
-import { hilosSignal } from '../../hilosSignal.js'
-import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
+import {
+  HilosAdminPage,
+  HilosHiddenMark,
+  HilosHideable,
+  HilosTableCell,
+  HilosTableDetail,
+  HilosViewportTable,
+  LoadingButton,
+  HILOS_ROUTER,
+  hilosSignal,
+  createHilosTrackedAction,
+} from '@hilos/angular/base'
 
 // The status contextual badge: failed is danger, sent is success, the rest neutral.
 const STATUS_CLASS: Record<string, string> = {

@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosDaemonHttpServerPage } from '@hilos/angular'
+import { HilosDaemonHttpServerPage } from '@hilos/angular/admin/daemon'
 
 import { hilosDaemonHttpContext } from './hilosDaemonContext.js'
 

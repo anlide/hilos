@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { HilosPageHeading, HilosProfileSessions, useSignal } from '@hilos/vue'
+import {
+  HilosPageHeading,
+  HilosProfileSessions,
+  useSignal,
+} from '@hilos/vue/base'
 
 import {
   profileSessionActions,

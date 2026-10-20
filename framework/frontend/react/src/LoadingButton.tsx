@@ -12,7 +12,10 @@
 // button marked opensWindow stays live.
 import { useEffect, useMemo } from 'react'
 import type { ButtonHTMLAttributes } from 'react'
-import { DEFAULT_SPINNER_DELAY_MS, createLoadingButtonState } from '@hilos/core'
+import {
+  DEFAULT_SPINNER_DELAY_MS,
+  createLoadingButtonState,
+} from '@hilos/core/base'
 
 import { joinDescribedBy, useLookOnly } from './hilosLookOnly.js'
 import { useSignal } from './useSignal.js'

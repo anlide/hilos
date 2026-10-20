@@ -5,12 +5,12 @@ import {
   input,
   signal,
 } from '@angular/core'
-import { HILOS_STEP_UP_COPY, subscribeSignal } from '@hilos/core'
+import { HILOS_STEP_UP_COPY, subscribeSignal } from '@hilos/core/base'
 import type {
   CodeSendProgress,
   HilosStepUpOpening,
   HilosStepUpStep as HilosStepUpController,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosSendProgress } from '../HilosSendProgress.js'

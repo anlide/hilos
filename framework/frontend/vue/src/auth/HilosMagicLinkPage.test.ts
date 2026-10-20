@@ -23,7 +23,7 @@ import {
   type HilosConnection,
   type HilosRouter,
   type ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
