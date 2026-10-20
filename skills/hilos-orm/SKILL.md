@@ -39,7 +39,8 @@ touched ORM surfaces.
 - A table under the change log — the label on its Entity, the place of each
   column, the trigger files a migration regenerates, the receipt a write runs
   under: `docs/agents/architecture/change-log.md`
-- Records that only make sense together, written by work over several ticks: `docs/agents/signals/work-in-portions.md`
+- Records that only make sense together, written by work over several ticks:
+  `docs/agents/signals/work-in-portions.md`
 - A new table also needs to say whose set it is part of, in `_setVia` and
   `_setRoot` on the same Entity (a column carrying the top of the set tree may
   be named in the optional `_setShortPath`); a node refuses to start without

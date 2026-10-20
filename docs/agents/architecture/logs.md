@@ -326,7 +326,8 @@ the picture of its previous life. The page agent writes one warning after thirty
 seconds of waiting for a first full snapshot, including when a partial picture is
 already visible. A full snapshot or zero viewers resets that warning's clock.
 
-This is a known exception to [work-in-portions.md, Part Or Whole](../signals/work-in-portions.md#part-or-whole).
+This is a known exception to
+[work-in-portions.md, Part Or Whole](../signals/work-in-portions.md#part-or-whole).
 
 **The pages.** The page agent (`hilos_logs`) is a surface a project implements
 by extending `AbstractHilosLogsAgent` with an empty subclass, and it is a
