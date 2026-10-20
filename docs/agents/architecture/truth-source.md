@@ -24,8 +24,9 @@ collection is — and this file says *owner*.
 
 ## Core Rule
 
-A collection has exactly one full owner. Ownership is declared on the claimant's
-class, the way an agent's reads are, and not made by a call inside a start hook:
+A collection written by the application has exactly one full owner. Ownership
+is declared on the claimant's class, the way an agent's reads are, and not made
+by a call inside a start hook:
 what a class owns is a fact about the class. The claimant is usually an agent,
 but not always — a test-only CLI command and the application class declare the
 same way, and *Three Cases A Flat Constant Cannot Say* is where that is spelled
@@ -38,6 +39,41 @@ and does not own it sends the owner a signal and lets the owner write; it does
 not reach into the registry, and it does not list the collection among its reads
 in order to write it. What the declaration looks like is in *Interest And
 Ownership Are One Fact*; what it replaces is in *The Form That Is Gone*.
+
+## A Collection Written Outside The Application
+
+A collection whose rows are written by database triggers has no application
+writer. Its readers declare ordinary reader interest, and an ORM write is
+refused with an explanation that the collection is written externally.
+(not in the code yet — HIL-1615)
+Do not invent an owner to make the collection fit the registry, or treat a read
+declaration as permission to bypass a write guard. HIL-1615 defines the external
+writer declaration and its refusal; the ordinary operation rights and registry
+guards remain in force.
+
+Five [journal tables](change-log.md#where-the-journal-lives), including both
+dictionaries, are written by triggers and use this form when their collections
+are mounted. (not in the code yet — HIL-1615)
+Any agent may declare that it reads the journal; none has that read by default.
+(not in the code yet — HIL-1615)
+The ORM does not emit sync frames for a trigger's inserts, so an interest is not
+a promise that a row cache is current. The journal collections answer bounded
+reads from the database without relying on unannounced rows being cached.
+(not in the code yet — HIL-1615)
+
+The receipt is different: the framework creates it in the process executing the
+action, before its handler or SQL file. The journal agent is not its creator.
+The receipt collection declares rights for that framework path and for the
+agent's attribution operations. (not in the code yet — HIL-1615)
+Creation, atomic `open_handovers` changes and deletion only when there are no
+journal rows or holders move into the collection layer.
+(not in the code yet — HIL-1616)
+The journal agent updates who wrote under its declared operations, using the
+business-row change notifications described in
+[The Receipt](change-log.md#the-receipt). (not in the code yet — HIL-1618)
+Until these leaves land, the journal has no mounted collections and the receipt
+scope performs its existing SQL operations; this transition grants no new
+application write rights over the five trigger-written tables.
 
 ## Interest And Ownership Are One Fact
 
@@ -93,6 +129,10 @@ happens to hold from mounting (`RtContext::declareProcessWideReads()`,
 waited on before the first agent is built
 (`WorkerManager::handleWorkerRegistered()`), and one over a collection nothing
 else here reads waits its round trip.
+
+For a database collection written externally, `READS_DB` expresses the same
+reader interest without an application owner.
+(not in the code yet — HIL-1615)
 
 The rule is sufficient and not complete, and says so rather than promise
 otherwise. A co-owner that may add rows as well holds no copy of the rows the

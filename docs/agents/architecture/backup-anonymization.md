@@ -107,8 +107,11 @@ final class User extends Entity
 - The column set to judge is the *live* one, not `_columns`. A table may carry
   columns the ORM does not map (`Identity::secret` is the framework's own case),
   and those are personal data like any other.
-- No connection index is written: a verdict on an Entity lands on the primary
-  connection, which is the only one an Entity knows.
+- No connection index is written in the verdict. It is collected from the Entity
+  and belongs to that Entity's declared database.
+  (not in the code yet — HIL-1614)
+  Today `PiiRegistry` still places Entity verdicts on primary; the named-database
+  mechanism changes that routing, not the verdict's strategies.
 
 A project's subclass of a framework Entity declares the verdicts on its own
 columns and inherits the base's; the registry collects the mounted subclass, not
@@ -120,8 +123,18 @@ framework's own are `FrameworkTablesWithoutEntity`; a project with such tables
 implements the interface and names its class under the connection index of its
 tables in `BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY` in its backup catalog.
 The framework's own verdicts cover the primary database and every database where
-the project names a provider. A project whose tables all have an Entity, like the
-chat demo, names nothing there.
+the project names a provider. A project adds no provider for tables already
+mapped by Entities.
+
+The journal's six verdicts move from `ChangeLogTablesWithoutEntity` to its six
+Entities in the journal database. (not in the code yet — HIL-1615)
+Until that move, a backup-enabled installation with the journal still names
+`ChangeLogTablesWithoutEntity` for connection 1. Providers remain the declaration
+for genuinely unmapped tables in other databases; the move does not remove that
+path. Coverage, compatibility, every column strategy and the anonymization
+result remain the same. See
+[The Database An Entity Lives In](../orm/entity.md#the-database-an-entity-lives-in)
+and [Where The Journal Lives](change-log.md#where-the-journal-lives).
 
 The worked examples are the framework's own Entities and
 `demo/chat/backend/Database/Entity/Item/`; the collection is documented on

@@ -629,7 +629,15 @@ For its data and privacy boundaries, read
    `AbstractHilosChangeLogDashboardPage`, `AbstractHilosChangeLogTablesPage` and
    `AbstractHilosChangeLogTablePage`. Bind the framework feed, tables and history
    tables respectively in `TABLES`, the project `TableContext` and `PAGE_TABLES`.
-   Pages and tables use the framework `ChangeLogSectionReader`.
+   The serving agent declares reading the journal's typed `Hilos::$db`
+   collections. (not in the code yet — HIL-1615)
+   Feed and receipt/entry reads use those collections.
+   (not in the code yet — HIL-1619)
+   Tables, history and overview follow, removing `ChangeLogSectionReader`.
+   (not in the code yet — HIL-1620)
+   Until each path migrates, it still requires the current reader; do not copy
+   its SQL into a page or table. The bounds and reading rights are in
+   [Reading The Journal](change-log.md#reading-the-journal).
 7. In a Vue, React or Angular project, mount the section's three pages —
    `HilosChangeLogPage`, `HilosChangeLogTablesPage` and
    `HilosChangeLogTablePage` — from `@hilos/vue`, `@hilos/react` or
@@ -643,8 +651,11 @@ Chat journals the four framework tables plus `bot` and `moderator_prompt_piece`;
 binance-btc-tracker, ecommerce-shop, tasks, online-testing and polls each journal
 only the four framework tables. Chat and binance-btc-tracker mount all three Vue pages
 of the section. The remaining view mounts keep the leaf boundaries above. Where
-Backup is already active, name `ChangeLogTablesWithoutEntity` under connection
-1 in its catalog; activating the journal does not activate Backup.
+Backup is already active, it collects the six journal verdicts from the journal
+Entities mounted by `CHANGE_LOG`. (not in the code yet — HIL-1615)
+Until those Entities land, keep `ChangeLogTablesWithoutEntity` under connection
+1 in the backup catalog. Activating the journal does not activate Backup; the
+thin project bindings and database/DDL setup above remain required.
 
 ### moderation — the Moderation section
 

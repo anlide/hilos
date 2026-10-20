@@ -19,6 +19,10 @@ new collection, helper, table method, or page-level query.
 `_objectCollections`, then maps each one to a view collection with
 `setRepresent()`.
 
+The Entity also determines which logical database the collection's rows belong
+to; mounting a collection does not create a second public context for that
+database. (not in the code yet — HIL-1614)
+
 ```php
 final class ChatDbContext extends HilosDbContext
 {
@@ -61,6 +65,39 @@ The layers are:
 
 Do not skip these layers with page/table-specific SQL when the behavior belongs
 to a collection, item, or action.
+
+## Collections In A Named Database
+
+`Hilos::$db` remains the public door. The database follows the
+[Entity's declaration](entity.md#the-database-an-entity-lives-in), not a connection
+chosen by a page, table, or agent. (not in the code yet — HIL-1614)
+Lookup by key, lazy loading, `queryPage()` / `loadByColumn()`, counts and bulk
+writes all read or write that Entity's database.
+(not in the code yet — HIL-1614)
+Do not add a repository, service, or context per database. HIL-1614 supplies the
+missing database routing; an agreed future API is not a reason to put SQL into
+its callers meanwhile.
+
+A transaction, its memory rollback and `afterCommit()` queue, and the SQL session
+variable `@hilos_receipt` belong to a connection. A logical database name does
+not move them to another connection or promise atomicity across connections.
+The existing [transaction rule](transactions.md) still applies, including the
+handler boundary and the release of announcements at commit. HIL-1614 must
+define and test the supported behavior of a write to a second database while
+the primary connection has an open transaction, and align these docs with that
+implementation. This rule does not choose between switching connections and
+qualified SQL. Today the ORM uses the active connection, and receipt SQL uses
+qualified journal tables on primary.
+
+A collection written by triggers has no application writer; its readers declare
+ordinary interest and ORM writes refuse, as described in
+[A Collection Written Outside The Application](../architecture/truth-source.md#a-collection-written-outside-the-application).
+(not in the code yet — HIL-1615)
+Read journal collections through bounded queries, without loading the whole
+journal or trusting a row cache to contain inserts the ORM never announced.
+(not in the code yet — HIL-1615)
+Trigger inserts produce no ORM sync frames; reader interest alone does not make
+such a cache current.
 
 ## Finding Existing Logic
 

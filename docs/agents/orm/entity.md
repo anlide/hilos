@@ -39,6 +39,25 @@ class MyEntity extends Entity {
 - Do not add business logic to Entity — it's a data container only
 - Do not add methods that query the DB inside Entity
 
+## The Database An Entity Lives In
+
+An Entity declares the logical name of its database, not a connection index;
+without a declaration it belongs to the primary database.
+(not in the code yet — HIL-1614)
+An explicitly empty or unknown name refuses startup instead of falling back to
+primary. (not in the code yet — HIL-1614)
+The `Database` layer resolves that logical name to the installation's real
+database. This is a general mechanism for projects, not a journal-only path.
+(not in the code yet — HIL-1614)
+
+The journal's real database name is derived from the primary name of each
+installation or test piece; see
+[Where The Journal Lives](../architecture/change-log.md#where-the-journal-lives).
+HIL-1614 defines the declaration and resolution API. Until it lands, the Entity
+layer still uses the active connection and has no logical database declaration.
+The database name does not decide the transaction's connection; see
+[Collections In A Named Database](db-collection.md#collections-in-a-named-database).
+
 ## Entity vs Object
 
 | | Entity | Object |
@@ -53,6 +72,10 @@ Entity fields must match the DB schema. Migrations are the source of truth: edit
 Entity's `_columns` / `_types` / `_indexes` / `_foreign` metadata in the same commit as
 the migration that changes the schema. A mismatch between the two is a bug to fix, not a
 condition to diagnose at runtime.
+
+The audit compares an Entity with the table in its declared database, including
+table coverage, rather than assuming every Entity belongs to primary.
+(not in the code yet — HIL-1614)
 
 For framework Entities this drift is caught by `EntitySchemaConsistencyTest` (framework
 integration suite): it applies the migration stubs and audits every Entity against the
@@ -125,9 +148,13 @@ The audit runs in **both directions**, and the second one is what a hand-written
 cannot give. `EntitySchemaAudit::auditTableCoverage()` asks the opposite question: every
 `BASE TABLE` of the live schema must be the table of an audited Entity, or a table
 declared to have none. The framework declares its own in
-`Hilos\Database\Schema\FrameworkTablesWithoutEntity` — `migration`, the analytics tables
-and the change-log tables all live outside the ORM. That same class carries their
-personal-data verdict, for the reason the next section gives. A project table that does the same
+`Hilos\Database\Schema\FrameworkTablesWithoutEntity` — `migration` and the analytics
+tables live outside the ORM. The journal's six tables are currently unmapped too,
+with their verdicts in `ChangeLogTablesWithoutEntity`; this is transitional.
+They become six Entities in their own database and leave the tables-without-entity
+providers. (not in the code yet — HIL-1615)
+An unmapped table's provider also carries its personal-data verdict, for the reason
+the next section gives. A project table that does the same
 is named in the `$allowedTablesWithoutEntity` argument; anything left over is a finding
 on the `table_unmapped` axis. Without this direction a table nobody mapped passes the
 suite in silence, which is exactly what it used to do (HIL-605).
@@ -194,6 +221,13 @@ ORM does not map but a restore still rewrites. A table with no Entity says the s
 things in a `TablesWithoutEntityProvider`. A project's subclass of a framework Entity
 declares the verdicts on its own columns and inherits the base's; see
 [inheritance.md](inheritance.md).
+
+At backup and restore, the Entity's verdict belongs to the same declared database
+as its table; the verdict itself does not name a connection index.
+(not in the code yet — HIL-1614)
+Today `PiiRegistry` still places Entity verdicts on primary and the journal uses
+its separate provider. The journal's six Entities take over those verdicts.
+(not in the code yet — HIL-1615)
 
 How to choose a strategy, and what the gates of a restore and of a startup refuse
 on:

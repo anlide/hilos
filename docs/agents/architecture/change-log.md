@@ -33,7 +33,11 @@ The screens only show what is declared.
 For attribution a journal row carries only the receipt number; the receipt says
 who acted, on whose behalf and through what.
 
-The journal lives in its own database on the same server.
+The journal lives in its own derived database on the same server. Its six tables
+become Entities in that database, mounted when `CHANGE_LOG` is declared.
+(not in the code yet — HIL-1615)
+Triggers write five of them, including both dictionaries; the framework writes
+the receipt in the process executing the action.
 
 Triggers are files, and the database holds exactly what those files say.
 
@@ -111,8 +115,14 @@ server.
 ## The Receipt
 
 One action has one receipt: who is at the keyboard, on whose behalf, the session,
-the channel, the action, the agent, the source and the time. The application
-inserts it on the primary SQL connection before the handler or migration file.
+the channel, the action, the agent, the source and the time. The framework
+creates it in the process executing the action, before the handler or migration
+SQL file; creation is not handed to the journal agent. Today the receipt scope
+inserts it on the primary SQL connection with a qualified journal table name.
+Its row operations move to the receipt collection, retaining the same path for
+web, agent, CLI, cron and migration work. (not in the code yet — HIL-1616)
+An INSERT whose response was lost is ambiguous and is never replayed to try to
+recover its number; its failure reaches the caller without running the work.
 
 Under impersonation the administrator is at the keyboard and the session's
 person is the one on whose behalf the action runs. That is already the session's
@@ -170,6 +180,12 @@ returned. An empty receipt is deleted only when all holds are released. A lost
 frame, interrupted attempt or failed conclusion can leave an empty receipt hidden
 from the feed until its partition expires; the feed requires a journal row.
 
+The collection layer owns atomic changes to `open_handovers` and deletion
+conditioned on both no journal rows and no holders; do not write back a counter
+computed from a process's cached receipt. (not in the code yet — HIL-1616)
+This preserves the join, local hold and completion rules while moving their
+current SQL into the ORM; it does not turn a receipt into a transaction.
+
 A web scope starts after the action guards and ends before the success or deferred
 ack. It stores the acting administrator and impersonated person separately, and
 stores only the session number as source. A migration scope covers one up, down
@@ -180,10 +196,27 @@ or removing. The migration's failed marker stays outside the scope.
 
 A page action whose write is handed to another agent keeps one receipt with the
 person and the writing agent. Its number travels in `AgentSignalData` as `receipt`;
-the recipient handles the frame inside `JournalReceiptScope::join()` and the
-last agent to write is recorded on the receipt. The journal database is shared,
-so the same number applies when the recipient is on another node. Only a write
-during the handed-over frame belongs to the person's receipt.
+the recipient handles the frame inside `JournalReceiptScope::join()`. The journal
+database is shared, so the same number applies when the recipient is on another
+node. Only a write during the handed-over frame belongs to the person's receipt.
+Today the scope counts journal rows before and after the work to record the last
+agent that actually wrote a journaled row. That attribution path is transitional.
+
+The created, updated or deleted business-row frame carries the receipt of that
+write and the writer's data, captured at the write and preserved through
+`afterCommit()` and forwarding to another node.
+(not in the code yet — HIL-1617)
+This is the ORM change frame, distinct from the existing handover `receipt` in
+`AgentSignalData`; it is delivered only to subscribers, without a broadcast.
+(not in the code yet — HIL-1617)
+The journal agent declares reading the journaled business collections and uses
+those notifications to update the receipt's `agent`, removing both journal
+`COUNT` queries from attribution. (not in the code yet — HIL-1618)
+That notification is not proof that a trigger wrote a journal row: a lost frame
+can leave the initiating agent on the receipt, and raw SQL and migrations get
+no new ORM notification. The attribution agent does not calculate journal row
+numbers or times; a reader fetches those rows from the database.
+(not in the code yet — HIL-1618)
 
 An agent that writes later on its own uses its own receipt with the `agent`
 channel for a concrete autonomous operation, such as sending a completed bot
@@ -295,8 +328,18 @@ one row per changed field (`hilos_change_log_change`), and long values
 dictionary alone has a foreign key to the table dictionary. The receipt carries
 soft actor, subject and session numbers; the log carries a canonical record key
 and nullable hash. Field rows distinguish inline, fact-only and long values;
-their presence flags distinguish an absent side from SQL NULL. The new verdict
-for every column is `ChangeLogTablesWithoutEntity` on connection 1.
+their presence flags distinguish an absent side from SQL NULL.
+
+These six tables have Entities in their own named database, with their full
+collection chains mounted under `CHANGE_LOG`; each Entity carries its
+personal-data verdict. (not in the code yet — HIL-1615)
+Five collections, including the table and field dictionaries, declare an
+external trigger writer and refuse ORM writes; the receipt collection declares
+the framework's and attribution agent's respective operations.
+(not in the code yet — HIL-1615)
+Today `ChangeLogTablesWithoutEntity` on connection 1 still supplies all six
+verdicts and remains required until that move. The move changes neither column
+strategies nor the coverage and compatibility gates of a restore.
 
 A project carrying `CHANGE_LOG` provisions the derived database and grants the
 app access to it before starting. Its `Database::initialize()` configures and
@@ -379,10 +422,15 @@ moves the journal schema. An installation with the journal refuses an archive
 without connection 1 before the first import, because the journal must roll
 back with the data.
 
-Only triggers write journal rows. The `hilos_change_log` agent reads them for
-the section through `ChangeLogSectionReader`. It is one cluster agent in a
-monopolistic worker, and the reader uses raw SQL: Entity models only the primary
-database, while the journal lives in a separate one.
+Partitions, provisioning, schema DDL, trigger generation and installation,
+reset, dump/import and the primary migration chain remain infrastructure outside
+the Entity/DbCollection row API. Named-database collections do not replace them
+or change the data-plus-journal backup pair and its restore gates.
+
+The `hilos_change_log` agent remains one cluster agent in a monopolistic worker.
+It currently serves the section through `ChangeLogSectionReader`, whose SQL
+predates named-database Entities. The collection-based replacement is described
+below; the separate database is not a permanent reason to bypass the ORM.
 
 **The April placeholder is not the model.** The applied
 `demo/chat/backend/Database/Migration/Schema/016_create_hilos_change_log.sql`
@@ -397,14 +445,31 @@ the receipt scope replaces the old attribution shape.
 
 ## Reading The Journal
 
-Read the journal for admin screens only through the cluster's
-`ChangeLogSectionReader`. It runs SQL on the primary connection with qualified
-journal table names and restores the caller's active connection afterward.
-The reader returns typed values, not browser frames. Its feed is nonempty
-receipts plus one row for each journal entry without a receipt; table history
-includes both. Windows use a complete time-and-row anchor and carry at most 50
-rows. Counts stop at the table count ceiling plus one, so a caller can show a
-bounded count without scanning an unbounded result into memory.
+Any agent with declared reading may read the journal through typed collections
+on `Hilos::$db`; no agent reads it by default.
+(not in the code yet — HIL-1615)
+Do not repeat journal SQL in a page, table or agent; missing reads belong on the
+owning ORM layer. Feed windows and modal receipt/entry reads move to those
+collections. (not in the code yet — HIL-1619)
+The tables, history and overview reads follow, after which
+`ChangeLogSectionReader` is removed. (not in the code yet — HIL-1620)
+Journal collections use bounded database queries without loading the journal
+whole or treating their ORM cache as the source of trigger inserts.
+(not in the code yet — HIL-1615)
+The ORM emits no sync frames for those inserts.
+
+Until those reading leaves land, the section still uses
+`ChangeLogSectionReader`: it runs SQL on primary with qualified journal table
+names and restores the caller's active connection afterward. Keep using it for
+the paths not yet migrated; it is the current implementation, not the pattern
+for new journal reads. The replacement keeps the section's public actions and
+payloads and the following guarantees.
+
+Reads return typed values, not browser frames. The feed is nonempty receipts
+plus one row for each journal entry without a receipt; table history includes
+both. Windows use a complete time-and-row anchor and carry at most 50 rows.
+Counts stop at the table count ceiling plus one, so a caller can show a bounded
+count without scanning an unbounded result into memory.
 
 The Change Log dashboard answers its subscription with one overview snapshot
 in the page response (`changeLogOverview`): journal entries, journal database
@@ -418,6 +483,14 @@ number with each label. It exposes live table names and column policies without
 exposing journal dictionary row numbers. A service trigger's valid-from
 migration comes from the header of its project SQL file, never from the SQL
 body sent to a browser.
+
+Person search and current names for feed and receipt reads come through
+`Hilos::$db->users`, without SQL joining the primary and journal databases.
+(not in the code yet — HIL-1619)
+History and the remaining section reads use the same user collection path.
+(not in the code yet — HIL-1620)
+The soft person number, `Deleted user #N` fallback, filters and personal-data
+masking in admin view mode remain unchanged.
 
 The dashboard's two reading actions open details on intent:
 `hilos_change_log_receipt_read` answers with a complete `receipt` header,
@@ -665,6 +738,15 @@ actor, action, writer agent, `block` values `0` → `1` and complete visible
 attribution header, including When and Source, must agree. The leader and term
 stay unchanged (HIL-1465).
 
+The new business-row frame preserves its write receipt and writer data between
+nodes. (not in the code yet — HIL-1617)
+The journal agent applies attribution through that frame path under its declared
+operations. (not in the code yet — HIL-1618)
+A separate cluster scenario proves the collection-based reading and new
+attribution path through any master. (not in the code yet — HIL-1621)
+That scenario is still to be added; the existing HIL-1465 scenario above remains
+coverage of the current path, not evidence that the new path already works.
+
 The existing stands no longer carry primary/replica or Galera topologies, by
 the owner's decision of 2026-10-14. Specialized database carriers and six new
 demos are P-567, deferred until 2026-10-24. The shared harness retains scenarios
@@ -705,7 +787,11 @@ those guarantees need their future carriers as well as journal scenarios.
 - Giving an administrator a “journal this table” switch moves the declaration
   out of its owner; put it on the Entity.
 - Querying the journal directly from a page, table, or agent duplicates the
-  reader and its bounds; use `ChangeLogSectionReader`.
+  ORM's reads and their bounds; use typed `Hilos::$db` collections with declared
+  reading. (not in the code yet — HIL-1615)
+  The existing section keeps its reader until the feed and receipt/entry reads
+  migrate (not in the code yet — HIL-1619), then the tables, history and overview
+  migrate and the reader is removed (not in the code yet — HIL-1620).
 - Using the April stub as a worked example revives a rejected design;
   follow this page instead.
 - Naming here what a leaf introduces — Entity constants, journal tables and
