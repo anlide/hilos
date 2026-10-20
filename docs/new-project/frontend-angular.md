@@ -153,9 +153,12 @@ In `angular.json` production, set `statsJson: true` and keep the native initial
 budgets `4MB` warning / `5MB` error. The ordinary package build script is:
 
 ```json
-"build": "ng build && node node_modules/@hilos/core/bin/theme-head.mjs dist && node node_modules/@hilos/core/bin/initial-bundle-budget.mjs angular dist --project-sources src/app/pages/routes.ts src/app/app.ts"
+"build": "NG_BUILD_OPTIMIZE_CHUNKS=0 ng build && node node_modules/@hilos/core/bin/theme-head.mjs dist && node node_modules/@hilos/core/bin/initial-bundle-budget.mjs angular dist --project-sources src/app/pages/routes.ts src/app/app.ts"
 ```
 
+Keep `NG_BUILD_OPTIMIZE_CHUNKS=0` in front of `ng build`: Angular's chunk
+optimizer re-cuts the chunk graph this gate proves
+([build-and-docker.md](../agents/frontend/build-and-docker.md)).
 Adapt both source paths to the project. This CLI runs after the production,
 static-prerender and theme passes; it reads the final client HTML, stats and
 bytes, leaving `initial-bundle-report.json`. Require

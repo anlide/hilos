@@ -177,9 +177,14 @@ command === 'build' && !isSsrBuild && initialBundleBudget({
 ```
 
 Angular production enables `statsJson: true` and retains its native `initial`
-budgets `maximumWarning: '4MB'`, `maximumError: '5MB'`. After the ordinary
-`ng build` (including static prerender) and theme-head pass, its build script
-runs the same graph policy through the shipped CLI:
+budgets `maximumWarning: '4MB'`, `maximumError: '5MB'`. Its `ng build` runs with
+`NG_BUILD_OPTIMIZE_CHUNKS=0`: from Angular 22.2 the builder's Rolldown
+chunk-optimizer pass also runs on a build with a server entry (the static
+prerender), re-cuts the esbuild chunk graph and trims each APF forwarding chunk
+to the names in use, and the forwarding proof below refuses such a chunk. The
+variable keeps the graph the gate proves; Angular 22.0 never ran the pass here.
+After that `ng build` (including static prerender) and theme-head pass, its
+build script runs the same graph policy through the shipped CLI:
 
 ```sh
 node node_modules/@hilos/core/bin/initial-bundle-budget.mjs angular dist --project-sources src/app/pages/routes.ts src/app/app.ts
@@ -199,7 +204,7 @@ The build retains `initial-bundle-report.json`: roots, initial and lazy files,
 static/dynamic edges, raw/gzip totals, input modules, expanded SDK source evidence,
 forbidden modules, project proof and budget verdict. A Vite SSR pass does not
 overwrite the client report, and serve does not run this gate. Angular reads
-`stats.json`, final `index.csr.html` (or `index.html`) and the actual emitted
+`browser-stats.json`, final `index.csr.html` (or `index.html`) and the actual emitted
 bytes. Missing, malformed or unresolved roots, edges or provenance refuse the
 build instead of appearing clean. Preserve the report with the production
 artifact when assessing its graph.

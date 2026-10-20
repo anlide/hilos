@@ -343,7 +343,9 @@ export function initialBundleBudget(options = {}) {
 export function angularBundleGraph(directory) {
   const dist = resolve(directory)
   const projectRoot = dirname(dist)
-  const stats = JSON.parse(readFileSync(join(dist, 'stats.json'), 'utf8'))
+  const stats = JSON.parse(
+    readFileSync(join(dist, 'browser-stats.json'), 'utf8'),
+  )
   if (
     !stats.inputs ||
     typeof stats.inputs !== 'object' ||

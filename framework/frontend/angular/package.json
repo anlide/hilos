@@ -52,9 +52,9 @@
     "bootstrap-icons": "^1.13.1"
   },
   "devDependencies": {
-    "@angular/compiler": "22.0.1",
-    "@angular/compiler-cli": "22.0.1",
-    "@angular/platform-browser": "22.0.1",
+    "@angular/compiler": "22.2.3",
+    "@angular/compiler-cli": "22.2.3",
+    "@angular/platform-browser": "22.2.3",
     "jsdom": "^29.1.1",
     "ng-packagr": "^22.0.0"
   }

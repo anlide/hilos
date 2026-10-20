@@ -139,15 +139,15 @@ manifest declares `@angular/compiler`, `@angular/compiler-cli` and
 `@angular/compiler`, `@angular/core` and `@angular/platform-browser`, plus
 `@angular/build`, `@angular/cli`, `@angular/compiler-cli`,
 `@angular/platform-server`, `@angular/router` and `@angular/ssr`. Every one of
-them reads `22.0.1`, with no caret and no tilde. The frontend of a new project
+them reads `22.2.3`, with no caret and no tilde. The frontend of a new project
 ([docs/new-project/README.md](../../new-project/README.md), *Project layout*)
 joins them with the first `@angular/*` its manifest names, and the rule binds
-it from its first install. `22.0.1` and the three roots are today's facts, not a
+it from its first install. `22.2.3` and the three roots are today's facts, not a
 list to keep: what the rule fixes is that the entries are exact and equal
 across every root that carries Angular, whatever the number is and however
 many roots there are. The reason sits inside Angular. Its packages hold each
 other to an exact version in their own `peerDependencies` —
-`@angular/core@22.0.1` declares `{"@angular/compiler": "22.0.1"}`, readable in
+`@angular/core@22.2.3` declares `{"@angular/compiler": "22.2.3"}`, readable in
 `framework/frontend/package-lock.json` — so one caret resolved a minor ahead of
 its siblings drags the whole framework in, and the lockfile shows it as an
 ordinary neighbour bump.

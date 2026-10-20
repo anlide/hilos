@@ -1835,15 +1835,19 @@ function angularFixture() {
     { path: 'section.js', kind: 'dynamic-import' },
   ]
   outputs['style.css'].imports = [{ path: 'font.woff2', kind: 'url-token' }]
-  // Server outputs and prerender entries exist only in stats, not the served directory.
+  // Server outputs and prerender entries never belong to the served directory;
+  // a client stats graph that lists them must still refuse to reach them.
   outputs['main.server.mjs'] = { bytes: 99999, inputs: {}, imports: [] }
   outputs['chunk-server.mjs'] = { bytes: 99999, inputs: {}, imports: [] }
-  writeFileSync(join(dist, 'stats.json'), JSON.stringify({ inputs, outputs }))
+  writeFileSync(
+    join(dist, 'browser-stats.json'),
+    JSON.stringify({ inputs, outputs }),
+  )
   return dist
 }
 
 function changeStats(dist, mutate) {
-  const path = join(dist, 'stats.json')
+  const path = join(dist, 'browser-stats.json')
   const stats = JSON.parse(readFileSync(path, 'utf8'))
   mutate(stats)
   writeFileSync(path, JSON.stringify(stats))
