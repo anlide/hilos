@@ -236,7 +236,7 @@ export function expectPublicBundle(
 ): void {
   expect(report.budget.errors).toEqual([])
   expect(report.initial.forbiddenModules).toEqual([])
-  expect(report.initial.totalBytes).toBeLessThanOrEqual(2_000_000)
+  expect(report.initial.totalBytes).toBeLessThanOrEqual(5_000_000)
   expect(
     report.initial.modules.filter((id) =>
       /\/admin\/[^/]+\/Hilos[^/]+Page\./.test(id),

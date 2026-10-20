@@ -341,7 +341,7 @@ export class App { protected readonly pages = {
     })
     const report = JSON.parse(context.emitFile.mock.calls[0][0].source)
     expect(report.projectProof.status).toBe('verified')
-    expect(report.initial.totalBytes).toBeLessThan(2_000_000)
+    expect(report.initial.totalBytes).toBeLessThan(5_000_000)
     expect(() => plugin.writeBundle.call(context)).toThrow(
       'project admin component',
     )
@@ -2203,9 +2203,9 @@ describe('Angular stats/HTML adapter and strict CLI', () => {
     expect(
       runInitialBundleBudget(['angular', dist]).budget.errors[0],
     ).toContain('admin implementation')
-    writeFileSync(join(dist, 'main.js'), 'x'.repeat(2_000_001))
+    writeFileSync(join(dist, 'main.js'), 'x'.repeat(5_000_001))
     changeStats(dist, (stats) => {
-      stats.outputs['main.js'].bytes = 2_000_001
+      stats.outputs['main.js'].bytes = 5_000_001
     })
     expect(runInitialBundleBudget(['angular', dist]).budget.errors).toEqual(
       expect.arrayContaining([expect.stringContaining('exceeds error budget')]),

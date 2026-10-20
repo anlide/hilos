@@ -150,7 +150,7 @@ for the outlet cache, continuous skeleton deadline, refusals and failed-ESM retr
 limits.
 
 In `angular.json` production, set `statsJson: true` and keep the native initial
-budgets `1.5MB` warning / `2MB` error. The ordinary package build script is:
+budgets `1.5MB` warning / `5MB` error. The ordinary package build script is:
 
 ```json
 "build": "ng build && node node_modules/@hilos/core/bin/theme-head.mjs dist && node node_modules/@hilos/core/bin/initial-bundle-budget.mjs angular dist --project-sources src/app/pages/routes.ts src/app/app.ts"
@@ -208,7 +208,7 @@ see [../agents/frontend/styling-rules.md](../agents/frontend/styling-rules.md)):
 The Bootstrap-Icons font is a real dependency in the app's own `node_modules`
 (not a cross-root SDK asset), so unlike the Vite demos `ng serve` needs no
 file-system allow-list. Bootstrap raises the bundle past the CLI's default
-budgets — set `initial` `maximumWarning`/`maximumError` to `1.5MB`/`2MB`.
+budgets — set `initial` `maximumWarning`/`maximumError` to `1.5MB`/`5MB`.
 
 ## Dev-mode WebSocket
 

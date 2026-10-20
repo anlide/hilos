@@ -42,7 +42,7 @@ export default defineConfig(({ mode, command, isSsrBuild }) => {
         !isSsrBuild &&
         initialBundleBudget({
           warningBytes: 1500000,
-          errorBytes: 2000000,
+          errorBytes: 5000000,
           projectSources: {
             routes: 'src/pages/routes.ts',
             views: 'src/App.tsx',

@@ -168,7 +168,7 @@ import { initialBundleBudget } from '@hilos/core/build/initial-bundle-budget'
 // Inside defineConfig's factory; keep the other plugins in this array.
 command === 'build' && !isSsrBuild && initialBundleBudget({
   warningBytes: 1500000,
-  errorBytes: 2000000,
+  errorBytes: 5000000,
   projectSources: {
     routes: 'src/pages/routes.ts',
     views: 'src/App.vue', // React: 'src/App.tsx'
@@ -177,7 +177,7 @@ command === 'build' && !isSsrBuild && initialBundleBudget({
 ```
 
 Angular production enables `statsJson: true` and retains its native `initial`
-budgets `maximumWarning: '1.5MB'`, `maximumError: '2MB'`. After the ordinary
+budgets `maximumWarning: '1.5MB'`, `maximumError: '5MB'`. After the ordinary
 `ng build` (including static prerender) and theme-head pass, its build script
 runs the same graph policy through the shipped CLI:
 
