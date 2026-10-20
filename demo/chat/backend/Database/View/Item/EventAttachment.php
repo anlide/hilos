@@ -60,8 +60,8 @@ final class EventAttachment extends DbItem
             ObjectEventAttachment::id => $this->_object->id,
             ObjectEventAttachment::eventId => $this->_object->eventId,
             ObjectEventAttachment::fileId => $this->_object->fileId,
-            ChatDbContext::eventMessage => Hilos::$db->eventMessages[$this->_object->eventId],
-            self::file => Hilos::$db->files[$this->_object->fileId],
+            ChatDbContext::eventMessage => Hilos::$db->eventMessages[$this->_object->eventId] ?? null,
+            self::file => Hilos::$db->files[$this->_object->fileId] ?? null,
             self::url => HilosFiles::downloadPath($this->_object->fileId),
             self::thumbUrl => HilosFiles::downloadPath($this->_object->fileId, ChatAttachmentUploadTarget::THUMB_VARIANT),
             default => parent::__get($name),
@@ -95,7 +95,7 @@ final class EventAttachment extends DbItem
         bool $toFrontend = false,
     ): array {
         $result = parent::toArray($withId, $idAsIndex, $withBridges, $withCalculation, $toFrontend);
-        $file = Hilos::$db->files[$this->_object->fileId];
+        $file = $this->file;
         $result[ObjectFile::filename] = $file?->filename;
         $result[ObjectFile::mimeType] = $file?->mimeType;
         $result[self::url] = HilosFiles::downloadPath($this->_object->fileId);

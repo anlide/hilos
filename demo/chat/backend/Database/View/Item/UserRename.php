@@ -38,7 +38,7 @@ final class UserRename extends FrameworkUserRename
     {
         return match ($name) {
             ObjectUserRename::eventId => $this->_object->eventId,
-            ChatDbContext::event => Hilos::$db->events[$this->_object->eventId],
+            ChatDbContext::event => Hilos::$db->events[$this->_object->eventId] ?? null,
             default => parent::__get($name),
         };
     }

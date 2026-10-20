@@ -77,7 +77,7 @@ final class Connection extends HilosSessionConnection
             StateConnection::renameModerationName => $this->_state->renameModerationName,
             StateConnection::renameModerationReason => $this->_state->renameModerationReason,
             StateConnection::renameModerationUpdatedAt => $this->_state->renameModerationUpdatedAt,
-            ChatDbContext::user => $this->_state->userId !== null ? Hilos::$db->users[$this->_state->userId] : null,
+            ChatDbContext::user => Hilos::$db->users[$this->_state->userId] ?? null,
             ConnectionRuntimeConstants::userState => $this->_state->userId !== null
                 ? Hilos::$rt->userStates[$this->_state->userId]
                 : null,

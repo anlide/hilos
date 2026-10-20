@@ -99,7 +99,7 @@ final class ChatMentionNotifier
                 || $user->id === $authorUserId
                 || $user->block
                 || !self::isMentioned($message, $user->name)
-                || Hilos::$db->userMerges[$user->id] !== null
+                || isset(Hilos::$db->userMerges[$user->id])
             ) {
                 continue;
             }
@@ -173,11 +173,19 @@ final class ChatMentionNotifier
     private static function authorName(?int $authorUserId, ?int $authorBotId): string
     {
         if ($authorUserId !== null) {
-            return Hilos::$db->users[$authorUserId]?->name ?? self::UNKNOWN_AUTHOR_NAME;
+            if (!isset(Hilos::$db->users[$authorUserId])) {
+                return self::UNKNOWN_AUTHOR_NAME;
+            }
+
+            return Hilos::$db->users[$authorUserId]->name;
         }
 
         if ($authorBotId !== null) {
-            return Hilos::$db->bots[$authorBotId]?->name ?? self::UNKNOWN_AUTHOR_NAME;
+            if (!isset(Hilos::$db->bots[$authorBotId])) {
+                return self::UNKNOWN_AUTHOR_NAME;
+            }
+
+            return Hilos::$db->bots[$authorBotId]->name;
         }
 
         return self::UNKNOWN_AUTHOR_NAME;

@@ -472,10 +472,10 @@ final class ModeratorAgent extends AbstractAgent
         if ($upload?->phase !== UploadPhase::COMPLETE || $upload->tmpIndex === null) {
             throw new AgentException('Photo upload is no longer complete');
         }
-        $name = Hilos::$db->users[$check->userId]?->name;
-        if ($name === null) {
+        if (!isset(Hilos::$db->users[$check->userId])) {
             throw new AgentException('Person left before photo moderation began');
         }
+        $name = Hilos::$db->users[$check->userId]->name;
 
         $tmp = (Hilos::$fs ?? throw new AgentException('Temporary files are unavailable'))->getTmp();
         $bytes = FsPath::read($tmp[$upload->tmpIndex]->getPath());

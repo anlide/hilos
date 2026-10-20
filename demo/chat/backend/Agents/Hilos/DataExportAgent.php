@@ -59,7 +59,9 @@ final class DataExportAgent extends AbstractDataExportAgent
             }
         }
         $writer->section('chat', [
-            'profile' => ['name' => Hilos::$db->users[$userId]?->name],
+            'profile' => [
+                'name' => isset(Hilos::$db->users[$userId]) ? Hilos::$db->users[$userId]->name : null,
+            ],
             'messages' => $messages,
             'registeredAt' => DataExportTime::iso($registeredAt),
         ]);

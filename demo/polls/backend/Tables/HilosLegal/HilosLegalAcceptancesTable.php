@@ -24,10 +24,11 @@ final class HilosLegalAcceptancesTable extends AbstractHilosLegalAcceptancesTabl
     {
         $names = [];
         foreach ($userIds as $userId) {
-            $name = Hilos::$db->users[$userId]?->name;
-            if ($name !== null) {
-                $names[$userId] = $name;
+            if (!isset(Hilos::$db->users[$userId])) {
+                continue;
             }
+
+            $names[$userId] = Hilos::$db->users[$userId]->name;
         }
 
         return $names;

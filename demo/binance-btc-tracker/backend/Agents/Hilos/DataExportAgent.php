@@ -26,7 +26,9 @@ final class DataExportAgent extends AbstractDataExportAgent
     protected function applyAccountExport(int $userId, DataExportWriter $writer): void
     {
         $writer->section('binance-btc-tracker', [
-            'profile' => ['name' => Hilos::$db->users[$userId]?->name],
+            'profile' => [
+                'name' => isset(Hilos::$db->users[$userId]) ? Hilos::$db->users[$userId]->name : null,
+            ],
         ]);
     }
 }

@@ -62,7 +62,7 @@ final class ChatUserState extends RtItem
         return match ($name) {
             StateChatUserState::userId => $this->_state->userId,
             StateChatUserState::lastOutboundSubmittedAt => $this->_state->lastOutboundSubmittedAt,
-            ChatDbContext::user => Hilos::$db->users[$this->_state->userId],
+            ChatDbContext::user => Hilos::$db->users[$this->_state->userId] ?? null,
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };

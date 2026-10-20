@@ -46,7 +46,7 @@ final class BotAgentStatus extends RtItem
             StateBotAgentStatus::botId => $this->_state->botId,
             StateBotAgentStatus::status => $this->_state->status,
             StateBotAgentStatus::updatedAt => $this->_state->updatedAt,
-            ChatDbContext::bot => Hilos::$db->bots[$this->_state->botId],
+            ChatDbContext::bot => Hilos::$db->bots[$this->_state->botId] ?? null,
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };

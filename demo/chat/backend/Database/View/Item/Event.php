@@ -57,8 +57,8 @@ final class Event extends DbItem
             ObjectEvent::id => $this->_object->id,
             ObjectEvent::type => $this->_object->type,
             ObjectEvent::timestamp => $this->_object->timestamp,
-            ChatDbContext::eventMessage => Hilos::$db->eventMessages[$this->_object->id],
-            ChatDbContext::eventUserRegistration => Hilos::$db->eventUserRegistrations[$this->_object->id],
+            ChatDbContext::eventMessage => Hilos::$db->eventMessages[$this->_object->id] ?? null,
+            ChatDbContext::eventUserRegistration => Hilos::$db->eventUserRegistrations[$this->_object->id] ?? null,
             // Asked of every event the room holds, so only a rename event reaches the journal.
             ChatDbContext::userRename => match (ChatEventType::tryFrom($this->_object->type)) {
                 ChatEventType::USER_RENAMED, ChatEventType::USER_RENAMED_BY_ADMIN

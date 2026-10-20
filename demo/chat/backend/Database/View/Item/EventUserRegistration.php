@@ -42,8 +42,8 @@ final class EventUserRegistration extends DbItem
         return match ($name) {
             ObjectEventUserRegistration::eventId => $this->_object->eventId,
             ObjectEventUserRegistration::targetUserId => $this->_object->targetUserId,
-            ChatDbContext::event => Hilos::$db->events[$this->_object->eventId],
-            self::targetUser => Hilos::$db->users[$this->_object->targetUserId],
+            ChatDbContext::event => Hilos::$db->events[$this->_object->eventId] ?? null,
+            self::targetUser => Hilos::$db->users[$this->_object->targetUserId] ?? null,
             default => parent::__get($name),
         };
     }
