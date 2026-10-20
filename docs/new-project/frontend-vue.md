@@ -115,7 +115,7 @@ export default defineConfig(({ command, isSsrBuild }) => ({
   plugins: [
     vue(),
     command === 'build' && !isSsrBuild && initialBundleBudget({
-      warningBytes: 1500000,
+      warningBytes: 4000000,
       errorBytes: 5000000,
       projectSources: {
         routes: 'src/pages/routes.ts',

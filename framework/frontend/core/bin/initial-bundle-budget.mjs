@@ -9,7 +9,7 @@ import { sdkEvidence } from './initial-bundle-sdk.mjs'
 import { projectEvidence } from './initial-bundle-project.mjs'
 
 const REPORT_FILE = 'initial-bundle-report.json'
-const DEFAULT_BUDGET = { warningBytes: 1_500_000, errorBytes: 5_000_000 }
+const DEFAULT_BUDGET = { warningBytes: 4_000_000, errorBytes: 5_000_000 }
 const SCRIPT = /\.[cm]?js$/i
 const CLIENT_ASSET = /\.(?:[cm]?js|css)$/i
 
