@@ -89,7 +89,7 @@ try {
         $this->countsByUser[$userId] = $previous;
     });
     $this->countsByUser[$userId] = $count;
-    Hilos::$db->users[$userId]?->actions->rename($name);
+    Hilos::$db->users[$userId]->actions->rename($name);
     Database::transactionCommit();
 } catch (HilosException $failure) {
     Database::transactionRollback();
