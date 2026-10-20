@@ -32,10 +32,10 @@ final class AddressablePerson
      */
     public static function require(int $userId): void
     {
-        if (Hilos::$db->users[$userId] === null) {
+        if (!isset(Hilos::$db->users[$userId])) {
             throw new ItemNotFoundForUpdateException("No such user: {$userId}");
         }
-        if (Hilos::$db->userMerges[$userId] !== null) {
+        if (isset(Hilos::$db->userMerges[$userId])) {
             throw new ValidationException(AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE);
         }
     }

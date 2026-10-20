@@ -257,6 +257,48 @@ final class UsersLibraryRenameIntegrationTest extends HilosSessionIntegrationTes
     }
 
     /**
+     * @throws HilosException When the fixture person or the completion frame cannot be handled
+     */
+    public function testAMissingRenameRowSkipsTheHookAndStillAnswersTheCard(): void
+    {
+        $userId = self::seedPerson('Grace', admin: false);
+        $ask = new UserRenameSignalData(
+            userId: $userId,
+            name: 'Grace',
+            renamedByUserId: null,
+            replySignal: HilosSignalConstants::HILOS_USER_RENAME_DONE,
+            acceptKey: self::ACCEPT_KEY,
+            requestId: 'rename-request',
+            action: HilosSignalConstants::HILOS_USER_UPDATE,
+            successMessage: 'Name changed',
+            answerSignal: HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE,
+        );
+        self::assertArrayNotHasKey(9999, Hilos::$db->userRenames);
+
+        $this->inLibrary(fn () => $this->library->onSignalAgent(
+            new AgentSignalData(data: UserRenameDoneSignalData::to($ask, 9999, null)),
+            '',
+            HilosSignalConstants::HILOS_USER_RENAME_DONE,
+        ));
+        $this->carry();
+
+        self::assertSame([], $this->library->renamed);
+        self::assertSame([], $this->notices());
+        self::assertCount(1, $this->outbox);
+        self::assertSame(HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE, $this->outbox[0]->signalName->getName());
+        self::assertInstanceOf(AgentSignalData::class, $this->outbox[0]->data);
+        $answer = $this->outbox[0]->data->data;
+        self::assertInstanceOf(HandoverAnswerSignalData::class, $answer);
+        self::assertSame(self::ACCEPT_KEY, $answer->acceptKey);
+        self::assertSame('rename-request', $answer->requestId);
+        self::assertSame(HilosSignalConstants::HILOS_USER_UPDATE, $answer->action);
+        self::assertSame('Name changed', $answer->successMessage);
+        self::assertNull($answer->error);
+        self::assertNull($answer->errorType);
+        self::assertNull($answer->errorDetail);
+    }
+
+    /**
      * The author's account goes, the renamed person's history stays - with nobody named as author.
      *
      * @throws HilosException When a fixture row cannot be written or the rename fails

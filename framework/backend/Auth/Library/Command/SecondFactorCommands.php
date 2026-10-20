@@ -778,9 +778,12 @@ final class SecondFactorCommands extends AbstractLibraryCommands
             return;
         }
 
+        if (!isset(Hilos::$db->secondFactorResets[$request->resetId])) {
+            throw new LogicException('A standing second-factor removal ' . $request->resetId . ' has no cancel token');
+        }
         $reset = Hilos::$db->secondFactorResets[$request->resetId];
-        $token = $reset?->readCancelToken();
-        if ($reset === null || $token === null) {
+        $token = $reset->readCancelToken();
+        if ($token === null) {
             throw new LogicException('A standing second-factor removal ' . $request->resetId . ' has no cancel token');
         }
         SecondFactorResetNotifier::reminder($request->userId, $token, (int)strtotime($reset->effectiveAt));

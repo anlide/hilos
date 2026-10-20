@@ -273,7 +273,9 @@ class HilosCommunicationsChannelsTable extends TableDefinition implements SelfSn
 
         $key = $descriptor->enabledSettingKey();
 
-        return Hilos::$db->settings[$key]?->value !== null && Hilos::$setting[$key]->bool();
+        return isset(Hilos::$db->settings[$key])
+            && Hilos::$db->settings[$key]->value !== null
+            && Hilos::$setting[$key]->bool();
     }
 
     /**

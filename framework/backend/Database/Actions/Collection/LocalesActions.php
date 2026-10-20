@@ -52,7 +52,7 @@ class LocalesActions extends DbActions
         $this->ensureCanCreateInSet((string)$language->id);
 
         $code = ObjectLocale::codeFor($language->code, $country?->code);
-        if ($this->collection[$code] !== null) {
+        if (isset($this->collection[$code])) {
             throw new ValidationException("Locale '{$code}' already exists.");
         }
         LocaleTemplates::refuseUnknown($dateFormat, $timeFormat, $numberFormat, $phoneFormat, $addressFormat, $collation);
@@ -90,8 +90,11 @@ class LocalesActions extends DbActions
     public function refreshFromCatalog(): void
     {
         foreach (BuiltInI18nCatalog::locales() as $definition) {
+            if (!isset($this->collection[$definition->code])) {
+                continue;
+            }
             $locale = $this->collection[$definition->code];
-            if ($locale === null || $locale->enabled || self::matchesCatalog($locale, $definition)) {
+            if ($locale->enabled || self::matchesCatalog($locale, $definition)) {
                 continue;
             }
             $locale->actions->update(

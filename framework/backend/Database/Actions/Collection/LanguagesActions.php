@@ -39,7 +39,7 @@ class LanguagesActions extends DbActions
         if (trim($nativeName) === '' || mb_strlen($nativeName) > 64) {
             throw new ValidationException('Language native name must have 1..64 characters');
         }
-        if ($this->collection[$code] !== null) {
+        if (isset($this->collection[$code])) {
             throw new ValidationException("Language '{$code}' already exists.");
         }
 
@@ -96,8 +96,11 @@ class LanguagesActions extends DbActions
     public function refreshFromCatalog(): void
     {
         foreach (BuiltInI18nCatalog::languages() as $definition) {
+            if (!isset($this->collection[$definition->code])) {
+                continue;
+            }
             $language = $this->collection[$definition->code];
-            if ($language === null || $language->enabled
+            if ($language->enabled
                 || ($language->nativeName === $definition->nativeName && $language->rtl === $definition->rtl)) {
                 continue;
             }

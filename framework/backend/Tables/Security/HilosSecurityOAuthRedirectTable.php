@@ -185,6 +185,7 @@ class HilosSecurityOAuthRedirectTable extends TableDefinition implements SelfSna
             return false;
         }
 
-        return Hilos::$db->settings[(int) $sourceId]?->key === OAuthSettingsCatalog::REDIRECT_URI_KEY;
+        return isset(Hilos::$db->settings[(int) $sourceId])
+            && Hilos::$db->settings[(int) $sourceId]->key === OAuthSettingsCatalog::REDIRECT_URI_KEY;
     }
 }

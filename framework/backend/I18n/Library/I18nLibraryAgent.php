@@ -148,13 +148,16 @@ final class I18nLibraryAgent extends AbstractHilosAgent
         $definition = DefaultLanguage::definition();
         Database::transactionStart();
         try {
-            $language = Hilos::$db->languages[$definition->code];
-            $created = $language === null;
-            $language ??= Hilos::$db->languages->actions->create(
-                $definition->code,
-                $definition->nativeName,
-                $definition->rtl,
-            );
+            $created = !isset(Hilos::$db->languages[$definition->code]);
+            if ($created) {
+                $language = Hilos::$db->languages->actions->create(
+                    $definition->code,
+                    $definition->nativeName,
+                    $definition->rtl,
+                );
+            } else {
+                $language = Hilos::$db->languages[$definition->code];
+            }
             $language->actions->switchOn();
 
             $this->switchOnCatalogCountrylessLocale($language);
@@ -199,8 +202,8 @@ final class I18nLibraryAgent extends AbstractHilosAgent
      */
     private function seedCountryNamesFixture(): void
     {
-        if (Hilos::$db->countries[self::COUNTRY_NAMES_TARGET_CODE] !== null
-            || Hilos::$db->languages[self::COUNTRY_NAMES_WRITING_CODE] !== null) {
+        if (isset(Hilos::$db->countries[self::COUNTRY_NAMES_TARGET_CODE])
+            || isset(Hilos::$db->languages[self::COUNTRY_NAMES_WRITING_CODE])) {
             throw new ValidationException('The country names fixture already exists. Clear it before seeding again.');
         }
 
@@ -255,20 +258,31 @@ final class I18nLibraryAgent extends AbstractHilosAgent
                 throw new ValidationException('The country names fixture command takes no arguments.');
             }
             $this->assertCountryNamesFixtureMarkers();
-            $country = Hilos::$db->countries[self::COUNTRY_NAMES_TARGET_CODE];
-            $language = Hilos::$db->languages[self::COUNTRY_NAMES_WRITING_CODE];
-            $addLanguage = Hilos::$db->languages[self::COUNTRY_NAMES_ADD_LANGUAGE];
-            if ($country !== null && $addLanguage !== null) {
-                Hilos::$db->countryNames->findBase($country->id, $addLanguage->id)?->actions->delete();
+            if (isset(Hilos::$db->countries[self::COUNTRY_NAMES_TARGET_CODE])
+                && isset(Hilos::$db->languages[self::COUNTRY_NAMES_ADD_LANGUAGE])) {
+                Hilos::$db->countryNames->findBase(
+                    Hilos::$db->countries[self::COUNTRY_NAMES_TARGET_CODE]->id,
+                    Hilos::$db->languages[self::COUNTRY_NAMES_ADD_LANGUAGE]->id,
+                )?->actions->delete();
             }
-            if ($country !== null && $language !== null) {
-                Hilos::$db->countryNames->findBase($country->id, $language->id)?->actions->delete();
+            if (isset(Hilos::$db->countries[self::COUNTRY_NAMES_TARGET_CODE])
+                && isset(Hilos::$db->languages[self::COUNTRY_NAMES_WRITING_CODE])) {
+                Hilos::$db->countryNames->findBase(
+                    Hilos::$db->countries[self::COUNTRY_NAMES_TARGET_CODE]->id,
+                    Hilos::$db->languages[self::COUNTRY_NAMES_WRITING_CODE]->id,
+                )?->actions->delete();
             }
             foreach ([...array_keys(self::COUNTRY_NAMES_CORRECTIONS), self::COUNTRY_NAMES_ADD_LOCALE_COUNTRY] as $countryCode) {
-                Hilos::$db->locales[self::COUNTRY_NAMES_WRITING_CODE . '-' . strtoupper($countryCode)]?->actions->delete();
+                if (isset(Hilos::$db->locales[self::COUNTRY_NAMES_WRITING_CODE . '-' . strtoupper($countryCode)])) {
+                    Hilos::$db->locales[self::COUNTRY_NAMES_WRITING_CODE . '-' . strtoupper($countryCode)]->actions->delete();
+                }
             }
-            Hilos::$db->languages[self::COUNTRY_NAMES_WRITING_CODE]?->actions->delete();
-            Hilos::$db->countries[self::COUNTRY_NAMES_TARGET_CODE]?->actions->delete();
+            if (isset(Hilos::$db->languages[self::COUNTRY_NAMES_WRITING_CODE])) {
+                Hilos::$db->languages[self::COUNTRY_NAMES_WRITING_CODE]->actions->delete();
+            }
+            if (isset(Hilos::$db->countries[self::COUNTRY_NAMES_TARGET_CODE])) {
+                Hilos::$db->countries[self::COUNTRY_NAMES_TARGET_CODE]->actions->delete();
+            }
         } catch (WiringRefusal $refusal) {
             throw $refusal;
         } catch (Throwable $failure) {
@@ -286,12 +300,12 @@ final class I18nLibraryAgent extends AbstractHilosAgent
      */
     private function assertCountryNamesFixtureMarkers(): void
     {
-        if (Hilos::$db->countries[self::COUNTRY_NAMES_TARGET_CODE] !== null
+        if (isset(Hilos::$db->countries[self::COUNTRY_NAMES_TARGET_CODE])
             && (Hilos::$db->countries[self::COUNTRY_NAMES_TARGET_CODE]->currencySymbol !== self::COUNTRY_NAMES_CURRENCY_SYMBOL
                 || Hilos::$db->countries[self::COUNTRY_NAMES_TARGET_CODE]->currencyCode !== self::COUNTRY_NAMES_CURRENCY_CODE)) {
             throw new ValidationException('Country qj is not the country names fixture.');
         }
-        if (Hilos::$db->languages[self::COUNTRY_NAMES_WRITING_CODE] !== null
+        if (isset(Hilos::$db->languages[self::COUNTRY_NAMES_WRITING_CODE])
             && (Hilos::$db->languages[self::COUNTRY_NAMES_WRITING_CODE]->nativeName !== self::COUNTRY_NAMES_WRITING_MARKER
                 || Hilos::$db->languages[self::COUNTRY_NAMES_WRITING_CODE]->rtl)) {
             throw new ValidationException('Language qk is not the country names fixture.');
@@ -330,7 +344,7 @@ final class I18nLibraryAgent extends AbstractHilosAgent
     {
         $this->assertLanguageNamesFixtureMarkers();
         foreach (array_keys(self::LANGUAGE_NAMES_MARKERS) as $code) {
-            if (Hilos::$db->languages[$code] !== null) {
+            if (isset(Hilos::$db->languages[$code])) {
                 throw new ValidationException('The language names fixture already exists. Clear it before seeding again.');
             }
         }
@@ -385,22 +399,33 @@ final class I18nLibraryAgent extends AbstractHilosAgent
                 throw new ValidationException('The language names fixture command takes no arguments.');
             }
             $this->assertLanguageNamesFixtureMarkers();
-            $language = Hilos::$db->languages[self::LANGUAGE_NAMES_TARGET_CODE];
-            $inLanguage = Hilos::$db->languages[self::LANGUAGE_NAMES_WRITING_CODE];
-            if ($language !== null && $inLanguage !== null) {
+            if (isset(Hilos::$db->languages[self::LANGUAGE_NAMES_TARGET_CODE])
+                && isset(Hilos::$db->languages[self::LANGUAGE_NAMES_WRITING_CODE])) {
+                $language = Hilos::$db->languages[self::LANGUAGE_NAMES_TARGET_CODE];
+                $inLanguage = Hilos::$db->languages[self::LANGUAGE_NAMES_WRITING_CODE];
                 Hilos::$db->languageNames->findBase($language->id, $inLanguage->id)?->actions->delete();
                 Hilos::$db->languageNames->findBase($inLanguage->id, $language->id)?->actions->delete();
             }
             foreach (array_keys(self::LANGUAGE_NAMES_CORRECTIONS) as $countryCode) {
                 $localeCode = self::LANGUAGE_NAMES_WRITING_CODE . '-' . strtoupper($countryCode);
-                Hilos::$db->locales[$localeCode]?->actions->switchOff();
-                Hilos::$db->locales[$localeCode]?->actions->delete();
+                if (isset(Hilos::$db->locales[$localeCode])) {
+                    Hilos::$db->locales[$localeCode]->actions->switchOff();
+                }
+                if (isset(Hilos::$db->locales[$localeCode])) {
+                    Hilos::$db->locales[$localeCode]->actions->delete();
+                }
             }
             $reverseLocaleCode = self::LANGUAGE_NAMES_TARGET_CODE . '-' . strtoupper(self::LANGUAGE_NAMES_REVERSE_COUNTRY_CODE);
-            Hilos::$db->locales[$reverseLocaleCode]?->actions->switchOff();
-            Hilos::$db->locales[$reverseLocaleCode]?->actions->delete();
+            if (isset(Hilos::$db->locales[$reverseLocaleCode])) {
+                Hilos::$db->locales[$reverseLocaleCode]->actions->switchOff();
+            }
+            if (isset(Hilos::$db->locales[$reverseLocaleCode])) {
+                Hilos::$db->locales[$reverseLocaleCode]->actions->delete();
+            }
             foreach (array_keys(self::LANGUAGE_NAMES_MARKERS) as $code) {
-                Hilos::$db->languages[$code]?->actions->delete();
+                if (isset(Hilos::$db->languages[$code])) {
+                    Hilos::$db->languages[$code]->actions->delete();
+                }
             }
         } catch (WiringRefusal $refusal) {
             throw $refusal;
@@ -420,7 +445,7 @@ final class I18nLibraryAgent extends AbstractHilosAgent
     private function assertLanguageNamesFixtureMarkers(): void
     {
         foreach (self::LANGUAGE_NAMES_MARKERS as $code => $marker) {
-            if (Hilos::$db->languages[$code] !== null && Hilos::$db->languages[$code]->nativeName !== $marker) {
+            if (isset(Hilos::$db->languages[$code]) && Hilos::$db->languages[$code]->nativeName !== $marker) {
                 throw new ValidationException("Language '{$code}' is not the language names fixture.");
             }
         }
@@ -525,7 +550,9 @@ final class I18nLibraryAgent extends AbstractHilosAgent
         }
 
         try {
-            Hilos::$db->languages[$code]?->actions->delete();
+            if (isset(Hilos::$db->languages[$code])) {
+                Hilos::$db->languages[$code]->actions->delete();
+            }
         } catch (WiringRefusal $refusal) {
             throw $refusal;
         } catch (Throwable $failure) {
@@ -561,8 +588,12 @@ final class I18nLibraryAgent extends AbstractHilosAgent
                 return;
             }
             Database::transactionStart();
-            Hilos::$db->locales[$code]?->actions->switchOff();
-            Hilos::$db->locales[$code]?->actions->delete();
+            if (isset(Hilos::$db->locales[$code])) {
+                Hilos::$db->locales[$code]->actions->switchOff();
+            }
+            if (isset(Hilos::$db->locales[$code])) {
+                Hilos::$db->locales[$code]->actions->delete();
+            }
             Database::transactionCommit();
         } catch (WiringRefusal $refusal) {
             Database::transactionRollback();
@@ -591,15 +622,15 @@ final class I18nLibraryAgent extends AbstractHilosAgent
             return;
         }
         try {
+            if (!isset(Hilos::$db->languages[$code])) {
+                $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Language '{$code}' does not exist"));
+                return;
+            }
             $language = Hilos::$db->languages[$code];
         } catch (WiringRefusal $refusal) {
             throw $refusal;
         } catch (Throwable $failure) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
-            return;
-        }
-        if ($language === null) {
-            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Language '{$code}' does not exist"));
             return;
         }
         if (BuiltInI18nCatalog::locale($code) === null) {

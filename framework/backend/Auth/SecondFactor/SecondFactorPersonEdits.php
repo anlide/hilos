@@ -201,7 +201,7 @@ final class SecondFactorPersonEdits
     {
         $reset = $ask->resetId === null
             ? Hilos::$db->secondFactorResets->liveOf($this->userId)
-            : Hilos::$db->secondFactorResets[$ask->resetId];
+            : Hilos::$db->secondFactorResets[$ask->resetId] ?? null;
         $canceled = $reset !== null && $reset->userId === $this->userId && $reset->actions->cancel();
 
         return new UserSecondFactorResetCancelDoneSignalData($ask, $canceled, null, null, null);
@@ -243,11 +243,12 @@ final class SecondFactorPersonEdits
      */
     public function carryOutReset(UserSecondFactorResetDueSignalData $request): UserSecondFactorResetDueDoneSignalData
     {
-        $reset = Hilos::$db->secondFactorResets[$request->resetId];
-        if ($reset === null || $reset->userId !== $this->userId) {
+        if (!isset(Hilos::$db->secondFactorResets[$request->resetId])
+            || Hilos::$db->secondFactorResets[$request->resetId]->userId !== $this->userId) {
             return new UserSecondFactorResetDueDoneSignalData($request, false, null, null, null);
         }
 
+        $reset = Hilos::$db->secondFactorResets[$request->resetId];
         Database::transactionStart();
         try {
             if (!$reset->actions->complete()) {
@@ -275,9 +276,12 @@ final class SecondFactorPersonEdits
      */
     public function remind(UserSecondFactorResetRemindSignalData $request): UserSecondFactorResetRemindDoneSignalData
     {
+        if (!isset(Hilos::$db->secondFactorResets[$request->resetId])) {
+            return new UserSecondFactorResetRemindDoneSignalData($request, false, null, null, null);
+        }
+
         $reset = Hilos::$db->secondFactorResets[$request->resetId];
-        $marked = $reset !== null
-            && $reset->userId === $this->userId
+        $marked = $reset->userId === $this->userId
             && $reset->actions->remind($request->notifiedBefore);
 
         return new UserSecondFactorResetRemindDoneSignalData($request, $marked, null, null, null);
@@ -328,7 +332,9 @@ final class SecondFactorPersonEdits
             return new SecondFactorProofCheck(false, true, null, null, SecondFactorMessages::INVALID_CODE);
         }
 
-        $lockedUntil = Hilos::$db->secondFactorSettings[$this->userId]?->appCodeLockedUntil;
+        $lockedUntil = isset(Hilos::$db->secondFactorSettings[$this->userId])
+            ? Hilos::$db->secondFactorSettings[$this->userId]->appCodeLockedUntil
+            : null;
         $left = $lockedUntil === null ? 0 : (int)strtotime($lockedUntil) - time();
         if ($left > 0) {
             return new SecondFactorProofCheck(
@@ -352,8 +358,8 @@ final class SecondFactorPersonEdits
 
         $now = time();
         $setting = Hilos::$db->secondFactorSettings[$this->userId];
-        $lastUntil = $setting?->appCodeLockedUntil;
-        $step = $policy->nextStep((int)$setting?->appCodeLockStep, $lastUntil === null ? null : (int)strtotime($lastUntil), $now);
+        $lastUntil = $setting->appCodeLockedUntil;
+        $step = $policy->nextStep((int)$setting->appCodeLockStep, $lastUntil === null ? null : (int)strtotime($lastUntil), $now);
         $untilSec = $now + $policy->lockSecondsFor($step);
         $locked = Hilos::$db->secondFactorSettings->actions->lockAppCodes(
             $this->userId,

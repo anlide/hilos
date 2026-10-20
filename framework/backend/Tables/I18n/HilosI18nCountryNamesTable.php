@@ -84,7 +84,11 @@ final class HilosI18nCountryNamesTable extends AbstractHilosI18nNamesTable
      */
     protected function subjectId(int $id): ?int
     {
-        return Hilos::$db->countries[$id]?->id;
+        if (!isset(Hilos::$db->countries[$id])) {
+            return null;
+        }
+
+        return Hilos::$db->countries[$id]->id;
     }
 
     /**
@@ -123,9 +127,12 @@ final class HilosI18nCountryNamesTable extends AbstractHilosI18nNamesTable
      */
     protected function nameCoordinates(SourceChange $change): ?array
     {
-        $name = Hilos::$db->countryNames[(int) $change->sourceId];
-        $countryId = $name?->countryId ?? self::rowId($change->row, ObjectCountryName::countryId);
-        $languageId = $name?->languageId ?? self::rowId($change->row, ObjectCountryName::languageId);
+        $countryId = isset(Hilos::$db->countryNames[(int) $change->sourceId])
+            ? Hilos::$db->countryNames[(int) $change->sourceId]->countryId
+            : self::rowId($change->row, ObjectCountryName::countryId);
+        $languageId = isset(Hilos::$db->countryNames[(int) $change->sourceId])
+            ? Hilos::$db->countryNames[(int) $change->sourceId]->languageId
+            : self::rowId($change->row, ObjectCountryName::languageId);
 
         return $countryId === null || $languageId === null ? null : [$countryId, $languageId];
     }

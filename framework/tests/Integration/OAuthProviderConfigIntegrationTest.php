@@ -345,6 +345,38 @@ final class OAuthProviderConfigIntegrationTest extends FrameworkIntegrationTestC
     }
 
     /**
+     * @throws HilosException When the fixture row or the configuration cannot be read
+     */
+    public function testAbsentProviderAndAbsentRedirectOverrideKeepEnvConfiguration(): void
+    {
+        self::assertArrayNotHasKey(OAuthProviderPreset::GITHUB->value, Hilos::$db->oauthProviders);
+        self::assertArrayNotHasKey(OAuthSettingsCatalog::REDIRECT_URI_KEY, Hilos::$db->settings);
+
+        $config = $this->resolver()->providerConfig(self::github());
+        self::assertNotNull($config);
+        self::assertSame('env-client', $config->clientId);
+        self::assertSame('env-secret', $config->clientSecret);
+        self::assertSame(self::ENV_REDIRECT, $config->redirectUri);
+    }
+
+    /**
+     * @throws HilosException When the fixture row or the configuration cannot be read
+     */
+    public function testANullRedirectOverrideKeepsEnvConfiguration(): void
+    {
+        Database::sqlRun(
+            'INSERT INTO `hilos_setting` (`key`, `value`) VALUES (?, NULL)',
+            [OAuthSettingsCatalog::REDIRECT_URI_KEY],
+        );
+        self::assertArrayHasKey(OAuthSettingsCatalog::REDIRECT_URI_KEY, Hilos::$db->settings);
+        self::assertNull(Hilos::$db->settings[OAuthSettingsCatalog::REDIRECT_URI_KEY]->value);
+
+        $resolved = $this->resolver()->resolveRedirectUri();
+        self::assertSame(OAuthConfigSource::ENV, $resolved->source);
+        self::assertSame(self::ENV_REDIRECT, $resolved->value);
+    }
+
+    /**
      * Stores the return address the way the general settings screen would.
      *
      * @param string $value Address to store, empty included

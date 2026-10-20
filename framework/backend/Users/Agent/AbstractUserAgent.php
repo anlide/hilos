@@ -1050,12 +1050,15 @@ abstract class AbstractUserAgent extends AbstractAgent
     protected function writePasswordHash(int $identityId, string $passwordHash): void
     {
         $this->personToWrite();
-        $password = Hilos::$db->identities[$identityId];
-        if ($password === null || $password->userId !== $this->userId || $password->type !== IdentityType::PASSWORD) {
+        if (
+            !isset(Hilos::$db->identities[$identityId])
+            || Hilos::$db->identities[$identityId]->userId !== $this->userId
+            || Hilos::$db->identities[$identityId]->type !== IdentityType::PASSWORD
+        ) {
             throw new ValidationException(AuthMessages::NO_PASSWORD);
         }
 
-        $password->setPasswordHash($passwordHash);
+        Hilos::$db->identities[$identityId]->setPasswordHash($passwordHash);
     }
 
     /**
@@ -1105,7 +1108,11 @@ abstract class AbstractUserAgent extends AbstractAgent
     protected function markAddressVerified(int $identityId): void
     {
         $this->personToWrite();
-        Hilos::$db->identities[$identityId]?->markVerified();
+        if (!isset(Hilos::$db->identities[$identityId])) {
+            return;
+        }
+
+        Hilos::$db->identities[$identityId]->markVerified();
     }
 
     /**
@@ -1200,8 +1207,11 @@ abstract class AbstractUserAgent extends AbstractAgent
     protected function unlinkIdentity(int $identityId): void
     {
         $this->personToWrite();
-        $identity = Hilos::$db->identities[$identityId];
-        if ($identity !== null && $identity->userId === $this->userId && $identity->type === IdentityType::PASSKEY) {
+        if (
+            isset(Hilos::$db->identities[$identityId])
+            && Hilos::$db->identities[$identityId]->userId === $this->userId
+            && Hilos::$db->identities[$identityId]->type === IdentityType::PASSKEY
+        ) {
             Hilos::$db->passkeyCredentials->deleteByIdentity($identityId);
         }
 
@@ -1284,12 +1294,14 @@ abstract class AbstractUserAgent extends AbstractAgent
         if ($notificationId === null) {
             Hilos::$db->notifications->actions->markAllReadForUser($this->userId);
         } else {
-            $notification = Hilos::$db->notifications[$notificationId];
-            if ($notification === null || $notification->userId !== $this->userId) {
+            if (
+                !isset(Hilos::$db->notifications[$notificationId])
+                || Hilos::$db->notifications[$notificationId]->userId !== $this->userId
+            ) {
                 throw new ValidationException('Notification not found');
             }
 
-            $notification->actions->markRead();
+            Hilos::$db->notifications[$notificationId]->actions->markRead();
         }
 
         $this->sendToGroup(
@@ -1449,7 +1461,7 @@ abstract class AbstractUserAgent extends AbstractAgent
     protected function removePhoto(): ?int
     {
         $this->personToWrite();
-        if (Hilos::$db->userPhotos[$this->userId] === null) {
+        if (!isset(Hilos::$db->userPhotos[$this->userId])) {
             return null;
         }
 

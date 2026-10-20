@@ -42,12 +42,16 @@ final readonly class SecondFactorResetWait
      */
     public static function of(int $userId): self
     {
+        if (!isset(Hilos::$db->secondFactorSettings[$userId])) {
+            return new self(null, null, null);
+        }
+
         $setting = Hilos::$db->secondFactorSettings[$userId];
-        $from = $setting?->pendingResetWaitFrom;
+        $from = $setting->pendingResetWaitFrom;
 
         return new self(
-            $setting?->resetWaitDays,
-            $setting?->pendingResetWaitDays,
+            $setting->resetWaitDays,
+            $setting->pendingResetWaitDays,
             $from === null ? null : (int)strtotime($from),
         );
     }

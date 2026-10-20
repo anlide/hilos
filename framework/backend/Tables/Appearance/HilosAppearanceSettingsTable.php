@@ -151,6 +151,6 @@ final class HilosAppearanceSettingsTable extends TableDefinition implements Self
             return null;
         }
 
-        return Hilos::$db->settings[(int) $sourceId]?->key;
+        return isset(Hilos::$db->settings[(int) $sourceId]) ? Hilos::$db->settings[(int) $sourceId]->key : null;
     }
 }

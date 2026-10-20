@@ -259,10 +259,10 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
         if ($id === false || (string) $id !== (string) $rowKey) {
             return false;
         }
-        $country = Hilos::$db->countries[$id];
-        if ($country === null) {
+        if (!isset(Hilos::$db->countries[$id])) {
             return false;
         }
+        $country = Hilos::$db->countries[$id];
 
         return $this->containsRowInMemory(
             [$this->rowForCountry($country, $this->defaultLanguageId())->toArray()],
@@ -355,10 +355,10 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
             return $this->mutation(TableMutationType::Delete, (string) $change->sourceId);
         }
 
-        $country = Hilos::$db->countries[(int) $change->sourceId];
-        if ($country === null) {
+        if (!isset(Hilos::$db->countries[(int) $change->sourceId])) {
             return null;
         }
+        $country = Hilos::$db->countries[(int) $change->sourceId];
 
         return $this->mutation(
             $change->mutationType,
@@ -384,11 +384,13 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
     {
         $countryId = $change->mutationType === TableMutationType::Delete
             ? self::rowInt($change->row, ObjectCountryName::countryId)
-            : Hilos::$db->countryNames[(int) $change->sourceId]?->countryId;
-        $country = Hilos::$db->countries[$countryId];
-        if ($country === null) {
+            : (isset(Hilos::$db->countryNames[(int) $change->sourceId])
+                ? Hilos::$db->countryNames[(int) $change->sourceId]->countryId
+                : null);
+        if (!isset(Hilos::$db->countries[$countryId])) {
             return null;
         }
+        $country = Hilos::$db->countries[$countryId];
 
         return $this->mutation(
             TableMutationType::Update,
@@ -414,11 +416,13 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
     {
         $countryId = $change->mutationType === TableMutationType::Delete
             ? self::rowInt($change->row, ObjectLocale::countryId)
-            : Hilos::$db->locales[(int) $change->sourceId]?->countryId;
-        $country = Hilos::$db->countries[$countryId];
-        if ($country === null) {
+            : (isset(Hilos::$db->locales[(int) $change->sourceId])
+                ? Hilos::$db->locales[(int) $change->sourceId]->countryId
+                : null);
+        if (!isset(Hilos::$db->countries[$countryId])) {
             return null;
         }
+        $country = Hilos::$db->countries[$countryId];
 
         return $this->mutation(
             TableMutationType::Update,
@@ -532,7 +536,11 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
      */
     private function defaultLanguageId(): ?int
     {
-        return Hilos::$db->languages[DefaultLanguage::code()]?->id;
+        if (!isset(Hilos::$db->languages[DefaultLanguage::code()])) {
+            return null;
+        }
+
+        return Hilos::$db->languages[DefaultLanguage::code()]->id;
     }
 
     /**

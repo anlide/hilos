@@ -167,8 +167,9 @@ abstract class AbstractHilosI18nNamesTable extends TableDefinition implements Wi
             array_push($languageIds, ...$this->relabelledLanguageIds($change));
         }
         if ($change->sourceKey === HilosDbContext::locales) {
-            $languageId = Hilos::$db->locales[(int) $change->sourceId]?->languageId
-                ?? self::rowId($change->row, ObjectLocale::languageId);
+            $languageId = isset(Hilos::$db->locales[(int) $change->sourceId])
+                ? Hilos::$db->locales[(int) $change->sourceId]->languageId
+                : self::rowId($change->row, ObjectLocale::languageId);
             if ($languageId !== null) {
                 $languageIds[] = $languageId;
             }
@@ -210,8 +211,11 @@ abstract class AbstractHilosI18nNamesTable extends TableDefinition implements Wi
         if ($id === false || (string) $id !== (string) $rowKey) {
             return false;
         }
+        if (!isset(Hilos::$db->languages[$id])) {
+            return false;
+        }
         $language = Hilos::$db->languages[$id];
-        if ($subjectId === null || $language === null || $this->excludesRowLanguage($subjectId, (int) $language->id)) {
+        if ($subjectId === null || $this->excludesRowLanguage($subjectId, (int) $language->id)) {
             return false;
         }
 
@@ -419,10 +423,10 @@ abstract class AbstractHilosI18nNamesTable extends TableDefinition implements Wi
             return [$this->mutation(TableMutationType::Delete, (string) $change->sourceId)];
         }
 
-        $language = Hilos::$db->languages[$languageId];
-        if ($language === null) {
+        if (!isset(Hilos::$db->languages[$languageId])) {
             return [];
         }
+        $language = Hilos::$db->languages[$languageId];
 
         $type = $change->mutationType === TableMutationType::Create ? TableMutationType::Create : TableMutationType::Update;
 
@@ -442,8 +446,8 @@ abstract class AbstractHilosI18nNamesTable extends TableDefinition implements Wi
         $mutations = [];
         $defaultLanguageId = $languageIds === [] ? null : $this->defaultLanguageId();
         foreach ($languageIds as $languageId) {
-            $language = Hilos::$db->languages[$languageId];
-            if ($language !== null && !$this->excludesRowLanguage($subjectId, $languageId)) {
+            if (isset(Hilos::$db->languages[$languageId]) && !$this->excludesRowLanguage($subjectId, $languageId)) {
+                $language = Hilos::$db->languages[$languageId];
                 $mutations[] = $this->mutation(
                     TableMutationType::Update,
                     (string) $language->id,
@@ -467,10 +471,15 @@ abstract class AbstractHilosI18nNamesTable extends TableDefinition implements Wi
      */
     private function relabelledLanguageIds(SourceChange $change): array
     {
-        $name = Hilos::$db->countryNames[(int) $change->sourceId];
-        $countryId = $name?->countryId ?? self::rowId($change->row, ObjectCountryName::countryId);
-        $languageId = $name?->languageId ?? self::rowId($change->row, ObjectCountryName::languageId);
-        $localeId = $name !== null ? $name->localeId : self::rowId($change->row, ObjectCountryName::localeId);
+        $countryId = isset(Hilos::$db->countryNames[(int) $change->sourceId])
+            ? Hilos::$db->countryNames[(int) $change->sourceId]->countryId
+            : self::rowId($change->row, ObjectCountryName::countryId);
+        $languageId = isset(Hilos::$db->countryNames[(int) $change->sourceId])
+            ? Hilos::$db->countryNames[(int) $change->sourceId]->languageId
+            : self::rowId($change->row, ObjectCountryName::languageId);
+        $localeId = isset(Hilos::$db->countryNames[(int) $change->sourceId])
+            ? Hilos::$db->countryNames[(int) $change->sourceId]->localeId
+            : self::rowId($change->row, ObjectCountryName::localeId);
         if ($countryId === null || $localeId !== null || $languageId === null || $languageId !== $this->defaultLanguageId()) {
             return [];
         }
@@ -537,10 +546,10 @@ abstract class AbstractHilosI18nNamesTable extends TableDefinition implements Wi
         $overrides = $this->overrideNames($subjectId, $languageId);
         $corrections = [];
         foreach (Hilos::$db->locales->whereColumnIs(ObjectLocale::languageId, $languageId) as $locale) {
-            $country = $locale->countryId === null ? null : Hilos::$db->countries[$locale->countryId];
-            if ($country === null) {
+            if ($locale->countryId === null || !isset(Hilos::$db->countries[$locale->countryId])) {
                 continue;
             }
+            $country = Hilos::$db->countries[$locale->countryId];
 
             $override = $overrides[$locale->id] ?? null;
             $corrections[] = [
@@ -588,6 +597,10 @@ abstract class AbstractHilosI18nNamesTable extends TableDefinition implements Wi
      */
     private function defaultLanguageId(): ?int
     {
-        return Hilos::$db->languages[DefaultLanguage::code()]?->id;
+        if (!isset(Hilos::$db->languages[DefaultLanguage::code()])) {
+            return null;
+        }
+
+        return Hilos::$db->languages[DefaultLanguage::code()]->id;
     }
 }

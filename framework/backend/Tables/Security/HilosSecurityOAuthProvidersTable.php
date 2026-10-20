@@ -269,7 +269,9 @@ class HilosSecurityOAuthProvidersTable extends TableDefinition implements SelfSn
             return null;
         }
 
-        return Hilos::$db->oauthProviders[(int) $change->sourceId]?->providerKey;
+        return isset(Hilos::$db->oauthProviders[(int) $change->sourceId])
+            ? Hilos::$db->oauthProviders[(int) $change->sourceId]->providerKey
+            : null;
     }
 
     /**

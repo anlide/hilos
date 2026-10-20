@@ -139,10 +139,10 @@ final class HilosI18nLanguagesTable extends TableDefinition implements MultiRowV
             return $this->mutation(TableMutationType::Delete, (string) $change->sourceId);
         }
 
-        $language = Hilos::$db->languages[(int) $change->sourceId];
-        if ($language === null) {
+        if (!isset(Hilos::$db->languages[(int) $change->sourceId])) {
             return null;
         }
+        $language = Hilos::$db->languages[(int) $change->sourceId];
 
         return $this->mutation(
             $change->mutationType,
@@ -189,9 +189,9 @@ final class HilosI18nLanguagesTable extends TableDefinition implements MultiRowV
         }
 
         $source = $change->mutationType === TableMutationType::Delete ? null : match ($change->sourceKey) {
-            HilosDbContext::locales => Hilos::$db->locales[(int) $change->sourceId],
-            HilosDbContext::countryNames => Hilos::$db->countryNames[(int) $change->sourceId],
-            HilosDbContext::languageNames => Hilos::$db->languageNames[(int) $change->sourceId],
+            HilosDbContext::locales => Hilos::$db->locales[(int) $change->sourceId] ?? null,
+            HilosDbContext::countryNames => Hilos::$db->countryNames[(int) $change->sourceId] ?? null,
+            HilosDbContext::languageNames => Hilos::$db->languageNames[(int) $change->sourceId] ?? null,
         };
         $languageIds = [];
         foreach ([$source?->toArray() ?? [], $change->row, $change->previous] as $row) {
@@ -205,8 +205,8 @@ final class HilosI18nLanguagesTable extends TableDefinition implements MultiRowV
 
         $mutations = [];
         foreach (array_keys($languageIds) as $languageId) {
-            $language = Hilos::$db->languages[$languageId];
-            if ($language !== null) {
+            if (isset(Hilos::$db->languages[$languageId])) {
+                $language = Hilos::$db->languages[$languageId];
                 $mutations[] = $this->mutation(
                     TableMutationType::Update,
                     (string) $language->id,
@@ -282,10 +282,10 @@ final class HilosI18nLanguagesTable extends TableDefinition implements MultiRowV
         if ($id === false || (string) $id !== (string) $rowKey) {
             return false;
         }
-        $language = Hilos::$db->languages[$id];
-        if ($language === null) {
+        if (!isset(Hilos::$db->languages[$id])) {
             return false;
         }
+        $language = Hilos::$db->languages[$id];
 
         return $this->containsRowInMemory(
             [$this->rowForLanguage($language, DefaultLanguage::code())->toArray()],

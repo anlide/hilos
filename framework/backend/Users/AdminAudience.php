@@ -56,7 +56,7 @@ class AdminAudience
 
         $userIds = [];
         foreach (Hilos::$db->users->listAll() as $user) {
-            if ($user->id !== null && $user->admin === true && $user->block !== true && Hilos::$db->userMerges[$user->id] === null) {
+            if ($user->id !== null && $user->admin === true && $user->block !== true && !isset(Hilos::$db->userMerges[$user->id])) {
                 $userIds[] = $user->id;
             }
         }

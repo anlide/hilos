@@ -308,7 +308,7 @@ abstract class AbstractDataExportAgent extends AbstractAgent
         $person = $connection->userId;
         if ($person === null) {
             $person = Hilos::$db->sessions->findByToken($connection->sessionToken)?->blockedUserId;
-            if ($person === null || Hilos::$db->users[$person]?->block !== true) {
+            if ($person === null || !isset(Hilos::$db->users[$person]) || Hilos::$db->users[$person]->block !== true) {
                 throw new ValidationException(DataExportMessages::NOBODY);
             }
         }

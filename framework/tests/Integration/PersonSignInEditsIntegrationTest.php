@@ -268,6 +268,57 @@ final class PersonSignInEditsIntegrationTest extends HilosSessionIntegrationTest
     }
 
     /**
+     * @throws HilosException When the fixture person or one of the identity asks cannot be handled
+     */
+    public function testAMissingIdentityRefusesAPasswordWriteButAllowsVerificationAndUnlink(): void
+    {
+        $userId = self::seedPerson();
+        self::assertArrayNotHasKey(9999, Hilos::$db->identities);
+
+        $password = $this->carry(HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE, new UserPasswordChangeSignalData(
+            userId: $userId,
+            identityId: 9999,
+            passwordHash: ObjectIdentity::hashPassword(self::NEW_PASSWORD),
+            signOutOthers: false,
+            flowOpen: false,
+            keepSessionId: 0,
+            replySignal: HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE_DONE,
+            acceptKey: self::ACCEPT_KEY,
+            requestId: 'missing-password',
+            action: HilosSignalConstants::PROFILE_CHANGE_PASSWORD,
+            successMessage: null,
+        ));
+        self::assertInstanceOf(UserPasswordChangeDoneSignalData::class, $password);
+        self::assertSame(AuthMessages::NO_PASSWORD, $password->error);
+        self::assertSame([], $this->announcedTypes($userId));
+
+        $verification = $this->carry(HilosSignalConstants::HILOS_USER_ADDRESS_VERIFY, new UserAddressVerifySignalData(
+            $userId,
+            9999,
+            HilosSignalConstants::HILOS_USER_ADDRESS_VERIFY_DONE,
+            self::ACCEPT_KEY,
+            'missing-verification',
+            HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK,
+            null,
+        ));
+        self::assertInstanceOf(UserAddressVerifyDoneSignalData::class, $verification);
+        self::assertNull($verification->error);
+
+        $unlink = $this->carry(HilosSignalConstants::HILOS_USER_IDENTITY_UNLINK, new UserIdentityUnlinkSignalData(
+            $userId,
+            9999,
+            HilosSignalConstants::HILOS_USER_IDENTITY_UNLINK_DONE,
+            self::ACCEPT_KEY,
+            'missing-unlink',
+            HilosSignalConstants::PROFILE_UNLINK_IDENTITY,
+            null,
+        ));
+        self::assertInstanceOf(UserIdentityUnlinkDoneSignalData::class, $unlink);
+        self::assertNull($unlink->error);
+        self::assertSame([], self::waysInOf($userId));
+    }
+
+    /**
      * The counter the library checked is checked again where it is written, so the second of two
      * assertions carrying the same counter - what a cloned key sends - is refused (HIL-1405).
      *

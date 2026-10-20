@@ -31,6 +31,8 @@ use Hilos\Users\DTO\UserSecondFactorProveDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveSignalData;
 use Hilos\Users\DTO\UserSecondFactorRemoveDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorRemoveSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetCancelDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetCancelSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetDueDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetDueSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetRemindDoneSignalData;
@@ -299,6 +301,47 @@ final class SecondFactorPersonEditsIntegrationTest extends HilosSessionIntegrati
         self::assertTrue($marked->marked);
 
         self::assertFalse($this->remind($userId, (int)$reset->id, $staleBefore)->marked, 'The frame sent again marks nothing');
+    }
+
+    /**
+     * @throws HilosException When a fixture row cannot be written or a frame fails
+     */
+    public function testMissingRemovalsAreAnsweredWithoutChangingTheFactor(): void
+    {
+        $userId = self::seedPerson();
+        self::seedApp($userId, self::SECRET_BYTES);
+        self::assertArrayNotHasKey(9999, Hilos::$db->secondFactorResets);
+
+        foreach ([9999, null] as $resetId) {
+            $ask = new UserSecondFactorResetCancelSignalData(
+                userId: $userId,
+                resetId: $resetId,
+                replySignal: HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL_DONE,
+                acceptKey: self::ACCEPT_KEY,
+                requestId: 'missing-reset',
+                action: HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_CANCEL,
+                successMessage: null,
+            );
+            $canceled = $this->carry(
+                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL,
+                $ask,
+                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL_DONE,
+            );
+            self::assertInstanceOf(UserSecondFactorResetCancelDoneSignalData::class, $canceled);
+            self::assertSame($ask, $canceled->ask);
+            self::assertFalse($canceled->canceled);
+            self::assertNull($canceled->error);
+        }
+
+        $due = $this->carryOut($userId, 9999);
+        self::assertFalse($due->carriedOut);
+        self::assertNull($due->error);
+
+        $reminded = $this->remind($userId, 9999, self::FUTURE);
+        self::assertFalse($reminded->marked);
+        self::assertNull($reminded->error);
+        self::assertCount(1, Hilos::$db->secondFactors->confirmedOf($userId));
+        self::assertArrayNotHasKey($userId, Hilos::$db->secondFactorSettings);
     }
 
     /**

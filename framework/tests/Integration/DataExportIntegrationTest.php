@@ -288,6 +288,21 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         }
     }
 
+    /** A person without a photo still receives a complete archive with a null photo section. */
+    public function testProfilePhotoSectionIsNullWithoutAPhotoRow(): void
+    {
+        DataExportPhotoTestHilos::initBrowser();
+        self::assertArrayNotHasKey(7, Hilos::$db->userPhotos);
+        $order = Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
+        $agent = new DataExportTestAgent();
+        $agent->onStart();
+        $agent->onTick();
+
+        self::assertSame(DataExportState::READY, $order->state);
+        $archive = new PharData($this->directory . '/' . $order->storedName);
+        self::assertNull(self::section($archive, 'profile_photo'));
+    }
+
     /** A restored photo row with no original file cannot make the whole copy fail. */
     public function testProfilePhotoSectionIsNullWhenOriginalIsMissing(): void
     {

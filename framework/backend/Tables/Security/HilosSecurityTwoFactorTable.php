@@ -213,6 +213,6 @@ class HilosSecurityTwoFactorTable extends TableDefinition implements SelfSnapsho
             return null;
         }
 
-        return Hilos::$db->settings[(int) $sourceId]?->key;
+        return isset(Hilos::$db->settings[(int) $sourceId]) ? Hilos::$db->settings[(int) $sourceId]->key : null;
     }
 }

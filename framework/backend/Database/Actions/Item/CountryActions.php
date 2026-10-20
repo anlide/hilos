@@ -48,8 +48,8 @@ class CountryActions extends DbActions
             throw new ValidationException('Country currency code must have three uppercase letters');
         }
         if ($defaultLocaleId !== null) {
-            $locale = Hilos::$db->locales[$defaultLocaleId];
-            if ($locale === null || $locale->countryId !== $this->object->id) {
+            if (!isset(Hilos::$db->locales[$defaultLocaleId])
+                || Hilos::$db->locales[$defaultLocaleId]->countryId !== $this->object->id) {
                 throw new ValidationException('Country default locale must belong to this country');
             }
         }

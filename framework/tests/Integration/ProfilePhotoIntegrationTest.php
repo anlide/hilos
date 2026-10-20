@@ -259,6 +259,34 @@ final class ProfilePhotoIntegrationTest extends ProfileIntegrationTestCase
     }
 
     /**
+     * @throws HilosException When the file cannot be seeded or a frame fails
+     */
+    public function testAMissingFileOrOwnerFailsPublicationWithoutAskingThePerson(): void
+    {
+        $this->seedFile(self::SECOND_FILE_ID);
+        Database::sqlRun('UPDATE `hilos_file` SET `owner_user_id` = NULL WHERE `id` = ?', [self::SECOND_FILE_ID]);
+        self::assertArrayNotHasKey(self::FIRST_FILE_ID, Hilos::$db->files);
+        self::assertArrayHasKey(self::SECOND_FILE_ID, Hilos::$db->files);
+        self::assertNull(Hilos::$db->files[self::SECOND_FILE_ID]->ownerUserId);
+        $this->drainSignals();
+
+        foreach ([self::FIRST_FILE_ID, self::SECOND_FILE_ID] as $fileId) {
+            $this->deliverPublished('unowned-photo', $fileId);
+
+            self::assertArrayNotHasKey(self::USER_ID, Hilos::$db->userPhotos);
+            $errors = $this->signalsNamed(SignalConstants::ACTION_ERROR);
+            self::assertCount(1, $errors);
+            self::assertInstanceOf(WebSocketSignalData::class, $errors[0]->data);
+            self::assertInstanceOf(PageActionErrorSignalData::class, $errors[0]->data->data);
+            self::assertSame(HilosSignalConstants::PROFILE_PHOTO_SET, $errors[0]->data->data->action);
+            self::assertSame('Cannot keep the file', $errors[0]->data->data->reason);
+            self::assertSame([], $this->signalsNamed(HilosSignalConstants::HILOS_USER_PHOTO_PUT));
+            self::assertSame([], $this->signalsNamed(HilosSignalConstants::HILOS_FILE_BIND));
+            self::assertSame([], $this->signalsNamed(HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE));
+        }
+    }
+
+    /**
      * A removal already asked, then a new photo, leaves the new file on the row.
      *
      * @throws HilosException When a file cannot be seeded or a frame fails

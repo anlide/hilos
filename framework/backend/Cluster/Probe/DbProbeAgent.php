@@ -142,8 +142,7 @@ final class DbProbeAgent extends AbstractAgent
 
         try {
             $settings = Hilos::$db->settings;
-            $existing = $settings[$key];
-            if ($existing === null) {
+            if (!isset($settings[$key])) {
                 $settings->actions->addOrphan(
                     $key,
                     SettingsCatalogConstants::TYPE_STRING,
@@ -151,7 +150,7 @@ final class DbProbeAgent extends AbstractAgent
                     Hilos::$setting?->catalog() ?? [],
                 );
             } else {
-                $existing->actions->updateValue($value);
+                $settings[$key]->actions->updateValue($value);
             }
             Database::sql('SELECT @@hostname AS member');
             $member = Database::field('member');
@@ -187,7 +186,7 @@ final class DbProbeAgent extends AbstractAgent
         }
 
         try {
-            $setting = Hilos::$db->settings[$key];
+            $value = isset(Hilos::$db->settings[$key]) ? Hilos::$db->settings[$key]->value : null;
         // read-refusal-swallowed: this probe answers its caller with whatever failed, the refusal included
         } catch (HilosException $e) {
             return CommandReplyDTO::error($request->correlationId, $e->getMessage());
@@ -195,7 +194,7 @@ final class DbProbeAgent extends AbstractAgent
 
         return CommandReplyDTO::ok($request->correlationId, [
             CommandConstants::FIELD_SETTING_KEY => $key,
-            CommandConstants::FIELD_SETTING_VALUE => $setting?->value,
+            CommandConstants::FIELD_SETTING_VALUE => $value,
         ]);
     }
 

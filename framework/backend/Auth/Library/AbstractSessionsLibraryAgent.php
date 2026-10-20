@@ -2345,7 +2345,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             // blocked account is not the blocked person, and a blocked administrator taking over
             // somebody else is.
             $atKeyboard = $session->userAtKeyboard();
-            if ($atKeyboard !== null && Hilos::$db->users[$atKeyboard]?->block === true) {
+            if ($atKeyboard !== null && isset(Hilos::$db->users[$atKeyboard]) && Hilos::$db->users[$atKeyboard]->block === true) {
                 $session->actions->holdBlockedNotice($atKeyboard, true);
                 $this->logAgentInfo('account_block_enforced ' . json_encode([
                     'event' => 'account_block_enforced',
@@ -2356,7 +2356,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 $resolved->session->actions->touch();
 
                 return $resolved;
-            } elseif ($session->blockedUserId !== null && Hilos::$db->users[$session->blockedUserId]?->block !== true) {
+            } elseif (
+                $session->blockedUserId !== null
+                && (!isset(Hilos::$db->users[$session->blockedUserId]) || Hilos::$db->users[$session->blockedUserId]->block !== true)
+            ) {
                 // The account was unblocked while this browser was away (HIL-1188). A handshake gives it
                 // back to its person the way the unblock frame would have: in at once, or through the
                 // second-factor step. An operator names the session to bind its own person right after,
@@ -5404,7 +5407,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         if ($target === null) {
             throw new ValidationException("No such user: {$targetUserId}");
         }
-        if (Hilos::$db->userMerges[$targetUserId] !== null) {
+        if (isset(Hilos::$db->userMerges[$targetUserId])) {
             throw new ValidationException(self::MERGED_ACCOUNT_REFUSED_MESSAGE);
         }
 
@@ -5839,7 +5842,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return 0;
         }
 
-        if (Hilos::$db->users[$userId]?->block !== true) {
+        if (!isset(Hilos::$db->users[$userId]) || Hilos::$db->users[$userId]->block !== true) {
             $returned = [];
             $secondFactor = [];
             $lowered = [];
@@ -5947,10 +5950,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      */
     protected function assertMergeable(int $survivorUserId, int $loserUserId): void
     {
-        if (Hilos::$db->users[$survivorUserId] === null) {
+        if (!isset(Hilos::$db->users[$survivorUserId])) {
             throw new ValidationException("No such user: {$survivorUserId}");
         }
-        if (Hilos::$db->userMerges[$survivorUserId] !== null) {
+        if (isset(Hilos::$db->userMerges[$survivorUserId])) {
             throw new ValidationException(sprintf(
                 self::ACCOUNT_MERGE_SURVIVOR_MERGED_MESSAGE,
                 $this->mergeRefusalAccountLabel($survivorUserId),
@@ -5958,10 +5961,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             ));
         }
 
-        if (Hilos::$db->users[$loserUserId] === null) {
+        if (!isset(Hilos::$db->users[$loserUserId])) {
             throw new ValidationException("No such user: {$loserUserId}");
         }
-        if (Hilos::$db->userMerges[$loserUserId] !== null) {
+        if (isset(Hilos::$db->userMerges[$loserUserId])) {
             throw new ValidationException(sprintf(
                 self::ACCOUNT_MERGE_ALREADY_MERGED_MESSAGE,
                 $this->mergeRefusalAccountLabel($loserUserId),
@@ -5979,7 +5982,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      */
     private function mergeRefusalAccountLabel(int $userId): string
     {
-        $name = Hilos::$db->users[$userId]?->name;
+        $name = isset(Hilos::$db->users[$userId]) ? Hilos::$db->users[$userId]->name : null;
         $number = '#' . $userId;
         if ($name === null || $name === '') {
             return $number;
@@ -6325,7 +6328,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // Chat reads rename rows while deleting its feed events. Rows where this account
         // was only the author remain; the database clears their author reference (HIL-1195).
         Hilos::$db->userRenames->actions->deleteByUser($userId);
-        Hilos::$db->users[$userId]?->actions->delete();
+        if (isset(Hilos::$db->users[$userId])) {
+            Hilos::$db->users[$userId]->actions->delete();
+        }
 
         return $erasure;
     }
@@ -6694,7 +6699,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         ?string $action,
         ?string $provenBy = null,
     ): bool {
-        if (!$this->enforcesAccountBlock() || Hilos::$db->users[$userId]?->block !== true) {
+        if (!$this->enforcesAccountBlock() || !isset(Hilos::$db->users[$userId]) || Hilos::$db->users[$userId]->block !== true) {
             return false;
         }
 
@@ -7714,14 +7719,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      */
     private function reissueOAuthSignIn(HilosOAuthTrip $trip, ?int $sessionId, string $acceptKey): void
     {
-        $session = $sessionId === null ? null : Hilos::$db->sessions[$sessionId];
-        $userId = $session?->userId;
-        if ($session === null || $userId === null) {
+        if ($sessionId === null || !isset(Hilos::$db->sessions[$sessionId]) || Hilos::$db->sessions[$sessionId]->userId === null) {
             $this->sendOAuthLoginFailed($trip, $acceptKey);
 
             return;
         }
 
+        $session = Hilos::$db->sessions[$sessionId];
+        $userId = $session->userId;
         $this->publishSessionState(new SessionStateSignalData(
             sessionToken: $session->token,
             sessionId: $session->id,

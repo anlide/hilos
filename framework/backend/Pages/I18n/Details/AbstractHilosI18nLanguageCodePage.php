@@ -33,7 +33,7 @@ abstract class AbstractHilosI18nLanguageCodePage extends AbstractHilosPage
     final protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {
         $address = HilosI18nLanguagePageSubscribeParams::fromPageRouteParams($params);
-        if (Hilos::$db->languages[$address->languageCode] === null) {
+        if (!isset(Hilos::$db->languages[$address->languageCode])) {
             throw new PageResourceNotFoundException('Unknown language: ' . $address->languageCode);
         }
     }

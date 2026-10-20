@@ -7,9 +7,13 @@ namespace Hilos\Tests\Integration;
 use Hilos\Backup\Anonymization\AnonymizationCoverageValidator;
 use Hilos\Backup\Anonymization\LiveSchemaReader;
 use Hilos\Backup\Anonymization\PiiRegistry;
+use Hilos\Constants\CliCommands;
+use Hilos\Constants\CommandConstants;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\SourceChangeProvenance;
@@ -31,7 +35,11 @@ use Hilos\Database\View\Item\Locale;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
+use Hilos\I18n\I18nTestCommandConstants;
+use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 
 /**
  * The reflow's write doors against the live framework schema (HIL-1472): what each takes in
@@ -101,6 +109,90 @@ final class I18nCatalogTakeInIntegrationTest extends FrameworkIntegrationTestCas
             putenv(EnvConstants::HILOS_DEFAULT_LANGUAGE->name . '=' . $this->previousDefaultLanguage);
         }
         parent::tearDown();
+    }
+
+    /** @throws HilosException When default language provision or name cleanup fails */
+    public function testStartupImportsNamesOnlyForALanguageCreatedOnThatStart(): void
+    {
+        Hilos::$db->countries->actions->create('gb', '£', 'GBP');
+        Hilos::$db->i18nReflows->actions->record(BuiltInI18nCatalog::fingerprint());
+        $agent = new I18nLibraryAgent();
+
+        $agent->onStart();
+
+        $this->assertArrayHasKey('es', Hilos::$db->languages);
+        $this->assertTrue(Hilos::$db->languages['es']->enabled);
+        $this->assertArrayHasKey('es', Hilos::$db->locales);
+        $this->assertTrue(Hilos::$db->locales['es']->enabled);
+        $base = Hilos::$db->countryNames->findBase(Hilos::$db->countries['gb']->id, Hilos::$db->languages['es']->id);
+        $this->assertNotNull($base);
+        $this->assertSame(BuiltInI18nCatalog::countryName('gb', 'es'), $base->name);
+        $base->actions->delete();
+        $before = $this->changes->count;
+
+        $agent->onStart();
+
+        $this->assertSame($before, $this->changes->count, 'An existing default does not import names again');
+        $this->assertNull(Hilos::$db->countryNames->findBase(Hilos::$db->countries['gb']->id, Hilos::$db->languages['es']->id));
+    }
+
+    /** @throws HilosException When fixture preparation or cleanup fails */
+    public function testCountryNamesCleanupContinuesPastMissingCountryLanguageAndLocale(): void
+    {
+        Hilos::$db->countries->actions->takeFromCatalog();
+        $this->assertTrue($this->command(CliCommands::I18N_TEST_COUNTRY_NAMES_SEED)->isOk());
+        $this->assertArrayNotHasKey('en', Hilos::$db->languages);
+        Hilos::$db->countryNames->findBase(Hilos::$db->countries['qj']->id, Hilos::$db->languages['qk']->id)->actions->delete();
+        Hilos::$db->countries['qj']->actions->delete();
+        Hilos::$db->locales['qk-GB']->actions->delete();
+
+        $this->assertTrue($this->command(CliCommands::I18N_TEST_COUNTRY_NAMES_CLEAR)->isOk());
+
+        $this->assertArrayNotHasKey('qj', Hilos::$db->countries);
+        $this->assertArrayNotHasKey('qk', Hilos::$db->languages);
+        foreach (['qk-GB', 'qk-US', 'qk-FR'] as $code) {
+            $this->assertArrayNotHasKey($code, Hilos::$db->locales);
+        }
+        $this->assertArrayHasKey('gb', Hilos::$db->countries);
+        $before = $this->changes->count;
+        $this->assertTrue($this->command(CliCommands::I18N_TEST_COUNTRY_NAMES_CLEAR)->isOk());
+        $this->assertSame($before, $this->changes->count, 'Repeated cleanup writes nothing');
+    }
+
+    /** @throws HilosException When fixture preparation or cleanup fails */
+    public function testLanguageNamesCleanupStillSwitchesOffAndDeletesTheRemainingLocale(): void
+    {
+        Hilos::$db->countries->actions->takeFromCatalog();
+        $this->assertTrue($this->command(CliCommands::I18N_TEST_LANGUAGE_NAMES_SEED)->isOk());
+        Hilos::$db->languageNames->findBase(Hilos::$db->languages['qv']->id, Hilos::$db->languages['qw']->id)->actions->delete();
+        Hilos::$db->locales['qv-GB']->actions->delete();
+        Hilos::$db->languages['qv']->actions->delete();
+        Hilos::$db->locales['qw-US']->actions->delete();
+        Hilos::$db->locales['qw-GB']->actions->switchOn();
+
+        $this->assertTrue($this->command(CliCommands::I18N_TEST_LANGUAGE_NAMES_CLEAR)->isOk());
+
+        $this->assertArrayNotHasKey('qv', Hilos::$db->languages);
+        $this->assertArrayNotHasKey('qw', Hilos::$db->languages);
+        foreach (['qv-GB', 'qw-GB', 'qw-US'] as $code) {
+            $this->assertArrayNotHasKey($code, Hilos::$db->locales);
+        }
+        $this->assertArrayHasKey('gb', Hilos::$db->countries);
+        $before = $this->changes->count;
+        $this->assertTrue($this->command(CliCommands::I18N_TEST_LANGUAGE_NAMES_CLEAR)->isOk());
+        $this->assertSame($before, $this->changes->count, 'Repeated cleanup writes nothing');
+    }
+
+    /** @throws HilosException When the command cannot be answered */
+    public function testLocaleOnAnswersMissingLanguageWithTheExistingCommandError(): void
+    {
+        $reply = $this->command(CliCommands::I18N_TEST_LOCALE_ON, 'en');
+
+        $this->assertFalse($reply->isOk());
+        $this->assertSame("Language 'en' does not exist", $reply->payload[CommandConstants::FIELD_MESSAGE]);
+        $this->assertArrayNotHasKey('en', Hilos::$db->languages);
+        $this->assertArrayNotHasKey('en', Hilos::$db->locales);
+        $this->assertSame(0, $this->changes->count);
     }
 
     /** @throws HilosException When a database or action fails unexpectedly */
@@ -289,6 +381,36 @@ final class I18nCatalogTakeInIntegrationTest extends FrameworkIntegrationTestCas
             [EntityI18nReflow::id, EntityI18nReflow::fingerprint],
             $registry->notPersonalColumns($index, EntityI18nReflow::_table),
         );
+    }
+
+    /**
+     * @param string $command Library fixture command
+     * @param ?string $code Optional fixture code
+     * @return CommandReplyDTO The command's single correlated reply
+     * @throws HilosException When the command cannot be answered
+     */
+    private function command(string $command, ?string $code = null): CommandReplyDTO
+    {
+        $previousRouter = Hilos::$sr;
+        Hilos::$sr = new SignalRouter();
+        Hilos::$sr->dbSyncBroadcastEnabled = false;
+        try {
+            new I18nLibraryAgent()->onSignalCommand(
+                new CommandRequestDTO('i18n-optional-read', $command, $code === null ? [] : [I18nTestCommandConstants::FIELD_CODE => $code]),
+                'cli',
+                $command,
+            );
+            $signal = Hilos::$sr->getNextQueuedSignal();
+            $this->assertNotNull($signal);
+            $this->assertSame(SignalTypeConstants::COMMAND_REPLY, $signal->signalType->getType());
+            $this->assertInstanceOf(CommandReplyDTO::class, $signal->data);
+            $this->assertSame('i18n-optional-read', $signal->data->correlationId);
+            $this->assertNull(Hilos::$sr->getNextQueuedSignal(), 'A fixture command replies exactly once');
+
+            return $signal->data;
+        } finally {
+            Hilos::$sr = $previousRouter;
+        }
     }
 
     /**

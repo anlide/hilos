@@ -157,13 +157,13 @@ final class ProfilePhotoCommands extends AbstractLibraryCommands
         }
 
         $fileId = $answer->fileIds[0];
-        $file = Hilos::$db->files[$fileId];
-        if ($file?->ownerUserId === null) {
+        if (!isset(Hilos::$db->files[$fileId]) || Hilos::$db->files[$fileId]->ownerUserId === null) {
             $this->failSet($answer->acceptKey, self::PUBLISH_FAILED);
 
             return;
         }
 
+        $file = Hilos::$db->files[$fileId];
         try {
             AddressablePerson::require($file->ownerUserId);
         } catch (ValidationException $e) {

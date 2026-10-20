@@ -46,11 +46,11 @@ class Countries extends DbCollection
      */
     public function cardSummary(int $countryId): CountryCardSummary
     {
-        $country = $this[$countryId];
-        if ($country === null) {
+        if (!isset($this[$countryId])) {
             throw new InvalidArgumentException("Country {$countryId} does not exist");
         }
 
+        $country = $this[$countryId];
         $locales = $country->locales;
         $defaultLocale = $country->defaultLocale;
         $choices = array_values($locales->map(static fn (Locale $locale): CountryLocaleChoice => new CountryLocaleChoice(
@@ -85,7 +85,9 @@ class Countries extends DbCollection
      */
     public function nameInDefaultLanguage(int $countryId): ?string
     {
-        $defaultLanguageId = Hilos::$db->languages[DefaultLanguage::code()]?->id;
+        $defaultLanguageId = isset(Hilos::$db->languages[DefaultLanguage::code()])
+            ? Hilos::$db->languages[DefaultLanguage::code()]->id
+            : null;
         $name = $defaultLanguageId === null ? null : Hilos::$db->countryNames->findBase($countryId, $defaultLanguageId)?->name;
 
         return $name === '' ? null : $name;
@@ -100,7 +102,15 @@ class Countries extends DbCollection
      */
     public function offsetExists(mixed $offset): bool
     {
-        return $this->offsetGet($offset) !== null;
+        if (is_string($offset)) {
+            $object = $this->objectCollection->findByCode($offset);
+            return $this->getItemForKey($object?->id) !== null;
+        }
+        if (!is_int($offset)) {
+            return false;
+        }
+
+        return $this->getItemForKey($offset) !== null;
     }
 
     /**

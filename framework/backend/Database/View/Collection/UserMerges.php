@@ -70,10 +70,10 @@ class UserMerges extends DbCollection
         $current = $userId;
         while (!isset($visited[$current])) {
             $visited[$current] = true;
-            $merge = $this[$current];
-            if ($merge === null) {
+            if (!isset($this[$current])) {
                 return $current === $userId ? null : $current;
             }
+            $merge = $this[$current];
             $current = $merge->survivorUserId;
             if ($current === null) {
                 return null;

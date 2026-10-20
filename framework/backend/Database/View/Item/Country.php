@@ -54,7 +54,7 @@ class Country extends DbItem
             ObjectCountry::defaultLocaleId => $this->_object->defaultLocaleId,
             ObjectCountry::enabled => $this->_object->enabled,
             HilosDbContext::locales => Hilos::$db->locales->forCountryId($this->_object->id),
-            self::defaultLocale => Hilos::$db->locales[$this->_object->defaultLocaleId],
+            self::defaultLocale => Hilos::$db->locales[$this->_object->defaultLocaleId] ?? null,
             default => parent::__get($name),
         };
     }

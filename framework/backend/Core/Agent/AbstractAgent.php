@@ -641,7 +641,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
 
         $impersonatorId = $session->impersonatorUserId;
         $impersonator = $impersonatorId !== null ? (Hilos::$db->users[$impersonatorId] ?? null) : null;
-        $photo = Hilos::hasFeature(HilosFeature::PROFILE_PHOTO) ? Hilos::$db->userPhotos[$userId] : null;
+        $photo = Hilos::hasFeature(HilosFeature::PROFILE_PHOTO) ? (Hilos::$db->userPhotos[$userId] ?? null) : null;
 
         return new HandshakeResponseSignalData(
             selfId: (int)$user->id,

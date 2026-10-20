@@ -49,8 +49,8 @@ class LanguageNamesActions extends DbActions
     {
         $languageId = $language->id;
         $inLanguageId = $inLanguage->id;
-        if ($languageId === null || Hilos::$db->languages[$languageId] === null
-            || $inLanguageId === null || Hilos::$db->languages[$inLanguageId] === null) {
+        if ($languageId === null || !isset(Hilos::$db->languages[$languageId])
+            || $inLanguageId === null || !isset(Hilos::$db->languages[$inLanguageId])) {
             throw new ValidationException('Name references must exist');
         }
         $this->ensureCanCreateInSet((string)$languageId);
@@ -58,7 +58,7 @@ class LanguageNamesActions extends DbActions
             throw new ValidationException('Name exceeds its column width');
         }
         if ($locale !== null) {
-            if ($locale->id === null || Hilos::$db->locales[$locale->id] === null
+            if ($locale->id === null || !isset(Hilos::$db->locales[$locale->id])
                 || $locale->languageId !== $inLanguageId
                 || $this->collection->findBase($languageId, $inLanguageId) === null) {
                 throw new ValidationException('Override needs its base and a locale of the writing language');

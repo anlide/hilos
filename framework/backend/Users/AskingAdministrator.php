@@ -72,7 +72,8 @@ final class AskingAdministrator
             throw new ValidationException('User session not found');
         }
         if (
-            Hilos::$db->sessions[$connection->sessionId]?->impersonatorUserId !== null
+            (isset(Hilos::$db->sessions[$connection->sessionId])
+                && Hilos::$db->sessions[$connection->sessionId]->impersonatorUserId !== null)
             || !in_array($connection->userId, Hilos::adminAudienceClass()::all(), true)
         ) {
             throw new ValidationException('Only an active administrator can do this');

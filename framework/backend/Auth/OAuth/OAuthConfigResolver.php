@@ -236,7 +236,10 @@ final class OAuthConfigResolver
     {
         $settingKey = OAuthSettingsCatalog::REDIRECT_URI_KEY;
         $stored = null;
-        if (Hilos::$setting !== null && Hilos::$db instanceof HilosDbContext && Hilos::$db->settings[$settingKey]?->value !== null) {
+        if (Hilos::$setting !== null
+            && Hilos::$db instanceof HilosDbContext
+            && isset(Hilos::$db->settings[$settingKey])
+            && Hilos::$db->settings[$settingKey]->value !== null) {
             $stored = Hilos::$setting[$settingKey]->string();
         }
 
@@ -286,7 +289,7 @@ final class OAuthConfigResolver
             return null;
         }
 
-        return Hilos::$db->oauthProviders[$providerKey];
+        return Hilos::$db->oauthProviders[$providerKey] ?? null;
     }
 
     /**

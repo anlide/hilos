@@ -36,6 +36,10 @@ final class Takeover
             return null;
         }
 
-        return Hilos::$db->sessions[$connection->sessionId]?->impersonatorUserId;
+        if (!isset(Hilos::$db->sessions[$connection->sessionId])) {
+            return null;
+        }
+
+        return Hilos::$db->sessions[$connection->sessionId]->impersonatorUserId;
     }
 }

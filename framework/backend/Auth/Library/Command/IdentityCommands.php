@@ -357,10 +357,10 @@ final class IdentityCommands extends AbstractLibraryCommands
             throw new ValidationException('cannot remove your only sign-in method');
         }
 
-        $identity = Hilos::$db->identities[$identityId];
-        if ($identity === null) {
+        if (!isset(Hilos::$db->identities[$identityId])) {
             return;
         }
+        $identity = Hilos::$db->identities[$identityId];
         if ($identity->userId !== $acting->userId) {
             throw new ValidationException('cannot unlink an identity you do not own');
         }

@@ -10,6 +10,10 @@ use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Object\Item\Setting as ObjectSetting;
 use Hilos\Database\Settings\SettingsAccessor;
+use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Database\Settings\SettingValue;
+use Hilos\Database\View\Collection\Settings;
+use Hilos\Database\View\Item\Setting;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Mail\Delivery\MailDeliveryChannel;
@@ -17,6 +21,7 @@ use Hilos\Notification\Delivery\AbstractDeliveryChannel;
 use Hilos\Notification\Delivery\DeliveryChannelSettings;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTableRow;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -75,6 +80,52 @@ final class HilosCommunicationsChannelsTableTest extends TestCase
         self::assertFalse($row->enabled);
         self::assertFalse($row->configured);
         self::assertSame(count($mail->configFields()), $row->missingFields);
+    }
+
+    /**
+     * @param bool $exists Whether a persisted enablement row exists
+     * @param ?string $value Persisted override, or null when cleared
+     * @param bool $enabled Expected channel state
+     */
+    #[DataProvider('enablementOverrides')]
+    public function testOnlyAPersistedOverrideReadsTheCatalog(bool $exists, ?string $value, bool $enabled): void
+    {
+        $mail = $this->createPartialMock(MailDeliveryChannel::class, ['configFields']);
+        $mail->method('configFields')->willReturn([]);
+        $key = $mail->enabledSettingKey();
+        $settings = $this->createMock(Settings::class);
+        $settings->expects(self::once())->method('offsetExists')->with($key)->willReturn($exists);
+        if ($exists) {
+            $setting = $this->createMock(Setting::class);
+            $setting->method('__get')->with(ObjectSetting::value)->willReturn($value);
+            $settings->expects(self::once())->method('offsetGet')->with($key)->willReturn($setting);
+        } else {
+            $settings->expects(self::never())->method('offsetGet');
+        }
+        Hilos::$db = $this->createMock(HilosDbContext::class);
+        Hilos::$db->method('__get')->with(HilosDbContext::settings)->willReturn($settings);
+        Hilos::$setting = $this->createMock(SettingsAccessor::class);
+        if ($value === null) {
+            Hilos::$setting->expects(self::never())->method('offsetGet');
+        } else {
+            Hilos::$setting->expects(self::once())->method('offsetGet')->with($key)->willReturn(new SettingValue($key));
+            Hilos::$setting->expects(self::once())->method('typeFor')->with($key)->willReturn(SettingsCatalogConstants::TYPE_BOOLEAN);
+            Hilos::$setting->expects(self::once())->method('effectiveValueFor')->with($key)->willReturn($value);
+        }
+
+        $row = $this->table($mail)->getFullSnapshot()->rows[0];
+
+        self::assertInstanceOf(HilosCommunicationsChannelsTableRow::class, $row);
+        self::assertSame($enabled, $row->enabled);
+    }
+
+    /** @return iterable<string, array{bool, ?string, bool}> Missing, cleared, disabled and enabled overrides */
+    public static function enablementOverrides(): iterable
+    {
+        yield 'missing row' => [false, null, false];
+        yield 'cleared override' => [true, null, false];
+        yield 'disabled override' => [true, '0', false];
+        yield 'enabled override' => [true, '1', true];
     }
 
     public function testBrowserRowRidesSingleChannelSlot(): void

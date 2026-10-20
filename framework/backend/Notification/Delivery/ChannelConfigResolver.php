@@ -85,7 +85,7 @@ final class ChannelConfigResolver
             return false;
         }
 
-        return Hilos::$db->settings[$settingKey]?->value !== null;
+        return isset(Hilos::$db->settings[$settingKey]) && Hilos::$db->settings[$settingKey]->value !== null;
     }
 
     /**

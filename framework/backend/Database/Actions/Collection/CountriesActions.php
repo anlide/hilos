@@ -33,7 +33,7 @@ class CountriesActions extends DbActions
         if (preg_match('/^[a-z]{2}$/', $code) !== 1) {
             throw new ValidationException('Country code must have two lowercase letters');
         }
-        if ($this->collection[$code] !== null) {
+        if (isset($this->collection[$code])) {
             throw new ValidationException("Country '{$code}' already exists.");
         }
         if (trim($currencySymbol) === '' || mb_strlen($currencySymbol) > 8) {
@@ -71,11 +71,11 @@ class CountriesActions extends DbActions
     public function takeFromCatalog(): void
     {
         foreach (BuiltInI18nCatalog::countries() as $definition) {
-            $country = $this->collection[$definition->code];
-            if ($country === null) {
+            if (!isset($this->collection[$definition->code])) {
                 $this->create($definition->code, $definition->currencySymbol, $definition->currencyCode);
                 continue;
             }
+            $country = $this->collection[$definition->code];
             if ($country->enabled
                 || ($country->currencySymbol === $definition->currencySymbol
                     && $country->currencyCode === $definition->currencyCode)) {

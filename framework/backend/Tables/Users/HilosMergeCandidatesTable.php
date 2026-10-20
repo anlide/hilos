@@ -136,7 +136,9 @@ final class HilosMergeCandidatesTable extends TableDefinition implements Viewpor
         }
         if ($change->sourceKey === HilosDbContext::secondFactors) {
             $userId = $change->row[ObjectSecondFactor::userId]
-                ?? Hilos::$db->secondFactors[(int)$change->sourceId]?->userId;
+                ?? (isset(Hilos::$db->secondFactors[(int)$change->sourceId])
+                    ? Hilos::$db->secondFactors[(int)$change->sourceId]->userId
+                    : null);
             if ($userId === null) {
                 return null;
             }
@@ -317,7 +319,7 @@ final class HilosMergeCandidatesTable extends TableDefinition implements Viewpor
     private function candidateRowForUserId(int $userId): ?HilosUserTableRow
     {
         $user = Hilos::$db->users[$userId] ?? null;
-        if ($user === null || Hilos::$db->userMerges[$userId] !== null) {
+        if ($user === null || isset(Hilos::$db->userMerges[$userId])) {
             return null;
         }
 
@@ -356,7 +358,7 @@ final class HilosMergeCandidatesTable extends TableDefinition implements Viewpor
      */
     private function identityOwnerUserId(int $identityId): int
     {
-        return (int) (Hilos::$db->identities[$identityId]?->userId ?? 0);
+        return (int) ((isset(Hilos::$db->identities[$identityId]) ? Hilos::$db->identities[$identityId]->userId : null) ?? 0);
     }
 
     /**

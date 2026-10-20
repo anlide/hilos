@@ -232,7 +232,7 @@ final class AccountStandingResolver
             return self::compose(false, null, null, false, null, [], [], $refusal);
         }
 
-        $merged = $db->userMerges[$userId] !== null;
+        $merged = isset($db->userMerges[$userId]);
         $mergedInto = $merged ? $db->userMerges->liveSurvivorOf($userId) : null;
         $deletion = $db->accountDeletions->liveOf($userId);
         $documents = self::documentsOf($db, $userId, $today);
@@ -240,7 +240,7 @@ final class AccountStandingResolver
         return self::compose(
             $merged,
             $mergedInto,
-            $mergedInto === null ? null : $db->users[$mergedInto]?->name,
+            $mergedInto !== null && isset($db->users[$mergedInto]) ? $db->users[$mergedInto]->name : null,
             ($db->users[$userId] ?? null)?->block === true,
             $deletion === null ? null : TimeHelper::sqlToMs($deletion->effectiveAt),
             self::inStanding($documents, LegalStanding::LAPSED),

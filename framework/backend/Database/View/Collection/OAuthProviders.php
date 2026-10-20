@@ -41,7 +41,14 @@ class OAuthProviders extends DbCollection
      */
     public function offsetExists(mixed $offset): bool
     {
-        return $this->offsetGet($offset) !== null;
+        if (is_string($offset)) {
+            return $this->findByProviderKey($offset) !== null;
+        }
+        if (!is_int($offset)) {
+            return false;
+        }
+
+        return $this->getItemForKey($offset) !== null;
     }
 
     /**

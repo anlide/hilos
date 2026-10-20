@@ -178,6 +178,6 @@ class HilosLegalSettingsTable extends TableDefinition implements SelfSnapshotTab
             return null;
         }
 
-        return Hilos::$db->settings[(int) $sourceId]?->key;
+        return isset(Hilos::$db->settings[(int) $sourceId]) ? Hilos::$db->settings[(int) $sourceId]->key : null;
     }
 }

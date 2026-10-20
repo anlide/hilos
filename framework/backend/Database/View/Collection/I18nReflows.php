@@ -35,6 +35,6 @@ class I18nReflows extends DbCollection
      */
     public function recordedFingerprint(): ?string
     {
-        return $this->offsetGet(EntityI18nReflow::ROW_ID)?->fingerprint;
+        return isset($this[EntityI18nReflow::ROW_ID]) ? $this[EntityI18nReflow::ROW_ID]->fingerprint : null;
     }
 }

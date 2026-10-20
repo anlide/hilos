@@ -1470,7 +1470,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         }
 
         try {
-            $known = Hilos::$db->users[$userId] !== null;
+            $known = isset(Hilos::$db->users[$userId]);
         } catch (WiringRefusal $refusal) {
             // Named apart, though answered the same way: the operator's terminal is parked on
             // the one reply, and a missing read of the people is a wiring fault, not their absence.
@@ -1712,7 +1712,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         if ($user->admin === true) {
             throw new ValidationException('Remove the admin rights first');
         }
-        if (Hilos::$db->userMerges[$userId] !== null) {
+        if (isset(Hilos::$db->userMerges[$userId])) {
             throw new ValidationException(AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE);
         }
     }
@@ -2180,7 +2180,11 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      */
     public function displayNameOf(int $userId): ?string
     {
-        $name = Hilos::$db->users[$userId]?->name;
+        if (!isset(Hilos::$db->users[$userId])) {
+            return null;
+        }
+
+        $name = Hilos::$db->users[$userId]->name;
 
         return $name === null || $name === '' ? null : $name;
     }
@@ -3414,7 +3418,10 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         $ask = $done->ask;
         if ($done->renameId !== null) {
             try {
-                $rename = Hilos::$db->userRenames[$done->renameId];
+                $rename = null;
+                if (isset(Hilos::$db->userRenames[$done->renameId])) {
+                    $rename = Hilos::$db->userRenames[$done->renameId];
+                }
             } catch (WiringRefusal $refusal) {
                 // Told apart and answered rather than raised: the rename stands, and somebody waits on it.
                 $this->logAgentError("Rename #{$done->renameId} cannot be read here: {$refusal->getMessage()}");

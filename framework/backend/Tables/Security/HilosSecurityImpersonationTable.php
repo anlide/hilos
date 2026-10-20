@@ -210,6 +210,6 @@ class HilosSecurityImpersonationTable extends TableDefinition implements SelfSna
             return null;
         }
 
-        return Hilos::$db->settings[(int) $sourceId]?->key;
+        return isset(Hilos::$db->settings[(int) $sourceId]) ? Hilos::$db->settings[(int) $sourceId]->key : null;
     }
 }

@@ -50,7 +50,7 @@ class CountryName extends DbItem
             ObjectCountryName::locked => $this->_object->locked,
             self::country => Hilos::$db->countries[$this->_object->countryId],
             self::language => Hilos::$db->languages[$this->_object->languageId],
-            self::locale => Hilos::$db->locales[$this->_object->localeId],
+            self::locale => Hilos::$db->locales[$this->_object->localeId] ?? null,
             default => parent::__get($name),
         };
     }

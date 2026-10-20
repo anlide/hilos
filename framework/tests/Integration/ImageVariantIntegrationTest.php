@@ -342,12 +342,19 @@ final class ImageVariantIntegrationTest extends FrameworkIntegrationTestCase
     public function testRemovedOriginalRowDiscardsTheRenderingAndAnswersNotFound(): void
     {
         $file = $this->publish();
-        $this->ask($file);
-        $result = $this->render($this->takeRender());
+        $first = $this->ask($file);
+        $second = $this->ask($file);
+        $this->enqueue($this->takeRender());
+        $this->enqueue($this->takeRender());
+        $result = $this->tick();
         $tmp = Hilos::$fs->getTmp()[$result->tmpIndex]->getPath();
         $file->actions->delete();
         $this->deliver($result);
-        self::assertSame(404, $this->reply()->status);
+        self::assertSame([$first->correlationId, $second->correlationId], array_map(
+            static fn(HttpReplyDTO $reply): string => $reply->correlationId, $this->library->replies));
+        self::assertSame([404, 404], array_map(
+            static fn(HttpReplyDTO $reply): int => $reply->status, $this->library->replies));
+        self::assertSame([], $this->library->warnings);
         self::assertFileDoesNotExist($tmp);
     }
 

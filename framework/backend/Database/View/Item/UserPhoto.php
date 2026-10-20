@@ -39,7 +39,7 @@ class UserPhoto extends DbItem
             ObjectUserPhoto::userId => $this->_object->userId,
             ObjectUserPhoto::fileId => $this->_object->fileId,
             ObjectUserPhoto::setAt => $this->_object->setAt,
-            self::file => Hilos::$db->files[$this->_object->fileId],
+            self::file => Hilos::$db->files[$this->_object->fileId] ?? null,
             self::photo => HilosFiles::downloadPath($this->_object->fileId, ProfilePhotoUploadTarget::VARIANT),
             default => parent::__get($name),
         };

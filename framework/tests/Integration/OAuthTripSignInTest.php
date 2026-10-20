@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\Library\Command\AuthMessages;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
+use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthTripOpenedSignalData;
 use Hilos\Auth\Session\DTO\OAuthResumeActionDTO;
 use Hilos\Auth\Session\DTO\OAuthResumeReplyDTO;
@@ -14,6 +16,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Database\Database;
@@ -29,6 +32,7 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\Item\HilosOAuthTrip as ViewHilosOAuthTrip;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * Integration tests for a provider sign-in that ends in a session, against the session table
@@ -176,6 +180,64 @@ final class OAuthTripSignInTest extends HilosSessionIntegrationTestCase
         $this->assertNotNull($frame->rotationTicket);
         $this->assertNotSame($first->rotationTicket, $frame->rotationTicket);
         $this->assertNotNull(Hilos::$rt?->hilosSessionRotations[(string)$frame->rotationTicket]);
+    }
+
+    /** @return array<string, array{bool, bool}> Whether the trip names a session and whether that row exists */
+    public static function unavailableSignIns(): array
+    {
+        return [
+            'no session id' => [false, false],
+            'missing session' => [true, false],
+            'session without a person' => [true, true],
+        ];
+    }
+
+    /**
+     * @param bool $hasSessionId Whether the completed trip recorded a session id
+     * @param bool $hasSession Whether that id still names an anonymous session
+     * @throws HilosException When the trip, session or presentation cannot be handled
+     */
+    #[DataProvider('unavailableSignIns')]
+    public function testAnUnavailableSignInAnswersOnlyTheReturningTabWithFailure(bool $hasSessionId, bool $hasSession): void
+    {
+        $sessionId = 9999;
+        if ($hasSession) {
+            self::seedSession(self::SESSION_TOKEN, null, self::CREATED_AT, null);
+            $session = Hilos::$db->sessions->findByToken(self::SESSION_TOKEN);
+            self::assertNotNull($session);
+            $sessionId = $session->id;
+        }
+        $agent = new OAuthTripSignInTestAgent();
+        $this->open($agent, self::DROPPED_ACCEPT_KEY);
+        $trip = $this->trip();
+        self::assertNotNull($trip);
+        $trip->actions->end(StateHilosOAuthTrip::ENDING_SIGNED_IN);
+        if ($hasSessionId) {
+            $trip->actions->markSignedIn($sessionId);
+        }
+        self::assertNull($this->lastStateFrame());
+
+        $reply = $this->resume($agent, self::RETURNING_ACCEPT_KEY);
+
+        self::assertTrue($reply->known);
+        $failures = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            $payload = $signal->data;
+            self::assertFalse($payload instanceof AgentSignalData && $payload->data instanceof SessionStateSignalData);
+            if ($payload instanceof WebSocketSignalData && $payload->data instanceof OAuthResultSignalData) {
+                self::assertSame(HilosSignalConstants::HILOS_OAUTH_RESULT, $signal->signalName->getName());
+                self::assertSame(self::RETURNING_ACCEPT_KEY, $payload->targetAcceptKey);
+                $failures[] = $payload->data;
+            }
+        }
+        self::assertCount(1, $failures);
+        self::assertSame(self::RETURNING_ACCEPT_KEY, $failures[0]->acceptKey);
+        self::assertSame('oauth:github', $failures[0]->provider);
+        self::assertSame(OAuthResultSignalData::REASON_LOGIN_FAILED, $failures[0]->reason);
+        self::assertSame(AuthMessages::OAUTH_LOGIN_FAILED, $failures[0]->message);
+        self::assertCount(0, Hilos::$rt->hilosSessionRotations);
+        self::assertSame(StateHilosOAuthTrip::ENDING_SIGNED_IN, $this->trip()?->ending);
+        self::assertSame($hasSessionId ? $sessionId : null, $this->trip()?->sessionId);
     }
 
     /**

@@ -16,6 +16,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Entity\Item\Country as EntityCountry;
 use Hilos\Database\Entity\Item\Locale as EntityLocale;
 use Hilos\Database\Object\Collection\Countries as ObjectCountries;
+use Hilos\Database\Object\Collection\Languages as ObjectLanguages;
 use Hilos\Database\Object\Item\Country as ObjectCountry;
 use Hilos\Database\Object\Item\Locale as ObjectLocale;
 use Hilos\Database\View\Collection\Countries;
@@ -90,8 +91,10 @@ final class I18nCountriesLocaleChoiceReadTest extends TestCase
 
         $names = $this->createMock(CountryNames::class);
         $names->method('hasForCountry')->willReturnCallback(static fn (int $id): bool => $id === 1 || $id === 2 || $id === 3);
-        $languages = $this->createMock(Languages::class);
-        $languages->method('offsetGet')->willReturn(null);
+        $languageObjects = $this->getMockBuilder(ObjectLanguages::class)->onlyMethods(['findByCode'])->getMock();
+        $languageObjects->method('findByCode')->with('en')->willReturn(null);
+        $languages = Languages::init();
+        $languages->setObjectCollection($languageObjects);
         Hilos::$db = $this->createMock(HilosDbContext::class);
         Hilos::$db->method('__get')->willReturnMap([
             [HilosDbContext::countries, $countryView],

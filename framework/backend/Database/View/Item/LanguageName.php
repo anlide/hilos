@@ -50,7 +50,7 @@ class LanguageName extends DbItem
             ObjectLanguageName::locked => $this->_object->locked,
             self::language => Hilos::$db->languages[$this->_object->languageId],
             self::inLanguage => Hilos::$db->languages[$this->_object->inLanguageId],
-            self::locale => Hilos::$db->locales[$this->_object->localeId],
+            self::locale => Hilos::$db->locales[$this->_object->localeId] ?? null,
             default => parent::__get($name),
         };
     }

@@ -95,9 +95,8 @@ class CountryNamesActions extends DbActions
     public function takeAllFromCatalog(Language $language): void
     {
         foreach (BuiltInI18nCatalog::countries() as $definition) {
-            $country = Hilos::$db->countries[$definition->code];
-            if ($country !== null) {
-                $this->takeFromCatalog($country, $language);
+            if (isset(Hilos::$db->countries[$definition->code])) {
+                $this->takeFromCatalog(Hilos::$db->countries[$definition->code], $language);
             }
         }
     }
@@ -116,8 +115,8 @@ class CountryNamesActions extends DbActions
     {
         $countryId = $country->id;
         $languageId = $language->id;
-        if ($countryId === null || Hilos::$db->countries[$countryId] === null
-            || $languageId === null || Hilos::$db->languages[$languageId] === null) {
+        if ($countryId === null || !isset(Hilos::$db->countries[$countryId])
+            || $languageId === null || !isset(Hilos::$db->languages[$languageId])) {
             throw new ValidationException('Name references must exist');
         }
         $this->ensureCanCreateInSet((string)$countryId);
@@ -125,7 +124,7 @@ class CountryNamesActions extends DbActions
             throw new ValidationException('Name exceeds its column width');
         }
         if ($locale !== null) {
-            if ($locale->id === null || Hilos::$db->locales[$locale->id] === null
+            if ($locale->id === null || !isset(Hilos::$db->locales[$locale->id])
                 || $locale->languageId !== $languageId
                 || $this->collection->findBase($countryId, $languageId) === null) {
                 throw new ValidationException('Override needs its base and a locale of the writing language');

@@ -261,7 +261,7 @@ class HilosCommunicationsChannelFieldsTable extends TableDefinition implements S
             return null;
         }
 
-        return $db->settings[$id]?->key;
+        return isset($db->settings[$id]) ? $db->settings[$id]->key : null;
     }
 
     /**

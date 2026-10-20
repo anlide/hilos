@@ -294,7 +294,7 @@ abstract class AbstractHilosSecurityOAuthProviderPage extends AbstractHilosPage
      */
     private function providerRow(OAuthProviderDescriptor $descriptor): ?OAuthProvider
     {
-        return $this->db()->oauthProviders[$descriptor->key];
+        return $this->db()->oauthProviders[$descriptor->key] ?? null;
     }
 
     /**

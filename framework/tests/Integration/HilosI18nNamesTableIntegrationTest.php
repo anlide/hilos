@@ -358,6 +358,39 @@ final class HilosI18nNamesTableIntegrationTest extends FrameworkIntegrationTestC
         $this->assertSame([['update', '2', 'Großbritannien']], $this->mutations(new HilosI18nCountryNamesTable(), 1));
     }
 
+    /**
+     * A deleted default-language name still identifies every correction whose country label disappeared.
+     *
+     * @throws HilosException When a name cannot be written or a change built
+     */
+    public function testDeletingACountryBaseNameRelabelsEveryLanguageWithALocaleOfIt(): void
+    {
+        Hilos::$db->languageNames->actions->createManual($this->french, $this->english, null, 'French');
+        Hilos::$db->languageNames->actions->createManual($this->french, $this->german, null, 'Französisch');
+        $base = Hilos::$db->countryNames->findBase((int) $this->britain->id, (int) $this->english->id);
+        $this->assertNotNull($base);
+        $nameId = $base->id;
+        $this->changes->taken = [];
+
+        $base->actions->delete();
+
+        $this->assertArrayNotHasKey($nameId, Hilos::$db->countryNames);
+        $built = $this->built(new HilosI18nLanguageNamesTable(), 3);
+        $this->assertSame(['1', '2'], array_map(static fn(TableRowMutationDTO $mutation): string => (string) $mutation->rowKey, $built));
+        foreach ($built as $mutation) {
+            $this->assertSame(TableMutationType::Update, $mutation->type);
+            $this->assertNull($mutation->row?->toArray()[HilosI18nNameTableRow::corrections][0][HilosI18nNameTableRow::countryName]);
+            $this->assertSame(
+                $this->britain->id,
+                $mutation->row?->toArray()[HilosI18nNameTableRow::corrections][0][HilosI18nNameTableRow::countryId],
+            );
+        }
+        $this->assertSame(
+            [['update', '1', null], ['update', '2', null]],
+            $this->mutations(new HilosI18nCountryNamesTable(), 1),
+        );
+    }
+
     /** @throws HilosException When the subject cannot be removed or a change built */
     public function testRemovingTheSubjectEmptiesItsWindow(): void
     {

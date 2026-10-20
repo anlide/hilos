@@ -71,7 +71,7 @@ class Locale extends DbItem
             ObjectLocale::collation => $this->_object->collation,
             ObjectLocale::enabled => $this->_object->enabled,
             self::language => Hilos::$db->languages[$this->_object->languageId],
-            self::country => Hilos::$db->countries[$this->_object->countryId],
+            self::country => Hilos::$db->countries[$this->_object->countryId] ?? null,
             self::languageNames => Hilos::$db->languageNames->forLocaleId($this->_object->id),
             self::countryNames => Hilos::$db->countryNames->forLocaleId($this->_object->id),
             default => parent::__get($name),

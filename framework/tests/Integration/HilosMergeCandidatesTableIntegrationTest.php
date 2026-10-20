@@ -89,6 +89,53 @@ final class HilosMergeCandidatesTableIntegrationTest extends HilosSessionIntegra
         self::assertArrayNotHasKey(HilosMergeCandidatesTable::FIELD_HAS_SECOND_FACTOR, $table->wireFields());
     }
 
+    /** @throws HilosException When a factor or the candidate row cannot be read */
+    public function testFactorSourceOwnerTakesPrecedenceOverTheLiveRow(): void
+    {
+        $this->seedPeople();
+        $factor = Hilos::$db->secondFactors->actions->startEnrolment(self::BETA, 'App', 'JBSWY3DPEHPK3PXP');
+        $id = (string) $factor->id;
+        $table = $this->table();
+
+        $mutation = $table->buildMutationForSourceEvent(SourceChange::dbUpdated(
+            HilosDbContext::secondFactors,
+            $id,
+            [ObjectSecondFactor::userId => self::GAMMA],
+        ));
+
+        self::assertNotNull($mutation);
+        self::assertSame(TableMutationType::Update, $mutation->type);
+        self::assertSame(self::GAMMA, $mutation->rowKey);
+
+        $factor->actions->delete();
+
+        self::assertNull($table->buildMutationForSourceEvent(
+            SourceChange::dbDeleted(HilosDbContext::secondFactors, $id),
+        ));
+    }
+
+    /** @throws HilosException When an identity or the candidate row cannot be read */
+    public function testIdentitySourceWithoutAnOwnerUsesTheLiveRowOrIsIgnored(): void
+    {
+        $this->seedPeople();
+        $password = Hilos::$db->identities->findPasswordByUser(self::BETA);
+        self::assertNotNull($password);
+        $table = $this->table();
+
+        $mutation = $table->buildMutationForSourceEvent(SourceChange::dbUpdated(
+            HilosDbContext::identities,
+            (string) $password->id,
+            [ObjectIdentity::verified => true],
+        ));
+
+        self::assertNotNull($mutation);
+        self::assertSame(TableMutationType::Update, $mutation->type);
+        self::assertSame(self::BETA, $mutation->rowKey);
+        self::assertNull($table->buildMutationForSourceEvent(
+            SourceChange::dbDeleted(HilosDbContext::identities, '99999'),
+        ));
+    }
+
     /**
      * Neither the survivor nor an account already folded into another one is offered.
      *

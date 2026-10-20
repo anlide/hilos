@@ -53,9 +53,8 @@ final class FrameworkDataExportSections
         // folded into theirs. Null where it is not known - a row carried over without its
         // moment, an older row whose survivor was erased before HIL-1200.
         $merges = [];
-        $foldedAway = Hilos::$db->userMerges[$userId];
-        if ($foldedAway !== null) {
-            $merges[] = self::merge($foldedAway);
+        if (isset(Hilos::$db->userMerges[$userId])) {
+            $merges[] = self::merge(Hilos::$db->userMerges[$userId]);
         }
         foreach (Hilos::$db->userMerges->foldedInto($userId) as $foldedIn) {
             $merges[] = self::merge($foldedIn);
@@ -82,7 +81,7 @@ final class FrameworkDataExportSections
         }
 
         if (Hilos::hasFeature(HilosFeature::PROFILE_PHOTO)) {
-            $photo = Hilos::$db->userPhotos[$userId];
+            $photo = Hilos::$db->userPhotos[$userId] ?? null;
             $file = $photo?->file;
             $stored = $file === null ? null : Hilos::$fs->files[$file->storedName];
             $writer->section(self::PROFILE_PHOTO_SECTION, $stored === null || !$stored->exists() ? null : [

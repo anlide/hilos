@@ -436,10 +436,9 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
      */
     private function onImageRendered(ImageRenderedSignalData $result): void
     {
-        $file = Hilos::$db->files[$result->fileId];
-        if ($file === null || $result->outcome === ImageRenderOutcome::MISSING) {
+        if (!isset(Hilos::$db->files[$result->fileId]) || $result->outcome === ImageRenderOutcome::MISSING) {
             $this->discardImageTmp($result->tmpIndex);
-            if ($file !== null) {
+            if (isset(Hilos::$db->files[$result->fileId])) {
                 $this->logAgentWarning("File {$result->fileId} has a row but no file on disk");
             }
             foreach ($result->requests as $request) {
@@ -447,6 +446,7 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
             }
             return;
         }
+        $file = Hilos::$db->files[$result->fileId];
         $variant = ImageVariant::named($result->variant);
         if ($result->outcome === ImageRenderOutcome::FAILED || $variant === null) {
             $this->discardImageTmp($result->tmpIndex);
@@ -585,13 +585,12 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
     private function markBound(array $fileIds): void
     {
         foreach ($fileIds as $fileId) {
-            $file = Hilos::$db->files[$fileId];
-            if ($file === null) {
+            if (!isset(Hilos::$db->files[$fileId])) {
                 $this->logAgentWarning("File {$fileId} is not in the registry");
                 continue;
             }
 
-            $file->actions->markBound();
+            Hilos::$db->files[$fileId]->actions->markBound();
         }
     }
 
@@ -612,13 +611,12 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
         $removed = 0;
         $kept = 0;
         foreach ($fileIds as $fileId) {
-            $file = Hilos::$db->files[$fileId];
-            if ($file === null) {
+            if (!isset(Hilos::$db->files[$fileId])) {
                 $this->logAgentWarning("File {$fileId} is not in the registry");
                 continue;
             }
 
-            if ($this->removeRegistryFile($file)) {
+            if ($this->removeRegistryFile(Hilos::$db->files[$fileId])) {
                 $removed++;
                 continue;
             }

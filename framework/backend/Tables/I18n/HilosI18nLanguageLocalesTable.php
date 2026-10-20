@@ -184,8 +184,7 @@ final class HilosI18nLanguageLocalesTable extends TableDefinition implements Win
             return [];
         }
 
-        $language = Hilos::$db->languages[$languageId];
-        if ($language === null) {
+        if (!isset(Hilos::$db->languages[$languageId])) {
             // The language left: nothing of the window stands on anything any more. Asked only for the
             // removal of the window's own language, so a window opened on an ID that never existed is
             // not sent a removal of every row on every write.
@@ -195,6 +194,7 @@ final class HilosI18nLanguageLocalesTable extends TableDefinition implements Win
 
             return $removed ? $this->removeEveryRow($languageId) : [];
         }
+        $language = Hilos::$db->languages[$languageId];
 
         return match ($change->sourceKey) {
             HilosDbContext::locales => $this->localeMutations($change, $language),
@@ -290,17 +290,17 @@ final class HilosI18nLanguageLocalesTable extends TableDefinition implements Win
     public function findRow(string|int $rowKey): ?HilosI18nLanguageLocalesTableRow
     {
         [$languageId, $countryId] = self::pairOf((string) $rowKey);
-        $language = Hilos::$db->languages[$languageId];
-        if ($language === null) {
+        if (!isset(Hilos::$db->languages[$languageId])) {
             return null;
         }
+        $language = Hilos::$db->languages[$languageId];
         if ($countryId === null) {
             return $this->ownRow($language);
         }
 
-        $country = Hilos::$db->countries[$countryId];
-
-        return $country === null ? null : $this->countryRow($language, $country);
+        return isset(Hilos::$db->countries[$countryId])
+            ? $this->countryRow($language, Hilos::$db->countries[$countryId])
+            : null;
     }
 
     /**
@@ -380,9 +380,9 @@ final class HilosI18nLanguageLocalesTable extends TableDefinition implements Win
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
         $languageId = self::languageIdOf($query);
-        $language = $languageId === null ? null : Hilos::$db->languages[$languageId];
         $rows = [];
-        if ($language !== null) {
+        if ($languageId !== null && isset(Hilos::$db->languages[$languageId])) {
+            $language = Hilos::$db->languages[$languageId];
             $languageId = (int) $language->id;
             $ownLocale = null;
             $localesByCountry = [];
@@ -428,21 +428,24 @@ final class HilosI18nLanguageLocalesTable extends TableDefinition implements Win
      */
     private function localeMutations(SourceChange $change, DbLanguage $language): array
     {
-        $locale = Hilos::$db->locales[(int) $change->sourceId];
-        $languageId = $locale !== null ? $locale->languageId : self::rowId($change->row, ObjectLocale::languageId);
+        $languageId = isset(Hilos::$db->locales[(int) $change->sourceId])
+            ? Hilos::$db->locales[(int) $change->sourceId]->languageId
+            : self::rowId($change->row, ObjectLocale::languageId);
         if ($languageId !== (int) $language->id) {
             return [];
         }
 
-        $countryId = $locale !== null ? $locale->countryId : self::rowId($change->row, ObjectLocale::countryId);
+        $countryId = isset(Hilos::$db->locales[(int) $change->sourceId])
+            ? Hilos::$db->locales[(int) $change->sourceId]->countryId
+            : self::rowId($change->row, ObjectLocale::countryId);
         if ($countryId === null) {
             return [$this->mutation(TableMutationType::Update, self::pairKey($language->id, null), $this->ownRow($language))];
         }
 
-        $country = Hilos::$db->countries[$countryId];
-        if ($country === null) {
+        if (!isset(Hilos::$db->countries[$countryId])) {
             return [];
         }
+        $country = Hilos::$db->countries[$countryId];
 
         $row = $this->countryRow($language, $country);
 
@@ -469,10 +472,10 @@ final class HilosI18nLanguageLocalesTable extends TableDefinition implements Win
             return [];
         }
 
-        $country = Hilos::$db->countries[(int) $change->sourceId];
-        if ($country === null) {
+        if (!isset(Hilos::$db->countries[(int) $change->sourceId])) {
             return [];
         }
+        $country = Hilos::$db->countries[(int) $change->sourceId];
 
         $row = $this->countryRow($language, $country);
 
@@ -492,18 +495,23 @@ final class HilosI18nLanguageLocalesTable extends TableDefinition implements Win
      */
     private function countryNameMutations(SourceChange $change, DbLanguage $language): array
     {
-        $name = Hilos::$db->countryNames[(int) $change->sourceId];
-        $languageId = $name !== null ? $name->languageId : self::rowId($change->row, ObjectCountryName::languageId);
-        $localeId = $name !== null ? $name->localeId : self::rowId($change->row, ObjectCountryName::localeId);
-        $countryId = $name !== null ? $name->countryId : self::rowId($change->row, ObjectCountryName::countryId);
+        $languageId = isset(Hilos::$db->countryNames[(int) $change->sourceId])
+            ? Hilos::$db->countryNames[(int) $change->sourceId]->languageId
+            : self::rowId($change->row, ObjectCountryName::languageId);
+        $localeId = isset(Hilos::$db->countryNames[(int) $change->sourceId])
+            ? Hilos::$db->countryNames[(int) $change->sourceId]->localeId
+            : self::rowId($change->row, ObjectCountryName::localeId);
+        $countryId = isset(Hilos::$db->countryNames[(int) $change->sourceId])
+            ? Hilos::$db->countryNames[(int) $change->sourceId]->countryId
+            : self::rowId($change->row, ObjectCountryName::countryId);
         if ($languageId !== (int) $language->id || $localeId !== null || $countryId === null) {
             return [];
         }
 
-        $country = Hilos::$db->countries[$countryId];
-        if ($country === null) {
+        if (!isset(Hilos::$db->countries[$countryId])) {
             return [];
         }
+        $country = Hilos::$db->countries[$countryId];
 
         $row = $this->countryRow($language, $country);
 

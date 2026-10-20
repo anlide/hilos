@@ -67,7 +67,7 @@ abstract class AbstractHilosAnalyticsPersonPage extends AbstractHilosAnalyticsPa
     protected function buildPagePayload(string $acceptKey, PageRouteParams $params): PagePayload
     {
         $userId = HilosAnalyticsPersonPageSubscribeParams::fromPageRouteParams($params)->userId;
-        $name = Hilos::$db->users[$userId]?->name;
+        $name = isset(Hilos::$db->users[$userId]) ? Hilos::$db->users[$userId]->name : null;
         if ($name !== null) {
             $label = $name . ' (#' . $userId . ')';
         } elseif (new AnalyticsSectionReader()->browserSessionCount($userId) > 0) {

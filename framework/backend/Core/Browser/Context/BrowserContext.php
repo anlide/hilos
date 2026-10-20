@@ -2668,8 +2668,11 @@ abstract class BrowserContext
         if ($field === HilosUserTableRow::FIELD_MERGED_INTO_NAME) {
             try {
                 $survivorId = Hilos::$db->userMerges->liveSurvivorOf((int) $rowKey);
+                if ($survivorId === null || !isset(Hilos::$db->users[$survivorId])) {
+                    return null;
+                }
 
-                return $survivorId === null ? null : Hilos::$db->users[$survivorId]?->name;
+                return Hilos::$db->users[$survivorId]->name;
             } catch (DatabaseException|InvalidArgumentException|LogicException $exception) {
                 throw new PageInternalErrorException('Merge target name could not be resolved', $exception);
             }

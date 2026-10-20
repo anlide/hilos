@@ -248,7 +248,7 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
             lastActivity: $user->lastActivity,
             onlineSessionCount: $summary->onlineSessionCount,
             presence: $summary->presence,
-            merged: Hilos::$db->userMerges[(int) $user->id] !== null,
+            merged: isset(Hilos::$db->userMerges[(int) $user->id]),
         );
     }
 

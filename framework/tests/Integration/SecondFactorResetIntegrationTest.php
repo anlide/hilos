@@ -49,6 +49,8 @@ use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Users\DTO\UserSecondFactorResetRemindDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetRemindSignalData;
 
 /**
  * The profile half of the second factor and its delayed removal, against the real tables (HIL-494).
@@ -418,6 +420,39 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
         $this->assertSame($stale, $reset->notifiedAt);
         $this->assertNull($reset->readCancelToken());
         $this->assertNull($this->announcement(SecondFactorNotificationType::RESET_REMINDER));
+    }
+
+    /**
+     * A reminder answer can outlive its removal or its token; both keep the same invariant refusal.
+     *
+     * @throws HilosException When the fixture row or the answer cannot be handled
+     */
+    public function testAMarkedReminderWithoutItsRemovalOrTokenKeepsTheRefusal(): void
+    {
+        $reset = Hilos::$db->secondFactorResets->actions->request(self::USER_ID, '2036-01-01 00:00:00', 'cancel-token');
+        Database::sqlRun('UPDATE `hilos_second_factor_reset` SET `cancel_token` = NULL WHERE `id` = ?', [(int)$reset->id]);
+        self::assertArrayNotHasKey(9999, Hilos::$db->secondFactorResets);
+        $this->drain();
+
+        foreach ([9999, (int)$reset->id] as $resetId) {
+            $request = new UserSecondFactorResetRemindSignalData(
+                self::USER_ID,
+                $resetId,
+                self::CREATED_AT,
+                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND_DONE,
+            );
+            try {
+                $this->library->onSignalAgent(
+                    new AgentSignalData(new UserSecondFactorResetRemindDoneSignalData($request, true, null, null, null)),
+                    'test',
+                    HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND_DONE,
+                );
+                self::fail('A marked removal without its cancel token must refuse the reminder');
+            } catch (LogicException $failure) {
+                self::assertSame('A standing second-factor removal ' . $resetId . ' has no cancel token', $failure->getMessage());
+            }
+            self::assertNull($this->announcement(SecondFactorNotificationType::RESET_REMINDER));
+        }
     }
 
     /**
