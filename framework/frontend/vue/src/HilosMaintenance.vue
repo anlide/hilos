@@ -39,6 +39,7 @@ import {
   PROTECTED_MODE_PASS_COPY,
 } from '@hilos/core'
 
+import HilosFormError from './HilosFormError.vue'
 import { useSignal } from './useSignal.js'
 
 const props = defineProps<{
@@ -215,14 +216,16 @@ function present(): void {
             {{ PROTECTED_MODE_PASS_COPY.submit }}
           </button>
         </div>
-        <p
-          v-if="status.passRejected"
-          id="maintenance-pass-error"
-          class="text-danger small mt-2 mb-0"
-          data-id="maintenance-pass-error"
-        >
-          {{ PROTECTED_MODE_PASS_COPY.rejected }}
-        </p>
+        <!-- The room is taken with the field, so a refusal moves nothing; this
+        wrapper is what the field's aria-describedby points at. -->
+        <div id="maintenance-pass-error">
+          <HilosFormError
+            :message="
+              status.passRejected ? PROTECTED_MODE_PASS_COPY.rejected : null
+            "
+            data-id="maintenance-pass-error"
+          />
+        </div>
       </div>
     </form>
   </div>

@@ -1,9 +1,10 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
   BACKUP_RESTORE_PROGRESS_SIGNAL,
   PROTECTED_MODE_INACTIVE,
+  PROTECTED_MODE_PASS_COPY,
   RT_STALENESS_FRESH,
 } from '@hilos/core'
 import type {
@@ -16,6 +17,13 @@ import type {
 
 import HilosLayout from './HilosLayout.vue'
 import HilosMaintenance from './HilosMaintenance.vue'
+
+// The refusal's detail panel is a HilosModal, which teleports to <body>:
+// assertions about it query the document, and nothing may outlive its case.
+afterEach(() => {
+  document.body.innerHTML = ''
+  document.body.classList.remove('modal-open')
+})
 
 const FROZEN: ProtectedModeStatus = {
   active: true,
@@ -357,12 +365,145 @@ describe('HilosMaintenance', () => {
       },
     })
 
-    expect(wrapper.find('[data-id="maintenance-pass-error"]').exists()).toBe(
-      true,
-    )
+    const row = wrapper.find('[data-id="maintenance-pass-error"]')
+    expect(row.exists()).toBe(true)
+    expect(row.text()).toContain(PROTECTED_MODE_PASS_COPY.rejected)
     expect(
       wrapper.find('[data-id="maintenance-pass"]').attributes('aria-invalid'),
     ).toBe('true')
+    wrapper.unmount()
+  })
+
+  it('holds the room of the refusal from the moment the field appears', () => {
+    const wrapper = mount(HilosMaintenance, {
+      props: {
+        status: MINTED,
+        connection: fakeConnection(MINTED).connection,
+        adminSurface: true,
+      },
+    })
+
+    expect(
+      wrapper.find('[data-id="maintenance-pass-error-slot"]').exists(),
+    ).toBe(true)
+    const idle = wrapper.find('[data-id="maintenance-pass-error-idle"]')
+    expect(idle.exists()).toBe(true)
+    expect(idle.attributes('aria-hidden')).toBe('true')
+    expect(idle.classes()).toContain('invisible')
+    expect(idle.find('button').exists()).toBe(false)
+    expect(wrapper.find('[data-id="maintenance-pass-error"]').exists()).toBe(
+      false,
+    )
+    expect(
+      wrapper.find('[data-id="maintenance-pass-error-details"]').exists(),
+    ).toBe(false)
+    expect(
+      wrapper
+        .find('[data-id="maintenance-pass"]')
+        .attributes('aria-describedby'),
+    ).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('draws, opens and clears the refusal in the same slot of one mount', async () => {
+    const { connection, presented } = fakeConnection(MINTED)
+    // Attached, so the field's aria-describedby resolves in the document.
+    const wrapper = mount(HilosMaintenance, {
+      props: { status: MINTED, connection, adminSurface: true },
+      attachTo: document.body,
+    })
+    const rejected = PROTECTED_MODE_PASS_COPY.rejected
+    const field = (): HTMLInputElement =>
+      wrapper.find('[data-id="maintenance-pass"]').element as HTMLInputElement
+    const slot = (): Element | null =>
+      wrapper.find('[data-id="maintenance-pass-error-slot"]').element
+    const details = '[data-id="maintenance-pass-error-details"]'
+    const full = '[data-id="maintenance-pass-error-full"]'
+
+    await wrapper.find('[data-id="maintenance-pass"]').setValue('typo')
+    const fieldNode = field()
+    const surfaceNode = wrapper.find('[data-id="maintenance"]').element
+    const slotNode = slot()
+
+    // The refusal arrives on the same mount: nothing is mounted again.
+    await wrapper.setProps({ status: REJECTED })
+    expect(field()).toBe(fieldNode)
+    expect(wrapper.find('[data-id="maintenance"]').element).toBe(surfaceNode)
+    expect(slot()).toBe(slotNode)
+    expect(wrapper.findAll('[data-id="maintenance-pass-error"]')).toHaveLength(
+      1,
+    )
+    const row = wrapper.find('[data-id="maintenance-pass-error"]')
+    expect(row.find('span.text-truncate').text()).toBe(rejected)
+    expect(wrapper.find(details).attributes('aria-label')).toBe(
+      'Show error details',
+    )
+    expect(fieldNode.value).toBe('typo')
+    expect(fieldNode.classList.contains('is-invalid')).toBe(true)
+    expect(fieldNode.getAttribute('aria-invalid')).toBe('true')
+    expect(fieldNode.getAttribute('aria-describedby')).toBe(
+      'maintenance-pass-error',
+    )
+    const target = document.getElementById('maintenance-pass-error')
+    expect(target).not.toBeNull()
+    expect(target?.contains(row.element)).toBe(true)
+    expect(target?.textContent).toContain(rejected)
+    // The sentence is the surface's own live region's to announce, once.
+    for (const node of [slotNode, row.element, target]) {
+      expect(node?.getAttribute('role')).toBeNull()
+      expect(node?.getAttribute('aria-live')).toBeNull()
+    }
+    const outer = wrapper.find('[data-id="maintenance"]')
+    expect(outer.attributes('role')).toBe('status')
+    expect(outer.attributes('aria-live')).toBe('polite')
+
+    // The details button opens the panel and does not present the code again.
+    await wrapper.find(details).trigger('click')
+    expect(document.querySelector('.modal-title')?.textContent).toContain(
+      'Error details',
+    )
+    expect(document.querySelector(full)?.textContent?.trim()).toBe(rejected)
+    expect(presented).toEqual([])
+    ;(
+      document.querySelector(
+        '[data-id="maintenance-pass-error-close"]',
+      ) as HTMLElement
+    ).click()
+    await flushPromises()
+    expect(document.querySelector(full)).toBeNull()
+    await wrapper.find(details).trigger('click')
+    expect(document.querySelector(full)?.textContent?.trim()).toBe(rejected)
+
+    // The refusal is lifted while the panel is open: panel and row go, the slot
+    // and the field stay, the twin is back and the field points at nothing.
+    await wrapper.setProps({ status: MINTED })
+    expect(document.querySelector(full)).toBeNull()
+    expect(wrapper.find('[data-id="maintenance-pass-error"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find(details).exists()).toBe(false)
+    expect(
+      wrapper.find('[data-id="maintenance-pass-error-idle"]').exists(),
+    ).toBe(true)
+    expect(field()).toBe(fieldNode)
+    expect(slot()).toBe(slotNode)
+    expect(fieldNode.value).toBe('typo')
+    expect(fieldNode.hasAttribute('aria-describedby')).toBe(false)
+
+    // A new refusal shows the same text and button; the old panel stays shut.
+    await wrapper.setProps({ status: REJECTED })
+    expect(slot()).toBe(slotNode)
+    expect(
+      wrapper
+        .find('[data-id="maintenance-pass-error"] span.text-truncate')
+        .text(),
+    ).toBe(rejected)
+    expect(wrapper.find(details).exists()).toBe(true)
+    expect(document.querySelector(full)).toBeNull()
+    expect(fieldNode.getAttribute('aria-describedby')).toBe(
+      'maintenance-pass-error',
+    )
+    wrapper.unmount()
   })
 
   it('shows no restore panel to a visitor whose session asked for nothing', () => {

@@ -51,10 +51,13 @@ import type {
   ProtectedModeStatus,
 } from '@hilos/core'
 
+import { HilosFormError } from './HilosFormError.js'
+
 /** The full-screen maintenance state of the shell. */
 @Component({
   selector: 'hilos-maintenance',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [HilosFormError],
   template: `
     <div
       class="d-flex flex-column justify-content-center align-items-center flex-grow-1 text-center"
@@ -144,15 +147,14 @@ import type {
                 {{ passCopy.submit }}
               </button>
             </div>
-            @if (status().passRejected) {
-              <p
-                id="maintenance-pass-error"
-                class="text-danger small mt-2 mb-0"
-                data-id="maintenance-pass-error"
-              >
-                {{ passCopy.rejected }}
-              </p>
-            }
+            <!-- The room is taken with the field, so a refusal moves nothing;
+                 this wrapper is what the field's aria-describedby points at. -->
+            <div id="maintenance-pass-error">
+              <hilos-form-error
+                [message]="status().passRejected ? passCopy.rejected : null"
+                dataId="maintenance-pass-error"
+              />
+            </div>
           </div>
         </form>
       } @else if (status().acceptsPass && adminSurface()) {

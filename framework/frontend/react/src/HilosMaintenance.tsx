@@ -44,6 +44,7 @@ import type {
   ProtectedModeStatus,
 } from '@hilos/core'
 
+import { HilosFormError } from './HilosFormError.js'
 import { useSignal } from './useSignal.js'
 
 /**
@@ -240,15 +241,16 @@ export function HilosMaintenance({
                 {PROTECTED_MODE_PASS_COPY.submit}
               </button>
             </div>
-            {status.passRejected && (
-              <p
-                id="maintenance-pass-error"
-                className="text-danger small mt-2 mb-0"
-                data-id="maintenance-pass-error"
-              >
-                {PROTECTED_MODE_PASS_COPY.rejected}
-              </p>
-            )}
+            {/* The room is taken with the field, so a refusal moves nothing;
+                this wrapper is what the field's aria-describedby points at. */}
+            <div id="maintenance-pass-error">
+              <HilosFormError
+                message={
+                  status.passRejected ? PROTECTED_MODE_PASS_COPY.rejected : null
+                }
+                dataId="maintenance-pass-error"
+              />
+            </div>
           </div>
         </form>
       )}

@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
   BACKUP_RESTORE_PROGRESS_SIGNAL,
   PROTECTED_MODE_INACTIVE,
+  PROTECTED_MODE_PASS_COPY,
   RT_STALENESS_FRESH,
 } from '@hilos/core'
 import type {
@@ -202,7 +203,12 @@ function surface(container: HTMLElement, id: string): Element | null {
 }
 
 describe('HilosMaintenance', () => {
-  afterEach(cleanup)
+  // The refusal's detail panel is a HilosModal, which portals to <body>:
+  // assertions about it query the document.
+  afterEach(() => {
+    cleanup()
+    document.body.classList.remove('modal-open')
+  })
 
   it('renders the copy the backend authored', () => {
     const { container } = render(
@@ -361,10 +367,146 @@ describe('HilosMaintenance', () => {
       />,
     )
 
-    expect(surface(container, 'maintenance-pass-error')).not.toBeNull()
+    const row = surface(container, 'maintenance-pass-error')
+    expect(row).not.toBeNull()
+    expect(row?.textContent).toContain(PROTECTED_MODE_PASS_COPY.rejected)
     expect(
       surface(container, 'maintenance-pass')?.getAttribute('aria-invalid'),
     ).toBe('true')
+  })
+
+  it('holds the room of the refusal from the moment the field appears', () => {
+    const { container } = render(
+      <HilosMaintenance
+        status={MINTED}
+        connection={fakeConnection(MINTED).connection}
+        adminSurface
+      />,
+    )
+
+    expect(surface(container, 'maintenance-pass-error-slot')).not.toBeNull()
+    const idle = surface(container, 'maintenance-pass-error-idle')
+    expect(idle).not.toBeNull()
+    expect(idle?.getAttribute('aria-hidden')).toBe('true')
+    expect(idle?.classList.contains('invisible')).toBe(true)
+    expect(idle?.querySelector('button')).toBeNull()
+    expect(surface(container, 'maintenance-pass-error')).toBeNull()
+    expect(surface(container, 'maintenance-pass-error-details')).toBeNull()
+    expect(
+      surface(container, 'maintenance-pass')?.hasAttribute('aria-describedby'),
+    ).toBe(false)
+  })
+
+  it('draws, opens and clears the refusal in the same slot of one render', () => {
+    const { connection, presented } = fakeConnection(MINTED)
+    const { container, rerender } = render(
+      <HilosMaintenance status={MINTED} connection={connection} adminSurface />,
+    )
+    const rejected = PROTECTED_MODE_PASS_COPY.rejected
+    const field = (): HTMLInputElement =>
+      surface(container, 'maintenance-pass') as HTMLInputElement
+    const slot = (): Element | null =>
+      surface(container, 'maintenance-pass-error-slot')
+    const details = (): Element | null =>
+      surface(container, 'maintenance-pass-error-details')
+    const full = (): Element | null =>
+      document.querySelector('[data-id="maintenance-pass-error-full"]')
+    const update = (next: ProtectedModeStatus): void => {
+      act(() => {
+        rerender(
+          <HilosMaintenance
+            status={next}
+            connection={connection}
+            adminSurface
+          />,
+        )
+      })
+    }
+
+    act(() => {
+      fireEvent.change(field(), { target: { value: 'typo' } })
+    })
+    const fieldNode = field()
+    const surfaceNode = surface(container, 'maintenance')
+    const slotNode = slot()
+
+    // The refusal arrives on the same render: nothing is mounted again.
+    update(REJECTED)
+    expect(field()).toBe(fieldNode)
+    expect(surface(container, 'maintenance')).toBe(surfaceNode)
+    expect(slot()).toBe(slotNode)
+    expect(
+      container.querySelectorAll('[data-id="maintenance-pass-error"]'),
+    ).toHaveLength(1)
+    const row = surface(container, 'maintenance-pass-error') as Element
+    expect(row.querySelector('span.text-truncate')?.textContent).toBe(rejected)
+    expect(details()?.getAttribute('aria-label')).toBe('Show error details')
+    expect(fieldNode.value).toBe('typo')
+    expect(fieldNode.classList.contains('is-invalid')).toBe(true)
+    expect(fieldNode.getAttribute('aria-invalid')).toBe('true')
+    expect(fieldNode.getAttribute('aria-describedby')).toBe(
+      'maintenance-pass-error',
+    )
+    const target = document.getElementById('maintenance-pass-error')
+    expect(target).not.toBeNull()
+    expect(target?.contains(row)).toBe(true)
+    expect(target?.textContent).toContain(rejected)
+    // The sentence is the surface's own live region's to announce, once.
+    for (const node of [slotNode, row, target]) {
+      expect(node?.getAttribute('role')).toBeNull()
+      expect(node?.getAttribute('aria-live')).toBeNull()
+    }
+    const outer = surface(container, 'maintenance')
+    expect(outer?.getAttribute('role')).toBe('status')
+    expect(outer?.getAttribute('aria-live')).toBe('polite')
+
+    // The details button opens the panel and does not present the code again.
+    act(() => {
+      fireEvent.click(details() as Element)
+    })
+    expect(document.querySelector('.modal-title')?.textContent).toContain(
+      'Error details',
+    )
+    expect(full()?.textContent?.trim()).toBe(rejected)
+    expect(presented).toEqual([])
+    act(() => {
+      fireEvent.click(
+        document.querySelector(
+          '[data-id="maintenance-pass-error-close"]',
+        ) as Element,
+      )
+    })
+    expect(full()).toBeNull()
+    act(() => {
+      fireEvent.click(details() as Element)
+    })
+    expect(full()?.textContent?.trim()).toBe(rejected)
+
+    // The refusal is lifted while the panel is open: panel and row go, the slot
+    // and the field stay, the twin is back and the field points at nothing.
+    update(MINTED)
+    expect(full()).toBeNull()
+    expect(surface(container, 'maintenance-pass-error')).toBeNull()
+    expect(details()).toBeNull()
+    expect(surface(container, 'maintenance-pass-error-idle')).not.toBeNull()
+    expect(field()).toBe(fieldNode)
+    expect(slot()).toBe(slotNode)
+    expect(fieldNode.value).toBe('typo')
+    expect(fieldNode.hasAttribute('aria-describedby')).toBe(false)
+
+    // A new refusal shows the same text and button; the old panel stays shut.
+    update(REJECTED)
+    expect(slot()).toBe(slotNode)
+    expect(
+      surface(container, 'maintenance-pass-error')?.querySelector(
+        'span.text-truncate',
+      )?.textContent,
+    ).toBe(rejected)
+    expect(details()).not.toBeNull()
+    expect(full()).toBeNull()
+    expect(fieldNode.getAttribute('aria-describedby')).toBe(
+      'maintenance-pass-error',
+    )
   })
 
   it('shows no restore panel to a visitor whose session asked for nothing', () => {
