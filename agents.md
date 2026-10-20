@@ -189,6 +189,7 @@ Minimum ORM rules before editing:
 | File | Read when... |
 |---|---|
 | [testing.md](docs/agents/testing.md) | running unit / integration / e2e tests — **always** via the composer scripts, never `phpunit` directly; which demo's cluster stand carries a scenario, and on what shape |
+| [testing/integration-tests.md](docs/agents/testing/integration-tests.md) | writing or changing a rollback-scoped PHP integration test: its explicit marker, lifecycle, SQL boundary, rollback scope, and ORM reset |
 | [stand-services.md](docs/agents/stand-services.md) | a spec needs an external service on the stand: adding a channel or an emulator, choosing between a stub and an emulator, or reading where a caught message lands |
 | [manual-checks.md](docs/agents/manual-checks.md) | a change touches something only a person on a real device or a real provider sees — the passkey ceremony, a letter in a real mail client, a provider's consent screen: which items your hand-over names, and which platforms we promise |
 

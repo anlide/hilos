@@ -738,6 +738,9 @@ admission or bypassing the environment gate. Ordinary restore and `reHydrate()`
 remain governed by their own contracts; this restriction is on the test-only
 forget operation.
 
+Rollback-scoped integration cases request a cold ORM reset after rollback with
+`#[BreaksOrmState]`; see [Rollback-scoped integration tests](testing/integration-tests.md#cold-orm-reset-after-rollback).
+
 **Choose the process whose memory the test needs to forget.** In the current
 PHP test process, use the mounted context:
 
@@ -815,8 +818,10 @@ keep their existing behavior.
 - **PHPUnit unit tests** (`tests/Unit/`): pure, no DB, no Hilos runtime.
   Use PHPUnit's `TestCase` directly. See
   `demo/chat/tests/Unit/MessageActionDTOTest.php` for reference.
-- **PHPUnit integration tests** (`tests/Integration/`): extend
-  `IntegrationTestCase` for a prepared test DB and Hilos bootstrap.
+- **Rollback-scoped PHPUnit integration tests** (`tests/Integration/`): opt in
+  with `#[IntegrationTest]` on a concrete class and follow
+  [Rollback-scoped integration tests](testing/integration-tests.md). Existing
+  unmarked classes and their bases keep their current lifecycle.
 - For signal-layer DTOs that cross the worker → daemon IPC boundary,
   always cover the `fromArray(toArray())` roundtrip — a missing or
   broken `fromArray` silently falls back to generic `SignalData` and

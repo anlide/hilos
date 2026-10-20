@@ -32,6 +32,7 @@ final readonly class ClassRecord
      * @param array<string, string> $constantClasses Fully qualified class by constant name, for a constant whose value is `X::class`
      * @param bool $isAbstract True when the declaration carries the `abstract` modifier
      * @param int $line Line the declaration sits on, which is where a hit about the class as a whole is reported
+     * @param list<array{name: string, line: int}> $attributes Explicit attributes, resolved without loading their classes
      */
     public function __construct(
         public string $name,
@@ -47,6 +48,7 @@ final readonly class ClassRecord
         public array $constantClasses,
         public bool $isAbstract,
         public int $line,
+        public array $attributes = [],
     ) {
     }
 

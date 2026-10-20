@@ -16,6 +16,7 @@ use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
 use Hilos\Tests\CodeStyle\Rule\FrameworkOrmChainRule;
 use Hilos\Tests\CodeStyle\Rule\FsSeamRule;
+use Hilos\Tests\CodeStyle\Rule\IntegrationTestRule;
 use Hilos\Tests\CodeStyle\Rule\LineLengthRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
 use Hilos\Tests\CodeStyle\Rule\MalformedInputMarkerRule;
@@ -31,6 +32,7 @@ use Hilos\Tests\CodeStyle\Rule\RtStateMutationRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
 use Hilos\Tests\CodeStyle\Rule\SecretInQueryRule;
 use Hilos\Tests\CodeStyle\Rule\SpellingRule;
+use Hilos\Tests\CodeStyle\Rule\TestRollbackScopeRule;
 use Hilos\Tests\CodeStyle\Rule\TruthSourceClaimRule;
 use Hilos\Tests\CodeStyle\Rule\ViewWrapperBindingRule;
 use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
@@ -154,7 +156,7 @@ final class CodeStyleGuardTest extends TestCase
             }
         }
 
-        return [...$reported, ...$this->reportedCrossFileViolations()];
+        return [...$reported, ...$this->reportedCrossFileViolations(), ...$this->reportedIntegrationViolations()];
     }
 
     /**
@@ -174,6 +176,29 @@ final class CodeStyleGuardTest extends TestCase
             foreach ($rule->check($index) as $violation) {
                 $reported[$rule->id() . ' ' . $violation->relativePath][] = $violation->describe($rule->doc());
             }
+        }
+
+        return $reported;
+    }
+
+    /**
+     * Integration contracts need suite declarations; this separate index never widens THROWS.
+     * Both scans use the same exact fixture exclusions and feed the one baseline.
+     *
+     * @return array<string, list<string>> Integration findings keyed by rule and repository path
+     */
+    private function reportedIntegrationViolations(): array
+    {
+        $roots = ScannedRoots::all($this->repositoryRoot());
+        $rule = new IntegrationTestRule(array_keys(array_filter($roots, static fn(RootKind $kind): bool => $kind === RootKind::Suite)));
+        $index = SourceIndex::forRoots(
+            $this->repositoryRoot(),
+            array_keys(array_filter($roots, static fn(RootKind $kind): bool => $kind !== RootKind::Standalone)),
+            self::EXCLUDED_PATHS,
+        );
+        $reported = [];
+        foreach ($rule->check($index) as $violation) {
+            $reported[$rule->id() . ' ' . $violation->relativePath][] = $violation->describe($rule->doc());
         }
 
         return $reported;
@@ -238,6 +263,7 @@ final class CodeStyleGuardTest extends TestCase
             new BlockingResolutionRule(),
             new ProcessForkRule($root),
             new NestableTransactionRule($root),
+            new TestRollbackScopeRule($root, $kind),
             new MalformedInputMarkerRule(),
             new TruthSourceClaimRule(),
             new SecretInQueryRule(),

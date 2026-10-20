@@ -123,6 +123,14 @@ project may mark its transactions; the `NESTABLE-TRANSACTION` guard reads
 `framework/backend` alone and refuses the mark there, with no list of exceptions
 ([../code-style/automated-checks.md](../code-style/automated-checks.md)).
 
+An explicitly marked integration case has one test-only exception: its synthetic
+rollback root is neutral, so the first application transaction start becomes a
+savepoint under that root. Later plain application starts still refuse. The
+application commit releases its savepoint into the root; it cannot commit the
+root. This does not mark any framework transaction nestable or change the
+`NESTABLE-TRANSACTION` guard. The harness owns this lifecycle; see
+[Rollback-scoped integration tests](../testing/integration-tests.md).
+
 ## The transaction ends with its handler
 
 Work that outlives one handler keeps everything tied to one item in one portion

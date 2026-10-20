@@ -47,10 +47,12 @@ final class TransactionLevel
     /**
      * @param bool $nestable Whether this level allows another level to start inside it
      * @param ?string $savepoint Savepoint this level stands on, or null for the outermost level
+     * @param ?TestRollbackScope $testScope Owner of a synthetic test root; null on application levels
      */
     public function __construct(
         public readonly bool $nestable,
         public readonly ?string $savepoint,
+        public readonly ?TestRollbackScope $testScope = null,
     ) {
     }
 

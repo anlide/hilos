@@ -90,13 +90,14 @@ final class SourceIndex
     /**
      * @param string $base Absolute path the roots are relative to
      * @param array<int, string> $roots Source roots to index, each relative to the base
+     * @param array<string, list<string>> $excludedPaths Exact exclusions relative to each root, keyed by root
      * @return self Index of every PHP file under those roots
      */
-    public static function forRoots(string $base, array $roots): self
+    public static function forRoots(string $base, array $roots, array $excludedPaths = []): self
     {
         $index = new self();
         foreach ($roots as $root) {
-            $scanner = new SourceScanner($base . '/' . $root);
+            $scanner = new SourceScanner($base . '/' . $root, $excludedPaths[$root] ?? []);
             foreach ($scanner->files() as $file) {
                 $index->readFile(
                     $root . '/' . $scanner->relativePath($file),
@@ -235,6 +236,10 @@ final class SourceIndex
                 $this->readImports();
                 continue;
             }
+            if ($type === T_ATTRIBUTE) {
+                $this->cursor = $this->skipAttribute($this->cursor);
+                continue;
+            }
             if ($type === T_CLASS || $type === T_INTERFACE || $type === T_TRAIT || $type === T_ENUM) {
                 $this->readDeclaration($type);
                 continue;
@@ -352,6 +357,7 @@ final class SourceIndex
         $name = $this->namespace === '' ? $nameToken[1] : $this->namespace . '\\' . $nameToken[1];
         $isAbstract = $this->declaredAbstract($this->cursor - 2);
         $doc = $this->classDoc($this->cursor - 2);
+        $attributes = $this->declarationAttributes($this->cursor - 2);
         $line = $nameToken[2];
         $this->cursor++;
         [$parent, $interfaces] = $this->readInheritance($keyword === T_INTERFACE);
@@ -359,7 +365,7 @@ final class SourceIndex
             return;
         }
 
-        $this->readBody($name, $parent, $interfaces, $isAbstract, $line, $doc);
+        $this->readBody($name, $parent, $interfaces, $isAbstract, $line, $doc, $attributes);
     }
 
     /**
@@ -393,9 +399,7 @@ final class SourceIndex
      * docblock would have to be dropped on the namespace, on every `use` and on every
      * other top-level token, or the file's own docblock would end up on the class.
      *
-     * The price is an attribute in front of the declaration: it ends the walk and the
-     * tags above it stay unread. No class in the framework backend or in a demo backend
-     * carries one there.
+     * Attribute groups are skipped as units, including nested argument arrays.
      *
      * @param int $cursor Index of the token directly before the declaration keyword
      * @return ?string Docblock standing in front of the declaration, or null when there is none
@@ -406,6 +410,10 @@ final class SourceIndex
             $type = $this->tokens[$cursor][0];
             if ($type === T_DOC_COMMENT) {
                 return $this->tokens[$cursor][1];
+            }
+            if ($type === ']') {
+                $cursor = $this->attributeStart($cursor);
+                continue;
             }
             if ($type !== T_ABSTRACT && $type !== T_FINAL && $type !== T_READONLY) {
                 return null;
@@ -479,8 +487,17 @@ final class SourceIndex
      * @param bool $isAbstract True when the declaration carries the `abstract` modifier
      * @param int $line Line the declaration sits on
      * @param ?string $classDoc Docblock standing in front of the declaration
+     * @param list<array{name: string, line: int}> $attributes Explicit class attributes
      */
-    private function readBody(string $name, ?string $parent, array $interfaces, bool $isAbstract, int $line, ?string $classDoc): void
+    private function readBody(
+        string $name,
+        ?string $parent,
+        array $interfaces,
+        bool $isAbstract,
+        int $line,
+        ?string $classDoc,
+        array $attributes,
+    ): void
     {
         $this->cursor++;
         $this->currentClass = $name;
@@ -495,6 +512,7 @@ final class SourceIndex
         $doc = null;
         $modifiers = [];
         $typeTokens = [];
+        $memberAttributes = [];
 
         while (isset($this->tokens[$this->cursor])) {
             $token = $this->tokens[$this->cursor];
@@ -517,7 +535,7 @@ final class SourceIndex
                 $this->cursor++;
                 $traits = [...$traits, ...$this->readNameList()];
                 $this->skipTraitAdaptations();
-                [$doc, $modifiers, $typeTokens] = [null, [], []];
+                [$doc, $modifiers, $typeTokens, $memberAttributes] = [null, [], [], []];
                 continue;
             }
             if ($type === T_CONST) {
@@ -533,25 +551,26 @@ final class SourceIndex
                         $constantClasses[$constant] = $resolved;
                     }
                 }
-                [$doc, $modifiers, $typeTokens] = [null, [], []];
+                [$doc, $modifiers, $typeTokens, $memberAttributes] = [null, [], [], []];
                 continue;
             }
             if ($type === T_CASE) {
                 $this->skipMember();
-                [$doc, $modifiers, $typeTokens] = [null, [], []];
+                [$doc, $modifiers, $typeTokens, $memberAttributes] = [null, [], [], []];
                 continue;
             }
             if ($type === T_ATTRIBUTE) {
+                $memberAttributes = [...$memberAttributes, ...$this->attributesAt($this->cursor)];
                 $this->cursor = $this->skipAttribute($this->cursor);
                 continue;
             }
             if ($type === T_FUNCTION) {
-                $method = $this->readMethod($name, $doc, $modifiers);
+                $method = $this->readMethod($name, $doc, $modifiers, $memberAttributes);
                 if ($method !== null) {
                     $methods[strtolower($method->name)] = $method;
                     $properties = [...$properties, ...$this->promoted];
                 }
-                [$doc, $modifiers, $typeTokens] = [null, [], []];
+                [$doc, $modifiers, $typeTokens, $memberAttributes] = [null, [], [], []];
                 continue;
             }
             if ($type === T_VARIABLE) {
@@ -561,7 +580,7 @@ final class SourceIndex
                     $properties[$this->propertyKey($property, in_array(T_STATIC, $modifiers, true))] = $declared;
                 }
                 $this->skipMember();
-                [$doc, $modifiers, $typeTokens] = [null, [], []];
+                [$doc, $modifiers, $typeTokens, $memberAttributes] = [null, [], [], []];
                 continue;
             }
             if (in_array($type, self::BRACE_OPENERS, true)) {
@@ -587,6 +606,7 @@ final class SourceIndex
             $constantClasses,
             $isAbstract,
             $line,
+            $attributes,
         );
     }
 
@@ -703,9 +723,10 @@ final class SourceIndex
      * @param string $class Fully qualified name of the declaring class
      * @param ?string $doc Docblock directly above the declaration
      * @param array<int, int|string> $modifiers Modifier token types read before the keyword
+     * @param list<array{name: string, line: int}> $attributes Explicit method attributes
      * @return ?MethodRecord The method, or null when the keyword opened a closure rather than a declaration
      */
-    private function readMethod(string $class, ?string $doc, array $modifiers): ?MethodRecord
+    private function readMethod(string $class, ?string $doc, array $modifiers, array $attributes): ?MethodRecord
     {
         $this->promoted = [];
         $this->cursor++;
@@ -734,7 +755,10 @@ final class SourceIndex
         $callSites = [];
         $arrayBindings = [];
         $optionAccesses = [];
+        $bodySource = '';
+        $bodyLine = $this->tokens[$this->cursor + 1][2] ?? $line;
         if ($hasBody) {
+            $bodySource = $this->qualifiedBodySource($this->cursor + 1, $this->matchingBrace($this->cursor));
             [$callSites, $arrayBindings, $optionAccesses] = $this->readMethodBody($class);
         } else {
             $this->cursor++;
@@ -751,6 +775,9 @@ final class SourceIndex
             $variableTypes,
             $arrayBindings,
             $optionAccesses,
+            $attributes,
+            $bodySource,
+            $bodyLine,
         );
     }
 
@@ -1737,6 +1764,7 @@ final class SourceIndex
 
     /**
      * @param array<int, int|string> $modifiers Modifier token types read before the keyword
+     * @param list<array{name: string, line: int}> $attributes Explicit method attributes
      * @return string One of the visibility constants of {@see MethodRecord}
      */
     private function visibilityOf(array $modifiers): string
@@ -1997,6 +2025,10 @@ final class SourceIndex
             return substr($name, 1);
         }
 
+        if (str_starts_with(strtolower($name), 'namespace\\')) {
+            return ltrim($this->namespace . '\\' . substr($name, strlen('namespace\\')), '\\');
+        }
+
         $separator = strpos($name, '\\');
         $head = $separator === false ? $name : substr($name, 0, $separator);
         $imported = $this->aliases[strtolower($head)] ?? null;
@@ -2228,6 +2260,101 @@ final class SourceIndex
         }
 
         return $cursor - 1;
+    }
+
+    /**
+     * @param int $cursor Token immediately before a class keyword
+     * @return list<array{name: string, line: int}> Explicit attributes in declaration order
+     */
+    private function declarationAttributes(int $cursor): array
+    {
+        $attributes = [];
+        for (; $cursor >= 0; $cursor--) {
+            $type = $this->tokens[$cursor][0];
+            if ($type === ']') {
+                $cursor = $this->attributeStart($cursor);
+                $attributes = [...$this->attributesAt($cursor), ...$attributes];
+                continue;
+            }
+            if (!in_array($type, [T_ABSTRACT, T_FINAL, T_READONLY, T_DOC_COMMENT], true)) {
+                break;
+            }
+        }
+
+        return $attributes;
+    }
+
+    /**
+     * @param int $cursor Closing bracket of an attribute group
+     * @return int Opening attribute token, or the stopping token for a malformed declaration
+     */
+    private function attributeStart(int $cursor): int
+    {
+        $depth = 1;
+        while (--$cursor >= 0) {
+            $type = $this->tokens[$cursor][0];
+            if ($type === ']') {
+                $depth++;
+            } elseif ($type === '[' || $type === T_ATTRIBUTE) {
+                if (--$depth === 0) {
+                    return $cursor;
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * Argument names, nested arrays and constructed argument values are not attributes.
+     *
+     * @param int $start Opening attribute token
+     * @return list<array{name: string, line: int}> Attribute names and their own source lines
+     */
+    private function attributesAt(int $start): array
+    {
+        $attributes = [];
+        $end = $this->skipAttribute($start);
+        $expectsName = true;
+        for ($cursor = $start + 1; $cursor < $end - 1; $cursor++) {
+            $token = $this->tokens[$cursor];
+            if ($expectsName && $this->isName($token)) {
+                $attributes[] = ['name' => $this->resolveName($token[1]), 'line' => $token[2]];
+                $expectsName = false;
+            } elseif ($token[0] === '(') {
+                $cursor = $this->matchingBracket($cursor, '(', ')');
+            } elseif ($token[0] === ',') {
+                $expectsName = true;
+            }
+        }
+
+        return $attributes;
+    }
+
+    /**
+     * Keeps a separate lexical body for rules that inspect SQL arguments and callbacks.
+     * The existing exception call graph still deliberately skips callback bodies.
+     *
+     * @param int $start First token inside the body
+     * @param int $end Closing brace, excluded
+     * @return string Compact source with class names qualified and original line distances preserved
+     */
+    private function qualifiedBodySource(int $start, int $end): string
+    {
+        $body = '';
+        $line = $this->tokens[$start][2] ?? 1;
+        for ($cursor = $start; $cursor < $end; $cursor++) {
+            $token = $this->tokens[$cursor];
+            if ($this->isName($token) && ($this->tokens[$cursor - 1][0] ?? null) === T_NEW) {
+                $token[1] = $this->resolveTypeName($token[1]) ?? $token[1];
+            } else {
+                $token[1] = $this->qualifiedTokenText($cursor);
+            }
+            $body .= str_repeat("\n", max(0, $token[2] - $line)) . $token[1] . ' ';
+            $line = $token[2] + substr_count($token[1], "\n");
+        }
+
+        return $body;
     }
 
     /**

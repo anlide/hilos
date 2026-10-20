@@ -1,6 +1,6 @@
 ---
 name: hilos-testing-cli
-description: Run or choose Hilos test, migration, schema, DB reset, monitoring, and CLI commands. Use when validating Hilos changes, running framework or demo tests, checking migrations, resetting test databases, running frontend tests, deciding the correct composer script, or considering forgetting loaded ORM state through CLI, direct API, or a helper.
+description: Run or choose Hilos tests, migration, schema, DB reset, monitoring, and CLI commands, or write a PHP integration test. Use when validating Hilos changes, writing or changing PHP integration tests, running framework or demo tests, checking migrations, resetting test databases, running frontend tests, deciding the correct composer script, or considering forgetting loaded ORM state through CLI, direct API, or a helper.
 ---
 
 # Hilos Testing CLI
@@ -12,6 +12,8 @@ Use this skill whenever validation or CLI commands are needed. Start with `agent
 - Before considering ORM forget by CLI, API, or helper:
   [Forgetting loaded ORM state](../../docs/agents/testing.md#forgetting-loaded-orm-state).
 - Test commands and test-writing rules: `docs/agents/testing.md`
+- Before writing or changing a rollback-scoped PHP integration test:
+  [Rollback-scoped integration tests](../../docs/agents/testing/integration-tests.md).
 - The full run — the step graph, lanes, and the re-run rule for red under
   concurrency: `docs/agents/testing.md`, section "The full run — one graph, a
   bounded number of lanes"

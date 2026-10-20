@@ -10,6 +10,7 @@ use Hilos\Database\Exception\DatabaseConnectionException;
 use Hilos\Database\Exception\DatabaseParamsException;
 use Hilos\Database\Exception\DatabaseRuntimeException;
 use Hilos\Database\Exception\SqlConnection\CantConnectToMysqlServerException;
+use Hilos\Database\Exception\TestRollbackRefusedException;
 use Hilos\Database\Exception\Transaction\AnnouncementFailedException;
 use Hilos\Database\Exception\Transaction\MemoryRollbackFailedException;
 use Hilos\Database\Exception\Transaction\NestedTransactionRefusedException;
@@ -17,7 +18,10 @@ use Hilos\Database\Exception\Transaction\TransactionLeftOpenException;
 use Hilos\Database\Exception\Transaction\TransactionNotOpenException;
 use Hilos\Database\ResultSet\ResultSet;
 use Hilos\Database\ResultSet\ResultSetCollection;
+use Hilos\Database\Transaction\TestRollbackScope;
+use Hilos\Database\Transaction\TestRollbackSqlGuard;
 use Hilos\Database\Transaction\TransactionLevel;
+use Hilos\Environment\NonProductionGate;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
@@ -31,6 +35,8 @@ use Throwable;
  */
 class Database
 {
+    private const string TEST_SQL_MODE_QUERY = 'SELECT @@SESSION.sql_mode';
+
     /** @var array<int, DatabaseConnectionConfig> */
     private static array $configurations = [];
 
@@ -67,6 +73,12 @@ class Database
      * @var array<int, list<TransactionLevel>>
      */
     private static array $transactions = [];
+
+    /** The sole test harness owns these handles for one case; no other process reads them. */
+    private static ?TestRollbackScope $testRollbackScope = null;
+
+    /** Undo may announce mirror facts, but must neither publish reactions nor journal fresh work during cleanup. */
+    private static bool $cleaningTestScope = false;
 
     /** Whether a handler is open: from handlerStart() to handlerEnd() a failed announcement waits for the handler's end */
     private static bool $handlerOpen = false;
@@ -155,6 +167,9 @@ class Database
         int $reconnectAttempts = DatabaseConnectionPolicy::DEFAULT_RECONNECT_ATTEMPTS,
         int $reconnectDelay = DatabaseConnectionPolicy::DEFAULT_RECONNECT_DELAY_MS
     ): void {
+        if (self::$testRollbackScope !== null) {
+            self::dropLink($index);
+        }
         self::$configurations[$index] = new DatabaseConnectionConfig(
             $host,
             $user,
@@ -245,6 +260,12 @@ class Database
         ?int $retryDelaySeconds = null,
     ): void {
         $index = $index ?? self::$currentIndex;
+        if (self::$testRollbackScope !== null && (self::$transactions[$index] ?? []) !== []) {
+            $root = self::$transactions[$index][0];
+            if ($root->isOpened() || $root->isFailed()) {
+                throw new DatabaseConnectionException('Cannot replace a connection owned by an active test rollback scope');
+            }
+        }
 
         $config = self::$configurations[$index]
             ?? throw new DatabaseConnectionException("Connection {$index} is not configured");
@@ -481,6 +502,9 @@ class Database
     {
         if (MysqlClientErrorCode::isRetriedOnReconnect($errno)) {
             self::$unreachable[$index] = true;
+            if (self::$testRollbackScope !== null) {
+                self::dropLink($index);
+            }
         }
     }
 
@@ -570,11 +594,20 @@ class Database
      * @return ResultSetCollection First result set collection
      * @throws DatabaseConnectionException When not connected or reconnect fails
      * @throws DatabaseParamsException When parameters are invalid or placeholder count mismatches
-     * @throws DatabaseRuntimeException When query execution fails
+     * @throws DatabaseRuntimeException When execution fails, or active test-scope SQL admission refuses
      */
     public static function sql(string $sql, array|SqlParamCollection|null $params = null, bool $tryReconnect = true): ResultSetCollection
     {
         $index = self::$currentIndex;
+        if (self::$testRollbackScope !== null) {
+            if (self::$cleaningTestScope) {
+                throw new DatabaseRuntimeException('SQL is refused while a test rollback scope is closing');
+            }
+            self::ensureTestRoot($index);
+            if (self::$transactions[$index][0]->isFailed()) {
+                throw new DatabaseRuntimeException('SQL is refused on a failed test rollback scope');
+            }
+        }
         $mysqli = self::openLink($index, $tryReconnect);
         $config = self::$configurations[$index];
 
@@ -604,6 +637,9 @@ class Database
         // The first query of a transaction opens its MySQL part: BEGIN, then the savepoints of
         // the nested levels started since, in order. Sent after the drain, which a BEGIN on a
         // link with results still pending would be refused for.
+        if (self::$testRollbackScope !== null) {
+            self::checkTestSqlMode($index, $mysqli, $parsedSql);
+        }
         self::openPendingLevels($index, $mysqli);
 
         $attempts = 0;
@@ -898,21 +934,30 @@ class Database
      * Never nests: a start while a transaction is open on the connection is refused, and the open
      * transaction is left for its own caller to roll back. A nested level opens only when every
      * level of the chain was started with {@see self::transactionStartNestable()}, which the
-     * framework itself never calls.
+     * framework itself never calls. Inside a test rollback scope, the synthetic root is neutral:
+     * the first application start is a savepoint, and a second plain application start still refuses.
      *
-     * @throws NestedTransactionRefusedException When a transaction is already open on the connection
+     * @throws NestedTransactionRefusedException When an application transaction is already open, or test cleanup is running
      */
     public static function transactionStart(): void
     {
         $index = self::$currentIndex;
+        if (self::$cleaningTestScope) {
+            throw new NestedTransactionRefusedException('Cannot start a transaction while a test rollback scope is closing');
+        }
+        self::ensureTestRoot($index);
         $depth = count(self::$transactions[$index] ?? []);
-        if ($depth > 0) {
+        if ($depth > 0 && ($depth !== 1 || self::$transactions[$index][0]->testScope === null
+            || self::$transactions[$index][0]->isFailed())) {
             throw self::$transactions[$index][$depth - 1]->isFailed()
                 ? NestedTransactionRefusedException::forFailedLevel($index, $depth)
                 : NestedTransactionRefusedException::forStart($index, $depth, null);
         }
 
-        self::$transactions[$index] = [new TransactionLevel(nestable: false, savepoint: null)];
+        self::$transactions[$index][] = new TransactionLevel(
+            nestable: false,
+            savepoint: $depth === 0 ? null : TransactionLevel::SAVEPOINT_PREFIX . ($depth + 1),
+        );
     }
 
     /**
@@ -923,7 +968,8 @@ class Database
      * savepoint and hands its held announcements and its memory journal to the level under it,
      * its rollback undoes its own writes and its own memory alone. One level without the mark
      * refuses the start, as the plain start does. Like the plain start it sends no SQL: the
-     * first query on the connection opens BEGIN and the savepoints in order.
+     * first query on the connection opens BEGIN and the savepoints in order. A synthetic test root
+     * is neutral; every application level still needs the mark.
      *
      * Project code may call this; the framework never does, and the NESTABLE-TRANSACTION guard
      * keeps it so - a framework method joins the caller's transaction instead.
@@ -933,6 +979,10 @@ class Database
     public static function transactionStartNestable(): void
     {
         $index = self::$currentIndex;
+        if (self::$cleaningTestScope) {
+            throw new NestedTransactionRefusedException('Cannot start a transaction while a test rollback scope is closing');
+        }
+        self::ensureTestRoot($index);
         $levels = self::$transactions[$index] ?? [];
         $depth = count($levels);
         if ($depth === 0) {
@@ -945,7 +995,7 @@ class Database
             if ($level->isFailed()) {
                 throw NestedTransactionRefusedException::forFailedLevel($index, $position + 1);
             }
-            if (!$level->nestable) {
+            if (!$level->nestable && $level->testScope === null) {
                 throw NestedTransactionRefusedException::forStart($index, $depth, $position + 1);
             }
         }
@@ -968,8 +1018,9 @@ class Database
      * reached the server commits without SQL. A commit that fails rolls its own level back, puts
      * its memory back, drops what the level held and leaves the level standing as failed for the
      * caller's rollback to close - taken off here, that rollback would reach the parent level.
+     * A synthetic test root is never committed here: only an application level may commit.
      *
-     * @throws TransactionNotOpenException When no transaction is open, or the innermost level already failed to commit
+     * @throws TransactionNotOpenException When no application transaction is open, or its innermost level already failed
      * @throws DatabaseConnectionException When not connected
      * @throws DatabaseRuntimeException When the commit or the savepoint release fails
      * @throws AnnouncementFailedException When an announcement the commit released failed and no handler is open to hold the failure
@@ -978,7 +1029,7 @@ class Database
     {
         $index = self::$currentIndex;
         $depth = count(self::$transactions[$index] ?? []);
-        if ($depth === 0) {
+        if ($depth === 0 || self::$transactions[$index][$depth - 1]->testScope !== null) {
             throw TransactionNotOpenException::forEmptyStack($index);
         }
         $level = self::$transactions[$index][$depth - 1];
@@ -1035,6 +1086,7 @@ class Database
      * that fails stops neither the other steps nor the SQL: memory half put back is worse than any
      * error. The failure raised is the SQL's when it failed; otherwise the first failed step's,
      * as it is when it is a Hilos exception and wrapped when it is not. The rest are logged.
+     * With only a synthetic test root it does nothing; that root belongs to its scope token.
      *
      * @throws DatabaseConnectionException When not connected
      * @throws DatabaseRuntimeException When the rollback fails
@@ -1045,41 +1097,10 @@ class Database
     {
         $index = self::$currentIndex;
         $depth = count(self::$transactions[$index] ?? []);
-        if ($depth === 0) {
+        if ($depth === 0 || self::$transactions[$index][$depth - 1]->testScope !== null) {
             return;
         }
-        $level = array_pop(self::$transactions[$index]);
-        if ($level->isFailed()) {
-            return;
-        }
-        $level->dropHeld();
-        $memoryFailure = self::restoreMemory($index, $depth, $level);
-
-        if ($level->isOpened()) {
-            $mysqli = self::getConnection($index);
-            try {
-                if ($level->savepoint === null) {
-                    mysqli_rollback($mysqli);
-                } else {
-                    mysqli_query($mysqli, DatabaseSql::rollbackToSavepoint($level->savepoint));
-                    mysqli_release_savepoint($mysqli, $level->savepoint);
-                }
-            } catch (mysqli_sql_exception $e) {
-                self::markUnreachable($index, $e->getCode());
-                MysqlExceptionMapper::runtimeException(
-                    $e->getCode(),
-                    $e->getMessage(),
-                    $level->savepoint === null ? DatabaseSql::ROLLBACK : DatabaseSql::ROLLBACK_TO_SAVEPOINT,
-                );
-            }
-        }
-
-        if ($memoryFailure instanceof HilosException) {
-            throw $memoryFailure;
-        }
-        if ($memoryFailure !== null) {
-            throw new MemoryRollbackFailedException($memoryFailure);
-        }
+        self::rollBackLevel($index);
     }
 
     /**
@@ -1116,6 +1137,10 @@ class Database
      */
     public static function afterCommit(Closure $announce): void
     {
+        if (self::$cleaningTestScope) {
+            return;
+        }
+        self::ensureTestRoot(self::$currentIndex);
         $levels = self::$transactions[self::$currentIndex] ?? [];
         for ($position = count($levels) - 1; $position >= 0; $position--) {
             if (!$levels[$position]->isFailed()) {
@@ -1125,7 +1150,9 @@ class Database
             }
         }
 
-        $announce();
+        if (self::$testRollbackScope === null) {
+            $announce();
+        }
     }
 
     /**
@@ -1145,9 +1172,13 @@ class Database
      */
     public static function onRollback(Closure $undo): void
     {
+        if (self::$cleaningTestScope) {
+            return;
+        }
+        self::ensureTestRoot(self::$currentIndex);
         $levels = self::$transactions[self::$currentIndex] ?? [];
         for ($position = count($levels) - 1; $position >= 0; $position--) {
-            if (!$levels[$position]->isFailed()) {
+            if (!$levels[$position]->isFailed() || $levels[$position]->testScope !== null) {
                 $levels[$position]->remember($undo);
 
                 return;
@@ -1157,12 +1188,16 @@ class Database
 
     /**
      * Reads every connection's stack without opening a connection or changing the active index.
-     * A failed level is still open until its caller rolls it back.
+     * A failed level is still open until its caller rolls it back. An active test scope counts
+     * even before its first lazy root, so a test-only ORM reset cannot detach its memory journal.
      *
-     * @return bool Whether any connection holds a transaction level
+     * @return bool Whether a test scope or any connection's transaction level remains open
      */
     public static function hasOpenTransactions(): bool
     {
+        if (self::$testRollbackScope !== null) {
+            return true;
+        }
         foreach (self::$transactions as $levels) {
             if ($levels !== []) {
                 return true;
@@ -1170,6 +1205,29 @@ class Database
         }
 
         return false;
+    }
+
+    /**
+     * Opens one rollback-only test scope for this process, without connecting or sending SQL.
+     * Its physical roots do not grant application transactions permission to nest.
+     *
+     * @return TestRollbackScope The only capability that can close this scope
+     * @throws TestRollbackRefusedException When the environment refuses or any scope or transaction is already open
+     */
+    public static function beginRollbackScopeForTest(): TestRollbackScope
+    {
+        if (!NonProductionGate::admitted()) {
+            throw new TestRollbackRefusedException('A test rollback scope requires a known non-production environment');
+        }
+        if (self::hasOpenTransactions()) {
+            throw new TestRollbackRefusedException('A test rollback scope requires no open scope or transaction on any connection');
+        }
+
+        self::$testRollbackScope = new TestRollbackScope(static function (TestRollbackScope $scope): void {
+            self::rollBackTestScope($scope);
+        });
+
+        return self::$testRollbackScope;
     }
 
     /**
@@ -1344,6 +1402,178 @@ class Database
     }
 
     /**
+     * Pops one ordinary transaction or application savepoint, preserving its existing rollback semantics.
+     *
+     * @param int $index Connection owning the level
+     * @throws DatabaseConnectionException When not connected
+     * @throws DatabaseRuntimeException When rollback fails
+     * @throws MemoryRollbackFailedException When a memory step fails outside the framework tree
+     * @throws HilosException When a framework memory step fails
+     */
+    private static function rollBackLevel(int $index): void
+    {
+        $depth = count(self::$transactions[$index]);
+        $level = array_pop(self::$transactions[$index]);
+        if ($level->isFailed()) {
+            return;
+        }
+        $level->dropHeld();
+        $memoryFailure = self::restoreMemory($index, $depth, $level);
+
+        if ($level->isOpened()) {
+            $mysqli = self::getConnection($index);
+            try {
+                if ($level->savepoint === null) {
+                    mysqli_rollback($mysqli);
+                } else {
+                    mysqli_query($mysqli, DatabaseSql::rollbackToSavepoint($level->savepoint));
+                    mysqli_release_savepoint($mysqli, $level->savepoint);
+                }
+            } catch (mysqli_sql_exception $e) {
+                self::markUnreachable($index, $e->getCode());
+                MysqlExceptionMapper::runtimeException(
+                    $e->getCode(),
+                    $e->getMessage(),
+                    $level->savepoint === null ? DatabaseSql::ROLLBACK : DatabaseSql::ROLLBACK_TO_SAVEPOINT,
+                );
+            }
+        }
+
+        if ($memoryFailure instanceof HilosException) {
+            throw $memoryFailure;
+        }
+        if ($memoryFailure !== null) {
+            throw new MemoryRollbackFailedException($memoryFailure);
+        }
+    }
+
+    /**
+     * Installs a lazy root on the connection first touched by SQL, a start or memory-only work.
+     *
+     * @param int $index Connection whose stack is about to be used
+     */
+    private static function ensureTestRoot(int $index): void
+    {
+        if (self::$testRollbackScope !== null && (self::$transactions[$index] ?? []) === []) {
+            self::$transactions[$index] = [new TransactionLevel(
+                nestable: false,
+                savepoint: null,
+                testScope: self::$testRollbackScope,
+            )];
+        }
+    }
+
+    /**
+     * Reads session syntax through the driver after draining results, before sending user SQL.
+     * SET is refused by the scope, but the connection may have inherited a non-default SQL mode.
+     *
+     * @param int $index Connection owning the scope root
+     * @param mysqli $mysqli Connection that will execute the query
+     * @param string $sql Rendered query to admit
+     * @throws DatabaseRuntimeException When the syntax probe fails or the query is unsafe
+     */
+    private static function checkTestSqlMode(int $index, mysqli $mysqli, string $sql): void
+    {
+        try {
+            mysqli_multi_query($mysqli, self::TEST_SQL_MODE_QUERY);
+            $result = mysqli_store_result($mysqli);
+            $row = mysqli_fetch_row($result);
+            mysqli_free_result($result);
+        } catch (mysqli_sql_exception $failure) {
+            self::markUnreachable($index, $failure->getCode());
+            MysqlExceptionMapper::runtimeException($failure->getCode(), $failure->getMessage(), self::TEST_SQL_MODE_QUERY);
+        }
+        $modes = explode(',', $row[0]);
+        TestRollbackSqlGuard::check(
+            $sql,
+            backslashEscapes: !in_array('NO_BACKSLASH_ESCAPES', $modes, true),
+            ansiQuotes: in_array('ANSI_QUOTES', $modes, true),
+        );
+    }
+
+    /**
+     * All roots remain owned until every undo and driver rollback has been attempted.
+     * A failing connection cannot prevent cleanup of another, or publish anything it held.
+     *
+     * @param TestRollbackScope $scope Capability issued by this Database instance
+     * @throws TestRollbackRefusedException When ownership or cleanup fails
+     * @throws TransactionLeftOpenException When application levels remain, after full cleanup
+     */
+    private static function rollBackTestScope(TestRollbackScope $scope): void
+    {
+        if (self::$testRollbackScope !== $scope) {
+            throw new TestRollbackRefusedException('Only the original test rollback scope can close its roots');
+        }
+
+        $initialIndex = self::$currentIndex;
+        $firstFailure = null;
+        $leftOpen = [];
+        self::$cleaningTestScope = true;
+        try {
+            foreach (self::$transactions as $index => $levels) {
+                if ($levels === [] || $levels[0]->testScope !== $scope) {
+                    continue;
+                }
+                self::$currentIndex = $index;
+                $root = $levels[0];
+                $heldCount = 0;
+                for ($position = count($levels) - 1; $position >= 0; $position--) {
+                    $heldCount += count($levels[$position]->takeHeld());
+                    $failure = self::restoreMemory($index, $position + 1, $levels[$position]);
+                    $firstFailure ??= $failure;
+                }
+                if (count($levels) > 1) {
+                    $leftOpen[] = TransactionLeftOpenException::describe($index, count($levels) - 1, $heldCount);
+                }
+                try {
+                    if ($root->isFailed()) {
+                        throw new TestRollbackRefusedException("Test rollback root failed on connection {$index}");
+                    }
+                    if ($root->isOpened()) {
+                        $mysqli = self::getConnection($index);
+                        try {
+                            while (mysqli_next_result($mysqli)) {
+                                $result = mysqli_store_result($mysqli);
+                                if ($result instanceof mysqli_result) {
+                                    mysqli_free_result($result);
+                                }
+                            }
+                        } catch (mysqli_sql_exception $failure) {
+                            // A deferred statement error must fail the case, but cannot skip its rollback.
+                            $firstFailure ??= $failure;
+                        }
+                        mysqli_rollback($mysqli);
+                    }
+                } catch (Throwable $failure) {
+                    $firstFailure ??= $failure;
+                    // Discard a link whose rollback was not confirmed before the next case can use it.
+                    try {
+                        self::dropLink($index);
+                    } catch (Throwable $closeFailure) {
+                        Logger::error("Could not close test rollback connection {$index}: " . $closeFailure->getMessage());
+                        self::$connections[$index] = null;
+                        self::$resultSets[$index] = null;
+                        self::$lastSql[$index] = '';
+                    }
+                } finally {
+                    self::$transactions[$index] = [];
+                }
+            }
+        } finally {
+            self::$currentIndex = $initialIndex;
+            self::$testRollbackScope = null;
+            self::$cleaningTestScope = false;
+        }
+
+        if ($leftOpen !== []) {
+            throw TransactionLeftOpenException::forConnections($leftOpen, $firstFailure);
+        }
+        if ($firstFailure !== null) {
+            throw new TestRollbackRefusedException('Test rollback scope cleanup failed', previous: $firstFailure);
+        }
+    }
+
+    /**
      * Opens the MySQL part of every level of the connection that has not reached the server yet.
      *
      * Called before the first query: BEGIN for the outermost level, then SAVEPOINT for each nested
@@ -1394,6 +1624,9 @@ class Database
      */
     private static function rollBackFailedCommit(mysqli $mysqli, int $index, int $depth, TransactionLevel $level): void
     {
+        if ($level->isFailed()) {
+            return;
+        }
         $level->dropHeld();
         $level->markFailed();
         self::restoreMemory($index, $depth, $level);
@@ -1464,6 +1697,28 @@ class Database
         $rollbackFailure = null;
         foreach (self::$transactions as $index => $levels) {
             if ($levels === []) {
+                continue;
+            }
+            if ($levels[0]->testScope !== null) {
+                if (count($levels) === 1) {
+                    continue;
+                }
+                $heldCount = 0;
+                $initialIndex = self::$currentIndex;
+                try {
+                    while (count(self::$transactions[$index]) > 1) {
+                        self::$currentIndex = $index;
+                        $heldCount += count(self::$transactions[$index][array_key_last(self::$transactions[$index])]->takeHeld());
+                        try {
+                            self::rollBackLevel($index);
+                        } catch (Throwable $failure) {
+                            $rollbackFailure ??= $failure;
+                        }
+                    }
+                } finally {
+                    self::$currentIndex = $initialIndex;
+                }
+                $descriptions[] = TransactionLeftOpenException::describe($index, count($levels) - 1, $heldCount);
                 continue;
             }
 

@@ -27,6 +27,9 @@ final readonly class MethodRecord
      * @param array<string, string> $variableTypes Declared type by variable name, an `[]` suffix marking an array of it
      * @param array<string, array{base: string, path: array<int, string>}> $arrayBindings Iterated receiver by loop variable
      * @param array<int, OptionAccess> $optionAccesses Reads of `$options` and handoffs of the variable whole, class names already resolved
+     * @param list<array{name: string, line: int}> $attributes Explicit method attributes with qualified names and source positions
+     * @param string $bodySource Compact lexical body, class receivers and constructed names qualified
+     * @param int $bodyLine Original line of the first body token
      */
     public function __construct(
         public string $class,
@@ -39,6 +42,9 @@ final readonly class MethodRecord
         public array $variableTypes,
         public array $arrayBindings,
         public array $optionAccesses,
+        public array $attributes = [],
+        public string $bodySource = '',
+        public int $bodyLine = 1,
     ) {
     }
 

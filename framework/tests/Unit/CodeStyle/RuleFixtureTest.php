@@ -28,6 +28,7 @@ use Hilos\Tests\CodeStyle\Rule\RtStateMutationRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
 use Hilos\Tests\CodeStyle\Rule\SecretInQueryRule;
 use Hilos\Tests\CodeStyle\Rule\SpellingRule;
+use Hilos\Tests\CodeStyle\Rule\TestRollbackScopeRule;
 use Hilos\Tests\CodeStyle\Rule\TruthSourceClaimRule;
 use Hilos\Tests\CodeStyle\Rule\ViewWrapperBindingRule;
 use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
@@ -736,6 +737,10 @@ final class RuleFixtureTest extends TestCase
                 'VIEW-WRAPPER-BIND Runtime/View/Collection/ByRefFactorySamples.php:47 — $state is declared by '
                     . 'reference in the wrapper layer; take the value, so no caller has to hand over a '
                     . 'variable (see docs/agents/orm/collection-iteration.md)',
+                'CODE-FQN ThrowsTree/Integration/tests/Cases.php:79 — \Hilos\Testing\IntegrationTest is written out in code; '
+                    . 'import it and use the short name (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN ThrowsTree/Integration/tests/Cases.php:82 — \Hilos\Testing\BreaksOrmState is written out in code; '
+                    . 'import it and use the short name (see docs/agents/code-style/qualified-names.md)',
                 'EMPTY-STRING-SENTINEL WholeRoot/Playground/JudgedAnyway.php:22 — ?? \'\' turns a missing '
                     . 'value into an empty string; keep it null or make the field required '
                     . '(see docs/agents/code-style/method-contracts.md)',
@@ -784,6 +789,35 @@ final class RuleFixtureTest extends TestCase
         );
         $this->assertSame([], $demo);
         $this->assertSame([], $suite);
+    }
+
+    /** Scope entry is admitted by explicit suite kind or the exact common harness path only. */
+    public function testRollbackScopeEntryUsesTheRootAndExactHarnessPath(): void
+    {
+        $bad = token_get_all((string)file_get_contents($this->fixtureRoot() . '/Bad/TestRollbackScopeSamples.php'));
+        $good = token_get_all((string)file_get_contents($this->fixtureRoot() . '/Good/TestRollbackScopeSamples.php'));
+        foreach ([
+            ['framework/backend', RootKind::Production, 'Other.php', [13, 14, 15, 16]],
+            ['demo/chat/backend', RootKind::Production, 'Other.php', [13, 14, 15, 16]],
+            ['scripts', RootKind::Standalone, 'Other.php', [13, 14, 15, 16]],
+            ['framework/tests', RootKind::Suite, 'Other.php', []],
+            ['demo/chat/tests', RootKind::Suite, 'Other.php', []],
+            ['arbitrary/root', RootKind::Suite, 'Other.php', []],
+            ['framework/tests', RootKind::Production, 'Other.php', [13, 14, 15, 16]],
+            ['framework/backend', RootKind::Production, 'Testing/RollbackIntegrationTestCase.php', []],
+            ['demo/chat/backend', RootKind::Production, 'Testing/RollbackIntegrationTestCase.php', [13, 14, 15, 16]],
+            ['framework/backend', RootKind::Production, 'Other/Testing/RollbackIntegrationTestCase.php', [13, 14, 15, 16]],
+        ] as [$root, $kind, $path, $lines]) {
+            $rule = new TestRollbackScopeRule($root, $kind);
+            self::assertSame('TEST-ROLLBACK-SCOPE', $rule->id());
+            self::assertSame('docs/agents/testing/integration-tests.md', $rule->doc());
+            $hits = iterator_to_array($rule->check($path, $bad), false);
+            self::assertSame(array_map(static fn(int $line): string =>
+                'TEST-ROLLBACK-SCOPE ' . $path . ':' . $line . ' — beginRollbackScopeForTest() belongs to the rollback harness '
+                    . 'or a technical test root (see docs/agents/testing/integration-tests.md)', $lines),
+                array_map(static fn(Violation $hit): string => $hit->describe($rule->doc()), $hits), $root . '/' . $path);
+            self::assertSame([], iterator_to_array($rule->check($path, $good), false));
+        }
     }
 
     /** The same tokens earn a verdict from their root and whole path segments alone. */
@@ -977,6 +1011,7 @@ final class RuleFixtureTest extends TestCase
             new BlockingResolutionRule(),
             new ProcessForkRule('framework/tests/CodeStyle/Fixtures'),
             new NestableTransactionRule('framework/tests/CodeStyle/Fixtures'),
+            new TestRollbackScopeRule('framework/tests/CodeStyle/Fixtures', RootKind::Suite),
             new MalformedInputMarkerRule(),
             new TruthSourceClaimRule(),
             new SecretInQueryRule(),
