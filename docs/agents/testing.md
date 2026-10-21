@@ -500,11 +500,58 @@ shared by the masters (optional); `stranger`, the node under a profile
 that a scenario raises on its own (optional); `cluster-directory`, the name and
 in-container path of a cluster directory of the stand's `$fs`, which scenario 29
 gives one node a copy of its own (optional); `scenarios`, the numbers the
-stand carries — never their order, which is the harness's. A demo's composer
-script calls `python3 ../../framework/docker/cluster/cluster.py <compose file>
-scenarios`. A scenario the stand names but cannot carry by its shape — too few
-masters or slaves, no stranger, no cluster directory — is refused before the
-stand is raised, and so is a stand that leaves out what the harness reads.
+stand carries — never their order, which is the harness's. Scripts that call
+the harness enter through `framework/docker/cluster/run` with that demo's
+compose file. A scenario the stand names but cannot carry by its shape — too
+few masters or slaves, no stranger, no cluster directory — is refused before
+the stand is raised, and so is a stand that leaves out what the harness reads.
+
+### Cluster harness runner
+
+From a demo directory, run
+`../../framework/docker/cluster/run docker/docker-compose.cluster.yml <command> [args]`.
+For example, `up`, `status`, `inspect m1` and `down` operate the selected stand.
+The existing `composer run test:cluster:*` names remain convenient entry points.
+`composer run test:cluster:down` keeps using the existing
+`scripts/down-stands.php`; calling the shell runner's `down` is a standalone
+path. Use `down --volumes` only when intentionally deleting the stand's
+database data.
+
+The shell launcher needs ordinary Linux shell utilities, the Docker CLI and an
+accessible local Unix Docker socket. It requires Linux and a selected local
+Unix endpoint: `DOCKER_CONTEXT` and `DOCKER_HOST` are honored, while a remote
+TCP/SSH endpoint or an absent or inaccessible socket is refused with exit 2
+before the stand is affected. The supported target is a local Linux Docker
+Engine; Docker Desktop, rootless, SSH and multi-machine setups are outside this
+runner's supported contract. It needs no host Python, PHP, Composer or Compose
+plugin, and it does not need root, privileged mode or host networking.
+
+Every invocation builds `framework/docker/Dockerfile.cluster-harness` with
+Docker's normal cache and without `--pull`, then runs that invocation's exact
+image ID in a disposable `--rm --init` container. The first build happens
+automatically; unchanged inputs use cached layers on later invocations. The
+image pins Python 3.12.12, Docker CLI 28.5.1 and Compose 2.40.3. It reads the
+current Python sources from the repository mount. The launcher preserves
+arguments, standard streams, exit codes and signals; build output goes to
+stderr, leaving `inspect` stdout as JSON. The container has temporary `HOME`
+and `DOCKER_CONFIG`, and Python bytecode is not written into the repository.
+
+The repository is mounted read/write at its physical absolute path, and the
+container working directory is the physical demo directory. It mounts the
+selected Docker socket and runs as the caller's UID:GID with the socket's
+numeric GID added. Host `/dev/shm` is mounted read-only so a separate Docker
+helper can find existing database bind directories before cleanup. New files
+belong to the caller; owners and permissions of existing journals are left
+intact. When defined, the launcher passes the existing
+`CLUSTER_E2E_TIMEOUT_SCALE`, `CLUSTER_E2E_RETRIES` and
+`HILOS_E2E_TIMEOUT_SCALE` variables, plus the existing
+`HILOS_STAND_SUFFIX`, `HILOS_STAND_CPU_SHARES`,
+`HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER`,
+`HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER` and
+`HILOS_STAND_NET_ONLINE_TESTING_CLUSTER` variables. It does not forward
+arbitrary host environment variables. A mistaken direct call to `cluster.py`
+under Python earlier than 3.10 exits before imports with a shell-runner hint;
+Python 3.10+ is not a host prerequisite.
 
 The harness retains multi-server database capabilities for P-567. Such a stand
 labels every member `hilos.database.member: "true"` and exactly one

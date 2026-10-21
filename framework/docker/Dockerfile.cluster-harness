@@ -1,0 +1,14 @@
+# The harness reads Python sources from the caller's repository mount.
+# The pinned Docker donor includes Compose 2.40.3 and Buildx 0.29.1.
+FROM docker:28.5.1-cli@sha256:9190b0613792e658a7783cf14b2d5ace5941bb68ede7276922ea36ee457d76ad AS docker-cli
+FROM python:3.12.12-alpine3.22@sha256:848ba4413eb897e225159b8fc1b02094576cbae4aa73fc13142608ae2c8c0e32
+
+COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/ /usr/local/libexec/docker/cli-plugins/
+
+ENV HOME=/tmp \
+    DOCKER_CONFIG=/tmp/.docker \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+RUN python3 --version && docker --version && docker compose version

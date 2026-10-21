@@ -300,12 +300,34 @@ The stand remains up after this command, as it does after `test:cluster:scenario
 Every browser run starts with empty node log directories, rotation archives
 included; copy the previous run's logs before starting the next one.
 
-The harness's other commands — `kill`, `partition`, `cut`, `crash-daemon`, `inspect`,
-`stranger up`, `own-directory s1 on` and the rest — are called on the module
-directly, from `demo/binance-btc-tracker`:
+The harness commands — `kill`, `partition`, `cut`, `crash-daemon`, `inspect`,
+`stranger up`, `own-directory s1 on` and the rest — use the shell entry point
+from this demo directory. It builds and runs a disposable container, using the
+current repository through a mount. The first invocation builds its image
+automatically; later builds use Docker's normal cache. It runs as your UID:GID
+and mounts the selected local Docker socket with its numeric group. This path
+needs ordinary Linux shell utilities, the Docker CLI and an accessible local
+Unix Docker daemon; it does not need host Python, PHP, Composer or a Compose
+plugin. Docker Desktop, rootless, SSH and multi-machine daemons are outside the
+supported target. See the
+[shared runner details](../../docs/agents/testing.md#cluster-harness-runner).
+
+The existing Composer command names above remain convenient entry points.
+`composer run test:cluster:down` still uses `../../scripts/down-stands.php`;
+direct `down` below is a standalone path.
 
 ```bash
-python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml inspect m1
+../../framework/docker/cluster/run docker/docker-compose.cluster.yml up
+../../framework/docker/cluster/run docker/docker-compose.cluster.yml status
+../../framework/docker/cluster/run docker/docker-compose.cluster.yml inspect m1
+../../framework/docker/cluster/run docker/docker-compose.cluster.yml down
+```
+
+**Destructive:** `down --volumes` deletes the stand's database data. Run it
+only when that deletion is intended:
+
+```bash
+../../framework/docker/cluster/run docker/docker-compose.cluster.yml down --volumes
 ```
 
 ### Database

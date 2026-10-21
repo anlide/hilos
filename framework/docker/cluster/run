@@ -1,0 +1,71 @@
+#!/bin/sh
+# One disposable runtime, on the same local daemon and paths as the caller.
+set -eu
+
+refuse() {
+    printf 'cluster: %s\n' "$*" >&2
+    exit 2
+}
+
+[ "$#" -ge 2 ] || refuse 'usage: framework/docker/cluster/run <compose-file> <command> [args]'
+command -v docker >/dev/null 2>&1 || refuse 'Docker CLI is required'
+[ "$(uname -s)" = Linux ] || refuse 'a local Linux Docker daemon is required'
+
+# Docker gives an explicit context priority over DOCKER_HOST. Resolve that
+# selection before replacing it with a fixed endpoint for both build and run.
+if [ -n "${DOCKER_CONTEXT:-}" ]; then
+    endpoint=$(docker context inspect "$DOCKER_CONTEXT" --format '{{.Endpoints.docker.Host}}') ||
+        refuse "cannot read Docker context '$DOCKER_CONTEXT'"
+elif [ -n "${DOCKER_HOST:-}" ]; then
+    endpoint=$DOCKER_HOST
+else
+    endpoint=$(docker context inspect --format '{{.Endpoints.docker.Host}}') ||
+        refuse 'cannot read the selected Docker context'
+fi
+case "$endpoint" in
+    unix:///*) socket=${endpoint#unix://} ;;
+    *) refuse "a local unix Docker endpoint is required (selected: $endpoint)" ;;
+esac
+[ -S "$socket" ] || refuse "Docker socket does not exist: $socket"
+[ -r "$socket" ] && [ -w "$socket" ] || refuse "Docker socket is not accessible: $socket"
+socket_gid=$(stat -Lc '%g' "$socket") || refuse "cannot read Docker socket group: $socket"
+unset DOCKER_CONTEXT DOCKER_HOST DOCKER_TLS_VERIFY DOCKER_CERT_PATH
+docker --host "$endpoint" info >/dev/null || refuse "cannot reach Docker daemon at $endpoint"
+
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+repo=$(CDPATH= cd -- "$here/../../.." && pwd -P)
+workdir=$(pwd -P)
+build_dir=$(mktemp -d)
+trap 'rm -rf "$build_dir"' EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# Keep every build message, including a cached build's image id, off stdout.
+# An unsuccessful build exits here and cannot fall back to an older image.
+docker --host "$endpoint" build --iidfile "$build_dir/image" \
+    --file "$repo/framework/docker/Dockerfile.cluster-harness" \
+    "$repo/framework/docker" >&2
+image=$(cat "$build_dir/image")
+[ -n "$image" ] || refuse 'Docker build did not return an image id'
+rm -rf "$build_dir"
+trap - EXIT HUP INT TERM
+
+# Prepend only the existing knobs that the caller actually defined, preserving
+# empty values too. The stand variables keep this caller's parallel instance.
+set -- "$image" python3 "$here/cluster.py" "$@"
+[ "${CLUSTER_E2E_TIMEOUT_SCALE+x}" != x ] || set -- --env "CLUSTER_E2E_TIMEOUT_SCALE=$CLUSTER_E2E_TIMEOUT_SCALE" "$@"
+[ "${CLUSTER_E2E_RETRIES+x}" != x ] || set -- --env "CLUSTER_E2E_RETRIES=$CLUSTER_E2E_RETRIES" "$@"
+[ "${HILOS_E2E_TIMEOUT_SCALE+x}" != x ] || set -- --env "HILOS_E2E_TIMEOUT_SCALE=$HILOS_E2E_TIMEOUT_SCALE" "$@"
+[ "${HILOS_STAND_SUFFIX+x}" != x ] || set -- --env "HILOS_STAND_SUFFIX=$HILOS_STAND_SUFFIX" "$@"
+[ "${HILOS_STAND_CPU_SHARES+x}" != x ] || set -- --env "HILOS_STAND_CPU_SHARES=$HILOS_STAND_CPU_SHARES" "$@"
+[ "${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER+x}" != x ] || set -- --env "HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER=$HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER" "$@"
+[ "${HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER+x}" != x ] || set -- --env "HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER=$HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER" "$@"
+[ "${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER+x}" != x ] || set -- --env "HILOS_STAND_NET_ONLINE_TESTING_CLUSTER=$HILOS_STAND_NET_ONLINE_TESTING_CLUSTER" "$@"
+
+exec docker --host "$endpoint" run --rm --init -i \
+    --user "$(id -u):$(id -g)" --group-add "$socket_gid" \
+    --mount "type=bind,source=$repo,target=$repo" \
+    --mount "type=bind,source=$socket,target=$socket" \
+    --mount type=bind,source=/dev/shm,target=/dev/shm,readonly \
+    --workdir "$workdir" --env "DOCKER_HOST=$endpoint" "$@"

@@ -5,8 +5,9 @@ has a cluster stand: the controller of the stand and its scenario matrix in one 
 stand is not remembered here - it is read from the compose file named on the command line,
 afresh on every command (stand.py says what is read and from where).
 
-Usage: cluster.py <compose-file> <command> [args]   (the compose file relative to the current
-directory; a demo calls this from its composer scripts)
+Usage: framework/docker/cluster/run <compose-file> <command> [args]
+  (the compose file relative to the current directory; a demo calls
+  ../../framework/docker/cluster/run from its composer scripts)
 
   up                   build every image, then start the nodes (they roll the schema out
                        under a claim in the database, HIL-1228) and the cli container.
@@ -60,9 +61,16 @@ Exit code: 0 done (a green matrix), 1 failed (a red matrix), 2 the stand or the 
 
 import sys
 
+if sys.version_info < (3, 10):
+    print("cluster: Python 3.10+ required for a direct call; use "
+          "framework/docker/cluster/run <compose-file> <command> [args]", file=sys.stderr)
+    sys.exit(2)
+
 # The harness runs from the repository: keep the interpreter's bytecode cache out of the tree.
 sys.dont_write_bytecode = True
 
+import pathlib  # noqa: E402
+import shlex  # noqa: E402
 import control  # noqa: E402 - after the bytecode switch, which has to precede the import
 import browser  # noqa: E402
 import scenarios  # noqa: E402
@@ -173,14 +181,17 @@ def main(argv):
     # Line by line, so a runner streaming this into its log sees each line when it is said, in
     # order with what the docker commands print between them.
     sys.stdout.reconfigure(line_buffering=True)
+    prog = str(pathlib.Path(argv[0]).with_name("run"))
+    # Scenario-driven restarts also use argv[0] for their follow-up commands.
+    argv[0] = prog
     if len(argv) < 3 or argv[2] not in COMMANDS:
-        print(f"cluster: usage: {argv[0]} <compose-file> {{{'|'.join(COMMANDS)}}} [args]", file=sys.stderr)
+        print(f"cluster: usage: {prog} <compose-file> {{{'|'.join(COMMANDS)}}} [args]", file=sys.stderr)
         return REFUSED
     compose, command, args = argv[1], argv[2], argv[3:]
     try:
         stand = load_stand(compose)
         check_registry(stand, compose)
-        return dispatch(stand, command, args, f"{argv[0]} {compose}")
+        return dispatch(stand, command, args, shlex.join([prog, compose]))
     except StandRefused as refusal:
         print(f"cluster: {refusal}", file=sys.stderr)
         return REFUSED
