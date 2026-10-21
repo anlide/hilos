@@ -6,7 +6,7 @@ import {
   shownByTestId,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant'
-import { gotoPage, PAGE_READY } from '../helpers/page'
+import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page'
 
 // Rotation, carrying a batch off and cleaning it up, end to end (HIL-763): the
 // second and last through-scenario of the logs epic. It forces a rotation, sees
@@ -35,6 +35,14 @@ import { gotoPage, PAGE_READY } from '../helpers/page'
 // filters and empty states (HIL-387), the retention predicate itself (HIL-381).
 // Nor the cluster half of any of it: this installation is single-node, and its
 // rows are keyed on a dash in place of a node name.
+//
+// One filter case is checked here after all, by a test of its own beside the
+// scenario: the reset of the address filter (HIL-1521). A screen opened at
+// `/rotations/due`, directly or through a reload, used to reset back to the
+// filter its address put there; the test drives the reset cross from the
+// general address, from the direct one and from a reload of it. It reads only
+// the filter and the address, so it rotates nothing and writes no setting, and
+// the warning below does not concern it.
 //
 // The scenario shares the stand with every other binance-btc-tracker spec, and
 // rotation moves live log files out from under all of them — which is safe only
@@ -201,6 +209,25 @@ async function newBatchKeys(
   )
 
   return keys.sort((a, b) => batchInstant(a) - batchInstant(b))
+}
+
+/**
+ * Press the reset cross of a rotations screen that stands on the address filter,
+ * and see the whole filter go with it: the switch is off, the address is the
+ * general one, and the cross is gone from both branches of the table.
+ *
+ * @param page The tab showing the rotations screen at `/rotations/due`.
+ */
+async function resetRotationFilters(page: Page): Promise<void> {
+  const state = shownByTestId(page, 'hilos-table-filter-state')
+  await expect(state).toBeChecked()
+  await expect(page).toHaveURL(/\/hilos\/logs\/rotations\/due$/)
+
+  await shownByTestId(page, 'hilos-table-filter-reset').click()
+
+  await expect(state).not.toBeChecked()
+  await expect(page).toHaveURL(/\/hilos\/logs\/rotations$/)
+  await expect(page.getByTestId('hilos-table-filter-reset')).toHaveCount(0)
 }
 
 test.afterEach(async () => {
@@ -441,4 +468,38 @@ test('rotates on the configured threshold, carries a batch off on the operator c
   // The control tab is deliberately left open and left registered: the trigger has
   // been up again since the attempt that ran the cleaner, and the cleanup is the
   // one thing that lowers it.
+})
+
+test('resets the rotations filter wherever the address put it, after a reload too', async ({
+  page,
+}) => {
+  await grantAdminToSelf(page)
+
+  // The general address, with the filter switched on by hand.
+  await gotoPage(page, '/hilos/logs/rotations', PAGE_READY)
+  await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+  await shownByTestId(page, 'hilos-table-filter-state').click()
+  await resetRotationFilters(page)
+
+  // The filtered address, opened directly: the filter is the address's, and the
+  // reset used to hand it back.
+  await gotoPage(page, '/hilos/logs/rotations/due', PAGE_READY)
+  await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+  await resetRotationFilters(page)
+
+  // The same address after a reload, which rebuilds the screen from the address
+  // alone.
+  await gotoPage(page, '/hilos/logs/rotations/due', PAGE_READY)
+  await page.reload()
+  await expectPageReady(page)
+  await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+  await resetRotationFilters(page)
+
+  // The reset wrote the general address, so a reload stays unfiltered.
+  await page.reload()
+  await expectPageReady(page)
+  await expect(page).toHaveURL(/\/hilos\/logs\/rotations$/)
+  await expect(
+    shownByTestId(page, 'hilos-table-filter-state'),
+  ).not.toBeChecked()
 })

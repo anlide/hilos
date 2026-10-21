@@ -849,6 +849,37 @@ describe('HilosLogsRotationsPage', () => {
       (byId(container, 'hilos-table-filter-state') as HTMLInputElement).checked,
     ).toBe(false)
   })
+
+  it('clears the awaiting switch with the reset cross of a page entered by the awaiting address', async () => {
+    const { connection, sent, pushPageWindow } = makeConnection()
+    const rewrites: string[] = []
+    const container = mountPage(
+      connection,
+      makeActions().actions,
+      router({ state: 'due' }, rewrites),
+    )
+
+    pushPageWindow([batch()])
+    const before = sent.length
+    // The bar draws the cross twice, a wide copy and a compact one; either clears.
+    const crosses = container.querySelectorAll(
+      '[data-id="hilos-table-filter-reset"]',
+    )
+    expect(crosses.length).toBeGreaterThan(0)
+
+    fireEvent.click(crosses[0] as Element)
+    await settled()
+
+    expect(sent).toHaveLength(before + 1)
+    expect(sent.at(-1)?.filter).toEqual({})
+    expect(
+      (byId(container, 'hilos-table-filter-state') as HTMLInputElement).checked,
+    ).toBe(false)
+    expect(rewrites).toEqual(['/hilos/logs/rotations'])
+    expect(
+      container.querySelectorAll('[data-id="hilos-table-filter-reset"]'),
+    ).toHaveLength(0)
+  })
 })
 
 describe('HilosLogsRotationsPage in the admin view mode', () => {

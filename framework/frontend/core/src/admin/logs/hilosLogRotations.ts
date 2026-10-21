@@ -343,6 +343,24 @@ export function logRotationsPath(state: string): string {
 }
 
 /**
+ * The rotations-table controller, whose reset clears EVERY filter. An address
+ * carrying the awaiting tail opens the table with that filter as its preset — so
+ * the unfiltered first window is never shown — but the filter is the bar's own
+ * switch, and resetting back to the preset would turn the switch on again and
+ * leave the badge, the reset control and the address saying what they said
+ * before the press.
+ */
+class HilosLogRotationsController extends TableViewportController<HilosLogRotationRow> {
+  override resetFilters(): void {
+    this.setFilters(
+      Object.fromEntries(
+        Object.keys(this.filter.get()).map((key) => [key, null]),
+      ),
+    )
+  }
+}
+
+/**
  * The server-windowed controller for the rotation history: search, the node and
  * state filters, sort, and paging change the viewport descriptor sent over the
  * connection, and the backend replies a window plus the total count scoped to the
@@ -360,9 +378,10 @@ export function logRotationsPath(state: string): string {
  * awaiting tail — where the overview banner links — opens the table with that
  * filter as a route preset, so the unfiltered first window is never shown; and
  * whenever the table's state filter moves, by the switch or by the generic
- * "Reset filters" returning to the preset, the address is rewritten in place to
- * match, so a reload or a copied link opens what is on the screen. Without a
- * navigator there is neither a preset nor a rewrite.
+ * "Reset filters" clearing every rotation filter, the address is rewritten in
+ * place to match — back to the bare address after a reset — so a reload or a
+ * copied link opens what is on the screen. Without a navigator there is neither
+ * a preset nor a rewrite.
  *
  * @param context The project context (connection and scope stores).
  * @param header The page header handle's signal, created before this table.
@@ -451,7 +470,7 @@ export function createHilosLogRotationsTable(
     ],
     filteredEmpty: 'page',
   }
-  const controller = new TableViewportController<HilosLogRotationRow>({
+  const controller = new HilosLogRotationsController({
     resolve: resolveHilosLogRotationRow,
     sendViewport: (descriptor) =>
       context.connection.sendTableViewport(

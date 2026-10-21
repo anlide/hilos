@@ -666,7 +666,7 @@ describe('createHilosLogRotationsTable and the address', () => {
     expect(rewrites).toEqual([])
   })
 
-  it('rewrites the address as the filter moves, and back with the reset to the preset', () => {
+  it('rewrites the address as the switch moves the filter', () => {
     const sent: TableViewportDescriptor[] = []
     const rewrites: string[] = []
     const table = createHilosLogRotationsTable(
@@ -681,14 +681,158 @@ describe('createHilosLogRotationsTable and the address', () => {
     expect(table.state.get()).toBe('')
     expect(rewrites).toEqual(['/hilos/logs/rotations'])
 
-    // The generic "Reset filters" returns the table to what it was entered with.
-    table.controller.resetFilters()
+    table.controller.setFilter('state', HILOS_ROTATION_STATE_DUE)
 
     expect(table.state.get()).toBe(HILOS_ROTATION_STATE_DUE)
     expect(rewrites).toEqual([
       '/hilos/logs/rotations',
       '/hilos/logs/rotations/due',
     ])
+  })
+
+  it('drops the awaiting filter the address opened on with the reset, and the tail with it', () => {
+    const sent: TableViewportDescriptor[] = []
+    const rewrites: string[] = []
+    const table = createHilosLogRotationsTable(
+      stubContext(sent),
+      quietHeader(),
+      fakeAddress({ state: 'due' }, rewrites),
+    )
+    table.start()
+    servePageWindow(table)
+
+    // The generic "Reset filters" clears the bar, not back to what the address opened on.
+    table.controller.resetFilters()
+
+    expect(table.controller.filter.get()).toEqual({})
+    expect(table.state.get()).toBe('')
+    expect(table.controller.frame.activeFilterCount.get()).toBe(0)
+    expect(sent.at(-1)?.filter).toEqual({})
+    expect(rewrites).toEqual(['/hilos/logs/rotations'])
+    table.dispose()
+  })
+
+  it('keeps the awaiting filter off when the reset follows the switch turning it off', () => {
+    const sent: TableViewportDescriptor[] = []
+    const rewrites: string[] = []
+    const table = createHilosLogRotationsTable(
+      stubContext(sent),
+      quietHeader(),
+      fakeAddress({ state: 'due' }, rewrites),
+    )
+    table.start()
+
+    table.controller.setFilter('state', '')
+    table.controller.resetFilters()
+
+    expect(table.controller.filter.get()).toEqual({})
+    expect(table.state.get()).toBe('')
+    expect(sent.at(-1)?.filter).toEqual({})
+    expect(rewrites).toEqual(['/hilos/logs/rotations'])
+    table.dispose()
+  })
+
+  it('drops the awaiting filter the switch turned on from the bare address with the reset', () => {
+    const sent: TableViewportDescriptor[] = []
+    const rewrites: string[] = []
+    const table = createHilosLogRotationsTable(
+      stubContext(sent),
+      quietHeader(),
+      fakeAddress({}, rewrites),
+    )
+    table.start()
+    servePageWindow(table)
+
+    table.controller.setFilter('state', HILOS_ROTATION_STATE_DUE)
+    table.controller.resetFilters()
+
+    expect(table.controller.filter.get()).toEqual({})
+    expect(table.state.get()).toBe('')
+    expect(table.controller.frame.activeFilterCount.get()).toBe(0)
+    expect(sent.at(-1)?.filter).toEqual({})
+    expect(rewrites).toEqual([
+      '/hilos/logs/rotations/due',
+      '/hilos/logs/rotations',
+    ])
+    table.dispose()
+  })
+
+  it('clears the search, the node and the awaiting filter in one window with the reset', () => {
+    const sent: TableViewportDescriptor[] = []
+    const rewrites: string[] = []
+    const table = createHilosLogRotationsTable(
+      stubContext(sent),
+      createSignal<HilosLogRotationsHeader | null>(
+        header({ nodes: ['node-1', 'node-2'] }),
+      ),
+      fakeAddress({ state: 'due' }, rewrites),
+    )
+    table.start()
+    servePageWindow(table)
+    table.controller.setSearch('2027-01')
+    table.controller.setFilter(ROTATION_FILTER_NODE, 'node-2')
+
+    expect(table.controller.filter.get()).toEqual({
+      search: '2027-01',
+      [ROTATION_FILTER_NODE]: 'node-2',
+      [ROTATION_FILTER_STATE]: HILOS_ROTATION_STATE_DUE,
+    })
+    expect(table.controller.frame.activeFilterCount.get()).toBe(2)
+    const before = sent.length
+
+    table.controller.resetFilters()
+
+    expect(sent.slice(before).map((descriptor) => descriptor.filter)).toEqual([
+      {},
+    ])
+    expect(table.controller.frame.activeFilterCount.get()).toBe(0)
+    expect(table.state.get()).toBe('')
+    expect(rewrites).toEqual(['/hilos/logs/rotations'])
+
+    table.controller.ingestWindow(
+      [rotationTableRow('node-1:1800000000', { retentionState: 'kept' })],
+      1,
+      true,
+      null,
+      null,
+      25,
+    )
+
+    expect(table.controller.descriptor()?.filter).toEqual({})
+    table.dispose()
+  })
+
+  it('asks the next window after the reset without the awaiting filter', () => {
+    const sent: TableViewportDescriptor[] = []
+    const rewrites: string[] = []
+    const table = createHilosLogRotationsTable(
+      stubContext(sent),
+      quietHeader(),
+      fakeAddress({ state: 'due' }, rewrites),
+    )
+    table.start()
+    servePageWindow(table)
+    table.controller.resetFilters()
+    table.controller.ingestWindow(
+      [
+        rotationTableRow('node-1:1800000060', { retentionState: 'due' }),
+        rotationTableRow('node-1:1800000000', { retentionState: 'kept' }),
+      ],
+      4,
+      true,
+      { batchAt: 1800000060 },
+      { batchAt: 1800000000 },
+      2,
+    )
+
+    expect(table.controller.frame.footer.get().hasNextPage).toBe(true)
+    table.controller.nextPage()
+
+    expect(sent.at(-1)?.filter).toEqual({})
+    expect(table.state.get()).toBe('')
+    expect(table.controller.frame.activeFilterCount.get()).toBe(0)
+    expect(rewrites).toEqual(['/hilos/logs/rotations'])
+    table.dispose()
   })
 
   it('opens a bare or unknown address on All and leaves it as it is', () => {

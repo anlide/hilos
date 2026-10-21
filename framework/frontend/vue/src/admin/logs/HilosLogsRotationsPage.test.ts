@@ -889,6 +889,39 @@ describe('HilosLogsRotationsPage', () => {
     ).toBe(false)
   })
 
+  it('clears the awaiting switch with the reset cross of a page entered by the awaiting address', async () => {
+    const { connection, sent, pushPageWindow } = makeConnection()
+    const rewrites: string[] = []
+    const wrapper = mountPage(
+      connection,
+      makeActions().actions,
+      router({ state: 'due' }, rewrites),
+    )
+
+    pushPageWindow([batch()])
+    await nextTick()
+    const before = sent.length
+    // The bar draws the cross twice, a wide copy and a compact one; either clears.
+    const crosses = wrapper.findAll('[data-id="hilos-table-filter-reset"]')
+    expect(crosses.length).toBeGreaterThan(0)
+
+    await crosses[0]?.trigger('click')
+    await settled()
+
+    expect(sent).toHaveLength(before + 1)
+    expect(sent.at(-1)?.filter).toEqual({})
+    expect(
+      (
+        wrapper.find('[data-id="hilos-table-filter-state"]')
+          .element as HTMLInputElement
+      ).checked,
+    ).toBe(false)
+    expect(rewrites).toEqual(['/hilos/logs/rotations'])
+    expect(
+      wrapper.findAll('[data-id="hilos-table-filter-reset"]'),
+    ).toHaveLength(0)
+  })
+
   it('a viewer opens the takeout dialog and has nothing to confirm it with', async () => {
     bindSession().handshake(null, true)
     const { connection, pushHeader, pushWindow } = makeConnection()
