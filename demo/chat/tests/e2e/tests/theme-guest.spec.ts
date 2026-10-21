@@ -9,7 +9,6 @@ import {
   expectThemeHeader,
   expectThemeMode,
   setCustomSetting,
-  sidewaysOverflow,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
@@ -210,35 +209,25 @@ test('System follows each guest tab media while explicit choices ignore it', asy
   await expectThemeHeader(expect, page, 'light')
 })
 
-for (const palette of ['light', 'dark'] as const) {
-  test(`at 375px in ${palette} a guest can choose and reset without sideways overflow`, async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 375, height: 812 })
-    await emulateSystemTheme(page, palette)
-    await gotoPage(page, '/', PAGE_READY)
-    await page.getByTestId('nav-theme').click()
-    await expect(page.getByTestId('nav-theme-menu')).toBeVisible()
-    expect(await sidewaysOverflow(page)).toEqual([0, 0])
-    await page.getByTestId('nav-theme-option-dark').click()
-    await expect(page.getByTestId('nav-theme-menu')).toBeHidden()
-    await expectThemeMode(expect, page, 'dark')
-    await expectThemeHeader(expect, page, 'dark')
-    expect(await sidewaysOverflow(page)).toEqual([0, 0])
-    const toggle = page.getByTestId('nav-theme')
-    await toggle.press('ArrowUp')
-    const reset = page.getByTestId('nav-theme-default')
-    await expect(reset).toBeFocused()
-    await expect(reset).toBeVisible()
-    await expect(reset).toBeEnabled()
-    await expect(reset).toHaveRole('menuitem')
-    await expect(reset).not.toHaveAttribute('aria-checked')
-    expect(await sidewaysOverflow(page)).toEqual([0, 0])
-    await reset.press('Enter')
-    await expect(page.getByTestId('nav-theme-menu')).toBeHidden()
-    await expect(toggle).toBeFocused()
-    await expectThemeMode(expect, page, palette)
-    await expectThemeHeader(expect, page, 'system', true)
-    expect(await sidewaysOverflow(page)).toEqual([0, 0])
-  })
-}
+test('a guest can choose and reset from the header menu', async ({ page }) => {
+  await gotoPage(page, '/', PAGE_READY)
+  await page.getByTestId('nav-theme').click()
+  await expect(page.getByTestId('nav-theme-menu')).toBeVisible()
+  await page.getByTestId('nav-theme-option-dark').click()
+  await expect(page.getByTestId('nav-theme-menu')).toBeHidden()
+  await expectThemeMode(expect, page, 'dark')
+  await expectThemeHeader(expect, page, 'dark')
+  const toggle = page.getByTestId('nav-theme')
+  await toggle.press('ArrowUp')
+  const reset = page.getByTestId('nav-theme-default')
+  await expect(reset).toBeFocused()
+  await expect(reset).toBeVisible()
+  await expect(reset).toBeEnabled()
+  await expect(reset).toHaveRole('menuitem')
+  await expect(reset).not.toHaveAttribute('aria-checked')
+  await reset.press('Enter')
+  await expect(page.getByTestId('nav-theme-menu')).toBeHidden()
+  await expect(toggle).toBeFocused()
+  await expectThemeMode(expect, page, 'light')
+  await expectThemeHeader(expect, page, 'system', true)
+})

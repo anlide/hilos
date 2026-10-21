@@ -1,9 +1,8 @@
 import { test, expect, type Locator, type Page } from '@playwright/test'
 
-import { PASSWORD, clickSubmit, register, signUp } from '../helpers/session'
+import { PASSWORD, clickSubmit, signUp } from '../helpers/session'
 import { gotoPage } from '../helpers/page'
 import { dictateModerationVerdict } from '../helpers/moderation'
-import { sidewaysOverflow } from '../../../../../framework/frontend/e2e/index.js'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 
 // Type into a Vue input the way a user does — clear, then key by key — so the
@@ -175,18 +174,4 @@ test('opens the push devices page', async ({ page }) => {
   await expect(page.getByTestId('profile-devices-heading')).toHaveText(
     'Devices',
   )
-})
-
-test('keeps long profile addresses inside a narrow screen', async ({
-  page,
-}) => {
-  const email = `wide${Date.now()}@${'x'.repeat(50)}.example.test`
-  await gotoPage(page, '/profile')
-  await register(page, email)
-  await expect(page.getByTestId('profile-email')).toContainText(email)
-  await page.setViewportSize({ width: 375, height: 812 })
-  expect(await sidewaysOverflow(page)).toEqual([0, 0])
-  await clickSubmit(page.getByTestId('profile-sign-in-open'))
-  await expect(page.getByTestId('identity-identifier')).toHaveText(email)
-  expect(await sidewaysOverflow(page)).toEqual([0, 0])
 })

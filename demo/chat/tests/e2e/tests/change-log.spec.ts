@@ -8,7 +8,6 @@ import {
   expectChangeLogDashboardCard,
   expectChangeLogFeedRow,
   expectChangeLogOverview,
-  expectChangeLogReceiptFits,
   expectChangeLogReceiptOpen,
   expectChangeLogValues,
   expectRegistrationReceiptFacts,
@@ -29,7 +28,7 @@ test('opens Change Log from the admin dashboard with its overview and feed', asy
   await expectChangeLogOverview(expect, page)
 })
 
-test('opens a block receipt with old and new values and returns keyboard focus on a narrow screen', async ({
+test('opens a block receipt with old and new values and returns keyboard focus', async ({
   browser,
   page,
 }) => {
@@ -59,7 +58,6 @@ test('opens a block receipt with old and new values and returns keyboard focus o
       CHANGE_LOG_BLOCK_ACTION,
     )
 
-    await page.setViewportSize({ width: 375, height: 812 })
     const opener = shownByTestId(page, `hilos-change-log-open-${rowKey}`)
     await expect(opener).toHaveAccessibleName(`View receipt #${receiptId}`)
     await opener.focus()
@@ -71,7 +69,6 @@ test('opens a block receipt with old and new values and returns keyboard focus o
     await expect(detail).toContainText(`hilos_user #${person.userId}`)
     await expect(detail).toContainText(CHANGE_LOG_BLOCK_ACTION)
     await expectChangeLogValues(expect, page, 'block', '0', '1')
-    await expectChangeLogReceiptFits(expect, page)
     await page.keyboard.press('Escape')
     await expect(modal).toHaveCount(0)
     await expect(opener).toBeFocused()

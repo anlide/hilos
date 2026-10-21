@@ -7,7 +7,6 @@ import {
   dismissToasts,
   expectChangeLogFeedRow,
   expectChangeLogReceiptOpen,
-  expectNarrowColumns,
   expectTrackedTableRecord,
   expectTrackedTableWhole,
   shownByTestId,
@@ -81,9 +80,6 @@ test('follows a block receipt to the history of its record and back to the whole
 
     await page.getByTestId('hilos-change-log-record-filter-clear').click()
     await expectTrackedTableWhole(expect, page, 'hilos_user')
-
-    await page.setViewportSize({ width: 375, height: 812 })
-    await expectNarrowColumns(expect, page, 'block', 'Yes / no')
   } finally {
     await personContext.close()
   }

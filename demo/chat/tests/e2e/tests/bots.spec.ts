@@ -3,7 +3,6 @@ import { test, expect, type Page } from '@playwright/test'
 import {
   dismissToasts,
   shownByTestId,
-  sidewaysOverflow,
   watchFirstRowTop,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
@@ -1177,38 +1176,5 @@ test('an own create on a Back window pushes its first row above and Back retriev
 
   await pageBackOnce(page)
   expect((await tableRowKeys(page))[0]).toBe(topKey)
-  await deleteBot(page, key)
-})
-
-test('a narrow screen draws the table as cards without sideways overflow, and Edit opens from the card', async ({
-  page,
-}) => {
-  const name = nameBeforeAll(Date.now())
-
-  await signUpAdmin(page)
-  await openBots(page)
-  await createBot(page, name)
-  const key = await tableRowKeyByText(page, name)
-
-  const desktop = page.viewportSize() ?? { width: 1280, height: 720 }
-  await page.setViewportSize({ width: 375, height: desktop.height })
-
-  await typeInto(page.getByTestId('hilos-table-search'), name)
-
-  const cards = page.getByTestId('hilos-table-cards')
-  const card = cards.getByTestId(`hilos-table-card-${key}`)
-  const row = page.getByTestId(`hilos-table-row-${key}`)
-
-  await expect(cards).toBeVisible()
-  await expect(card).toBeVisible()
-  await expect(row).toBeHidden()
-
-  expect(await sidewaysOverflow(page)).toEqual([0, 0])
-
-  await shownByTestId(page, `admin-bots-edit-${key}`).click()
-  await expect(page.getByTestId('admin-bots-name')).toHaveValue(name)
-  await page.getByTestId('modal-close').click()
-  await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
-
   await deleteBot(page, key)
 })

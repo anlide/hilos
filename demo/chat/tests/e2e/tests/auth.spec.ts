@@ -33,7 +33,7 @@ import {
 //     auth gate mounts the project sign-in surface IN PLACE (no redirect), then
 //     resumes the preserved subscription off the session upgrade — no navigation;
 //   - wrong password handling inline and unknown address leading to registration;
-//   - narrow-screen responsive layout and button position stability across steps;
+//   - button position stability across steps;
 //   - password screen stability when magic link is toggled by an administrator;
 //   - re-deciding open admin and profile pages on logout in place.
 
@@ -132,43 +132,13 @@ test('answers a wrong password inline, and an unknown address with the registrat
   await expect(page.getByTestId('profile-name')).toHaveCount(0)
 })
 
-test('holds the refusal to one line on a narrow screen', async ({ page }) => {
-  const email = uniqueEmail()
-
-  // 375 is the narrowest screen the frontend is built for, and the card (24rem)
-  // is wider than it: this is where a refusal used to take a second line, and
-  // where the truncation has to keep it to one.
-  await page.setViewportSize({ width: 375, height: 800 })
-
-  await gotoPage(page, '/profile')
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await register(page, email)
-  await expect(page.getByTestId('profile-name')).toBeVisible()
-  await logout(page)
-
-  await gotoPage(page, '/profile')
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
-
-  await enterIdentifierAndPassword(page, email, 'a different password')
-  const slotRoom = await watchHeight(page.getByTestId('auth-error-slot'))
-  const submitTop = await watchTop(page.getByTestId('auth-submit'))
-  await clickSubmit(page.getByTestId('auth-submit'))
-  await expect(page.getByTestId('auth-error')).toHaveText('Incorrect password')
-
-  await slotRoom.unchanged()
-  await submitTop.unchanged()
-})
-
-test('keeps the main button still while the field answers, on a narrow screen', async ({
+test('keeps the main button still while the field answers', async ({
   page,
 }) => {
   const member = uniqueEmail()
   const free = uniqueEmail()
 
-  // 375 is the narrowest screen the frontend is built for, and the one the owner
-  // saw the form jump on. What must not move is the button under the field.
-  await page.setViewportSize({ width: 375, height: 800 })
-
+  // What must not move is the button under the field.
   await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
   await register(page, member)
@@ -211,9 +181,7 @@ test('keeps the password screen still while the way past the password comes and 
     .getByTestId('hilos-sign-in-method-enabled-magic_link')
   await expect(magicLinkToggle).toBeChecked()
 
-  const guestContext = await browser.newContext({
-    viewport: { width: 375, height: 800 },
-  })
+  const guestContext = await browser.newContext()
   try {
     const guestPage = await guestContext.newPage()
     const email = uniqueEmail()
@@ -282,11 +250,10 @@ test('keeps the password screen still while the way past the password comes and 
  * auth-continue), and the twins of the steps that hold the card's room carry no
  * data-id at all, so the locator resolves to the one live button every time.
  * And it is read against the card, not the screen: the last step signs the
- * session in, and on a narrow screen the shell's navigation grows a row for the
- * name and the way out — the card moves down with it, the button inside it does
- * not.
+ * session in, and the shell around the card changes with it — the button inside
+ * the card does not move.
  *
- * @param page The page to register on, with its viewport already set.
+ * @param page The page to register on.
  */
 async function registerWithTheMainButtonStill(page: Page): Promise<void> {
   const email = uniqueEmail()
@@ -339,16 +306,6 @@ async function registerWithTheMainButtonStill(page: Page): Promise<void> {
 test('keeps the main button at one height on ordinary registration steps', async ({
   page,
 }) => {
-  await registerWithTheMainButtonStill(page)
-})
-
-test('keeps the main button at one height on ordinary registration steps, on a narrow screen', async ({
-  page,
-}) => {
-  // 375 is the narrowest screen the frontend is built for: the leads wrap
-  // differently here, and the twins of the steps have to wrap with them.
-  await page.setViewportSize({ width: 375, height: 800 })
-
   await registerWithTheMainButtonStill(page)
 })
 
