@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\Object\Collection;
 
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\CountryNames as EntityCountryNames;
@@ -32,13 +33,17 @@ class CountryNames extends Objects
      * @param int $languageId Writing language primary id
      * @return bool Whether a locked country name is written in it
      * @throws DatabaseException When the query fails
+     * @throws InvalidArgumentException When the entity column is invalid
+     * @throws LogicException When collection classes are not configured
      */
     public function hasLockedNameInLanguage(int $languageId): bool
     {
-        return static::entityClass()::count([
-            EntityCountryName::language_id => $languageId,
-            EntityCountryName::locked => true,
-        ]) > 0;
+        foreach ($this->loadByColumn(EntityCountryName::language_id, $languageId) as $id) {
+            if ($this->objects[$id]->locked === true) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -50,18 +55,11 @@ class CountryNames extends Objects
      */
     public function unlockedBaseNamesInLanguage(int $languageId): static
     {
-        $rows = static::entityClass()::get(
-            '`' . EntityCountryName::language_id . '` = ? AND `' . EntityCountryName::locked . '` = ?'
-                . ' AND `' . EntityCountryName::locale_id . '` IS NULL',
-            [$languageId, 0],
-        );
         $names = static::initEmpty();
-        foreach ($rows as $row) {
-            if ($row->id !== null) {
-                if (!isset($this->objects[$row->id])) {
-                    $this->hydrate($row->id, static::OBJECT_CLASS::fromEntity($row));
-                }
-                $names->hydrate($row->id, $this->objects[$row->id]);
+        foreach ($this->loadByColumn(EntityCountryName::language_id, $languageId) as $id) {
+            $name = $this->objects[$id];
+            if ($name->locked === false && $name->localeId === null) {
+                $names->hydrate($id, $name);
             }
         }
         return $names;
@@ -71,24 +69,31 @@ class CountryNames extends Objects
      * @param int $countryId Named country primary id
      * @return bool Whether any name row, base or override, even empty, names it
      * @throws DatabaseException When the query fails
+     * @throws InvalidArgumentException When the entity column is invalid
+     * @throws LogicException When collection classes are not configured
      */
     public function hasForCountry(int $countryId): bool
     {
-        return static::entityClass()::count([EntityCountryName::country_id => $countryId]) > 0;
+        return $this->countByColumn(EntityCountryName::country_id, $countryId) > 0;
     }
 
     /**
      * @param int $countryId Named country primary id
      * @return int Number of nonempty base names in every language
      * @throws DatabaseException When the query fails
+     * @throws InvalidArgumentException When the entity column is invalid
+     * @throws LogicException When collection classes are not configured
      */
     public function countBaseNamesForCountry(int $countryId): int
     {
-        return static::entityClass()::count(
-            '`' . EntityCountryName::country_id . '` = ? AND `' . EntityCountryName::locale_id . '` IS NULL AND `'
-                . EntityCountryName::name . '` <> ?',
-            [$countryId, ''],
-        );
+        $count = 0;
+        foreach ($this->loadByColumn(EntityCountryName::country_id, $countryId) as $id) {
+            $name = $this->objects[$id];
+            if ($name->localeId === null && $name->name !== '') {
+                $count++;
+            }
+        }
+        return $count;
     }
 
     /**
@@ -97,6 +102,7 @@ class CountryNames extends Objects
      * @return ?ObjectCountryName Base row, or null
      * @throws DatabaseException When the query fails
      * @throws InvalidArgumentException When the query is invalid
+     * @throws LogicException When collection classes are not configured
      */
     public function findBase(int $countryId, int $languageId): ?ObjectCountryName
     {
@@ -110,6 +116,7 @@ class CountryNames extends Objects
      * @return ?ObjectCountryName Override row, or null
      * @throws DatabaseException When the query fails
      * @throws InvalidArgumentException When the query is invalid
+     * @throws LogicException When collection classes are not configured
      */
     public function findOverride(int $countryId, int $languageId, int $localeId): ?ObjectCountryName
     {
@@ -126,18 +133,11 @@ class CountryNames extends Objects
      */
     public function overridesFor(int $countryId, int $languageId): static
     {
-        $rows = static::entityClass()::get(
-            '`' . EntityCountryName::country_id . '` = ? AND `' . EntityCountryName::language_id . '` = ?'
-                . ' AND `' . EntityCountryName::locale_id . '` IS NOT NULL',
-            [$countryId, $languageId],
-        );
         $names = static::initEmpty();
-        foreach ($rows as $row) {
-            if ($row->id !== null) {
-                if (!isset($this->objects[$row->id])) {
-                    $this->hydrate($row->id, static::OBJECT_CLASS::fromEntity($row));
-                }
-                $names->hydrate($row->id, $this->objects[$row->id]);
+        foreach ($this->loadByColumn(EntityCountryName::country_id, $countryId) as $id) {
+            $name = $this->objects[$id];
+            if ($name->languageId === $languageId && $name->localeId !== null) {
+                $names->hydrate($id, $name);
             }
         }
         return $names;
@@ -150,19 +150,16 @@ class CountryNames extends Objects
      * @return ?ObjectCountryName Matching row, or null
      * @throws DatabaseException When the query fails
      * @throws InvalidArgumentException When the query is invalid
+     * @throws LogicException When collection classes are not configured
      */
     private function findOne(int $countryId, int $languageId, ?int $localeId): ?ObjectCountryName
     {
-        $where = '`' . EntityCountryName::country_id . '` = ? AND `' . EntityCountryName::language_id . '` = ?'
-            . ' AND `' . EntityCountryName::locale_id . '`' . ($localeId === null ? ' IS NULL' : ' = ?');
-        $params = $localeId === null ? [$countryId, $languageId] : [$countryId, $languageId, $localeId];
-        $row = static::entityClass()::get($where, $params)->first();
-        if ($row?->id === null) {
-            return null;
+        foreach ($this->loadByColumn(EntityCountryName::country_id, $countryId) as $id) {
+            $name = $this->objects[$id];
+            if ($name->languageId === $languageId && $name->localeId === $localeId) {
+                return $name;
+            }
         }
-        if (!isset($this->objects[$row->id])) {
-            $this->hydrate($row->id, static::OBJECT_CLASS::fromEntity($row));
-        }
-        return $this->objects[$row->id];
+        return null;
     }
 }

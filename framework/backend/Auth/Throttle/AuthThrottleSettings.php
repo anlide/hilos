@@ -13,7 +13,7 @@ use Hilos\Hilos;
  *
  * The one number of the layer that is a setting rather than an environment value: an
  * administrator decides how long the doors may run unguarded, and the decision is in force on
- * every node at once.
+ * each peer after DB sync is applied or its settings collection is re-read.
  */
 final class AuthThrottleSettings
 {

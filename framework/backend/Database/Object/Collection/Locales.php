@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\Object\Collection;
 
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\Locales as EntityLocales;
@@ -31,29 +32,39 @@ class Locales extends Objects
      * @param int $languageId Language primary id
      * @return int Number of its locales, regardless of enabled state
      * @throws DatabaseException When the query fails
+     * @throws InvalidArgumentException When the entity column is invalid
+     * @throws LogicException When collection classes are not configured
      */
     public function countForLanguage(int $languageId): int
     {
-        return static::entityClass()::count([EntityLocale::language_id => $languageId]);
+        return $this->countByColumn(EntityLocale::language_id, $languageId);
     }
 
     /**
      * @param int $languageId Language primary id
      * @return ?bool Whether its countryless locale is enabled; null when absent
      * @throws DatabaseException When the query fails
+     * @throws InvalidArgumentException When the entity column is invalid
+     * @throws LogicException When collection classes are not configured
      */
     public function countrylessEnabled(int $languageId): ?bool
     {
-        $locale = static::entityClass()::get('`language_id` = ? AND `country_id` IS NULL', [$languageId])->first();
+        foreach ($this->loadByColumn(EntityLocale::language_id, $languageId) as $id) {
+            $locale = $this->objects[$id];
+            if ($locale->countryId === null) {
+                return $locale->enabled;
+            }
+        }
 
-        return $locale?->enabled;
+        return null;
     }
 
     /**
      * @param string $code Locale code
      * @return ?ObjectLocale Locale or null
      * @throws DatabaseException When the query fails
-     * @throws InvalidArgumentException When the entity query is invalid
+     * @throws InvalidArgumentException When the entity column is invalid
+     * @throws LogicException When collection classes are not configured
      */
     public function findByCode(string $code): ?ObjectLocale
     {
@@ -61,15 +72,10 @@ class Locales extends Objects
             return null;
         }
 
-        $entity = static::entityClass()::get([EntityLocale::code => $code])->first();
-        if ($entity?->id === null) {
-            return null;
+        foreach ($this->loadByColumn(EntityLocale::code, $code) as $id) {
+            return $this->objects[$id];
         }
 
-        if (!isset($this->objects[$entity->id])) {
-            $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
-        }
-
-        return $this->objects[$entity->id];
+        return null;
     }
 }

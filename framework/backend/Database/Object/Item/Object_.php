@@ -45,12 +45,6 @@ use Hilos\HilosException;
  */
 abstract class Object_
 {
-    /** @var TEntity current entity state */
-    protected Entity $entity;
-
-    /** @var TEntity synced entity state (from database) */
-    protected Entity $entitySync;
-
     /**
      * Entity class for this Object. Child classes must define:
      *   public const string ENTITY_CLASS = EntityXxx::class;
@@ -61,6 +55,12 @@ abstract class Object_
 
     /** @var class-string<Objects>|'' Collection that owns this object row */
     public const string OBJECT_COLLECTION_CLASS = '';
+
+    /** @var TEntity current entity state */
+    protected Entity $entity;
+
+    /** @var TEntity synced entity state (from database) */
+    protected Entity $entitySync;
 
     /**
      * Prevents cloning of Object instances.
@@ -593,6 +593,22 @@ abstract class Object_
     public function toArray(): array
     {
         return $this->entity->toArray();
+    }
+
+    /**
+     * Reads current entity state without loading, serializing or announcing a change.
+     *
+     * @param string $column Actual Entity column name, without object-field aliases
+     * @return mixed Scalar column value (int, float, bool or string), or null
+     * @throws InvalidArgumentException When the declared Entity has no such column
+     */
+    public function valueForColumn(string $column): mixed
+    {
+        if (!in_array($column, (static::ENTITY_CLASS)::_columns, true)) {
+            throw new InvalidArgumentException("Entity '" . static::ENTITY_CLASS . "' has no column '{$column}'");
+        }
+
+        return $this->entity->{$column};
     }
 
     /**

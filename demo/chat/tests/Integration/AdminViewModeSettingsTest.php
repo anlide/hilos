@@ -39,6 +39,7 @@ use Hilos\Core\Table\TableConstants;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Log\LogSettingsPresets;
@@ -155,6 +156,7 @@ final class AdminViewModeSettingsTest extends IntegrationTestCase
             self::ORPHAN_SETTING_KEY,
             OAuthSettingsCatalog::REDIRECT_URI_KEY,
         ]);
+        Hilos::$db->reHydrateCollection(HilosDbContext::settings);
     }
 
     /**

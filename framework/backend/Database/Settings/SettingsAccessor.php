@@ -228,7 +228,8 @@ class SettingsAccessor implements ArrayAccess
     }
 
     /**
-     * Returns the effective setting value from DB or resolved catalog default.
+     * Reads the current ORM value or resolved catalog default on each application.
+     * Peer writes become visible when DB sync is applied or the collection is re-read.
      *
      * @param string $key Setting key
      * @return mixed Persisted value when not null, otherwise resolved catalog default
@@ -333,7 +334,7 @@ class SettingsAccessor implements ArrayAccess
         $path = $this->appendResolutionKey($key, $path);
 
         if (Hilos::$db instanceof HilosDbContext) {
-            $persistedValue = Hilos::$db->settings->readPersistedValueByKeyFresh($key);
+            $persistedValue = isset(Hilos::$db->settings[$key]) ? Hilos::$db->settings[$key]->value : null;
             if ($persistedValue !== null) {
                 return $persistedValue;
             }

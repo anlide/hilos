@@ -507,10 +507,9 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
     /**
      * Returns the items whose column holds one value, as a collection of the same class.
      *
-     * The set is read out of the database rather than out of what this process happens to hold,
-     * which is the whole point: a collection keyed by its own primary key knows nothing about
-     * the rows of somebody else's key until it asks. No match is an empty collection, never
-     * null, so a caller reads a set either way.
+     * A full Object collection reads its held rows; a partial lazy collection queries SQL.
+     * A promised whole table loads on its first nonempty read. No match is an empty typed
+     * collection, and a null value returns that empty selection without loading.
      *
      * @param string $column Entity column to match, or the object field name standing for it
      * @param int|string|null $value Value to match, or null for an empty result
@@ -534,8 +533,9 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
     /**
      * Returns the items whose column holds one of several values, as a collection of the same class.
      *
-     * The batch form exists so that a caller with many keys in hand asks once: reading a join for
-     * a whole list one key at a time is the same query repeated per row.
+     * Full Object collections match held rows; partial lazy collections use one SQL IN query.
+     * Matching uses canonical domain scalars, without emulating arbitrary SQL collation in memory.
+     * The selection retains the current View items; no values returns it empty without loading.
      *
      * @param string $column Entity column to match, or the object field name standing for it
      * @param int|string ...$values Values to match; no values means an empty result and no query

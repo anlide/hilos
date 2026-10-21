@@ -11,8 +11,11 @@ use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\DbSyncApplicator;
 use Hilos\Database\Entity\Item\Setting as EntitySetting;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
@@ -53,7 +56,7 @@ final class BotAgentRefreshTest extends IntegrationTestCase
             $this->assertSame($original, $firstClient->lastOptions?->model);
 
             $setting->value = '';
-            $setting->save();
+            $this->saveAndApplySetting($setting);
             $agent->onTick();
             $this->assertSame($original, (new ReflectionProperty($agent, 'profile'))->getValue($agent)->model);
             $this->assertSame(1, $firstClient->startGenerateCalls);
@@ -64,14 +67,14 @@ final class BotAgentRefreshTest extends IntegrationTestCase
             $this->assertSame('', (new ReflectionProperty($agent, 'profile'))->getValue($agent)->model);
 
             $setting->value = 'recovered-model';
-            $setting->save();
+            $this->saveAndApplySetting($setting);
             $this->scheduleAgain($agent);
             $agent->onTick();
             $this->assertSame('recovered-model', (new ReflectionProperty($agent, 'profile'))->getValue($agent)->model);
             $this->assertNotSame($firstClient, (new ReflectionProperty($agent, 'chatClient'))->getValue($agent));
         } finally {
             $setting->value = $original;
-            $setting->save();
+            $this->saveAndApplySetting($setting);
             if (isset($agent)) {
                 $agent->onStop();
             }
@@ -79,6 +82,17 @@ final class BotAgentRefreshTest extends IntegrationTestCase
             ExecutionContext::setCurrentAgentId(null);
             $bot->actions->delete();
         }
+    }
+
+    /** @param EntitySetting $setting Peer row whose persisted value is delivered to the bot's context */
+    private function saveAndApplySetting(EntitySetting $setting): void
+    {
+        $setting->save();
+        DbSyncApplicator::applyUpdated(new DbSyncUpdatedSignalData(
+            HilosDbContext::settings,
+            (string) $setting->id,
+            [EntitySetting::value => $setting->value],
+        ), originNodeId: 'peer');
     }
 
     private function scheduleAgain(BotAgent $agent): void

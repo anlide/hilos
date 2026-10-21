@@ -32,6 +32,7 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\ChangeLog\JournalTriggerFiles;
@@ -127,6 +128,7 @@ final class JournalReceiptCommandIntegrationTest extends IntegrationTestCase
             }
         }
         Database::sqlRun('DELETE FROM `hilos_setting` WHERE `key` LIKE ?', [self::KEY_PREFIX . '%']);
+        Hilos::$db->reHydrateCollection(HilosDbContext::settings);
         foreach (self::triggerCatalog() as $row) {
             Database::sql('DROP TRIGGER `' . $row['TRIGGER_NAME'] . '`');
         }
@@ -335,6 +337,7 @@ final class JournalReceiptCommandIntegrationTest extends IntegrationTestCase
     {
         $this->touchedSettingKeys[] = 'example_integer';
         Database::sqlRun('DELETE FROM `hilos_setting` WHERE `key` = ?', ['example_integer']);
+        Hilos::$db->reHydrateCollection(HilosDbContext::settings);
 
         $worker = new JournalReceiptCommandTestWorker();
         $worker->handleDaemonMessage(new AgentStartDTO(SettingsLibraryAgent::AGENT_TYPE));
@@ -395,6 +398,7 @@ final class JournalReceiptCommandIntegrationTest extends IntegrationTestCase
         $orphanKey = 'orphan_' . RandomHelper::hex(8);
         $this->touchedSettingKeys[] = $orphanKey;
         Database::sqlRun('DELETE FROM `hilos_setting` WHERE `key` = ?', ['example_integer']);
+        Hilos::$db->reHydrateCollection(HilosDbContext::settings);
 
         $worker = new JournalReceiptCommandTestWorker();
         $worker->handleDaemonMessage(new AgentStartDTO(SettingsLibraryAgent::AGENT_TYPE));
@@ -505,6 +509,7 @@ final class JournalReceiptCommandIntegrationTest extends IntegrationTestCase
             '42',
             '42',
         ]);
+        Hilos::$db->reHydrateCollection(HilosDbContext::settings);
         $this->assertSame(42, Hilos::$setting['example_integer']->int());
 
         $worker = new JournalReceiptCommandTestWorker();

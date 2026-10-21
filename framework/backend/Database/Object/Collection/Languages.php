@@ -66,7 +66,8 @@ class Languages extends Objects
      * @param string $code Language code
      * @return ?ObjectLanguage Language or null
      * @throws DatabaseException When the query fails
-     * @throws InvalidArgumentException When the entity query is invalid
+     * @throws InvalidArgumentException When the entity column is invalid
+     * @throws LogicException When collection classes are not configured
      */
     public function findByCode(string $code): ?ObjectLanguage
     {
@@ -74,15 +75,10 @@ class Languages extends Objects
             return null;
         }
 
-        $entity = static::entityClass()::get([EntityLanguage::code => $code])->first();
-        if ($entity?->id === null) {
-            return null;
+        foreach ($this->loadByColumn(EntityLanguage::code, $code) as $id) {
+            return $this->objects[$id];
         }
 
-        if (!isset($this->objects[$entity->id])) {
-            $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
-        }
-
-        return $this->objects[$entity->id];
+        return null;
     }
 }

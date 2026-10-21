@@ -42,7 +42,6 @@ use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
-use Hilos\Database\Object\Item\Setting as ObjectSetting;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
 use Hilos\Database\Settings\Library\DTO\SettingResetSignalData;
@@ -1215,11 +1214,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
      */
     private function createOrphanSetting(string $key, string $value): void
     {
-        $setting = ObjectSetting::create();
-        $setting->key = $key;
-        $setting->type = SettingsCatalogConstants::TYPE_STRING;
-        $setting->value = $value;
-        $setting->sync();
+        Hilos::$db->settings->actions->addOrphan($key, SettingsCatalogConstants::TYPE_STRING, $value, Hilos::$setting->catalog());
     }
 
     /**

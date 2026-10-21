@@ -50,6 +50,8 @@ class CountryNames extends DbCollection
      * @param int $languageId Writing language primary id
      * @return bool Whether a locked country name is written in it
      * @throws DatabaseException When the query fails
+     * @throws InvalidArgumentException When the entity column is invalid
+     * @throws LogicException When collection classes are not configured
      */
     public function hasLockedNameInLanguage(int $languageId): bool
     {
@@ -82,6 +84,8 @@ class CountryNames extends DbCollection
      * @param int $countryId Named country primary id
      * @return bool Whether any name row, base or override, even empty, names it
      * @throws DatabaseException When the query fails
+     * @throws InvalidArgumentException When the entity column is invalid
+     * @throws LogicException When collection classes are not configured
      */
     public function hasForCountry(int $countryId): bool
     {
@@ -92,6 +96,8 @@ class CountryNames extends DbCollection
      * @param int $countryId Named country primary id
      * @return int Number of nonempty base names in every language
      * @throws DatabaseException When the query fails
+     * @throws InvalidArgumentException When the entity column is invalid
+     * @throws LogicException When collection classes are not configured
      */
     public function countBaseNamesForCountry(int $countryId): int
     {

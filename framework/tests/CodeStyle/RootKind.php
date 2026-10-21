@@ -6,6 +6,7 @@ namespace Hilos\Tests\CodeStyle;
 
 use Hilos\Tests\CodeStyle\Rule\CollectionItemNarrowingRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionObjectListRule;
+use Hilos\Tests\CodeStyle\Rule\CollectionSqlReadRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
 use Hilos\Tests\CodeStyle\Rule\FsSeamRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
@@ -59,6 +60,7 @@ enum RootKind
      */
     private const array PRODUCTION_ONLY_RULES = [
         CollectionObjectListRule::ID,
+        CollectionSqlReadRule::ID,
         CollectionItemNarrowingRule::ID,
         ErrorSuppressionRule::ID,
         FsSeamRule::ID,

@@ -242,7 +242,8 @@ Declare two keys in the framework's settings catalog:
 
 These keys and defaults live in `ThemeSettingsCatalog`. A project whose catalog
 carries no theme fragment lives on these defaults. As settings, they take effect
-at once on every node, with nothing restarted; see "Settings and catalogs" in
+without a restart: the writer sees its own write, and peers see it after normal
+DB sync or a settings collection reread. See "Settings and catalogs" in
 [framework-development.md](../framework-development.md).
 
 Every connected tab, a guest's too, receives both in the handshake and again as a

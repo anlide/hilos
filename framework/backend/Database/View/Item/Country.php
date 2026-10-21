@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Database\View\Item;
 
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Actions\Item\CountryActions;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
@@ -62,6 +64,8 @@ class Country extends DbItem
     /**
      * @return ?string First deletion blocker: catalog, locales, names; null when none exists
      * @throws DatabaseException When dependent names cannot be read
+     * @throws InvalidArgumentException When a dependent entity column is invalid
+     * @throws LogicException When collection classes are not configured
      */
     public function deleteReason(): ?string
     {

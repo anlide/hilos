@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Closure;
 use Hilos\Backup\Anonymization\AnonymizationCoverageValidator;
 use Hilos\Backup\Anonymization\LiveSchemaReader;
 use Hilos\Backup\Anonymization\PiiRegistry;
@@ -16,6 +17,9 @@ use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\SourceChangeProvenance;
 use Hilos\Core\Source\SourceChangeSubscriberInterface;
+use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
@@ -26,6 +30,8 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\DbSyncApplicator;
+use Hilos\Database\Entity\Item\Setting as EntitySetting;
 use Hilos\Database\Entity\Item\Language as EntityLanguage;
 use Hilos\Database\Entity\Item\LanguageName as EntityLanguageName;
 use Hilos\Database\Entity\Item\CountryName as EntityCountryName;
@@ -33,6 +39,10 @@ use Hilos\Database\Entity\Item\Locale as EntityLocale;
 use Hilos\Database\Object\Collection\CountryNames as ObjectCountryNames;
 use Hilos\Database\Object\Collection\LanguageNames as ObjectLanguageNames;
 use Hilos\Database\Object\Item\Locale as ObjectLocale;
+use Hilos\Database\Object\Item\CountryName as ObjectCountryName;
+use Hilos\Database\Object\Item\LanguageName as ObjectLanguageName;
+use Hilos\Database\Object\Objects;
+use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\View\Collection\LanguageNames;
 use Hilos\Database\View\Collection\Locales;
 use Hilos\Database\Entity\Item\Country as EntityCountry;
@@ -49,13 +59,14 @@ use Hilos\HilosException;
 use Hilos\I18n\Exception\I18nRowFrozenException;
 use Hilos\I18n\MeasurementSystem;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
+use Hilos\I18n\DTO\LanguageCardSummary;
 use PHPUnit\Framework\Attributes\DataProvider;
 
 /** Reference rows and their action doors against the live framework schema. */
 final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
 {
     private const array TABLES = [
-        'hilos_language', 'hilos_country', 'hilos_locale', 'hilos_language_name', 'hilos_country_name',
+        'hilos_setting', 'hilos_language', 'hilos_country', 'hilos_locale', 'hilos_language_name', 'hilos_country_name',
     ];
     private const string OWNER_AGENT_ID = 'test-agent:i18n-library';
 
@@ -83,6 +94,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         $db->configure();
         Hilos::$db = $db;
 
+        TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::OWNER_AGENT_ID);
         TruthSourceRegistry::register(HilosDbContext::languages, TruthSourceKeys::all(), self::OWNER_AGENT_ID);
         TruthSourceRegistry::register(HilosDbContext::countries, TruthSourceKeys::all(), self::OWNER_AGENT_ID);
         TruthSourceRegistry::register(HilosDbContext::locales, TruthSourceKeys::all(), self::OWNER_AGENT_ID);
@@ -191,6 +203,342 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         ExecutionContext::setCurrentAgentId('test-agent:outsider');
         $this->expectException(CreateNotAllowedException::class);
         Hilos::$db->languages->actions->create('de', 'Deutsch', false);
+    }
+
+    /** Every helper entrance honors the production whole-table promise on its first read. */
+    public function testColdReferenceHelpersLoadWholeTablesOnce(): void
+    {
+        Hilos::$db->settings->actions->addOrphan('first', SettingsCatalogConstants::TYPE_STRING, 'one', []);
+        Hilos::$db->settings->actions->addOrphan('second', SettingsCatalogConstants::TYPE_STRING, 'two', []);
+        $en = Hilos::$db->languages->actions->create('en', 'English', false);
+        $fr = Hilos::$db->languages->actions->create('fr', 'French', false);
+        $country = Hilos::$db->countries->actions->create('qx', '$', 'USD');
+        Hilos::$db->countries->actions->create('qy', '$', 'USD');
+        self::createLocale($en, null);
+        self::createLocale($en, $country);
+        Hilos::$db->countryNames->actions->createCatalogBase($country, $en, 'Country');
+        Hilos::$db->countryNames->actions->createManual($country, $fr, null, 'Pays');
+        Hilos::$db->languageNames->actions->createManual($fr, $en, null, 'French');
+        Hilos::$db->languageNames->actions->createManual($en, $fr, null, 'Anglais');
+
+        foreach ([
+            [HilosDbContext::settings, static fn () => Hilos::$db->settings->getObjectCollection()->findByKey('first')],
+            [HilosDbContext::languages, static fn () => Hilos::$db->languages->getObjectCollection()->findByCode('en')],
+            [HilosDbContext::countries, static fn () => Hilos::$db->countries->getObjectCollection()->findByCode('qx')],
+            [HilosDbContext::locales, static fn () => Hilos::$db->locales->getObjectCollection()->findByCode('en')],
+            [HilosDbContext::locales, static fn () => Hilos::$db->locales->countForLanguage($en->id)],
+            [HilosDbContext::locales, static fn () => Hilos::$db->locales->countrylessEnabled($en->id)],
+            [HilosDbContext::countryNames, static fn () => Hilos::$db->countryNames->findBase($country->id, $en->id)],
+            [HilosDbContext::countryNames, static fn () => Hilos::$db->countryNames->hasForCountry($country->id)],
+            [HilosDbContext::languageNames, static fn () => Hilos::$db->languageNames->findBase($fr->id, $en->id)],
+            [HilosDbContext::languageNames, static fn () => Hilos::$db->languageNames->countBaseNamesForLanguage($fr->id)],
+        ] as [$key, $read]) {
+            Hilos::$db = new I18nReferenceTestDbContext();
+            Hilos::$db->configure();
+            $objects = Hilos::$db->{$key}->getObjectCollection();
+            self::assertFalse($objects->isAllLoaded());
+            $before = self::selectCount();
+            $found = $read();
+            self::assertSame($before + 1, self::selectCount(), $key . ' loads once at the helper entrance');
+            self::assertTrue($objects->isAllLoaded());
+            $this->assertQuietReads(function () use ($read, $found, $objects): void {
+                self::assertSame($found, $read());
+                self::assertCount(2, $objects, 'The first lookup must hold unrelated rows too');
+            });
+        }
+    }
+
+    /** Key lookups reuse held instances and track local create, update and delete actions. */
+    public function testWarmReferenceKeysTrackActionsWithoutSelects(): void
+    {
+        SourceChangeBus::subscribe(new ViewCacheSubscriber());
+        $setting = Hilos::$db->settings->actions->addOrphan('probe', SettingsCatalogConstants::TYPE_STRING, 'one', []);
+        $language = Hilos::$db->languages->actions->create('qk', 'Own', false);
+        $country = Hilos::$db->countries->actions->create('qx', '$', 'USD');
+        $locale = self::createLocale($language, null);
+        $regional = self::createLocale($language, $country);
+        count(Hilos::$db->languageNames);
+        count(Hilos::$db->countryNames);
+
+        $this->assertQuietReads(function () use ($setting, $language, $country, $locale, $regional): void {
+            self::assertSame($setting->getObject(), Hilos::$db->settings->getObjectCollection()->findByKey('probe'));
+            self::assertSame($language->getObject(), Hilos::$db->languages->getObjectCollection()->findByCode('qk'));
+            self::assertSame($country->getObject(), Hilos::$db->countries->getObjectCollection()->findByCode('qx'));
+            self::assertSame($locale->getObject(), Hilos::$db->locales->getObjectCollection()->findByCode('qk'));
+            self::assertSame(Hilos::$db->settings['probe'], Hilos::$db->settings[$setting->id]);
+            self::assertSame(Hilos::$db->languages['qk'], Hilos::$db->languages[$language->id]);
+            self::assertSame(Hilos::$db->countries['qx'], Hilos::$db->countries[$country->id]);
+            self::assertSame(Hilos::$db->locales['qk-QX'], Hilos::$db->locales[$regional->id]);
+            foreach ([HilosDbContext::settings, HilosDbContext::languages, HilosDbContext::countries, HilosDbContext::locales] as $key) {
+                self::assertArrayNotHasKey('', Hilos::$db->{$key});
+                self::assertArrayNotHasKey('missing', Hilos::$db->{$key});
+            }
+            self::assertSame(2, Hilos::$db->locales->countForLanguage($language->id));
+            self::assertFalse(Hilos::$db->locales->countrylessEnabled($language->id));
+            self::assertSame(0, Hilos::$db->locales->countForLanguage(-1));
+            self::assertNull(Hilos::$db->locales->countrylessEnabled(-1));
+            $card = Hilos::$db->languages->cardSummary($language->id);
+            self::assertSame(2, $card->localeCount);
+            self::assertSame(0, $card->nameCount);
+            self::assertSame(LanguageCardSummary::COUNTRYLESS_OFF, $card->countrylessLocale);
+            self::assertSame(LanguageCardSummary::DELETE_LOCALES, $card->deleteReason);
+            self::assertSame(Country::DELETE_LOCALES, $country->deleteReason());
+        });
+
+        $setting->actions->updateValue('two');
+        $language->actions->update('Renamed', false);
+        $locale->actions->switchOn();
+        $this->assertQuietReads(function () use ($setting, $language): void {
+            self::assertSame($setting->getObject(), Hilos::$db->settings->getObjectCollection()->findByKey('probe'));
+            self::assertSame('two', Hilos::$db->settings['probe']->value);
+            self::assertSame('Renamed', Hilos::$db->languages['qk']->nativeName);
+            self::assertTrue(Hilos::$db->locales->countrylessEnabled($language->id));
+            self::assertSame(LanguageCardSummary::COUNTRYLESS_ON, Hilos::$db->languages->cardSummary($language->id)->countrylessLocale);
+        });
+        $locale->actions->switchOff();
+        $locale->actions->delete();
+        $regional->actions->delete();
+        $this->assertQuietReads(function () use ($language, $country): void {
+            self::assertSame(0, Hilos::$db->locales->countForLanguage($language->id));
+            self::assertNull(Hilos::$db->locales->countrylessEnabled($language->id));
+            self::assertTrue(Hilos::$db->languages->cardSummary($language->id)->canDelete);
+            self::assertNull($country->deleteReason());
+        });
+        $setting->actions->delete();
+        $language->actions->delete();
+        $country->actions->delete();
+        $this->assertQuietReads(function (): void {
+            self::assertArrayNotHasKey('probe', Hilos::$db->settings);
+            self::assertArrayNotHasKey('qk', Hilos::$db->languages);
+            self::assertArrayNotHasKey('qx', Hilos::$db->countries);
+            self::assertArrayNotHasKey('qk', Hilos::$db->locales);
+            self::assertArrayNotHasKey('qk-QX', Hilos::$db->locales);
+        });
+    }
+
+    /** Base and override predicates retain their independent empty, locked and language conditions. */
+    public function testWarmNameHelpersTrackActionsWithoutSelects(): void
+    {
+        $named = Hilos::$db->languages->actions->create('qf', 'Named', false);
+        $writing = Hilos::$db->languages->actions->create('qe', 'Writing', false);
+        $other = Hilos::$db->languages->actions->create('qg', 'Other', false);
+        $country = Hilos::$db->countries->actions->create('qx', '$', 'USD');
+        $emptyCountry = Hilos::$db->countries->actions->create('qy', '$', 'USD');
+        $locale = self::createLocale($writing, null);
+        $base = Hilos::$db->countryNames->actions->createCatalogBase($country, $writing, 'Country');
+        $empty = Hilos::$db->countryNames->actions->createManual($emptyCountry, $writing, null, '');
+        $override = Hilos::$db->countryNames->actions->createManual($country, $writing, $locale, '');
+        $selfName = Hilos::$db->languageNames->actions->createManual($named, $named, null, 'Self');
+        $name = Hilos::$db->languageNames->actions->createManual($named, $writing, null, '');
+        $translation = Hilos::$db->languageNames->actions->createManual($named, $other, null, 'Translation');
+        $nameOverride = Hilos::$db->languageNames->actions->createManual($named, $writing, $locale, 'Override');
+
+        $this->assertQuietReads(function () use ($named, $writing, $other, $country, $emptyCountry, $locale, $base, $name, $override): void {
+            self::assertSame($base->getObject(), Hilos::$db->countryNames->findBase($country->id, $writing->id)->getObject());
+            self::assertSame($override->getObject(), Hilos::$db->countryNames->findOverride($country->id, $writing->id, $locale->id)->getObject());
+            self::assertSame($name->getObject(), Hilos::$db->languageNames->findBase($named->id, $writing->id)->getObject());
+            self::assertSame(Hilos::$db->countryNames[$base->id], Hilos::$db->countryNames->findBase($country->id, $writing->id));
+            self::assertSame(Hilos::$db->languageNames[$name->id], Hilos::$db->languageNames->findBase($named->id, $writing->id));
+            self::assertSame(1, Hilos::$db->countryNames->countBaseNamesForCountry($country->id));
+            self::assertSame(0, Hilos::$db->countryNames->countBaseNamesForCountry($emptyCountry->id));
+            self::assertTrue(Hilos::$db->countryNames->hasForCountry($emptyCountry->id));
+            self::assertTrue(Hilos::$db->countryNames->hasLockedNameInLanguage($writing->id));
+            self::assertFalse(Hilos::$db->countryNames->hasLockedNameInLanguage($other->id));
+            self::assertSame(Country::DELETE_NAMES, $emptyCountry->deleteReason());
+            self::assertSame([$base->id], Hilos::$db->countryNames->getObjectCollection()->unlockedBaseNamesInLanguage($writing->id)->keys());
+            self::assertSame(1, Hilos::$db->languageNames->countBaseNamesForLanguage($named->id));
+            self::assertTrue(Hilos::$db->languageNames->hasManualNameForLanguage($named->id));
+            self::assertTrue(Hilos::$db->languageNames->hasManualNameForLanguage($writing->id), 'The writing side of OR also counts');
+            self::assertSame(LanguageCardSummary::DELETE_NAMES, Hilos::$db->languages->cardSummary($named->id)->deleteReason);
+            self::assertSame(1, Hilos::$db->languages->cardSummary($named->id)->nameCount);
+            self::assertFalse(Hilos::$db->countryNames->hasForCountry(-1));
+            self::assertFalse(Hilos::$db->countryNames->hasLockedNameInLanguage(-1));
+            self::assertFalse(Hilos::$db->languageNames->hasManualNameForLanguage(-1));
+            self::assertSame(0, Hilos::$db->countryNames->countBaseNamesForCountry(-1));
+            self::assertSame(0, Hilos::$db->languageNames->countBaseNamesForLanguage(-1));
+            self::assertNull(Hilos::$db->countryNames->findBase($country->id, $other->id));
+            self::assertNull(Hilos::$db->countryNames->findOverride($country->id, $writing->id, -1));
+            self::assertNull(Hilos::$db->languageNames->findBase($writing->id, $named->id));
+            self::assertNull(Hilos::$db->languageNames->findOverride($named->id, $writing->id, -1));
+        });
+
+        $countrySubset = Hilos::$db->countryNames->overridesFor($country->id, $writing->id);
+        $languageSubset = Hilos::$db->languageNames->overridesFor($named->id, $writing->id);
+        $base->actions->edit('');
+        $translation->actions->edit('');
+        $name->actions->edit('Name');
+        $this->assertQuietReads(function () use ($named, $writing, $country, $name, $nameOverride, $override): void {
+            self::assertCount(0, Hilos::$db->countryNames->unlockedBaseNamesInLanguage($writing->id));
+            self::assertSame(0, Hilos::$db->countryNames->countBaseNamesForCountry($country->id));
+            self::assertSame(1, Hilos::$db->languageNames->countBaseNamesForLanguage($named->id));
+            self::assertSame($name->getObject(), Hilos::$db->languageNames->findBase($named->id, $writing->id)->getObject());
+            self::assertSame([$override->id], Hilos::$db->countryNames->getObjectCollection()->overridesFor($country->id, $writing->id)->keys());
+            self::assertSame([$nameOverride->id], Hilos::$db->languageNames->getObjectCollection()->overridesFor($named->id, $writing->id)->keys());
+        });
+        $base->actions->delete();
+        $name->actions->delete();
+        $selfName->actions->delete();
+        $translation->actions->delete();
+        $empty->actions->delete();
+        $this->assertQuietReads(function () use ($named, $writing, $country, $emptyCountry, $countrySubset, $languageSubset): void {
+            self::assertCount(0, Hilos::$db->countryNames->overridesFor($country->id, $writing->id));
+            self::assertCount(0, Hilos::$db->languageNames->overridesFor($named->id, $writing->id));
+            self::assertCount(1, $countrySubset, 'A detached selection retains its original membership');
+            self::assertCount(1, $languageSubset);
+            self::assertFalse(Hilos::$db->countryNames->hasForCountry($country->id));
+            self::assertFalse(Hilos::$db->countryNames->hasLockedNameInLanguage($writing->id));
+            self::assertFalse(Hilos::$db->languageNames->hasManualNameForLanguage($named->id));
+            self::assertFalse(Hilos::$db->languageNames->hasManualNameForLanguage($writing->id));
+            self::assertSame(0, Hilos::$db->languageNames->countBaseNamesForLanguage($named->id));
+            self::assertNull($emptyCountry->deleteReason());
+            self::assertTrue(Hilos::$db->languages->cardSummary($named->id)->canDelete);
+        });
+    }
+
+    /** Persisted foreign writes reach all six warm helper paths through the real sync applicator. */
+    public function testWarmReferenceHelpersFollowDeliveredDbSync(): void
+    {
+        SourceChangeBus::subscribe(new ViewCacheSubscriber());
+        $writer = Hilos::$db;
+        $reader = new I18nReferenceTestDbContext();
+        $reader->configure();
+        foreach ([
+            HilosDbContext::settings, HilosDbContext::languages, HilosDbContext::countries,
+            HilosDbContext::locales, HilosDbContext::countryNames, HilosDbContext::languageNames,
+        ] as $key) {
+            self::assertCount(0, $reader->{$key});
+        }
+
+        $setting = $writer->settings->actions->addOrphan('synced', SettingsCatalogConstants::TYPE_STRING, 'old', []);
+        $language = $writer->languages->actions->create('qk', 'Old', false);
+        $country = $writer->countries->actions->create('qx', '$', 'USD');
+        $locale = self::createLocale($language, null);
+        $countryName = $writer->countryNames->actions->createManual($country, $language, null, 'Old country');
+        $languageName = $writer->languageNames->actions->createManual($language, $language, null, 'Old language');
+        $rows = [
+            [HilosDbContext::settings, 'hilos_setting', $setting->id, [EntitySetting::value => 'new'],
+                static fn () => Hilos::$db->settings['synced']],
+            [HilosDbContext::languages, 'hilos_language', $language->id, [EntityLanguage::native_name => 'New'],
+                static fn () => Hilos::$db->languages['qk']],
+            [HilosDbContext::countries, 'hilos_country', $country->id, [EntityCountry::currency_symbol => '¤'],
+                static fn () => Hilos::$db->countries['qx']],
+            [HilosDbContext::locales, 'hilos_locale', $locale->id, [EntityLocale::enabled => true],
+                static fn () => Hilos::$db->locales['qk']],
+            [HilosDbContext::countryNames, 'hilos_country_name', $countryName->id,
+                [EntityCountryName::name => '', EntityCountryName::locked => false],
+                static fn () => Hilos::$db->countryNames->findBase($country->id, $language->id)],
+            [HilosDbContext::languageNames, 'hilos_language_name', $languageName->id,
+                [EntityLanguageName::name => '', EntityLanguageName::locked => false],
+                static fn () => Hilos::$db->languageNames->findBase($language->id, $language->id)],
+        ];
+        Hilos::$db = $reader;
+        foreach ($rows as [$key, $table, $id, $diff, $read]) {
+            $row = Database::sql("SELECT * FROM `{$table}` WHERE `id` = ?", [$id])->firstRow();
+            DbSyncApplicator::applyCreated(new DbSyncCreatedSignalData($key, (string)$id, $row), originNodeId: 'other-node');
+            $this->assertQuietReads(function () use ($id, $read): void {
+                self::assertSame($id, $read()->id);
+            });
+            $held = $read();
+            foreach ($diff as $column => $value) {
+                Database::sqlRun("UPDATE `{$table}` SET `{$column}` = ? WHERE `id` = ?", [is_bool($value) ? (int)$value : $value, $id]);
+            }
+            DbSyncApplicator::applyUpdated(new DbSyncUpdatedSignalData($key, (string)$id, $diff));
+            $this->assertQuietReads(function () use ($read, $held, $diff): void {
+                self::assertSame($held, $read());
+                foreach ($diff as $column => $value) {
+                    self::assertSame($value, $read()->getObject()->valueForColumn($column));
+                }
+            });
+        }
+        $this->assertQuietReads(function () use ($country, $language): void {
+            self::assertTrue(Hilos::$db->locales->countrylessEnabled($language->id));
+            self::assertSame(0, Hilos::$db->countryNames->countBaseNamesForCountry($country->id));
+            self::assertTrue(Hilos::$db->countryNames->hasForCountry($country->id));
+            self::assertFalse(Hilos::$db->countryNames->hasLockedNameInLanguage($language->id));
+            self::assertCount(1, Hilos::$db->countryNames->unlockedBaseNamesInLanguage($language->id));
+            self::assertFalse(Hilos::$db->languageNames->hasManualNameForLanguage($language->id));
+        });
+        foreach (array_reverse($rows) as [$key, $table, $id]) {
+            Database::sqlRun("DELETE FROM `{$table}` WHERE `id` = ?", [$id]);
+            DbSyncApplicator::applyDeleted(new DbSyncDeletedSignalData($key, (string)$id));
+            $this->assertQuietReads(function () use ($key, $id): void {
+                self::assertArrayNotHasKey($id, Hilos::$db->{$key});
+                self::assertCount(0, Hilos::$db->{$key});
+            });
+        }
+        $this->assertQuietReads(function () use ($country, $language): void {
+            self::assertArrayNotHasKey('synced', Hilos::$db->settings);
+            self::assertArrayNotHasKey('qk', Hilos::$db->languages);
+            self::assertArrayNotHasKey('qx', Hilos::$db->countries);
+            self::assertArrayNotHasKey('qk', Hilos::$db->locales);
+            self::assertSame(0, Hilos::$db->locales->countForLanguage($language->id));
+            self::assertFalse(Hilos::$db->countryNames->hasForCountry($country->id));
+            self::assertNull(Hilos::$db->countryNames->findBase($country->id, $language->id));
+            self::assertNull(Hilos::$db->languageNames->findBase($language->id, $language->id));
+        });
+    }
+
+    /** A name override alone still protects a country, even with no base or nonempty text. */
+    public function testWarmCountryNameExistenceIncludesAnEmptyOverrideWithoutBase(): void
+    {
+        $language = Hilos::$db->languages->actions->create('qk', 'Own', false);
+        $country = Hilos::$db->countries->actions->create('qx', '$', 'USD');
+        $locale = self::createLocale($language, null);
+        $base = Hilos::$db->countryNames->actions->createManual($country, $language, null, 'Base');
+        Hilos::$db->countryNames->actions->createManual($country, $language, $locale, '');
+        Database::sqlRun('DELETE FROM `hilos_country_name` WHERE `id` = ?', [$base->id]);
+        DbSyncApplicator::applyDeleted(new DbSyncDeletedSignalData(HilosDbContext::countryNames, (string)$base->id));
+        $this->assertQuietReads(function () use ($country, $language): void {
+            self::assertTrue(Hilos::$db->countryNames->hasForCountry($country->id));
+            self::assertSame(0, Hilos::$db->countryNames->countBaseNamesForCountry($country->id));
+            self::assertNull(Hilos::$db->countryNames->findBase($country->id, $language->id));
+            self::assertSame(Country::DELETE_NAMES, $country->deleteReason());
+        });
+    }
+
+    /** Late-static name selections keep the configured item subtype and never widen on a helper read. */
+    public function testNameSubsetsKeepSubtypesKeysAndHeldObjects(): void
+    {
+        $language = Hilos::$db->languages->actions->create('qk', 'Own', false);
+        $country = Hilos::$db->countries->actions->create('qx', '$', 'USD');
+        $locale = self::createLocale($language, null);
+        $countryBase = Hilos::$db->countryNames->actions->createCatalogBase($country, $language, 'Country');
+        $countryOverride = Hilos::$db->countryNames->actions->createManual($country, $language, $locale, 'Override');
+        $languageBase = Hilos::$db->languageNames->actions->createManual($language, $language, null, 'Language');
+        $languageOverride = Hilos::$db->languageNames->actions->createManual($language, $language, $locale, 'Override');
+        $countries = I18nCountryNamesSubtype::initDB(Objects::LAZY_STRATEGY_NONE);
+        $languages = I18nLanguageNamesSubtype::initDB(Objects::LAZY_STRATEGY_NONE);
+        $heldCountry = $countries->findBase($country->id, $language->id);
+        $heldLanguage = $languages->findBase($language->id, $language->id);
+        self::assertInstanceOf(I18nCountryNameSubtype::class, $heldCountry);
+        self::assertInstanceOf(I18nLanguageNameSubtype::class, $heldLanguage);
+
+        $this->assertQuietReads(function () use (
+            $country, $language, $locale, $countryBase, $countryOverride, $languageBase, $languageOverride,
+            $countries, $languages, $heldCountry, $heldLanguage,
+        ): void {
+            $unlocked = $countries->unlockedBaseNamesInLanguage($language->id);
+            self::assertInstanceOf(I18nCountryNamesSubtype::class, $unlocked);
+            self::assertSame([$countryBase->id], $unlocked->keys());
+            self::assertSame($heldCountry, $unlocked->findBase($country->id, $language->id));
+            self::assertCount(0, $unlocked->overridesFor($country->id, $language->id));
+            $countryOverrides = $countries->overridesFor($country->id, $language->id);
+            self::assertInstanceOf(I18nCountryNamesSubtype::class, $countryOverrides);
+            self::assertSame([$countryOverride->id], $countryOverrides->keys());
+            self::assertInstanceOf(I18nCountryNameSubtype::class, $countryOverrides[$countryOverride->id]);
+            self::assertSame($countries[$countryOverride->id], $countryOverrides->findOverride($country->id, $language->id, $locale->id));
+            self::assertNull($countryOverrides->findBase($country->id, $language->id));
+            self::assertSame(0, $countryOverrides->countBaseNamesForCountry($country->id));
+            self::assertTrue($countryOverrides->hasForCountry($country->id));
+            $languageOverrides = $languages->overridesFor($language->id, $language->id);
+            self::assertInstanceOf(I18nLanguageNamesSubtype::class, $languageOverrides);
+            self::assertSame([$languageOverride->id], $languageOverrides->keys());
+            self::assertInstanceOf(I18nLanguageNameSubtype::class, $languageOverrides[$languageOverride->id]);
+            self::assertSame($languages[$languageOverride->id], $languageOverrides->findOverride($language->id, $language->id, $locale->id));
+            self::assertNull($languageOverrides->findBase($language->id, $language->id));
+            self::assertSame($heldCountry, $countries[$countryBase->id]);
+            self::assertSame($heldLanguage, $languages[$languageBase->id]);
+        });
     }
 
     /** @throws HilosException When actions, bridges or the SQL counter fail */
@@ -1164,6 +1512,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         Database::sqlRun('UPDATE `hilos_country_name` SET `locked` = 0 WHERE `id` = ?', [$usFr->id]);
         $usFr->getObject()->locked = false;
 
+        $beforeSelects = self::selectCount();
         $beforeChanges = $this->changes->count;
         $objRes = Hilos::$db->countryNames->getObjectCollection()->unlockedBaseNamesInLanguage($en->id);
         $viewRes = Hilos::$db->countryNames->unlockedBaseNamesInLanguage($en->id);
@@ -1211,6 +1560,8 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         count($viewRes);
         foreach ($viewRes as $unused) {}
         self::assertCount(2, $viewRes);
+        self::assertSame($beforeSelects, self::selectCount());
+        self::assertSame($beforeChanges, $this->changes->count);
     }
 
     /** @throws HilosException When fixture setup or queries fail */
@@ -1250,6 +1601,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         Hilos::$db->countryNames->actions->createManual($country, $otherLang, null, 'Estados Unidos');
         $ovOtherLang = Hilos::$db->countryNames->actions->createManual($country, $otherLang, $otherLocale, 'EE. UU.');
 
+        $beforeSelects = self::selectCount();
         $beforeChanges = $this->changes->count;
         $objRes = Hilos::$db->countryNames->getObjectCollection()->overridesFor($country->id, $lang->id);
         $viewRes = Hilos::$db->countryNames->overridesFor($country->id, $lang->id);
@@ -1297,6 +1649,8 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         count($viewRes);
         foreach ($viewRes as $unused) {}
         self::assertCount(2, $viewRes);
+        self::assertSame($beforeSelects, self::selectCount());
+        self::assertSame($beforeChanges, $this->changes->count);
     }
 
     /** @throws HilosException When fixture setup or queries fail */
@@ -1336,6 +1690,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         Hilos::$db->languageNames->actions->createManual($fr, $de, null, 'Französisch');
         $ovOtherInLang = Hilos::$db->languageNames->actions->createManual($fr, $de, $deLocale, 'Französisch (AT)');
 
+        $beforeSelects = self::selectCount();
         $beforeChanges = $this->changes->count;
         $objRes = Hilos::$db->languageNames->getObjectCollection()->overridesFor($fr->id, $en->id);
         $viewRes = Hilos::$db->languageNames->overridesFor($fr->id, $en->id);
@@ -1383,6 +1738,24 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         count($viewRes);
         foreach ($viewRes as $unused) {}
         self::assertCount(2, $viewRes);
+        self::assertSame($beforeSelects, self::selectCount());
+        self::assertSame($beforeChanges, $this->changes->count);
+    }
+
+    /** @return int SELECT statements executed on the real test connection */
+    private static function selectCount(): int
+    {
+        return (int) Database::sql("SHOW SESSION STATUS LIKE 'Com_select'")->firstRow()['Value'];
+    }
+
+    /** @param Closure(): void $read Warm lookups whose reads must be silent and query-free */
+    private function assertQuietReads(Closure $read): void
+    {
+        $selects = self::selectCount();
+        $changes = $this->changes->count;
+        $read();
+        self::assertSame($selects, self::selectCount(), 'Warm helpers must not SELECT');
+        self::assertSame($changes, $this->changes->count, 'Reads must not announce source changes');
     }
 
     /**
@@ -1429,6 +1802,28 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
 /** The framework's reference catalogs with no project extension. */
 final class I18nReferenceTestDbContext extends HilosDbContext
 {
+}
+
+/** Name item variant used to check late-static Object construction. */
+final class I18nCountryNameSubtype extends ObjectCountryName
+{
+}
+
+/** Name item variant used to check late-static Object construction. */
+final class I18nLanguageNameSubtype extends ObjectLanguageName
+{
+}
+
+/** Name collection variant whose subsets must retain its concrete class. */
+final class I18nCountryNamesSubtype extends ObjectCountryNames
+{
+    public const string OBJECT_CLASS = I18nCountryNameSubtype::class;
+}
+
+/** Name collection variant whose subsets must retain its concrete class. */
+final class I18nLanguageNamesSubtype extends ObjectLanguageNames
+{
+    public const string OBJECT_CLASS = I18nLanguageNameSubtype::class;
 }
 
 /** Counts announcements to prove repeated switches do not write or sync. */

@@ -163,5 +163,7 @@ final class I18nPageAddressTest extends IntegrationTestCase
     {
         Database::sqlRun("DELETE FROM hilos_country WHERE code IN ('qx', 'qy')");
         Database::sqlRun("DELETE FROM hilos_language WHERE code IN ('qx', 'qy')");
+        Hilos::$db->reHydrateCollection(HilosDbContext::countries);
+        Hilos::$db->reHydrateCollection(HilosDbContext::languages);
     }
 }

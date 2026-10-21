@@ -123,18 +123,23 @@ the re-hydrate path already writes down
 (`framework/backend/Cluster/Peer/DTO/PeerDbReHydrateDTO.php`: a restore run on
 any node leaves the others holding caches of a database that no longer exists).
 
-**A query is equally fresh on any node; a read by key is not.**
-`Objects::offsetGet()` answers from this process's object cache when the row is
-already there and only falls through to SQL when it is not, and the repair for a
-cache another process invalidated is node-local: the daemon announces a write to
-its own workers (`WorkerDbSync*MessageDTO`), and `framework/backend/Cluster`
-carries no DB sync at all. So a node that read a row before another node changed
-it keeps the old copy indefinitely. Cross-node cache invalidation is one of the
-open preconditions below; until it is answered, a caller that must not read a
-stale row reads it with a query rather than by key.
+**Explicit SQL reads the database; a local read reflects the last applied sync.**
+`Objects::offsetGet()` can answer from the Object already held by this process,
+and a full collection's column lookup reads its held rows too. DB sync crosses
+nodes over `peer_db_sync` and reaches each node's workers through the
+`WorkerDbSync*MessageDTO` frames; `DbSyncApplicator` applies those facts to their
+local copies. A peer link coming back calls `reReadAfterLink()` to reread the
+database-backed collections: full copies are reread, lazy ones forget and fetch
+on the next read. An isolated process can therefore keep an older copy until
+delivery or recovery; a local lookup does not promise an immediate cross-node
+read barrier. A caller whose operation requires an explicit database read uses
+the collection's query API with that requirement documented.
 
-Who holds the set *in memory* is the question the library answers; how a node
-learns that its copy of a row is stale is the question it leaves open.
+Who holds the set *in memory* remains the library's question. Receiving DB sync
+does not make a partial lazy cache a complete set: rows this process never
+loaded are not evidence that the database contains no such rows. The
+[shared column reads](../orm/object.md#choosing-memory-or-sql) choose full
+memory or partial SQL without treating that cache as the whole table.
 
 Note what is **not** evidence for this: every node of a cluster stand names the
 one schema of its demo (HIL-712), so a stand does hold a shared database — but
@@ -219,7 +224,9 @@ that reaches such a call site fixes it there. The one call site the repository
 had was the browser join (`BrowserContext::sourceItemsForRow()`), and it now asks
 the table for the rows of a foreign key instead of walking for them —
 `DbCollection::whereColumnIs()` / `whereColumnIn()`, over
-`Objects::loadByColumn()`.
+`Objects::loadByColumn()`. These reads use SQL for a partial lazy collection and
+memory for a full one; a promised whole table loads on its first nonempty read.
+They do not treat the rows in a partial cache as the whole answer.
 
 ## Writing Without The Owner
 

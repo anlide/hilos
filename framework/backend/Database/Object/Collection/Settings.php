@@ -36,7 +36,8 @@ class Settings extends Objects
      * @param string $key Setting key
      * @return ?ObjectSetting Setting object or null if not found
      * @throws DatabaseException If database query fails
-     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws InvalidArgumentException When the entity column is invalid
+     * @throws LogicException When collection classes are not configured
      */
     public function findByKey(string $key): ?ObjectSetting
     {
@@ -44,34 +45,11 @@ class Settings extends Objects
             return null;
         }
 
-        $entitySetting = static::entityClass()::get([EntitySetting::key => $key])->first();
-
-        if ($entitySetting === null) {
-            return null;
+        foreach ($this->loadByColumn(EntitySetting::key, $key) as $id) {
+            return $this->objects[$id];
         }
 
-        if (!isset($this->objects[$entitySetting->id])) {
-            $this->hydrate($entitySetting->id, static::OBJECT_CLASS::fromEntity($entitySetting));
-        }
-
-        return $this->objects[$entitySetting->id];
-    }
-
-    /**
-     * Reads a setting value from the database without using or changing held objects.
-     *
-     * @param string $key Setting key
-     * @return ?string Persisted value or null when absent or unset
-     * @throws DatabaseException If database query fails
-     * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     */
-    public function readPersistedValueByKeyFresh(string $key): ?string
-    {
-        if ($key === '') {
-            return null;
-        }
-
-        return static::entityClass()::get([EntitySetting::key => $key])->first()?->value;
+        return null;
     }
 
     /**

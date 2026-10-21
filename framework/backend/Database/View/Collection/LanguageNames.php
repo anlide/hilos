@@ -50,6 +50,8 @@ class LanguageNames extends DbCollection
      * @param int $languageId Named language primary id
      * @return int Number of nonempty base names in other languages
      * @throws DatabaseException When the query fails
+     * @throws InvalidArgumentException When the entity column is invalid
+     * @throws LogicException When collection classes are not configured
      */
     public function countBaseNamesForLanguage(int $languageId): int
     {
@@ -60,6 +62,8 @@ class LanguageNames extends DbCollection
      * @param int $languageId Language primary id
      * @return bool Whether a locked name names it or is written in it
      * @throws DatabaseException When the query fails
+     * @throws InvalidArgumentException When the entity column is invalid
+     * @throws LogicException When collection classes are not configured
      */
     public function hasManualNameForLanguage(int $languageId): bool
     {

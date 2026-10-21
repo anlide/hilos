@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\Object\Collection;
 
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\Countries as EntityCountries;
@@ -31,7 +32,8 @@ class Countries extends Objects
      * @param string $code Country code
      * @return ?ObjectCountry Country or null
      * @throws DatabaseException When the query fails
-     * @throws InvalidArgumentException When the entity query is invalid
+     * @throws InvalidArgumentException When the entity column is invalid
+     * @throws LogicException When collection classes are not configured
      */
     public function findByCode(string $code): ?ObjectCountry
     {
@@ -39,15 +41,10 @@ class Countries extends Objects
             return null;
         }
 
-        $entity = static::entityClass()::get([EntityCountry::code => $code])->first();
-        if ($entity?->id === null) {
-            return null;
+        foreach ($this->loadByColumn(EntityCountry::code, $code) as $id) {
+            return $this->objects[$id];
         }
 
-        if (!isset($this->objects[$entity->id])) {
-            $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
-        }
-
-        return $this->objects[$entity->id];
+        return null;
     }
 }

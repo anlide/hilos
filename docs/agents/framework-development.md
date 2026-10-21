@@ -94,17 +94,24 @@ protected const string SETTINGS_CATALOG = SettingsCatalog::class;
 
 ## Settings and catalogs
 
-- **A setting takes effect at once, on every node, with nothing restarted.**
-  That is what a setting is, and what tells it from an environment value. Its
-  row lives in the shared database, so one write reaches every node of the
-  cluster; every reader asks for it at the moment it applies it — on each pass,
-  request or check, never once at start into a field — and a schedule kept in a
-  setting rebuilds its cron rule when the expression changes. A decision already
-  taken keeps the value it was taken with: a deletion moment already set does
-  not move. A value read once at start, or meant to differ from node to node, is
-  an environment value (`EnvCatalogStub`), not a setting. So a knob a ticket
-  calls a setting is a settings-catalog key, and which of the two it should be
-  is not a question to put to the owner.
+- **A setting takes effect without a restart, through the ORM's DB sync.**
+  Its row lives in the shared database. The writer sees its own write; other
+  processes and nodes see it after normal DB sync delivery or a reread of
+  their settings collection. `Hilos::$setting[$key]->string()` / `int()` /
+  `float()` / `bool()` read the current full local ORM copy through the
+  key-based `Hilos::$db->settings[$key]` contract, without a fresh SQL query
+  on each read. An isolated peer may retain its old copy until communication
+  recovers and the copy is reread; there is no promised small delay or read
+  barrier. Actions that require a stronger security apply acknowledgement
+  keep their separate apply-ACK mechanism.
+  Every reader asks for the value at the moment it applies it — on each pass,
+  request or check, never once at start into a field — and a schedule kept in
+  a setting rebuilds its cron rule when the expression changes. A decision
+  already taken keeps the value it was taken with: a deletion moment already
+  set does not move. A value read once at start, or meant to differ from node
+  to node, is an environment value (`EnvCatalogStub`), not a setting. So a
+  knob a ticket calls a setting is a settings-catalog key, and which of the
+  two it should be is not a question to put to the owner.
 - Settings catalog definitions are allowed to be arrays because the catalog is a
   compact declarative map.
 - Keep those arrays at the catalog boundary. Runtime readers and accessors

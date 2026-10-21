@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\Object\Collection;
 
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\LanguageNames as EntityLanguageNames;
@@ -32,28 +33,41 @@ class LanguageNames extends Objects
      * @param int $languageId Named language primary id
      * @return int Number of nonempty base names in other languages
      * @throws DatabaseException When the query fails
+     * @throws InvalidArgumentException When the entity column is invalid
+     * @throws LogicException When collection classes are not configured
      */
     public function countBaseNamesForLanguage(int $languageId): int
     {
-        return static::entityClass()::count(
-            '`' . EntityLanguageName::language_id . '` = ? AND `' . EntityLanguageName::in_language_id . '` <> ?'
-                . ' AND `' . EntityLanguageName::locale_id . '` IS NULL AND `' . EntityLanguageName::name . '` <> ?',
-            [$languageId, $languageId, ''],
-        );
+        $count = 0;
+        foreach ($this->loadByColumn(EntityLanguageName::language_id, $languageId) as $id) {
+            $name = $this->objects[$id];
+            if ($name->inLanguageId !== $languageId && $name->localeId === null && $name->name !== '') {
+                $count++;
+            }
+        }
+        return $count;
     }
 
     /**
      * @param int $languageId Language primary id
      * @return bool Whether a locked name names it or is written in it
      * @throws DatabaseException When the query fails
+     * @throws InvalidArgumentException When the entity column is invalid
+     * @throws LogicException When collection classes are not configured
      */
     public function hasManualNameForLanguage(int $languageId): bool
     {
-        return static::entityClass()::count(
-            '(`' . EntityLanguageName::language_id . '` = ? OR `' . EntityLanguageName::in_language_id . '` = ?)'
-                . ' AND `' . EntityLanguageName::locked . '` = ?',
-            [$languageId, $languageId, true],
-        ) > 0;
+        foreach ($this->loadByColumn(EntityLanguageName::language_id, $languageId) as $id) {
+            if ($this->objects[$id]->locked === true) {
+                return true;
+            }
+        }
+        foreach ($this->loadByColumn(EntityLanguageName::in_language_id, $languageId) as $id) {
+            if ($this->objects[$id]->locked === true) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -62,6 +76,7 @@ class LanguageNames extends Objects
      * @return ?ObjectLanguageName Base row, or null
      * @throws DatabaseException When the query fails
      * @throws InvalidArgumentException When the query is invalid
+     * @throws LogicException When collection classes are not configured
      */
     public function findBase(int $languageId, int $inLanguageId): ?ObjectLanguageName
     {
@@ -75,6 +90,7 @@ class LanguageNames extends Objects
      * @return ?ObjectLanguageName Override row, or null
      * @throws DatabaseException When the query fails
      * @throws InvalidArgumentException When the query is invalid
+     * @throws LogicException When collection classes are not configured
      */
     public function findOverride(int $languageId, int $inLanguageId, int $localeId): ?ObjectLanguageName
     {
@@ -91,18 +107,11 @@ class LanguageNames extends Objects
      */
     public function overridesFor(int $languageId, int $inLanguageId): static
     {
-        $rows = static::entityClass()::get(
-            '`' . EntityLanguageName::language_id . '` = ? AND `' . EntityLanguageName::in_language_id . '` = ?'
-                . ' AND `' . EntityLanguageName::locale_id . '` IS NOT NULL',
-            [$languageId, $inLanguageId],
-        );
         $names = static::initEmpty();
-        foreach ($rows as $row) {
-            if ($row->id !== null) {
-                if (!isset($this->objects[$row->id])) {
-                    $this->hydrate($row->id, static::OBJECT_CLASS::fromEntity($row));
-                }
-                $names->hydrate($row->id, $this->objects[$row->id]);
+        foreach ($this->loadByColumn(EntityLanguageName::language_id, $languageId) as $id) {
+            $name = $this->objects[$id];
+            if ($name->inLanguageId === $inLanguageId && $name->localeId !== null) {
+                $names->hydrate($id, $name);
             }
         }
         return $names;
@@ -115,19 +124,16 @@ class LanguageNames extends Objects
      * @return ?ObjectLanguageName Matching row, or null
      * @throws DatabaseException When the query fails
      * @throws InvalidArgumentException When the query is invalid
+     * @throws LogicException When collection classes are not configured
      */
     private function findOne(int $languageId, int $inLanguageId, ?int $localeId): ?ObjectLanguageName
     {
-        $where = '`' . EntityLanguageName::language_id . '` = ? AND `' . EntityLanguageName::in_language_id . '` = ?'
-            . ' AND `' . EntityLanguageName::locale_id . '`' . ($localeId === null ? ' IS NULL' : ' = ?');
-        $params = $localeId === null ? [$languageId, $inLanguageId] : [$languageId, $inLanguageId, $localeId];
-        $row = static::entityClass()::get($where, $params)->first();
-        if ($row?->id === null) {
-            return null;
+        foreach ($this->loadByColumn(EntityLanguageName::language_id, $languageId) as $id) {
+            $name = $this->objects[$id];
+            if ($name->inLanguageId === $inLanguageId && $name->localeId === $localeId) {
+                return $name;
+            }
         }
-        if (!isset($this->objects[$row->id])) {
-            $this->hydrate($row->id, static::OBJECT_CLASS::fromEntity($row));
-        }
-        return $this->objects[$row->id];
+        return null;
     }
 }

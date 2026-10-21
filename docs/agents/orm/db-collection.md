@@ -153,6 +153,15 @@ Put reusable lookups on the collection layer instead of rebuilding the same
 filter in pages or tables. Example: `Sessions::findByToken()` delegates to the
 Object collection and returns the matching `DbItem`.
 
+`whereColumnIs()` / `whereColumnIn()` delegate to `Objects::loadByColumn()`:
+a full Object collection matches its current memory, a partial lazy collection
+uses SQL, and a collection that promised the whole table loads it on its first
+nonempty read. The result is a new typed manual selection containing the
+current View items. A null `whereColumnIs()` value or no `whereColumnIn()`
+values returns an empty selection without loading. See
+[the Object collection read contract](object.md#choosing-memory-or-sql) for
+manual sets, column validation and the limits of scalar matching.
+
 Do not put read-only helpers under `->actions`. Actions are write APIs; using
 them for reads hides ownership boundaries and makes call sites look like they
 mutate state.

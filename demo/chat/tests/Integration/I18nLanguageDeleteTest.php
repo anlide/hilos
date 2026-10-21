@@ -258,7 +258,7 @@ final class I18nLanguageDeleteTest extends IntegrationTestCase
         $languageId = Hilos::$db->languages['fr']->id;
         $britainId = Hilos::$db->countryNames->findBase(Hilos::$db->countries['gb']->id, $languageId)->id;
         $statesId = Hilos::$db->countryNames->findBase(Hilos::$db->countries['us']->id, $languageId)->id;
-        Hilos::$db->countryNames->getObjectCollection()->clearInMemory();
+        Hilos::$db->countryNames->getObjectCollection()->forgetLoadedDataForTest();
         Hilos::$db->countryNames->clearCache();
 
         $this->underAgent($this->agent, static fn () => Hilos::$db->languages['fr']->actions->delete());
@@ -317,7 +317,7 @@ final class I18nLanguageDeleteTest extends IntegrationTestCase
             Database::sqlRun('UPDATE hilos_country_name SET locked = 0 WHERE id = ?', [$override->id]);
             return $base;
         });
-        Hilos::$db->countryNames->getObjectCollection()->clearInMemory();
+        Hilos::$db->countryNames->getObjectCollection()->forgetLoadedDataForTest();
         Hilos::$db->countryNames->clearCache();
 
         $names = Hilos::$db->countryNames->unlockedBaseNamesInLanguage(Hilos::$db->languages['fr']->id);
@@ -402,6 +402,7 @@ final class I18nLanguageDeleteTest extends IntegrationTestCase
             Database::sqlRun('INSERT INTO hilos_language_name (language_id, in_language_id, name, locked) VALUES (?, ?, ?, 0)', [
                 Hilos::$db->languages['en']->id, Hilos::$db->languages['fr']->id, 'Anglais',
             ]);
+            Hilos::$db->reHydrateCollection(HilosDbContext::languageNames);
             return $bases;
         });
         $languageId = Hilos::$db->languages['fr']->id;

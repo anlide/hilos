@@ -10,6 +10,7 @@ use Hilos\Tests\CodeStyle\Rule\BlockingResolutionRule;
 use Hilos\Tests\CodeStyle\Rule\CodeFqnRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionItemNarrowingRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionObjectListRule;
+use Hilos\Tests\CodeStyle\Rule\CollectionSqlReadRule;
 use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
 use Hilos\Tests\CodeStyle\Rule\FrameworkOrmChainRule;
@@ -219,6 +220,66 @@ final class RuleFixtureTest extends TestCase
                 'COLLECTION-OBJECT-LIST Bad/Database/Object/Collection/CollectionObjectListSamples.php:126 — branches @return '
                     . '(list<int>)|(list<CountryLocaleChoice>): use a typed collection (see '
                     . 'docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-SQL-READ Bad/Database/Object/Collection/CollectionSqlReadSamples.php:11 — '
+                    . 'entityClass()::get() reads SQL directly; use Objects::loadByColumn/countByColumn '
+                    . 'or another shared collection read (see docs/agents/orm/object.md)',
+                'COLLECTION-SQL-READ Bad/Database/Object/Collection/CollectionSqlReadSamples.php:12 — '
+                    . 'entityClass()::count() reads SQL directly; use Objects::loadByColumn/countByColumn '
+                    . 'or another shared collection read (see docs/agents/orm/object.md)',
+                'COLLECTION-SQL-READ Bad/Database/Object/Collection/CollectionSqlReadSamples.php:13 — '
+                    . 'entityClass()::get() reads SQL directly; use Objects::loadByColumn/countByColumn '
+                    . 'or another shared collection read (see docs/agents/orm/object.md)',
+                'COLLECTION-SQL-READ Bad/Database/Object/Collection/CollectionSqlReadSamples.php:14 — '
+                    . 'entityClass()::count() reads SQL directly; use Objects::loadByColumn/countByColumn '
+                    . 'or another shared collection read (see docs/agents/orm/object.md)',
+                'COLLECTION-SQL-READ Bad/Database/Object/Collection/CollectionSqlReadSamples.php:15 — '
+                    . 'entityClass()::get() reads SQL directly; use Objects::loadByColumn/countByColumn '
+                    . 'or another shared collection read (see docs/agents/orm/object.md)',
+                'COLLECTION-SQL-READ Bad/Database/Object/Collection/CollectionSqlReadSamples.php:16 — '
+                    . 'entityClass()::count() reads SQL directly; use Objects::loadByColumn/countByColumn '
+                    . 'or another shared collection read (see docs/agents/orm/object.md)',
+                'COLLECTION-SQL-READ Bad/Database/Object/Collection/CollectionSqlReadSamples.php:17 — '
+                    . 'entityClass()::get() reads SQL directly; use Objects::loadByColumn/countByColumn '
+                    . 'or another shared collection read (see docs/agents/orm/object.md)',
+                'COLLECTION-SQL-READ Bad/Database/Object/Collection/CollectionSqlReadSamples.php:21 — '
+                    . 'entityClass()::get() reads SQL directly; use Objects::loadByColumn/countByColumn '
+                    . 'or another shared collection read (see docs/agents/orm/object.md)',
+                'COLLECTION-SQL-READ Bad/Database/Object/Collection/CollectionSqlReadSamples.php:21 — '
+                    . 'entityClass()::count() reads SQL directly; use Objects::loadByColumn/countByColumn '
+                    . 'or another shared collection read (see docs/agents/orm/object.md)',
+                'COLLECTION-SQL-READ Bad/Database/Object/Collection/CollectionSqlReadSamples.php:23 — '
+                    . 'entityClass()::get() reads SQL directly; use Objects::loadByColumn/countByColumn '
+                    . 'or another shared collection read; fresh-sql marker has no reason (see docs/agents/orm/object.md)',
+                'COLLECTION-SQL-READ Bad/Database/Object/Collection/CollectionSqlReadSamples.php:24 — '
+                    . 'entityClass()::count() reads SQL directly; use Objects::loadByColumn/countByColumn '
+                    . 'or another shared collection read; fresh-sql marker has no reason (see docs/agents/orm/object.md)',
+                'COLLECTION-SQL-READ Bad/Database/Object/Collection/CollectionSqlReadSamples.php:26 — '
+                    . 'entityClass()::get() reads SQL directly; use Objects::loadByColumn/countByColumn '
+                    . 'or another shared collection read (see docs/agents/orm/object.md)',
+                'COLLECTION-SQL-READ Bad/Database/Object/Collection/CollectionSqlReadSamples.php:27 — '
+                    . 'entityClass()::count() reads SQL directly; use Objects::loadByColumn/countByColumn '
+                    . 'or another shared collection read (see docs/agents/orm/object.md)',
+                'COLLECTION-SQL-READ Bad/Database/Object/Collection/CollectionSqlReadSamples.php:29 — '
+                    . 'entityClass()::get() reads SQL directly; use Objects::loadByColumn/countByColumn '
+                    . 'or another shared collection read (see docs/agents/orm/object.md)',
+                'COLLECTION-SQL-READ Bad/Database/Object/Collection/CollectionSqlReadSamples.php:30 — '
+                    . 'entityClass()::count() reads SQL directly; use Objects::loadByColumn/countByColumn '
+                    . 'or another shared collection read (see docs/agents/orm/object.md)',
+                'COLLECTION-SQL-READ Bad/Database/Object/Collection/CollectionSqlReadSamples.php:31 — '
+                    . 'entityClass()::get() reads SQL directly; use Objects::loadByColumn/countByColumn '
+                    . 'or another shared collection read (see docs/agents/orm/object.md)',
+                'COLLECTION-SQL-READ Bad/Database/Object/Collection/CollectionSqlReadSamples.php:32 — '
+                    . 'entityClass()::count() reads SQL directly; use Objects::loadByColumn/countByColumn '
+                    . 'or another shared collection read (see docs/agents/orm/object.md)',
+                'COLLECTION-SQL-READ Bad/Database/Object/Collection/CollectionSqlReadSamples.php:33 — '
+                    . 'entityClass()::get() reads SQL directly; use Objects::loadByColumn/countByColumn '
+                    . 'or another shared collection read (see docs/agents/orm/object.md)',
+                'COLLECTION-SQL-READ Bad/Database/Object/Collection/CollectionSqlReadSamples.php:36 — '
+                    . 'entityClass()::count() reads SQL directly; use Objects::loadByColumn/countByColumn '
+                    . 'or another shared collection read (see docs/agents/orm/object.md)',
+                'COLLECTION-SQL-READ Bad/Database/Object/Collection/CollectionSqlReadSamples.php:37 — '
+                    . 'entityClass()::get() reads SQL directly; use Objects::loadByColumn/countByColumn '
+                    . 'or another shared collection read (see docs/agents/orm/object.md)',
                 'COLLECTION-ITEM-NARROWING Bad/Database/View/Collection/CollectionItemNarrowingSamples.php:24 — '
                     . 'getObjectCollection() names ObjectSessions instead of the item ObjectUsers; '
                     . 'declare `@method ObjectUsers|null getObjectCollection()` (see docs/agents/orm/db-collection.md)',
@@ -606,6 +667,9 @@ final class RuleFixtureTest extends TestCase
                     . 'hydrate() for a row read out of storage (see docs/agents/orm/object.md)',
                 'COLLECTION-OBJECT-LIST Database/Object/Collection/ObjectStoreMutateLookAlikes.php:55 — localNamedLikeTheStore '
                     . '@return array<int, Object_>: use a typed collection (see docs/agents/code-style/internal-backend-api.md)',
+                'COLLECTION-SQL-READ Database/Object/Collection/OrmChainLookAlikes.php:39 — '
+                    . 'entityClass()::get() reads SQL directly; use Objects::loadByColumn/countByColumn '
+                    . 'or another shared collection read (see docs/agents/orm/object.md)',
                 'CODE-FQN Database/Object/Collection/OrmChainSamples.php:48 — '
                     . '\Hilos\Database\Object\Item\AccountDeletion is written out in code; import it and use the '
                     . 'short name (see docs/agents/code-style/qualified-names.md)',
@@ -848,6 +912,88 @@ final class RuleFixtureTest extends TestCase
         }
     }
 
+    /** Direct SQL chains belong only to whole Object collection path segments in production roots. */
+    public function testCollectionSqlReadsAreJudgedOnlyInProductionObjectCollections(): void
+    {
+        $tokens = token_get_all((string)file_get_contents(
+            $this->fixtureRoot() . '/Bad/Database/Object/Collection/CollectionSqlReadSamples.php',
+        ));
+        foreach ([
+            'framework/backend', 'demo/example/backend', 'framework/tests', 'demo/example/tests', 'scripts',
+            'framework/backendExtra', 'demo/example/backendExtra', 'demo/nested/example/backend',
+        ] as $root) {
+            $rule = new CollectionSqlReadRule($root);
+            $this->assertSame('COLLECTION-SQL-READ', $rule->id());
+            $this->assertSame('docs/agents/orm/object.md', $rule->doc());
+            foreach (['Database/Object/Collection/Sample.php', 'Nested/Database/Object/Collection/Sample.php'] as $path) {
+                $hits = iterator_to_array($rule->check($path, $tokens), false);
+                $this->assertSame(
+                    in_array($root, ['framework/backend', 'demo/example/backend'], true)
+                        ? [11, 12, 13, 14, 15, 16, 17, 21, 21, 23, 24, 26, 27, 29, 30, 31, 32, 33, 36, 37] : [],
+                    array_map(static fn(Violation $hit): int => $hit->line, $hits),
+                    $root . '/' . $path,
+                );
+            }
+            foreach ([
+                'Database/Object/CollectionExtra/Sample.php',
+                'OtherDatabase/Object/Collection/Sample.php',
+                'Database/View/Collection/Sample.php',
+                'Database/Entity/Collection/Sample.php',
+                'Database/Actions/Collection/Sample.php',
+                'Database/Object/Objects.php',
+                'Database/Object/Item/Sample.php',
+                'Tables/Sample.php',
+            ] as $path) {
+                $this->assertSame([], iterator_to_array($rule->check($path, $tokens), false), $root . '/' . $path);
+            }
+        }
+    }
+
+    /** The detector's real report drives the existing freeze, growth and shrink contract. */
+    public function testCollectionSqlReadBaselineRequiresItsActualFrozenCount(): void
+    {
+        $path = 'Database/Object/Collection/Sample.php';
+        $source = "<?php\nstatic::entityClass()::get();\nself::entityClass()::count();\n";
+        $key = 'COLLECTION-SQL-READ framework/backend/' . $path;
+        $baseline = Baseline::fromText($key . ' 2 # HIL-1533');
+        $reported = $this->collectionSqlReadReport($source, $path);
+        $this->assertCount(2, $reported[$key]);
+        $this->assertSame([], $baseline->reconcile($reported));
+
+        foreach (['get', 'count'] as $method) {
+            $grown = $this->collectionSqlReadReport($source . 'parent::entityClass()::' . $method . '();', $path);
+            $this->assertCount(3, $grown[$key]);
+            $this->assertSame(
+                ['COLLECTION-SQL-READ framework/backend/Database/Object/Collection/Sample.php:4 — '
+                    . 'entityClass()::' . $method . '() reads SQL directly; use Objects::loadByColumn/countByColumn '
+                    . 'or another shared collection read (see docs/agents/orm/object.md)'],
+                $baseline->reconcile($grown),
+            );
+        }
+        $newPath = 'Database/Object/Collection/Another.php';
+        $this->assertSame(
+            ['COLLECTION-SQL-READ framework/backend/Database/Object/Collection/Another.php:2 — '
+                . 'entityClass()::get() reads SQL directly; use Objects::loadByColumn/countByColumn '
+                . 'or another shared collection read (see docs/agents/orm/object.md)'],
+            $baseline->reconcile($reported + $this->collectionSqlReadReport("<?php\nstatic::entityClass()::get();", $newPath)),
+        );
+        $shrunk = $this->collectionSqlReadReport(str_replace('static::entityClass()::get();', '', $source), $path);
+        $this->assertCount(1, $shrunk[$key]);
+        $this->assertSame(
+            ['baseline record "COLLECTION-SQL-READ framework/backend/Database/Object/Collection/Sample.php" '
+                . 'allows 2, only 1 left — lower the count'],
+            $baseline->reconcile($shrunk),
+        );
+        $this->assertSame([], Baseline::fromText($key . ' 1 # HIL-1533')->reconcile($shrunk));
+        $paid = $this->collectionSqlReadReport('<?php $this->loadByColumn("id", 1);', $path);
+        $this->assertSame(
+            ['baseline record "COLLECTION-SQL-READ framework/backend/Database/Object/Collection/Sample.php" '
+                . 'is paid off — delete the line'],
+            $baseline->reconcile($paid),
+        );
+        $this->assertSame([], Baseline::fromText('')->reconcile($paid));
+    }
+
     /**
      * The same tokens earn a verdict from their root and whole path segments alone, in each of
      * the three layers. The layer is read off the path, so each layer's own broken sample is what
@@ -915,6 +1061,22 @@ final class RuleFixtureTest extends TestCase
                 . '(see docs/agents/code-style/internal-backend-api.md)'],
             $baseline->reconcile($grown),
         );
+    }
+
+    /**
+     * @param string $source PHP source to scan without loading its declarations
+     * @param string $path File path relative to the production root
+     * @return array<string, list<string>> Real SQL detector output in the guard's baseline format
+     */
+    private function collectionSqlReadReport(string $source, string $path): array
+    {
+        $rule = new CollectionSqlReadRule('framework/backend');
+        $reported = [];
+        foreach ($rule->check($path, token_get_all($source)) as $hit) {
+            $reported[$rule->id() . ' framework/backend/' . $path][] = $hit->withPathPrefix('framework/backend')->describe($rule->doc());
+        }
+
+        return $reported;
     }
 
     /**
@@ -999,6 +1161,7 @@ final class RuleFixtureTest extends TestCase
             new CodeFqnRule($this->fixtureRoot()),
             new PhpDocFqnRule($this->fixtureRoot()),
             new CollectionObjectListRule('framework/backend'),
+            new CollectionSqlReadRule('framework/backend'),
             new CollectionItemNarrowingRule('framework/backend'),
             new RtStateReachRule(),
             new RtStateMutationRule(),

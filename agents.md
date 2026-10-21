@@ -84,7 +84,7 @@ Both exceptions are about `git commit` only. The push ban has none.
 
 | File | Read when... |
 |---|---|
-| [framework-development.md](docs/agents/framework-development.md) | changing framework-level APIs, facade globals, extension points, framework subsystem exceptions; also what a setting is — a value that takes effect at once on every node with nothing restarted — and so whether a new knob is a setting or an environment value |
+| [framework-development.md](docs/agents/framework-development.md) | changing framework-level APIs, facade globals, extension points, framework subsystem exceptions; also what a setting is — a value that takes effect without restart through normal DB sync or a settings collection reread — and so whether a new knob is a setting or an environment value |
 | [framework-first.md](docs/agents/framework-first.md) | about to write SQL of your own or read the database past `Hilos::$db`; about to give a class a static property, an instance field, or a local array to hold state — before either, find the mechanism the framework already has and name why you chose as you did |
 
 ## Feature Development

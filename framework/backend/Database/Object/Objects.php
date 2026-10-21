@@ -42,6 +42,7 @@ use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Object\Item\Object_;
+use Hilos\Database\PhpType;
 use Hilos\Database\SqlIndexType;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlSortDirection;
@@ -308,39 +309,36 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
     /**
      * Loads the rows whose column holds one of the given values, and answers with their keys.
      *
-     * This is how a set owned by somebody else is read: a collection keyed by its own primary
-     * key cannot answer "all rows of user 6" by walking what it happens to hold, because a key
-     * lazy collection holds only what was asked for by key. The database answers instead, and
-     * what came back is hydrated rather than announced, so a read stays a read.
-     *
-     * Answering with keys rather than with objects keeps the unstructured array out of the
-     * contract: the caller turns each key into whatever its own layer speaks.
+     * A promised whole table loads once; a full or manual set reads its held objects. A partial
+     * lazy set queries SQL and silently hydrates only missing rows. Memory matches canonical
+     * domain scalars by declared type, without emulating arbitrary SQL coercion or collation.
      *
      * @param string $column Entity column to match, or the object field name standing for it
      * @param int|string ...$values Values to match; no values means no query and no keys
-     * @return Generator<int, int|string> Keys of the rows the database answered with
+     * @return Generator<int, int|string> Matching keys, each once
      * @throws InvalidArgumentException When the column is neither a column of this entity nor a field naming one
+     * @throws LogicException When entity collection class is not configured
      * @throws DatabaseException When the lookup query fails
      */
     public function loadByColumn(string $column, int|string ...$values): Generator
     {
-        $resolvedColumn = $this->columnForField($column);
-        if ($resolvedColumn === null) {
-            throw new InvalidArgumentException(
-                "database collection '" . $this->getCollectionKey() . "' has no column '{$column}'"
-            );
-        }
+        $resolvedColumn = $this->requireColumn($column);
         if ($values === []) {
             return;
         }
+        $this->loadWholeIfPromised();
+        if (!$this->_allowLazyLoading || $this->_allLoaded) {
+            yield from $this->matchingColumnKeys($resolvedColumn, ...$values);
+            return;
+        }
+
         $objectClass = static::OBJECT_CLASS;
-        $entityClass = $objectClass::ENTITY_CLASS;
+        $entityClass = static::entityClass();
 
         $entityCollection = count($values) === 1
             ? $entityClass::get([$resolvedColumn => $values[0]])
             : $entityClass::get(
-                filters: '`' . str_replace('`', '``', $resolvedColumn) . '` IN ('
-                    . implode(', ', array_fill(0, count($values), '?')) . ')',
+                filters: $this->columnInCondition($resolvedColumn, count($values)),
                 filtersParam: array_values($values),
             );
 
@@ -350,6 +348,64 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
             }
             yield $key;
         }
+    }
+
+    /**
+     * @param string $column Entity column name or object field alias
+     * @return string Validated Entity column name
+     * @throws InvalidArgumentException When this collection has no such column
+     */
+    private function requireColumn(string $column): string
+    {
+        return $this->columnForField($column) ?? throw new InvalidArgumentException(
+            "database collection '" . $this->getCollectionKey() . "' has no column '{$column}'"
+        );
+    }
+
+    /**
+     * Called only after the collection has settled its completeness, or for a manual set.
+     * Canonical integer strings retain their value; invalid or overflowing numbers never become zero.
+     *
+     * @param string $column Validated Entity column name
+     * @param int|string ...$values Canonical domain scalars to match
+     * @return Generator<int, int|string> Matching held keys, each once
+     * @throws InvalidArgumentException When an object's Entity has no such column
+     */
+    private function matchingColumnKeys(string $column, int|string ...$values): Generator
+    {
+        $type = (static::entityClass())::_types[$column] ?? null;
+        $typedValues = [];
+        foreach ($values as $value) {
+            $typedValue = match ($type) {
+                PhpType::INTEGER->value => (string)(int)$value === (string)$value ? (int)$value : null,
+                PhpType::BOOLEAN->value => in_array($value, [0, 1, '0', '1'], true) ? (bool)$value : null,
+                PhpType::FLOAT->value, PhpType::DECIMAL->value, PhpType::DOUBLE->value =>
+                    is_numeric($value) && is_finite((float)$value) ? (float)$value : null,
+                PhpType::STRING->value, PhpType::TEXT->value, PhpType::BINARY->value,
+                PhpType::JSON->value, PhpType::DATETIME->value, PhpType::DATE->value, PhpType::TIME->value => (string)$value,
+                default => $value,
+            };
+            if ($typedValue !== null) {
+                $typedValues[] = $typedValue;
+            }
+        }
+
+        foreach ($this as $key => $object) {
+            if (in_array($object->valueForColumn($column), $typedValues, true)) {
+                yield $key;
+            }
+        }
+    }
+
+    /**
+     * @param string $column Validated Entity column name
+     * @param int $valueCount Number of bound values
+     * @return string SQL IN condition with positional placeholders
+     */
+    private function columnInCondition(string $column, int $valueCount): string
+    {
+        return '`' . str_replace('`', '``', $column) . '` IN ('
+            . implode(', ', array_fill(0, $valueCount, '?')) . ')';
     }
 
     /**
@@ -1060,6 +1116,37 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
         }
 
         return count($this->objects);
+    }
+
+    /**
+     * Uses the same canonical scalar matching as loadByColumn() for a full or manual set.
+     * A partial lazy set uses SQL COUNT without hydrating rows; a promised whole table loads once.
+     *
+     * @param string $column Entity column to match, or the object field name standing for it
+     * @param int|string ...$values Values to match; no values means zero without loading
+     * @return int Number of matching rows, ignoring duplicate values
+     * @throws InvalidArgumentException When the column names no field of this entity
+     * @throws LogicException When entity collection class is not configured
+     * @throws DatabaseException When the lookup query fails
+     */
+    public function countByColumn(string $column, int|string ...$values): int
+    {
+        $resolvedColumn = $this->requireColumn($column);
+        if ($values === []) {
+            return 0;
+        }
+        $this->loadWholeIfPromised();
+        if (!$this->_allowLazyLoading || $this->_allLoaded) {
+            return iterator_count($this->matchingColumnKeys($resolvedColumn, ...$values));
+        }
+
+        $entityClass = static::entityClass();
+        return count($values) === 1
+            ? $entityClass::count([$resolvedColumn => $values[0]])
+            : $entityClass::count(
+                filters: $this->columnInCondition($resolvedColumn, count($values)),
+                filtersParam: array_values($values),
+            );
     }
 
     /**

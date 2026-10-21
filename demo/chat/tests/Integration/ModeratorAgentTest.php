@@ -17,9 +17,12 @@ use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\DbSyncApplicator;
 use Hilos\Database\Entity\Item\Setting as EntitySetting;
 use Hilos\Files\Upload\ProfilePhotoUploadTarget;
 use Hilos\LLM\Exception\LLMResultUnavailableException;
@@ -142,7 +145,7 @@ final class ModeratorAgentTest extends IntegrationTestCase
             $this->assertSame(1, $firstClient->startGenerateCalls);
 
             $setting->value = '';
-            $setting->save();
+            $this->saveAndApplySetting($setting);
             $agent->onTick();
             $this->assertSame($original, (new ReflectionProperty($agent, 'profile'))->getValue($agent)->model);
             $this->assertTrue($this->takeQueuedModerationResult()?->allow ?? false);
@@ -158,14 +161,14 @@ final class ModeratorAgentTest extends IntegrationTestCase
 
             $this->clearCurrentMessageRequest($agent, $acceptKey);
             $setting->value = $original;
-            $setting->save();
+            $this->saveAndApplySetting($setting);
             Hilos::$rt->connections[$acceptKey]?->actions->startOutboundModeration('third request', []);
             $agent->onTick();
             $this->assertSame($original, (new ReflectionProperty($agent, 'profile'))->getValue($agent)->model);
             $this->assertNotSame($firstClient, (new ReflectionProperty($agent, 'chatClient'))->getValue($agent));
         } finally {
             $setting->value = $original;
-            $setting->save();
+            $this->saveAndApplySetting($setting);
             Hilos::$rt->connections->actions->clear();
             Hilos::$rt->userStates->actions->clear();
         }
@@ -204,9 +207,9 @@ final class ModeratorAgentTest extends IntegrationTestCase
             $this->clearCurrentMessageRequest($agent, $acceptKey);
 
             $url->value = 'http://alternate-local:11434';
-            $url->save();
+            $this->saveAndApplySetting($url);
             $timeout->value = '12.5';
-            $timeout->save();
+            $this->saveAndApplySetting($timeout);
             Hilos::$rt->connections[$acceptKey]?->actions->startOutboundModeration('local request', []);
             $agent->onTick();
             $localProfile = (new ReflectionProperty($agent, 'profile'))->getValue($agent);
@@ -218,7 +221,7 @@ final class ModeratorAgentTest extends IntegrationTestCase
 
             putenv(EnvConstants::LLM_EXTERNAL_API_KEY->name . '=sk-test');
             $provider->value = 'external';
-            $provider->save();
+            $this->saveAndApplySetting($provider);
             Hilos::$rt->connections[$acceptKey]?->actions->startOutboundModeration('external request', []);
             $agent->onTick();
             $externalProfile = (new ReflectionProperty($agent, 'profile'))->getValue($agent);
@@ -230,11 +233,11 @@ final class ModeratorAgentTest extends IntegrationTestCase
             $this->assertSame($photoClient, (new ReflectionProperty($agent, 'photoClient'))->getValue($agent));
         } finally {
             $url->value = $originalUrl;
-            $url->save();
+            $this->saveAndApplySetting($url);
             $timeout->value = $originalTimeout;
-            $timeout->save();
+            $this->saveAndApplySetting($timeout);
             $provider->value = $originalProvider;
-            $provider->save();
+            $this->saveAndApplySetting($provider);
             if ($originalKey === false) {
                 putenv(EnvConstants::LLM_EXTERNAL_API_KEY->name);
             } else {
@@ -707,6 +710,17 @@ final class ModeratorAgentTest extends IntegrationTestCase
             }
             $this->endPictureModeration();
         }
+    }
+
+    /** @param EntitySetting $setting Peer row whose persisted value is delivered to the moderator's context */
+    private function saveAndApplySetting(EntitySetting $setting): void
+    {
+        $setting->save();
+        DbSyncApplicator::applyUpdated(new DbSyncUpdatedSignalData(
+            HilosDbContext::settings,
+            (string) $setting->id,
+            [EntitySetting::value => $setting->value],
+        ), originNodeId: 'peer');
     }
 
     private function beginPictureModeration(): void

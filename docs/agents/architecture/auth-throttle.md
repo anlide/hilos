@@ -128,9 +128,9 @@ policy picks its node, and it is deliberately **not** pinned to the leader, whic
 would buy the guard nothing. A worker on any node reads its own replica and asks the
 agent wherever it runs; the check and the verdict cross nodes over the ordinary
 peer delivery, with no route of their own. All the arithmetic and the durable write
-live in the agent, so a worker never reaches the database on the auth path — with
-one exception, the fresh read of the grace setting, and only on a pass that found a
-verdict gone missing.
+live in the agent. The worker reads the grace through the same settings accessor
+from its full local ORM copy, only on a pass that found a verdict gone missing;
+there is no separate fresh SQL query for that check.
 
 When the agent moves — its node died, left or was rebuilt — the move carries no code
 of its own: the new owner starts from **empty windows** and replays the blocks out of
@@ -231,10 +231,14 @@ before it.
 **One number is a setting, not an env value:** `auth.throttle.outage_grace_seconds`,
 how many seconds of the agent's silence the guarded doors still run through
 (HIL-1280). It is an integer of zero or more and defaults to 5; zero refuses the very
-first verdict that misses its deadline. Being a setting, it takes effect at once on
-every node, read fresh on each pass that found a missed verdict
-(`Hilos\Auth\Throttle\AuthThrottleSettings`); a read that fails falls back to the
-default and says so in the log. The key comes as a catalog fragment,
+first verdict that misses its deadline. Each pass that found a missed verdict reads
+the current local settings copy (`Hilos\Auth\Throttle\AuthThrottleSettings`).
+The writer sees its write, and a peer applies it after DB sync delivery or a
+reread, without a restart. During isolation its old value may remain until
+communication recovers; see
+[Settings and catalogs](../framework-development.md#settings-and-catalogs).
+A read that fails falls back to the default and says so in the log. The key
+comes as a catalog fragment,
 `Hilos\Auth\Throttle\AuthThrottleSettingsCatalog`, which a project declaring the
 feature folds into its own `SETTINGS_CATALOG` — `AuthThrottleFeature` requires it, and
 the start of a project that did not is refused. Once folded in, it is a row on the

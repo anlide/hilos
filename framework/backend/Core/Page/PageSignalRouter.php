@@ -1429,10 +1429,10 @@ class PageSignalRouter
      * in force do not leak out through either door: the fast path refuses those without ever
      * parking anything.
      *
-     * The grace is a setting and is read fresh, once per pass and only on a pass that found an
-     * expired action - the one read of the database on the auth path, and only on a verdict that
-     * went missing. Expired actions are judged oldest first, the order they were parked in, so
-     * the oldest unanswered question is the one that opens the silence.
+     * The grace is read from the current local settings ORM copy once per pass, and only on a
+     * pass that found an expired action; this read issues no separate fresh SQL query. Expired
+     * actions are judged oldest first, the order they were parked in, so the oldest unanswered
+     * question is the one that opens the silence.
      *
      * @throws FramePopOrderException When the execution frame is unwound out of order
      */
