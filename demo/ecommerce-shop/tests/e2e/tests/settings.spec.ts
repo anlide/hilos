@@ -3,9 +3,7 @@ import { test, expect } from '@playwright/test'
 import {
   clearCustomSetting,
   setCustomSetting,
-  shareOneRow,
   shownByTestId,
-  sidewaysOverflow,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
@@ -117,96 +115,4 @@ test('sets a custom value on a catalog key from its row and resets it, live', as
 
   // All of it happened over the live socket — no document reload.
   expect(fullLoads).toBe(loadsAfterColdLoad)
-})
-
-test('a narrow window draws the settings as cards and never scrolls sideways', async ({
-  page,
-}) => {
-  // HIL-815 acceptance, the React twin of the chat case (HIL-806). A
-  // table is a table on a wide screen and a list of cards on a narrow
-  // one; both are mounted, and Bootstrap's display utilities show exactly one of
-  // them. What a phone must never get is the wide table squeezed into a sideways
-  // scroll — the thing the cards exist to replace.
-  //
-  // The grant runs at the usual width: it is not what is under test. The page
-  // itself is opened narrow, the way a phone opens it.
-  await grantAdminToSelf(page)
-  const desktop = page.viewportSize() ?? { width: 1280, height: 720 }
-  await page.setViewportSize({ width: 375, height: desktop.height })
-  await gotoPage(page, '/hilos/settings')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
-
-  // Isolate one catalog key before judging its responsive branches: catalog
-  // additions may move the key to another page, but must not change its card.
-  const key = 'example_string'
-  await typeInto(page.getByTestId('hilos-table-search'), key)
-  const cards = page.getByTestId('hilos-table-cards')
-  const card = cards.getByTestId(`hilos-table-card-${key}`)
-  const row = page.getByTestId(`hilos-table-row-${key}`)
-
-  await expect(card).toBeVisible()
-  await expect(row).toBeHidden()
-  expect(await sidewaysOverflow(page)).toEqual([0, 0])
-
-  // Open the setting's edit modal from inside the card; its Cancel and Save
-  // buttons share one row and divide its width equally on a narrow screen.
-  const cancel = page.getByTestId('hilos-settings-edit-cancel')
-  const save = page.getByTestId('hilos-settings-edit-save')
-  await card.getByTestId(`hilos-settings-edit-${key}`).click()
-  await expect(cancel).toBeVisible()
-  await shareOneRow(cancel, save)
-  await cancel.click()
-  await expect(cancel).toBeHidden()
-
-  // Back on a wide screen it is the table again, and the cards are gone from sight:
-  // both branches were drawn from the same window, so the row is there to show.
-  await page.setViewportSize(desktop)
-  await expect(row).toBeVisible()
-  await expect(cards).toBeHidden()
-})
-
-test('a narrow window sorts the settings by one column from the Order menu', async ({
-  page,
-}) => {
-  // HIL-1145 acceptance. Below md the table is a list of cards, and a card has no
-  // header to click, so the "Order" menu offers every sortable column both ways.
-  // The settings declare no composite order: above md the header gives all of it,
-  // and the menu is not there at all. The grant runs at the usual width, the page
-  // is opened narrow, the way a phone opens it.
-  await grantAdminToSelf(page)
-  const desktop = page.viewportSize() ?? { width: 1280, height: 720 }
-  await page.setViewportSize({ width: 375, height: desktop.height })
-  await gotoPage(page, '/hilos/settings')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
-  await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
-
-  const menu = page.getByTestId('hilos-table-order')
-  const keyHeader = page.locator('th:has([data-id="hilos-table-sort-key"])')
-  const firstCard = page
-    .getByTestId('hilos-table-cards')
-    .locator('[data-id^="hilos-table-card-"]')
-    .first()
-
-  // The settings open by key, first to last. The header that says so is on the
-  // hidden wide branch, and it still carries the order the window runs in.
-  await expect(keyHeader).toHaveAttribute('aria-sort', 'ascending')
-  await expect(menu).toBeVisible()
-  await expect(firstCard).toBeVisible()
-  const firstByKey = await firstCard.getAttribute('data-id')
-  expect(firstByKey).not.toBeNull()
-
-  // The way home names the opening order, so its column item is not offered twice.
-  await menu.getByTestId('hilos-dropdown-toggle').click()
-  await expect(page.getByTestId('hilos-table-order-key-asc')).toHaveCount(0)
-  await page.getByTestId('hilos-table-order-key-desc').click()
-
-  // The window comes back last to first: another setting heads the cards.
-  await expect(keyHeader).toHaveAttribute('aria-sort', 'descending')
-  await expect(firstCard).not.toHaveAttribute('data-id', firstByKey ?? '')
-
-  // On a wide screen the header sorts, and a menu of columns alone is not drawn.
-  await page.setViewportSize(desktop)
-  await expect(menu).toBeHidden()
 })

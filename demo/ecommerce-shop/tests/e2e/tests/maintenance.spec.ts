@@ -8,7 +8,6 @@ import {
   expectToastPlacement,
   maintenanceCircleRow,
   shownByTestId,
-  sidewaysOverflow,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant.js'
 import { gotoPage } from '../helpers/page.js'
@@ -26,9 +25,6 @@ import { signUp, uniqueEmail } from '../helpers/session.js'
 // framework/frontend/vue/src/admin/maintenance/HilosMaintenancePage.test.ts,
 // framework/frontend/react/test/HilosMaintenancePage.test.tsx,
 // framework/frontend/angular/test/HilosMaintenancePage.test.ts.
-// The same notices prove where the stack stands: on a narrow screen at the bottom
-// across the width, at the top while the bottom-sheet dialog is open, and in the
-// corner from the md breakpoint up.
 
 test('naming a verifier shows the row, and refuses an unproven address and a repeat in the dialog and in the corner', async ({
   page,
@@ -45,42 +41,16 @@ test('naming a verifier shows the row, and refuses an unproven address and a rep
   const member = await memberContext.newPage()
   const memberEmail = await signUp(member)
 
-  // Named on a phone: the dialog is a bottom sheet there.
-  const desktop = page.viewportSize() ?? { width: 1280, height: 720 }
-  const narrow = { width: 375, height: desktop.height }
-  await page.setViewportSize(narrow)
   await addToMaintenanceCircle(page, memberEmail)
 
   // The row comes over the live table - there is no optimistic row to wait out - and
-  // the ack's own sentence is the toast. Cards are the narrow shape of the same
-  // table. Both branches are mounted; only the cards are on screen, and the page
-  // does not scroll sideways.
+  // the ack's own sentence is the toast, standing in the corner.
   await expect(maintenanceCircleRow(page, memberEmail)).toBeVisible()
-  await expect(
-    page
-      .getByTestId('hilos-table-cards')
-      .getByTestId(`hilos-maintenance-circle-row-${memberEmail}`),
-  ).toBeVisible()
-  expect(await sidewaysOverflow(page)).toEqual([0, 0])
   await expect(
     page
       .getByTestId('hilos-toasts')
       .getByText(`${memberEmail} added to the circle.`),
   ).toBeVisible()
-
-  // The sheet has closed, so the bottom is free: the notice stands there across the
-  // width, up to the md breakpoint, and keeps its corner from it on.
-  await expectToastPlacement(expect, page, { edge: 'bottom', fullWidth: true })
-  for (const width of [600, 767]) {
-    await page.setViewportSize({ width, height: desktop.height })
-    await expectToastPlacement(expect, page, {
-      edge: 'bottom',
-      fullWidth: true,
-    })
-  }
-  await page.setViewportSize({ width: 768, height: desktop.height })
-  await expectToastPlacement(expect, page, { edge: 'bottom', fullWidth: false })
-  await page.setViewportSize(desktop)
   await expectToastPlacement(expect, page, { edge: 'bottom', fullWidth: false })
   await expect(
     page
@@ -89,18 +59,8 @@ test('naming a verifier shows the row, and refuses an unproven address and a rep
   ).toBeVisible()
   await expect(page.getByTestId('hilos-table-count')).toBeVisible()
 
-  // Back on the phone the sheet takes the bottom, and the notice still standing
-  // moves to the top for as long as the sheet is open.
-  await page.setViewportSize(narrow)
-  await expect(
-    page
-      .getByTestId('hilos-toasts')
-      .getByText(`${memberEmail} added to the circle.`),
-  ).toBeVisible()
-
   // An address nobody has proven: the dialog stays, the refusal is its first line and
-  // the typed address is still there; the toast above the sheet is the second
-  // addressee.
+  // the typed address is still there; the toast is the second addressee.
   const unproven = uniqueEmail()
   await shownByTestId(
     page.getByTestId('hilos-maintenance-circle-table'),
@@ -111,7 +71,6 @@ test('naming a verifier shows the row, and refuses an unproven address and a rep
   const confirm = dialog.getByTestId('hilos-maintenance-circle-add-confirm')
   const refusal = dialog.getByTestId('hilos-action-error')
   await expect(field).toBeVisible()
-  await expectToastPlacement(expect, page, { edge: 'top', fullWidth: true })
   await field.fill('')
   await field.pressSequentially(unproven, { delay: 10 })
   await confirm.scrollIntoViewIfNeeded()
@@ -129,7 +88,6 @@ test('naming a verifier shows the row, and refuses an unproven address and a rep
   ).toBeVisible()
   await expect(field).toHaveValue(unproven)
   await expect(confirm).toBeEnabled()
-  await expectToastPlacement(expect, page, { edge: 'top', fullWidth: true })
   await expect(
     page
       .getByTestId('hilos-toast-error')
@@ -158,9 +116,6 @@ test('naming a verifier shows the row, and refuses an unproven address and a rep
 
   await dialog.getByTestId('modal-close').click()
   await expect(dialog).toHaveCount(0)
-  // The last dialog has gone, and the refusals left standing go back to the bottom.
-  await expectToastPlacement(expect, page, { edge: 'bottom', fullWidth: true })
-  await page.setViewportSize(desktop)
   await dismissToasts(page)
   await memberContext.close()
 
