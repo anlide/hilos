@@ -160,6 +160,17 @@ const pages: Record<string, PageView<ComponentType>> = {
   [HilosPages.MAINTENANCE]: lazyPage(() =>
     import('./views/Hilos/Maintenance/Maintenance.js').then((m) => m.default),
   ),
+  [HilosPages.COMMUNICATIONS]: lazyPage(() =>
+    import('./views/Hilos/Communications/Communications.js').then(
+      (m) => m.default,
+    ),
+  ),
+  [HilosPages.COMMUNICATIONS_CHANNEL]: lazyPage(() =>
+    import('./views/Hilos/Communications/Channel.js').then((m) => m.default),
+  ),
+  [HilosPages.COMMUNICATIONS_DELIVERIES]: lazyPage(() =>
+    import('./views/Hilos/Communications/Deliveries.js').then((m) => m.default),
+  ),
   // The framework logs section, activated whole: the framework owns the six
   // screens, their tables and every phrase on them; the project binds its
   // connection, scope stores and action lifecycle (views/Hilos/Logs) and, on its

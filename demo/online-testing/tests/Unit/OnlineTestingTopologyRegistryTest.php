@@ -57,10 +57,15 @@ use Demo\OnlineTesting\Pages\Hilos\Logs\LogsKeysPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsOverviewPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsRotationsPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsSettingsPage;
+use Demo\OnlineTesting\Notification\OnlineTestingDeliveryChannelRegistry;
+use Demo\OnlineTesting\Pages\Hilos\Communications\CommunicationsChannelPage;
+use Demo\OnlineTesting\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
+use Demo\OnlineTesting\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsViewPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\OnlineTesting\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\OnlineTesting\Pages\Hilos\PrivacyPage;
+use Demo\OnlineTesting\Pages\Hilos\ProfileNotificationsPage;
 use Demo\OnlineTesting\Pages\Hilos\SettingsPage;
 use Demo\OnlineTesting\Pages\Hilos\AppearancePage;
 use Demo\OnlineTesting\Pages\Hilos\TermsPage;
@@ -132,6 +137,16 @@ use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Pages\Appearance\DTO\HilosAppearanceDefaultThemeSetActionDTO;
 use Hilos\Pages\Appearance\DTO\HilosAppearanceThemeSwitchingSetActionDTO;
+use Hilos\Pages\Communications\DTO\HilosChannelSettingResetActionDTO;
+use Hilos\Pages\Communications\DTO\HilosChannelSettingUpdateActionDTO;
+use Hilos\Pages\Communications\DTO\HilosChannelTestActionDTO;
+use Hilos\Pages\Communications\DTO\HilosDeliveryRetryActionDTO;
+use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
+use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
+use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
+use Hilos\Mail\Delivery\MailDeliveryChannel;
+use Hilos\Notification\Delivery\DeliveryChannelSettings;
+use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Demo\OnlineTesting\Pages\Hilos\I18nPage;
@@ -239,6 +254,10 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             LogsRotationsPage::PAGE => LogsRotationsPage::class,
             LogsViewPage::PAGE => LogsViewPage::class,
             LogsSettingsPage::PAGE => LogsSettingsPage::class,
+            CommunicationsPage::PAGE => CommunicationsPage::class,
+            CommunicationsChannelPage::PAGE => CommunicationsChannelPage::class,
+            CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
+            ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
             MaintenancePage::PAGE => MaintenancePage::class,
             UsersPage::PAGE => UsersPage::class,
             UserPage::PAGE => UserPage::class,
@@ -434,6 +453,9 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         $hilosPages = [
             DashboardPage::class,
             SettingsPage::class,
+            CommunicationsPage::class,
+            CommunicationsChannelPage::class,
+            CommunicationsDeliveriesPage::class,
             MaintenancePage::class,
             UsersPage::class,
             UserPage::class,
@@ -638,6 +660,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             HilosFeature::LOGS,
             HilosFeature::DAEMON,
             HilosFeature::NOTIFICATIONS,
+            HilosFeature::NOTIFICATION_DELIVERY,
             HilosFeature::AUTH,
             HilosFeature::AUTH_THROTTLE,
         ], Hilos::features());
@@ -784,6 +807,9 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             OnlineTestingTableContext::hilosDaemonEnvSourcesDiffer => HilosDaemonEnvSourcesDifferTable::class,
             OnlineTestingTableContext::hilosDaemonHttpRoutes => HilosDaemonHttpRoutesTable::class,
             OnlineTestingTableContext::hilosDaemonPlacement => HilosDaemonPlacementTable::class,
+            OnlineTestingTableContext::hilosCommunicationsChannels => HilosCommunicationsChannelsTable::class,
+            OnlineTestingTableContext::hilosCommunicationsChannelFields => HilosCommunicationsChannelFieldsTable::class,
+            OnlineTestingTableContext::hilosNotificationDeliveries => HilosNotificationDeliveriesTable::class,
             OnlineTestingTableContext::hilosI18nLanguageNames => HilosI18nLanguageNamesTable::class,
             OnlineTestingTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
             OnlineTestingTableContext::hilosI18nLanguageLocales => HilosI18nLanguageLocalesTable::class,
@@ -815,6 +841,9 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             DaemonAgentsPage::PAGE,
             DaemonEnvMismatchPage::PAGE,
             DaemonHttpServerPage::PAGE,
+            CommunicationsPage::PAGE,
+            CommunicationsChannelPage::PAGE,
+            CommunicationsDeliveriesPage::PAGE,
             UsersPage::PAGE,
             UserPage::PAGE,
             LanguagesListPage::PAGE,
@@ -1019,15 +1048,75 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         );
     }
 
-    public function testNotificationCenterIsActivatedWithoutDelivery(): void
+    public function testNotificationsAreActivated(): void
     {
         $this->assertContains(HilosFeature::NOTIFICATIONS, Hilos::features());
-        $this->assertNotContains(HilosFeature::NOTIFICATION_DELIVERY, Hilos::features());
+        $this->assertContains(HilosFeature::NOTIFICATION_DELIVERY, Hilos::features());
         $this->assertSame([NotificationsGroup::GROUP => NotificationsGroup::class], Hilos::GROUPS);
         $library = Hilos::AGENTS[AgentType::HILOS_NOTIFICATIONS_LIBRARY];
         $this->assertSame(NotificationsLibraryAgent::class, AgentRegistry::workerClass($library));
         $this->assertSame(NotificationsLibraryAgentDaemon::class, AgentRegistry::daemonClass($library));
         $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($library));
+    }
+
+    public function testCommunicationsAdminFeatureIsActivated(): void
+    {
+        $this->assertContains(HilosFeature::NOTIFICATION_DELIVERY, Hilos::features());
+        $this->assertSame(CommunicationsPage::class, Hilos::PAGES[CommunicationsPage::PAGE]);
+        $this->assertSame(CommunicationsChannelPage::class, Hilos::PAGES[CommunicationsChannelPage::PAGE]);
+        $this->assertSame(CommunicationsDeliveriesPage::class, Hilos::PAGES[CommunicationsDeliveriesPage::PAGE]);
+        $this->assertSame(ProfileNotificationsPage::class, Hilos::PAGES[ProfileNotificationsPage::PAGE]);
+
+        $this->assertSame(AgentType::HILOS_INDEX, CommunicationsPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(AgentType::HILOS_INDEX, CommunicationsChannelPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(AgentType::HILOS_INDEX, CommunicationsDeliveriesPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(AgentType::ONLINE_TESTING, ProfileNotificationsPage::SUBSCRIPTION_AGENT_TYPE);
+
+        $this->assertSame(
+            [OnlineTestingTableContext::hilosCommunicationsChannels => []],
+            Hilos::PAGE_TABLES[CommunicationsPage::PAGE],
+        );
+        $this->assertSame(
+            [OnlineTestingTableContext::hilosCommunicationsChannelFields => []],
+            Hilos::PAGE_TABLES[CommunicationsChannelPage::PAGE],
+        );
+        $this->assertSame(
+            [OnlineTestingTableContext::hilosNotificationDeliveries => []],
+            Hilos::PAGE_TABLES[CommunicationsDeliveriesPage::PAGE],
+        );
+
+        $this->assertSame(
+            HilosChannelSettingUpdateActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::COMMUNICATIONS_CHANNEL_SET],
+        );
+        $this->assertSame(
+            HilosChannelSettingResetActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::COMMUNICATIONS_CHANNEL_RESET],
+        );
+        $this->assertSame(
+            HilosChannelTestActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::COMMUNICATIONS_CHANNEL_TEST],
+        );
+        $this->assertSame(
+            HilosDeliveryRetryActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY],
+        );
+
+        $this->assertSame(
+            HandoverAnswerSignalData::class,
+            Hilos::getPageSignalDtoRoutes()[SignalTypeConstants::AGENT_SIGNAL]
+                [HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE],
+        );
+        $this->assertSame(
+            HandoverAnswerSignalData::class,
+            Hilos::getPageSignalDtoRoutes()[SignalTypeConstants::AGENT_SIGNAL]
+                [HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE],
+        );
+
+        $catalog = OnlineTestingSettingsCatalog::getCatalog();
+        $emailKey = DeliveryChannelSettings::enabledKey(MailDeliveryChannel::NAME);
+        $this->assertArrayHasKey($emailKey, $catalog);
+        $this->assertTrue($catalog[$emailKey][SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE]);
     }
 
     public function testProjectTopologyPassesStartupValidation(): void

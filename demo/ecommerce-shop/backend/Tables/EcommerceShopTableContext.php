@@ -13,6 +13,9 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
+use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
+use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
+use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvDivergedTable;
@@ -47,6 +50,9 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * @property-read HilosVerifierCircleTable $hilosVerifierCircle
  * @property-read HilosSettingsTable $settings
  * @property-read HilosAppearanceSettingsTable $hilosAppearanceSettings
+ * @property-read HilosCommunicationsChannelsTable $hilosCommunicationsChannels
+ * @property-read HilosCommunicationsChannelFieldsTable $hilosCommunicationsChannelFields
+ * @property-read HilosNotificationDeliveriesTable $hilosNotificationDeliveries
  * @property-read HilosUsersTable $hilosUsers
  * @property-read HilosI18nLanguageNamesTable $hilosI18nLanguageNames
  * @property-read HilosI18nLanguagesTable $hilosI18nLanguages
@@ -74,6 +80,9 @@ final class EcommerceShopTableContext extends TableContext
     public const string hilosVerifierCircle = HilosVerifierCircleTable::TABLE;
     public const string settings = HilosSettingsTable::TABLE;
     public const string hilosAppearanceSettings = HilosAppearanceSettingsTable::TABLE;
+    public const string hilosCommunicationsChannels = HilosCommunicationsChannelsTable::TABLE;
+    public const string hilosCommunicationsChannelFields = HilosCommunicationsChannelFieldsTable::TABLE;
+    public const string hilosNotificationDeliveries = HilosNotificationDeliveriesTable::TABLE;
     public const string hilosUsers = 'hilosUsers';
     public const string hilosI18nLanguageNames = HilosI18nLanguageNamesTable::TABLE;
     public const string hilosI18nLanguages = HilosI18nLanguagesTable::TABLE;

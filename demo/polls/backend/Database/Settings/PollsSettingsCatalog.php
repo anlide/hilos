@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Polls\Database\Settings;
 
+use Demo\Polls\Notification\PollsDeliveryChannelRegistry;
 use Hilos\Core\Analytics\AnalyticsSettingsCatalog;
 use Hilos\Auth\AccountDeletion\AccountDeletionSettingsCatalog;
 use Hilos\Auth\Method\AuthMethodSettingsCatalog;
@@ -17,6 +18,10 @@ use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Log\LogSettingsCatalog;
 use Hilos\Legal\LegalSettingsCatalog;
+use Hilos\Mail\Delivery\MailDeliveryChannel;
+use Hilos\Notification\Delivery\ChannelSettingsCatalog;
+use Hilos\Notification\Delivery\DeliveryChannelSettings;
+use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
 use Hilos\ProtectedMode\ProtectedModeSettingsCatalog;
 use Hilos\Theme\ThemeSettingsCatalog;
 
@@ -58,6 +63,15 @@ final class PollsSettingsCatalog implements CatalogProviderInterface
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => false,
             ],
         ],
+            ChannelSettingsCatalog::entriesFor(PollsDeliveryChannelRegistry::all()),
+            [
+                DeliveryChannelSettings::enabledKey(MailDeliveryChannel::NAME) => [
+                    SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
+                    SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
+                    SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => true,
+                ],
+            ],
+            DeliveryLogSettingsCatalog::getCatalog(),
             LogSettingsCatalog::getCatalog(),
             ThemeSettingsCatalog::getCatalog(),
             AnalyticsSettingsCatalog::getCatalog(),

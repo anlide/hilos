@@ -3,13 +3,14 @@ import { createCommandChannel } from '../../../../../framework/frontend/scripts/
 // The daemon command channel — the same socket the CLI test:notification:emit
 // command speaks. The Playwright runner has no PHP, so the e2e emits over the
 // wire directly; the emit still runs where a product caller's would, in a worker
-// (AbstractHilosIndexAgent), so it writes the durable row and fans the live
-// in-app signal exactly as the product path does.
+// (AbstractHilosIndexAgent), so it writes the durable row, fans the live in-app
+// signal, and dispatches the channels exactly as the product path does.
 const COMMAND_HOST = process.env.COMMAND_HOST ?? 'ecommerce-shop-daemon-test'
 const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 
-// Past the emit's own work — a durable write and a group fan-out — so a slow box
-// comes back as the agent's answer rather than as a socket timeout.
+// Past the emit's own work — a durable write, a group fan-out, and one delivery
+// row per channel — so a slow box comes back as the agent's answer rather than
+// as a socket timeout.
 const REPLY_TIMEOUT_MS = 10_000
 
 const EMIT_COMMAND = 'test:notification:emit'
@@ -30,27 +31,37 @@ export interface NotificationDraft {
   body?: string
   /** Severity level (NotificationSeverity); the backend defaults to `info`. */
   severity?: string
+  /** Channel narrowing; omitted means every channel the recipient allows. */
+  channels?: string[]
+}
+
+/** What the emit produced, as the delivery journal holds it. */
+export interface EmittedNotification {
+  /** Id of the persisted notification — the bell row's stable selector suffix. */
+  notificationId: number
+  /**
+   * Channels that got a delivery row, read back from the table. This is the
+   * verdict a channel test needs: it tells "nothing was queued at all" apart
+   * from "queued, and its agent did not deliver".
+   */
+  queuedChannels: string[]
 }
 
 /**
  * Emits one notification to a user through the live daemon.
  *
- * The reply's other half — the channels that got a delivery row — is not
- * returned here: this demo activates NOTIFICATIONS without NOTIFICATION_DELIVERY,
- * so no delivery journal is mounted and the agent always reads back an empty
- * list. Handing a caller a field that cannot say anything would invite a channel
- * assertion this stand can never answer; the binance-btc-tracker demo, which does
- * deliver, is where that half is exercised.
- *
  * @param userId Recipient's durable user id.
  * @param draft The notification to emit.
- * @returns Id of the persisted notification — the bell row's stable selector suffix.
+ * @returns The persisted id and the channels that got a delivery row.
  */
 export async function emitNotification(
   userId: number,
   draft: NotificationDraft,
-): Promise<number> {
+): Promise<EmittedNotification> {
   const reply = await sendCommand(EMIT_COMMAND, { userId, ...draft })
 
-  return Number(reply.notificationId)
+  return {
+    notificationId: Number(reply.notificationId),
+    queuedChannels: (reply.queuedChannels as string[] | undefined) ?? [],
+  }
 }

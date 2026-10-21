@@ -54,7 +54,11 @@ use Demo\Polls\Database\Settings\PollsSettingsCatalog;
 use Demo\Polls\Environment\PollsEnvCatalog;
 use Demo\Polls\Fs\PollsFsContext;
 use Demo\Polls\Legal\PollsLegalCatalog;
+use Demo\Polls\Notification\PollsDeliveryChannelRegistry;
 use Demo\Polls\Pages\Hilos\AboutPage;
+use Demo\Polls\Pages\Hilos\Communications\CommunicationsChannelPage;
+use Demo\Polls\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
+use Demo\Polls\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\Polls\Pages\Hilos\DashboardPage;
 use Demo\Polls\Pages\Hilos\AnalyticsPage;
 use Demo\Polls\Pages\Hilos\Analytics\BrowserSessionPage;
@@ -157,6 +161,9 @@ use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgentDaemon;
+use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
+use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
+use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
@@ -212,6 +219,8 @@ final class Hilos extends HilosFacade
 
     protected const string SETTINGS_CATALOG = PollsSettingsCatalog::class;
 
+    protected const string NOTIFICATION_CHANNEL_REGISTRY = PollsDeliveryChannelRegistry::class;
+
     protected const string CODE_CHANNEL_REGISTRY = PollsCodeChannelRegistry::class;
 
     protected const string AUTH_METHOD_DIRECTORY = PollsAuthMethodDirectory::class;
@@ -231,6 +240,7 @@ final class Hilos extends HilosFacade
         HilosFeature::LOGS,
         HilosFeature::DAEMON,
         HilosFeature::NOTIFICATIONS,
+        HilosFeature::NOTIFICATION_DELIVERY,
         HilosFeature::AUTH,
         HilosFeature::AUTH_THROTTLE,
         HilosFeature::CODE_CHANNELS,
@@ -274,6 +284,9 @@ final class Hilos extends HilosFacade
         LogsRotationsPage::PAGE => LogsRotationsPage::class,
         LogsViewPage::PAGE => LogsViewPage::class,
         LogsSettingsPage::PAGE => LogsSettingsPage::class,
+        CommunicationsPage::PAGE => CommunicationsPage::class,
+        CommunicationsChannelPage::PAGE => CommunicationsChannelPage::class,
+        CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         UsersPage::PAGE => UsersPage::class,
         UserPage::PAGE => UserPage::class,
@@ -455,6 +468,9 @@ final class Hilos extends HilosFacade
         PollsTableContext::hilosDaemonEnvSourcesDiffer => HilosDaemonEnvSourcesDifferTable::class,
         PollsTableContext::hilosDaemonHttpRoutes => HilosDaemonHttpRoutesTable::class,
         PollsTableContext::hilosDaemonPlacement => HilosDaemonPlacementTable::class,
+        PollsTableContext::hilosCommunicationsChannels => HilosCommunicationsChannelsTable::class,
+        PollsTableContext::hilosCommunicationsChannelFields => HilosCommunicationsChannelFieldsTable::class,
+        PollsTableContext::hilosNotificationDeliveries => HilosNotificationDeliveriesTable::class,
         PollsTableContext::hilosSecurityOauthProviders => HilosSecurityOAuthProvidersTable::class,
         PollsTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
         PollsTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
@@ -600,6 +616,15 @@ final class Hilos extends HilosFacade
         ],
         DaemonHttpServerPage::PAGE => [
             PollsTableContext::hilosDaemonHttpRoutes => [],
+        ],
+        CommunicationsPage::PAGE => [
+            PollsTableContext::hilosCommunicationsChannels => [],
+        ],
+        CommunicationsChannelPage::PAGE => [
+            PollsTableContext::hilosCommunicationsChannelFields => [],
+        ],
+        CommunicationsDeliveriesPage::PAGE => [
+            PollsTableContext::hilosNotificationDeliveries => [],
         ],
         SecurityOAuthPage::PAGE => [
             PollsTableContext::hilosSecurityOauthRedirect => [],

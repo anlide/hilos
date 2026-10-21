@@ -1,15 +1,24 @@
-import { test, expect, type Browser, type Page } from '@playwright/test'
+import {
+  test,
+  expect,
+  type Browser,
+  type Locator,
+  type Page,
+} from '@playwright/test'
 
 import {
   clearCustomSetting,
+  enableEmailChannel,
   openBell,
   setCustomSetting,
+  shownByTestId,
   unreadBadge,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../helpers/adminGrant'
-import { emitNotification } from '../helpers/notifications'
-import { gotoPage } from '../helpers/page'
-import { typeInto } from '../helpers/session'
+import { grantAdminToSelf } from '../helpers/adminGrant.js'
+import { waitForMailTo } from '../helpers/mail.js'
+import { emitNotification } from '../helpers/notifications.js'
+import { gotoPage } from '../helpers/page.js'
+import { signUp, typeInto } from '../helpers/session.js'
 
 // Notification-center e2e for this demo (HIL-558), the React half of the
 // same center coverage binance-btc-tracker and online-testing carry. A notification
@@ -25,9 +34,29 @@ import { typeInto } from '../helpers/session'
 // (openJoined below), so a notification belongs to one recipient and the tests
 // stay isolated on the shared database.
 //
-// This demo activates NOTIFICATIONS without NOTIFICATION_DELIVERY, so the
-// coverage stops at the center and the toast: the channel and delivery halves
-// have no surface here; binance-btc-tracker proves the channels and journal.
+// The delivery channels and their journal are activated in this demo (HIL-1687),
+// so notifications emitted over the command channel are asserted both in the
+// in-app notification center and through email delivery and preferences.
+
+/** The email channel's opt-out switch in the profile's notifications section. */
+function emailPreference(page: Page): Locator {
+  return page.getByTestId('hilos-notification-preference-toggle-email')
+}
+
+/**
+ * Sign in an account the email channel can address (with a verified email), and make it admin.
+ *
+ * @param page Page starting anonymous.
+ * @returns The account's proven email and durable user id.
+ */
+async function signInAddressableAdmin(
+  page: Page,
+): Promise<{ email: string; userId: number }> {
+  const email = await signUp(page)
+  const userId = await grantAdminToSelf(page)
+
+  return { email, userId }
+}
 
 /**
  * Open the app and learn who this browser is, on a page whose socket has already
@@ -63,7 +92,7 @@ test('an emitted notification reaches the bell as an unread row', async ({
 }) => {
   const userId = await openJoined(page)
 
-  const notificationId = await emitNotification(userId, {
+  const { notificationId } = await emitNotification(userId, {
     type: 'e2e_center',
     title: 'Deploy finished',
     body: 'The nightly deploy completed.',
@@ -84,7 +113,7 @@ test('an emitted notification reaches the bell as an unread row', async ({
 
 test('marking a row read clears the badge', async ({ page }) => {
   const userId = await openJoined(page)
-  const notificationId = await emitNotification(userId, {
+  const { notificationId } = await emitNotification(userId, {
     type: 'e2e_mark_read',
     title: 'One to read',
   })
@@ -124,10 +153,10 @@ test('mark-all read clears a badge carrying several', async ({ page }) => {
 
   await expect(unreadBadge(page)).toHaveCount(0)
   await expect(
-    page.getByTestId(`hilos-notification-mark-read-${first}`),
+    page.getByTestId(`hilos-notification-mark-read-${first.notificationId}`),
   ).toHaveCount(0)
   await expect(
-    page.getByTestId(`hilos-notification-mark-read-${second}`),
+    page.getByTestId(`hilos-notification-mark-read-${second.notificationId}`),
   ).toHaveCount(0)
   // With nothing left unread the header control disables itself.
   await expect(page.getByTestId('hilos-notification-mark-all')).toBeDisabled()
@@ -149,7 +178,7 @@ test('a read in one tab reaches the other tab of the same user', async ({
   await gotoPage(tabB, '/')
   const loadsAfterColdLoad = tabBLoads
 
-  const notificationId = await emitNotification(userId, {
+  const { notificationId } = await emitNotification(userId, {
     type: 'e2e_across_tabs',
     title: 'Seen from both tabs',
   })
@@ -207,6 +236,86 @@ test('saving a setting raises a toast the close button dismisses', async ({
   // Reset the key back to its catalog default.
   await clearCustomSetting(page, 'example_boolean')
   await expect(save).toHaveCount(0)
+})
+
+test('an emitted notification is delivered by email', async ({ page }) => {
+  const { email, userId } = await signInAddressableAdmin(page)
+
+  const title = `Delivery for user ${userId}`
+  const body = 'This line rode the email channel out of the node.'
+  const { queuedChannels } = await emitNotification(userId, {
+    type: 'e2e_delivery',
+    title,
+    body,
+  })
+  expect(queuedChannels).toContain('email')
+
+  const mail = await waitForMailTo(email, title)
+  expect(mail.text).toContain(body)
+})
+
+test('muting the email channel keeps the next emit off it', async ({
+  page,
+}) => {
+  const { userId } = await signInAddressableAdmin(page)
+
+  await gotoPage(page, '/profile/notifications')
+  const toggle = emailPreference(page)
+  await expect(toggle).toBeEnabled()
+  await expect(toggle).toBeChecked()
+
+  const allowed = await emitNotification(userId, {
+    type: 'e2e_channel_allowed',
+    title: 'Emitted while the channel is allowed',
+  })
+  expect(allowed.queuedChannels).toContain('email')
+
+  const tabB = await page.context().newPage()
+  await gotoPage(tabB, '/profile/notifications')
+  await expect(emailPreference(tabB)).toBeChecked()
+
+  await toggle.click()
+  await expect(emailPreference(tabB)).not.toBeChecked()
+
+  await gotoPage(page, '/profile/notifications')
+  await expect(emailPreference(page)).not.toBeChecked()
+
+  const muted = await emitNotification(userId, {
+    type: 'e2e_channel_muted',
+    title: 'Emitted while the channel is muted',
+  })
+  expect(muted.queuedChannels).not.toContain('email')
+
+  await tabB.close()
+})
+
+test('disabling the email channel globally persists across page reload and can be re-enabled', async ({
+  page,
+}) => {
+  await grantAdminToSelf(page)
+  await gotoPage(page, '/hilos/communications')
+  await expect(page.getByTestId('page-error')).toHaveCount(0)
+
+  // Ensure channel is enabled at start.
+  await enableEmailChannel(page)
+
+  const toggle = shownByTestId(page, 'hilos-channel-enabled-email')
+  await expect(toggle).toBeVisible()
+  await expect(toggle).toBeChecked()
+
+  // Switching off persists false over the default=true.
+  await toggle.click()
+  await expect(toggle).not.toBeChecked()
+
+  await gotoPage(page, '/hilos/communications')
+  const reloadedToggle = shownByTestId(page, 'hilos-channel-enabled-email')
+  await expect(reloadedToggle).toBeVisible()
+  await expect(reloadedToggle).not.toBeChecked()
+
+  // Clean up: restore the channel to enabled so other tests see email=true.
+  await enableEmailChannel(page)
+  await gotoPage(page, '/hilos/communications')
+  await expect(shownByTestId(page, 'hilos-channel-enabled-email')).toBeChecked()
 })
 
 // The product half of the line (HIL-557): every row above was planted by the

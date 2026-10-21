@@ -115,6 +115,26 @@ export class App {
         (module) => module.Settings,
       ),
     ),
+    [HilosPages.COMMUNICATIONS]: lazyPage(() =>
+      import('./views/hilos/communications/communications.js').then(
+        (module) => module.Communications,
+      ),
+    ),
+    [HilosPages.COMMUNICATIONS_CHANNEL]: lazyPage(() =>
+      import('./views/hilos/communications/channel.js').then(
+        (module) => module.Channel,
+      ),
+    ),
+    [HilosPages.COMMUNICATIONS_DELIVERIES]: lazyPage(() =>
+      import('./views/hilos/communications/deliveries.js').then(
+        (module) => module.Deliveries,
+      ),
+    ),
+    [HilosPages.PROFILE_NOTIFICATIONS]: lazyPage(() =>
+      import('./views/hilos/profile-notifications/profile-notifications.js').then(
+        (module) => module.ProfileNotifications,
+      ),
+    ),
     [HilosPages.APPEARANCE]: lazyPage(() =>
       import('./views/hilos/appearance/appearance.js').then(
         (module) => module.Appearance,

@@ -60,6 +60,9 @@ use Hilos\Legal\Export\LegalAcceptancesExportHttp;
 use Hilos\Legal\LegalSettings;
 use Hilos\Legal\LegalSettingsCatalog;
 use Hilos\Theme\ThemeSettingsCatalog;
+use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Mail\Delivery\MailDeliveryChannel;
+use Hilos\Notification\Delivery\DeliveryChannelSettings;
 
 use Hilos\DataExport\DataExportHttp;
 use Hilos\DataExport\DTO\DataExportOrderActionDTO;
@@ -581,6 +584,14 @@ final class ChatTopologyRegistryTest extends TestCase
         foreach (ThemeSettingsCatalog::KEYS as $key) {
             $this->assertSame(ThemeSettingsCatalog::getCatalog()[$key], $catalog[$key]);
         }
+    }
+
+    public function testNotificationDeliverySettingsDefaults(): void
+    {
+        $catalog = SettingsCatalog::getCatalog();
+        $emailKey = DeliveryChannelSettings::enabledKey(MailDeliveryChannel::NAME);
+        $this->assertArrayHasKey($emailKey, $catalog);
+        $this->assertTrue($catalog[$emailKey][SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE]);
     }
 
     /** The export runs once on the policy-selected node and has a worker of its own. */

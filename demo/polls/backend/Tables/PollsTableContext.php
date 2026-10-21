@@ -7,6 +7,9 @@ namespace Demo\Polls\Tables;
 use Demo\Polls\Tables\HilosLegal\HilosLegalAcceptancesTable;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
+use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
+use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
+use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
@@ -68,6 +71,9 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
  * @property-read HilosDaemonEnvSourcesDifferTable $hilosDaemonEnvSourcesDiffer
  * @property-read HilosDaemonHttpRoutesTable $hilosDaemonHttpRoutes
  * @property-read HilosDaemonPlacementTable $hilosDaemonPlacement
+ * @property-read HilosCommunicationsChannelsTable $hilosCommunicationsChannels
+ * @property-read HilosCommunicationsChannelFieldsTable $hilosCommunicationsChannelFields
+ * @property-read HilosNotificationDeliveriesTable $hilosNotificationDeliveries
  * @property-read HilosUsersTable $hilosUsers
  * @property-read HilosVerifierCircleTable $hilosVerifierCircle
  * @property-read HilosSettingsTable $settings
@@ -109,6 +115,9 @@ final class PollsTableContext extends TableContext
     public const string hilosDaemonEnvSourcesDiffer = HilosDaemonEnvSourcesDifferTable::TABLE;
     public const string hilosDaemonHttpRoutes = HilosDaemonHttpRoutesTable::TABLE;
     public const string hilosDaemonPlacement = HilosDaemonPlacementTable::TABLE;
+    public const string hilosCommunicationsChannels = HilosCommunicationsChannelsTable::TABLE;
+    public const string hilosCommunicationsChannelFields = HilosCommunicationsChannelFieldsTable::TABLE;
+    public const string hilosNotificationDeliveries = HilosNotificationDeliveriesTable::TABLE;
     public const string hilosUsers = 'hilosUsers';
     public const string hilosVerifierCircle = HilosVerifierCircleTable::TABLE;
     public const string settings = HilosSettingsTable::TABLE;

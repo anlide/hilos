@@ -23,7 +23,9 @@ use Hilos\Files\FilesSettingsCatalog;
 use Hilos\Files\Upload\UploadsSettingsCatalog;
 use Hilos\Log\LogSettingsCatalog;
 use Hilos\Legal\LegalSettingsCatalog;
+use Hilos\Mail\Delivery\MailDeliveryChannel;
 use Hilos\Notification\Delivery\ChannelSettingsCatalog;
+use Hilos\Notification\Delivery\DeliveryChannelSettings;
 use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
 use Hilos\ProtectedMode\ProtectedModeSettingsCatalog;
 use Hilos\Theme\ThemeSettingsCatalog;
@@ -136,6 +138,13 @@ final class SettingsCatalog implements CatalogProviderInterface
             ],
         ],
             ChannelSettingsCatalog::entriesFor(ChatDeliveryChannelRegistry::all()),
+            [
+                DeliveryChannelSettings::enabledKey(MailDeliveryChannel::NAME) => [
+                    SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
+                    SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
+                    SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => true,
+                ],
+            ],
             DeliveryLogSettingsCatalog::getCatalog(),
             FilesSettingsCatalog::getCatalog(),
             UploadsSettingsCatalog::getCatalog(),

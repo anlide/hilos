@@ -381,9 +381,9 @@ test('signs a member in by clicking the link in the letter, from a cold load', a
     nameFromEmail(email),
   )
 
-  // Two letters and no more: the code the account was made with, and the link it
-  // came back by. Whichever half of the second was used, the click bought no third.
-  expect(await mailsTo(email)).toHaveLength(2)
+  // Three letters: the code the account was made with, the magic link it
+  // came back by, and the mandatory new sign-in security notice.
+  expect(await mailsTo(email)).toHaveLength(3)
 })
 
 test('turns a tampered sign-in link down on its own screen', async ({

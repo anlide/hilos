@@ -32,9 +32,13 @@ use Demo\EcommerceShop\Environment\EcommerceShopEnvCatalog;
 use Demo\EcommerceShop\Fs\EcommerceShopFsContext;
 use Demo\EcommerceShop\Groups\Hilos\NotificationsGroup;
 use Demo\EcommerceShop\Legal\EcommerceShopLegalCatalog;
+use Demo\EcommerceShop\Notification\EcommerceShopDeliveryChannelRegistry;
 use Demo\EcommerceShop\Pages\Hilos\AboutPage;
 use Demo\EcommerceShop\Pages\Hilos\AppearancePage;
 use Demo\EcommerceShop\Pages\Hilos\Backup\BackupPage;
+use Demo\EcommerceShop\Pages\Hilos\Communications\CommunicationsChannelPage;
+use Demo\EcommerceShop\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
+use Demo\EcommerceShop\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTablePage;
@@ -53,6 +57,7 @@ use Demo\EcommerceShop\Pages\Hilos\Analytics\PersonPage;
 use Demo\EcommerceShop\Pages\Hilos\LicensePage;
 use Demo\EcommerceShop\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\EcommerceShop\Pages\Hilos\PrivacyPage;
+use Demo\EcommerceShop\Pages\Hilos\ProfileNotificationsPage;
 use Demo\EcommerceShop\Pages\Hilos\SettingsPage;
 use Demo\EcommerceShop\Pages\Hilos\I18nPage;
 use Demo\EcommerceShop\Pages\Hilos\I18n\Lists\LanguagesListPage;
@@ -113,6 +118,9 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
+use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
+use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
+use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvDivergedTable;
@@ -173,6 +181,8 @@ final class Hilos extends HilosFacade
 
     protected const string SETTINGS_CATALOG = EcommerceShopSettingsCatalog::class;
 
+    protected const string NOTIFICATION_CHANNEL_REGISTRY = EcommerceShopDeliveryChannelRegistry::class;
+
     protected const array FEATURES = [
         HilosFeature::ANALYTICS,
         HilosFeature::AUTH,
@@ -184,6 +194,7 @@ final class Hilos extends HilosFacade
         HilosFeature::I18N,
         HilosFeature::HILOS_USERS,
         HilosFeature::NOTIFICATIONS,
+        HilosFeature::NOTIFICATION_DELIVERY,
     ];
 
     protected const array DATABASE_GUARANTEES = [
@@ -212,6 +223,10 @@ final class Hilos extends HilosFacade
         DaemonEnvMismatchPage::PAGE => DaemonEnvMismatchPage::class,
         SettingsPage::PAGE => SettingsPage::class,
         AppearancePage::PAGE => AppearancePage::class,
+        CommunicationsPage::PAGE => CommunicationsPage::class,
+        CommunicationsChannelPage::PAGE => CommunicationsChannelPage::class,
+        CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
+        ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
         I18nPage::PAGE => I18nPage::class,
         LanguagesListPage::PAGE => LanguagesListPage::class,
         CountriesListPage::PAGE => CountriesListPage::class,
@@ -376,6 +391,9 @@ final class Hilos extends HilosFacade
         EcommerceShopTableContext::hilosDaemonEnvSourcesDiffer => HilosDaemonEnvSourcesDifferTable::class,
         EcommerceShopTableContext::hilosDaemonHttpRoutes => HilosDaemonHttpRoutesTable::class,
         EcommerceShopTableContext::hilosDaemonPlacement => HilosDaemonPlacementTable::class,
+        EcommerceShopTableContext::hilosCommunicationsChannels => HilosCommunicationsChannelsTable::class,
+        EcommerceShopTableContext::hilosCommunicationsChannelFields => HilosCommunicationsChannelFieldsTable::class,
+        EcommerceShopTableContext::hilosNotificationDeliveries => HilosNotificationDeliveriesTable::class,
     ];
 
     public const array BROWSER_DATA = [
@@ -476,6 +494,15 @@ final class Hilos extends HilosFacade
         ],
         DaemonHttpServerPage::PAGE => [
             EcommerceShopTableContext::hilosDaemonHttpRoutes => [],
+        ],
+        CommunicationsPage::PAGE => [
+            EcommerceShopTableContext::hilosCommunicationsChannels => [],
+        ],
+        CommunicationsChannelPage::PAGE => [
+            EcommerceShopTableContext::hilosCommunicationsChannelFields => [],
+        ],
+        CommunicationsDeliveriesPage::PAGE => [
+            EcommerceShopTableContext::hilosNotificationDeliveries => [],
         ],
     ];
 

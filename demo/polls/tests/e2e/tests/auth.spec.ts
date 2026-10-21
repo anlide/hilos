@@ -297,9 +297,9 @@ test('walks both halves of the sign-in link, and turns a tampered one down', asy
     await continueFromDone(page)
     await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 
-    // Two letters and no more: the code the account was made with, and the link
-    // it came back by. Whichever half of the second was used, no third followed.
-    expect(await mailsTo(email)).toHaveLength(2)
+    // Three letters: the code the account was made with, the magic link,
+    // and the mandatory new sign-in security notice.
+    expect(await mailsTo(email)).toHaveLength(3)
 
     await logout(page)
   })
@@ -332,8 +332,9 @@ test('walks both halves of the sign-in link, and turns a tampered one down', asy
     await expect(page.getByTestId('nav-logout')).toBeVisible()
     await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 
-    // Two letters and no more, for the reason the step above gives.
-    expect(await mailsTo(email)).toHaveLength(2)
+    // Three letters: the code the account was made with, the magic link,
+    // and the mandatory new sign-in security notice.
+    expect(await mailsTo(email)).toHaveLength(3)
 
     // The click signed the session in, so the surface says what was achieved
     // and waits for Continue (HIL-422) — over the shell, in the way of the

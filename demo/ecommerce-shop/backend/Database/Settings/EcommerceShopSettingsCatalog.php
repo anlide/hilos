@@ -4,12 +4,17 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Database\Settings;
 
+use Demo\EcommerceShop\Notification\EcommerceShopDeliveryChannelRegistry;
 use Hilos\Core\Analytics\AnalyticsSettingsCatalog;
 use Hilos\Auth\AccountDeletion\AccountDeletionSettings;
 use Hilos\Auth\StepUp\StepUpSettings;
 use Hilos\Auth\Throttle\AuthThrottleSettingsCatalog;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Mail\Delivery\MailDeliveryChannel;
+use Hilos\Notification\Delivery\ChannelSettingsCatalog;
+use Hilos\Notification\Delivery\DeliveryChannelSettings;
+use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
 use Hilos\ProtectedMode\ProtectedModeSettingsCatalog;
 use Hilos\Theme\ThemeSettingsCatalog;
 
@@ -50,7 +55,20 @@ final class EcommerceShopSettingsCatalog implements CatalogProviderInterface
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => false,
             ],
-        ], ThemeSettingsCatalog::getCatalog(), AnalyticsSettingsCatalog::getCatalog(),
-            ProtectedModeSettingsCatalog::getCatalog(), AuthThrottleSettingsCatalog::getCatalog());
+        ],
+            ChannelSettingsCatalog::entriesFor(EcommerceShopDeliveryChannelRegistry::all()),
+            [
+                DeliveryChannelSettings::enabledKey(MailDeliveryChannel::NAME) => [
+                    SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
+                    SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
+                    SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => true,
+                ],
+            ],
+            DeliveryLogSettingsCatalog::getCatalog(),
+            ThemeSettingsCatalog::getCatalog(),
+            AnalyticsSettingsCatalog::getCatalog(),
+            ProtectedModeSettingsCatalog::getCatalog(),
+            AuthThrottleSettingsCatalog::getCatalog(),
+        );
     }
 }

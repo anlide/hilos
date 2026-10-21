@@ -42,11 +42,15 @@ use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Settings\EcommerceShopSettingsCatalog;
 use Demo\EcommerceShop\Groups\Hilos\NotificationsGroup;
 use Demo\EcommerceShop\Hilos;
+use Demo\EcommerceShop\Notification\EcommerceShopDeliveryChannelRegistry;
 use Demo\EcommerceShop\Pages\Hilos\AboutPage;
 use Demo\EcommerceShop\Pages\Hilos\Backup\BackupPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTablePage;
+use Demo\EcommerceShop\Pages\Hilos\Communications\CommunicationsChannelPage;
+use Demo\EcommerceShop\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
+use Demo\EcommerceShop\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonAgentsPage;
 use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonCronPage;
 use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonEnvMismatchPage;
@@ -59,6 +63,7 @@ use Demo\EcommerceShop\Pages\Hilos\DashboardPage;
 use Demo\EcommerceShop\Pages\Hilos\LicensePage;
 use Demo\EcommerceShop\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\EcommerceShop\Pages\Hilos\PrivacyPage;
+use Demo\EcommerceShop\Pages\Hilos\ProfileNotificationsPage;
 use Demo\EcommerceShop\Pages\Hilos\SettingsPage;
 use Demo\EcommerceShop\Pages\Hilos\AppearancePage;
 use Demo\EcommerceShop\Pages\Hilos\TermsPage;
@@ -128,6 +133,17 @@ use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Pages\Appearance\DTO\HilosAppearanceDefaultThemeSetActionDTO;
 use Hilos\Pages\Appearance\DTO\HilosAppearanceThemeSwitchingSetActionDTO;
+use Hilos\Pages\Communications\DTO\HilosChannelSettingResetActionDTO;
+use Hilos\Pages\Communications\DTO\HilosChannelSettingUpdateActionDTO;
+use Hilos\Pages\Communications\DTO\HilosChannelTestActionDTO;
+use Hilos\Pages\Communications\DTO\HilosDeliveryRetryActionDTO;
+use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
+use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
+use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
+use Hilos\Mail\Delivery\MailDeliveryChannel;
+use Hilos\Notification\Delivery\DeliveryChannelSettings;
+use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
+use Hilos\Notification\DeliveryLogPruner;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Demo\EcommerceShop\Pages\Hilos\I18nPage;
 use Demo\EcommerceShop\Pages\Hilos\I18n\Lists\LanguagesListPage;
@@ -220,6 +236,10 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             DaemonEnvMismatchPage::PAGE => DaemonEnvMismatchPage::class,
             SettingsPage::PAGE => SettingsPage::class,
             AppearancePage::PAGE => AppearancePage::class,
+            CommunicationsPage::PAGE => CommunicationsPage::class,
+            CommunicationsChannelPage::PAGE => CommunicationsChannelPage::class,
+            CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
+            ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
             I18nPage::PAGE => I18nPage::class,
             LanguagesListPage::PAGE => LanguagesListPage::class,
             CountriesListPage::PAGE => CountriesListPage::class,
@@ -422,6 +442,9 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             BackupPage::class,
             MaintenancePage::class,
             SettingsPage::class,
+            CommunicationsPage::class,
+            CommunicationsChannelPage::class,
+            CommunicationsDeliveriesPage::class,
             UsersPage::class,
             UserPage::class,
             AboutPage::class,
@@ -631,7 +654,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         // stopped being routed here would otherwise look like a working surface until somebody
         // submitted the form it belongs to. The other features are backup, settings and the
         // people (HIL-1225), whose actions are their pages' and so stay out of this map, and
-        // notifications without delivery, whose actions close the map.
+        // notifications with delivery, whose actions close the map.
         $this->assertSame([
             HilosFeature::ANALYTICS,
             HilosFeature::AUTH,
@@ -643,6 +666,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             HilosFeature::I18N,
             HilosFeature::HILOS_USERS,
             HilosFeature::NOTIFICATIONS,
+            HilosFeature::NOTIFICATION_DELIVERY,
         ], Hilos::features());
 
         $this->assertSame(UsersLibraryAgent::class, AgentRegistry::workerClass(
@@ -858,6 +882,14 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             SettingsCatalogConstants::STUB_KEY_EXAMPLE_STRING,
             SettingsCatalogConstants::STUB_KEY_EXAMPLE_INTEGER,
             SettingsCatalogConstants::STUB_KEY_EXAMPLE_BOOLEAN,
+            DeliveryChannelSettings::enabledKey(MailDeliveryChannel::NAME),
+            DeliveryChannelSettings::fieldKey(MailDeliveryChannel::NAME, MailDeliveryChannel::FIELD_FROM_ADDRESS),
+            DeliveryChannelSettings::fieldKey(MailDeliveryChannel::NAME, MailDeliveryChannel::FIELD_FROM_NAME),
+            DeliveryChannelSettings::fieldKey(MailDeliveryChannel::NAME, MailDeliveryChannel::FIELD_SMTP_HOST),
+            DeliveryChannelSettings::fieldKey(MailDeliveryChannel::NAME, MailDeliveryChannel::FIELD_SMTP_PORT),
+            DeliveryChannelSettings::fieldKey(MailDeliveryChannel::NAME, MailDeliveryChannel::FIELD_SMTP_SECURITY),
+            DeliveryChannelSettings::fieldKey(MailDeliveryChannel::NAME, MailDeliveryChannel::FIELD_TIMEOUT_MS),
+            DeliveryLogPruner::RETENTION_SETTING_KEY,
             ThemeSettingsCatalog::SWITCHING_ENABLED_KEY,
             ThemeSettingsCatalog::DEFAULT_THEME_KEY,
             AnalyticsSettingsCatalog::JOURNAL_MAX_BYTES,
@@ -956,17 +988,87 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
 
     public function testNotificationsAreActivated(): void
     {
-        // Notifications without delivery are an activation, not a build (HIL-1225): the demo
-        // declares the feature, registers the library and its group, and every row behind the
-        // bell is the framework's. Delivery is not switched on.
         $this->assertContains(HilosFeature::NOTIFICATIONS, Hilos::features());
-        $this->assertNotContains(HilosFeature::NOTIFICATION_DELIVERY, Hilos::features());
+        $this->assertContains(HilosFeature::NOTIFICATION_DELIVERY, Hilos::features());
         $this->assertSame([NotificationsGroup::GROUP => NotificationsGroup::class], Hilos::GROUPS);
 
         $library = Hilos::AGENTS[AgentType::HILOS_NOTIFICATIONS_LIBRARY];
         $this->assertSame(NotificationsLibraryAgent::class, AgentRegistry::workerClass($library));
         $this->assertSame(NotificationsLibraryAgentDaemon::class, AgentRegistry::daemonClass($library));
         $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($library));
+    }
+
+    public function testCommunicationsAdminFeatureIsActivated(): void
+    {
+        $this->assertContains(HilosFeature::NOTIFICATION_DELIVERY, Hilos::features());
+        $this->assertSame(CommunicationsPage::class, Hilos::PAGES[CommunicationsPage::PAGE]);
+        $this->assertSame(CommunicationsChannelPage::class, Hilos::PAGES[CommunicationsChannelPage::PAGE]);
+        $this->assertSame(CommunicationsDeliveriesPage::class, Hilos::PAGES[CommunicationsDeliveriesPage::PAGE]);
+        $this->assertSame(ProfileNotificationsPage::class, Hilos::PAGES[ProfileNotificationsPage::PAGE]);
+
+        $this->assertSame(AgentType::HILOS_INDEX, CommunicationsPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(AgentType::HILOS_INDEX, CommunicationsChannelPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(AgentType::HILOS_INDEX, CommunicationsDeliveriesPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(AgentType::ECOMMERCE_SHOP, ProfileNotificationsPage::SUBSCRIPTION_AGENT_TYPE);
+
+        $this->assertSame(
+            HilosCommunicationsChannelsTable::class,
+            Hilos::TABLES[EcommerceShopTableContext::hilosCommunicationsChannels],
+        );
+        $this->assertSame(
+            HilosCommunicationsChannelFieldsTable::class,
+            Hilos::TABLES[EcommerceShopTableContext::hilosCommunicationsChannelFields],
+        );
+        $this->assertSame(
+            HilosNotificationDeliveriesTable::class,
+            Hilos::TABLES[EcommerceShopTableContext::hilosNotificationDeliveries],
+        );
+
+        $this->assertSame(
+            [EcommerceShopTableContext::hilosCommunicationsChannels => []],
+            Hilos::PAGE_TABLES[CommunicationsPage::PAGE],
+        );
+        $this->assertSame(
+            [EcommerceShopTableContext::hilosCommunicationsChannelFields => []],
+            Hilos::PAGE_TABLES[CommunicationsChannelPage::PAGE],
+        );
+        $this->assertSame(
+            [EcommerceShopTableContext::hilosNotificationDeliveries => []],
+            Hilos::PAGE_TABLES[CommunicationsDeliveriesPage::PAGE],
+        );
+
+        $this->assertSame(
+            HilosChannelSettingUpdateActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::COMMUNICATIONS_CHANNEL_SET],
+        );
+        $this->assertSame(
+            HilosChannelSettingResetActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::COMMUNICATIONS_CHANNEL_RESET],
+        );
+        $this->assertSame(
+            HilosChannelTestActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::COMMUNICATIONS_CHANNEL_TEST],
+        );
+        $this->assertSame(
+            HilosDeliveryRetryActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY],
+        );
+
+        $this->assertSame(
+            HandoverAnswerSignalData::class,
+            Hilos::getPageSignalDtoRoutes()[SignalTypeConstants::AGENT_SIGNAL]
+                [HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE],
+        );
+        $this->assertSame(
+            HandoverAnswerSignalData::class,
+            Hilos::getPageSignalDtoRoutes()[SignalTypeConstants::AGENT_SIGNAL]
+                [HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE],
+        );
+
+        $catalog = EcommerceShopSettingsCatalog::getCatalog();
+        $emailKey = DeliveryChannelSettings::enabledKey(MailDeliveryChannel::NAME);
+        $this->assertArrayHasKey($emailKey, $catalog);
+        $this->assertTrue($catalog[$emailKey][SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE]);
     }
 
     public function testProjectTopologyPassesStartupValidation(): void

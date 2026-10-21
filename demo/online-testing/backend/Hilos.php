@@ -31,7 +31,11 @@ use Demo\OnlineTesting\Environment\OnlineTestingEnvCatalog;
 use Demo\OnlineTesting\Fs\OnlineTestingFsContext;
 use Demo\OnlineTesting\Groups\Hilos\NotificationsGroup;
 use Demo\OnlineTesting\Legal\OnlineTestingLegalCatalog;
+use Demo\OnlineTesting\Notification\OnlineTestingDeliveryChannelRegistry;
 use Demo\OnlineTesting\Pages\Hilos\AboutPage;
+use Demo\OnlineTesting\Pages\Hilos\Communications\CommunicationsChannelPage;
+use Demo\OnlineTesting\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
+use Demo\OnlineTesting\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\OnlineTesting\Pages\Hilos\DashboardPage;
 use Demo\OnlineTesting\Pages\Hilos\AnalyticsPage;
 use Demo\OnlineTesting\Pages\Hilos\Analytics\BrowserSessionPage;
@@ -53,6 +57,7 @@ use Demo\OnlineTesting\Pages\Hilos\Logs\LogsViewPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\OnlineTesting\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\OnlineTesting\Pages\Hilos\PrivacyPage;
+use Demo\OnlineTesting\Pages\Hilos\ProfileNotificationsPage;
 use Demo\OnlineTesting\Pages\Hilos\AppearancePage;
 use Demo\OnlineTesting\Pages\Hilos\SettingsPage;
 use Demo\OnlineTesting\Pages\Hilos\I18nPage;
@@ -133,6 +138,9 @@ use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
+use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
+use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
+use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Demo\OnlineTesting\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
@@ -173,6 +181,8 @@ final class Hilos extends HilosFacade
 
     protected const string SETTINGS_CATALOG = OnlineTestingSettingsCatalog::class;
 
+    protected const string NOTIFICATION_CHANNEL_REGISTRY = OnlineTestingDeliveryChannelRegistry::class;
+
     protected const ?string LEGAL_CATALOG = OnlineTestingLegalCatalog::class;
 
     protected const array FEATURES = [
@@ -184,6 +194,7 @@ final class Hilos extends HilosFacade
         HilosFeature::LOGS,
         HilosFeature::DAEMON,
         HilosFeature::NOTIFICATIONS,
+        HilosFeature::NOTIFICATION_DELIVERY,
         HilosFeature::AUTH,
         HilosFeature::AUTH_THROTTLE,
     ];
@@ -226,6 +237,10 @@ final class Hilos extends HilosFacade
         LogsRotationsPage::PAGE => LogsRotationsPage::class,
         LogsViewPage::PAGE => LogsViewPage::class,
         LogsSettingsPage::PAGE => LogsSettingsPage::class,
+        CommunicationsPage::PAGE => CommunicationsPage::class,
+        CommunicationsChannelPage::PAGE => CommunicationsChannelPage::class,
+        CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
+        ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         UsersPage::PAGE => UsersPage::class,
         UserPage::PAGE => UserPage::class,
@@ -376,6 +391,9 @@ final class Hilos extends HilosFacade
         OnlineTestingTableContext::hilosDaemonEnvSourcesDiffer => HilosDaemonEnvSourcesDifferTable::class,
         OnlineTestingTableContext::hilosDaemonHttpRoutes => HilosDaemonHttpRoutesTable::class,
         OnlineTestingTableContext::hilosDaemonPlacement => HilosDaemonPlacementTable::class,
+        OnlineTestingTableContext::hilosCommunicationsChannels => HilosCommunicationsChannelsTable::class,
+        OnlineTestingTableContext::hilosCommunicationsChannelFields => HilosCommunicationsChannelFieldsTable::class,
+        OnlineTestingTableContext::hilosNotificationDeliveries => HilosNotificationDeliveriesTable::class,
         OnlineTestingTableContext::hilosI18nLanguageNames => HilosI18nLanguageNamesTable::class,
         OnlineTestingTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
         OnlineTestingTableContext::hilosI18nLanguageLocales => HilosI18nLanguageLocalesTable::class,
@@ -468,6 +486,15 @@ final class Hilos extends HilosFacade
         ],
         DaemonHttpServerPage::PAGE => [
             OnlineTestingTableContext::hilosDaemonHttpRoutes => [],
+        ],
+        CommunicationsPage::PAGE => [
+            OnlineTestingTableContext::hilosCommunicationsChannels => [],
+        ],
+        CommunicationsChannelPage::PAGE => [
+            OnlineTestingTableContext::hilosCommunicationsChannelFields => [],
+        ],
+        CommunicationsDeliveriesPage::PAGE => [
+            OnlineTestingTableContext::hilosNotificationDeliveries => [],
         ],
         UsersPage::PAGE => [
             OnlineTestingTableContext::hilosUsers => [],

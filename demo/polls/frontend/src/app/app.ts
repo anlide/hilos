@@ -169,6 +169,21 @@ export class App {
         (module) => module.Settings,
       ),
     ),
+    [HilosPages.COMMUNICATIONS]: lazyPage(() =>
+      import('./views/hilos/communications/communications.js').then(
+        (module) => module.Communications,
+      ),
+    ),
+    [HilosPages.COMMUNICATIONS_CHANNEL]: lazyPage(() =>
+      import('./views/hilos/communications/channel.js').then(
+        (module) => module.Channel,
+      ),
+    ),
+    [HilosPages.COMMUNICATIONS_DELIVERIES]: lazyPage(() =>
+      import('./views/hilos/communications/deliveries.js').then(
+        (module) => module.Deliveries,
+      ),
+    ),
     // The framework Appearance page: the framework owns the table, both windows
     // and the writes; the project binds its scope stores and action lifecycle
     // (views/hilos/appearance) and its theme catalog on the backend.

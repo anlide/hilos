@@ -9,6 +9,9 @@ use Demo\OnlineTesting\Tables\HilosUser\HilosUsersTable;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
+use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
+use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
+use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\I18n\HilosI18nCountriesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
@@ -41,6 +44,9 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
  * @property-read HilosChangeLogTablesTable $hilosChangeLogTables
  * @property-read HilosSettingsTable $settings
  * @property-read HilosAppearanceSettingsTable $hilosAppearanceSettings
+ * @property-read HilosCommunicationsChannelsTable $hilosCommunicationsChannels
+ * @property-read HilosCommunicationsChannelFieldsTable $hilosCommunicationsChannelFields
+ * @property-read HilosNotificationDeliveriesTable $hilosNotificationDeliveries
  * @property-read HilosUsersTable $hilosUsers
  * @property-read HilosVerifierCircleTable $hilosVerifierCircle
  * @property-read HilosLogKeysTable $hilosLogKeys
@@ -70,6 +76,9 @@ final class OnlineTestingTableContext extends TableContext
     public const string hilosChangeLogTables = HilosChangeLogTablesTable::TABLE;
     public const string settings = HilosSettingsTable::TABLE;
     public const string hilosAppearanceSettings = HilosAppearanceSettingsTable::TABLE;
+    public const string hilosCommunicationsChannels = HilosCommunicationsChannelsTable::TABLE;
+    public const string hilosCommunicationsChannelFields = HilosCommunicationsChannelFieldsTable::TABLE;
+    public const string hilosNotificationDeliveries = HilosNotificationDeliveriesTable::TABLE;
     public const string hilosUsers = 'hilosUsers';
     public const string hilosVerifierCircle = HilosVerifierCircleTable::TABLE;
     public const string hilosLogKeys = HilosLogKeysTable::TABLE;

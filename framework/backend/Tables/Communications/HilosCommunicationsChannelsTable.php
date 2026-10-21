@@ -255,10 +255,7 @@ class HilosCommunicationsChannelsTable extends TableDefinition implements SelfSn
     }
 
     /**
-     * Reads a channel's global-enablement setting, defaulting to disabled.
-     *
-     * Only a persisted admin override switches a channel on; with no DB context (or
-     * no override) the channel reads disabled, the catalog default.
+     * Reads a channel's global-enablement setting, falling back to its catalog default.
      *
      * @param AbstractDeliveryChannel $descriptor Channel descriptor
      * @return bool True when the channel is globally enabled
@@ -273,9 +270,7 @@ class HilosCommunicationsChannelsTable extends TableDefinition implements SelfSn
 
         $key = $descriptor->enabledSettingKey();
 
-        return isset(Hilos::$db->settings[$key])
-            && Hilos::$db->settings[$key]->value !== null
-            && Hilos::$setting[$key]->bool();
+        return isset(Hilos::$setting[$key]) && Hilos::$setting[$key]->bool();
     }
 
     /**
@@ -306,6 +301,7 @@ class HilosCommunicationsChannelsTable extends TableDefinition implements SelfSn
      *
      * @param SourceChange $change Settings source change
      * @return string Setting key, or an empty string when it cannot be resolved
+     * @throws DatabaseException When the settings collection cannot be read
      */
     private function settingKeyFromSourceChange(SourceChange $change): string
     {
@@ -313,7 +309,30 @@ class HilosCommunicationsChannelsTable extends TableDefinition implements SelfSn
         if (is_string($key) || is_int($key)) {
             return (string) $key;
         }
+        if (ctype_digit($change->sourceId)) {
+            $key = $this->settingKeyById((int) $change->sourceId);
+            if ($key !== null) {
+                return $key;
+            }
+        }
 
         return $change->sourceId;
+    }
+
+    /**
+     * Reads a setting key by its row id.
+     *
+     * @param int $id Setting row id
+     * @return ?string Setting key, or null when absent
+     * @throws DatabaseException When the settings collection cannot be read
+     */
+    protected function settingKeyById(int $id): ?string
+    {
+        $db = Hilos::$db;
+        if (!$db instanceof HilosDbContext) {
+            return null;
+        }
+
+        return isset($db->settings[$id]) ? $db->settings[$id]->key : null;
     }
 }

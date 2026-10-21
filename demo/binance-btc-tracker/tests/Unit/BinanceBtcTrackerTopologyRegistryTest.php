@@ -117,6 +117,8 @@ use Hilos\HilosException;
 use Hilos\Log\LogSettingsCatalog;
 use Hilos\Theme\ThemeSettingsCatalog;
 use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
+use Hilos\Mail\Delivery\MailDeliveryChannel;
+use Hilos\Notification\Delivery\DeliveryChannelSettings;
 use Hilos\Notification\NotificationAction;
 use Hilos\Notification\NotificationPreferenceAction;
 use Hilos\Push\PushSubscriptionAction;
@@ -811,6 +813,10 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             $this->assertArrayHasKey($descriptor->enabledSettingKey(), $catalog);
         }
         $this->assertSame([], array_diff_key(DeliveryLogSettingsCatalog::getCatalog(), $catalog));
+
+        $emailKey = DeliveryChannelSettings::enabledKey(MailDeliveryChannel::NAME);
+        $this->assertArrayHasKey($emailKey, $catalog);
+        $this->assertTrue($catalog[$emailKey][SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE]);
 
         $this->assertSame(
             HilosCommunicationsChannelsTable::class,

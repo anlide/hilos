@@ -70,6 +70,9 @@ use Demo\Tasks\Hilos;
 use Demo\Tasks\Groups\Hilos\NotificationsGroup;
 use Demo\Tasks\Pages\Hilos\DashboardPage;
 use Demo\Tasks\Pages\Hilos\Backup\BackupPage;
+use Demo\Tasks\Pages\Hilos\Communications\CommunicationsChannelPage;
+use Demo\Tasks\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
+use Demo\Tasks\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\Tasks\Pages\Hilos\Daemon\DaemonPage;
 use Demo\Tasks\Pages\Hilos\Daemon\DaemonWorkersPage;
 use Demo\Tasks\Pages\Hilos\Daemon\DaemonAgentsPage;
@@ -154,7 +157,17 @@ use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Pages\Appearance\DTO\HilosAppearanceDefaultThemeSetActionDTO;
 use Hilos\Pages\Appearance\DTO\HilosAppearanceThemeSwitchingSetActionDTO;
+use Hilos\Pages\Communications\DTO\HilosChannelSettingResetActionDTO;
+use Hilos\Pages\Communications\DTO\HilosChannelSettingUpdateActionDTO;
+use Hilos\Pages\Communications\DTO\HilosChannelTestActionDTO;
+use Hilos\Pages\Communications\DTO\HilosDeliveryRetryActionDTO;
+use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
+use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
+use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
+use Hilos\Mail\Delivery\MailDeliveryChannel;
+use Hilos\Notification\Delivery\DeliveryChannelSettings;
+use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\HilosException;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
 use Hilos\Database\Schema\MountedCollectionKeyGuard;
@@ -637,6 +650,7 @@ final class TasksTopologyRegistryTest extends TestCase
             HilosFeature::LOGS,
             HilosFeature::DAEMON,
             HilosFeature::NOTIFICATIONS,
+            HilosFeature::NOTIFICATION_DELIVERY,
             HilosFeature::AUTH,
             HilosFeature::AUTH_THROTTLE,
             HilosFeature::CODE_CHANNELS,
@@ -804,6 +818,9 @@ final class TasksTopologyRegistryTest extends TestCase
             TasksTableContext::hilosDaemonEnvSourcesDiffer => HilosDaemonEnvSourcesDifferTable::class,
             TasksTableContext::hilosDaemonHttpRoutes => HilosDaemonHttpRoutesTable::class,
             TasksTableContext::hilosDaemonPlacement => HilosDaemonPlacementTable::class,
+            TasksTableContext::hilosCommunicationsChannels => HilosCommunicationsChannelsTable::class,
+            TasksTableContext::hilosCommunicationsChannelFields => HilosCommunicationsChannelFieldsTable::class,
+            TasksTableContext::hilosNotificationDeliveries => HilosNotificationDeliveriesTable::class,
             TasksTableContext::hilosSecurityOauthProviders => HilosSecurityOAuthProvidersTable::class,
             TasksTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
             TasksTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
@@ -851,6 +868,9 @@ final class TasksTopologyRegistryTest extends TestCase
                 DaemonAgentsPage::PAGE,
                 DaemonEnvMismatchPage::PAGE,
                 DaemonHttpServerPage::PAGE,
+                CommunicationsPage::PAGE,
+                CommunicationsChannelPage::PAGE,
+                CommunicationsDeliveriesPage::PAGE,
                 SecurityOAuthPage::PAGE,
                 SecurityOAuthProviderPage::PAGE,
                 SecuritySignInMethodsPage::PAGE,
@@ -1286,5 +1306,63 @@ final class TasksTopologyRegistryTest extends TestCase
             [HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING],
             Hilos::PAGE_LISTS[HilosPageConstants::HILOS_PROFILE_SIGN_IN],
         );
+    }
+
+    public function testCommunicationsAdminFeatureIsActivated(): void
+    {
+        $this->assertContains(HilosFeature::NOTIFICATION_DELIVERY, Hilos::features());
+        $this->assertSame(CommunicationsPage::class, Hilos::PAGES[CommunicationsPage::PAGE]);
+        $this->assertSame(CommunicationsChannelPage::class, Hilos::PAGES[CommunicationsChannelPage::PAGE]);
+        $this->assertSame(CommunicationsDeliveriesPage::class, Hilos::PAGES[CommunicationsDeliveriesPage::PAGE]);
+
+        $this->assertSame(AgentType::HILOS_INDEX, CommunicationsPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(AgentType::HILOS_INDEX, CommunicationsChannelPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(AgentType::HILOS_INDEX, CommunicationsDeliveriesPage::SUBSCRIPTION_AGENT_TYPE);
+
+        $this->assertSame(
+            [TasksTableContext::hilosCommunicationsChannels => []],
+            Hilos::PAGE_TABLES[CommunicationsPage::PAGE],
+        );
+        $this->assertSame(
+            [TasksTableContext::hilosCommunicationsChannelFields => []],
+            Hilos::PAGE_TABLES[CommunicationsChannelPage::PAGE],
+        );
+        $this->assertSame(
+            [TasksTableContext::hilosNotificationDeliveries => []],
+            Hilos::PAGE_TABLES[CommunicationsDeliveriesPage::PAGE],
+        );
+
+        $this->assertSame(
+            HilosChannelSettingUpdateActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::COMMUNICATIONS_CHANNEL_SET],
+        );
+        $this->assertSame(
+            HilosChannelSettingResetActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::COMMUNICATIONS_CHANNEL_RESET],
+        );
+        $this->assertSame(
+            HilosChannelTestActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::COMMUNICATIONS_CHANNEL_TEST],
+        );
+        $this->assertSame(
+            HilosDeliveryRetryActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY],
+        );
+
+        $this->assertSame(
+            HandoverAnswerSignalData::class,
+            Hilos::getPageSignalDtoRoutes()[SignalTypeConstants::AGENT_SIGNAL]
+                [HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE],
+        );
+        $this->assertSame(
+            HandoverAnswerSignalData::class,
+            Hilos::getPageSignalDtoRoutes()[SignalTypeConstants::AGENT_SIGNAL]
+                [HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE],
+        );
+
+        $catalog = TasksSettingsCatalog::getCatalog();
+        $emailKey = DeliveryChannelSettings::enabledKey(MailDeliveryChannel::NAME);
+        $this->assertArrayHasKey($emailKey, $catalog);
+        $this->assertTrue($catalog[$emailKey][SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE]);
     }
 }

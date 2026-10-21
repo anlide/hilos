@@ -71,6 +71,9 @@ use Demo\Polls\Database\Settings\PollsSettingsCatalog;
 use Demo\Polls\Hilos;
 use Demo\Polls\Groups\Hilos\NotificationsGroup;
 use Demo\Polls\Pages\Hilos\DashboardPage;
+use Demo\Polls\Pages\Hilos\Communications\CommunicationsChannelPage;
+use Demo\Polls\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
+use Demo\Polls\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonPage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonWorkersPage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonAgentsPage;
@@ -159,7 +162,17 @@ use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Pages\Appearance\DTO\HilosAppearanceDefaultThemeSetActionDTO;
 use Hilos\Pages\Appearance\DTO\HilosAppearanceThemeSwitchingSetActionDTO;
+use Hilos\Pages\Communications\DTO\HilosChannelSettingResetActionDTO;
+use Hilos\Pages\Communications\DTO\HilosChannelSettingUpdateActionDTO;
+use Hilos\Pages\Communications\DTO\HilosChannelTestActionDTO;
+use Hilos\Pages\Communications\DTO\HilosDeliveryRetryActionDTO;
+use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
+use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
+use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
+use Hilos\Mail\Delivery\MailDeliveryChannel;
+use Hilos\Notification\Delivery\DeliveryChannelSettings;
+use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\HilosException;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
 use Hilos\Database\Schema\MountedCollectionKeyGuard;
@@ -633,6 +646,7 @@ final class PollsTopologyRegistryTest extends TestCase
             HilosFeature::LOGS,
             HilosFeature::DAEMON,
             HilosFeature::NOTIFICATIONS,
+            HilosFeature::NOTIFICATION_DELIVERY,
             HilosFeature::AUTH,
             HilosFeature::AUTH_THROTTLE,
             HilosFeature::CODE_CHANNELS,
@@ -798,6 +812,9 @@ final class PollsTopologyRegistryTest extends TestCase
             PollsTableContext::hilosDaemonEnvSourcesDiffer => HilosDaemonEnvSourcesDifferTable::class,
             PollsTableContext::hilosDaemonHttpRoutes => HilosDaemonHttpRoutesTable::class,
             PollsTableContext::hilosDaemonPlacement => HilosDaemonPlacementTable::class,
+            PollsTableContext::hilosCommunicationsChannels => HilosCommunicationsChannelsTable::class,
+            PollsTableContext::hilosCommunicationsChannelFields => HilosCommunicationsChannelFieldsTable::class,
+            PollsTableContext::hilosNotificationDeliveries => HilosNotificationDeliveriesTable::class,
             PollsTableContext::hilosSecurityOauthProviders => HilosSecurityOAuthProvidersTable::class,
             PollsTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
             PollsTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
@@ -844,6 +861,9 @@ final class PollsTopologyRegistryTest extends TestCase
                 DaemonAgentsPage::PAGE,
                 DaemonEnvMismatchPage::PAGE,
                 DaemonHttpServerPage::PAGE,
+                CommunicationsPage::PAGE,
+                CommunicationsChannelPage::PAGE,
+                CommunicationsDeliveriesPage::PAGE,
                 SecurityOAuthPage::PAGE,
                 SecurityOAuthProviderPage::PAGE,
                 SecuritySignInMethodsPage::PAGE,
@@ -1316,5 +1336,63 @@ final class PollsTopologyRegistryTest extends TestCase
         }
 
         $this->addToAssertionCount(1);
+    }
+
+    public function testCommunicationsAdminFeatureIsActivated(): void
+    {
+        $this->assertContains(HilosFeature::NOTIFICATION_DELIVERY, Hilos::features());
+        $this->assertSame(CommunicationsPage::class, Hilos::PAGES[CommunicationsPage::PAGE]);
+        $this->assertSame(CommunicationsChannelPage::class, Hilos::PAGES[CommunicationsChannelPage::PAGE]);
+        $this->assertSame(CommunicationsDeliveriesPage::class, Hilos::PAGES[CommunicationsDeliveriesPage::PAGE]);
+
+        $this->assertSame(AgentType::HILOS_INDEX, CommunicationsPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(AgentType::HILOS_INDEX, CommunicationsChannelPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(AgentType::HILOS_INDEX, CommunicationsDeliveriesPage::SUBSCRIPTION_AGENT_TYPE);
+
+        $this->assertSame(
+            [PollsTableContext::hilosCommunicationsChannels => []],
+            Hilos::PAGE_TABLES[CommunicationsPage::PAGE],
+        );
+        $this->assertSame(
+            [PollsTableContext::hilosCommunicationsChannelFields => []],
+            Hilos::PAGE_TABLES[CommunicationsChannelPage::PAGE],
+        );
+        $this->assertSame(
+            [PollsTableContext::hilosNotificationDeliveries => []],
+            Hilos::PAGE_TABLES[CommunicationsDeliveriesPage::PAGE],
+        );
+
+        $this->assertSame(
+            HilosChannelSettingUpdateActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::COMMUNICATIONS_CHANNEL_SET],
+        );
+        $this->assertSame(
+            HilosChannelSettingResetActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::COMMUNICATIONS_CHANNEL_RESET],
+        );
+        $this->assertSame(
+            HilosChannelTestActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::COMMUNICATIONS_CHANNEL_TEST],
+        );
+        $this->assertSame(
+            HilosDeliveryRetryActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY],
+        );
+
+        $this->assertSame(
+            HandoverAnswerSignalData::class,
+            Hilos::getPageSignalDtoRoutes()[SignalTypeConstants::AGENT_SIGNAL]
+                [HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE],
+        );
+        $this->assertSame(
+            HandoverAnswerSignalData::class,
+            Hilos::getPageSignalDtoRoutes()[SignalTypeConstants::AGENT_SIGNAL]
+                [HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE],
+        );
+
+        $catalog = PollsSettingsCatalog::getCatalog();
+        $emailKey = DeliveryChannelSettings::enabledKey(MailDeliveryChannel::NAME);
+        $this->assertArrayHasKey($emailKey, $catalog);
+        $this->assertTrue($catalog[$emailKey][SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE]);
     }
 }

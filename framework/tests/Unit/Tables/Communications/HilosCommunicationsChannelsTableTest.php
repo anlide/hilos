@@ -93,25 +93,12 @@ final class HilosCommunicationsChannelsTableTest extends TestCase
         $mail = $this->createPartialMock(MailDeliveryChannel::class, ['configFields']);
         $mail->method('configFields')->willReturn([]);
         $key = $mail->enabledSettingKey();
-        $settings = $this->createMock(Settings::class);
-        $settings->expects(self::once())->method('offsetExists')->with($key)->willReturn($exists);
-        if ($exists) {
-            $setting = $this->createMock(Setting::class);
-            $setting->method('__get')->with(ObjectSetting::value)->willReturn($value);
-            $settings->expects(self::once())->method('offsetGet')->with($key)->willReturn($setting);
-        } else {
-            $settings->expects(self::never())->method('offsetGet');
-        }
         Hilos::$db = $this->createMock(HilosDbContext::class);
-        Hilos::$db->method('__get')->with(HilosDbContext::settings)->willReturn($settings);
         Hilos::$setting = $this->createMock(SettingsAccessor::class);
-        if ($value === null) {
-            Hilos::$setting->expects(self::never())->method('offsetGet');
-        } else {
-            Hilos::$setting->expects(self::once())->method('offsetGet')->with($key)->willReturn(new SettingValue($key));
-            Hilos::$setting->expects(self::once())->method('typeFor')->with($key)->willReturn(SettingsCatalogConstants::TYPE_BOOLEAN);
-            Hilos::$setting->expects(self::once())->method('effectiveValueFor')->with($key)->willReturn($value);
-        }
+        Hilos::$setting->expects(self::once())->method('offsetExists')->with($key)->willReturn(true);
+        Hilos::$setting->expects(self::once())->method('offsetGet')->with($key)->willReturn(new SettingValue($key));
+        Hilos::$setting->expects(self::once())->method('typeFor')->with($key)->willReturn(SettingsCatalogConstants::TYPE_BOOLEAN);
+        Hilos::$setting->expects(self::once())->method('effectiveValueFor')->with($key)->willReturn($value ?? ($enabled ? '1' : '0'));
 
         $row = $this->table($mail)->getFullSnapshot()->rows[0];
 
@@ -180,6 +167,21 @@ final class HilosCommunicationsChannelsTableTest extends TestCase
         self::assertInstanceOf(HilosCommunicationsChannelsTableRow::class, $mutation->row);
     }
 
+    public function testEnablementChangeResolvesKeyByRowIdWhenDiffCarriesNoKey(): void
+    {
+        $enabledKey = DeliveryChannelSettings::enabledKey(MailDeliveryChannel::NAME);
+
+        $table = $this->tableWithSettingKeys([5 => $enabledKey], new MailDeliveryChannel());
+        $mutation = $table->buildMutationForSourceEvent(
+            SourceChange::dbUpdated(HilosDbContext::settings, '5', [ObjectSetting::value => '1']),
+        );
+
+        self::assertNotNull($mutation);
+        self::assertSame(TableMutationType::Update, $mutation->type);
+        self::assertSame(MailDeliveryChannel::NAME, $mutation->rowKey);
+        self::assertInstanceOf(HilosCommunicationsChannelsTableRow::class, $mutation->row);
+    }
+
     public function testFieldChangeUpdatesOwningChannelRow(): void
     {
         $fieldKey = DeliveryChannelSettings::fieldKey(MailDeliveryChannel::NAME, MailDeliveryChannel::FIELD_SMTP_HOST);
@@ -218,10 +220,27 @@ final class HilosCommunicationsChannelsTableTest extends TestCase
      */
     private function table(AbstractDeliveryChannel ...$channels): HilosCommunicationsChannelsTable
     {
-        return new class($channels) extends HilosCommunicationsChannelsTable {
-            /** @param list<AbstractDeliveryChannel> $channelsFixture */
-            public function __construct(private readonly array $channelsFixture)
-            {
+        return $this->tableWithSettingKeys([], ...$channels);
+    }
+
+    /**
+     * Builds a channels table with pre-seeded setting keys by row id.
+     *
+     * @param array<int, string> $settingKeys Setting keys by numeric row id
+     * @param AbstractDeliveryChannel ...$channels Channel descriptors to expose
+     * @return HilosCommunicationsChannelsTable Table over the bound channels
+     */
+    private function tableWithSettingKeys(array $settingKeys, AbstractDeliveryChannel ...$channels): HilosCommunicationsChannelsTable
+    {
+        return new class($channels, $settingKeys) extends HilosCommunicationsChannelsTable {
+            /**
+             * @param list<AbstractDeliveryChannel> $channelsFixture
+             * @param array<int, string> $settingKeysFixture
+             */
+            public function __construct(
+                private readonly array $channelsFixture,
+                private readonly array $settingKeysFixture,
+            ) {
                 parent::__construct();
             }
 
@@ -233,6 +252,11 @@ final class HilosCommunicationsChannelsTableTest extends TestCase
                 }
 
                 return $keyed;
+            }
+
+            protected function settingKeyById(int $id): ?string
+            {
+                return $this->settingKeysFixture[$id] ?? null;
             }
         };
     }
