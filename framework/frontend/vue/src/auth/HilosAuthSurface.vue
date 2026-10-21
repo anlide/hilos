@@ -2307,6 +2307,8 @@ onUnmounted(() => {
             {{ CODE_EXPIRED_MESSAGE }}
           </div>
 
+          <HilosFormError :message="errorMessage" data-id="auth-error" />
+
           <div class="d-flex flex-column mt-auto" data-id="auth-step-actions">
             <!-- The gate outlives the code it was armed for: it belongs to the
         address, so a person cannot spend a code, watch it expire and re-take

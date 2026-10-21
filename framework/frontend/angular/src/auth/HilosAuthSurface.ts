@@ -1369,6 +1369,11 @@ const ERROR_DETAILS_TWIN_CLASS =
                 {{ codeExpiredMessage }}
               </div>
 
+              <hilos-form-error
+                [message]="errorMessage()"
+                dataId="auth-error"
+              />
+
               <div
                 class="d-flex flex-column mt-auto"
                 data-id="auth-step-actions"

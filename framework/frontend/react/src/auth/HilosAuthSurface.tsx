@@ -2337,6 +2337,8 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
                   {CODE_EXPIRED_MESSAGE}
                 </div>
 
+                <HilosFormError message={errorMessage} dataId="auth-error" />
+
                 <div
                   className="d-flex flex-column mt-auto"
                   data-id="auth-step-actions"

@@ -24,8 +24,10 @@ import {
   AUTH_ACTION_DISMISS_SESSION_ACK,
   AUTH_ACTION_LEGAL_CONSENT,
   AUTH_ACTION_LOGIN,
+  AUTH_ACTION_REGISTER,
   AUTH_ACTION_REGISTRATION_PASSKEY_OPTIONS,
   AUTH_ACTION_REQUEST_MAGIC_LINK,
+  AUTH_ACTION_REQUEST_PHONE_CODE,
   AUTH_CONVERGE_SIGNAL,
   AUTH_SURFACE_HEADING_ID,
   bindCodeSendProgress,
@@ -2273,6 +2275,407 @@ describe('HilosAuthSurface', () => {
     expect(wrapper.find('[data-id="auth-code"]').exists()).toBe(true)
     expect(wrapper.find('[data-id="auth-expires-in"]').exists()).toBe(true)
     expect(wrapper.find('[data-id="auth-code-expired"]').exists()).toBe(false)
+  })
+
+  it('shows the server refusal above actions on the code_expired step during registration renewal and clears on retry (HIL-1770)', async () => {
+    vi.useFakeTimers()
+    const registrationRefusalMessage =
+      'Custom registration quota reached for this domain. Please wait 24 hours before requesting another code.'
+    let registerAttempts = 0
+    const dispatched: Dispatched = []
+    const connection = {
+      on: vi.fn().mockReturnValue(() => undefined),
+    } as unknown as HilosConnection
+    const actions = {
+      dispatch: (action: string, payload: Record<string, unknown>) => {
+        dispatched.push({ action, payload })
+        if (action === AUTH_ACTION_REGISTER) {
+          registerAttempts += 1
+          if (registerAttempts === 1) {
+            return {
+              requestId: `register-${registerAttempts}`,
+              loading: createSignal(false),
+              done: Promise.resolve({
+                reply: {
+                  ok: false,
+                  code: 'send_cap_reached',
+                  message: registrationRefusalMessage,
+                },
+              }),
+            } as unknown as ActionHandle
+          }
+
+          return {
+            requestId: `register-${registerAttempts}`,
+            loading: createSignal(false),
+            done: Promise.resolve({
+              reply: {
+                ok: true,
+                resendAt: Date.now() - 1,
+                expiresAt: Date.now() + 60_000,
+              },
+            }),
+          } as unknown as ActionHandle
+        }
+
+        return {
+          requestId: `req-${dispatched.length}`,
+          loading: createSignal(false),
+          done: Promise.resolve({ reply: undefined }),
+        } as unknown as ActionHandle
+      },
+    } as unknown as ActionLifecycle
+
+    const context = createHilosAuthContext({
+      connection,
+      scopes: scopesWith([{ key: 'password', name: null }]),
+      actions,
+      channels: [],
+    })
+    context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, {
+      identifier: 'someone@example.com',
+      kind: 'email',
+      intent: 'register',
+      step: 'code',
+      channel: null,
+      expiresAt: Date.now() + 10_000,
+      code: null,
+      message: null,
+    })
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-code"]').exists()).toBe(true)
+    await vi.advanceTimersByTimeAsync(10_000)
+    await flush(wrapper)
+
+    // Before refusal: only auth-error-slot stands between alert and actions.
+    const expiredAlert = wrapper.find('[data-id="auth-code-expired"]')
+    expect(expiredAlert.exists()).toBe(true)
+    expect(expiredAlert.text()).toContain('That code has expired.')
+    const slot = wrapper.find('[data-id="auth-error-slot"]')
+    expect(slot.exists()).toBe(true)
+    const actionsBlock = wrapper.find('[data-id="auth-step-actions"]')
+    expect(actionsBlock.exists()).toBe(true)
+    expect(actionsBlock.classes()).toContain('mt-auto')
+    expect(expiredAlert.element.nextElementSibling).toBe(slot.element)
+    expect(slot.element.nextElementSibling).toBe(actionsBlock.element)
+
+    const idle = slot.find('[data-id="auth-error-idle"]')
+    expect(idle.exists()).toBe(true)
+    expect(idle.classes()).toContain('invisible')
+    expect(idle.attributes('aria-hidden')).toBe('true')
+    expect(slot.find('[data-id="auth-error"]').exists()).toBe(false)
+    expect(slot.find('[data-id="auth-error-details"]').exists()).toBe(false)
+
+    const liveAssertive = wrapper.find('[data-id="auth-live-assertive"]')
+    const liveAssertiveEl = liveAssertive.element
+    expect(liveAssertive.text()).toBe('')
+    expect(wrapper.find('[data-id="auth-live-polite"]').text()).toContain(
+      'That code has expired.',
+    )
+
+    // Renew: first attempt fails with server refusal without next.
+    await wrapper.find('[data-id="auth-code-renew"]').trigger('click')
+    await flush(wrapper)
+
+    expect(dispatched).toHaveLength(1)
+    expect(dispatched[0]?.action).toBe(AUTH_ACTION_REGISTER)
+    expect(dispatched[0]?.payload).toEqual({ email: 'someone@example.com' })
+
+    // Stays on code_expired: code field and Confirm do not reappear.
+    expect(wrapper.find('[data-id="auth-code-expired"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="auth-code-expired"]').text()).toContain(
+      'That code has expired.',
+    )
+    expect(wrapper.find('[data-id="auth-code"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="auth-submit"]').exists()).toBe(false)
+
+    // Visible error row shown with verbatim server message before actions.
+    const errorRow = slot.find('[data-id="auth-error"]')
+    expect(errorRow.exists()).toBe(true)
+    expect(errorRow.text()).toBe(registrationRefusalMessage)
+    expect(slot.find('[data-id="auth-error-idle"]').exists()).toBe(false)
+    expect(errorRow.find('.text-truncate').text()).toBe(
+      registrationRefusalMessage,
+    )
+    expect(errorRow.attributes('role')).toBeUndefined()
+    expect(errorRow.attributes('aria-live')).toBeUndefined()
+    expect(slot.attributes('role')).toBeUndefined()
+    expect(slot.attributes('aria-live')).toBeUndefined()
+
+    // No second alert element carries this phrase.
+    const alertsWithRefusal = wrapper
+      .findAll('.alert')
+      .filter((node) => node.text().includes(registrationRefusalMessage))
+    expect(alertsWithRefusal).toHaveLength(1)
+    expect(alertsWithRefusal[0]?.attributes('data-id')).toBe('auth-error')
+
+    // Live assertive is the same node and carries exactly one copy.
+    expect(wrapper.find('[data-id="auth-live-assertive"]').element).toBe(
+      liveAssertiveEl,
+    )
+    expect(liveAssertive.text()).toBe(registrationRefusalMessage)
+    expect(wrapper.find('[data-id="auth-live-polite"]').text()).toContain(
+      'That code has expired.',
+    )
+
+    // Details button and modal.
+    const detailsButton = errorRow.find('[data-id="auth-error-details"]')
+    expect(detailsButton.exists()).toBe(true)
+    expect(detailsButton.attributes('aria-label')).toBe('Show error details')
+    await detailsButton.trigger('click')
+    await flush(wrapper)
+    expect(document.querySelector('.modal-title')?.textContent?.trim()).toBe(
+      'Error details',
+    )
+    expect(
+      document
+        .querySelector('[data-id="auth-error-full"]')
+        ?.textContent?.trim(),
+    ).toBe(registrationRefusalMessage)
+
+    // Twin parity: row and idle classes match (modulo invisible), icons and truncated span match.
+    const rowClasses = errorRow.classes().slice().sort()
+    const idleClasses = idle
+      .classes()
+      .filter((c) => c !== 'invisible')
+      .sort()
+    expect(idleClasses).toEqual(rowClasses)
+    expect(idle.find('i.bi-exclamation-circle').exists()).toBe(true)
+    expect(errorRow.find('i.bi-exclamation-circle').exists()).toBe(true)
+    expect(idle.find('span.text-truncate').exists()).toBe(true)
+    expect(errorRow.find('span.text-truncate').exists()).toBe(true)
+    expect(idle.find('span.btn').classes().sort()).toEqual(
+      detailsButton.classes().sort(),
+    )
+    expect(idle.find('button').exists()).toBe(false)
+
+    // Code height twin keeps its ERROR_ROW_TWIN_CLASS and structure.
+    const roomIdle = wrapper.find('[data-id="auth-step-room-idle"]')
+    expect(roomIdle.classes()).toContain('invisible')
+    expect(roomIdle.attributes('aria-hidden')).toBe('true')
+    expect(roomIdle.attributes('inert')).toBeDefined()
+    expect(roomIdle.element.children).toHaveLength(4)
+    expect(roomIdle.find('[data-id]').exists()).toBe(false)
+    expect(
+      roomIdle.find('form, input, select, textarea, button').exists(),
+    ).toBe(false)
+    expect(roomIdle.find('[data-autofocus]').exists()).toBe(false)
+    const codeTwin = roomIdle.element.children.item(1) as HTMLElement
+    expect(codeTwin).not.toBeNull()
+    const errorTwinInCode = codeTwin.querySelector('.alert.alert-danger')
+    expect(errorTwinInCode).not.toBeNull()
+    expect(errorTwinInCode?.className).toBe(
+      'alert alert-danger small py-1 px-2 my-2 d-flex align-items-center gap-2',
+    )
+    expect(errorTwinInCode?.querySelector('.btn')?.className).toBe(
+      'btn btn-link btn-sm p-0 lh-1 flex-shrink-0 text-decoration-none text-nowrap',
+    )
+
+    // Second renew attempt: clears the old refusal, closes details, transitions to code.
+    await wrapper.find('[data-id="auth-code-renew"]').trigger('click')
+    await flush(wrapper)
+
+    expect(dispatched).toHaveLength(2)
+    expect(dispatched[1]?.action).toBe(AUTH_ACTION_REGISTER)
+    expect(document.querySelector('[data-id="auth-error-full"]')).toBeNull()
+    expect(wrapper.find('[data-id="auth-code-expired"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="auth-code"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="auth-expires-in"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="auth-submit"]').exists()).toBe(true)
+
+    wrapper.unmount()
+    document.body.innerHTML = ''
+  })
+
+  it('shows the server refusal above actions on the code_expired step during phone sign-in renewal and clears on retry (HIL-1770)', async () => {
+    vi.useFakeTimers()
+    const phoneRefusalMessage =
+      'Custom phone SMS rate limit reached: please wait 24 hours before requesting another verification code.'
+    let phoneAttempts = 0
+    const dispatched: Dispatched = []
+    const projectListeners: Array<(signal: ProjectSignal) => void> = []
+    const connection = {
+      on: (event: string, listener: (payload: never) => void) => {
+        if (event === 'projectSignal') {
+          projectListeners.push(
+            listener as unknown as (signal: ProjectSignal) => void,
+          )
+          return () => {
+            const idx = projectListeners.indexOf(
+              listener as unknown as (signal: ProjectSignal) => void,
+            )
+            if (idx >= 0) {
+              projectListeners.splice(idx, 1)
+            }
+          }
+        }
+        return () => undefined
+      },
+    } as unknown as HilosConnection
+
+    const actions = {
+      dispatch: (action: string, payload: Record<string, unknown>) => {
+        dispatched.push({ action, payload })
+        if (action === AUTH_ACTION_REQUEST_PHONE_CODE) {
+          phoneAttempts += 1
+          const ticket = `phone-send-${phoneAttempts}`
+          if (phoneAttempts === 1) {
+            for (const listener of [...projectListeners]) {
+              listener({
+                type: SIGNAL_CODE_SEND_PROGRESS,
+                data: {
+                  ticket,
+                  reason: 'code_cap_reached',
+                  state: CODE_SEND_STATE_FAILED,
+                  message: phoneRefusalMessage,
+                  channel: 'sms',
+                  detail: null,
+                  resendAt: null,
+                  expiresAt: null,
+                },
+              } as unknown as ProjectSignal)
+            }
+            return {
+              requestId: `req-phone-${phoneAttempts}`,
+              loading: createSignal(false),
+              done: Promise.resolve({ reply: { ticket } }),
+            } as unknown as ActionHandle
+          }
+
+          for (const listener of [...projectListeners]) {
+            listener({
+              type: SIGNAL_CODE_SEND_PROGRESS,
+              data: {
+                ticket,
+                reason: 'code_sent',
+                state: CODE_SEND_STATE_SENT,
+                message: null,
+                channel: 'sms',
+                detail: null,
+                resendAt: Date.now() - 1,
+                expiresAt: Date.now() + 60_000,
+              },
+            } as unknown as ProjectSignal)
+          }
+          return {
+            requestId: `req-phone-${phoneAttempts}`,
+            loading: createSignal(false),
+            done: Promise.resolve({ reply: { ticket } }),
+          } as unknown as ActionHandle
+        }
+
+        return {
+          requestId: `req-${dispatched.length}`,
+          loading: createSignal(false),
+          done: Promise.resolve({ reply: undefined }),
+        } as unknown as ActionHandle
+      },
+    } as unknown as ActionLifecycle
+
+    const context = createHilosAuthContext({
+      connection,
+      scopes: scopesWith([{ key: 'password', name: null }]),
+      actions,
+      channels: [SMS_CODE_CHANNEL],
+    })
+    context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, {
+      identifier: '+15550100',
+      kind: 'phone',
+      intent: 'login',
+      step: 'code',
+      channel: 'sms',
+      expiresAt: Date.now() + 10_000,
+      code: null,
+      message: null,
+    })
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-code"]').exists()).toBe(true)
+    await vi.advanceTimersByTimeAsync(10_000)
+    await flush(wrapper)
+
+    // Before refusal: slot is positioned between code_expired alert and actions.
+    const expiredAlert = wrapper.find('[data-id="auth-code-expired"]')
+    expect(expiredAlert.exists()).toBe(true)
+    const slot = wrapper.find('[data-id="auth-error-slot"]')
+    expect(slot.exists()).toBe(true)
+    const actionsBlock = wrapper.find('[data-id="auth-step-actions"]')
+    expect(actionsBlock.exists()).toBe(true)
+    expect(actionsBlock.classes()).toContain('mt-auto')
+    expect(expiredAlert.element.nextElementSibling).toBe(slot.element)
+    expect(slot.element.nextElementSibling).toBe(actionsBlock.element)
+
+    const idle = slot.find('[data-id="auth-error-idle"]')
+    expect(idle.exists()).toBe(true)
+    expect(idle.classes()).toContain('invisible')
+    expect(idle.attributes('aria-hidden')).toBe('true')
+    expect(slot.find('[data-id="auth-error"]').exists()).toBe(false)
+    expect(slot.find('[data-id="auth-error-details"]').exists()).toBe(false)
+
+    // Renew: dispatches hilos_request_phone_code, stays on code_expired on refusal.
+    await wrapper.find('[data-id="auth-code-renew"]').trigger('click')
+    await flush(wrapper)
+
+    expect(dispatched).toHaveLength(1)
+    expect(dispatched[0]?.action).toBe(AUTH_ACTION_REQUEST_PHONE_CODE)
+    expect(dispatched[0]?.payload).toEqual({
+      phone: '+15550100',
+      channel: 'sms',
+    })
+
+    expect(wrapper.find('[data-id="auth-code-expired"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="auth-code"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="auth-submit"]').exists()).toBe(false)
+
+    // Shows server refusal message verbatim.
+    const errorRow = slot.find('[data-id="auth-error"]')
+    expect(errorRow.exists()).toBe(true)
+    expect(errorRow.text()).toBe(phoneRefusalMessage)
+    expect(slot.find('[data-id="auth-error-idle"]').exists()).toBe(false)
+    expect(errorRow.find('.text-truncate').text()).toBe(phoneRefusalMessage)
+    expect(errorRow.attributes('role')).toBeUndefined()
+    expect(errorRow.attributes('aria-live')).toBeUndefined()
+    expect(slot.attributes('role')).toBeUndefined()
+    expect(slot.attributes('aria-live')).toBeUndefined()
+
+    expect(wrapper.find('[data-id="auth-live-assertive"]').text()).toBe(
+      phoneRefusalMessage,
+    )
+    expect(wrapper.find('[data-id="auth-live-polite"]').text()).toContain(
+      'That code has expired.',
+    )
+
+    // Details button and modal dialog.
+    const detailsButton = errorRow.find('[data-id="auth-error-details"]')
+    expect(detailsButton.attributes('aria-label')).toBe('Show error details')
+    await detailsButton.trigger('click')
+    await flush(wrapper)
+    expect(document.querySelector('.modal-title')?.textContent?.trim()).toBe(
+      'Error details',
+    )
+    expect(
+      document
+        .querySelector('[data-id="auth-error-full"]')
+        ?.textContent?.trim(),
+    ).toBe(phoneRefusalMessage)
+
+    // Subsequent attempt clears refusal and successfully transitions back to code screen.
+    await wrapper.find('[data-id="auth-code-renew"]').trigger('click')
+    await flush(wrapper)
+
+    expect(dispatched).toHaveLength(2)
+    expect(dispatched[1]?.action).toBe(AUTH_ACTION_REQUEST_PHONE_CODE)
+    expect(document.querySelector('[data-id="auth-error-full"]')).toBeNull()
+    expect(wrapper.find('[data-id="auth-code-expired"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="auth-code"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="auth-expires-in"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="auth-submit"]').exists()).toBe(true)
+
+    wrapper.unmount()
+    document.body.innerHTML = ''
   })
 
   it('answers a provider trip that failed with a refusal on the form', async () => {
