@@ -393,8 +393,7 @@ export function HilosSecurityOauthPage({
       <HilosModal
         open={resetOpen}
         title="Reset · Return address"
-        closeOnBackdrop={!reset.busy}
-        closeOnEsc={!reset.busy}
+        busy={reset.busy}
         initialFocus="dialog"
         onClose={closeReset}
         actions={({ requestClose }) => (

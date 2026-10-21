@@ -37,8 +37,7 @@ const emit = defineEmits<{
   <HilosModal
     :model-value="modelValue"
     title="Erase everything this browser keeps?"
-    :close-on-backdrop="!busy"
-    :close-on-esc="!busy"
+    :busy="busy"
     initial-focus="dialog"
     @update:model-value="emit('update:modelValue', $event)"
   >

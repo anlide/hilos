@@ -66,9 +66,7 @@ type LanguageWindowPlate = ReturnType<LanguageWindow['plate']['get']>
       (openChange)="$event || closeWindow()"
       [title]="title()"
       [confirmOnClose]="mode() === 'edit' && state().dirty"
-      [closeOnBackdrop]="!action.busy()"
-      [closeOnEsc]="!action.busy()"
-      [closeDisabled]="action.busy()"
+      [busy]="action.busy()"
       initialFocus="dialog"
     >
       <div modalHeader data-id="i18n-language-edit-title">

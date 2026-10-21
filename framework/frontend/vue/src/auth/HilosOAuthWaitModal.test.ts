@@ -210,6 +210,79 @@ describe('HilosOAuthWaitModal', () => {
     wrapper.unmount()
   })
 
+  const closeGestures: Array<[string, () => void]> = [
+    [
+      'the × button',
+      () =>
+        document.body
+          .querySelector<HTMLButtonElement>('[data-id="modal-close"]')
+          ?.click(),
+    ],
+    [
+      'Escape',
+      () =>
+        document.body
+          .querySelector('[data-id="modal"]')
+          ?.dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+          ),
+    ],
+    [
+      'a click on the backdrop',
+      () =>
+        document.body.querySelector<HTMLElement>('[data-id="modal"]')?.click(),
+    ],
+  ]
+
+  it.each(closeGestures)(
+    'takes the trip back on %s while the provider leg waits',
+    async (_name, gesture) => {
+      const world = tripWorld()
+      active = world
+      const wrapper = mount(HilosOAuthWaitModal)
+      await world.oauth.startOAuthLink(GITHUB)
+      await nextTick()
+
+      expect(
+        document.body.querySelector<HTMLButtonElement>(
+          '[data-id="modal-close"]',
+        )?.disabled,
+      ).toBe(false)
+      gesture()
+      await nextTick()
+
+      expect(world.window.closed).toBe(true)
+      expect(world.oauth.trip.get()).toBeNull()
+      expect(document.body.querySelector('[data-id="modal"]')).toBeNull()
+      wrapper.unmount()
+    },
+  )
+
+  it.each(closeGestures)(
+    'keeps the trip and the window on %s while the exchange runs',
+    async (_name, gesture) => {
+      const world = tripWorld()
+      active = world
+      const wrapper = mount(HilosOAuthWaitModal)
+      await world.oauth.startOAuthLink(GITHUB)
+      courierReturns(world)
+      await nextTick()
+
+      expect(world.oauth.trip.get()?.phase).toBe('exchanging')
+      expect(
+        document.body.querySelector<HTMLButtonElement>(
+          '[data-id="modal-close"]',
+        )?.disabled,
+      ).toBe(true)
+      gesture()
+      await nextTick()
+
+      expect(world.oauth.trip.get()?.phase).toBe('exchanging')
+      expect(document.body.querySelector('[data-id="modal"]')).not.toBeNull()
+      wrapper.unmount()
+    },
+  )
+
   it('drops Cancel once the exchange is running', async () => {
     const world = tripWorld()
     active = world

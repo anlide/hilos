@@ -380,8 +380,7 @@ function submitEdit(): void {
           : DISABLE_COPY.title
       "
       initial-focus="inner"
-      :close-on-backdrop="!disableBusy"
-      :close-on-esc="!disableBusy"
+      :busy="disableBusy"
       @cancel="disable.close()"
     >
       <div ref="disableBody" data-id="hilos-2fa-disable-window">

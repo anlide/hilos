@@ -36,8 +36,7 @@ import { hilosSignal } from '../hilosSignal.js'
     <hilos-modal
       [(open)]="modalOpen"
       [title]="title()"
-      [closeOnEsc]="cancelable()"
-      [closeOnBackdrop]="cancelable()"
+      [busy]="exchanging()"
       initialFocus="dialog"
       (cancel)="onCloseRequest()"
     >
@@ -81,6 +80,13 @@ export class HilosOAuthWaitModal {
   // and closing over it would leave the account half-linked in the person's head.
   protected readonly cancelable = computed(
     () => this.trip()?.phase === 'authorizing',
+  )
+
+  // The exchange leg holds the dialog: the close button turns disabled and Esc and
+  // the backdrop leave it standing until the server's outcome or the connection's
+  // verdict ends it.
+  protected readonly exchanging = computed(
+    () => this.trip()?.phase === 'exchanging',
   )
 
   protected readonly title = computed(() => {

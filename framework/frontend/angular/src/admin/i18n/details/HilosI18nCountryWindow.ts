@@ -76,9 +76,7 @@ const NO_FIELDS: HilosI18nCountryEditFields = {
       (openChange)="$event || closeWindow()"
       [title]="title()"
       [confirmOnClose]="mode() === 'edit' && touched()"
-      [closeOnBackdrop]="!busy()"
-      [closeOnEsc]="!busy()"
-      [closeDisabled]="busy()"
+      [busy]="busy()"
       initialFocus="inner"
     >
       <div modalHeader data-id="i18n-country-title">

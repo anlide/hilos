@@ -756,8 +756,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
       <HilosModal
         open={deleteOpen}
         title={deleteRow ? `Delete · ${deleteRow.id}` : 'Delete backup'}
-        closeOnBackdrop={!del.busy}
-        closeOnEsc={!del.busy}
+        busy={del.busy}
         initialFocus="dialog"
         onClose={closeDelete}
         actions={({ requestClose }) => (
@@ -800,8 +799,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
       <HilosModal
         open={reopenOpen}
         title={HILOS_BACKUP_REOPEN_COPY.modalTitle}
-        closeOnBackdrop={!reopen.busy}
-        closeOnEsc={!reopen.busy}
+        busy={reopen.busy}
         initialFocus="dialog"
         onClose={closeReopen}
         actions={({ requestClose }) => (
@@ -925,8 +923,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
       <HilosModal
         open={restoreOpen}
         title={restoreRow ? `Restore · ${restoreRow.id}` : 'Restore backup'}
-        closeOnBackdrop={!restore.busy}
-        closeOnEsc={!restore.busy}
+        busy={restore.busy}
         onClose={closeRestore}
         actions={({ requestClose }) => (
           <>
@@ -1085,8 +1082,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
       <HilosModal
         open={createOpen}
         title="Create backup"
-        closeOnBackdrop={!create.busy}
-        closeOnEsc={!create.busy}
+        busy={create.busy}
         onClose={closeCreate}
         actions={({ requestClose }) => (
           <>

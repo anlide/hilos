@@ -249,8 +249,7 @@ const RETENTION_CLASS: Record<string, string> = {
         [open]="takeoutOpen()"
         (openChange)="$event ? takeoutOpen.set(true) : closeTakeout()"
         [title]="takeoutTitle()"
-        [closeOnBackdrop]="!takeout.busy()"
-        [closeOnEsc]="!takeout.busy()"
+        [busy]="takeout.busy()"
         initialFocus="dialog"
       >
         <hilos-action-error
@@ -339,8 +338,7 @@ const RETENTION_CLASS: Record<string, string> = {
         [open]="undoOpen()"
         (openChange)="$event ? undoOpen.set(true) : closeUndo()"
         title="Has the batch not been carried off?"
-        [closeOnBackdrop]="!undo.busy()"
-        [closeOnEsc]="!undo.busy()"
+        [busy]="undo.busy()"
         initialFocus="dialog"
       >
         <hilos-action-error

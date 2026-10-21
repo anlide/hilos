@@ -549,8 +549,7 @@ async function submitDelete(): Promise<void> {
       <HilosModal
         v-model="deleteOpen"
         :title="deleteShown ? `Delete · ${deleteShown.name}` : 'Delete bot'"
-        :close-on-backdrop="!deleteBusy"
-        :close-on-esc="!deleteBusy"
+        :busy="deleteBusy"
         initial-focus="dialog"
         @cancel="closeDelete"
       >

@@ -83,8 +83,7 @@ async function submit(): Promise<void> {
     v-model="modalOpen"
     :title="title"
     :confirm-on-close="dirty"
-    :close-on-backdrop="!saving"
-    :close-on-esc="!saving"
+    :busy="saving"
   >
     <template #header>
       <div data-id="i18n-language-name-title">

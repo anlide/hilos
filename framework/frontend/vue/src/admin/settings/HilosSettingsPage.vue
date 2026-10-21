@@ -426,8 +426,7 @@ async function submitReset(): Promise<void> {
     <HilosModal
       v-model="deleteOpen"
       :title="deleteRow ? `Delete · ${deleteRow.key}` : 'Delete setting'"
-      :close-on-backdrop="!deleteBusy"
-      :close-on-esc="!deleteBusy"
+      :busy="deleteBusy"
       initial-focus="dialog"
       @cancel="closeDelete"
     >
@@ -473,8 +472,7 @@ async function submitReset(): Promise<void> {
     <HilosModal
       v-model="resetOpen"
       :title="resetRow ? `Reset · ${resetRow.key}` : 'Reset setting'"
-      :close-on-backdrop="!resetBusy"
-      :close-on-esc="!resetBusy"
+      :busy="resetBusy"
       initial-focus="dialog"
       @cancel="closeReset"
     >

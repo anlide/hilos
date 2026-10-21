@@ -327,8 +327,7 @@ function LocaleWindow({
       title={title}
       onClose={close}
       confirmOnClose={mode === 'edit' && editState.dirty}
-      closeOnBackdrop={!busy}
-      closeOnEsc={!busy}
+      busy={busy}
       initialFocus="dialog"
       header={
         <div className={mode !== 'add' ? 'hilos-stack flex-grow-1' : undefined}>

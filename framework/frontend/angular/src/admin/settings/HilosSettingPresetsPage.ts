@@ -194,8 +194,7 @@ import {
       <hilos-modal
         [(open)]="confirmOpen"
         [title]="vocabulary().confirmTitle"
-        [closeOnBackdrop]="!applyAction.busy()"
-        [closeOnEsc]="!applyAction.busy()"
+        [busy]="applyAction.busy()"
         initialFocus="dialog"
         (cancel)="closeConfirm()"
       >

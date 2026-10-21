@@ -106,8 +106,7 @@ async function confirm(): Promise<void> {
   <HilosModal
     v-model="modalOpen"
     :title="copy.title(openedName)"
-    :close-on-backdrop="!action.busy.value"
-    :close-on-esc="!action.busy.value"
+    :busy="action.busy.value"
     initial-focus="dialog"
     @cancel="closeWindow"
   >

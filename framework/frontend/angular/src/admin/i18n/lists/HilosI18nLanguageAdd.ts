@@ -53,9 +53,7 @@ type LanguageAddForm = ReturnType<LanguageAdd['form']['get']>
       [open]="step() === 'form'"
       (openChange)="$event || add().close()"
       [title]="copy.title"
-      [closeOnBackdrop]="!formAction.busy()"
-      [closeOnEsc]="!formAction.busy()"
-      [closeDisabled]="formAction.busy()"
+      [busy]="formAction.busy()"
     >
       <form id="i18n-language-add-form" (submit)="submit($event)">
         <div class="row g-2">
@@ -176,9 +174,7 @@ type LanguageAddForm = ReturnType<LanguageAdd['form']['get']>
       [open]="step() === 'confirm'"
       (openChange)="$event || add().close()"
       [title]="copy.confirmTitle"
-      [closeOnBackdrop]="!confirmAction.busy()"
-      [closeOnEsc]="!confirmAction.busy()"
-      [closeDisabled]="confirmAction.busy()"
+      [busy]="confirmAction.busy()"
       initialFocus="dialog"
     >
       <div data-id="i18n-language-confirm">

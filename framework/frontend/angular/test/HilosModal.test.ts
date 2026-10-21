@@ -123,6 +123,42 @@ class SizeHost {
 class FootersHost {}
 
 /**
+ * A modal whose busy flag, open flag and Escape/backdrop options the test
+ * flips in place on the mounted component, with a footer that takes the issued
+ * `requestClose`. The no-input case is the other hosts, which bind no `busy`.
+ */
+@Component({
+  selector: 'test-modal-busy-host',
+  imports: [HilosModal],
+  template: `
+    <hilos-modal
+      [open]="open()"
+      [confirmOnClose]="confirmOnClose()"
+      [closeOnEsc]="closeOnEsc()"
+      [closeOnBackdrop]="closeOnBackdrop()"
+      [busy]="busy()"
+      (cancel)="cancels.set(cancels() + 1)"
+    >
+      <input data-autofocus data-id="field" />
+      <ng-template #modalActions let-requestClose="requestClose">
+        <button type="button" data-id="footer-cancel" (click)="requestClose()">
+          Cancel
+        </button>
+        <button type="button" data-id="footer-save">Save</button>
+      </ng-template>
+    </hilos-modal>
+  `,
+})
+class BusyHost {
+  readonly open = signal(true)
+  readonly confirmOnClose = signal(false)
+  readonly closeOnEsc = signal(true)
+  readonly closeOnBackdrop = signal(true)
+  readonly busy = signal(false)
+  readonly cancels = signal(0)
+}
+
+/**
  * Mount the host and render its modal effects.
  *
  * @returns The mounted fixture, already rendered once.
@@ -159,6 +195,62 @@ function layerDepths(selector: string): string[] {
       return element.style.getPropertyValue('--hilos-modal-depth')
     },
   )
+}
+
+/** The header close button of the open dialog. */
+function closeButton(): HTMLButtonElement | null {
+  return document.querySelector<HTMLButtonElement>('[data-id="modal-close"]')
+}
+
+/**
+ * One element by its `data-id`.
+ *
+ * @param id The data-id to look up.
+ * @returns The element, or null when it is not drawn.
+ */
+function byId(id: string): HTMLElement | null {
+  return document.querySelector<HTMLElement>(`[data-id="${id}"]`)
+}
+
+/**
+ * Press a key on an element the way the browser does.
+ *
+ * @param target The element that has focus.
+ * @param key The key name.
+ * @param shiftKey Whether Shift is held.
+ */
+function press(target: Element, key: string, shiftKey = false): void {
+  target.dispatchEvent(
+    new KeyboardEvent('keydown', {
+      key,
+      shiftKey,
+      bubbles: true,
+      cancelable: true,
+    }),
+  )
+}
+
+/**
+ * Mount a busy host and flip the modal's `busy` input in place.
+ *
+ * @returns The fixture, the host, and a setter for the modal's busy input.
+ */
+function mountBusyHost(): {
+  fixture: ComponentFixture<BusyHost>
+  host: BusyHost
+  setBusy: (busy: boolean) => void
+} {
+  const fixture = TestBed.createComponent(BusyHost)
+  fixture.detectChanges()
+
+  return {
+    fixture,
+    host: fixture.componentInstance,
+    setBusy: (busy) => {
+      fixture.componentInstance.busy.set(busy)
+      fixture.detectChanges()
+    },
+  }
 }
 
 describe('HilosModal', () => {
@@ -411,5 +503,156 @@ describe('HilosModal', () => {
       expect(footer.classList.contains('hilos-button-row')).toBe(true)
       expect(footer.classList.contains('flex-column-reverse')).toBe(false)
     })
+  })
+
+  it('is not busy without the input: the close button is enabled', () => {
+    const fixture = mountHost()
+
+    expect(closeButton()?.disabled).toBe(false)
+    closeButton()?.click()
+    fixture.detectChanges()
+
+    expect(layerDepths('[data-id="modal"]')).toEqual([])
+  })
+
+  it('refuses every close gesture while busy and closes again once idle', () => {
+    const { fixture, host, setBusy } = mountBusyHost()
+    host.confirmOnClose.set(true)
+    setBusy(true)
+
+    const close = closeButton()
+    expect(close?.disabled).toBe(true)
+    expect(close?.classList.contains('btn-close')).toBe(true)
+    expect(close?.getAttribute('aria-label')).toBe('Close')
+
+    close?.click()
+    press(byId('modal') as Element, 'Escape')
+    ;(byId('modal') as HTMLElement).click()
+    byId('footer-cancel')?.click()
+    fixture.detectChanges()
+
+    expect(host.cancels()).toBe(0)
+    expect(byId('modal-confirm')).toBeNull()
+    expect(byId('modal')).not.toBeNull()
+
+    setBusy(false)
+    expect(closeButton()?.disabled).toBe(false)
+
+    // Idle, the dirty draft goes through the same Discard changes? step.
+    closeButton()?.click()
+    fixture.detectChanges()
+    expect(byId('modal-confirm')).not.toBeNull()
+    expect(host.cancels()).toBe(0)
+
+    byId('modal-confirm-discard')?.click()
+    fixture.detectChanges()
+    expect(host.cancels()).toBe(1)
+  })
+
+  it('closes on the close button again once busy clears, replaying nothing', () => {
+    const { fixture, host, setBusy } = mountBusyHost()
+    setBusy(true)
+    closeButton()?.click()
+    expect(host.cancels()).toBe(0)
+
+    setBusy(false)
+    expect(host.cancels()).toBe(0)
+
+    closeButton()?.click()
+    fixture.detectChanges()
+    expect(host.cancels()).toBe(1)
+  })
+
+  it('outranks closeOnEsc and closeOnBackdrop while busy', () => {
+    const { fixture, host, setBusy } = mountBusyHost()
+    setBusy(true)
+    press(byId('modal') as Element, 'Escape')
+    ;(byId('modal') as HTMLElement).click()
+    expect(host.cancels()).toBe(0)
+
+    setBusy(false)
+    press(byId('modal') as Element, 'Escape')
+    fixture.detectChanges()
+    expect(host.cancels()).toBe(1)
+  })
+
+  it('keeps the draft, the focus and an open confirm step when busy flips', () => {
+    const { fixture, host, setBusy } = mountBusyHost()
+    host.confirmOnClose.set(true)
+    fixture.detectChanges()
+    const field = byId('field') as HTMLInputElement
+    field.value = 'draft'
+
+    setBusy(true)
+    expect(document.activeElement).toBe(field)
+    setBusy(false)
+    expect(document.activeElement).toBe(field)
+    expect((byId('field') as HTMLInputElement).value).toBe('draft')
+
+    closeButton()?.click()
+    fixture.detectChanges()
+    const confirm = byId('modal-confirm')
+    expect(document.activeElement).toBe(confirm)
+
+    setBusy(true)
+    press(confirm as Element, 'Escape')
+    byId('modal-confirm-discard')?.click()
+    fixture.detectChanges()
+
+    expect(byId('modal-confirm')).toBe(confirm)
+    expect(document.activeElement).toBe(confirm)
+    expect((byId('field') as HTMLInputElement).value).toBe('draft')
+    expect(host.cancels()).toBe(0)
+  })
+
+  it('does not reactivate scroll lock or layer when busy flips', () => {
+    const { host, setBusy } = mountBusyHost()
+    const dialog = byId('modal')
+    const depth = layerDepths('[data-id="modal"]')
+
+    setBusy(true)
+    setBusy(false)
+
+    expect(byId('modal')).toBe(dialog)
+    expect(layerDepths('[data-id="modal"]')).toEqual(depth)
+    expect(document.body.classList.contains('modal-open')).toBe(true)
+    expect(host.open()).toBe(true)
+  })
+
+  it('leaves the disabled close button out of the Tab cycle', () => {
+    const { setBusy } = mountBusyHost()
+    const field = byId('field') as HTMLElement
+    const save = byId('footer-save') as HTMLElement
+
+    save.focus()
+    press(save, 'Tab')
+    expect(document.activeElement).toBe(closeButton())
+
+    setBusy(true)
+    save.focus()
+    press(save, 'Tab')
+    expect(document.activeElement).toBe(field)
+
+    press(field, 'Tab', true)
+    expect(document.activeElement).toBe(save)
+  })
+
+  it('closes when the parent sets it closed while busy, releasing scroll and focus', () => {
+    const opener = document.createElement('button')
+    document.body.appendChild(opener)
+    opener.focus()
+
+    const { fixture, host, setBusy } = mountBusyHost()
+    setBusy(true)
+    expect(document.body.classList.contains('modal-open')).toBe(true)
+
+    host.open.set(false)
+    fixture.detectChanges()
+
+    expect(byId('modal')).toBeNull()
+    expect(document.querySelector('.modal-backdrop')).toBeNull()
+    expect(document.body.classList.contains('modal-open')).toBe(false)
+    expect(document.activeElement).toBe(opener)
+    opener.remove()
   })
 })

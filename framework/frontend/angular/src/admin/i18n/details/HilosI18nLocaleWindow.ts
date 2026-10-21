@@ -126,9 +126,7 @@ const FOOTER = 'modal-footer hilos-button-row p-0 m-0 border-0 align-self-end'
       (openChange)="$event || closeWindow()"
       [title]="title()"
       [confirmOnClose]="mode() === 'edit' && editState().dirty"
-      [closeOnBackdrop]="!busy()"
-      [closeOnEsc]="!busy()"
-      [closeDisabled]="busy()"
+      [busy]="busy()"
       initialFocus="dialog"
     >
       <div

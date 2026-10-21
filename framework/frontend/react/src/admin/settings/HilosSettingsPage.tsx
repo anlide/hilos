@@ -438,8 +438,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
       <HilosModal
         open={deleteOpen}
         title={deleteRow ? `Delete · ${deleteRow.key}` : 'Delete setting'}
-        closeOnBackdrop={!del.busy}
-        closeOnEsc={!del.busy}
+        busy={del.busy}
         initialFocus="dialog"
         onClose={closeDelete}
         actions={({ requestClose }) => (
@@ -490,8 +489,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
       <HilosModal
         open={resetOpen}
         title={resetRow ? `Reset · ${resetRow.key}` : 'Reset setting'}
-        closeOnBackdrop={!reset.busy}
-        closeOnEsc={!reset.busy}
+        busy={reset.busy}
         initialFocus="dialog"
         onClose={closeReset}
         actions={({ requestClose }) => (

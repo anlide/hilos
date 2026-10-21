@@ -439,8 +439,7 @@ onUnmounted(() => {
       v-model="unlinkOpen"
       :title="`Remove ${unlinkMethod ? title(unlinkMethod) : 'sign-in method'}?`"
       initial-focus="dialog"
-      :close-on-esc="!unlinkAction.busy.value"
-      :close-on-backdrop="!unlinkAction.busy.value"
+      :busy="unlinkAction.busy.value"
     >
       <div data-id="profile-unlink-modal">
         <p>

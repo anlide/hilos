@@ -57,8 +57,7 @@ export function HilosI18nLanguageWindow({
       title={title}
       onClose={close}
       confirmOnClose={mode === 'edit' && state.dirty}
-      closeOnBackdrop={!action.busy}
-      closeOnEsc={!action.busy}
+      busy={action.busy}
       initialFocus="dialog"
       header={
         <div data-id="i18n-language-edit-title">

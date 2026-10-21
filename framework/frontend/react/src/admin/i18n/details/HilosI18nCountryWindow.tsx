@@ -52,8 +52,7 @@ export function HilosI18nCountryWindow({ window }: { window: CountryWindow }) {
       title={title}
       onClose={() => window.close()}
       confirmOnClose={mode === 'edit' && touched && !busy}
-      closeOnBackdrop={!busy}
-      closeOnEsc={!busy}
+      busy={busy}
       initialFocus="inner"
       header={
         <div data-id="i18n-country-title">

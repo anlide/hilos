@@ -42,6 +42,24 @@ function layerDepths(selector: string): string[] {
   )
 }
 
+/** The header close button of the open dialog. */
+function closeButton(): HTMLButtonElement | null {
+  return document.querySelector<HTMLButtonElement>('[data-id="modal-close"]')
+}
+
+/**
+ * Press a key on an element the way a keyboard does: a bubbling keydown.
+ *
+ * @param target The element the key is pressed on.
+ * @param key The key, as `KeyboardEvent.key` names it.
+ * @param shiftKey Whether Shift is held.
+ */
+function press(target: Element | null, key: string, shiftKey = false): void {
+  target?.dispatchEvent(
+    new KeyboardEvent('keydown', { key, shiftKey, bubbles: true }),
+  )
+}
+
 /** A clipboard that records what was written to it. */
 function recordingClipboard(): void {
   setClipboard({
@@ -328,6 +346,167 @@ describe('HilosModal', () => {
     await wrapper.vm.$nextTick()
     expect(wrapper.emitted('update:modelValue')?.[0]).toEqual([false])
     expect(wrapper.emitted('cancel')).toHaveLength(1)
+  })
+
+  it('is not busy without the input: the close button is enabled', () => {
+    mount(HilosModal, { props: { modelValue: true } })
+    expect(closeButton()?.disabled).toBe(false)
+  })
+
+  it('refuses every close gesture while busy and closes again once idle', async () => {
+    const wrapper = mount(HilosModal, {
+      props: { modelValue: true, confirmOnClose: true },
+      slots: {
+        actions: `<template #actions="{ requestClose }">
+          <button type="button" data-id="footer-cancel" @click="requestClose()">Cancel</button>
+        </template>`,
+      },
+    })
+    await wrapper.setProps({ busy: true })
+
+    const close = closeButton()
+    expect(close?.disabled).toBe(true)
+    expect(close?.classList.contains('btn-close')).toBe(true)
+    expect(close?.getAttribute('aria-label')).toBe('Close')
+
+    close?.click()
+    press(document.querySelector('[data-id="modal"]'), 'Escape')
+    document
+      .querySelector<HTMLElement>('[data-id="modal"]')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    document
+      .querySelector<HTMLButtonElement>('[data-id="footer-cancel"]')
+      ?.click()
+    await flushPromises()
+
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(wrapper.emitted('cancel')).toBeUndefined()
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+
+    await wrapper.setProps({ busy: false })
+    expect(closeButton()?.disabled).toBe(false)
+
+    // Idle, the dirty draft goes through the same Discard changes? step.
+    closeButton()?.click()
+    await flushPromises()
+    expect(document.querySelector('[data-id="modal-confirm"]')).not.toBeNull()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-confirm-discard"]')
+      ?.click()
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')?.[0]).toEqual([false])
+    expect(wrapper.emitted('cancel')).toHaveLength(1)
+  })
+
+  it('closes on the close button again once busy clears, with no confirm guard', async () => {
+    const wrapper = mount(HilosModal, {
+      props: { modelValue: true, busy: true },
+    })
+    closeButton()?.click()
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+
+    await wrapper.setProps({ busy: false })
+    // Nothing refused while busy is replayed when it clears.
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+
+    closeButton()?.click()
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')?.[0]).toEqual([false])
+    expect(wrapper.emitted('cancel')).toHaveLength(1)
+  })
+
+  it('keeps the draft, the focus and an open confirm step when busy flips', async () => {
+    const wrapper = mount(HilosModal, {
+      props: { modelValue: true, confirmOnClose: true },
+      slots: { default: '<input data-autofocus data-id="field" />' },
+    })
+    await flushPromises()
+    const field = document.querySelector<HTMLInputElement>('[data-id="field"]')
+    if (field) {
+      field.value = 'draft'
+    }
+
+    await wrapper.setProps({ busy: true })
+    await flushPromises()
+    expect(document.activeElement).toBe(field)
+    await wrapper.setProps({ busy: false })
+    await flushPromises()
+    expect(document.activeElement).toBe(field)
+    expect(
+      document.querySelector<HTMLInputElement>('[data-id="field"]')?.value,
+    ).toBe('draft')
+
+    closeButton()?.click()
+    await flushPromises()
+    const confirm = document.querySelector('[data-id="modal-confirm"]')
+    expect(document.activeElement).toBe(confirm)
+
+    await wrapper.setProps({ busy: true })
+    press(confirm, 'Escape')
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-confirm-discard"]')
+      ?.click()
+    await flushPromises()
+
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBe(confirm)
+    expect(document.activeElement).toBe(confirm)
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(
+      document.querySelector<HTMLInputElement>('[data-id="field"]')?.value,
+    ).toBe('draft')
+  })
+
+  it('leaves the disabled close button out of the Tab cycle', async () => {
+    const wrapper = mount(HilosModal, {
+      props: { modelValue: true },
+      slots: {
+        default: '<input data-autofocus data-id="field" />',
+        actions: '<button type="button" data-id="save">Save</button>',
+      },
+    })
+    await flushPromises()
+    const field = document.querySelector<HTMLElement>('[data-id="field"]')
+    const save = document.querySelector<HTMLElement>('[data-id="save"]')
+
+    save?.focus()
+    press(save, 'Tab')
+    expect(document.activeElement).toBe(closeButton())
+
+    await wrapper.setProps({ busy: true })
+    save?.focus()
+    press(save, 'Tab')
+    expect(document.activeElement).toBe(field)
+
+    press(field, 'Tab', true)
+    expect(document.activeElement).toBe(save)
+  })
+
+  it('closes when the parent sets it closed while busy, releasing scroll and focus', async () => {
+    const opener = document.createElement('button')
+    document.body.appendChild(opener)
+    opener.focus()
+
+    const wrapper = mount(HilosModal, {
+      props: { modelValue: true, busy: true },
+      slots: { default: '<input data-autofocus data-id="field" />' },
+    })
+    await flushPromises()
+    expect(document.activeElement).toBe(
+      document.querySelector('[data-id="field"]'),
+    )
+    expect(document.body.classList.contains('modal-open')).toBe(true)
+
+    await wrapper.setProps({ modelValue: false })
+    await flushPromises()
+
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    expect(document.querySelector('.modal-backdrop')).toBeNull()
+    expect(document.body.classList.contains('modal-open')).toBe(false)
+    expect(document.activeElement).toBe(opener)
   })
 
   it('gives both dialogs a scrollable body and a narrow-screen sheet', async () => {

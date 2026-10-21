@@ -384,8 +384,7 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
             : DISABLE_COPY.title
         }
         initialFocus="inner"
-        closeOnBackdrop={!disableBusy}
-        closeOnEsc={!disableBusy}
+        busy={disableBusy}
         actions={({ requestClose }) => (
           <>
             <button

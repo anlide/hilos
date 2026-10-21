@@ -79,8 +79,7 @@ async function confirm(): Promise<void> {
   <HilosModal
     v-model="formOpen"
     :title="copy.title"
-    :close-on-backdrop="!formAction.busy.value"
-    :close-on-esc="!formAction.busy.value"
+    :busy="formAction.busy.value"
     @cancel="add.close"
   >
     <form id="i18n-language-add-form" @submit.prevent="submit">
@@ -195,8 +194,7 @@ async function confirm(): Promise<void> {
   <HilosModal
     v-model="confirmOpen"
     :title="copy.confirmTitle"
-    :close-on-backdrop="!confirmAction.busy.value"
-    :close-on-esc="!confirmAction.busy.value"
+    :busy="confirmAction.busy.value"
     initial-focus="dialog"
     @cancel="add.close"
   >

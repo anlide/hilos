@@ -984,8 +984,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
             : HILOS_STEP_UP_COPY.title
         }
         initialFocus="inner"
-        closeOnBackdrop={!lifecycleAction.busy}
-        closeOnEsc={!lifecycleAction.busy}
+        busy={lifecycleAction.busy}
         actions={({ requestClose }) => (
           <>
             <button
@@ -1067,8 +1066,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
             : HILOS_STEP_UP_COPY.title
         }
         initialFocus="inner"
-        closeOnBackdrop={!impersonateAction.busy}
-        closeOnEsc={!impersonateAction.busy}
+        busy={impersonateAction.busy}
         actions={({ requestClose }) => (
           <>
             <button
@@ -1248,8 +1246,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
               : 'Merge an account'
         }
         confirmOnClose={selectedCandidateId !== null}
-        closeOnBackdrop={!mergeAction.busy}
-        closeOnEsc={!mergeAction.busy}
+        busy={mergeAction.busy}
         initialFocus="inner"
         size="wide"
         onClose={closeMerge}

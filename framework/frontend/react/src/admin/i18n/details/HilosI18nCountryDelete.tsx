@@ -68,8 +68,7 @@ export function HilosI18nCountryDelete({
       open={open}
       title={copy.title(target ? hilosI18nCountryDeleteLabel(target) : '')}
       onClose={close}
-      closeOnBackdrop={!action.busy}
-      closeOnEsc={!action.busy}
+      busy={action.busy}
       initialFocus="dialog"
       actions={({ requestClose }) => (
         <>

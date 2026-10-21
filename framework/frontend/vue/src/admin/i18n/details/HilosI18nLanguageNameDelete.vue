@@ -81,8 +81,7 @@ async function confirm(): Promise<void> {
   <HilosModal
     v-model="modalOpen"
     :title="opened ? copy.title(opened) : ''"
-    :close-on-backdrop="!action.busy.value"
-    :close-on-esc="!action.busy.value"
+    :busy="action.busy.value"
     initial-focus="dialog"
   >
     <div v-if="opened" data-id="i18n-language-name-delete-window">

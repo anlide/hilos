@@ -77,8 +77,7 @@ function LocaleDelete({
       open
       title={copy.title(target.nativeName, target.countryLabel)}
       onClose={close}
-      closeOnBackdrop={!action.busy}
-      closeOnEsc={!action.busy}
+      busy={action.busy}
       initialFocus="dialog"
       actions={({ requestClose }) => (
         <>

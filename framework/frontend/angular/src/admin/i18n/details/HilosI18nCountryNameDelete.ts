@@ -62,9 +62,7 @@ import {
       [open]="open()"
       (openChange)="$event || closeWindow()"
       [title]="title()"
-      [closeOnBackdrop]="!action.busy()"
-      [closeOnEsc]="!action.busy()"
-      [closeDisabled]="action.busy()"
+      [busy]="action.busy()"
       initialFocus="dialog"
     >
       @if (opened(); as held) {

@@ -302,8 +302,7 @@ function resetNowText(row: HilosOAuthFieldRow): string {
         [open]="resetOpen()"
         (openChange)="$event ? resetOpen.set(true) : closeReset()"
         [title]="resetTitle()"
-        [closeOnBackdrop]="!reset.busy()"
-        [closeOnEsc]="!reset.busy()"
+        [busy]="reset.busy()"
         initialFocus="dialog"
       >
         <hilos-action-error

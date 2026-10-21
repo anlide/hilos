@@ -418,8 +418,7 @@ const legendOpen = ref(false)
           ? `Carrying off the batch of ${batchTime(takeoutRow)}${takeoutRow.node ? ` · ${takeoutRow.node}` : ''}`
           : 'Carrying off a batch'
       "
-      :close-on-backdrop="!takeoutBusy"
-      :close-on-esc="!takeoutBusy"
+      :busy="takeoutBusy"
       initial-focus="dialog"
       @cancel="closeTakeout"
     >
@@ -505,8 +504,7 @@ const legendOpen = ref(false)
     <HilosModal
       v-model="undoOpen"
       title="Has the batch not been carried off?"
-      :close-on-backdrop="!undoBusy"
-      :close-on-esc="!undoBusy"
+      :busy="undoBusy"
       initial-focus="dialog"
       @cancel="closeUndo"
     >

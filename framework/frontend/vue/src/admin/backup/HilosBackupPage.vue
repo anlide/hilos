@@ -687,8 +687,7 @@ function openOutcome(row: HilosBackupRow): void {
     <HilosModal
       v-model="deleteOpen"
       :title="deleteRow ? `Delete · ${deleteRow.id}` : 'Delete backup'"
-      :close-on-backdrop="!deleteBusy"
-      :close-on-esc="!deleteBusy"
+      :busy="deleteBusy"
       initial-focus="dialog"
       @cancel="closeDelete"
     >
@@ -727,8 +726,7 @@ function openOutcome(row: HilosBackupRow): void {
     <HilosModal
       v-model="reopenOpen"
       :title="HILOS_BACKUP_REOPEN_COPY.modalTitle"
-      :close-on-backdrop="!reopenBusy"
-      :close-on-esc="!reopenBusy"
+      :busy="reopenBusy"
       initial-focus="dialog"
       @cancel="closeReopen"
     >
@@ -833,8 +831,7 @@ function openOutcome(row: HilosBackupRow): void {
     <HilosModal
       v-model="restoreOpen"
       :title="restoreRow ? `Restore · ${restoreRow.id}` : 'Restore backup'"
-      :close-on-backdrop="!restoreBusy"
-      :close-on-esc="!restoreBusy"
+      :busy="restoreBusy"
       @cancel="closeRestore"
     >
       <HilosActionError
@@ -979,8 +976,7 @@ function openOutcome(row: HilosBackupRow): void {
     <HilosModal
       v-model="createOpen"
       title="Create backup"
-      :close-on-backdrop="!createBusy"
-      :close-on-esc="!createBusy"
+      :busy="createBusy"
       @cancel="closeCreate"
     >
       <HilosActionError

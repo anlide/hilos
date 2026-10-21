@@ -60,9 +60,7 @@ type CountryAddKind = ReturnType<CountryAdd['kind']['get']>
       [title]="copy.title"
       [confirmOnClose]="dirty()"
       initialFocus="inner"
-      [closeOnBackdrop]="!formAction.busy()"
-      [closeOnEsc]="!formAction.busy()"
-      [closeDisabled]="formAction.busy()"
+      [busy]="formAction.busy()"
     >
       <form id="i18n-country-add-form" (submit)="submit($event)">
         <hilos-i18n-country-fields
@@ -134,9 +132,7 @@ type CountryAddKind = ReturnType<CountryAdd['kind']['get']>
       [open]="step() === 'confirm'"
       (openChange)="$event || add().close()"
       [title]="copy.confirmTitle"
-      [closeOnBackdrop]="!confirmAction.busy()"
-      [closeOnEsc]="!confirmAction.busy()"
-      [closeDisabled]="confirmAction.busy()"
+      [busy]="confirmAction.busy()"
       initialFocus="dialog"
     >
       <div

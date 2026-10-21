@@ -219,8 +219,7 @@ async function submitRestart(): Promise<void> {
     <HilosModal
       :model-value="restartOpen"
       title="Restart agent"
-      :close-on-backdrop="!restartBusy"
-      :close-on-esc="!restartBusy"
+      :busy="restartBusy"
       initial-focus="dialog"
       @update:model-value="closeRestart"
     >

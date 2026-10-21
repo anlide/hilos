@@ -273,8 +273,7 @@ const SOURCE_LABEL: Record<OAuthValueSource, string> = {
         [open]="resetOpen()"
         (openChange)="$event ? resetOpen.set(true) : closeReset()"
         title="Reset · Return address"
-        [closeOnBackdrop]="!reset.busy()"
-        [closeOnEsc]="!reset.busy()"
+        [busy]="reset.busy()"
         initialFocus="dialog"
       >
         <hilos-action-error

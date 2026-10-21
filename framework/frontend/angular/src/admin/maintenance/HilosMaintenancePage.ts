@@ -203,9 +203,7 @@ function describeManualError(
         [open]="enableOpen()"
         (openChange)="$event || closeEnable()"
         [title]="enableCopy.enableTitle"
-        [closeOnBackdrop]="!enableAction.busy()"
-        [closeOnEsc]="!enableAction.busy()"
-        [closeDisabled]="enableAction.busy()"
+        [busy]="enableAction.busy()"
         initialFocus="dialog"
       >
         <div data-id="hilos-maintenance-enable-modal">
@@ -257,9 +255,7 @@ function describeManualError(
         [open]="disableOpen()"
         (openChange)="$event || closeDisable()"
         [title]="disableCopy.disableTitle"
-        [closeOnBackdrop]="!disableAction.busy()"
-        [closeOnEsc]="!disableAction.busy()"
-        [closeDisabled]="disableAction.busy()"
+        [busy]="disableAction.busy()"
         initialFocus="dialog"
       >
         <div data-id="hilos-maintenance-disable-modal">
@@ -299,9 +295,7 @@ function describeManualError(
         [title]="
           passStep() === 'confirm' ? passCopy.mintTitle : passCopy.codeTitle
         "
-        [closeOnBackdrop]="!passAction.busy()"
-        [closeOnEsc]="!passAction.busy()"
-        [closeDisabled]="passAction.busy()"
+        [busy]="passAction.busy()"
         [copyText]="pass() ?? ''"
         initialFocus="dialog"
       >
@@ -401,8 +395,7 @@ function describeManualError(
         [open]="circleAddOpen()"
         (openChange)="circleAddOpen.set($event)"
         [title]="circleCopy.addTitle"
-        [closeOnBackdrop]="!circleAdd.busy()"
-        [closeOnEsc]="!circleAdd.busy()"
+        [busy]="circleAdd.busy()"
       >
         <hilos-action-error
           [action]="circleAdd"
@@ -451,8 +444,7 @@ function describeManualError(
         [open]="circleRemoveOpen()"
         (openChange)="$event ? circleRemoveOpen.set(true) : closeCircleRemove()"
         [title]="circleCopy.removeTitle"
-        [closeOnBackdrop]="!circleRemove.busy()"
-        [closeOnEsc]="!circleRemove.busy()"
+        [busy]="circleRemove.busy()"
         initialFocus="dialog"
       >
         <hilos-action-error

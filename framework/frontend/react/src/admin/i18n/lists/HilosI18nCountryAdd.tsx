@@ -45,8 +45,7 @@ export function HilosI18nCountryAdd({ add }: { add: CountryAdd }) {
         onClose={add.close}
         confirmOnClose={dirty && !saving}
         initialFocus="inner"
-        closeOnBackdrop={!saving}
-        closeOnEsc={!saving}
+        busy={saving}
         actions={({ requestClose }) => (
           <>
             <button
@@ -140,8 +139,7 @@ export function HilosI18nCountryAdd({ add }: { add: CountryAdd }) {
         open={step === 'confirm'}
         title={copy.confirmTitle}
         onClose={add.close}
-        closeOnBackdrop={!saving}
-        closeOnEsc={!saving}
+        busy={saving}
         initialFocus="dialog"
         actions={({ requestClose }) => (
           <>

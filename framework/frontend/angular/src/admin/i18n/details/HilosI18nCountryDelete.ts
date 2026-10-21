@@ -48,9 +48,7 @@ import {
       [open]="open()"
       (openChange)="$event || closeWindow()"
       [title]="copy.title(label())"
-      [closeOnBackdrop]="!action.busy()"
-      [closeOnEsc]="!action.busy()"
-      [closeDisabled]="action.busy()"
+      [busy]="action.busy()"
       initialFocus="dialog"
     >
       <div data-id="i18n-country-delete-window">

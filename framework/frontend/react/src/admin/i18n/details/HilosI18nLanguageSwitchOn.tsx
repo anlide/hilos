@@ -85,8 +85,7 @@ export function HilosI18nLanguageSwitchOn({
         open={target !== null}
         title={copy.title(target?.name ?? '')}
         onClose={close}
-        closeOnBackdrop={!action.busy}
-        closeOnEsc={!action.busy}
+        busy={action.busy}
         initialFocus="dialog"
         actions={({ requestClose }) => (
           <>

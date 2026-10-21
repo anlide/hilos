@@ -59,9 +59,7 @@ import {
       [open]="target() !== null"
       (openChange)="$event || closeWindow()"
       [title]="copy.title(target()?.name ?? '')"
-      [closeOnBackdrop]="!action.busy()"
-      [closeOnEsc]="!action.busy()"
-      [closeDisabled]="action.busy()"
+      [busy]="action.busy()"
       initialFocus="dialog"
     >
       <div data-id="language-card-switch-on-error">

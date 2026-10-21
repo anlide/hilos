@@ -29,13 +29,14 @@ export function HilosOAuthWaitModal() {
   // Only the provider leg can be taken back; the exchange leg is our own round trip
   // and closing over it would leave the account half-linked in the person's head.
   const cancelable = trip?.phase === 'authorizing'
+  // The exchange leg holds the window: the modal refuses every close gesture meanwhile.
+  const exchanging = trip?.phase === 'exchanging'
 
   return (
     <HilosModal
       open={open}
       title={trip ? oauthTripTitle(trip) : ''}
-      closeOnEsc={cancelable}
-      closeOnBackdrop={cancelable}
+      busy={exchanging}
       initialFocus="dialog"
       // The trip owns whether this is open, so refusing to cancel simply leaves
       // it open.

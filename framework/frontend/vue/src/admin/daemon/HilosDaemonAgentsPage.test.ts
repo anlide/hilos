@@ -410,6 +410,7 @@ describe('HilosDaemonAgentsPage restart', () => {
     expect(
       (modal('hilos-daemon-restart-cancel') as HTMLButtonElement).disabled,
     ).toBe(true)
+    expect((modal('modal-close') as HTMLButtonElement).disabled).toBe(true)
     modal('modal-close').click()
     modal('modal').dispatchEvent(
       new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
@@ -427,6 +428,9 @@ describe('HilosDaemonAgentsPage restart', () => {
     const h = restartHarness()
     await open(h)
     modal('hilos-daemon-restart-confirm').click()
+    await nextTick()
+    expect((modal('modal-close') as HTMLButtonElement).disabled).toBe(true)
+    expect(h.dispatch).toHaveBeenCalledTimes(1)
     h.fail()
     await flushPromises()
     expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
@@ -434,6 +438,7 @@ describe('HilosDaemonAgentsPage restart', () => {
     expect(
       (modal('hilos-daemon-restart-confirm') as HTMLButtonElement).disabled,
     ).toBe(false)
+    expect((modal('modal-close') as HTMLButtonElement).disabled).toBe(false)
   })
 
   it('shows a live restart badge and disables viewer, silent and restarting rows', async () => {

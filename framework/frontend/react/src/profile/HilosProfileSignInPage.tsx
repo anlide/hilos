@@ -415,8 +415,7 @@ export function HilosProfileSignInPage({
         }}
         title={`Remove ${unlinkMethod ? title(unlinkMethod) : 'sign-in method'}?`}
         initialFocus="dialog"
-        closeOnEsc={!unlinkAction.busy}
-        closeOnBackdrop={!unlinkAction.busy}
+        busy={unlinkAction.busy}
         actions={({ requestClose }) => (
           <>
             <button

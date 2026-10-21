@@ -517,8 +517,7 @@ function focusWindow(body: HTMLElement | undefined): void {
             : stepUpCopy.title
         "
         initialFocus="inner"
-        [closeOnBackdrop]="!lifecycleAction.busy()"
-        [closeOnEsc]="!lifecycleAction.busy()"
+        [busy]="lifecycleAction.busy()"
       >
         <div #lifecycleBody>
           <div class="visually-hidden" role="alert" aria-live="assertive">
@@ -601,8 +600,7 @@ function focusWindow(body: HTMLElement | undefined): void {
             : stepUpCopy.title
         "
         initialFocus="inner"
-        [closeOnBackdrop]="!impersonateAction.busy()"
-        [closeOnEsc]="!impersonateAction.busy()"
+        [busy]="impersonateAction.busy()"
       >
         <div #impersonateBody>
           <div class="visually-hidden" role="alert" aria-live="assertive">
@@ -687,8 +685,7 @@ function focusWindow(body: HTMLElement | undefined): void {
               : 'Merge an account'
         "
         [confirmOnClose]="selectedCandidateId() !== null"
-        [closeOnBackdrop]="!mergeAction.busy()"
-        [closeOnEsc]="!mergeAction.busy()"
+        [busy]="mergeAction.busy()"
         initialFocus="inner"
         size="wide"
       >

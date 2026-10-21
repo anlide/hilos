@@ -866,8 +866,7 @@ function submit(): void {
           : HILOS_STEP_UP_COPY.title
       "
       initial-focus="inner"
-      :close-on-backdrop="!lifecycleAction.busy.value"
-      :close-on-esc="!lifecycleAction.busy.value"
+      :busy="lifecycleAction.busy.value"
       @cancel="closeLifecycle"
     >
       <div ref="lifecycleBody">
@@ -939,8 +938,7 @@ function submit(): void {
           : HILOS_STEP_UP_COPY.title
       "
       initial-focus="inner"
-      :close-on-backdrop="!impersonateAction.busy.value"
-      :close-on-esc="!impersonateAction.busy.value"
+      :busy="impersonateAction.busy.value"
       @cancel="closeImpersonate"
     >
       <div ref="impersonateBody">
@@ -1105,8 +1103,7 @@ function submit(): void {
             : 'Merge an account'
       "
       :confirm-on-close="selectedCandidateId !== null"
-      :close-on-backdrop="!mergeAction.busy.value"
-      :close-on-esc="!mergeAction.busy.value"
+      :busy="mergeAction.busy.value"
       initial-focus="inner"
       size="wide"
       @cancel="closeMerge"

@@ -435,8 +435,7 @@ export function HilosSecurityOauthProviderPage({
       <HilosModal
         open={resetOpen}
         title={resetRow ? `Reset · ${resetRow.label}` : 'Reset field'}
-        closeOnBackdrop={!reset.busy}
-        closeOnEsc={!reset.busy}
+        busy={reset.busy}
         initialFocus="dialog"
         onClose={closeReset}
         actions={({ requestClose }) => (

@@ -272,8 +272,7 @@ import {
           disableStep() === 'step-up' ? stepUpCopy.title : disableCopy.title
         "
         initialFocus="inner"
-        [closeOnBackdrop]="!disableBusy()"
-        [closeOnEsc]="!disableBusy()"
+        [busy]="disableBusy()"
       >
         <div #disableBody data-id="hilos-2fa-disable-window">
           <div class="visually-hidden" role="alert" aria-live="assertive">

@@ -63,9 +63,7 @@ type NameWindowNotice = ReturnType<NameWindow['notice']['get']>
       (openChange)="$event || closeWindow()"
       [title]="title()"
       [confirmOnClose]="dirty()"
-      [closeOnBackdrop]="!saving()"
-      [closeOnEsc]="!saving()"
-      [closeDisabled]="saving()"
+      [busy]="saving()"
     >
       <div modalHeader data-id="i18n-language-name-title">
         @if (mode() === 'edit') {

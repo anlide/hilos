@@ -168,9 +168,7 @@ import type { HilosDaemonNodeHeading } from '@hilos/core/admin/daemon'
       <hilos-modal
         [open]="restartOpen()"
         title="Restart agent"
-        [closeOnBackdrop]="!restartBusy()"
-        [closeOnEsc]="!restartBusy()"
-        [closeDisabled]="restartBusy()"
+        [busy]="restartBusy()"
         initialFocus="dialog"
         (openChange)="closeRestart()"
       >

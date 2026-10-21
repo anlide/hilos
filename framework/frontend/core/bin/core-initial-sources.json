@@ -260,8 +260,8 @@
     "outputSha256": "e71c62120add1b5a5e637d7a8249971ffb69e9653a80bb0a34e2ca44212f2cea"
   },
   "src/primitives/modal.ts": {
-    "sourceSha256": "59cb1e0dd815dbf50b8a45d51f73151bca6ade0fad5eb94c7439ed668cafe606",
-    "outputSha256": "b671e887d4b9619d249b46350066871d58411210df85a3b9ba7235e265645928"
+    "sourceSha256": "3685883002fda6f9644ceec7a1225117183ffaa9080c6910ecf1738c0f20fa73",
+    "outputSha256": "cf3fd8112f199b0f550e5bd66c891192f041bc9d6dc5ad84b2704735bba12df4"
   },
   "src/primitives/passwordVisibility.ts": {
     "sourceSha256": "dbe966a248ede5fe73500b440aa42fcfca3d0ddb9c53d414392be9f2570578a7",

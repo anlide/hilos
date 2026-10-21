@@ -104,6 +104,15 @@ const props = withDefaults(
     closeOnEsc?: boolean
     /** Close on a backdrop click (through the confirm guard). */
     closeOnBackdrop?: boolean
+    /**
+     * The dialog's request is in flight: the header close button turns
+     * natively disabled, and neither Escape, a backdrop click, nor the
+     * `requestClose` the #actions slot receives closes the dialog or raises
+     * the confirm step. Outranks `closeOnEsc` and `closeOnBackdrop`; a
+     * gesture refused while busy is not replayed once it clears. The parent
+     * setting `modelValue` to false still closes the dialog.
+     */
+    busy?: boolean
     /** Raise a confirm step before closing — set it when the draft is dirty. */
     confirmOnClose?: boolean
     /** Confirm-step heading. */
@@ -129,6 +138,7 @@ const props = withDefaults(
     size: '',
     closeOnEsc: true,
     closeOnBackdrop: true,
+    busy: false,
     confirmOnClose: false,
     confirmTitle: 'Discard changes?',
     confirmMessage: 'You have unsaved changes. Discard them?',
@@ -158,6 +168,7 @@ const modal = createModalController({
   confirmOnClose: () => props.confirmOnClose,
   closeOnEsc: () => props.closeOnEsc,
   closeOnBackdrop: () => props.closeOnBackdrop,
+  busy: () => props.busy,
   onClose: () => {
     emit('update:modelValue', false)
     emit('cancel')
@@ -273,6 +284,7 @@ function onTab(event: KeyboardEvent): void {
                 class="btn-close"
                 aria-label="Close"
                 data-id="modal-close"
+                :disabled="busy"
                 @click="modal.requestClose()"
               ></button>
             </div>

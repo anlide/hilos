@@ -30,8 +30,7 @@ import { LoadingButton } from '../LoadingButton.js'
       [open]="open()"
       (openChange)="openChange.emit($event)"
       title="Erase everything this browser keeps?"
-      [closeOnBackdrop]="!busy()"
-      [closeOnEsc]="!busy()"
+      [busy]="busy()"
       initialFocus="dialog"
     >
       <p class="mb-2">This will remove from this browser:</p>

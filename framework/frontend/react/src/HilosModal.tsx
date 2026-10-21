@@ -105,6 +105,15 @@ export interface HilosModalProps {
   closeOnEsc?: boolean
   /** Close on a backdrop click (through the confirm guard). Defaults to true. */
   closeOnBackdrop?: boolean
+  /**
+   * The dialog's request is in flight: the header close button turns natively
+   * disabled, and neither Escape, a backdrop click, nor the `requestClose` the
+   * `actions` slot receives closes the dialog or raises the confirm step.
+   * Outranks `closeOnEsc` and `closeOnBackdrop`; a gesture refused while busy
+   * is not replayed once it clears. The parent setting `open` to false still
+   * closes the dialog. Defaults to false.
+   */
+  busy?: boolean
   /** Raise a confirm step before closing — set it when the draft is dirty. */
   confirmOnClose?: boolean
   /** Confirm-step heading. */
@@ -146,6 +155,7 @@ export function HilosModal({
   size = '',
   closeOnEsc = true,
   closeOnBackdrop = true,
+  busy = false,
   confirmOnClose = false,
   confirmTitle = 'Discard changes?',
   confirmMessage = 'You have unsaved changes. Discard them?',
@@ -169,8 +179,14 @@ export function HilosModal({
   const [copied, setCopied] = useState(false)
 
   // The controller reads its config live through a ref so it is created once.
-  const cfg = useRef({ confirmOnClose, closeOnEsc, closeOnBackdrop, onClose })
-  cfg.current = { confirmOnClose, closeOnEsc, closeOnBackdrop, onClose }
+  const cfg = useRef({
+    confirmOnClose,
+    closeOnEsc,
+    closeOnBackdrop,
+    busy,
+    onClose,
+  })
+  cfg.current = { confirmOnClose, closeOnEsc, closeOnBackdrop, busy, onClose }
 
   const modal = useMemo(
     () =>
@@ -178,6 +194,7 @@ export function HilosModal({
         confirmOnClose: () => cfg.current.confirmOnClose,
         closeOnEsc: () => cfg.current.closeOnEsc,
         closeOnBackdrop: () => cfg.current.closeOnBackdrop,
+        busy: () => cfg.current.busy,
         onClose: () => cfg.current.onClose?.(),
       }),
     [],
@@ -300,6 +317,7 @@ export function HilosModal({
                 className="btn-close"
                 aria-label="Close"
                 data-id="modal-close"
+                disabled={busy}
                 onClick={() => modal.requestClose()}
               />
             </div>

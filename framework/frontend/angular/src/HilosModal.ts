@@ -135,7 +135,7 @@ export interface ModalActionsContext {
                 class="btn-close"
                 aria-label="Close"
                 data-id="modal-close"
-                [disabled]="closeDisabled()"
+                [disabled]="busy()"
                 (click)="modal.requestClose()"
               ></button>
             </div>
@@ -256,8 +256,15 @@ export class HilosModal {
   readonly closeOnEsc = input(true)
   /** Close on a backdrop click (through the confirm guard). */
   readonly closeOnBackdrop = input(true)
-  /** Disable the header's close button while the owning action is in flight. */
-  readonly closeDisabled = input(false)
+  /**
+   * The dialog's request is in flight: the header close button turns natively
+   * disabled, and neither Escape, a backdrop click, nor the `requestClose` the
+   * `modalActions` template receives closes the dialog or raises the confirm
+   * step. Outranks `closeOnEsc` and `closeOnBackdrop`; a gesture refused while
+   * busy is not replayed once it clears. The parent setting `open` to false
+   * still closes the dialog. Defaults to false.
+   */
+  readonly busy = input(false)
   /** Raise a confirm step before closing — set it when the draft is dirty. */
   readonly confirmOnClose = input(false)
   /** Confirm-step heading. */
@@ -290,6 +297,7 @@ export class HilosModal {
     confirmOnClose: () => this.confirmOnClose(),
     closeOnEsc: () => this.closeOnEsc(),
     closeOnBackdrop: () => this.closeOnBackdrop(),
+    busy: () => this.busy(),
     onClose: () => {
       this.open.set(false)
       this.cancel.emit()

@@ -64,9 +64,7 @@ type LanguageDeleteAction =
       [open]="open()"
       (openChange)="$event || closeWindow()"
       [title]="copy.title(target().name)"
-      [closeOnBackdrop]="!action.busy()"
-      [closeOnEsc]="!action.busy()"
-      [closeDisabled]="action.busy()"
+      [busy]="action.busy()"
       initialFocus="dialog"
     >
       <div data-id="i18n-language-delete-window">

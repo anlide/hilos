@@ -414,8 +414,7 @@ import {
         [open]="deleteOpen()"
         (openChange)="deleteOpen.set($event)"
         [title]="deleteTitle()"
-        [closeOnBackdrop]="!del.busy()"
-        [closeOnEsc]="!del.busy()"
+        [busy]="del.busy()"
         initialFocus="dialog"
       >
         <hilos-action-error
@@ -457,8 +456,7 @@ import {
         [open]="reopenOpen()"
         (openChange)="reopenOpen.set($event)"
         [title]="reopenCopy.modalTitle"
-        [closeOnBackdrop]="!reopen.busy()"
-        [closeOnEsc]="!reopen.busy()"
+        [busy]="reopen.busy()"
         initialFocus="dialog"
       >
         <hilos-action-error
@@ -571,8 +569,7 @@ import {
         [open]="restoreOpen()"
         (openChange)="restoreOpen.set($event)"
         [title]="restoreTitle()"
-        [closeOnBackdrop]="!restore.busy()"
-        [closeOnEsc]="!restore.busy()"
+        [busy]="restore.busy()"
       >
         <hilos-action-error
           [action]="restore"
@@ -733,8 +730,7 @@ import {
         [open]="createOpen()"
         (openChange)="createOpen.set($event)"
         title="Create backup"
-        [closeOnBackdrop]="!create.busy()"
-        [closeOnEsc]="!create.busy()"
+        [busy]="create.busy()"
       >
         <hilos-action-error
           [action]="create"

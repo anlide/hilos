@@ -31,6 +31,9 @@ const open = computed(() => trip.value?.intent === 'link')
 // and closing over it would leave the account half-linked in the person's head.
 const cancelable = computed(() => trip.value?.phase === 'authorizing')
 
+// The exchange leg holds the window: the modal refuses every close gesture meanwhile.
+const exchanging = computed(() => trip.value?.phase === 'exchanging')
+
 /**
  * Answer the dialog's own close attempts (Escape, backdrop, the header's ×). The
  * trip owns whether this is open, so refusing to cancel simply leaves it open.
@@ -46,8 +49,7 @@ function onCloseRequest(): void {
   <HilosModal
     :model-value="open"
     :title="trip ? oauthTripTitle(trip) : ''"
-    :close-on-esc="cancelable"
-    :close-on-backdrop="cancelable"
+    :busy="exchanging"
     initial-focus="dialog"
     @update:model-value="onCloseRequest"
   >

@@ -428,8 +428,7 @@ async function submitCircleRemove(): Promise<void> {
     <HilosModal
       :model-value="enableOpen"
       :title="HILOS_MAINTENANCE_ENABLE_COPY.enableTitle"
-      :close-on-backdrop="!enableBusy"
-      :close-on-esc="!enableBusy"
+      :busy="enableBusy"
       initial-focus="dialog"
       @update:model-value="closeEnable"
     >
@@ -482,8 +481,7 @@ async function submitCircleRemove(): Promise<void> {
     <HilosModal
       :model-value="disableOpen"
       :title="HILOS_MAINTENANCE_DISABLE_COPY.disableTitle"
-      :close-on-backdrop="!disableBusy"
-      :close-on-esc="!disableBusy"
+      :busy="disableBusy"
       initial-focus="dialog"
       @update:model-value="closeDisable"
     >
@@ -526,8 +524,7 @@ async function submitCircleRemove(): Promise<void> {
           ? HILOS_MAINTENANCE_PASS_COPY.mintTitle
           : HILOS_MAINTENANCE_PASS_COPY.codeTitle
       "
-      :close-on-backdrop="!passBusy"
-      :close-on-esc="!passBusy"
+      :busy="passBusy"
       :copy-text="pass ?? ''"
       initial-focus="dialog"
       @update:model-value="closePass"
@@ -628,8 +625,7 @@ async function submitCircleRemove(): Promise<void> {
     <HilosModal
       v-model="circleAddOpen"
       :title="HILOS_MAINTENANCE_CIRCLE_COPY.addTitle"
-      :close-on-backdrop="!circleAddBusy"
-      :close-on-esc="!circleAddBusy"
+      :busy="circleAddBusy"
       @cancel="closeCircleAdd"
     >
       <HilosActionError
@@ -678,8 +674,7 @@ async function submitCircleRemove(): Promise<void> {
     <HilosModal
       v-model="circleRemoveOpen"
       :title="HILOS_MAINTENANCE_CIRCLE_COPY.removeTitle"
-      :close-on-backdrop="!circleRemoveBusy"
-      :close-on-esc="!circleRemoveBusy"
+      :busy="circleRemoveBusy"
       initial-focus="dialog"
       @cancel="closeCircleRemove"
     >

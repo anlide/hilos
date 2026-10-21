@@ -370,8 +370,7 @@ async function submitReset(): Promise<void> {
     <HilosModal
       v-model="resetOpen"
       title="Reset · Return address"
-      :close-on-backdrop="!resetBusy"
-      :close-on-esc="!resetBusy"
+      :busy="resetBusy"
       initial-focus="dialog"
       @cancel="closeReset"
     >

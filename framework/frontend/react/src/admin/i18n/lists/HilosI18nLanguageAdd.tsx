@@ -52,8 +52,7 @@ export function HilosI18nLanguageAdd({
         open={step === 'form'}
         title={copy.title}
         onClose={add.close}
-        closeOnBackdrop={!formAction.busy}
-        closeOnEsc={!formAction.busy}
+        busy={formAction.busy}
         actions={({ requestClose }) => (
           <>
             <button
@@ -180,8 +179,7 @@ export function HilosI18nLanguageAdd({
         open={step === 'confirm'}
         title={copy.confirmTitle}
         onClose={add.close}
-        closeOnBackdrop={!confirmAction.busy}
-        closeOnEsc={!confirmAction.busy}
+        busy={confirmAction.busy}
         initialFocus="dialog"
         actions={({ requestClose }) => (
           <>

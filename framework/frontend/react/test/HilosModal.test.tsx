@@ -33,6 +33,11 @@ function layerDepths(selector: string): string[] {
   )
 }
 
+/** The header close button of the open dialog. */
+function closeButton(): HTMLButtonElement | null {
+  return document.querySelector<HTMLButtonElement>('[data-id="modal-close"]')
+}
+
 /** Put a clipboard in the document, or take it away — plain http has none. */
 function setClipboard(clipboard: Clipboard | undefined): void {
   Object.defineProperty(navigator, 'clipboard', {
@@ -462,5 +467,189 @@ describe('HilosModal', () => {
 
     fireEvent.click(byId('modal-confirm-discard') as Element)
     expect(closes).toBe(1)
+  })
+
+  it('is not busy without the input: the close button is enabled', () => {
+    render(<HilosModal open />)
+    expect(closeButton()?.disabled).toBe(false)
+  })
+
+  it('refuses every close gesture while busy and closes again once idle', () => {
+    const closes: string[] = []
+    const modal = (busy?: boolean) => (
+      <HilosModal
+        open
+        confirmOnClose
+        busy={busy}
+        onClose={() => closes.push('close')}
+        actions={({ requestClose }) => (
+          <button
+            type="button"
+            data-id="footer-cancel"
+            onClick={() => requestClose()}
+          >
+            Cancel
+          </button>
+        )}
+      />
+    )
+    const view = render(modal())
+    view.rerender(modal(true))
+
+    const close = closeButton()
+    expect(close?.disabled).toBe(true)
+    expect(close?.classList.contains('btn-close')).toBe(true)
+    expect(close?.getAttribute('aria-label')).toBe('Close')
+
+    fireEvent.click(close as Element)
+    fireEvent.keyDown(byId('modal') as Element, { key: 'Escape' })
+    fireEvent.click(byId('modal') as Element)
+    fireEvent.click(byId('footer-cancel') as Element)
+
+    expect(closes).toEqual([])
+    expect(byId('modal-confirm')).toBeNull()
+    expect(byId('modal')).not.toBeNull()
+
+    view.rerender(modal(false))
+    expect(closeButton()?.disabled).toBe(false)
+
+    // Idle, the dirty draft goes through the same Discard changes? step.
+    fireEvent.click(closeButton() as Element)
+    expect(byId('modal-confirm')).not.toBeNull()
+    expect(closes).toEqual([])
+
+    fireEvent.click(byId('modal-confirm-discard') as Element)
+    expect(closes).toEqual(['close'])
+  })
+
+  it('closes on the close button again once busy clears, with no confirm guard', () => {
+    let closes = 0
+    const modal = (busy: boolean) => (
+      <HilosModal
+        open
+        busy={busy}
+        onClose={() => {
+          closes += 1
+        }}
+      />
+    )
+    const view = render(modal(true))
+    fireEvent.click(closeButton() as Element)
+    expect(closes).toBe(0)
+
+    view.rerender(modal(false))
+    // Nothing refused while busy is replayed when it clears.
+    expect(closes).toBe(0)
+
+    fireEvent.click(closeButton() as Element)
+    expect(closes).toBe(1)
+  })
+
+  it('outranks closeOnEsc and closeOnBackdrop while busy', () => {
+    let closes = 0
+    const modal = (busy: boolean) => (
+      <HilosModal
+        open
+        busy={busy}
+        closeOnEsc
+        closeOnBackdrop
+        onClose={() => {
+          closes += 1
+        }}
+      />
+    )
+    const view = render(modal(true))
+    fireEvent.keyDown(byId('modal') as Element, { key: 'Escape' })
+    fireEvent.click(byId('modal') as Element)
+    expect(closes).toBe(0)
+
+    view.rerender(modal(false))
+    fireEvent.keyDown(byId('modal') as Element, { key: 'Escape' })
+    expect(closes).toBe(1)
+    fireEvent.click(byId('modal') as Element)
+    expect(closes).toBe(2)
+  })
+
+  it('keeps the draft, the focus and an open confirm step when busy flips', () => {
+    const modal = (busy: boolean) => (
+      <HilosModal open confirmOnClose busy={busy}>
+        <input data-autofocus data-id="field" />
+      </HilosModal>
+    )
+    const view = render(modal(false))
+    const field = byId('field') as HTMLInputElement
+    field.value = 'draft'
+
+    view.rerender(modal(true))
+    expect(document.activeElement).toBe(field)
+    view.rerender(modal(false))
+    expect(document.activeElement).toBe(field)
+    expect((byId('field') as HTMLInputElement).value).toBe('draft')
+
+    fireEvent.click(closeButton() as Element)
+    const confirm = byId('modal-confirm')
+    expect(document.activeElement).toBe(confirm)
+
+    view.rerender(modal(true))
+    fireEvent.keyDown(confirm as Element, { key: 'Escape' })
+    fireEvent.click(byId('modal-confirm-discard') as Element)
+
+    expect(byId('modal-confirm')).toBe(confirm)
+    expect(document.activeElement).toBe(confirm)
+    expect((byId('field') as HTMLInputElement).value).toBe('draft')
+  })
+
+  it('leaves the disabled close button out of the Tab cycle', () => {
+    const modal = (busy: boolean) => (
+      <HilosModal
+        open
+        busy={busy}
+        actions={() => (
+          <button type="button" data-id="save">
+            Save
+          </button>
+        )}
+      >
+        <input data-autofocus data-id="field" />
+      </HilosModal>
+    )
+    const view = render(modal(false))
+    const field = byId('field') as HTMLElement
+    const save = byId('save') as HTMLElement
+
+    save.focus()
+    fireEvent.keyDown(save, { key: 'Tab' })
+    expect(document.activeElement).toBe(closeButton())
+
+    view.rerender(modal(true))
+    save.focus()
+    fireEvent.keyDown(save, { key: 'Tab' })
+    expect(document.activeElement).toBe(field)
+
+    fireEvent.keyDown(field, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(save)
+  })
+
+  it('closes when the parent sets it closed while busy, releasing scroll and focus', () => {
+    const opener = document.createElement('button')
+    document.body.appendChild(opener)
+    opener.focus()
+
+    const modal = (open: boolean) => (
+      <HilosModal open={open} busy>
+        <input data-autofocus data-id="field" />
+      </HilosModal>
+    )
+    const view = render(modal(true))
+    expect(document.activeElement).toBe(byId('field'))
+    expect(document.body.classList.contains('modal-open')).toBe(true)
+
+    view.rerender(modal(false))
+
+    expect(byId('modal')).toBeNull()
+    expect(document.querySelector('.modal-backdrop')).toBeNull()
+    expect(document.body.classList.contains('modal-open')).toBe(false)
+    expect(document.activeElement).toBe(opener)
+    opener.remove()
   })
 })

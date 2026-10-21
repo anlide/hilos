@@ -452,8 +452,7 @@ export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
       <HilosModal
         open={enableOpen}
         title={HILOS_MAINTENANCE_ENABLE_COPY.enableTitle}
-        closeOnBackdrop={!enableAction.busy}
-        closeOnEsc={!enableAction.busy}
+        busy={enableAction.busy}
         initialFocus="dialog"
         onClose={closeEnable}
         actions={({ requestClose }) => (
@@ -508,8 +507,7 @@ export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
       <HilosModal
         open={disableOpen}
         title={HILOS_MAINTENANCE_DISABLE_COPY.disableTitle}
-        closeOnBackdrop={!disableAction.busy}
-        closeOnEsc={!disableAction.busy}
+        busy={disableAction.busy}
         initialFocus="dialog"
         onClose={closeDisable}
         actions={({ requestClose }) => (
@@ -554,8 +552,7 @@ export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
             ? HILOS_MAINTENANCE_PASS_COPY.mintTitle
             : HILOS_MAINTENANCE_PASS_COPY.codeTitle
         }
-        closeOnBackdrop={!passAction.busy}
-        closeOnEsc={!passAction.busy}
+        busy={passAction.busy}
         copyText={pass ?? ''}
         initialFocus="dialog"
         onClose={closePass}
@@ -664,8 +661,7 @@ export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
       <HilosModal
         open={circleAddOpen}
         title={HILOS_MAINTENANCE_CIRCLE_COPY.addTitle}
-        closeOnBackdrop={!circleAdd.busy}
-        closeOnEsc={!circleAdd.busy}
+        busy={circleAdd.busy}
         onClose={closeCircleAdd}
         actions={({ requestClose }) => (
           <>
@@ -720,8 +716,7 @@ export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
       <HilosModal
         open={circleRemoveOpen}
         title={HILOS_MAINTENANCE_CIRCLE_COPY.removeTitle}
-        closeOnBackdrop={!circleRemove.busy}
-        closeOnEsc={!circleRemove.busy}
+        busy={circleRemove.busy}
         initialFocus="dialog"
         onClose={closeCircleRemove}
         actions={({ requestClose }) => (

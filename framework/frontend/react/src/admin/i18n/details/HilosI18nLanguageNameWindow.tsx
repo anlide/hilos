@@ -74,8 +74,7 @@ function NameForm({
       title={title}
       onClose={() => window.close()}
       confirmOnClose={dirty}
-      closeOnBackdrop={!saving}
-      closeOnEsc={!saving}
+      busy={saving}
       header={
         <div data-id="i18n-language-name-title">
           {mode === 'edit' ? (

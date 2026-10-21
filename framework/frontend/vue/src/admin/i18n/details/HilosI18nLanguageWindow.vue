@@ -79,8 +79,7 @@ async function submit(): Promise<void> {
     v-model="modalOpen"
     :title="title"
     :confirm-on-close="mode === 'edit' && state.dirty"
-    :close-on-backdrop="!busy"
-    :close-on-esc="!busy"
+    :busy="busy"
     initial-focus="dialog"
     @cancel="closeWindow"
   >

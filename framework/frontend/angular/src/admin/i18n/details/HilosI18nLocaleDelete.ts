@@ -46,9 +46,7 @@ import {
       [title]="
         copy.title(target()?.nativeName ?? '', target()?.countryLabel ?? null)
       "
-      [closeOnBackdrop]="!action.busy()"
-      [closeOnEsc]="!action.busy()"
-      [closeDisabled]="action.busy()"
+      [busy]="action.busy()"
       initialFocus="dialog"
     >
       <div data-id="i18n-locale-delete-window">

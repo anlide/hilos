@@ -294,8 +294,7 @@ function inputStep(type: string | undefined): 'any' | undefined {
         [open]="deleteOpen()"
         (openChange)="$event ? deleteOpen.set(true) : closeDelete()"
         [title]="deleteTitle()"
-        [closeOnBackdrop]="!del.busy()"
-        [closeOnEsc]="!del.busy()"
+        [busy]="del.busy()"
         initialFocus="dialog"
       >
         <hilos-action-error
@@ -345,8 +344,7 @@ function inputStep(type: string | undefined): 'any' | undefined {
         [open]="resetOpen()"
         (openChange)="$event ? resetOpen.set(true) : closeReset()"
         [title]="resetTitle()"
-        [closeOnBackdrop]="!reset.busy()"
-        [closeOnEsc]="!reset.busy()"
+        [busy]="reset.busy()"
         initialFocus="dialog"
       >
         <hilos-action-error

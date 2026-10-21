@@ -375,8 +375,7 @@ async function submitReset(): Promise<void> {
     <HilosModal
       v-model="resetOpen"
       :title="resetRow ? `Reset · ${resetRow.label}` : 'Reset field'"
-      :close-on-backdrop="!resetBusy"
-      :close-on-esc="!resetBusy"
+      :busy="resetBusy"
       initial-focus="dialog"
       @cancel="closeReset"
     >

@@ -437,8 +437,7 @@ export function HilosLogsRotationsPage({
             ? `Carrying off the batch of ${batchTime(takeoutRow)}${takeoutRow.node ? ` · ${takeoutRow.node}` : ''}`
             : 'Carrying off a batch'
         }
-        closeOnBackdrop={!takeout.busy}
-        closeOnEsc={!takeout.busy}
+        busy={takeout.busy}
         initialFocus="dialog"
         onClose={closeTakeout}
         actions={({ requestClose }) => (
@@ -529,8 +528,7 @@ export function HilosLogsRotationsPage({
       <HilosModal
         open={undoOpen}
         title="Has the batch not been carried off?"
-        closeOnBackdrop={!undo.busy}
-        closeOnEsc={!undo.busy}
+        busy={undo.busy}
         initialFocus="dialog"
         onClose={closeUndo}
         actions={({ requestClose }) => (

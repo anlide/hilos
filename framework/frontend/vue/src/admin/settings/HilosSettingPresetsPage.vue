@@ -280,8 +280,7 @@ function valueLines(values: unknown): string[] {
     <HilosModal
       v-model="confirmOpen"
       :title="vocabulary.confirmTitle"
-      :close-on-backdrop="!applyBusy"
-      :close-on-esc="!applyBusy"
+      :busy="applyBusy"
       initial-focus="dialog"
       @cancel="closeConfirm"
     >

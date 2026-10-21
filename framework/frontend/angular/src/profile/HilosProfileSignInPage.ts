@@ -197,8 +197,7 @@ let signInSequence = 0
         (openChange)="closeUnlink($event)"
         [title]="unlinkTitle()"
         initialFocus="dialog"
-        [closeOnEsc]="!unlinkAction.busy()"
-        [closeOnBackdrop]="!unlinkAction.busy()"
+        [busy]="unlinkAction.busy()"
       >
         <div data-id="profile-unlink-modal">
           <p>

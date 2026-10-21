@@ -133,6 +133,7 @@ describe('HilosDaemonAgentsPage', () => {
     expect(
       (h.el('hilos-daemon-restart-cancel') as HTMLButtonElement).disabled,
     ).toBe(true)
+    expect((h.el('modal-close') as HTMLButtonElement).disabled).toBe(true)
     h.el('modal')!.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
     )
@@ -155,12 +156,15 @@ describe('HilosDaemonAgentsPage', () => {
     open(h)
     h.el('hilos-daemon-restart-confirm')!.click()
     h.detect()
+    expect((h.el('modal-close') as HTMLButtonElement).disabled).toBe(true)
+    expect(h.dispatch).toHaveBeenCalledTimes(1)
     h.fail()
     await settle(h)
     expect(h.el('modal')?.textContent).toContain('Restart refused')
     expect(
       (h.el('hilos-daemon-restart-confirm') as HTMLButtonElement).disabled,
     ).toBe(false)
+    expect((h.el('modal-close') as HTMLButtonElement).disabled).toBe(false)
     h.el('hilos-daemon-restart-cancel')!.click()
     h.detect()
     expect(h.el('modal')).toBeNull()

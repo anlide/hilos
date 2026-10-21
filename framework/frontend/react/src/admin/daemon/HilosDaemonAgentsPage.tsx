@@ -246,8 +246,7 @@ function Agents({
         open={restartOpen}
         title="Restart agent"
         initialFocus="dialog"
-        closeOnBackdrop={!busy}
-        closeOnEsc={!busy}
+        busy={busy}
         onClose={closeRestart}
         actions={({ requestClose }) => (
           <>
