@@ -977,15 +977,18 @@ implementing card to reopen.
 not executed by this Research. No row below is a browser measurement. The
 framework PHP unit run validates the repository/document guards, not CSS.
 
-Use a wide viewport (proposed fixture: 1280 CSS px) and 375 CSS px for every
-browser geometry scenario, in every port assigned below. Wait for the socket
+Use the desktop viewport (proposed fixture: 1280 CSS px) for every browser
+geometry scenario, in every port assigned below. A browser check proves no
+375 CSS px card and no dark palette ([testing-strategy.md](testing-strategy.md),
+"Light theme, desktop width"): the narrow and dark columns below describe the
+product, not what a browser test drives. Wait for the socket
 transition and a settled layout, but also record intermediate rendered frames:
 a final correct rectangle cannot excuse a one-frame collapse. Bookmark at
 least three surviving records around the changed slot, their top **and**
 bottom relative to a stable body root, each content-column's left/right
 boundary, and the occupied bottom of the final record. On a last-record removal
 there is no following row to reveal the loss: check the final occupied bottom
-and the placeholder's extent explicitly. For cards include outer margins.
+and the placeholder's extent explicitly.
 
 Use the same root coordinate system before/after, not document scroll position.
 Propose a tolerance of at most 1 CSS px per compared boundary and at the final

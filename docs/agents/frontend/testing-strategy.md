@@ -114,16 +114,45 @@ cross-user features testable at all.
    ([wire-protocol.md](wire-protocol.md)). The hardest features require this category to test, so it
    is built in from the start.
 
+### Light theme, desktop width — no dark theme and no narrow screen
+
+Every e2e test runs in the light theme at the desktop viewport its config gives
+it (the owner's rule, 2026-10-21). A spec does not:
+
+- repeat a scenario in the dark theme, or loop a test over the two palettes;
+- check how a screen looks in the dark theme — its colors, its contrast;
+- narrow the viewport — no `setViewportSize` and no context `viewport` below
+  the desktop width, no loop over widths — and so it does not check what only a
+  narrow screen draws: cards in place of rows, a row that scrolls sideways, a
+  form that holds still on a small screen.
+
+The narrow screen and the dark palette stay behavior of the product, described
+in its docs and mockups; e2e is not where they are proved. A doc or a research
+that asks for a check at 375 px or in both palettes does not override this
+section.
+
+The theme feature is the one place the dark theme appears: its own specs
+(`theme-*.spec.ts`, `appearance.spec.ts`, the cluster `theme.spec.ts`) choose
+it through the real controls or the system preference and check that the pick
+takes effect — the mode, the header and profile positions, the first frame — is
+stored and reaches other tabs and nodes. They do not run one scenario in both
+palettes to see it drawn twice, and they run at the desktop width too.
+
+Why: a palette or a width multiplies a scenario without reaching a different
+server path. One leaf's 1440/375 × light/dark matrix grew chat-e2e from 180 to
+406 tests and from ~14 to ~26 minutes (HIL-1749), and chat-e2e is the floor of
+the full run.
+
 ### Which demo carries a spec — the server check travels, the product stays home
 
 A spec whose screen only leads the scenario while what it checks is the
 **server** — the session, cookies, letters, database rows — may live in a demo
 of any view framework where its feature is switched on (the owner's rule,
-2026-10-04). This is a judgment with examples, not a mechanical test: sign-in
-by a code or a link, step-up, second factor and session rotation check the
-server; the sign-in card on a narrow screen and its still button check the
-screen. A spec whose subject is the **screen** stays with its view framework
-and its area. Every demo keeps its own smoke and its own sign-in.
+2026-10-04). This is a judgment with examples, not a mechanical test: sign-in by
+a code or a link, step-up, second factor and session rotation check the server;
+the sign-in card and its still button check the screen. A spec whose subject is
+the **screen** stays with its view framework and its area. Every demo keeps its
+own smoke and its own sign-in.
 
 For a **new file** that checks the server, choose where the load is least at
 the moment:
@@ -215,10 +244,10 @@ Theme coverage has one full UI owner per kit and separate build probes:
 
 | Proof | Specs | Lives in |
 |---|---|---|
-| Guest storage, choices, System media, reset and reload/new tabs; account header/profile delivery between independent sessions, another person's isolation, an open receiving modal, keyboard/focus and 375px in both palettes | theme-guest, theme-account | chat (Vue), tasks (React), polls (Angular) |
+| Guest storage, choices, System media, reset and reload/new tabs; account header/profile delivery between independent sessions, another person's isolation, an open receiving modal, keyboard/focus | theme-guest, theme-account | chat (Vue), tasks (React), polls (Angular) |
 | Stale Dark reconnect after explicit reset without adoption; first login adoption by a never-chosen account; synchronized account's cached first frame | theme-account | chat only |
-| Both Appearance editors, live viewer rows, Save/Enter refusal, default and Off/On delivery, discard, keyboard/focus and 375px in both palettes | appearance | binance-btc-tracker (Vue), tasks (React), polls (Angular) |
-| Built head: remembered Dark and fresh System light/dark on `/` and `/about`, HTML attribute and painted background with application JS blocked | theme-first-frame | chat (Vue/Vite), ecommerce-shop (React/Vite), online-testing (Angular build/SSG) |
+| Both Appearance editors, live viewer rows, Save/Enter refusal, default and Off/On delivery, discard, keyboard/focus | appearance | binance-btc-tracker (Vue), tasks (React), polls (Angular) |
+| Built head: remembered Dark and fresh System dark on `/` and `/about`, HTML attribute and painted background with application JS blocked | theme-first-frame | chat (Vue/Vite), ecommerce-shop (React/Vite), online-testing (Angular build/SSG) |
 | Product shell account header/reload/reset; also guest choices and the Appearance card with its two live rows in the React and Angular shells | theme-smoke | binance-btc-tracker, ecommerce-shop, online-testing |
 | Three masters: live settings, independent account choices and reset, new tabs and stale Dark reconnect without adoption | cluster/live/theme | binance-btc-tracker |
 
@@ -256,14 +285,14 @@ specs (marked `stand`), the shell (`a11y`, `about`, `navigation`, `layout`,
 `admin-view-mode`), `profile-photo` and `account-merge` (their features are
 switched on only in chat), and `account-deletion` and `profile-data` (tasks and
 polls carry their own copies of those screens). From `auth`, chat keeps the
-narrow-screen layout and the still button, sign-up with a return, a wrong
-password, and the re-check of an open admin and profile on sign-out. From
-`profile`, it keeps the header link, the rename, the tab conflict, the push
-devices page and the narrow screen. The push devices page and the second-factor
-removal notice by mail (second-factor-mail) ride notification delivery, which
-is on only in chat and binance-btc-tracker; the view-only takeover test parked by
-the owner stays in chat's impersonation-settings — the write it is refused is a
-chat message. Everything else of `auth` and `profile` moves.
+still button, sign-up with a return, a wrong password, and the re-check of an
+open admin and profile on sign-out. From `profile`, it keeps the header link,
+the rename, the tab conflict and the push devices page. The push devices page
+and the second-factor removal notice by mail (second-factor-mail) ride
+notification delivery, which is on only in chat and binance-btc-tracker; the
+view-only takeover test parked by the owner stays in chat's
+impersonation-settings — the write it is refused is a chat message. Everything
+else of `auth` and `profile` moves.
 
 `admin-gating` and `account-lifecycle` are the screens of an administrator
 over people, and they go with settings, people and admin: framework-level
@@ -369,17 +398,17 @@ shared.
 there** — a helper that exists has already been argued about once.
 
 `lazyBundles.ts`, exported through the toolbox `index.ts`, reads the canonical
-`initial-bundle-report.json`, records real client JS/CSS requests and page replies,
-holds a selected bundle or first reply, and observes outlet/departure presentation.
-Use its `selectLazyBundle`, `holdClientBundle`, `holdPageReply`,
+`initial-bundle-report.json`, records real client JS/CSS requests and page
+replies, holds a selected bundle or first reply, and observes outlet/departure
+presentation. Use its `selectLazyBundle`, `holdClientBundle`, `holdPageReply`,
 `watchClientBundles`, `watchPageReplies`, `watchPagePresentation` and shared
 `expectLazy…` checks instead of guessing chunk names or readiness from one DOM
 node. Each demo's `lazy-pages.spec.ts` exercises its built production artifact:
-slow code/data, failure and revisit, sibling isolation, direct/history navigation,
-reconnect and access outcomes, and both themes at a narrow viewport. The six
-artifacts cover Vue, React and Angular. These Chromium checks and the output
-graph/package/AOT checks prove different seams; neither claims Firefox/Safari
-mobile or owner real-device acceptance. Loading and retry limits are in
+slow code/data, failure and revisit, sibling isolation, direct/history
+navigation, reconnect and access outcomes. The six artifacts cover Vue, React
+and Angular. These Chromium checks and the output graph/package/AOT checks prove
+different seams; neither claims Firefox/Safari mobile or owner real-device
+acceptance. Loading and retry limits are in
 [multiframework-core.md](multiframework-core.md#page-code-and-first-answer-state);
 measurement and source-proof scope are in
 [build-and-docker.md](build-and-docker.md#initial-client-graph-and-budget).
@@ -619,11 +648,10 @@ check preserves a window the caller already opened.
 `expectThemeFirstFrame(expect, page, path, mode)` uses `openFirstFrame` to
 block application bundles and check both the HTML attribute and painted body.
 It removes only its own route handler. The spec sets media explicitly and
-uses fresh contexts with project URL, HTTPS and viewport options for System
-light/dark. After a probe, ordinary UI work starts with the demo's `gotoPage`.
-`pickThemeBeforeLoad(context, theme)` remains for other specs that only need a
-fixed palette; theme-choice scenarios use real controls, without an init
-script that would impose the pick again on reload.
+uses a fresh context with project URL and HTTPS options for System dark. After
+a probe, ordinary UI work starts with the demo's `gotoPage`. Theme-choice
+scenarios use real controls, without an init script that would impose the pick
+again on reload.
 
 `appearance.ts` owns `APPEARANCE_PATH`, `THEME_SWITCHING_KEY`,
 `THEME_DEFAULT_KEY` and `appearanceSettingValue(page, key)`, which reads the
@@ -685,18 +713,17 @@ through its stable control, and the checks the three kits meet alike:
 `expectDefaultLanguageHeader` and `expectNoOtherLanguageNames`, each taking the
 spec's `expect` first, then its `Page`; the tests, their order and navigation
 stay in the demo spec. Beside them, `settleRemovedRow` (`table.ts`) waits a
-removed row out through the table's Apply gate, `countSentFrames` (`socket.ts`)
-counts the frames a page sends that carry a text, armed before the socket opens,
-and `pickThemeBeforeLoad` (`theme.ts`) sets the browser's theme pick before any
-page loads, for a spec that needs its pages in one theme rather than the menu.
+removed row out through the table's Apply gate, and `countSentFrames`
+(`socket.ts`) counts the frames a page sends that carry a text, armed before the
+socket opens.
 
 ### The Change Log section — names and checks
 
 `changeLog.ts` owns `CHANGE_LOG_PATH`, `CHANGE_LOG_TABLES_PATH`, `CHANGE_LOG_LEAD`,
 `CHANGE_LOG_TABLES_LEAD` and `CHANGE_LOG_BLOCK_ACTION`.
 `chooseChangeLogFeedTable` takes no `expect` and chooses by text, since option numbers belong to each demo.
-`expectChangeLog…`, `expectRegistrationReceiptFacts`, `expectTracked…` and
-`expectNarrowColumns` take the spec's `expect` first, then its `Page`.
+`expectChangeLog…`, `expectRegistrationReceiptFacts` and `expectTracked…` take
+the spec's `expect` first, then its `Page`.
 `expectChangeLogReceiptWriter(expect, page, actorLabel, action, agentId)` checks
 the exact Who, Action and Agent values in the receipt's first attribution `dl`.
 It returns the complete visible header with whitespace normalized, including

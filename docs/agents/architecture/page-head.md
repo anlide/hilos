@@ -214,8 +214,8 @@ After adoption, check both Overview and a child tab: same breadcrumb through
 the owner, correct current tab, one head and row, no leftover child cards, and
 the same live name in all three places. Check a rename in either window,
 direct URL and F5; a neighbor not adopted must remain unchanged. Also cover
-one-tab and filtered-tab cases, an addressless breadcrumb entry, loading,
-375 px, the viewer, and deletion from another window with a modal draft open.
+one-tab and filtered-tab cases, an addressless breadcrumb entry, loading, the
+viewer, and deletion from another window with a modal draft open.
 These are acceptance requirements for the redraw; this documentation change
 adds no product tests or selectors.
 

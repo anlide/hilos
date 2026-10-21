@@ -368,7 +368,7 @@ its names into this file in the same commit that clears its marker.
   System media, explicit choices, reload/new tabs and reset; account choices
   reach independent sessions in both directions, update an open profile window
   and leave another person's session alone. Header and profile controls retain
-  keyboard, focus and 375px checks in both palettes. Profile Off/On is proved
+  keyboard and focus checks. Profile Off/On is proved
   within the same installation: chat uses its settings page, tasks and polls
   their Appearance page.
 - Chat alone keeps the two server regressions: stale Dark reconnect after an
@@ -378,8 +378,8 @@ its names into this file in the same commit that clears its marker.
   know it before the handshake.
 - Run `appearance.spec.ts` in binance-btc-tracker (Vue), tasks (React) and polls
   (Angular) for both editors, live settings delivery, viewer refusal through
-  Save and Enter, default changes and Off/On, discard, keyboard/focus and both
-  palettes at 375px. Every changed setting returns to its catalog default.
+  Save and Enter, default changes and Off/On, discard and keyboard/focus. Every
+  changed setting returns to its catalog default.
 - `theme-smoke.spec.ts` in binance-btc-tracker checks its account header,
   reload and reset. Ecommerce-shop and online-testing keep guest and account
   header smoke plus their Appearance card and two live rows. These product
@@ -387,7 +387,7 @@ its names into this file in the same commit that clears its marker.
 - `theme-first-frame.spec.ts` in chat, ecommerce-shop and online-testing covers
   Vue/Vite, React/Vite and Angular build/SSG respectively. With application JS
   blocked, each checks both the HTML theme attribute and actual background on
-  `/` and `/about`: remembered Dark and fresh System in light and dark. Normal
+  `/` and `/about`: remembered Dark and fresh System dark. Normal
   UI navigation resumes through the demo's `gotoPage` after the probe.
 - Use the shared `theme.ts` and `appearance.ts` toolbox checks, with the spec's
   `expect` first; scenarios and navigation stay in their demo specs. The API

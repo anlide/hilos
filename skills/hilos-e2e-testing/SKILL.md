@@ -1,6 +1,6 @@
 ---
 name: hilos-e2e-testing
-description: Author or edit a Hilos e2e (Playwright) spec or shared helper — the rules for selectors, filling inputs, driving submit buttons, and waiting on state that arrives over the socket. Use when creating or changing an e2e spec/helper, choosing which demo carries a spec, marking whose a spec is, or before adding form input, clicks, or state assertions to a Playwright test. For which suites to run use $hilos-selective-testing; for how to run them use $hilos-testing-cli.
+description: Author or edit a Hilos e2e (Playwright) spec or shared helper — the rules for selectors, filling inputs, driving submit buttons, and waiting on state that arrives over the socket. Use when creating or changing an e2e spec/helper, choosing which demo carries a spec, marking whose a spec is, or before adding form input, clicks, or state assertions to a Playwright test, or a theme or a viewport size to one. For which suites to run use $hilos-selective-testing; for how to run them use $hilos-testing-cli.
 ---
 
 # Hilos E2E Testing
@@ -38,48 +38,56 @@ chosen command use `$hilos-testing-cli`. This skill is how a spec is *written*.
    the imports, above the header; a framework spec has no line. Whole tests
    of both sides in one file mean a split, with the framework half keeping
    the file name; one assertion of the other side does not.
-3. Before writing driving code, look in the shared toolbox
+3. Run the test in the light theme at the desktop viewport its config gives
+   it: no dark-theme variant, no loop over palettes or widths, no narrowed
+   viewport, no check of what only a narrow screen draws. Only the theme
+   feature's own specs choose dark, to prove the pick:
+   `docs/agents/frontend/testing-strategy.md`, "Light theme, desktop width".
+4. Before writing driving code, look in the shared toolbox
    (`framework/frontend/e2e/`) and **prefer what is already there**. It holds
    what reads the same in any demo; a demo's own `tests/e2e/helpers/` holds what
    belongs to that demo alone.
-4. When the spec needs a wait, a sweep or a round trip another demo would need in
+5. When the spec needs a wait, a sweep or a round trip another demo would need in
    the same words, or a check all three kits must meet, **put it in the toolbox**.
    A check takes the spec's `expect` as its first parameter; the test's scenario,
    order and navigation stay in the demo spec.
-5. Select interactive elements only by **stable `data-id`** — never by text or
+6. Select interactive elements only by **stable `data-id`** — never by text or
    position.
-6. Enter a value with `fill('')` to clear, then
+7. Enter a value with `fill('')` to clear, then
    `pressSequentially(value, { delay: 10 })` — never a bare `fill(value)`, which
    can miss view reactivity and submit a stale payload.
-7. Drive a submit button through its actionable states: scroll into view →
+8. Drive a submit button through its actionable states: scroll into view →
    assert visible → assert enabled → focus → click; then wait for the form to
    leave **or** the button to re-enable.
-8. After triggering an action, wait for it to **settle** — loading cleared, the
+9. After triggering an action, wait for it to **settle** — loading cleared, the
    surface/dialog closed on success, or the inline error shown — before asserting
    its result. Asserting through an in-flight action races the reply and flakes.
-9. Assert on **state that arrives over the socket**, not on fixed timeouts.
-10. Where the action makes the application **reload itself** — today the lift of
+10. Assert on **state that arrives over the socket**, not on fixed timeouts.
+11. Where the action makes the application **reload itself** — today the lift of
     protected mode — do not navigate at all: mark the document beforehand with
     `markDocument`, wait for the mark to go with `expectSelfReload`, then add
     `expectPageReady` if the spec asserts what is on screen, or a `gotoPage` if it
     needs a different address. Both navigations carry the same url, so the failure
     reads as a browser oddity rather than as a race.
-11. When a toast raised by a previous step is only in the way, sweep the stack
+12. When a toast raised by a previous step is only in the way, sweep the stack
     with `dismissToasts(page)` before the click it covers. A spec that is
     *about* a notice asserts on it instead and never sweeps.
-12. Measure geometry through the toolbox's `watchTop`, `watchHeight` or
+13. Measure geometry through the toolbox's `watchTop`, `watchHeight` or
     `watchFirstRowTop`: keep the bookmark and call its `unchanged()` after
     waiting for the expected state. Do not take or compare raw boxes.
-13. e2e runs the **built artifact** with a booted daemon — rebuild after a
+14. e2e runs the **built artifact** with a booted daemon — rebuild after a
     frontend change before the spec exercises it, and reset before re-running a
     data-mutating spec.
-14. A test whose own work outlives the base cap declares its own ceiling —
+15. A test whose own work outlives the base cap declares its own ceiling —
     `test.slow()` or a named factor over `test.info().timeout` — with the reason
     in a comment: `docs/agents/frontend/testing-strategy.md`, "A test longer than
     the cap declares its own".
 
 ## Hard Rules
 
+- Run every test in the light theme at the desktop width: never narrow the
+  viewport and never repeat or check a screen in the dark theme. Only the theme
+  feature's own specs choose dark, to prove the pick.
 - A spec of a demo's own product or of the stand carries
   `// spec-owner: demo|stand — <why>`; a framework spec carries none.
 - Select by stable `data-id` only — never by text or position.
