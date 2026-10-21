@@ -27,6 +27,7 @@ use Hilos\Cluster\Placement\PlacementRefusal;
 use Hilos\Cluster\Placement\PlacementRefusalCode;
 use Hilos\Cluster\Placement\PlacementState;
 use Hilos\Cluster\Placement\ResourceProfile;
+use Hilos\Constants\AgentConstants;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
@@ -60,6 +61,12 @@ final class ClusterPlacementTest extends TestCase
      */
     private const string SLOTS = 'slots=10';
 
+    /** Mirrors WorkerServer's private limit on the wait for a worker to connect (HIL-1671). */
+    private const float WORKER_CONNECT_WAIT_SECONDS = 10.0;
+
+    /** A regular worker's id: positive, where a monopolistic one is negative. */
+    private const int REGULAR_WORKER_ID = 4;
+
     /** @var class-string<Hilos> App class bound before this test touched it */
     private string $boundAppClass;
 
@@ -70,6 +77,16 @@ final class ClusterPlacementTest extends TestCase
             yield $state->value . ' without node' => [$state, null];
             yield $state->value . ' with previous node' => [$state, 'gpu-node'];
         }
+    }
+
+    /**
+     * @return iterable<string, array{int}> Worker a waiting agent is seated on, by the type it waited for
+     *     (negative = monopolistic, positive = regular, HIL-1671)
+     */
+    public static function awaitedWorkers(): iterable
+    {
+        yield 'monopolistic worker raised for the agent' => [-7];
+        yield 'regular worker launched and not yet connected' => [self::REGULAR_WORKER_ID];
     }
 
     protected function setUp(): void
@@ -171,11 +188,14 @@ final class ClusterPlacementTest extends TestCase
     }
 
     /**
-     * A placement accepted while a monopolistic worker is raised for the agent is answered once the
-     * agent is seated, with the worker it landed on, and only then (HIL-998). The start fact is
-     * what answers it: a tick does not.
+     * A placement accepted while the agent waits for a worker of its type to connect is answered
+     * once the agent is seated, with the worker it landed on, and only then (HIL-998, HIL-1671).
+     * The start fact is what answers it: a tick does not, and the acceptance is not a start.
+     *
+     * @param int $seatedWorkerId Worker the agent is seated on
      */
-    public function testNodeDefersTheStartedReplyUntilTheWaitingAgentIsSeated(): void
+    #[DataProvider('awaitedWorkers')]
+    public function testNodeDefersTheStartedReplyUntilTheWaitingAgentIsSeated(int $seatedWorkerId): void
     {
         $mesh = new FakePlacementMesh(['gpu-node' => [self::SLOTS]], linked: ['leader']);
         $executor = new FakePlacementExecutor();
@@ -186,8 +206,13 @@ final class ClusterPlacementTest extends TestCase
         $placement->tick(microtime(true));
 
         $this->assertSame([], $mesh->sent, 'Nothing is answered while the agent waits for its worker');
+        $placement->onPlacementQuery('leader');
+        $report = $mesh->sent[0][1];
+        $this->assertInstanceOf(PeerPlacementReportDTO::class, $report);
+        $this->assertSame([], $report->agents, 'An agent waiting for its worker is not hosted yet');
+        $mesh->sent = [];
 
-        $executor->seatedWorkerId = -7;
+        $executor->seatedWorkerId = $seatedWorkerId;
         $placement->noteAgentStarted('render', null);
         $placement->noteAgentStarted('render', null);
 
@@ -196,14 +221,18 @@ final class ClusterPlacementTest extends TestCase
         $this->assertSame('leader', $nodeId);
         $this->assertInstanceOf(PeerAgentStatusDTO::class, $frame);
         $this->assertSame(PlacementState::Started, $frame->state);
-        $this->assertSame(-7, $frame->workerId);
+        $this->assertSame($seatedWorkerId, $frame->workerId);
     }
 
     /**
      * A deferred placement whose start does not finish is answered failed with that reason, and
-     * a clock elapsing first does not answer it (HIL-1041).
+     * a clock elapsing first does not answer it (HIL-1041), whichever worker type it waited for.
+     * The failure is its one answer: a start reported after it adds none.
+     *
+     * @param int $seatedWorkerId Worker a late start would report the agent seated on
      */
-    public function testADeferredPlacementIsAnsweredFailedWhenTheStartFails(): void
+    #[DataProvider('awaitedWorkers')]
+    public function testADeferredPlacementIsAnsweredFailedWhenTheStartFails(int $seatedWorkerId): void
     {
         $mesh = new FakePlacementMesh(['gpu-node' => [self::SLOTS]], linked: ['leader']);
         $executor = new FakePlacementExecutor();
@@ -215,16 +244,22 @@ final class ClusterPlacementTest extends TestCase
 
         $this->assertSame([], $mesh->sent, 'A deferred placement is not answered by a clock');
 
-        $placement->noteAgentStartFailed('render', null, 'the monopolistic worker never came up');
+        $placement->noteAgentStartFailed('render', null, 'its worker never came up');
+        $executor->seatedWorkerId = $seatedWorkerId;
+        $placement->noteAgentStarted('render', null);
 
         $this->assertCount(1, $mesh->sent);
         $frame = $mesh->sent[0][1];
         $this->assertInstanceOf(PeerAgentStatusDTO::class, $frame);
         $this->assertSame(PlacementState::Failed, $frame->state);
-        $this->assertSame('the monopolistic worker never came up', $frame->error);
+        $this->assertSame('its worker never came up', $frame->error);
     }
 
-    public function testAStopAnswersADeferredPlacementAndNothingFollowsIt(): void
+    /**
+     * @param int $seatedWorkerId Worker a late start would report the agent seated on
+     */
+    #[DataProvider('awaitedWorkers')]
+    public function testAStopAnswersADeferredPlacementAndNothingFollowsIt(int $seatedWorkerId): void
     {
         $mesh = new FakePlacementMesh(['gpu-node' => [self::SLOTS]], linked: ['leader']);
         $executor = new FakePlacementExecutor();
@@ -233,7 +268,9 @@ final class ClusterPlacementTest extends TestCase
 
         $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', null));
         $placement->onStopAgent('leader', new PeerStopAgentDTO('render', null));
-        $placement->noteAgentStartFailed('render', null, 'it was stopped while waiting for a monopolistic worker');
+        $placement->noteAgentStartFailed('render', null, 'it was stopped while waiting for its worker to connect');
+        $executor->seatedWorkerId = $seatedWorkerId;
+        $placement->noteAgentStarted('render', null);
 
         $this->assertCount(1, $mesh->sent);
         $frame = $mesh->sent[0][1];
@@ -241,7 +278,11 @@ final class ClusterPlacementTest extends TestCase
         $this->assertSame(PlacementState::Stopped, $frame->state);
     }
 
-    public function testALocalPlacementWaitingForAWorkerIsPlacingUntilSeated(): void
+    /**
+     * @param int $seatedWorkerId Worker the agent is seated on
+     */
+    #[DataProvider('awaitedWorkers')]
+    public function testALocalPlacementWaitingForAWorkerIsPlacingUntilSeated(int $seatedWorkerId): void
     {
         $mesh = new FakePlacementMesh([self::SELF => [self::SLOTS]]);
         $executor = new FakePlacementExecutor();
@@ -253,7 +294,7 @@ final class ClusterPlacementTest extends TestCase
 
         $this->assertSame(PlacementState::Placing, $placement->registry()->get('chat')?->state);
 
-        $executor->seatedWorkerId = -3;
+        $executor->seatedWorkerId = $seatedWorkerId;
         $placement->noteAgentStarted('chat', null);
 
         $this->assertSame(PlacementState::Started, $placement->registry()->get('chat')?->state);
@@ -262,9 +303,13 @@ final class ClusterPlacementTest extends TestCase
 
     /**
      * A local placement whose start does not finish is failed with that reason, and a clock
-     * elapsing first leaves it placing (HIL-1041).
+     * elapsing first leaves it placing (HIL-1041), whichever worker type it waited for. A start
+     * reported after the failure does not turn it Started.
+     *
+     * @param int $seatedWorkerId Worker a late start would report the agent seated on
      */
-    public function testALocalPlacementIsFailedWhenTheStartFails(): void
+    #[DataProvider('awaitedWorkers')]
+    public function testALocalPlacementIsFailedWhenTheStartFails(int $seatedWorkerId): void
     {
         $mesh = new FakePlacementMesh([self::SELF => [self::SLOTS]]);
         $executor = new FakePlacementExecutor();
@@ -277,16 +322,22 @@ final class ClusterPlacementTest extends TestCase
 
         $this->assertSame(PlacementState::Placing, $placement->registry()->get('chat')?->state);
 
-        $placement->noteAgentStartFailed('chat', null, 'the monopolistic worker never came up');
+        $placement->noteAgentStartFailed('chat', null, 'its worker never came up');
+        $executor->seatedWorkerId = $seatedWorkerId;
+        $placement->noteAgentStarted('chat', null);
 
         $this->assertSame(PlacementState::Failed, $placement->registry()->get('chat')?->state);
     }
 
     /**
      * Revoking a local placement still waiting for its worker drops the deferred answer, so a
-     * later start-failed fact cannot rewrite a Refused record to Failed (HIL-1041).
+     * later start-failed fact cannot rewrite a Refused record to Failed (HIL-1041), nor a start
+     * reported late rewrite it to Started.
+     *
+     * @param int $seatedWorkerId Worker a late start would report the agent seated on
      */
-    public function testRevokingALocalPlacementDropsItsDeferredAnswer(): void
+    #[DataProvider('awaitedWorkers')]
+    public function testRevokingALocalPlacementDropsItsDeferredAnswer(int $seatedWorkerId): void
     {
         $mesh = new FakePlacementMesh([self::SELF => [self::SLOTS]]);
         $executor = new FakePlacementExecutor();
@@ -296,12 +347,21 @@ final class ClusterPlacementTest extends TestCase
         $placement->placeAgentOnNode('chat', null, self::SELF);
 
         $placement->refusePlacement('chat', null, self::SELF);
-        $placement->noteAgentStartFailed('chat', null, 'it was stopped while waiting for a monopolistic worker');
+        $placement->noteAgentStartFailed('chat', null, 'it was stopped while waiting for its worker to connect');
 
         $this->assertSame(
             PlacementState::Refused,
             $placement->registry()->get('chat')?->state,
             'A refused placement is not rewritten by a deferred start-failed fact',
+        );
+
+        $executor->seatedWorkerId = $seatedWorkerId;
+        $placement->noteAgentStarted('chat', null);
+
+        $this->assertSame(
+            PlacementState::Refused,
+            $placement->registry()->get('chat')?->state,
+            'A refused placement is not rewritten by a late start either',
         );
     }
 
@@ -484,6 +544,8 @@ final class ClusterPlacementTest extends TestCase
     /**
      * own-env announces node_leaving before the workers' agent_stopped reports (HIL-446).
      * Neither extra instance has a supervisor: only the retained placement can bring it back.
+     * The fresh host's regular worker has not connected when the place frames land: the host
+     * answers nothing until its agents are seated, then one Started each (HIL-1671).
      *
      * @param bool $afterGrace Whether failover runs before the fresh host returns
      */
@@ -551,8 +613,11 @@ final class ClusterPlacementTest extends TestCase
         foreach ([1001.7, 1001.71, 1001.72] as $now) {
             $placement->tick($now);
         }
+        // The fresh process launched its regular worker in the same millisecond, and the worker has
+        // not registered yet: the agents wait for it on the node rather than fail (HIL-1671).
         $freshMesh = new FakePlacementMesh(['node-b' => ['slots=3']], linked: [self::SELF]);
         $executor = new FakePlacementExecutor();
+        $executor->waitsForWorker = true;
         $fresh = new ClusterPlacement('node-b', $freshMesh, $executor);
         foreach ($mesh->sent as [$nodeId, $frame]) {
             if ($frame instanceof PeerPlaceAgentDTO) {
@@ -560,8 +625,29 @@ final class ClusterPlacementTest extends TestCase
                 $fresh->onPlaceAgent(self::SELF, $frame);
             }
         }
+        $mesh->sent = [];
+        $this->assertSame([], $freshMesh->sent, 'A host whose regular worker is still connecting answers nothing, failed least of all');
+        $this->assertCount(3, $placement->registry()->all(), 'Every intent is retained while the host waits');
+        foreach (['2001', '2003', '2011'] as $index) {
+            $this->assertSame(PlacementState::Placing, $placement->registry()->get('render:' . $index)?->state);
+        }
+        // The leader waits out the worker's connection and its data on the ack timer: no repeat, no query.
+        $placement->tick(1001.72 + self::WORKER_CONNECT_WAIT_SECONDS + AgentConstants::START_DEADLINE_SECONDS);
+        $this->assertSame([], array_filter(
+            $mesh->sent,
+            static fn(array $sent): bool => $sent[1] instanceof PeerPlaceAgentDTO || $sent[1] instanceof PeerPlacementQueryDTO,
+        ));
+
+        $executor->seatedWorkerId = self::REGULAR_WORKER_ID;
+        foreach (['2001', '2003', '2011'] as $index) {
+            $fresh->noteAgentStarted('render', $index);
+            $fresh->noteAgentStarted('render', $index);
+        }
+        $this->assertCount(3, $freshMesh->sent, 'One answer per seated agent');
         foreach ($freshMesh->sent as [, $frame]) {
             $this->assertInstanceOf(PeerAgentStatusDTO::class, $frame);
+            $this->assertSame(PlacementState::Started, $frame->state);
+            $this->assertSame(self::REGULAR_WORKER_ID, $frame->workerId);
             $placement->onAgentStatus('node-b', $frame);
         }
         $this->assertCount(3, $executor->executed, 'Every original intent starts once without a new ask');

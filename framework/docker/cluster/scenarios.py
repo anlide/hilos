@@ -228,6 +228,16 @@ CAPABILITY_WORKER = "worker"
 # Mirror PlacementState::Placing and PlacementState::Started
 # (framework/backend/Cluster/Placement/PlacementState.php).
 LIVE_PLACEMENT_STATES = ("placing", "started")
+# Placement states a converged cluster no longer holds on its leader: a start still under way and
+# a start a node tried and could not make. Mirror PlacementState::Placing and PlacementState::Failed
+# (framework/backend/Cluster/Placement/PlacementState.php). Unplaced is not one of them: it is the
+# wait for resources scenarios 43/44 prove (HIL-446), not a start that has yet to land.
+UNSETTLED_PLACEMENT_STATES = ("placing", "failed")
+# What a node logs when it starts a regular agent with no regular worker to seat it on; mirrors
+# NoSuitableWorkerException (framework/backend/Core/Agent/Exception/NoSuitableWorkerException.php).
+# A start that finds a regular worker its master launched but has not yet registered waits for it
+# (HIL-1671), so in a node's startup window this line is that defect back.
+REGULAR_STARTUP_REFUSAL = "No suitable regular worker available."
 # The gate's reasons for refusing a node; mirror PlacementRefusalCode
 # (framework/backend/Cluster/Placement/PlacementRefusalCode.php).
 REFUSAL_MISSING_CAPABILITIES = "missing_capabilities"
@@ -421,6 +431,20 @@ def node_log_mark(node):
 
 def node_log_since(node, mark):
     return control.node_log_since(STAND.node(node), mark)
+
+
+def assert_no_startup_refusal(node, mark, window):
+    """A node that started after `mark` refused no start for want of a regular worker (HIL-1671).
+
+    The mark is taken before the action that starts the node and the log is read once the cluster
+    has converged after it. Convergence alone does not tell the fix from the defect: a start the
+    node refused is retried by the leader five seconds later and converges all the same, and only
+    this line in the node's own log tells the two apart. node_log_since() reads the fresh file of a
+    node that started after the mark, so a line an earlier start left is never counted.
+    """
+    refusals = [line for line in node_log_since(node, mark).splitlines() if REGULAR_STARTUP_REFUSAL in line]
+    assert not refusals, (f"{node} refused a start for want of a regular worker {window} "
+                          f"(read {node_log_path(node)}):\n" + "\n".join(refusals[:EVIDENCE_LINES]))
 
 
 def db_sql(statement, member=None):
@@ -815,7 +839,15 @@ def wait_db_value(node, key, expected, timeout, desc):
 
 
 def converged(expected_nodes):
-    """Predicate: exactly one leader, and every expected node is online in its roster."""
+    """Predicate: exactly one leader, every expected node is online in its roster, and none of that
+    leader's placements is still placing or failed.
+
+    The placements read are the leader's own: a follower's hosted set or a retained snapshot says
+    what one node holds or what an earlier term handed over, not whether the leader's starts have
+    landed. A placing or failed row is work that runs nowhere yet, and a cluster carrying one has
+    not recovered (HIL-1671); an unplaced row may stay, as the wait for resources it is (HIL-446).
+    A step that means to watch a placing or failed row waits on a predicate of its own.
+    """
     expected = set(expected_nodes)
 
     def check(views):
@@ -824,7 +856,8 @@ def converged(expected_nodes):
             return False
         roster = views[ls[0]].get("nodes", [])
         online = {n["nodeId"] for n in roster if n.get("online")}
-        return expected.issubset(online)
+        return expected.issubset(online) and not any(
+            row.get("state") in UNSETTLED_PLACEMENT_STATES for row in leader_placements(views))
 
     return check
 
@@ -832,7 +865,8 @@ def converged(expected_nodes):
 def wait_converge(expected_nodes=None, timeout=CONVERGE_TIMEOUT):
     expected_nodes = ALL_NODES if expected_nodes is None else expected_nodes
     return wait_until(converged(expected_nodes), timeout,
-                      f"single leader + online roster {sorted(expected_nodes)}")
+                      f"single leader + online roster {sorted(expected_nodes)}"
+                      f" + no {'/'.join(UNSETTLED_PLACEMENT_STATES)} placement on the leader")
 
 
 def summarize(views):
@@ -1113,8 +1147,9 @@ def scenario_44_waiting_work_survives_leadership_changes():
     containing the first Unplaced extra. Its new leader must rebuild that queue, retain it
     while alone without quorum, and recover it after the masters return. Only then restore
     the first slave's stock of 64 slots: the target must start and write without a new ask.
-    Finally restart the entire stand without wiping volumes, removing all extra intent and
-    environment overrides even when an assertion fails.
+    Every slave recreated on the way logs no start refused for want of a regular worker
+    (HIL-1671). Finally restart the entire stand without wiping volumes, removing all extra
+    intent and environment overrides even when an assertion fails.
     """
     views = wait_converge(ALL_NODES)
     original = {slave: declared_capabilities(views, slave) for slave in SLAVES}
@@ -1186,10 +1221,12 @@ def scenario_44_waiting_work_survives_leadership_changes():
                 and ordinary_started(v) and all(runs(v, agent_id) for agent_id in extras))
 
     try:
+        recreated = {}
         for slave in SLAVES:
             declared = [CAPABILITY_WORKER, f"{RESOURCE_RAM}={SLAVE_RAM[slave]}", f"{RESOURCE_SLOTS}={COSTLESS_SLOTS}"]
             assignment = f"CLUSTER_NODE_CAPABILITIES={','.join(declared)}"
             print(f"    recreating {slave} with {assignment}")
+            recreated[slave] = node_log_mark(slave)
             outcome = control.execute(STAND, "own-env", slave, assignment)
             assert outcome.code == 0, f"could not limit {slave}'s slots: {outcome.err or outcome.out}"
             wait_until(lambda v, slave=slave, declared=declared: converged(ALL_NODES)(v)
@@ -1209,6 +1246,8 @@ def scenario_44_waiting_work_survives_leadership_changes():
                     and time.time() - steady["since"] >= POLICY_PLACEMENT_RETRY_SEC * 2)
 
         views = wait_until(settled, CONVERGE_TIMEOUT, "ordinary fleet and stable live placements at 16 slots")
+        for slave, mark in recreated.items():
+            assert_no_startup_refusal(slave, mark, f"after its recreation with {COSTLESS_SLOTS} slots")
         old_leader = leaders(views)[0]
         marks = {master: node_log_mark(master) for master in MASTERS}
         for slave in SLAVES:
@@ -1293,6 +1332,7 @@ def scenario_44_waiting_work_survives_leadership_changes():
         recovered_leader = leaders(views)[0]
         recovered_term = views[recovered_leader]["placementSnapshot"]["term"]
         print(f"    {recovered_leader} recovered {target} in term {recovered_term}; restoring {SLAVES[0]}'s slots")
+        restored_at = node_log_mark(SLAVES[0])
         outcome = control.execute(STAND, "own-env", SLAVES[0],
                                   f"CLUSTER_NODE_CAPABILITIES={','.join(original[SLAVES[0]])}")
         assert outcome.code == 0, f"could not restore {SLAVES[0]}'s stock: {outcome.err or outcome.out}"
@@ -1318,6 +1358,7 @@ def scenario_44_waiting_work_survives_leadership_changes():
             return row.get("updatedAt", 0) > before["updatedAt"] and row.get("jobsDone", 0) > before["jobsDone"]
 
         views = wait_until(writes, CONVERGE_TIMEOUT, f"the unique resumed {target} advances its host's live RT row")
+        assert_no_startup_refusal(SLAVES[0], restored_at, "after its stock of 64 slots was restored")
         held = ceiling(views, expanded=True)
     finally:
         if target is not None:

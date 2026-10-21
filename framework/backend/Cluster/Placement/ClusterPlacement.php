@@ -289,10 +289,11 @@ final class ClusterPlacement implements WorkerPlacement
     private array $placementVerdictWaiters = [];
 
     /**
-     * Placements this node accepted while the agent waits for a monopolistic worker raised for it
-     * (HIL-998), keyed by agent id. The answer is owed once the agent is seated or the start
-     * fails: to the placing leader when `nodeId` names one, and to nobody but this node's own view
-     * when it is null - a placement the leader made on itself.
+     * Placements this node accepted while the agent waits for a worker of its type to connect - a
+     * monopolistic one raised for it (HIL-998) or a regular one already launched (HIL-1671) -
+     * keyed by agent id. The answer is owed once the agent is seated or the start fails: to the
+     * placing leader when `nodeId` names one, and to nobody but this node's own view when it is
+     * null - a placement the leader made on itself.
      *
      * @var array<string, array{nodeId: ?string, agentType: string, agentIndex: ?string}>
      */
@@ -1089,11 +1090,13 @@ final class ClusterPlacement implements WorkerPlacement
      * the gate's refusal for this node; any other failure carries its text and no refusal, rather
      * than a capacity code nobody judged.
      *
-     * A placement accepted while a monopolistic worker is raised for the agent is answered later,
-     * by {@see noteAgentStarted()} or {@see noteAgentStartFailed()}, and nothing is sent now
-     * (HIL-998): refusing a node a second away from ready would send the agent looking elsewhere,
-     * and the leader already waits {@see DEFAULT_PLACEMENT_ACK_TIMEOUT_MS} for the answer, with
-     * the record in {@see PlacementState::Placing} read as ordinary travel time.
+     * A placement accepted while the agent waits for a worker of its type to connect - a
+     * monopolistic one raised for it (HIL-998), or a regular one the node launched and has not
+     * seen register yet (HIL-1671) - is answered later, by {@see noteAgentStarted()} or
+     * {@see noteAgentStartFailed()}, and nothing is sent now: accepting it is not a start, and
+     * refusing a node seconds away from ready would send the agent looking elsewhere. The leader
+     * already waits {@see DEFAULT_PLACEMENT_ACK_TIMEOUT_MS} for the answer, with the record in
+     * {@see PlacementState::Placing} read as ordinary travel time.
      *
      * @param string $fromNodeId Id of the leader node that requested the placement
      * @param PeerPlaceAgentDTO $frame Received place-agent frame
@@ -1150,7 +1153,8 @@ final class ClusterPlacement implements WorkerPlacement
     }
 
     /**
-     * Remembers a placement accepted while the agent waits for a worker raised for it (HIL-998).
+     * Remembers a placement accepted while the agent waits for a worker of its type to connect
+     * (HIL-998, HIL-1671).
      *
      * A remote leader is remembered as the placing leader here, not only when the agent is later
      * seated: until then the agent is not in the hosted set, and losing that leader must still
@@ -3051,7 +3055,7 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * A node that does not lead has no picture of the cluster — its registry holds what a leader
      * once published to it, not a complete account — so it is not read. What the node holds is
-     * what it hosts plus the starts it accepted while a worker is raised for them, each agent once;
+     * what it hosts plus the starts it accepted while they wait for a worker, each agent once;
      * a waiting start holds its cost until it is seated or let go, exactly as a Placing record does
      * on the leader. The agent being placed is left out, as the leader leaves out its record. Its
      * tags are the ones this node advertises now.
@@ -3557,7 +3561,7 @@ final class ClusterPlacement implements WorkerPlacement
         }
 
         unset($this->lastPlacementRefusals[$record->agentId()]);
-        // Accepted while a worker is raised for it (HIL-998): placing until the answer is known
+        // Accepted while it waits for a worker of its type (HIL-998, HIL-1671): placing until the answer is known
         if ($workerId === null) {
             $this->registry->put($record->withState(PlacementState::Placing));
             $this->deferPlacementAnswer(null, $agentType, $agentIndex);

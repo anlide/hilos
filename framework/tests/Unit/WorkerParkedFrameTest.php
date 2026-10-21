@@ -62,6 +62,16 @@ final class WorkerParkedFrameTest extends TestCase
 
     private const string BOOTSTRAP_COLLECTION = 'test-bootstrap-state';
 
+    /**
+     * The five seconds a worker gives a start the state it reads - not the ten its master gives a
+     * worker to connect (HIL-1671). Written out rather than read from the shared constant, so a
+     * budget moved there fails these cases instead of moving them along.
+     */
+    private const float DATA_WAIT_SECONDS = 5.0;
+
+    /** How far either side of those five seconds a pass is taken. */
+    private const float DATA_WAIT_MARGIN_SECONDS = 0.5;
+
     /** @var class-string<Hilos> App class bound before this test touched it */
     private string $boundAppClass;
 
@@ -189,11 +199,22 @@ final class WorkerParkedFrameTest extends TestCase
         );
     }
 
+    /**
+     * The wait for the state keeps its five seconds, measured from the start that parked: still
+     * waiting short of them, refused past them - well inside the ten a worker gets to connect,
+     * which is the master's wait before this one and does not stretch it (HIL-1671).
+     */
     public function testAStartWhoseStateNeverArrivesIsRefusedOnTheDeadlineAsItWasBefore(): void
     {
+        $askedFrom = microtime(true);
         $this->manager->handleDaemonMessage(new AgentStartDTO(WorkerParkedFrameTestReader::AGENT_TYPE));
+        $askedBy = microtime(true);
 
-        $this->manager->pass(microtime(true) + AgentConstants::START_DEADLINE_SECONDS + 1.0);
+        $this->manager->pass($askedFrom + self::DATA_WAIT_SECONDS - self::DATA_WAIT_MARGIN_SECONDS);
+        $this->assertSame([], $this->manager->failures, 'Short of five seconds the start still waits for its state.');
+        $this->assertTrue(SourceInterestRegistry::isDeclared(SourceChange::KIND_RT, WorkerParkedFrameTestReader::COLLECTION));
+
+        $this->manager->pass($askedBy + self::DATA_WAIT_SECONDS + self::DATA_WAIT_MARGIN_SECONDS);
 
         $this->assertNull($this->manager->agent(WorkerParkedFrameTestReader::AGENT_TYPE));
         $this->assertCount(1, $this->manager->failures);
@@ -205,7 +226,7 @@ final class WorkerParkedFrameTest extends TestCase
         $this->assertCount(1, $this->manager->client->sentOf(WorkerAgentStartFailedDTO::class));
 
         // Released once: a later pass has nothing left to refuse.
-        $this->manager->pass(microtime(true) + 2 * AgentConstants::START_DEADLINE_SECONDS);
+        $this->manager->pass($askedBy + 2 * self::DATA_WAIT_SECONDS);
         $this->assertCount(1, $this->manager->failures);
     }
 
@@ -237,12 +258,17 @@ final class WorkerParkedFrameTest extends TestCase
         // held behind it is a request of its own, and gets a wait of its own rather than riding
         // the release of the first.
         $this->manager->handleDaemonMessage(new AgentStartDTO(WorkerParkedFrameTestAgent::AGENT_TYPE));
+        $askedFrom = microtime(true);
         $this->manager->handleDaemonMessage($this->pageSubscribe(WorkerParkedFrameTestReadingPage::PAGE));
         $this->manager->handleDaemonMessage($this->pageSubscribe(WorkerParkedFrameTestReadingPage::PAGE));
+        $askedBy = microtime(true);
 
-        $this->manager->pass(microtime(true) + AgentConstants::START_DEADLINE_SECONDS + 1.0);
-
+        $this->manager->pass($askedFrom + self::DATA_WAIT_SECONDS - self::DATA_WAIT_MARGIN_SECONDS);
         $agent = $this->manager->agent(WorkerParkedFrameTestAgent::AGENT_TYPE);
+        $this->assertSame([], $agent?->subscribedPages, 'Short of five seconds neither subscription runs.');
+
+        $this->manager->pass($askedBy + self::DATA_WAIT_SECONDS + self::DATA_WAIT_MARGIN_SECONDS);
+
         $this->assertCount(1, $agent?->subscribedPages ?? [], 'Only the released subscription runs.');
 
         SourceInterestRegistry::markReady(SourceChange::KIND_RT, WorkerParkedFrameTestReader::COLLECTION);
@@ -270,7 +296,7 @@ final class WorkerParkedFrameTest extends TestCase
         );
 
         SourceInterestRegistry::markReady(SourceChange::KIND_RT, WorkerParkedFrameTestReader::COLLECTION);
-        $this->manager->pass(microtime(true) + AgentConstants::START_DEADLINE_SECONDS + 1.0);
+        $this->manager->pass(microtime(true) + self::DATA_WAIT_SECONDS + self::DATA_WAIT_MARGIN_SECONDS);
 
         $this->assertSame([], $agent?->subscribedPages, 'A dropped subscription is never run at a closed socket.');
     }

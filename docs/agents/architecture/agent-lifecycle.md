@@ -127,7 +127,7 @@ is an agent that is alive and unreachable.
 
 **The hold for a start under way ends on a fact, not on a clock** (HIL-1040).
 However long the start takes — waiting on the state it reads, waiting on a
-monopolistic worker raised for it — the frame waits with it, because every way
+worker raised for it or a regular one still connecting — the frame waits with it, because every way
 that start can end reaches the master: `agent_started` delivers the frame,
 `agent_start_failed` answers it as a start refused here, the death of the worker
 hosting the agent answers it as a host that went down — never redelivers it,

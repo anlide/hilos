@@ -7,14 +7,17 @@ namespace Hilos\Socket\Server;
 use Hilos\Core\Daemon\ParkedAgentSignal;
 
 /**
- * One monopolistic agent the master is raising a worker for (HIL-998).
+ * One agent the master holds until a worker of its type connects (HIL-998, HIL-1671).
  *
- * The pool of monopolistic workers grows on demand: an agent that needs a process of its own and
- * finds none free orders one, and waits here until a free monopolistic worker exists or its
- * deadline passes. The wait is the agent's, not a frame's - frames addressed to it meanwhile are
- * held by the master as {@see ParkedAgentSignal}, the same hold every agent whose start is under
- * way gets, and that hold outlasts this one by a second so a frame meets a verdict rather than an
- * empty wait.
+ * One queue for both worker types. A monopolistic agent that finds no free worker orders one; a
+ * regular agent that finds none while a regular worker this master launched has not connected
+ * yet waits for that one. Either waits here until a free worker of its type exists or its
+ * deadline passes - {@see WorkerServer::WORKER_CONNECT_WAIT_SECONDS} after it asked. The wait is
+ * the agent's, not a frame's - frames addressed to it meanwhile are held by the master as
+ * {@see ParkedAgentSignal}, the same hold every agent whose start is under way gets, and that hold
+ * keeps no clock of its own: it ends on the verdict this wait gives, seated or refused.
+ *
+ * Internal to the master process: neither a runtime row nor a wire DTO.
  */
 final readonly class AwaitingWorkerAgent
 {
@@ -25,6 +28,7 @@ final readonly class AwaitingWorkerAgent
      * @param bool $placedByLeader Whether the start carried the placement sanction, which the start that
      *     seats it must carry again - a policy-placed agent is refused without it off the leader
      * @param float $deadline Unix seconds after which the agent gives up and its start is refused
+     * @param bool $requiresMonopolistic Whether the agent waits for a monopolistic worker rather than a regular one
      */
     public function __construct(
         public string $agentId,
@@ -32,6 +36,7 @@ final readonly class AwaitingWorkerAgent
         public ?string $agentIndex,
         public bool $placedByLeader,
         public float $deadline,
+        public bool $requiresMonopolistic,
     ) {
     }
 }

@@ -57,9 +57,9 @@ interface PlacementExecutor
     /**
      * Launches an agent of the given type on this node and returns its worker id.
      *
-     * An agent waiting for a monopolistic worker or for its earlier stop report is accepted
-     * rather than refused. The answer is null until it is seated, and the caller learns its
-     * worker from {@see placedWorkerId()} once there is one.
+     * An agent waiting for a worker of its type to connect - monopolistic or regular - or for its
+     * earlier stop report is accepted rather than refused. The answer is null until it is seated,
+     * and the caller learns its worker from {@see placedWorkerId()} once there is one.
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent

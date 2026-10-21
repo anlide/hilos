@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Closure;
-use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentInterface;
@@ -56,6 +55,16 @@ use Socket;
 /** Receipt lifetime through the real worker dispatch/park loop and registered master-side decoder. */
 final class WorkerUploadReceiptTest extends TestCase
 {
+    /**
+     * The five seconds a worker gives a consumer the state it reads - not the ten its master gives a
+     * worker to connect (HIL-1671). Written out rather than read from the shared constant, so a
+     * budget moved there fails these cases instead of moving them along.
+     */
+    private const float DATA_WAIT_SECONDS = 5.0;
+
+    /** How far either side of those five seconds a pass is taken. */
+    private const float DATA_WAIT_MARGIN_SECONDS = 0.5;
+
     /** @var class-string<Hilos> Previously bound app */
     private string $previousApp;
 
@@ -203,18 +212,25 @@ final class WorkerUploadReceiptTest extends TestCase
      */
     public function testReleaseAndReparkKeepTheReceiptUntilItsOwnWaitEnds(): void
     {
+        $askedFrom = microtime(true);
         $this->subscribe('socket');
+        $askedBy = microtime(true);
         $this->subscribe('socket');
         $this->manager->handleDaemonMessage($this->binary('parked'));
         $this->flush();
         $this->assertSame([], $this->batches());
         $this->assertSame([], $this->manager->events);
+        $parkedFrames = new ReflectionProperty(WorkerManager::class, 'parkedFrames');
 
-        // First subscribe times out; the second opens its own wait and binary reparks behind it.
-        $this->manager->pass(microtime(true) + AgentConstants::START_DEADLINE_SECONDS + 1.0);
+        // Short of five seconds the first subscribe still waits, with both frames behind it.
+        $this->manager->pass($askedFrom + self::DATA_WAIT_SECONDS - self::DATA_WAIT_MARGIN_SECONDS);
+        $this->assertCount(3, $parkedFrames->getValue($this->manager)[SourceConsumer::page('socket')]);
+
+        // Past them it times out; the second opens its own wait and binary reparks behind it.
+        $this->manager->pass($askedBy + self::DATA_WAIT_SECONDS + self::DATA_WAIT_MARGIN_SECONDS);
         $this->assertSame([], $this->pending());
         $this->assertSame([], $this->manager->events);
-        $frames = new ReflectionProperty(WorkerManager::class, 'parkedFrames')->getValue($this->manager);
+        $frames = $parkedFrames->getValue($this->manager);
         $this->assertSame('parked', $frames[SourceConsumer::page('socket')][1]->uploadReceiptId);
 
         SourceInterestRegistry::markReady(SourceChange::KIND_RT, WorkerUploadReceiptReadingPage::COLLECTION);
@@ -265,17 +281,23 @@ final class WorkerUploadReceiptTest extends TestCase
      */
     public function testAFrameBehindAFailedAgentStartIsConsumedOnlyOnTheFinalMissingAgentDrop(): void
     {
+        $askedFrom = microtime(true);
         $this->manager->handleDaemonMessage(new AgentStartDTO(WorkerUploadReceiptWaitingAgent::AGENT_TYPE));
+        $askedBy = microtime(true);
         $this->manager->handleDaemonMessage($this->binary('missing', agentId: WorkerUploadReceiptWaitingAgent::AGENT_TYPE));
         $this->flush();
         $this->assertSame([], $this->batches());
-        $this->manager->pass(microtime(true) + AgentConstants::START_DEADLINE_SECONDS + 1.0);
+        $this->manager->pass($askedFrom + self::DATA_WAIT_SECONDS - self::DATA_WAIT_MARGIN_SECONDS);
+        $this->flush();
+        $this->assertSame([], $this->manager->failures, 'Short of five seconds the start still waits for its state.');
+        $this->assertSame([], $this->batches());
+        $this->manager->pass($askedBy + self::DATA_WAIT_SECONDS + self::DATA_WAIT_MARGIN_SECONDS);
         $this->flush();
         $this->assertCount(1, $this->manager->failures);
         $this->assertInstanceOf(AgentCreationFailedException::class, $this->manager->failures[0]->failure);
         $this->assertSame([], $this->manager->events);
         $this->assertFalse(SourceInterestRegistry::isDeclared(SourceChange::KIND_RT, WorkerUploadReceiptWaitingAgent::COLLECTION));
-        $this->manager->pass(microtime(true) + 2 * AgentConstants::START_DEADLINE_SECONDS);
+        $this->manager->pass($askedBy + 2 * self::DATA_WAIT_SECONDS);
         $this->flush();
         $this->assertSame([['missing']], $this->batches());
     }

@@ -33,9 +33,12 @@ final class AgentConstants
     /**
      * @var float Seconds a worker gives an agent's start - and a subscription - to get the state it reads before refusing it
      *
-     * Kept here rather than on the worker because the master reads it too: a frame it holds for an
-     * agent that is coming up waits this long plus the travel of the report (HIL-629). One value on
-     * both sides of the link, so moving the worker's budget moves the master's with it.
+     * The worker's budget for its data sources, and one phase of a start rather than the whole of
+     * it (HIL-629). The master keeps no clock of this length: the phase before it - waiting for a
+     * worker of the agent's type to connect, monopolistic or regular - is the master's own and runs
+     * on a limit of its own (HIL-1671), and the frames the master holds for a starting agent end on
+     * the start's report rather than on any deadline (HIL-1040). Moving this budget moves neither
+     * of them.
      *
      * Long enough that only a master in real trouble misses it - the answer is one round trip over
      * a link the worker is already reading - and short enough that a browser is told the page

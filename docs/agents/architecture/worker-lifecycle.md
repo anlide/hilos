@@ -68,12 +68,26 @@ monopolistic agent.
 - **Monopolistic**: single instance per cluster, handles shared state (DB truth source, context)
 
 A monopolistic worker holds exactly one agent. `WORKER_MIN_MONOPOLISTIC` is a warm-up, not a
-ceiling: an agent that finds no free monopolistic worker has one raised for it at once and waits in
-the master's register until it registers, with the frames addressed to it held meanwhile; a wait
-past `AgentConstants::START_DEADLINE_SECONDS` is refused like any start refused on the node
-(HIL-998). A monopolistic agent may not be per-instance — a start with an index is refused rather
-than grown for, so the pool follows agent types, never entities. The pool does not shrink: a
-worker lives until the node stops, and a freed one goes to the next agent that needs one.
+ceiling: an agent that finds no free monopolistic worker has one raised for it at once (HIL-998).
+A monopolistic agent may not be per-instance — a start with an index is refused rather than grown
+for, so the pool follows agent types, never entities. The pool does not shrink: a worker lives
+until the node stops, and a freed one goes to the next agent that needs one.
+
+An agent that finds no free worker of its type waits in the master's register until one connects,
+with the frames addressed to it held meanwhile. One queue serves both types (HIL-998, HIL-1671).
+A monopolistic agent waits for the worker raised for it. A regular agent waits only when this
+master has already launched a regular process that has not registered yet. No process is launched
+for the wait: the minimum, the maximum and the replacement of the dead stay with
+`ensureMinWorkers()`, and with no such process the start is refused as before. The wait ends
+seated on a worker of the agent's type, or refused after `WorkerServer::WORKER_CONNECT_WAIT_SECONDS`
+(10 s) like any start refused on the node. A regular worker takes every regular agent waiting,
+spread by the usual balance; a monopolistic worker takes one. A process that dies before it
+registers is not ordered again for the queue. The leader's answer about the placement is deferred
+until the seat.
+
+The 10 s is one phase of a start. The next is the data the agent reads, with a budget of its own:
+`AgentConstants::START_DEADLINE_SECONDS` (5 s) is the time the worker gives its data sources, and
+it no longer bounds the connection of a worker.
 
 Set via `$isMonopolistic` property in `WorkerManager` subclass.
 

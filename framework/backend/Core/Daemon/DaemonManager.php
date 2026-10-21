@@ -6896,9 +6896,10 @@ abstract class DaemonManager extends BaseManager implements
      * starting here.
      *
      * Under way means a start that has not reported yet AND is running: linked to a worker, or
-     * waiting for a monopolistic worker raised for it (HIL-998). A start the freeze or a placement
-     * gate refuses quietly is neither - and that is the point of asking, because a frame held for
-     * one of those would wait on a report nobody is going to send.
+     * waiting for a worker of its type to connect - a monopolistic one raised for it (HIL-998) or
+     * a regular one already launched (HIL-1671) - or for its earlier stop report. A start the
+     * freeze or a placement gate refuses quietly is neither - and that is the point of asking,
+     * because a frame held for one of those would wait on a report nobody is going to send.
      *
      * The reported half of the question is not a formality. An agent that came up long ago is
      * linked to a worker too, and reading the link alone would call its start "under way" forever:

@@ -138,7 +138,12 @@ class _DaemonController:
 
 
 def _daemon_phase(stand, extra_args):
-    """Run the live leader-loss spec, restoring every fault before any older phase starts."""
+    """Run the live leader-loss spec, restoring every fault before any older phase starts.
+
+    Every node the host starts - the remote under its own environment and back, the killed
+    leader - is read in its own log once the cluster has converged after it: a start refused for
+    want of a regular worker fails the phase, as a retry that converged later would not (HIL-1671).
+    """
     run_id = uuid.uuid4().hex
     directory = stand.demo_dir / "data" / "cluster-daemon-e2e" / run_id
     remote = stand.slaves[0]
@@ -147,13 +152,16 @@ def _daemon_phase(stand, extra_args):
     thread = None
     directory_created = False
     override_attempted = False
+    restarts = []
     failed = False
     try:
         directory.mkdir(parents=True)
         directory_created = True
         override_attempted = True
+        mark = scenarios.node_log_mark(remote)
         _switch(control.own_env(stand, remote, f"{env_key}={env_value}"))
         views = scenarios.wait_converge(stand.members)
+        scenarios.assert_no_startup_refusal(remote, mark, f"after its recreation with {env_key} of its own")
         leader = scenarios.leaders(views)[0]
         follower = next(master for master in stand.masters if master != leader)
         term = views[leader]["term"]
@@ -185,12 +193,16 @@ def _daemon_phase(stand, extra_args):
             thread.join()
         if controller is not None and controller.kill_attempted:
             try:
+                restarts.append((controller.leader, scenarios.node_log_mark(controller.leader),
+                                 "after its restart"))
                 _switch(control.start(stand, controller.leader))
             except Exception as error:
                 print(f"cluster e2e daemon: master recovery failed: {error}")
                 failed = True
         if override_attempted:
             try:
+                restarts.append((remote, scenarios.node_log_mark(remote),
+                                 "after its recreation on the stand's environment"))
                 _switch(control.own_env(stand, remote, "off"))
             except Exception as error:
                 print(f"cluster e2e daemon: environment recovery failed: {error}")
@@ -201,6 +213,12 @@ def _daemon_phase(stand, extra_args):
             except Exception as error:
                 print(f"cluster e2e daemon: recovery convergence failed: {error}")
                 failed = True
+            for node, mark, window in restarts:
+                try:
+                    scenarios.assert_no_startup_refusal(node, mark, window)
+                except AssertionError as error:
+                    print(f"cluster e2e daemon: recovery start failed: {error}")
+                    failed = True
         try:
             # Never sweep another run, or even the parent directory. Temp files belong to
             # this handshake too and may remain if a writer failed before its rename.

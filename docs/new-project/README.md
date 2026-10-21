@@ -224,9 +224,9 @@ The monopolistic minimum is a warm-up, not a ceiling. Each monopolistic agent
 claims its own monopolistic worker (one holding zero agents); an agent that finds
 none free orders one on the spot and waits for it to register, and the frames
 addressed to it are held by the master meanwhile (HIL-998). A wait that runs past
-`AgentConstants::START_DEADLINE_SECONDS` is refused the way any start refused on
-this node is — a page gets its subscription error, the project one
-`AGENT_START` card — and the daemon keeps running (HIL-999). So
+10 seconds (`WorkerServer::WORKER_CONNECT_WAIT_SECONDS`) is refused the way any
+start refused on this node is — a page gets its subscription error, the project
+one `AGENT_START` card — and the daemon keeps running (HIL-999). So
 `WORKER_MIN_MONOPOLISTIC` only decides how many agents come up without that wait
 of a second or two; zero is a working value, and the catalog default of 2 covers
 an app agent plus the Hilos dashboard of the SDK application shell. The demos do

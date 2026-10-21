@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Cluster\ClusterContext;
+use Hilos\Cluster\Leadership;
+use Hilos\Constants\AgentConstants;
+use Hilos\Constants\WorkerConstants;
+use Hilos\Core\Agent\Config\AgentPlacement;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
@@ -14,21 +20,26 @@ use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
 use Hilos\Core\Daemon\ContainedFailure;
 use Hilos\Core\Daemon\ContainedFailureSink;
 use Hilos\Core\Daemon\Master\MasterFailureUnit;
+use Hilos\Core\Process;
 use Hilos\Hilos;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Server\AwaitingWorkerAgent;
 use Hilos\Socket\Server\WorkerServer;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
+use ReflectionMethod;
 use ReflectionProperty;
 
 /**
- * The monopolistic worker pool grows on demand instead of refusing the agent it ran out for (HIL-998).
+ * The monopolistic worker pool grows on demand instead of refusing the agent it ran out for (HIL-998),
+ * and a regular agent waits in the same queue for a regular worker already launched (HIL-1671).
  *
- * A monopolistic agent that finds no free worker orders one and waits for it; the next master
- * pass that finds a free monopolistic worker seats it, and a wait that outlives its deadline ends
- * as the refusal a shortage used to be at once. Everything else that found no worker - a regular
- * agent, a node on its way out, a per-instance monopolistic agent - is refused exactly as before.
+ * A monopolistic agent that finds no free worker orders one and waits for it; a regular agent that
+ * finds none while a regular worker this master launched has not connected yet waits for that one
+ * and orders nothing. The next master pass that finds a free worker of the agent's type seats it,
+ * and a wait that outlives its ten seconds ends as the refusal a shortage used to be at once.
+ * Everything else that found no worker - a regular agent with no regular worker launched, a node on
+ * its way out, a per-instance monopolistic agent - is refused exactly as before.
  */
 final class WorkerServerPoolGrowthTest extends TestCase
 {
@@ -38,6 +49,8 @@ final class WorkerServerPoolGrowthTest extends TestCase
 
     private const string REGULAR_TYPE = 'crowded';
 
+    private const string PLACED_REGULAR_TYPE = 'placed';
+
     private const string INITIATOR_TYPE = 'initiator';
 
     private const string AGENT_INDEX = '1';
@@ -46,14 +59,26 @@ final class WorkerServerPoolGrowthTest extends TestCase
 
     private const int SECOND_WORKER_INDEX = 18;
 
+    private const int REGULAR_WORKER_INDEX = 19;
+
     private const int FRAME_COUNT = 10;
+
+    /** Mirrors WorkerServer's private limit on the wait for a worker to connect. */
+    private const float WORKER_CONNECT_WAIT_SECONDS = 10.0;
+
+    /** A moment well inside that wait and past the start deadline the wait used to have. */
+    private const float SEVENTH_SECOND = 7.0;
 
     /** @var class-string<Hilos> App class bound before this test touched it */
     private string $boundAppClass;
 
+    /** Cluster context bound before this test touched it. */
+    private ?ClusterContext $boundCluster;
+
     protected function setUp(): void
     {
         $this->boundAppClass = Hilos::appClass();
+        $this->boundCluster = Hilos::$cluster;
         new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, PoolGrowthTestHilos::class);
         Hilos::$cluster = null;
         Hilos::$rt = null;
@@ -62,6 +87,7 @@ final class WorkerServerPoolGrowthTest extends TestCase
     protected function tearDown(): void
     {
         new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, $this->boundAppClass);
+        Hilos::$cluster = $this->boundCluster;
 
         parent::tearDown();
     }
@@ -257,6 +283,326 @@ final class WorkerServerPoolGrowthTest extends TestCase
     }
 
     /**
+     * The leaf's own case (HIL-1671): a regular worker is launched and has not connected yet, so the
+     * regular agent waits for it in the same queue - no worker is ordered and nothing is refused.
+     */
+    public function testARegularAgentWaitsForALaunchedRegularWorkerWithoutOrderingOne(): void
+    {
+        $manager = new PoolGrowthTestAgentManagerDaemon();
+        $startSink = new PoolGrowthTestStartSink();
+        $manager->registerAgentStartSink($startSink);
+        $server = $this->buildServer($manager);
+        $failureSink = new PoolGrowthTestFailureSink();
+        $server->setContainedFailureSink($failureSink);
+        $server->launchRegularWorker(self::REGULAR_WORKER_INDEX);
+
+        $askedAt = microtime(true);
+        $server->startAgentPublic(self::REGULAR_TYPE);
+        $answeredAt = microtime(true);
+
+        $this->assertSame([], $server->orderedWorkers);
+        $this->assertTrue($server->isAgentAwaitingWorker(self::REGULAR_TYPE));
+        $this->assertTrue($manager->hasAgent(self::REGULAR_TYPE));
+        $this->assertSame([self::REGULAR_TYPE], $server->agentsStillStarting());
+        $this->assertSame([], $startSink->failedAgentIds);
+        $this->assertSame([], $failureSink->reported);
+        $awaiting = $server->awaitingWorker()[self::REGULAR_TYPE];
+        $this->assertFalse($awaiting->requiresMonopolistic);
+        $this->assertFalse($awaiting->placedByLeader);
+        $this->assertNull($awaiting->agentIndex);
+        $this->assertGreaterThanOrEqual($askedAt + self::WORKER_CONNECT_WAIT_SECONDS, $awaiting->deadline);
+        $this->assertLessThanOrEqual($answeredAt + self::WORKER_CONNECT_WAIT_SECONDS, $awaiting->deadline);
+    }
+
+    /**
+     * One regular worker takes every regular agent waiting, an indexed one too, and a monopolistic
+     * worker that connects first takes none of them.
+     */
+    public function testARegularWorkerSeatsEveryWaitingRegularAgentAndAMonopolisticOneSeatsNone(): void
+    {
+        $manager = new PoolGrowthTestAgentManagerDaemon();
+        $startSink = new PoolGrowthTestStartSink();
+        $manager->registerAgentStartSink($startSink);
+        $server = $this->buildServer($manager);
+        $server->launchRegularWorker(self::REGULAR_WORKER_INDEX);
+        $server->startAgentPublic(self::REGULAR_TYPE);
+        $server->startAgentPublic(self::REGULAR_TYPE, self::AGENT_INDEX);
+        $indexedAgentId = self::REGULAR_TYPE . AgentConstants::ID_SEPARATOR . self::AGENT_INDEX;
+        $this->assertSame(self::AGENT_INDEX, $server->awaitingWorker()[$indexedAgentId]->agentIndex);
+
+        $monopolistic = $server->addWorker(self::FIRST_WORKER_INDEX);
+        $server->advancePublic();
+
+        $this->assertSame([], $monopolistic->startedAgentTypes);
+        $this->assertTrue($server->isAgentAwaitingWorker(self::REGULAR_TYPE));
+        $this->assertTrue($server->isAgentAwaitingWorker($indexedAgentId));
+
+        $regular = $server->addRegularWorker(self::REGULAR_WORKER_INDEX);
+        $server->advancePublic();
+
+        $this->assertSame([self::REGULAR_TYPE, self::REGULAR_TYPE], $regular->startedAgentTypes);
+        $this->assertSame([null, self::AGENT_INDEX], $regular->startedAgentIndexes);
+        $this->assertSame([], $monopolistic->startedAgentTypes);
+        $this->assertSame(self::REGULAR_WORKER_INDEX, $manager->getAgentWorkerId(self::REGULAR_TYPE));
+        $this->assertSame(self::REGULAR_WORKER_INDEX, $manager->getAgentWorkerId($indexedAgentId));
+        $this->assertSame([], $server->awaitingWorker());
+        $this->assertSame([], $server->orderedWorkers);
+        $this->assertSame([], $startSink->failedAgentIds);
+    }
+
+    /**
+     * The other way round: a regular worker that connects is not handed a monopolistic agent waiting
+     * for the worker raised for it.
+     */
+    public function testARegularWorkerDoesNotSeatAWaitingMonopolisticAgent(): void
+    {
+        $manager = new PoolGrowthTestAgentManagerDaemon();
+        $server = $this->buildServer($manager);
+        $server->startAgentPublic(self::MONOPOLISTIC_TYPE);
+
+        $regular = $server->addRegularWorker(self::REGULAR_WORKER_INDEX);
+        $server->advancePublic();
+
+        $this->assertSame([], $regular->startedAgentTypes);
+        $this->assertTrue($server->isAgentAwaitingWorker(self::MONOPOLISTIC_TYPE));
+        $this->assertTrue($server->awaitingWorker()[self::MONOPOLISTIC_TYPE]->requiresMonopolistic);
+
+        $monopolistic = $server->addWorker(self::FIRST_WORKER_INDEX);
+        $server->advancePublic();
+
+        $this->assertSame([self::MONOPOLISTIC_TYPE], $monopolistic->startedAgentTypes);
+        $this->assertSame(-self::FIRST_WORKER_INDEX, $manager->getAgentWorkerId(self::MONOPOLISTIC_TYPE));
+    }
+
+    /**
+     * A start that carried the placement sanction is seated with it: on a node that is not the
+     * leader, a policy-placed agent is refused without it.
+     */
+    public function testARegularPlacementIsSeatedWithItsPlacementSanction(): void
+    {
+        $cluster = new ClusterContext();
+        $cluster->registerLeadership(new PoolGrowthTestFollowerLeadership());
+        Hilos::$cluster = $cluster;
+        $manager = new PoolGrowthTestAgentManagerDaemon();
+        $startSink = new PoolGrowthTestStartSink();
+        $manager->registerAgentStartSink($startSink);
+        $server = $this->buildServer($manager);
+        $server->launchRegularWorker(self::REGULAR_WORKER_INDEX);
+
+        $this->assertNull($server->executePlacement(self::PLACED_REGULAR_TYPE, null));
+        $this->assertTrue($server->awaitingWorker()[self::PLACED_REGULAR_TYPE]->placedByLeader);
+
+        $regular = $server->addRegularWorker(self::REGULAR_WORKER_INDEX);
+        $server->advancePublic();
+
+        $this->assertSame([self::PLACED_REGULAR_TYPE], $regular->startedAgentTypes);
+        $this->assertSame(self::REGULAR_WORKER_INDEX, $server->placedWorkerId(self::PLACED_REGULAR_TYPE, null));
+        $this->assertSame([], $startSink->failedAgentIds);
+    }
+
+    public function testManyFramesForOneWaitingRegularAgentLeaveItsWaitAsItWas(): void
+    {
+        $server = $this->buildServer(new PoolGrowthTestAgentManagerDaemon());
+        $server->launchRegularWorker(self::REGULAR_WORKER_INDEX);
+        $server->startAgentPublic(self::REGULAR_TYPE);
+        $register = $server->awaitingWorker();
+
+        for ($frame = 0; $frame < self::FRAME_COUNT; $frame++) {
+            $server->startAgentPublic(self::REGULAR_TYPE);
+        }
+
+        // The very same record: no second wait, and no later deadline
+        $this->assertSame($register, $server->awaitingWorker());
+        $this->assertSame([], $server->orderedWorkers);
+    }
+
+    /**
+     * The wait is ten seconds for both types: at the seventh - past the five the monopolistic wait
+     * used to have - both still wait, and both are seated when their workers connect.
+     */
+    public function testBothTypesStillWaitAtTheSeventhSecondAndAreSeatedThen(): void
+    {
+        $manager = new PoolGrowthTestAgentManagerDaemon();
+        $startSink = new PoolGrowthTestStartSink();
+        $manager->registerAgentStartSink($startSink);
+        $server = $this->buildServer($manager);
+        $failureSink = new PoolGrowthTestFailureSink();
+        $server->setContainedFailureSink($failureSink);
+        $server->launchRegularWorker(self::REGULAR_WORKER_INDEX);
+        $server->startAgentPublic(self::MONOPOLISTIC_TYPE);
+        $server->startAgentPublic(self::REGULAR_TYPE);
+
+        $server->ageWaits(self::SEVENTH_SECOND);
+        $server->advancePublic();
+
+        $this->assertTrue($server->isAgentAwaitingWorker(self::MONOPOLISTIC_TYPE));
+        $this->assertTrue($server->isAgentAwaitingWorker(self::REGULAR_TYPE));
+        $this->assertSame([], $failureSink->reported);
+
+        $monopolistic = $server->addWorker(self::FIRST_WORKER_INDEX);
+        $regular = $server->addRegularWorker(self::REGULAR_WORKER_INDEX);
+        $server->advancePublic();
+
+        $this->assertSame([self::MONOPOLISTIC_TYPE], $monopolistic->startedAgentTypes);
+        $this->assertSame([self::REGULAR_TYPE], $regular->startedAgentTypes);
+        $this->assertSame([], $server->awaitingWorker());
+        $this->assertSame([], $failureSink->reported);
+        $this->assertSame([], $startSink->failedAgentIds);
+    }
+
+    /**
+     * At ten seconds each wait ends once, as the refusal of its own worker type, and leaves nothing
+     * behind for a later worker or a later pass.
+     */
+    public function testAtTenSecondsEachWaitIsRefusedOnceAsItsOwnWorkerType(): void
+    {
+        $manager = new PoolGrowthTestAgentManagerDaemon();
+        $startSink = new PoolGrowthTestStartSink();
+        $manager->registerAgentStartSink($startSink);
+        $server = $this->buildServer($manager);
+        $failureSink = new PoolGrowthTestFailureSink();
+        $server->setContainedFailureSink($failureSink);
+        $server->launchRegularWorker(self::REGULAR_WORKER_INDEX);
+        $server->startAgentPublic(self::MONOPOLISTIC_TYPE);
+        $server->startAgentPublic(self::REGULAR_TYPE);
+
+        $server->ageWaits(self::WORKER_CONNECT_WAIT_SECONDS);
+        $server->advancePublic();
+
+        $this->assertSame([self::MONOPOLISTIC_TYPE, self::REGULAR_TYPE], $startSink->failedAgentIds);
+        $this->assertCount(2, $failureSink->reported);
+        $this->assertSame(self::MONOPOLISTIC_TYPE, $failureSink->reported[0]->address);
+        $this->assertInstanceOf(NoSuitableWorkerException::class, $failureSink->reported[0]->failure);
+        $this->assertSame(
+            'No suitable ' . WorkerConstants::TYPE_MONOPOLISTIC . ' worker available. Required: monopolistic worker without agents.',
+            $failureSink->reported[0]->failure->getMessage(),
+        );
+        $this->assertSame(self::REGULAR_TYPE, $failureSink->reported[1]->address);
+        $this->assertInstanceOf(NoSuitableWorkerException::class, $failureSink->reported[1]->failure);
+        $this->assertSame(
+            'No suitable ' . WorkerConstants::TYPE_REGULAR . ' worker available. Required: regular worker.',
+            $failureSink->reported[1]->failure->getMessage(),
+        );
+        $this->assertFalse($manager->hasAgent(self::MONOPOLISTIC_TYPE));
+        $this->assertFalse($manager->hasAgent(self::REGULAR_TYPE));
+        $this->assertSame([], $server->awaitingWorker());
+        $this->assertSame([], $server->agentsStillStarting());
+
+        $regular = $server->addRegularWorker(self::REGULAR_WORKER_INDEX);
+        $server->advancePublic();
+        $this->assertSame([], $regular->startedAgentTypes);
+        $this->assertCount(2, $failureSink->reported);
+        $this->assertSame([self::MONOPOLISTIC_TYPE, self::REGULAR_TYPE], $startSink->failedAgentIds);
+    }
+
+    /**
+     * A regular worker that dies before it registers is not ordered again by the wait: the agent
+     * waits out its ten seconds and is refused, and the regular pool's own upkeep replaces the dead.
+     */
+    public function testARegularWorkerDyingBeforeItRegistersOrdersNothingAndTheWaitRunsOut(): void
+    {
+        $manager = new PoolGrowthTestAgentManagerDaemon();
+        $startSink = new PoolGrowthTestStartSink();
+        $manager->registerAgentStartSink($startSink);
+        $server = $this->buildServer($manager);
+        $server->launchRegularWorker(self::REGULAR_WORKER_INDEX);
+        $server->startAgentPublic(self::REGULAR_TYPE);
+
+        $server->loseRegularWorker(self::REGULAR_WORKER_INDEX);
+        $server->advancePublic();
+
+        $this->assertTrue($server->isAgentAwaitingWorker(self::REGULAR_TYPE));
+        $this->assertSame([], $server->orderedWorkers);
+
+        $server->ageWaits(self::WORKER_CONNECT_WAIT_SECONDS);
+        $server->advancePublic();
+
+        $this->assertFalse($server->isAgentAwaitingWorker(self::REGULAR_TYPE));
+        $this->assertFalse($manager->hasAgent(self::REGULAR_TYPE));
+        $this->assertSame([self::REGULAR_TYPE], $startSink->failedAgentIds);
+        $this->assertSame([], $server->orderedWorkers);
+    }
+
+    public function testANodeOnItsWayOutDoesNotWaitForALaunchedRegularWorker(): void
+    {
+        $manager = new PoolGrowthTestAgentManagerDaemon();
+        $server = $this->buildServer($manager);
+        $server->launchRegularWorker(self::REGULAR_WORKER_INDEX);
+        $server->markPreparingShutdown();
+
+        $this->assertRefused($server, self::REGULAR_TYPE, null);
+        $this->assertFalse($manager->hasAgent(self::REGULAR_TYPE));
+    }
+
+    /**
+     * A stop takes a waiting regular agent out of the wait the way it takes a monopolistic one: one
+     * word to the frames held for it, and nothing for the worker that connects later.
+     */
+    public function testARevokeTakesAWaitingRegularAgentOutOfTheWait(): void
+    {
+        $manager = new PoolGrowthTestAgentManagerDaemon();
+        $startSink = new PoolGrowthTestStartSink();
+        $manager->registerAgentStartSink($startSink);
+        $server = $this->buildServer($manager);
+        $server->launchRegularWorker(self::REGULAR_WORKER_INDEX);
+        $this->assertNull($server->executePlacement(self::REGULAR_TYPE, null));
+
+        $server->revokePlacement(self::REGULAR_TYPE, null);
+
+        $this->assertFalse($server->isAgentAwaitingWorker(self::REGULAR_TYPE));
+        $this->assertFalse($manager->hasAgent(self::REGULAR_TYPE));
+        $this->assertSame([self::REGULAR_TYPE], $startSink->failedAgentIds);
+        $regular = $server->addRegularWorker(self::REGULAR_WORKER_INDEX);
+        $server->advancePublic();
+        $this->assertSame([], $regular->startedAgentTypes);
+        $this->assertSame([self::REGULAR_TYPE], $startSink->failedAgentIds);
+    }
+
+    public function testAFreezeTakesAWaitingRegularAgentOutOfTheWait(): void
+    {
+        $manager = new PoolGrowthTestAgentManagerDaemon();
+        $startSink = new PoolGrowthTestStartSink();
+        $manager->registerAgentStartSink($startSink);
+        $server = $this->buildServer($manager);
+        $server->launchRegularWorker(self::REGULAR_WORKER_INDEX);
+        $server->startAgentPublic(self::REGULAR_TYPE);
+
+        $server->stopAgentsForProtectedMode(self::INITIATOR_TYPE, null);
+        $server->advanceRosterPublic();
+
+        $this->assertFalse($server->isAgentAwaitingWorker(self::REGULAR_TYPE));
+        $this->assertFalse($manager->hasAgent(self::REGULAR_TYPE));
+        $this->assertSame([], $server->getProtectedModeStoppedAgents());
+        $this->assertSame([self::REGULAR_TYPE], $startSink->failedAgentIds);
+        $regular = $server->addRegularWorker(self::REGULAR_WORKER_INDEX);
+        $server->advancePublic();
+        $this->assertSame([], $regular->startedAgentTypes);
+    }
+
+    /**
+     * A gate that refuses the start once the regular worker has connected ends the wait as a failed
+     * start, rather than leaving the frames held for it waiting on nobody.
+     */
+    public function testAGateRefusingTheSeatOfARegularAgentEndsItsWaitAsAFailedStart(): void
+    {
+        $manager = new PoolGrowthTestAgentManagerDaemon();
+        $startSink = new PoolGrowthTestStartSink();
+        $manager->registerAgentStartSink($startSink);
+        $server = $this->buildServer($manager);
+        $server->launchRegularWorker(self::REGULAR_WORKER_INDEX);
+        $server->startAgentPublic(self::REGULAR_TYPE);
+        $server->refuseRtClaim(self::REGULAR_TYPE, null);
+
+        $regular = $server->addRegularWorker(self::REGULAR_WORKER_INDEX);
+        $server->advancePublic();
+
+        $this->assertSame([], $regular->startedAgentTypes);
+        $this->assertFalse($server->isAgentAwaitingWorker(self::REGULAR_TYPE));
+        $this->assertFalse($manager->hasAgent(self::REGULAR_TYPE));
+        $this->assertSame([self::REGULAR_TYPE], $startSink->failedAgentIds);
+    }
+
+    /**
      * @param PoolGrowthTestWorkerServer $server Server under test
      * @param string $agentType Agent type expected to be refused
      * @param ?string $agentIndex Agent index expected to be refused
@@ -337,12 +683,58 @@ final class PoolGrowthTestWorkerServer extends WorkerServer
      */
     public function addWorker(int $workerIndex): PoolGrowthTestWorkerClient
     {
-        $client = new ReflectionClass(PoolGrowthTestWorkerClient::class)->newInstanceWithoutConstructor();
-        $client->setWorkerIndex($workerIndex);
-        $client->setIsMonopolistic(true);
-        $this->clients[] = $client;
+        return $this->registerWorker($workerIndex, true);
+    }
 
-        return $client;
+    /**
+     * Registers a regular worker, the way a launched regular process does once it connects.
+     *
+     * @param int $workerIndex Index the worker registers with
+     * @return PoolGrowthTestWorkerClient The registered worker
+     */
+    public function addRegularWorker(int $workerIndex): PoolGrowthTestWorkerClient
+    {
+        return $this->registerWorker($workerIndex, false);
+    }
+
+    /**
+     * Puts a running regular process on the roster, the way a launch does before the process connects.
+     *
+     * @param int $workerIndex Index the process was launched with
+     */
+    public function launchRegularWorker(int $workerIndex): void
+    {
+        $workers = new ReflectionProperty(WorkerServer::class, 'workers');
+        $roster = $workers->getValue($this);
+        $roster[WorkerConstants::TYPE_REGULAR . WorkerConstants::KEY_SEPARATOR . $workerIndex] = [
+            WorkerConstants::FIELD_WORKER_PROCESS => new PoolGrowthTestProcess(),
+            WorkerConstants::FIELD_WORKER_TYPE => WorkerConstants::TYPE_REGULAR,
+            WorkerConstants::FIELD_WORKER_INDEX => $workerIndex,
+        ];
+        $workers->setValue($this, $roster);
+    }
+
+    /**
+     * Takes a regular process off the roster, the way the process tick does once it has died.
+     *
+     * @param int $workerIndex Index of the dead process
+     */
+    public function loseRegularWorker(int $workerIndex): void
+    {
+        new ReflectionMethod(WorkerServer::class, 'removeWorker')->invoke(
+            $this,
+            WorkerConstants::TYPE_REGULAR . WorkerConstants::KEY_SEPARATOR . $workerIndex,
+            WorkerConstants::TYPE_REGULAR,
+            $workerIndex,
+        );
+    }
+
+    /**
+     * @return array<string, AwaitingWorkerAgent> Agents waiting for a worker, keyed by agent id
+     */
+    public function awaitingWorker(): array
+    {
+        return new ReflectionProperty(WorkerServer::class, 'agentsAwaitingWorker')->getValue($this);
     }
 
     /**
@@ -350,18 +742,53 @@ final class PoolGrowthTestWorkerServer extends WorkerServer
      */
     public function expireWaits(): void
     {
+        $this->rewriteDeadlines(static fn (float $deadline): float => 0.0);
+    }
+
+    /**
+     * Moves every wait's deadline earlier, as if that many seconds of it had passed.
+     *
+     * @param float $seconds Seconds of the wait to count as gone
+     */
+    public function ageWaits(float $seconds): void
+    {
+        $this->rewriteDeadlines(static fn (float $deadline): float => $deadline - $seconds);
+    }
+
+    /**
+     * @param callable(float): float $deadlineOf New deadline of a wait, from its current one
+     */
+    private function rewriteDeadlines(callable $deadlineOf): void
+    {
         $register = new ReflectionProperty(WorkerServer::class, 'agentsAwaitingWorker');
-        $expired = [];
+        $rewritten = [];
         foreach ($register->getValue($this) as $agentId => $awaiting) {
-            $expired[$agentId] = new AwaitingWorkerAgent(
+            $rewritten[$agentId] = new AwaitingWorkerAgent(
                 $awaiting->agentId,
                 $awaiting->agentType,
                 $awaiting->agentIndex,
                 $awaiting->placedByLeader,
-                0.0,
+                $deadlineOf($awaiting->deadline),
+                $awaiting->requiresMonopolistic,
             );
         }
-        $register->setValue($this, $expired);
+        $register->setValue($this, $rewritten);
+    }
+
+    /**
+     * @param int $workerIndex Index the worker registers with
+     * @param bool $isMonopolistic Whether the worker registers as monopolistic
+     * @return PoolGrowthTestWorkerClient The registered worker
+     */
+    private function registerWorker(int $workerIndex, bool $isMonopolistic): PoolGrowthTestWorkerClient
+    {
+        $client = new ReflectionClass(PoolGrowthTestWorkerClient::class)->newInstanceWithoutConstructor();
+        $client->setWorkerIndex($workerIndex);
+        $client->setIsMonopolistic($isMonopolistic);
+        new ReflectionProperty(WorkerClient::class, 'isRegistered')->setValue($client, true);
+        $this->clients[] = $client;
+
+        return $client;
     }
 
     protected function onStart(): void
@@ -377,6 +804,9 @@ final class PoolGrowthTestWorkerClient extends WorkerClient
     /** @var list<string> Agent types a start was sent for, in order */
     public array $startedAgentTypes = [];
 
+    /** @var list<?string> Agent indexes a start was sent for, in the same order */
+    public array $startedAgentIndexes = [];
+
     /**
      * @param string $agentType Agent type to start
      * @param ?string $agentIndex Agent index to start
@@ -385,6 +815,7 @@ final class PoolGrowthTestWorkerClient extends WorkerClient
     public function sendAgentStart(string $agentType, ?string $agentIndex = null, array $liveAcceptKeys = []): void
     {
         $this->startedAgentTypes[] = $agentType;
+        $this->startedAgentIndexes[] = $agentIndex;
     }
 }
 
@@ -442,14 +873,17 @@ final class PoolGrowthTestStartSink implements AgentStartSink
  */
 final class PoolGrowthTestAgentManagerDaemon extends AgentManagerDaemon
 {
+    /** @var list<string> Agent types that run on a regular worker; every other type is monopolistic */
+    private const array REGULAR_TYPES = ['crowded', 'placed'];
+
     /**
      * @param string $agentType Agent type that was asked for
      * @param ?string $agentIndex Agent index that was asked for
-     * @return AgentDaemonInterface Daemon that is monopolistic unless it is the regular type
+     * @return AgentDaemonInterface Daemon that is monopolistic unless it is a regular type
      */
     protected function createAgentDaemon(string $agentType, ?string $agentIndex): AgentDaemonInterface
     {
-        return new PoolGrowthTestAgentDaemon($agentIndex, $agentType !== 'crowded');
+        return new PoolGrowthTestAgentDaemon($agentIndex, !in_array($agentType, self::REGULAR_TYPES, true));
     }
 }
 
@@ -477,7 +911,49 @@ final class PoolGrowthTestAgentDaemon extends AbstractAgentDaemon
 }
 
 /**
- * Project facade declaring the leader-hosted agents this test starts.
+ * Process on the roster that is running and has not connected, with no child behind it.
+ */
+final class PoolGrowthTestProcess extends Process
+{
+    public function __construct()
+    {
+    }
+
+    /** @return array<string, mixed> Status of a running process */
+    public function getStatus(): array
+    {
+        return [self::STATUS_RUNNING => true];
+    }
+}
+
+/**
+ * Leadership of a node that follows another leader.
+ */
+final class PoolGrowthTestFollowerLeadership implements Leadership
+{
+    public function amLeader(): bool
+    {
+        return false;
+    }
+
+    public function leaderId(): ?string
+    {
+        return 'leader';
+    }
+
+    public function leaderWebSocketOpen(): bool
+    {
+        return true;
+    }
+
+    public function hasQuorum(): bool
+    {
+        return true;
+    }
+}
+
+/**
+ * Project facade declaring the agents this test starts: leader-hosted, and one placed by policy.
  *
  * Abstract because only its registry constant is read: the start never builds a database.
  */
@@ -487,6 +963,7 @@ abstract class PoolGrowthTestHilos extends Hilos
         'lonely' => [],
         'solitary' => [],
         'crowded' => [],
+        'placed' => [AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY],
         'initiator' => [],
     ];
 }
