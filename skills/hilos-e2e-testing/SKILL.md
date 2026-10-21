@@ -82,6 +82,11 @@ chosen command use `$hilos-testing-cli`. This skill is how a spec is *written*.
     `test.slow()` or a named factor over `test.info().timeout` — with the reason
     in a comment: `docs/agents/frontend/testing-strategy.md`, "A test longer than
     the cap declares its own".
+16. A test that ran out of its cap gets 15 seconds more only when it was already
+    near the cap on the base (two thirds or more), passes alone with the extra,
+    and its steps are no slower than on the base. Otherwise the timeout is a
+    finding — a slowdown or a hang — not a budget: same file, "A test that ran
+    out of its cap".
 
 ## Hard Rules
 
@@ -101,6 +106,8 @@ chosen command use `$hilos-testing-cli`. This skill is how a spec is *written*.
   whether anything moved.
 - Never lean on the host timeout factor, and never add a floor under it to cure
   one test.
+- Never raise a test's cap that was not already near it on the base, and never
+  raise an `expect`, action or navigation timeout to cure a red test.
 - A file in `framework/frontend/e2e/` imports from `@playwright/test` with
   `import type` and nothing else — a value import loads a second Playwright and
   the runner refuses the run. A shared section check takes the spec's `expect`

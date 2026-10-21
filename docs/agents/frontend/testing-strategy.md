@@ -953,6 +953,37 @@ that passes only because the box was loaded goes red on the day the box is quiet
 (P-379). Never raise a floor under the factor — in the runner or in a config — to
 cure one test.
 
+### A test that ran out of its cap — 15 seconds more, only if it was already near it
+
+A test that fails with `Test timeout of … exceeded` on every attempt gets **15
+seconds more** (the owner's rule, 2026-10-21) when all three hold:
+
+1. **It was already near its cap.** In the base's green runs it passes using two
+   thirds of its cap or more; each step log prints every test's duration.
+2. **It only needed the time.** Re-run alone on the branch (`--tests=`) with the
+   15 seconds added, it passes.
+3. **Its steps are not slower.** On the branch it takes no longer than its base
+   duration plus the steps the branch added to this test.
+
+Declare the extra in the test itself, as the section above does: a named constant
+added to `test.info().timeout`, with the base duration and the branch duration in
+the comment.
+
+When one of the three fails, the cap is not the problem, and raising it hides the
+problem:
+
+- **1 fails** — the test had room and lost it: something on the branch got slower
+  or stuck. HIL-1565 held every answer to a page subscription for one delivery
+  window; each navigation grew from 0.19 to 1.30 seconds, whole suites ran twice
+  as long, and tests near their cap went red. A longer cap would have hidden it.
+- **2 fails** — what the test waits for never arrives. More time only makes the red
+  slower.
+- **3 fails** — the same steps run slower on the branch than on the base. That
+  slowdown is the finding.
+
+The rule is about the test's cap. An `expect`, action or navigation timeout is a
+wait for one state, not a budget, and is not raised this way.
+
 ## Source vs build
 
 Unit tests run against **source**; e2e runs against the **built artifact** with a
