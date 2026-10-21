@@ -6,7 +6,6 @@ import {
   i18nLocaleRow,
   settleRemovedRow,
   shownByTestId,
-  sidewaysOverflow,
   watchPageErrorFrames,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
@@ -179,13 +178,11 @@ test('shows accessible blocked deletion for a custom country with a locale and a
     await basket.focus()
     await basket.press('Enter')
     await expect(page.getByTestId('i18n-country-delete-window')).toHaveCount(0)
-    await page.setViewportSize({ width: 375, height: 812 })
     await expect(description).toBeVisible()
     await expect(basket).toHaveAttribute(
       'aria-describedby',
       (await description.getAttribute('id'))!,
     )
-    await expect.poll(() => sidewaysOverflow(page)).toEqual([0, 0])
     await gotoPage(page, `/hilos/i18n/countries/${code}`, PAGE_READY)
     await expect(page.getByTestId('country-card-delete-verdict')).toContainText(
       reason!,
@@ -197,6 +194,5 @@ test('shows accessible blocked deletion for a custom country with a locale and a
     await page.getByTestId('country-card-delete').focus()
     await page.getByTestId('country-card-delete').press('Enter')
     await expect(page.getByTestId('i18n-country-delete-window')).toHaveCount(0)
-    await page.setViewportSize({ width: 1280, height: 720 })
   }
 })

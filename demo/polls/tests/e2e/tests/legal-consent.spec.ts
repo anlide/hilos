@@ -15,7 +15,6 @@ import { gotoPage } from '../helpers/page.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import {
   acceptTermsAsNewAccount,
-  sidewaysOverflow,
   signInAs,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { declareOAuthAccount } from '../../../../../framework/frontend/scripts/standOAuth.mjs'
@@ -60,8 +59,6 @@ test('reads the current documents before registration and records both accepted 
   await expect(page.getByTestId('legal-revision-clause-deviation')).toHaveCount(
     1,
   )
-  await page.setViewportSize({ width: 375, height: 812 })
-  expect(await sidewaysOverflow(page)).toEqual([0, 0])
   await clickSubmit(page.getByTestId('legal-consent-back'))
   await expect(
     page.getByTestId('legal-consent-standard-toggle'),

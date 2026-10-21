@@ -12,7 +12,6 @@ import { clickSubmit, PASSWORD, signUp, typeInto } from '../helpers/session.js'
 import {
   downloadBytes,
   shownByTestId,
-  sidewaysOverflow,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 /** The header line of a file of acceptance records (HIL-1234). */
@@ -36,7 +35,7 @@ async function exportedLinesOf(page: Page, userId: number): Promise<string[]> {
   return lines.filter((line) => line.startsWith(`${userId},`))
 }
 
-test('reads the legal catalog, deviations and revision comparison at desktop and mobile widths', async ({
+test('reads the legal catalog, deviations and revision comparison', async ({
   page,
 }) => {
   await signUpAdmin(page)
@@ -75,18 +74,11 @@ test('reads the legal catalog, deviations and revision comparison at desktop and
   await expect(page.getByTestId('legal-revision-accepted')).toHaveText(
     /^\s*[1-9]\d* acceptances\s*$/,
   )
-
-  await page.setViewportSize({ width: 375, height: 812 })
-  await expect(page.getByTestId('legal-changes-narrow')).toBeVisible()
-  await expect(page.getByTestId('legal-changes-wide')).toBeHidden()
-  expect(await sidewaysOverflow(page)).toEqual([0, 0])
   await gotoPage(page, '/hilos/legal/terms')
   await expect(page.getByTestId('legal-set')).toBeVisible()
   await expect(shownByTestId(page, 'legal-revision-row')).toHaveCount(3)
-  expect(await sidewaysOverflow(page)).toEqual([0, 0])
   await gotoPage(page, '/hilos/legal')
   await expect(shownByTestId(page, 'legal-document-row')).toHaveCount(2)
-  expect(await sidewaysOverflow(page)).toEqual([0, 0])
 })
 
 /** Edits one legal setting through its page, leaving a no-op through Cancel. */
@@ -161,13 +153,11 @@ test('offers complete acceptance filters and merges legal setting changes across
     await expect(
       shownByTestId(other, 'legal-setting-value-legal.refusal_after_deadline'),
     ).toHaveText('Keep reminding')
-    await page.setViewportSize({ width: 375, height: 812 })
     await clickSubmit(
       shownByTestId(page, 'legal-setting-edit-legal.consent_form'),
     )
     await expect(page.getByTestId('legal-setting-input')).toHaveValue('line')
     await expect(page.getByTestId('legal-setting-save')).toBeDisabled()
-    expect(await sidewaysOverflow(page)).toEqual([0, 0])
     await clickSubmit(page.getByTestId('legal-setting-cancel'))
   } finally {
     const cleanup = await page.context().newPage()

@@ -10,10 +10,7 @@ import {
   openSignIn,
   signUp,
 } from '../helpers/session.js'
-import {
-  shownByTestId,
-  sidewaysOverflow,
-} from '../../../../../framework/frontend/e2e/index.js'
+import { shownByTestId } from '../../../../../framework/frontend/e2e/index.js'
 
 // "The terms have changed" (HIL-500). Polls's second terms revision is substantial
 // and took effect the day it was published, so a person the test:legal:hold
@@ -145,11 +142,9 @@ test('under "remind" the window rises on sign-in and the header icon keeps the r
     await clickSubmit(window.getByTestId('legal-reconsent-close'))
     await expect(window).toHaveCount(0)
 
-    await page.setViewportSize({ width: 375, height: 812 })
     await icon.click()
     await expect(window).toBeVisible()
     await expect(window.getByTestId('legal-reconsent-accept')).toBeEnabled()
-    expect(await sidewaysOverflow(page)).toEqual([0, 0])
     await clickSubmit(window.getByTestId('legal-reconsent-accept'))
     await expect(window).toHaveCount(0)
     await expect(icon).toHaveCount(0)

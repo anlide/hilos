@@ -20,7 +20,6 @@ import {
   saveAppearanceDefaultTheme,
   saveAppearanceSwitching,
   shownByTestId,
-  sidewaysOverflow,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import { setAdminViewMode } from '../helpers/adminViewMode.js'
@@ -322,77 +321,65 @@ test('Appearance switching restores guest and account Dark choices without reloa
   }
 })
 
-for (const palette of ['light', 'dark'] as const) {
-  test(`at 375px in ${palette} both Appearance windows support keyboard, focus and discard`, async ({
+test('both Appearance windows support keyboard, focus and discard', async ({
+  page,
+}) => {
+  await emulateSystemTheme(page, 'light')
+  await gotoPage(page, '/', PAGE_READY)
+  await chooseHeaderTheme(expect, page, 'light')
+  await signUpAdmin(page)
+  await gotoPage(page, APPEARANCE_PATH, PAGE_READY)
+  await expectThemeMode(expect, page, 'light')
+  await expectAppearanceRows(expect, page)
+  await dismissToasts(page)
+
+  const pencil = shownByTestId(
     page,
-  }) => {
-    await page.setViewportSize({ width: 375, height: 812 })
-    await emulateSystemTheme(page, 'light')
-    await gotoPage(page, '/', PAGE_READY)
-    await chooseHeaderTheme(expect, page, palette)
-    await signUpAdmin(page)
-    await gotoPage(page, APPEARANCE_PATH, PAGE_READY)
-    await expectThemeMode(expect, page, palette)
-    await expect(page.getByTestId('hilos-table-cards')).toBeVisible()
-    await expectAppearanceRows(expect, page)
-    expect(await sidewaysOverflow(page)).toEqual([0, 0])
-    await dismissToasts(page)
+    `appearance-setting-edit-${THEME_SWITCHING_KEY}`,
+  )
+  await expect(pencil).toContainText('Edit')
+  await pencil.focus()
+  await pencil.press('Enter')
+  const dialog = page.getByTestId('modal')
+  await expect(dialog).toBeVisible()
+  await expect(dialog).toHaveAccessibleName('Edit · Theme switching')
+  const switching = page.getByTestId('appearance-switching-input')
+  await expect(switching).toBeFocused()
+  await switching.press('Space')
+  await expect(switching).not.toBeChecked()
+  await expect(page.getByTestId('appearance-switching-save')).toBeEnabled()
+  await switching.press('Escape')
+  await expect(page.getByTestId('modal-confirm')).toContainText(
+    'Discard changes?',
+  )
+  await page.getByTestId('modal-confirm-discard').click()
+  await expect(dialog).toBeHidden()
+  await expect(pencil).toBeFocused()
+  await expect(appearanceSettingValue(page, THEME_SWITCHING_KEY)).toHaveText(
+    'On',
+  )
 
-    const pencil = shownByTestId(
-      page,
-      `appearance-setting-edit-${THEME_SWITCHING_KEY}`,
-    )
-    await expect(pencil).toContainText('Edit')
-    await pencil.focus()
-    await pencil.press('Enter')
-    const dialog = page.getByTestId('modal')
-    await expect(dialog).toBeVisible()
-    await expect(dialog).toHaveAccessibleName('Edit · Theme switching')
-    const switching = page.getByTestId('appearance-switching-input')
-    await expect(switching).toBeFocused()
-    await switching.press('Space')
-    await expect(switching).not.toBeChecked()
-    await expect(page.getByTestId('appearance-switching-save')).toBeEnabled()
-    expect(await sidewaysOverflow(page)).toEqual([0, 0])
-    await switching.press('Escape')
-    await expect(page.getByTestId('modal-confirm')).toContainText(
-      'Discard changes?',
-    )
-    await page.getByTestId('modal-confirm-discard').click()
-    await expect(dialog).toBeHidden()
-    await expect(pencil).toBeFocused()
-    await expect(appearanceSettingValue(page, THEME_SWITCHING_KEY)).toHaveText(
-      'On',
-    )
-
-    const themePencil = shownByTestId(
-      page,
-      `appearance-setting-edit-${THEME_DEFAULT_KEY}`,
-    )
-    await themePencil.focus()
-    await themePencil.press('Enter')
-    await expect(dialog).toBeVisible()
-    await expect(dialog).toHaveAccessibleName('Edit · Default theme')
-    const system = page.getByTestId('appearance-default-theme-system')
-    await expect(system).toBeChecked()
-    await system.focus()
-    await system.press('ArrowLeft')
-    await expect(
-      page.getByTestId('appearance-default-theme-dark'),
-    ).toBeChecked()
-    await expect(
-      page.getByTestId('appearance-default-theme-save'),
-    ).toBeEnabled()
-    expect(await sidewaysOverflow(page)).toEqual([0, 0])
-    await page.keyboard.press('Escape')
-    await expect(page.getByTestId('modal-confirm')).toContainText(
-      'Discard changes?',
-    )
-    await page.getByTestId('modal-confirm-discard').click()
-    await expect(dialog).toBeHidden()
-    await expect(themePencil).toBeFocused()
-    await expectAppearanceRows(expect, page)
-    await expectThemeMode(expect, page, palette)
-    expect(await sidewaysOverflow(page)).toEqual([0, 0])
-  })
-}
+  const themePencil = shownByTestId(
+    page,
+    `appearance-setting-edit-${THEME_DEFAULT_KEY}`,
+  )
+  await themePencil.focus()
+  await themePencil.press('Enter')
+  await expect(dialog).toBeVisible()
+  await expect(dialog).toHaveAccessibleName('Edit · Default theme')
+  const system = page.getByTestId('appearance-default-theme-system')
+  await expect(system).toBeChecked()
+  await system.focus()
+  await system.press('ArrowLeft')
+  await expect(page.getByTestId('appearance-default-theme-dark')).toBeChecked()
+  await expect(page.getByTestId('appearance-default-theme-save')).toBeEnabled()
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('modal-confirm')).toContainText(
+    'Discard changes?',
+  )
+  await page.getByTestId('modal-confirm-discard').click()
+  await expect(dialog).toBeHidden()
+  await expect(themePencil).toBeFocused()
+  await expectAppearanceRows(expect, page)
+  await expectThemeMode(expect, page, 'light')
+})

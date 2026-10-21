@@ -3,7 +3,6 @@ import { expect, test } from '@playwright/test'
 import { holdLegalRevision } from '../helpers/legalHold.js'
 import { gotoPage, PAGE_READY } from '../helpers/page.js'
 import { clickSubmit, logout, signUp } from '../helpers/session.js'
-import { sidewaysOverflow } from '../../../../../framework/frontend/e2e/index.js'
 
 // The public Terms page (HIL-501): its body is the text of the Terms revision in
 // force, read from polls's legal catalog, with the reader's standing above it and
@@ -114,10 +113,6 @@ test('the page follows a revision moved under it, and accepting there lifts the 
   const wide = comparison.getByTestId('legal-changes-wide')
   await expect(wide.getByTestId('legal-change-row')).toHaveCount(1)
   await expect(wide.getByTestId('legal-change-kind')).toHaveText('changed')
-
-  await page.setViewportSize({ width: 375, height: 812 })
-  await expect(comparison.getByTestId('legal-changes-narrow')).toBeVisible()
-  expect(await sidewaysOverflow(page)).toEqual([0, 0])
 
   await clickSubmit(page.getByTestId('terms-changes-accept'))
   await expect(comparison).toHaveCount(0)

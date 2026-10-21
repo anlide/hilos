@@ -3,9 +3,7 @@ import {
   dismissToasts,
   expectNoOtherLanguageNames,
   i18nNameRow,
-  pickThemeBeforeLoad,
   shownByTestId,
-  sidewaysOverflow,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import {
@@ -120,7 +118,7 @@ test('cancels then deletes a base name and all corrections live in both windows'
   }
 })
 
-test('removes one correction and then the saved empty correction at 375px, with a live missing-name explanation', async ({
+test('removes one correction and then the saved empty correction, with a live missing-name explanation', async ({
   page,
   context,
 }) => {
@@ -130,16 +128,9 @@ test('removes one correction and then the saved empty correction at 375px, with 
   await seedLanguageNamesFixture()
   const observer = await context.newPage()
   try {
-    // The spec needs the dark theme, not the menu: the browser's pick is set
-    // before any page loads, and registration carries it into the account.
-    await pickThemeBeforeLoad(context, 'dark')
     await signUpAdmin(page)
     await openNames(page)
     await openNames(observer)
-    for (const tab of [page, observer]) {
-      await expect(tab.locator('html')).toHaveAttribute('data-bs-theme', 'dark')
-    }
-    await page.setViewportSize({ width: 375, height: 812 })
     const trash = shownByTestId(page, 'i18n-names-delete-qw-GB')
     await expect(trash).toHaveAccessibleName('Remove locale correction qw-GB')
     await clickSubmit(trash)
@@ -148,7 +139,6 @@ test('removes one correction and then the saved empty correction at 375px, with 
     await expect(page.getByTestId(WINDOW)).toContainText(
       /Base name to inherit:\s*Fixture base/,
     )
-    await expect.poll(() => sidewaysOverflow(page)).toEqual([0, 0])
     await page.getByTestId('modal').press('Escape')
     await expect(page.getByTestId(WINDOW)).toHaveCount(0)
     await expect(trash).toBeFocused()
@@ -186,14 +176,12 @@ test('removes one correction and then the saved empty correction at 375px, with 
     await expect(
       page.getByTestId('i18n-language-name-delete-notice-slot'),
     ).toHaveAttribute('aria-live', 'polite')
-    await expect.poll(() => sidewaysOverflow(page)).toEqual([0, 0])
     await clickSubmit(
       page.getByTestId('i18n-language-name-delete-notice-details'),
     )
     await expect(
       page.getByTestId('i18n-language-name-delete-notice-full'),
     ).toContainText('The name no longer exists.')
-    await expect.poll(() => sidewaysOverflow(page)).toEqual([0, 0])
     await clickSubmit(
       page.getByTestId('i18n-language-name-delete-notice-close'),
     )

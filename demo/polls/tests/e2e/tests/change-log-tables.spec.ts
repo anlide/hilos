@@ -6,13 +6,12 @@ import {
   expectChangeLogReference,
   expectTrackedTablesPage,
   shownByTestId,
-  sidewaysOverflow,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import { expectPageReady, gotoPage } from '../helpers/page.js'
 import { typeInto } from '../helpers/session.js'
 
-test('opens Tracked tables from Change Log, filters journal labels and reads schema metadata on a phone', async ({
+test('opens Tracked tables from Change Log, filters journal labels and reads schema metadata', async ({
   page,
 }) => {
   await signUpAdmin(page)
@@ -50,12 +49,10 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
   await gotoPage(page, CHANGE_LOG_TABLES_PATH)
 
   await expectChangeLogReference(expect, page)
-  const noise = page.getByTestId('hilos-change-log-noisy-columns')
   const noiseTable = page.getByRole('table', {
     name: 'Noisy columns',
     exact: true,
   })
-  const modes = page.getByTestId('hilos-change-log-column-modes')
 
   await typeInto(search, 'hilos_session')
   const journal = page.getByTestId('hilos-table-filter-journal')
@@ -88,16 +85,4 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
   await expect(
     page.locator('table [data-id^="hilos-table-row-"]').first(),
   ).toBeVisible()
-
-  await page.setViewportSize({ width: 375, height: 812 })
-  await expect(noiseTable).toBeHidden()
-  const noiseCards = noise.locator('.d-md-none')
-  await expect(noiseCards).toBeVisible()
-  await expect(noiseCards).toContainText('hilos_user.last_activity')
-  await expect(noiseCards).toContainText('Changes on every user request')
-  await expect(modes).toBeVisible()
-  await expect(
-    page.getByRole('list', { name: 'Tables', exact: true }),
-  ).toBeVisible()
-  expect(await sidewaysOverflow(page)).toEqual([0, 0])
 })

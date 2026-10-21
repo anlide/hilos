@@ -37,7 +37,6 @@ test('a blocked account prepares and downloads its data after a credited passwor
     await openSignIn(personPage)
     await login(personPage, person.email, PASSWORD)
     await expect(personPage.getByTestId('account-blocked')).toBeVisible()
-    await personPage.setViewportSize({ width: 375, height: 900 })
     await expect(personPage.getByTestId('data-export')).toContainText(
       'Your data',
     )

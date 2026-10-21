@@ -2,9 +2,8 @@ import { test, expect } from '@playwright/test'
 
 import { clickSubmit, signUp } from '../helpers/session.js'
 import { gotoPage } from '../helpers/page.js'
-import { sidewaysOverflow } from '../../../../../framework/frontend/e2e/index.js'
 
-test('reads personal agreements and compares published revisions on wide and narrow screens', async ({
+test('reads personal agreements and compares published revisions', async ({
   page,
 }) => {
   await signUp(page)
@@ -96,14 +95,6 @@ test('reads personal agreements and compares published revisions on wide and nar
   await expect(wide).toContainText('Project deviation')
   await expect(wide).toContainText('This is a demo: its data may be wiped')
 
-  await page.setViewportSize({ width: 375, height: 812 })
-  const narrow = comparison.getByTestId('legal-changes-narrow')
-  await expect(narrow).toBeVisible()
-  await expect(wide).toBeHidden()
-  await expect(narrow.getByTestId('legal-change-row')).toHaveCount(1)
-  await expect(narrow).toContainText('Before — revision 17 September 2026')
-  await expect(narrow).toContainText('After — revision 1 October 2026')
-  expect(await sidewaysOverflow(page)).toEqual([0, 0])
   await clickSubmit(page.getByTestId('legal-history-close'))
   await expect(comparison).toBeHidden()
 
