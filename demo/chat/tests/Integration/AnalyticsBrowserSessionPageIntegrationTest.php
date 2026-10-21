@@ -86,10 +86,14 @@ final class AnalyticsBrowserSessionPageIntegrationTest extends IntegrationTestCa
         RtTruthSourceRegistry::unregisterDaemon(AdminViewModeRuntime::RT_ITEM);
         RtTruthSourceRegistry::unregisterAgent(self::OWNER);
         foreach ($this->sessionIds as $id) {
-            Hilos::$db->sessions[$id]?->actions->delete();
+            if (isset(Hilos::$db->sessions[$id])) {
+                Hilos::$db->sessions[$id]->actions->delete();
+            }
         }
         foreach ($this->userIds as $id) {
-            Hilos::$db->users[$id]?->actions->delete();
+            if (isset(Hilos::$db->users[$id])) {
+                Hilos::$db->users[$id]->actions->delete();
+            }
         }
         foreach ($this->baseline as $table => $id) {
             Database::sqlRun('DELETE FROM `' . $table . '` WHERE `id` > ?', [$id]);

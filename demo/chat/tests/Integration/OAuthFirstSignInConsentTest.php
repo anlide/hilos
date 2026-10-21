@@ -257,7 +257,9 @@ final class OAuthFirstSignInConsentTest extends IntegrationTestCase
         TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::SETTINGS_AGENT_ID);
         ExecutionContext::setCurrentAgentId(self::SETTINGS_AGENT_ID);
         try {
-            Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY]?->actions->delete();
+            if (isset(Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY])) {
+                Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY]->actions->delete();
+            }
             if ($provider !== null) {
                 Hilos::$db->settings->actions->add(
                     AuthMethodSettings::DISABLED_KEY,

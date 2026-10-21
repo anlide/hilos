@@ -89,7 +89,7 @@ final class I18nLanguageSwitchOnTest extends IntegrationTestCase
         $page = new LanguageDetailPage($this->agent);
         $this->underAgent($this->agent, static function () use ($page): void {
             self::assertNull($page->onAction('language-ak', HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_ON,
-                new HilosI18nLanguageSwitchOnActionDTO(Hilos::$db->languages['fr']?->id ?? 999999)));
+                new HilosI18nLanguageSwitchOnActionDTO(Hilos::$db->languages['fr']->id)));
         });
         self::assertTrue(Hilos::$db->languages['fr']->enabled);
         $page->sendActionSuccess('language-ak', HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_ON, 'switch-on-request');
@@ -106,13 +106,15 @@ final class I18nLanguageSwitchOnTest extends IntegrationTestCase
         )->countrylessLocale);
         $this->underAgent($this->agent, static function () use ($page): void {
             self::assertNull($page->onAction('language-ak', HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_ON,
-                new HilosI18nLanguageSwitchOnActionDTO(Hilos::$db->languages['fr']?->id ?? 999999)));
+                new HilosI18nLanguageSwitchOnActionDTO(Hilos::$db->languages['fr']->id)));
         });
         self::assertTrue(Hilos::$db->languages['fr']->enabled);
 
         $this->expectException(TableActionException::class);
         $page->onAction('language-ak', HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_ON,
-            new HilosI18nLanguageSwitchOnActionDTO(Hilos::$db->languages['zz']?->id ?? 999999));
+            new HilosI18nLanguageSwitchOnActionDTO(
+                isset(Hilos::$db->languages['zz']) ? Hilos::$db->languages['zz']->id : 999999,
+            ));
     }
 
     public function testBothOpenCardsReceiveEnabledAndCountrylessLocaleStates(): void
@@ -137,7 +139,7 @@ final class I18nLanguageSwitchOnTest extends IntegrationTestCase
         $language = Hilos::$db->languages['fr'];
         $this->underAgent($this->agent, function (): void {
             new LanguageDetailPage($this->agent)->onAction('switch-on-one', HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_ON,
-                new HilosI18nLanguageSwitchOnActionDTO(Hilos::$db->languages['fr']?->id ?? 999999));
+                new HilosI18nLanguageSwitchOnActionDTO(Hilos::$db->languages['fr']->id));
         });
         Hilos::$browser->record(SourceChange::dbUpdated(
             HilosDbContext::languages, (string)$language->id, [EntityLanguage::enabled => true],
@@ -196,11 +198,11 @@ final class I18nLanguageSwitchOnTest extends IntegrationTestCase
         self::assertFalse(Hilos::$db->languages->cardSummary(Hilos::$db->languages['es']->id)->canDelete);
         $this->assertCommand(CliCommands::I18N_TEST_LANGUAGE_DELETE, 'es', false, "Language 'es' cannot be deleted: it has locales.");
         $this->assertCommand(CliCommands::I18N_TEST_LOCALE_DELETE, 'es', true, ['code' => 'es']);
-        self::assertNull(Hilos::$db->locales['es']);
+        self::assertArrayNotHasKey('es', Hilos::$db->locales);
         self::assertTrue(Hilos::$db->languages->cardSummary(Hilos::$db->languages['es']->id)->canDelete);
         $this->assertCommand(CliCommands::I18N_TEST_LOCALE_DELETE, 'es', true, ['code' => 'es']);
         $this->assertCommand(CliCommands::I18N_TEST_LANGUAGE_DELETE, 'es', true, ['code' => 'es']);
-        self::assertNull(Hilos::$db->languages['es']);
+        self::assertArrayNotHasKey('es', Hilos::$db->languages);
         $this->assertCommand(CliCommands::I18N_TEST_LOCALE_DELETE, 'en', false,
             'The default locale cannot be removed by test cleanup');
         $this->assertCommand(CliCommands::I18N_TEST_LOCALE_DELETE, 'en-US', false,

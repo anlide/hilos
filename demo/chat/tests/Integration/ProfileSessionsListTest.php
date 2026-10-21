@@ -111,9 +111,8 @@ final class ProfileSessionsListTest extends IntegrationTestCase
     public function testEndingAnotherSessionRemovesItFromTheSubscribersList(): void
     {
         [$userId, $selfSessionId, $otherSessionId] = $this->createUserWithTwoSessions();
-        $otherSession = Hilos::$db->sessions[$otherSessionId];
-        self::assertNotNull($otherSession);
-        $otherSession->actions->unbindUser();
+        self::assertArrayHasKey($otherSessionId, Hilos::$db->sessions);
+        Hilos::$db->sessions[$otherSessionId]->actions->unbindUser();
 
         $syncData = null;
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {

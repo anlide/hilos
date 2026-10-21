@@ -66,7 +66,7 @@ final class UserTestSeedCommandTest extends IntegrationTestCase
 
             $userId = $identity->userId;
             $this->assertNotNull($userId);
-            $this->assertSame($local, Hilos::$db->users[$userId]?->name);
+            $this->assertSame($local, Hilos::$db->users[$userId]->name);
             $userIds[$userId] = true;
 
             // Every seeded user verifies against the one shared hash.

@@ -48,7 +48,7 @@ final class UserActionsTest extends IntegrationTestCase
         $name = str_repeat('x', 64);
         Hilos::$db->users[$userId]->actions->rename($name);
 
-        $this->assertSame($name, Hilos::$db->users[$userId]?->name);
+        $this->assertSame($name, Hilos::$db->users[$userId]->name);
     }
 
     /**

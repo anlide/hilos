@@ -331,9 +331,9 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
         try {
             $reply = $this->command(CliCommands::I18N_TEST_COUNTRY_NAMES_SEED);
             self::assertFalse($reply->isOk());
-            self::assertNull(Hilos::$db->countries['qj']);
-            self::assertNull(Hilos::$db->languages['qk']);
-            self::assertNull(Hilos::$db->locales['qk-GB']);
+            self::assertArrayNotHasKey('qj', Hilos::$db->countries);
+            self::assertArrayNotHasKey('qk', Hilos::$db->languages);
+            self::assertArrayNotHasKey('qk-GB', Hilos::$db->locales);
             self::assertSame([], $this->nameSnapshot());
         } finally {
             TruthSourceRegistry::register(HilosDbContext::locales, TruthSourceKeys::all(), $this->agent->getId());
@@ -532,14 +532,14 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
             $reply = $this->command(CliCommands::I18N_TEST_COUNTRY_NAMES_CLEAR);
             self::assertTrue($reply->isOk());
             self::assertSame([], $reply->payload);
-            self::assertNull(Hilos::$db->countries['qj']);
-            self::assertNull(Hilos::$db->languages['qk']);
-            self::assertNull(Hilos::$db->locales['qk-GB']);
-            self::assertNull(Hilos::$db->locales['qk-US']);
+            self::assertArrayNotHasKey('qj', Hilos::$db->countries);
+            self::assertArrayNotHasKey('qk', Hilos::$db->languages);
+            self::assertArrayNotHasKey('qk-GB', Hilos::$db->locales);
+            self::assertArrayNotHasKey('qk-US', Hilos::$db->locales);
         }
         self::assertSame($countries, [Hilos::$db->countries['gb']->id, Hilos::$db->countries['us']->id]);
         self::assertSame('Other', Hilos::$db->countries['qx']->currencySymbol);
-        self::assertNotNull(Hilos::$db->languages['en']);
+        self::assertArrayHasKey('en', Hilos::$db->languages);
     }
 
     /** @return iterable<string, array{string, string}> Each command with either foreign marker */
@@ -576,10 +576,10 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
         self::assertSame('Foreign', $code === 'qj'
             ? Hilos::$db->countries['qj']->currencySymbol : Hilos::$db->languages['qk']->nativeName);
         self::assertSame($before, $this->nameSnapshot());
-        self::assertNotNull(Hilos::$db->countries['qj']);
-        self::assertNotNull(Hilos::$db->languages['qk']);
-        self::assertNotNull(Hilos::$db->locales['qk-GB']);
-        self::assertNotNull(Hilos::$db->locales['qk-US']);
+        self::assertArrayHasKey('qj', Hilos::$db->countries);
+        self::assertArrayHasKey('qk', Hilos::$db->languages);
+        self::assertArrayHasKey('qk-GB', Hilos::$db->locales);
+        self::assertArrayHasKey('qk-US', Hilos::$db->locales);
     }
 
     /**
@@ -594,13 +594,13 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
             Hilos::$db->countries['qx'], Hilos::$db->languages['qk'], null, 'Do not clean this name',
         ));
         self::assertFalse($this->command(CliCommands::I18N_TEST_COUNTRY_NAMES_CLEAR)->isOk());
-        self::assertNotNull(Hilos::$db->countries['qj']);
-        self::assertNotNull(Hilos::$db->languages['qk']);
+        self::assertArrayHasKey('qj', Hilos::$db->countries);
+        self::assertArrayHasKey('qk', Hilos::$db->languages);
         self::assertSame('Do not clean this name', Hilos::$db->countryNames[$other->id]->name);
         $this->underAgent($this->agent, static fn () => $other->actions->delete());
         self::assertTrue($this->command(CliCommands::I18N_TEST_COUNTRY_NAMES_CLEAR)->isOk());
-        self::assertNull(Hilos::$db->languages['qk']);
-        self::assertNotNull(Hilos::$db->countries['qx']);
+        self::assertArrayNotHasKey('qk', Hilos::$db->languages);
+        self::assertArrayHasKey('qx', Hilos::$db->countries);
     }
 
     /** @throws HilosException When setup, dispatch or a data read fails */
@@ -716,8 +716,10 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
         } finally {
             $this->underAgent($this->agent, static function (): void {
                 Hilos::$db->countryNames->findBase(Hilos::$db->countries['us']->id, Hilos::$db->languages['en']->id)?->actions->delete();
-                Hilos::$db->locales['en-GB']?->actions->switchOff();
-                Hilos::$db->locales['en-GB']?->actions->delete();
+                if (isset(Hilos::$db->locales['en-GB'])) {
+                    Hilos::$db->locales['en-GB']->actions->switchOff();
+                    Hilos::$db->locales['en-GB']->actions->delete();
+                }
             });
         }
     }
@@ -729,8 +731,8 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
             $reply = $this->command($command, ['countryCode' => 'us']);
             self::assertFalse($reply->isOk());
             self::assertSame('The country names fixture command takes no arguments.', $reply->payload[CommandConstants::FIELD_MESSAGE]);
-            self::assertNull(Hilos::$db->countries['qj']);
-            self::assertNull(Hilos::$db->languages['qk']);
+            self::assertArrayNotHasKey('qj', Hilos::$db->countries);
+            self::assertArrayNotHasKey('qk', Hilos::$db->languages);
         }
     }
 
@@ -745,13 +747,13 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
             self::assertFalse($this->command(CliCommands::I18N_TEST_COUNTRY_NAMES_CLEAR)->isOk());
             self::assertNull($this->base());
             self::assertSame(Hilos::$db->locales['qk-GB']->id, Hilos::$db->countries['gb']->defaultLocaleId);
-            self::assertNotNull(Hilos::$db->locales['qk-US']);
+            self::assertArrayHasKey('qk-US', Hilos::$db->locales);
         } finally {
             $this->underAgent($this->agent, static fn () => Hilos::$db->countries['gb']->actions->update('£', 'GBP', null));
         }
         self::assertTrue($this->command(CliCommands::I18N_TEST_COUNTRY_NAMES_CLEAR)->isOk());
         self::assertTrue($this->command(CliCommands::I18N_TEST_COUNTRY_NAMES_CLEAR)->isOk());
-        self::assertNotNull(Hilos::$db->countries['gb']);
+        self::assertArrayHasKey('gb', Hilos::$db->countries);
     }
 
     /**
@@ -878,7 +880,11 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
     {
         $params = ['countryCode' => $countryCode];
         $windows = [ChatTableContext::hilosI18nCountryNames => new TableWindowDescriptorDTO(
-            filter: [HilosI18nCountryNamesTable::FILTER_COUNTRY => Hilos::$db->countries[$countryCode]?->id ?? 999999],
+            filter: [
+                HilosI18nCountryNamesTable::FILTER_COUNTRY => isset(Hilos::$db->countries[$countryCode])
+                    ? Hilos::$db->countries[$countryCode]->id
+                    : 999999,
+            ],
         )];
         Hilos::$sr->subscribeToPage(CountryNamesPage::PAGE, new WebSocketPageSubscribeSignalDTO(
             $acceptKey, CountryNamesPage::PAGE, $params, $windows,
@@ -947,7 +953,7 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
     {
         $this->underAgent($this->agent, static function (): void {
             foreach (['qj', 'qx'] as $code) {
-                if (Hilos::$db->countries[$code] === null) {
+                if (!isset(Hilos::$db->countries[$code])) {
                     continue;
                 }
                 foreach (Hilos::$db->countryNames as $name) {
@@ -957,12 +963,19 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
                 }
             }
             foreach (['qk-GB', 'qk-US', 'qk-FR'] as $code) {
-                Hilos::$db->locales[$code]?->actions->switchOff();
-                Hilos::$db->locales[$code]?->actions->delete();
+                if (!isset(Hilos::$db->locales[$code])) {
+                    continue;
+                }
+                Hilos::$db->locales[$code]->actions->switchOff();
+                Hilos::$db->locales[$code]->actions->delete();
             }
-            Hilos::$db->languages['qk']?->actions->delete();
+            if (isset(Hilos::$db->languages['qk'])) {
+                Hilos::$db->languages['qk']->actions->delete();
+            }
             foreach (['qj', 'qx'] as $code) {
-                Hilos::$db->countries[$code]?->actions->delete();
+                if (isset(Hilos::$db->countries[$code])) {
+                    Hilos::$db->countries[$code]->actions->delete();
+                }
             }
         });
     }
@@ -987,9 +1000,11 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
         string $text,
         ?string $expectedName = null,
     ): ActionPayloadDTO {
-        $subjectId = Hilos::$db->countries[$subjectCode]?->id ?? PHP_INT_MAX;
-        $writingId = Hilos::$db->languages[$writingCode]?->id ?? PHP_INT_MAX;
-        $localeId = $localeCode === null ? null : (Hilos::$db->locales[$localeCode]?->id ?? PHP_INT_MAX);
+        $subjectId = isset(Hilos::$db->countries[$subjectCode]) ? Hilos::$db->countries[$subjectCode]->id : PHP_INT_MAX;
+        $writingId = isset(Hilos::$db->languages[$writingCode]) ? Hilos::$db->languages[$writingCode]->id : PHP_INT_MAX;
+        $localeId = $localeCode === null
+            ? null
+            : (isset(Hilos::$db->locales[$localeCode]) ? Hilos::$db->locales[$localeCode]->id : PHP_INT_MAX);
         $base = Hilos::$db->countryNames->findBase($subjectId, $writingId);
         if ($class === HilosI18nCountryNameAddActionDTO::class) {
             return new HilosI18nCountryNameAddActionDTO(

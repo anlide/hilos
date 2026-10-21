@@ -67,7 +67,9 @@ final class BotPageTest extends IntegrationTestCase
         RtTruthSourceRegistry::unregisterAgent(self::CONNECTIONS_OWNER);
         ExecutionContext::setCurrentAgentId(null);
         foreach ($this->botIds as $botId) {
-            Hilos::$db->bots[$botId]?->actions->delete();
+            if (isset(Hilos::$db->bots[$botId])) {
+                Hilos::$db->bots[$botId]->actions->delete();
+            }
         }
         if ($this->library !== null) {
             SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($this->library->getId()));
@@ -146,7 +148,7 @@ final class BotPageTest extends IntegrationTestCase
         self::assertSame(HttpConstants::HTTP_BAD_REQUEST, $malformed->httpCode);
 
         $goneId = $this->createBot('Gone bot', true);
-        Hilos::$db->bots[$goneId]?->actions->delete();
+        Hilos::$db->bots[$goneId]->actions->delete();
         $this->botIds = array_values(array_diff($this->botIds, [$goneId]));
         $unknown = $this->refusal($this->subscribeRaw([BotPageSubscribeParams::BOT_ID => (string)$goneId]));
         self::assertSame(HttpConstants::HTTP_NOT_FOUND, $unknown->httpCode);
@@ -327,8 +329,8 @@ final class BotPageTest extends IntegrationTestCase
      */
     private function profileOf(int $botId): array
     {
+        self::assertArrayHasKey($botId, Hilos::$db->bots);
         $bot = Hilos::$db->bots[$botId];
-        self::assertNotNull($bot);
 
         return [
             Bot::id => $bot->id,

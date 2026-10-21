@@ -273,7 +273,9 @@ final class SecurityTwoFactorPageTest extends IntegrationTestCase
     private function clearRows(): void
     {
         foreach (SecondFactorSettings::KEYS as $key) {
-            Hilos::$db->settings[$key]?->actions->delete();
+            if (isset(Hilos::$db->settings[$key])) {
+                Hilos::$db->settings[$key]->actions->delete();
+            }
         }
     }
 }

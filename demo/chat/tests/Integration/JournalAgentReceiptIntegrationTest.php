@@ -324,12 +324,14 @@ final class JournalAgentReceiptIntegrationTest extends IntegrationTestCase
             RtTruthSourceRegistry::unregisterAgent($this->recipient->getId());
             SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($this->recipient->getId()));
         }
-        if ($this->botId !== null) {
-            Hilos::$db->bots[$this->botId]?->actions->delete();
+        if ($this->botId !== null && isset(Hilos::$db->bots[$this->botId])) {
+            Hilos::$db->bots[$this->botId]->actions->delete();
         }
         if (isset($this->settingKey)) {
             $this->underAgent($this->writer, function (): void {
-                Hilos::$db->settings[$this->settingKey]?->actions->delete();
+                if (isset(Hilos::$db->settings[$this->settingKey])) {
+                    Hilos::$db->settings[$this->settingKey]->actions->delete();
+                }
             });
         }
         if (isset($this->writer)) {

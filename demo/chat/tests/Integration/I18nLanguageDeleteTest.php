@@ -157,7 +157,7 @@ final class I18nLanguageDeleteTest extends IntegrationTestCase
             self::assertSame("Default language 'en' cannot be deleted", $failure->getMessage());
         }
         self::assertSame($enabled, Hilos::$db->languages['en']->enabled);
-        self::assertNotNull(Hilos::$db->locales['en']);
+        self::assertArrayHasKey('en', Hilos::$db->locales);
         self::assertNotNull(Hilos::$db->languageNames->findBase(Hilos::$db->languages['en']->id, Hilos::$db->languages['fr']->id));
         self::assertNotNull(Hilos::$db->countryNames->findBase(Hilos::$db->countries['gb']->id, Hilos::$db->languages['en']->id));
     }
@@ -240,10 +240,10 @@ final class I18nLanguageDeleteTest extends IntegrationTestCase
             Hilos::$db->languages['fr']->actions->delete();
         });
 
-        self::assertNull(Hilos::$db->languages['fr']);
-        self::assertNull(Hilos::$db->languages[$languageId]);
+        self::assertArrayNotHasKey('fr', Hilos::$db->languages);
+        self::assertArrayNotHasKey($languageId, Hilos::$db->languages);
         self::assertSame(0, EntityLanguage::count([EntityLanguage::id => $languageId]));
-        self::assertNotNull(Hilos::$db->languages['en']);
+        self::assertArrayHasKey('en', Hilos::$db->languages);
     }
 
     /** @throws HilosException When catalog fixture creation or deletion fails */
@@ -263,16 +263,16 @@ final class I18nLanguageDeleteTest extends IntegrationTestCase
 
         $this->underAgent($this->agent, static fn () => Hilos::$db->languages['fr']->actions->delete());
 
-        self::assertNull(Hilos::$db->languages['fr']);
-        self::assertNull(Hilos::$db->languages[$languageId]);
-        self::assertNull(Hilos::$db->countryNames[$britainId]);
-        self::assertNull(Hilos::$db->countryNames[$statesId]);
+        self::assertArrayNotHasKey('fr', Hilos::$db->languages);
+        self::assertArrayNotHasKey($languageId, Hilos::$db->languages);
+        self::assertArrayNotHasKey($britainId, Hilos::$db->countryNames);
+        self::assertArrayNotHasKey($statesId, Hilos::$db->countryNames);
         self::assertSame(0, EntityCountryName::count([EntityCountryName::language_id => $languageId]));
         self::assertSame('Britain', Hilos::$db->countryNames->findBase(
             Hilos::$db->countries['gb']->id, Hilos::$db->languages['en']->id,
         )->name);
-        self::assertNotNull(Hilos::$db->countries['us']);
-        self::assertNotNull(Hilos::$db->countries['gb']);
+        self::assertArrayHasKey('us', Hilos::$db->countries);
+        self::assertArrayHasKey('gb', Hilos::$db->countries);
     }
 
     /** @throws HilosException When the existing command, its reply or a fixture write fails */
@@ -295,7 +295,7 @@ final class I18nLanguageDeleteTest extends IntegrationTestCase
                 $reply = $this->drainCommandReply();
                 self::assertTrue($reply->isOk());
                 self::assertSame(['code' => 'fr'], $reply->payload);
-                self::assertNull(Hilos::$db->languages['fr']);
+                self::assertArrayNotHasKey('fr', Hilos::$db->languages);
                 self::assertSame(0, EntityCountryName::count([EntityCountryName::language_id => $languageId]));
             }
         } finally {
@@ -352,7 +352,7 @@ final class I18nLanguageDeleteTest extends IntegrationTestCase
                         self::fail('Only an unlocked base may join language removal');
                     } catch (ValidationException $failure) {
                         self::assertSame('Language removal can delete only unlocked base country names', $failure->getMessage());
-                        self::assertNotNull(Hilos::$db->countryNames[$id]);
+                        self::assertArrayHasKey($id, Hilos::$db->countryNames);
                     }
                 }
             } finally {
@@ -382,7 +382,7 @@ final class I18nLanguageDeleteTest extends IntegrationTestCase
                     self::fail('An update-only grant cannot remove a country name');
                 } catch (WriteNotAllowedException $failure) {
                     self::assertStringContainsString('may not remove', $failure->getMessage());
-                    self::assertNotNull(Hilos::$db->countryNames[$base->id]);
+                    self::assertArrayHasKey($base->id, Hilos::$db->countryNames);
                 }
             } finally {
                 Database::transactionRollback();
@@ -438,7 +438,7 @@ final class I18nLanguageDeleteTest extends IntegrationTestCase
             Hilos::$db->languageNames->findBase(Hilos::$db->languages['en']->id, $languageId)->actions->delete();
             Hilos::$db->languages['fr']->actions->delete();
         });
-        self::assertNull(Hilos::$db->languages['fr']);
+        self::assertArrayNotHasKey('fr', Hilos::$db->languages);
         self::assertSame(0, EntityCountryName::count([EntityCountryName::language_id => $languageId]));
     }
 
@@ -481,7 +481,7 @@ final class I18nLanguageDeleteTest extends IntegrationTestCase
         self::assertSame('Language Français (fr) deleted.', $success->message);
         self::assertNull($success->reply);
         self::assertArrayNotHasKey('reply', $success->toArray());
-        self::assertNull(Hilos::$db->languages['fr']);
+        self::assertArrayNotHasKey('fr', Hilos::$db->languages);
         self::assertSame(0, EntityCountryName::count([EntityCountryName::language_id => $languageId]));
     }
 
@@ -496,7 +496,7 @@ final class I18nLanguageDeleteTest extends IntegrationTestCase
         $this->underAgent($this->agent, static function () use ($page, $dto): void {
             self::assertNull($page->onAction('delete-ak', $dto->getAction(), $dto));
         });
-        self::assertNull(Hilos::$db->languages['fr']);
+        self::assertArrayNotHasKey('fr', Hilos::$db->languages);
     }
 
     /** @return iterable<string, array{bool, string, string}> Refusals through both real page routers */
@@ -556,8 +556,8 @@ final class I18nLanguageDeleteTest extends IntegrationTestCase
         self::assertSame($message, $failure->reason);
         self::assertSame($fromList ? HilosSignalConstants::HILOS_I18N_LANGUAGE_ROW_DELETE
             : HilosSignalConstants::HILOS_I18N_LANGUAGE_DELETE, $failure->action);
-        self::assertNotNull(Hilos::$db->languages['fr']);
-        self::assertNotNull(Hilos::$db->languages['en']);
+        self::assertArrayHasKey('fr', Hilos::$db->languages);
+        self::assertArrayHasKey('en', Hilos::$db->languages);
         self::assertNotNull(Hilos::$db->countryNames->findBase(Hilos::$db->countries['us']->id, Hilos::$db->languages['fr']->id));
     }
 
@@ -577,7 +577,7 @@ final class I18nLanguageDeleteTest extends IntegrationTestCase
         self::assertStringContainsString('hilos_language_name', $failure->errorDetail);
         self::assertSame(1, EntityCountryName::count([EntityCountryName::id => $base->id]));
         self::assertSame($base->getObject(), Hilos::$db->countryNames[$base->id]->getObject());
-        self::assertNotNull(Hilos::$db->languages['fr']);
+        self::assertArrayHasKey('fr', Hilos::$db->languages);
     }
 
     /** @param bool $fromList Whether deletion is submitted from a table row */
@@ -609,7 +609,12 @@ final class I18nLanguageDeleteTest extends IntegrationTestCase
         $action = $fromList ? HilosSignalConstants::HILOS_I18N_LANGUAGE_ROW_DELETE : HilosSignalConstants::HILOS_I18N_LANGUAGE_DELETE;
         $router = new PageSignalRouter(new HilosPageFactory($this->agent, Hilos::class), new ActionRouteConfig([$action => $page]));
         $this->underAgent($this->agent, static fn () => $router->dispatchAction(
-            new WebSocketActionSignalDTO('delete-ak', $action, ['languageId' => Hilos::$db->languages[$code]?->id ?? 999999], 'delete-tracked'),
+            new WebSocketActionSignalDTO(
+                'delete-ak',
+                $action,
+                ['languageId' => isset(Hilos::$db->languages[$code]) ? Hilos::$db->languages[$code]->id : 999999],
+                'delete-tracked',
+            ),
             'websocket',
         ));
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
@@ -645,7 +650,7 @@ final class I18nLanguageDeleteTest extends IntegrationTestCase
         } catch (ValidationException $failure) {
             self::assertSame($message, $failure->getMessage());
         }
-        self::assertNotNull(Hilos::$db->languages['fr']);
+        self::assertArrayHasKey('fr', Hilos::$db->languages);
         self::assertFalse(Hilos::$db->languages->cardSummary(Hilos::$db->languages['fr']->id)->canDelete);
     }
 

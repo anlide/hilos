@@ -45,14 +45,14 @@ final class I18nLanguageAddTest extends IntegrationTestCase
         $this->underAgent($this->agent, function (): void {
             Hilos::$db->languages->actions->create('en', 'English', false);
             foreach (['us', 'pl'] as $code) {
-                if (Hilos::$db->countries[$code] === null) {
+                if (!isset(Hilos::$db->countries[$code])) {
                     $definition = BuiltInI18nCatalog::country($code);
                     self::assertNotNull($definition);
                     Hilos::$db->countries->actions->create($code, $definition->currencySymbol, $definition->currencyCode);
                     $this->createdCountryCodes[] = $code;
                 }
             }
-            if (Hilos::$db->countries['gg'] === null) {
+            if (!isset(Hilos::$db->countries['gg'])) {
                 Hilos::$db->countries->actions->create('gg', '£', 'GBP');
                 $this->createdCountryCodes[] = 'gg';
             }
@@ -71,19 +71,18 @@ final class I18nLanguageAddTest extends IntegrationTestCase
     {
         $success = $this->addThroughPage('pt', 'Português editado', true);
         self::assertSame('Language Português editado (pt) added and switched off for now.', $success->message);
-        self::assertNotNull(Hilos::$db->languages['pt']);
+        self::assertArrayHasKey('pt', Hilos::$db->languages);
         self::assertFalse(Hilos::$db->languages['pt']->enabled);
         self::assertSame('Português editado', Hilos::$db->languages['pt']->nativeName);
         self::assertTrue(Hilos::$db->languages['pt']->rtl);
 
         $expectedNames = 0;
         foreach (BuiltInI18nCatalog::countries() as $definition) {
-            $country = Hilos::$db->countries[$definition->code];
             $expectedName = BuiltInI18nCatalog::countryName($definition->code, 'pt');
-            if ($country === null || $expectedName === null) {
+            if (!isset(Hilos::$db->countries[$definition->code]) || $expectedName === null) {
                 continue;
             }
-            $name = Hilos::$db->countryNames->findBase($country->id, Hilos::$db->languages['pt']->id);
+            $name = Hilos::$db->countryNames->findBase(Hilos::$db->countries[$definition->code]->id, Hilos::$db->languages['pt']->id);
             self::assertNotNull($name, $definition->code);
             self::assertSame($expectedName, $name->name);
             self::assertFalse($name->locked);
@@ -101,7 +100,7 @@ final class I18nLanguageAddTest extends IntegrationTestCase
         self::assertNull(BuiltInI18nCatalog::language('cy'));
         $success = $this->addThroughPage('cy', 'Cymraeg', false);
         self::assertSame('Custom language Cymraeg (cy) added and switched off for now.', $success->message);
-        self::assertNotNull(Hilos::$db->languages['cy']);
+        self::assertArrayHasKey('cy', Hilos::$db->languages);
         self::assertSame('Cymraeg', Hilos::$db->languages['cy']->nativeName);
         self::assertFalse(Hilos::$db->languages['cy']->rtl);
         self::assertFalse(Hilos::$db->languages['cy']->enabled);
@@ -139,9 +138,8 @@ final class I18nLanguageAddTest extends IntegrationTestCase
     {
         $allowedCountryId = null;
         foreach (BuiltInI18nCatalog::countries() as $definition) {
-            $country = Hilos::$db->countries[$definition->code];
-            if ($country !== null) {
-                $allowedCountryId = $country->id;
+            if (isset(Hilos::$db->countries[$definition->code])) {
+                $allowedCountryId = Hilos::$db->countries[$definition->code]->id;
                 break;
             }
         }
@@ -157,7 +155,7 @@ final class I18nLanguageAddTest extends IntegrationTestCase
             });
             self::fail('A refused country-name write must fail the whole addition');
         } catch (CreateNotAllowedException) {
-            self::assertNull(Hilos::$db->languages['pt']);
+            self::assertArrayNotHasKey('pt', Hilos::$db->languages);
             Database::sql('SELECT COUNT(*) AS `count` FROM hilos_language WHERE code = ?', ['pt']);
             self::assertSame(0, (int) Database::field('count'));
             Database::sql('SELECT COUNT(*) AS `count` FROM hilos_country_name');

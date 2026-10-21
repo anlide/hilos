@@ -74,12 +74,12 @@ final class I18nCountryEditTest extends IntegrationTestCase
         RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), $this->agent->getId());
         Hilos::$rt->connections->actions->clear();
         $this->underAgent($this->agent, function (): void {
-            if (Hilos::$db->languages['en'] === null) {
+            if (!isset(Hilos::$db->languages['en'])) {
                 Hilos::$db->languages->actions->create('en', 'English', false);
                 $this->createdEnglish = true;
             }
             foreach (['ie' => ['€', 'EUR'], 'qz' => ['¤', 'XQZ']] as $code => [$symbol, $currency]) {
-                if (Hilos::$db->countries[$code] === null) {
+                if (!isset(Hilos::$db->countries[$code])) {
                     Hilos::$db->countries->actions->create($code, $symbol, $currency);
                     $this->createdCountries[] = $code;
                 }
@@ -94,7 +94,7 @@ final class I18nCountryEditTest extends IntegrationTestCase
             Hilos::$db->countries['ie']->actions->update('€', 'EUR', null);
             foreach (['ie', 'qz'] as $country) {
                 $code = 'en-' . strtoupper($country);
-                if (Hilos::$db->locales[$code] === null) {
+                if (!isset(Hilos::$db->locales[$code])) {
                     Hilos::$db->locales->actions->create(
                         Hilos::$db->languages['en'], Hilos::$db->countries[$country],
                         'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
@@ -187,7 +187,7 @@ final class I18nCountryEditTest extends IntegrationTestCase
             $fresh = $dtoClass::fromArray(array_replace($payload, ['countryId' => $replacement->id]));
             $page->onAction('fresh-country', $fresh->getAction(), $fresh);
             if ($fresh instanceof HilosI18nCountryDeleteActionDTO || $fresh instanceof HilosI18nCountryRowDeleteActionDTO) {
-                self::assertNull(Hilos::$db->countries[$replacement->id]);
+                self::assertArrayNotHasKey($replacement->id, Hilos::$db->countries);
             } elseif ($fresh instanceof HilosI18nCountryUpdateActionDTO || $fresh instanceof HilosI18nCountryRowUpdateActionDTO) {
                 self::assertSame('edited', $replacement->currencySymbol);
                 self::assertSame('EUR', $replacement->currencyCode);
@@ -312,8 +312,8 @@ final class I18nCountryEditTest extends IntegrationTestCase
         $page = $fromList ? new CountriesListPage($this->agent) : new CountryDetailPage($this->agent);
         $action = $fromList ? HilosSignalConstants::HILOS_I18N_COUNTRY_ROW_UPDATE : HilosSignalConstants::HILOS_I18N_COUNTRY_UPDATE;
         $dto = $fromList
-            ? new HilosI18nCountryUpdateActionDTO(Hilos::$db->countries['ie']->id, 'IE€', 'EUR', Hilos::$db->locales['en-IE']?->id ?? 999999)
-            : new HilosI18nCountryRowUpdateActionDTO(Hilos::$db->countries['ie']->id, 'IE€', 'EUR', Hilos::$db->locales['en-IE']?->id ?? 999999);
+            ? new HilosI18nCountryUpdateActionDTO(Hilos::$db->countries['ie']->id, 'IE€', 'EUR', Hilos::$db->locales['en-IE']->id)
+            : new HilosI18nCountryRowUpdateActionDTO(Hilos::$db->countries['ie']->id, 'IE€', 'EUR', Hilos::$db->locales['en-IE']->id);
         try {
             $this->underAgent($this->agent, static fn () => $page->onAction(self::ACCEPT_KEY, $action, $dto));
             self::fail('The entrance must refuse the other DTO');
@@ -331,7 +331,7 @@ final class I18nCountryEditTest extends IntegrationTestCase
         $session->actions->bindUser((int) $admin->id);
         Hilos::$rt->connections->actions->register(self::ACCEPT_KEY, (int) $admin->id, $session->token, (int) $session->id);
         $router = new PageSignalRouter(new HilosPageFactory($this->agent, Hilos::class), new ActionRouteConfig(Hilos::getPageActionRoutes()));
-        $dto = new HilosI18nCountryUpdateActionDTO(Hilos::$db->countries['ie']->id, 'IE€', 'EUR', Hilos::$db->locales['en-IE']?->id ?? 999999);
+        $dto = new HilosI18nCountryUpdateActionDTO(Hilos::$db->countries['ie']->id, 'IE€', 'EUR', Hilos::$db->locales['en-IE']->id);
         $this->underAgent($this->agent, static fn () => $router->dispatchAction(
             new WebSocketActionSignalDTO(self::ACCEPT_KEY, $dto->getAction(), $dto->toArray(), 'country-save'), 'websocket',
         ));
@@ -342,7 +342,10 @@ final class I18nCountryEditTest extends IntegrationTestCase
         self::assertSame('Country ie saved.', $success->message);
         self::assertNull($success->reply);
 
-        $invalid = new HilosI18nCountryUpdateActionDTO(Hilos::$db->countries['ie']->id, '$', 'USD', Hilos::$db->locales['en-ZZ']?->id ?? 999999);
+        $invalid = new HilosI18nCountryUpdateActionDTO(
+            Hilos::$db->countries['ie']->id, '$', 'USD',
+            isset(Hilos::$db->locales['en-ZZ']) ? Hilos::$db->locales['en-ZZ']->id : 999999,
+        );
         $this->underAgent($this->agent, static fn () => $router->dispatchAction(
             new WebSocketActionSignalDTO(self::ACCEPT_KEY, $invalid->getAction(), $invalid->toArray(), 'country-fail'), 'websocket',
         ));
@@ -370,13 +373,13 @@ final class I18nCountryEditTest extends IntegrationTestCase
         $page = $fromList ? new CountriesListPage($this->agent) : new CountryDetailPage($this->agent);
         $dto = $fromList
             ? new HilosI18nCountryRowUpdateActionDTO(
-                Hilos::$db->countries[$code]?->id ?? 999999, $symbol, $currency,
-                $locale === null ? null : (Hilos::$db->locales[$locale]?->id ?? 999999),
+                isset(Hilos::$db->countries[$code]) ? Hilos::$db->countries[$code]->id : 999999, $symbol, $currency,
+                $locale === null ? null : (isset(Hilos::$db->locales[$locale]) ? Hilos::$db->locales[$locale]->id : 999999),
             )
 
             : new HilosI18nCountryUpdateActionDTO(
-                Hilos::$db->countries[$code]?->id ?? 999999, $symbol, $currency,
-                $locale === null ? null : (Hilos::$db->locales[$locale]?->id ?? 999999),
+                isset(Hilos::$db->countries[$code]) ? Hilos::$db->countries[$code]->id : 999999, $symbol, $currency,
+                $locale === null ? null : (isset(Hilos::$db->locales[$locale]) ? Hilos::$db->locales[$locale]->id : 999999),
             );
         $this->underAgent($this->agent, static fn () => self::assertNull($page->onAction(self::ACCEPT_KEY, $dto->getAction(), $dto)));
     }

@@ -148,7 +148,7 @@ final class AdminViewModeAppearanceTest extends IntegrationTestCase
         )));
 
         $this->underSettingsLibrary(
-            static fn () => Hilos::$db->settings[ThemeSettingsCatalog::DEFAULT_THEME_KEY]?->actions->delete(),
+            static fn () => Hilos::$db->settings[ThemeSettingsCatalog::DEFAULT_THEME_KEY]->actions->delete(),
         );
         $reset = $table->buildMutationForSourceEvent(SourceChange::dbDeleted(
             HilosDbContext::settings,
@@ -281,8 +281,8 @@ final class AdminViewModeAppearanceTest extends IntegrationTestCase
     private function resetThemeSettings(): void
     {
         foreach (ThemeSettingsCatalog::KEYS as $key) {
-            if (Hilos::$db->settings[$key] !== null) {
-                $this->underSettingsLibrary(static fn () => Hilos::$db->settings[$key]?->actions->delete());
+            if (isset(Hilos::$db->settings[$key])) {
+                $this->underSettingsLibrary(static fn () => Hilos::$db->settings[$key]->actions->delete());
             }
         }
     }

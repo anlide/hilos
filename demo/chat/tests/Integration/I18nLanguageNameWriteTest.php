@@ -633,10 +633,10 @@ final class I18nLanguageNameWriteTest extends IntegrationTestCase
         for ($attempt = 0; $attempt < 2; $attempt++) {
             self::assertTrue($this->command(CliCommands::I18N_TEST_LANGUAGE_NAMES_CLEAR)->isOk());
             foreach (['qv', 'qw'] as $code) {
-                self::assertNull(Hilos::$db->languages[$code]);
+                self::assertArrayNotHasKey($code, Hilos::$db->languages);
             }
             foreach (['qv-GB', 'qw-GB', 'qw-US'] as $code) {
-                self::assertNull(Hilos::$db->locales[$code]);
+                self::assertArrayNotHasKey($code, Hilos::$db->locales);
             }
             self::assertSame([], $this->nameSnapshot());
         }
@@ -671,10 +671,10 @@ final class I18nLanguageNameWriteTest extends IntegrationTestCase
         self::assertSame("Language '{$code}' is not the language names fixture.", $reply->payload[CommandConstants::FIELD_MESSAGE]);
         self::assertSame($before, $this->nameSnapshot());
         foreach (['qv-GB', 'qw-GB', 'qw-US'] as $locale) {
-            self::assertNotNull(Hilos::$db->locales[$locale]);
+            self::assertArrayHasKey($locale, Hilos::$db->locales);
         }
-        self::assertNotNull(Hilos::$db->languages['qv']);
-        self::assertNotNull(Hilos::$db->languages['qw']);
+        self::assertArrayHasKey('qv', Hilos::$db->languages);
+        self::assertArrayHasKey('qw', Hilos::$db->languages);
     }
 
     /**
@@ -763,7 +763,9 @@ final class I18nLanguageNameWriteTest extends IntegrationTestCase
             self::assertSame($message, $outcome->message);
         } else {
             $isUpdate = $dto instanceof HilosI18nLanguageNameUpdateActionDTO;
-            $locale = $dto->localeId === null ? null : (Hilos::$db->locales[$dto->localeId]?->code ?? 'qv-GB');
+            $locale = $dto->localeId === null
+                ? null
+                : (isset(Hilos::$db->locales[$dto->localeId]) ? Hilos::$db->locales[$dto->localeId]->code : 'qv-GB');
             $expected = ($locale === null
                 ? 'Name of HIL-1490 writing (qw) in HIL-1490 target (qv)'
                 : "Correction {$locale} of the name of HIL-1490 writing (qw)")
@@ -815,7 +817,11 @@ final class I18nLanguageNameWriteTest extends IntegrationTestCase
     {
         $params = ['languageCode' => 'qw'];
         $windows = [ChatTableContext::hilosI18nLanguageNames => new TableWindowDescriptorDTO(
-            filter: [HilosI18nLanguageNamesTable::FILTER_LANGUAGE => Hilos::$db->languages['qw']?->id ?? 999999],
+            filter: [
+                HilosI18nLanguageNamesTable::FILTER_LANGUAGE => isset(Hilos::$db->languages['qw'])
+                    ? Hilos::$db->languages['qw']->id
+                    : 999999,
+            ],
         )];
         Hilos::$sr->subscribeToPage(LanguageNamesPage::PAGE, new WebSocketPageSubscribeSignalDTO(
             $acceptKey, LanguageNamesPage::PAGE, $params, $windows,
@@ -885,7 +891,7 @@ final class I18nLanguageNameWriteTest extends IntegrationTestCase
         $this->underAgent($this->agent, static function (): void {
             $ids = [];
             foreach (['qv', 'qw', 'qx'] as $code) {
-                if (Hilos::$db->languages[$code] !== null) {
+                if (isset(Hilos::$db->languages[$code])) {
                     $ids[] = Hilos::$db->languages[$code]->id;
                 }
             }
@@ -902,7 +908,9 @@ final class I18nLanguageNameWriteTest extends IntegrationTestCase
                 }
             }
             foreach (['qv', 'qw', 'qx'] as $code) {
-                Hilos::$db->languages[$code]?->actions->delete();
+                if (isset(Hilos::$db->languages[$code])) {
+                    Hilos::$db->languages[$code]->actions->delete();
+                }
             }
         });
     }
@@ -926,9 +934,11 @@ final class I18nLanguageNameWriteTest extends IntegrationTestCase
         string $text,
         ?string $expectedName = null,
     ): ActionPayloadDTO {
-        $subjectId = Hilos::$db->languages[$subjectCode]?->id ?? PHP_INT_MAX;
-        $writingId = Hilos::$db->languages[$writingCode]?->id ?? PHP_INT_MAX;
-        $localeId = $localeCode === null ? null : (Hilos::$db->locales[$localeCode]?->id ?? PHP_INT_MAX);
+        $subjectId = isset(Hilos::$db->languages[$subjectCode]) ? Hilos::$db->languages[$subjectCode]->id : PHP_INT_MAX;
+        $writingId = isset(Hilos::$db->languages[$writingCode]) ? Hilos::$db->languages[$writingCode]->id : PHP_INT_MAX;
+        $localeId = $localeCode === null
+            ? null
+            : (isset(Hilos::$db->locales[$localeCode]) ? Hilos::$db->locales[$localeCode]->id : PHP_INT_MAX);
         $base = Hilos::$db->languageNames->findBase($subjectId, $writingId);
         if ($class === HilosI18nLanguageNameAddActionDTO::class) {
             return new HilosI18nLanguageNameAddActionDTO(

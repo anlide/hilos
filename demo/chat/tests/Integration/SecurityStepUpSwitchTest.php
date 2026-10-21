@@ -51,8 +51,8 @@ final class SecurityStepUpSwitchTest extends IntegrationTestCase
     {
         $this->withSettingsWriter(function (): void {
             $this->assertNull($this->submit(StepUpOperationKey::MERGE_ACCOUNTS, false));
-            $this->assertSame(StepUpOperationKey::MERGE_ACCOUNTS, Hilos::$db->settings[StepUpSettings::DISABLED_KEY]?->value);
-            $this->assertNull(Hilos::$db->settings[StepUpSettings::ENABLED_KEY]?->value);
+            $this->assertSame(StepUpOperationKey::MERGE_ACCOUNTS, Hilos::$db->settings[StepUpSettings::DISABLED_KEY]->value);
+            $this->assertArrayNotHasKey(StepUpSettings::ENABLED_KEY, Hilos::$db->settings);
             $this->assertFalse(StepUpSettings::isEnabled(StepUpOperationKey::MERGE_ACCOUNTS));
 
             $this->assertNull($this->submit(StepUpOperationKey::MERGE_ACCOUNTS, true));
@@ -73,13 +73,13 @@ final class SecurityStepUpSwitchTest extends IntegrationTestCase
             $this->assertNull($this->submit(StepUpOperationKey::REVOKE_ADMIN, true));
             $this->assertSame(
                 StepUpOperationKey::REVOKE_ADMIN . ',' . StepUpOperationKey::BLOCK_ACCOUNT,
-                Hilos::$db->settings[StepUpSettings::ENABLED_KEY]?->value,
+                Hilos::$db->settings[StepUpSettings::ENABLED_KEY]->value,
             );
-            $this->assertNull(Hilos::$db->settings[StepUpSettings::DISABLED_KEY]?->value);
+            $this->assertArrayNotHasKey(StepUpSettings::DISABLED_KEY, Hilos::$db->settings);
             $this->assertTrue(StepUpSettings::isEnabled(StepUpOperationKey::BLOCK_ACCOUNT));
 
             $this->assertNull($this->submit(StepUpOperationKey::BLOCK_ACCOUNT, false));
-            $this->assertSame(StepUpOperationKey::REVOKE_ADMIN, Hilos::$db->settings[StepUpSettings::ENABLED_KEY]?->value);
+            $this->assertSame(StepUpOperationKey::REVOKE_ADMIN, Hilos::$db->settings[StepUpSettings::ENABLED_KEY]->value);
             $this->assertFalse(StepUpSettings::isEnabled(StepUpOperationKey::BLOCK_ACCOUNT));
         });
     }
@@ -94,7 +94,7 @@ final class SecurityStepUpSwitchTest extends IntegrationTestCase
             $this->assertNull($this->submit(StepUpOperationKey::CHANGE_EMAIL, false));
             $this->assertNull($this->submit(StepUpOperationKey::BLOCK_ACCOUNT, false));
 
-            $this->assertSame(StepUpOperationKey::CHANGE_EMAIL, Hilos::$db->settings[StepUpSettings::DISABLED_KEY]?->value);
+            $this->assertSame(StepUpOperationKey::CHANGE_EMAIL, Hilos::$db->settings[StepUpSettings::DISABLED_KEY]->value);
             $this->assertSame([], StepUpSettings::enabledKeys());
             $this->assertFalse(StepUpSettings::isEnabled(StepUpOperationKey::BLOCK_ACCOUNT));
             $this->assertTrue(StepUpSettings::isEnabled(StepUpOperationKey::DELETE_OTHER_ACCOUNT));
@@ -158,14 +158,22 @@ final class SecurityStepUpSwitchTest extends IntegrationTestCase
     private function withSettingsWriter(callable $body): void
     {
         TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::SETTINGS_AGENT_ID);
-        Hilos::$db->settings[StepUpSettings::DISABLED_KEY]?->actions->delete();
-        Hilos::$db->settings[StepUpSettings::ENABLED_KEY]?->actions->delete();
+        if (isset(Hilos::$db->settings[StepUpSettings::DISABLED_KEY])) {
+            Hilos::$db->settings[StepUpSettings::DISABLED_KEY]->actions->delete();
+        }
+        if (isset(Hilos::$db->settings[StepUpSettings::ENABLED_KEY])) {
+            Hilos::$db->settings[StepUpSettings::ENABLED_KEY]->actions->delete();
+        }
 
         try {
             $body();
         } finally {
-            Hilos::$db->settings[StepUpSettings::DISABLED_KEY]?->actions->delete();
-            Hilos::$db->settings[StepUpSettings::ENABLED_KEY]?->actions->delete();
+            if (isset(Hilos::$db->settings[StepUpSettings::DISABLED_KEY])) {
+                Hilos::$db->settings[StepUpSettings::DISABLED_KEY]->actions->delete();
+            }
+            if (isset(Hilos::$db->settings[StepUpSettings::ENABLED_KEY])) {
+                Hilos::$db->settings[StepUpSettings::ENABLED_KEY]->actions->delete();
+            }
             TruthSourceRegistry::unregisterAgent(self::SETTINGS_AGENT_ID);
         }
     }

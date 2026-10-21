@@ -117,7 +117,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 new HilosSettingAddActionDTO(self::CATALOG_KEY, 'from-page-action'),
             );
 
-            $this->assertSame('from-page-action', Hilos::$db->settings[self::CATALOG_KEY]?->value);
+            $this->assertSame('from-page-action', Hilos::$db->settings[self::CATALOG_KEY]->value);
         }, [self::CATALOG_KEY]);
     }
 
@@ -131,7 +131,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 new HilosSettingAddActionDTO(self::CATALOG_KEY, 'first'),
             );
             // Snapshot before the second add: the row must be updated, not replaced.
-            $createdId = Hilos::$db->settings[self::CATALOG_KEY]?->id;
+            $createdId = Hilos::$db->settings[self::CATALOG_KEY]->id;
 
             $this->submit(
                 'add-dup-ak',
@@ -139,8 +139,8 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 new HilosSettingAddActionDTO(self::CATALOG_KEY, 'second'),
             );
 
-            $this->assertSame('second', Hilos::$db->settings[self::CATALOG_KEY]?->value);
-            $this->assertSame($createdId, Hilos::$db->settings[self::CATALOG_KEY]?->id);
+            $this->assertSame('second', Hilos::$db->settings[self::CATALOG_KEY]->value);
+            $this->assertSame($createdId, Hilos::$db->settings[self::CATALOG_KEY]->id);
         }, [self::CATALOG_KEY]);
     }
 
@@ -160,7 +160,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 new HilosSettingUpdateActionDTO(self::CATALOG_KEY, 'after'),
             );
 
-            $this->assertSame('after', Hilos::$db->settings[self::CATALOG_KEY]?->value);
+            $this->assertSame('after', Hilos::$db->settings[self::CATALOG_KEY]->value);
         }, [self::CATALOG_KEY]);
     }
 
@@ -186,7 +186,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
             );
 
             $this->assertNull($error);
-            $this->assertSame('42', Hilos::$db->settings[self::UNSEEDED_CATALOG_KEY]?->value);
+            $this->assertSame('42', Hilos::$db->settings[self::UNSEEDED_CATALOG_KEY]->value);
         }, [self::UNSEEDED_CATALOG_KEY]);
     }
 
@@ -195,7 +195,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
         $orphanKey = 'page_action_delete_orphan_' . RandomHelper::hex(8);
         $this->withSettingsWriter(function () use ($orphanKey): void {
             $this->createOrphanSetting($orphanKey, 'to-remove');
-            $this->assertNotNull(Hilos::$db->settings[$orphanKey]);
+            $this->assertArrayHasKey($orphanKey, Hilos::$db->settings);
 
             $this->submit(
                 'delete-orphan-ak',
@@ -203,7 +203,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 new HilosSettingDeleteActionDTO($orphanKey),
             );
 
-            $this->assertNull(Hilos::$db->settings[$orphanKey]);
+            $this->assertArrayNotHasKey($orphanKey, Hilos::$db->settings);
         }, [$orphanKey]);
     }
 
@@ -224,7 +224,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
             );
 
             $this->assertSame('Only orphan settings (not in catalog) can be deleted', $error);
-            $this->assertNotNull(Hilos::$db->settings[self::CATALOG_KEY]);
+            $this->assertArrayHasKey(self::CATALOG_KEY, Hilos::$db->settings);
         }, [self::CATALOG_KEY]);
     }
 
@@ -237,7 +237,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 HilosSignalConstants::SETTING_ADD,
                 new HilosSettingAddActionDTO(self::CATALOG_KEY, 'to-reset'),
             );
-            $this->assertNotNull(Hilos::$db->settings[self::CATALOG_KEY]);
+            $this->assertArrayHasKey(self::CATALOG_KEY, Hilos::$db->settings);
 
             $this->submit(
                 'reset-ok-ak',
@@ -247,7 +247,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
 
             // The row is gone, so the key reads as being on its catalog default again,
             // and the table row it leaves behind is the catalog placeholder (no id).
-            $this->assertNull(Hilos::$db->settings[self::CATALOG_KEY]);
+            $this->assertArrayNotHasKey(self::CATALOG_KEY, Hilos::$db->settings);
             $this->assertNull(Hilos::$table->settings->rowForKey(self::CATALOG_KEY)?->id);
         }, [self::CATALOG_KEY]);
     }
@@ -265,7 +265,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 new HilosSettingResetActionDTO(self::UNSEEDED_CATALOG_KEY),
             );
 
-            $this->assertNull(Hilos::$db->settings[self::UNSEEDED_CATALOG_KEY]);
+            $this->assertArrayNotHasKey(self::UNSEEDED_CATALOG_KEY, Hilos::$db->settings);
         }, [self::UNSEEDED_CATALOG_KEY]);
     }
 
@@ -298,8 +298,8 @@ final class SettingsPageActionTest extends IntegrationTestCase
             $this->assertThemeFrame(false, ThemeSettingsCatalog::DARK);
             $this->assertFalse(Hilos::$setting[$switchKey]->bool());
             $this->assertSame(ThemeSettingsCatalog::DARK, Hilos::$setting[$defaultKey]->string());
-            $this->assertSame('0', Hilos::$db->settings[$switchKey]?->value);
-            $this->assertSame(ThemeSettingsCatalog::DARK, Hilos::$db->settings[$defaultKey]?->value);
+            $this->assertSame('0', Hilos::$db->settings[$switchKey]->value);
+            $this->assertSame(ThemeSettingsCatalog::DARK, Hilos::$db->settings[$defaultKey]->value);
             foreach ([$switchKey => '0', $defaultKey => ThemeSettingsCatalog::DARK] as $key => $override) {
                 $row = Hilos::$table->settings->rowForKey($key);
                 $this->assertNotNull($row?->id);
@@ -316,8 +316,8 @@ final class SettingsPageActionTest extends IntegrationTestCase
             $this->assertThemeFrame(true, ThemeSettingsCatalog::LIGHT);
             $this->assertTrue(Hilos::$setting[$switchKey]->bool());
             $this->assertSame(ThemeSettingsCatalog::LIGHT, Hilos::$setting[$defaultKey]->string());
-            $this->assertSame('1', Hilos::$db->settings[$switchKey]?->value);
-            $this->assertSame(ThemeSettingsCatalog::LIGHT, Hilos::$db->settings[$defaultKey]?->value);
+            $this->assertSame('1', Hilos::$db->settings[$switchKey]->value);
+            $this->assertSame(ThemeSettingsCatalog::LIGHT, Hilos::$db->settings[$defaultKey]->value);
 
             $this->assertNull($this->submit('theme-switch-ak', HilosSignalConstants::SETTING_RESET,
                 new HilosSettingResetActionDTO($switchKey)));
@@ -325,8 +325,8 @@ final class SettingsPageActionTest extends IntegrationTestCase
             $this->assertNull($this->submit('theme-default-ak', HilosSignalConstants::SETTING_RESET,
                 new HilosSettingResetActionDTO($defaultKey)));
             $this->assertThemeFrame(true, ThemeSettingsCatalog::SYSTEM);
-            $this->assertNull(Hilos::$db->settings[$switchKey]);
-            $this->assertNull(Hilos::$db->settings[$defaultKey]);
+            $this->assertArrayNotHasKey($switchKey, Hilos::$db->settings);
+            $this->assertArrayNotHasKey($defaultKey, Hilos::$db->settings);
             $this->assertTrue(Hilos::$setting[$switchKey]->bool());
             $this->assertSame(ThemeSettingsCatalog::SYSTEM, Hilos::$setting[$defaultKey]->string());
             foreach (ThemeSettingsCatalog::KEYS as $key) {
@@ -351,7 +351,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 'theme-invalid-ak', HilosSignalConstants::SETTING_ADD,
                 new HilosSettingAddActionDTO($key, 'blue'),
             ));
-            $this->assertNull(Hilos::$db->settings[$key]);
+            $this->assertArrayNotHasKey($key, Hilos::$db->settings);
             $this->assertSame(ThemeSettingsCatalog::SYSTEM, Hilos::$setting[$key]->string());
             $this->assertSame([], $this->framesNamed(HilosSignalConstants::HILOS_THEME_SETTINGS));
 
@@ -362,7 +362,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 'theme-invalid-ak', HilosSignalConstants::SETTING_UPDATE,
                 new HilosSettingUpdateActionDTO($key, 'Dark'),
             ));
-            $this->assertSame(ThemeSettingsCatalog::DARK, Hilos::$db->settings[$key]?->value);
+            $this->assertSame(ThemeSettingsCatalog::DARK, Hilos::$db->settings[$key]->value);
             $this->assertSame(ThemeSettingsCatalog::DARK, Hilos::$setting[$key]->string());
             $this->assertSame([], $this->framesNamed(HilosSignalConstants::HILOS_THEME_SETTINGS));
         }, [$key]);
@@ -386,7 +386,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 "Setting '{$orphanKey}' is an orphan and has no catalog default to reset to",
                 $error,
             );
-            $this->assertNotNull(Hilos::$db->settings[$orphanKey]);
+            $this->assertArrayHasKey($orphanKey, Hilos::$db->settings);
         }, [$orphanKey]);
     }
 
@@ -528,7 +528,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
             );
 
             $this->assertSame('At least one sign-in method must stay on', $error);
-            $this->assertNull(Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY]?->value);
+            $this->assertArrayNotHasKey(AuthMethodSettings::DISABLED_KEY, Hilos::$db->settings);
             $this->assertSame([], $this->framesNamed(HilosSignalConstants::HILOS_AUTH_METHODS));
         }, [AuthMethodSettings::DISABLED_KEY]);
     }
@@ -738,7 +738,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 );
 
                 $this->assertSame(StepUpMessages::EXPIRED, $error);
-                $this->assertNull(Hilos::$db->settings[SecondFactorSettings::ENABLED_KEY]);
+                $this->assertArrayNotHasKey(SecondFactorSettings::ENABLED_KEY, Hilos::$db->settings);
                 $this->assertTrue(SecondFactorPolicy::current()->enabled);
             }, [SecondFactorSettings::ENABLED_KEY]);
         });
@@ -1224,7 +1224,9 @@ final class SettingsPageActionTest extends IntegrationTestCase
      */
     private function deleteSettingIfExists(string $key): void
     {
-        Hilos::$db->settings[$key]?->actions->delete();
+        if (isset(Hilos::$db->settings[$key])) {
+            Hilos::$db->settings[$key]->actions->delete();
+        }
     }
 
     /**

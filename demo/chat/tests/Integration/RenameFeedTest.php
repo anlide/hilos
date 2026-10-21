@@ -73,14 +73,14 @@ final class RenameFeedTest extends IntegrationTestCase
         $answer = $this->askAdminRename($userId, 'After admin', $adminId);
 
         self::assertNull($answer->error);
-        self::assertSame('After admin', Hilos::$db->users[$userId]?->name);
+        self::assertSame('After admin', Hilos::$db->users[$userId]->name);
         $row = $this->onlyJournalRowOf($userId);
         self::assertSame($adminId, $row->renamed_by_user_id);
         self::assertSame('Before admin', $row->old_name);
         self::assertSame('After admin', $row->new_name);
         self::assertNotNull($row->event_id, 'The journal row is linked to its feed line');
-        self::assertSame(ChatEventType::USER_RENAMED_BY_ADMIN->value, Hilos::$db->events[$row->event_id]?->type);
-        self::assertSame($row->id, Hilos::$db->events[$row->event_id]?->userRename?->id);
+        self::assertSame(ChatEventType::USER_RENAMED_BY_ADMIN->value, Hilos::$db->events[$row->event_id]->type);
+        self::assertSame($row->id, Hilos::$db->events[$row->event_id]->userRename?->id);
 
         $notices = $this->notificationsFor($userId);
         self::assertCount(1, $notices);
@@ -103,11 +103,11 @@ final class RenameFeedTest extends IntegrationTestCase
 
         $this->allowRename($userId, 'After self');
 
-        self::assertSame('After self', Hilos::$db->users[$userId]?->name);
+        self::assertSame('After self', Hilos::$db->users[$userId]->name);
         $row = $this->onlyJournalRowOf($userId);
         self::assertSame($userId, $row->renamed_by_user_id);
         self::assertNotNull($row->event_id);
-        self::assertSame(ChatEventType::USER_RENAMED->value, Hilos::$db->events[$row->event_id]?->type);
+        self::assertSame(ChatEventType::USER_RENAMED->value, Hilos::$db->events[$row->event_id]->type);
         self::assertCount(0, $this->notificationsFor($userId), 'A rename of oneself tells nobody');
     }
 
@@ -141,7 +141,7 @@ final class RenameFeedTest extends IntegrationTestCase
         $row = $this->onlyJournalRowOf($adminId);
         self::assertSame($adminId, $row->renamed_by_user_id);
         self::assertNotNull($row->event_id);
-        self::assertSame(ChatEventType::USER_RENAMED->value, Hilos::$db->events[$row->event_id]?->type);
+        self::assertSame(ChatEventType::USER_RENAMED->value, Hilos::$db->events[$row->event_id]->type);
         self::assertCount(0, $this->notificationsFor($adminId));
     }
 
@@ -162,8 +162,8 @@ final class RenameFeedTest extends IntegrationTestCase
         $row = $this->onlyJournalRowOf($userId);
         self::assertSame($rowId, $row->id);
         self::assertNull($row->event_id, 'The row lost its event in the database');
-        self::assertNull(Hilos::$db->userRenames[$rowId]?->eventId, 'and in the cache that heard it');
-        self::assertSame('After clear', Hilos::$db->userRenames[$rowId]?->newName);
+        self::assertNull(Hilos::$db->userRenames[$rowId]->eventId, 'and in the cache that heard it');
+        self::assertSame('After clear', Hilos::$db->userRenames[$rowId]->newName);
     }
 
     /**

@@ -362,7 +362,9 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
         $key = DeliveryChannelSettings::enabledKey($channel);
 
         try {
-            Hilos::$db->settings[$key]?->actions->delete();
+            if (isset(Hilos::$db->settings[$key])) {
+                Hilos::$db->settings[$key]->actions->delete();
+            }
             if ($enabled !== null) {
                 Hilos::$db->settings->actions->add($key, $enabled, Hilos::$setting->catalog());
             }

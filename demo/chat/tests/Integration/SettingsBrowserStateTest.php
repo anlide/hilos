@@ -156,7 +156,7 @@ final class SettingsBrowserStateTest extends IntegrationTestCase
             // default placeholder; the key stays in the window rather than being removed,
             // and the placeholder carries no id because no row backs it any more.
             Hilos::$table->settings->actions->reset($catalogKey);
-            $this->assertNull(Hilos::$db->settings[$catalogKey]);
+            $this->assertArrayNotHasKey($catalogKey, Hilos::$db->settings);
             $afterReset = $this->settingsSource($this->findSettingsBrowserRow(
                 $this->sendSettingsWindow('settings-mutation-ak'),
                 $catalogKey,
@@ -221,7 +221,7 @@ final class SettingsBrowserStateTest extends IntegrationTestCase
     {
         RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_SETTINGS_AGENT_ID);
         $userId = (int) Hilos::$db->users->actions->createWithName('Settings Browser Admin')->id;
-        Hilos::$db->users[$userId]?->actions->setAdmin(true);
+        Hilos::$db->users[$userId]->actions->setAdmin(true);
         Hilos::$rt->connections->actions->register($acceptKey, $userId);
     }
 
@@ -333,6 +333,8 @@ final class SettingsBrowserStateTest extends IntegrationTestCase
      */
     private function deleteSettingIfExists(string $key): void
     {
-        Hilos::$db->settings[$key]?->actions->delete();
+        if (isset(Hilos::$db->settings[$key])) {
+            Hilos::$db->settings[$key]->actions->delete();
+        }
     }
 }

@@ -219,7 +219,11 @@ final class I18nLanguageLocalesPageTest extends IntegrationTestCase
         $params = ['languageCode' => $code];
         $windows = [
             ChatTableContext::hilosI18nLanguageLocales => new TableWindowDescriptorDTO(
-                filter: [HilosI18nLanguageLocalesTable::FILTER_LANGUAGE => Hilos::$db->languages[$code]?->id ?? 999999],
+                filter: [
+                    HilosI18nLanguageLocalesTable::FILTER_LANGUAGE => isset(Hilos::$db->languages[$code])
+                        ? Hilos::$db->languages[$code]->id
+                        : 999999,
+                ],
             ),
         ];
         Hilos::$sr->subscribeToPage(

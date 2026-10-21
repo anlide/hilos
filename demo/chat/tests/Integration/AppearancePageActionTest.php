@@ -60,7 +60,7 @@ final class AppearancePageActionTest extends IntegrationTestCase
                 );
                 self::assertSame($enabled, Hilos::$setting[ThemeSettingsCatalog::SWITCHING_ENABLED_KEY]->bool());
                 self::assertSame(ThemeSettingsCatalog::SYSTEM, Hilos::$setting[ThemeSettingsCatalog::DEFAULT_THEME_KEY]->string());
-                self::assertNull(Hilos::$db->settings[ThemeSettingsCatalog::DEFAULT_THEME_KEY]);
+                self::assertArrayNotHasKey(ThemeSettingsCatalog::DEFAULT_THEME_KEY, Hilos::$db->settings);
             }
         });
     }
@@ -81,7 +81,7 @@ final class AppearancePageActionTest extends IntegrationTestCase
                 );
                 self::assertSame($defaultTheme, Hilos::$setting[ThemeSettingsCatalog::DEFAULT_THEME_KEY]->string());
                 self::assertTrue(Hilos::$setting[ThemeSettingsCatalog::SWITCHING_ENABLED_KEY]->bool());
-                self::assertNull(Hilos::$db->settings[ThemeSettingsCatalog::SWITCHING_ENABLED_KEY]);
+                self::assertArrayNotHasKey(ThemeSettingsCatalog::SWITCHING_ENABLED_KEY, Hilos::$db->settings);
             }
         });
     }
@@ -118,7 +118,7 @@ final class AppearancePageActionTest extends IntegrationTestCase
                     ThemeSettingsCatalog::THEME_VALUE_REFUSAL,
                 );
                 self::assertSame(ThemeSettingsCatalog::DARK, Hilos::$setting[ThemeSettingsCatalog::DEFAULT_THEME_KEY]->string());
-                self::assertNull(Hilos::$db->settings[ThemeSettingsCatalog::SWITCHING_ENABLED_KEY]);
+                self::assertArrayNotHasKey(ThemeSettingsCatalog::SWITCHING_ENABLED_KEY, Hilos::$db->settings);
             }
         });
     }
@@ -357,12 +357,20 @@ final class AppearancePageActionTest extends IntegrationTestCase
     {
         TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::SETTINGS_AGENT_ID);
         try {
-            Hilos::$db->settings[ThemeSettingsCatalog::SWITCHING_ENABLED_KEY]?->actions->delete();
-            Hilos::$db->settings[ThemeSettingsCatalog::DEFAULT_THEME_KEY]?->actions->delete();
+            if (isset(Hilos::$db->settings[ThemeSettingsCatalog::SWITCHING_ENABLED_KEY])) {
+                Hilos::$db->settings[ThemeSettingsCatalog::SWITCHING_ENABLED_KEY]->actions->delete();
+            }
+            if (isset(Hilos::$db->settings[ThemeSettingsCatalog::DEFAULT_THEME_KEY])) {
+                Hilos::$db->settings[ThemeSettingsCatalog::DEFAULT_THEME_KEY]->actions->delete();
+            }
             $body();
         } finally {
-            Hilos::$db->settings[ThemeSettingsCatalog::SWITCHING_ENABLED_KEY]?->actions->delete();
-            Hilos::$db->settings[ThemeSettingsCatalog::DEFAULT_THEME_KEY]?->actions->delete();
+            if (isset(Hilos::$db->settings[ThemeSettingsCatalog::SWITCHING_ENABLED_KEY])) {
+                Hilos::$db->settings[ThemeSettingsCatalog::SWITCHING_ENABLED_KEY]->actions->delete();
+            }
+            if (isset(Hilos::$db->settings[ThemeSettingsCatalog::DEFAULT_THEME_KEY])) {
+                Hilos::$db->settings[ThemeSettingsCatalog::DEFAULT_THEME_KEY]->actions->delete();
+            }
             TruthSourceRegistry::unregisterAgent(self::SETTINGS_AGENT_ID);
         }
     }

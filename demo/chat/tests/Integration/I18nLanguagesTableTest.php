@@ -411,7 +411,7 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
         ]);
 
         $catalog = $this->underAgent($this->agent, static function () {
-            if (Hilos::$db->countries['gb'] === null) {
+            if (!isset(Hilos::$db->countries['gb'])) {
                 Hilos::$db->countries->actions->create('gb', '£', 'GBP');
             }
             return Hilos::$db->countryNames->actions->createCatalogBase(

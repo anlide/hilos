@@ -41,7 +41,7 @@ final class EventBridgePropertiesTest extends IntegrationTestCase
         } finally {
             Hilos::$db->events->actions->deleteAll();
 
-            if ($bot?->id !== null && Hilos::$db->bots[$bot->id] !== null) {
+            if ($bot?->id !== null && isset(Hilos::$db->bots[$bot->id])) {
                 Hilos::$db->bots[$bot->id]->actions->delete();
             }
         }

@@ -126,8 +126,8 @@ final class LogsFollowRefusalTest extends IntegrationTestCase
         Hilos::initBrowser();
         $this->drainSignals();
         Hilos::$sr = null;
-        if ($this->adminId !== 0) {
-            Hilos::$db->users[$this->adminId]?->actions->delete();
+        if ($this->adminId !== 0 && isset(Hilos::$db->users[$this->adminId])) {
+            Hilos::$db->users[$this->adminId]->actions->delete();
         }
 
         parent::tearDown();
@@ -155,7 +155,7 @@ final class LogsFollowRefusalTest extends IntegrationTestCase
         self::assertSame(self::REQUEST_ID, $live->followId);
         self::assertSame([self::FOLLOWED_TEXT], array_column($live->lines, LogsReadLinesReplyDTO::text));
 
-        Hilos::$db->users[$this->adminId]?->actions->setAdmin(false);
+        Hilos::$db->users[$this->adminId]->actions->setAdmin(false);
         $this->drainSignals();
         $refusal = $this->reassess();
 

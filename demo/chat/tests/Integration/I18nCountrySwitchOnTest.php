@@ -92,7 +92,7 @@ final class I18nCountrySwitchOnTest extends IntegrationTestCase
             self::assertNull($page->onAction(
                 'country-ak',
                 HilosSignalConstants::HILOS_I18N_COUNTRY_SWITCH_ON,
-                new HilosI18nCountrySwitchOnActionDTO(Hilos::$db->countries['ca']?->id ?? 999999),
+                new HilosI18nCountrySwitchOnActionDTO(Hilos::$db->countries['ca']->id),
             ));
         });
         self::assertTrue(Hilos::$db->countries['ca']->enabled);
@@ -111,7 +111,7 @@ final class I18nCountrySwitchOnTest extends IntegrationTestCase
             self::assertNull($page->onAction(
                 'country-ak',
                 HilosSignalConstants::HILOS_I18N_COUNTRY_SWITCH_ON,
-                new HilosI18nCountrySwitchOnActionDTO(Hilos::$db->countries['ca']?->id ?? 999999),
+                new HilosI18nCountrySwitchOnActionDTO(Hilos::$db->countries['ca']->id),
             ));
         });
         self::assertTrue(Hilos::$db->countries['ca']->enabled);
@@ -139,7 +139,7 @@ final class I18nCountrySwitchOnTest extends IntegrationTestCase
             self::assertNull($page->onAction(
                 'country-ak',
                 HilosSignalConstants::HILOS_I18N_COUNTRY_SWITCH_ON,
-                new HilosI18nCountrySwitchOnActionDTO(Hilos::$db->countries['ca']?->id ?? 999999),
+                new HilosI18nCountrySwitchOnActionDTO(Hilos::$db->countries['ca']->id),
             ));
         });
         self::assertTrue(Hilos::$db->countries['ca']->enabled);
@@ -155,7 +155,9 @@ final class I18nCountrySwitchOnTest extends IntegrationTestCase
         $page->onAction(
             'country-ak',
             HilosSignalConstants::HILOS_I18N_COUNTRY_SWITCH_ON,
-            new HilosI18nCountrySwitchOnActionDTO(Hilos::$db->countries['zz']?->id ?? 999999),
+            new HilosI18nCountrySwitchOnActionDTO(
+                isset(Hilos::$db->countries['zz']) ? Hilos::$db->countries['zz']->id : 999999,
+            ),
         );
     }
 
@@ -184,7 +186,7 @@ final class I18nCountrySwitchOnTest extends IntegrationTestCase
             new CountryDetailPage($this->agent)->onAction(
                 'switch-card-one',
                 HilosSignalConstants::HILOS_I18N_COUNTRY_SWITCH_ON,
-                new HilosI18nCountrySwitchOnActionDTO(Hilos::$db->countries['ca']?->id ?? 999999),
+                new HilosI18nCountrySwitchOnActionDTO(Hilos::$db->countries['ca']->id),
             );
         });
         Hilos::$browser->record(SourceChange::dbUpdated(
@@ -211,7 +213,7 @@ final class I18nCountrySwitchOnTest extends IntegrationTestCase
         $reply = $this->drainCommandReply();
         self::assertTrue($reply->isOk());
         self::assertSame(['code' => 'ca', 'enabled' => false], $reply->payload);
-        self::assertNotNull(Hilos::$db->countries['ca']);
+        self::assertArrayHasKey('ca', Hilos::$db->countries);
         self::assertFalse(Hilos::$db->countries['ca']->enabled);
 
         $this->underAgent($this->agent, static function (): void {
@@ -239,7 +241,7 @@ final class I18nCountrySwitchOnTest extends IntegrationTestCase
             ]), '', '');
         });
         self::assertFalse($this->drainCommandReply()->isOk());
-        self::assertNull(Hilos::$db->countries['zz']);
+        self::assertArrayNotHasKey('zz', Hilos::$db->countries);
 
         $this->underAgent($this->agent, function (): void {
             $this->agent->onSignalCommand(new CommandRequestDTO('country-off-3', CliCommands::I18N_TEST_COUNTRY_OFF, [

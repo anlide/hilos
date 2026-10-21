@@ -366,7 +366,7 @@ final class ImpersonationTest extends IntegrationTestCase
         $token = RandomHelper::hex(16);
         $adminId = $this->authenticatedAdminSession($agent, 'page-ak', $token);
         $targetId = $this->registerUser();
-        $adminName = Hilos::$db->users[$adminId]?->name;
+        $adminName = Hilos::$db->users[$adminId]->name;
         $this->drainSignals();
 
         try {
@@ -1083,7 +1083,9 @@ final class ImpersonationTest extends IntegrationTestCase
         ExecutionContext::setCurrentAgentId(self::SETTINGS_AGENT_ID);
 
         try {
-            Hilos::$db->settings[$key]?->actions->delete();
+            if (isset(Hilos::$db->settings[$key])) {
+                Hilos::$db->settings[$key]->actions->delete();
+            }
             if ($value !== null) {
                 Hilos::$db->settings->actions->add($key, $value, Hilos::$setting->catalog());
             }

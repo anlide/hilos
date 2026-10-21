@@ -41,7 +41,7 @@ final class HilosUserDetailTableTest extends IntegrationTestCase
     {
         Hilos::$sr = new SignalRouter();
         $userId = (int) Hilos::$db->users->actions->createWithName('Card person')->id;
-        Hilos::$db->users[$userId]?->actions->setAdmin(true);
+        Hilos::$db->users[$userId]->actions->setAdmin(true);
         Hilos::$db->identities->createPasswordIdentity($userId, "card-{$userId}@example.test", 'correct horse battery');
         RtTruthSourceRegistry::register(BinanceBtcTrackerRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->register(self::ACCEPT_KEY, $userId);

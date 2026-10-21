@@ -119,10 +119,14 @@ final class JournalReceiptHandoverIntegrationTest extends IntegrationTestCase
         if ($this->sessionIds !== []) {
             Hilos::$rt->connections->actions->clear();
             foreach ($this->sessionIds as $id) {
-                Hilos::$db->sessions[$id]?->actions->delete();
+                if (isset(Hilos::$db->sessions[$id])) {
+                    Hilos::$db->sessions[$id]->actions->delete();
+                }
             }
             foreach ($this->userIds as $id) {
-                Hilos::$db->users[$id]?->actions->delete();
+                if (isset(Hilos::$db->users[$id])) {
+                    Hilos::$db->users[$id]->actions->delete();
+                }
             }
         }
         if ($this->previousBrowser === null) {
@@ -139,7 +143,9 @@ final class JournalReceiptHandoverIntegrationTest extends IntegrationTestCase
             Database::sqlRun('DELETE FROM `event` WHERE `id` IN '
                 . '(SELECT `event_id` FROM `hilos_user_rename` WHERE `user_id` = ? AND `event_id` IS NOT NULL)', [$id]);
             Database::sqlRun('DELETE FROM `hilos_user_rename` WHERE `user_id` = ?', [$id]);
-            Hilos::$db->users[$id]?->actions->delete();
+            if (isset(Hilos::$db->users[$id])) {
+                Hilos::$db->users[$id]->actions->delete();
+            }
         }
         $database = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
         foreach (self::JOURNAL_CLEANUP_ORDER as $table) {
@@ -258,9 +264,11 @@ final class JournalReceiptHandoverIntegrationTest extends IntegrationTestCase
             ExecutionContext::setCurrentAgentId(SettingsLibraryAgent::AGENT_TYPE);
             try {
                 if ($previous === null) {
-                    Hilos::$db->settings[$key]?->actions->delete();
+                    if (isset(Hilos::$db->settings[$key])) {
+                        Hilos::$db->settings[$key]->actions->delete();
+                    }
                 } else {
-                    Hilos::$db->settings[$key]?->actions->updateValue($previous['value']);
+                    Hilos::$db->settings[$key]->actions->updateValue($previous['value']);
                 }
             } finally {
                 ExecutionContext::setCurrentAgentId($previousAgent);
@@ -332,8 +340,8 @@ final class JournalReceiptHandoverIntegrationTest extends IntegrationTestCase
         $administratorId = $this->newUser(cleanup: false);
         $subjectId = $this->newUser(cleanup: false);
         $targetId = $this->newUser(cleanup: false);
-        Hilos::$db->users[$administratorId]?->actions->setAdmin(true);
-        Hilos::$db->users[$subjectId]?->actions->setAdmin(true);
+        Hilos::$db->users[$administratorId]->actions->setAdmin(true);
+        Hilos::$db->users[$subjectId]->actions->setAdmin(true);
         $sessionId = $this->newSession('receipt-handover-ak', $subjectId, $administratorId);
         Hilos::initBrowser();
         $worker = new JournalReceiptHandoverTestWorker();
@@ -365,7 +373,7 @@ final class JournalReceiptHandoverIntegrationTest extends IntegrationTestCase
         $this->assertInstanceOf(AgentSignalData::class, $second->data);
         $this->assertSame($receiptId, $second->data->receiptId);
         $worker->handleDaemonMessage(new DaemonAgentMessageDTO(UserAgent::AGENT_TYPE . ':' . $targetId, $second));
-        $this->assertSame('Renamed by handover', Hilos::$db->users[$targetId]?->name);
+        $this->assertSame('Renamed by handover', Hilos::$db->users[$targetId]->name);
 
         $third = $this->nextAgentFrameNamed(HilosSignalConstants::HILOS_USER_RENAME_DONE);
         $this->assertInstanceOf(AgentSignalData::class, $third->data);

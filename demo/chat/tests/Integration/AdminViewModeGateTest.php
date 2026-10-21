@@ -270,7 +270,7 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         $fail = $this->frameTo(self::VISITOR_KEY, HilosSignalConstants::HILOS_USER_UPDATE_FAIL);
         self::assertInstanceOf(HilosUserUpdateFailSignalData::class, $fail);
         self::assertSame('View mode: you can look around, but not change anything.', $fail->reason);
-        self::assertSame('Olena Kovalenko', Hilos::$db->users[(int) $person->id]?->name);
+        self::assertSame('Olena Kovalenko', Hilos::$db->users[(int) $person->id]->name);
     }
 
     public function testAViewerSubscribesToAnAdminPageOfTheFrameworkAndOfTheProject(): void
@@ -297,12 +297,12 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         $page = $this->subscribe(UsersPage::class, self::ADMIN_KEY);
         self::assertStringNotContainsString(HiddenValue::KEY, self::wire($page));
 
-        Hilos::$db->users[$this->adminId]?->actions->setAdmin(false);
+        Hilos::$db->users[$this->adminId]->actions->setAdmin(false);
         $viewing = $this->reassess(UsersPage::class, self::ADMIN_KEY);
         self::assertAnsweredWithThePage($viewing, 'after the flag was taken');
         self::assertStringContainsString(HiddenValue::KEY, self::wire($viewing));
 
-        Hilos::$db->users[$this->adminId]?->actions->setAdmin(true);
+        Hilos::$db->users[$this->adminId]->actions->setAdmin(true);
         $full = $this->reassess(UsersPage::class, self::ADMIN_KEY);
         self::assertAnsweredWithThePage($full, 'after the flag was given back');
         self::assertStringNotContainsString(HiddenValue::KEY, self::wire($full));
@@ -313,7 +313,7 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         $this->switchMode(false);
         $this->subscribe(UsersPage::class, self::ADMIN_KEY);
 
-        Hilos::$db->users[$this->adminId]?->actions->setAdmin(false);
+        Hilos::$db->users[$this->adminId]->actions->setAdmin(false);
 
         self::assertSame(403, $this->subscriptionError($this->reassess(UsersPage::class, self::ADMIN_KEY))->httpCode);
     }
@@ -341,7 +341,7 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         $this->subscribe(LogsKeysPage::class, self::ADMIN_KEY);
         $this->subscribe(LogsKeysPage::class, self::WITNESS_KEY);
 
-        Hilos::$db->users[$this->adminId]?->actions->setAdmin(false);
+        Hilos::$db->users[$this->adminId]->actions->setAdmin(false);
         $this->growTheClusterPicture();
         $this->tickPastTheThrottle();
 
@@ -355,7 +355,7 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         $this->growTheClusterPicture();
         $this->subscribe(LogsKeysPage::class, self::ADMIN_KEY);
 
-        Hilos::$db->users[$this->adminId]?->actions->setAdmin(false);
+        Hilos::$db->users[$this->adminId]->actions->setAdmin(false);
         $this->growTheClusterPicture();
         $this->tickPastTheThrottle();
 

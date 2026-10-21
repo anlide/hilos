@@ -822,10 +822,10 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
         );
         for ($attempt = 0; $attempt < 2; $attempt++) {
             self::assertTrue($this->command(CliCommands::I18N_TEST_COUNTRY_NAMES_CLEAR)->isOk());
-            self::assertNull(Hilos::$db->countries['qj']);
-            self::assertNull(Hilos::$db->languages['qk']);
+            self::assertArrayNotHasKey('qj', Hilos::$db->countries);
+            self::assertArrayNotHasKey('qk', Hilos::$db->languages);
             foreach (['qk-GB', 'qk-US', 'qk-FR'] as $code) {
-                self::assertNull(Hilos::$db->locales[$code]);
+                self::assertArrayNotHasKey($code, Hilos::$db->locales);
             }
             self::assertSame([], $this->nameSnapshot());
         }
@@ -873,10 +873,10 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
             ? 'Clear it before seeding again.' : 'is not the country names fixture.', $reply->payload[CommandConstants::FIELD_MESSAGE]);
         self::assertSame($before, $this->nameSnapshot());
         foreach (['qk-GB', 'qk-US', 'qk-FR'] as $locale) {
-            self::assertNotNull(Hilos::$db->locales[$locale]);
+            self::assertArrayHasKey($locale, Hilos::$db->locales);
         }
-        self::assertNotNull(Hilos::$db->countries['qj']);
-        self::assertNotNull(Hilos::$db->languages['qk']);
+        self::assertArrayHasKey('qj', Hilos::$db->countries);
+        self::assertArrayHasKey('qk', Hilos::$db->languages);
     }
 
     /** @throws HilosException When setup, dispatch or persistence fails */
@@ -889,12 +889,12 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
         self::assertFalse($this->command(CliCommands::I18N_TEST_COUNTRY_NAMES_CLEAR)->isOk());
         self::assertNull(Hilos::$db->countryNames->findBase(Hilos::$db->countries['qj']->id, Hilos::$db->languages['en']->id));
         self::assertSame('Foreign name', Hilos::$db->countryNames[$other->id]->name);
-        self::assertNotNull(Hilos::$db->languages['qk']);
+        self::assertArrayHasKey('qk', Hilos::$db->languages);
         $this->underAgent($this->agent, static fn () => $other->actions->delete());
         self::assertTrue($this->command(CliCommands::I18N_TEST_COUNTRY_NAMES_CLEAR)->isOk());
         self::assertTrue($this->command(CliCommands::I18N_TEST_COUNTRY_NAMES_CLEAR)->isOk());
-        self::assertNotNull(Hilos::$db->countries['qx']);
-        self::assertNotNull(Hilos::$db->languages['en']);
+        self::assertArrayHasKey('qx', Hilos::$db->countries);
+        self::assertArrayHasKey('en', Hilos::$db->languages);
     }
 
     /**
@@ -983,7 +983,9 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
             self::assertSame($message, $outcome->message);
         } else {
             $isUpdate = $dto instanceof HilosI18nCountryNameUpdateActionDTO;
-            $locale = $dto->localeId === null ? null : (Hilos::$db->locales[$dto->localeId]?->code ?? 'qk-GB');
+            $locale = $dto->localeId === null
+                ? null
+                : (isset(Hilos::$db->locales[$dto->localeId]) ? Hilos::$db->locales[$dto->localeId]->code : 'qk-GB');
             $expected = ($locale === null
                 ? 'Name of qj in HIL-1501 writing (qk)'
                 : "Correction {$locale} of the name of qj")
@@ -1035,7 +1037,11 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
     {
         $params = ['countryCode' => 'qj'];
         $windows = [ChatTableContext::hilosI18nCountryNames => new TableWindowDescriptorDTO(
-            filter: [HilosI18nCountryNamesTable::FILTER_COUNTRY => Hilos::$db->countries['qj']?->id ?? 999999],
+            filter: [
+                HilosI18nCountryNamesTable::FILTER_COUNTRY => isset(Hilos::$db->countries['qj'])
+                    ? Hilos::$db->countries['qj']->id
+                    : 999999,
+            ],
         )];
         Hilos::$sr->subscribeToPage(CountryNamesPage::PAGE, new WebSocketPageSubscribeSignalDTO(
             $acceptKey, CountryNamesPage::PAGE, $params, $windows,
@@ -1104,7 +1110,7 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
     {
         $this->underAgent($this->agent, static function (): void {
             foreach (['qj', 'qx'] as $code) {
-                if (Hilos::$db->countries[$code] === null) {
+                if (!isset(Hilos::$db->countries[$code])) {
                     continue;
                 }
                 foreach (Hilos::$db->countryNames as $name) {
@@ -1114,12 +1120,19 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
                 }
             }
             foreach (['qk-GB', 'qk-US', 'qk-FR'] as $code) {
-                Hilos::$db->locales[$code]?->actions->switchOff();
-                Hilos::$db->locales[$code]?->actions->delete();
+                if (!isset(Hilos::$db->locales[$code])) {
+                    continue;
+                }
+                Hilos::$db->locales[$code]->actions->switchOff();
+                Hilos::$db->locales[$code]->actions->delete();
             }
-            Hilos::$db->languages['qk']?->actions->delete();
+            if (isset(Hilos::$db->languages['qk'])) {
+                Hilos::$db->languages['qk']->actions->delete();
+            }
             foreach (['qj', 'qx'] as $code) {
-                Hilos::$db->countries[$code]?->actions->delete();
+                if (isset(Hilos::$db->countries[$code])) {
+                    Hilos::$db->countries[$code]->actions->delete();
+                }
             }
         });
     }
@@ -1143,9 +1156,11 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
         string $text,
         ?string $expectedName = null,
     ): ActionPayloadDTO {
-        $subjectId = Hilos::$db->countries[$subjectCode]?->id ?? PHP_INT_MAX;
-        $writingId = Hilos::$db->languages[$writingCode]?->id ?? PHP_INT_MAX;
-        $localeId = $localeCode === null ? null : (Hilos::$db->locales[$localeCode]?->id ?? PHP_INT_MAX);
+        $subjectId = isset(Hilos::$db->countries[$subjectCode]) ? Hilos::$db->countries[$subjectCode]->id : PHP_INT_MAX;
+        $writingId = isset(Hilos::$db->languages[$writingCode]) ? Hilos::$db->languages[$writingCode]->id : PHP_INT_MAX;
+        $localeId = $localeCode === null
+            ? null
+            : (isset(Hilos::$db->locales[$localeCode]) ? Hilos::$db->locales[$localeCode]->id : PHP_INT_MAX);
         $base = Hilos::$db->countryNames->findBase($subjectId, $writingId);
         if ($class === HilosI18nCountryNameAddActionDTO::class) {
             return new HilosI18nCountryNameAddActionDTO(

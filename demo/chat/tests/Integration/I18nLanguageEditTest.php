@@ -154,8 +154,8 @@ final class I18nLanguageEditTest extends IntegrationTestCase
             ? HilosSignalConstants::HILOS_I18N_LANGUAGE_ROW_UPDATE
             : HilosSignalConstants::HILOS_I18N_LANGUAGE_UPDATE;
         $dto = $fromList
-            ? new HilosI18nLanguageUpdateActionDTO(Hilos::$db->languages['uk']?->id ?? 999999, 'Українська мова', true)
-            : new HilosI18nLanguageRowUpdateActionDTO(Hilos::$db->languages['uk']?->id ?? 999999, 'Українська мова', true);
+            ? new HilosI18nLanguageUpdateActionDTO(Hilos::$db->languages['uk']->id, 'Українська мова', true)
+            : new HilosI18nLanguageRowUpdateActionDTO(Hilos::$db->languages['uk']->id, 'Українська мова', true);
 
         try {
             $this->underAgent($this->agent, static function () use ($page, $action, $dto): void {
@@ -207,7 +207,7 @@ final class I18nLanguageEditTest extends IntegrationTestCase
             $fresh = $dtoClass::fromArray(array_replace($payload, ['languageId' => $replacement->id]));
             $page->onAction('fresh-language', $fresh->getAction(), $fresh);
             if ($fresh instanceof HilosI18nLanguageDeleteActionDTO || $fresh instanceof HilosI18nLanguageRowDeleteActionDTO) {
-                self::assertNull(Hilos::$db->languages[$replacement->id]);
+                self::assertArrayNotHasKey($replacement->id, Hilos::$db->languages);
             } elseif ($fresh instanceof HilosI18nLanguageUpdateActionDTO || $fresh instanceof HilosI18nLanguageRowUpdateActionDTO) {
                 self::assertSame('Edited', $replacement->nativeName);
                 self::assertTrue($replacement->rtl);
@@ -227,8 +227,12 @@ final class I18nLanguageEditTest extends IntegrationTestCase
     {
         $page = $fromList ? new LanguagesListPage($this->agent) : new LanguageDetailPage($this->agent);
         $dto = $fromList
-            ? new HilosI18nLanguageRowUpdateActionDTO(Hilos::$db->languages[$code]?->id ?? 999999, $nativeName, $rtl)
-            : new HilosI18nLanguageUpdateActionDTO(Hilos::$db->languages[$code]?->id ?? 999999, $nativeName, $rtl);
+            ? new HilosI18nLanguageRowUpdateActionDTO(
+                isset(Hilos::$db->languages[$code]) ? Hilos::$db->languages[$code]->id : 999999, $nativeName, $rtl,
+            )
+            : new HilosI18nLanguageUpdateActionDTO(
+                isset(Hilos::$db->languages[$code]) ? Hilos::$db->languages[$code]->id : 999999, $nativeName, $rtl,
+            );
         $this->underAgent($this->agent, static function () use ($page, $dto): void {
             self::assertNull($page->onAction('language-edit-ak', $dto->getAction(), $dto));
         });

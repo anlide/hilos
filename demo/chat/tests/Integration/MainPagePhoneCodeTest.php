@@ -92,7 +92,7 @@ final class MainPagePhoneCodeTest extends IntegrationTestCase
             $this->assertNotNull($userId);
             $this->assertMatchesRegularExpression(
                 '/^User[1-9]\\d{5}$/',
-                Hilos::$db->users[$userId]?->name,
+                Hilos::$db->users[$userId]->name,
                 'The account is named User and six digits, never by its number',
             );
             $this->assertSame(

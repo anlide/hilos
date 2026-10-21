@@ -30,7 +30,9 @@ final class LegalConsentActionTest extends IntegrationTestCase
         parent::setUp();
         Hilos::initBrowser();
         TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::WRITER);
-        Hilos::$db->settings[LegalSettings::CONSENT_FORM_KEY]?->actions->delete();
+        if (isset(Hilos::$db->settings[LegalSettings::CONSENT_FORM_KEY])) {
+            Hilos::$db->settings[LegalSettings::CONSENT_FORM_KEY]->actions->delete();
+        }
     }
 
     /**
@@ -40,7 +42,9 @@ final class LegalConsentActionTest extends IntegrationTestCase
      */
     protected function tearDown(): void
     {
-        Hilos::$db->settings[LegalSettings::CONSENT_FORM_KEY]?->actions->delete();
+        if (isset(Hilos::$db->settings[LegalSettings::CONSENT_FORM_KEY])) {
+            Hilos::$db->settings[LegalSettings::CONSENT_FORM_KEY]->actions->delete();
+        }
         TruthSourceRegistry::unregisterAgent(self::WRITER);
         parent::tearDown();
     }

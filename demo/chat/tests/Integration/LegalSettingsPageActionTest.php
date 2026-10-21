@@ -30,14 +30,18 @@ final class LegalSettingsPageActionTest extends IntegrationTestCase
         Hilos::$sr = new SignalRouter();
         TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::WRITER);
         foreach (LegalSettings::KEYS as $key) {
-            Hilos::$db->settings[$key]?->actions->delete();
+            if (isset(Hilos::$db->settings[$key])) {
+                Hilos::$db->settings[$key]->actions->delete();
+            }
         }
     }
 
     protected function tearDown(): void
     {
         foreach (LegalSettings::KEYS as $key) {
-            Hilos::$db->settings[$key]?->actions->delete();
+            if (isset(Hilos::$db->settings[$key])) {
+                Hilos::$db->settings[$key]->actions->delete();
+            }
         }
         TruthSourceRegistry::unregisterAgent(self::WRITER);
         Hilos::$sr = null;

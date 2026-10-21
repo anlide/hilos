@@ -61,7 +61,7 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
         $this->clearFixtures();
         $this->underAgent($this->agent, function (): void {
             Hilos::$db->languages->actions->create('en', 'English', false);
-            if (Hilos::$db->countries['gb'] === null) {
+            if (!isset(Hilos::$db->countries['gb'])) {
                 Hilos::$db->countries->actions->create('gb', '£', 'GBP');
                 $this->createdBritain = true;
             }
@@ -136,7 +136,7 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
             $fresh = $dtoClass::fromArray(array_replace($payload, ['localeId' => $replacement->id]));
             $page->onAction('fresh-locale', $fresh->getAction(), $fresh);
             if ($fresh instanceof HilosI18nLocaleDeleteActionDTO) {
-                self::assertNull(Hilos::$db->locales[$replacement->id]);
+                self::assertArrayNotHasKey($replacement->id, Hilos::$db->locales);
             } elseif ($fresh instanceof HilosI18nLocaleUpdateActionDTO) {
                 self::assertSame('YYYY-MM-DD', $replacement->dateFormat);
             } else {
@@ -166,7 +166,7 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
                         $page->onAction('stale-parent', $stale->getAction(), $stale);
                         self::fail('A stale parent ID must not resolve its replacement');
                     } catch (TableActionException) {
-                        self::assertNull(Hilos::$db->locales['zz-QX']);
+                        self::assertArrayNotHasKey('zz-QX', Hilos::$db->locales);
                     }
                 }
                 $fresh = new HilosI18nLocaleAddActionDTO($language->id, $country->id, $formats);
@@ -174,7 +174,9 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
                 self::assertSame($language->id, Hilos::$db->locales['zz-QX']->languageId);
                 self::assertSame($country->id, Hilos::$db->locales['zz-QX']->countryId);
             } finally {
-                Hilos::$db->locales['zz-QX']?->actions->delete();
+                if (isset(Hilos::$db->locales['zz-QX'])) {
+                    Hilos::$db->locales['zz-QX']->actions->delete();
+                }
                 $country->actions->delete();
             }
         });
@@ -186,7 +188,7 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
         $page = new LanguageLocalesPage($this->agent);
         $this->underAgent($this->agent, static function () use ($page, $formats): void {
             self::assertNull($page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_ADD,
-                new HilosI18nLocaleAddActionDTO(Hilos::$db->languages['en']?->id ?? 999999, Hilos::$db->countries['gb']?->id ?? 999999, $formats)));
+                new HilosI18nLocaleAddActionDTO(Hilos::$db->languages['en']->id, Hilos::$db->countries['gb']->id, $formats)));
         });
         self::assertFalse(Hilos::$db->locales['en-GB']->enabled);
         self::assertSame($formats->toArray(), LocaleFormats::ofLocale(Hilos::$db->locales['en-GB'])->toArray());
@@ -198,13 +200,13 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
         $this->underAgent($this->agent, static function () use ($page, $updated): void {
             self::assertNull($page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_UPDATE,
                 new HilosI18nLocaleUpdateActionDTO(
-                    Hilos::$db->languages['en']?->id ?? 999999,
-                    Hilos::$db->countries['gb']?->id ?? 999999,
-                    Hilos::$db->locales['en-GB']?->id ?? 999999,
+                    Hilos::$db->languages['en']->id,
+                    Hilos::$db->countries['gb']->id,
+                    Hilos::$db->locales['en-GB']->id,
                     $updated,
                 )));
             self::assertNull($page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_ADD,
-                new HilosI18nLocaleAddActionDTO(Hilos::$db->languages['en']?->id ?? 999999, null, $updated)));
+                new HilosI18nLocaleAddActionDTO(Hilos::$db->languages['en']->id, null, $updated)));
         });
         self::assertSame('YYYY-MM-DD', Hilos::$db->locales['en-GB']->dateFormat);
         self::assertFalse(Hilos::$db->locales['en']->enabled);
@@ -216,12 +218,12 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
         $page = new LanguageLocalesPage($this->agent);
         $this->underAgent($this->agent, static function () use ($page, $formats): void {
             $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_ADD,
-                new HilosI18nLocaleAddActionDTO(Hilos::$db->languages['en']?->id ?? 999999, Hilos::$db->countries['gb']?->id ?? 999999, $formats));
+                new HilosI18nLocaleAddActionDTO(Hilos::$db->languages['en']->id, Hilos::$db->countries['gb']->id, $formats));
             self::assertNull($page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_SWITCH_ON,
                 new HilosI18nLocaleSwitchOnActionDTO(
-                    Hilos::$db->languages['en']?->id ?? 999999,
-                    Hilos::$db->countries['gb']?->id ?? 999999,
-                    Hilos::$db->locales['en-GB']?->id ?? 999999,
+                    Hilos::$db->languages['en']->id,
+                    Hilos::$db->countries['gb']->id,
+                    Hilos::$db->locales['en-GB']->id,
                 )));
         });
         self::assertTrue(Hilos::$db->locales['en-GB']->enabled);
@@ -229,9 +231,9 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
         $this->underAgent($this->agent, static function () use ($page): void {
             self::assertNull($page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_SWITCH_ON,
                 new HilosI18nLocaleSwitchOnActionDTO(
-                    Hilos::$db->languages['en']?->id ?? 999999,
-                    Hilos::$db->countries['gb']?->id ?? 999999,
-                    Hilos::$db->locales['en-GB']?->id ?? 999999,
+                    Hilos::$db->languages['en']->id,
+                    Hilos::$db->countries['gb']->id,
+                    Hilos::$db->locales['en-GB']->id,
                 )));
         });
         self::assertTrue(Hilos::$db->locales['en-GB']->enabled);
@@ -243,12 +245,12 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
         $page = new LanguageLocalesPage($this->agent);
         $this->underAgent($this->agent, static function () use ($page, $formats): void {
             $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_ADD,
-                new HilosI18nLocaleAddActionDTO(Hilos::$db->languages['en']?->id ?? 999999, Hilos::$db->countries['gb']?->id ?? 999999, $formats));
+                new HilosI18nLocaleAddActionDTO(Hilos::$db->languages['en']->id, Hilos::$db->countries['gb']->id, $formats));
             $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_SWITCH_ON,
                 new HilosI18nLocaleSwitchOnActionDTO(
-                    Hilos::$db->languages['en']?->id ?? 999999,
-                    Hilos::$db->countries['gb']?->id ?? 999999,
-                    Hilos::$db->locales['en-GB']?->id ?? 999999,
+                    Hilos::$db->languages['en']->id,
+                    Hilos::$db->countries['gb']->id,
+                    Hilos::$db->locales['en-GB']->id,
                 ));
         });
 
@@ -256,9 +258,9 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
         $this->underAgent($this->agent, static function () use ($page, $formats): void {
             $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_UPDATE,
                 new HilosI18nLocaleUpdateActionDTO(
-                    Hilos::$db->languages['en']?->id ?? 999999,
-                    Hilos::$db->countries['gb']?->id ?? 999999,
-                    Hilos::$db->locales['en-GB']?->id ?? 999999,
+                    Hilos::$db->languages['en']->id,
+                    Hilos::$db->countries['gb']->id,
+                    Hilos::$db->locales['en-GB']->id,
                     $formats,
                 ));
         });
@@ -270,9 +272,9 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
         $page = new LanguageLocalesPage($this->agent);
         $this->underAgent($this->agent, static function () use ($page, $formats): void {
             $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_ADD,
-                new HilosI18nLocaleAddActionDTO(Hilos::$db->languages['en']?->id ?? 999999, null, $formats));
+                new HilosI18nLocaleAddActionDTO(Hilos::$db->languages['en']->id, null, $formats));
             self::assertNull($page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_SWITCH_ON,
-                new HilosI18nLocaleSwitchOnActionDTO(Hilos::$db->languages['en']?->id ?? 999999, null, Hilos::$db->locales['en']?->id ?? 999999)));
+                new HilosI18nLocaleSwitchOnActionDTO(Hilos::$db->languages['en']->id, null, Hilos::$db->locales['en']->id)));
         });
         self::assertTrue(Hilos::$db->locales['en']->enabled);
     }
@@ -285,9 +287,11 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
                 $this->underAgent($this->agent, static function () use ($page, $language, $country): void {
                     $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_SWITCH_ON,
                         new HilosI18nLocaleSwitchOnActionDTO(
-                            Hilos::$db->languages[$language]?->id ?? 999999,
-                            Hilos::$db->countries[$country]?->id ?? 999999,
-                            Hilos::$db->locales[ObjectLocale::codeFor($language, $country)]?->id ?? 999999,
+                            isset(Hilos::$db->languages[$language]) ? Hilos::$db->languages[$language]->id : 999999,
+                            isset(Hilos::$db->countries[$country]) ? Hilos::$db->countries[$country]->id : 999999,
+                            isset(Hilos::$db->locales[ObjectLocale::codeFor($language, $country)])
+                                ? Hilos::$db->locales[ObjectLocale::codeFor($language, $country)]->id
+                                : 999999,
                         ));
                 });
                 self::fail('Unknown locale should be refused');
@@ -304,7 +308,7 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
         $previousDefault = Hilos::$db->countries['gb']->defaultLocaleId;
         $this->underAgent($this->agent, static function () use ($page, $formats): void {
             $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_ADD,
-                new HilosI18nLocaleAddActionDTO(Hilos::$db->languages['en']?->id ?? 999999, Hilos::$db->countries['gb']?->id ?? 999999, $formats));
+                new HilosI18nLocaleAddActionDTO(Hilos::$db->languages['en']->id, Hilos::$db->countries['gb']->id, $formats));
             Hilos::$db->locales['en-GB']->actions->switchOn();
             Hilos::$db->countries['gb']->actions->update('£', 'GBP', Hilos::$db->locales['en-GB']->id);
             Hilos::$db->countryNames->actions->createManual(
@@ -316,9 +320,9 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
             $this->underAgent($this->agent, static function () use ($page): void {
                 self::assertNull($page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_SWITCH_OFF,
                     new HilosI18nLocaleSwitchOffActionDTO(
-                        Hilos::$db->languages['en']?->id ?? 999999,
-                        Hilos::$db->countries['gb']?->id ?? 999999,
-                        Hilos::$db->locales['en-GB']?->id ?? 999999,
+                        Hilos::$db->languages['en']->id,
+                        Hilos::$db->countries['gb']->id,
+                        Hilos::$db->locales['en-GB']->id,
                     )));
             });
             self::assertFalse(Hilos::$db->locales['en-GB']->enabled);
@@ -341,9 +345,9 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
             $this->underAgent($this->agent, static function () use ($page): void {
                 self::assertNull($page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_SWITCH_OFF,
                     new HilosI18nLocaleSwitchOffActionDTO(
-                        Hilos::$db->languages['en']?->id ?? 999999,
-                        Hilos::$db->countries['gb']?->id ?? 999999,
-                        Hilos::$db->locales['en-GB']?->id ?? 999999,
+                        Hilos::$db->languages['en']->id,
+                        Hilos::$db->countries['gb']->id,
+                        Hilos::$db->locales['en-GB']->id,
                     )));
             });
             self::assertSame($before, (int) Database::sql("SHOW SESSION STATUS LIKE 'Com_update'")->firstRow()['Value']);
@@ -354,9 +358,9 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
             $this->underAgent($this->agent, static function () use ($page, $updated): void {
                 $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_UPDATE,
                     new HilosI18nLocaleUpdateActionDTO(
-                        Hilos::$db->languages['en']?->id ?? 999999,
-                        Hilos::$db->countries['gb']?->id ?? 999999,
-                        Hilos::$db->locales['en-GB']?->id ?? 999999,
+                        Hilos::$db->languages['en']->id,
+                        Hilos::$db->countries['gb']->id,
+                        Hilos::$db->locales['en-GB']->id,
                         $updated,
                     ));
             });
@@ -375,10 +379,10 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
         $this->underAgent($this->agent, static function () use ($page, $formats): void {
             Hilos::$db->languages->actions->create('zz', 'Test language', false)->actions->switchOn();
             $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_ADD,
-                new HilosI18nLocaleAddActionDTO(Hilos::$db->languages['zz']?->id ?? 999999, null, $formats));
+                new HilosI18nLocaleAddActionDTO(Hilos::$db->languages['zz']->id, null, $formats));
             Hilos::$db->locales['zz']->actions->switchOn();
             self::assertNull($page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_SWITCH_OFF,
-                new HilosI18nLocaleSwitchOffActionDTO(Hilos::$db->languages['zz']?->id ?? 999999, null, Hilos::$db->locales['zz']?->id ?? 999999)));
+                new HilosI18nLocaleSwitchOffActionDTO(Hilos::$db->languages['zz']->id, null, Hilos::$db->locales['zz']->id)));
         });
         self::assertFalse(Hilos::$db->locales['zz']->enabled);
         self::assertTrue(Hilos::$db->languages['zz']->enabled);
@@ -391,7 +395,7 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
         $page = new LanguageLocalesPage($this->agent);
         $this->underAgent($this->agent, static function () use ($page, $formats): void {
             $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_ADD,
-                new HilosI18nLocaleAddActionDTO(Hilos::$db->languages['en']?->id ?? 999999, null, $formats));
+                new HilosI18nLocaleAddActionDTO(Hilos::$db->languages['en']->id, null, $formats));
         });
         foreach ([false, true] as $enabled) {
             if ($enabled) {
@@ -405,9 +409,9 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
                         if ($viaPage) {
                             $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_SWITCH_OFF,
                                 new HilosI18nLocaleSwitchOffActionDTO(
-                                    Hilos::$db->languages['en']?->id ?? 999999,
+                                    Hilos::$db->languages['en']->id,
                                     null,
-                                    Hilos::$db->locales['en']?->id ?? 999999,
+                                    Hilos::$db->locales['en']->id,
                                 ));
                         } else {
                             Hilos::$db->locales['en']->actions->switchOff();
@@ -431,9 +435,11 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
                 $this->underAgent($this->agent, static function () use ($page, $language, $country): void {
                     $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_SWITCH_OFF,
                         new HilosI18nLocaleSwitchOffActionDTO(
-                            Hilos::$db->languages[$language]?->id ?? 999999,
-                            Hilos::$db->countries[$country]?->id ?? 999999,
-                            Hilos::$db->locales[ObjectLocale::codeFor($language, $country)]?->id ?? 999999,
+                            isset(Hilos::$db->languages[$language]) ? Hilos::$db->languages[$language]->id : 999999,
+                            isset(Hilos::$db->countries[$country]) ? Hilos::$db->countries[$country]->id : 999999,
+                            isset(Hilos::$db->locales[ObjectLocale::codeFor($language, $country)])
+                                ? Hilos::$db->locales[ObjectLocale::codeFor($language, $country)]->id
+                                : 999999,
                         ));
                 });
                 self::fail('Unknown locale should be refused');
@@ -443,7 +449,11 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
         }
         $this->expectException(InvalidActionPayloadException::class);
         $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_SWITCH_OFF,
-            new HilosI18nLocaleSwitchOnActionDTO(Hilos::$db->languages['en']?->id ?? 999999, null, Hilos::$db->locales['en']?->id ?? 999999));
+            new HilosI18nLocaleSwitchOnActionDTO(
+                Hilos::$db->languages['en']->id,
+                null,
+                isset(Hilos::$db->locales['en']) ? Hilos::$db->locales['en']->id : 999999,
+            ));
     }
 
     public function testDuplicateAndUnknownAddressesAreRefused(): void
@@ -452,14 +462,14 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
         $page = new LanguageLocalesPage($this->agent);
         $this->underAgent($this->agent, static function () use ($page, $formats): void {
             $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_ADD,
-                new HilosI18nLocaleAddActionDTO(Hilos::$db->languages['en']?->id ?? 999999, Hilos::$db->countries['gb']?->id ?? 999999, $formats));
+                new HilosI18nLocaleAddActionDTO(Hilos::$db->languages['en']->id, Hilos::$db->countries['gb']->id, $formats));
         });
         try {
             $this->underAgent($this->agent, static function () use ($page, $formats): void {
                 $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_ADD,
                     new HilosI18nLocaleAddActionDTO(
-                        Hilos::$db->languages['en']?->id ?? 999999,
-                        Hilos::$db->countries['gb']?->id ?? 999999,
+                        Hilos::$db->languages['en']->id,
+                        Hilos::$db->countries['gb']->id,
                         $formats,
                     ));
             });
@@ -472,8 +482,8 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
             try {
                 $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_ADD,
                     new HilosI18nLocaleAddActionDTO(
-                        Hilos::$db->languages[$language]?->id ?? 999999,
-                        Hilos::$db->countries[$country]?->id ?? 999999,
+                        isset(Hilos::$db->languages[$language]) ? Hilos::$db->languages[$language]->id : 999999,
+                        isset(Hilos::$db->countries[$country]) ? Hilos::$db->countries[$country]->id : 999999,
                         $formats,
                     ));
                 self::fail('Unknown address should be refused');
@@ -484,7 +494,12 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
         $this->expectException(TableActionException::class);
         $this->expectExceptionMessage('Unknown locale: 999999');
         $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_UPDATE,
-            new HilosI18nLocaleUpdateActionDTO(Hilos::$db->languages['en']?->id ?? 999999, null, Hilos::$db->locales['en']?->id ?? 999999, $formats));
+            new HilosI18nLocaleUpdateActionDTO(
+                Hilos::$db->languages['en']->id,
+                null,
+                isset(Hilos::$db->locales['en']) ? Hilos::$db->locales['en']->id : 999999,
+                $formats,
+            ));
     }
 
     public function testUnknownTemplateAndFrozenLocaleAreRefused(): void
@@ -498,26 +513,26 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
         try {
             $this->underAgent($this->agent, static function () use ($page, $unknown): void {
                 $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_ADD,
-                    new HilosI18nLocaleAddActionDTO(Hilos::$db->languages['en']?->id ?? 999999, null, $unknown));
+                    new HilosI18nLocaleAddActionDTO(Hilos::$db->languages['en']->id, null, $unknown));
             });
             self::fail('Unknown format should be refused');
         } catch (ValidationException $error) {
             self::assertStringContainsString("Date format 'bad date'", $error->getMessage());
-            self::assertNull(Hilos::$db->locales['en']);
+            self::assertArrayNotHasKey('en', Hilos::$db->locales);
         }
 
         $this->underAgent($this->agent, static function () use ($page, $formats): void {
             $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_ADD,
-                new HilosI18nLocaleAddActionDTO(Hilos::$db->languages['en']?->id ?? 999999, null, $formats));
+                new HilosI18nLocaleAddActionDTO(Hilos::$db->languages['en']->id, null, $formats));
             Hilos::$db->locales['en']->actions->switchOn();
         });
         $this->expectException(I18nRowFrozenException::class);
         $this->underAgent($this->agent, static function () use ($page, $unknown): void {
             $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_UPDATE,
                 new HilosI18nLocaleUpdateActionDTO(
-                    Hilos::$db->languages['en']?->id ?? 999999,
+                    Hilos::$db->languages['en']->id,
                     null,
-                    Hilos::$db->locales['en']?->id ?? 999999,
+                    Hilos::$db->locales['en']->id,
                     $unknown,
                 ));
         });

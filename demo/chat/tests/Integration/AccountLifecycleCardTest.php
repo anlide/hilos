@@ -349,7 +349,9 @@ final class AccountLifecycleCardTest extends IntegrationTestCase
         ExecutionContext::setCurrentAgentId(self::SETTINGS_AGENT_ID);
 
         try {
-            Hilos::$db->settings[StepUpSettings::ENABLED_KEY]?->actions->delete();
+            if (isset(Hilos::$db->settings[StepUpSettings::ENABLED_KEY])) {
+                Hilos::$db->settings[StepUpSettings::ENABLED_KEY]->actions->delete();
+            }
             if ($enabled !== null) {
                 Hilos::$db->settings->actions->add(StepUpSettings::ENABLED_KEY, $enabled, Hilos::$setting->catalog());
             }

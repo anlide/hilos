@@ -39,10 +39,9 @@ final class HistoryCleanupFilesTest extends IntegrationTestCase
     {
         Hilos::$db->events->actions->deleteAll();
         foreach ($this->fileIds as $fileId) {
-            $file = Hilos::$db->files[$fileId];
-            if ($file !== null) {
-                $storedName = $file->storedName;
-                $file->actions->delete();
+            if (isset(Hilos::$db->files[$fileId])) {
+                $storedName = Hilos::$db->files[$fileId]->storedName;
+                Hilos::$db->files[$fileId]->actions->delete();
                 Hilos::$fs?->files[$storedName]->unlink();
             }
         }

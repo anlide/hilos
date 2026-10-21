@@ -64,7 +64,7 @@ final class AdminCreateCommandTest extends IntegrationTestCase
         self::assertTrue($reply->isOk(), var_export($reply->payload, true));
         self::assertSame((int)$member->id, $reply->payload[AdminCommandConstants::FIELD_USER_ID]);
         self::assertFalse($reply->payload[AdminCommandConstants::FIELD_CREATED]);
-        self::assertTrue(Hilos::$db->users[(int)$member->id]?->admin);
+        self::assertTrue(Hilos::$db->users[(int)$member->id]->admin);
         self::assertCount($usersBefore, Hilos::$db->users->listAll(), 'Flagging a user mints none');
     }
 
@@ -85,9 +85,8 @@ final class AdminCreateCommandTest extends IntegrationTestCase
 
         $mintedId = $reply->payload[AdminCommandConstants::FIELD_USER_ID];
         self::assertIsInt($mintedId);
-        $minted = Hilos::$db->users[$mintedId];
-        self::assertTrue($minted?->admin);
-        self::assertNull(Hilos::$db->userMerges[$mintedId]);
+        self::assertTrue(Hilos::$db->users[$mintedId]->admin);
+        self::assertArrayNotHasKey($mintedId, Hilos::$db->userMerges);
         // The bind is what makes the mint usable: without it the operator owns an
         // administrator and no browser that is one.
         self::assertSame($mintedId, Hilos::$db->sessions->findByToken($sessionToken)?->userId);
@@ -131,7 +130,7 @@ final class AdminCreateCommandTest extends IntegrationTestCase
         self::assertCount(1, $replies);
         self::assertFalse($replies[0]->isOk());
         self::assertSame('This account was merged into another one', $replies[0]->payload[CommandConstants::FIELD_MESSAGE] ?? null);
-        self::assertFalse(Hilos::$db->users[$foldedId]?->admin);
+        self::assertFalse(Hilos::$db->users[$foldedId]->admin);
     }
 
     /**

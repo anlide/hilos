@@ -823,7 +823,9 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
         ExecutionContext::setCurrentAgentId(self::SETTINGS_AGENT_ID);
 
         try {
-            Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY]?->actions->delete();
+            if (isset(Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY])) {
+                Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY]->actions->delete();
+            }
             if ($disabled !== null) {
                 Hilos::$db->settings->actions->add(AuthMethodSettings::DISABLED_KEY, $disabled, Hilos::$setting->catalog());
             }

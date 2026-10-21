@@ -94,11 +94,11 @@ final class I18nLanguageSwitchOffTest extends IntegrationTestCase
             self::assertNull($page->onAction(
                 'language-ak',
                 HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_OFF,
-                new HilosI18nLanguageSwitchOffActionDTO(Hilos::$db->languages['fr']?->id ?? 999999),
+                new HilosI18nLanguageSwitchOffActionDTO(Hilos::$db->languages['fr']->id),
             ));
         });
         self::assertFalse(Hilos::$db->languages['fr']->enabled);
-        self::assertNotNull(Hilos::$db->locales['fr']);
+        self::assertArrayHasKey('fr', Hilos::$db->locales);
         self::assertNotNull(Hilos::$db->languageNames->findBase(
             Hilos::$db->languages['fr']->id,
             Hilos::$db->languages['en']->id,
@@ -106,7 +106,7 @@ final class I18nLanguageSwitchOffTest extends IntegrationTestCase
 
         $this->underAgent($this->agent, static function () use ($page): void {
             $page->onAction('language-ak', HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_OFF,
-                new HilosI18nLanguageSwitchOffActionDTO(Hilos::$db->languages['fr']?->id ?? 999999));
+                new HilosI18nLanguageSwitchOffActionDTO(Hilos::$db->languages['fr']->id));
         });
         self::assertFalse(Hilos::$db->languages['fr']->enabled);
     }
@@ -120,7 +120,7 @@ final class I18nLanguageSwitchOffTest extends IntegrationTestCase
         try {
             $this->underAgent($this->agent, static function () use ($page): void {
                 $page->onAction('language-ak', HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_OFF,
-                    new HilosI18nLanguageSwitchOffActionDTO(Hilos::$db->languages['en']?->id ?? 999999));
+                    new HilosI18nLanguageSwitchOffActionDTO(Hilos::$db->languages['en']->id));
             });
             self::fail('The default language must be protected');
         } catch (DefaultLanguageProtectedException) {
@@ -129,7 +129,9 @@ final class I18nLanguageSwitchOffTest extends IntegrationTestCase
 
         $this->expectException(TableActionException::class);
         $page->onAction('language-ak', HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_OFF,
-            new HilosI18nLanguageSwitchOffActionDTO(Hilos::$db->languages['zz']?->id ?? 999999));
+            new HilosI18nLanguageSwitchOffActionDTO(
+                isset(Hilos::$db->languages['zz']) ? Hilos::$db->languages['zz']->id : 999999,
+            ));
     }
 
     public function testBothOpenCardsReceiveTheDisabledState(): void
@@ -157,7 +159,7 @@ final class I18nLanguageSwitchOffTest extends IntegrationTestCase
             new LanguageDetailPage($this->agent)->onAction(
                 'switch-card-one',
                 HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_OFF,
-                new HilosI18nLanguageSwitchOffActionDTO(Hilos::$db->languages['fr']?->id ?? 999999),
+                new HilosI18nLanguageSwitchOffActionDTO(Hilos::$db->languages['fr']->id),
             );
         });
         Hilos::$browser->record(SourceChange::dbUpdated(
@@ -199,7 +201,7 @@ final class I18nLanguageSwitchOffTest extends IntegrationTestCase
             ]), '', '');
         });
         self::assertFalse($this->drainCommandReply()->isOk());
-        self::assertNull(Hilos::$db->languages['zz']);
+        self::assertArrayNotHasKey('zz', Hilos::$db->languages);
     }
 
     public function testDeleteCommandRemovesEditedFixtureAndAllowsRepeatedCleanup(): void
@@ -218,7 +220,7 @@ final class I18nLanguageSwitchOffTest extends IntegrationTestCase
             $reply = $this->drainCommandReply();
             self::assertTrue($reply->isOk());
             self::assertSame(['code' => 'fr'], $reply->payload);
-            self::assertNull(Hilos::$db->languages['fr']);
+            self::assertArrayNotHasKey('fr', Hilos::$db->languages);
         }
     }
 
@@ -251,9 +253,9 @@ final class I18nLanguageSwitchOffTest extends IntegrationTestCase
             if ($code === 'en') {
                 self::assertStringContainsString('cannot be deleted', $reply->payload['message']);
             }
-            self::assertNotNull(Hilos::$db->languages[$code]);
+            self::assertArrayHasKey($code, Hilos::$db->languages);
         }
-        self::assertNotNull(Hilos::$db->locales['fr']);
+        self::assertArrayHasKey('fr', Hilos::$db->locales);
         self::assertTrue(Hilos::$db->languages['en']->enabled);
     }
 

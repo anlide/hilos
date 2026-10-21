@@ -77,9 +77,9 @@ final class SettingPresetApplyTest extends IntegrationTestCase
             $this->applyPreset('apply-ok-ak', LogSettingsPresets::FRUGAL);
 
             foreach (LogSettingsPresets::presetGroup()->memberKeys() as $key) {
-                $this->assertNotNull(Hilos::$db->settings[$key], "no row written for {$key}");
+                $this->assertArrayHasKey($key, Hilos::$db->settings, "no row written for {$key}");
             }
-            $this->assertSame(LogSettingsPresets::FRUGAL, Hilos::$db->settings[LogSettingsCatalog::PRESET]?->value);
+            $this->assertSame(LogSettingsPresets::FRUGAL, Hilos::$db->settings[LogSettingsCatalog::PRESET]->value);
             $this->assertSame(LogSettingsPresets::FRUGAL, $this->resolver()->selectedName());
             $this->assertSame([], $this->resolver()->differences());
         });
@@ -155,7 +155,7 @@ final class SettingPresetApplyTest extends IntegrationTestCase
     public function testAWriterWithoutTheClaimIsRefusedAndWritesNothing(): void
     {
         foreach ($this->groupKeys() as $key) {
-            $this->assertNull(Hilos::$db->settings[$key], "the case opens on a settings row for {$key}");
+            $this->assertArrayNotHasKey($key, Hilos::$db->settings, "the case opens on a settings row for {$key}");
         }
         TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::OUTSIDER_AGENT_ID);
 
@@ -165,7 +165,7 @@ final class SettingPresetApplyTest extends IntegrationTestCase
 
             $this->assertSame(SignalConstants::ACTION_FAILED_REASON, $error);
             foreach ($this->groupKeys() as $key) {
-                $this->assertNull(Hilos::$db->settings[$key], "a refused apply wrote a row for {$key}");
+                $this->assertArrayNotHasKey($key, Hilos::$db->settings, "a refused apply wrote a row for {$key}");
             }
         } finally {
             TruthSourceRegistry::unregisterAgent(self::OUTSIDER_AGENT_ID);
@@ -255,7 +255,7 @@ final class SettingPresetApplyTest extends IntegrationTestCase
     {
         $ids = [];
         foreach ($this->groupKeys() as $key) {
-            $ids[$key] = Hilos::$db->settings[$key]?->id;
+            $ids[$key] = isset(Hilos::$db->settings[$key]) ? Hilos::$db->settings[$key]->id : null;
         }
 
         return $ids;
@@ -314,7 +314,9 @@ final class SettingPresetApplyTest extends IntegrationTestCase
 
         try {
             foreach ($this->groupKeys() as $key) {
-                Hilos::$db->settings[$key]?->actions->delete();
+                if (isset(Hilos::$db->settings[$key])) {
+                    Hilos::$db->settings[$key]->actions->delete();
+                }
             }
         } finally {
             TruthSourceRegistry::unregisterAgent(self::CLEANUP_AGENT_ID);

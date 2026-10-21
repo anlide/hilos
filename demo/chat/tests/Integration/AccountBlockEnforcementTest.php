@@ -932,7 +932,7 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
             successMessage: null,
             answerSignal: 'block-card-answer',
         )), '', HilosSignalConstants::HILOS_USER_BLOCK_WRITE));
-        self::assertTrue(Hilos::$db->users[$userId]?->block);
+        self::assertTrue(Hilos::$db->users[$userId]->block);
     }
 
     /**

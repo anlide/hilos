@@ -383,7 +383,7 @@ final class SessionAuthenticationTest extends IntegrationTestCase
             $this->deauthenticateSession($agent, $token);
 
             $this->assertNull(Hilos::$db->sessions->findByToken($token));
-            $this->assertNotNull(Hilos::$db->sessions[$sessionId]);
+            $this->assertArrayHasKey($sessionId, Hilos::$db->sessions);
             $this->assertNotSame($token, Hilos::$db->sessions[$sessionId]->token);
             $this->assertNull(Hilos::$db->sessions[$sessionId]->userId);
             $this->assertNull($this->rotation());

@@ -71,7 +71,7 @@ final class AdminCreateCommandTest extends IntegrationTestCase
         self::assertTrue($reply->isOk(), var_export($reply->payload, true));
         self::assertSame((int)$visitor->id, $reply->payload[AdminCommandConstants::FIELD_USER_ID]);
         self::assertFalse($reply->payload[AdminCommandConstants::FIELD_CREATED]);
-        self::assertTrue(Hilos::$db->users[(int)$visitor->id]?->admin);
+        self::assertTrue(Hilos::$db->users[(int)$visitor->id]->admin);
         self::assertCount($usersBefore, Hilos::$db->users->listAll(), 'Flagging a user mints none');
     }
 
@@ -96,7 +96,7 @@ final class AdminCreateCommandTest extends IntegrationTestCase
 
         $mintedId = $reply->payload[AdminCommandConstants::FIELD_USER_ID];
         self::assertIsInt($mintedId);
-        self::assertTrue(Hilos::$db->users[$mintedId]?->admin);
+        self::assertTrue(Hilos::$db->users[$mintedId]->admin);
         // The bind is what makes the mint usable: without it the operator owns an
         // administrator and no browser that is one.
         self::assertSame($mintedId, Hilos::$db->sessions->findByToken($sessionToken)?->userId);

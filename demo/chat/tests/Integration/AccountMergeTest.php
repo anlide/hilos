@@ -149,8 +149,8 @@ final class AccountMergeTest extends IntegrationTestCase
         $this->assertCount(0, EntityEventMessage::get([EntityEventMessage::author_user_id => $loserId]));
         $this->assertCount(1, EntityEventMessage::get([EntityEventMessage::author_user_id => $survivorId]));
 
-        $this->assertSame($survivorId, Hilos::$db->userMerges[$loserId]?->survivorUserId);
-        $this->assertTrue(Hilos::$db->users[$loserId]?->block);
+        $this->assertSame($survivorId, Hilos::$db->userMerges[$loserId]->survivorUserId);
+        $this->assertTrue(Hilos::$db->users[$loserId]->block);
     }
 
     /**
@@ -505,7 +505,7 @@ final class AccountMergeTest extends IntegrationTestCase
         }
         $this->assertNotNull($answer, 'The card is answered');
         $this->assertSame('Failed to update user: ' . AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE, $answer->error);
-        $this->assertSame('Loser', Hilos::$db->users[$loserId]?->name);
+        $this->assertSame('Loser', Hilos::$db->users[$loserId]->name);
 
         $token = RandomHelper::hex(16);
         Hilos::$db->sessions->actions->createAnonymous($token)->actions->bindUser($adminId);

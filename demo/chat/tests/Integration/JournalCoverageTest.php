@@ -173,8 +173,12 @@ final class JournalCoverageTest extends IntegrationTestCase
             foreach (Database::rows() as $trigger) {
                 Database::sql('DROP TRIGGER `' . $trigger['TRIGGER_NAME'] . '`');
             }
-            Hilos::$db->bots[$botId]?->actions->delete();
-            Hilos::$db->moderatorPromptPieces[$pieceId]?->actions->delete();
+            if (isset(Hilos::$db->bots[$botId])) {
+                Hilos::$db->bots[$botId]->actions->delete();
+            }
+            if (isset(Hilos::$db->moderatorPromptPieces[$pieceId])) {
+                Hilos::$db->moderatorPromptPieces[$pieceId]->actions->delete();
+            }
             foreach ($cleanupOrder as $table) {
                 Database::sqlRun("DELETE FROM {$journal}.`{$table}` WHERE `id` > ?", [$baseline[$table]]);
             }

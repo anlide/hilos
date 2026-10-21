@@ -36,7 +36,7 @@ final class HilosUserDetailPasswordPresenceTest extends IntegrationTestCase
     {
         Hilos::$sr = new SignalRouter();
         $userId = (int) Hilos::$db->users->actions->createWithName('Merge survivor')->id;
-        Hilos::$db->users[$userId]?->actions->setAdmin(true);
+        Hilos::$db->users[$userId]->actions->setAdmin(true);
         Hilos::$db->identities->createMagicLinkIdentity($userId, "survivor-{$userId}@example.test");
         $params = [HilosPageRouteParams::HILOS_USER_USER_ID => (string) $userId];
         RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
@@ -96,7 +96,7 @@ final class HilosUserDetailPasswordPresenceTest extends IntegrationTestCase
     {
         Hilos::$sr = new SignalRouter();
         $userId = (int)Hilos::$db->users->actions->createWithName('Unprotected survivor')->id;
-        Hilos::$db->users[$userId]?->actions->setAdmin(true);
+        Hilos::$db->users[$userId]->actions->setAdmin(true);
         $params = [HilosPageRouteParams::HILOS_USER_USER_ID => (string)$userId];
         RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         TruthSourceRegistry::register(HilosDbContext::secondFactors, TruthSourceKeys::all(), self::TEST_AGENT_ID);

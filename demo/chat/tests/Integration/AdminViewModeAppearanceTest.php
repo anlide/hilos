@@ -124,7 +124,7 @@ final class AdminViewModeAppearanceTest extends IntegrationTestCase
                 [ObjectSetting::key => 'some.other.setting'],
             )));
 
-            $this->underAgent($writer, static fn() => Hilos::$db->settings[ThemeSettingsCatalog::SWITCHING_ENABLED_KEY]?->actions->delete());
+            $this->underAgent($writer, static fn() => Hilos::$db->settings[ThemeSettingsCatalog::SWITCHING_ENABLED_KEY]->actions->delete());
             $reset = $table->buildMutationForSourceEvent(SourceChange::dbDeleted(
                 HilosDbContext::settings,
                 (string) $setting->id,

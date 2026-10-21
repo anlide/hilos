@@ -67,7 +67,7 @@ final class ImpersonationTest extends IntegrationTestCase
         $agent = new TasksAgent();
         $token = RandomHelper::hex(16);
         $adminId = $this->signedInSession($agent, 'start-ak', $token, admin: true);
-        $adminName = Hilos::$db->users[$adminId]?->name;
+        $adminName = Hilos::$db->users[$adminId]->name;
         $targetId = (int)Hilos::$db->users->actions->createWithName('Ada')->id;
         $this->drainSignals();
 

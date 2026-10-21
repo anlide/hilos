@@ -48,7 +48,7 @@ final class UserActionsTest extends IntegrationTestCase
         $name = str_repeat('x', 64);
         Hilos::$db->users[$userId]->actions->rename($name);
 
-        $this->assertSame($name, Hilos::$db->users[$userId]?->name);
+        $this->assertSame($name, Hilos::$db->users[$userId]->name);
     }
 
     /**
@@ -129,10 +129,10 @@ final class UserActionsTest extends IntegrationTestCase
         $this->assertFalse($user->admin);
 
         Hilos::$db->users[$userId]->actions->setAdmin(true);
-        $this->assertTrue(Hilos::$db->users[$userId]?->admin);
+        $this->assertTrue(Hilos::$db->users[$userId]->admin);
 
         Hilos::$db->users[$userId]->actions->setAdmin(false);
-        $this->assertFalse(Hilos::$db->users[$userId]?->admin);
+        $this->assertFalse(Hilos::$db->users[$userId]->admin);
     }
 
     /**
@@ -147,6 +147,6 @@ final class UserActionsTest extends IntegrationTestCase
 
         Hilos::$db->users[$userId]->actions->setAdmin(false);
 
-        $this->assertFalse(Hilos::$db->users[$userId]?->admin);
+        $this->assertFalse(Hilos::$db->users[$userId]->admin);
     }
 }

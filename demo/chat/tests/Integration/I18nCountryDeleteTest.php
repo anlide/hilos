@@ -126,10 +126,10 @@ final class I18nCountryDeleteTest extends IntegrationTestCase
         $this->createFixture($enabled);
         $id = Hilos::$db->countries['qx']->id;
         $this->remove($door, 'qx');
-        self::assertNull(Hilos::$db->countries['qx']);
-        self::assertNull(Hilos::$db->countries[$id]);
+        self::assertArrayNotHasKey('qx', Hilos::$db->countries);
+        self::assertArrayNotHasKey($id, Hilos::$db->countries);
         self::assertSame(0, EntityCountry::count([EntityCountry::id => $id]));
-        self::assertNotNull(Hilos::$db->countries['us']);
+        self::assertArrayHasKey('us', Hilos::$db->countries);
     }
 
     /** @throws HilosException When fixture creation or direct deletion fails */
@@ -139,7 +139,7 @@ final class I18nCountryDeleteTest extends IntegrationTestCase
         $id = Hilos::$db->countries['qx']->id;
         putenv(EnvConstants::HILOS_DEFAULT_LANGUAGE->name);
         $this->remove('item', 'qx');
-        self::assertNull(Hilos::$db->countries[$id]);
+        self::assertArrayNotHasKey($id, Hilos::$db->countries);
         self::assertSame(0, EntityCountry::count([EntityCountry::id => $id]));
     }
 
@@ -277,8 +277,8 @@ final class I18nCountryDeleteTest extends IntegrationTestCase
             if ($payload === ['countryId' => 999999]) {
                 self::assertSame('Unknown country: 999999', $reply->reason);
             }
-            self::assertNotNull(Hilos::$db->countries['qx']);
-            self::assertNotNull(Hilos::$db->countries['us']);
+            self::assertArrayHasKey('qx', Hilos::$db->countries);
+            self::assertArrayHasKey('us', Hilos::$db->countries);
         }
     }
 
@@ -292,13 +292,13 @@ final class I18nCountryDeleteTest extends IntegrationTestCase
         $this->createFixture();
         $page = $fromList ? new CountriesListPage($this->agent) : new CountryDetailPage($this->agent);
         $dto = $fromList
-            ? new HilosI18nCountryDeleteActionDTO(Hilos::$db->countries['qx']?->id ?? 999999)
-            : new HilosI18nCountryRowDeleteActionDTO(Hilos::$db->countries['qx']?->id ?? 999999);
+            ? new HilosI18nCountryDeleteActionDTO(Hilos::$db->countries['qx']->id)
+            : new HilosI18nCountryRowDeleteActionDTO(Hilos::$db->countries['qx']->id);
         try {
             $page->onAction('delete-ak', $this->action($fromList), $dto);
             self::fail('The other page DTO must be refused');
         } catch (InvalidActionPayloadException) {
-            self::assertNotNull(Hilos::$db->countries['qx']);
+            self::assertArrayHasKey('qx', Hilos::$db->countries);
         }
     }
 
@@ -331,7 +331,7 @@ final class I18nCountryDeleteTest extends IntegrationTestCase
         );
         $this->worker->recordCommittedSync();
         self::assertSame([], Hilos::$browser->flushToSignalRouter());
-        self::assertNull(Hilos::$db->countries[$countryId]);
+        self::assertArrayNotHasKey($countryId, Hilos::$db->countries);
 
         $byKey = $this->drainByAcceptKey();
         $success = $this->soleSuccess($byKey['delete-ak'] ?? []);
@@ -472,7 +472,10 @@ final class I18nCountryDeleteTest extends IntegrationTestCase
             }
             return;
         }
-        $reply = $this->dispatchDelete($door === 'list', ['countryId' => Hilos::$db->countries[$code]?->id ?? 999999]);
+        $reply = $this->dispatchDelete(
+            $door === 'list',
+            ['countryId' => isset(Hilos::$db->countries[$code]) ? Hilos::$db->countries[$code]->id : 999999],
+        );
         if ($refusal !== null) {
             self::assertInstanceOf(PageActionErrorSignalData::class, $reply);
             self::assertSame('fail', $reply->getEnvelopeOutcome());

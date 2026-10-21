@@ -75,7 +75,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
                 new RenameActionDTO('Alice'),
             );
 
-            $this->assertSame($oldName, Hilos::$db->users[$user->id]?->name);
+            $this->assertSame($oldName, Hilos::$db->users[$user->id]->name);
             $this->assertSame(
                 ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_CHECKING,
                 Hilos::$rt->connections['rename-start-ak']?->renameModerationPhase,
@@ -111,7 +111,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
                 ),
             );
 
-            $this->assertSame('Alice', Hilos::$db->users[$user->id]?->name);
+            $this->assertSame('Alice', Hilos::$db->users[$user->id]->name);
             $this->assertSame(
                 ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_NONE,
                 Hilos::$rt->connections['rename-approve-ak']?->renameModerationPhase,
@@ -163,7 +163,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
             }
 
             $this->assertSame(0, $carried);
-            $this->assertSame('Loser', Hilos::$db->users[$loser->id]?->name);
+            $this->assertSame('Loser', Hilos::$db->users[$loser->id]->name);
             $errorSignal = $this->takeQueuedWebSocketSignal(SignalConstants::ACTION_ERROR);
             $this->assertNotNull($errorSignal);
             $this->assertInstanceOf(PageActionErrorSignalData::class, $errorSignal->data);
@@ -201,7 +201,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
                 ),
             );
 
-            $this->assertSame($oldName, Hilos::$db->users[$user->id]?->name);
+            $this->assertSame($oldName, Hilos::$db->users[$user->id]->name);
             $this->assertSame(
                 ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_REJECTED,
                 Hilos::$rt->connections['rename-reject-ak']?->renameModerationPhase,

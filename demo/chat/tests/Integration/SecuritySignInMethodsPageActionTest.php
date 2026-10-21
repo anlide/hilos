@@ -55,17 +55,17 @@ final class SecuritySignInMethodsPageActionTest extends IntegrationTestCase
     {
         $this->withSettingsWriter(function (): void {
             $this->assertNull($this->submit('switch-ak', AuthMethodKey::SMS, false));
-            $this->assertSame(AuthMethodKey::SMS, Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY]?->value);
+            $this->assertSame(AuthMethodKey::SMS, Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY]->value);
             $this->assertFalse(EnabledAuthMethods::isEnabled(AuthMethodKey::SMS));
 
             $this->assertNull($this->submit('switch-ak', AuthMethodKey::PASSWORD, false));
             $this->assertSame(
                 AuthMethodKey::PASSWORD . ',' . AuthMethodKey::SMS,
-                Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY]?->value,
+                Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY]->value,
             );
 
             $this->assertNull($this->submit('switch-ak', AuthMethodKey::SMS, true));
-            $this->assertSame(AuthMethodKey::PASSWORD, Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY]?->value);
+            $this->assertSame(AuthMethodKey::PASSWORD, Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY]->value);
         });
     }
 
@@ -98,10 +98,10 @@ final class SecuritySignInMethodsPageActionTest extends IntegrationTestCase
                 foreach ($wired as $methodKey) {
                     $this->assertNull($this->submit('unready-ak', $methodKey, false));
                 }
-                $stored = Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY]?->value;
+                $stored = Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY]->value;
 
                 $this->assertSame('At least one sign-in method that is set up must stay on', $this->submit('unready-ak', $last, false));
-                $this->assertSame($stored, Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY]?->value);
+                $this->assertSame($stored, Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY]->value);
             });
         });
     }
@@ -231,14 +231,22 @@ final class SecuritySignInMethodsPageActionTest extends IntegrationTestCase
     private function withSettingsWriter(callable $body): void
     {
         TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::SETTINGS_AGENT_ID);
-        Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY]?->actions->delete();
-        Hilos::$db->settings[PasskeyAddressPolicy::SETTING_KEY]?->actions->delete();
+        if (isset(Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY])) {
+            Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY]->actions->delete();
+        }
+        if (isset(Hilos::$db->settings[PasskeyAddressPolicy::SETTING_KEY])) {
+            Hilos::$db->settings[PasskeyAddressPolicy::SETTING_KEY]->actions->delete();
+        }
 
         try {
             $body();
         } finally {
-            Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY]?->actions->delete();
-            Hilos::$db->settings[PasskeyAddressPolicy::SETTING_KEY]?->actions->delete();
+            if (isset(Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY])) {
+                Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY]->actions->delete();
+            }
+            if (isset(Hilos::$db->settings[PasskeyAddressPolicy::SETTING_KEY])) {
+                Hilos::$db->settings[PasskeyAddressPolicy::SETTING_KEY]->actions->delete();
+            }
             TruthSourceRegistry::unregisterAgent(self::SETTINGS_AGENT_ID);
         }
     }

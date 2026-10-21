@@ -136,7 +136,9 @@ final class JournalReceiptCronIntegrationTest extends IntegrationTestCase
             Database::sqlRun('DELETE FROM `hilos_access_log` WHERE `user_id` = ?', [$id]);
             Database::sqlRun('DELETE FROM `hilos_second_factor` WHERE `user_id` = ?', [$id]);
             Database::sqlRun('DELETE FROM `hilos_second_factor_reset` WHERE `user_id` = ?', [$id]);
-            Hilos::$db->users[$id]?->actions->delete();
+            if (isset(Hilos::$db->users[$id])) {
+                Hilos::$db->users[$id]->actions->delete();
+            }
         }
         Database::sqlRun('DELETE FROM `hilos_user_verification` WHERE `identifier` = ?', [self::KEY_PREFIX]);
         Database::sqlRun('DELETE FROM `hilos_setting` WHERE `key` LIKE ?', [self::KEY_PREFIX . '%']);

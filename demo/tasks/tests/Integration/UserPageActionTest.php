@@ -74,7 +74,7 @@ final class UserPageActionTest extends IntegrationTestCase
         );
         $this->deliverHilosLibraryFrames();
 
-        $this->assertSame('Renamed', Hilos::$db->users[$userId]?->name);
+        $this->assertSame('Renamed', Hilos::$db->users[$userId]->name);
 
         $journal = EntityUserRename::get([EntityUserRename::user_id => $userId])->first();
         $this->assertNotNull($journal);

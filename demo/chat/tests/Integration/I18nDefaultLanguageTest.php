@@ -49,10 +49,10 @@ final class I18nDefaultLanguageTest extends IntegrationTestCase
     {
         $this->startLibrary();
 
+        self::assertArrayHasKey('en', Hilos::$db->languages);
+        self::assertArrayHasKey('en', Hilos::$db->locales);
         $language = Hilos::$db->languages['en'];
         $locale = Hilos::$db->locales['en'];
-        self::assertNotNull($language);
-        self::assertNotNull($locale);
         self::assertTrue($language->enabled);
         self::assertTrue($locale->enabled);
         self::assertSame('English', $language->nativeName);
@@ -64,9 +64,9 @@ final class I18nDefaultLanguageTest extends IntegrationTestCase
         $dateFormat = $locale->dateFormat;
         $this->underAgent($this->agent, fn (): mixed => $this->agent->onStart());
 
-        self::assertSame($languageId, Hilos::$db->languages['en']?->id);
-        self::assertSame($localeId, Hilos::$db->locales['en']?->id);
-        self::assertSame($dateFormat, Hilos::$db->locales['en']?->dateFormat);
+        self::assertSame($languageId, Hilos::$db->languages['en']->id);
+        self::assertSame($localeId, Hilos::$db->locales['en']->id);
+        self::assertSame($dateFormat, Hilos::$db->locales['en']->dateFormat);
         self::assertSame(1, $this->rowCount('hilos_language', 'en'));
         self::assertSame(1, $this->rowCount('hilos_locale', 'en'));
     }
@@ -91,11 +91,11 @@ final class I18nDefaultLanguageTest extends IntegrationTestCase
 
         $this->underAgent($this->agent, fn (): mixed => $this->agent->onStart());
 
-        self::assertSame('Custom English', Hilos::$db->languages['en']?->nativeName);
-        self::assertTrue(Hilos::$db->languages['en']?->rtl);
-        self::assertTrue(Hilos::$db->languages['en']?->enabled);
-        self::assertSame('YYYY-MM-DD', Hilos::$db->locales['en']?->dateFormat);
-        self::assertTrue(Hilos::$db->locales['en']?->enabled);
+        self::assertSame('Custom English', Hilos::$db->languages['en']->nativeName);
+        self::assertTrue(Hilos::$db->languages['en']->rtl);
+        self::assertTrue(Hilos::$db->languages['en']->enabled);
+        self::assertSame('YYYY-MM-DD', Hilos::$db->locales['en']->dateFormat);
+        self::assertTrue(Hilos::$db->locales['en']->enabled);
     }
 
     public function testEnvChangeMovesProtectionAndKeepsPreviousLanguageEnabled(): void
@@ -104,8 +104,8 @@ final class I18nDefaultLanguageTest extends IntegrationTestCase
         putenv(EnvConstants::HILOS_DEFAULT_LANGUAGE->name . '=ru');
         $this->underAgent($this->agent, fn (): mixed => $this->agent->onStart());
 
-        self::assertTrue(Hilos::$db->languages['en']?->enabled);
-        self::assertTrue(Hilos::$db->languages['ru']?->enabled);
+        self::assertTrue(Hilos::$db->languages['en']->enabled);
+        self::assertTrue(Hilos::$db->languages['ru']->enabled);
         $this->underAgent($this->agent, static function (): void {
             // The start took the catalog's country names in; the language goes without them (HIL-1488 deletes them along).
             $englishId = Hilos::$db->languages['en']->id;
@@ -119,7 +119,7 @@ final class I18nDefaultLanguageTest extends IntegrationTestCase
             Hilos::$db->locales['en']->actions->delete();
             Hilos::$db->languages['en']->actions->delete();
         });
-        self::assertNull(Hilos::$db->languages['en']);
+        self::assertArrayNotHasKey('en', Hilos::$db->languages);
 
         try {
             $this->underAgent($this->agent, static function (): void {
@@ -165,7 +165,7 @@ final class I18nDefaultLanguageTest extends IntegrationTestCase
 
         self::assertSame(0, $this->rowCount('hilos_language', 'en'));
         self::assertSame(0, $this->rowCount('hilos_locale', 'en'));
-        self::assertNull(Hilos::$db->languages['en']);
+        self::assertArrayNotHasKey('en', Hilos::$db->languages);
     }
 
     private function startLibrary(): void

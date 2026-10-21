@@ -129,13 +129,13 @@ final class I18nLocaleDeleteTest extends IntegrationTestCase
         $id = Hilos::$db->locales[$code]->id;
         $payload = [
             'languageId' => Hilos::$db->languages['en']->id,
-            'countryId' => Hilos::$db->countries[$countryCode]?->id,
+            'countryId' => $countryCode === null ? null : Hilos::$db->countries[$countryCode]->id,
             'localeId' => $id,
         ];
         $this->assertSuccess($this->dispatch($payload), $code);
-        self::assertNull(Hilos::$db->locales[$code]);
-        self::assertNull(Hilos::$db->locales[$id]);
-        self::assertNotNull(Hilos::$db->locales[$countryCode === null ? 'en-GB' : 'en']);
+        self::assertArrayNotHasKey($code, Hilos::$db->locales);
+        self::assertArrayNotHasKey($id, Hilos::$db->locales);
+        self::assertArrayHasKey($countryCode === null ? 'en-GB' : 'en', Hilos::$db->locales);
         self::assertCount(1, Hilos::$db->languageNames);
         self::assertCount(1, Hilos::$db->countryNames);
         $before = $this->referenceRows();
@@ -225,9 +225,9 @@ final class I18nLocaleDeleteTest extends IntegrationTestCase
         try {
             new LanguageLocalesPage($this->agent)->onAction(
                 'delete-ak', HilosSignalConstants::HILOS_I18N_LOCALE_DELETE, new HilosI18nLocaleSwitchOffActionDTO(
-                    Hilos::$db->languages['en']?->id ?? 999999,
-                    Hilos::$db->countries['gb']?->id ?? 999999,
-                    Hilos::$db->locales['en-GB']?->id ?? 999999,
+                    Hilos::$db->languages['en']->id,
+                    Hilos::$db->countries['gb']->id,
+                    Hilos::$db->locales['en-GB']->id,
                 ),
             );
             self::fail('The deletion branch must reject a different DTO');
@@ -411,7 +411,7 @@ final class I18nLocaleDeleteTest extends IntegrationTestCase
         $params = ['languageCode' => 'en'];
         $windows = [
             ChatTableContext::hilosI18nLanguageLocales => new TableWindowDescriptorDTO(
-                filter: [HilosI18nLanguageLocalesTable::FILTER_LANGUAGE => Hilos::$db->languages['en']?->id ?? 999999],
+                filter: [HilosI18nLanguageLocalesTable::FILTER_LANGUAGE => Hilos::$db->languages['en']->id],
             ),
         ];
         Hilos::$sr->subscribeToPage(LanguageLocalesPage::PAGE,

@@ -274,7 +274,7 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
 
             $userId = $identity->userId;
             $this->assertNotNull($userId);
-            $this->assertSame($this->localPart($email), Hilos::$db->users[$userId]?->name);
+            $this->assertSame($this->localPart($email), Hilos::$db->users[$userId]->name);
             $this->assertSame(1, $this->registrationEventCount($userId), 'The new member is announced');
 
             $this->assertSame($userId, $this->sessionOf('register-ak')?->userId);
@@ -795,7 +795,7 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
 
             $userId = $identity->userId;
             $this->assertNotNull($userId);
-            $this->assertSame($this->localPart($email), Hilos::$db->users[$userId]?->name);
+            $this->assertSame($this->localPart($email), Hilos::$db->users[$userId]->name);
             $this->assertSame(1, $this->registrationEventCount($userId), 'The new member is announced');
 
             $this->assertSame($userId, $this->sessionOf('code-register-ak')?->userId);

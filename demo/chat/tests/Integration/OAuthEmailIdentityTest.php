@@ -133,7 +133,7 @@ final class OAuthEmailIdentityTest extends IntegrationTestCase
             $this->assertSame(mb_strtolower($email), Hilos::$db->identities->findVerifiedEmailByUser($userId));
 
             // The address is present and still takes no part in the name (HIL-573).
-            $this->assertSame('octocat', Hilos::$db->users[$userId]?->name);
+            $this->assertSame('octocat', Hilos::$db->users[$userId]->name);
         } finally {
             $this->drainSignals();
         }
@@ -158,7 +158,7 @@ final class OAuthEmailIdentityTest extends IntegrationTestCase
             $this->assertNotNull($userId);
 
             $this->assertNull(Hilos::$db->identities->findVerifiedEmailByUser($userId));
-            $this->assertSame('nameless-mail', Hilos::$db->users[$userId]?->name);
+            $this->assertSame('nameless-mail', Hilos::$db->users[$userId]->name);
         } finally {
             $this->drainSignals();
         }
@@ -421,7 +421,7 @@ final class OAuthEmailIdentityTest extends IntegrationTestCase
         $userId = $oauth->userId;
         $this->assertNotNull($userId);
 
-        return Hilos::$db->users[$userId]?->name;
+        return Hilos::$db->users[$userId]->name;
     }
 
     /**

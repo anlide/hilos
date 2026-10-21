@@ -48,7 +48,7 @@ final class I18nCountryAddTest extends IntegrationTestCase
         Hilos::$rt->connections->actions->clear();
         $this->clearFixtures();
         $this->underAgent($this->agent, function (): void {
-            if (Hilos::$db->countries['us'] === null) {
+            if (!isset(Hilos::$db->countries['us'])) {
                 Hilos::$db->countries->actions->create('us', '$', 'USD');
                 $this->createdUnitedStates = true;
             }
@@ -76,8 +76,8 @@ final class I18nCountryAddTest extends IntegrationTestCase
                 new HilosI18nCountryAddActionDTO('gg', '£', 'GBP')));
         });
 
+        self::assertArrayHasKey('gg', Hilos::$db->countries);
         $country = Hilos::$db->countries['gg'];
-        self::assertNotNull($country);
         self::assertFalse($country->enabled);
         self::assertSame('£', $country->currencySymbol);
         self::assertSame('GBP', $country->currencyCode);
@@ -109,8 +109,8 @@ final class I18nCountryAddTest extends IntegrationTestCase
 
     public function testKnownCountryIsRefusedWithoutChangingItsCurrency(): void
     {
+        self::assertArrayHasKey('us', Hilos::$db->countries);
         $before = Hilos::$db->countries['us'];
-        self::assertNotNull($before);
         $symbol = $before->currencySymbol;
         $code = $before->currencyCode;
         $page = new CountriesListPage($this->agent);
@@ -145,7 +145,7 @@ final class I18nCountryAddTest extends IntegrationTestCase
             } catch (ValidationException $error) {
                 self::assertSame($message, $error->getMessage());
             }
-            self::assertNull(Hilos::$db->countries['qy']);
+            self::assertArrayNotHasKey('qy', Hilos::$db->countries);
         }
     }
 

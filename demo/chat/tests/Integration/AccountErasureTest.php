@@ -105,7 +105,9 @@ final class AccountErasureTest extends IntegrationTestCase
         self::assertNull($renameLeft->renamed_by_user_id, 'The rename of the other person lost its author');
         self::assertSame([[$fileId]], $removals, 'The attachment file is named to the files library after the commit');
         $storedName = $file->storedName;
-        Hilos::$db->files[$fileId]?->actions->delete();
+        if (isset(Hilos::$db->files[$fileId])) {
+            Hilos::$db->files[$fileId]->actions->delete();
+        }
         Hilos::$fs?->files[$storedName]->unlink();
 
         Database::sql('SELECT `completed_at` FROM `hilos_account_deletion` WHERE `user_id` = ?', [$personId]);

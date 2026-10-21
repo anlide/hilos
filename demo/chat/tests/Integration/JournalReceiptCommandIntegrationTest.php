@@ -113,7 +113,9 @@ final class JournalReceiptCommandIntegrationTest extends IntegrationTestCase
         ExecutionContext::setCurrentAgentId($this->previousAgentId);
         if ($this->userIds !== []) {
             foreach ($this->userIds as $id) {
-                Hilos::$db->users[$id]?->actions->delete();
+                if (isset(Hilos::$db->users[$id])) {
+                    Hilos::$db->users[$id]->actions->delete();
+                }
             }
         }
         if ($this->previousBrowser === null) {
@@ -313,7 +315,7 @@ final class JournalReceiptCommandIntegrationTest extends IntegrationTestCase
         $this->assertTrue($reply->isOk());
         $this->assertSame($correlationId, $reply->correlationId);
 
-        $this->assertTrue(Hilos::$db->users[$userId]?->admin);
+        $this->assertTrue(Hilos::$db->users[$userId]->admin);
 
         $receipt = $this->receipt($receiptId);
         $this->assertNotNull($receipt);

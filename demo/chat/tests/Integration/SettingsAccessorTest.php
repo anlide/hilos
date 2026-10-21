@@ -63,7 +63,7 @@ final class SettingsAccessorTest extends IntegrationTestCase
     {
         $this->assertSame(
             'qwen2.5:3b',
-            Hilos::$db->settings[ChatSettingsConstants::DEFAULT_BOT_MODEL]?->value,
+            Hilos::$db->settings[ChatSettingsConstants::DEFAULT_BOT_MODEL]->value,
         );
         $this->assertTrue(isset(Hilos::$db->settings[ChatSettingsConstants::DEFAULT_BOT_MODEL]));
     }
@@ -74,16 +74,16 @@ final class SettingsAccessorTest extends IntegrationTestCase
     public function testEmptyPersistedStringDoesNotFallBackToDefault(): void
     {
         $setting = Hilos::$db->settings[ChatSettingsConstants::DEFAULT_BOT_MODEL];
-        $originalValue = $setting?->value;
+        $originalValue = $setting->value;
         TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::TEST_SETTINGS_AGENT_ID);
 
         try {
-            $setting?->actions->updateValue('');
+            $setting->actions->updateValue('');
 
             $this->assertSame('', Hilos::$setting[ChatSettingsConstants::CHAT_BOT_MODEL]->string());
         } finally {
             try {
-                $setting?->actions->updateValue($originalValue);
+                $setting->actions->updateValue($originalValue);
             } finally {
                 TruthSourceRegistry::unregisterAgent(self::TEST_SETTINGS_AGENT_ID);
             }
@@ -94,8 +94,8 @@ final class SettingsAccessorTest extends IntegrationTestCase
     public function testEffectiveValueFollowsAppliedSettingUpdates(): void
     {
         $key = ChatSettingsConstants::DEFAULT_BOT_MODEL;
+        $this->assertArrayHasKey($key, Hilos::$db->settings);
         $held = Hilos::$db->settings[$key];
-        $this->assertNotNull($held);
         $original = $held->value;
         $reader = Hilos::$setting[ChatSettingsConstants::CHAT_BOT_MODEL];
         $this->assertSame($original, $reader->string());
@@ -166,8 +166,8 @@ final class SettingsAccessorTest extends IntegrationTestCase
                 (string) $remote->id,
                 $remote->toArray(),
             ), originNodeId: 'peer');
+            $this->assertArrayHasKey('memory.root', Hilos::$db->settings);
             $held = Hilos::$db->settings['memory.root'];
-            $this->assertNotNull($held);
             $this->assertQuietReads(function () use ($reader, $held, $unrelated): void {
                 $this->assertSame('peer-root', $reader->string());
                 $this->assertSame('peer-root', Hilos::$setting['memory.leaf']->string());

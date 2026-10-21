@@ -207,7 +207,7 @@ final class SecurityImpersonationPageTest extends IntegrationTestCase
                 new HilosImpersonationScopeSetActionDTO('admin'),
             ));
 
-            $this->assertNull(Hilos::$db->settings[ImpersonationSettings::SCOPE_KEY]);
+            $this->assertArrayNotHasKey(ImpersonationSettings::SCOPE_KEY, Hilos::$db->settings);
             $this->assertSame([], $this->policyFrames);
         });
     }
@@ -334,7 +334,9 @@ final class SecurityImpersonationPageTest extends IntegrationTestCase
     private function clearRows(): void
     {
         foreach (ImpersonationSettings::KEYS as $key) {
-            Hilos::$db->settings[$key]?->actions->delete();
+            if (isset(Hilos::$db->settings[$key])) {
+                Hilos::$db->settings[$key]->actions->delete();
+            }
         }
     }
 }

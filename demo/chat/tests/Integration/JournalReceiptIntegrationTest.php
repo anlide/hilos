@@ -94,10 +94,14 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
             }
             Hilos::$sr = $this->previousRouter;
             foreach ($this->sessionIds as $id) {
-                Hilos::$db->sessions[$id]?->actions->delete();
+                if (isset(Hilos::$db->sessions[$id])) {
+                    Hilos::$db->sessions[$id]->actions->delete();
+                }
             }
             foreach ($this->userIds as $id) {
-                Hilos::$db->users[$id]?->actions->delete();
+                if (isset(Hilos::$db->users[$id])) {
+                    Hilos::$db->users[$id]->actions->delete();
+                }
             }
         }
         Database::sqlRun('DELETE FROM `hilos_setting` WHERE `key` LIKE ?', [self::KEY_PREFIX . '%']);

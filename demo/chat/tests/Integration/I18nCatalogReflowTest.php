@@ -112,8 +112,8 @@ final class I18nCatalogReflowTest extends IntegrationTestCase
 
         self::assertTrue($reflowCommitted, 'The reflow committed and allowed a new transaction before success was logged');
         $this->assertReflowCommittedOnce();
+        self::assertArrayHasKey('en', Hilos::$db->languages);
         $english = Hilos::$db->languages['en'];
-        self::assertNotNull($english);
         self::assertSame(self::CATALOG_COUNTRIES, $this->rows('SELECT COUNT(*) AS `count` FROM `hilos_country`'));
         self::assertSame(0, $this->rows('SELECT COUNT(*) AS `count` FROM `hilos_country` WHERE `enabled` = 1'));
         self::assertSame(
@@ -122,8 +122,8 @@ final class I18nCatalogReflowTest extends IntegrationTestCase
         );
         self::assertSame(self::CATALOG_COUNTRIES, $this->namesIn('en'));
         self::assertSame(0, $this->rows('SELECT COUNT(*) AS `count` FROM `hilos_country_name` WHERE `locked` = 1'));
+        self::assertArrayHasKey('us', Hilos::$db->countries);
         $us = Hilos::$db->countries['us'];
-        self::assertNotNull($us);
         self::assertFalse($us->enabled);
         self::assertSame('$', $us->currencySymbol);
         self::assertSame('USD', $us->currencyCode);
@@ -145,8 +145,8 @@ final class I18nCatalogReflowTest extends IntegrationTestCase
 
         self::assertSame(0, $this->writes->count);
         self::assertSame('', file_get_contents($this->logFile));
-        self::assertSame('$', Hilos::$db->countries['de']?->currencySymbol);
-        self::assertSame('USD', Hilos::$db->countries['de']?->currencyCode);
+        self::assertSame('$', Hilos::$db->countries['de']->currencySymbol);
+        self::assertSame('USD', Hilos::$db->countries['de']->currencyCode);
         self::assertSame(self::CATALOG_COUNTRIES, $this->namesIn('en'));
     }
 
@@ -182,37 +182,37 @@ final class I18nCatalogReflowTest extends IntegrationTestCase
 
         $this->startLibrary();
 
-        self::assertSame('€', Hilos::$db->countries['de']?->currencySymbol);
-        self::assertSame('EUR', Hilos::$db->countries['de']?->currencyCode);
-        self::assertTrue(Hilos::$db->countries['fr']?->enabled);
-        self::assertSame('$', Hilos::$db->countries['fr']?->currencySymbol);
-        self::assertSame('USD', Hilos::$db->countries['fr']?->currencyCode);
-        self::assertSame('Z', Hilos::$db->countries['zz']?->currencySymbol);
-        self::assertSame('ZZZ', Hilos::$db->countries['zz']?->currencyCode);
+        self::assertSame('€', Hilos::$db->countries['de']->currencySymbol);
+        self::assertSame('EUR', Hilos::$db->countries['de']->currencyCode);
+        self::assertTrue(Hilos::$db->countries['fr']->enabled);
+        self::assertSame('$', Hilos::$db->countries['fr']->currencySymbol);
+        self::assertSame('USD', Hilos::$db->countries['fr']->currencyCode);
+        self::assertSame('Z', Hilos::$db->countries['zz']->currencySymbol);
+        self::assertSame('ZZZ', Hilos::$db->countries['zz']->currencyCode);
 
-        self::assertSame('Español', Hilos::$db->languages['es']?->nativeName);
-        self::assertFalse(Hilos::$db->languages['es']?->rtl);
-        self::assertSame('Arabic', Hilos::$db->languages['ar']?->nativeName);
-        self::assertSame('Own', Hilos::$db->languages['xx']?->nativeName);
-        self::assertNull(Hilos::$db->languages['fr']);
+        self::assertSame('Español', Hilos::$db->languages['es']->nativeName);
+        self::assertFalse(Hilos::$db->languages['es']->rtl);
+        self::assertSame('Arabic', Hilos::$db->languages['ar']->nativeName);
+        self::assertSame('Own', Hilos::$db->languages['xx']->nativeName);
+        self::assertArrayNotHasKey('fr', Hilos::$db->languages);
 
         $catalogSpanish = BuiltInI18nCatalog::locale('es');
         self::assertNotNull($catalogSpanish);
-        self::assertSame($catalogSpanish->dateFormat, Hilos::$db->locales['es']?->dateFormat);
-        self::assertSame($catalogSpanish->addressFormat, Hilos::$db->locales['es']?->addressFormat);
-        self::assertSame($catalogSpanish->measurementSystem, Hilos::$db->locales['es']?->measurementSystem->value);
-        self::assertSame('YYYY-MM-DD', Hilos::$db->locales['en-GB']?->dateFormat);
-        self::assertNull(Hilos::$db->locales['en-US']);
-        self::assertNull(Hilos::$db->locales['ar']);
+        self::assertSame($catalogSpanish->dateFormat, Hilos::$db->locales['es']->dateFormat);
+        self::assertSame($catalogSpanish->addressFormat, Hilos::$db->locales['es']->addressFormat);
+        self::assertSame($catalogSpanish->measurementSystem, Hilos::$db->locales['es']->measurementSystem->value);
+        self::assertSame('YYYY-MM-DD', Hilos::$db->locales['en-GB']->dateFormat);
+        self::assertArrayNotHasKey('en-US', Hilos::$db->locales);
+        self::assertArrayNotHasKey('ar', Hilos::$db->locales);
         self::assertSame(3, $this->rows('SELECT COUNT(*) AS `count` FROM `hilos_locale`'));
 
+        self::assertArrayHasKey('en', Hilos::$db->languages);
         $english = Hilos::$db->languages['en'];
-        self::assertNotNull($english);
-        $germanyName = Hilos::$db->countryNames->findBase((int)Hilos::$db->countries['de']?->id, (int)$english->id);
+        $germanyName = Hilos::$db->countryNames->findBase((int)Hilos::$db->countries['de']->id, (int)$english->id);
         self::assertSame('Deutschland', $germanyName?->name);
         self::assertTrue($germanyName?->locked);
-        self::assertSame('UK', Hilos::$db->countryNames[$ids['override']]?->name);
-        $usName = Hilos::$db->countryNames->findBase((int)Hilos::$db->countries['us']?->id, (int)$english->id);
+        self::assertSame('UK', Hilos::$db->countryNames[$ids['override']]->name);
+        $usName = Hilos::$db->countryNames->findBase((int)Hilos::$db->countries['us']->id, (int)$english->id);
         self::assertSame('United States', $usName?->name);
         self::assertFalse($usName?->locked);
         self::assertSame(self::CATALOG_COUNTRIES, $this->namesIn('es'));
@@ -295,10 +295,10 @@ final class I18nCatalogReflowTest extends IntegrationTestCase
         self::assertSame('', file_get_contents($this->logFile));
         self::assertSame(0, $this->rows('SELECT COUNT(*) AS `count` FROM `hilos_country`'));
         self::assertSame(0, $this->rows('SELECT COUNT(*) AS `count` FROM `hilos_i18n_reflow`'));
-        self::assertNull(Hilos::$db->countries['us']);
+        self::assertArrayNotHasKey('us', Hilos::$db->countries);
         self::assertNull(Hilos::$db->i18nReflows->recordedFingerprint());
-        self::assertTrue(Hilos::$db->languages['en']?->enabled);
-        self::assertTrue(Hilos::$db->locales['en']?->enabled);
+        self::assertTrue(Hilos::$db->languages['en']->enabled);
+        self::assertTrue(Hilos::$db->locales['en']->enabled);
 
         Database::sqlRun('DROP TRIGGER IF EXISTS `' . self::FAILURE_TRIGGER . '`');
         $this->startLibrary();
@@ -316,14 +316,14 @@ final class I18nCatalogReflowTest extends IntegrationTestCase
 
         $this->startLibrary();
 
+        self::assertArrayHasKey('ru', Hilos::$db->languages);
         $russian = Hilos::$db->languages['ru'];
-        self::assertNotNull($russian);
         self::assertTrue($russian->enabled);
         self::assertSame(self::CATALOG_COUNTRIES, $this->namesIn('ru'));
         $us = Hilos::$db->countries['us'];
         self::assertSame(
             BuiltInI18nCatalog::countryName('us', 'ru'),
-            Hilos::$db->countryNames->findBase((int)$us?->id, (int)$russian->id)?->name,
+            Hilos::$db->countryNames->findBase((int)$us->id, (int)$russian->id)?->name,
         );
         self::assertSame(BuiltInI18nCatalog::fingerprint(), Hilos::$db->i18nReflows->recordedFingerprint());
     }

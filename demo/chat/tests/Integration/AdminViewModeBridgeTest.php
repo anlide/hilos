@@ -274,7 +274,7 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
             $flag = $row[PagePayload::slots][AbstractHilosUsersTable::SLOT_MERGE][HilosUserTableRow::merged];
             self::assertIsBool($flag);
             $id = $row[PagePayload::slots][AbstractHilosUsersTable::SLOT_USER][HilosUserTableRow::id];
-            self::assertSame(Hilos::$db->userMerges[(int) $id] !== null, $flag, "merged flag of person {$id}");
+            self::assertSame(isset(Hilos::$db->userMerges[(int) $id]), $flag, "merged flag of person {$id}");
         }
     }
 

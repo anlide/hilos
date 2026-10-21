@@ -49,8 +49,8 @@ final class OrphanSettingActionsTest extends IntegrationTestCase
             $this->assertSame(SettingsCatalogConstants::TYPE_INTEGER, $created->type);
             $this->assertSame('42', $created->value);
 
+            $this->assertArrayHasKey($key, Hilos::$db->settings);
             $reloaded = Hilos::$db->settings[$key];
-            $this->assertNotNull($reloaded);
             $this->assertTrue($reloaded->isOrphan(SettingsCatalog::getCatalog()));
         }, [$key]);
     }
@@ -113,10 +113,10 @@ final class OrphanSettingActionsTest extends IntegrationTestCase
                 'to-remove',
                 SettingsCatalog::getCatalog(),
             );
-            $this->assertNotNull(Hilos::$db->settings[$key]);
+            $this->assertArrayHasKey($key, Hilos::$db->settings);
 
             Hilos::$db->settings->actions->deleteOrphan($key, SettingsCatalog::getCatalog());
-            $this->assertNull(Hilos::$db->settings[$key]);
+            $this->assertArrayNotHasKey($key, Hilos::$db->settings);
         }, [$key]);
     }
 
@@ -146,13 +146,13 @@ final class OrphanSettingActionsTest extends IntegrationTestCase
                 ExitCode::SUCCESS,
                 $create->execute([], [$key, SettingsCatalogConstants::TYPE_BOOLEAN, 'true']),
             );
+            $this->assertArrayHasKey($key, Hilos::$db->settings);
             $row = Hilos::$db->settings[$key];
-            $this->assertNotNull($row);
             $this->assertSame('1', $row->value);
 
             $delete = new OrphanTestDeleteCommand();
             $this->assertSame(ExitCode::SUCCESS, $delete->execute([], [$key]));
-            $this->assertNull(Hilos::$db->settings[$key]);
+            $this->assertArrayNotHasKey($key, Hilos::$db->settings);
         }, [$key]);
     }
 
@@ -165,7 +165,7 @@ final class OrphanSettingActionsTest extends IntegrationTestCase
                 ExitCode::INVALID_ARGUMENT,
                 $create->execute([], [$key, SettingsCatalogConstants::TYPE_INTEGER, 'not-a-number']),
             );
-            $this->assertNull(Hilos::$db->settings[$key]);
+            $this->assertArrayNotHasKey($key, Hilos::$db->settings);
         }, [$key]);
     }
 
@@ -178,7 +178,7 @@ final class OrphanSettingActionsTest extends IntegrationTestCase
                 ExitCode::INVALID_ARGUMENT,
                 $create->execute([], [$key, 'datetime', 'now']),
             );
-            $this->assertNull(Hilos::$db->settings[$key]);
+            $this->assertArrayNotHasKey($key, Hilos::$db->settings);
         }, [$key]);
     }
 
@@ -197,7 +197,9 @@ final class OrphanSettingActionsTest extends IntegrationTestCase
             $body();
         } finally {
             foreach ($keysToCleanup as $key) {
-                Hilos::$db->settings[$key]?->actions->delete();
+                if (isset(Hilos::$db->settings[$key])) {
+                    Hilos::$db->settings[$key]->actions->delete();
+                }
             }
             TruthSourceRegistry::unregisterAgent(self::SETTINGS_AGENT_ID);
         }

@@ -474,7 +474,7 @@ final class MainPageRegisterTest extends IntegrationTestCase
 
             $userId = $identity->userId;
             $this->assertNotNull($userId);
-            $this->assertSame($this->localPart($email), Hilos::$db->users[$userId]?->name);
+            $this->assertSame($this->localPart($email), Hilos::$db->users[$userId]->name);
 
             // The plaintext came in with this very submit and was hashed into the identity
             // here, so no hash for an account that did not exist was ever stored anywhere.
@@ -561,7 +561,7 @@ final class MainPageRegisterTest extends IntegrationTestCase
 
             $userId = $identity->userId;
             $this->assertNotNull($userId);
-            $this->assertSame($this->localPart($email), Hilos::$db->users[$userId]?->name);
+            $this->assertSame($this->localPart($email), Hilos::$db->users[$userId]->name);
 
             $this->assertSame($userId, $this->sessionOf('nopw-ak')?->userId);
             $this->assertSame($userId, Hilos::$rt->connections['nopw-ak']->userId);

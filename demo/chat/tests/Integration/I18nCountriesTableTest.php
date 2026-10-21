@@ -325,7 +325,7 @@ final class I18nCountriesTableTest extends IntegrationTestCase
         self::assertSame('After', $namedRow->name);
 
         $this->underAgent($this->agent, function () use ($created): void {
-            Hilos::$db->countryNames[$created['name']]?->actions->delete();
+            Hilos::$db->countryNames[$created['name']]->actions->delete();
         });
         $nameDelete = $table->buildMutationForSourceEvent(SourceChange::dbDeleted(
             HilosDbContext::countryNames,
@@ -783,7 +783,7 @@ final class I18nCountriesTableTest extends IntegrationTestCase
         for ($left = ord('a'); $left <= ord('z') && $total < $target; $left++) {
             for ($right = ord('a'); $right <= ord('z') && $total < $target; $right++) {
                 $code = chr($left) . chr($right);
-                if ($code === 'zz' || Hilos::$db->countries[$code] !== null) {
+                if ($code === 'zz' || isset(Hilos::$db->countries[$code])) {
                     continue;
                 }
                 $this->country($code, '¤', 'X' . strtoupper($code));
@@ -794,9 +794,8 @@ final class I18nCountriesTableTest extends IntegrationTestCase
 
     private function language(string $code, string $nativeName): Language
     {
-        $language = Hilos::$db->languages[$code];
-        if ($language !== null) {
-            return $language;
+        if (isset(Hilos::$db->languages[$code])) {
+            return Hilos::$db->languages[$code];
         }
         $this->createdLanguages[] = $code;
 
@@ -805,9 +804,8 @@ final class I18nCountriesTableTest extends IntegrationTestCase
 
     private function country(string $code, string $symbol, string $currency): Country
     {
-        $country = Hilos::$db->countries[$code];
-        if ($country !== null) {
-            return $country;
+        if (isset(Hilos::$db->countries[$code])) {
+            return Hilos::$db->countries[$code];
         }
         $this->createdCountries[] = $code;
 
