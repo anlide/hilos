@@ -16,6 +16,8 @@ declare(strict_types=1);
  *   php scripts/run-test-suite.php                       the whole graph
  *   php scripts/run-test-suite.php frontend              a tag, plus its dependencies
  *   php scripts/run-test-suite.php chat-e2e --lanes=1    one step, alone
+ *   php scripts/run-test-suite.php chat-e2e --lanes=1 --tests=tests/bots.spec.ts:71
+ *                                                        one failed test of it, alone
  *   php scripts/run-test-suite.php --list                the plan, without running it
  *
  * Options:
@@ -32,6 +34,11 @@ declare(strict_types=1);
  *                  also sweeps out of it the logs of steps the manifest no longer
  *                  lists; a re-run of one step sweeps nothing.
  *   --rc-file=PATH where the `<id> rc=<n>` ledger lands (default `<log-dir>/rc`).
+ *   --tests=LIST   the tests to run inside one e2e step, comma-separated in the form
+ *                  Playwright takes on its command line (`tests/a.spec.ts:71`). Only
+ *                  with exactly one target, and only a step that declares
+ *                  `takesTests`: the re-run of a red e2e step names its red tests
+ *                  rather than paying for the whole suite again.
  *   --artifact-dir=DIR
  *                  where each step's snapshot of the stand lands (default
  *                  `<log-dir>/artifacts`), one subdirectory per step. Taken at
@@ -49,6 +56,12 @@ const POLL_INTERVAL_MICROSECONDS = 200_000;
 
 /** The option overriding both the environment and the adaptive lane count. */
 const LANES_OPTION = '--lanes';
+
+/** The option naming the tests to run inside one e2e step. */
+const TESTS_OPTION = '--tests';
+
+/** What separates the tests listed in one TESTS_OPTION value. */
+const TESTS_SEPARATOR = ',';
 
 /** Environment variable overriding the adaptive lane count. */
 const LANES_VAR = 'HILOS_TEST_LANES';
@@ -82,7 +95,7 @@ require_once $root . '/scripts/stand-registry.php';
 require_once $root . '/scripts/stand-teardown.php';
 require_once $root . '/scripts/evidence-sweep.php';
 $options = parseArguments(array_slice($argv, 1));
-$manifest = indexById(require $root . '/scripts/test-suite.php');
+$manifest = narrowToTests(indexById(require $root . '/scripts/test-suite.php'), $options['targets'], $options['tests']);
 $plan = planFor($manifest, $options['targets']);
 ['count' => $lanes, 'source' => $lanesSource] = resolveLanes($options['lanes']);
 $logDir = $options['logDir'] ?? $root . '/var/test-suite';
@@ -111,7 +124,7 @@ exit(runPlan(
  *
  * @param array<int, string> $arguments Everything after the script name.
  * @return array{targets: array<int, string>, lanes: int|null, logDir: string|null,
- *     rcFile: string|null, artifactDir: string|null, list: bool}
+ *     rcFile: string|null, artifactDir: string|null, list: bool, tests: array<int, string>}
  */
 function parseArguments(array $arguments): array
 {
@@ -122,6 +135,7 @@ function parseArguments(array $arguments): array
         'rcFile' => null,
         'artifactDir' => null,
         'list' => false,
+        'tests' => [],
     ];
     foreach ($arguments as $argument) {
         if ($argument === '--help' || $argument === '-h') {
@@ -131,6 +145,8 @@ function parseArguments(array $arguments): array
             $parsed['list'] = true;
         } elseif (str_starts_with($argument, LANES_OPTION . '=')) {
             $parsed['lanes'] = readLaneCount(substr($argument, strlen(LANES_OPTION . '=')), LANES_OPTION);
+        } elseif (str_starts_with($argument, TESTS_OPTION . '=')) {
+            $parsed['tests'] = readTestList(substr($argument, strlen(TESTS_OPTION . '=')));
         } elseif (str_starts_with($argument, '--log-dir=')) {
             $parsed['logDir'] = rtrim(substr($argument, strlen('--log-dir=')), '/');
         } elseif (str_starts_with($argument, '--rc-file=')) {
@@ -163,6 +179,22 @@ function readLaneCount(string $value, string $source): int
     return (int)$value;
 }
 
+/**
+ * The tests a TESTS_OPTION value names, or a fatal error when it names none.
+ *
+ * @param string $value The raw text after the `=`.
+ * @return array<int, string>
+ */
+function readTestList(string $value): array
+{
+    $tests = array_values(array_filter(array_map(trim(...), explode(TESTS_SEPARATOR, $value)), static fn(string $test): bool => $test !== ''));
+    if ($tests === []) {
+        fail(TESTS_OPTION . ' names no test');
+    }
+
+    return $tests;
+}
+
 /** Print how to call this script. */
 function printUsage(): void
 {
@@ -173,6 +205,8 @@ function printUsage(): void
                           dependencies of whatever matches are pulled in. No
                           target at all runs the whole graph.
           --lanes=N       steps at a time (overrides HILOS_TEST_LANES).
+          --tests=LIST    tests inside the one e2e step targeted, comma-separated
+                          as Playwright takes them (tests/a.spec.ts:71).
           --log-dir=DIR   per-step logs (default var/test-suite).
           --rc-file=PATH  the `<id> rc=<n>` ledger (default <log-dir>/rc).
           --artifact-dir=DIR
@@ -211,6 +245,33 @@ function indexById(array $steps): array
     }
 
     return $byId;
+}
+
+/**
+ * The manifest with the named tests handed to the one e2e step that runs them.
+ *
+ * The step declares `takesTests` when its command passes trailing arguments to
+ * Playwright and to nothing else; the tests then reach the command after `--`.
+ * Several targets would leave it unsaid whose tests they are, so exactly one is
+ * accepted, and it must be such a step itself rather than a tag.
+ *
+ * @param array<string, array{command: string}> $manifest Steps by id.
+ * @param array<int, string> $targets Step ids and tags from the command line.
+ * @param array<int, string> $tests The tests TESTS_OPTION named; empty when it was not given.
+ * @return array<string, array{command: string}>
+ */
+function narrowToTests(array $manifest, array $targets, array $tests): array
+{
+    if ($tests === []) {
+        return $manifest;
+    }
+    $target = count($targets) === 1 ? $targets[0] : null;
+    if ($target === null || ($manifest[$target]['takesTests'] ?? false) !== true) {
+        fail(TESTS_OPTION . ' names tests of one e2e step: give exactly one target, the id of a step that takes tests');
+    }
+    $manifest[$target]['command'] .= ' -- ' . implode(' ', array_map(escapeshellarg(...), $tests));
+
+    return $manifest;
 }
 
 /**

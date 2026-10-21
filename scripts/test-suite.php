@@ -396,6 +396,9 @@ foreach ($demos as $demo => $seconds) {
         'group' => $demo,
         'tags' => ['frontend', 'e2e', 'demo'],
         'seconds' => $seconds['e2e'],
+        // Every part of `test:e2e-full` but `playwright test` is marked
+        // `@no_additional_args`, so the tests a re-run names reach Playwright alone.
+        'takesTests' => true,
     ];
 }
 

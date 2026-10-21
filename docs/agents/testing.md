@@ -238,6 +238,8 @@ composer run test:suite                       every step
 composer run test:frontend:all                the `frontend` tag, plus its dependencies
 composer run test:framework:all                the `framework-php` tag, plus its dependencies
 php scripts/run-test-suite.php chat-e2e       one step, plus its dependencies
+php scripts/run-test-suite.php chat-e2e --lanes=1 --tests=tests/bots.spec.ts:71
+                                              named tests of one e2e step, alone
 php scripts/run-test-suite.php --list         the plan, without running it
 ```
 
@@ -343,8 +345,13 @@ in [frontend/testing-strategy.md](frontend/testing-strategy.md).
 
 ### A red step under concurrency is not a verdict
 
-Re-run it **alone on the same HEAD** — `php scripts/run-test-suite.php <id>
---lanes=1` — before believing it:
+Re-run it **alone on the same HEAD** before believing it. An e2e step re-runs only
+its red tests — the `file:line` of each entry under `N failed` in its log, and the
+specs its `hilos-unstable:` line names — through `--tests=`, because the whole step
+alone costs nearly as much as the full run (`tasks-e2e` alone ~18 minutes against a
+full run of ~22, 2026-10-21) and adds nothing to the verdict:
+`php scripts/run-test-suite.php <id> --lanes=1 --tests=tests/a.spec.ts:71,tests/b.spec.ts:12`.
+Any other step re-runs whole: `php scripts/run-test-suite.php <id> --lanes=1`.
 
 - **red again** — real. Treat it as any other failure.
 - **green alone** — the step is green. Name the test that went red as possibly
@@ -356,8 +363,8 @@ Re-run it **alone on the same HEAD** — `php scripts/run-test-suite.php <id>
 
 What must never happen is a red waved off as "probably the neighbour" without that
 re-run: it is exactly how a genuine regression reaches the base wearing the excuse
-of concurrency. The check is cheap — one demo block is 1–3 minutes and `chat-e2e`,
-the longest step there is, about twenty — and it only happens on red. The other
+of concurrency. The check is cheap — one demo block is 1–3 minutes, and the red
+tests of an e2e step with its stand about as much — and it only happens on red. The other
 half of the defense is that Playwright's caps stretch with host load rather than
 firing ([frontend/testing-strategy.md](frontend/testing-strategy.md)).
 

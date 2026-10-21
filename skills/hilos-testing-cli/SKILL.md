@@ -43,6 +43,7 @@ Use this skill whenever validation or CLI commands are needed. Start with `agent
 - One e2e spec or grep, full clean cycle, from `demo/<demo>`: `composer run test:e2e-full -- <spec | --grep "…">`
 - Everything, as one graph: `composer run test:suite`
 - One step of that graph, alone: `php scripts/run-test-suite.php <id> --lanes=1`
+- Named tests of one e2e step, alone: `php scripts/run-test-suite.php <id> --lanes=1 --tests=tests/a.spec.ts:71`
 
 ## Hard Rules
 
@@ -56,7 +57,8 @@ Use this skill whenever validation or CLI commands are needed. Start with `agent
 - Never run `phpunit` or `vendor/bin/phpunit` directly from the host.
 - Prefer composer scripts documented in `docs/agents/testing.md`.
 - A step of `test:suite` that goes red while another step was running is not a
-  verdict — re-run it with `--lanes=1` on the same HEAD before believing it.
+  verdict — re-run it with `--lanes=1` on the same HEAD before believing it; an
+  e2e step re-runs only its red tests, named with `--tests=`.
   Green alone: the step is green and the test is named as possibly flaky. Do not
   run the whole suite with `--lanes=1`.
 - Read the run's `=== unstable: ... ===` section when there is one: those tests
