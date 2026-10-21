@@ -6,6 +6,8 @@ import {
   ROWS,
   setCustomSetting,
   shownByTestId,
+  watchSocketFrames,
+  type SocketFrame,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 import { grantAdminToSelf } from '../helpers/adminGrant'
@@ -104,19 +106,23 @@ test('a window the server cannot build turns the rows into the unavailable tile,
 test('a refused table gets its rows back on the first change to its own data, with nothing pressed and no reload', async ({
   page,
 }) => {
-  let sockets = 0
   let settingsAnswers = 0
-  page.on('websocket', (socket) => {
-    sockets += 1
-    socket.on('framereceived', (frame) => {
-      const payload = String(frame.payload)
-      if (
-        payload.includes('"type":"page_response"') &&
-        payload.includes('"page":"hilos_settings"')
-      ) {
-        settingsAnswers += 1
-      }
-    })
+  const frames: SocketFrame[] = []
+  const socketFrames = watchSocketFrames(page, (frame) => {
+    frames.push(frame)
+    const wire = frame.wire as
+      | {
+          type?: unknown
+          data?: { page?: unknown }
+        }
+      | undefined
+      | null
+    if (
+      wire?.type === 'page_response' &&
+      wire.data?.page === 'hilos_settings'
+    ) {
+      settingsAnswers += 1
+    }
   })
   let fullLoads = 0
   page.on('load', () => {
@@ -129,7 +135,7 @@ test('a refused table gets its rows back on the first change to its own data, wi
 
   await expect(shownByTestId(page, 'hilos-table-unavailable')).toBeVisible()
   await expect(page.locator(ROWS)).toHaveCount(0)
-  const socketsAfterOpen = sockets
+  const socketsAfterOpen = socketFrames.sockets()
   const loadsAfterOpen = fullLoads
   const answersAfterOpen = settingsAnswers
 
@@ -158,9 +164,14 @@ test('a refused table gets its rows back on the first change to its own data, wi
 
     await expect(page.locator(ROWS).first()).toBeVisible()
     await expect(shownByTestId(page, 'hilos-table-unavailable')).toHaveCount(0)
-    expect(sockets).toBe(socketsAfterOpen)
+    expect(socketFrames.sockets()).toBe(socketsAfterOpen)
     expect(fullLoads).toBe(loadsAfterOpen)
   } finally {
+    socketFrames.stop()
+    await test.info().attach('table-recovery-frames', {
+      body: JSON.stringify(frames),
+      contentType: 'application/json',
+    })
     await clearCustomSetting(tabB, 'example_string')
     await tabB.close()
   }

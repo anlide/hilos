@@ -1,4 +1,5 @@
-import type { Page, WebSocket } from '@playwright/test'
+import type { Page } from '@playwright/test'
+import { watchSocketFrames } from './socket.js'
 
 export interface MonopolisticWorker {
   readonly index: number
@@ -38,65 +39,59 @@ export async function readMonopolisticWorker(
   // Rows of the set before the latest page shown, or -1 until one arrives.
   let pageStart = -1
   let morePages = false
-  const watch = (socket: WebSocket) => {
-    socket.on('framereceived', (frame) => {
-      if (typeof frame.payload !== 'string') return
-      let envelope: Record<string, unknown>
-      try {
-        envelope = record(JSON.parse(frame.payload))
-      } catch {
-        return
-      }
-      const data = record(envelope.data)
-      if (data.page !== 'hilos_daemon_workers') return
-      const window =
-        envelope.type === 'page_response'
-          ? record(record(record(data.payload).windows).hilosDaemonWorkers)
-          : data.tableKey === 'hilosDaemonWorkers' &&
-              envelope.type === 'table_window'
-            ? data
-            : {}
-      if (!Array.isArray(window.rows)) return
+  const observer = watchSocketFrames(page, (frame) => {
+    if (frame.raw === undefined) return
+    if (frame.wire === undefined)
+      throw new Error('Invalid Workers socket evidence')
+    const envelope = record(frame.wire)
+    const data = record(envelope.data)
+    if (data.page !== 'hilos_daemon_workers') return
+    const window =
+      envelope.type === 'page_response'
+        ? record(record(record(data.payload).windows).hilosDaemonWorkers)
+        : data.tableKey === 'hilosDaemonWorkers' &&
+            envelope.type === 'table_window'
+          ? data
+          : {}
+    if (!Array.isArray(window.rows)) return
+    if (
+      window.rows.length > 0 &&
+      window.totalExact === true &&
+      typeof window.rowsBefore === 'number' &&
+      typeof window.totalCount === 'number' &&
+      window.rowsBefore >= pageStart
+    ) {
+      pageStart = window.rowsBefore
+      morePages = window.rowsBefore + window.rows.length < window.totalCount
+    }
+    for (const row of window.rows) {
+      const fields = record(record(record(row).slots).worker)
       if (
-        window.rows.length > 0 &&
-        window.totalExact === true &&
-        typeof window.rowsBefore === 'number' &&
-        typeof window.totalCount === 'number' &&
-        window.rowsBefore >= pageStart
-      ) {
-        pageStart = window.rowsBefore
-        morePages = window.rowsBefore + window.rows.length < window.totalCount
-      }
-      for (const row of window.rows) {
-        const fields = record(record(record(row).slots).worker)
-        if (
-          fields.kind !== 'monopolistic' ||
-          !Array.isArray(fields.agentIds) ||
-          fields.agentIds.length !== 1 ||
-          fields.agentIds[0] !== agentId
+        fields.kind !== 'monopolistic' ||
+        !Array.isArray(fields.agentIds) ||
+        fields.agentIds.length !== 1 ||
+        fields.agentIds[0] !== agentId
+      )
+        continue
+      if (
+        !Number.isInteger(fields.index) ||
+        typeof fields.index !== 'number' ||
+        fields.index <= 0 ||
+        !Number.isInteger(fields.pid) ||
+        typeof fields.pid !== 'number' ||
+        fields.pid <= 1
+      )
+        throw new Error(
+          'The Workers window carries an invalid monopolistic worker identity',
         )
-          continue
-        if (
-          !Number.isInteger(fields.index) ||
-          typeof fields.index !== 'number' ||
-          fields.index <= 0 ||
-          !Number.isInteger(fields.pid) ||
-          typeof fields.pid !== 'number' ||
-          fields.pid <= 1
-        )
-          throw new Error(
-            'The Workers window carries an invalid monopolistic worker identity',
-          )
-        worker = {
-          index: fields.index,
-          pid: fields.pid,
-          kind: fields.kind,
-          agentIds: [agentId],
-        }
+      worker = {
+        index: fields.index,
+        pid: fields.pid,
+        kind: fields.kind,
+        agentIds: [agentId],
       }
-    })
-  }
-  page.on('websocket', watch)
+    }
+  })
   try {
     await gotoWorkers(page)
     await waitFor(() => worker !== undefined || pageStart >= 0)
@@ -109,6 +104,6 @@ export async function readMonopolisticWorker(
       throw new Error('The selected monopolistic worker never arrived')
     return worker
   } finally {
-    page.off('websocket', watch)
+    observer.stop()
   }
 }

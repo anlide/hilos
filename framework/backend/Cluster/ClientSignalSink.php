@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Cluster;
 
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * Local port between the peer transport and this node's browser connections.
@@ -27,6 +28,7 @@ interface ClientSignalSink
      *
      * @param string $acceptKey Accept key of the connection to deliver to
      * @param SignalDTO $signal Signal to write to that connection
+     * @throws InvalidFormatException When a matching completion reads an invalid delivery window
      */
     public function deliverSignalToClient(string $acceptKey, SignalDTO $signal): void;
 

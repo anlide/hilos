@@ -12,6 +12,8 @@ import {
   shownByTestId,
   watchDaemonCronFrames,
   watchDaemonMismatchFrames,
+  createSocketFrameReader,
+  type SocketFrame,
 } from '../../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../../helpers/adminGrant.js'
 import {
@@ -422,6 +424,7 @@ test('cluster daemon: foreign node pages, remote restart, environment mismatch a
 
 /** Observe the real source frame and the browser's reply, without driving either side. */
 function observeRecovery(page: Page) {
+  const frames: SocketFrame[] = []
   const received: Array<{ page: string; params: Record<string, unknown> }> = []
   const sent: string[] = []
   const subscribed: Array<{
@@ -433,6 +436,7 @@ function observeRecovery(page: Page) {
   let sockets = 0
   let closed = 0
   let mark = {
+    frames: 0,
     received: 0,
     sent: 0,
     subscribed: 0,
@@ -442,17 +446,23 @@ function observeRecovery(page: Page) {
   }
   page.on('websocket', (socket) => {
     sockets += 1
+    const read = createSocketFrameReader(sockets)
     socket.on('close', () => {
       closed += 1
     })
     socket.on('framereceived', ({ payload }) => {
-      if (typeof payload !== 'string' || !payload.startsWith('{')) return
-      const frame = JSON.parse(payload) as {
-        type: string
-        data: { page: string; params: Record<string, unknown> }
+      for (const observation of read(payload)) {
+        frames.push(observation)
+        const frame = observation.wire as
+          | {
+              type: string
+              data: { page: string; params: Record<string, unknown> }
+            }
+          | undefined
+          | null
+        if (frame?.type === 'page_resubscribe') received.push(frame.data)
+        if (frame?.type === 'page_response') answered.push(frame.data.page)
       }
-      if (frame.type === 'page_resubscribe') received.push(frame.data)
-      if (frame.type === 'page_response') answered.push(frame.data.page)
     })
     socket.on('framesent', ({ payload }) => {
       if (typeof payload !== 'string' || !payload.startsWith('{')) return
@@ -467,6 +477,7 @@ function observeRecovery(page: Page) {
     page,
     mark() {
       mark = {
+        frames: frames.length,
         received: received.length,
         sent: sent.length,
         subscribed: subscribed.length,
@@ -477,6 +488,7 @@ function observeRecovery(page: Page) {
     },
     sinceMark() {
       return {
+        frames: frames.slice(mark.frames),
         received: received.slice(mark.received),
         sent: sent.slice(mark.sent),
         subscribed: subscribed.slice(mark.subscribed),
@@ -498,8 +510,8 @@ function mismatchRemoteCells(
     rowKey: string
     slots: { key?: { cells?: Array<{ nodeId: string }> } }
   }
-  return frames.flatMap(({ raw }) => {
-    const { data } = JSON.parse(raw) as {
+  return frames.flatMap(({ wire }) => {
+    const { data } = wire as {
       data: {
         rows?: Row[]
         payload?: { windows?: Record<string, { rows?: Row[] }> }

@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Socket\Client\Interface;
 
 use Hilos\Core\Exception\InvalidStateException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Socket\Client\ClientInterface;
+use Hilos\Socket\WebSocket\Delivery\DeliveryFrame;
 
 /**
  * WebSocketClientInterface - Interface for WebSocket client implementations.
@@ -25,8 +27,18 @@ interface WebSocketClientInterface extends ClientInterface
      *
      * @param string $data Text data to send (UTF-8)
      * @throws InvalidStateException When handshake not completed
+     * @throws InvalidFormatException When the effective window or a merged envelope is invalid
      */
     public function sendFrame(string $data): void;
+
+    /**
+     * Queue immutable application text prepared once per broadcast.
+     *
+     * @param DeliveryFrame $frame Shared prepared frame
+     * @throws InvalidStateException When handshake not completed
+     * @throws InvalidFormatException When the effective window or a merged envelope is invalid
+     */
+    public function sendDeliveryFrame(DeliveryFrame $frame): void;
 
     /**
      * Send WebSocket binary frame.

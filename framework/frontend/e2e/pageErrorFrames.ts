@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test'
+import { watchSocketFrames } from './socket.js'
 
 /** One `subscription_page_error` frame, its payload and the original text. */
 export interface PageErrorFrameLog {
@@ -17,32 +18,24 @@ export interface PageErrorFrameLog {
  */
 export function watchPageErrorFrames(page: Page): PageErrorFrameLog[] {
   const frames: PageErrorFrameLog[] = []
-  page.on('websocket', (socket) => {
-    socket.on('framereceived', ({ payload }) => {
-      const raw = payload.toString()
-      let wire: unknown
-      try {
-        wire = JSON.parse(raw)
-      } catch {
-        if (/"type"\s*:\s*"subscription_page_error"/.test(raw)) {
-          frames.push({
-            type: 'subscription_page_error',
-            data: undefined,
-            raw,
-          })
-        }
-        return
-      }
-      if (wire === null || typeof wire !== 'object' || !('type' in wire)) {
-        return
-      }
-      if (wire.type !== 'subscription_page_error') return
+  watchSocketFrames(page, (frame) => {
+    if (frame.raw === undefined) return
+    const wire = frame.wire
+    if (wire === null || typeof wire !== 'object' || !('type' in wire)) {
+      if (wire !== undefined) return
+      const type = frame.raw.match(
+        /"type"\s*:\s*"(subscription_page_error)"/,
+      )?.[1] as PageErrorFrameLog['type'] | undefined
+      if (type) frames.push({ type, data: undefined, raw: frame.raw })
+      return
+    }
+    if (wire.type === 'subscription_page_error') {
       frames.push({
-        type: 'subscription_page_error',
+        type: wire.type,
         data: 'data' in wire ? wire.data : undefined,
-        raw,
+        raw: frame.raw,
       })
-    })
+    }
   })
   return frames
 }

@@ -5,6 +5,7 @@
 // never breaks an older client.
 import { z } from 'zod'
 import { protectedModeBlockSchema } from './protectedMode.js'
+import { SIGNAL_TYPE_SIGNAL_BATCH } from './constants.js'
 
 /**
  * Abstract envelope of every server→client frame:
@@ -24,6 +25,14 @@ export const signalEnvelopeSchema = z.looseObject({
 })
 
 export type SignalEnvelope = z.infer<typeof signalEnvelopeSchema>
+
+/** Validate the whole delivery before narrowing its individual frames. */
+export const signalBatchEnvelopeSchema = signalEnvelopeSchema.extend({
+  type: z.literal(SIGNAL_TYPE_SIGNAL_BATCH),
+  data: z.looseObject({ frames: z.array(z.unknown()).min(1) }),
+})
+
+export type SignalBatchEnvelope = z.infer<typeof signalBatchEnvelopeSchema>
 
 /**
  * Payload of the framework welcome (`type: 'handshake'`), sent first after the

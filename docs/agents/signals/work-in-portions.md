@@ -23,9 +23,38 @@ logs aggregator 0.5 s, Daemon roster 0.5 s, node 5 s, collector 0.5 s — limits
 how often the section recomputes its picture, not delivery. Do not add a section
 window to throttle delivery.
 
-Delivery is one package per connection per delivery window — a setting,
-1000 ms by default; a change after quiet goes at once; a request from the browser
-sends what has gathered together with its answer (not in the code yet — HIL-1565).
+Application text uses a separate queue on each TCP connection. Its window is the
+positive `websocket.delivery_window_ms` setting (default 1000 ms), read through
+the existing Settings catalog. Each ready worker reports its value to its node's
+master, which applies it from a process-local memory mirror. The first nonempty
+delivery after quiet goes in the next socket write pass. While busy, the next
+deadline stays fixed from the previous nonempty delivery; producer writes do not
+debounce it. Empty packets are never sent.
+
+A validated browser application request hastens only its own connection.
+Correlated action acknowledgements, `table_window` and `table_window_refused`
+also hasten pending text. A tracked page subscribe or params update starts one
+delivery grace window when its matching completion reaches the socket master,
+so a delayed reply does not spend that grace before it arrives. Further stream
+updates do not renew it. An already-open deadline or grace window keeps the
+setting value with which it began; later decisions use the latest setting.
+
+The HTTP 101 handshake, framework welcome, RFC control frames and binary
+transport keep their transport paths. A session reply carried by
+`HandshakeResponseSignalData` is an urgent application reply: it flushes queued
+text and starts a fresh grace window on that socket, so a session-gated
+`page_subscribe` does not wait for cadence. The DTO type selects this behavior;
+the project signal name is arbitrary, and the wire shape is unchanged. An
+active whole-subscription hold takes precedence over urgency: only its matching
+completion releases the full response with accumulated text. Other ordinary
+bootstrap notifications follow the delivery window unless independently
+urgent; do not promise that the whole bootstrap is immediate. The batching and
+safe coalescing rules are described in the
+[wire protocol](../frontend/wire-protocol.md#signal-batches-and-delivery-coalescing).
+
+The window does not rate-limit producers, replace the page's declared-source
+fan-out, or make related business writes atomic. Queue and deadline state stay
+private to the connection and its process; they are not domain RT state.
 
 ## Part Or Whole
 

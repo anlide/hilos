@@ -53,6 +53,9 @@ final class WorkerConstants
     /** Effective upload memory budget reported by a registered worker. */
     public const string MESSAGE_UPLOAD_SETTINGS = 'worker_upload_settings';
 
+    /** Effective WebSocket delivery window reported by a registered worker. */
+    public const string MESSAGE_DELIVERY_SETTINGS = 'worker_delivery_settings';
+
     /** Binary deliveries processed or finally discarded by a registered worker. */
     public const string MESSAGE_UPLOAD_CONSUMED = 'worker_upload_consumed';
 

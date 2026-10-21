@@ -1,4 +1,12 @@
-import { expect, type Page } from '@playwright/test'
+import {
+  expect,
+  type Page,
+  type WebSocket as PlaywrightWebSocket,
+} from '@playwright/test'
+import {
+  watchSocketFrames,
+  type SocketFrame,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
 
 // The daemon command channel — the same socket the CLI test:admin-view-mode command
@@ -39,91 +47,161 @@ export async function setAdminViewMode(enabled: boolean): Promise<void> {
   await sendCommand(ADMIN_VIEW_MODE_COMMAND, { enabled })
 }
 
-/** Arm a forged submit before the viewer loads; the product connection stays private. */
-export async function armViewerSubmit(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    const NativeWebSocket = window.WebSocket
-    const sockets: WebSocket[] = []
-    window.WebSocket = class extends NativeWebSocket {
-      constructor(url: string | URL, protocols?: string | string[]) {
-        super(url, protocols)
-        sockets.push(this)
+/** Arm before the viewer loads; only the test hook can send on its private socket. */
+export async function armViewerSubmit(page: Page) {
+  const frames: SocketFrame[] = []
+  let pending:
+    | {
+        socket: number
+        requestId: string
+        resolve: (frame: SocketFrame) => void
+        reject: (error: Error) => void
+        timer: ReturnType<typeof setTimeout>
       }
+    | undefined
+  let disposed = false
+  const watcher = watchSocketFrames(page, (frame) => {
+    frames.push(frame)
+    const wire = frame.wire as
+      | {
+          requestId?: unknown
+          data?: { requestId?: unknown }
+        }
+      | undefined
+      | null
+    if (
+      pending &&
+      frame.socket === pending.socket &&
+      (wire?.requestId === pending.requestId ||
+        wire?.data?.requestId === pending.requestId)
+    ) {
+      const waiter = pending
+      pending = undefined
+      clearTimeout(waiter.timer)
+      waiter.resolve(frame)
     }
-    Object.defineProperty(window, '__hilosE2eViewerSubmit', {
-      value: (
-        frame: string,
-        requestId: string,
-      ): Promise<Record<string, unknown>> => {
-        const socket = sockets.at(-1)
-        if (socket?.readyState !== WebSocket.OPEN)
-          throw new Error('The viewer socket is not open')
-        const current = socket
-        return new Promise((resolve, reject) => {
-          const timer = setTimeout(() => {
-            current.removeEventListener('message', receive)
-            reject(new Error('The server did not answer the forged submit'))
-          }, 5000)
-          function receive(event: MessageEvent): void {
-            if (typeof event.data !== 'string') return
-            let reply: {
-              type?: string
-              requestId?: string
-              data?: Record<string, unknown>
-            }
-            try {
-              reply = JSON.parse(event.data)
-            } catch {
-              return
-            }
-            if (
-              reply.requestId !== requestId &&
-              reply.data?.requestId !== requestId
-            )
-              return
-            clearTimeout(timer)
-            current.removeEventListener('message', receive)
-            resolve({ type: reply.type, ...reply.data })
-          }
-          current.addEventListener('message', receive)
-          current.send(frame)
-        })
-      },
-    })
   })
+  const closed = new Map<PlaywrightWebSocket, () => void>()
+  const rejectPending = (error: Error) => {
+    if (!pending) return
+    const waiter = pending
+    pending = undefined
+    clearTimeout(waiter.timer)
+    waiter.reject(error)
+  }
+  const opened = (socket: PlaywrightWebSocket) => {
+    const id = watcher.sockets()
+    const close = () => {
+      if (pending?.socket === id) {
+        rejectPending(
+          new Error('The viewer socket closed before the forged reply'),
+        )
+      }
+      closed.delete(socket)
+    }
+    closed.set(socket, close)
+    socket.once('close', close)
+  }
+  const dispose = () => {
+    disposed = true
+    rejectPending(new Error('The forged submit observer was disposed'))
+    watcher.stop()
+    page.off('websocket', opened)
+    page.off('close', dispose)
+    for (const [socket, close] of closed) socket.off('close', close)
+    closed.clear()
+  }
+  page.on('websocket', opened)
+  page.once('close', dispose)
+  try {
+    await page.addInitScript(() => {
+      const NativeWebSocket = window.WebSocket
+      const sockets: WebSocket[] = []
+      window.WebSocket = class extends NativeWebSocket {
+        constructor(url: string | URL, protocols?: string | string[]) {
+          super(url, protocols)
+          sockets.push(this)
+        }
+      }
+      Object.defineProperty(window, '__hilosE2eViewerSubmit', {
+        value: (frame: string): void => {
+          const socket = sockets.at(-1)
+          if (socket?.readyState !== WebSocket.OPEN)
+            throw new Error('The viewer socket is not open')
+          socket.send(frame)
+        },
+      })
+    })
+  } catch (error) {
+    dispose()
+    throw error
+  }
+  return {
+    frames,
+    dispose,
+    async submit(frame: string, requestId: string): Promise<SocketFrame> {
+      if (disposed) throw new Error('The forged submit observer was disposed')
+      if (pending) throw new Error('A forged submit is already pending')
+      const answer = new Promise<SocketFrame>((resolve, reject) => {
+        pending = {
+          socket: watcher.sockets(),
+          requestId,
+          resolve,
+          reject,
+          timer: setTimeout(() => {
+            rejectPending(
+              new Error('The server did not answer the forged submit'),
+            )
+          }, REPLY_TIMEOUT_MS),
+        }
+      })
+      // Arm correlation before sending; a reply may precede evaluate's completion.
+      const sent = page
+        .evaluate((frame) => {
+          const hook = (
+            window as unknown as Record<string, (frame: string) => void>
+          ).__hilosE2eViewerSubmit
+          hook(frame)
+        }, frame)
+        .catch((error: Error) => {
+          rejectPending(error)
+          throw error
+        })
+      const [, reply] = await Promise.all([sent, answer])
+      return reply
+    },
+  }
 }
 
 /** Prove both the visible disabled control and the server's refusal of a forged restart. */
 export async function expectViewerRestartRefused(
   page: Page,
   agentId: string,
+  viewer: Awaited<ReturnType<typeof armViewerSubmit>>,
 ): Promise<void> {
   const button = page
     .getByTestId(`hilos-daemon-agent-restart-${agentId}`)
     .filter({ visible: true })
   await expect(button).toBeDisabled()
   const requestId = 'e2e-forged-daemon-restart'
-  const reply = await page.evaluate(
-    ({ agentId, requestId }) => {
-      const hook = (
-        window as unknown as Record<
-          string,
-          (frame: string, requestId: string) => Promise<Record<string, unknown>>
-        >
-      ).__hilosE2eViewerSubmit
-      return hook(
-        JSON.stringify({
-          type: 'action',
-          action: 'hilos_daemon_agent_restart',
-          data: { agentId, nodeId: 'standalone' },
-          requestId,
-        }),
-        requestId,
-      )
-    },
-    { agentId, requestId },
+  const observation = await viewer.submit(
+    JSON.stringify({
+      type: 'action',
+      action: 'hilos_daemon_agent_restart',
+      data: { agentId, nodeId: 'standalone' },
+      requestId,
+    }),
+    requestId,
   )
-  expect(reply.type).toBe('action_error')
+  expect(observation.failure).toBeUndefined()
+  const wire = observation.wire as {
+    type?: unknown
+    data?: Record<string, unknown>
+  }
+  expect(wire.type).toBe('action_error')
+  const reply = wire.data
+  expect(reply).toBeDefined()
+  if (!reply) throw new Error('The forged refusal has no payload')
   expect(reply.errorCode).toBe('view_mode')
   expect(reply.reason).toBe(
     'View mode: you can look around, but not change anything.',

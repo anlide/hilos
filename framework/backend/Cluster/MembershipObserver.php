@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster;
 
+use Hilos\Core\Exception\InvalidFormatException;
+
 use Hilos\Core\Daemon\DaemonManager;
 
 /**
@@ -27,6 +29,7 @@ interface MembershipObserver
 
     /**
      * @param ClusterNode $node Node that left (went offline)
+     * @throws InvalidFormatException When a pending page recovery address is malformed
      */
     public function onNodeLeft(ClusterNode $node): void;
 }

@@ -3,6 +3,8 @@ import { test, expect } from '@playwright/test'
 import {
   armSocketDrop,
   dropSocket,
+  watchSocketFrames,
+  type SocketFrame,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
@@ -115,28 +117,16 @@ test('re-serves an admin page after a dropped socket, with no false refusal', as
   page,
 }) => {
   await armSocketDrop(page)
-  const frames: Array<{
+  const frames: SocketFrame[] = []
+  type Reply = {
     type?: string
     data?: {
       page?: string
       httpCode?: number
       payload?: { windows?: Record<string, unknown> }
     }
-  }> = []
-  let sockets = 0
-  page.on('websocket', (ws) => {
-    sockets += 1
-    ws.on('framereceived', (frame) => {
-      if (typeof frame.payload !== 'string') {
-        return
-      }
-      try {
-        frames.push(JSON.parse(frame.payload))
-      } catch {
-        // Not one of ours; the socket also carries the keepalive text ping.
-      }
-    })
-  })
+  }
+  const socketFrames = watchSocketFrames(page, (frame) => frames.push(frame))
 
   await signUpAdmin(page)
   await gotoPage(page, '/hilos/users')
@@ -146,7 +136,7 @@ test('re-serves an admin page after a dropped socket, with no false refusal', as
     page.locator('[data-id^="hilos-users-open-"]').first(),
   ).toBeVisible()
   const framesBeforeDrop = frames.length
-  const socketsBeforeDrop = sockets
+  const socketsBeforeDrop = socketFrames.sockets()
 
   // Kill the socket and let the client notice on its own. Nothing in the product
   // is touched: the connection object is not on `window`, so the drop reaches it
@@ -155,7 +145,7 @@ test('re-serves an admin page after a dropped socket, with no false refusal', as
   // disconnected label, which a fast reconnect can pass through unseen.
   await dropSocket(page)
   await expect
-    .poll(() => sockets, { timeout: 15_000 })
+    .poll(socketFrames.sockets, { timeout: 15_000 })
     .toBeGreaterThan(socketsBeforeDrop)
   await expect(page.getByTestId('conn-state')).toHaveText('connected', {
     timeout: 15_000,
@@ -171,9 +161,10 @@ test('re-serves an admin page after a dropped socket, with no false refusal', as
       () =>
         frames
           .slice(framesBeforeDrop)
+          .map(({ wire }) => wire as Reply | undefined | null)
           .some(
             (frame) =>
-              frame.type === 'page_response' &&
+              frame?.type === 'page_response' &&
               frame.data?.page === 'hilos_users' &&
               frame.data.payload?.windows?.[HILOS_USERS_TABLE] !== undefined,
           ),
@@ -188,10 +179,18 @@ test('re-serves an admin page after a dropped socket, with no false refusal', as
 
   // And nobody was told to sign in again on either socket.
   expect(
-    frames.filter(
-      (frame) =>
-        frame.type === 'subscription_page_error' &&
-        frame.data?.httpCode === 401,
-    ),
+    frames
+      .map(({ wire }) => wire as Reply | undefined | null)
+      .filter(
+        (frame) =>
+          frame?.type === 'subscription_page_error' &&
+          frame.data?.httpCode === 401,
+      ),
   ).toEqual([])
+  expect(frames.filter(({ failure }) => failure !== undefined)).toEqual([])
+  socketFrames.stop()
+  await test.info().attach('admin-reconnect-frames', {
+    body: JSON.stringify(frames),
+    contentType: 'application/json',
+  })
 })

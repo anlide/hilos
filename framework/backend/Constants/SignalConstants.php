@@ -43,6 +43,9 @@ final class SignalConstants
     /** @var string Page subscription error signal - sent when onSubscribe throws PageSubscriptionException */
     public const string SUBSCRIPTION_PAGE_ERROR = 'subscription_page_error';
 
+    /** @var string Internal marker that a page delivery has completed */
+    public const string DELIVERY_COMPLETE = 'hilos_delivery_complete';
+
     /** Ask the addressed browser to repeat its current page subscription. */
     public const string PAGE_RESUBSCRIBE = 'page_resubscribe';
 

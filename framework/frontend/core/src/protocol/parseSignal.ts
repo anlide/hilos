@@ -8,6 +8,7 @@ import {
   SIGNAL_TYPE_ACTION_ERROR,
   SIGNAL_TYPE_ACTION_SUCCESS,
   SIGNAL_TYPE_HANDSHAKE,
+  SIGNAL_TYPE_SIGNAL_BATCH,
   SIGNAL_TYPE_PAGE_RESUBSCRIBE,
   SIGNAL_TYPE_PROTECTED_MODE,
   SIGNAL_TYPE_RT_STALENESS,
@@ -304,7 +305,21 @@ export function parseSignal(
     return { ok: false, failure: { kind: 'malformed-json', raw } }
   }
 
-  const envelope = signalEnvelopeSchema.safeParse(json)
+  return parseSignalValue(json, projectSchemas)
+}
+
+/**
+ * Narrow a decoded frame through the same envelope and concrete schemas as text.
+ * Transport wrappers are never domain signals, including inside another delivery.
+ *
+ * @param value A decoded inner frame or bare envelope.
+ * @param projectSchemas Project-declared concrete signal schemas by `type`.
+ */
+export function parseSignalValue(
+  value: unknown,
+  projectSchemas?: ProjectSignalSchemas,
+): ParseResult {
+  const envelope = signalEnvelopeSchema.safeParse(value)
   if (!envelope.success) {
     return {
       ok: false,
@@ -313,6 +328,15 @@ export function parseSignal(
   }
 
   switch (envelope.data.type) {
+    case SIGNAL_TYPE_SIGNAL_BATCH:
+      return {
+        ok: false,
+        failure: {
+          kind: 'invalid-signal-data',
+          type: SIGNAL_TYPE_SIGNAL_BATCH,
+          message: 'A signal batch cannot be used as an inner signal.',
+        },
+      }
     case SIGNAL_TYPE_PAGE_RESUBSCRIBE: {
       const data = pageResubscribeSignalDataSchema.safeParse(envelope.data.data)
       if (!data.success) {

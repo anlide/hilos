@@ -6,6 +6,7 @@ import time
 import uuid
 
 import control
+import delivery
 import scenarios
 from stand import StandRefused
 
@@ -233,6 +234,48 @@ def _daemon_phase(stand, extra_args):
     return 1 if failed else 0
 
 
+def _live_phase(stand, env, extra_args, leader, term):
+    """Automatically offer in-phase worker faults in both pointed and full carrier runs."""
+    if stand.demo_dir.name != "binance-btc-tracker":
+        return _phase(stand, env, "live", extra_args)
+    run_id = uuid.uuid4().hex
+    directory = stand.demo_dir / "data" / "cluster-delivery-e2e" / run_id
+    directory.mkdir(parents=True)
+    controller = delivery.DeliveryController(stand, directory, run_id, leader, term)
+    thread = threading.Thread(target=controller.run, name=f"delivery-e2e-{run_id}")
+    env = {**env, "CLUSTER_DELIVERY_RUN_ID": run_id,
+           "CLUSTER_DELIVERY_CONTROL_DIR": "/hilos/" + directory.relative_to(
+               stand.demo_dir.parent.parent).as_posix()}
+    failed = False
+    try:
+        thread.start()
+        failed = _phase(stand, env, "live", extra_args) != 0
+    finally:
+        controller.stop.set()
+        if thread.ident is not None:
+            thread.join()
+        try:
+            controller.restore()
+        except Exception as error:
+            print(f"cluster delivery: restoration failed: {error}", flush=True)
+            failed = True
+        if controller.error is not None:
+            print(f"cluster delivery: controller failed: {controller.error}", flush=True)
+            failed = True
+        try:
+            # Sequence files belong to this UUID only. Never sweep the parent,
+            # browser artifacts or journals, even after an interrupted write.
+            for sequence in range(1, controller.sequence + 2):
+                for side in ("request", "result"):
+                    for suffix in ("json", "json.tmp"):
+                        (directory / f"{side}-{sequence}.{suffix}").unlink(missing_ok=True)
+            directory.rmdir()
+        except OSError as error:
+            print(f"cluster delivery: control cleanup failed: {error}", flush=True)
+            failed = True
+    return 1 if failed else 0
+
+
 def run(stand, extra_args):
     """The carrier adds daemon/recovery before live; pointing preserves each stand's projects."""
     run_daemon = daemon_phase_selected(stand, extra_args)
@@ -271,7 +314,7 @@ def run(stand, extra_args):
         live_env = _environment(stand, leader, follower, "live")
         print(f"cluster e2e: restored leader {leader} (term {views[leader].get('term')}), "
               f"live browser on {follower}")
-    if _phase(stand, live_env, "live", extra_args) != 0:
+    if _live_phase(stand, live_env, extra_args, leader, views[leader]["term"]) != 0:
         print("cluster e2e: failed: phase live")
         return 1
 

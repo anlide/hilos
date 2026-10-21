@@ -34,7 +34,7 @@ import {
 } from '../protocol/constants.js'
 import { assertNever } from '../protocol/assertNever.js'
 import {
-  parseSignal,
+  parseSignalValue,
   type ActionErrorSignal,
   type ActionSuccessSignal,
   type HandshakeSignal,
@@ -59,6 +59,7 @@ import {
   type TableViewportFrozenSignal,
   type UnknownSignal,
 } from '../protocol/parseSignal.js'
+import { unpackSignalFrames } from '../protocol/delivery.js'
 import {
   isSameProtectedModeStatus,
   PROTECTED_MODE_INACTIVE,
@@ -421,6 +422,8 @@ export class HilosConnection {
   /** A rotation held back until the wire is quiet, and the timer that stops holding it. */
   private heldRotation: SessionRotation | null = null
   private heldRotationTimer: ReturnType<typeof setTimeout> | null = null
+  /** Synchronous deliveries still dispatching on this connection instance. */
+  private deliveryDepth = 0
   private protectedModeStatus: ProtectedModeStatus = PROTECTED_MODE_INACTIVE
   private rtStalenessStatus: RtStalenessStatus = RT_STALENESS_FRESH
   /**
@@ -1021,13 +1024,37 @@ export class HilosConnection {
   }
 
   private handleFrame(data: unknown): void {
-    const result = parseSignal(data, this.projectSchemas)
-    if (!result.ok) {
-      this.emitter.emit('parseFailure', result.failure)
+    const delivery = unpackSignalFrames(data)
+    if (!delivery.ok) {
+      this.emitter.emit('parseFailure', delivery.failure)
       return
     }
 
-    const signal = result.signal
+    const generation = this.generation
+    this.deliveryDepth += 1
+    try {
+      for (const frame of delivery.frames) {
+        if (generation !== this.generation) {
+          break
+        }
+        const result = parseSignalValue(frame, this.projectSchemas)
+        if (result.ok) {
+          this.dispatchSignal(result.signal)
+        } else {
+          this.emitter.emit('parseFailure', result.failure)
+        }
+      }
+    } finally {
+      this.deliveryDepth -= 1
+      if (this.awaitedReplies.size === 0) {
+        this.releaseRotation()
+      }
+    }
+  }
+
+  /** Deliver each inner signal through the existing per-signal lifecycle. */
+  private dispatchSignal(signal: ParsedSignal): void {
+    const generation = this.generation
     switch (signal.kind) {
       case 'handshake':
         this.handleHandshake(signal)
@@ -1050,11 +1077,15 @@ export class HilosConnection {
         // rotation was waiting for, and that reconnect fails every action still
         // in flight — including this one, whose answer is right here.
         this.emitter.emit('actionSuccess', signal)
-        this.replyArrived(signal.requestId)
+        if (generation === this.generation) {
+          this.replyArrived(signal.requestId)
+        }
         break
       case 'actionError':
         this.emitter.emit('actionError', signal)
-        this.replyArrived(signal.requestId)
+        if (generation === this.generation) {
+          this.replyArrived(signal.requestId)
+        }
         break
       case 'project':
         this.rememberPageFrame(signal)
@@ -1102,7 +1133,9 @@ export class HilosConnection {
       default:
         assertNever(signal)
     }
-    this.emitter.emit('signal', signal)
+    if (generation === this.generation) {
+      this.emitter.emit('signal', signal)
+    }
   }
 
   /**
@@ -1161,8 +1194,8 @@ export class HilosConnection {
    *
    * The reconnect is the point of the whole exchange — the cookie can only be set on a
    * 101 — so it happens here rather than being left to the consumer, and it happens
-   * straight after the listeners run: they write the cookie synchronously, and the
-   * socket that opens next carries it. It also skips the backoff delay, which exists to
+   * after the current delivery finishes: listeners write the cookie synchronously,
+   * and the socket that opens next carries it. It also skips the backoff delay, which exists to
    * spread a fleet reconnecting after a restart and would only be a pause the visitor
    * spends logged in on a token the server no longer answers to.
    *
@@ -1179,8 +1212,11 @@ export class HilosConnection {
       ticket: signal.ticket,
       cookieName: `${cookieName}${SESSION_ROTATE_COOKIE_SUFFIX}`,
     }
+    const generation = this.generation
     this.emitter.emit('sessionRotate', rotation)
-    this.holdRotationUntilQuiet(rotation)
+    if (generation === this.generation) {
+      this.holdRotationUntilQuiet(rotation)
+    }
   }
 
   /**
@@ -1200,12 +1236,12 @@ export class HilosConnection {
    * unanswered action fails the way any dropped action does.
    */
   private holdRotationUntilQuiet(rotation: SessionRotation): void {
+    this.heldRotation = rotation
     if (this.awaitedReplies.size === 0) {
-      this.reconnectNow()
+      this.releaseRotation()
 
       return
     }
-    this.heldRotation = rotation
     const generation = this.generation
     this.heldRotationTimer = setTimeout(() => {
       this.heldRotationTimer = null
@@ -1224,9 +1260,9 @@ export class HilosConnection {
     }
   }
 
-  /** Performs the reconnect a rotation was waiting to make. */
+  /** Reconnect only after the outermost synchronous delivery has dispatched its tail. */
   private releaseRotation(): void {
-    if (this.heldRotation === null) {
+    if (this.heldRotation === null || this.deliveryDepth > 0) {
       return
     }
     this.heldRotation = null
@@ -1239,14 +1275,17 @@ export class HilosConnection {
     // Bumped before the close, not only by openSocket() after it: a socket that reports
     // its close synchronously would otherwise still be current, and its handler would
     // schedule a second, delayed reconnect on top of the one opening here.
-    this.generation += 1
+    const generation = ++this.generation
     this.clearReconnectTimer()
     this.stopKeepalive()
     this.closeSocket()
     this.reconnectAttempt = 0
     this.setReconnectDragging(false)
+    if (generation !== this.generation) {
+      return
+    }
     this.setState('reconnecting')
-    this.openSocket()
+    this.ifCurrent(generation, () => this.openSocket())
   }
 
   /**

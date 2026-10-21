@@ -52,6 +52,7 @@ use Hilos\Core\Exception\Process\FailedToTerminateProcessException;
 use Hilos\Core\Exception\Process\FailedToWriteStdInException;
 use Hilos\Core\Process;
 use Hilos\Files\Upload\UploadMemoryDeliverySink;
+use Hilos\Socket\WebSocket\Delivery\DeliverySettingsSink;
 use Hilos\Files\Upload\UploadMemoryWorkerLifetime;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -122,6 +123,9 @@ abstract class WorkerServer extends AbstractServer implements
     private array $workers = [];
 
     private ?UploadMemoryDeliverySink $uploadMemoryPoolSink = null;
+
+    /** Master-owned receiver for delivery window reports. */
+    private ?DeliverySettingsSink $deliverySettingsSink = null;
 
     /** @var array<int, UploadMemoryWorkerLifetime> Registered process/connection pairs retained through both exit facts */
     private array $uploadWorkerLifetimes = [];
@@ -350,10 +354,26 @@ abstract class WorkerServer extends AbstractServer implements
     protected function onCreateClient($socket): WorkerClientInterface
     {
         $client = new WorkerClient($socket, $this->agentManager, $this);
+        if ($this->deliverySettingsSink !== null) {
+            $client->setDeliverySettingsSink($this->deliverySettingsSink);
+        }
         if ($this->uploadMemoryPoolSink !== null) {
             $client->setUploadMemoryPoolSink($this->uploadMemoryPoolSink);
         }
         return $client;
+    }
+
+    /**
+     * @param DeliverySettingsSink $sink Receiver shared with this master's WebSocket delivery mirror
+     */
+    public function setDeliverySettingsSink(DeliverySettingsSink $sink): void
+    {
+        $this->deliverySettingsSink = $sink;
+        foreach ($this->clients as $client) {
+            if ($client instanceof WorkerClient) {
+                $client->setDeliverySettingsSink($sink);
+            }
+        }
     }
 
     /**
@@ -512,6 +532,7 @@ abstract class WorkerServer extends AbstractServer implements
      * stop — so a second leadership-loss signal is harmless. A child that starts extra
      * cluster-singletons in {@see onBecameSingletonHost()} may override to release matching
      * resources, calling parent::onLostSingletonHost() first.
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     public function onLostSingletonHost(): void
     {
@@ -1251,6 +1272,7 @@ abstract class WorkerServer extends AbstractServer implements
      * so the report means everything sent to the agent before the stop was handled - a SIGTERM sent on
      * a count of passes cut off the last batches still unread behind it (HIL-1314). A held worker whose
      * link is gone is not waited for, and the master's shutdown ceiling covers the wait.
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     protected function advanceSecondStopWave(): void
     {
@@ -1775,6 +1797,7 @@ abstract class WorkerServer extends AbstractServer implements
      *
      * Protected rather than private so a pass can be taken without the rest of {@see onTick()},
      * whose worker-process half needs a server built from a worker environment.
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     protected function advanceAgentsAwaitingWorker(): void
     {
@@ -2301,6 +2324,7 @@ abstract class WorkerServer extends AbstractServer implements
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     protected function stopAgent(string $agentType, ?string $agentIndex = null): void
     {
@@ -2478,6 +2502,7 @@ abstract class WorkerServer extends AbstractServer implements
      *
      * @param string $initiatorAgentType Initiator agent type left running
      * @param ?string $initiatorAgentIndex Initiator agent index, or null for a singleton initiator
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     public function stopAgentsForProtectedMode(string $initiatorAgentType, ?string $initiatorAgentIndex): void
     {
@@ -2668,6 +2693,7 @@ abstract class WorkerServer extends AbstractServer implements
      *
      * @throws RtActionsCollectionNameNullException When the switch a finished walk tells cannot name its row
      * @throws RtTruthSourceWriteNotAllowedException When that switch writes a row this master is not the truth source of
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     protected function advanceProtectedModeRoster(): void
     {
@@ -2915,6 +2941,7 @@ abstract class WorkerServer extends AbstractServer implements
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     public function revokePlacement(string $agentType, ?string $agentIndex): void
     {

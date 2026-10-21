@@ -29,6 +29,10 @@ class WebSocketPageSubscribeSignalDTO extends BaseDTO implements SignalDataDTO, 
     public const string PAGE = 'page';
     public const string PARAMS = 'params';
     public const string TABLE_WINDOWS = 'tableWindows';
+    public const string DELIVERY_ID = 'deliveryId';
+
+    /** @var ?string Delivery token; null when no delivery is being tracked */
+    public readonly ?string $deliveryId;
 
     /**
      * Creates page subscribe signal DTO.
@@ -37,13 +41,16 @@ class WebSocketPageSubscribeSignalDTO extends BaseDTO implements SignalDataDTO, 
      * @param ?string $page Page name, null when the signal name carries it
      * @param array<string, string> $params Route params
      * @param array<string, TableWindowDescriptorDTO> $tableWindows Windows the tab holds, by table key
+     * @param ?string $deliveryId Delivery token, or null/empty when delivery tracking is absent
      */
     public function __construct(
         public readonly string $acceptKey,
         public readonly ?string $page = null,
         public readonly array $params = [],
         public readonly array $tableWindows = [],
+        ?string $deliveryId = null,
     ) {
+        $this->deliveryId = $deliveryId === '' ? null : $deliveryId;
     }
 
     public function getAcceptKey(): string
@@ -77,6 +84,10 @@ class WebSocketPageSubscribeSignalDTO extends BaseDTO implements SignalDataDTO, 
             );
         }
 
+        if ($this->deliveryId !== null) {
+            $result[self::DELIVERY_ID] = $this->deliveryId;
+        }
+
         return $result;
     }
 
@@ -90,8 +101,8 @@ class WebSocketPageSubscribeSignalDTO extends BaseDTO implements SignalDataDTO, 
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
-     * @throws InvalidFormatException When the payload carries no accept key, or a window
-     *     descriptor carries no limit or addresses its window two ways at once
+     * @throws InvalidFormatException When the payload carries no accept key, a mistyped delivery id,
+     *     or a window descriptor carries no limit or addresses its window two ways at once
      */
     public static function fromArray(array $data): static
     {
@@ -102,6 +113,7 @@ class WebSocketPageSubscribeSignalDTO extends BaseDTO implements SignalDataDTO, 
             page: $page === '' ? null : $page,
             params: self::optionalArray($data, self::PARAMS) ?? [],
             tableWindows: self::readTableWindows($data),
+            deliveryId: self::optionalString($data, self::DELIVERY_ID),
         );
     }
 

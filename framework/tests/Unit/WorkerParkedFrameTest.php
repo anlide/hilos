@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\AgentConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentInterface;
@@ -25,10 +26,12 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Hilos;
+use Hilos\Socket\WebSocket\DTO\DeliveryCompleteSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
@@ -252,6 +255,33 @@ final class WorkerParkedFrameTest extends TestCase
         $this->assertSame([], $this->manager->failures);
     }
 
+    public function testSourceWaitKeepsTheTokenAndCompletesOnlyAfterTheRealPageRuns(): void
+    {
+        $this->manager->handleDaemonMessage(new AgentStartDTO(WorkerParkedFrameTestAgent::AGENT_TYPE));
+        $this->manager->handleDaemonMessage($this->pageSubscribe(WorkerParkedFrameTestReadingPage::PAGE, 'source-token'));
+        // Source acquisition can announce staleness, but cannot claim the page handler finished.
+        self::assertSame('rt_staleness', Hilos::$sr->getNextQueuedSignal()?->signalName->getName());
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+        self::assertSame([], $this->manager->agent(WorkerParkedFrameTestAgent::AGENT_TYPE)?->subscribedPages);
+        SourceInterestRegistry::markReady(SourceChange::KIND_RT, WorkerParkedFrameTestReader::COLLECTION);
+        $this->manager->pass(microtime(true));
+        $signals = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() !== 'rt_staleness') {
+                $signals[] = $signal;
+            }
+        }
+        self::assertCount(2, $signals);
+        self::assertSame(SignalTypeConstants::PAGE_RESPONSE, $signals[0]->signalName->getName());
+        $marker = $signals[1];
+        self::assertSame(SignalConstants::DELIVERY_COMPLETE, $marker?->signalName->getName());
+        self::assertInstanceOf(WebSocketSignalData::class, $marker?->data);
+        self::assertSame(self::ACCEPT_KEY, $marker->data->targetAcceptKey);
+        self::assertInstanceOf(DeliveryCompleteSignalData::class, $marker->data->data);
+        self::assertSame('source-token', $marker->data->data->deliveryId);
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
     public function testASecondSubscriptionHeldBehindAReleasedOneWaitsForItsOwnState(): void
     {
         // Released on its deadline, the first subscription is answered without its state; the one
@@ -343,15 +373,16 @@ final class WorkerParkedFrameTest extends TestCase
 
     /**
      * @param string $page Page the connection subscribes to
+     * @param ?string $deliveryId Optional internal delivery token
      * @return DaemonAgentMessageDTO Page subscription of the test connection
      */
-    private function pageSubscribe(string $page): DaemonAgentMessageDTO
+    private function pageSubscribe(string $page, ?string $deliveryId = null): DaemonAgentMessageDTO
     {
         return new DaemonAgentMessageDTO(WorkerParkedFrameTestAgent::AGENT_TYPE, new SignalDTO(
             new SignalSource(SignalSource::WEBSOCKET),
             new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),
             new SignalName($page),
-            new WebSocketPageSubscribeSignalDTO(self::ACCEPT_KEY, $page),
+            new WebSocketPageSubscribeSignalDTO(self::ACCEPT_KEY, $page, deliveryId: $deliveryId),
         ));
     }
 

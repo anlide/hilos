@@ -24,12 +24,14 @@ use Hilos\ProtectedMode\ProtectedModeStubCopy;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
+use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\Server\WebSocketServer;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Tests\Unit\WebSocketClientTestProbe;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use LogicException;
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
 use Socket;
 
 /**
@@ -121,6 +123,7 @@ final class ProtectedModeLockedOutDeliveryIntegrationTest extends TestCase
 
         $manager->notifyProtectedModeLockedOutState($this->announcement());
         $manager->dispatch();
+        $server->drainDeliveries();
 
         foreach ([$stranger, $cookieless] as $held) {
             $frame = $this->deliveredFrame($held);
@@ -150,6 +153,7 @@ final class ProtectedModeLockedOutDeliveryIntegrationTest extends TestCase
             self::sessionHash(self::OPERATOR_SESSION_TOKEN),
         );
         $manager->dispatch();
+        $server->drainDeliveries();
 
         $this->assertSame('', $operatorTab->outboundBytes());
         $this->assertSame('', $operatorSecondTab->outboundBytes());
@@ -172,6 +176,7 @@ final class ProtectedModeLockedOutDeliveryIntegrationTest extends TestCase
             self::sessionHash(self::MEMBER_SESSION_TOKEN),
         );
         $manager->dispatch();
+        $server->drainDeliveries();
 
         $this->assertSame(SignalTypeConstants::PROTECTED_MODE, $this->deliveredFrame($memberTab)['type'] ?? null);
         $this->assertSame(SignalTypeConstants::PROTECTED_MODE, $this->deliveredFrame($memberSecondTab)['type'] ?? null);
@@ -220,6 +225,7 @@ final class ProtectedModeLockedOutDeliveryIntegrationTest extends TestCase
 
         $manager->notifyProtectedModeLockedOutState($this->announcement());
         $manager->dispatch();
+        $server->drainDeliveries();
 
         $this->assertSame('', $stranger->outboundBytes());
         $this->assertSame('', $cookieless->outboundBytes());
@@ -274,7 +280,7 @@ final class ProtectedModeLockedOutDeliveryIntegrationTest extends TestCase
     }
 
     /**
-     * Decodes the one frame the dispatch pass wrote to this connection.
+     * Decodes the one frame the dispatch pass queued and a due delivery drain wrote to this connection.
      *
      * @param WebSocketClientTestProbe $probe Connection to read the delivery off
      * @return array<string, mixed> Decoded signal frame
@@ -326,7 +332,7 @@ final class LockedOutDeliveryTestManager extends DaemonManager
     }
 
     /**
-     * Drains the queue through the real dispatch pass, which is private to the manager.
+     * Runs the master's real dispatch pass, which queues deliveries for the websocket server.
      */
     public function dispatch(): void
     {
@@ -438,14 +444,25 @@ final class LockedOutDeliveryTestServer extends WebSocketServer
     }
 
     /**
-     * Drops the 101 and the welcome frame every connection was answered with, so what remains in a
-     * buffer afterwards is what the dispatch pass put there.
+     * Drops the 101 and welcome frame so later application delivery is the only data read from a
+     * connection's buffer.
      */
     public function forgetHandshakeBytes(): void
     {
         foreach ($this->clients as $client) {
             if ($client instanceof WebSocketClientTestProbe) {
                 $client->flushOutbound();
+            }
+        }
+    }
+
+    /** Materializes due deliveries by draining every socketless client's real delivery queue. */
+    public function drainDeliveries(): void
+    {
+        $deliveryDrain = new ReflectionMethod(WebSocketClient::class, 'drainDelivery');
+        foreach ($this->clients as $client) {
+            if ($client instanceof WebSocketClientTestProbe) {
+                $deliveryDrain->invoke($client, false);
             }
         }
     }

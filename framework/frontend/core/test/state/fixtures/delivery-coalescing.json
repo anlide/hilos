@@ -1,0 +1,7323 @@
+{
+  "version": 1,
+  "contract": "Expected snapshots omit revisions and publish counts. Entity snapshots stringify ids; references retain the last wire id. Viewport cases seed each distinct String(rowKey) from original row_updated frames with empty slots before ingesting.",
+  "cases": [
+    {
+      "name": "entities-ten-entity-field-updates",
+      "carrier": "entities",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "some_value": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "some_value": 2
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "some_value": 3
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "some_value": 4
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "some_value": 5
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "some_value": 6
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "some_value": 7
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "some_value": 8
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "some_value": 9
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "some_value": 10
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "some_value": 10
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "some_value": 10
+            }
+          }
+        ],
+        "data": {
+          "thing": {
+            "type": "thing",
+            "id": 42
+          }
+        },
+        "tables": {},
+        "lists": {}
+      }
+    },
+    {
+      "name": "entities-mixed-fields-null-nested",
+      "carrier": "entities",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "a": 1,
+                  "b": 1,
+                  "nested": {
+                    "old": 1,
+                    "keep": 2
+                  },
+                  "array": [1, 2]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "a": 2,
+                  "b": null,
+                  "nested": {
+                    "new": 3
+                  },
+                  "array": []
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "c": 4
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "a": 2,
+                  "b": null,
+                  "nested": {
+                    "new": 3
+                  },
+                  "array": [],
+                  "c": 4
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "a": 2,
+              "b": null,
+              "nested": {
+                "new": 3
+              },
+              "array": [],
+              "c": 4
+            }
+          }
+        ],
+        "data": {
+          "thing": {
+            "type": "thing",
+            "id": 42
+          }
+        },
+        "tables": {},
+        "lists": {}
+      }
+    },
+    {
+      "name": "tables-ten-entity-field-updates",
+      "carrier": "tables",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "some_value": 1
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "some_value": 2
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "some_value": 3
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "some_value": 4
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "some_value": 5
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "some_value": 6
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "some_value": 7
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "some_value": 8
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "some_value": 9
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "some_value": 10
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "some_value": 10
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "some_value": 10
+            }
+          }
+        ],
+        "data": {},
+        "tables": {
+          "t": [
+            {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "type": "thing",
+                  "id": 42
+                }
+              }
+            }
+          ]
+        },
+        "lists": {}
+      }
+    },
+    {
+      "name": "tables-mixed-fields-null-nested",
+      "carrier": "tables",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "a": 1,
+                          "b": 1,
+                          "nested": {
+                            "old": 1,
+                            "keep": 2
+                          },
+                          "array": [1, 2]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "a": 2,
+                          "b": null,
+                          "nested": {
+                            "new": 3
+                          },
+                          "array": []
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "c": 4
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "a": 2,
+                          "b": null,
+                          "nested": {
+                            "new": 3
+                          },
+                          "array": [],
+                          "c": 4
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "a": 2,
+              "b": null,
+              "nested": {
+                "new": 3
+              },
+              "array": [],
+              "c": 4
+            }
+          }
+        ],
+        "data": {},
+        "tables": {
+          "t": [
+            {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "type": "thing",
+                  "id": 42
+                }
+              }
+            }
+          ]
+        },
+        "lists": {}
+      }
+    },
+    {
+      "name": "lists-ten-entity-field-updates",
+      "carrier": "lists",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "some_value": 1
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "some_value": 2
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "some_value": 3
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "some_value": 4
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "some_value": 5
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "some_value": 6
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "some_value": 7
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "some_value": 8
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "some_value": 9
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "some_value": 10
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "some_value": 10
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "some_value": 10
+            }
+          }
+        ],
+        "data": {},
+        "tables": {},
+        "lists": {
+          "l": [
+            {
+              "itemKey": "r",
+              "slots": {
+                "thing": {
+                  "type": "thing",
+                  "id": 42
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "lists-mixed-fields-null-nested",
+      "carrier": "lists",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "a": 1,
+                          "b": 1,
+                          "nested": {
+                            "old": 1,
+                            "keep": 2
+                          },
+                          "array": [1, 2]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "a": 2,
+                          "b": null,
+                          "nested": {
+                            "new": 3
+                          },
+                          "array": []
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "c": 4
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "a": 2,
+                          "b": null,
+                          "nested": {
+                            "new": 3
+                          },
+                          "array": [],
+                          "c": 4
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "a": 2,
+              "b": null,
+              "nested": {
+                "new": 3
+              },
+              "array": [],
+              "c": 4
+            }
+          }
+        ],
+        "data": {},
+        "tables": {},
+        "lists": {
+          "l": [
+            {
+              "itemKey": "r",
+              "slots": {
+                "thing": {
+                  "type": "thing",
+                  "id": 42
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "viewport-ten-entity-field-updates",
+      "carrier": "viewport",
+      "original": [
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "some_value": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "some_value": 2
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "some_value": 3
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "some_value": 4
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "some_value": 5
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "some_value": 6
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "some_value": 7
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "some_value": 8
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "some_value": 9
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "some_value": 10
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "some_value": 10
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "some_value": 10
+            }
+          }
+        ],
+        "data": {},
+        "tables": {},
+        "lists": {},
+        "viewport": {
+          "rows": [
+            {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "type": "thing",
+                  "id": 42
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "viewport-mixed-fields-null-nested",
+      "carrier": "viewport",
+      "original": [
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "a": 1,
+                  "b": 1,
+                  "nested": {
+                    "old": 1,
+                    "keep": 2
+                  },
+                  "array": [1, 2]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "a": 2,
+                  "b": null,
+                  "nested": {
+                    "new": 3
+                  },
+                  "array": []
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "c": 4
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "a": 2,
+                  "b": null,
+                  "nested": {
+                    "new": 3
+                  },
+                  "array": [],
+                  "c": 4
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "a": 2,
+              "b": null,
+              "nested": {
+                "new": 3
+              },
+              "array": [],
+              "c": 4
+            }
+          }
+        ],
+        "data": {},
+        "tables": {},
+        "lists": {},
+        "viewport": {
+          "rows": [
+            {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "type": "thing",
+                  "id": 42
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "tables-slots-left-to-right",
+      "carrier": "tables",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "left": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "right": 2
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "left": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "right": 2
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [],
+        "data": {},
+        "tables": {
+          "t": [
+            {
+              "rowKey": "r",
+              "slots": {
+                "right": 2
+              }
+            }
+          ]
+        },
+        "lists": {}
+      }
+    },
+    {
+      "name": "tables-slots-a-b-a",
+      "carrier": "tables",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "left": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "right": 2
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "left": 3
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "left": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "right": 2
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "left": 3
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [],
+        "data": {},
+        "tables": {
+          "t": [
+            {
+              "rowKey": "r",
+              "slots": {
+                "left": 3
+              }
+            }
+          ]
+        },
+        "lists": {}
+      }
+    },
+    {
+      "name": "tables-slots-empty-and-add",
+      "carrier": "tables",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "left": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {}
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "left": 2,
+                        "right": 3
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "left": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {}
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "left": 2,
+                        "right": 3
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [],
+        "data": {},
+        "tables": {
+          "t": [
+            {
+              "rowKey": "r",
+              "slots": {
+                "left": 2,
+                "right": 3
+              }
+            }
+          ]
+        },
+        "lists": {}
+      }
+    },
+    {
+      "name": "tables-plain-entity-null-identity",
+      "carrier": "tables",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "a": 1
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": null
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 43,
+                          "b": 2
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "a": 1
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": null
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 43,
+                          "b": 2
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "a": 1
+            }
+          },
+          {
+            "type": "thing",
+            "id": "43",
+            "fields": {
+              "id": 43,
+              "b": 2
+            }
+          }
+        ],
+        "data": {},
+        "tables": {
+          "t": [
+            {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "type": "thing",
+                  "id": 43
+                }
+              }
+            }
+          ]
+        },
+        "lists": {}
+      }
+    },
+    {
+      "name": "tables-entity-array-slot",
+      "carrier": "tables",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": [
+                          {
+                            "id": 42,
+                            "a": 1
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": [
+                          {
+                            "id": 42,
+                            "b": 2
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": [
+                          {
+                            "id": 42,
+                            "a": 1
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": [
+                          {
+                            "id": 42,
+                            "b": 2
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "a": 1,
+              "b": 2
+            }
+          }
+        ],
+        "data": {},
+        "tables": {
+          "t": [
+            {
+              "rowKey": "r",
+              "slots": {
+                "thing": [
+                  {
+                    "type": "thing",
+                    "id": 42
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "lists": {}
+      }
+    },
+    {
+      "name": "tables-disappeared-entity-remains-referenced",
+      "carrier": "tables",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "a": 1
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "plain": "remaining"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "a": 1
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "plain": "remaining"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "a": 1
+            }
+          }
+        ],
+        "data": {
+          "alias": {
+            "type": "thing",
+            "id": 42
+          }
+        },
+        "tables": {
+          "t": [
+            {
+              "rowKey": "r",
+              "slots": {
+                "plain": "remaining"
+              }
+            }
+          ]
+        },
+        "lists": {}
+      },
+      "initial": {
+        "entities": {
+          "alias": {
+            "id": 42
+          }
+        }
+      },
+      "entityTypes": {
+        "alias": "thing"
+      }
+    },
+    {
+      "name": "tables-cross-row-alias-order",
+      "carrier": "tables",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "a",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "x": "old"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "b",
+                      "slots": {
+                        "alias": {
+                          "id": 42,
+                          "x": "new"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "a",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "y": 3
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "a",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "x": "old"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "b",
+                      "slots": {
+                        "alias": {
+                          "id": 42,
+                          "x": "new"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "a",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "y": 3
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "x": "new",
+              "y": 3
+            }
+          }
+        ],
+        "data": {},
+        "tables": {
+          "t": [
+            {
+              "rowKey": "a",
+              "slots": {
+                "thing": {
+                  "type": "thing",
+                  "id": 42
+                }
+              }
+            },
+            {
+              "rowKey": "b",
+              "slots": {
+                "alias": {
+                  "type": "thing",
+                  "id": 42
+                }
+              }
+            }
+          ]
+        },
+        "lists": {}
+      },
+      "entityTypes": {
+        "alias": "thing"
+      }
+    },
+    {
+      "name": "tables-typed-row-and-id-string-collision",
+      "carrier": "tables",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": 1,
+                      "slots": {
+                        "thing": {
+                          "id": 1,
+                          "x": "old"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "1",
+                      "slots": {
+                        "thing": {
+                          "id": "1",
+                          "x": "new"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": 1,
+                      "slots": {
+                        "thing": {
+                          "id": 1,
+                          "y": 3
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": 1,
+                      "slots": {
+                        "thing": {
+                          "id": 1,
+                          "x": "old"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "1",
+                      "slots": {
+                        "thing": {
+                          "id": "1",
+                          "x": "new"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": 1,
+                      "slots": {
+                        "thing": {
+                          "id": 1,
+                          "y": 3
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "1",
+            "fields": {
+              "id": 1,
+              "x": "new",
+              "y": 3
+            }
+          }
+        ],
+        "data": {},
+        "tables": {
+          "t": [
+            {
+              "rowKey": "1",
+              "slots": {
+                "thing": {
+                  "type": "thing",
+                  "id": 1
+                }
+              }
+            }
+          ]
+        },
+        "lists": {}
+      }
+    },
+    {
+      "name": "lists-slots-left-to-right",
+      "carrier": "lists",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "left": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "right": 2
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "left": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "right": 2
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [],
+        "data": {},
+        "tables": {},
+        "lists": {
+          "l": [
+            {
+              "itemKey": "r",
+              "slots": {
+                "right": 2
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "lists-slots-a-b-a",
+      "carrier": "lists",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "left": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "right": 2
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "left": 3
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "left": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "right": 2
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "left": 3
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [],
+        "data": {},
+        "tables": {},
+        "lists": {
+          "l": [
+            {
+              "itemKey": "r",
+              "slots": {
+                "left": 3
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "lists-slots-empty-and-add",
+      "carrier": "lists",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "left": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {}
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "left": 2,
+                        "right": 3
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "left": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {}
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "left": 2,
+                        "right": 3
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [],
+        "data": {},
+        "tables": {},
+        "lists": {
+          "l": [
+            {
+              "itemKey": "r",
+              "slots": {
+                "left": 2,
+                "right": 3
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "lists-plain-entity-null-identity",
+      "carrier": "lists",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "a": 1
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": null
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 43,
+                          "b": 2
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "a": 1
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": null
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 43,
+                          "b": 2
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "a": 1
+            }
+          },
+          {
+            "type": "thing",
+            "id": "43",
+            "fields": {
+              "id": 43,
+              "b": 2
+            }
+          }
+        ],
+        "data": {},
+        "tables": {},
+        "lists": {
+          "l": [
+            {
+              "itemKey": "r",
+              "slots": {
+                "thing": {
+                  "type": "thing",
+                  "id": 43
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "lists-entity-array-slot",
+      "carrier": "lists",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": [
+                          {
+                            "id": 42,
+                            "a": 1
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": [
+                          {
+                            "id": 42,
+                            "b": 2
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": [
+                          {
+                            "id": 42,
+                            "a": 1
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": [
+                          {
+                            "id": 42,
+                            "b": 2
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "a": 1,
+              "b": 2
+            }
+          }
+        ],
+        "data": {},
+        "tables": {},
+        "lists": {
+          "l": [
+            {
+              "itemKey": "r",
+              "slots": {
+                "thing": [
+                  {
+                    "type": "thing",
+                    "id": 42
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "lists-disappeared-entity-remains-referenced",
+      "carrier": "lists",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "a": 1
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "plain": "remaining"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "a": 1
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "r",
+                      "slots": {
+                        "plain": "remaining"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "a": 1
+            }
+          }
+        ],
+        "data": {
+          "alias": {
+            "type": "thing",
+            "id": 42
+          }
+        },
+        "tables": {},
+        "lists": {
+          "l": [
+            {
+              "itemKey": "r",
+              "slots": {
+                "plain": "remaining"
+              }
+            }
+          ]
+        }
+      },
+      "initial": {
+        "entities": {
+          "alias": {
+            "id": 42
+          }
+        }
+      },
+      "entityTypes": {
+        "alias": "thing"
+      }
+    },
+    {
+      "name": "lists-cross-row-alias-order",
+      "carrier": "lists",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "a",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "x": "old"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "b",
+                      "slots": {
+                        "alias": {
+                          "id": 42,
+                          "x": "new"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "a",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "y": 3
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "a",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "x": "old"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "b",
+                      "slots": {
+                        "alias": {
+                          "id": 42,
+                          "x": "new"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "a",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "y": 3
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "x": "new",
+              "y": 3
+            }
+          }
+        ],
+        "data": {},
+        "tables": {},
+        "lists": {
+          "l": [
+            {
+              "itemKey": "a",
+              "slots": {
+                "thing": {
+                  "type": "thing",
+                  "id": 42
+                }
+              }
+            },
+            {
+              "itemKey": "b",
+              "slots": {
+                "alias": {
+                  "type": "thing",
+                  "id": 42
+                }
+              }
+            }
+          ]
+        }
+      },
+      "entityTypes": {
+        "alias": "thing"
+      }
+    },
+    {
+      "name": "lists-typed-row-and-id-string-collision",
+      "carrier": "lists",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": 1,
+                      "slots": {
+                        "thing": {
+                          "id": 1,
+                          "x": "old"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "1",
+                      "slots": {
+                        "thing": {
+                          "id": "1",
+                          "x": "new"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": 1,
+                      "slots": {
+                        "thing": {
+                          "id": 1,
+                          "y": 3
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": 1,
+                      "slots": {
+                        "thing": {
+                          "id": 1,
+                          "x": "old"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "1",
+                      "slots": {
+                        "thing": {
+                          "id": "1",
+                          "x": "new"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": 1,
+                      "slots": {
+                        "thing": {
+                          "id": 1,
+                          "y": 3
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "1",
+            "fields": {
+              "id": 1,
+              "x": "new",
+              "y": 3
+            }
+          }
+        ],
+        "data": {},
+        "tables": {},
+        "lists": {
+          "l": [
+            {
+              "itemKey": "1",
+              "slots": {
+                "thing": {
+                  "type": "thing",
+                  "id": 1
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "viewport-slots-left-to-right",
+      "carrier": "viewport",
+      "original": [
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "left": 1
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "right": 2
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "left": 1
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "right": 2
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [],
+        "data": {},
+        "tables": {},
+        "lists": {},
+        "viewport": {
+          "rows": [
+            {
+              "rowKey": "r",
+              "slots": {
+                "right": 2
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "viewport-slots-a-b-a",
+      "carrier": "viewport",
+      "original": [
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "left": 1
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "right": 2
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "left": 3
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "left": 1
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "right": 2
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "left": 3
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [],
+        "data": {},
+        "tables": {},
+        "lists": {},
+        "viewport": {
+          "rows": [
+            {
+              "rowKey": "r",
+              "slots": {
+                "left": 3
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "viewport-slots-empty-and-add",
+      "carrier": "viewport",
+      "original": [
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "left": 1
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {}
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "left": 2,
+                "right": 3
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "left": 1
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {}
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "left": 2,
+                "right": 3
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [],
+        "data": {},
+        "tables": {},
+        "lists": {},
+        "viewport": {
+          "rows": [
+            {
+              "rowKey": "r",
+              "slots": {
+                "left": 2,
+                "right": 3
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "viewport-plain-entity-null-identity",
+      "carrier": "viewport",
+      "original": [
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": 1
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "a": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": null
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 43,
+                  "b": 2
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": 1
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "a": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": null
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 43,
+                  "b": 2
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "a": 1
+            }
+          },
+          {
+            "type": "thing",
+            "id": "43",
+            "fields": {
+              "id": 43,
+              "b": 2
+            }
+          }
+        ],
+        "data": {},
+        "tables": {},
+        "lists": {},
+        "viewport": {
+          "rows": [
+            {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "type": "thing",
+                  "id": 43
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "viewport-entity-array-slot",
+      "carrier": "viewport",
+      "original": [
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": [
+                  {
+                    "id": 42,
+                    "a": 1
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": [
+                  {
+                    "id": 42,
+                    "b": 2
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": [
+                  {
+                    "id": 42,
+                    "a": 1
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": [
+                  {
+                    "id": 42,
+                    "b": 2
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "a": 1,
+              "b": 2
+            }
+          }
+        ],
+        "data": {},
+        "tables": {},
+        "lists": {},
+        "viewport": {
+          "rows": [
+            {
+              "rowKey": "r",
+              "slots": {
+                "thing": [
+                  {
+                    "type": "thing",
+                    "id": 42
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "viewport-disappeared-entity-remains-referenced",
+      "carrier": "viewport",
+      "original": [
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "a": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "plain": "remaining"
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "a": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "plain": "remaining"
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "a": 1
+            }
+          }
+        ],
+        "data": {
+          "alias": {
+            "type": "thing",
+            "id": 42
+          }
+        },
+        "tables": {},
+        "lists": {},
+        "viewport": {
+          "rows": [
+            {
+              "rowKey": "r",
+              "slots": {
+                "plain": "remaining"
+              }
+            }
+          ]
+        }
+      },
+      "initial": {
+        "entities": {
+          "alias": {
+            "id": 42
+          }
+        }
+      },
+      "entityTypes": {
+        "alias": "thing"
+      }
+    },
+    {
+      "name": "viewport-cross-row-alias-order",
+      "carrier": "viewport",
+      "original": [
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "a",
+            "row": {
+              "rowKey": "a",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "x": "old"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "b",
+            "row": {
+              "rowKey": "b",
+              "slots": {
+                "alias": {
+                  "id": 42,
+                  "x": "new"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "a",
+            "row": {
+              "rowKey": "a",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "y": 3
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "a",
+            "row": {
+              "rowKey": "a",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "x": "old"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "b",
+            "row": {
+              "rowKey": "b",
+              "slots": {
+                "alias": {
+                  "id": 42,
+                  "x": "new"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "a",
+            "row": {
+              "rowKey": "a",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "y": 3
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "x": "new",
+              "y": 3
+            }
+          }
+        ],
+        "data": {},
+        "tables": {},
+        "lists": {},
+        "viewport": {
+          "rows": [
+            {
+              "rowKey": "a",
+              "slots": {
+                "thing": {
+                  "type": "thing",
+                  "id": 42
+                }
+              }
+            },
+            {
+              "rowKey": "b",
+              "slots": {
+                "alias": {
+                  "type": "thing",
+                  "id": 42
+                }
+              }
+            }
+          ]
+        }
+      },
+      "entityTypes": {
+        "alias": "thing"
+      }
+    },
+    {
+      "name": "viewport-typed-row-and-id-string-collision",
+      "carrier": "viewport",
+      "original": [
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": 1,
+            "row": {
+              "rowKey": 1,
+              "slots": {
+                "thing": {
+                  "id": 1,
+                  "x": "old"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "1",
+            "row": {
+              "rowKey": "1",
+              "slots": {
+                "thing": {
+                  "id": "1",
+                  "x": "new"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": 1,
+            "row": {
+              "rowKey": 1,
+              "slots": {
+                "thing": {
+                  "id": 1,
+                  "y": 3
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": 1,
+            "row": {
+              "rowKey": 1,
+              "slots": {
+                "thing": {
+                  "id": 1,
+                  "x": "old"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "1",
+            "row": {
+              "rowKey": "1",
+              "slots": {
+                "thing": {
+                  "id": "1",
+                  "x": "new"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": 1,
+            "row": {
+              "rowKey": 1,
+              "slots": {
+                "thing": {
+                  "id": 1,
+                  "y": 3
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "1",
+            "fields": {
+              "id": 1,
+              "x": "new",
+              "y": 3
+            }
+          }
+        ],
+        "data": {},
+        "tables": {},
+        "lists": {},
+        "viewport": {
+          "rows": [
+            {
+              "rowKey": "1",
+              "slots": {
+                "thing": {
+                  "type": "thing",
+                  "id": 1
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "page-independent-insertion-order-and-data",
+      "carrier": "page",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "data": {
+                "a": 1,
+                "blob": {
+                  "old": 1
+                }
+              },
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "b",
+                      "slots": {
+                        "n": 1
+                      }
+                    }
+                  ]
+                }
+              },
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "z",
+                      "slots": {
+                        "n": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "data": {
+                "b": 2,
+                "blob": {
+                  "new": 2
+                }
+              },
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "a",
+                      "slots": {
+                        "n": 2
+                      }
+                    }
+                  ]
+                }
+              },
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "y",
+                      "slots": {
+                        "n": 2
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "b",
+                      "slots": {
+                        "n": 3
+                      }
+                    }
+                  ]
+                }
+              },
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "z",
+                      "slots": {
+                        "n": 3
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "data": {
+                "a": 1,
+                "blob": {
+                  "new": 2
+                },
+                "b": 2
+              },
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "b",
+                      "slots": {
+                        "n": 3
+                      }
+                    },
+                    {
+                      "rowKey": "a",
+                      "slots": {
+                        "n": 2
+                      }
+                    }
+                  ]
+                }
+              },
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "z",
+                      "slots": {
+                        "n": 3
+                      }
+                    },
+                    {
+                      "itemKey": "y",
+                      "slots": {
+                        "n": 2
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "data": {
+          "a": 1,
+          "blob": {
+            "new": 2
+          },
+          "b": 2
+        },
+        "entities": [],
+        "tables": {
+          "t": [
+            {
+              "rowKey": "b",
+              "slots": {
+                "n": 3
+              }
+            },
+            {
+              "rowKey": "a",
+              "slots": {
+                "n": 2
+              }
+            }
+          ]
+        },
+        "lists": {
+          "l": [
+            {
+              "itemKey": "z",
+              "slots": {
+                "n": 3
+              }
+            },
+            {
+              "itemKey": "y",
+              "slots": {
+                "n": 2
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "page-structural-frame-is-atomic",
+      "carrier": "page",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "x": 1
+                }
+              },
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "left": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "y": 2
+                }
+              },
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "right": 2
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "x": 1
+                }
+              },
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "left": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "y": 2
+                }
+              },
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "right": 2
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "data": {
+          "thing": {
+            "type": "thing",
+            "id": 42
+          }
+        },
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "x": 1,
+              "y": 2
+            }
+          }
+        ],
+        "tables": {
+          "t": [
+            {
+              "rowKey": "r",
+              "slots": {
+                "right": 2
+              }
+            }
+          ]
+        },
+        "lists": {}
+      }
+    },
+    {
+      "name": "tables-delete-recreate-clear",
+      "carrier": "tables",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "b",
+                      "slots": {
+                        "n": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "deleted": ["b"]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "b",
+                      "slots": {
+                        "n": 2
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "cleared": true,
+                  "rows": [
+                    {
+                      "rowKey": "c",
+                      "slots": {
+                        "n": 3
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "b",
+                      "slots": {
+                        "n": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "deleted": ["b"]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "b",
+                      "slots": {
+                        "n": 2
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "cleared": true,
+                  "rows": [
+                    {
+                      "rowKey": "c",
+                      "slots": {
+                        "n": 3
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [],
+        "data": {},
+        "tables": {
+          "t": [
+            {
+              "rowKey": "c",
+              "slots": {
+                "n": 3
+              }
+            }
+          ]
+        },
+        "lists": {}
+      }
+    },
+    {
+      "name": "lists-delete-recreate-clear",
+      "carrier": "lists",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "b",
+                      "slots": {
+                        "n": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "deleted": ["b"]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "b",
+                      "slots": {
+                        "n": 2
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "cleared": true,
+                  "items": [
+                    {
+                      "itemKey": "c",
+                      "slots": {
+                        "n": 3
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "b",
+                      "slots": {
+                        "n": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "deleted": ["b"]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "b",
+                      "slots": {
+                        "n": 2
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "cleared": true,
+                  "items": [
+                    {
+                      "itemKey": "c",
+                      "slots": {
+                        "n": 3
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [],
+        "data": {},
+        "tables": {},
+        "lists": {
+          "l": [
+            {
+              "itemKey": "c",
+              "slots": {
+                "n": 3
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "page-entity-alias-order",
+      "carrier": "page",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "x": "old"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "alias": {
+                  "id": 42,
+                  "x": "new"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "y": 3
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "x": "old"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "alias": {
+                  "id": 42,
+                  "x": "new"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "y": 3
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "data": {
+          "thing": {
+            "type": "thing",
+            "id": 42
+          },
+          "alias": {
+            "type": "thing",
+            "id": 42
+          }
+        },
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "x": "new",
+              "y": 3
+            }
+          }
+        ],
+        "tables": {},
+        "lists": {}
+      },
+      "entityTypes": {
+        "alias": "thing"
+      }
+    },
+    {
+      "name": "page-entity-null-and-id-transition",
+      "carrier": "page",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "a": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": null
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 43,
+                  "b": 2
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "a": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": null
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 43,
+                  "b": 2
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "data": {
+          "thing": {
+            "type": "thing",
+            "id": 43
+          }
+        },
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "a": 1
+            }
+          },
+          {
+            "type": "thing",
+            "id": "43",
+            "fields": {
+              "id": 43,
+              "b": 2
+            }
+          }
+        ],
+        "tables": {},
+        "lists": {}
+      }
+    },
+    {
+      "name": "viewport-own-and-stale-boundaries",
+      "carrier": "viewport",
+      "original": [
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "x": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_stale",
+            "rowKey": "r",
+            "staleSources": ["thing"]
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "y": 2
+                }
+              },
+              "staleSources": ["thing"]
+            },
+            "own": true
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "x": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_stale",
+            "rowKey": "r",
+            "staleSources": ["thing"]
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "y": 2
+                }
+              },
+              "staleSources": ["thing"]
+            },
+            "own": true
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "x": 1,
+              "y": 2
+            }
+          }
+        ],
+        "data": {},
+        "tables": {},
+        "lists": {},
+        "viewport": {
+          "rows": [
+            {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "type": "thing",
+                  "id": 42
+                }
+              },
+              "staleSources": ["thing"]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "viewport-own-transitions",
+      "carrier": "viewport",
+      "original": [
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "x": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "y": 2
+                }
+              }
+            },
+            "own": true
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "z": 3
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "x": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "y": 2
+                }
+              }
+            },
+            "own": true
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "z": 3
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "x": 1,
+              "y": 2,
+              "z": 3
+            }
+          }
+        ],
+        "data": {},
+        "tables": {},
+        "lists": {},
+        "viewport": {
+          "rows": [
+            {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "type": "thing",
+                  "id": 42
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "page-empty-map-list-identity",
+      "carrier": "page",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "map": {},
+                  "list": [1]
+                }
+              },
+              "data": {
+                "blob": []
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "list": []
+                }
+              },
+              "data": {
+                "blob": {}
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "map": {},
+                  "list": []
+                }
+              },
+              "data": {
+                "blob": {}
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "data": {
+          "thing": {
+            "type": "thing",
+            "id": 42
+          },
+          "blob": {}
+        },
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "map": {},
+              "list": []
+            }
+          }
+        ],
+        "tables": {},
+        "lists": {}
+      }
+    },
+    {
+      "name": "tables-independent-entity-row-order",
+      "carrier": "tables",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "a",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "x": 1
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "b",
+                      "slots": {
+                        "thing": {
+                          "id": 43,
+                          "z": 2
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "a",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "y": 3
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "a",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "x": 1,
+                          "y": 3
+                        }
+                      }
+                    },
+                    {
+                      "rowKey": "b",
+                      "slots": {
+                        "thing": {
+                          "id": 43,
+                          "z": 2
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "x": 1,
+              "y": 3
+            }
+          },
+          {
+            "type": "thing",
+            "id": "43",
+            "fields": {
+              "id": 43,
+              "z": 2
+            }
+          }
+        ],
+        "data": {},
+        "tables": {
+          "t": [
+            {
+              "rowKey": "a",
+              "slots": {
+                "thing": {
+                  "type": "thing",
+                  "id": 42
+                }
+              }
+            },
+            {
+              "rowKey": "b",
+              "slots": {
+                "thing": {
+                  "type": "thing",
+                  "id": 43
+                }
+              }
+            }
+          ]
+        },
+        "lists": {}
+      }
+    },
+    {
+      "name": "lists-independent-entity-row-order",
+      "carrier": "lists",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "a",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "x": 1
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "b",
+                      "slots": {
+                        "thing": {
+                          "id": 43,
+                          "z": 2
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "a",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "y": 3
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "a",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "x": 1,
+                          "y": 3
+                        }
+                      }
+                    },
+                    {
+                      "itemKey": "b",
+                      "slots": {
+                        "thing": {
+                          "id": 43,
+                          "z": 2
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "x": 1,
+              "y": 3
+            }
+          },
+          {
+            "type": "thing",
+            "id": "43",
+            "fields": {
+              "id": 43,
+              "z": 2
+            }
+          }
+        ],
+        "data": {},
+        "tables": {},
+        "lists": {
+          "l": [
+            {
+              "itemKey": "a",
+              "slots": {
+                "thing": {
+                  "type": "thing",
+                  "id": 42
+                }
+              }
+            },
+            {
+              "itemKey": "b",
+              "slots": {
+                "thing": {
+                  "type": "thing",
+                  "id": 43
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "viewport-independent-entity-row-order",
+      "carrier": "viewport",
+      "original": [
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "a",
+            "row": {
+              "rowKey": "a",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "x": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "b",
+            "row": {
+              "rowKey": "b",
+              "slots": {
+                "thing": {
+                  "id": 43,
+                  "z": 2
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "a",
+            "row": {
+              "rowKey": "a",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "y": 3
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "b",
+            "row": {
+              "rowKey": "b",
+              "slots": {
+                "thing": {
+                  "id": 43,
+                  "z": 2
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "a",
+            "row": {
+              "rowKey": "a",
+              "slots": {
+                "thing": {
+                  "id": 42,
+                  "x": 1,
+                  "y": 3
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "x": 1,
+              "y": 3
+            }
+          },
+          {
+            "type": "thing",
+            "id": "43",
+            "fields": {
+              "id": 43,
+              "z": 2
+            }
+          }
+        ],
+        "data": {},
+        "tables": {},
+        "lists": {},
+        "viewport": {
+          "rows": [
+            {
+              "rowKey": "a",
+              "slots": {
+                "thing": {
+                  "type": "thing",
+                  "id": 42
+                }
+              }
+            },
+            {
+              "rowKey": "b",
+              "slots": {
+                "thing": {
+                  "type": "thing",
+                  "id": 43
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "page-cross-section-alias-order",
+      "carrier": "page",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "x": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "a",
+                      "slots": {
+                        "alias": {
+                          "id": 42,
+                          "x": 2
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "y": 3
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "x": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "a",
+                      "slots": {
+                        "alias": {
+                          "id": 42,
+                          "x": 2
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "y": 3
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "data": {
+          "thing": {
+            "type": "thing",
+            "id": 42
+          }
+        },
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "x": 2,
+              "y": 3
+            }
+          }
+        ],
+        "tables": {},
+        "lists": {
+          "l": [
+            {
+              "itemKey": "a",
+              "slots": {
+                "alias": {
+                  "type": "thing",
+                  "id": 42
+                }
+              }
+            }
+          ]
+        }
+      },
+      "entityTypes": {
+        "alias": "thing"
+      }
+    },
+    {
+      "name": "page-viewport-cross-carrier-alias-order",
+      "carrier": "mixed",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "x": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "alias": {
+                  "id": 42,
+                  "x": 2
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "y": 3
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "x": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "table_viewport_delta",
+          "data": {
+            "page": "p",
+            "tableKey": "t",
+            "kind": "row_updated",
+            "rowKey": "r",
+            "row": {
+              "rowKey": "r",
+              "slots": {
+                "alias": {
+                  "id": 42,
+                  "x": 2
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "entities": {
+                "thing": {
+                  "id": 42,
+                  "y": 3
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "data": {
+          "thing": {
+            "type": "thing",
+            "id": 42
+          }
+        },
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "x": 2,
+              "y": 3
+            }
+          }
+        ],
+        "tables": {},
+        "lists": {},
+        "viewport": {
+          "rows": [
+            {
+              "rowKey": "r",
+              "slots": {
+                "alias": {
+                  "type": "thing",
+                  "id": 42
+                }
+              }
+            }
+          ]
+        }
+      },
+      "entityTypes": {
+        "alias": "thing"
+      }
+    },
+    {
+      "name": "page-table-staleness-is-atomic",
+      "carrier": "page",
+      "original": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "x": 1
+                        }
+                      },
+                      "staleSources": ["thing"]
+                    }
+                  ]
+                }
+              },
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "a",
+                      "slots": {
+                        "n": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "y": 2
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "a",
+                      "slots": {
+                        "n": 2
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "z": 3
+                        }
+                      },
+                      "staleSources": []
+                    }
+                  ]
+                }
+              },
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "b",
+                      "slots": {
+                        "n": 3
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "coalesced": [
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "x": 1
+                        }
+                      },
+                      "staleSources": ["thing"]
+                    }
+                  ]
+                }
+              },
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "a",
+                      "slots": {
+                        "n": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "y": 2
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "a",
+                      "slots": {
+                        "n": 2
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "page_response",
+          "data": {
+            "page": "p",
+            "payload": {
+              "tables": {
+                "t": {
+                  "rows": [
+                    {
+                      "rowKey": "r",
+                      "slots": {
+                        "thing": {
+                          "id": 42,
+                          "z": 3
+                        }
+                      },
+                      "staleSources": []
+                    }
+                  ]
+                }
+              },
+              "lists": {
+                "l": {
+                  "items": [
+                    {
+                      "itemKey": "b",
+                      "slots": {
+                        "n": 3
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "data": {},
+        "entities": [
+          {
+            "type": "thing",
+            "id": "42",
+            "fields": {
+              "id": 42,
+              "x": 1,
+              "y": 2,
+              "z": 3
+            }
+          }
+        ],
+        "tables": {
+          "t": [
+            {
+              "rowKey": "r",
+              "slots": {
+                "thing": {
+                  "type": "thing",
+                  "id": 42
+                }
+              },
+              "staleSources": []
+            }
+          ]
+        },
+        "lists": {
+          "l": [
+            {
+              "itemKey": "a",
+              "slots": {
+                "n": 2
+              }
+            },
+            {
+              "itemKey": "b",
+              "slots": {
+                "n": 3
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

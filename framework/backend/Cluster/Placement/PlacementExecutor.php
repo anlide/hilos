@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Placement;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentNotLinkedToWorkerException;
 use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
@@ -86,6 +87,7 @@ interface PlacementExecutor
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     public function revokePlacement(string $agentType, ?string $agentIndex): void;
 }

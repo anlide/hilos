@@ -37,6 +37,7 @@ use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Server\CommandServer;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
+use Hilos\Socket\WebSocket\DTO\DeliveryCompleteSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
@@ -140,6 +141,39 @@ final class DaemonManagerAgentStartRefusedTest extends TestCase
         $this->assertSame(HttpConstants::HTTP_SERVICE_UNAVAILABLE, $error->httpCode);
         $this->assertSame('agent_unavailable', $error->errorCode);
         $this->assertSame([], $manager->deliveredTo());
+    }
+
+    public function testATrackedParkedSubscribeGetsTheTerminalErrorBeforeItsMatchingCompletion(): void
+    {
+        $manager = new AgentStartRefusedTestManager();
+        Hilos::$sr->queueSignal(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),
+            new SignalName(AgentStartRefusedTestRouter::AWAITING_PAGE),
+            new WebSocketPageSubscribeSignalDTO(
+                self::ACCEPT_KEY,
+                AgentStartRefusedTestRouter::AWAITING_PAGE,
+                deliveryId: 'server-token',
+            ),
+        );
+        $manager->drainQueue();
+        $reflection = new ReflectionClass(DaemonManager::class);
+        $this->assertCount(1, $reflection->getProperty('parkedAgentSignals')->getValue($manager));
+        $manager->getAgentManagerDaemon()->reportAgentStartFailed(AgentStartRefusedTestRouter::AWAITING_AGENT, 'failed start');
+        $error = Hilos::$sr->getNextQueuedSignal();
+        $this->assertSame(SignalConstants::SUBSCRIPTION_PAGE_ERROR, $error->signalName->getName());
+        $this->assertSame('agent_unavailable', $error->data->data->errorCode);
+        $completion = Hilos::$sr->getNextQueuedSignal();
+        $this->assertSame(SignalConstants::DELIVERY_COMPLETE, $completion->signalName->getName());
+        $this->assertInstanceOf(DeliveryCompleteSignalData::class, $completion->data->data);
+        $this->assertSame('server-token', $completion->data->data->deliveryId);
+        $this->assertSame(AgentStartRefusedTestRouter::AWAITING_PAGE, $completion->data->data->page);
+        $this->assertSame(self::ACCEPT_KEY, $completion->data->targetAcceptKey);
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+        $this->assertSame([], $reflection->getProperty('parkedAgentSignals')->getValue($manager));
+        $this->assertSame([], $reflection->getProperty('releasedAgentSignals')->getValue($manager));
+        $manager->getAgentManagerDaemon()->reportAgentStartFailed(AgentStartRefusedTestRouter::AWAITING_AGENT, 'duplicate');
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
     }
 
     public function testAnOperatorWaitingOnTheRefusedAgentIsAnsweredByName(): void

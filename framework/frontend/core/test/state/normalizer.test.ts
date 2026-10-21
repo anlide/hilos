@@ -1,8 +1,48 @@
 import { describe, expect, it } from 'vitest'
 import { type EntityFragment, ingest } from '../../src/state/normalizer.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
+import {
+  deliveryCases,
+  ingestDeliveryFrames,
+  probeDeliveryScope,
+} from './fixtures/deliveryCoalescing.js'
 
 describe('ingest', () => {
+  it.each(deliveryCases)(
+    'preserves delivery fixture $name through the real scope stores',
+    (testCase) => {
+      const run = (frames: typeof testCase.original) => {
+        const probe = probeDeliveryScope()
+        try {
+          ingest(probe.scope, testCase.initial ?? {}, {
+            entityTypes: testCase.entityTypes,
+          })
+          ingestDeliveryFrames(probe.scope, testCase, frames)
+          return probe.snapshot()
+        } finally {
+          probe.restore()
+        }
+      }
+      const original = run(testCase.original)
+      const coalesced = run(testCase.coalesced)
+      expect(coalesced).toEqual(original)
+      expect(original).toEqual(
+        Object.fromEntries(
+          Object.entries(testCase.expected).filter(
+            ([key]) => key !== 'viewport',
+          ),
+        ),
+      )
+      expect(coalesced).toEqual(
+        Object.fromEntries(
+          Object.entries(testCase.expected).filter(
+            ([key]) => key !== 'viewport',
+          ),
+        ),
+      )
+    },
+  )
+
   it('upserts a single entity slot and leaves a reference in the data store', () => {
     const scope = new ScopeManager().openPage('a')
     ingest(scope, { entities: { author: { id: 7, name: 'Ann' } } })

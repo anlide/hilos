@@ -6,6 +6,8 @@ namespace Hilos\Cluster;
 
 use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * Local port the peer transport uses to hand a cross-node signal to an agent on this node.
@@ -26,13 +28,14 @@ interface AgentSignalSink
     /**
      * Delivers a resolved signal to a local agent, starting it first when it is not running.
      *
-     * Raises nothing and answers nothing. A start under way holds the frame until it ends, and
-     * every other refusal is written down where it happened: the caller is a transport reading
-     * a socket on the master loop, which has neither a way to react nor a place to fall over.
+     * A start under way holds the frame until it ends. An undelivered tracked page request is
+     * answered through the ordinary addressed browser route; other refusals remain log entries.
      *
      * @param string $agentType Target agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param SignalDTO $signal Signal to deliver
+     * @throws InvalidArgumentException When a tracked subscription refusal cannot be named
+     * @throws InvalidFormatException When the tracked delivery has an invalid completion address
      */
     public function deliverSignalToAgent(string $agentType, ?string $agentIndex, SignalDTO $signal): void;
 }

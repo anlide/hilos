@@ -399,7 +399,9 @@ abstract class AbstractPage implements ActionHostInterface
      * whatever must hold before the client is released - a route-param check
      * that refuses the subscription, a snapshot of the page's own that has to
      * be on the wire first - goes before it, and whatever may only run once the
-     * subscription is answered goes after it.
+     * subscription is answered goes after it. For tracked subscriptions the framework holds
+     * preliminary frames with the response, facet counts and after-response output until the
+     * router queues completion of the entire handler.
      *
      * Route params are available through the typed accessors on
      * PageRouteParams; family-level abstract pages typically convert

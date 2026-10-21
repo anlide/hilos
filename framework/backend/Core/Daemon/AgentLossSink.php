@@ -6,6 +6,7 @@ namespace Hilos\Core\Daemon;
 
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * AgentLossSink - master-side seam the roster hands a dead worker's agents to.
@@ -46,6 +47,7 @@ interface AgentLossSink
      * @param bool $isMonopolistic True when that worker was monopolistic
      * @param list<string> $agentIds Ids of the agents it was hosting, in roster order
      * @throws InvalidArgumentException When a refusal owed to a page or a command cannot be named
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     public function reportAgentsLostWithWorker(int $workerIndex, bool $isMonopolistic, array $agentIds): void;
 }

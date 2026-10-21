@@ -26,6 +26,7 @@ use Hilos\Cluster\Placement\PlacementState;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\Module\PeerModule;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\ClusterProtectedMode;
@@ -968,6 +969,7 @@ final class ClusterContext
      * Forwards a node-left transition to the registered observer, if any.
      *
      * @param ClusterNode $node Node that left (went offline)
+     * @throws InvalidFormatException When a pending page recovery address is malformed
      */
     public function notifyNodeLeft(ClusterNode $node): void
     {

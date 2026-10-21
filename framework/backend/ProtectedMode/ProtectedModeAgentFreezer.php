@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\ProtectedMode;
 
 use Hilos\Cluster\Placement\PlacementExecutor;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * Local port the daemon uses to stop this node's application agents while protected mode holds.
@@ -37,6 +38,7 @@ interface ProtectedModeAgentFreezer
      *
      * @param string $initiatorAgentType Initiator agent type left running
      * @param ?string $initiatorAgentIndex Initiator agent index, or null for a singleton initiator
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     public function stopAgentsForProtectedMode(string $initiatorAgentType, ?string $initiatorAgentIndex): void;
 

@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
+import { EventEmitter } from 'node:events'
 
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import {
@@ -42,6 +43,164 @@ import {
 // Kit unit tests cover Cron idle/empty and cluster mismatches (P-572);
 // cluster coverage lives in ../cluster/daemon/daemon.spec.ts.
 const DATABASE_HOST = 'binance-btc-tracker-mysql-test'
+
+// Runner doubles exercise correlation and cleanup. The real browser and server
+// still prove the private socket hook and view-mode refusal in the restart test.
+test.describe('forged viewer submit transport', () => {
+  const requestId = 'e2e-correlated-submit'
+  const request = JSON.stringify({
+    type: 'action',
+    action: 'forged',
+    requestId,
+  })
+
+  function observerPeer(send: (frame: string) => void) {
+    const socket = new EventEmitter()
+    const events = Object.assign(new EventEmitter(), {
+      async addInitScript() {},
+      async evaluate(callback: unknown, frame: string) {
+        void callback
+        send(frame)
+      },
+    })
+    return { socket, events, page: events as unknown as Page }
+  }
+
+  for (const delivery of ['bare', 'batch'] as const) {
+    for (const correlation of ['envelope', 'data'] as const) {
+      test(`${delivery} forged reply correlates by ${correlation} and retains neighbors and evidence`, async () => {
+        const sent: unknown[] = []
+        const reply = {
+          type: 'action_error',
+          data: {
+            action: 'forged',
+            errorCode: 'view_mode',
+            reason: 'Refused.',
+            ...(correlation === 'data' ? { requestId } : {}),
+          },
+          ...(correlation === 'envelope' ? { requestId } : {}),
+          outcome: 'fail',
+          time: 42,
+        }
+        const before = {
+          type: 'e2e_neighbor',
+          data: {},
+          requestId: 'someone-else',
+        }
+        const after = { type: 'e2e_tail', data: { sequence: 1 } }
+        const late = { type: 'e2e_tail', data: { sequence: 2 } }
+        const inners = [before, null, reply, after]
+        const raw =
+          delivery === 'batch'
+            ? JSON.stringify({ type: 'signal_batch', data: { frames: inners } })
+            : JSON.stringify(reply)
+        const peer = observerPeer((message) => {
+          sent.push(JSON.parse(message))
+          const receive = (payload: string | Buffer) =>
+            peer.socket.emit('framereceived', { payload })
+          receive('{"type":')
+          receive(Buffer.from([0, 255]))
+          if (delivery === 'bare') receive(JSON.stringify(before))
+          receive(raw)
+          if (delivery === 'bare') receive(JSON.stringify(after))
+          receive(JSON.stringify(late))
+        })
+        const viewer = await armViewerSubmit(peer.page)
+        peer.events.emit('websocket', peer.socket)
+        try {
+          const answer = await viewer.submit(request, requestId)
+          expect(answer.wire).toEqual(reply)
+          expect(answer.raw).toBe(raw)
+          expect(answer.failure).toBeUndefined()
+          expect(sent).toEqual([
+            { type: 'action', action: 'forged', requestId },
+          ])
+          expect(viewer.frames.map(({ wire }) => wire)).toEqual([
+            undefined,
+            undefined,
+            ...(delivery === 'batch' ? inners : [before, reply, after]),
+            late,
+          ])
+          expect(viewer.frames[0]).toMatchObject({
+            socket: 1,
+            message: 1,
+            raw: '{"type":',
+            failure: { kind: 'malformed-json' },
+          })
+          expect(viewer.frames[1]).toMatchObject({
+            socket: 1,
+            message: 2,
+            raw: undefined,
+            failure: { kind: 'non-text-frame' },
+          })
+          if (delivery === 'batch') {
+            expect(
+              viewer.frames
+                .slice(2, 6)
+                .map(({ socket, message, raw }) => ({ socket, message, raw })),
+            ).toEqual(inners.map(() => ({ socket: 1, message: 3, raw })))
+            expect(viewer.frames[3].failure?.kind).toBe('invalid-envelope')
+          }
+          viewer.dispose()
+          expect(peer.events.listenerCount('websocket')).toBe(0)
+          expect(peer.events.listenerCount('close')).toBe(0)
+          expect(peer.socket.listenerCount('framereceived')).toBe(0)
+          expect(peer.socket.listenerCount('close')).toBe(0)
+          await expect(viewer.submit(request, requestId)).rejects.toThrow(
+            'disposed',
+          )
+        } finally {
+          viewer.dispose()
+        }
+      })
+    }
+  }
+
+  for (const ending of ['close', 'dispose', 'timeout'] as const) {
+    test(`a forged submit settles on ${ending} and releases its pending waiter`, async () => {
+      let received = 0
+      const peer = observerPeer(() => {
+        received++
+        if (ending === 'close') peer.socket.emit('close')
+        if (received > 1)
+          peer.socket.emit('framereceived', {
+            payload: JSON.stringify({
+              type: 'action_error',
+              data: { action: 'forged', reason: 'Late.' },
+              requestId,
+            }),
+          })
+      })
+      const viewer = await armViewerSubmit(peer.page)
+      peer.events.emit('websocket', peer.socket)
+      try {
+        const answer = viewer.submit(request, requestId)
+        const rejected = expect(answer).rejects.toThrow(
+          ending === 'close'
+            ? 'socket closed'
+            : ending === 'dispose'
+              ? 'disposed'
+              : 'did not answer',
+        )
+        expect(received).toBe(1)
+        if (ending === 'dispose') viewer.dispose()
+        await rejected
+        if (ending === 'timeout') {
+          await expect(
+            viewer.submit(request, requestId),
+          ).resolves.toMatchObject({
+            wire: { requestId, type: 'action_error' },
+          })
+          expect(received).toBe(2)
+        }
+      } finally {
+        viewer.dispose()
+      }
+      expect(peer.events.listenerCount('websocket')).toBe(0)
+      expect(peer.socket.listenerCount('framereceived')).toBe(0)
+    })
+  }
+})
 
 test.describe('daemon overview', () => {
   test.afterEach(() => setAdminViewMode(false))
@@ -662,11 +821,19 @@ test.describe('restarting an agent', () => {
     page,
   }) => {
     await setAdminViewMode(true)
-    await armViewerSubmit(page)
-    await gotoPage(page, '/hilos/daemon/standalone/agents', PAGE_READY)
-    await expect(page.getByTestId('view-mode-banner')).toBeVisible()
-    await expectViewerRestartRefused(page, RESTART_AGENT)
-    await expect(page.getByTestId('modal')).toHaveCount(0)
+    const viewer = await armViewerSubmit(page)
+    try {
+      await gotoPage(page, '/hilos/daemon/standalone/agents', PAGE_READY)
+      await expect(page.getByTestId('view-mode-banner')).toBeVisible()
+      await expectViewerRestartRefused(page, RESTART_AGENT, viewer)
+      await expect(page.getByTestId('modal')).toHaveCount(0)
+    } finally {
+      viewer.dispose()
+      await test.info().attach('viewer-forged-submit-frames', {
+        body: JSON.stringify(viewer.frames),
+        contentType: 'application/json',
+      })
+    }
   })
 })
 

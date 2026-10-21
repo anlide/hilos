@@ -77,7 +77,7 @@ final class UploadMemorySettingsTest extends TestCase
 
             SourceChangeBus::publish(SourceChange::dbCreated(HilosDbContext::settings, '9', [Setting::key => 'other']));
             SourceChangeBus::publish(SourceChange::dbDeleted(HilosDbContext::settings, '9', [Setting::key => 'other']));
-            $this->assertSame(1, $accessor->reads, 'Other keyed changes do not read the budget');
+            $this->assertSame(2, $accessor->reads, 'Only the initial upload and delivery settings reads ran');
 
             $second = new UploadMemorySettingsRecordingClient();
             $manager->replaceChannel($second);
@@ -86,7 +86,7 @@ final class UploadMemorySettingsTest extends TestCase
             $accessor->value = 1;
             $readsBefore = $accessor->reads;
             SourceChangeBus::publish(SourceChange::dbUpdated(HilosDbContext::settings, '1', [Setting::value => '1']));
-            $this->assertSame($readsBefore + 1, $accessor->reads, 'Registration must not subscribe a second reporter');
+            $this->assertSame($readsBefore + 2, $accessor->reads, 'One upload and one delivery reporter read each update');
             $this->assertSame([3], $first->uploads());
             $this->assertSame([3, 1], $second->uploads());
             SourceChangeBus::publish(SourceChange::dbUpdated(HilosDbContext::settings, '1', [Setting::value => '1']));
@@ -107,7 +107,7 @@ final class UploadMemorySettingsTest extends TestCase
             $manager->handleDaemonMessage(new WorkerDbInterestReadyMessageDTO(HilosDbContext::settings));
             SourceChangeBus::publish(SourceChange::dbUpdated(HilosDbContext::settings, '1', [Setting::value => '1']));
             $this->assertSame([], $client->uploads());
-            $this->assertSame(0, $accessor->reads);
+            $this->assertSame(2, $accessor->reads, 'The always-on delivery reporter reads at readiness and update');
         });
     }
 

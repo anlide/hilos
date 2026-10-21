@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Database\Settings\Validation\PositiveIntegerRule;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Throwable;
@@ -44,7 +45,7 @@ final class SettingsAccessorCatalogCacheTest extends TestCase
         $accessor = new SettingsAccessor(CountingSettingsTestCatalog::class);
 
         $this->assertTrue(isset($accessor['test_string_key']));
-        $this->assertSame(CountingSettingsTestCatalog::$catalog, $accessor->catalog());
+        $this->assertSame($this->expectedCatalog(), $accessor->catalog());
         $this->assertSame(SettingsCatalogConstants::TYPE_STRING, $accessor->typeFor('test_string_key'));
         $this->assertSame('test_default', $accessor->defaultValueFor('test_string_key'));
 
@@ -83,8 +84,25 @@ final class SettingsAccessorCatalogCacheTest extends TestCase
 
         $catalog = $accessor->catalog();
 
-        $this->assertSame(CountingSettingsTestCatalog::$catalog, $catalog);
+        $this->assertSame($this->expectedCatalog(), $catalog);
         $this->assertSame(2, CountingSettingsTestCatalog::$calls);
+    }
+
+    /** @return array<string, array<string, mixed>> Exact framework and project catalog */
+    private function expectedCatalog(): array
+    {
+        return [
+            'websocket.delivery_window_ms' => [
+                'type' => 'integer',
+                'admin_view_visible' => true,
+                'default_value' => 1000,
+                'rule' => PositiveIntegerRule::class,
+            ],
+            'test_string_key' => [
+                'type' => 'string',
+                'default_value' => 'test_default',
+            ],
+        ];
     }
 }
 

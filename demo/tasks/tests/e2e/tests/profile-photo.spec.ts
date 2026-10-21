@@ -3,6 +3,8 @@ import { test, expect } from '@playwright/test'
 import {
   watchClientDocument,
   watchUploadFrames,
+  watchSocketFrames,
+  type SocketFrame,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant.js'
 import { setAdminViewMode } from '../helpers/adminViewMode.js'
@@ -132,12 +134,8 @@ test('a real crop is public, follows both tabs and the admin card, and can be re
 
     await setAdminViewMode(true)
     const viewer = await viewerContext.newPage()
-    const viewerFrames: string[] = []
-    viewer.on('websocket', (socket) => {
-      socket.on('framereceived', ({ payload }) => {
-        viewerFrames.push(payload.toString())
-      })
-    })
+    const viewerFrames: SocketFrame[] = []
+    watchSocketFrames(viewer, (frame) => viewerFrames.push(frame))
     await gotoPage(viewer, `/hilos/user/${userId}`, PAGE_READY)
     await expect(viewer.getByTestId('view-mode-banner')).toBeVisible()
     const viewerCard = viewer.getByTestId('hilos-user-detail')
@@ -146,7 +144,7 @@ test('a real crop is public, follows both tabs and the admin card, and can be re
     ).toHaveText('Hidden')
     await expect(viewerCard.getByTestId('hilos-avatar-photo')).toHaveCount(0)
     // Look at the real masked photo field, not the administrator's shell avatar.
-    expect(viewerFrames.join('\n')).toMatch(
+    expect(viewerFrames.map(({ raw }) => raw).join('\n')).toMatch(
       /"photo"\s*:\s*\{\s*"_hidden"\s*:\s*true\s*\}/,
     )
     documents.push(await watchClientDocument(viewer))
@@ -234,10 +232,10 @@ test('a real crop is public, follows both tabs and the admin card, and can be re
       await expect(avatar).toHaveText(initials)
     }
     await expect(viewerCard.getByTestId('hilos-avatar-photo')).toHaveCount(0)
-    for (const frame of viewerFrames) {
-      expect(frame).not.toContain(firstSrc)
-      expect(frame).not.toContain(replacementSrc)
-      expect(frame).not.toContain(name)
+    for (const { raw } of viewerFrames) {
+      expect(raw ?? '').not.toContain(firstSrc)
+      expect(raw ?? '').not.toContain(replacementSrc)
+      expect(raw ?? '').not.toContain(name)
     }
     for (const document of documents) await document.unchanged()
   } finally {

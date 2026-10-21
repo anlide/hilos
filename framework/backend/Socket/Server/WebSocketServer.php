@@ -13,6 +13,7 @@ use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\SocketException;
+use Hilos\Socket\WebSocket\Delivery\DeliverySettingsMirror;
 
 /**
  * WebSocketServer - WebSocket server implementation.
@@ -35,6 +36,9 @@ abstract class WebSocketServer extends AbstractServer
 
     /** @var ?UploadMemoryPoolSink Admission seam injected by production registerServer */
     private ?UploadMemoryPoolSink $uploadMemoryPoolSink = null;
+
+    /** Live delivery setting shared with every accepted socket. */
+    private ?DeliverySettingsMirror $deliverySettingsMirror = null;
 
     /**
      * Called when a new WebSocket client connection is accepted.
@@ -75,6 +79,16 @@ abstract class WebSocketServer extends AbstractServer
     }
 
     /**
+     * registerServer shares the master's live mirror with the sockets accepted here.
+     *
+     * @param DeliverySettingsMirror $mirror This master's effective delivery window
+     */
+    public function setDeliverySettingsMirror(DeliverySettingsMirror $mirror): void
+    {
+        $this->deliverySettingsMirror = $mirror;
+    }
+
+    /**
      * registerServer mounts the same master ledger on both transport servers.
      * Projects keep their existing client factories and constructor signatures.
      *
@@ -108,6 +122,9 @@ abstract class WebSocketServer extends AbstractServer
         }
         if ($client instanceof WebSocketClient && $this->uploadMemoryPoolSink !== null) {
             $client->setUploadMemoryPoolSink($this->uploadMemoryPoolSink);
+        }
+        if ($client instanceof WebSocketClient && $this->deliverySettingsMirror !== null) {
+            $client->setDeliverySettingsMirror($this->deliverySettingsMirror);
         }
 
         return $client;

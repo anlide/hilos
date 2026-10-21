@@ -38,6 +38,9 @@ use Hilos\Runtime\Exception\RtBaseException;
 use Hilos\Runtime\View\Item\HilosSessionRotation;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\SocketException;
+use Hilos\Socket\WebSocket\Delivery\DeliveryFrame;
+use Hilos\Socket\WebSocket\Delivery\DeliveryQueue;
+use Hilos\Socket\WebSocket\Delivery\DeliverySettingsMirror;
 use Hilos\Socket\WebSocket\DTO\HandshakeWelcomeSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
@@ -160,6 +163,9 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      */
     private const string LOGGED_TICKET_MASK = '[ticket]';
 
+    /** Convert the process monotonic clock to the delivery queue's milliseconds. */
+    private const int NANOSECONDS_PER_MILLISECOND = 1_000_000;
+
     /** @var bool Whether WebSocket handshake is completed */
     protected bool $handshakeCompleted = false;
 
@@ -184,6 +190,18 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * other moment of a connection's life.
      */
     private array $pendingRotationDrops = [];
+
+    /** Private to this TCP connection; no worker or peer reads its buffered application text. */
+    private ?DeliveryQueue $deliveryQueue = null;
+
+    /** The accepting master's live setting, read without DB or I/O on the socket path. */
+    private ?DeliverySettingsMirror $deliverySettingsMirror = null;
+
+    /** Monotonic within this accepted connection; browser input never supplies this counter. */
+    private int $deliverySequence = 0;
+
+    /** @var array<string, WebSocketPageSubscribeSignalDTO|WebSocketPageUpdateSubscriptionSignalDTO> Accepted pending requests */
+    private array $deliveryRequests = [];
 
     /**
      * @var ?string Peer address this connection was accepted from, read once on the 101
@@ -621,19 +639,102 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /**
      * Writes the outbound buffer and releases anything that was waiting for it to empty.
      *
-     * The only thing waiting today is a spent rotation's drops ({@see onOutboundDrained()}).
-     * A partial write leaves them held for the next call, which is exactly the point.
+     * Application deliveries become transport frames only when due. A spent rotation's drops
+     * wait for both that queue and any partial transport write ({@see onOutboundDrained()}).
      *
      * @throws SocketException If socket write fails
      * @throws HilosException When buffered wire input refuses to become a DTO
      */
     public function write(): void
     {
+        if ($this->shouldClose()) {
+            return;
+        }
+        if ($this->deliveryQueue !== null) {
+            $this->effectiveDeliveryQueue();
+        }
+        $this->drainDelivery();
         parent::write();
 
-        if ($this->pendingRotationDrops !== [] && $this->writeBuffer === '') {
+        if ($this->pendingRotationDrops !== [] && !$this->hasPendingWrite()) {
             $this->onOutboundDrained();
         }
+    }
+
+    /** @return bool Whether application deliveries or transport bytes remain pending */
+    public function hasPendingWrite(): bool
+    {
+        return parent::hasPendingWrite() || ($this->deliveryQueue?->hasFrames() ?? false);
+    }
+
+    /**
+     * Release completed application work before the transport decides whether it is empty.
+     * An incomplete subscription remains held even during this forced release.
+     */
+    public function closeOnceWritten(): void
+    {
+        $this->drainDelivery(force: true);
+        parent::closeOnceWritten();
+    }
+
+    /**
+     * Discard socket-local deliveries even when a project replaces the close notification hook.
+     *
+     * @throws HilosException When the subclass fails to announce the close
+     */
+    public function close(): void
+    {
+        $this->deliveryQueue?->close();
+        $this->deliveryRequests = [];
+        $this->pendingRotationDrops = [];
+        parent::close();
+    }
+
+    /** @param DeliverySettingsMirror $mirror Live setting owned by the accepting master */
+    public function setDeliverySettingsMirror(DeliverySettingsMirror $mirror): void
+    {
+        $this->deliverySettingsMirror = $mirror;
+    }
+
+    /** @return int Monotonic milliseconds; overridable for deterministic transport tests */
+    protected function deliveryNowMs(): int
+    {
+        return intdiv(hrtime(true), self::NANOSECONDS_PER_MILLISECOND);
+    }
+
+    /**
+     * @return DeliveryQueue Socket-local queue with the latest setting for its next decision
+     * @throws InvalidFormatException When the effective delivery window is not positive
+     */
+    private function effectiveDeliveryQueue(): DeliveryQueue
+    {
+        $this->deliveryQueue ??= new DeliveryQueue();
+        if ($this->deliverySettingsMirror !== null) {
+            $this->deliveryQueue->setWindowMs($this->deliverySettingsMirror->getWindowMs());
+        }
+
+        return $this->deliveryQueue;
+    }
+
+    /**
+     * @param bool $force Whether shutdown is releasing all completed application work
+     */
+    private function drainDelivery(bool $force = false): void
+    {
+        if ($this->deliveryQueue === null) {
+            return;
+        }
+        foreach ($this->deliveryQueue->drain($this->deliveryNowMs(), $force) as $text) {
+            $this->writeBuffer .= $this->buildFrameHeader(strlen($text), self::OPCODE_TEXT) . $text;
+        }
+    }
+
+    /**
+     * @throws InvalidFormatException When the effective delivery window is not positive
+     */
+    private function acceptDeliveryRequest(): void
+    {
+        $this->effectiveDeliveryQueue()->acceptRequest($this->deliveryNowMs());
     }
 
     /**
@@ -1094,20 +1195,89 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     }
 
     /**
-     * Send WebSocket text frame.
+     * Queue application text; arbitrary non-envelope text remains an ordered boundary.
      *
      * @param string $data Text data to send (UTF-8)
      * @throws InvalidStateException When handshake not completed
+     * @throws InvalidFormatException When the effective window or a merged envelope is invalid
      */
     public function sendFrame(string $data): void
+    {
+        $this->sendDeliveryFrame(DeliveryFrame::fromJson($data));
+    }
+
+    /**
+     * Queue one immutable frame prepared once for all recipients by the master.
+     *
+     * @param DeliveryFrame $frame Shared prepared application text
+     * @throws InvalidStateException When handshake not completed
+     * @throws InvalidFormatException When the effective window or a merged envelope is invalid
+     */
+    public function sendDeliveryFrame(DeliveryFrame $frame): void
     {
         // Check if handshake is completed
         if (!$this->handshakeCompleted) {
             throw new InvalidStateException("Cannot send frame: WebSocket handshake not completed");
         }
 
-        $header = $this->buildFrameHeader(strlen($data), self::OPCODE_TEXT);
-        $this->writeBuffer .= $header . $data;
+        $this->effectiveDeliveryQueue()->enqueue($frame, $this->deliveryNowMs());
+    }
+
+    /**
+     * Settle the matching page attempt before the next transport drain.
+     *
+     * @param string $page Page address from the internal completion
+     * @param string $deliveryId Internal delivery token from the addressed completion
+     * @throws InvalidFormatException When the effective delivery window is not positive
+     */
+    public function completeDelivery(string $page, string $deliveryId): void
+    {
+        if (!$this->isDeliveryPending($page, $deliveryId)) {
+            return;
+        }
+        unset($this->deliveryRequests[$deliveryId]);
+        $this->effectiveDeliveryQueue()->completeDelivery($deliveryId, $this->deliveryNowMs());
+    }
+
+    /**
+     * @param string $page Page named by the request
+     * @param string $deliveryId Master-minted token
+     * @return bool Whether this exact attempt still awaits completion
+     */
+    public function isDeliveryPending(string $page, string $deliveryId): bool
+    {
+        return ($this->deliveryRequests[$deliveryId] ?? null)?->page === $page;
+    }
+
+    /**
+     * The accepted subscribe can precede its dispatch and the router's subscription record.
+     *
+     * @return ?WebSocketPageSubscribeSignalDTO Request holding this connection, absent after completion or cancellation
+     */
+    public function pendingPageSubscribe(): ?WebSocketPageSubscribeSignalDTO
+    {
+        foreach ($this->deliveryRequests as $request) {
+            if ($request instanceof WebSocketPageSubscribeSignalDTO) {
+                return $request;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Abandon incomplete work before an unsubscribe or recovery control frame is queued.
+     *
+     * @param ?string $page Page being left, or null when the connection navigates away
+     */
+    public function cancelDeliveries(?string $page = null): void
+    {
+        foreach ($this->deliveryRequests as $deliveryId => $request) {
+            if ($page === null || $page === $request->page) {
+                $this->deliveryQueue?->cancelDelivery($deliveryId);
+                unset($this->deliveryRequests[$deliveryId]);
+            }
+        }
     }
 
     /**
@@ -1172,6 +1342,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @throws AgentUnknownActionException When action name is not allowed
      * @throws UnsupportedOperationException When an internal signal branch is unreachable
      * @throws InvalidArgumentException When the signal the frame turns into cannot be named
+     * @throws InvalidFormatException When the effective delivery window is not positive
      */
     protected function onFrame(string $payload): void
     {
@@ -1200,6 +1371,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                 } catch (InvalidFormatException $failure) {
                     throw new InvalidFrameException($failure->getMessage());
                 }
+                $this->acceptDeliveryRequest();
                 Hilos::$sr->queueSignal(
                     new SignalSource(SignalSource::WEBSOCKET),
                     new SignalType(SignalTypeConstants::UPLOAD_CREDIT_REQUEST),
@@ -1243,6 +1415,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     sessionIdentity: $this->sessionIdentity,
                 );
 
+                $this->acceptDeliveryRequest();
                 $userActionKey = Hilos::$ac?->logUserAction($acceptKey, $actionName, $actionData);
                 Hilos::$ac?->startUserActionCapture($userActionKey);
                 try {
@@ -1270,20 +1443,35 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                 }
 
                 $params = is_array($decoded[SignalPayloadConstants::FIELD_PARAMS] ?? null) ? $decoded[SignalPayloadConstants::FIELD_PARAMS] : [];
-                $dto = match ($type) {
-                    SignalTypeConstants::PAGE_SUBSCRIBE => new WebSocketPageSubscribeSignalDTO(
-                        acceptKey: $acceptKey,
-                        page: $page,
-                        params: $params,
-                    ),
-                    SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION => new WebSocketPageUpdateSubscriptionSignalDTO(
-                        acceptKey: $acceptKey,
-                        page: $page,
-                        params: $params,
-                    ),
-                    default => throw new UnsupportedOperationException("Unsupported page signal type: {$type}"),
-                };
+                $deliveryId = $acceptKey . ':' . ++$this->deliverySequence;
+                try {
+                    $dto = match ($type) {
+                        SignalTypeConstants::PAGE_SUBSCRIBE => WebSocketPageSubscribeSignalDTO::fromArray([
+                            ...$decoded,
+                            WebSocketPageSubscribeSignalDTO::ACCEPT_KEY => $acceptKey,
+                            WebSocketPageSubscribeSignalDTO::PAGE => $page,
+                            WebSocketPageSubscribeSignalDTO::PARAMS => $params,
+                            WebSocketPageSubscribeSignalDTO::DELIVERY_ID => $deliveryId,
+                        ]),
+                        SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION => new WebSocketPageUpdateSubscriptionSignalDTO(
+                            acceptKey: $acceptKey,
+                            page: $page,
+                            params: $params,
+                            deliveryId: $deliveryId,
+                        ),
+                        default => throw new UnsupportedOperationException("Unsupported page signal type: {$type}"),
+                    };
+                } catch (InvalidFormatException $exception) {
+                    throw new InvalidFrameException($exception->getMessage(), $exception);
+                }
 
+                if ($type === SignalTypeConstants::PAGE_SUBSCRIBE) {
+                    $this->cancelDeliveries();
+                    $this->effectiveDeliveryQueue()->beginSubscription($deliveryId, $this->deliveryNowMs());
+                } else {
+                    $this->effectiveDeliveryQueue()->beginUpdate($deliveryId, $this->deliveryNowMs());
+                }
+                $this->deliveryRequests[$deliveryId] = $dto;
                 Hilos::$sr->queueSignal(
                     new SignalSource(SignalSource::WEBSOCKET),
                     new SignalType($type),
@@ -1321,6 +1509,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     acceptKey: $acceptKey,
                 );
 
+                $this->cancelDeliveries($page);
+                $this->acceptDeliveryRequest();
                 Hilos::$sr->queueSignal(
                     new SignalSource(SignalSource::WEBSOCKET),
                     new SignalType(SignalTypeConstants::PAGE_UNSUBSCRIBE),
@@ -1345,8 +1535,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
 
                 $decoded[SignalPayloadConstants::FIELD_ACCEPT_KEY] = $acceptKey;
 
-                // The viewport is the one frame whose shape is read by its DTO rather
-                // than field by field here, so its refusal is translated into the type
+                // The viewport's shape is read by its DTO rather than field by field
+                // here, so its refusal is translated into the type
                 // the checks above throw. Either reader of the client closes the
                 // connection on both classes now, so what the translation buys is one
                 // vocabulary on this path: a frame that could not be read says so as a
@@ -1357,6 +1547,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     throw new InvalidFrameException($exception->getMessage(), $exception);
                 }
 
+                $this->acceptDeliveryRequest();
                 Hilos::$sr->queueSignal(
                     new SignalSource(SignalSource::WEBSOCKET),
                     new SignalType(SignalTypeConstants::TABLE_VIEWPORT),
@@ -1386,6 +1577,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     throw new InvalidFrameException($exception->getMessage(), $exception);
                 }
 
+                $this->acceptDeliveryRequest();
                 Hilos::$sr->queueSignal(
                     new SignalSource(SignalSource::WEBSOCKET),
                     new SignalType(SignalTypeConstants::TABLE_FACETS),
@@ -1413,6 +1605,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     throw new InvalidFrameException($exception->getMessage(), $exception);
                 }
 
+                $this->acceptDeliveryRequest();
                 Hilos::$sr->queueSignal(
                     new SignalSource(SignalSource::WEBSOCKET),
                     new SignalType(SignalTypeConstants::TABLE_RENDERED),
@@ -1440,6 +1633,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     throw new InvalidFrameException($exception->getMessage(), $exception);
                 }
 
+                $this->acceptDeliveryRequest();
                 Hilos::$sr->queueSignal(
                     new SignalSource(SignalSource::WEBSOCKET),
                     new SignalType(SignalTypeConstants::TABLE_ROW_FOCUS),
@@ -1479,6 +1673,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     default => throw new UnsupportedOperationException("Unsupported group signal type: {$type}"),
                 };
 
+                $this->acceptDeliveryRequest();
                 Hilos::$sr->queueSignal(
                     new SignalSource(SignalSource::WEBSOCKET),
                     new SignalType($type),

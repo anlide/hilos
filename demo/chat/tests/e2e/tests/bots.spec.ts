@@ -4,6 +4,8 @@ import {
   dismissToasts,
   shownByTestId,
   watchFirstRowTop,
+  watchSocketFrames,
+  type SocketFrame,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { setAdminViewMode } from '../helpers/adminViewMode'
@@ -246,26 +248,18 @@ async function deleteBot(page: Page, rowKey: string): Promise<void> {
  * @returns A reader of the number of `table_window` frames received so far.
  */
 function countTableWindows(page: Page): () => number {
-  let windows = 0
-  page.on('websocket', (socket) => {
-    socket.on('framereceived', (frame) => {
-      if (typeof frame.payload !== 'string') {
-        return
-      }
-      try {
-        if (
-          (JSON.parse(frame.payload) as { type?: unknown }).type ===
-          'table_window'
-        ) {
-          windows += 1
-        }
-      } catch {
-        // Not one of ours; the socket also carries the keepalive text ping.
-      }
-    })
-  })
-
-  return () => windows
+  const frames: SocketFrame[] = []
+  watchSocketFrames(page, (frame) => frames.push(frame))
+  return () => {
+    expect(frames.filter(({ failure }) => failure !== undefined)).toEqual([])
+    return frames.filter(
+      ({ wire }) =>
+        wire !== null &&
+        typeof wire === 'object' &&
+        'type' in wire &&
+        wire.type === 'table_window',
+    ).length
+  }
 }
 
 test('a bot created here takes the place the sort gives it, and edits and deletes live', async ({

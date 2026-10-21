@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Placement;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Cluster\Consensus\ConsensusInspection;
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\Exception\PlacementCapabilityException;
@@ -751,6 +752,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @param string $agentType Agent type to stop
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param ?string $nodeId Host to revoke, or null for work that runs nowhere
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     public function stopAgentOnNode(string $agentType, ?string $agentIndex, ?string $nodeId): void
     {
@@ -795,6 +797,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @param ?string $agentIndex Agent index
      * @param string $hostNodeId Current host
      * @param string $targetNodeId Policy's selected target
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     public function restartElsewhere(
         string $agentType,
@@ -876,6 +879,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @param string $agentType Agent type whose claim lost
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param string $nodeId Node the agent runs on
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     public function refusePlacement(string $agentType, ?string $agentIndex, string $nodeId): void
     {
@@ -976,6 +980,7 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * @param string $agentType Agent type that started
      * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     public function noteAgentStarted(string $agentType, ?string $agentIndex): void
     {
@@ -1182,6 +1187,7 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * @param string $fromNodeId Id of the leader node that requested the stop
      * @param PeerStopAgentDTO $frame Received stop-agent frame
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     public function onStopAgent(string $fromNodeId, PeerStopAgentDTO $frame): void
     {
@@ -1219,6 +1225,7 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * @param string $fromNodeId Id of the node that reported the status
      * @param PeerAgentStatusDTO $frame Received agent-status frame
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     public function onAgentStatus(string $fromNodeId, PeerAgentStatusDTO $frame): void
     {
@@ -1464,6 +1471,7 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * @param string $fromNodeId Id of the node that reported
      * @param PeerPlacementReportDTO $frame Received placement report
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     public function onPlacementReport(string $fromNodeId, PeerPlacementReportDTO $frame): void
     {
@@ -2134,6 +2142,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @param float $now Current microtime
      * @throws EnvException When cluster mode cannot be read while confirming an early view
      * @throws PeerTransportException When the leader's snapshot metadata is invalid
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     public function tick(float $now): void
     {

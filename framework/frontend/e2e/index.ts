@@ -31,7 +31,28 @@ export {
   watchTopWithin,
   Watched,
 } from './geometry.js'
-export { armSocketDrop, countSentFrames, dropSocket } from './socket.js'
+export {
+  armSocketDrop,
+  countSentFrames,
+  createSocketFrameReader,
+  dropSocket,
+  watchSocketFrames,
+  type SocketFrame,
+} from './socket.js'
+export {
+  deliveryObject,
+  waitDeliveryBoundary,
+  watchDeliveryFrames,
+  type DeliveryFrameLog,
+  type DeliveryPacket,
+  type DeliveryRequest,
+} from './deliveryFrames.js'
+export {
+  deliverySettingUpdates,
+  saveDeliverySetting,
+  type DeliverySettingUpdate,
+  type DeliverySettingMutation,
+} from './deliverySettings.js'
 export {
   watchHandshakeFrames,
   type HandshakeFrameLog,

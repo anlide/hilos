@@ -1,5 +1,9 @@
 import { test, expect } from '@playwright/test'
 
+import {
+  watchSocketFrames,
+  type SocketFrame,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { gotoPage } from '../helpers/page'
 import {
   PASSWORD,
@@ -32,7 +36,7 @@ const SIGN_INS_ALLOWED = 10
 const WRONG_PASSWORD = 'not the password'
 
 // The refusal a block gives on the wire, and the words it is drawn in.
-const RATE_LIMITED_CODE = '"rate_limited"'
+const RATE_LIMITED_CODE = 'rate_limited'
 const REFUSED = 'Too many attempts'
 const REFUSED_REASON = 'Too many attempts. Please wait a moment and try again.'
 
@@ -47,17 +51,19 @@ test('a run of wrong passwords is refused, and the block holds the right one too
   // reading the line the previous refusal left on screen.
   let refusals = 0
   let refusalReason: unknown
-  page.on('websocket', (socket) => {
-    socket.on('framereceived', (frame) => {
-      if (
-        typeof frame.payload === 'string' &&
-        frame.payload.includes(RATE_LIMITED_CODE)
-      ) {
-        const reply: { data?: { reason?: unknown } } = JSON.parse(frame.payload)
-        refusalReason = reply.data?.reason
-        refusals += 1
-      }
-    })
+  const frames: SocketFrame[] = []
+  watchSocketFrames(page, (frame) => {
+    frames.push(frame)
+    const reply = frame.wire as
+      | {
+          data?: { errorCode?: unknown; reason?: unknown }
+        }
+      | undefined
+      | null
+    if (reply?.data?.errorCode === RATE_LIMITED_CODE) {
+      refusalReason = reply.data.reason
+      refusals += 1
+    }
   })
 
   await resetThrottle()
@@ -109,5 +115,9 @@ test('a run of wrong passwords is refused, and the block holds the right one too
     await expect(page.getByTestId('self-user')).toHaveCount(0)
   } finally {
     await resetThrottle()
+    await test.info().attach('throttle-frames', {
+      body: JSON.stringify(frames),
+      contentType: 'application/json',
+    })
   }
 })

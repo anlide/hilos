@@ -82,16 +82,19 @@ export async function expectPageRefused(page: Page): Promise<void> {
  * @param page The Playwright page.
  * @param path Path to open, as the address bar would hold it.
  * @param expected The settled state to require, or undefined for either.
+ * @param timeout Local observation budget when measuring an intentionally long delivery window.
  */
 export async function gotoPage(
   page: Page,
   path: string,
   expected?: PageOutcome,
+  timeout?: number,
 ): Promise<void> {
   await page.goto(path)
   await expect(page.getByTestId(PAGE_STATE)).toHaveAttribute(
     'data-state',
     expected ?? SETTLED,
+    { timeout },
   )
 }
 

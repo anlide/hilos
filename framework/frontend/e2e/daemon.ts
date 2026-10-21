@@ -1,5 +1,6 @@
-import type { Expect, Page, WebSocket } from '@playwright/test'
+import type { Expect, Page } from '@playwright/test'
 import { shownByTestId } from './table.js'
+import { watchSocketFrames } from './socket.js'
 
 /**
  * Daemon section checks all three kits must meet alike. Tests, their order and
@@ -443,7 +444,7 @@ export async function expectClusterDaemonCronSchedule(
     let cronReported = false
     let rows: CronRow[] = []
     for (const frame of frames) {
-      const { data } = JSON.parse(frame.raw) as {
+      const { data } = frame.wire as {
         data: {
           tableKey?: string
           rows?: CronRow[]
@@ -597,6 +598,8 @@ export async function expectClusterEnvironmentMismatch(
 export interface DaemonPageFrame {
   type: 'page_response' | 'table_window'
   raw: string
+  /** The inner envelope; raw remains the original physical message. */
+  wire: unknown
 }
 
 /** A complete comparison-page answer retained for privacy checks. */
@@ -627,36 +630,16 @@ function watchDaemonPageFrames(
   stop(): void
 } {
   const frames: DaemonPageFrame[] = []
-  const sockets = new Set<WebSocket>()
-  const received = ({ payload }: { payload: string | Buffer }) => {
-    const raw = payload.toString()
-    let frame: {
-      type?: string
-      data?: { page?: string }
-    }
-    try {
-      frame = JSON.parse(raw) as typeof frame
-    } catch {
-      return
-    }
+  const observer = watchSocketFrames(page, ({ wire, raw }) => {
+    if (raw === undefined) return
+    if (wire === undefined) throw new Error('Invalid Daemon socket evidence')
+    const frame = wire as { type?: string; data?: { page?: string } } | null
     if (
       (frame?.type === 'page_response' || frame?.type === 'table_window') &&
       frame.data?.page === pageKey
     ) {
-      frames.push({ type: frame.type, raw })
+      frames.push({ type: frame.type, raw, wire })
     }
-  }
-  const opened = (socket: WebSocket) => {
-    sockets.add(socket)
-    socket.on('framereceived', received)
-  }
-  page.on('websocket', opened)
-  return {
-    frames,
-    stop() {
-      page.off('websocket', opened)
-      for (const socket of sockets) socket.off('framereceived', received)
-      sockets.clear()
-    },
-  }
+  })
+  return { frames, stop: observer.stop }
 }

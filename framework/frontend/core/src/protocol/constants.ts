@@ -4,6 +4,9 @@
 /** Signal `type` of the framework welcome frame (PHP `SignalTypeConstants::HANDSHAKE`). */
 export const SIGNAL_TYPE_HANDSHAKE = 'handshake'
 
+/** Transport wrapper (PHP `SignalTypeConstants::SIGNAL_BATCH`). */
+export const SIGNAL_TYPE_SIGNAL_BATCH = 'signal_batch'
+
 /** Server frame `type` announcing the protected-mode state (PHP `SignalTypeConstants::PROTECTED_MODE`). */
 export const SIGNAL_TYPE_PROTECTED_MODE = 'protected_mode'
 

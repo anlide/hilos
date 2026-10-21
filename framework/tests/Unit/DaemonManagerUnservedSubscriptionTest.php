@@ -21,7 +21,10 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Hilos;
+use Hilos\Socket\WebSocket\DTO\DeliveryCompleteSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -94,6 +97,41 @@ final class DaemonManagerUnservedSubscriptionTest extends TestCase
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
     }
 
+    /** @return iterable<string, array{string, bool}> Every early refusal entry point on both request types */
+    public static function refusals(): iterable
+    {
+        foreach (['unserved', 'start', 'unreachable'] as $path) {
+            yield $path . '-subscribe' => [$path, false];
+            yield $path . '-update' => [$path, true];
+        }
+    }
+
+    #[DataProvider('refusals')]
+    public function testTrackedEarlyRefusalQueuesCompletionAfterAnyError(string $path, bool $update): void
+    {
+        $signal = new SignalDTO(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType($update ? SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION : SignalTypeConstants::PAGE_SUBSCRIBE),
+            new SignalName('missing'),
+            $update ? new WebSocketPageUpdateSubscriptionSignalDTO('ak-1', deliveryId: 'token')
+                : new WebSocketPageSubscribeSignalDTO('ak-1', deliveryId: 'token'),
+        );
+        new DaemonManagerUnservedSubscriptionTestManager()->refuse($path, $signal);
+        if (!$update) {
+            self::assertSame(SignalConstants::SUBSCRIPTION_PAGE_ERROR, Hilos::$sr->getNextQueuedSignal()?->signalName->getName());
+        }
+        $marker = Hilos::$sr->getNextQueuedSignal();
+        self::assertNotNull($marker);
+        self::assertSame(SignalTypeConstants::WS_USER, $marker->signalType->getType());
+        self::assertSame(SignalConstants::DELIVERY_COMPLETE, $marker->signalName->getName());
+        self::assertInstanceOf(WebSocketSignalData::class, $marker->data);
+        self::assertSame('ak-1', $marker->data->targetAcceptKey);
+        self::assertInstanceOf(DeliveryCompleteSignalData::class, $marker->data->data);
+        self::assertSame('missing', $marker->data->data->page);
+        self::assertSame('token', $marker->data->data->deliveryId);
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
     /**
      * @param string $page Page being subscribed to
      * @param string $acceptKey Connection that sent the subscription
@@ -121,6 +159,15 @@ final class DaemonManagerUnservedSubscriptionTestManager extends DaemonManager
     public function answer(SignalDTO $signal): void
     {
         $this->answerUnservedSubscription($signal);
+    }
+
+    public function refuse(string $path, SignalDTO $signal): void
+    {
+        match ($path) {
+            'unserved' => $this->answerUnservedSubscription($signal),
+            'start' => $this->answerStartRefusedSubscription($signal),
+            'unreachable' => $this->answerUnreachableSubscription($signal),
+        };
     }
 
     /**

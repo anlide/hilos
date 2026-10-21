@@ -164,6 +164,7 @@ use Hilos\ProtectedMode\VerifierCircleSnapshot;
 use Hilos\ProtectedMode\ProtectedModeSettingsReporter;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Files\Upload\UploadMemorySettingsReporter;
+use Hilos\Socket\WebSocket\Delivery\DeliverySettingsReporter;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
@@ -225,6 +226,9 @@ abstract class WorkerManager extends BaseManager implements PageResender
 
     /** Channel-local reporting state, subscribed once and rebound on each registration. */
     private ?UploadMemorySettingsReporter $uploadMemorySettingsReporter = null;
+
+    /** One subscriber per worker, rebound to the current registered master link. */
+    private ?DeliverySettingsReporter $deliverySettingsReporter = null;
 
     /** @var array<int|string, string> Deduplicated terminal ids, private to this worker's current daemon channel */
     private array $pendingUploadReceiptIds = [];
@@ -942,6 +946,12 @@ abstract class WorkerManager extends BaseManager implements PageResender
             }
             $this->protectedModeSettingsReporter->report();
 
+            if ($this->deliverySettingsReporter === null) {
+                $this->deliverySettingsReporter = new DeliverySettingsReporter();
+                SourceChangeBus::subscribe($this->deliverySettingsReporter);
+            }
+            $this->deliverySettingsReporter->onRegistered($this->daemonClient);
+
             if (Hilos::hasFeature(HilosFeature::UPLOADS)) {
                 if ($this->uploadMemorySettingsReporter === null) {
                     $this->uploadMemorySettingsReporter = new UploadMemorySettingsReporter();
@@ -1220,6 +1230,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
         if ($data->collectionKey === HilosDbContext::settings) {
             $this->protectedModeSettingsReporter?->report();
             $this->uploadMemorySettingsReporter?->report();
+            $this->deliverySettingsReporter?->report();
         }
     }
 

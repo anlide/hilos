@@ -118,6 +118,8 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Files\Upload\UploadMemoryMaster;
+use Hilos\Socket\WebSocket\Delivery\DeliverySettingsMirror;
+use Hilos\Socket\WebSocket\Delivery\DeliveryFrame;
 use Hilos\Files\Upload\UploadMemoryTestDoor;
 use Hilos\Files\Upload\UploadMemoryTestDelivery;
 use Hilos\Files\Upload\DTO\UploadMemoryTestRequest;
@@ -125,6 +127,8 @@ use Hilos\Cluster\Probe\ClusterProbe;
 use Hilos\Files\Upload\UploadPhase;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Utils\Helpers\RandomHelper;
+use Hilos\Socket\WebSocket\DTO\DeliveryCompleteSignalData;
+use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Files\Upload\DTO\UploadCreditRequestSignalData;
 use Hilos\Files\Upload\DTO\UploadStateSignalData;
@@ -446,6 +450,12 @@ abstract class DaemonManager extends BaseManager implements
 
     /** Sole process-private upload ledger; test-only activation also works without the product feature. */
     private ?UploadMemoryMaster $uploadMemory = null;
+
+    /** Process-private delivery settings, shared by this master's transport servers. */
+    private ?DeliverySettingsMirror $deliverySettings = null;
+
+    /** @var array<string, array<string, PendingPageDelivery>> Connection and attempt to selected serving address */
+    private array $pendingPageDeliveries = [];
 
     /** @var list<ParkedAgentSignal> Frames held until the agent they address is up (HIL-629) */
     private array $parkedAgentSignals = [];
@@ -1766,6 +1776,15 @@ abstract class DaemonManager extends BaseManager implements
         // takes off holds the dead client until the master goes down.
         $server->setClientSocketDetacher($this);
 
+        if ($server instanceof WorkerServer || $server instanceof WebSocketServer) {
+            $this->deliverySettings ??= new DeliverySettingsMirror();
+            if ($server instanceof WorkerServer) {
+                $server->setDeliverySettingsSink($this->deliverySettings);
+            } else {
+                $server->setDeliverySettingsMirror($this->deliverySettings);
+            }
+        }
+
         if (Hilos::hasFeature(HilosFeature::UPLOADS)
             && ($server instanceof WorkerServer || $server instanceof PeerServer || $server instanceof WebSocketServer)) {
             $this->uploadMemory ??= new UploadMemoryMaster(sprintf(
@@ -1876,11 +1895,13 @@ abstract class DaemonManager extends BaseManager implements
      * @param bool $isMonopolistic True when that worker was monopolistic
      * @param list<string> $agentIds Ids of the agents it was hosting, in roster order
      * @throws InvalidArgumentException When a refusal answering a page or a command cannot be named
+     * @throws InvalidFormatException When the tracked delivery has an invalid completion address
      */
     public function reportAgentsLostWithWorker(int $workerIndex, bool $isMonopolistic, array $agentIds): void
     {
         $this->agentRestarts->onAgentsLost($agentIds);
         $this->rearmSingletonStart();
+        $this->recoverPendingPageDeliveries(agentIds: $agentIds);
         $this->answerFramesHeldForLostAgents($agentIds);
         $this->announceAgentsGone($agentIds, AgentsGoneSignalData::REASON_WORKER_DIED);
 
@@ -1936,16 +1957,18 @@ abstract class DaemonManager extends BaseManager implements
      * Lets go of the frames held for an agent that was stopped before its start was reported
      * ({@see AgentStartSink}).
      *
-     * Only moved, not answered: a stop is the end of this wait, not a refusal. The frames go out
-     * at the head of the next drain ({@see releaseParkedAgentSignals()}), through the ordinary
+     * Tracked browser attempts are canceled and asked to subscribe again. Other held frames go
+     * out at the head of the next drain ({@see releaseParkedAgentSignals()}), through the ordinary
      * door - the agent running elsewhere is forwarded to, the agent here is started again, no
      * address asks for a placement. The freeze, a placement revoke and a lost singleton host
      * all stop through the same call, and all three mean the same thing to a held frame.
      *
      * @param string $agentId Id of the agent that stopped, in the `type` or `type:index` form
+     * @throws InvalidFormatException When the recovery page or params are malformed
      */
     public function onAgentStopped(string $agentId): void
     {
+        $this->recoverPendingPageDeliveries(agentIds: [$agentId]);
         $stillParked = [];
         foreach ($this->parkedAgentSignals as $parked) {
             if ($parked->agentId === $agentId) {
@@ -1972,6 +1995,7 @@ abstract class DaemonManager extends BaseManager implements
      * @param string $agentId Id of the agent whose start failed, in the `type` or `type:index` form
      * @param string $reason Why the start did not finish, as the failure said it
      * @throws InvalidArgumentException When a refusal answering a page or a command cannot be named
+     * @throws InvalidFormatException When the tracked delivery has an invalid completion address
      */
     public function onAgentStartFailed(string $agentId, string $reason): void
     {
@@ -2011,6 +2035,7 @@ abstract class DaemonManager extends BaseManager implements
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param string $reason Why the agent was not placed, including the record state
      * @throws InvalidArgumentException When a refusal answering a page or a command cannot be named
+     * @throws InvalidFormatException When the tracked delivery has an invalid completion address
      */
     public function onAgentNotPlaced(string $agentType, ?string $agentIndex, string $reason): void
     {
@@ -2380,6 +2405,8 @@ abstract class DaemonManager extends BaseManager implements
      * @param string $agentType Target agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param SignalDTO $signal Signal to deliver
+     * @throws InvalidArgumentException When a tracked subscription refusal cannot be named
+     * @throws InvalidFormatException When the tracked delivery has an invalid completion address
      */
     public function deliverSignalToAgent(string $agentType, ?string $agentIndex, SignalDTO $signal): void
     {
@@ -2388,6 +2415,11 @@ abstract class DaemonManager extends BaseManager implements
         $agentLabel = $agentIndex !== null ? "{$agentType} (index: {$agentIndex})" : $agentType;
 
         $request = $signal->data;
+        if ($signalType === SignalTypeConstants::PAGE_UNSUBSCRIBE && $request instanceof WebSocketPageUnsubscribeSignalDTO) {
+            $this->cancelPendingPageDeliveries($request->acceptKey, $request->page ?? $signalName);
+        } elseif ($signalType === SignalTypeConstants::CONNECTION_CLOSE && $request instanceof WebSocketCloseSignalDTO) {
+            $this->cancelPendingPageDeliveries($request->acceptKey);
+        }
         // This door receives only peer-forwarded frames; locally queued requests never enter it.
         if ($request instanceof CommandRequestDTO && $request->originNodeId !== null) {
             $this->commandReplyOrigins->note($request->correlationId, $request->originNodeId, microtime(true));
@@ -2397,7 +2429,7 @@ abstract class DaemonManager extends BaseManager implements
         if ($workerServer === null) {
             Logger::warning("Peer signal dropped: {$signalType}/{$signalName}"
                 . " -> agent {$agentLabel} - no worker server");
-
+            $this->answerStartRefusedSubscription($signal);
             return;
         }
 
@@ -2410,6 +2442,8 @@ abstract class DaemonManager extends BaseManager implements
         if ($outcome === AgentDeliveryOutcome::Delivered || $outcome === AgentDeliveryOutcome::Held) {
             return;
         }
+
+        $this->answerStartRefusedSubscription($signal);
 
         // What went wrong is on the line the door itself just wrote - a start it refused, or a
         // node on its way out. This one is the forwarded frame's own record, which is what a
@@ -3045,6 +3079,9 @@ abstract class DaemonManager extends BaseManager implements
      */
     public function detachClientSocket(ClientInterface $client): void
     {
+        if ($client instanceof WebSocketClient) {
+            $this->cancelPendingPageDeliveries($client->acceptKey);
+        }
         $socket = $client->getSocket();
         if ($socket !== null) {
             $this->eventLoop->unregister($socket);
@@ -3179,6 +3216,11 @@ abstract class DaemonManager extends BaseManager implements
             if ($signal === null) {
                 break;
             }
+
+            if ($this->isAbandonedPageDelivery($signal) || $this->isStalePageRecovery($signal)) {
+                continue;
+            }
+            $this->acceptPageDeliveryControl($signal);
 
             if ($signal->signalType->getType() === SignalTypeConstants::UPLOAD_CREDIT_REQUEST) {
                 if ($signal->signalSource->getSource() === SignalSource::WEBSOCKET
@@ -3323,7 +3365,9 @@ abstract class DaemonManager extends BaseManager implements
                 $this->refuseUnservedGroupSubscription($signal, $signalName);
             }
 
-            if (empty($destinations) && $signalType === SignalTypeConstants::PAGE_SUBSCRIBE) {
+            if (empty($destinations)
+                && in_array($signalType, [SignalTypeConstants::PAGE_SUBSCRIBE, SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION], true)
+            ) {
                 $this->answerUnservedSubscription($signal);
             }
 
@@ -3339,6 +3383,9 @@ abstract class DaemonManager extends BaseManager implements
                 $this->refuseUnownedCommand($signal);
             }
 
+            // Prepare application JSON lazily, once for this signal's whole local fan-out.
+            $deliveryFrame = null;
+            $deliveryFramePrepared = false;
             // Deliver signal to each destination
             $skipSignal = false;
             /** @var list<AgentAddressedDestination> Agents this walk addressed, in the order it addressed them */
@@ -3346,6 +3393,21 @@ abstract class DaemonManager extends BaseManager implements
             while (($destination = array_shift($destinations)) !== null) {
                 if ($skipSignal) {
                     break;
+                }
+
+                if ($webSocketServer !== null && $destination instanceof WebSocketDestination
+                    && $signalName === SignalConstants::DELIVERY_COMPLETE
+                ) {
+                    $this->sendSignalToWebSocketClient($webSocketServer, $signal, $destination->acceptKey);
+                    continue;
+                }
+
+                if ($webSocketServer !== null && !$deliveryFramePrepared
+                    && ($destination instanceof WebSocketDestination || $destination instanceof AllClientsDestination
+                        || $destination instanceof SessionClientsDestination)
+                ) {
+                    $deliveryFrame = $this->prepareSignalFrame($signal);
+                    $deliveryFramePrepared = true;
                 }
 
                 if ($destination instanceof AgentAddressedDestination) {
@@ -3448,21 +3510,22 @@ abstract class DaemonManager extends BaseManager implements
                         continue;
                     }
 
-                    $this->sendSignalToWebSocketClient($webSocketServer, $signal, $acceptKey);
+                    if ($deliveryFrame !== null) {
+                        $this->sendToClient($webSocketServer, $acceptKey, $deliveryFrame);
+                    }
                 } elseif ($destination instanceof AllClientsDestination) {
                     // Broadcast signal to every connected WebSocket client
                     if ($webSocketServer === null) {
                         continue;
                     }
 
-                    $broadcastFrame = $this->encodeSignalFrame($signal);
-                    if ($broadcastFrame === null) {
+                    if ($deliveryFrame === null) {
                         continue;
                     }
 
                     $this->sendToAllClients(
                         $webSocketServer,
-                        $broadcastFrame,
+                        $deliveryFrame,
                         $destination->excludeAcceptKey,
                         $destination->excludeSessionTokenHash,
                     );
@@ -3472,14 +3535,13 @@ abstract class DaemonManager extends BaseManager implements
                         continue;
                     }
 
-                    $sessionFrame = $this->encodeSignalFrame($signal);
-                    if ($sessionFrame === null) {
+                    if ($deliveryFrame === null) {
                         continue;
                     }
 
                     $this->sendToSessionClients(
                         $webSocketServer,
-                        $sessionFrame,
+                        $deliveryFrame,
                         $destination->sessionTokenHash,
                     );
                 } elseif ($destination instanceof CommandReplyDestination) {
@@ -4918,9 +4980,11 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param string $nodeId Node that can no longer be reached
      * @param float $at Microtime of this node's clock when the link closed
+     * @throws InvalidFormatException When the recovery page or params are malformed
      */
     public function noteNodeUnreachable(string $nodeId, float $at): void
     {
+        $this->recoverPendingPageDeliveries(nodeId: $nodeId);
         $workerServer = $this->findWorkerServer();
         foreach ($this->agentManagerDaemon->rtReplicaOriginMap()->rowsOfNode($nodeId) as $collectionKey => $stateIds) {
             RtStaleness::mark($collectionKey, $stateIds, $at);
@@ -5024,6 +5088,7 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param string $acceptKey Accept key of the connection to deliver to
      * @param SignalDTO $signal Signal to write to that connection
+     * @throws InvalidFormatException When a matching completion reads an invalid delivery window
      */
     public function deliverSignalToClient(string $acceptKey, SignalDTO $signal): void
     {
@@ -5152,6 +5217,7 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param SignalDTO $signal Signal that could not be carried to the node hosting its agent
      * @throws InvalidArgumentException When the subscription-error signal cannot be named
+     * @throws InvalidFormatException When the tracked delivery has an invalid completion address
      */
     protected function answerUnreachableSubscription(SignalDTO $signal): void
     {
@@ -5175,6 +5241,7 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param SignalDTO $signal Signal whose agent could not be started on this node
      * @throws InvalidArgumentException When the subscription-error signal cannot be named
+     * @throws InvalidFormatException When the tracked delivery has an invalid completion address
      */
     protected function answerStartRefusedSubscription(SignalDTO $signal): void
     {
@@ -5194,6 +5261,7 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param SignalDTO $signal Subscription with no page route
      * @throws InvalidArgumentException When the subscription-error signal cannot be named
+     * @throws InvalidFormatException When the tracked delivery has an invalid completion address
      */
     protected function answerUnservedSubscription(SignalDTO $signal): void
     {
@@ -5209,8 +5277,8 @@ abstract class DaemonManager extends BaseManager implements
      * Sends the subscription error a page waiting on an undelivered subscribe is owed.
      *
      * Shared by the refusal doors above; what differs between them is the status, the code,
-     * the sentence and the reason the journal line gives. Anything but a PAGE_SUBSCRIBE is
-     * left alone - an update travels on a page whose agent is already up.
+     * the sentence and the reason the journal line gives. An undelivered tracked update ends
+     * its service token without a new user-facing reply. Other signal types are left alone.
      *
      * @param SignalDTO $signal Signal that could not be delivered, a subscribe or not
      * @param int $httpCode HTTP status of the refusal
@@ -5224,11 +5292,17 @@ abstract class DaemonManager extends BaseManager implements
         string $errorCode,
         string $reason,
     ): void {
+        $data = $signal->data;
+        if ($signal->signalType->getType() === SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION
+            && $data instanceof WebSocketPageUpdateSubscriptionSignalDTO
+        ) {
+            $this->completeRefusedDelivery($data->acceptKey, $data->page ?? $signal->signalName->getName(), $data->deliveryId);
+            return;
+        }
         if ($signal->signalType->getType() !== SignalTypeConstants::PAGE_SUBSCRIBE) {
             return;
         }
 
-        $data = $signal->data;
         if (!$data instanceof WebSocketPageSubscribeSignalDTO) {
             return;
         }
@@ -5249,6 +5323,32 @@ abstract class DaemonManager extends BaseManager implements
                     errorCode: $errorCode,
                 ),
                 targetAcceptKey: $data->acceptKey,
+            ),
+        );
+        $this->completeRefusedDelivery($data->acceptKey, $page, $data->deliveryId);
+    }
+
+    /**
+     * Queues the internal boundary after an early refusal, without inventing an update reply.
+     *
+     * @param string $acceptKey Connection whose delivery was refused
+     * @param string $page Page address of the request
+     * @param ?string $deliveryId Internal token, absent for untracked requests
+     * @throws InvalidArgumentException When the completion signal cannot be named
+     */
+    private function completeRefusedDelivery(string $acceptKey, string $page, ?string $deliveryId): void
+    {
+        if ($deliveryId === null || $page === '') {
+            return;
+        }
+
+        Hilos::$sr->queueSignal(
+            signalSource: new SignalSource(SignalSource::DAEMON),
+            signalType: new SignalType(SignalTypeConstants::WS_USER),
+            signalName: new SignalName(SignalConstants::DELIVERY_COMPLETE),
+            signalData: new WebSocketSignalData(
+                data: new DeliveryCompleteSignalData($page, $deliveryId),
+                targetAcceptKey: $acceptKey,
             ),
         );
     }
@@ -5473,28 +5573,35 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
 
-        foreach (Hilos::$sr->localClientDestinations($signal) as $destination) {
-            if ($destination instanceof WebSocketDestination) {
-                $this->sendSignalToWebSocketClient($webSocketServer, $signal, $destination->acceptKey);
-            } elseif ($destination instanceof AllClientsDestination) {
-                $broadcastFrame = $this->encodeSignalFrame($signal);
-                if ($broadcastFrame === null) {
-                    continue;
+        $destinations = Hilos::$sr->localClientDestinations($signal);
+        if ($destinations === []) {
+            return;
+        }
+        if ($signal->signalName->getName() === SignalConstants::DELIVERY_COMPLETE) {
+            foreach ($destinations as $destination) {
+                if ($destination instanceof WebSocketDestination) {
+                    $this->sendSignalToWebSocketClient($webSocketServer, $signal, $destination->acceptKey);
                 }
+            }
+            return;
+        }
 
+        $deliveryFrame = $this->prepareSignalFrame($signal);
+        if ($deliveryFrame === null) {
+            return;
+        }
+        foreach ($destinations as $destination) {
+            if ($destination instanceof WebSocketDestination) {
+                $this->sendToClient($webSocketServer, $destination->acceptKey, $deliveryFrame);
+            } elseif ($destination instanceof AllClientsDestination) {
                 $this->sendToAllClients(
                     $webSocketServer,
-                    $broadcastFrame,
+                    $deliveryFrame,
                     $destination->excludeAcceptKey,
                     $destination->excludeSessionTokenHash,
                 );
             } elseif ($destination instanceof SessionClientsDestination) {
-                $sessionFrame = $this->encodeSignalFrame($signal);
-                if ($sessionFrame === null) {
-                    continue;
-                }
-
-                $this->sendToSessionClients($webSocketServer, $sessionFrame, $destination->sessionTokenHash);
+                $this->sendToSessionClients($webSocketServer, $deliveryFrame, $destination->sessionTokenHash);
             }
         }
     }
@@ -6028,15 +6135,289 @@ abstract class DaemonManager extends BaseManager implements
      * @param WebSocketServer $server WebSocket server
      * @param SignalDTO $signal Signal DTO
      * @param string $acceptKey Accept key
+     * @throws InvalidFormatException When a matching completion reads an invalid delivery window
      */
     private function sendSignalToWebSocketClient(WebSocketServer $server, SignalDTO $signal, string $acceptKey): void
     {
-        $message = $this->encodeSignalFrame($signal);
+        if ($signal->signalName->getName() === SignalConstants::DELIVERY_COMPLETE) {
+            $targeting = $signal->data;
+            if ($signal->signalType->getType() === SignalTypeConstants::WS_USER
+                && $targeting instanceof WebSocketSignalData && $targeting->data instanceof DeliveryCompleteSignalData
+                && $targeting->targetAcceptKey === $acceptKey
+            ) {
+                $this->acceptPageDeliveryControl($signal);
+                foreach ($server->getClients() as $client) {
+                    if ($client instanceof WebSocketClient && $client->acceptKey === $acceptKey) {
+                        $client->completeDelivery($targeting->data->page, $targeting->data->deliveryId);
+                        return;
+                    }
+                }
+            }
+            return;
+        }
+
+        if ($this->isStalePageRecovery($signal)) {
+            return;
+        }
+        $this->acceptPageDeliveryControl($signal);
+        $message = $this->prepareSignalFrame($signal);
         if ($message === null) {
             return;
         }
 
         $this->sendToClient($server, $acceptKey, $message);
+    }
+
+    /**
+     * @param string $acceptKey Connection accepted on this node
+     * @return ?WebSocketClient Its live transport, absent for remote or closed connections
+     */
+    private function deliveryClient(string $acceptKey): ?WebSocketClient
+    {
+        foreach ($this->findWebSocketServer()?->getClients() ?? [] as $client) {
+            if ($client instanceof WebSocketClient && $client->acceptKey === $acceptKey) {
+                return $client;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param SignalDTO $signal Queued or released browser request
+     * @param bool $localOnly Whether this request was forwarded by a peer to this serving node
+     * @return bool Whether a socket-local token was superseded before dispatch
+     */
+    private function isAbandonedPageDelivery(SignalDTO $signal, bool $localOnly = false): bool
+    {
+        $data = $signal->data;
+        if (!$data instanceof WebSocketPageSubscribeSignalDTO && !$data instanceof WebSocketPageUpdateSubscriptionSignalDTO) {
+            return false;
+        }
+        if ($data->deliveryId === null) {
+            return false;
+        }
+        $client = $this->deliveryClient($data->acceptKey);
+
+        if ($client !== null) {
+            return !$client->isDeliveryPending($data->page ?? $signal->signalName->getName(), $data->deliveryId);
+        }
+
+        return $localOnly
+            ? !isset($this->pendingPageDeliveries[$data->acceptKey][$data->deliveryId])
+            : $this->findWebSocketServer() !== null;
+    }
+
+    /**
+     * Record the selected address before writing to a worker or a peer. Unknown placement is
+     * deliberately absent; start parking retains the actual local agent it waits for.
+     *
+     * @param SignalDTO $signal Request being dispatched
+     * @param AgentAddressedDestination $destination Selected serving address
+     */
+    private function trackPageDelivery(SignalDTO $signal, AgentAddressedDestination $destination): void
+    {
+        $data = $signal->data;
+        if (($signal->signalType->getType() !== SignalTypeConstants::PAGE_SUBSCRIBE
+                && $signal->signalType->getType() !== SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION)
+            || (!$data instanceof WebSocketPageSubscribeSignalDTO && !$data instanceof WebSocketPageUpdateSubscriptionSignalDTO)
+            || $data->deliveryId === null
+        ) {
+            return;
+        }
+        if ($data instanceof WebSocketPageSubscribeSignalDTO
+            && !isset($this->pendingPageDeliveries[$data->acceptKey][$data->deliveryId])) {
+            $this->cancelPendingPageDeliveries($data->acceptKey, cancelSocket: false);
+        }
+        $this->pendingPageDeliveries[$data->acceptKey][$data->deliveryId] = new PendingPageDelivery(
+            $data->acceptKey,
+            $data->page ?? $signal->signalName->getName(),
+            $data->deliveryId,
+            $data->params,
+            $this->agentManagerDaemon->buildAgentId($destination->agentType, $destination->agentIndex),
+            $destination instanceof RemoteAgentDestination ? $destination->nodeId : null,
+        );
+    }
+
+    /**
+     * Completion forgets only its exact attempt, including on the serving node before a peer
+     * forward. Recovery first abandons the page hold so the control frame can reach the socket.
+     *
+     * @param SignalDTO $signal Addressed internal boundary or existing page recovery control
+     */
+    private function acceptPageDeliveryControl(SignalDTO $signal): void
+    {
+        $target = $signal->data;
+        if ($signal->signalType->getType() !== SignalTypeConstants::WS_USER
+            || !$target instanceof WebSocketSignalData || $target->targetAcceptKey === null) {
+            return;
+        }
+        if ($signal->signalName->getName() === SignalConstants::DELIVERY_COMPLETE && $target->data instanceof DeliveryCompleteSignalData) {
+            $pending = $this->pendingPageDeliveries[$target->targetAcceptKey][$target->data->deliveryId] ?? null;
+            if ($pending?->page === $target->data->page) {
+                unset($this->pendingPageDeliveries[$pending->acceptKey][$pending->deliveryId]);
+                if ($this->pendingPageDeliveries[$pending->acceptKey] === []) {
+                    unset($this->pendingPageDeliveries[$pending->acceptKey]);
+                }
+            }
+        } elseif ($signal->signalName->getName() === SignalConstants::PAGE_RESUBSCRIBE
+            && $target->data instanceof PageResubscribeSignalData && !$this->isStalePageRecovery($signal)) {
+            $this->cancelPendingPageDeliveries($target->targetAcceptKey, $target->data->page);
+        }
+    }
+
+    /**
+     * Compare before mutating any socket, ledger or start queue. The accepted socket request
+     * outranks the dispatched registry; the serving node can instead use its address ledger.
+     *
+     * @param SignalDTO $signal Possible addressed recovery control
+     * @return bool Whether a known current subscription disagrees with the control's identity
+     */
+    private function isStalePageRecovery(SignalDTO $signal): bool
+    {
+        $target = $signal->data;
+        if ($signal->signalType->getType() !== SignalTypeConstants::WS_USER
+            || $signal->signalName->getName() !== SignalConstants::PAGE_RESUBSCRIBE
+            || !$target instanceof WebSocketSignalData || $target->targetAcceptKey === null
+            || !$target->data instanceof PageResubscribeSignalData) {
+            return false;
+        }
+
+        $current = $this->deliveryClient($target->targetAcceptKey)?->pendingPageSubscribe()
+            ?? Hilos::$sr->pageSubscription($target->targetAcceptKey);
+        if ($current !== null) {
+            return $current->page !== $target->data->page || !self::samePageParams($current->params, $target->data->params);
+        }
+        foreach (array_reverse($this->pendingPageDeliveries[$target->targetAcceptKey] ?? []) as $pending) {
+            return $pending->page !== $target->data->page || !self::samePageParams($pending->params, $target->data->params);
+        }
+
+        return false;
+    }
+
+    /**
+     * @param mixed $left Current JSON parameter value
+     * @param mixed $right Recovery JSON parameter value
+     * @return bool Structural equality, with strict scalar types, ordered lists and unordered map keys
+     */
+    private static function samePageParams(mixed $left, mixed $right): bool
+    {
+        if (!is_array($left) || !is_array($right)) {
+            return $left === $right;
+        }
+        if (array_is_list($left) !== array_is_list($right) || count($left) !== count($right)) {
+            return false;
+        }
+        foreach ($left as $key => $value) {
+            if (!array_key_exists($key, $right) || !self::samePageParams($value, $right[$key])) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Cancel before recovery/unsubscribe can queue anything else. Both start queues are filtered:
+     * a frame already released by a start report must not resurrect the abandoned attempt.
+     *
+     * @param string $acceptKey Connection whose transport obligation ended
+     * @param ?string $page Page being abandoned, or null for the whole connection
+     * @param bool $cancelSocket Whether to cancel the transport too, false when recording a new attempt
+     */
+    private function cancelPendingPageDeliveries(string $acceptKey, ?string $page = null, bool $cancelSocket = true): void
+    {
+        foreach ($this->pendingPageDeliveries[$acceptKey] ?? [] as $deliveryId => $pending) {
+            if ($page === null || $pending->page === $page) {
+                unset($this->pendingPageDeliveries[$acceptKey][$deliveryId]);
+            }
+        }
+        if (($this->pendingPageDeliveries[$acceptKey] ?? []) === []) {
+            unset($this->pendingPageDeliveries[$acceptKey]);
+        }
+        if ($cancelSocket) {
+            $this->deliveryClient($acceptKey)?->cancelDeliveries($page);
+        }
+        $keep = static function (ParkedSignal|ParkedAgentSignal $parked) use ($acceptKey, $page): bool {
+            $data = $parked->signal->data;
+            return (!$data instanceof WebSocketPageSubscribeSignalDTO && !$data instanceof WebSocketPageUpdateSubscriptionSignalDTO)
+                || $data->acceptKey !== $acceptKey
+                || ($page !== null && ($data->page ?? $parked->signal->signalName->getName()) !== $page);
+        };
+        $this->parkedSignals = array_values(array_filter($this->parkedSignals, $keep));
+        $this->parkedAgentSignals = array_values(array_filter($this->parkedAgentSignals, $keep));
+        $this->releasedAgentSignals = array_values(array_filter($this->releasedAgentSignals, $keep));
+    }
+
+    /**
+     * Loss is an event, never a timeout. Only pending attempts at the lost address are asked to
+     * subscribe again; completed pages have no record here. A serving node knows its own agent
+     * roster and sends the existing addressed control back over the ordinary client route.
+     *
+     * @param list<string> $agentIds Local agents lost with a worker or stopped
+     * @param ?string $nodeId Remote node lost by the socket master, or null for local agents
+     * @param ?string $acceptKey One connection moving to a different owner, or null for an owner loss
+     * @param ?string $page Previous page of that connection
+     * @throws InvalidFormatException When the recovery page or params are malformed
+     */
+    private function recoverPendingPageDeliveries(
+        array $agentIds = [],
+        ?string $nodeId = null,
+        ?string $acceptKey = null,
+        ?string $page = null,
+    ): void
+    {
+        foreach ($this->pendingPageDeliveries as $attempts) {
+            foreach ($attempts as $pending) {
+                $matches = match (true) {
+                    $acceptKey !== null => $pending->acceptKey === $acceptKey && $pending->page === $page,
+                    $nodeId !== null => $pending->nodeId === $nodeId,
+                    default => $pending->nodeId === null && in_array($pending->agentId, $agentIds, true),
+                };
+                if (!isset($this->pendingPageDeliveries[$pending->acceptKey][$pending->deliveryId])
+                    || !$matches) {
+                    continue;
+                }
+                $client = $this->deliveryClient($pending->acceptKey);
+                if ($client !== null && !$client->isDeliveryPending($pending->page, $pending->deliveryId)) {
+                    unset($this->pendingPageDeliveries[$pending->acceptKey][$pending->deliveryId]);
+                    if ($this->pendingPageDeliveries[$pending->acceptKey] === []) {
+                        unset($this->pendingPageDeliveries[$pending->acceptKey]);
+                    }
+                    continue;
+                }
+                $this->cancelPendingPageDeliveries($pending->acceptKey, $pending->page);
+                try {
+                    Hilos::$sr->queueSignal(
+                        new SignalSource(SignalSource::DAEMON),
+                        new SignalType(SignalTypeConstants::WS_USER),
+                        new SignalName(SignalConstants::PAGE_RESUBSCRIBE),
+                        new WebSocketSignalData(
+                            new PageResubscribeSignalData($pending->page, $pending->params),
+                            targetAcceptKey: $pending->acceptKey,
+                        ),
+                    );
+                } catch (InvalidArgumentException $failure) {
+                    Logger::error('Page delivery recovery refused for ' . $pending->acceptKey . ': ' . $failure->getMessage());
+                }
+            }
+        }
+    }
+
+    /**
+     * The session answer releases the browser's first page subscribe. Earlier session
+     * notifications may already have opened cadence, but this reply must not wait for it.
+     * The socket's whole-subscription hold still takes precedence over urgency.
+     *
+     * @param SignalDTO $signal Signal whose encoded text is shared by every local recipient
+     * @return ?DeliveryFrame Immutable prepared text, absent when the encoder refused it
+     */
+    private function prepareSignalFrame(SignalDTO $signal): ?DeliveryFrame
+    {
+        $json = $this->encodeSignalFrame($signal);
+        $inner = $signal->data instanceof WebSocketSignalData ? $signal->data->data : $signal->data;
+
+        return $json === null ? null : DeliveryFrame::fromJson($json, urgent: $inner instanceof HandshakeResponseSignalData);
     }
 
     /**
@@ -6060,6 +6441,11 @@ abstract class DaemonManager extends BaseManager implements
      */
     protected function encodeSignalFrame(SignalDTO $signal): ?string
     {
+        // Service markers must never enter a browser envelope, including broadcast paths.
+        if ($signal->signalName->getName() === SignalConstants::DELIVERY_COMPLETE) {
+            return null;
+        }
+
         $signalData = $signal->data;
 
         // Extract inner data from WebSocketSignalData if present
@@ -6088,14 +6474,14 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param WebSocketServer $server WebSocket server
      * @param string $acceptKey Accept key
-     * @param string $message Message JSON
+     * @param DeliveryFrame $message Shared immutable application frame
      */
-    private function sendToClient(WebSocketServer $server, string $acceptKey, string $message): void
+    private function sendToClient(WebSocketServer $server, string $acceptKey, DeliveryFrame $message): void
     {
         foreach ($server->getClients() as $client) {
             if ($client instanceof WebSocketClient && $client->acceptKey === $acceptKey) {
                 try {
-                    $client->sendFrame($message);
+                    $client->sendDeliveryFrame($message);
                     return;
                 } catch (Throwable $e) {
                     Logger::error("Failed to send message to acceptKey {$acceptKey}: " . $e->getMessage());
@@ -6118,14 +6504,14 @@ abstract class DaemonManager extends BaseManager implements
      * because both sides are derived from a session token.
      *
      * @param WebSocketServer $server WebSocket server
-     * @param string $message Message JSON
+     * @param DeliveryFrame $message Shared immutable application frame
      * @param ?string $excludeAcceptKey Accept key to exclude, or null to send to all
      * @param ?string $excludeSessionTokenHash Hash of the session whose connections are excluded, or
      *                                         null to leave no browser out
      */
     private function sendToAllClients(
         WebSocketServer $server,
-        string $message,
+        DeliveryFrame $message,
         ?string $excludeAcceptKey = null,
         ?string $excludeSessionTokenHash = null,
     ): void {
@@ -6145,7 +6531,7 @@ abstract class DaemonManager extends BaseManager implements
             }
 
             try {
-                $client->sendFrame($message);
+                $client->sendDeliveryFrame($message);
             } catch (Throwable $e) {
                 Logger::error("Failed to send message to acceptKey {$client->acceptKey}: " . $e->getMessage());
             }
@@ -6165,10 +6551,10 @@ abstract class DaemonManager extends BaseManager implements
      * which is the credential this whole address stands in for.
      *
      * @param WebSocketServer $server WebSocket server
-     * @param string $message Message JSON
+     * @param DeliveryFrame $message Shared immutable application frame
      * @param string $sessionTokenHash Hash of the session whose connections receive the frame
      */
-    private function sendToSessionClients(WebSocketServer $server, string $message, string $sessionTokenHash): void
+    private function sendToSessionClients(WebSocketServer $server, DeliveryFrame $message, string $sessionTokenHash): void
     {
         foreach ($server->getClients() as $client) {
             if (!$client instanceof WebSocketClient || $client->sessionTokenHash === null) {
@@ -6179,7 +6565,7 @@ abstract class DaemonManager extends BaseManager implements
             }
 
             try {
-                $client->sendFrame($message);
+                $client->sendDeliveryFrame($message);
             } catch (Throwable $e) {
                 Logger::error("Failed to send message to acceptKey {$client->acceptKey}: " . $e->getMessage());
             }
@@ -6221,10 +6607,10 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param WebSocketServer $server WebSocket server
      * @param string $group Group name
-     * @param string $message Message JSON
+     * @param DeliveryFrame $message Shared immutable application frame
      * @param ?string $excludeAcceptKey Accept key to exclude (optional)
      */
-    private function sendToGroup(WebSocketServer $server, string $group, string $message, ?string $excludeAcceptKey = null): void
+    private function sendToGroup(WebSocketServer $server, string $group, DeliveryFrame $message, ?string $excludeAcceptKey = null): void
     {
         // TODO: Implement proper group subscription tracking
         // For now, send to all clients (basic implementation)
@@ -6237,7 +6623,7 @@ abstract class DaemonManager extends BaseManager implements
                 // Basic implementation: send to all clients
                 // In future, check if client is subscribed to group
                 try {
-                    $client->sendFrame($message);
+                    $client->sendDeliveryFrame($message);
                 } catch (Throwable $e) {
                     Logger::error("Failed to send message to acceptKey {$client->acceptKey}: " . $e->getMessage());
                 }
@@ -6259,6 +6645,7 @@ abstract class DaemonManager extends BaseManager implements
      * @param SignalDTO $signal Signal DTO
      * @throws EnvException When locating the replaced subscription's agent reads cluster configuration and it is invalid
      * @throws InvalidArgumentException When the unsubscribe of a replaced subscription cannot be named
+     * @throws InvalidFormatException When a pending recovery address is malformed
      */
     protected function updateSubscriptions(SignalDTO $signal): void
     {
@@ -6539,6 +6926,7 @@ abstract class DaemonManager extends BaseManager implements
      * @param string $page Page the connection is moving to
      * @param ?PageAgentAddress $address Settled address the subscription is moving to, null when the new page is not per-instance
      * @throws EnvException When the placement lookup reads cluster configuration and it is invalid
+     * @throws InvalidFormatException When a pending recovery address is malformed
      */
     private function unsubscribeReplacedPageAgent(string $acceptKey, string $page, ?PageAgentAddress $address): void
     {
@@ -6557,6 +6945,7 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
 
+        $this->recoverPendingPageDeliveries(acceptKey: $acceptKey, page: $previous->page);
         $workerServer = $this->findWorkerServer();
         if ($workerServer === null) {
             return;
@@ -6729,6 +7118,7 @@ abstract class DaemonManager extends BaseManager implements
         if ($signal->signalType->getType() === SignalTypeConstants::PAGE_UNSUBSCRIBE
             && $data instanceof WebSocketPageUnsubscribeSignalDTO
         ) {
+            $this->cancelPendingPageDeliveries($data->acceptKey, $signal->signalName->getName());
             Hilos::$sr->unsubscribeFromPage($signal->signalName->getName(), $data);
 
             return;
@@ -6738,6 +7128,7 @@ abstract class DaemonManager extends BaseManager implements
             && $data instanceof WebSocketCloseSignalDTO
             && $data->acceptKey !== ''
         ) {
+            $this->cancelPendingPageDeliveries($data->acceptKey);
             Hilos::$sr->unsubscribeFromAll($data->acceptKey);
             $this->dropParkedSignals($data->acceptKey);
             $this->dropParkedAgentSignals($data->acceptKey);
@@ -7074,6 +7465,9 @@ abstract class DaemonManager extends BaseManager implements
 
         foreach ($released as $parked) {
             $signal = $parked->signal;
+            if ($this->isAbandonedPageDelivery($signal, $parked->localOnly)) {
+                continue;
+            }
             $agent = AgentId::fromId($parked->agentId);
             Logger::info(sprintf(
                 'Signal %s/%s held for agent %s let go after %.3fs',
@@ -7238,6 +7632,7 @@ abstract class DaemonManager extends BaseManager implements
         $signalName = $signal->signalName->getName();
 
         if ($destination instanceof RemoteAgentDestination) {
+            $this->trackPageDelivery($signal, $destination);
             if ($mesh === null) {
                 Logger::error("Peer signal dropped: {$signalType}/{$signalName}"
                     . " -> node {$destination->nodeId} agent {$destination->agentType} - no peer server");
@@ -7317,6 +7712,7 @@ abstract class DaemonManager extends BaseManager implements
         $signalType = $signal->signalType->getType();
         $signalName = $signal->signalName->getName();
 
+        $this->trackPageDelivery($signal, $destination);
         try {
             // An agent that has not reported its start is started here, as being addressed always
             // started it, and the frame waits in the master for the report instead of being written
@@ -7688,7 +8084,7 @@ abstract class DaemonManager extends BaseManager implements
         Hilos::$cluster?->placement()?->noteNodeOnline($node->nodeId, microtime(true));
         try {
             $this->rerouteNodeAddressedPages($node->nodeId);
-        } catch (EnvException | InvalidArgumentException $e) {
+        } catch (EnvException | InvalidArgumentException | InvalidFormatException $e) {
             Logger::error("Could not reroute pages for joined node {$node->nodeId}: {$e->getMessage()}");
         }
         // Last, so the roster workers read is published after this node has decided what the join
@@ -7707,6 +8103,7 @@ abstract class DaemonManager extends BaseManager implements
      * non-blocking.
      *
      * @param ClusterNode $node Node that left
+     * @throws InvalidFormatException When the recovery page or params are malformed
      */
     public function onNodeLeft(ClusterNode $node): void
     {
@@ -7729,9 +8126,10 @@ abstract class DaemonManager extends BaseManager implements
         $this->rtClaimRegistry->forget($node->nodeId);
         try {
             $this->rerouteNodeAddressedPages($node->nodeId);
-        } catch (EnvException | InvalidArgumentException $e) {
+        } catch (EnvException | InvalidArgumentException | InvalidFormatException $e) {
             Logger::error("Could not reroute pages for departed node {$node->nodeId}: {$e->getMessage()}");
         }
+        $this->recoverPendingPageDeliveries(nodeId: $node->nodeId);
         // Last, for the reason given in {@see onNodeJoined()}. The departed node keeps its row and
         // turns offline in it; the registry does not forget it either (HIL-337).
         $this->publishClusterNodes();
@@ -7864,8 +8262,18 @@ abstract class DaemonManager extends BaseManager implements
                 continue;
             }
 
+            $wasPending = false;
+            foreach ($this->pendingPageDeliveries[$acceptKey] ?? [] as $pending) {
+                if ($pending->page === $page) {
+                    $wasPending = true;
+                    break;
+                }
+            }
             $this->unsubscribeReplacedPageAgent($acceptKey, $page, $address);
             $router->bindPageAgent($acceptKey, $page, $address->agentType, $address->agentIndex, $address->agentNode);
+            if ($wasPending) {
+                continue;
+            }
             $workerServer = $this->findWorkerServer();
             if ($workerServer === null) {
                 continue;

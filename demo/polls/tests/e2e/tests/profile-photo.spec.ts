@@ -3,6 +3,8 @@ import { test, expect, type Page } from '@playwright/test'
 import {
   countSentFrames,
   watchClientDocument,
+  watchSocketFrames,
+  type SocketFrame,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant.js'
 import { setAdminViewMode } from '../helpers/adminViewMode.js'
@@ -14,8 +16,6 @@ import {
   selectPhoto,
 } from '../helpers/profilePhoto.js'
 import { clickSubmit, signUp } from '../helpers/session.js'
-
-// spec-owner: demo — polls' Angular photo wiring publishes without moderation.
 
 const PHOTO_LIMIT_BYTES = 40 * 1024 * 1024
 // Flat interior pixels survive the browser JPEG and server WebP encoders with
@@ -255,12 +255,8 @@ test('the admin card follows userPhoto while the viewer receives its personal ph
 
       await setAdminViewMode(true)
       const viewer = await viewerContext.newPage()
-      const frames: string[] = []
-      viewer.on('websocket', (socket) => {
-        socket.on('framereceived', ({ payload }) => {
-          frames.push(JSON.stringify(JSON.parse(payload.toString())))
-        })
-      })
+      const frames: SocketFrame[] = []
+      watchSocketFrames(viewer, (frame) => frames.push(frame))
       await gotoPage(viewer, `/hilos/user/${person.userId}`, PAGE_READY)
       await expect(viewer.getByTestId('view-mode-banner')).toBeVisible()
       await expect(
@@ -276,14 +272,23 @@ test('the admin card follows userPhoto while the viewer receives its personal ph
       // personal-field mask in the delivered userPhoto browser table as well.
       await expect
         .poll(() =>
-          frames.some(
-            (frame) =>
-              frame.includes('"userPhoto"') &&
-              frame.includes('"photo":{"_hidden":true}'),
-          ),
+          frames.some(({ wire, raw }) => {
+            // This projection selects one inner signal; privacy below reads
+            // the original physical text, including all its batch neighbors.
+            const inner = JSON.stringify(wire)
+            return (
+              inner?.includes('"userPhoto"') &&
+              inner.includes('"photo":{"_hidden":true}') &&
+              raw !== undefined &&
+              /"photo"\s*:\s*\{\s*"_hidden"\s*:\s*true\s*\}/.test(raw)
+            )
+          }),
         )
         .toBe(true)
-      for (const frame of frames) expect(frame).not.toContain('/_hilos/file?')
+      for (const { raw, wire } of frames) {
+        expect(raw ?? '').not.toContain('/_hilos/file?')
+        expect(JSON.stringify(wire) ?? '').not.toContain('/_hilos/file?')
+      }
 
       await selectPhoto(page, await picture(page, 'image/png'), 'image/png')
       await clickSubmit(page.getByTestId('profile-photo-save'))
@@ -300,7 +305,10 @@ test('the admin card follows userPhoto while the viewer receives its personal ph
       await expect(viewerAvatar.getByTestId('hilos-avatar-photo')).toHaveCount(
         0,
       )
-      for (const frame of frames) expect(frame).not.toContain('/_hilos/file?')
+      for (const { raw, wire } of frames) {
+        expect(raw ?? '').not.toContain('/_hilos/file?')
+        expect(JSON.stringify(wire) ?? '').not.toContain('/_hilos/file?')
+      }
 
       await clickSubmit(page.getByTestId('profile-photo-open'))
       await clickSubmit(page.getByTestId('profile-photo-remove'))
@@ -309,8 +317,8 @@ test('the admin card follows userPhoto while the viewer receives its personal ph
       await expect(avatar).toHaveText('E')
       await document.unchanged()
       await test.info().attach('viewer-photo-frames', {
-        body: frames.join('\n'),
-        contentType: 'application/x-ndjson',
+        body: JSON.stringify(frames),
+        contentType: 'application/json',
       })
     } finally {
       await document.dispose()

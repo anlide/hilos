@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { z } from 'zod'
 import { createHilosConnection } from '../../src/connection/createHilosConnection.js'
+import { ActionLifecycle } from '../../src/connection/actionLifecycle.js'
 import {
   HilosConnection,
   type SessionRotation,
@@ -79,6 +81,7 @@ function connected(welcome: string = WELCOME): {
   const connection = new HilosConnection({
     url: 'ws://test/ws',
     webSocketFactory: (url) => new MockWebSocket(url),
+    projectSchemas: { project_tail: z.object({}) },
     // Full jitter at its maximum, so a backoff-delayed reconnect would be a whole
     // second away and could never be mistaken for the immediate one.
     random: () => 1,
@@ -101,6 +104,166 @@ afterEach(() => {
 })
 
 describe('session rotation (HIL-582)', () => {
+  it.each([false, true])(
+    'settles an action and dispatches the whole batch before rotation (already held: %s)',
+    async (alreadyHeld) => {
+      const { connection } = connected()
+      const actions = new ActionLifecycle(connection)
+      const handle = actions.dispatch('login', {})
+      const before = MockWebSocket.last
+      const order: string[] = []
+      const ack = {
+        type: 'action_success',
+        data: { action: 'login', reply: { accepted: true } },
+        requestId: handle.requestId,
+        outcome: 'success',
+        time: 456,
+      }
+      connection.on('actionSuccess', (signal) => {
+        expect(signal.envelope).toEqual(ack)
+        order.push('ack')
+      })
+      connection.on('tableViewportDelta', () => {
+        expect(before.closeCalls).toBe(0)
+        order.push('table')
+      })
+      connection.on('projectSignal', (signal) => {
+        expect(MockWebSocket.instances).toHaveLength(1)
+        order.push(signal.type)
+      })
+      connection.on('state', (state) => order.push(state))
+      if (alreadyHeld) before.emit('message', { data: ROTATE })
+      before.emit('message', {
+        data: JSON.stringify({
+          type: 'signal_batch',
+          data: {
+            frames: [
+              ...(alreadyHeld ? [] : [JSON.parse(ROTATE)]),
+              ack,
+              {
+                type: 'table_viewport_delta',
+                data: { page: 'p', tableKey: 't', kind: 'row_updated' },
+              },
+              { type: 'project_tail', data: {} },
+            ],
+          },
+        }),
+      })
+      expect(order).toEqual(['ack', 'table', 'project_tail', 'reconnecting'])
+      expect(await handle.done).toEqual({
+        message: undefined,
+        reply: { accepted: true },
+      })
+      expect(MockWebSocket.instances).toHaveLength(2)
+      expect(before.closeCalls).toBe(1)
+      connection.close()
+    },
+  )
+
+  it('dispatches the tail before reconnecting even when no reply is pending', () => {
+    const { connection } = connected()
+    const order: string[] = []
+    connection.on('unknownSignal', () => order.push('tail'))
+    connection.on('state', (state) => order.push(state))
+    MockWebSocket.last.emit('message', {
+      data: JSON.stringify({
+        type: 'signal_batch',
+        data: { frames: [JSON.parse(ROTATE), { type: 'tail', data: {} }] },
+      }),
+    })
+    expect(order).toEqual(['tail', 'reconnecting'])
+    expect(MockWebSocket.instances).toHaveLength(2)
+    connection.close()
+  })
+
+  it.each(['sessionRotate', 'unknownSignal', 'signal'] as const)(
+    'does not revive a connection explicitly closed by a %s listener',
+    (event) => {
+      const { connection } = connected()
+      const before = MockWebSocket.last
+      const seen: string[] = []
+      connection.on(event, () => connection.close())
+      connection.on('unknownSignal', (signal) => seen.push(signal.type))
+      before.emit('message', {
+        data: JSON.stringify({
+          type: 'signal_batch',
+          data: {
+            frames: [
+              JSON.parse(ROTATE),
+              { type: 'first_tail', data: {} },
+              { type: 'old_tail', data: {} },
+            ],
+          },
+        }),
+      })
+      expect(seen).toEqual(event === 'unknownSignal' ? ['first_tail'] : [])
+      expect(connection.state).toBe('disconnected')
+      expect(MockWebSocket.instances).toHaveLength(1)
+      expect(before.closeCalls).toBe(1)
+    },
+  )
+
+  it('does not open a replacement when a reconnect-state listener closes explicitly', () => {
+    const { connection } = connected()
+    connection.on('state', (state) => {
+      if (state === 'reconnecting') connection.close()
+    })
+    MockWebSocket.last.emit('message', { data: ROTATE })
+    expect(connection.state).toBe('disconnected')
+    expect(MockWebSocket.instances).toHaveLength(1)
+  })
+
+  it('holds rotation through a reentrant delivery until the outer tail is dispatched', () => {
+    const { connection } = connected()
+    const socket = MockWebSocket.last
+    const order: string[] = []
+    connection.sendAction('login', {}, 'req')
+    connection.on('actionSuccess', () => order.push('ack'))
+    connection.on('state', (state) => order.push(state))
+    connection.on('unknownSignal', (signal) => {
+      order.push(signal.type)
+      expect(MockWebSocket.instances).toHaveLength(1)
+      if (signal.type === 'trigger') {
+        socket.emit('message', {
+          data: JSON.stringify({
+            type: 'signal_batch',
+            data: {
+              frames: [
+                {
+                  type: 'action_success',
+                  requestId: 'req',
+                  data: { action: 'login' },
+                },
+                { type: 'inner_tail', data: {} },
+              ],
+            },
+          }),
+        })
+      }
+    })
+    socket.emit('message', {
+      data: JSON.stringify({
+        type: 'signal_batch',
+        data: {
+          frames: [
+            JSON.parse(ROTATE),
+            { type: 'trigger', data: {} },
+            { type: 'outer_tail', data: {} },
+          ],
+        },
+      }),
+    })
+    expect(order).toEqual([
+      'trigger',
+      'ack',
+      'inner_tail',
+      'outer_tail',
+      'reconnecting',
+    ])
+    expect(MockWebSocket.instances).toHaveLength(2)
+    connection.close()
+  })
+
   it('reports the ticket under the cookie name the welcome announced', () => {
     const { rotations } = connected()
 

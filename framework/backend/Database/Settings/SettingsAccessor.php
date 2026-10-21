@@ -19,6 +19,7 @@ use Hilos\Database\Settings\Exception\SettingNotInCatalogException;
 use Hilos\Database\Settings\Exception\SettingTypeMismatchException;
 use Hilos\Database\Settings\Validation\SettingValueRuleInterface;
 use Hilos\Hilos;
+use Hilos\Socket\WebSocket\Delivery\DeliverySettingsCatalog;
 
 /**
  * Catalog-backed settings accessor for Hilos::$setting[$key]->string()/int()/float()/bool().
@@ -48,6 +49,9 @@ class SettingsAccessor implements ArrayAccess
     /**
      * Returns the settings catalog for this accessor, asking the provider once.
      *
+     * Project entries override the framework delivery defaults. Only metadata is cached;
+     * effective persisted values are read on demand.
+     *
      * The catalog is a declaration, not a value: the provider builds the same array from the same
      * literals every call, so keeping the first answer changes nothing an owner can observe. It is
      * remembered because one index read consults it three times — the key check in offsetGet, the type
@@ -63,7 +67,10 @@ class SettingsAccessor implements ArrayAccess
      */
     protected function getCatalog(): array
     {
-        return $this->catalogCache ??= $this->catalogClass::getCatalog();
+        return $this->catalogCache ??= array_replace(
+            DeliverySettingsCatalog::getCatalog(),
+            $this->catalogClass::getCatalog(),
+        );
     }
 
     /**

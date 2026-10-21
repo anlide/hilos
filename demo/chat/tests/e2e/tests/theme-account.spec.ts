@@ -18,6 +18,8 @@ import {
   dropSocket,
   isSessionCookie,
   setCustomSetting,
+  watchSocketFrames,
+  type SocketFrame,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
@@ -334,6 +336,7 @@ test('a stale Dark browser reconnects after reset without adopting it again', as
     ignoreHTTPSErrors: true,
     colorScheme: 'light',
   })
+  const frames: SocketFrame[] = []
   try {
     await emulateSystemTheme(page, 'light')
     const person = await signUp(page)
@@ -343,28 +346,29 @@ test('a stale Dark browser reconnects after reset without adopting it again', as
     await armSocketDrop(second)
     const adoptions = countSentFrames(second, 'hilos_theme_adopt')
     let accountTheme: unknown
-    second.on('websocket', (socket) => {
-      socket.on('framereceived', ({ payload }) => {
-        if (typeof payload !== 'string') return
-        const frame = JSON.parse(payload) as {
-          type?: string
-          data?: {
-            entities?: {
-              currentUser?: {
-                themePick: unknown
-                themePickInitialized: unknown
-              } | null
+    watchSocketFrames(second, (observation) => {
+      frames.push(observation)
+      const frame = observation.wire as
+        | {
+            type?: string
+            data?: {
+              entities?: {
+                currentUser?: {
+                  themePick: unknown
+                  themePickInitialized: unknown
+                } | null
+              }
             }
           }
+        | undefined
+        | null
+      const user = frame?.data?.entities?.currentUser
+      if (frame?.type === 'handshake_response') {
+        accountTheme = {
+          themePick: user?.themePick,
+          themePickInitialized: user?.themePickInitialized,
         }
-        const user = frame.data?.entities?.currentUser
-        if (frame.type === 'handshake_response' && user) {
-          accountTheme = {
-            themePick: user.themePick,
-            themePickInitialized: user.themePickInitialized,
-          }
-        }
-      })
+      }
     })
     await gotoPage(second, '/profile')
     await login(second, person.email)
@@ -417,6 +421,10 @@ test('a stale Dark browser reconnects after reset without adopting it again', as
     expect(adoptions()).toBe(0)
   } finally {
     await secondContext.close()
+    await test.info().attach('theme-reconnect-frames', {
+      body: JSON.stringify(frames),
+      contentType: 'application/json',
+    })
   }
 })
 

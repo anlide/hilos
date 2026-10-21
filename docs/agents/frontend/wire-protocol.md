@@ -142,10 +142,64 @@ arrives on.
 
 ### Signal envelope (BE→FE) and the handshake welcome
 
-Every server→client frame is the envelope `{type, data, outcome?, time?}`:
-`type` discriminates the signal, `data` carries its payload, `outcome`
-(`success` | `fail`) marks action acknowledgements, and `time` is a reserved
-server clock tick in milliseconds.
+Every server→client signal is the envelope
+`{type, data, outcome?, requestId?, time?}`: `type` discriminates the signal,
+`data` carries its payload, `outcome` (`success` | `fail`) marks action
+acknowledgements, `requestId` correlates a reply with its request, and `time` is
+a reserved server clock tick in milliseconds. These fields stay on the envelope,
+not in the signal payload.
+
+### Signal batches and delivery coalescing
+
+A physical WebSocket text message carries one unchanged bare envelope when it
+contains one signal. When it carries multiple signals, the transport wrapper is
+`{"type":"signal_batch","data":{"frames":[...]}}`; `frames` is a nonempty
+array of the existing signal envelopes. Optional `outcome`, `requestId` and
+`time` stay on each inner envelope. The wrapper is not nested, and a one-signal
+message keeps the legacy bare shape. A batch changes neither a domain signal's
+name nor its payload. In particular, a page subscription still has exactly one
+logical `page_response`; other ordered signals may share its physical message.
+
+The server coalesces safe state updates before it packages the surviving
+envelopes. Within a segment, known full-state `subscription_page_*` signals
+(except `subscription_page_error`), absolute table counts, and progress for the
+same run keep the latest value. Compatible `page_response` and row-update
+fragments for the same entity within one carrier merge fields: the latest value
+wins per field, a missing field keeps its earlier value, and explicit `null`
+clears it. Nested field values are replaced as a whole. Rows with the same
+row/item key can merge only when their slot maps have the same keys; each plain
+slot takes its last value, while an entity slot merges fields only for the same
+typed entity id. `row.slots` and `item.slots` are complete maps, never unions.
+
+A changed slot-key set, a plain/entity or null/non-null slot transition, an
+entity-id change in the same carrier, stale-source or own-state transitions,
+row clears/deletes/recreates/moves, cross-carrier write collisions, array values
+with entity effects, or any unsupported shape creates a coalescing boundary.
+String and integer ids remain distinct; if the client's string normalization
+could alias writes across carriers, the merger leaves those frames in order. A
+boundary keeps each whole frame in the same delivery window; it does not cause
+an early socket write. Standalone events, acknowledgements with request metadata
+and unsupported project frames remain independently observable. Surviving
+updates keep the order of their last occurrences. Coalescing reduces repeated
+state descriptions; it does not merge business writes into a transaction.
+
+### Parsing a physical delivery
+
+The core parses each physical text message once with `unpackSignalFrames`,
+validates the outer envelope, then validates each inner value through
+`parseSignalValue`. A malformed outer message, empty or invalid batch, or
+non-text frame produces one parse failure. An invalid inner signal produces its
+own failure and does not prevent later valid inner signals from being applied;
+a batch wrapper inside `frames` is invalid. Inner signals dispatch
+synchronously and in order. Session rotation waits until the physical delivery
+finishes, while disposal or a connection-generation change stops delivery from
+the old socket. This preserves transport order, not business transaction
+rollback or reactive atomicity for every listener.
+
+End-to-end observers use the shared `watchSocketFrames` decoder in
+`framework/frontend/e2e/socket.ts` (and its delivery observer) so they retain
+each inner signal's physical socket, message number and original raw packet. Do
+not parse an incoming batch into synthetic inner JSON for raw wire evidence.
 
 The first frame the server sends on every connection — directly behind the 101
 upgrade response, before anything else — is the framework welcome:

@@ -11,6 +11,7 @@ use Hilos\Core\Agent\AgentId;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentDaemonNotRegisteredException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Group\DTO\GroupLeaveAllSignalData;
 use Hilos\Core\Page\DTO\PageAccessReassessConnectionsSignalData;
 use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
@@ -466,6 +467,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      *
      * @param WorkerAgentStartFailedDTO $dto DTO naming the agent whose start did not finish, and why
      * @throws InvalidArgumentException When the start sink cannot name an answer it owes a held frame
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     public function handleAgentStartFailed(WorkerAgentStartFailedDTO $dto): void
     {
@@ -485,6 +487,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * @param string $agentId Id of the agent whose start failed, in the `type` or `type:index` form
      * @param string $reason Why the start did not finish
      * @throws InvalidArgumentException When the start sink cannot name an answer it owes a held frame
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     public function reportAgentStartFailed(string $agentId, string $reason): void
     {
@@ -500,6 +503,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * a failed start - the frames held for it are let go, not answered (HIL-1041).
      *
      * @param string $agentId Id of the agent that stopped, in the `type` or `type:index` form
+     * @throws InvalidFormatException When a pending page recovery address is malformed
      */
     public function reportAgentStopped(string $agentId): void
     {
@@ -1145,6 +1149,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * @param bool $isMonopolistic True when that worker was monopolistic
      * @return list<string> Ids of the agents forgotten, in roster order; empty when it hosted none
      * @throws InvalidArgumentException When the loss sink cannot name an answer it owes a held frame
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     public function forgetAgentsOfWorker(int $workerIndex, bool $isMonopolistic): array
     {

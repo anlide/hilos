@@ -22,6 +22,8 @@ import {
   turnOffMaintenance,
   turnOnMaintenance,
   watchClusterMasterUpgrades,
+  watchSocketFrames,
+  type SocketFrame,
 } from '../../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf, sessionToken } from '../../helpers/adminGrant.js'
 import {
@@ -271,6 +273,7 @@ test('cluster manual maintenance: every master closes, another admitted admin op
   const upgrades: Awaited<ReturnType<typeof watchClusterMasterUpgrades>>[] = []
   const sessionUsers = new Map<Page, number | null>()
   const frameErrors: unknown[] = []
+  const frames: Array<{ page: number; nodeId: string; frame: SocketFrame }> = []
   let circlePrepared = false
   try {
     for (const node of [
@@ -284,24 +287,23 @@ test('cluster manual maintenance: every master closes, another admitted admin op
       upgrades.push(await watchClusterMasterUpgrades(expect, page, stand, node))
       // The admin section has no self-user-id element: read its actual session
       // identity from the handshake, including the one after the final reload.
-      page.on('websocket', (socket) => {
-        socket.on('framereceived', ({ payload }) => {
-          if (typeof payload !== 'string') return
-          try {
-            const frame = JSON.parse(payload) as {
+      watchSocketFrames(page, (observation) => {
+        frames.push({
+          page: pages.indexOf(page),
+          nodeId: node,
+          frame: observation,
+        })
+        if (observation.failure) frameErrors.push(observation)
+        const frame = observation.wire as
+          | {
               type?: string
               data?: { entities?: { currentUser?: { id: number } | null } }
             }
-            if (frame.type === 'handshake_response') {
-              sessionUsers.set(
-                page,
-                frame.data?.entities?.currentUser?.id ?? null,
-              )
-            }
-          } catch (error) {
-            frameErrors.push(error)
-          }
-        })
+          | null
+          | undefined
+        if (frame?.type === 'handshake_response') {
+          sessionUsers.set(page, frame.data?.entities?.currentUser?.id ?? null)
+        }
       })
     }
     const [operator, otherAdmin, member, ...visitors] = pages
@@ -468,6 +470,10 @@ test('cluster manual maintenance: every master closes, another admitted admin op
     const closed = await Promise.allSettled(
       pages.map((page) => page.context().close()),
     )
+    await test.info().attach('manual-maintenance-frames', {
+      body: JSON.stringify(frames),
+      contentType: 'application/json',
+    })
     for (const result of [...cleanup, ...stopped, ...closed]) {
       expect
         .soft(

@@ -21,6 +21,7 @@ use Hilos\Hilos;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\Server\WebSocketServer;
+use Hilos\Socket\WebSocket\Delivery\DeliveryFrame;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -170,7 +171,7 @@ final class DaemonBroadcastSessionExclusionTest extends TestCase
      */
     private function received(WebSocketClientTestProbe $probe): bool
     {
-        return str_contains($probe->outboundBytes(), self::SIGNAL_NAME);
+        return array_any($probe->deliveryFrames, static fn (DeliveryFrame $frame): bool => $frame->getType() === self::SIGNAL_NAME);
     }
 }
 

@@ -9,6 +9,9 @@ namespace Hilos\Constants;
  */
 final class SignalPayloadConstants
 {
+    /** @var string Nonempty list of existing envelopes in a browser delivery wrapper */
+    public const string FIELD_FRAMES = 'frames';
+
     /** @var string Payload field key for signal type */
     public const string FIELD_TYPE = 'type';
 

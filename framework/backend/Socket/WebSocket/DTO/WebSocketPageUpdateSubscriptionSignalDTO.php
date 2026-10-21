@@ -20,6 +20,10 @@ class WebSocketPageUpdateSubscriptionSignalDTO extends BaseDTO implements Signal
     public const string ACCEPT_KEY = 'acceptKey';
     public const string PAGE = 'page';
     public const string PARAMS = 'params';
+    public const string DELIVERY_ID = 'deliveryId';
+
+    /** @var ?string Delivery token; null when no delivery is being tracked */
+    public readonly ?string $deliveryId;
 
     /**
      * Creates page update subscription signal DTO.
@@ -27,12 +31,15 @@ class WebSocketPageUpdateSubscriptionSignalDTO extends BaseDTO implements Signal
      * @param string $acceptKey WebSocket accept key
      * @param ?string $page Page name to update subscription for, null when the signal name carries it
      * @param array<string, string> $params Route params for the page
+     * @param ?string $deliveryId Delivery token, or null/empty when delivery tracking is absent
      */
     public function __construct(
         public readonly string $acceptKey,
         public readonly ?string $page = null,
         public readonly array $params = [],
+        ?string $deliveryId = null,
     ) {
+        $this->deliveryId = $deliveryId === '' ? null : $deliveryId;
     }
 
     public function getAcceptKey(): string
@@ -59,6 +66,10 @@ class WebSocketPageUpdateSubscriptionSignalDTO extends BaseDTO implements Signal
             $result[self::PARAMS] = $this->params;
         }
 
+        if ($this->deliveryId !== null) {
+            $result[self::DELIVERY_ID] = $this->deliveryId;
+        }
+
         return $result;
     }
 
@@ -70,7 +81,7 @@ class WebSocketPageUpdateSubscriptionSignalDTO extends BaseDTO implements Signal
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
-     * @throws InvalidFormatException When the payload carries no accept key
+     * @throws InvalidFormatException When the payload carries no accept key or a mistyped delivery id
      */
     public static function fromArray(array $data): static
     {
@@ -80,6 +91,7 @@ class WebSocketPageUpdateSubscriptionSignalDTO extends BaseDTO implements Signal
             acceptKey: self::requireString($data, self::ACCEPT_KEY),
             page: $page === '' ? null : $page,
             params: self::optionalArray($data, self::PARAMS) ?? [],
+            deliveryId: self::optionalString($data, self::DELIVERY_ID),
         );
     }
 }

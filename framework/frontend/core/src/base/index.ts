@@ -922,6 +922,7 @@ export {
 } from '../auth/cookiesRefused.js'
 export {
   SIGNAL_TYPE_HANDSHAKE,
+  SIGNAL_TYPE_SIGNAL_BATCH,
   SIGNAL_TYPE_PROTECTED_MODE,
   SIGNAL_TYPE_RT_STALENESS,
   SIGNAL_TYPE_PAGE_SUBSCRIBE,
@@ -1021,8 +1022,10 @@ export { resolvePageTitle } from '../routing/pageTitle.js'
 export { assertNever } from '../protocol/assertNever.js'
 export {
   signalEnvelopeSchema,
+  signalBatchEnvelopeSchema,
   handshakeSignalDataSchema,
   type SignalEnvelope,
+  type SignalBatchEnvelope,
   type HandshakeSignalData,
 } from '../protocol/envelope.js'
 export {
@@ -1059,6 +1062,7 @@ export {
 } from '../protocol/scopePayload.js'
 export {
   parseSignal,
+  parseSignalValue,
   type ParsedSignal,
   type HandshakeSignal,
   type ProtectedModeSignal,
@@ -1073,6 +1077,10 @@ export {
   type ParseFailure,
   type ParseResult,
 } from '../protocol/parseSignal.js'
+export {
+  unpackSignalFrames,
+  type UnpackSignalFramesResult,
+} from '../protocol/delivery.js'
 export { z } from 'zod'
 export {
   ActionErrorStore,

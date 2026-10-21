@@ -1,9 +1,35 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { parseSignal } from '../../src/protocol/parseSignal.js'
+import {
+  parseSignal,
+  parseSignalValue,
+} from '../../src/protocol/parseSignal.js'
 import { SESSION_SIGNAL_SCHEMAS } from '../../src/session/sessionScope.js'
 
 describe('parseSignal', () => {
+  it('shares the decoded-value reader, including failures and metadata', () => {
+    const schemas = { changed: z.object({ count: z.number() }) }
+    for (const value of [
+      { type: 'handshake', data: { build: 'dev' } },
+      {
+        type: 'changed',
+        data: { count: 2 },
+        requestId: 'req',
+        outcome: 'success',
+        time: 42,
+      },
+      { type: 'changed', data: { count: 'bad' } },
+      { type: 'unknown', data: { extra: true } },
+      { type: 'signal_batch', data: { frames: [] } },
+      { type: 'action_success', data: { action: 'save' }, outcome: 'bad' },
+      null,
+    ]) {
+      expect(parseSignalValue(value, schemas)).toEqual(
+        parseSignal(JSON.stringify(value), schemas),
+      )
+    }
+  })
+
   it('parses page recovery before project schemas, including empty params', () => {
     for (const params of [{}, { roomId: '42', nested: { a: [1, true] } }]) {
       const data = { page: 'picture', params }

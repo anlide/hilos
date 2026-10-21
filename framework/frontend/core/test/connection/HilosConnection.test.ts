@@ -827,6 +827,109 @@ describe('page frame buffer', () => {
     return connection
   }
 
+  it('dispatches every inner frame synchronously and preserves late-listener replay', () => {
+    const connection = connected()
+    const seen: string[] = []
+    const replies: unknown[] = []
+    connection.on('signal', (signal) => seen.push(signal.envelope.type))
+    connection.on('parseFailure', (failure) => seen.push(failure.kind))
+    connection.on('actionSuccess', (signal) => replies.push(signal))
+    const ack = {
+      type: 'action_success',
+      data: { action: 'save' },
+      requestId: 'req',
+      outcome: 'success',
+      time: 123,
+    }
+    const frames = [
+      { type: 'subscription_page_hilos_logs', data: { node: 'early' } },
+      { type: 'handshake', data: {} },
+      ack,
+      { type: 'signal_batch', data: { frames: [ack] } },
+      {
+        type: 'table_viewport_delta',
+        data: { page: 'p', tableKey: 't', kind: 'row_updated' },
+      },
+      JSON.parse(WINDOW_ANSWER),
+      { type: 'future', data: null },
+    ]
+    MockWebSocket.last.message(
+      JSON.stringify({ type: 'signal_batch', data: { frames } }),
+    )
+
+    expect(seen).toEqual([
+      'subscription_page_hilos_logs',
+      'invalid-signal-data',
+      'action_success',
+      'invalid-signal-data',
+      'table_viewport_delta',
+      'page_response',
+      'future',
+    ])
+    expect(replies).toMatchObject([{ requestId: 'req', envelope: ack }])
+    const late: string[] = []
+    connection.on('projectSignal', (signal) => late.push(signal.type))
+    expect(late).toEqual(['subscription_page_hilos_logs', 'page_response'])
+    const tail: string[] = []
+    connection.on('projectSignal', (signal) => {
+      if (signal.type === 'page_response') {
+        connection.on('unknownSignal', (inner) => tail.push(inner.type))
+      }
+    })
+    MockWebSocket.last.message(
+      JSON.stringify({
+        type: 'signal_batch',
+        data: {
+          frames: [JSON.parse(WINDOW_ANSWER), { type: 'after_page', data: {} }],
+        },
+      }),
+    )
+    // Both the replayed page response and its new delivery register a listener.
+    expect(tail).toEqual(['after_page', 'after_page'])
+  })
+
+  it('reports a malformed outer once and dispatches none of its inner frames', () => {
+    const connection = connected()
+    const seen: string[] = []
+    connection.on('signal', () => seen.push('signal'))
+    connection.on('parseFailure', () => seen.push('failure'))
+    MockWebSocket.last.message(
+      JSON.stringify({
+        type: 'signal_batch',
+        outcome: 'bad',
+        data: { frames: [JSON.parse(WINDOW_ANSWER)] },
+      }),
+    )
+    expect(seen).toEqual(['failure'])
+  })
+
+  it('stops an old delivery when a listener closes and opens a new generation', () => {
+    const connection = connected()
+    const before = MockWebSocket.last
+    const seen: string[] = []
+    connection.on('unknownSignal', (signal) => {
+      seen.push(signal.type)
+      connection.close()
+      connection.connect()
+    })
+    before.message(
+      JSON.stringify({
+        type: 'signal_batch',
+        data: {
+          frames: [
+            { type: 'first', data: {} },
+            { type: 'old_tail', data: {} },
+          ],
+        },
+      }),
+    )
+    expect(seen).toEqual(['first'])
+    expect(MockWebSocket.instances).toHaveLength(2)
+    expect(connection.state).toBe('connecting')
+    before.message('{"type":"obsolete","data":{}}')
+    expect(seen).toEqual(['first'])
+  })
+
   it('replays a page frame that arrived before the listener registered', () => {
     const connection = connected()
     MockWebSocket.last.message(

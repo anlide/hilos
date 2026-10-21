@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Peer;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Cluster\Exception\PeerTransportException;
 
 use Hilos\Cluster\AgentSignalMesh;
@@ -1086,6 +1087,7 @@ final class PeerServer extends AbstractTlsServer implements
      * remains the fallback.
      *
      * @param PeerNodeLeavingDTO $frame Received graceful-leave frame
+     * @throws InvalidFormatException When a pending page recovery address is malformed
      */
     public function onNodeLeaving(PeerNodeLeavingDTO $frame): void
     {
@@ -1126,6 +1128,7 @@ final class PeerServer extends AbstractTlsServer implements
      *
      * @param PeerLink $link Link the request arrived on
      * @param PeerStopAgentDTO $frame Received stop-agent frame
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     public function onStopAgentReceived(PeerLink $link, PeerStopAgentDTO $frame): void
     {
@@ -1140,6 +1143,7 @@ final class PeerServer extends AbstractTlsServer implements
      *
      * @param PeerLink $link Link the reply arrived on
      * @param PeerAgentStatusDTO $frame Received agent-status frame
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     public function onAgentStatusReceived(PeerLink $link, PeerAgentStatusDTO $frame): void
     {
@@ -1216,6 +1220,7 @@ final class PeerServer extends AbstractTlsServer implements
      *
      * @param PeerLink $link Link the report arrived on
      * @param PeerPlacementReportDTO $frame Received placement-report frame
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     public function onPlacementReportReceived(PeerLink $link, PeerPlacementReportDTO $frame): void
     {

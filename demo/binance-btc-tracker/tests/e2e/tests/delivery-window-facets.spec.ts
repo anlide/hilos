@@ -1,0 +1,195 @@
+import { writeFile } from 'node:fs/promises'
+import { test, expect } from '@playwright/test'
+import {
+  armSocketDrop,
+  deliveryObject as object,
+  dropSocket,
+  ROWS,
+  shownByTestId,
+  watchDeliveryFrames,
+} from '../../../../../framework/frontend/e2e/index.js'
+import { grantAdminToSelf } from '../helpers/adminGrant.js'
+import {
+  expectDocumentUnchanged,
+  expectPageReady,
+  gotoPage,
+  markDocument,
+  PAGE_READY,
+} from '../helpers/page.js'
+
+test.describe.configure({ retries: 0 })
+
+test('logs initial answers keep own state, response and declared facets in one physical delivery', async ({
+  page,
+}) => {
+  test.slow() // Includes a real reconnect and the log owner's normal reporting tick.
+  await armSocketDrop(page)
+  const log = watchDeliveryFrames(page)
+  try {
+    await grantAdminToSelf(page)
+    await gotoPage(page, '/hilos/logs', PAGE_READY)
+    await expect(page.getByTestId('hilos-logs-tile-daemon')).toBeVisible()
+    const overview = log.packets.find((packet) =>
+      packet.frames.some(
+        ({ wire }) =>
+          object(wire).type === 'page_response' &&
+          object(object(wire).data).page === 'hilos_logs',
+      ),
+    )!
+    expect(overview).toBeDefined()
+    expect(
+      overview.frames
+        .map(({ wire }) => object(wire).type)
+        .filter(
+          (type) =>
+            type === 'subscription_page_hilos_logs' || type === 'page_response',
+        ),
+    ).toEqual(['subscription_page_hilos_logs', 'page_response'])
+    expect(overview.raw).toMatch(/^\{"type":"signal_batch"/)
+
+    await page.getByTestId('hilos-admin-child-hilos_logs_keys').click()
+    await expectPageReady(page)
+    await expect.poll(() => page.locator(ROWS).count()).toBeGreaterThan(0)
+    await expect
+      .poll(() =>
+        log.sent.some(
+          ({ wire }) =>
+            object(wire).type === 'table_facets' &&
+            object(wire).tableKey === 'hilosLogKeys',
+        ),
+      )
+      .toBe(true)
+    await expect
+      .poll(() =>
+        log.packets.some((packet) =>
+          packet.frames.some(
+            ({ wire }) =>
+              object(wire).type === 'table_facet_counts' &&
+              object(object(wire).data).tableKey === 'hilosLogKeys',
+          ),
+        ),
+      )
+      .toBe(true)
+    await shownByTestId(page, 'hilos-table-filter-class').click()
+    await expect(shownByTestId(page, 'hilos-table-facet-class-any')).toHaveText(
+      /^\d+$/,
+    )
+    const countBefore = await shownByTestId(
+      page,
+      'hilos-table-facet-class-any',
+    ).textContent()
+    await shownByTestId(page, 'hilos-table-filter-class').click()
+    const rowKeysBefore = await page
+      .locator(ROWS)
+      .evaluateAll((rows) => rows.map((row) => row.getAttribute('data-id')))
+    const socket = log.sockets()
+    await markDocument(page)
+    await dropSocket(page)
+    await expect.poll(log.sockets, { timeout: 15_000 }).toBe(socket + 1)
+    await expect
+      .poll(
+        () =>
+          log.packets.some(
+            (packet) =>
+              packet.socket === socket + 1 &&
+              packet.frames.some(
+                ({ wire }) =>
+                  object(wire).type === 'page_response' &&
+                  object(object(wire).data).page === 'hilos_logs_keys',
+              ),
+          ),
+        { timeout: 15_000 },
+      )
+      .toBe(true)
+    const subscribe = log.sent.find(
+      ({ socket: id, wire }) =>
+        id === socket + 1 &&
+        object(wire).type === 'page_subscribe' &&
+        object(wire).page === 'hilos_logs_keys',
+    )!
+    expect(subscribe).toBeDefined()
+    const descriptor = object(
+      object(object(subscribe.wire).tableWindows).hilosLogKeys,
+    )
+    expect(descriptor.facets).toEqual({ class: ['daemon', 'agent', 'worker'] })
+    expect(descriptor.sort).toEqual([{ field: 'bytes', direction: 'desc' }])
+    expect(descriptor.limit).toBe(25)
+    expect(subscribe.raw).toContain('facets')
+    const restored = log.packets.find(
+      (packet) =>
+        packet.socket === socket + 1 &&
+        packet.frames.some(
+          ({ wire }) =>
+            object(wire).type === 'page_response' &&
+            object(object(wire).data).page === 'hilos_logs_keys',
+        ),
+    )!
+    expect(
+      restored.frames
+        .map(({ wire }) => object(wire).type)
+        .filter(
+          (type) =>
+            type === 'subscription_page_hilos_logs_keys' ||
+            type === 'page_response' ||
+            type === 'table_facet_counts',
+        ),
+    ).toEqual([
+      'subscription_page_hilos_logs_keys',
+      'page_response',
+      'table_facet_counts',
+    ])
+    expect(restored.raw).toMatch(/^\{"type":"signal_batch"/)
+    expect(
+      new Set(
+        restored.frames.map(({ socket, message }) => `${socket}:${message}`),
+      ).size,
+    ).toBe(1)
+    expect(restored.frames.every(({ raw }) => raw === restored.raw)).toBe(true)
+    const reply = restored.frames.find(
+      ({ wire }) => object(wire).type === 'page_response',
+    )!
+    const window = object(
+      object(object(object(reply.wire).data).payload).windows,
+    ).hilosLogKeys
+    const rows = object(window).rows
+    expect(Array.isArray(rows)).toBe(true)
+    const restoredKeys = (rows as unknown[]).map(
+      (row) => `hilos-table-row-${String(object(row).rowKey)}`,
+    )
+    expect(restoredKeys.length).toBeGreaterThan(0)
+    expect(object(window).limit).toBe(descriptor.limit)
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
+    await expectPageReady(page)
+    // Byte totals and ordering can change while disconnected. The visible rows
+    // must come from the restored snapshot, in its actual server order.
+    await expect
+      .poll(() =>
+        page
+          .locator(ROWS)
+          .evaluateAll((rows) =>
+            rows.map((row) => row.getAttribute('data-id')),
+          ),
+      )
+      .toEqual(restoredKeys)
+    expect(restoredKeys.some((key) => rowKeysBefore.includes(key))).toBe(true)
+    await shownByTestId(page, 'hilos-table-filter-class').click()
+    await expect(shownByTestId(page, 'hilos-table-facet-class-any')).toHaveText(
+      countBefore!,
+    )
+    await expectDocumentUnchanged(page)
+    expect(log.sockets()).toBe(socket + 1)
+    expect(log.packets.map(({ raw }) => raw).join('\n')).not.toContain(
+      'hilos_delivery_complete',
+    )
+  } finally {
+    log.stop()
+    const evidencePath = test
+      .info()
+      .outputPath('initial-logs-physical-deliveries.json')
+    await writeFile(evidencePath, JSON.stringify(log))
+    await test.info().attach('initial-logs-physical-deliveries', {
+      path: evidencePath,
+      contentType: 'application/json',
+    })
+  }
+})

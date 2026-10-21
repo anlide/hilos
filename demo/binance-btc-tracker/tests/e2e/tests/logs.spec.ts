@@ -3,6 +3,8 @@ import { test, expect } from '@playwright/test'
 import {
   liesAbove,
   watchTop,
+  watchSocketFrames,
+  type SocketFrame,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant'
 import { setAdminViewMode } from '../helpers/adminViewMode'
@@ -180,7 +182,8 @@ test.describe('the log viewer in the admin view mode', () => {
       ignoreHTTPSErrors,
     })
     const adminPage = await adminContext.newPage()
-    const frames: string[] = []
+    const frames: SocketFrame[] = []
+    const socketFrames = watchSocketFrames(page, (frame) => frames.push(frame))
 
     try {
       await grantAdminToSelf(adminPage)
@@ -188,11 +191,6 @@ test.describe('the log viewer in the admin view mode', () => {
       await expect(adminPage.getByTestId('hilos-log-tail-badge')).toBeVisible()
 
       await setAdminViewMode(true)
-      page.on('websocket', (socket) => {
-        socket.on('framereceived', (frame) =>
-          frames.push(String(frame.payload)),
-        )
-      })
       await gotoPage(page, VIEWER_PATH, PAGE_READY)
       await expect(page.getByTestId('view-mode-banner')).toBeVisible()
       await expect(page.getByTestId('hilos-log-tail-badge')).toBeVisible()
@@ -237,9 +235,14 @@ test.describe('the log viewer in the admin view mode', () => {
 
       await gotoPage(page, VIEWER_PATH, PAGE_READY)
       await expect(page.getByTestId('hilos-log-entry').first()).toBeVisible()
-      expect(frames.join('\n')).not.toContain(marker)
+      expect(frames.map(({ raw }) => raw).join('\n')).not.toContain(marker)
       await expect(page.locator('body')).not.toContainText(marker)
     } finally {
+      socketFrames.stop()
+      await test.info().attach('viewer-log-frames', {
+        body: JSON.stringify(frames),
+        contentType: 'application/json',
+      })
       await adminContext.close()
     }
   })

@@ -71,7 +71,9 @@ use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\Socket\Worker\DTO\WorkerUploadConsumedDTO;
 use Hilos\Socket\Worker\DTO\WorkerUploadSettingsDTO;
+use Hilos\Socket\Worker\DTO\WorkerDeliverySettingsDTO;
 use Hilos\Socket\Worker\WorkerDTO;
+use Hilos\Socket\WebSocket\Delivery\DeliverySettingsSink;
 use Hilos\Utils\LogLevel;
 use Hilos\Utils\Logger;
 use Hilos\Socket\Worker\DTO\WorkerTestOrmForgottenDTO;
@@ -107,6 +109,9 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
 
     /** The production master supplies the same pool sink to both transport servers. */
     private ?UploadMemoryPoolSink $uploadMemoryPoolSink = null;
+
+    /** Master-owned receiver for delivery window reports. */
+    private ?DeliverySettingsSink $deliverySettingsSink = null;
 
     /**
      * Create worker client with socket and agent manager.
@@ -196,6 +201,14 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
         $this->uploadMemoryPoolSink = $sink;
     }
 
+    /**
+     * @param DeliverySettingsSink $sink Master-owned receiver for this channel's delivery settings
+     */
+    public function setDeliverySettingsSink(DeliverySettingsSink $sink): void
+    {
+        $this->deliverySettingsSink = $sink;
+    }
+
     /** Delete this departed channel's raw IPC buffers before its owner records queue deletion. */
     public function discardUploadBuffers(): void
     {
@@ -254,6 +267,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             $workerDTO instanceof WorkerLogWriteLevelDTO => $this->handleWorkerLogWriteLevelMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModeSettingsDTO => $this->handleWorkerProtectedModeSettingsMessage($workerDTO),
             $workerDTO instanceof WorkerUploadSettingsDTO => $this->handleWorkerUploadSettingsMessage($workerDTO),
+            $workerDTO instanceof WorkerDeliverySettingsDTO => $this->handleWorkerDeliverySettingsMessage($workerDTO),
             $workerDTO instanceof WorkerUploadConsumedDTO => $this->handleWorkerUploadConsumedMessage($workerDTO),
             $workerDTO instanceof WorkerAgentStartedDTO => $this->handleAgentStartedMessage($workerDTO),
             $workerDTO instanceof WorkerAgentStartFailedDTO => $this->handleAgentStartFailedMessage($workerDTO),
@@ -359,6 +373,19 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     private function handleWorkerProtectedModeSettingsMessage(WorkerProtectedModeSettingsDTO $dto): void
     {
         Hilos::$cluster?->protectedModeSettingsSink()?->onProtectedModeSettings($dto->manualRestartIsNormal);
+    }
+
+    /**
+     * @param WorkerDeliverySettingsDTO $dto Effective window reported by this channel
+     * @throws InvalidFormatException When the channel is unregistered or the window is invalid
+     */
+    private function handleWorkerDeliverySettingsMessage(WorkerDeliverySettingsDTO $dto): void
+    {
+        if (!$this->isRegistered) {
+            throw new InvalidFormatException('Delivery settings require a registered worker');
+        }
+
+        $this->deliverySettingsSink?->onDeliverySettings($this, $dto->windowMs);
     }
 
     /**
@@ -979,6 +1006,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      * the raise below is about: a page or a command owed a refusal that cannot be named.
      *
      * @throws InvalidArgumentException When a refusal owed to a frame held for a lost agent cannot be named
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     protected function onClose(): void
     {

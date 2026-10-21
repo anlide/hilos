@@ -25,11 +25,13 @@ use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
+use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\Server\WebSocketServer;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Tests\Unit\WebSocketClientTestProbe;
 use LogicException;
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
 use Socket;
 
 /**
@@ -101,6 +103,7 @@ final class BackupRestoreProgressSessionDeliveryIntegrationTest extends TestCase
 
         $this->queueProgress('importing');
         $manager->dispatch();
+        $server->drainDeliveries();
 
         foreach ([$started, $reloaded] as $probe) {
             $frame = $this->deliveredFrame($probe);
@@ -126,6 +129,7 @@ final class BackupRestoreProgressSessionDeliveryIntegrationTest extends TestCase
 
         $this->queueProgress('importing');
         $manager->dispatch();
+        $server->drainDeliveries();
 
         $this->assertSame('', $stranger->outboundBytes());
     }
@@ -143,6 +147,7 @@ final class BackupRestoreProgressSessionDeliveryIntegrationTest extends TestCase
 
         $this->queueProgress('failed', 'the archive checksum did not match');
         $manager->dispatch();
+        $server->drainDeliveries();
 
         $frame = $this->deliveredFrame($watching);
         $this->assertSame('error', $frame['data']['outcome'] ?? null);
@@ -187,7 +192,7 @@ final class BackupRestoreProgressSessionDeliveryIntegrationTest extends TestCase
     }
 
     /**
-     * Decodes the one frame the dispatch pass wrote to this connection.
+     * Decodes the one frame the dispatch pass queued and a due delivery drain wrote to this connection.
      *
      * @param WebSocketClientTestProbe $probe Connection to read the delivery off
      * @return array<string, mixed> Decoded signal frame
@@ -230,7 +235,7 @@ final class RestoreProgressDeliveryTestManager extends DaemonManager
     }
 
     /**
-     * Drains the queue through the real dispatch pass, which is private to the manager.
+     * Runs the master's real dispatch pass, which queues deliveries for the websocket server.
      */
     public function dispatch(): void
     {
@@ -325,14 +330,25 @@ final class RestoreProgressDeliveryTestServer extends WebSocketServer
     }
 
     /**
-     * Drops the 101 and the welcome frame every connection was answered with, so what remains in a
-     * buffer afterwards is what the dispatch pass put there.
+     * Drops the 101 and welcome frame so later application delivery is the only data read from a
+     * connection's buffer.
      */
     public function forgetHandshakeBytes(): void
     {
         foreach ($this->clients as $client) {
             if ($client instanceof WebSocketClientTestProbe) {
                 $client->flushOutbound();
+            }
+        }
+    }
+
+    /** Materializes due deliveries by draining every socketless client's real delivery queue. */
+    public function drainDeliveries(): void
+    {
+        $deliveryDrain = new ReflectionMethod(WebSocketClient::class, 'drainDelivery');
+        foreach ($this->clients as $client) {
+            if ($client instanceof WebSocketClientTestProbe) {
+                $deliveryDrain->invoke($client, false);
             }
         }
     }

@@ -6,6 +6,7 @@ namespace Hilos\Cluster;
 
 use Hilos\Cluster\Peer\DTO\PeerPlacementVerdictDTO;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * Local port the placement coordinator uses to tell the master an agent was not placed.
@@ -25,6 +26,7 @@ interface PlacementVerdictSink
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param string $reason Why the agent was not placed, including the record state
      * @throws InvalidArgumentException When an answer the listener owes a waiting frame cannot be named
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     public function onAgentNotPlaced(string $agentType, ?string $agentIndex, string $reason): void;
 }

@@ -6,6 +6,7 @@ namespace Hilos\Core\Agent\Daemon;
 
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\ProtectedMode\ProtectedModeAgentStopSink;
 
 /**
@@ -41,6 +42,7 @@ interface AgentStartSink
      * @param string $agentId Id of the agent whose start failed, in the `type` or `type:index` form
      * @param string $reason Why the start did not finish, as the failure said it
      * @throws InvalidArgumentException When an answer the listener owes a waiting frame cannot be named
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     public function onAgentStartFailed(string $agentId, string $reason): void;
 
@@ -53,6 +55,7 @@ interface AgentStartSink
      * siblings.
      *
      * @param string $agentId Id of the agent that stopped, in the `type` or `type:index` form
+     * @throws InvalidFormatException When a pending page recovery address is malformed
      */
     public function onAgentStopped(string $agentId): void;
 }

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
-import type { Page, WebSocket } from '@playwright/test'
+import type { Page, WebSocket, WebSocketRoute } from '@playwright/test'
+import { createSocketFrameReader, type SocketFrame } from './socket.js'
 
 interface UploadObservation {
   readonly id: string
@@ -33,7 +34,11 @@ export function watchUploadFrames(
   const errors: string[] = []
   let sockets = 0
   let closes = 0
-  const frame = (direction: 'sent' | 'received', payload: string | Buffer) => {
+  const frame = (
+    direction: 'sent' | 'received',
+    payload: string | Buffer,
+    wire?: unknown,
+  ) => {
     try {
       if (typeof payload !== 'string') {
         if (direction !== 'sent') return
@@ -73,7 +78,7 @@ export function watchUploadFrames(
         })
         return
       }
-      const envelope = record(JSON.parse(payload))
+      const envelope = record(direction === 'sent' ? JSON.parse(payload) : wire)
       const data = record(envelope.data)
       if (
         direction === 'sent' &&
@@ -146,13 +151,24 @@ export function watchUploadFrames(
       evidence({ kind: 'observer-error', participant, error: String(error) })
     }
   }
+  const receive = (frames: SocketFrame[]) => {
+    for (const incoming of frames) {
+      if (incoming.raw === undefined) continue
+      evidence({ kind: 'received-frame', participant, ...incoming })
+      if (incoming.wire === undefined) {
+        const error = `Invalid incoming upload evidence: ${incoming.failure?.kind}`
+        errors.push(error)
+        evidence({ kind: 'observer-error', participant, error, ...incoming })
+      } else frame('received', incoming.raw, incoming.wire)
+    }
+  }
   const watch = (socket: WebSocket) => {
-    sockets++
+    const read = createSocketFrameReader(++sockets)
     socket.on('close', () => {
       closes++
     })
     socket.on('framesent', ({ payload }) => frame('sent', payload))
-    socket.on('framereceived', ({ payload }) => frame('received', payload))
+    socket.on('framereceived', ({ payload }) => receive(read(payload)))
   }
   page.on('websocket', watch)
   return {
@@ -162,20 +178,27 @@ export function watchUploadFrames(
     holdCredits: async () => {
       page.off('websocket', watch)
       const credits: { clientUploadId: string; sendUpToBytes: number }[] = []
+      let open = false
+      const held = new Map<WebSocketRoute, (string | Buffer)[]>()
       await page.routeWebSocket('**/ws', (socket) => {
-        sockets++
+        const read = createSocketFrameReader(++sockets)
         const server = socket.connectToServer()
+        const buffered: (string | Buffer)[] = []
+        held.set(socket, buffered)
         socket.onMessage((message) => {
           frame('sent', message)
           server.send(message)
         })
         server.onMessage((message) => {
-          frame('received', message)
-          if (
-            typeof message === 'string' &&
-            record(JSON.parse(message)).type === 'hilos_upload_credit'
-          ) {
-            const data = record(record(JSON.parse(message)).data)
+          const incoming = read(message)
+          receive(incoming)
+          const withheld = open
+            ? []
+            : incoming.filter(
+                ({ wire }) => record(wire).type === 'hilos_upload_credit',
+              )
+          for (const credit of withheld) {
+            const data = record(record(credit.wire).data)
             credits.push({
               clientUploadId: String(data.clientUploadId),
               sendUpToBytes: Number(data.sendUpToBytes),
@@ -184,15 +207,28 @@ export function watchUploadFrames(
               kind: 'withheld-real-credit',
               participant,
               originalFrame: message,
+              ...credit,
             })
-          } else socket.send(message)
+          }
+          // Keep the whole physical message and its successors in order. A
+          // batch's neighboring frames are released once with the real credit.
+          if (!open && (withheld.length > 0 || buffered.length > 0))
+            buffered.push(message)
+          else socket.send(message)
         })
         socket.onClose((code, reason) => {
           closes++
+          held.delete(socket)
           void server.close({ code, reason })
         })
       })
-      return { credits, errors }
+      const release = () => {
+        open = true
+        for (const [socket, buffered] of held) {
+          for (const message of buffered.splice(0)) socket.send(message)
+        }
+      }
+      return { credits, errors, release, dispose: release }
     },
     connections: () => ({ sockets, closes }),
     sentBytes: () =>

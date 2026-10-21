@@ -9,6 +9,11 @@ import type {
   BudgetedInitialBundleReport,
   InitialBundleSection,
 } from '../core/bin/initial-bundle-budget.mjs'
+import {
+  createSocketFrameReader,
+  watchSocketFrames,
+  type SocketFrame,
+} from './socket.js'
 
 export type ClientBundleReport = BudgetedInitialBundleReport
 export type LazyBundleSection = ClientBundleReport['lazy'][number]
@@ -392,24 +397,22 @@ export interface PageReply {
   httpCode?: number
 }
 
-function pageReply(payload: string, socket: number): PageReply | null {
-  let raw: unknown
-  try {
-    raw = JSON.parse(payload)
-  } catch {
-    if (/page_response|subscription_page_error/.test(payload)) {
+function pageReply(frame: SocketFrame): PageReply | null {
+  if (frame.raw === undefined) return null
+  if (frame.wire === undefined) {
+    if (/page_response|subscription_page_error/.test(frame.raw)) {
       throw new Error('Malformed page reply in browser evidence.')
     }
     return null
   }
-  const wire = object(raw)
+  const wire = object(frame.wire)
   if (wire.type !== 'page_response' && wire.type !== 'subscription_page_error')
     return null
   const data = object(wire.data)
   if (typeof data.page !== 'string')
     throw new Error('Page reply has no page key.')
   return {
-    socket,
+    socket: frame.socket,
     type: wire.type,
     page: data.page,
     ...(typeof data.httpCode === 'number' ? { httpCode: data.httpCode } : {}),
@@ -423,15 +426,11 @@ function pageReply(payload: string, socket: number): PageReply | null {
  */
 export function watchPageReplies(page: Page) {
   const replies: PageReply[] = []
-  let sockets = 0
-  page.on('websocket', (socket) => {
-    const number = ++sockets
-    socket.on('framereceived', ({ payload }) => {
-      const reply = pageReply(payload.toString(), number)
-      if (reply) replies.push(reply)
-    })
+  const observer = watchSocketFrames(page, (frame) => {
+    const reply = pageReply(frame)
+    if (reply) replies.push(reply)
   })
-  return { replies, sockets: (): number => sockets }
+  return { replies, sockets: observer.sockets }
 }
 
 /**
@@ -453,11 +452,19 @@ export async function holdPageReply(page: Page, pageKey: string) {
   let sockets = 0
   await page.routeWebSocket('**/ws', (client) => {
     const server = client.connectToServer()
-    const number = ++sockets
+    const read = createSocketFrameReader(++sockets)
+    let holding = false
     server.onMessage((message) => {
-      const reply = pageReply(message.toString(), number)
-      if (reply) replies.push(reply)
-      if (!open && reply?.page === pageKey) {
+      const incoming = read(message).flatMap((frame) => {
+        const reply = pageReply(frame)
+        return reply ? [reply] : []
+      })
+      replies.push(...incoming)
+      if (
+        !open &&
+        (holding || incoming.some((reply) => reply.page === pageKey))
+      ) {
+        holding = true
         buffered.push({ client, message })
         observed()
       } else client.send(message)

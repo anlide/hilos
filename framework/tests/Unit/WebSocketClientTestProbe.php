@@ -12,6 +12,7 @@ use Hilos\Core\Exception\UnsupportedOperationException;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\SocketException;
+use Hilos\Socket\WebSocket\Delivery\DeliveryFrame;
 use Hilos\Socket\WebSocket\Exception\HandshakeFailedException;
 use Hilos\Socket\WebSocket\Exception\InvalidFrameException;
 use Hilos\Socket\WebSocket\Exception\InvalidFrameSequenceException;
@@ -46,6 +47,16 @@ final class WebSocketClientTestProbe extends WebSocketClient
 
     /** @var list<string> Action names the probe lets through */
     public array $acceptedActions = [];
+
+    /** @var list<DeliveryFrame> Application deliveries queued beyond the socketless transport buffer */
+    public array $deliveryFrames = [];
+
+    /** @param DeliveryFrame $frame Prepared application delivery observed by this socketless probe */
+    public function sendDeliveryFrame(DeliveryFrame $frame): void
+    {
+        parent::sendDeliveryFrame($frame);
+        $this->deliveryFrames[] = $frame;
+    }
 
     /**
      * Build a probe without invoking the socket/env constructor chain.

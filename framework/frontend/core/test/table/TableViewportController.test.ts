@@ -15,6 +15,13 @@ import {
   TableViewportController,
 } from '../../src/table/TableViewportController.js'
 import { HILOS_TABLE_OPENING_ORDER_KEY } from '../../src/table/tableSortOrder.js'
+import { ingest } from '../../src/state/normalizer.js'
+import {
+  deliveryCases,
+  deliveryViewportSeed,
+  ingestDeliveryFrames,
+  probeDeliveryScope,
+} from '../state/fixtures/deliveryCoalescing.js'
 
 function makeController(pageSize = 10, initialOrder?: TableSortOrder) {
   const sent: TableViewportDescriptor[] = []
@@ -50,6 +57,123 @@ function makeController(pageSize = 10, initialOrder?: TableSortOrder) {
 }
 
 describe('TableViewportController', () => {
+  it.each(
+    deliveryCases.filter(
+      (testCase) =>
+        testCase.carrier === 'viewport' || testCase.carrier === 'mixed',
+    ),
+  )(
+    'preserves delivery fixture $name through normalizeTableRow and the real controller',
+    (testCase) => {
+      const run = (frames: typeof testCase.original) => {
+        const probe = probeDeliveryScope()
+        const { controller, open } = makeController()
+        try {
+          ingest(probe.scope, testCase.initial ?? {}, {
+            entityTypes: testCase.entityTypes,
+          })
+          open(deliveryViewportSeed(testCase))
+          const trace: unknown[] = []
+          ingestDeliveryFrames(probe.scope, testCase, frames, (delta) => {
+            controller.ingestDelta(delta)
+            trace.push({
+              kind: delta.kind,
+              own: delta.kind === 'row_updated' ? (delta.own ?? false) : false,
+              pending: controller.pendingCount.get(),
+            })
+          })
+          return {
+            snapshot: {
+              ...probe.snapshot(),
+              viewport: { rows: controller.rows.get().map((row) => row.row) },
+            },
+            pending: controller.pendingCount.get(),
+            stale: controller.rows.get().map((row) => row.staleSources),
+            trace,
+          }
+        } finally {
+          probe.restore()
+        }
+      }
+      const original = run(testCase.original)
+      const coalesced = run(testCase.coalesced)
+      expect(coalesced.snapshot).toEqual(original.snapshot)
+      expect(original.snapshot).toEqual(testCase.expected)
+      expect(coalesced.snapshot).toEqual(testCase.expected)
+      expect(original.pending).toBe(0)
+      expect(coalesced.pending).toBe(0)
+      expect(coalesced.stale).toEqual(original.stale)
+      if (testCase.name === 'viewport-own-and-stale-boundaries') {
+        expect(original.trace).toEqual([
+          { kind: 'row_updated', own: false, pending: 0 },
+          { kind: 'row_stale', own: false, pending: 0 },
+          { kind: 'row_updated', own: true, pending: 0 },
+        ])
+        expect(coalesced.trace).toEqual(original.trace)
+        expect(coalesced.stale).toEqual([['thing']])
+      }
+    },
+  )
+
+  it.each([false, true])(
+    'keeps pending and stale semantics for fixture rows (own move: %s)',
+    (own) => {
+      const testCase = deliveryCases.find(
+        (entry) => entry.name === 'viewport-own-and-stale-boundaries',
+      )
+      if (testCase === undefined) throw new Error('Missing own/stale fixture')
+      const probe = probeDeliveryScope()
+      const { controller, open } = makeController()
+      try {
+        open([
+          { rowKey: 'other', slots: {} },
+          ...deliveryViewportSeed(testCase),
+        ])
+        ingestDeliveryFrames(
+          probe.scope,
+          testCase,
+          testCase.original.slice(0, 1),
+          (delta) => {
+            if (delta.kind !== 'row_updated')
+              throw new Error('Expected fixture row')
+            controller.ingestDelta({
+              ...delta,
+              kind: 'row_moved',
+              position: 0,
+              own,
+            })
+          },
+        )
+        expect(controller.pendingCount.get()).toBe(own ? 0 : 1)
+        expect(controller.rows.get().map((row) => row.rowKey)).toEqual(
+          own ? ['r', 'other'] : ['other', 'r'],
+        )
+        ingestDeliveryFrames(
+          probe.scope,
+          testCase,
+          testCase.original.slice(1, 2),
+          (delta) => controller.ingestDelta(delta),
+        )
+        expect(controller.pendingCount.get()).toBe(own ? 0 : 1)
+        expect(
+          controller.rows.get().find((row) => row.rowKey === 'r')?.staleSources,
+        ).toEqual(['thing'])
+        ingestDeliveryFrames(
+          probe.scope,
+          testCase,
+          testCase.original.slice(2),
+          (delta) => controller.ingestDelta(delta),
+        )
+        expect(controller.pendingCount.get()).toBe(0)
+        expect(controller.rows.get().map((row) => row.rowKey)).toEqual(
+          own ? ['r', 'other'] : ['other', 'r'],
+        )
+      } finally {
+        probe.restore()
+      }
+    },
+  )
+
   it('restores current facets and row focus after a loaded subscription window', () => {
     const facets: Array<Readonly<Record<string, readonly unknown[]>>> = []
     const focus: string[] = []

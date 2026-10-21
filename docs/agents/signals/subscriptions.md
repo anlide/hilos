@@ -100,6 +100,26 @@ second request in order to render the page it just subscribed to: the reply to
 placeholder — see [core-and-connection.md](../frontend/core-and-connection.md),
 "A page shows a placeholder until its subscription answers".
 
+That `page_response` is one logical signal; its physical WebSocket message may
+carry other signals in a `signal_batch`. For a browser-issued `page_subscribe`,
+the socket master starts an internal hold before routing the request. Application
+frames queued on that connection — including the page's own state and session
+or toast frames — stay held until the serving handler has queued its state,
+`page_response` or refusal, table facets and after-hook work. The worker then
+queues an addressed `hilos_delivery_complete` marker in order; the master
+consumes it before browser encoding and releases the completed delivery. Thus
+legacy page-owned frames sent before `page_response` can share its physical
+packet while remaining separate, ordered inner signals. The client does not
+send the master-minted delivery id.
+
+`page_update_subscription` is tracked for its matching reply and delivery grace,
+but it does not hold the connection's whole queue. Synthetic resends without a
+browser-issued token do not start or finish another request's hold. Unsubscribe,
+navigation, disconnect or loss of the serving attempt cancels the unfinished
+packet; it is not released by a timeout, and a reconnect starts with a new socket
+queue. See [the delivery window](work-in-portions.md#the-stream-to-an-open-page)
+and [the wire packet shape](../frontend/wire-protocol.md#signal-batches-and-delivery-coalescing).
+
 The sole public-file exception is `/status`: nginx files supply its first
 render and every later read, even with a live connection; `page_response` is
 neither its source nor a condition of reading. See

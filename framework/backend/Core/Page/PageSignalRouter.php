@@ -30,6 +30,7 @@ use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\Exception\FramePopOrderException;
 use Hilos\Core\Execution\ExecutionContext;
@@ -81,6 +82,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Socket\WebSocket\DTO\DeliveryCompleteSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
@@ -201,6 +203,7 @@ class PageSignalRouter
      * @param string $source Signal source
      * @param string $name Signal name (page name fallback)
      * @throws InvalidArgumentException When the subscription-error signal cannot be named
+     * @throws InvalidFormatException When the tracked delivery has an invalid completion address
      */
     public function dispatchPageSubscribe(WebSocketPageSubscribeSignalDTO $data, string $source, string $name): void
     {
@@ -236,6 +239,7 @@ class PageSignalRouter
      * @param string $source Signal source
      * @param string $name Signal name (page name fallback)
      * @throws InvalidArgumentException When the subscription-error signal cannot be named
+     * @throws InvalidFormatException When the tracked delivery has an invalid completion address
      */
     public function dispatchPageAccessReassess(WebSocketPageSubscribeSignalDTO $data, string $source, string $name): void
     {
@@ -284,6 +288,7 @@ class PageSignalRouter
      * @param array<string, mixed> $params Route params of the subscription, as the subscription mirror holds them
      * @return PageResendOutcome What went out to the connection
      * @throws InvalidArgumentException When the subscription-error signal cannot be named
+     * @throws InvalidFormatException When the tracked delivery has an invalid completion address
      */
     public function resendPage(string $page, string $acceptKey, array $params): PageResendOutcome
     {
@@ -427,120 +432,124 @@ class PageSignalRouter
         bool $reportFailure = true,
     ): PageResendOutcome {
         $page = $data->page ?? $name;
-        if ($page === '') {
-            if ($reportFailure) {
-                Logger::error('Page subscribe without page name');
-            }
-            return PageResendOutcome::Unserved;
-        }
-
-        $pageInstance = $this->resolvePage($page, $reportFailure);
-        if ($pageInstance === null) {
-            if (!$reportFailure) {
-                return PageResendOutcome::Refused;
-            }
-            $this->sendSubscriptionError(
-                $this->pageFactory->getAgent()->getAgentSignalSource(),
-                $page,
-                $data->acceptKey,
-                HttpConstants::HTTP_NOT_FOUND,
-                PageErrorCode::NOT_SERVED,
-            );
-            return PageResendOutcome::Refused;
-        }
-
         try {
-            // The whole verdict is reached BEFORE onSubscribe — the declared access
-            // level, then the freeze, the route params and the page's browser guards.
-            // onSubscribe is where a page reads domain state and runs its own side
-            // effects, so a session that will be refused must not reach it at all: the
-            // work would be done for an answer that never ships. The denial lands in
-            // the PageSubscriptionException catch below, keeping the subscription alive
-            // for live-promotion after sign-in or an admin grant.
-            $params = new PageRouteParams($data->params);
-            // Held for the one reader that needs it and only until the answer is built: the
-            // windows this tab is holding decide which window each of the page's viewport
-            // tables answers with (HIL-642). Written before the guards rather than after,
-            // because a refusal has to clear it too, and the take does that.
-            Hilos::$sr?->reportTableWindows($data->acceptKey, $data->tableWindows);
-            PageAccessGate::assert($pageInstance::class, $data->acceptKey);
-            Hilos::$browser?->assertSubscriptionAccess($page, $data->acceptKey, $params);
-            $pageInstance->onSubscribe($data->acceptKey, $params);
-            if ($recordVisit) {
-                $this->recordPersonEvent($data->acceptKey, AnalyticsPersonEvent::PAGE_OPEN, page: $page, params: $params->toArray());
+            if ($page === '') {
+                if ($reportFailure) {
+                    Logger::error('Page subscribe without page name');
+                }
+                return PageResendOutcome::Unserved;
             }
 
-            return PageResendOutcome::Answered;
-        } catch (PageInternalErrorException $e) {
-            $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
-            if (!$reportFailure) {
-                return PageResendOutcome::Failed;
-            }
-            // Ahead of its own base class, because it is not the same event. Every other species
-            // below is a verdict about the resource or the rights, reached on purpose and worth
-            // an info line and public status wording to the subscriber. This one says the node is
-            // wrong about itself: error, because nobody comes to fix an info line, and the
-            // internal-error sentence, because the text names the inside of the node and the
-            // subscriber can act on none of it. The frame it sends is the internal-error frame either way — the species
-            // already carries 500 and `internal_error`.
-            Logger::error("Page subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
-            $this->sendSubscriptionError(
-                $pageInstance->getAgent()->getAgentSignalSource(),
-                $page,
-                $data->acceptKey,
-                $e->httpCode,
-                $e->errorCode,
-            );
-
-            return PageResendOutcome::Failed;
-        } catch (PageSubscriptionException $e) {
-            $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
-            if (!$reportFailure) {
+            $pageInstance = $this->resolvePage($page, $reportFailure);
+            if ($pageInstance === null) {
+                if (!$reportFailure) {
+                    return PageResendOutcome::Refused;
+                }
+                $this->sendSubscriptionError(
+                    $this->pageFactory->getAgent()->getAgentSignalSource(),
+                    $page,
+                    $data->acceptKey,
+                    HttpConstants::HTTP_NOT_FOUND,
+                    PageErrorCode::NOT_SERVED,
+                );
                 return PageResendOutcome::Refused;
             }
-            // The subscription registration is intentionally KEPT alive, not torn down.
-            // What stays alive is that registration, not what the page held for the
-            // connection: that is released before this frame
-            // ({@see AbstractPage::onUnsubscribe()}). A guard failure is a transient
-            // state, not a dead end: if the missing resource later appears (e.g. user
-            // #10 is created while a client sits on its 404 page) or access is later
-            // granted, the guard starts passing and the live fan-out promotes the error
-            // page into the real page with no re-subscribe — the Hilos live-promotion
-            // model. Because the subscription stays registered, the browser delivery
-            // paths must re-check the guard on every fan-out (not rely on the
-            // subscription being absent): a guard-failed subscription receives nothing
-            // WHILE the guard fails, yet resumes the instant it passes.
-            Logger::info("Page subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
-            $this->sendSubscriptionError(
-                $pageInstance->getAgent()->getAgentSignalSource(),
-                $page,
-                $data->acceptKey,
-                $e->httpCode,
-                $e->errorCode,
-            );
 
-            return PageResendOutcome::Refused;
-        } catch (Throwable $e) {
-            $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
-            if (!$reportFailure) {
+            try {
+                // The whole verdict is reached BEFORE onSubscribe — the declared access
+                // level, then the freeze, the route params and the page's browser guards.
+                // onSubscribe is where a page reads domain state and runs its own side
+                // effects, so a session that will be refused must not reach it at all: the
+                // work would be done for an answer that never ships. The denial lands in
+                // the PageSubscriptionException catch below, keeping the subscription alive
+                // for live-promotion after sign-in or an admin grant.
+                $params = new PageRouteParams($data->params);
+                // Held for the one reader that needs it and only until the answer is built: the
+                // windows this tab is holding decide which window each of the page's viewport
+                // tables answers with (HIL-642). Written before the guards rather than after,
+                // because a refusal has to clear it too, and the take does that.
+                Hilos::$sr?->reportTableWindows($data->acceptKey, $data->tableWindows);
+                PageAccessGate::assert($pageInstance::class, $data->acceptKey);
+                Hilos::$browser?->assertSubscriptionAccess($page, $data->acceptKey, $params);
+                $pageInstance->onSubscribe($data->acceptKey, $params);
+                if ($recordVisit) {
+                    $this->recordPersonEvent($data->acceptKey, AnalyticsPersonEvent::PAGE_OPEN, page: $page, params: $params->toArray());
+                }
+
+                return PageResendOutcome::Answered;
+            } catch (PageInternalErrorException $e) {
+                $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
+                if (!$reportFailure) {
+                    return PageResendOutcome::Failed;
+                }
+                // Ahead of its own base class, because it is not the same event. Every other species
+                // below is a verdict about the resource or the rights, reached on purpose and worth
+                // an info line and public status wording to the subscriber. This one says the node is
+                // wrong about itself: error, because nobody comes to fix an info line, and the
+                // internal-error sentence, because the text names the inside of the node and the
+                // subscriber can act on none of it. The frame it sends is the internal-error frame either way — the species
+                // already carries 500 and `internal_error`.
+                Logger::error("Page subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
+                $this->sendSubscriptionError(
+                    $pageInstance->getAgent()->getAgentSignalSource(),
+                    $page,
+                    $data->acceptKey,
+                    $e->httpCode,
+                    $e->errorCode,
+                );
+
                 return PageResendOutcome::Failed;
-            }
-            Logger::error("Unexpected page subscription error: page={$page}, exception={$e->getMessage()}");
-            $this->sendSubscriptionError(
-                $pageInstance->getAgent()->getAgentSignalSource(),
-                $page,
-                $data->acceptKey,
-                HttpConstants::HTTP_INTERNAL_ERROR,
-                'internal_error',
-            );
+            } catch (PageSubscriptionException $e) {
+                $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
+                if (!$reportFailure) {
+                    return PageResendOutcome::Refused;
+                }
+                // The subscription registration is intentionally KEPT alive, not torn down.
+                // What stays alive is that registration, not what the page held for the
+                // connection: that is released before this frame
+                // ({@see AbstractPage::onUnsubscribe()}). A guard failure is a transient
+                // state, not a dead end: if the missing resource later appears (e.g. user
+                // #10 is created while a client sits on its 404 page) or access is later
+                // granted, the guard starts passing and the live fan-out promotes the error
+                // page into the real page with no re-subscribe — the Hilos live-promotion
+                // model. Because the subscription stays registered, the browser delivery
+                // paths must re-check the guard on every fan-out (not rely on the
+                // subscription being absent): a guard-failed subscription receives nothing
+                // WHILE the guard fails, yet resumes the instant it passes.
+                Logger::info("Page subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
+                $this->sendSubscriptionError(
+                    $pageInstance->getAgent()->getAgentSignalSource(),
+                    $page,
+                    $data->acceptKey,
+                    $e->httpCode,
+                    $e->errorCode,
+                );
 
-            return PageResendOutcome::Failed;
+                return PageResendOutcome::Refused;
+            } catch (Throwable $e) {
+                $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
+                if (!$reportFailure) {
+                    return PageResendOutcome::Failed;
+                }
+                Logger::error("Unexpected page subscription error: page={$page}, exception={$e->getMessage()}");
+                $this->sendSubscriptionError(
+                    $pageInstance->getAgent()->getAgentSignalSource(),
+                    $page,
+                    $data->acceptKey,
+                    HttpConstants::HTTP_INTERNAL_ERROR,
+                    'internal_error',
+                );
+
+                return PageResendOutcome::Failed;
+            } finally {
+                // The report does not outlive the frame it arrived in, whatever the verdict was:
+                // an answer takes it above, and a refusal drops it here. Left standing, it would
+                // still be there when this page is re-sent to the same connection later, and the
+                // window it names may by then be one the tab has moved on from.
+                Hilos::$sr?->takeReportedTableWindows($data->acceptKey);
+            }
         } finally {
-            // The report does not outlive the frame it arrived in, whatever the verdict was:
-            // an answer takes it above, and a refusal drops it here. Left standing, it would
-            // still be there when this page is re-sent to the same connection later, and the
-            // window it names may by then be one the tab has moved on from.
-            Hilos::$sr?->takeReportedTableWindows($data->acceptKey);
+            $this->completePageDelivery($data->acceptKey, $page !== '' ? $page : $name, $data->deliveryId);
         }
     }
 
@@ -566,6 +575,7 @@ class PageSignalRouter
      * @param string $source Signal source
      * @param string $name Signal name (page name)
      * @throws InvalidArgumentException When the subscription-error signal cannot be named
+     * @throws InvalidFormatException When the tracked delivery has an invalid completion address
      */
     public function dispatchPageUpdateSubscription(WebSocketPageUpdateSubscriptionSignalDTO $data, string $source, string $name): void
     {
@@ -592,86 +602,94 @@ class PageSignalRouter
     private function runPageUpdateSubscriptionFrame(WebSocketPageUpdateSubscriptionSignalDTO $data, string $source, string $name): void
     {
         $page = $name;
-        if ($page === '') {
-            Logger::error('Page update subscription without page name');
-            return;
-        }
-
-        $pageInstance = $this->resolvePage($page);
-        if ($pageInstance === null) {
-            return;
-        }
-
-        if (!$this->subscribedToPage($data->acceptKey, $page)) {
-            // The tab navigated away, or closed, before the frame was judged — a window
-            // parking widens but did not invent. Judging it would run the page's
-            // onUpdateSubscription for a page this connection no longer stands on, and the
-            // mirror write below would then fail on a record that names another page: which
-            // is exactly what the straight-through path did here, silently, before the check.
-            //
-            // Ahead of the guards on purpose. There is no verdict to reach about a page
-            // nobody is on, and reaching one anyway would answer the client about it.
-            Logger::info("Page update subscription for a page left behind: page={$page}, acceptKey={$data->acceptKey}");
-            return;
-        }
-
         try {
-            $params = new PageRouteParams($this->mergedSubscriptionParams($data));
-            $previousParams = Hilos::$sr?->getPageSubscriptions()[$data->acceptKey]
-                [SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY] ?? [];
-            PageAccessGate::assert($pageInstance::class, $data->acceptKey);
-            Hilos::$browser?->assertSubscriptionAccess($page, $data->acceptKey, $params);
-            $pageInstance->onUpdateSubscription($data->acceptKey, $params);
-            if ($params->toArray() != $previousParams) {
-                $this->recordPersonEvent(
-                    $data->acceptKey, AnalyticsPersonEvent::PAGE_UPDATE, page: $page, params: $params->toArray(),
-                );
+            if ($page === '') {
+                Logger::error('Page update subscription without page name');
+                return;
+            }
+
+            $pageInstance = $this->resolvePage($page);
+            if ($pageInstance === null) {
+                return;
+            }
+
+            if (!$this->subscribedToPage($data->acceptKey, $page)) {
+                // The tab navigated away, or closed, before the frame was judged — a window
+                // parking widens but did not invent. Judging it would run the page's
+                // onUpdateSubscription for a page this connection no longer stands on, and the
+                // mirror write below would then fail on a record that names another page: which
+                // is exactly what the straight-through path did here, silently, before the check.
+                //
+                // Ahead of the guards on purpose. There is no verdict to reach about a page
+                // nobody is on, and reaching one anyway would answer the client about it.
+                Logger::info("Page update subscription for a page left behind: page={$page}, acceptKey={$data->acceptKey}");
+                return;
             }
 
             try {
-                // Only an accepted update settles into the mirrors: a set the guards
-                // refused would otherwise judge the next fan-out for this connection.
-                // Written here, beside the verdict, and no longer by the caller — the
-                // answer that used to travel back as a bool never leaves this method.
-                Hilos::$sr?->updatePageSubscription($page, $data);
-            } catch (PageSubscriptionNotFoundException|PageSubscriptionMismatchException $e) {
-                // The registry moved under an accepted update. The client is told nothing:
-                // its update did happen, and the page already ran it.
-                Logger::error("Cannot mirror page subscription update: page={$page}, acceptKey={$data->acceptKey}, {$e->getMessage()}");
+                $params = new PageRouteParams($this->mergedSubscriptionParams($data));
+                $previousParams = Hilos::$sr?->getPageSubscriptions()[$data->acceptKey]
+                    [SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY] ?? [];
+                PageAccessGate::assert($pageInstance::class, $data->acceptKey);
+                Hilos::$browser?->assertSubscriptionAccess($page, $data->acceptKey, $params);
+                $pageInstance->onUpdateSubscription($data->acceptKey, $params);
+                if ($params->toArray() != $previousParams) {
+                    $this->recordPersonEvent(
+                        $data->acceptKey, AnalyticsPersonEvent::PAGE_UPDATE, page: $page, params: $params->toArray(),
+                    );
+                }
+
+                try {
+                    // Only an accepted update settles into the mirrors: a set the guards
+                    // refused would otherwise judge the next fan-out for this connection.
+                    // Written here, beside the verdict, and no longer by the caller — the
+                    // answer that used to travel back as a bool never leaves this method.
+                    Hilos::$sr?->updatePageSubscription($page, $data);
+                } catch (PageSubscriptionNotFoundException|PageSubscriptionMismatchException $e) {
+                    // The registry moved under an accepted update. The client is told nothing:
+                    // its update did happen, and the page already ran it.
+                    Logger::error("Cannot mirror page subscription update: page={$page}, acceptKey={$data->acceptKey}, {$e->getMessage()}");
+                }
+            } catch (PageInternalErrorException $e) {
+                $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
+                // Same order and the same reason as in dispatchPageSubscribe(): a node wrong about
+                // itself is not a verdict about the subscriber, so it is logged as an error and its
+                // words stay inside.
+                Logger::error(
+                    "Page update subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}",
+                );
+                $this->sendSubscriptionError(
+                    $pageInstance->getAgent()->getAgentSignalSource(),
+                    $page,
+                    $data->acceptKey,
+                    $e->httpCode,
+                    $e->errorCode,
+                );
+            } catch (PageSubscriptionException $e) {
+                $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
+                Logger::info(
+                    "Page update subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}",
+                );
+                $this->sendSubscriptionError(
+                    $pageInstance->getAgent()->getAgentSignalSource(),
+                    $page,
+                    $data->acceptKey,
+                    $e->httpCode,
+                    $e->errorCode,
+                );
+            } catch (Throwable $e) {
+                $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
+                Logger::error("Unexpected page update subscription error: page={$page}, exception={$e->getMessage()}");
+                $this->sendSubscriptionError(
+                    $pageInstance->getAgent()->getAgentSignalSource(),
+                    $page,
+                    $data->acceptKey,
+                    HttpConstants::HTTP_INTERNAL_ERROR,
+                    'internal_error',
+                );
             }
-        } catch (PageInternalErrorException $e) {
-            $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
-            // Same order and the same reason as in dispatchPageSubscribe(): a node wrong about
-            // itself is not a verdict about the subscriber, so it is logged as an error and its
-            // words stay inside.
-            Logger::error("Page update subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
-            $this->sendSubscriptionError(
-                $pageInstance->getAgent()->getAgentSignalSource(),
-                $page,
-                $data->acceptKey,
-                $e->httpCode,
-                $e->errorCode,
-            );
-        } catch (PageSubscriptionException $e) {
-            $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
-            Logger::info("Page update subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
-            $this->sendSubscriptionError(
-                $pageInstance->getAgent()->getAgentSignalSource(),
-                $page,
-                $data->acceptKey,
-                $e->httpCode,
-                $e->errorCode,
-            );
-        } catch (Throwable $e) {
-            $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
-            Logger::error("Unexpected page update subscription error: page={$page}, exception={$e->getMessage()}");
-            $this->sendSubscriptionError(
-                $pageInstance->getAgent()->getAgentSignalSource(),
-                $page,
-                $data->acceptKey,
-                HttpConstants::HTTP_INTERNAL_ERROR,
-                'internal_error',
-            );
+        } finally {
+            $this->completePageDelivery($data->acceptKey, $page !== '' ? $page : ($data->page ?? $page), $data->deliveryId);
         }
     }
 
@@ -2601,6 +2619,34 @@ class PageSignalRouter
         }
 
         Hilos::$sr?->clearPageResource($acceptKey);
+    }
+
+    /**
+     * Ends an executed frame in the same queue as its response and after-response output.
+     *
+     * A frame without a page address cannot have a tracked page delivery. Parked frames
+     * do not reach this boundary until they resume; synthetic requests carry no token.
+     *
+     * @param string $acceptKey Connection that sent the frame
+     * @param string $page Page address the handler judged
+     * @param ?string $deliveryId Internal token, absent for untracked requests
+     * @throws InvalidArgumentException When the completion signal cannot be named
+     */
+    private function completePageDelivery(string $acceptKey, string $page, ?string $deliveryId): void
+    {
+        if ($deliveryId === null || $page === '') {
+            return;
+        }
+
+        Hilos::$sr->queueSignal(
+            signalSource: $this->pageFactory->getAgent()->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::WS_USER),
+            signalName: new SignalName(SignalConstants::DELIVERY_COMPLETE),
+            signalData: new WebSocketSignalData(
+                data: new DeliveryCompleteSignalData($page, $deliveryId),
+                targetAcceptKey: $acceptKey,
+            ),
+        );
     }
 
     /**

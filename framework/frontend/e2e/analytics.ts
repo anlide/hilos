@@ -1,5 +1,6 @@
 import type { Expect, Locator, Page } from '@playwright/test'
 import { shownByTestId } from './table.js'
+import { watchSocketFrames } from './socket.js'
 
 /**
  * Analytics section checks all three kits must meet alike. Tests, their order
@@ -125,19 +126,19 @@ const ANALYTICS_NO_VALUE_TEXT = '—'
  */
 export function watchAnalyticsFrames(page: Page): AnalyticsFrameLog[] {
   const frames: AnalyticsFrameLog[] = []
-  page.on('websocket', (socket) => {
-    socket.on('framereceived', ({ payload }) => {
-      if (typeof payload !== 'string') return
-      const wire = JSON.parse(payload) as AnalyticsFrame
-      if (
-        wire.data?.page === SESSION_PAGE &&
-        (wire.type === 'page_response' ||
-          (wire.type === 'table_window' &&
-            wire.data.tableKey === ACTIONS_TABLE))
-      ) {
-        frames.push({ wire, raw: payload })
-      }
-    })
+  watchSocketFrames(page, (frame) => {
+    if (frame.raw === undefined) return
+    if (frame.wire === undefined) {
+      throw new Error(`Invalid Analytics socket evidence: ${frame.raw}`)
+    }
+    const wire = frame.wire as AnalyticsFrame | null
+    if (
+      wire?.data?.page === SESSION_PAGE &&
+      (wire.type === 'page_response' ||
+        (wire.type === 'table_window' && wire.data.tableKey === ACTIONS_TABLE))
+    ) {
+      frames.push({ wire, raw: frame.raw })
+    }
   })
   return frames
 }

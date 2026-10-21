@@ -13,6 +13,9 @@ use Hilos\Core\Page\PageAccessReassessment;
  */
 final class SignalTypeConstants
 {
+    /** @var string Browser delivery wrapper containing existing signal envelopes */
+    public const string SIGNAL_BATCH = 'signal_batch';
+
     /** @var string System signal type */
     public const string SYSTEM = 'system';
 

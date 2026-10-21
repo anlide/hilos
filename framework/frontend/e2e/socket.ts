@@ -1,4 +1,89 @@
-import type { Page } from '@playwright/test'
+import type { Page, WebSocket as PlaywrightWebSocket } from '@playwright/test'
+import {
+  parseSignalValue,
+  unpackSignalFrames,
+  type ParseFailure,
+} from '../core/src/base/index.js'
+
+/** One inner frame, or a failed physical message, retaining transport evidence. */
+export interface SocketFrame {
+  readonly socket: number
+  /** One-based physical message number on this socket, shared by batch inners. */
+  readonly message: number
+  /** The original text; binary transport has no text representation. */
+  readonly raw: string | undefined
+  readonly wire: unknown
+  /** Validation never hides the original inner value from an assertion. */
+  readonly failure: ParseFailure | undefined
+}
+
+/**
+ * Read physical messages from one socket through the core decoder. A failed
+ * outer or binary message produces one observation; invalid inners stay in order
+ * beside valid ones. No synthetic inner JSON replaces the physical raw text.
+ *
+ * @param socket The observer's identity for this connection, including reconnects.
+ */
+export function createSocketFrameReader(socket: number) {
+  let message = 0
+  return (payload: unknown): SocketFrame[] => {
+    message++
+    const raw = typeof payload === 'string' ? payload : undefined
+    const delivery = unpackSignalFrames(payload)
+    if (!delivery.ok) {
+      return [
+        { socket, message, raw, wire: undefined, failure: delivery.failure },
+      ]
+    }
+    return delivery.frames.map((wire) => {
+      const parsed = parseSignalValue(wire)
+      return {
+        socket,
+        message,
+        raw,
+        wire,
+        failure: parsed.ok ? undefined : parsed.failure,
+      }
+    })
+  }
+}
+
+/**
+ * Arm before navigation to observe all subsequent sockets. The callback receives
+ * every inner and every decoding failure synchronously, including binary input.
+ *
+ * @param page The page whose incoming messages are observed.
+ * @param received The observer, which narrows unknown payloads for its own checks.
+ */
+export function watchSocketFrames(
+  page: Page,
+  received: (frame: SocketFrame) => void,
+) {
+  let sockets = 0
+  const listeners = new Map<
+    PlaywrightWebSocket,
+    (frame: { payload: string | Buffer }) => void
+  >()
+  const opened = (socket: PlaywrightWebSocket) => {
+    const read = createSocketFrameReader(++sockets)
+    const listener = ({ payload }: { payload: string | Buffer }) => {
+      for (const frame of read(payload)) received(frame)
+    }
+    listeners.set(socket, listener)
+    socket.on('framereceived', listener)
+  }
+  page.on('websocket', opened)
+  return {
+    sockets: () => sockets,
+    stop() {
+      page.off('websocket', opened)
+      for (const [socket, listener] of listeners) {
+        socket.off('framereceived', listener)
+      }
+      listeners.clear()
+    },
+  }
+}
 
 // Some specs need one thing the browser will not give them: a socket that dies
 // while the page stays put. Playwright's offline emulation was the obvious way

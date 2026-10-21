@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster;
 
+use Hilos\Core\Exception\InvalidFormatException;
+
 use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\HilosException;
@@ -137,6 +139,7 @@ interface RtSyncSink
      *
      * @param string $nodeId Node that can no longer be reached
      * @param float $at Microtime of this node's clock when the link closed
+     * @throws InvalidFormatException When a pending page recovery address is malformed
      */
     public function noteNodeUnreachable(string $nodeId, float $at): void;
 
