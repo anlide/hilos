@@ -134,6 +134,8 @@ use Hilos\Users\DTO\UserBrowserTrustRevokeDoneSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRevokeSignalData;
 use Hilos\Users\DTO\UserThemePickWriteDoneSignalData;
 use Hilos\Users\DTO\UserThemePickWriteSignalData;
+use Hilos\Users\DTO\UserTimeZoneWriteDoneSignalData;
+use Hilos\Users\DTO\UserTimeZoneWriteSignalData;
 use Hilos\Users\DTO\UserEmailChangeDoneSignalData;
 use Hilos\Users\DTO\UserEmailChangeSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkDoneSignalData;
@@ -684,6 +686,22 @@ final class HilosSignalConstants
      * Carried by {@see UserThemePickWriteDoneSignalData}; resumes the initiating browser action.
      */
     public const string HILOS_USER_THEME_PICK_DONE = 'hilos_user_theme_pick_done';
+
+    /**
+     * Coordinator → the person's agent: write an exact time zone or reset to Automatic (HIL-1580).
+     *
+     * Carried by {@see UserTimeZoneWriteSignalData}; the owner answers under the ask's replySignal.
+     * SCAFFOLD: The internal write/done handover is implemented and tested. Keep this API until
+     * HIL-1593 adds the first browser caller.
+     */
+    public const string HILOS_USER_TIME_ZONE_WRITE = 'hilos_user_time_zone_write';
+
+    /**
+     * The person's agent → users library: the time zone is written, or why it was refused (HIL-1580).
+     *
+     * Carried by {@see UserTimeZoneWriteDoneSignalData}; resumes the coordinator's waiting action.
+     */
+    public const string HILOS_USER_TIME_ZONE_WRITE_DONE = 'hilos_user_time_zone_write_done';
 
     /**
      * The person's agent → sessions library: the block flag is written, or why not (HIL-1404).

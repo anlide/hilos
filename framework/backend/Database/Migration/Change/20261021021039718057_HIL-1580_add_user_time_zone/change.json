@@ -1,0 +1,14 @@
+{
+    "format": 1,
+    "id": "20261021021039718057_HIL-1580_add_user_time_zone",
+    "parts": [
+        {
+            "unit": "user",
+            "up": "add_user_time_zone.sql",
+            "down": "add_user_time_zone_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "c904392c95cddc57af61338064323d8aeee8b2e9e6c03d0df80771655001ea59",
+            "afterStubDownSha256": "c51fdef7a88ead7047c9c14f60f39df9955251291c267b7cca94927fa318df35"
+        }
+    ]
+}

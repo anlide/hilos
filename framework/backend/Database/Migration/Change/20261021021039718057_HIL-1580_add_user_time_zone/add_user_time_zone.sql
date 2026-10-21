@@ -1,0 +1,1 @@
+ALTER TABLE `hilos_user` ADD COLUMN `time_zone` VARCHAR(64) NULL DEFAULT NULL;

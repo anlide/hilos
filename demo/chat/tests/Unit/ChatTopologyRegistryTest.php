@@ -370,6 +370,8 @@ use Hilos\Users\DTO\UserStepUpRecordDoneSignalData;
 use Hilos\Users\DTO\UserStepUpRecordSignalData;
 use Hilos\Users\DTO\UserThemePickWriteSignalData;
 use Hilos\Users\DTO\UserThemePickWriteDoneSignalData;
+use Hilos\Users\DTO\UserTimeZoneWriteDoneSignalData;
+use Hilos\Users\DTO\UserTimeZoneWriteSignalData;
 use Hilos\HilosException;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
 use Hilos\Database\Schema\MountedCollectionKeyGuard;
@@ -1124,6 +1126,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_ADMIN_COMMAND => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_BLOCK_WRITE => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE => HilosAgentType::HILOS_USER,
+            HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_PASSWORD_REHASH => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_ADDRESS_VERIFY => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_PASSKEY_USE => HilosAgentType::HILOS_USER,
@@ -1154,6 +1157,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_USER_THEME_PICK_ADOPT_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_USER_THEME_PICK_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_USER_ADMIN_RENAME => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -1357,6 +1361,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_ADMIN_COMMAND => 'userId',
             HilosSignalConstants::HILOS_USER_BLOCK_WRITE => 'userId',
             HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE => 'userId',
+            HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE => 'userId',
             HilosSignalConstants::HILOS_USER_PASSWORD_REHASH => 'userId',
             HilosSignalConstants::HILOS_USER_ADDRESS_VERIFY => 'userId',
             HilosSignalConstants::HILOS_USER_PASSKEY_USE => 'userId',
@@ -1436,6 +1441,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_ADMIN_COMMAND => UserAdminCommandSignalData::class,
             HilosSignalConstants::HILOS_USER_BLOCK_WRITE => UserBlockWriteSignalData::class,
             HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE => UserThemePickWriteSignalData::class,
+            HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE => UserTimeZoneWriteSignalData::class,
             HilosSignalConstants::HILOS_USER_PASSWORD_REHASH => UserPasswordRehashSignalData::class,
             HilosSignalConstants::HILOS_USER_ADDRESS_VERIFY => UserAddressVerifySignalData::class,
             HilosSignalConstants::HILOS_USER_PASSKEY_USE => UserPasskeyUseSignalData::class,
@@ -1466,6 +1472,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
             HilosSignalConstants::HILOS_USER_THEME_PICK_ADOPT_DONE => UserThemePickWriteDoneSignalData::class,
             HilosSignalConstants::HILOS_USER_THEME_PICK_DONE => UserThemePickWriteDoneSignalData::class,
+            HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE_DONE => UserTimeZoneWriteDoneSignalData::class,
             HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => OAuthLoginReadySignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET => AccountDeletionSetSignalData::class,
             HilosSignalConstants::HILOS_USER_ADMIN_RENAME => AdminRenameSignalData::class,

@@ -22,6 +22,7 @@ use Hilos\Database\Object\Collection\Users as ObjectUsers;
  * @property ?string $lastActivity
  * @property ?string $themePick
  * @property bool $themePickInitialized
+ * @property ?string $timeZone Exact IANA time zone; null for Automatic
  */
 class User extends Object_
 {
@@ -35,6 +36,7 @@ class User extends Object_
     public const string lastActivity = 'lastActivity';
     public const string themePick = 'themePick';
     public const string themePickInitialized = 'themePickInitialized';
+    public const string timeZone = 'timeZone';
 
     /**
      * Returns the value of a user object property by name.
@@ -53,6 +55,7 @@ class User extends Object_
             self::lastActivity => $this->entity->last_activity,
             self::themePick => $this->entity->theme_pick,
             self::themePickInitialized => $this->entity->theme_pick_initialized,
+            self::timeZone => $this->entity->time_zone,
             default => parent::__get($property),
         };
     }
@@ -73,6 +76,7 @@ class User extends Object_
             self::lastActivity => $this->entity->last_activity = is_scalar($value) ? (string)$value : null,
             self::themePick => $this->entity->theme_pick = $value === null ? null : (string)$value,
             self::themePickInitialized => $this->entity->theme_pick_initialized = (bool)$value,
+            self::timeZone => $this->entity->time_zone = $value === null ? null : (string)$value,
             default => parent::__set($property, $value),
         };
     }
@@ -92,6 +96,7 @@ class User extends Object_
             self::lastActivity => $this->entity->last_activity,
             self::themePick => $this->entity->theme_pick,
             self::themePickInitialized => $this->entity->theme_pick_initialized,
+            self::timeZone => $this->entity->time_zone,
         ];
     }
 }

@@ -70,6 +70,14 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                     $origins[] = $install;
                 }
             }
+            $base = $project->root . '/' . sprintf('%03d', $indices[$index] + 1)
+                . '_framework_change_38c7203a140d8efdf40017ddaa16d4a695810303ef7f3e89ae703b19ed141c0d';
+            $change = $catalog->verifyPair(FsPath::read($base . '.sql'), FsPath::read($base . '_down.sql'));
+            self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+            self::assertSame(['user'], $change->units);
+            self::assertCount(1, $change->parts);
+            self::assertSame('20261021021039718057_HIL-1580_add_user_time_zone/user', $change->parts[0]->key());
+            $origins[] = $change;
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $plans = new FrameworkMigrationInstaller()->plan(...$projects);

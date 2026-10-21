@@ -650,6 +650,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
             selfPhoto: $photo === null ? null : HilosFiles::downloadPath($photo->fileId, ProfilePhotoUploadTarget::VARIANT),
             selfThemePick: $user->themePick,
             selfThemePickInitialized: $user->themePickInitialized,
+            selfTimeZone: $user->timeZone,
             impersonatorId: $impersonator !== null ? (int)$impersonator->id : null,
             impersonatorName: $impersonator?->name,
         );

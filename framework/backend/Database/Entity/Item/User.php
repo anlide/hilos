@@ -25,6 +25,7 @@ class User extends Entity
     public const string last_activity = 'last_activity';
     public const string theme_pick = 'theme_pick';
     public const string theme_pick_initialized = 'theme_pick_initialized';
+    public const string time_zone = 'time_zone';
 
     // Table meta information
     public const string _table = 'hilos_user';
@@ -39,6 +40,7 @@ class User extends Entity
         self::last_activity,
         self::theme_pick,
         self::theme_pick_initialized,
+        self::time_zone,
     ];
 
     // Column types
@@ -50,6 +52,7 @@ class User extends Entity
         self::last_activity => PhpType::DATETIME->value,
         self::theme_pick => PhpType::STRING->value,
         self::theme_pick_initialized => PhpType::BOOLEAN->value,
+        self::time_zone => PhpType::STRING->value,
     ];
 
     // Indexes
@@ -64,7 +67,10 @@ class User extends Entity
 
     // A display name is derived from the primary key rather than masked, so a restored copy
     // still tells its people apart.
-    public const array _pii = [self::name => AnonymizationStrategy::FAKE_NAME];
+    public const array _pii = [
+        self::name => AnonymizationStrategy::FAKE_NAME,
+        self::time_zone => AnonymizationStrategy::NULLIFY,
+    ];
 
     public const array _piiNotPersonal = [
         self::id,
@@ -83,4 +89,5 @@ class User extends Entity
     public ?string $last_activity = null;
     public ?string $theme_pick = null;
     public bool $theme_pick_initialized;
+    public ?string $time_zone = null;
 }

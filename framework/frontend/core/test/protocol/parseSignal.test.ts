@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { parseSignal } from '../../src/protocol/parseSignal.js'
+import { SESSION_SIGNAL_SCHEMAS } from '../../src/session/sessionScope.js'
 
 describe('parseSignal', () => {
   it('parses page recovery before project schemas, including empty params', () => {
@@ -185,6 +186,37 @@ describe('parseSignal', () => {
       })
     }
   })
+
+  it.each([
+    ['a string', 'Europe/Warsaw'],
+    ['an explicit null', null],
+  ])(
+    'preserves currentUser.timeZone as %s in handshake_response',
+    (_description, timeZone) => {
+      const result = parseSignal(
+        JSON.stringify({
+          type: 'handshake_response',
+          data: { entities: { currentUser: { id: 7, timeZone } } },
+        }),
+        SESSION_SIGNAL_SCHEMAS,
+      )
+      expect(result).toMatchObject({
+        ok: true,
+        signal: {
+          kind: 'project',
+          type: 'handshake_response',
+          data: { entities: { currentUser: { id: 7, timeZone } } },
+        },
+      })
+      if (result.ok && result.signal.kind === 'project') {
+        expect(result.signal.data).toHaveProperty('entities.currentUser.id', 7)
+        expect(result.signal.data).toHaveProperty(
+          'entities.currentUser.timeZone',
+          timeZone,
+        )
+      }
+    },
+  )
 
   it('tolerates envelope metadata and extra keys', () => {
     const result = parseSignal(

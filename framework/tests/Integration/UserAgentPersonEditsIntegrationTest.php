@@ -42,6 +42,8 @@ use Hilos\Users\DTO\UserRenameSignalData;
 use Hilos\Users\DTO\UserThemePickWriteDoneSignalData;
 use Hilos\Users\DTO\UserThemePickWriteSignalData;
 use Hilos\Users\DTO\UserSessionsRestateSignalData;
+use Hilos\Users\DTO\UserTimeZoneWriteDoneSignalData;
+use Hilos\Users\DTO\UserTimeZoneWriteSignalData;
 
 /**
  * The ordinary edits of one person are written by that person's agent and by nobody else (HIL-1404).
@@ -290,6 +292,128 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
         ));
     }
 
+    /** Exact IANA names, aliases and explicit reset persist without touching activity time. */
+    public function testTheOwnerWritesExactTimeZonesAndResetAndRestatesIdempotentRepeats(): void
+    {
+        $userId = self::seedPerson('Ada', admin: false);
+        $activity = '2026-10-01 12:34:56';
+        Database::sqlRun('UPDATE `hilos_user` SET `last_activity` = ? WHERE `id` = ?', [$activity, $userId]);
+
+        foreach (['UTC', 'Europe/Warsaw', 'US/Eastern', null] as $timeZone) {
+            $ask = new UserTimeZoneWriteSignalData(
+                $userId, $timeZone, HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE_DONE,
+                self::ACCEPT_KEY, 'request-time-zone', 'time_zone', 'Saved',
+            );
+            $this->deliverToPerson($this->frame(HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE, $ask));
+            $this->assertThemeRestate($userId);
+            $answer = $this->answer(HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE_DONE);
+            self::assertInstanceOf(UserTimeZoneWriteDoneSignalData::class, $answer);
+            self::assertNull($answer->error);
+            self::assertSame($ask, $answer->ask);
+            self::assertSame($timeZone, self::personRow($userId)['time_zone']);
+            self::assertSame($activity, self::personRow($userId)['last_activity']);
+            self::assertNull(Hilos::$sr->getNextQueuedSignal());
+
+            $this->deliverToPerson($this->frame(HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE, $ask));
+            $repeatRestate = Hilos::$sr->getNextQueuedSignal();
+            self::assertNotNull($repeatRestate);
+            self::assertSame(HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE, $repeatRestate->signalName->getName());
+            self::assertInstanceOf(AgentSignalData::class, $repeatRestate->data);
+            self::assertInstanceOf(UserSessionsRestateSignalData::class, $repeatRestate->data->data);
+            self::assertSame($userId, $repeatRestate->data->data->userId);
+            $repeatDone = Hilos::$sr->getNextQueuedSignal();
+            self::assertNotNull($repeatDone);
+            self::assertSame(HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE_DONE, $repeatDone->signalName->getName());
+            self::assertInstanceOf(AgentSignalData::class, $repeatDone->data);
+            self::assertInstanceOf(UserTimeZoneWriteDoneSignalData::class, $repeatDone->data->data);
+            self::assertNull($repeatDone->data->data->error);
+            self::assertSame($ask, $repeatDone->data->data->ask);
+            self::assertNull(Hilos::$sr->getNextQueuedSignal(), 'The unchanged value must not sync the row');
+            self::assertSame($timeZone, self::personRow($userId)['time_zone']);
+            self::assertSame($activity, self::personRow($userId)['last_activity']);
+        }
+    }
+
+    /** Validation is exact and happens before mutating the saved row or the cached object. */
+    public function testInvalidTimeZonesReturnPublicRefusalsWithoutRestatingOrChangingThePerson(): void
+    {
+        $userId = self::seedPerson('Ada', admin: false);
+        $activity = '2026-10-01 12:34:56';
+        Database::sqlRun(
+            'UPDATE `hilos_user` SET `time_zone` = ?, `last_activity` = ? WHERE `id` = ?',
+            ['Europe/Warsaw', $activity, $userId],
+        );
+
+        foreach (['Unknown/Zone', '', '+02:00', ' UTC', 'UTC ', "\tUTC\n", 'europe/warsaw'] as $invalid) {
+            $ask = new UserTimeZoneWriteSignalData(
+                $userId, $invalid, HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE_DONE,
+                self::ACCEPT_KEY, null, 'time_zone', null,
+            );
+            $this->deliverToPerson($this->frame(HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE, $ask));
+            $next = Hilos::$sr->getNextQueuedSignal();
+            self::assertNotNull($next);
+            self::assertSame(HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE_DONE, $next->signalName->getName());
+            self::assertInstanceOf(AgentSignalData::class, $next->data);
+            self::assertInstanceOf(UserTimeZoneWriteDoneSignalData::class, $next->data->data);
+            self::assertSame('Choose a valid IANA time zone or Automatic.', $next->data->data->error);
+            self::assertNull($next->data->data->errorType);
+            self::assertNull($next->data->data->errorDetail);
+            self::assertSame($ask, $next->data->data->ask);
+            self::assertNull(Hilos::$sr->getNextQueuedSignal(), 'A refused write must not restate or sync');
+            self::assertSame('Europe/Warsaw', self::personRow($userId)['time_zone']);
+            self::assertSame($activity, self::personRow($userId)['last_activity']);
+            self::assertSame('Europe/Warsaw', Hilos::$db->users[$userId]->timeZone);
+        }
+    }
+
+    /** Both a library and another person's owner are refused before validation or mutation. */
+    public function testForeignExecutionFramesCannotWriteAPersonsTimeZoneDirectly(): void
+    {
+        $userId = self::seedPerson('Ada', admin: false);
+        $otherId = self::seedPerson('Grace', admin: false);
+        $otherAgent = $this->personAgent($otherId);
+
+        foreach ([$this->users->getId(), $otherAgent->getId()] as $foreignId) {
+            foreach (['UTC', ''] as $timeZone) {
+                try {
+                    ExecutionContext::run(
+                        new ExecutionFrame(agentId: $foreignId),
+                        static fn () => Hilos::$db->users[$userId]->actions->setTimeZone($timeZone),
+                    );
+                    self::fail('A foreign frame must not edit the time zone');
+                } catch (WriteNotAllowedException $refusal) {
+                    self::assertStringContainsString($foreignId, $refusal->getMessage());
+                }
+                self::assertNull(self::personRow($userId)['time_zone']);
+                self::assertNull(self::personRow($userId)['last_activity']);
+                self::assertNull(Hilos::$db->users[$userId]->timeZone);
+            }
+        }
+    }
+
+    /** An ask delivered to the wrong owner cannot retarget either person's row. */
+    public function testATimeZoneFrameForAnotherPersonIsRefused(): void
+    {
+        $userId = self::seedPerson('Ada', admin: false);
+        $otherId = self::seedPerson('Grace', admin: false);
+        try {
+            $this->asPerson($userId, static fn ($agent) => $agent->onSignalAgent(
+                new AgentSignalData(data: new UserTimeZoneWriteSignalData(
+                    $otherId, 'UTC', HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE_DONE,
+                    self::ACCEPT_KEY, null, 'time_zone', null,
+                )),
+                '',
+                HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE,
+            ));
+            self::fail('A time-zone ask must stay addressed to the same person');
+        } catch (AgentException $refusal) {
+            self::assertStringContainsString("user #{$otherId} reached the agent of user #{$userId}", $refusal->getMessage());
+        }
+        self::assertNull(self::personRow($userId)['time_zone']);
+        self::assertNull(self::personRow($otherId)['time_zone']);
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
     /**
      * @throws HilosException When a fixture row cannot be written or a frame fails
      */
@@ -509,13 +633,13 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
 
     /**
      * @param string $name Agent-signal name the frame travels under
-     * @param UserRenameSignalData|UserAdminWriteSignalData|UserBlockWriteSignalData|UserThemePickWriteSignalData $ask Frame payload
+     * @param UserRenameSignalData|UserAdminWriteSignalData|UserBlockWriteSignalData|UserThemePickWriteSignalData|UserTimeZoneWriteSignalData $ask Ask
      * @return SignalDTO The frame as the coordinator would have queued it
      * @throws HilosException When the frame cannot be queued or taken back
      */
     private function frame(
         string $name,
-        UserRenameSignalData|UserAdminWriteSignalData|UserBlockWriteSignalData|UserThemePickWriteSignalData $ask,
+        UserRenameSignalData|UserAdminWriteSignalData|UserBlockWriteSignalData|UserThemePickWriteSignalData|UserTimeZoneWriteSignalData $ask,
     ): SignalDTO
     {
         $this->sessions->sendToAgent($name, $ask);
@@ -654,7 +778,10 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
      */
     private static function personRow(int $userId): array
     {
-        Database::sql('SELECT `name`, `admin`, `block`, `last_activity`, `theme_pick` FROM `hilos_user` WHERE `id` = ?', [$userId]);
+        Database::sql(
+            'SELECT `name`, `admin`, `block`, `last_activity`, `theme_pick`, `time_zone` FROM `hilos_user` WHERE `id` = ?',
+            [$userId],
+        );
         $row = Database::row();
         self::assertNotNull($row);
 

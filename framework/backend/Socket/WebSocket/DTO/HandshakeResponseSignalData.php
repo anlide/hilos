@@ -147,6 +147,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public const string photo = 'photo';
     public const string themePick = 'themePick';
     public const string themePickInitialized = 'themePickInitialized';
+    public const string timeZone = 'timeZone';
     public const string data = 'data';
     public const string pendingAck = 'pendingAck';
     public const string serverTimeMs = 'serverTimeMs';
@@ -221,6 +222,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * @param ?string $selfPhoto Variant URL of the person's published photo, or null for initials
      * @param ?string $selfThemePick Stored theme choice, or null when there is no personal position
      * @param bool $selfThemePickInitialized Whether an account choice was ever saved, including a reset
+     * @param ?string $selfTimeZone Stored personal IANA time zone, or null for automatic selection
      */
     public function __construct(
         public readonly ?int $selfId = null,
@@ -242,6 +244,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         public readonly ?array $themeSettings = null,
         public readonly ?string $selfThemePick = null,
         public readonly bool $selfThemePickInitialized = false,
+        public readonly ?string $selfTimeZone = null,
     ) {
     }
 
@@ -261,6 +264,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         return new self(
             selfThemePick: $this->selfThemePick,
             selfThemePickInitialized: $this->selfThemePickInitialized,
+            selfTimeZone: $this->selfTimeZone,
             selfId: $this->selfId,
             selfName: $this->selfName,
             selfAdmin: $this->selfAdmin,
@@ -297,6 +301,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         return new self(
             selfThemePick: $this->selfThemePick,
             selfThemePickInitialized: $this->selfThemePickInitialized,
+            selfTimeZone: $this->selfTimeZone,
             selfId: $this->selfId,
             selfName: $this->selfName,
             selfAdmin: $this->selfAdmin,
@@ -336,6 +341,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         return new self(
             selfThemePick: $this->selfThemePick,
             selfThemePickInitialized: $this->selfThemePickInitialized,
+            selfTimeZone: $this->selfTimeZone,
             selfId: $this->selfId,
             selfName: $this->selfName,
             selfAdmin: $this->selfAdmin,
@@ -371,6 +377,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         return new self(
             selfThemePick: $this->selfThemePick,
             selfThemePickInitialized: $this->selfThemePickInitialized,
+            selfTimeZone: $this->selfTimeZone,
             selfId: $this->selfId,
             selfName: $this->selfName,
             selfAdmin: $this->selfAdmin,
@@ -406,6 +413,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         return new self(
             selfThemePick: $this->selfThemePick,
             selfThemePickInitialized: $this->selfThemePickInitialized,
+            selfTimeZone: $this->selfTimeZone,
             selfId: $this->selfId,
             selfName: $this->selfName,
             selfAdmin: $this->selfAdmin,
@@ -435,6 +443,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         return new self(
             selfThemePick: $this->selfThemePick,
             selfThemePickInitialized: $this->selfThemePickInitialized,
+            selfTimeZone: $this->selfTimeZone,
             selfId: $this->selfId,
             selfName: $this->selfName,
             selfAdmin: $this->selfAdmin,
@@ -485,6 +494,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         return new self(
             selfThemePick: $this->selfThemePick,
             selfThemePickInitialized: $this->selfThemePickInitialized,
+            selfTimeZone: $this->selfTimeZone,
             selfId: $this->selfId,
             selfName: $this->selfName,
             selfAdmin: $this->selfAdmin,
@@ -523,6 +533,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
                         self::photo => $this->selfPhoto,
                         self::themePick => $this->selfThemePick,
                         self::themePickInitialized => $this->selfThemePickInitialized,
+                        self::timeZone => $this->selfTimeZone,
                     ],
                 self::impersonatedBy => $this->impersonatorId === null
                     ? null
@@ -615,6 +626,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             selfPhoto: self::optionalString($currentUser, self::photo),
             selfThemePick: self::optionalString($currentUser, self::themePick),
             selfThemePickInitialized: self::requireBool($currentUser, self::themePickInitialized),
+            selfTimeZone: self::optionalString($currentUser, self::timeZone),
             impersonatorId: $impersonatedBy === null ? null : self::requireInt($impersonatedBy, self::id),
             impersonatorName: $impersonatedBy === null ? null : self::optionalString($impersonatedBy, self::name),
             pendingAck: $pendingAck,

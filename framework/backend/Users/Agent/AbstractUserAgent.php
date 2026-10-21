@@ -93,6 +93,8 @@ use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
 use Hilos\Users\DTO\UserThemePickWriteDoneSignalData;
 use Hilos\Users\DTO\UserThemePickWriteSignalData;
+use Hilos\Users\DTO\UserTimeZoneWriteDoneSignalData;
+use Hilos\Users\DTO\UserTimeZoneWriteSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveDoneSignalData;
@@ -174,6 +176,10 @@ abstract class AbstractUserAgent extends AbstractAgent
         HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE => [
             AgentSignalConfigKey::INDEX_FIELD => UserThemePickWriteSignalData::userId,
             AgentSignalConfigKey::DTO => UserThemePickWriteSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE => [
+            AgentSignalConfigKey::INDEX_FIELD => UserTimeZoneWriteSignalData::userId,
+            AgentSignalConfigKey::DTO => UserTimeZoneWriteSignalData::class,
         ],
         HilosSignalConstants::HILOS_USER_PASSWORD_REHASH => [
             AgentSignalConfigKey::INDEX_FIELD => UserPasswordRehashSignalData::userId,
@@ -472,6 +478,17 @@ abstract class AbstractUserAgent extends AbstractAgent
 
                 $this->refuseAnotherPerson($themePickWrite->userId, $name);
                 $this->handleThemePickWrite($themePickWrite);
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE:
+                $timeZoneWrite = $data->data;
+                if (!$timeZoneWrite instanceof UserTimeZoneWriteSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserTimeZoneWriteSignalData::class, $timeZoneWrite);
+                }
+
+                $this->refuseAnotherPerson($timeZoneWrite->userId, $name);
+                $this->handleTimeZoneWrite($timeZoneWrite);
 
                 return;
 
@@ -1029,6 +1046,22 @@ abstract class AbstractUserAgent extends AbstractAgent
     }
 
     /**
+     * Writes this person's time zone without touching activity time.
+     *
+     * @param ?string $timeZone Exact IANA identifier or an explicit reset
+     * @throws ItemNotFoundForUpdateException When there is no such person
+     * @throws ValidationException When the account was merged or the identifier is invalid
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type
+     * @throws DatabaseException When the person or the merges cannot be loaded
+     * @throws HilosException On database or truth-source failure while writing the time zone
+     */
+    protected function writeTimeZone(?string $timeZone): void
+    {
+        $this->personToWrite()->actions->setTimeZone($timeZone);
+    }
+
+    /**
      * Stores a password hash on the person's password row (HIL-1405).
      *
      * One write for three asks - a rehash on sign-in, and a recovery and a change in the profile
@@ -1556,6 +1589,30 @@ abstract class AbstractUserAgent extends AbstractAgent
         }
 
         $this->sendToAgent($ask->replySignal, UserThemePickWriteDoneSignalData::to($ask, $refusal));
+    }
+
+    /**
+     * Announces a successful write, including a repeat; announcement failure keeps success intact.
+     *
+     * @param UserTimeZoneWriteSignalData $ask Time zone and the coordinator's waiting action
+     * @throws InvalidArgumentException When the answer frame cannot be named or queued
+     */
+    private function handleTimeZoneWrite(UserTimeZoneWriteSignalData $ask): void
+    {
+        $refusal = $this->flagRefusal(fn () => $this->writeTimeZone($ask->timeZone), 'Time zone');
+
+        if ($refusal === null) {
+            try {
+                $this->sendToAgent(
+                    HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE,
+                    new UserSessionsRestateSignalData($this->userId),
+                );
+            } catch (Throwable $failure) {
+                $this->logAgentError("Time zone restate for #{$this->userId} failed: {$failure->getMessage()}");
+            }
+        }
+
+        $this->sendToAgent($ask->replySignal, UserTimeZoneWriteDoneSignalData::to($ask, $refusal));
     }
 
     /**

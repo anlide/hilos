@@ -11,6 +11,7 @@ CREATE TABLE `hilos_user` (
     `last_activity` TIMESTAMP NULL DEFAULT NULL,
     `theme_pick` ENUM('light', 'dark', 'system') NULL DEFAULT NULL,
     `theme_pick_initialized` BOOLEAN NOT NULL DEFAULT 0,
+    `time_zone` VARCHAR(64) NULL DEFAULT NULL,
     PRIMARY KEY (`id`),
     KEY `idx_user_admin` (`admin`),
     KEY `idx_user_block` (`block`),

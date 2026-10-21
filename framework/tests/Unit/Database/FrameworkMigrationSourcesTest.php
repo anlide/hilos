@@ -68,13 +68,19 @@ final class FrameworkMigrationSourcesTest extends TestCase
         rmdir($this->root);
     }
 
-    public function testRealGenesisCoversEveryUnitAndCurrentStubIncludingBootstrapAndJournal(): void
+    public function testRealGenesisAndChangesCoverEveryUnitAndCurrentStubIncludingBootstrapAndJournal(): void
     {
         $schema = new FrameworkSchemaCatalog();
         $catalog = new FrameworkMigrationCatalog($schema);
         $catalog->verifyCurrentStubs();
         $this->assertCount(42, $schema->allUnits());
-        $this->assertSame([], $catalog->selectedParts(MigrationSourceCoreHilos::class));
+        $this->assertSame(
+            ['20261021021039718057_HIL-1580_add_user_time_zone/user'],
+            array_map(
+                static fn (FrameworkMigrationPart $part): string => $part->key(),
+                $catalog->selectedParts(MigrationSourceCoreHilos::class),
+            ),
+        );
         $this->assertSame(1, $schema->unit('change_log')->connection);
         $this->assertNull($schema->unit('migration')->upPath);
     }

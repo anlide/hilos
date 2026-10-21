@@ -41,6 +41,7 @@ use Hilos\Users\DTO\UserPhotoPutSignalData;
 use Hilos\Users\DTO\UserPhotoRemoveSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
 use Hilos\Users\DTO\UserThemePickWriteSignalData;
+use Hilos\Users\DTO\UserTimeZoneWriteSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveSignalData;
 use Hilos\Users\DTO\UserSecondFactorRemoveSignalData;
@@ -127,6 +128,7 @@ trait PersonAgentFrames
             $ask instanceof UserAdminCommandSignalData,
             $ask instanceof UserBlockWriteSignalData,
             $ask instanceof UserThemePickWriteSignalData,
+            $ask instanceof UserTimeZoneWriteSignalData,
             $ask instanceof UserPasswordRehashSignalData,
             $ask instanceof UserAddressVerifySignalData,
             $ask instanceof UserPasskeyUseSignalData,

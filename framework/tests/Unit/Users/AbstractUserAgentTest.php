@@ -45,6 +45,7 @@ use Hilos\Users\DTO\UserPushRemoveSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
 use Hilos\Users\DTO\UserThemePickWriteSignalData;
+use Hilos\Users\DTO\UserTimeZoneWriteSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveSignalData;
 use Hilos\Users\DTO\UserSecondFactorRemoveSignalData;
@@ -266,6 +267,7 @@ final class AbstractUserAgentTest extends TestCase
             HilosSignalConstants::HILOS_USER_ADMIN_COMMAND => UserAdminCommandSignalData::class,
             HilosSignalConstants::HILOS_USER_BLOCK_WRITE => UserBlockWriteSignalData::class,
             HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE => UserThemePickWriteSignalData::class,
+            HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE => UserTimeZoneWriteSignalData::class,
             HilosSignalConstants::HILOS_USER_PASSWORD_REHASH => UserPasswordRehashSignalData::class,
             HilosSignalConstants::HILOS_USER_ADDRESS_VERIFY => UserAddressVerifySignalData::class,
             HilosSignalConstants::HILOS_USER_PASSKEY_USE => UserPasskeyUseSignalData::class,

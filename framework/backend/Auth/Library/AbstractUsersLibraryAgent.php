@@ -227,6 +227,7 @@ use Hilos\Users\DTO\UserSecondFactorWaitWriteDoneSignalData;
 use Hilos\Users\DTO\UserStepUpRecordDoneSignalData;
 use Hilos\Users\DTO\UserThemePickWriteDoneSignalData;
 use Hilos\Users\DTO\UserThemePickWriteSignalData;
+use Hilos\Users\DTO\UserTimeZoneWriteDoneSignalData;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 use Hilos\WiringRefusal;
@@ -390,6 +391,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
         HilosSignalConstants::HILOS_USER_THEME_PICK_ADOPT_DONE => UserThemePickWriteDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_THEME_PICK_DONE => UserThemePickWriteDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE_DONE => UserTimeZoneWriteDoneSignalData::class,
         HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => OAuthLoginReadySignalData::class,
         HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET => AccountDeletionSetSignalData::class,
         HilosSignalConstants::HILOS_USER_ADMIN_RENAME => AdminRenameSignalData::class,
@@ -1070,6 +1072,14 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             case HilosSignalConstants::HILOS_USER_THEME_PICK_DONE:
                 if (!$data->data instanceof UserThemePickWriteDoneSignalData) {
                     throw new InvalidAgentSignalPayloadException($name, UserThemePickWriteDoneSignalData::class, $data->data);
+                }
+                $this->resumeAction($data->data->ask, $data->data->error, static fn () => null);
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE_DONE:
+                if (!$data->data instanceof UserTimeZoneWriteDoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserTimeZoneWriteDoneSignalData::class, $data->data);
                 }
                 $this->resumeAction($data->data->ask, $data->data->error, static fn () => null);
 

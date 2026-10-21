@@ -144,6 +144,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                         'photo' => null,
                         'themePick' => null,
                         'themePickInitialized' => false,
+                        'timeZone' => null,
                     ],
                     'impersonatedBy' => null,
                 ],
@@ -330,6 +331,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                         'photo' => null,
                         'themePick' => null,
                         'themePickInitialized' => false,
+                        'timeZone' => null,
                     ],
                     'impersonatedBy' => [
                         'id' => 3,
@@ -800,6 +802,111 @@ final class HandshakeResponseSignalDataTest extends TestCase
     {
         $payload = new HandshakeResponseSignalData()->toArray();
         $payload['data']['themeSettings'] = ['switchingEnabled' => true];
+
+        $this->expectException(InvalidFormatException::class);
+
+        HandshakeResponseSignalData::fromArray($payload);
+    }
+
+    /** @return iterable<string, array{?string}> Stored time zones and an explicit reset */
+    public static function personalTimeZones(): iterable
+    {
+        yield 'IANA zone' => ['Europe/Warsaw'];
+        yield 'historical alias' => ['Europe/Kiev'];
+        yield 'automatic' => [null];
+    }
+
+    /** @param ?string $timeZone Personal choice or automatic selection */
+    #[DataProvider('personalTimeZones')]
+    public function testPersonalTimeZoneSurvivesRoundtripAndEachResponseStamp(?string $timeZone): void
+    {
+        $identity = new HandshakeResponseSignalData(
+            selfId: 7,
+            selfName: 'Person',
+            impersonatorId: 9,
+            impersonatorName: 'Admin',
+            selfTimeZone: $timeZone,
+        );
+        $stamps = [
+            static fn ($dto) => $dto->withPendingAck(SessionAck::SIGNED_IN),
+            static fn ($dto) => $dto->withAccountBlocked(null),
+            static fn ($dto) => $dto->withAccountStanding(self::STANDING),
+            static fn ($dto) => $dto->withAdminViewMode(true),
+            static fn ($dto) => $dto->withImpersonationPolicy([
+                'viewOnly' => false, 'carryAdmin' => true, 'allowed' => true, 'accountAccess' => false,
+                'blocked' => true, 'frozen' => true, 'equal' => true,
+            ]),
+            static fn ($dto) => $dto->withThemeSettings(['switchingEnabled' => true, 'defaultTheme' => 'system']),
+            static fn ($dto) => $dto->withSessionContext(
+                self::SERVER_TIME_MS, null, self::CODE_DELIVERY, self::AUTH_METHODS, self::PASSKEY_ALLOWS_UNPROVEN,
+            ),
+        ];
+        $responses = [$identity];
+        $chain = $identity;
+        foreach ($stamps as $stamp) {
+            $responses[] = $stamp($identity);
+            $chain = $stamp($chain);
+            $responses[] = $chain;
+        }
+
+        foreach ($responses as $response) {
+            $payload = $response->toArray();
+            self::assertSame([
+                'id' => 7,
+                'name' => 'Person',
+                'admin' => false,
+                'photo' => null,
+                'themePick' => null,
+                'themePickInitialized' => false,
+                'timeZone' => $timeZone,
+            ], $payload['entities']['currentUser']);
+            self::assertSame(['id' => 9, 'name' => 'Admin'], $payload['entities']['impersonatedBy']);
+            self::assertArrayNotHasKey('timeZone', $payload['data']);
+            self::assertSame($timeZone, $response->selfTimeZone);
+            $restored = HandshakeResponseSignalData::fromArray($payload);
+            self::assertSame($timeZone, $restored->selfTimeZone);
+            self::assertSame($payload, $restored->toArray());
+        }
+    }
+
+    public function testOlderCurrentUserWithoutTimeZoneReadsAsAutomatic(): void
+    {
+        $payload = new HandshakeResponseSignalData(selfId: 7)->toArray();
+        unset($payload['entities']['currentUser']['timeZone']);
+
+        $restored = HandshakeResponseSignalData::fromArray($payload);
+
+        self::assertNull($restored->selfTimeZone);
+        self::assertArrayHasKey('timeZone', $restored->toArray()['entities']['currentUser']);
+        self::assertNull($restored->toArray()['entities']['currentUser']['timeZone']);
+    }
+
+    public function testGuestDoesNotExposeAPersonalTimeZone(): void
+    {
+        $payload = new HandshakeResponseSignalData(selfTimeZone: 'Europe/Warsaw')->toArray();
+
+        self::assertNull($payload['entities']['currentUser']);
+        self::assertNull($payload['entities']['impersonatedBy']);
+        self::assertArrayNotHasKey('timeZone', $payload['data']);
+        $restored = HandshakeResponseSignalData::fromArray($payload);
+        self::assertNull($restored->selfTimeZone);
+        self::assertSame($payload, $restored->toArray());
+    }
+
+    /** @return iterable<string, array{mixed}> Values that cannot carry a nullable string */
+    public static function malformedTimeZones(): iterable
+    {
+        yield 'integer' => [42];
+        yield 'boolean' => [false];
+        yield 'array' => [[]];
+    }
+
+    /** @param mixed $timeZone Invalid wire type */
+    #[DataProvider('malformedTimeZones')]
+    public function testPersonalTimeZoneRejectsOtherWireTypes(mixed $timeZone): void
+    {
+        $payload = new HandshakeResponseSignalData(selfId: 7)->toArray();
+        $payload['entities']['currentUser']['timeZone'] = $timeZone;
 
         $this->expectException(InvalidFormatException::class);
 

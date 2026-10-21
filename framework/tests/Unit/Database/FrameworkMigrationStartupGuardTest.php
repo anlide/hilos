@@ -387,6 +387,15 @@ final class FrameworkMigrationStartupGuardTest extends TestCase
 
     public function testRealPreludeAcceptsSourcesWithoutAskingForAppliedSqlBeforeDockerPersistence(): void
     {
+        $part = new FrameworkMigrationCatalog()->part('20261021021039718057_HIL-1580_add_user_time_zone', 'user');
+        $this->writePair('004_user_time_zone.sql', $this->pair(
+            'user_time_zone',
+            FrameworkMigrationOrigin::CHANGE,
+            ['user'],
+            $part->upSql,
+            $part->downSql,
+            [$part],
+        ));
         $persistenceCalled = false;
         EntrypointPrelude::run(StartupCoreHilos::class, $this->root, static function () use (&$persistenceCalled): void {
             $persistenceCalled = true;

@@ -21,6 +21,23 @@ describe('scopePayloadSchema', () => {
     }
   })
 
+  it.each([
+    ['a string', 'Europe/Warsaw'],
+    ['an explicit null', null],
+  ])('preserves currentUser.timeZone as %s', (_description, timeZone) => {
+    const result = scopePayloadSchema.safeParse({
+      entities: { currentUser: { id: 7, timeZone } },
+    })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.entities?.currentUser).toEqual({ id: 7, timeZone })
+      expect(result.data.entities?.currentUser).toHaveProperty(
+        'timeZone',
+        timeZone,
+      )
+    }
+  })
+
   it('accepts fragment lists and string ids', () => {
     const result = scopePayloadSchema.safeParse({
       entities: { users: [{ id: '1' }, { id: '2', name: 'B' }] },

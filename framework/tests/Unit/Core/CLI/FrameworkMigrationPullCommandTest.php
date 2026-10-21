@@ -64,12 +64,19 @@ final class FrameworkMigrationPullCommandTest extends TestCase
         self::assertNull($manager->answerWithoutRunning());
         [$code, $output] = $this->capture(fn (): int => $manager->run());
         self::assertSame(ExitCode::SUCCESS, $code, $output);
-        self::assertSame(2, substr_count($output, ': created 2 files'));
+        self::assertSame(2, substr_count($output, ': created 4 files'));
         foreach (['one', 'two'] as $name) {
             $files = glob($this->track($name) . '/002_framework_install_setting*.sql');
             self::assertCount(2, $files);
             $origin = FrameworkMigrationOrigin::parsePair(file_get_contents($files[0]), file_get_contents($files[1]));
             self::assertSame(['setting'], $origin->units);
+            $changes = glob($this->track($name) . '/003_framework_change_38c7203a140d8efdf40017ddaa16d4a695810303ef7f3e89ae703b19ed141c0d*.sql');
+            self::assertCount(2, $changes);
+            $change = FrameworkMigrationOrigin::parsePair(file_get_contents($changes[0]), file_get_contents($changes[1]));
+            self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+            self::assertSame(['user'], $change->units);
+            self::assertCount(1, $change->parts);
+            self::assertSame('20261021021039718057_HIL-1580_add_user_time_zone/user', $change->parts[0]->key());
         }
         [$repeat, $repeatOutput] = $this->capture(fn (): int => $manager->run());
         self::assertSame(ExitCode::SUCCESS, $repeat);

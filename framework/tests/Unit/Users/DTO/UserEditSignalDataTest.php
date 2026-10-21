@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\Users\DTO;
 
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Core\Action\ActionRefusal;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\DatabaseException;
@@ -19,6 +20,8 @@ use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
 use Hilos\Users\DTO\UserThemePickWriteDoneSignalData;
 use Hilos\Users\DTO\UserThemePickWriteSignalData;
+use Hilos\Users\DTO\UserTimeZoneWriteDoneSignalData;
+use Hilos\Users\DTO\UserTimeZoneWriteSignalData;
 use PHPUnit\Framework\TestCase;
 
 /** The frames between a coordinator and the person's agent survive the wire whole (HIL-1404). */
@@ -239,5 +242,133 @@ final class UserEditSignalDataTest extends TestCase
         $this->expectException(InvalidFormatException::class);
 
         new UserAdminCommandSignalData(0, true, HilosSignalConstants::HILOS_USER_ADMIN_COMMAND_DONE, 'corr-1', CliCommands::ADMIN_GRANT, null, false);
+    }
+
+    public function testATimeZoneWriteAskAndItsAnswerRoundTrip(): void
+    {
+        $ask = new UserTimeZoneWriteSignalData(
+            userId: 7,
+            timeZone: 'Europe/Warsaw',
+            replySignal: 'time_zone_write_done',
+            acceptKey: 'key-1',
+            requestId: 'req-1',
+            action: 'user_time_zone_set',
+            successMessage: 'Saved',
+        );
+        $expectedAsk = [
+            UserTimeZoneWriteSignalData::userId => 7,
+            UserTimeZoneWriteSignalData::timeZone => 'Europe/Warsaw',
+            UserTimeZoneWriteSignalData::replySignal => 'time_zone_write_done',
+            UserTimeZoneWriteSignalData::acceptKey => 'key-1',
+            UserTimeZoneWriteSignalData::requestId => 'req-1',
+            UserTimeZoneWriteSignalData::action => 'user_time_zone_set',
+            UserTimeZoneWriteSignalData::successMessage => 'Saved',
+        ];
+        $expectedDone = [
+            UserTimeZoneWriteDoneSignalData::ask => $expectedAsk,
+            UserTimeZoneWriteDoneSignalData::error => null,
+            UserTimeZoneWriteDoneSignalData::errorType => null,
+            UserTimeZoneWriteDoneSignalData::errorDetail => null,
+        ];
+        $done = UserTimeZoneWriteDoneSignalData::to($ask, null);
+
+        $restored = UserTimeZoneWriteDoneSignalData::fromJson($done->toJson());
+
+        self::assertSame($expectedAsk, $ask->toArray());
+        self::assertSame($expectedDone, $done->toArray());
+        self::assertEquals($done, $restored);
+        self::assertSame($expectedDone, $restored->toArray());
+        self::assertSame($expectedAsk, $restored->ask->toArray());
+        self::assertNull($restored->error);
+        self::assertNull($restored->errorType);
+        self::assertNull($restored->errorDetail);
+    }
+
+    public function testAnExplicitNullTimeZoneSurvivesAskAndNestedAnswerJson(): void
+    {
+        $ask = new UserTimeZoneWriteSignalData(7, null, 'time_zone_write_done', 'key-1', null, 'user_time_zone_set', null);
+        $done = UserTimeZoneWriteDoneSignalData::to($ask, null);
+        $expectedAsk = [
+            UserTimeZoneWriteSignalData::userId => 7,
+            UserTimeZoneWriteSignalData::timeZone => null,
+            UserTimeZoneWriteSignalData::replySignal => 'time_zone_write_done',
+            UserTimeZoneWriteSignalData::acceptKey => 'key-1',
+            UserTimeZoneWriteSignalData::requestId => null,
+            UserTimeZoneWriteSignalData::action => 'user_time_zone_set',
+            UserTimeZoneWriteSignalData::successMessage => null,
+        ];
+        $expectedDone = [
+            UserTimeZoneWriteDoneSignalData::ask => $expectedAsk,
+            UserTimeZoneWriteDoneSignalData::error => null,
+            UserTimeZoneWriteDoneSignalData::errorType => null,
+            UserTimeZoneWriteDoneSignalData::errorDetail => null,
+        ];
+
+        $restoredAsk = UserTimeZoneWriteSignalData::fromJson($ask->toJson());
+        $restoredDone = UserTimeZoneWriteDoneSignalData::fromJson($done->toJson());
+
+        self::assertSame($expectedAsk, $restoredAsk->toArray());
+        self::assertSame($expectedDone, $restoredDone->toArray());
+        self::assertArrayHasKey(UserTimeZoneWriteSignalData::timeZone, $restoredAsk->toArray());
+        self::assertNull($restoredAsk->timeZone);
+        self::assertArrayHasKey(UserTimeZoneWriteSignalData::timeZone, $restoredDone->ask->toArray());
+        self::assertNull($restoredDone->ask->timeZone);
+        self::assertNull($restoredDone->ask->requestId);
+        self::assertNull($restoredDone->ask->successMessage);
+    }
+
+    public function testATimeZoneWriteAnswerSeparatesPublicRefusalFromTechnicalDetails(): void
+    {
+        $ask = new UserTimeZoneWriteSignalData(7, 'Europe/Warsaw', 'time_zone_write_done', 'key-1', null, 'user_time_zone_set', null);
+        $done = UserTimeZoneWriteDoneSignalData::to($ask, ActionRefusal::fromThrowable(new DatabaseException('disk full')));
+
+        $restored = UserTimeZoneWriteDoneSignalData::fromArray($done->toArray());
+
+        self::assertSame(SignalConstants::ACTION_FAILED_REASON, $restored->error);
+        self::assertSame('DatabaseException', $restored->errorType);
+        self::assertSame('disk full', $restored->errorDetail);
+        self::assertNotSame($restored->error, $restored->errorDetail);
+        self::assertSame($ask->toArray(), $restored->ask->toArray());
+    }
+
+    public function testATimeZoneWriteAskForNoPersonIsRefused(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        new UserTimeZoneWriteSignalData(0, 'Europe/Warsaw', 'done', 'key-1', null, 'set', null);
+    }
+
+    public function testATimeZoneWriteAskForANegativePersonIsRefused(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        new UserTimeZoneWriteSignalData(-1, 'Europe/Warsaw', 'done', 'key-1', null, 'set', null);
+    }
+
+    public function testATimeZoneWriteAskCannotOmitItsNullableChoice(): void
+    {
+        $ask = new UserTimeZoneWriteSignalData(7, null, 'done', 'key-1', null, 'set', null);
+        $payload = $ask->toArray();
+        unset($payload[UserTimeZoneWriteSignalData::timeZone]);
+        $this->expectException(InvalidFormatException::class);
+
+        UserTimeZoneWriteSignalData::fromArray($payload);
+    }
+
+    public function testATimeZoneWriteAskRefusesANonStringChoice(): void
+    {
+        $ask = new UserTimeZoneWriteSignalData(7, null, 'done', 'key-1', null, 'set', null);
+        $payload = $ask->toArray();
+        $payload[UserTimeZoneWriteSignalData::timeZone] = ['Europe/Warsaw'];
+        $this->expectException(InvalidFormatException::class);
+
+        UserTimeZoneWriteSignalData::fromArray($payload);
+    }
+
+    public function testAnUnknownTimeZoneStringPassesTheDtoShapeCheck(): void
+    {
+        $ask = new UserTimeZoneWriteSignalData(7, 'Definitely/Not_A_Zone', 'done', 'key-1', null, 'set', null);
+
+        self::assertSame('Definitely/Not_A_Zone', $ask->timeZone);
     }
 }

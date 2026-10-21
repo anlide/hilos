@@ -1,0 +1,2 @@
+-- hilos-framework: {"format":1,"kind":"change","units":["user"],"parts":[{"changeId":"20261021021039718057_HIL-1580_add_user_time_zone","unit":"user","upSha256":"b2647c3d0f088113ed205a20f02f096d6caf7f938f8186a9c880efab283d7acd","downSha256":"96b6ce1980bce0d15f2e112b33ffc07be131c30ade9fd9af8cbc9e1f9daae868"}],"upSha256":"b2647c3d0f088113ed205a20f02f096d6caf7f938f8186a9c880efab283d7acd","downSha256":"96b6ce1980bce0d15f2e112b33ffc07be131c30ade9fd9af8cbc9e1f9daae868"}
+ALTER TABLE `hilos_user` ADD COLUMN `time_zone` VARCHAR(64) NULL DEFAULT NULL;

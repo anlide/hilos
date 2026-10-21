@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Entity\Item\User;
 use Hilos\Database\Schema\EntitySchemaAudit;
 use PHPUnit\Framework\TestCase;
 
@@ -95,5 +96,11 @@ final class FrameworkEntityPiiVerdictTest extends TestCase
                 );
             }
         }
+    }
+
+    public function testUserTimeZoneIsPersonalAndNullified(): void
+    {
+        $this->assertSame(AnonymizationStrategy::NULLIFY, User::_pii[User::time_zone]);
+        $this->assertNotContains(User::time_zone, User::_piiNotPersonal);
     }
 }

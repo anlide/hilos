@@ -12,6 +12,7 @@ use Hilos\Core\Bootstrap\EntrypointPrelude;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
+use Hilos\Database\Migration\FrameworkMigrationCatalog;
 use Hilos\Database\Migration\FrameworkMigrationOrigin;
 use Hilos\Database\Migration\FrameworkMigrationPair;
 use Hilos\Database\Migration\FrameworkMigrationStartupGuard;
@@ -258,7 +259,7 @@ final class EntrypointPreludeTest extends TestCase
     }
 
     /**
-     * Supplies the facade's core and bootstrap genesis composition to the real source gate, without opening a database.
+     * Supplies genesis and the current user change to the real source gate, without opening a database.
      *
      * @throws DatabaseException When the no-op adoption pair is invalid
      */
@@ -286,6 +287,19 @@ final class EntrypointPreludeTest extends TestCase
         }
         if (file_put_contents($track . '/001_' . $pair->name . '_down.sql', $pair->downSql) === false) {
             $this->fail('Cannot write framework adoption down source');
+        }
+        $part = new FrameworkMigrationCatalog()->part('20261021021039718057_HIL-1580_add_user_time_zone', 'user');
+        $change = new FrameworkMigrationPair(
+            'user_time_zone',
+            FrameworkMigrationOrigin::forBodies(FrameworkMigrationOrigin::CHANGE, ['user'], [$part], $part->upSql, $part->downSql),
+            $part->upSql,
+            $part->downSql,
+        );
+        if (file_put_contents($track . '/002_user_time_zone.sql', $change->upSql) === false) {
+            $this->fail('Cannot write user time zone up source');
+        }
+        if (file_put_contents($track . '/002_user_time_zone_down.sql', $change->downSql) === false) {
+            $this->fail('Cannot write user time zone down source');
         }
     }
 

@@ -17,14 +17,16 @@ Written Ahead Of Its Code*).
 ## Core Rule
 
 The person is the framework's table `hilos_user`, with the columns `id`, `name`,
-`admin`, `block`, `last_activity`, `theme_pick`. Its Entity declares
+`admin`, `block`, `last_activity`, `theme_pick`, `time_zone`. Its Entity declares
 `Entity::SET_STANDALONE` with `_setRoot = true` — a person belongs to
-nobody's set and is the root other tables hang their sets on — and the verdict
-`FAKE_NAME` on `name`. The collection key `users` is mounted by
-`HilosDbContext`. The core `user` schema unit is selected independently of admin
-features. In a catalog-initialized project, run `db:framework:pull` and apply its
+nobody's set and is the root other tables hang their sets on — and the verdicts
+`FAKE_NAME` on `name` and `NULLIFY` on `time_zone`. The collection key `users`
+is mounted by `HilosDbContext`. The core `user` schema unit is selected
+independently of admin features. `time_zone` is nullable `VARCHAR(64)` with
+default `NULL`. In a catalog-initialized project, run `db:framework:pull` and apply its
 generated project migrations for the current `create_hilos_user.sql` form and
-subsequent changes; see the [migration canon](../orm/migrations.md#framework-tables-in-a-project-hil-1326).
+subsequent changes; see the
+[migration canon](../orm/migrations.md#framework-tables-in-a-project-hil-1326).
 The three demos migrate their former `user` tables to this shape. The shared
 columns and indexes match the stub: `name` is `VARCHAR(255)`, while the code
 keeps the rename limit at 64 characters.
@@ -63,7 +65,23 @@ The row's name, administrator flag, block and theme choice are written by the
 person's own agent (`AbstractUserAgent`, HIL-1404 and HIL-1427) —
 [instance-owners.md](instance-owners.md). The theme choice is
 `hilos_user.theme_pick`, written on the agent's `hilos_user_theme_pick_write`
-ask (HIL-1427). The libraries judge those edits and do what follows them;
+ask (HIL-1427).
+
+The nullable `hilos_user.time_zone` choice (`null` for Automatic) is also
+written by the person's own agent. The
+[AbstractUserAgent](../../../framework/backend/Users/Agent/AbstractUserAgent.php)
+handles the internal `hilos_user_time_zone_write` ask, carried by
+[UserTimeZoneWriteSignalData](../../../framework/backend/Users/DTO/UserTimeZoneWriteSignalData.php).
+It checks that `userId` is its own and writes through
+[UserActions::setTimeZone()](../../../framework/backend/Database/Actions/Item/UserActions.php).
+It answers with `hilos_user_time_zone_write_done`
+([UserTimeZoneWriteDoneSignalData](../../../framework/backend/Users/DTO/UserTimeZoneWriteDoneSignalData.php));
+the [users library](../../../framework/backend/Auth/Library/AbstractUsersLibraryAgent.php)
+resumes the original action from that done frame. On a successful write,
+including a repeat, the agent requests
+`hilos_user_sessions_restate`, which refreshes that person's sessions and tabs.
+
+The libraries judge those edits and do what follows them;
 creation, including the guest's submitted theme choice, stays with the
 users library, and the sessions library keeps three set operations on the row:
 minting the first administrator, the loser's block inside a merge, and the

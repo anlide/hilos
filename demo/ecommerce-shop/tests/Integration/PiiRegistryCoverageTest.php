@@ -66,6 +66,9 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
     /** Name the probe row is written with, so the pass has a row to rewrite. */
     private const string PROBE_USER_NAME = 'PII coverage probe';
 
+    /** Personal preference the pass must clear from the probe row. */
+    private const string PROBE_USER_TIME_ZONE = 'Europe/Warsaw';
+
     /**
      * Every table the demo creates must carry a classification, and every column it
      * classifies must be able to carry its strategy.
@@ -170,6 +173,7 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
         Database::transactionStart();
         try {
             $probeId = self::insertProbeUser();
+            $this->assertSame(self::PROBE_USER_TIME_ZONE, self::probeUserTimeZone($probeId));
             foreach ($statements as $statement) {
                 Database::sqlRun($statement);
             }
@@ -177,6 +181,7 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
             // this schema is empty after a reset. One row of the demo's own is enough to also
             // prove the pass rewrites rather than passes over.
             $this->assertSame('User ' . $probeId, self::probeUserName($probeId));
+            $this->assertNull(self::probeUserTimeZone($probeId));
         } finally {
             Database::transactionRollback();
         }
@@ -211,8 +216,8 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
     private static function insertProbeUser(): int
     {
         Database::sqlRun(
-            'INSERT INTO `hilos_user` (`name`) VALUES (?)',
-            SqlParamCollection::fromArray([self::PROBE_USER_NAME]),
+            'INSERT INTO `hilos_user` (`name`, `time_zone`) VALUES (?, ?)',
+            SqlParamCollection::fromArray([self::PROBE_USER_NAME, self::PROBE_USER_TIME_ZONE]),
         );
         Database::sql(
             'SELECT `id` FROM `hilos_user` WHERE `name` = ? ORDER BY `id` DESC LIMIT 1',
@@ -236,5 +241,20 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
         $name = Database::field('name');
 
         return $name === null ? null : (string)$name;
+    }
+
+    /**
+     * @param int $probeId Primary key of the probe row
+     * @return ?string Stored time zone, or null after anonymization
+     */
+    private static function probeUserTimeZone(int $probeId): ?string
+    {
+        Database::sql(
+            'SELECT `time_zone` FROM `hilos_user` WHERE `id` = ?',
+            SqlParamCollection::fromArray([$probeId]),
+        );
+        $timeZone = Database::field('time_zone');
+
+        return $timeZone === null ? null : (string)$timeZone;
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Actions\Item;
 
+use DateTimeZone;
 use Hilos\Database\Object\Item\User as ObjectUser;
 use Hilos\Database\View\Item\User;
 use Hilos\Core\Exception\EmptyValueException;
@@ -143,6 +144,31 @@ class UserActions extends DbActions
 
         $this->object->themePick = $themePick;
         $this->object->themePickInitialized = true;
+        $this->object->sync();
+    }
+
+    /**
+     * Persists an exact IANA identifier or an automatic reset without changing activity time.
+     *
+     * @param ?string $timeZone Identifier including backward aliases, or null for Automatic
+     * @throws ItemNotFoundForUpdateException When the user has no persisted id
+     * @throws ValidationException When the identifier is outside the IANA catalog
+     * @throws HilosException On database or truth-source failure
+     */
+    public function setTimeZone(?string $timeZone): void
+    {
+        $this->ensureCanWrite();
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('User not found for setTimeZone (id is null)');
+        }
+        if ($timeZone !== null && !in_array($timeZone, DateTimeZone::listIdentifiers(DateTimeZone::ALL_WITH_BC), true)) {
+            throw new ValidationException('Choose a valid IANA time zone or Automatic.');
+        }
+        if ($this->object->timeZone === $timeZone) {
+            return;
+        }
+
+        $this->object->timeZone = $timeZone;
         $this->object->sync();
     }
 

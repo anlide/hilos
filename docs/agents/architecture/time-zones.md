@@ -79,13 +79,39 @@ to project and UTC, without a manual choice. All SDKs and demos read the one
 effective value. (not in the code yet — HIL-1583)
 
 **Automatic** means the person has no choice of their own, so the current
-browser supplies the zone; it is not a zone name. Keep an explicit choice in
-the account. Only the person's agent writes it, and a change reaches all of
-that person's sessions and tabs. (not in the code yet — HIL-1580)
+browser supplies the zone; it is not a zone name. The nullable account column
+`hilos_user.time_zone` stores an explicit IANA choice; `NULL` means Automatic.
+[UserActions::setTimeZone()](../../../framework/backend/Database/Actions/Item/UserActions.php)
+accepts `null` or an exact identifier returned by
+`DateTimeZone::listIdentifiers(DateTimeZone::ALL_WITH_BC)`; it does not trim or
+normalize names, accept offsets, update `last_activity`, or sync an unchanged
+value. The person's own write is handled by
+[AbstractUserAgent](../../../framework/backend/Users/Agent/AbstractUserAgent.php),
+which receives `hilos_user_time_zone_write`
+([UserTimeZoneWriteSignalData](../../../framework/backend/Users/DTO/UserTimeZoneWriteSignalData.php)),
+writes its own row, and answers `hilos_user_time_zone_write_done`
+([UserTimeZoneWriteDoneSignalData](../../../framework/backend/Users/DTO/UserTimeZoneWriteDoneSignalData.php))
+with the same ask; the
+[users library](../../../framework/backend/Auth/Library/AbstractUsersLibraryAgent.php)
+resumes the original action from that done frame. After any successful write,
+including a repeat, it requests the existing `hilos_user_sessions_restate` for
+that person's sessions.
+[AbstractAgent::handshakeIdentity()](../../../framework/backend/Core/Agent/AbstractAgent.php)
+carries the stored value as
+`handshake_response.entities.currentUser.timeZone` through
+[HandshakeResponseSignalData](../../../framework/backend/Socket/WebSocket/DTO/HandshakeResponseSignalData.php);
+a guest has `currentUser: null`, and an older payload without `timeZone` reads
+as null. This value is on `currentUser`, not `impersonatedBy` or `data`. The
+SDKs do not yet apply it as the effective reader zone, and this leaf adds no
+selection window.
 
-The explicit choice is personal data: hide it in admin view mode and erase it
-during restore anonymization (owner's decision, 2026-10-17).
-(not in the code yet — HIL-1580)
+The [User Entity](../../../framework/backend/Database/Entity/Item/User.php)
+classifies `time_zone` as personal and assigns `NULLIFY` for restore
+anonymization ([backup-anonymization.md](backup-anonymization.md)); the journal
+records that the column changed without its value
+([change-log.md](change-log.md)). Admin-view mode reads the same personal-field
+verdict ([admin-view-mode.md](admin-view-mode.md)); a visible row for this value
+in the admin table is a separate later change (HIL-1588).
 
 ## What The Browser Reports And The Person Keeps
 
