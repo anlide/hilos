@@ -33,7 +33,7 @@ import {
 import { AuthSurface } from './auth/authSurface'
 import { hilosAuthContext } from './auth/hilosAuthContext'
 import { connection } from './bootstrap/connection'
-import { currentUserName } from './bootstrap/session'
+import { currentUserName, currentUserPhoto } from './bootstrap/session.js'
 import { PAGE_MAIN } from './pages/keys'
 import { About } from './views/about/about'
 import { License } from './views/license/license'
@@ -78,7 +78,11 @@ import { Terms } from './views/terms/terms'
           data-id="nav-profile-name"
           [title]="userName()"
         >
-          <hilos-avatar [name]="userName()" [mark]="avatarMark()" />
+          <hilos-avatar
+            [name]="userName()"
+            [photo]="userPhoto()"
+            [mark]="avatarMark()"
+          />
           <span class="visually-hidden">{{ userName() }}</span>
         </a>
       } @else {
@@ -116,6 +120,7 @@ export class App {
   protected readonly connection = connection
 
   protected readonly userName = hilosSignal(currentUserName)
+  protected readonly userPhoto = hilosSignal(currentUserPhoto)
 
   /** The profile root the avatar leads to (HIL-1169). */
   protected readonly profileHref = HILOS_PAGE_ROUTES[HilosPages.PROFILE]

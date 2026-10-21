@@ -130,6 +130,9 @@ services:
       - ../../../composer.lock:/hilos/composer.lock:ro
       - ../../../framework:/hilos/framework:ro
       - ../data/logs-test:/var/log/hilos
+      # An override is an absolute path in the shell or docker/.env, mounted
+      # at the same path in the daemon and read-only by nginx.
+      - ${POLLS_FILES_PUBLISHED_DIR:-../data/files/published}:${POLLS_FILES_PUBLISHED_DIR:-/app/data/files/published}
     working_dir: /app
     environment:
       - APP_ENV=test
@@ -142,6 +145,8 @@ services:
       - HTTP_STATUS_PORT=8090
       - HILOS_DATA_EXPORT_XACCEL_LOCATION=/__hilos_data_export
       - HILOS_LEGAL_EXPORT_XACCEL_LOCATION=/__hilos_legal_export
+      - HILOS_FILES_XACCEL_LOCATION=/__hilos_files
+      - POLLS_FILES_PUBLISHED_DIR=${POLLS_FILES_PUBLISHED_DIR:-/app/data/files/published}
       - WORKER_COMM_HOST=0.0.0.0
       - WORKER_COMM_PORT=8091
       - WEBSOCKET_HOST=0.0.0.0
@@ -265,6 +270,7 @@ services:
       - ../frontend/dist:/usr/share/nginx/html:ro
       - ../data/data_export:/data_export:ro
       - ../data/legal_export:/legal_export:ro
+      - ${POLLS_FILES_PUBLISHED_DIR:-../data/files/published}:/published:ro
       - nginx-ssl-test:/etc/nginx/ssl
     ports:
       - "${HILOS_BIND_HOST:-127.0.0.1}:${NGINX_TEST_HTTP_PORT:-8088}:80"

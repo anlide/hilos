@@ -32,6 +32,7 @@ final class PollsEnvCatalog implements CatalogProviderInterface
     {
         return array_replace(EnvCatalogStub::getCatalog(), [
             EnvConstants::DB_DATABASE->name => self::stringEntry('hilos-demo-polls', emptyIsMissing: true),
+            PollsEnvConstants::POLLS_FILES_PUBLISHED_DIR => self::stringEntry(''),
             PollsEnvConstants::OAUTH_STATE_SECRET => self::stringEntry(
                 'dev-oauth-state-secret-change-me',
                 emptyIsMissing: true,

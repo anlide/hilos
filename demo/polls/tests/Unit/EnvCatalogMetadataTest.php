@@ -7,6 +7,7 @@ namespace Demo\Polls\Tests\Unit;
 use Demo\Polls\Constants\PollsEnvConstants;
 use Demo\Polls\Environment\PollsEnvCatalog;
 use Hilos\Environment\EnvAccessor;
+use Hilos\Environment\EnvCatalogConstants;
 use Hilos\Environment\EnvCatalogStub;
 use PHPUnit\Framework\TestCase;
 
@@ -46,8 +47,12 @@ final class EnvCatalogMetadataTest extends TestCase
             PollsEnvConstants::OAUTH_GITHUB_CLIENT_ID,
             PollsEnvConstants::OAUTH_GOOGLE_CLIENT_ID,
             PollsEnvConstants::OAUTH_REDIRECT_URI,
+            PollsEnvConstants::POLLS_FILES_PUBLISHED_DIR,
         ] as $key) {
             $this->assertFalse($env->sensitiveFor($key), $key);
         }
+        $this->assertSame('', PollsEnvCatalog::getCatalog()[PollsEnvConstants::POLLS_FILES_PUBLISHED_DIR][
+            EnvCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE
+        ]);
     }
 }

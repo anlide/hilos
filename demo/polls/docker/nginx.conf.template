@@ -76,6 +76,18 @@ http {
             alias /legal_export/;
         }
 
+        # The files library checks the session cookie and visibility before
+        # nginx streams the file from its read-only internal directory.
+        location = /_hilos/file {
+            proxy_pass http://${FRONTEND_HTML_UPSTREAM}:8090;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+        location ^~ /__hilos_files/ {
+            internal;
+            alias /published/;
+        }
+
         location /ws {
             proxy_pass http://${FRONTEND_HTML_UPSTREAM}:8092;
             proxy_http_version 1.1;

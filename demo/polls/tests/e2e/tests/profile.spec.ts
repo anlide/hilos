@@ -61,11 +61,13 @@ test('the header avatar leads to the profile root and its sections', async ({
   await expect(page.getByTestId('profile-edit')).toHaveCount(0)
   await expect(page.getByTestId('profile-identity-email')).toHaveText(email)
   await expect(page.getByTestId('profile-email')).toContainText(email)
+  await expect(page.getByTestId('profile-photo-open')).toBeVisible()
 
   const sections = ['sign-in', 'sessions', 'security', 'agreements', 'data']
   await expect(page.getByTestId('profile-section')).toHaveCount(sections.length)
   expect(
     await page
+      .getByTestId('profile-section')
       .getByTestId(/^profile-[a-z-]+-open$/)
       .evaluateAll((links) =>
         links.map((link) => link.getAttribute('data-id')),

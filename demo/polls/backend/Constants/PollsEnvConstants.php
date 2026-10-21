@@ -13,6 +13,9 @@ namespace Demo\Polls\Constants;
  */
 final class PollsEnvConstants
 {
+    /** Published files directory override; empty uses data/files/published. */
+    public const string POLLS_FILES_PUBLISHED_DIR = 'POLLS_FILES_PUBLISHED_DIR';
+
     /**
      * Secret for signing the stateless OAuth `state` token (HMAC-bound to the
      * session, expiring). Env-only; the dev/e2e default is non-empty so a stand

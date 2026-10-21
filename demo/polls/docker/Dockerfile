@@ -9,10 +9,14 @@ FROM php:8.4-cli
 # - libevent-dev: required to compile ext-event
 # - libssl-dev: enables SSL support (optional)
 # - git, zip, unzip: required for Composer installations
+# - libjpeg62-turbo-dev, libpng-dev, libwebp-dev: GD image formats
 # -----------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libevent-dev \
     libssl-dev \
+    libjpeg62-turbo-dev \
+    libpng-dev \
+    libwebp-dev \
     git \
     zip \
     unzip \
@@ -25,6 +29,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # mysqli, pdo, and pdo_mysql are required for database operations.
 # -----------------------------------------------------------
 RUN docker-php-ext-install -j$(nproc) sockets pcntl posix mysqli pdo pdo_mysql
+
+# -----------------------------------------------------------
+# GD draws image variants (HilosFeature::IMAGES). PNG is enabled by default.
+# -----------------------------------------------------------
+RUN docker-php-ext-configure gd --with-jpeg --with-webp \
+ && docker-php-ext-install -j$(nproc) gd
 
 # -----------------------------------------------------------
 # Ensure custom extension load order

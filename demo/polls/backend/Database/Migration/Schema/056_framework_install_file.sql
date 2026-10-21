@@ -1,0 +1,40 @@
+-- hilos-framework: {"format":1,"kind":"install","units":["file"],"parts":[],"upSha256":"9235fbfc7ec909dae6bfb6570b5c0081c2fad554f7aa77f7453f8c9d41b75d68","downSha256":"f2a940077724421dee78ff78528db41420284ce04e1e8019ca3648f2e327dc99"}
+-- Migration: Create hilos_file table (stub/reference)
+-- Copy this SQL to project migration (e.g. 0NN_create_hilos_file.sql)
+--
+-- Registry of published files (HIL-131, HIL-336). One row is one file kept in the
+-- project's files directory under `stored_name`. A row is born unbound (`bound` = 0);
+-- once the project has written its own link to the file it calls
+-- Hilos::$files->markBound(), and the files library flips the flag. The library's
+-- janitor removes unbound rows older than the `files.unbound_ttl_hours` setting,
+-- the row first and the file on disk after it.
+--
+-- owner_user_id points at hilos_user with SET NULL. A file can outlive its owner:
+-- account erasure clears the reference, then removes project-named files after commit.
+--
+-- `stored_name` is the name on disk, so it compares byte for byte (utf8mb4_bin): a
+-- filesystem tells case apart. `filename` is the name the uploader gave the file.
+--
+-- `content_hash` is the sha256 of the file's content, lowercase hex; by it the duplicate
+-- check looks for the same file of the same owner (HIL-136).
+--
+-- `visibility` has no DEFAULT on purpose: who may be given the file is the
+-- publisher's to say, and a default would decide the access for it.
+
+CREATE TABLE `hilos_file` (
+    `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `stored_name` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+    `filename` VARCHAR(255) NOT NULL,
+    `mime_type` VARCHAR(255) NOT NULL,
+    `size` BIGINT UNSIGNED NOT NULL,
+    `content_hash` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    `owner_user_id` INT UNSIGNED DEFAULT NULL,
+    `visibility` ENUM('public', 'authenticated', 'owner') NOT NULL,
+    `bound` TINYINT(1) NOT NULL DEFAULT 0,
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_file_stored_name` (`stored_name`),
+    KEY `idx_file_bound_created` (`bound`, `created_at`),
+    KEY `idx_file_owner_hash` (`owner_user_id`, `content_hash`),
+    CONSTRAINT `fk_file_owner` FOREIGN KEY (`owner_user_id`) REFERENCES `hilos_user` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

@@ -198,11 +198,87 @@ use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 
+use Demo\Polls\Agents\Hilos\FilesLibraryAgent;
+use Demo\Polls\Core\Agent\Daemon\Hilos\FilesLibraryAgentDaemon;
+use Hilos\Files\FilesSettingsCatalog;
+use Hilos\Files\HilosFiles;
+use Hilos\Files\Image\ImageFit;
+use Hilos\Files\Image\ImageFormat;
+use Hilos\Files\Image\ImagesAgent;
+use Hilos\Files\Image\ImagesAgentDaemon;
+use Hilos\Files\Image\ImageVariant;
+use Hilos\Files\Image\DTO\ImageRenderedSignalData;
+use Hilos\Files\Image\DTO\ImageRenderSignalData;
+use Hilos\Files\DTO\FileBindSignalData;
+use Hilos\Files\DTO\FileRemoveSignalData;
+use Hilos\Files\DTO\FilePublishSignalData;
+use Hilos\Files\Upload\ProfilePhotoUploadTarget;
+use Hilos\Files\Upload\UploadsAgent;
+use Hilos\Files\Upload\UploadsAgentDaemon;
+use Hilos\Files\Upload\UploadsSettingsCatalog;
+use Hilos\Files\Upload\DTO\UploadInitActionDTO;
+use Hilos\Files\Upload\DTO\UploadCancelActionDTO;
+use Hilos\Files\Upload\DTO\UploadPublishSignalData;
+use Hilos\Tables\Users\HilosUserPhotoBrowserTable;
+
 /**
  * Guards the project-level polls topology registry.
  */
 final class PollsTopologyRegistryTest extends TestCase
 {
+    /** The photo pipeline uses framework policies and one policy-placed holder per subsystem. */
+    public function testProfilePhotoPipelineUsesTheFrameworkAgentsAndCatalogs(): void
+    {
+        foreach ([
+            HilosAgentType::HILOS_FILES_LIBRARY => [FilesLibraryAgent::class, FilesLibraryAgentDaemon::class],
+            HilosAgentType::HILOS_UPLOADS => [UploadsAgent::class, UploadsAgentDaemon::class],
+            HilosAgentType::HILOS_IMAGES => [ImagesAgent::class, ImagesAgentDaemon::class],
+        ] as $agentType => [$workerClass, $daemonClass]) {
+            $entry = Hilos::AGENTS[$agentType];
+            self::assertSame([
+                AgentRegistryKey::WORKER => $workerClass,
+                AgentRegistryKey::DAEMON => $daemonClass,
+                AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+            ], $entry);
+            self::assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
+            self::assertFalse(AgentRegistry::requiresIndex($entry));
+            self::assertTrue((new $daemonClass())->requiresMonopolisticProcess());
+        }
+
+        self::assertNull(Hilos::PROFILE_PHOTO_CHECKER);
+        self::assertSame([], Hilos::UPLOAD_TARGETS);
+        self::assertSame([], Hilos::IMAGE_VARIANTS);
+        self::assertSame([ProfilePhotoUploadTarget::NAME => ProfilePhotoUploadTarget::class], Hilos::uploadTargets());
+        self::assertSame([
+            ProfilePhotoUploadTarget::VARIANT => [
+                ImageVariant::WIDTH => 256,
+                ImageVariant::HEIGHT => 256,
+                ImageVariant::FIT => ImageFit::COVER,
+                ImageVariant::FORMAT => ImageFormat::WEBP,
+            ],
+        ], Hilos::imageVariants());
+
+        $catalog = PollsSettingsCatalog::getCatalog();
+        foreach ([FilesSettingsCatalog::getCatalog(), UploadsSettingsCatalog::getCatalog()] as $fragment) {
+            foreach ($fragment as $key => $entry) {
+                self::assertSame($entry, $catalog[$key]);
+            }
+        }
+
+        foreach ([
+            HilosSignalConstants::HILOS_FILE_BIND => FileBindSignalData::class,
+            HilosSignalConstants::HILOS_FILE_REMOVE => FileRemoveSignalData::class,
+            HilosSignalConstants::HILOS_FILE_PUBLISH => FilePublishSignalData::class,
+            HilosSignalConstants::HILOS_IMAGE_RENDERED => ImageRenderedSignalData::class,
+            HilosSignalConstants::HILOS_UPLOAD_PUBLISH => UploadPublishSignalData::class,
+            HilosSignalConstants::HILOS_IMAGE_RENDER => ImageRenderSignalData::class,
+        ] as $signal => $dtoClass) {
+            self::assertSame($dtoClass, Hilos::getAgentSignalDtoRoutes()[$signal]);
+        }
+        self::assertSame(UploadInitActionDTO::class, Hilos::getAgentActionDtoRoutes()[HilosSignalConstants::HILOS_UPLOAD_INIT]);
+        self::assertSame(UploadCancelActionDTO::class, Hilos::getAgentActionDtoRoutes()[HilosSignalConstants::HILOS_UPLOAD_CANCEL]);
+    }
+
     /** All three journal pages use the cluster reader and the framework tables. */
     public function testChangeLogSectionIsFullyActivated(): void
     {
@@ -264,6 +340,7 @@ final class PollsTopologyRegistryTest extends TestCase
     {
         self::assertSame([
             HttpConstants::METHOD_GET => [
+                HilosFiles::DOWNLOAD_PATH => HilosAgentType::HILOS_FILES_LIBRARY,
                 DataExportHttp::DOWNLOAD_PATH => HilosAgentType::HILOS_DATA_EXPORT,
                 LegalAcceptancesExportHttp::DOWNLOAD_PATH => HilosAgentType::HILOS_LEGAL,
             ],
@@ -458,6 +535,12 @@ final class PollsTopologyRegistryTest extends TestCase
         );
         $this->assertSame(
             [
+                HilosSignalConstants::HILOS_FILE_BIND => HilosAgentType::HILOS_FILES_LIBRARY,
+                HilosSignalConstants::HILOS_FILE_REMOVE => HilosAgentType::HILOS_FILES_LIBRARY,
+                HilosSignalConstants::HILOS_FILE_PUBLISH => HilosAgentType::HILOS_FILES_LIBRARY,
+                HilosSignalConstants::HILOS_IMAGE_RENDERED => HilosAgentType::HILOS_FILES_LIBRARY,
+                HilosSignalConstants::HILOS_UPLOAD_PUBLISH => HilosAgentType::HILOS_UPLOADS,
+                HilosSignalConstants::HILOS_IMAGE_RENDER => HilosAgentType::HILOS_IMAGES,
                 HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER => HilosAgentType::HILOS_DATA_EXPORT,
                 HilosSignalConstants::HILOS_SESSION_STATE => AgentType::POLLS,
                 HilosSignalConstants::HILOS_SESSIONS_SWEPT => AgentType::POLLS,
@@ -650,6 +733,10 @@ final class PollsTopologyRegistryTest extends TestCase
             HilosFeature::AUTH,
             HilosFeature::AUTH_THROTTLE,
             HilosFeature::CODE_CHANNELS,
+            HilosFeature::FILES,
+            HilosFeature::UPLOADS,
+            HilosFeature::IMAGES,
+            HilosFeature::PROFILE_PHOTO,
         ], Hilos::features());
 
         $this->assertSame(UsersLibraryAgent::class, AgentRegistry::workerClass(
@@ -680,6 +767,8 @@ final class PollsTopologyRegistryTest extends TestCase
         );
 
         $this->assertSame([
+            HilosSignalConstants::HILOS_UPLOAD_INIT => HilosAgentType::HILOS_UPLOADS,
+            HilosSignalConstants::HILOS_UPLOAD_CANCEL => HilosAgentType::HILOS_UPLOADS,
             HilosSignalConstants::HILOS_DATA_EXPORT_ORDER => HilosAgentType::HILOS_DATA_EXPORT,
             // Signing out, dismissing an ack and leaving a takeover all write a session, so
             // the sessions library owns them (HIL-710, HIL-729) - this demo adds an action of
@@ -837,7 +926,10 @@ final class PollsTopologyRegistryTest extends TestCase
         ], Hilos::TABLES);
 
         $this->assertSame(
-            [HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class],
+            [
+                HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class,
+                HilosUserPhotoBrowserTable::TABLE => HilosUserPhotoBrowserTable::class,
+            ],
             Hilos::BROWSER_TABLES,
         );
 
@@ -886,6 +978,11 @@ final class PollsTopologyRegistryTest extends TestCase
             array_keys(Hilos::PAGE_TABLES),
         );
         $this->assertSame([PollsTableContext::hilosUsers => []], Hilos::PAGE_TABLES[UsersPage::PAGE]);
+
+        $this->assertSame([
+            HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING,
+            HilosUserPhotoBrowserTable::TABLE => HilosUserPhotoBrowserTable::BINDING,
+        ], Hilos::PAGE_TABLES[UserPage::PAGE]);
 
         $this->assertSame(
             UserPage::PAGE,

@@ -16,6 +16,8 @@ use Hilos\Auth\Verification\VerificationSweepSettingsCatalog;
 use Hilos\Auth\Impersonation\ImpersonationSettingsCatalog;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Files\FilesSettingsCatalog;
+use Hilos\Files\Upload\UploadsSettingsCatalog;
 use Hilos\Log\LogSettingsCatalog;
 use Hilos\Legal\LegalSettingsCatalog;
 use Hilos\Mail\Delivery\MailDeliveryChannel;
@@ -85,6 +87,8 @@ final class PollsSettingsCatalog implements CatalogProviderInterface
             AccountDeletionSettingsCatalog::getCatalog(),
             VerificationSweepSettingsCatalog::getCatalog(),
             AuthThrottleSettingsCatalog::getCatalog(),
+            FilesSettingsCatalog::getCatalog(),
+            UploadsSettingsCatalog::getCatalog(),
         );
     }
 }

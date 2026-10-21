@@ -5,6 +5,9 @@
   "/_hilos/legal-acceptances-export": {
     "target": "http://polls-daemon-local:8090"
   },
+  "/_hilos/file": {
+    "target": "http://polls-files-local"
+  },
   "/ws": {
     "target": "http://polls-daemon-local:8092",
     "ws": true
