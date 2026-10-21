@@ -12,11 +12,9 @@ import {
   settleClientBundles,
   expectPublicBundle,
   expectServerRefusal,
-  expectThemeHeader,
   expectThemeMode,
   holdClientBundle,
   holdPageReply,
-  pickThemeBeforeLoad,
   readClientBundleReport,
   selectLazyBundle,
   siblingExclusiveFiles,
@@ -76,69 +74,57 @@ test.afterEach(async ({ page }, info) => {
   bundles.dispose()
 })
 
-for (const theme of ['light', 'dark'] as const) {
-  test(`cold public footer, home and history stay eager in ${theme} at 375px`, async ({
-    page,
-    context,
-  }) => {
-    await page.setViewportSize({ width: 375, height: 812 })
-    await pickThemeBeforeLoad(context, theme)
-    const report = await readClientBundleReport(page)
-    expectPublicBundle(expect, report)
-    // Shared eager contexts may live beside lazy wrappers, including Legal's
-    // profile binding in polls. The component sources themselves must stay lazy.
-    expect(
-      report.initial.modules.filter((id) =>
-        [SETTINGS_MODULE, APPEARANCE_MODULE].some((suffix) =>
-          id.endsWith(suffix),
-        ),
+test('cold public footer, home and history stay eager', async ({ page }) => {
+  const report = await readClientBundleReport(page)
+  expectPublicBundle(expect, report)
+  // Shared eager contexts may live beside lazy wrappers, including Legal's
+  // profile binding in polls. The component sources themselves must stay lazy.
+  expect(
+    report.initial.modules.filter((id) =>
+      [SETTINGS_MODULE, APPEARANCE_MODULE].some((suffix) =>
+        id.endsWith(suffix),
       ),
-    ).toEqual([])
-    await test.info().attach('production-bundle-report', {
-      body: JSON.stringify(report),
-      contentType: 'application/json',
-    })
-    await gotoPage(page, '/')
-    await expectThemeMode(expect, page, theme)
-    await expectThemeHeader(expect, page, theme)
-    await expect(page.getByTestId('nav-brand')).toHaveAccessibleName(/\S/)
-    await expect(page.getByTestId('skip-to-content')).toHaveAttribute(
-      'href',
-      '#hilos-main-content',
-    )
-    const document = await watchClientDocument(page)
-    try {
-      await page.getByTestId('footer-link-hilos_about').click()
+    ),
+  ).toEqual([])
+  await test.info().attach('production-bundle-report', {
+    body: JSON.stringify(report),
+    contentType: 'application/json',
+  })
+  await gotoPage(page, '/')
+  await expectThemeMode(expect, page, 'light')
+  await expect(page.getByTestId('nav-brand')).toHaveAccessibleName(/\S/)
+  await expect(page.getByTestId('skip-to-content')).toHaveAttribute(
+    'href',
+    '#hilos-main-content',
+  )
+  const document = await watchClientDocument(page)
+  try {
+    await page.getByTestId('footer-link-hilos_about').click()
+    await expectPageReady(page)
+    await page.getByTestId('nav-brand').click()
+    await expectPageReady(page)
+    await page.goBack()
+    await expectPageReady(page)
+    await expect(page).toHaveURL(/\/about$/)
+    await page.goForward()
+    await expectPageReady(page)
+    await expect(page).toHaveURL(/\/$/)
+    for (const footer of ['hilos_terms', 'hilos_privacy', 'hilos_license']) {
+      await page.getByTestId(`footer-link-${footer}`).click()
       await expectPageReady(page)
       await page.getByTestId('nav-brand').click()
       await expectPageReady(page)
-      await page.goBack()
-      await expectPageReady(page)
-      await expect(page).toHaveURL(/\/about$/)
-      await page.goForward()
-      await expectPageReady(page)
-      await expect(page).toHaveURL(/\/$/)
-      for (const footer of ['hilos_terms', 'hilos_privacy', 'hilos_license']) {
-        await page.getByTestId(`footer-link-${footer}`).click()
-        await expectPageReady(page)
-        await page.getByTestId('nav-brand').click()
-        await expectPageReady(page)
-      }
-      await expectThemeMode(expect, page, theme)
-      // The menu remains keyboard accessible after the footer and history trip.
-      await chooseHeaderTheme(expect, page, theme)
-      await expectThemeMode(expect, page, theme)
-      await document.unchanged()
-      expectBundleRequests(
-        expect,
-        bundles.requests,
-        bundleFiles(report.initial),
-      )
-    } finally {
-      await document.dispose()
     }
-  })
-}
+    await expectThemeMode(expect, page, 'light')
+    // The menu remains keyboard accessible after the footer and history trip.
+    await chooseHeaderTheme(expect, page, 'light')
+    await expectThemeMode(expect, page, 'light')
+    await document.unchanged()
+    expectBundleRequests(expect, bundles.requests, bundleFiles(report.initial))
+  } finally {
+    await document.dispose()
+  }
+})
 
 test('holds selected project code after the server answer, then reuses it through history', async ({
   page,

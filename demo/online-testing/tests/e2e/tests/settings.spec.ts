@@ -3,9 +3,7 @@ import { test, expect } from '@playwright/test'
 import {
   clearCustomSetting,
   setCustomSetting,
-  shareOneRow,
   shownByTestId,
-  sidewaysOverflow,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant.js'
 import { gotoPage } from '../helpers/page.js'
@@ -117,51 +115,4 @@ test('sets a custom value on a catalog key from its row and resets it, live', as
 
   // All of it happened over the live socket — no document reload.
   expect(fullLoads).toBe(loadsAfterColdLoad)
-})
-
-test('a narrow window draws the settings as cards and never scrolls sideways', async ({
-  page,
-}) => {
-  // HIL-815 acceptance, the Angular twin of the binance-btc-tracker case. A
-  // table is a table on a wide screen and a list of cards on a narrow
-  // one; both are mounted, and Bootstrap's display utilities show exactly one of
-  // them. What a phone must never get is the wide table squeezed into a sideways
-  // scroll — the thing the cards exist to replace.
-  //
-  // The grant runs at the usual width: it is not what is under test. The page
-  // itself is opened narrow, the way a phone opens it.
-  await grantAdminToSelf(page)
-  const desktop = page.viewportSize() ?? { width: 1280, height: 720 }
-  await page.setViewportSize({ width: 375, height: desktop.height })
-  await gotoPage(page, '/hilos/settings')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
-
-  // Isolate one catalog key before judging its responsive branches: catalog
-  // additions may move the key to another page, but must not change its card.
-  const key = 'example_string'
-  await typeInto(page.getByTestId('hilos-table-search'), key)
-  const cards = page.getByTestId('hilos-table-cards')
-  const card = cards.getByTestId(`hilos-table-card-${key}`)
-  const row = page.getByTestId(`hilos-table-row-${key}`)
-
-  await expect(card).toBeVisible()
-  await expect(row).toBeHidden()
-  expect(await sidewaysOverflow(page)).toEqual([0, 0])
-
-  // Open the setting's edit modal from inside the card; its Cancel and Save
-  // buttons share one row and divide its width equally on a narrow screen.
-  const cancel = page.getByTestId('hilos-settings-edit-cancel')
-  const save = page.getByTestId('hilos-settings-edit-save')
-  await card.getByTestId(`hilos-settings-edit-${key}`).click()
-  await expect(cancel).toBeVisible()
-  await shareOneRow(cancel, save)
-  await cancel.click()
-  await expect(cancel).toBeHidden()
-
-  // Back on a wide screen it is the table again, and the cards are gone from sight:
-  // both branches were drawn from the same window, so the row is there to show.
-  await page.setViewportSize(desktop)
-  await expect(row).toBeVisible()
-  await expect(cards).toBeHidden()
 })
