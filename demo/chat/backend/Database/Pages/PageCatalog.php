@@ -24,7 +24,10 @@ use Hilos\Database\Pages\PageCatalogProviderInterface;
 final class PageCatalog implements PageCatalogProviderInterface
 {
     /**
-     * @return array<string, array{label: string, lead: string, parent?: string, icon?: string}> The chat demo's admin pages
+     * @return array<string, array{
+     *     label: string, lead: string, parent?: string, icon?: string,
+     *     breadcrumb?: string, entity?: bool, pageHead?: bool
+     * }> The chat demo's admin pages
      */
     public static function pages(): array
     {

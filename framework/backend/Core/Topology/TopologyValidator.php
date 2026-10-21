@@ -3284,6 +3284,7 @@ final class TopologyValidator
 
         /** @var class-string<PageCatalogProviderInterface> $provider */
         $catalog = PageCatalogResolver::catalogOf($provider);
+        $catalogErrorCount = count($errors);
         foreach ($catalog as $page => $entry) {
             $this->validatePageCatalogEntry($catalog, (string)$page, $entry, $errors);
         }
@@ -3291,10 +3292,16 @@ final class TopologyValidator
         foreach (PageCatalogResolver::dashboardSectionsOf($provider) as $index => $section) {
             $this->validatePageCatalogSection($catalog, $index, $section, $errors);
         }
+
+        if (count($errors) === $catalogErrorCount) {
+            foreach (array_keys($catalog) as $page) {
+                $this->validatePageCatalogHead($catalog, (string)$page, $provider, $errors);
+            }
+        }
     }
 
     /**
-     * Validates one catalog entry: both its texts, its parent, and its way up to the root.
+     * Validates one catalog entry: its texts and optional metadata, its parent, and its way up to the root.
      *
      * The caption and the lead are judged together because both are read unconditionally when a
      * page answers its subscription: an entry missing either one would pass startup and then warn
@@ -3321,6 +3328,17 @@ final class TopologyValidator
             }
         }
 
+        if (array_key_exists(PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB, $entry)
+            && !is_string($entry[PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB])) {
+            $errors[] = "{$path}[" . PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB . '] must be a string';
+        }
+
+        foreach ([PageCatalogConstants::CATALOG_ENTRY_ENTITY, PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD] as $field) {
+            if (array_key_exists($field, $entry) && !is_bool($entry[$field])) {
+                $errors[] = "{$path}[{$field}] must be a bool";
+            }
+        }
+
         $parent = $entry[PageCatalogConstants::CATALOG_ENTRY_PARENT] ?? null;
         if ($parent === null) {
             return;
@@ -3333,6 +3351,32 @@ final class TopologyValidator
 
         if ($this->pageCatalogWalkLoops($catalog, $page)) {
             $errors[] = "{$path} sits in a parent cycle and never reaches the tree root";
+        }
+    }
+
+    /**
+     * Judges adoption only after the whole catalog has passed shape, parent and cycle validation.
+     * Entity boundaries apply even when their own head is disabled.
+     *
+     * @param array<string, array<string, mixed>> $catalog Validated merged page catalog
+     * @param string $page Page key whose head metadata is judged
+     * @param class-string<PageCatalogProviderInterface> $provider Page catalog provider class
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validatePageCatalogHead(array $catalog, string $page, string $provider, array &$errors): void
+    {
+        $entry = $catalog[$page];
+        $owner = PageCatalogResolver::rowOwnerOf($page, $provider);
+        $path = self::SECTION_PAGE_CATALOG . "[{$page}]";
+        if (($entry[PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD] ?? false) && $owner !== $page) {
+            $errors[] = "{$path}[" . PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD . '] may be true only on an admin row owner';
+        }
+
+        if ($owner !== null && $owner !== $page
+            && ($catalog[$owner][PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD] ?? false)
+            && ($entry[PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB] ?? $entry[PageCatalogConstants::CATALOG_ENTRY_LABEL]) === '') {
+            $errors[] = "{$path}[" . PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB
+                . "] must be non-empty for a tab of page head owner {$owner}";
         }
     }
 

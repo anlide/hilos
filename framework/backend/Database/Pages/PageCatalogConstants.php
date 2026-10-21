@@ -21,7 +21,7 @@ final class PageCatalogConstants
     /** @var string Catalog entry: parent page key in the admin tree; absent on the tree root */
     public const string CATALOG_ENTRY_PARENT = 'parent';
 
-    /** @var string Catalog entry: heading of the page, which is also its breadcrumb caption */
+    /** @var string Catalog entry: heading of the page and fallback breadcrumb caption */
     public const string CATALOG_ENTRY_LABEL = 'label';
 
     /** @var string Catalog entry: one-line description under the heading and on the dashboard card */
@@ -29,6 +29,15 @@ final class PageCatalogConstants
 
     /** @var string Catalog entry: Bootstrap icon name (`bi-*`) for the dashboard card */
     public const string CATALOG_ENTRY_ICON = 'icon';
+
+    /** @var string Catalog entry: breadcrumb and tab caption; an empty caption omits the breadcrumb link */
+    public const string CATALOG_ENTRY_BREADCRUMB = 'breadcrumb';
+
+    /** @var string Catalog entry: entity boundary; absent means false, independently of head adoption */
+    public const string CATALOG_ENTRY_ENTITY = 'entity';
+
+    /** @var string Catalog entry: enables the shared head for this row's owner and all its tabs; absent means false */
+    public const string CATALOG_ENTRY_PAGE_HEAD = 'pageHead';
 
     /** @var string Dashboard section: group heading */
     public const string SECTION_TITLE = 'title';
@@ -45,11 +54,26 @@ final class PageCatalogConstants
     /** @var string Wire: the subscribing page's own lead */
     public const string WIRE_PAGE_LEAD = 'pageLead';
 
-    /** @var string Wire: breadcrumb chain, root first, ending with the subscribing page */
+    /** @var string Wire: breadcrumb chain, root first, ending at the adopted owner or the legacy subscribing page */
     public const string WIRE_PAGE_BREADCRUMB = 'pageBreadcrumb';
 
     /** @var string Wire: the subscribing page's own children, in catalog order; empty on a leaf */
     public const string WIRE_PAGE_CHILDREN = 'pageChildren';
+
+    /** @var string Wire: catalog identity of the adopted row owner, separate from the subscribing page's identity */
+    public const string WIRE_PAGE_HEAD_OWNER = 'pageHeadOwner';
+
+    /** @var string Wire: eligible pages of the adopted owner, in catalog tree order */
+    public const string WIRE_PAGE_TABS = 'pageTabs';
+
+    /** @var string Wire: page key of the adopted row owner */
+    public const string WIRE_OWNER_PAGE = 'page';
+
+    /** @var string Wire: page key of one tab */
+    public const string WIRE_TAB_PAGE = 'page';
+
+    /** @var string Wire: caption of one tab */
+    public const string WIRE_TAB_LABEL = 'label';
 
     /** @var string Wire: dashboard sections, sent to the dashboard page alone */
     public const string WIRE_DASHBOARD_SECTIONS = 'dashboardSections';

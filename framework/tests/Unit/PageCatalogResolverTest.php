@@ -5,10 +5,15 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\HilosPageConstants;
+use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\PageAgentInterface;
+use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Database\Pages\PageCatalogProviderInterface;
 use Hilos\Database\Pages\PageCatalogResolver;
 use Hilos\Hilos;
+use LogicException;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -21,6 +26,15 @@ use PHPUnit\Framework\TestCase;
  */
 final class PageCatalogResolverTest extends TestCase
 {
+    private ?SignalRouter $previousRouter = null;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->previousRouter = Hilos::$sr;
+        Hilos::$sr = new PageHeadTestSignalRouter();
+    }
+
     /**
      * Restores the base facade so a later test sees the process as it found it.
      */
@@ -28,6 +42,7 @@ final class PageCatalogResolverTest extends TestCase
     {
         Hilos::initBrowser();
         Hilos::resetBrowser();
+        Hilos::$sr = $this->previousRouter;
 
         parent::tearDown();
     }
@@ -45,6 +60,8 @@ final class PageCatalogResolverTest extends TestCase
                 PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Queue',
                 PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Reports waiting for a moderator.',
                 PageCatalogConstants::CATALOG_ENTRY_PARENT => PageCatalogResolverTestCatalog::MODERATION,
+                PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Short queue',
+                PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
             ],
             $catalog[PageCatalogResolverTestCatalog::MODERATION_QUEUE],
         );
@@ -225,6 +242,224 @@ final class PageCatalogResolverTest extends TestCase
         );
     }
 
+    public function testCountryAndNamesShareTheExactHeadWithoutChangingTheirIdentity(): void
+    {
+        CountryPageHeadTestHilos::initBrowser();
+        $params = new PageRouteParams(['countryId' => '42']);
+        $country = PageCatalogResolver::head(HilosPageConstants::HILOS_I18N_COUNTRY, $params);
+        $names = PageCatalogResolver::head(HilosPageConstants::HILOS_I18N_COUNTRY_NAMES, $params);
+
+        self::assertNotNull($country);
+        self::assertNotNull($names);
+        self::assertNotSame($country, $names);
+        self::assertSame([
+            'pageHeadOwner' => [
+                'page' => HilosPageConstants::HILOS_I18N_COUNTRY,
+                'label' => 'Country',
+                'lead' => 'A single country: currency, default locale, and state.',
+            ],
+            'pageBreadcrumb' => [
+                ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                ['page' => HilosPageConstants::HILOS_I18N, 'label' => 'Internationalization'],
+                ['page' => HilosPageConstants::HILOS_I18N_COUNTRIES, 'label' => 'Countries'],
+                ['page' => HilosPageConstants::HILOS_I18N_COUNTRY, 'label' => 'Country'],
+            ],
+            'pageTabs' => [
+                ['page' => HilosPageConstants::HILOS_I18N_COUNTRY, 'label' => 'Overview'],
+                ['page' => HilosPageConstants::HILOS_I18N_COUNTRY_NAMES, 'label' => 'Names'],
+            ],
+            'pageChildren' => [],
+        ], $country->toArray());
+        self::assertSame($country->toArray(), $names->toArray());
+        self::assertSame([
+            'label' => 'Country',
+            'lead' => 'A single country: currency, default locale, and state.',
+        ], PageCatalogResolver::identity(HilosPageConstants::HILOS_I18N_COUNTRY));
+        self::assertSame([
+            'label' => 'Country names',
+            'lead' => 'How this country is named in each language.',
+        ], PageCatalogResolver::identity(HilosPageConstants::HILOS_I18N_COUNTRY_NAMES));
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_I18N_COUNTRY_NAMES,
+                'label' => 'Country names', 'lead' => 'How this country is named in each language.'],
+        ], PageCatalogResolver::children(HilosPageConstants::HILOS_I18N_COUNTRY));
+        self::assertSame(
+            HilosPageConstants::HILOS_I18N_COUNTRY,
+            PageCatalogResolver::rowOwner(HilosPageConstants::HILOS_I18N_COUNTRY_NAMES),
+        );
+    }
+
+    public function testOwnerLookupUsesTheNamedProviderBeforeBindingIt(): void
+    {
+        Hilos::initBrowser();
+
+        self::assertSame(
+            HilosPageConstants::HILOS_ROLES,
+            PageCatalogResolver::rowOwnerOf(PageHeadTestCatalog::ROLES_LIST, PageHeadTestCatalog::class),
+        );
+        self::assertSame(
+            PageHeadTestCatalog::ROLE,
+            PageCatalogResolver::rowOwnerOf(PageHeadTestCatalog::RIGHTS, PageHeadTestCatalog::class),
+        );
+        self::assertNull(PageCatalogResolver::rowOwner(PageHeadTestCatalog::ROLE));
+    }
+
+    public function testDepthFirstTabsStayInOneRowAndExcludeWholeEntityBranches(): void
+    {
+        PageHeadTestHilos::initBrowser();
+        $params = new PageRouteParams(['variant' => 'enabled']);
+        $head = PageCatalogResolver::head(PageHeadTestCatalog::MACHINE, $params);
+
+        self::assertNotNull($head);
+        self::assertSame([
+            'page' => HilosPageConstants::HILOS_I18N,
+            'label' => 'Translation workspace',
+            'lead' => 'Translation workspace lead.',
+            'icon' => 'bi-translate',
+        ], $head->pageHeadOwner);
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+        ], $head->pageBreadcrumb);
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_I18N, 'label' => 'Overview'],
+            ['page' => HilosPageConstants::HILOS_I18N_COUNTRIES, 'label' => 'Countries'],
+            ['page' => PageHeadTestCatalog::GAPS, 'label' => 'Gaps'],
+            ['page' => PageHeadTestCatalog::MACHINE, 'label' => 'Machine'],
+            ['page' => PageHeadTestCatalog::FINDINGS, 'label' => 'Other findings'],
+        ], $head->pageTabs);
+        self::assertSame(HilosPageConstants::HILOS_I18N, PageCatalogResolver::rowOwner(PageHeadTestCatalog::GAPS));
+        self::assertSame(
+            $head->toArray(),
+            PageCatalogResolver::head(HilosPageConstants::HILOS_I18N_COUNTRIES, $params)?->toArray(),
+        );
+    }
+
+    public function testEmptyAncestorCrumbDoesNotBreakTheChainAndMissingCaptionUsesLabel(): void
+    {
+        PageHeadTestHilos::initBrowser();
+
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+            ['page' => HilosPageConstants::HILOS_I18N_COUNTRIES, 'label' => 'Countries'],
+            ['page' => HilosPageConstants::HILOS_I18N_COUNTRY, 'label' => 'Country'],
+        ], PageCatalogResolver::breadcrumb(HilosPageConstants::HILOS_I18N_COUNTRY_NAMES));
+    }
+
+    public function testRoleChainKeepsDifferentKeysWithRepeatedCaptionsEvenWithoutServedAncestors(): void
+    {
+        PageHeadTestHilos::initBrowser();
+
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+            ['page' => HilosPageConstants::HILOS_ROLES, 'label' => 'Roles'],
+            ['page' => PageHeadTestCatalog::ROLES_LIST, 'label' => 'Roles'],
+            ['page' => PageHeadTestCatalog::ROLE, 'label' => 'Role'],
+        ], PageCatalogResolver::breadcrumb(PageHeadTestCatalog::RIGHTS));
+        self::assertFalse(Hilos::$sr->servesPage(PageHeadTestCatalog::ROLES_LIST));
+    }
+
+    public function testUsersIsItsOwnListAndASingleTabIsStillReturned(): void
+    {
+        PageHeadTestHilos::initBrowser();
+        $head = PageCatalogResolver::head(HilosPageConstants::HILOS_USERS, new PageRouteParams([]));
+
+        self::assertNotNull($head);
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+            ['page' => HilosPageConstants::HILOS_USERS, 'label' => 'Users'],
+        ], $head->pageBreadcrumb);
+        self::assertSame([['page' => HilosPageConstants::HILOS_USERS, 'label' => 'Overview']], $head->pageTabs);
+    }
+
+    public function testDisabledNestedEntityStopsAdoptionAndKeepsItsLegacyChain(): void
+    {
+        PageHeadTestHilos::initBrowser();
+
+        self::assertSame(
+            PageHeadTestCatalog::REGION,
+            PageCatalogResolver::rowOwner(PageHeadTestCatalog::REGION_HISTORY),
+        );
+        self::assertNull(PageCatalogResolver::head(PageHeadTestCatalog::REGION, new PageRouteParams([])));
+        self::assertNull(PageCatalogResolver::head(PageHeadTestCatalog::REGION_HISTORY, new PageRouteParams([])));
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+            ['page' => HilosPageConstants::HILOS_I18N, 'label' => 'Translation workspace'],
+            ['page' => HilosPageConstants::HILOS_I18N_COUNTRIES, 'label' => 'Countries'],
+            ['page' => HilosPageConstants::HILOS_I18N_COUNTRY, 'label' => 'Country'],
+            ['page' => HilosPageConstants::HILOS_I18N_COUNTRY_NAMES, 'label' => 'Country names'],
+            ['page' => PageHeadTestCatalog::REGION, 'label' => 'Region title'],
+            ['page' => PageHeadTestCatalog::REGION_HISTORY, 'label' => 'Region history'],
+        ], PageCatalogResolver::breadcrumb(PageHeadTestCatalog::REGION_HISTORY));
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_I18N_COUNTRY, 'label' => 'Overview'],
+            ['page' => HilosPageConstants::HILOS_I18N_COUNTRY_NAMES, 'label' => 'Names'],
+        ], PageCatalogResolver::head(HilosPageConstants::HILOS_I18N_COUNTRY, new PageRouteParams([]))?->pageTabs);
+    }
+
+    public function testUnknownExternalDashboardAndDisabledOwnersHaveNoHead(): void
+    {
+        PageHeadTestHilos::initBrowser();
+        foreach (['unknown', HilosPageConstants::HILOS_DASHBOARD, HilosPageConstants::HILOS_PROFILE_SIGN_IN] as $page) {
+            self::assertNull(PageCatalogResolver::rowOwner($page));
+            self::assertNull(PageCatalogResolver::head($page, new PageRouteParams([])));
+        }
+        self::assertSame([], PageCatalogResolver::breadcrumb('unknown'));
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_PROFILE, 'label' => 'Profile'],
+            ['page' => HilosPageConstants::HILOS_PROFILE_SIGN_IN, 'label' => 'Ways to sign in'],
+        ], PageCatalogResolver::breadcrumb(HilosPageConstants::HILOS_PROFILE_SIGN_IN));
+
+        PageCatalogResolverTestHilos::initBrowser();
+        self::assertSame(
+            PageCatalogResolverTestCatalog::MODERATION,
+            PageCatalogResolver::rowOwner(PageCatalogResolverTestCatalog::MODERATION_QUEUE),
+        );
+        self::assertNull(PageCatalogResolver::head(PageCatalogResolverTestCatalog::MODERATION_QUEUE, new PageRouteParams([])));
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+            ['page' => PageCatalogResolverTestCatalog::MODERATION, 'label' => 'Moderation'],
+            ['page' => PageCatalogResolverTestCatalog::MODERATION_QUEUE, 'label' => 'Queue'],
+        ], PageCatalogResolver::breadcrumb(PageCatalogResolverTestCatalog::MODERATION_QUEUE));
+    }
+
+    public function testTabApplicabilityIsRecomputedForEachSubscriptionAndPrunesDescendants(): void
+    {
+        PageHeadTestHilos::initBrowser();
+        $enabled = PageCatalogResolver::head(HilosPageConstants::HILOS_I18N, new PageRouteParams(['variant' => 'enabled']));
+        $disabled = PageCatalogResolver::head(HilosPageConstants::HILOS_I18N, new PageRouteParams(['variant' => 'disabled']));
+
+        self::assertNotNull($enabled);
+        self::assertNotNull($disabled);
+        self::assertSame([
+            HilosPageConstants::HILOS_I18N,
+            HilosPageConstants::HILOS_I18N_COUNTRIES,
+            PageHeadTestCatalog::GAPS,
+            PageHeadTestCatalog::MACHINE,
+            PageHeadTestCatalog::FINDINGS,
+        ], array_column($enabled->pageTabs, 'page'));
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_I18N, 'label' => 'Overview'],
+            ['page' => HilosPageConstants::HILOS_I18N_COUNTRIES, 'label' => 'Countries'],
+            ['page' => PageHeadTestCatalog::FINDINGS, 'label' => 'Other findings'],
+        ], $disabled->pageTabs);
+        self::assertSame($enabled->pageBreadcrumb, $disabled->pageBreadcrumb);
+    }
+
+    public function testAnUnregisteredPageIsOmittedEvenWhenTheRouterReportsItServed(): void
+    {
+        PageHeadTestHilos::initBrowser();
+        Hilos::$sr = $this->createStub(SignalRouter::class);
+        Hilos::$sr->method('servesPage')->willReturnCallback(
+            static fn (string $page): bool => $page !== PageHeadTestCatalog::UNSERVED,
+        );
+
+        $head = PageCatalogResolver::head(HilosPageConstants::HILOS_I18N, new PageRouteParams(['variant' => 'enabled']));
+
+        self::assertNotNull($head);
+        self::assertNotContains(PageHeadTestCatalog::MISSING, array_column($head->pageTabs, 'page'));
+        self::assertNotContains(PageHeadTestCatalog::MISSING_CHILD, array_column($head->pageTabs, 'page'));
+    }
+
     public function testProjectSectionsComeAfterTheFrameworkOnes(): void
     {
         PageCatalogResolverTestHilos::initBrowser();
@@ -269,7 +504,10 @@ final class PageCatalogResolverTestCatalog implements PageCatalogProviderInterfa
     public const string MODERATION_QUEUE = 'moderation_queue';
 
     /**
-     * @return array<string, array{label: string, lead: string, parent?: string, icon?: string}> Pages of the fixture project
+     * @return array<string, array{
+     *     label: string, lead: string, parent?: string, icon?: string,
+     *     breadcrumb?: string, entity?: bool, pageHead?: bool
+     * }> Pages of the fixture project
      */
     public static function pages(): array
     {
@@ -284,12 +522,17 @@ final class PageCatalogResolverTestCatalog implements PageCatalogProviderInterfa
                 PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Queue',
                 PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Reports waiting for a moderator.',
                 PageCatalogConstants::CATALOG_ENTRY_PARENT => self::MODERATION,
+                PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Short queue',
+                PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
             ],
             HilosPageConstants::HILOS_I18N => [
                 PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Languages of the product',
                 PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Product copy in every language it ships in.',
                 PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
                 PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-translate',
+                PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Workspace',
+                PageCatalogConstants::CATALOG_ENTRY_ENTITY => false,
+                PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => false,
             ],
         ];
     }
@@ -318,4 +561,176 @@ final class PageCatalogResolverTestCatalog implements PageCatalogProviderInterfa
 abstract class PageCatalogResolverTestHilos extends Hilos
 {
     protected const string PAGE_CATALOG = PageCatalogResolverTestCatalog::class;
+}
+
+/** The framework catalog with both country pages registered. */
+abstract class CountryPageHeadTestHilos extends Hilos
+{
+    public const array PAGES = [
+        HilosPageConstants::HILOS_I18N_COUNTRY => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_I18N_COUNTRY_NAMES => PageHeadTestPage::class,
+    ];
+}
+
+/** Synthetic adoption boundaries and tabs; registration is separate from catalog membership. */
+abstract class PageHeadTestHilos extends CountryPageHeadTestHilos
+{
+    public const array PAGES = [
+        ...parent::PAGES,
+        HilosPageConstants::HILOS_I18N => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_I18N_COUNTRIES => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_USERS => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_USER => PageHeadTestPage::class,
+        PageHeadTestCatalog::ROLE => PageHeadTestPage::class,
+        PageHeadTestCatalog::RIGHTS => PageHeadTestPage::class,
+        PageHeadTestCatalog::REGION => PageHeadTestPage::class,
+        PageHeadTestCatalog::REGION_HISTORY => PageHeadTestPage::class,
+        PageHeadTestCatalog::GAPS => PageHeadTestConditionalTab::class,
+        PageHeadTestCatalog::MACHINE => PageHeadTestPage::class,
+        PageHeadTestCatalog::FINDINGS => PageHeadTestPage::class,
+        PageHeadTestCatalog::MISSING_CHILD => PageHeadTestPage::class,
+        PageHeadTestCatalog::UNSERVED => PageHeadTestUnservedTab::class,
+        PageHeadTestCatalog::UNSERVED_CHILD => PageHeadTestPage::class,
+    ];
+
+    protected const string PAGE_CATALOG = PageHeadTestCatalog::class;
+}
+
+/** No head calculation may instantiate a page or its agent. */
+class PageHeadTestPage extends AbstractPage
+{
+    public const string SUBSCRIPTION_AGENT_TYPE = 'catalog-test';
+
+    /** @param PageAgentInterface $agent Agent whose construction the resolver must never require */
+    final public function __construct(PageAgentInterface $agent)
+    {
+        throw new LogicException('Tab eligibility must not construct pages.');
+    }
+}
+
+final class PageHeadTestConditionalTab extends PageHeadTestPage
+{
+    /**
+     * @param PageRouteParams $ownerParams Current owner's params; no separate child-tab params are needed
+     * @return bool Whether this owner variant has the Gaps branch
+     */
+    public static function isTabApplicable(PageRouteParams $ownerParams): bool
+    {
+        return $ownerParams->getString('variant') === 'enabled';
+    }
+}
+
+final class PageHeadTestUnservedTab extends PageHeadTestPage
+{
+    /**
+     * @param PageRouteParams $ownerParams Unused because serving must be checked first
+     * @return bool Never returned; an unserved tab must not be asked
+     */
+    public static function isTabApplicable(PageRouteParams $ownerParams): bool
+    {
+        throw new LogicException('Serving must be checked before applicability.');
+    }
+}
+
+final class PageHeadTestSignalRouter extends SignalRouter
+{
+    /** @return class-string<Hilos> Facade bound by this test */
+    protected function hilosClass(): string
+    {
+        return Hilos::appClass();
+    }
+
+    /**
+     * @param string $page Candidate page key
+     * @return bool Whether the registered page is served in this fixture
+     */
+    public function servesPage(string $page): bool
+    {
+        return $page !== PageHeadTestCatalog::UNSERVED && parent::servesPage($page);
+    }
+}
+
+/** Catalog boundary fixture covering entity nesting, repeated captions and pruned tab branches. */
+final class PageHeadTestCatalog implements PageCatalogProviderInterface
+{
+    public const string ROLES_LIST = 'roles_list';
+    public const string ROLE = 'role';
+    public const string RIGHTS = 'role_rights';
+    public const string REGION = 'country_region';
+    public const string REGION_HISTORY = 'country_region_history';
+    public const string GAPS = 'i18n_gaps';
+    public const string MACHINE = 'i18n_gaps_machine';
+    public const string FINDINGS = 'i18n_findings';
+    public const string MISSING = 'i18n_missing';
+    public const string MISSING_CHILD = 'i18n_missing_child';
+    public const string UNSERVED = 'i18n_unserved';
+    public const string UNSERVED_CHILD = 'i18n_unserved_child';
+
+    /**
+     * @return array<string, array{
+     *     label: string, lead: string, parent?: string, icon?: string,
+     *     breadcrumb?: string, entity?: bool, pageHead?: bool
+     * }> Fixture catalog metadata
+     */
+    public static function pages(): array
+    {
+        return [
+            HilosPageConstants::HILOS_I18N => self::entry(
+                'Translation workspace', HilosPageConstants::HILOS_DASHBOARD, breadcrumb: '', pageHead: true,
+            ) + [PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-translate'],
+            HilosPageConstants::HILOS_ROLES => self::entry('Roles', HilosPageConstants::HILOS_DASHBOARD, pageHead: true),
+            self::ROLES_LIST => self::entry('Roles', HilosPageConstants::HILOS_ROLES),
+            self::ROLE => self::entry('Role title', self::ROLES_LIST, breadcrumb: 'Role', entity: true, pageHead: true),
+            self::RIGHTS => self::entry('Rights title', self::ROLE, breadcrumb: 'Rights'),
+            HilosPageConstants::HILOS_USERS => self::entry('Users', HilosPageConstants::HILOS_DASHBOARD, pageHead: true),
+            HilosPageConstants::HILOS_USER => self::entry('User', HilosPageConstants::HILOS_USERS, entity: true, pageHead: true),
+            self::REGION => self::entry('Region title', HilosPageConstants::HILOS_I18N_COUNTRY_NAMES, breadcrumb: 'Region', entity: true),
+            self::REGION_HISTORY => self::entry('Region history', self::REGION),
+            self::GAPS => self::entry('Gaps title', HilosPageConstants::HILOS_I18N, breadcrumb: 'Gaps', pageHead: true),
+            self::FINDINGS => self::entry('Other findings', HilosPageConstants::HILOS_I18N),
+            self::MACHINE => self::entry('Machine', self::GAPS),
+            self::MISSING => self::entry('Missing', HilosPageConstants::HILOS_I18N),
+            self::MISSING_CHILD => self::entry('Missing child', self::MISSING),
+            self::UNSERVED => self::entry('Unserved', HilosPageConstants::HILOS_I18N),
+            self::UNSERVED_CHILD => self::entry('Unserved child', self::UNSERVED),
+            HilosPageConstants::HILOS_PROFILE_SIGN_IN => self::entry(
+                'Ways to sign in', HilosPageConstants::HILOS_PROFILE, breadcrumb: 'Ignored', entity: true, pageHead: true,
+            ),
+        ];
+    }
+
+    /** @return list<array{title: string, description: string, items: list<string>}> No additional dashboard groups */
+    public static function dashboardSections(): array
+    {
+        return [];
+    }
+
+    /**
+     * @param string $label Page title
+     * @param string $parent Parent page key
+     * @param ?string $breadcrumb Explicit caption, or null to omit the field
+     * @param bool $entity Entity boundary
+     * @param bool $pageHead Shared head switch
+     * @return array{label: string, lead: string, parent: string, breadcrumb?: string, entity: bool, pageHead: bool} Catalog entry
+     */
+    private static function entry(
+        string $label,
+        string $parent,
+        ?string $breadcrumb = null,
+        bool $entity = false,
+        bool $pageHead = false,
+    ): array {
+        $entry = [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => $label,
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => $label . ' lead.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => $parent,
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => $entity,
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => $pageHead,
+        ];
+        if ($breadcrumb !== null) {
+            $entry[PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB] = $breadcrumb;
+        }
+
+        return $entry;
+    }
 }

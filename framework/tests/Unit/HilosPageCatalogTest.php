@@ -232,4 +232,29 @@ final class HilosPageCatalogTest extends TestCase
             self::assertSame($parent, HilosPageCatalog::CATALOG[$page][PageCatalogConstants::CATALOG_ENTRY_PARENT]);
         }
     }
+
+    public function testOnlyCountryAdoptsTheSharedHead(): void
+    {
+        $adopted = [];
+        $entities = [];
+        foreach (HilosPageCatalog::CATALOG as $page => $entry) {
+            if ($entry[PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD] ?? false) {
+                $adopted[] = $page;
+            }
+            if ($entry[PageCatalogConstants::CATALOG_ENTRY_ENTITY] ?? false) {
+                $entities[] = $page;
+            }
+        }
+
+        self::assertSame([HilosPageConstants::HILOS_I18N_COUNTRY], $adopted);
+        self::assertSame([HilosPageConstants::HILOS_I18N_COUNTRY], $entities);
+        self::assertSame(
+            'Country',
+            HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_I18N_COUNTRY][PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB],
+        );
+        self::assertSame(
+            'Names',
+            HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_I18N_COUNTRY_NAMES][PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB],
+        );
+    }
 }

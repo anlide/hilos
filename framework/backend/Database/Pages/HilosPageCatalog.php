@@ -27,6 +27,9 @@ use Hilos\Constants\HilosPageConstants;
  */
 final class HilosPageCatalog
 {
+    /** @var string English fallback caption of the owner's first tab */
+    public const string OVERVIEW_LABEL = 'Overview';
+
     /**
      * Admin page identity, keyed by page key.
      *
@@ -34,7 +37,10 @@ final class HilosPageCatalog
      * and the chain from any page up to the dashboard is what the breadcrumb walks. `icon` marks
      * a top-level section, which is the only place a card is drawn.
      *
-     * @var array<string, array{label: string, lead: string, parent?: string, icon?: string}> Page identity per page key
+     * @var array<string, array{
+     *     label: string, lead: string, parent?: string, icon?: string,
+     *     breadcrumb?: string, entity?: bool, pageHead?: bool
+     * }> Catalog metadata per page key
      */
     public const array CATALOG = [
         HilosPageConstants::HILOS_DASHBOARD => [
@@ -172,11 +178,15 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Country',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'A single country: currency, default locale, and state.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_I18N_COUNTRIES,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Country',
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ],
         HilosPageConstants::HILOS_I18N_COUNTRY_NAMES => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Country names',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'How this country is named in each language.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_I18N_COUNTRY,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Names',
         ],
         HilosPageConstants::HILOS_I18N_ENTITIES => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Entities',

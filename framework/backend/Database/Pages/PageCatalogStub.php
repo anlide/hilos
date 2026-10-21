@@ -18,7 +18,10 @@ namespace Hilos\Database\Pages;
 final class PageCatalogStub implements PageCatalogProviderInterface
 {
     /**
-     * @return array<string, array{label: string, lead: string, parent?: string, icon?: string}> No project pages
+     * @return array<string, array{
+     *     label: string, lead: string, parent?: string, icon?: string,
+     *     breadcrumb?: string, entity?: bool, pageHead?: bool
+     * }> No project pages
      */
     public static function pages(): array
     {

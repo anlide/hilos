@@ -8,8 +8,10 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\I18n\Details\CountryDetailPage;
 use Demo\Chat\Pages\Hilos\I18n\Details\CountryNamesPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Demo\Chat\Tables\ChatTableContext;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Execution\ExecutionContext;
@@ -31,6 +33,7 @@ use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\Country as EntityCountry;
 use Hilos\Database\Entity\Item\CountryName as EntityCountryName;
 use Hilos\Database\Entity\Item\Locale as EntityLocale;
+use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\I18n\Browser\CountryCardBrowserData;
 use Hilos\I18n\DTO\CountryCardSummary;
 use Hilos\I18n\Library\I18nLibraryAgent;
@@ -38,6 +41,7 @@ use Hilos\I18n\MeasurementSystem;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /** The country card reads its name, default locale and deletion verdict from persisted rows. */
 final class I18nCountryCardTest extends IntegrationTestCase
@@ -402,7 +406,9 @@ final class I18nCountryCardTest extends IntegrationTestCase
         }
     }
 
-    public function testAdminViewModeShowsAllNonpersonalCardFieldsToAViewer(): void
+    /** @param class-string<CountryDetailPage|CountryNamesPage> $pageClass Country tab opened by the viewer */
+    #[DataProvider('countryPages')]
+    public function testAdminViewModeShowsAllNonpersonalCardFieldsToAViewer(string $pageClass): void
     {
         $this->underAgent($this->agent, static function (): void {
             $english = Hilos::$db->languages->actions->create('en', 'English', false);
@@ -410,16 +416,18 @@ final class I18nCountryCardTest extends IntegrationTestCase
             Hilos::$db->countryNames->actions->createCatalogBase($known, $english, 'United States');
         });
         $viewer = Hilos::$db->users->actions->createWithName('Country card viewer');
-        $session = Hilos::$db->sessions->actions->createAnonymous(substr(hash('sha256', __METHOD__), 0, 32));
+        $session = Hilos::$db->sessions->actions->createAnonymous(substr(hash('sha256', __METHOD__ . $pageClass), 0, 32));
         $session->actions->bindUser((int)$viewer->id);
         Hilos::$rt->connections->actions->register('card-viewer', (int)$viewer->id, $session->token, (int)$session->id);
         RtTruthSourceRegistry::registerDaemon(AdminViewModeRuntime::RT_ITEM);
         Hilos::$rt->hilosAdminViewModeRuntime?->actions->set(true);
 
         try {
-            $this->subscribe('card-viewer', 'us');
+            $this->subscribe('card-viewer', 'us', $pageClass);
             $responses = $this->drainCardResponses();
             self::assertCount(1, $responses);
+            self::assertSame($pageClass::PAGE, $responses[0]->pageKey);
+            $this->assertCountryHead($responses[0]);
             $card = $this->cardOf($responses[0]);
             self::assertSame([
                 'countryId' => Hilos::$db->countries['us']->id,
@@ -448,6 +456,13 @@ final class I18nCountryCardTest extends IntegrationTestCase
         }
     }
 
+    /** @return iterable<string, array{class-string<CountryDetailPage|CountryNamesPage>}> Both real country subscriptions */
+    public static function countryPages(): iterable
+    {
+        yield 'Overview' => [CountryDetailPage::class];
+        yield 'Names' => [CountryNamesPage::class];
+    }
+
     public function testNamesPageCarriesTheSameCardAndItsLiveUpdates(): void
     {
         $admin = Hilos::$db->users->actions->createWithName('Country names card admin');
@@ -466,12 +481,16 @@ final class I18nCountryCardTest extends IntegrationTestCase
         $this->subscribe('card-detail', 'qx', CountryDetailPage::class);
         $detailResponses = $this->drainCardResponses();
         self::assertCount(1, $detailResponses);
+        self::assertSame(CountryDetailPage::PAGE, $detailResponses[0]->pageKey);
+        $this->assertCountryHead($detailResponses[0]);
         $detailCard = $this->cardOf($detailResponses[0]);
         $this->assertBoundCountry('card-detail', $countryId);
 
         $this->subscribe('card-names', 'qx', CountryNamesPage::class);
         $namesResponses = $this->drainCardResponses();
         self::assertCount(1, $namesResponses);
+        self::assertSame(CountryNamesPage::PAGE, $namesResponses[0]->pageKey);
+        $this->assertCountryHead($namesResponses[0]);
         $namesCard = $this->cardOf($namesResponses[0]);
         $this->assertBoundCountry('card-names', $countryId);
 
@@ -609,6 +628,40 @@ final class I18nCountryCardTest extends IntegrationTestCase
     private function cardOf(PageResponseSignalData $response): array
     {
         return $response->payload->toArray()[PagePayload::data][CountryCardBrowserData::DATA];
+    }
+
+    /** @param PageResponseSignalData $response The one frame carrying identity and the browser snapshot */
+    private function assertCountryHead(PageResponseSignalData $response): void
+    {
+        self::assertSame([
+            'page' => HilosPageConstants::HILOS_I18N_COUNTRY,
+            'label' => 'Country',
+            'lead' => 'A single country: currency, default locale, and state.',
+        ], $response->payload->data[PageCatalogConstants::WIRE_PAGE_HEAD_OWNER] ?? null);
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+            ['page' => HilosPageConstants::HILOS_I18N, 'label' => 'Internationalization'],
+            ['page' => HilosPageConstants::HILOS_I18N_COUNTRIES, 'label' => 'Countries'],
+            ['page' => HilosPageConstants::HILOS_I18N_COUNTRY, 'label' => 'Country'],
+        ], $response->payload->data[PageCatalogConstants::WIRE_PAGE_BREADCRUMB]);
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_I18N_COUNTRY, 'label' => 'Overview'],
+            ['page' => HilosPageConstants::HILOS_I18N_COUNTRY_NAMES, 'label' => 'Names'],
+        ], $response->payload->data[PageCatalogConstants::WIRE_PAGE_TABS] ?? null);
+        self::assertSame([], $response->payload->data[PageCatalogConstants::WIRE_PAGE_CHILDREN]);
+        self::assertSame(
+            $response->pageKey === CountryDetailPage::PAGE ? 'Country' : 'Country names',
+            $response->payload->data[PageCatalogConstants::WIRE_PAGE_LABEL],
+        );
+        self::assertSame(
+            $response->pageKey === CountryDetailPage::PAGE
+                ? 'A single country: currency, default locale, and state.'
+                : 'How this country is named in each language.',
+            $response->payload->data[PageCatalogConstants::WIRE_PAGE_LEAD],
+        );
+        if ($response->pageKey === CountryNamesPage::PAGE) {
+            self::assertArrayHasKey(ChatTableContext::hilosI18nCountryNames, $response->payload->windows);
+        }
     }
 
     /**

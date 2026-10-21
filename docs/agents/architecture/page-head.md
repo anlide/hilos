@@ -26,8 +26,7 @@ The **owner** is the section or entity whose pages share that head and row.
 Each tab is a separate page with its own address. A non-entity child of a tab
 stays in that owner's row; an entity opened from a list row starts its own head
 and row. Do not give every tab an owner of its own. The catalog declares entities
-and enables adoption at the owner, covering all its tabs
-(not in the code yet — HIL-1599).
+and enables adoption at the owner, covering all its tabs.
 
 Keep exactly one `h1` on the rendered page: the section title or entity name in
 the head. Preserve the heading's connection to a table's accessible name; do
@@ -48,15 +47,14 @@ Follow the catalog's parent tree from the root of the branch through the owner
 of the row. The current tab is not appended. A list contributes a link when it
 is a separate tab on the path to an entity; when the section itself is the list,
 the section link already serves that purpose. Keep repeated captions when two
-different catalog entries on that path have the same caption
-(not in the code yet — HIL-1599).
+different catalog entries on that path have the same caption.
 
 Distinguish three values: the page's **title**, its catalog **Breadcrumb
 caption**, and the **instance name** supplied by the page's data. The Breadcrumb
 caption is separate from title and lead. It labels breadcrumb links and child
 tabs; an empty caption omits that breadcrumb link. The owner's first tab is
-Overview. These are concepts, not proposed field or constant names
-(not in the code yet — HIL-1599).
+Overview. These terms describe distinct concepts; their implementation names
+are listed under Implementation Status And Binding Points.
 
 Do not draw a chain of one link. The last link is text, never a link to itself.
 The application resolves addresses from page keys and route params. An
@@ -70,14 +68,17 @@ Build the row in catalog order: the owner first as Overview, then its child
 pages except entities. A non-entity child of a tab follows its parent in the
 same row. The open page itself is current, including such a child; do not mark
 its parent instead. Entity pages opened from lists are new owners, never tabs
-in the containing owner's row (not in the code yet — HIL-1599).
+in the containing owner's row.
 
 Use the same eligibility decision as dashboard cards: omit pages that are
 absent, disabled, not connected by the project, not built in the active view
 layer, or inapplicable to this instance. For example, a letter-frame page is
-applicable to Email, not SMS. Preserve the existing server-served and
-view-layer-built filtering when calculating the new row
-(not in the code yet — HIL-1599).
+applicable to Email, not SMS. The backend checks whether the project serves
+each page and calls `AbstractPage::isTabApplicable()` with the owner's route
+params; an absent or inapplicable page removes its branch. Filtering to pages
+built in the active view layer remains part of each frontend adoption: Vue
+(not in the code yet — HIL-1602), React (not in the code yet — HIL-1604), and
+Angular (not in the code yet — HIL-1605).
 
 Draw at most one row. With only one eligible tab, hide the row but keep the
 head. Do not put counts, badges, alarm dots or disabled tabs in it; counts and
@@ -91,8 +92,8 @@ The server sends the owner, breadcrumb skeleton and tab row in the **same
 `page_response`** as the page data. No second catalog request, action on mount,
 or companion signal supplies the first screen. This extends the existing
 [one-reply rule](../signals/subscriptions.md#one-subscription-answers-everything-the-page-renders);
-the owner-based identity in that reply is
-(not in the code yet — HIL-1599).
+the owner-based identity in that reply is assembled by the backend catalog
+resolver.
 
 Each tab's page supplies the instance name from its own data to the breadcrumb
 entry with the **entity's page key**, never by position from the end. The same
@@ -184,10 +185,12 @@ gate or enable Internationalization as a whole.
 1. Put the redraw behind **HIL-1606** with `blocked-after`, and wait for its
    merge: it is the shared component and navigation verification gate across
    Vue, React and Angular (not in the code yet — HIL-1606).
-2. Identify the owner and its tabs from the catalog tree. Declare the entity
-   boundaries, Breadcrumb captions and adoption on the owner in the backend
-   catalog, using the API landed by HIL-1599. Its enabling mechanism is
-   (not in the code yet — HIL-1599).
+2. Identify the owner and its tabs from the catalog tree. Declare entity
+   boundaries, Breadcrumb captions and adoption in the backend catalog:
+   `entity: true`, `breadcrumb: '<caption>'`, and `pageHead: true` on the owner.
+   `PageCatalogProviderInterface::pages()` accepts these optional fields, named
+   by `PageCatalogConstants::CATALOG_ENTRY_ENTITY`,
+   `CATALOG_ENTRY_BREADCRUMB`, and `CATALOG_ENTRY_PAGE_HEAD`.
 3. Mount the shared head on every tab of this owner and supply its page-owned
    entity block content. Use the implemented interface, not today's manual
    country header as a proposed generic API. The first Vue carrier is
@@ -219,36 +222,39 @@ adds no product tests or selectors.
 ## Examples
 
 These are navigation scenarios, not declarations of page keys, routes or
-activation. `<name>` is data from the page, not a literal caption. Bold marks
-the current tab. The catalog calculation illustrated below belongs to HIL-1599;
-the country head is first applied by HIL-1602, with React and Angular following
-in HIL-1604 and HIL-1605. Roles, Users and the other examples wait for their own
+activation. The backend owner, breadcrumb and tab calculations are implemented;
+Country is the only owner currently opted in. Its server reply carries the
+catalog head skeleton; `<name>` is data from the page, not a literal caption,
+and binding its live value remains HIL-1601. Bold marks the current tab. The
+Country head is first drawn by HIL-1602, with React and Angular following in
+HIL-1604 and HIL-1605. Roles, Users and the other examples wait for their own
 redraws; naming them here does not enable them.
 
-| Open page | Owner | Breadcrumb | Row | Catalog calculation |
-|---|---|---|---|---|
-| Country Overview | Country instance | Hilos › Internationalization › Countries › `<name>` | **Overview** / Names | (not in the code yet — HIL-1599) |
-| Country Names | Same country instance | Hilos › Internationalization › Countries › `<name>` | Overview / **Names** | (not in the code yet — HIL-1599) |
-| Role Overview, from a separate Roles list tab | Role instance | Hilos › Roles › Roles › `<name>` | **Overview** / Rights / Grants / History | (not in the code yet — HIL-1599) |
-| Users, where the section itself is the list | Users section | Hilos › Users | No row: only the owner page | (not in the code yet — HIL-1599) |
-| Person Overview, from that Users list | Person instance | Hilos › Users › `<name>` | **Overview** / Roles / Access / Sessions | (not in the code yet — HIL-1599) |
-| Machine, a non-entity child of Gaps | Internationalization section | Hilos › Internationalization | Overview / Languages / Countries / Entities / Pages / Groups / Actions / Messages / Gaps / **Machine** / Other findings | (not in the code yet — HIL-1599) |
+| Open page | Owner | Breadcrumb | Row |
+|---|---|---|---|
+| Country Overview | Country instance | Hilos › Internationalization › Countries › `<name>` | **Overview** / Names |
+| Country Names | Same country instance | Hilos › Internationalization › Countries › `<name>` | Overview / **Names** |
+| Role Overview, from a separate Roles list tab | Role instance | Hilos › Roles › Roles › `<name>` | **Overview** / Rights / Grants / History |
+| Users, where the section itself is the list | Users section | Hilos › Users | No row: only the owner page |
+| Person Overview, from that Users list | Person instance | Hilos › Users › `<name>` | **Overview** / Roles / Access / Sessions |
+| Machine, a non-entity child of Gaps | Internationalization section | Hilos › Internationalization | Overview / Languages / Countries / Entities / Pages / Groups / Actions / Messages / Gaps / **Machine** / Other findings |
 
 The two country tabs share the chain ending at the country, not at Names. Roles
 repeats because the section and its separate list are different entries. Users
 does not repeat because its section is its list. Machine follows Gaps in the
-same row and is itself current; it does not create another row. These examples
-exercise the ownership calculation (not in the code yet — HIL-1599).
+same row and is itself current; it does not create another row. The other rows
+illustrate the calculation without opting those owners in.
 
 ## Implementation Status And Binding Points
 
 The paths here locate implementation work; an author can follow the adoption
 sequence without studying these files. They do not specify a future API.
 
-| Area | Current binding point | Remaining behavior and owner |
+| Area | Current binding point | Current state and remaining behavior |
 |---|---|---|
-| Backend catalog | `framework/backend/Database/Pages/PageCatalogProviderInterface.php`, `PageCatalogResolver.php`, `PageCatalogConstants.php` | Separate Breadcrumb caption, entity declaration, owner switch, chain/row calculation and identity carried in the page reply (not in the code yet — HIL-1599) |
-| Backend assembly | `framework/backend/Core/Page/AbstractPage.php`, `servedPageCards()` and `withPageIdentity()` | Assemble the adopted owner's identity while preserving serving filters and existing payload precedence (not in the code yet — HIL-1599) |
+| Backend catalog | `PageCatalogProviderInterface::pages()`, `PageCatalogConstants`, `HilosPageCatalog::CATALOG`, `TopologyValidator::validatePageCatalogEntry()` and `validatePageCatalogHead()` | Optional `breadcrumb`, `entity` and `pageHead` fields; validation checks their types, owner placement and non-empty captions for tabs of an adopted owner. Country is the only current owner opted in. |
+| Backend owner and row calculation | `PageCatalogResolver::identity()`, `rowOwner()`, `rowOwnerOf()`, `breadcrumb()`, `head()`, `children()` and private `pageTabs()` | Resolves the nearest entity or top-level admin section, uses legacy page-label breadcrumbs for unadopted owners, and builds the adopted breadcrumb and depth-first row. The row filters pages the project serves and pages applicable to the owner's route params. |
+| Backend assembly | `AbstractPage::onSubscribe()`, `withPageIdentity()`, `servedPageCards()` and `PageHead::toArray()` | Adds `pageHeadOwner`, `pageBreadcrumb`, `pageTabs` and empty `pageChildren` to the same `page_response`. The readonly `PageHead` is built for the subscription; `pageLabel` and `pageLead` remain the subscribing page's identity, with the existing admin/viewer payload precedence. |
 | Name and Vue title | `framework/frontend/core/src/admin/identity/hilosPageIdentity.ts`, `framework/frontend/core/src/routing/pageTitle.ts`, `framework/frontend/core/src/bootstrap/bootHilos.ts` | Instance name by entity key and its reactive title binding (not in the code yet — HIL-1601) |
 | Vue head and country | `framework/frontend/vue/src/HilosAdminPage.vue`; `framework/frontend/vue/src/admin/i18n/details/HilosI18nCountryHeader.vue`, `HilosI18nCountryPage.vue`, `HilosI18nCountryNamesPage.vue` | Shared head/block/row and both country tabs using it (not in the code yet — HIL-1602) |
 | React parity | `framework/frontend/react/src/HilosAdminPage.tsx` and its country page modules | Equivalent head, states, accessibility, live name and title (not in the code yet — HIL-1604) |
@@ -257,12 +263,31 @@ sequence without studying these files. They do not specify a future API.
 | Live 404, clients | The page error surfaces in all three view layers | Show that line, remove the head and preserve an open modal draft (not in the code yet — HIL-1603) |
 | Adoption gate | HIL-1606 | Shared e2e navigation coverage before other owners' redraws (not in the code yet — HIL-1606) |
 
-Today the resolver walks through the current page using `label` and returns
-children as cards. The constants describe `label`, `lead`, `parent`, `icon` and
-the existing `pageLabel`, `pageLead`, `pageBreadcrumb`, `pageChildren` identity.
-`withPageIdentity()` lets a page's payload override the catalog, reversing that
-precedence for a viewer; preserve both behaviors and Analytics' existing use of
-`pageLabel`. The current country header has a manual row; it is not the shared
+`PageCatalogConstants` names the optional catalog fields `breadcrumb`, `entity`
+and `pageHead`, separately from wire keys. `PageCatalogResolver::rowOwner()`
+finds the nearest entity even when its head is not enabled, or the top-level
+admin section; it returns null for the dashboard and pages outside the admin
+tree. `breadcrumb()` keeps the legacy label chain through the subscribing page
+unless its owner opted in. For an adopted owner it walks through that owner,
+uses `breadcrumb` with `label` as fallback, and omits empty captions. `children()`
+continues to build legacy child cards. `head()` returns a fresh readonly
+`PageHead` only for an adopted owner; its `pageHeadOwner` is that owner's
+catalog identity, `pageBreadcrumb` ends at the owner, and `pageTabs` starts with
+Overview followed by served non-entity descendants in depth-first catalog
+order. A missing or inapplicable page removes its branch. `TopologyValidator`
+checks the metadata types and owner/caption constraints after catalog shape,
+parents and cycles validate.
+
+`AbstractPage::onSubscribe()` passes the route params to `withPageIdentity()`,
+which adds `pageHeadOwner`, `pageBreadcrumb`, `pageTabs` and an empty
+`pageChildren` to the existing shell in the same `page_response`. The resolver
+does not filter by modules built in the active frontend; that part remains with
+the Vue, React and Angular leaves above. `pageLabel` and `pageLead` continue to
+describe the subscribing page, including Analytics' existing use of
+`pageLabel`. The page payload still wins over catalog identity for an
+administrator (`$payload->data + $shell`); the shell wins for an admin-view-mode
+viewer (`$shell + $payload->data`) after the page's own data is hidden. The
+current country header still draws a manual row; it is not the shared frontend
 API described here. Do not turn the legacy chain into the owner's chain on
 pages whose owner has not opted in.
 

@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\AdminViewMode\WireField;
 use Hilos\Constants\HilosPageConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserPageBindings;
@@ -18,12 +19,16 @@ use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
+use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
@@ -40,8 +45,10 @@ use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Collection\RtCollection;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\Item\RtItem;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
 use Hilos\Utils\Logger;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -118,6 +125,79 @@ final class AbstractPageAdminViewModeTest extends TestCase
             ],
             $payload,
         );
+    }
+
+    /**
+     * @param class-string<PageViewerTestPage> $pageClass Adopted page to subscribe
+     * @param bool $viewer Whether the page's personal data must be hidden
+     * @param string $label Subscribed page's own catalog label
+     * @param string $lead Subscribed page's own catalog lead
+     */
+    #[DataProvider('headPages')]
+    public function testAnAdoptedPageCarriesItsHeadOutsideThePersonalData(
+        string $pageClass,
+        bool $viewer,
+        string $label,
+        string $lead,
+    ): void {
+        PageViewerHeadTestHilos::initBrowser(new PageViewerTestBrowser(viewer: $viewer));
+        Hilos::$sr = new PageViewerHeadTestSignalRouter();
+        $shell = self::headShell($label, $lead);
+
+        $payload = $this->answer(
+            new $pageClass(new PageViewerTestAgent()),
+            new PageRouteParams(['countryCode' => 'us']),
+        );
+
+        $this->assertSame([
+            PagePayload::entities => ['currentUser' => $viewer ? HiddenValue::mark() : ['id' => 7, 'name' => 'Ada']],
+            PagePayload::data => $viewer
+                ? $shell + ['declared' => 'shown', 'undeclared' => HiddenValue::mark()]
+                : ['declared' => 'shown', 'undeclared' => 'secret', PageCatalogConstants::WIRE_PAGE_LABEL => 'Mine'] + $shell,
+        ], $payload);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    /** @return iterable<string, array{class-string<PageViewerTestPage>, bool, string, string}> Owner and tab under both verdicts */
+    public static function headPages(): iterable
+    {
+        foreach ([false, true] as $viewer) {
+            $role = $viewer ? 'viewer' : 'admin';
+            yield 'owner ' . $role => [
+                PageViewerHeadTestPage::class, $viewer, 'Country', 'A single country: currency, default locale, and state.',
+            ];
+            yield 'tab ' . $role => [
+                PageViewerHeadNamesTestPage::class, $viewer, 'Country names', 'How this country is named in each language.',
+            ];
+        }
+    }
+
+    public function testARefusedConnectionGetsNoAdoptedHead(): void
+    {
+        PageViewerHeadTestHilos::initBrowser();
+        Hilos::$sr = new PageViewerHeadTestSignalRouter();
+        $router = new PageSignalRouter(
+            new HilosPageFactory(new PageViewerTestAgent(), PageViewerHeadTestHilos::class),
+            new ActionRouteConfig(),
+        );
+
+        foreach ([[null, 401], [5, 403]] as [$userId, $httpCode]) {
+            Hilos::$browser = new IdentityTestBrowser(userId: $userId, admin: false);
+            $router->dispatchPageSubscribe(
+                new WebSocketPageSubscribeSignalDTO('ak-1', PageViewerHeadTestPage::PAGE, ['countryCode' => 'us']),
+                SignalSource::WORKER,
+                PageViewerHeadTestPage::PAGE,
+            );
+
+            $signal = Hilos::$sr?->getNextQueuedSignal();
+            $this->assertNotNull($signal);
+            $this->assertSame(SignalConstants::SUBSCRIPTION_PAGE_ERROR, $signal->signalName->getName());
+            $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+            $this->assertInstanceOf(PageSubscriptionErrorSignalData::class, $signal->data->data);
+            $this->assertSame($httpCode, $signal->data->data->httpCode);
+            $this->assertArrayNotHasKey(PageResponseSignalData::payload, $signal->data->data->toArray());
+            $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+        }
     }
 
     public function testTheDashboardShowsAViewerItsSections(): void
@@ -215,11 +295,12 @@ final class AbstractPageAdminViewModeTest extends TestCase
      * Subscribes the page and returns the payload of the answer it queued.
      *
      * @param AbstractPage $page Page to subscribe
+     * @param ?PageRouteParams $params Subscription params, empty by default
      * @return array<string, mixed> Payload of the page_response frame
      */
-    private function answer(AbstractPage $page): array
+    private function answer(AbstractPage $page, ?PageRouteParams $params = null): array
     {
-        $page->onSubscribe('ak-1', new PageRouteParams([]));
+        $page->onSubscribe('ak-1', $params ?? new PageRouteParams([]));
 
         $signal = Hilos::$sr?->getNextQueuedSignal();
         $this->assertNotNull($signal);
@@ -263,12 +344,41 @@ final class AbstractPageAdminViewModeTest extends TestCase
             PageCatalogConstants::WIRE_PAGE_CHILDREN => [],
         ];
     }
+
+    /**
+     * @param string $label Subscribed page's own catalog label
+     * @param string $lead Subscribed page's own catalog lead
+     * @return array<string, mixed> Exact country shell shared by admin and viewer
+     */
+    private static function headShell(string $label, string $lead): array
+    {
+        return [
+            PageCatalogConstants::WIRE_PAGE_LABEL => $label,
+            PageCatalogConstants::WIRE_PAGE_LEAD => $lead,
+            PageCatalogConstants::WIRE_PAGE_BREADCRUMB => [
+                ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                ['page' => HilosPageConstants::HILOS_I18N, 'label' => 'Internationalization'],
+                ['page' => HilosPageConstants::HILOS_I18N_COUNTRIES, 'label' => 'Countries'],
+                ['page' => HilosPageConstants::HILOS_I18N_COUNTRY, 'label' => 'Country'],
+            ],
+            PageCatalogConstants::WIRE_PAGE_CHILDREN => [],
+            PageCatalogConstants::WIRE_PAGE_HEAD_OWNER => [
+                'page' => HilosPageConstants::HILOS_I18N_COUNTRY,
+                'label' => 'Country',
+                'lead' => 'A single country: currency, default locale, and state.',
+            ],
+            PageCatalogConstants::WIRE_PAGE_TABS => [
+                ['page' => HilosPageConstants::HILOS_I18N_COUNTRY, 'label' => 'Overview'],
+                ['page' => HilosPageConstants::HILOS_I18N_COUNTRY_NAMES, 'label' => 'Names'],
+            ],
+        ];
+    }
 }
 
 /**
  * An admin page standing on a catalog entry, with data it declares, data it does not, and a key named like the shell.
  */
-final class PageViewerTestPage extends AbstractPage
+class PageViewerTestPage extends AbstractPage
 {
     public const string PAGE = HilosPageConstants::HILOS_LOGS_KEYS;
 
@@ -300,6 +410,52 @@ final class PageViewerTestPage extends AbstractPage
     public static function frameFor(string $acceptKey, SignalDataInterface $frame): ?SignalDataInterface
     {
         return static::frameForViewer($acceptKey, $frame, ['declared' => WireField::notPersonal()]);
+    }
+}
+
+final class PageViewerHeadTestPage extends PageViewerTestPage
+{
+    public const string PAGE = HilosPageConstants::HILOS_I18N_COUNTRY;
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'page-viewer-test';
+}
+
+final class PageViewerHeadNamesTestPage extends PageViewerTestPage
+{
+    public const string PAGE = HilosPageConstants::HILOS_I18N_COUNTRY_NAMES;
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'page-viewer-test';
+
+    /**
+     * @param PageRouteParams $ownerParams Current subscription's country coordinates
+     * @return bool Whether the params reached the head assembler
+     */
+    public static function isTabApplicable(PageRouteParams $ownerParams): bool
+    {
+        return $ownerParams->getString('countryCode') === 'us';
+    }
+}
+
+final class PageViewerHeadTestHilos extends Hilos
+{
+    public const array PAGES = [
+        PageViewerHeadTestPage::PAGE => PageViewerHeadTestPage::class,
+        PageViewerHeadNamesTestPage::PAGE => PageViewerHeadNamesTestPage::class,
+    ];
+
+    /** @return HilosDbContext Empty fixture database context */
+    protected static function createDb(): HilosDbContext
+    {
+        return new PageViewerTableTestDbContext();
+    }
+}
+
+final class PageViewerHeadTestSignalRouter extends SignalRouter
+{
+    /** @return class-string<Hilos> Facade serving the two adopted fixture pages */
+    protected function hilosClass(): string
+    {
+        return PageViewerHeadTestHilos::class;
     }
 }
 

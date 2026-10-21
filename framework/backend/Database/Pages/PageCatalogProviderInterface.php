@@ -25,7 +25,13 @@ interface PageCatalogProviderInterface
     /**
      * Returns the project's page entries, keyed by page key.
      *
-     * @return array<string, array{label: string, lead: string, parent?: string, icon?: string}> Page identity per page key
+     * Breadcrumb defaults to label; an empty caption omits the adopted breadcrumb link.
+     * Entity boundaries and owner head adoption both default to false.
+     *
+     * @return array<string, array{
+     *     label: string, lead: string, parent?: string, icon?: string,
+     *     breadcrumb?: string, entity?: bool, pageHead?: bool
+     * }> Catalog metadata per page key
      */
     public static function pages(): array;
 

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Pages;
 
+use Hilos\Constants\HilosPageConstants;
+use Hilos\Core\Page\PageRouteParams;
+use Hilos\Database\Pages\DTO\PageHead;
 use Hilos\Hilos;
 
 /**
@@ -27,14 +30,20 @@ final class PageCatalogResolver
      * provider rather than held flat so that a second facade - which only a test binds - gets its
      * own answer instead of the first one's.
      *
-     * @var array<string, array<string, array{label: string, lead: string, parent?: string, icon?: string}>> Merged catalog per provider class
+     * @var array<string, array<string, array{
+     *     label: string, lead: string, parent?: string, icon?: string,
+     *     breadcrumb?: string, entity?: bool, pageHead?: bool
+     * }>> Immutable catalog metadata per provider class
      */
     private static array $catalogs = [];
 
     /**
      * Returns the merged catalog, keyed by page key.
      *
-     * @return array<string, array{label: string, lead: string, parent?: string, icon?: string}> Page identity per page key
+     * @return array<string, array{
+     *     label: string, lead: string, parent?: string, icon?: string,
+     *     breadcrumb?: string, entity?: bool, pageHead?: bool
+     * }> Catalog metadata per page key
      */
     public static function catalog(): array
     {
@@ -48,7 +57,10 @@ final class PageCatalogResolver
      * running one, so the provider arrives by name instead of through the facade.
      *
      * @param class-string<PageCatalogProviderInterface> $provider Page catalog provider class
-     * @return array<string, array{label: string, lead: string, parent?: string, icon?: string}> Page identity per page key
+     * @return array<string, array{
+     *     label: string, lead: string, parent?: string, icon?: string,
+     *     breadcrumb?: string, entity?: bool, pageHead?: bool
+     * }> Catalog metadata per page key
      */
     public static function catalogOf(string $provider): array
     {
@@ -72,24 +84,66 @@ final class PageCatalogResolver
             return null;
         }
 
-        // Identity is the entry minus its place in the tree, which the breadcrumb reads instead.
-        unset($entry[PageCatalogConstants::CATALOG_ENTRY_PARENT]);
+        $identity = [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => $entry[PageCatalogConstants::CATALOG_ENTRY_LABEL],
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => $entry[PageCatalogConstants::CATALOG_ENTRY_LEAD],
+        ];
+        if (isset($entry[PageCatalogConstants::CATALOG_ENTRY_ICON])) {
+            $identity[PageCatalogConstants::CATALOG_ENTRY_ICON] = $entry[PageCatalogConstants::CATALOG_ENTRY_ICON];
+        }
 
-        return $entry;
+        return $identity;
     }
 
     /**
-     * Returns the breadcrumb chain of a page, the dashboard first and the page itself last.
-     *
-     * A page at the root of the tree gets a chain of one link, itself. A page the catalog does
-     * not carry gets an empty chain, the same non-error as {@see self::identity()}.
-     *
-     * The walk up `parent` is not guarded against a broken tree, deliberately: a parent naming
-     * no entry, or a cycle, is refused by topology validation before the daemon serves anything,
-     * and a runtime guard here would swallow the typo the startup check exists to show.
+     * @param string $page Page key
+     * @return ?string Nearest entity or top-level admin section; null outside the admin branch or on the dashboard
+     */
+    public static function rowOwner(string $page): ?string
+    {
+        return self::rowOwnerOf($page, Hilos::getPageCatalogClass());
+    }
+
+    /**
+     * Resolves ownership before a facade is bound. Adoption never changes entity boundaries.
      *
      * @param string $page Page key
-     * @return list<array{page: string, label: string}> Breadcrumb links from the root down to this page
+     * @param class-string<PageCatalogProviderInterface> $provider Page catalog provider class
+     * @return ?string Row owner, or null outside the admin branch, on the dashboard or for an unknown page
+     */
+    public static function rowOwnerOf(string $page, string $provider): ?string
+    {
+        $catalog = self::catalogOf($provider);
+        if (!isset($catalog[$page]) || $page === HilosPageConstants::HILOS_DASHBOARD) {
+            return null;
+        }
+
+        $entity = null;
+        $key = $page;
+        while ($key !== null) {
+            $entry = $catalog[$key];
+            if ($entity === null && ($entry[PageCatalogConstants::CATALOG_ENTRY_ENTITY] ?? false)) {
+                $entity = $key;
+            }
+
+            $parent = $entry[PageCatalogConstants::CATALOG_ENTRY_PARENT] ?? null;
+            if ($parent === HilosPageConstants::HILOS_DASHBOARD) {
+                return $entity ?? $key;
+            }
+            $key = $parent;
+        }
+
+        return null;
+    }
+
+    /**
+     * Adopted rows end at the owner and use breadcrumb captions, omitting explicit empty captions.
+     * Other pages keep their legacy label chain through the subscribing page itself.
+     *
+     * Startup topology validation refuses missing parents and cycles; this walk does not hide them.
+     *
+     * @param string $page Page key
+     * @return list<array{page: string, label: string}> Breadcrumb links from the root, or empty for an unknown page
      */
     public static function breadcrumb(string $page): array
     {
@@ -98,18 +152,46 @@ final class PageCatalogResolver
             return [];
         }
 
+        $owner = self::rowOwner($page);
+        $adopted = $owner !== null && ($catalog[$owner][PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD] ?? false);
         $crumbs = [];
-        $key = $page;
+        $key = $adopted ? $owner : $page;
         while ($key !== null) {
             $entry = $catalog[$key];
-            $crumbs[] = [
-                PageCatalogConstants::WIRE_CRUMB_PAGE => $key,
-                PageCatalogConstants::WIRE_CRUMB_LABEL => $entry[PageCatalogConstants::CATALOG_ENTRY_LABEL],
-            ];
+            $label = $adopted
+                ? ($entry[PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB] ?? $entry[PageCatalogConstants::CATALOG_ENTRY_LABEL])
+                : $entry[PageCatalogConstants::CATALOG_ENTRY_LABEL];
+            if (!$adopted || $label !== '') {
+                $crumbs[] = [
+                    PageCatalogConstants::WIRE_CRUMB_PAGE => $key,
+                    PageCatalogConstants::WIRE_CRUMB_LABEL => $label,
+                ];
+            }
             $key = $entry[PageCatalogConstants::CATALOG_ENTRY_PARENT] ?? null;
         }
 
         return array_reverse($crumbs);
+    }
+
+    /**
+     * Builds a fresh head for this subscription without retaining params or applicability results.
+     *
+     * @param string $page Subscribing page key
+     * @param PageRouteParams $ownerParams Current subscription params containing the owner's coordinates
+     * @return ?PageHead Shared head, or null when this page has no adopted owner
+     */
+    public static function head(string $page, PageRouteParams $ownerParams): ?PageHead
+    {
+        $owner = self::rowOwner($page);
+        if ($owner === null || !(self::catalog()[$owner][PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD] ?? false)) {
+            return null;
+        }
+
+        return new PageHead(
+            pageHeadOwner: [PageCatalogConstants::WIRE_OWNER_PAGE => $owner] + self::identity($owner),
+            pageBreadcrumb: self::breadcrumb($page),
+            pageTabs: self::pageTabs($owner, $ownerParams, true),
+        );
     }
 
     /**
@@ -163,5 +245,44 @@ final class PageCatalogResolver
     public static function dashboardSectionsOf(string $provider): array
     {
         return array_merge(HilosPageCatalog::DASHBOARD_SECTIONS, $provider::dashboardSections());
+    }
+
+    /**
+     * An absent or inapplicable candidate removes its whole branch; entities begin another row.
+     *
+     * @param string $page Candidate page key
+     * @param PageRouteParams $ownerParams Current subscription params containing the owner's coordinates
+     * @param bool $owner Whether this candidate is the row's owner
+     * @return list<array{page: string, label: string}> Tab wire entries in depth-first catalog order
+     */
+    private static function pageTabs(string $page, PageRouteParams $ownerParams, bool $owner = false): array
+    {
+        if (!Hilos::$sr->servesPage($page)) {
+            return [];
+        }
+
+        $pageClass = Hilos::appClass()::PAGES[$page] ?? null;
+        if ($pageClass === null || !$pageClass::isTabApplicable($ownerParams)) {
+            return [];
+        }
+
+        $catalog = self::catalog();
+        $tabs = [[
+            PageCatalogConstants::WIRE_TAB_PAGE => $page,
+            PageCatalogConstants::WIRE_TAB_LABEL => $owner
+                ? HilosPageCatalog::OVERVIEW_LABEL
+                : ($catalog[$page][PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB]
+                    ?? $catalog[$page][PageCatalogConstants::CATALOG_ENTRY_LABEL]),
+        ]];
+        foreach ($catalog as $key => $entry) {
+            if (($entry[PageCatalogConstants::CATALOG_ENTRY_PARENT] ?? null) !== $page
+                || ($entry[PageCatalogConstants::CATALOG_ENTRY_ENTITY] ?? false)) {
+                continue;
+            }
+
+            array_push($tabs, ...self::pageTabs($key, $ownerParams));
+        }
+
+        return $tabs;
     }
 }

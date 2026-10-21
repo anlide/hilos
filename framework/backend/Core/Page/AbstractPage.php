@@ -274,6 +274,18 @@ abstract class AbstractPage implements ActionHostInterface
     }
 
     /**
+     * Answers instance applicability without constructing a page or checking subscription access.
+     * Overrides read only the owner's route params, not params specific to a neighboring tab.
+     *
+     * @param PageRouteParams $ownerParams Current subscription params containing the owner's coordinates
+     * @return bool Whether this page belongs in this owner's tab row
+     */
+    public static function isTabApplicable(PageRouteParams $ownerParams): bool
+    {
+        return true;
+    }
+
+    /**
      * Returns the static page identifier.
      *
      * @return string Page identifier from the PAGE constant
@@ -435,7 +447,7 @@ abstract class AbstractPage implements ActionHostInterface
     {
         $pageResource = $this->resolvePageResource($acceptKey, $params);
         $this->onSubscribeBeforeResponse($acceptKey, $params);
-        $own = $this->withPageIdentity($this->buildPagePayload($acceptKey, $params), $acceptKey);
+        $own = $this->withPageIdentity($this->buildPagePayload($acceptKey, $params), $acceptKey, $params);
         $snapshot = Hilos::$browser?->buildSubscribeSnapshot(static::PAGE, $acceptKey, $params) ?? new PagePayload();
         $this->sendToUser(
             SignalTypeConstants::PAGE_RESPONSE,
@@ -1151,11 +1163,15 @@ abstract class AbstractPage implements ActionHostInterface
      * for them - the catalog wins - so the shell stays recognizable, and a key of the page's own that
      * shares a name with the shell never reaches a viewer.
      *
+     * An adopted owner's head replaces the legacy breadcrumb and children in that shell; its
+     * catalog identity and tabs are added after the page's personal data has been hidden.
+     *
      * @param ?PagePayload $payload Payload the page built, or null when it built none
      * @param string $acceptKey Connection the payload goes to
+     * @param PageRouteParams $params Current subscription params for tab applicability
      * @return PagePayload Payload carrying the page identity the catalog holds
      */
-    private function withPageIdentity(?PagePayload $payload, string $acceptKey): PagePayload
+    private function withPageIdentity(?PagePayload $payload, string $acceptKey, PageRouteParams $params): PagePayload
     {
         $payload ??= new PagePayload();
         $viewer = Hilos::$browser?->isAdminViewModeViewer(static::class, $acceptKey) === true;
@@ -1182,6 +1198,7 @@ abstract class AbstractPage implements ActionHostInterface
                 PageCatalogConstants::WIRE_CHILD_PAGE,
             ),
         ];
+        $shell = array_replace($shell, PageCatalogResolver::head(static::PAGE, $params)?->toArray() ?? []);
 
         return new PagePayload(
             entities: $payload->entities,

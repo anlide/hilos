@@ -1238,6 +1238,98 @@ final class TopologyValidatorTest extends TestCase
         );
     }
 
+    /**
+     * Explicit nulls and coercible values do not satisfy the optional metadata types.
+     */
+    public function testPageCatalogHeadMetadataRequiresExactTypes(): void
+    {
+        $this->assertPageCatalogErrors(TopologyPageCatalogHeadTypesHilos::class, [
+            'PAGE_CATALOG[breadcrumb_null][breadcrumb] must be a string',
+            'PAGE_CATALOG[breadcrumb_bool][breadcrumb] must be a string',
+            'PAGE_CATALOG[breadcrumb_int][breadcrumb] must be a string',
+            'PAGE_CATALOG[breadcrumb_array][breadcrumb] must be a string',
+            'PAGE_CATALOG[entity_null][entity] must be a bool',
+            'PAGE_CATALOG[entity_zero][entity] must be a bool',
+            'PAGE_CATALOG[entity_one][entity] must be a bool',
+            'PAGE_CATALOG[entity_float][entity] must be a bool',
+            'PAGE_CATALOG[entity_string][entity] must be a bool',
+            'PAGE_CATALOG[entity_array][entity] must be a bool',
+            'PAGE_CATALOG[head_null][pageHead] must be a bool',
+            'PAGE_CATALOG[head_zero][pageHead] must be a bool',
+            'PAGE_CATALOG[head_one][pageHead] must be a bool',
+            'PAGE_CATALOG[head_float][pageHead] must be a bool',
+            'PAGE_CATALOG[head_string][pageHead] must be a bool',
+            'PAGE_CATALOG[head_array][pageHead] must be a bool',
+        ]);
+    }
+
+    /**
+     * Adoption cannot create an owner on a tab or outside the admin branch, even on an entity.
+     */
+    public function testPageCatalogHeadCanBeEnabledOnlyOnAnAdminRowOwner(): void
+    {
+        $this->assertPageCatalogErrors(TopologyPageCatalogHeadPlacementHilos::class, [
+            'PAGE_CATALOG[' . HilosPageConstants::HILOS_DASHBOARD . '][pageHead] may be true only on an admin row owner',
+            'PAGE_CATALOG[' . HilosPageConstants::HILOS_PROFILE . '][pageHead] may be true only on an admin row owner',
+            'PAGE_CATALOG[' . HilosPageConstants::HILOS_PROFILE_SIGN_IN . '][pageHead] may be true only on an admin row owner',
+            'PAGE_CATALOG[outside_entity][pageHead] may be true only on an admin row owner',
+            'PAGE_CATALOG[outside_child][pageHead] may be true only on an admin row owner',
+            'PAGE_CATALOG[ordinary_tab][pageHead] may be true only on an admin row owner',
+            'PAGE_CATALOG[ordinary_nested_tab][pageHead] may be true only on an admin row owner',
+            'PAGE_CATALOG[adopted_tab][pageHead] may be true only on an admin row owner',
+        ]);
+    }
+
+    /**
+     * Every non-entity descendant in an adopted row needs a caption, including a tab's child.
+     */
+    public function testPageCatalogAdoptedTabsCannotHaveEmptyBreadcrumbCaptions(): void
+    {
+        $this->assertPageCatalogErrors(TopologyPageCatalogHeadBlankTabsHilos::class, [
+            'PAGE_CATALOG[empty_tab][breadcrumb] must be non-empty for a tab of page head owner enabled_section',
+            'PAGE_CATALOG[empty_grandchild][breadcrumb] must be non-empty for a tab of page head owner enabled_section',
+            'PAGE_CATALOG[empty_entity_tab][breadcrumb] must be non-empty for a tab of page head owner enabled_entity',
+        ]);
+    }
+
+    /**
+     * Empty ancestor and owner captions are legal; a disabled entity cuts off the adopted row.
+     */
+    public function testPageCatalogHeadBoundariesAndOptionalDefaultsPassWithoutRuntimeOrRegisteredPages(): void
+    {
+        HilosFacade::$db = null;
+        HilosFacade::$rt = null;
+        HilosFacade::$sr = null;
+
+        $this->assertSame([], TopologyPageCatalogHeadValidHilos::PAGES);
+        TopologyPageCatalogHeadValidHilos::validateTopology();
+        $this->assertNull(HilosFacade::$db);
+        $this->assertNull(HilosFacade::$rt);
+        $this->assertNull(HilosFacade::$sr);
+    }
+
+    /**
+     * The framework country's adopted entity row is valid without activating its pages.
+     */
+    public function testPageCatalogCountryHeadPassesWithoutCountryPageRegistration(): void
+    {
+        $this->assertArrayNotHasKey(HilosPageConstants::HILOS_I18N_COUNTRY, TopologyValidHilos::PAGES);
+        $this->assertArrayNotHasKey(HilosPageConstants::HILOS_I18N_COUNTRY_NAMES, TopologyValidHilos::PAGES);
+        TopologyValidHilos::validateTopology();
+    }
+
+    /**
+     * A head declared before a malformed ancestor must wait for the whole catalog's validation.
+     */
+    public function testPageCatalogMalformedEntriesAndParentsFailBeforeHeadTraversal(): void
+    {
+        $this->assertPageCatalogErrors(TopologyPageCatalogHeadMalformedHilos::class, [
+            'PAGE_CATALOG[malformed_entry] must be an array carrying label and lead',
+            'PAGE_CATALOG[malformed_parent][parent] names no catalog entry',
+            'PAGE_CATALOG[malformed_type][entity] must be a bool',
+        ]);
+    }
+
     public function testWellFormedBrowserDeclarationsPass(): void
     {
         TopologyBrowserValidHilos::validateTopology();
@@ -2042,6 +2134,25 @@ final class TopologyValidatorTest extends TestCase
         TopologySetTreeHoldingHilos::validateTopologyReferences();
 
         $this->addToAssertionCount(2);
+    }
+
+    /**
+     * @param class-string<HilosFacade> $hilosClass Facade carrying the catalog fixture
+     * @param list<string> $expectedErrors Complete catalog errors in declaration order
+     */
+    private function assertPageCatalogErrors(string $hilosClass, array $expectedErrors): void
+    {
+        try {
+            $hilosClass::validateTopology();
+        } catch (InvalidTopologyException $exception) {
+            $this->assertSame(
+                InvalidTopologyException::forErrors($hilosClass, $expectedErrors)->getMessage(),
+                $exception->getMessage(),
+            );
+            return;
+        }
+
+        $this->fail('Expected page catalog validation to fail');
     }
 
     private function assertTopologyErrors(callable $callback, array $expectedFragments): void
@@ -5252,6 +5363,237 @@ final class TopologyPageCatalogCycleHilos extends HilosFacade
     {
         return new TopologyTestDbContext();
     }
+}
+
+/**
+ * Supplies ordinary identity defaults while preserving each fixture's malformed values.
+ */
+abstract class TopologyPageCatalogHeadCatalog implements PageCatalogProviderInterface
+{
+    protected const array ENTRIES = [];
+
+    /**
+     * @return array<string, mixed> Immutable fixture entries with default identity fields
+     */
+    public static function pages(): array
+    {
+        $pages = static::ENTRIES;
+        foreach ($pages as $page => $entry) {
+            if (is_array($entry)) {
+                $pages[$page] = $entry + [
+                    PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Fixture page',
+                    PageCatalogConstants::CATALOG_ENTRY_LEAD => 'A catalog validation fixture.',
+                    PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
+                ];
+            }
+        }
+
+        return $pages;
+    }
+
+    /**
+     * @return list<array{title: string, description: string, items: list<string>}> No additional dashboard sections
+     */
+    public static function dashboardSections(): array
+    {
+        return [];
+    }
+}
+
+final class TopologyPageCatalogHeadTypesCatalog extends TopologyPageCatalogHeadCatalog
+{
+    protected const array ENTRIES = [
+        'breadcrumb_null' => [PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => null],
+        'breadcrumb_bool' => [PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => false],
+        'breadcrumb_int' => [PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 1],
+        'breadcrumb_array' => [PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => []],
+        'entity_null' => [PageCatalogConstants::CATALOG_ENTRY_ENTITY => null],
+        'entity_zero' => [PageCatalogConstants::CATALOG_ENTRY_ENTITY => 0],
+        'entity_one' => [PageCatalogConstants::CATALOG_ENTRY_ENTITY => 1],
+        'entity_float' => [PageCatalogConstants::CATALOG_ENTRY_ENTITY => 0.0],
+        'entity_string' => [PageCatalogConstants::CATALOG_ENTRY_ENTITY => 'true'],
+        'entity_array' => [PageCatalogConstants::CATALOG_ENTRY_ENTITY => []],
+        'head_null' => [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => null],
+        'head_zero' => [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => 0],
+        'head_one' => [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => 1],
+        'head_float' => [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => 0.0],
+        'head_string' => [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => 'false'],
+        'head_array' => [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => []],
+    ];
+}
+
+final class TopologyPageCatalogHeadPlacementCatalog extends TopologyPageCatalogHeadCatalog
+{
+    protected const array ENTRIES = [
+        HilosPageConstants::HILOS_DASHBOARD => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => null,
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ],
+        HilosPageConstants::HILOS_PROFILE => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => null,
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ],
+        HilosPageConstants::HILOS_PROFILE_SIGN_IN => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_PROFILE,
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ],
+        HilosPageConstants::HILOS_LOGS => [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+        'outside_entity' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => null,
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ],
+        'outside_child' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => 'outside_entity',
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ],
+        'ordinary_tab' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_I18N,
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ],
+        'ordinary_nested_tab' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => 'ordinary_tab',
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ],
+        'adopted_tab' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_LOGS,
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ],
+    ];
+}
+
+final class TopologyPageCatalogHeadBlankTabsCatalog extends TopologyPageCatalogHeadCatalog
+{
+    protected const array ENTRIES = [
+        'enabled_section' => [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+        'empty_tab' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => 'enabled_section',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => '',
+        ],
+        'empty_grandchild' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => 'empty_tab',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => '',
+        ],
+        'enabled_entity' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => 'empty_tab',
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ],
+        'empty_entity_tab' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => 'enabled_entity',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => '',
+        ],
+    ];
+}
+
+final class TopologyPageCatalogHeadValidCatalog extends TopologyPageCatalogHeadCatalog
+{
+    protected const array ENTRIES = [
+        HilosPageConstants::HILOS_DASHBOARD => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => null,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => '',
+        ],
+        'enabled_section' => [
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => '',
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => false,
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ],
+        'ordinary_tab' => [PageCatalogConstants::CATALOG_ENTRY_PARENT => 'enabled_section'],
+        'nested_tab' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => 'ordinary_tab',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Nested tab',
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => false,
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => false,
+        ],
+        'disabled_entity' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => 'ordinary_tab',
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => false,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => '',
+        ],
+        'disabled_entity_tab' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => 'disabled_entity',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => '',
+        ],
+        'disabled_nested_tab' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => 'disabled_entity_tab',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => '',
+        ],
+        'plain_section' => [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => false],
+        'plain_tab' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => 'plain_section',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => '',
+        ],
+        'enabled_entity' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => 'nested_tab',
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => '',
+        ],
+        'enabled_entity_tab' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => 'enabled_entity',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Names',
+        ],
+    ];
+}
+
+final class TopologyPageCatalogHeadMalformedCatalog extends TopologyPageCatalogHeadCatalog
+{
+    protected const array ENTRIES = [
+        'head_before_malformed' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => 'malformed_entry',
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ],
+        'malformed_entry' => 17,
+        'head_before_parent' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => 'malformed_parent',
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ],
+        'malformed_parent' => [PageCatalogConstants::CATALOG_ENTRY_PARENT => [HilosPageConstants::HILOS_DASHBOARD]],
+        'head_before_type' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => 'malformed_type',
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ],
+        'malformed_type' => [PageCatalogConstants::CATALOG_ENTRY_ENTITY => []],
+    ];
+}
+
+abstract class TopologyPageCatalogHeadHilos extends HilosFacade
+{
+    /**
+     * @return HilosDbContext No-op context for catalog fixtures
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyPageCatalogHeadTypesHilos extends TopologyPageCatalogHeadHilos
+{
+    protected const string PAGE_CATALOG = TopologyPageCatalogHeadTypesCatalog::class;
+}
+
+final class TopologyPageCatalogHeadPlacementHilos extends TopologyPageCatalogHeadHilos
+{
+    protected const string PAGE_CATALOG = TopologyPageCatalogHeadPlacementCatalog::class;
+}
+
+final class TopologyPageCatalogHeadBlankTabsHilos extends TopologyPageCatalogHeadHilos
+{
+    protected const string PAGE_CATALOG = TopologyPageCatalogHeadBlankTabsCatalog::class;
+}
+
+final class TopologyPageCatalogHeadValidHilos extends TopologyPageCatalogHeadHilos
+{
+    protected const string PAGE_CATALOG = TopologyPageCatalogHeadValidCatalog::class;
+}
+
+final class TopologyPageCatalogHeadMalformedHilos extends TopologyPageCatalogHeadHilos
+{
+    protected const string PAGE_CATALOG = TopologyPageCatalogHeadMalformedCatalog::class;
 }
 
 /**
