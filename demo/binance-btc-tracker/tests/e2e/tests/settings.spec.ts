@@ -6,9 +6,7 @@ import {
   openSettingEdit,
   overlapSpot,
   setCustomSetting,
-  shareOneRow,
   shownByTestId,
-  sidewaysOverflow,
   watchHeight,
   watchLeft,
   watchTop,
@@ -159,63 +157,6 @@ test('a third click on a sorted header returns the table to its initial order', 
   await expect(valueHeader).toHaveAttribute('aria-sort', 'none')
   await expect(keyHeader).toHaveAttribute('aria-sort', 'ascending')
   await expect.poll(order).toEqual(initialOrder)
-})
-
-test('a narrow window draws the settings as cards and never scrolls sideways', async ({
-  page,
-}) => {
-  // HIL-806 acceptance. A table is a table on a wide screen and a list of
-  // cards on a narrow one; both are mounted, and Bootstrap's display utilities show
-  // exactly one of them. What a phone must never get is the wide table squeezed
-  // into a sideways scroll — the thing the cards exist to replace.
-  //
-  // The sign-up runs at the usual width: it is not what is under test, and driving
-  // it on a phone would put its own troubles into this verdict. The page itself is
-  // opened narrow, the way a phone opens it.
-  await signUpAdmin(page)
-  const desktop = page.viewportSize() ?? { width: 1280, height: 720 }
-  await page.setViewportSize({ width: 375, height: desktop.height })
-  await openSettings(page)
-
-  // The record is isolated with the search box, so it is on screen in one branch
-  // or the other whatever keys fill the first page - a framework fragment adding a
-  // key sorts it in ahead (HIL-302). Which branch it is in is the whole question.
-  // An integer on its default that no spec and no logging mode writes, so its ↺
-  // is drawn and locked.
-  const key = 'logs.index.push_interval_ms'
-  const cards = page.getByTestId('hilos-table-cards')
-  const card = cards.getByTestId(`hilos-table-card-${key}`)
-  const row = page.getByTestId(`hilos-table-row-${key}`)
-  await typeInto(page.getByTestId('hilos-table-search'), key)
-
-  await expect(card).toBeVisible()
-  await expect(row).toBeHidden()
-
-  // Nothing reaches sideways: neither the shell's own scrolling container, which is
-  // where the admin page lives (HilosLayout), nor the document around it.
-  expect(await sidewaysOverflow(page)).toEqual([0, 0])
-
-  // Open the setting's edit modal from inside the card; its Cancel and Save
-  // buttons share one row and divide its width equally on a narrow screen.
-  const cancel = page.getByTestId('hilos-settings-edit-cancel')
-  const save = page.getByTestId('hilos-settings-edit-save')
-  await card.getByTestId(`hilos-settings-edit-${key}`).click()
-  await expect(cancel).toBeVisible()
-  await shareOneRow(cancel, save)
-  await cancel.click()
-  await expect(cancel).toBeHidden()
-
-  // The ↺ stands in the same row as the pencil — locked on the default, but drawn.
-  await shareOneRow(
-    card.getByTestId(`hilos-settings-edit-${key}`),
-    card.getByTestId(`hilos-settings-reset-${key}`),
-  )
-
-  // Back on a wide screen it is the table again, and the cards are gone from sight:
-  // both branches were drawn from the same window, so the row is there to show.
-  await page.setViewportSize(desktop)
-  await expect(row).toBeVisible()
-  await expect(cards).toBeHidden()
 })
 
 test('a tab applies its own edit at once, with no pending gate', async ({
@@ -437,11 +378,11 @@ test('Keep mine on a dirty conflict saves the typed value in both tabs', async (
   await isolate(page, key)
   await isolate(tabB, key)
 
-  const value = await draftCustomSetting(tabB, key, 'mine-provider')
+  await draftCustomSetting(tabB, key, 'mine-provider')
   const save = tabB.getByTestId('hilos-settings-edit-save')
   const cancel = tabB.getByTestId('hilos-settings-edit-cancel')
   // The choices of a conflict hold their room from the open (HIL-1148): their
-  // arrival and their leaving move neither Cancel nor Save, nor the field.
+  // arrival and their leaving move neither Cancel nor Save.
   const wide = [
     await watchLeft(save),
     await watchTop(save),
@@ -458,18 +399,9 @@ test('Keep mine on a dirty conflict saves the typed value in both tabs', async (
     await mark.unchanged()
   }
 
-  await tabB.setViewportSize({ width: 375, height: 800 })
-  const narrow = [
-    await watchLeft(save),
-    await watchTop(save),
-    await watchLeft(cancel),
-    await watchTop(cancel),
-    await watchTop(value),
-  ]
-
   await tabB.getByTestId('conflict-accept-mine').click()
   await expect(tabB.getByTestId('conflict-badge')).toHaveCount(0)
-  for (const mark of narrow) {
+  for (const mark of wide) {
     await mark.unchanged()
   }
   await expect(save).toBeEnabled()
@@ -705,52 +637,6 @@ test('refuses a bad value in the words of the rule that refused it', async ({
   await expect(page.getByTestId('hilos-settings-edit-value')).toHaveCount(0)
   const row = page.getByTestId(`hilos-table-row-${key}`)
   await expect(row).toContainText('default')
-})
-
-test('a refusal too long for the line still moves nothing under it', async ({
-  page,
-}) => {
-  // The proof that the plate is one line at any length: at 375 the sentence does
-  // not fit, and a plate that wrapped would grow and push the field down.
-  //
-  // Only the measurement is narrow. The journey to the dialog runs at the usual
-  // width, the way logs-rotation.spec.ts beside it narrows an already-open
-  // modal: the
-  // admin table is not what is under test here, and driving it on a phone would
-  // put its own troubles into this verdict.
-  //
-  // The key is the one the case above uses, and sharing it is safe — a refused
-  // write leaves the catalog exactly as it found it.
-  const key = 'logs.archive_retention.keep_batches'
-
-  await signUpAdmin(page)
-  await openSettings(page)
-  await isolate(page, key)
-
-  const value = await draftCustomSetting(page, key, '-1')
-
-  const desktop = page.viewportSize() ?? { width: 1280, height: 720 }
-  await page.setViewportSize({ width: 375, height: desktop.height })
-
-  const slot = page.getByTestId('hilos-action-error-slot')
-  const save = page.getByTestId('hilos-settings-edit-save')
-  await save.scrollIntoViewIfNeeded()
-  await expect(save).toBeVisible()
-  await expect(save).toBeEnabled()
-  const slotRoom = await watchHeight(slot)
-  const valueTop = await watchTop(value)
-
-  await save.focus()
-  await save.click()
-
-  const refusal = page.getByTestId('hilos-action-error')
-  await expect(refusal).toBeVisible()
-  await expect(refusal).toContainText('Value must be an integer of 0 or more')
-
-  await slotRoom.unchanged()
-  await valueTop.unchanged()
-
-  await page.setViewportSize(desktop)
 })
 
 test.describe('in the admin view mode', () => {

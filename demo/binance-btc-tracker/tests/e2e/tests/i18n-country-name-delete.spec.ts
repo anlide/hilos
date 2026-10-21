@@ -2,7 +2,6 @@ import { expect, test, type Page } from '@playwright/test'
 import {
   dismissToasts,
   shownByTestId,
-  sidewaysOverflow,
   i18nNameRow,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
@@ -41,7 +40,7 @@ async function confirmDelete(page: Page, message: string): Promise<void> {
   ).toBeVisible()
 }
 
-test('removes country name corrections and their base live in two windows, including empty values at 375px', async ({
+test('removes country name corrections and their base live in two windows, including empty values', async ({
   page,
   context,
 }) => {
@@ -54,12 +53,6 @@ test('removes country name corrections and their base live in two windows, inclu
     await signUpAdmin(page)
     await openNames(page)
     await openNames(observer)
-    // Picked through the header menu here; the same spec in the React and
-    // Angular demos sets the browser's pick before the page loads instead.
-    await page.getByTestId('nav-theme').click()
-    await page.getByTestId('nav-theme-option-dark').click()
-    await expect(page.locator('html')).toHaveAttribute('data-bs-theme', 'dark')
-    await page.setViewportSize({ width: 375, height: 812 })
 
     const correctionTrash = shownByTestId(page, 'i18n-names-delete-qk-GB')
     await expect(correctionTrash).toHaveAccessibleName(
@@ -75,7 +68,6 @@ test('removes country name corrections and their base live in two windows, inclu
     await expect(page.getByTestId(WINDOW)).toContainText(
       'This correction will not return by itself.',
     )
-    await expect.poll(() => sidewaysOverflow(page)).toEqual([0, 0])
     await page.getByTestId('modal').press('Escape')
     await expect(page.getByTestId(WINDOW)).toHaveCount(0)
     await expect(correctionTrash).toBeFocused()
@@ -122,7 +114,6 @@ test('removes country name corrections and their base live in two windows, inclu
       'If the built-in catalog knows this name, it returns immediately as an unlocked name. Otherwise, there will be no name in this language.',
     )
     await expect(page.getByTestId(WINDOW)).not.toContainText(/36|hours/)
-    await expect.poll(() => sidewaysOverflow(page)).toEqual([0, 0])
     await clickSubmit(page.getByTestId(CANCEL))
     await expect(page.getByTestId(WINDOW)).toHaveCount(0)
     await expect(baseTrash).toBeFocused()

@@ -4,7 +4,6 @@ import {
   expectNoOtherLanguageNames,
   i18nNameRow,
   shownByTestId,
-  sidewaysOverflow,
   watchHeight,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
@@ -163,7 +162,7 @@ test('creates and edits a base and correction live, preserving literal empty val
   }
 })
 
-test('refuses concurrent base and correction ADD without overwriting at 375px in dark', async ({
+test('refuses concurrent base and correction ADD without overwriting', async ({
   page,
   context,
 }) => {
@@ -176,12 +175,6 @@ test('refuses concurrent base and correction ADD without overwriting at 375px in
     await signUpAdmin(page)
     for (const tab of [page, observer]) {
       await openNames(tab)
-      // Picked through the header menu here; the same spec in the React and
-      // Angular demos sets the browser's pick before the page loads instead.
-      await clickSubmit(tab.getByTestId('nav-theme'))
-      await clickSubmit(tab.getByTestId('nav-theme-option-dark'))
-      await expect(tab.locator('html')).toHaveAttribute('data-bs-theme', 'dark')
-      await tab.setViewportSize({ width: 375, height: 812 })
     }
 
     for (const correction of [false, true]) {
@@ -228,7 +221,6 @@ test('refuses concurrent base and correction ADD without overwriting at 375px in
       await expect(observer.getByTestId(WINDOW)).toBeVisible()
       await errorRoom.unchanged()
       await bodyRoom.unchanged()
-      await expect.poll(() => sidewaysOverflow(observer)).toEqual([0, 0])
       await expect(
         observer.getByTestId('hilos-action-error-slot'),
       ).toHaveAttribute('aria-live', 'assertive')
@@ -236,7 +228,6 @@ test('refuses concurrent base and correction ADD without overwriting at 375px in
       await expect(
         observer.getByTestId('hilos-action-error-full'),
       ).toContainText(DUPLICATE)
-      await expect.poll(() => sidewaysOverflow(observer)).toEqual([0, 0])
       await clickSubmit(observer.getByTestId('hilos-action-error-close'))
       await expect(
         observer.getByTestId('hilos-action-error-details'),

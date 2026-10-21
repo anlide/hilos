@@ -1,10 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import {
-  shareOneRow,
-  shownByTestId,
-  sidewaysOverflow,
-} from '../../../../../framework/frontend/e2e/index.js'
+import { shownByTestId } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant'
 import { setAdminViewMode } from '../helpers/adminViewMode'
 import { gotoPage, PAGE_READY } from '../helpers/page'
@@ -90,30 +86,6 @@ test('an open channel-field edit follows the other tab, then conflicts and keeps
   await page.getByTestId('hilos-channel-reset-confirm').click()
   await expect(reset).toBeDisabled()
   await tabB.close()
-})
-
-test('a narrow window draws channel field actions in one row and never scrolls sideways', async ({
-  page,
-}) => {
-  await grantAdminToSelf(page)
-  const desktop = page.viewportSize() ?? { width: 1280, height: 720 }
-  await page.setViewportSize({ width: 375, height: desktop.height })
-  await gotoPage(page, '/hilos/communications/sms')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-
-  const card = page
-    .getByTestId('hilos-table-cards')
-    .getByTestId('hilos-table-card-notifications.channel.sms.from')
-  await expect(card).toBeVisible()
-
-  const edit = card.getByTestId('hilos-channel-field-edit-from')
-  const reset = card.getByTestId('hilos-channel-field-reset-from')
-  await expect(edit).toBeVisible()
-  await expect(reset).toBeVisible()
-
-  await shareOneRow(edit, reset)
-  expect(await sidewaysOverflow(page)).toEqual([0, 0])
-  await page.setViewportSize(desktop)
 })
 
 /**

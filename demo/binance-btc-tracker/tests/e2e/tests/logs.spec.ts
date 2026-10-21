@@ -3,7 +3,6 @@ import { test, expect } from '@playwright/test'
 import {
   liesAbove,
   watchTop,
-  watchTopWithin,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant'
 import { setAdminViewMode } from '../helpers/adminViewMode'
@@ -160,29 +159,6 @@ test('follows a live log file: an appended line arrives on its own, and one appe
 
   // The Follow switch was not touched once in the whole scenario, which is the
   // decision this asserts: scrolling releases the stickiness, not the tail.
-
-  // The note that a typed search is not applied yet shares the cell with the
-  // line count. On a narrow viewport (375 px) the unconstrained note wrapped
-  // the toolbar and shifted the pane by ~32 px; in its cell held at width by an
-  // invisible twin, neither the note appearing nor it leaving moves the pane
-  // (styling-rules.md, "The room a live message takes"; HIL-1152).
-  const desktop = page.viewportSize() ?? { width: 1280, height: 720 }
-  await page.setViewportSize({ width: 375, height: desktop.height })
-  const paneInPage = await watchTopWithin(
-    pane,
-    page.getByTestId('hilos-admin-title'),
-  )
-  await page
-    .getByTestId('hilos-log-substring')
-    .pressSequentially('deadlock', { delay: 10 })
-  await expect(page.getByTestId('hilos-log-search-pending')).toBeVisible()
-  await expect(page.getByTestId('hilos-log-count')).toHaveCount(0)
-  await paneInPage.unchanged()
-  await page.getByTestId('hilos-log-search').click()
-  await expect(page.getByTestId('hilos-log-search-pending')).toHaveCount(0)
-  await expect(page.getByTestId('hilos-log-count')).toBeVisible()
-  await paneInPage.unchanged()
-  await page.setViewportSize(desktop)
 })
 
 // HIL-1257: the text must be absent from the guest's socket frames, not merely

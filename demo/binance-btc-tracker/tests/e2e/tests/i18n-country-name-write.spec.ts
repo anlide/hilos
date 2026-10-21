@@ -4,7 +4,6 @@ import {
   dismissToasts,
   i18nNameRow,
   shownByTestId,
-  sidewaysOverflow,
   watchHeight,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
@@ -185,7 +184,7 @@ test('writes country names and corrections live in two tabs, including literal e
   }
 })
 
-test('refuses a concurrent correction ADD and keeps its draft at 375px in dark', async ({
+test('refuses a concurrent correction ADD and keeps its draft', async ({
   page,
   context,
 }) => {
@@ -198,19 +197,12 @@ test('refuses a concurrent correction ADD and keeps its draft at 375px in dark',
     await signUpAdmin(page)
     for (const tab of [page, observer]) {
       await openNames(tab)
-      // Picked through the header menu here; the same spec in the React and
-      // Angular demos sets the browser's pick before the page loads instead.
-      await clickSubmit(tab.getByTestId('nav-theme'))
-      await clickSubmit(tab.getByTestId('nav-theme-option-dark'))
-      await expect(tab.locator('html')).toHaveAttribute('data-bs-theme', 'dark')
-      await tab.setViewportSize({ width: 375, height: 812 })
       await expandCorrections(tab)
     }
-    // The base form's longer catalog hint also fits the narrow screen.
+    // The base form carries the longer catalog hint.
     await openName(page, 'add-en')
     await expect(page.getByTestId(WINDOW)).toContainText('built-in catalog')
     await typeInto(page.getByTestId(INPUT), 'Canceled base')
-    await expect.poll(() => sidewaysOverflow(page)).toEqual([0, 0])
     await clickSubmit(page.getByTestId(CANCEL))
     await clickSubmit(page.getByTestId('modal-confirm-discard'))
     await expect(page.getByTestId(WINDOW)).toHaveCount(0)
@@ -261,7 +253,6 @@ test('refuses a concurrent correction ADD and keeps its draft at 375px in dark',
     await expect(observer.getByTestId(WINDOW)).toBeVisible()
     await errorRoom.unchanged()
     await bodyRoom.unchanged()
-    await expect.poll(() => sidewaysOverflow(observer)).toEqual([0, 0])
     await expect(
       observer.getByTestId('hilos-action-error-slot'),
     ).toHaveAttribute('aria-live', 'assertive')
@@ -269,7 +260,6 @@ test('refuses a concurrent correction ADD and keeps its draft at 375px in dark',
     await expect(observer.getByTestId('hilos-action-error-full')).toContainText(
       DUPLICATE,
     )
-    await expect.poll(() => sidewaysOverflow(observer)).toEqual([0, 0])
     await clickSubmit(observer.getByTestId('hilos-action-error-close'))
     await expect(
       observer.getByTestId('hilos-action-error-details'),

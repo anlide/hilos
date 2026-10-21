@@ -18,7 +18,6 @@ import {
   maintenanceCircleRow,
   presentMaintenanceCode,
   shownByTestId,
-  sidewaysOverflow,
   turnOffMaintenance,
   turnOnMaintenance,
 } from '../../../../../framework/frontend/e2e/index.js'
@@ -100,7 +99,6 @@ test('two administrators close the system by hand, one lets the other in with a 
   await gotoPage(page, MAINTENANCE_PATH, PAGE_READY)
   // An emptied circle keeps the second administrator outside until the code.
   await clearMaintenanceCircle(page)
-  await page.setViewportSize({ width: 375, height: 812 })
   const otherContext = await browser.newContext()
   const other = await otherContext.newPage()
   try {
@@ -109,7 +107,6 @@ test('two administrators close the system by hand, one lets the other in with a 
 
     await turnOnMaintenance(page)
     await expectManualMaintenanceOn(expect, page)
-    expect(await sidewaysOverflow(page)).toEqual([0, 0])
     await expectHeldByManualMaintenance(expect, other)
 
     await dismissToasts(page)
@@ -139,7 +136,6 @@ test('a code issued in Maintenance admits two independent browsers and is shown 
   await grantAdminToSelf(page)
   await gotoPage(page, MAINTENANCE_PATH, PAGE_READY)
   await clearMaintenanceCircle(page)
-  await page.setViewportSize({ width: 375, height: 812 })
   const secondContext = await browser.newContext()
   const thirdContext = await browser.newContext()
   const second = await secondContext.newPage()

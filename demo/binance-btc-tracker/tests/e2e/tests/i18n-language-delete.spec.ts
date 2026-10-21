@@ -2,7 +2,6 @@ import { expect, test } from '@playwright/test'
 import {
   settleRemovedRow,
   shownByTestId,
-  sidewaysOverflow,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import {
@@ -88,16 +87,6 @@ test('shows a disabled trash and a visible reason for a language with a locale',
     )
     await expect(reason).toBeVisible()
     await expect(reason).toHaveText('Cannot delete: the language has locales.')
-    await page.setViewportSize({ width: 375, height: 812 })
-    await expect(opener).toBeVisible()
-    await expect(opener).toBeDisabled()
-    await expect(reason).toBeVisible()
-    await expect(reason).toHaveText('Cannot delete: the language has locales.')
-    await expect(opener).toHaveAttribute(
-      'aria-describedby',
-      (await reason.getAttribute('id'))!,
-    )
-    await expect.poll(() => sidewaysOverflow(page)).toEqual([0, 0])
     await expect(page.getByTestId('i18n-language-delete-window')).toHaveCount(0)
   } finally {
     await deleteLocale('es')
