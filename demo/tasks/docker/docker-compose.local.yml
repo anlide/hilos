@@ -139,6 +139,7 @@ services:
       - PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d
       - HTTP_STATUS_HOST=0.0.0.0
       - HTTP_STATUS_PORT=8090
+      - HILOS_FILES_XACCEL_LOCATION=/__hilos_files
       - WORKER_COMM_HOST=0.0.0.0
       - WORKER_COMM_PORT=8091
       - WEBSOCKET_HOST=0.0.0.0
@@ -254,6 +255,7 @@ services:
       - ../frontend/dist:/usr/share/nginx/html:ro
       - ../data/data_export:/data_export:ro
       - ../data/legal_export:/legal_export:ro
+      - ../data/files/published:/published:ro
       - nginx-ssl-local:/etc/nginx/ssl
     ports:
       # HTTPS only. The container's own :80 vhost stays unpublished on purpose —
@@ -271,6 +273,21 @@ services:
       hilos-tasks-local-network:
         ipv4_address: ${DOCKER_NGINX_IP:-10.197.0.12}
 
+  # Internal nginx gateway for published profile and registry files. Vite
+  # proxies the same-origin download path here so nginx can stream via X-Accel.
+  # The published directory is read-only and the service has no host ports.
+  tasks-files-local:
+    image: nginx:alpine
+    container_name: tasks-files-local
+    volumes:
+      - ./nginx.files-local.conf:/etc/nginx/conf.d/default.conf:ro
+      - ../data/files/published:/published:ro
+    depends_on:
+      - tasks-daemon-local
+    restart: unless-stopped
+    networks:
+      - hilos-tasks-local-network
+
   # Vite dev server with HMR for the tasks frontend. Mounts the whole repo
   # at /hilos so the @hilos/react `file:` symlink into framework/frontend
   # resolves, and runs npm install first so a fresh checkout or an SDK re-vendor
@@ -285,6 +302,7 @@ services:
     working_dir: /hilos/demo/tasks/frontend
     environment:
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      VITE_FILES_TARGET: "http://tasks-files-local"
     command: sh -c "npm install && npm run dev"
     ports:
       - "${HILOS_BIND_HOST:-127.0.0.1}:${FRONTEND_DEV_PORT:-5174}:5173"

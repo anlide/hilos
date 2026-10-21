@@ -17,6 +17,8 @@ use Hilos\Auth\Verification\VerificationSweepSettingsCatalog;
 use Hilos\Auth\Impersonation\ImpersonationSettingsCatalog;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Files\FilesSettingsCatalog;
+use Hilos\Files\Upload\UploadsSettingsCatalog;
 use Hilos\Log\LogSettingsCatalog;
 use Hilos\Legal\LegalSettingsCatalog;
 use Hilos\Mail\Delivery\MailDeliveryChannel;
@@ -86,6 +88,8 @@ final class TasksSettingsCatalog implements CatalogProviderInterface
             AccountDeletionSettingsCatalog::getCatalog(),
             VerificationSweepSettingsCatalog::getCatalog(),
             AuthThrottleSettingsCatalog::getCatalog(),
+            FilesSettingsCatalog::getCatalog(),
+            UploadsSettingsCatalog::getCatalog(),
             // Tasks opts in to accounts without an address for the passkey specs HIL-1324 moved here, as chat
             // does on the owner's word of 26.09.2026 (HIL-1106); kept on 09.10.2026, tasks switches everything on.
             [PasskeyAddressPolicy::SETTING_KEY => [

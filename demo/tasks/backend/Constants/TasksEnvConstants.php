@@ -13,6 +13,9 @@ namespace Demo\Tasks\Constants;
  */
 final class TasksEnvConstants
 {
+    /** Published registry directory; empty uses data/files/published under the project. */
+    public const string TASKS_FILES_PUBLISHED_DIR = 'TASKS_FILES_PUBLISHED_DIR';
+
     /**
      * Secret for signing the stateless OAuth `state` token (HMAC-bound to the
      * session, expiring). Env-only; the dev/e2e default is non-empty so a stand

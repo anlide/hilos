@@ -39,6 +39,7 @@ final class TasksEnvCatalog implements CatalogProviderInterface
     {
         return array_replace(EnvCatalogStub::getCatalog(), [
             EnvConstants::DB_DATABASE->name => self::stringEntry('hilos-demo-tasks', emptyIsMissing: true),
+            TasksEnvConstants::TASKS_FILES_PUBLISHED_DIR => self::stringEntry(''),
             TasksEnvConstants::OAUTH_STATE_SECRET => self::stringEntry(
                 'dev-oauth-state-secret-change-me',
                 emptyIsMissing: true,

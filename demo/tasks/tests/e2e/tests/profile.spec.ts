@@ -50,13 +50,19 @@ test('the header avatar leads to the profile root and its sections', async ({
 
   const sections = ['sign-in', 'security', 'data']
   await expect(page.getByTestId('profile-section')).toHaveCount(sections.length)
+  // The photo modal sits beside the three profile section controls.
   expect(
     await page
       .getByTestId(/^profile-[a-z-]+-open$/)
       .evaluateAll((links) =>
         links.map((link) => link.getAttribute('data-id')),
       ),
-  ).toEqual(sections.map((section) => `profile-${section}-open`))
+  ).toEqual([
+    'profile-photo-open',
+    'profile-sign-in-open',
+    'profile-security-open',
+    'profile-data-open',
+  ])
   for (const section of sections) {
     await clickSubmit(page.getByTestId(`profile-${section}-open`))
     await expect(page).toHaveURL(new RegExp(`/profile/${section}$`))

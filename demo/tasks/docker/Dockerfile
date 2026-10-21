@@ -16,6 +16,9 @@ FROM php:8.4-cli
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libevent-dev \
     libssl-dev \
+    libjpeg62-turbo-dev \
+    libpng-dev \
+    libwebp-dev \
     git \
     zip \
     unzip \
@@ -29,6 +32,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # mysqli, pdo, and pdo_mysql are required for database operations.
 # -----------------------------------------------------------
 RUN docker-php-ext-install -j$(nproc) sockets pcntl posix mysqli pdo pdo_mysql
+
+# GD draws the image variants published by the files registry (HilosFeature::IMAGES).
+# JPEG and WebP are configured explicitly; PNG is included by GD.
+RUN docker-php-ext-configure gd --with-jpeg --with-webp \
+ && docker-php-ext-install -j$(nproc) gd
 
 # -----------------------------------------------------------
 # Ensure custom extension load order

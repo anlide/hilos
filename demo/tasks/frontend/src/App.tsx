@@ -34,7 +34,7 @@ import type { ComponentType } from 'react'
 import AuthSurface from './auth/AuthSurface'
 import { hilosAuthContext } from './auth/hilosAuthContext'
 import { connection } from './bootstrap/connection'
-import { currentUserName } from './bootstrap/session'
+import { currentUserName, currentUserPhoto } from './bootstrap/session.js'
 import { PAGE_MAIN } from './pages/keys'
 import About from './views/About/About'
 import Profile from './views/Profile/Profile.js'
@@ -271,6 +271,7 @@ const profileHref = HILOS_PAGE_ROUTES[HilosPages.PROFILE]
 
 export default function App({ authGate }: AppProps) {
   const userName = useSignal(currentUserName)
+  const userPhoto = useSignal(currentUserPhoto)
   // The standing mark by the avatar (HIL-945): a takeover, or the session's own
   // scheduled deletion, in the color of the strip that says it in words.
   const avatarMark = useSignal(hilosSessionAvatarMark)
@@ -304,7 +305,11 @@ export default function App({ authGate }: AppProps) {
               data-id="nav-profile-name"
               title={userName}
             >
-              <HilosAvatar name={userName} mark={avatarMark} />
+              <HilosAvatar
+                name={userName}
+                mark={avatarMark}
+                photo={userPhoto}
+              />
               <span className="visually-hidden">{userName}</span>
             </HilosLink>
           </>

@@ -83,6 +83,10 @@ export default defineConfig(({ mode, command, isSsrBuild }) => {
             env.VITE_DATA_EXPORT_TARGET || 'http://tasks-daemon-local:8090',
           changeOrigin: true,
         },
+        '/_hilos/file': {
+          target: env.VITE_FILES_TARGET || 'http://tasks-files-local',
+          changeOrigin: true,
+        },
         '/ws': {
           target: env.VITE_WS_TARGET || 'http://tasks-daemon-local:8092',
           ws: true,

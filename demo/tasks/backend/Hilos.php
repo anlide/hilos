@@ -30,6 +30,7 @@ use Demo\Tasks\Agents\Hilos\DemoHilosAgent;
 use Demo\Tasks\Agents\Hilos\DemoHilosAnalyticsAgent;
 use Demo\Tasks\Agents\Hilos\DemoHilosDaemonAgent;
 use Demo\Tasks\Agents\Hilos\DemoHilosLogsAgent;
+use Demo\Tasks\Agents\Hilos\FilesLibraryAgent;
 use Demo\Tasks\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\Tasks\Agents\Hilos\SessionsLibraryAgent;
 use Demo\Tasks\Agents\Hilos\UserAgent;
@@ -45,6 +46,7 @@ use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosDaemonAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
+use Demo\Tasks\Core\Agent\Daemon\Hilos\FilesLibraryAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\UserAgentDaemon;
@@ -140,6 +142,10 @@ use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
+use Hilos\Files\Image\ImagesAgent;
+use Hilos\Files\Image\ImagesAgentDaemon;
+use Hilos\Files\Upload\UploadsAgent;
+use Hilos\Files\Upload\UploadsAgentDaemon;
 use Hilos\Fs\Context\FsContext;
 use Hilos\I18n\Browser\CountryCardBrowserData;
 use Hilos\I18n\Browser\LanguageCardBrowserData;
@@ -184,6 +190,7 @@ use Hilos\Tables\Security\HilosSecurityStepUpTable;
 use Hilos\Tables\Security\HilosSecurityImpersonationTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
+use Hilos\Tables\Users\HilosUserPhotoBrowserTable;
 use Demo\Tasks\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
 use Demo\Tasks\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
@@ -242,6 +249,10 @@ final class Hilos extends HilosFacade
         HilosFeature::AUTH_THROTTLE,
         HilosFeature::CODE_CHANNELS,
         HilosFeature::BACKUP,
+        HilosFeature::FILES,
+        HilosFeature::UPLOADS,
+        HilosFeature::IMAGES,
+        HilosFeature::PROFILE_PHOTO,
     ];
 
     protected const array DATABASE_GUARANTEES = [
@@ -316,6 +327,21 @@ final class Hilos extends HilosFacade
     ];
 
     public const array AGENTS = [
+        FilesLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => FilesLibraryAgent::class,
+            AgentRegistryKey::DAEMON => FilesLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        UploadsAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => UploadsAgent::class,
+            AgentRegistryKey::DAEMON => UploadsAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        ImagesAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => ImagesAgent::class,
+            AgentRegistryKey::DAEMON => ImagesAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
         DemoHilosChangeLogAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosChangeLogAgent::class,
             AgentRegistryKey::DAEMON => DemoHilosChangeLogAgentDaemon::class,
@@ -505,6 +531,7 @@ final class Hilos extends HilosFacade
 
     public const array BROWSER_TABLES = [
         HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class,
+        HilosUserPhotoBrowserTable::TABLE => HilosUserPhotoBrowserTable::class,
     ];
 
     public const array PAGE_LISTS = [
@@ -645,6 +672,7 @@ final class Hilos extends HilosFacade
         ],
         UserPage::PAGE => [
             HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING,
+            HilosUserPhotoBrowserTable::TABLE => HilosUserPhotoBrowserTable::BINDING,
         ],
         LanguagesListPage::PAGE => [
             TasksTableContext::hilosI18nLanguages => [],

@@ -4,6 +4,31 @@ declare(strict_types=1);
 
 namespace Demo\Tasks\Tests\Unit;
 
+use Demo\Tasks\Agents\Hilos\FilesLibraryAgent;
+use Demo\Tasks\Core\Agent\Daemon\Hilos\FilesLibraryAgentDaemon;
+use Hilos\Database\Settings\Validation\PositiveIntegerRule;
+use Hilos\Files\DTO\FileBindSignalData;
+use Hilos\Files\DTO\FilePublishSignalData;
+use Hilos\Files\DTO\FileRemoveSignalData;
+use Hilos\Files\FilesSettingsCatalog;
+use Hilos\Files\FileVisibility;
+use Hilos\Files\HilosFiles;
+use Hilos\Files\Image\DTO\ImageRenderedSignalData;
+use Hilos\Files\Image\DTO\ImageRenderSignalData;
+use Hilos\Files\Image\ImageFit;
+use Hilos\Files\Image\ImageFormat;
+use Hilos\Files\Image\ImagesAgent;
+use Hilos\Files\Image\ImagesAgentDaemon;
+use Hilos\Files\Image\ImageVariant;
+use Hilos\Files\Upload\DTO\UploadCancelActionDTO;
+use Hilos\Files\Upload\DTO\UploadInitActionDTO;
+use Hilos\Files\Upload\DTO\UploadPublishSignalData;
+use Hilos\Files\Upload\ProfilePhotoUploadTarget;
+use Hilos\Files\Upload\UploadsAgent;
+use Hilos\Files\Upload\UploadsAgentDaemon;
+use Hilos\Files\Upload\UploadsSettingsCatalog;
+use Hilos\Tables\Users\HilosUserPhotoBrowserTable;
+
 use Demo\Tasks\Agents\Hilos\DemoHilosAnalyticsAgent;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
 use Demo\Tasks\Pages\Hilos\AnalyticsPage;
@@ -259,6 +284,7 @@ final class TasksTopologyRegistryTest extends TestCase
     {
         self::assertSame([
             HttpConstants::METHOD_GET => [
+                HilosFiles::DOWNLOAD_PATH => HilosAgentType::HILOS_FILES_LIBRARY,
                 DataExportHttp::DOWNLOAD_PATH => HilosAgentType::HILOS_DATA_EXPORT,
                 LegalAcceptancesExportHttp::DOWNLOAD_PATH => HilosAgentType::HILOS_LEGAL,
             ],
@@ -273,6 +299,110 @@ final class TasksTopologyRegistryTest extends TestCase
         self::assertSame(DataExportAgentDaemon::class, AgentRegistry::daemonClass($entry));
         self::assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
         self::assertTrue((new DataExportAgentDaemon())->requiresMonopolisticProcess());
+    }
+
+    /** The file pipeline has one policy-placed monopolistic holder per agent type. */
+    public function testProfilePhotoPipelineUsesFrameworkAgents(): void
+    {
+        foreach ([
+            HilosAgentType::HILOS_FILES_LIBRARY => [
+                AgentRegistryKey::WORKER => FilesLibraryAgent::class,
+                AgentRegistryKey::DAEMON => FilesLibraryAgentDaemon::class,
+                AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+            ],
+            HilosAgentType::HILOS_UPLOADS => [
+                AgentRegistryKey::WORKER => UploadsAgent::class,
+                AgentRegistryKey::DAEMON => UploadsAgentDaemon::class,
+                AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+            ],
+            HilosAgentType::HILOS_IMAGES => [
+                AgentRegistryKey::WORKER => ImagesAgent::class,
+                AgentRegistryKey::DAEMON => ImagesAgentDaemon::class,
+                AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+            ],
+        ] as $type => $expected) {
+            self::assertSame($expected, Hilos::AGENTS[$type]);
+            self::assertSame(AgentScope::CLUSTER, AgentRegistry::scope(Hilos::AGENTS[$type]));
+            self::assertFalse(AgentRegistry::requiresIndex(Hilos::AGENTS[$type]));
+            $daemonClass = AgentRegistry::daemonClass(Hilos::AGENTS[$type]);
+            self::assertTrue((new $daemonClass())->requiresMonopolisticProcess());
+        }
+        self::assertNull(Hilos::PROFILE_PHOTO_CHECKER);
+    }
+
+    /** The framework supplies the public photo target and its display variant without project duplicates. */
+    public function testProfilePhotoTargetVariantAndUserCardAreReady(): void
+    {
+        self::assertSame([], Hilos::UPLOAD_TARGETS);
+        self::assertSame([], Hilos::IMAGE_VARIANTS);
+        self::assertSame([
+            'hilos_profile_photo' => ProfilePhotoUploadTarget::class,
+        ], Hilos::uploadTargets());
+        self::assertSame([
+            'hilos_avatar' => [
+                ImageVariant::WIDTH => 256,
+                ImageVariant::HEIGHT => 256,
+                ImageVariant::FIT => ImageFit::COVER,
+                ImageVariant::FORMAT => ImageFormat::WEBP,
+            ],
+        ], Hilos::imageVariants());
+        $target = new ProfilePhotoUploadTarget();
+        self::assertSame(524288, $target->maxBytes());
+        self::assertSame(['image/jpeg'], $target->acceptedMimeTypes());
+        self::assertTrue($target->requiresSignIn());
+        self::assertTrue($target->sniffsContent());
+        self::assertSame(FileVisibility::PUBLIC, $target->visibility());
+        self::assertSame([
+            HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING,
+            HilosUserPhotoBrowserTable::TABLE => HilosUserPhotoBrowserTable::BINDING,
+        ], Hilos::PAGE_TABLES[UserPage::PAGE]);
+        self::assertArrayNotHasKey(HilosUserPhotoBrowserTable::TABLE, Hilos::TABLES);
+    }
+
+    /** The activated routes retain the framework payload types on both sides of the pipeline. */
+    public function testFilePipelinePayloadTypesAreInherited(): void
+    {
+        $signalDtos = Hilos::getAgentSignalDtoRoutes();
+        foreach ([
+            HilosSignalConstants::HILOS_FILE_BIND => FileBindSignalData::class,
+            HilosSignalConstants::HILOS_FILE_REMOVE => FileRemoveSignalData::class,
+            HilosSignalConstants::HILOS_FILE_PUBLISH => FilePublishSignalData::class,
+            HilosSignalConstants::HILOS_IMAGE_RENDERED => ImageRenderedSignalData::class,
+            HilosSignalConstants::HILOS_UPLOAD_PUBLISH => UploadPublishSignalData::class,
+            HilosSignalConstants::HILOS_IMAGE_RENDER => ImageRenderSignalData::class,
+        ] as $signal => $dtoClass) {
+            self::assertSame($dtoClass, $signalDtos[$signal]);
+        }
+        self::assertSame(UploadInitActionDTO::class,
+            Hilos::getAgentActionDtoRoutes()[HilosSignalConstants::HILOS_UPLOAD_INIT]);
+        self::assertSame(UploadCancelActionDTO::class,
+            Hilos::getAgentActionDtoRoutes()[HilosSignalConstants::HILOS_UPLOAD_CANCEL]);
+    }
+
+    /** File retention, disk capacity and upload memory keep their framework defaults and metadata. */
+    public function testFilePipelineSettingsAreActivated(): void
+    {
+        $catalog = TasksSettingsCatalog::getCatalog();
+        foreach ([
+            FilesSettingsCatalog::UNBOUND_TTL_HOURS_KEY => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 24,
+            ],
+            FilesSettingsCatalog::MAX_TOTAL_BYTES_KEY => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 0,
+            ],
+            UploadsSettingsCatalog::MEMORY_POOL_BYTES_KEY => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 2147483648,
+                SettingsCatalogConstants::CATALOG_ENTRY_RULE => PositiveIntegerRule::class,
+            ],
+        ] as $key => $entry) {
+            self::assertSame($entry, $catalog[$key]);
+        }
     }
 
     public function testComputedPageRoutesCoverEveryRegisteredPage(): void
@@ -453,6 +583,12 @@ final class TasksTopologyRegistryTest extends TestCase
         );
         $this->assertSame(
             [
+                HilosSignalConstants::HILOS_FILE_BIND => HilosAgentType::HILOS_FILES_LIBRARY,
+                HilosSignalConstants::HILOS_FILE_REMOVE => HilosAgentType::HILOS_FILES_LIBRARY,
+                HilosSignalConstants::HILOS_FILE_PUBLISH => HilosAgentType::HILOS_FILES_LIBRARY,
+                HilosSignalConstants::HILOS_IMAGE_RENDERED => HilosAgentType::HILOS_FILES_LIBRARY,
+                HilosSignalConstants::HILOS_UPLOAD_PUBLISH => HilosAgentType::HILOS_UPLOADS,
+                HilosSignalConstants::HILOS_IMAGE_RENDER => HilosAgentType::HILOS_IMAGES,
                 HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER => HilosAgentType::HILOS_DATA_EXPORT,
                 HilosSignalConstants::HILOS_SESSION_STATE => AgentType::TASKS,
                 HilosSignalConstants::HILOS_SESSIONS_SWEPT => AgentType::TASKS,
@@ -655,6 +791,10 @@ final class TasksTopologyRegistryTest extends TestCase
             HilosFeature::AUTH_THROTTLE,
             HilosFeature::CODE_CHANNELS,
             HilosFeature::BACKUP,
+            HilosFeature::FILES,
+            HilosFeature::UPLOADS,
+            HilosFeature::IMAGES,
+            HilosFeature::PROFILE_PHOTO,
         ], Hilos::features());
 
         $this->assertSame(UsersLibraryAgent::class, AgentRegistry::workerClass(
@@ -685,6 +825,8 @@ final class TasksTopologyRegistryTest extends TestCase
         );
 
         $this->assertSame([
+            HilosSignalConstants::HILOS_UPLOAD_INIT => HilosAgentType::HILOS_UPLOADS,
+            HilosSignalConstants::HILOS_UPLOAD_CANCEL => HilosAgentType::HILOS_UPLOADS,
             HilosSignalConstants::HILOS_DATA_EXPORT_ORDER => HilosAgentType::HILOS_DATA_EXPORT,
             // Signing out, dismissing an ack and leaving a takeover all write a session, so
             // the sessions library owns them (HIL-710, HIL-729) - this demo adds an action of
@@ -843,7 +985,10 @@ final class TasksTopologyRegistryTest extends TestCase
         ], Hilos::TABLES);
 
         $this->assertSame(
-            [HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class],
+            [
+                HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class,
+                HilosUserPhotoBrowserTable::TABLE => HilosUserPhotoBrowserTable::class,
+            ],
             Hilos::BROWSER_TABLES,
         );
 
