@@ -22,6 +22,7 @@ import { computed, inject, nextTick, onUnmounted, ref, watch } from 'vue'
 import { createHilosUploadField } from '@hilos/core/base'
 import {
   HilosAvatar,
+  HilosFormError,
   HilosUploadDrop,
   HilosUploadFiles,
   HilosUploadPicker,
@@ -150,6 +151,10 @@ const moderationBanner = computed<ModerationBanner | null>(() => {
     spinner: false,
   }
 })
+
+const composerError = computed(() =>
+  moderationBanner.value ? null : error.value,
+)
 
 // The composer's files — drop, paste, the picker, the chips — are the framework
 // upload field; this view keeps only the message composer and the markup. The
@@ -489,6 +494,16 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <div
+      class="visually-hidden"
+      role="alert"
+      aria-live="assertive"
+      aria-atomic="true"
+      data-id="message-error-live"
+    >
+      {{ composerError ?? '' }}
+    </div>
+
     <div class="mt-3 flex-shrink-0" data-id="composer">
       <HilosUploadDrop :field="upload" data-id="composer-upload">
         <div
@@ -505,15 +520,10 @@ onUnmounted(() => {
           <span data-id="moderation-text">{{ moderationBanner.text }}</span>
         </div>
         <!-- A moderation failure already shows in the banner above and also rides
-        back as an action_error; suppress the bare error then to avoid a duplicate.
-        Synchronous submit errors (rate-limited, empty) have no banner and show. -->
-        <div
-          v-if="error && !moderationBanner"
-          class="small text-danger mb-1"
-          data-id="message-error"
-        >
-          {{ error }}
-        </div>
+        back as an action_error; the banner suppresses both the row and its voice.
+        Synchronous refusals such as the rate limit have no banner and show;
+        empty messages never leave Send. -->
+        <HilosFormError :message="composerError" data-id="message-error" />
 
         <HilosUploadFiles :field="upload" data-id="attachments" />
 

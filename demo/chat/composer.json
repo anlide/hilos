@@ -89,7 +89,7 @@
         "test:integration": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite integration",
         "test:phpunit": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php vendor/bin/phpunit -c tests/phpunit.xml",
         "test:check": [
-            "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-frontend-cli-test sh -c \"set -e; node ../../../framework/frontend/scripts/npm-install-if-stale.mjs; echo '--- frontend: check'; npm run check; echo '--- frontend: lint'; npm run lint; echo '--- frontend: format-check'; npm run format:check\"",
+            "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-frontend-cli-test sh -c \"set -e; node ../../../framework/frontend/scripts/npm-install-if-stale.mjs; echo '--- frontend: check'; npm run check; echo '--- frontend: test'; npm run test; echo '--- frontend: lint'; npm run lint; echo '--- frontend: format-check'; npm run format:check\"",
             "@test:e2e-install",
             "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm chat-e2e-runner sh -c \"set -e; echo '--- e2e: lint'; npm run lint; echo '--- e2e: format-check'; npm run format:check\""
         ],
