@@ -1,4 +1,4 @@
-import type { BrowserContext, Expect, Locator, Page } from '@playwright/test'
+import type { Expect, Locator, Page } from '@playwright/test'
 
 import { openFirstFrame } from './firstFrame.js'
 
@@ -205,26 +205,5 @@ export async function expectThemeFirstFrame(
 ): Promise<void> {
   expect(await openFirstFrame(page, path)).toEqual(
     mode === 'dark' ? DARK_FRAME : LIGHT_FRAME,
-  )
-}
-
-/**
- * Choose the theme every page of the context will wear, before any of them
- * loads. Call it before signing up: registration adopts the browser's pick into
- * the account (demo/tasks/tests/e2e/tests/daemon.spec.ts), so every tab opened
- * in the context afterwards wears it too, with no menu involved.
- *
- * @param context the browser context whose pages are yet to load.
- * @param theme the position every page of the context will wear.
- */
-export async function pickThemeBeforeLoad(
-  context: BrowserContext,
-  theme: 'light' | 'dark',
-): Promise<void> {
-  await context.addInitScript(
-    ({ key, pick }: { key: string; pick: string }) => {
-      localStorage.setItem(key, pick)
-    },
-    { key: THEME_PICK_STORAGE_KEY, pick: theme },
   )
 }

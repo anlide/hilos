@@ -24,7 +24,6 @@ export {
   fitsInScrollport,
   liesAbove,
   overlapSpot,
-  shareOneRow,
   watchFirstRowTop,
   watchHeight,
   watchLeft,
@@ -88,7 +87,6 @@ export {
   TABLE,
   settleRemovedRow,
   shownByTestId,
-  sidewaysOverflow,
   tableRowKeyByText,
 } from './table.js'
 export {
@@ -147,13 +145,11 @@ export {
   expectChangeLogReceiptOpen,
   expectChangeLogReceiptWriter,
   expectChangeLogValues,
-  expectChangeLogReceiptFits,
   expectRegistrationReceiptFacts,
   expectTrackedTablesPage,
   expectChangeLogReference,
   expectTrackedTableRecord,
   expectTrackedTableWhole,
-  expectNarrowColumns,
 } from './changeLog.js'
 
 export {
@@ -221,7 +217,6 @@ export {
   expectThemeHeader,
   expectThemeMode,
   openProfileTheme,
-  pickThemeBeforeLoad,
   type ThemeTestPick,
   type ThemeTestPosition,
 } from './theme.js'

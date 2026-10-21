@@ -44,29 +44,6 @@ export function shownByTestId(
 }
 
 /**
- * How far the page reaches sideways, in pixels: once for the shell's own scrolling
- * container, where an admin page lives (HilosLayout), and once for the document
- * around it. A table turns into cards on a narrow screen precisely so a
- * phone never gets the wide table in a sideways scroll, so `[0, 0]` is what a narrow
- * window over such a table must read.
- *
- * @param page The page to measure.
- * @returns The overflow of the shell's container and of the document, in that order.
- */
-export function sidewaysOverflow(page: Page): Promise<number[]> {
-  return page.evaluate(() => {
-    const main = document.getElementById('hilos-main-content')
-    if (main === null) {
-      throw new Error('the shell drew no main container to measure')
-    }
-
-    return [main, document.documentElement].map(
-      (element) => element.scrollWidth - element.clientWidth,
-    )
-  })
-}
-
-/**
  * Settle a table after a row the page itself removed on the server: the
  * ordinary removal gate of the table may leave this window owing an Apply, or may
  * take the row out at once, so the step waits for either and presses Apply where

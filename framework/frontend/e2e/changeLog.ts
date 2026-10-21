@@ -1,5 +1,5 @@
 import type { Expect, Locator, Page } from '@playwright/test'
-import { shownByTestId, sidewaysOverflow, tableRowKeyByText } from './table.js'
+import { shownByTestId, tableRowKeyByText } from './table.js'
 
 /**
  * Change Log section checks all three kits must meet alike. Tests, their order
@@ -146,21 +146,6 @@ export async function expectChangeLogValues(
   ).toHaveText(after)
 }
 
-/** The receipt fits inside its scrolling body on a narrow screen. */
-export async function expectChangeLogReceiptFits(
-  expect: Expect,
-  page: Page,
-): Promise<void> {
-  // Bootstrap row gutters reach into the body's padding. Measure the body
-  // that owns scrolling, rather than the unpadded content wrapper inside it.
-  expect(
-    await page
-      .getByTestId('modal')
-      .locator('.modal-body')
-      .evaluate((node) => node.scrollWidth - node.clientWidth),
-  ).toBe(0)
-}
-
 /** Registration journals the person and identity as facts without values. */
 export async function expectRegistrationReceiptFacts(
   expect: Expect,
@@ -267,23 +252,6 @@ export async function expectTrackedTableWhole(
   await expect(page.getByTestId('hilos-viewport-table')).toContainText(
     'All records of this table',
   )
-}
-
-/** Columns become cards on a phone and leave no horizontal page overflow. */
-export async function expectNarrowColumns(
-  expect: Expect,
-  page: Page,
-  column: string,
-  storage: string,
-): Promise<void> {
-  await expect(
-    page.getByRole('table', { name: 'Columns', exact: true }),
-  ).toBeHidden()
-  const columns = page.getByRole('list', { name: 'Columns', exact: true })
-  await expect(columns).toBeVisible()
-  await expect(columns).toContainText(column)
-  await expect(columns).toContainText(storage)
-  expect(await sidewaysOverflow(page)).toEqual([0, 0])
 }
 
 /** Treat supplied table names, record keys and field names as literal text. */
