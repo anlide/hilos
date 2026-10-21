@@ -123,9 +123,10 @@ feature sends no such agent reports. An empty report withdraws a former set.
 The node agent combines these reports into flat rows: `agentId` is null for a
 daemon rule and names its agent otherwise. Each row carries the rule's name,
 expression, last actual firing (`lastRunAt`), and the next matching local minute
-as Unix seconds (`nextRunAt`). The node agent computes that next minute with
-`CronRule::nextRunAfter()`, using the same field rules as the runner: the day of
-month and weekday must both match. Null means no match in the bounded search or
+as Unix seconds (`nextRunAt`). "Local" is the project time zone
+(`HILOS_PROJECT_TIME_ZONE`), the same one the runner matches the rule in. The
+node agent computes that next minute with `CronRule::nextRunAfter()`, using the
+same field rules as the runner: the day of month and weekday must both match. Null means no match in the bounded search or
 an invalid expression. Daemon rules have no next run on a node that is not the
 leader; `idleReason: not_leader` says why. Agent rules continue to have next
 runs on that node.

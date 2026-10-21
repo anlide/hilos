@@ -50,6 +50,7 @@ use Hilos\Database\Exception\TableNotActivatedException;
 use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
 use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
 use Hilos\Database\Settings\Exception\SettingException;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
@@ -301,6 +302,7 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      * the journal is this library's.
      *
      * @throws DatabaseException When the cron receipt cannot be opened or closed
+     * @throws EnvException When the project time zone of the prune schedule cannot be read
      */
     public function onTick(): void
     {

@@ -17,6 +17,7 @@ use Hilos\Backup\BackupRetentionPolicy;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\BackupShipOutcome;
 use Hilos\Backup\BackupStatus;
+use Hilos\Constants\TimeConstants;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\View\Item\BackupHistory;
 use PHPUnit\Framework\TestCase;
@@ -32,6 +33,10 @@ use PHPUnit\Framework\TestCase;
  * with the default policy in mind: the daily age lands on 2026-06-04, the weekly on 2025-09-07,
  * the monthly on 2022-10-19, and the yearly on 1981-07-19.
  *
+ * The Warsaw cases run the same ladder on a project clock while the process clock stays UTC, as
+ * it does in the daemon. Their rows are absolute UTC strings with the local wall time beside
+ * them, so each pair visibly straddles a local midnight, Monday, first of the month or new year.
+ *
  * The ceiling cases are read differently: they carry byte sizes and no clock at all, because the
  * pass runs over whatever the ladder already kept and only asks which rows are oldest.
  *
@@ -42,8 +47,26 @@ final class BackupPrunerTest extends TestCase
 {
     private const string TIMEZONE = 'UTC';
 
+    /** Project time zone of the Warsaw cases: +01:00 in winter, +02:00 in summer. */
+    private const string WARSAW = 'Europe/Warsaw';
+
     /** The instant every fixture's age is measured from. */
     private const string NOW = '2026-07-19T12:00:00+00:00';
+
+    private string $previousProcessZone;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->previousProcessZone = date_default_timezone_get();
+        date_default_timezone_set(TimeConstants::UTC_TIME_ZONE);
+    }
+
+    protected function tearDown(): void
+    {
+        date_default_timezone_set($this->previousProcessZone);
+        parent::tearDown();
+    }
 
     public function testKeepsEveryBackupYoungerThanTheDailyAge(): void
     {
@@ -202,6 +225,142 @@ final class BackupPrunerTest extends TestCase
         // All three are in the daily band on three different days; the middle day has no full
         // backup, so the schema-seed row covering it is the timeline's representative.
         $this->assertDoomed([], $rows, $this->policy());
+    }
+
+    public function testARowJustPastLocalMidnightJoinsTheLocalDay(): void
+    {
+        $rows = [
+            $this->row('wed-late', '2026-05-27T21:30:00+00:00', BackupScope::FULL), // Wed 23:30 CEST
+            $this->row('thu-early', '2026-05-27T22:30:00+00:00', BackupScope::FULL), // Thu 00:30 CEST
+            $this->row('thu-noon', '2026-05-28T10:00:00+00:00', BackupScope::FULL), // Thu 12:00 CEST
+        ];
+
+        // The daily band: in Warsaw 'thu-early' is Thursday and loses to the Thursday noon row;
+        // in UTC it is still Wednesday and takes Wednesday from 'wed-late'.
+        $this->assertDoomedInWarsaw(['thu-early'], $rows, $this->policy());
+        $this->assertDoomed(['wed-late'], $rows, $this->policy());
+    }
+
+    public function testARowJustPastTheLocalMondayJoinsTheLocalIsoWeek(): void
+    {
+        $rows = [
+            $this->row('sun-late', '2025-01-12T22:30:00+00:00', BackupScope::FULL), // Sun 23:30 CET, week 2025-02
+            $this->row('mon-early', '2025-01-12T23:30:00+00:00', BackupScope::FULL), // Mon 00:30 CET, week 2025-03
+            $this->row('mon-noon', '2025-01-13T11:00:00+00:00', BackupScope::FULL), // Mon 12:00 CET, week 2025-03
+        ];
+
+        // The weekly band: the ISO week begins at the local Monday, an hour before the UTC one.
+        $this->assertDoomedInWarsaw(['mon-early'], $rows, $this->policy());
+        $this->assertDoomed(['sun-late'], $rows, $this->policy());
+    }
+
+    public function testARowJustPastTheLocalFirstOfTheMonthJoinsTheLocalMonth(): void
+    {
+        $rows = [
+            $this->row('mar-late', '2021-03-31T21:30:00+00:00', BackupScope::FULL), // 31 Mar 23:30 CEST
+            $this->row('apr-early', '2021-03-31T22:30:00+00:00', BackupScope::FULL), // 1 Apr 00:30 CEST
+            $this->row('apr-mid', '2021-04-15T10:00:00+00:00', BackupScope::FULL), // 15 Apr 12:00 CEST
+        ];
+
+        // The monthly band: April begins in Warsaw two hours before it begins in UTC.
+        $this->assertDoomedInWarsaw(['apr-early'], $rows, $this->policy());
+        $this->assertDoomed(['mar-late'], $rows, $this->policy());
+    }
+
+    public function testARowJustPastTheLocalNewYearJoinsTheLocalYear(): void
+    {
+        $rows = [
+            $this->row('dec-late', '1974-12-31T22:30:00+00:00', BackupScope::FULL), // 31 Dec 1974 23:30 CET
+            $this->row('jan-early', '1974-12-31T23:30:00+00:00', BackupScope::FULL), // 1 Jan 1975 00:30 CET
+            $this->row('jun', '1975-06-01T10:00:00+00:00', BackupScope::FULL), // 1 Jun 1975 11:00 CET
+        ];
+
+        // The yearly band: 1975 begins in Warsaw an hour before it begins in UTC.
+        $this->assertDoomedInWarsaw(['jan-early'], $rows, $this->policy());
+        $this->assertDoomed(['dec-late'], $rows, $this->policy());
+    }
+
+    public function testTheLongAutumnDayHoldsBothHalfPastTwosAndKeepsTheLaterInstant(): void
+    {
+        $now = '2026-10-27T11:00:00+00:00';
+        $rows = [
+            $this->row('day-start', '2026-10-24T22:00:00+00:00', BackupScope::FULL), // 25 Oct 00:00 CEST
+            $this->row('summer-half-past-two', '2026-10-25T00:30:00+00:00', BackupScope::FULL), // 25 Oct 02:30 CEST
+            $this->row('winter-half-past-two', '2026-10-25T01:30:00+00:00', BackupScope::FULL), // 25 Oct 02:30 CET
+            $this->row('next-day-start', '2026-10-25T23:00:00+00:00', BackupScope::FULL), // 26 Oct 00:00 CET
+        ];
+
+        // 25 October runs 25 hours in Warsaw, from 22:00Z to 23:00Z the next day, and both 02:30
+        // wall times fall in it. They read the same on the clock, so the representative is the
+        // later instant - listed second, so a wall-clock tie would have kept the first.
+        $this->assertDoomedInWarsaw(['day-start', 'summer-half-past-two'], $rows, $this->policy(daily: 1), $now);
+        $this->assertDoomedOn(
+            ['summer-half-past-two', 'winter-half-past-two'],
+            $rows,
+            $this->policy(daily: 1),
+            new DateTimeZone(self::TIMEZONE),
+            new DateTimeImmutable($now),
+        );
+    }
+
+    public function testTheDailyAgeAcrossTheSpringChangeIsTwentyThreeHours(): void
+    {
+        // Sunday 29 March 12:00 CEST; one calendar day back is Saturday 12:00 CET, 23 hours ago.
+        $now = '2026-03-29T10:00:00+00:00';
+        $rows = [
+            $this->row('sat-morning', '2026-03-28T08:00:00+00:00', BackupScope::FULL), // Sat 09:00 CET
+            $this->row('sat-past', '2026-03-28T10:45:00+00:00', BackupScope::FULL), // Sat 11:45 CET, 23h15m ago
+            $this->row('sat-at', '2026-03-28T11:00:00+00:00', BackupScope::FULL), // Sat 12:00 CET, exactly a day ago
+        ];
+
+        // 'sat-past' is not yet 24 hours old but is past the calendar day, so it is thinned with
+        // the morning row; 'sat-at' sits on the age and stays in the untouched band.
+        $this->assertDoomedInWarsaw(['sat-morning'], $rows, $this->policy(daily: 1), $now);
+    }
+
+    public function testTheDailyAgeAcrossTheAutumnChangeIsTwentyFiveHours(): void
+    {
+        // Sunday 25 October 12:00 CET; one calendar day back is Saturday 12:00 CEST, 25 hours ago.
+        $now = '2026-10-25T11:00:00+00:00';
+        $rows = [
+            $this->row('sat-morning', '2026-10-24T08:00:00+00:00', BackupScope::FULL), // Sat 10:00 CEST
+            $this->row('sat-before', '2026-10-24T09:45:00+00:00', BackupScope::FULL), // Sat 11:45 CEST, 25h15m ago
+            $this->row('sat-at', '2026-10-24T10:00:00+00:00', BackupScope::FULL), // Sat 12:00 CEST, exactly a day ago
+        ];
+
+        // 'sat-at' is already 25 hours old but no older than the calendar day, so it is not thinned;
+        // the two rows before it share Saturday and the morning one goes.
+        $this->assertDoomedInWarsaw(['sat-morning'], $rows, $this->policy(daily: 1), $now);
+    }
+
+    public function testTheWeeklyAgeAcrossTheSpringChangeIsAnHourShortOfSevenFullDays(): void
+    {
+        // Wednesday 1 April 12:00 CEST; one calendar week back is 25 March 12:00 CET, 167 hours ago.
+        $now = '2026-04-01T10:00:00+00:00';
+        $rows = [
+            $this->row('mon', '2026-03-23T10:00:00+00:00', BackupScope::FULL), // Mon 11:00 CET, week 2026-13
+            $this->row('wed-past', '2026-03-25T10:45:00+00:00', BackupScope::FULL), // Wed 11:45 CET, 167h15m ago
+            $this->row('wed-at', '2026-03-25T11:00:00+00:00', BackupScope::FULL), // Wed 12:00 CET, exactly a week ago
+        ];
+
+        // 'wed-past' is younger than 168 hours yet past the calendar week, so ISO week 2026-13
+        // keeps it over Monday; 'wed-at' sits on the age and stays a day of its own.
+        $this->assertDoomedInWarsaw(['mon'], $rows, $this->policy(daily: 0, weekly: 1), $now);
+    }
+
+    public function testTheWeeklyAgeAcrossTheAutumnChangeIsAnHourOverSevenFullDays(): void
+    {
+        // Wednesday 28 October 12:00 CET; one calendar week back is 21 October 12:00 CEST, 169 hours ago.
+        $now = '2026-10-28T11:00:00+00:00';
+        $rows = [
+            $this->row('mon', '2026-10-19T10:00:00+00:00', BackupScope::FULL), // Mon 12:00 CEST, week 2026-43
+            $this->row('wed-before', '2026-10-21T09:45:00+00:00', BackupScope::FULL), // Wed 11:45 CEST, 169h15m ago
+            $this->row('wed-at', '2026-10-21T10:00:00+00:00', BackupScope::FULL), // Wed 12:00 CEST, exactly a week ago
+        ];
+
+        // 'wed-at' is already 169 hours old but no older than the calendar week, so it stays a day
+        // of its own; 'wed-before' is past it and keeps ISO week 2026-43 over Monday.
+        $this->assertDoomedInWarsaw(['mon'], $rows, $this->policy(daily: 0, weekly: 1), $now);
     }
 
     public function testCeilingOfZeroNeverDeletesAnything(): void
@@ -696,7 +855,7 @@ final class BackupPrunerTest extends TestCase
     }
 
     /**
-     * Asserts the planner would prune exactly the given ids.
+     * Asserts the planner would prune exactly the given ids on the UTC clock at {@see NOW}.
      *
      * @param list<string> $expected Backup ids expected to be pruned
      * @param list<BackupHistory> $rows Index rows fed to the planner
@@ -704,12 +863,57 @@ final class BackupPrunerTest extends TestCase
      */
     private function assertDoomed(array $expected, array $rows, BackupRetentionPolicy $policy): void
     {
-        $doomed = new BackupPruner()->selectForDeletion(
+        $this->assertDoomedOn(
+            $expected,
             $rows,
             $policy,
             new DateTimeZone(self::TIMEZONE),
             new DateTimeImmutable(self::NOW),
         );
+    }
+
+    /**
+     * Asserts the planner would prune exactly the given ids on the Warsaw clock.
+     *
+     * The instant is handed over twice: once in UTC, as the agent reads its clock on a UTC
+     * process, and once as the same moment in Warsaw. Both must give the same selection, so
+     * the ladder may not depend on which zone the caller's instant happens to carry.
+     *
+     * @param list<string> $expected Backup ids expected to be pruned
+     * @param list<BackupHistory> $rows Index rows fed to the planner
+     * @param BackupRetentionPolicy $policy Retention policy under test
+     * @param string $now ISO-8601 instant the ages are measured from
+     */
+    private function assertDoomedInWarsaw(
+        array $expected,
+        array $rows,
+        BackupRetentionPolicy $policy,
+        string $now = self::NOW,
+    ): void {
+        $warsaw = new DateTimeZone(self::WARSAW);
+        $utcNow = new DateTimeImmutable($now)->setTimezone(new DateTimeZone(TimeConstants::UTC_TIME_ZONE));
+
+        $this->assertDoomedOn($expected, $rows, $policy, $warsaw, $utcNow);
+        $this->assertDoomedOn($expected, $rows, $policy, $warsaw, $utcNow->setTimezone($warsaw));
+    }
+
+    /**
+     * Asserts the planner would prune exactly the given ids on the given clock.
+     *
+     * @param list<string> $expected Backup ids expected to be pruned
+     * @param list<BackupHistory> $rows Index rows fed to the planner
+     * @param BackupRetentionPolicy $policy Retention policy under test
+     * @param DateTimeZone $timezone Timezone the planner derives buckets and ages in
+     * @param DateTimeImmutable $now Instant the ages are measured from
+     */
+    private function assertDoomedOn(
+        array $expected,
+        array $rows,
+        BackupRetentionPolicy $policy,
+        DateTimeZone $timezone,
+        DateTimeImmutable $now,
+    ): void {
+        $doomed = new BackupPruner()->selectForDeletion($rows, $policy, $timezone, $now);
         $ids = array_map(static fn(BackupHistory $row): string => $row->getId(), $doomed);
         sort($ids);
         $want = $expected;

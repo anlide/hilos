@@ -7,7 +7,10 @@ namespace Hilos\Tests\Unit;
 use Hilos\API\Router\HttpRouteTally;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\ClusterContext;
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
+use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Daemon\DaemonMeasurements;
 use Hilos\Core\Agent\Exception\AgentException;
@@ -25,6 +28,8 @@ use Hilos\DaemonSection\DTO\DaemonNodePictureSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
 use Hilos\DaemonSection\NodeEnvironmentSummary;
 use Hilos\DaemonSection\NodeEnvironmentFingerprint;
+use Hilos\Environment\EnvAccessor;
+use Hilos\Environment\EnvCatalogStub;
 use Hilos\Environment\EnvSource;
 use Hilos\Core\Agent\Hilos\DaemonNodeAgent;
 use Hilos\DaemonSection\DaemonCronPicture;
@@ -35,19 +40,35 @@ use Hilos\DaemonSection\DaemonWorkerPicture;
 use Hilos\DaemonSection\DTO\DaemonAgentCronSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterCronSignalData;
 use Hilos\Hilos;
+use DateTimeImmutable;
+use DateTimeZone;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
 
 /** The node sends a complete frame at start, on change and periodically. */
 final class DaemonNodePictureTest extends TestCase
 {
+    private const string WARSAW = 'Europe/Warsaw';
+
+    private const string DAILY_AT_THREE = '0 3 * * *';
+
+    private const string CLOCK_FORMAT = 'H:i';
+
+    private const int SECONDS_PER_DAY = 86400;
+
     private ?ClusterContext $previousCluster = null;
     private ?SignalRouter $previousRouter = null;
+    private ?EnvAccessor $previousEnv = null;
+    private string|false $previousProjectZone = false;
+    private string $previousProcessZone = TimeConstants::UTC_TIME_ZONE;
 
     protected function setUp(): void
     {
         $this->previousCluster = Hilos::$cluster;
         $this->previousRouter = Hilos::$sr;
+        $this->previousEnv = Hilos::$env;
+        $this->previousProjectZone = getenv(EnvConstants::HILOS_PROJECT_TIME_ZONE->name);
+        $this->previousProcessZone = date_default_timezone_get();
         Hilos::$cluster = null;
         Hilos::$sr = new SignalRouter();
     }
@@ -56,6 +77,13 @@ final class DaemonNodePictureTest extends TestCase
     {
         Hilos::$cluster = $this->previousCluster;
         Hilos::$sr = $this->previousRouter;
+        Hilos::$env = $this->previousEnv;
+        if ($this->previousProjectZone === false) {
+            putenv(EnvConstants::HILOS_PROJECT_TIME_ZONE->name);
+        } else {
+            putenv(EnvConstants::HILOS_PROJECT_TIME_ZONE->name . '=' . $this->previousProjectZone);
+        }
+        date_default_timezone_set($this->previousProcessZone);
         parent::tearDown();
     }
 
@@ -535,6 +563,50 @@ final class DaemonNodePictureTest extends TestCase
         ));
     }
 
+    public function testMasterAndAgentNextRunFollowTheProjectZoneWhileTheProcessIsUtc(): void
+    {
+        $agent = new DaemonNodeAgent();
+        $agent->onStart();
+        Hilos::$sr?->getNextQueuedSignal();
+        Hilos::$env = new EnvAccessor(EnvCatalogStub::class);
+        putenv(EnvConstants::HILOS_PROJECT_TIME_ZONE->name . '=' . self::WARSAW);
+        date_default_timezone_set(TimeConstants::UTC_TIME_ZONE);
+
+        $before = time();
+        $agent->onSignalAgent(
+            new AgentSignalData(data: new DaemonMasterCronSignalData('standalone', null, [
+                new DaemonCronRuleReport('daily', self::DAILY_AT_THREE, 123),
+            ])),
+            SignalSource::DAEMON,
+            HilosSignalConstants::DAEMON_MASTER_CRON,
+        );
+        $agent->onSignalAgent(
+            new AgentSignalData(data: new DaemonAgentCronSignalData('a-agent', [
+                new DaemonCronRuleReport('daily', self::DAILY_AT_THREE, 456),
+            ])),
+            'agent/a-agent',
+            HilosSignalConstants::DAEMON_AGENT_CRON,
+        );
+        $after = time();
+        $agent->reportIfDue(microtime(true) + 6.0);
+        $reported = Hilos::$sr?->getNextQueuedSignal()?->data?->data;
+
+        self::assertInstanceOf(DaemonNodePictureSignalData::class, $reported);
+        $rules = $reported->picture->cron?->rules ?? [];
+        self::assertSame([null, 'a-agent'], array_map(
+            static fn (DaemonCronRulePicture $rule): ?string => $rule->agentId,
+            $rules,
+        ));
+        self::assertSame([123, 456], array_map(
+            static fn (DaemonCronRulePicture $rule): ?int => $rule->lastRunAt,
+            $rules,
+        ));
+        foreach ($rules as $rule) {
+            $this->assertDailyRunOnTheProjectClock($rule->nextRunAt, $before, $after);
+        }
+        self::assertSame(TimeConstants::UTC_TIME_ZONE, date_default_timezone_get());
+    }
+
     public function testAgentCronRefusesAnotherSender(): void
     {
         $agent = new DaemonNodeAgent();
@@ -546,5 +618,27 @@ final class DaemonNodePictureTest extends TestCase
             'agent/other-agent',
             HilosSignalConstants::DAEMON_AGENT_CRON,
         );
+    }
+
+    /**
+     * @param int|null $nextRunAt Next run as the picture carries it
+     * @param int $before Unix time read before the node counted the run
+     * @param int $after Unix time read after the node counted the run
+     */
+    private function assertDailyRunOnTheProjectClock(?int $nextRunAt, int $before, int $after): void
+    {
+        self::assertIsInt($nextRunAt);
+        // The frame still carries seconds: a daily run is within two days of now, milliseconds would not be.
+        self::assertGreaterThan($before, $nextRunAt);
+        self::assertLessThanOrEqual($after + 2 * self::SECONDS_PER_DAY, $nextRunAt);
+
+        $moment = new DateTimeImmutable('@' . $nextRunAt);
+        self::assertSame('03:00', $moment->setTimezone(new DateTimeZone(self::WARSAW))->format(self::CLOCK_FORMAT));
+        // 03:00 in Warsaw is 02:00Z in winter and 01:00Z in summer, never 03:00Z of the process zone.
+        self::assertContains($moment->format(self::CLOCK_FORMAT), ['01:00', '02:00']);
+        self::assertContains($nextRunAt, [
+            CronRule::nextRunAfter(self::DAILY_AT_THREE, $before),
+            CronRule::nextRunAfter(self::DAILY_AT_THREE, $after),
+        ]);
     }
 }

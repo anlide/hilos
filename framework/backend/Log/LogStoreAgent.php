@@ -365,6 +365,7 @@ final class LogStoreAgent extends AbstractAgent
      *
      * @throws InvalidArgumentException When a frame to a following viewer or to the aggregator cannot be named
      * @throws DatabaseException When scheduled rotation cannot open or close its receipt
+     * @throws EnvException When the project time zone of the rotation schedule cannot be read
      */
     public function onTick(): void
     {
@@ -436,6 +437,7 @@ final class LogStoreAgent extends AbstractAgent
      * @param float $now Monotonic-enough wall clock of the walk this check rides
      * @throws InvalidArgumentException When the frame announcing the new batch cannot be named
      * @throws DatabaseException When a cron receipt cannot be opened or closed
+     * @throws EnvException When the project time zone of the rotation schedule cannot be read
      */
     public function rotateIfDue(float $now): void
     {

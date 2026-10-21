@@ -133,7 +133,7 @@ final class BackupConstants
     /** Schedule entry key: the unique job name (also the daemon-mechanism cron signal name). */
     public const string SCHEDULE_NAME = 'name';
 
-    /** Schedule entry key: the five-field cron expression (server timezone). */
+    /** Schedule entry key: the five-field cron expression (project time zone). */
     public const string SCHEDULE_CRON = 'cron';
 
     /** Schedule entry key: the {@see BackupScope} value the run captures. */

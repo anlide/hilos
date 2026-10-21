@@ -119,6 +119,7 @@ final class DaemonNodeAgent extends AbstractHilosAgent
      * @throws AgentUnknownSignalException When the signal is not this agent's
      * @throws InvalidArgumentException When the replacement names another node
      * @throws InvalidFormatException When a cron section cannot be built
+     * @throws EnvException When the project time zone of a next run cannot be read
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
@@ -293,6 +294,7 @@ final class DaemonNodeAgent extends AbstractHilosAgent
      * @param int $now Unix time after which the next run is sought
      * @throws InvalidArgumentException When the replacement names another node
      * @throws InvalidFormatException When a cron row is invalid
+     * @throws EnvException When the project time zone of a next run cannot be read
      */
     private function rebuildCron(int $now): void
     {

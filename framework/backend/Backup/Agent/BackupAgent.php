@@ -4129,7 +4129,8 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      * Applies the retention policy to the runtime index: deletes pruned backups and their rows.
      *
      * Runs against the just-rebuilt index (files=truth, RT=index) in two steps. First the age
-     * ladder ({@see BackupPruner::selectForDeletion()}) plans its keep-set; then the byte ceiling
+     * ladder ({@see BackupPruner::selectForDeletion()}) plans its keep-set on the project clock,
+     * HILOS_PROJECT_TIME_ZONE, never on the process one, which is UTC; then the byte ceiling
      * ({@see BackupPruner::selectForCeiling()}) plans over what the ladder kept, so a store that
      * outgrew its disk is thinned even when the ladder wanted to keep everything - which is
      * exactly the case the ceiling exists for. Both steps delete through the same path: the
@@ -4162,7 +4163,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
             $doomed = $pruner->selectForDeletion(
                 $rows,
                 $policy,
-                new DateTimeZone(date_default_timezone_get()),
+                new DateTimeZone(Hilos::$env[EnvConstants::HILOS_PROJECT_TIME_ZONE]->string()),
                 new DateTimeImmutable(),
             );
             $pruned = [];

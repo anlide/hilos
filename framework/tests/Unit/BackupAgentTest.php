@@ -19,6 +19,7 @@ use Hilos\Constants\ExitCode;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
@@ -41,6 +42,7 @@ use Hilos\Runtime\View\Item\RestoreRuntime;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
 use RuntimeException;
 
 /**
@@ -59,15 +61,31 @@ use RuntimeException;
  * The out-of-reach cases (HIL-940) mount the backup index: an archive another node's disk holds
  * is refused by name at all three operator requests, and the readers of this node's own archives
  * never count it.
+ *
+ * The rotation cases (HIL-1581) mount the index too and run one pass over it: the age buckets
+ * fall on the project clock the environment declares, while the process clock stays UTC as a
+ * daemon's does.
  */
 final class BackupAgentTest extends TestCase
 {
     private const string INITIATOR = 'accept-key-of-the-tab';
 
+    private const string WARSAW = 'Europe/Warsaw';
+
+    /** Half an hour before midnight UTC, 1 January 1970: still 1969 in UTC, already 1970 in Warsaw. */
+    private const string BEFORE_UTC_NEW_YEAR = '1969-12-31_23-30-00';
+
+    /** Half an hour after that midnight: 1970 on both clocks. */
+    private const string AFTER_UTC_NEW_YEAR = '1970-01-01_00-30-00';
+
+    private string $previousProcessZone;
+
     protected function setUp(): void
     {
         parent::setUp();
 
+        $this->previousProcessZone = date_default_timezone_get();
+        date_default_timezone_set(TimeConstants::UTC_TIME_ZONE);
         Hilos::$sr = new SignalRouter();
         Hilos::$env = $this->env();
     }
@@ -75,10 +93,12 @@ final class BackupAgentTest extends TestCase
     protected function tearDown(): void
     {
         RtTruthSourceRegistry::unregisterDaemon(StateRestoreRuntime::RT_ITEM);
+        RtTruthSourceRegistry::unregisterDaemon(StateBackupHistory::RT_COLLECTION);
         Hilos::$rt = null;
         Hilos::$sr = null;
         Hilos::$env = null;
         Hilos::$db = null;
+        date_default_timezone_set($this->previousProcessZone);
 
         parent::tearDown();
     }
@@ -481,6 +501,67 @@ final class BackupAgentTest extends TestCase
         $this->assertNull($this->nextSignalOfType(SignalTypeConstants::PROTECTED_MODE_DISABLE));
     }
 
+    public function testRotationCountsItsYearsOnTheProjectClockAndNotOnTheProcessOne(): void
+    {
+        // Midnight of 1 January 1970 came an hour earlier in Warsaw than in UTC, so the two rows
+        // half an hour either side of the UTC one share Warsaw's 1970, and the yearly grid keeps
+        // one of them: the newer.
+        $this->assertSame([self::AFTER_UTC_NEW_YEAR], $this->rowsLeftByRotationOn(self::WARSAW));
+    }
+
+    public function testRotationOnAUtcProjectKeepsTheRowsEitherSideOfTheUtcNewYear(): void
+    {
+        $this->assertSame(
+            [self::BEFORE_UTC_NEW_YEAR, self::AFTER_UTC_NEW_YEAR],
+            $this->rowsLeftByRotationOn(TimeConstants::UTC_TIME_ZONE),
+        );
+    }
+
+    /**
+     * Runs one rotation pass over the two rows either side of the 1970 UTC new year.
+     *
+     * Both are successful full backups more than half a century old, and every age is one unit,
+     * so both sit in the yearly band whatever today's date is; which year each falls in is the
+     * only thing the project zone can change. Nothing on disk is touched: the storage root is
+     * empty, which makes the stored-file delete a no-op, and the byte ceiling is off, so the
+     * rows that leave the index are exactly the ones the age ladder dropped.
+     *
+     * @param string $projectZone Project time zone the environment declares
+     * @return list<string> Ids left in the backup index, in index order
+     */
+    private function rowsLeftByRotationOn(string $projectZone): array
+    {
+        Hilos::$env = $this->env([
+            EnvConstants::HILOS_PROJECT_TIME_ZONE->name => $projectZone,
+            EnvConstants::BACKUP_DIR->name => '',
+            EnvConstants::BACKUP_RETENTION_DAILY->name => 1,
+            EnvConstants::BACKUP_RETENTION_WEEKLY->name => 1,
+            EnvConstants::BACKUP_RETENTION_MONTHLY->name => 1,
+            EnvConstants::BACKUP_RETENTION_YEARLY->name => 1,
+            EnvConstants::BACKUP_MAX_TOTAL_BYTES->name => 0,
+        ]);
+        $this->mountIndex(
+            $this->indexRow(self::BEFORE_UTC_NEW_YEAR, [StateBackupHistory::createdAt => '1969-12-31T23:30:00+00:00']),
+            $this->indexRow(self::AFTER_UTC_NEW_YEAR, [StateBackupHistory::createdAt => '1970-01-01T00:30:00+00:00']),
+        );
+        // The agent owns the index in a daemon; here the daemon stands in for it, as it does for
+        // the restore runtime row, so the pass may forget what it pruned.
+        RtTruthSourceRegistry::registerDaemon(StateBackupHistory::RT_COLLECTION);
+
+        // Every entrance to rotation rescans storage first, and the rescan would replace these rows
+        // with what a disk holds; the pass itself is what is asked about, so it is called directly.
+        ob_start();
+        new ReflectionMethod(BackupAgent::class, 'pruneHistory')->invoke(new BackupAgent());
+        ob_end_clean();
+
+        $ids = [];
+        foreach ($this->histories() as $row) {
+            $ids[] = $row->getId();
+        }
+
+        return $ids;
+    }
+
     /**
      * Mounts the backup index holding the given rows, and the restore runtime row beside it.
      *
@@ -655,40 +736,64 @@ final class BackupAgentTest extends TestCase
     }
 
     /**
-     * Builds an environment the restore admission can read every value it needs from.
+     * Builds an environment the restore admission and the rotation pass can read every value they need from.
      *
      * The fixtures answer at the catalog and the value seam rather than at the typed readers,
-     * because an index read reaches those two and never the readers themselves.
+     * because an index read reaches those two and never the readers themselves. The storage root
+     * and the project zone are named; every other string key reads as the CLI entry and every
+     * integer key as 600. A case that needs another answer for a key passes it in `$answers`.
      *
+     * @param array<string, string|int> $answers Answers keyed by env variable name, replacing the fixtures
      * @return EnvAccessor Accessor answering the backup keys with fixtures
      */
-    private function env(): EnvAccessor
+    private function env(array $answers = []): EnvAccessor
     {
-        return new class extends EnvAccessor {
+        return new class ($answers + [
+            EnvConstants::BACKUP_DIR->name => '/app/data/backup',
+            EnvConstants::HILOS_PROJECT_TIME_ZONE->name => TimeConstants::UTC_TIME_ZONE,
+        ]) extends EnvAccessor {
             /**
-             * @return array<string, array<string, mixed>> Framework catalog plus the entry point a project declares
+             * @param array<string, string|int> $answers Answers keyed by env variable name
+             */
+            public function __construct(private readonly array $answers)
+            {
+                parent::__construct();
+            }
+
+            /**
+             * @return array<string, array<string, mixed>> Framework catalog plus the entry point and retention keys a project declares
              */
             protected function getCatalog(): array
             {
+                $integer = [EnvCatalogConstants::CATALOG_ENTRY_TYPE => EnvCatalogConstants::TYPE_INTEGER];
+
                 return [
                     ...parent::getCatalog(),
                     EnvConstants::BACKUP_CLI_ENTRY->name => [
                         EnvCatalogConstants::CATALOG_ENTRY_TYPE => EnvCatalogConstants::TYPE_STRING,
                     ],
+                    EnvConstants::BACKUP_RETENTION_DAILY->name => $integer,
+                    EnvConstants::BACKUP_RETENTION_WEEKLY->name => $integer,
+                    EnvConstants::BACKUP_RETENTION_MONTHLY->name => $integer,
+                    EnvConstants::BACKUP_RETENTION_YEARLY->name => $integer,
+                    EnvConstants::BACKUP_ERROR_RETENTION_COUNT->name => $integer,
+                    EnvConstants::BACKUP_MAX_TOTAL_BYTES->name => $integer,
                 ];
             }
 
             /**
              * @param string $key Environment variable name
-             * @return mixed Fixture for a string or integer key, the catalog answer for every other type
+             * @return mixed Named answer, else a fixture for a string or integer key, else the catalog answer
              * @throws EnvException When the key is invalid, uncataloged, or has no answer
              */
             public function effectiveValueFor(string $key): mixed
             {
+                if (array_key_exists($key, $this->answers)) {
+                    return $this->answers[$key];
+                }
+
                 return match ($this->typeFor($key)) {
-                    EnvCatalogConstants::TYPE_STRING => $key === EnvConstants::BACKUP_DIR->name
-                        ? '/app/data/backup'
-                        : '/app/cli.php',
+                    EnvCatalogConstants::TYPE_STRING => '/app/cli.php',
                     EnvCatalogConstants::TYPE_INTEGER => 600,
                     default => parent::effectiveValueFor($key),
                 };

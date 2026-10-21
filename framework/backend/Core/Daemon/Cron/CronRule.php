@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon\Cron;
 
+use DateTimeImmutable;
 use DateTimeZone;
+use Hilos\Constants\EnvConstants;
+use Hilos\Environment\Exception\EnvException;
+use Hilos\Hilos;
 
 /**
  * Represents a single cron rule with cron expression.
@@ -12,6 +16,10 @@ use DateTimeZone;
  * Stores cron job configuration: name, cron expression, and last execution time.
  * Supports standard cron expressions: "minute hour day month weekday".
  * Example: "*\/5 * * * *" means every 5 minutes.
+ *
+ * Every expression is read on the project clock, HILOS_PROJECT_TIME_ZONE, and never on the
+ * process zone, which is UTC: "0 3 * * *" in Europe/Warsaw fires at 02:00Z in winter and at
+ * 01:00Z in summer. The zone is read per calculation and kept nowhere.
  */
 class CronRule
 {
@@ -29,6 +37,12 @@ class CronRule
 
     /** Use noon to determine a calendar day without crossing a midnight clock change. */
     private const int MIDDAY_HOUR = 12;
+
+    /** Date format of a local calendar day, the key the clock changes of a search are filed under. */
+    private const string DAY_KEY_FORMAT = 'Ymd';
+
+    /** Date format of the weekday, numbered as in the weekday field: 0 = Sunday. */
+    private const string WEEKDAY_FORMAT = 'w';
 
     /** Field separator inside a cron expression. */
     private const string FIELD_SEPARATOR = ' ';
@@ -117,9 +131,14 @@ class CronRule
      * Find the first matching local minute strictly after the given instant.
      * The day of month and weekday must both match, as in shouldRun().
      *
+     * The calendar is the project's: the search starts, ends, counts month lengths and
+     * weekdays and meets its clock changes in HILOS_PROJECT_TIME_ZONE, while every candidate
+     * stays an absolute instant compared with $after.
+     *
      * @param string $expression Cron expression to search
      * @param int $after Unix time before the next run
      * @return int|null Start of the matching minute, or null when none exists within 28 years
+     * @throws EnvException When the project time zone cannot be read
      */
     public static function nextRunAfter(string $expression, int $after): ?int
     {
@@ -128,21 +147,14 @@ class CronRule
         }
 
         [$minuteExpr, $hourExpr, $dayExpr, $monthExpr, $weekdayExpr] = self::parseExpression($expression);
-        $start = getdate($after);
-        $lastYear = $start['year'] + self::NEXT_RUN_HORIZON_YEARS;
-        $deadline = mktime(
-            $start['hours'],
-            $start['minutes'],
-            $start['seconds'],
-            $start['mon'],
-            $start['mday'],
-            $lastYear,
-        );
+        $zone = new DateTimeZone(Hilos::$env[EnvConstants::HILOS_PROJECT_TIME_ZONE]->string());
+        $start = self::localTime($after, $zone);
+        [, , $startDay, $startMonth] = self::calendarFields($start);
+        $startYear = (int)$start->format('Y');
+        $lastYear = $startYear + self::NEXT_RUN_HORIZON_YEARS;
+        $deadline = $start->setDate($lastYear, $startMonth, $startDay)->getTimestamp();
         $foldsByDay = [];
-        $transitions = (new DateTimeZone(date_default_timezone_get()))->getTransitions(
-            $after - self::SECONDS_PER_DAY,
-            $deadline,
-        );
+        $transitions = $zone->getTransitions($after - self::SECONDS_PER_DAY, $deadline);
         if ($transitions !== false) {
             $previousOffset = $transitions[0]['offset'];
             foreach (array_slice($transitions, 1) as $transition) {
@@ -153,36 +165,38 @@ class CronRule
                 }
 
                 $fold = [$transition['ts'], $foldSeconds];
-                $foldsByDay[date('Ymd', $transition['ts'] - 1)][] = $fold;
-                $foldsByDay[date('Ymd', $transition['ts'])][] = $fold;
+                $foldsByDay[self::localTime($transition['ts'] - 1, $zone)->format(self::DAY_KEY_FORMAT)][] = $fold;
+                $foldsByDay[self::localTime($transition['ts'], $zone)->format(self::DAY_KEY_FORMAT)][] = $fold;
             }
         }
 
-        for ($year = $start['year']; $year <= $lastYear; $year++) {
+        $calendar = $start->setTime(self::MIDDAY_HOUR, 0);
+        for ($year = $startYear; $year <= $lastYear; $year++) {
             for ($month = self::MONTH_MIN; $month <= self::MONTH_MAX; $month++) {
-                if ($year === $start['year'] && $month < $start['mon']) {
+                if ($year === $startYear && $month < $startMonth) {
                     continue;
                 }
                 if (!self::matchesPart($monthExpr, $month, self::MONTH_MIN, self::MONTH_MAX)) {
                     continue;
                 }
 
-                $daysInMonth = (int)date('t', mktime(self::MIDDAY_HOUR, 0, 0, $month, 1, $year));
+                $daysInMonth = (int)$calendar->setDate($year, $month, self::DAY_MIN)->format('t');
                 for ($day = self::DAY_MIN; $day <= $daysInMonth; $day++) {
-                    if ($year === $start['year'] && $month === $start['mon'] && $day < $start['mday']) {
+                    if ($year === $startYear && $month === $startMonth && $day < $startDay) {
                         continue;
                     }
                     if (!self::matchesPart($dayExpr, $day, self::DAY_MIN, self::DAY_MAX)) {
                         continue;
                     }
 
-                    $weekday = (int)date('w', mktime(self::MIDDAY_HOUR, 0, 0, $month, $day, $year));
+                    $noon = $calendar->setDate($year, $month, $day);
+                    $weekday = (int)$noon->format(self::WEEKDAY_FORMAT);
                     if (!self::matchesPart($weekdayExpr, $weekday, self::WEEKDAY_MIN, self::WEEKDAY_MAX)) {
                         continue;
                     }
 
                     $earliest = null;
-                    $folds = $foldsByDay[sprintf('%04d%02d%02d', $year, $month, $day)] ?? [];
+                    $folds = $foldsByDay[$noon->format(self::DAY_KEY_FORMAT)] ?? [];
                     for ($hour = self::HOUR_MIN; $hour <= self::HOUR_MAX; $hour++) {
                         if (!self::matchesPart($hourExpr, $hour, self::HOUR_MIN, self::HOUR_MAX)) {
                             continue;
@@ -193,7 +207,7 @@ class CronRule
                                 continue;
                             }
 
-                            $candidates = [mktime($hour, $minute, 0, $month, $day, $year)];
+                            $candidates = [$noon->setTime($hour, $minute)->getTimestamp()];
                             foreach ($folds as [$transitionAt, $foldSeconds]) {
                                 if ($candidates[0] >= $transitionAt - $foldSeconds && $candidates[0] < $transitionAt) {
                                     $candidates[] = $candidates[0] + $foldSeconds;
@@ -207,9 +221,11 @@ class CronRule
                                     continue;
                                 }
 
-                                $local = getdate($candidate);
-                                if ($local['hours'] !== $hour || $local['minutes'] !== $minute ||
-                                    $local['mday'] !== $day || $local['mon'] !== $month) {
+                                [$localMinute, $localHour, $localDay, $localMonth, $localWeekday] = self::calendarFields(
+                                    self::localTime($candidate, $zone),
+                                );
+                                if ($localHour !== $hour || $localMinute !== $minute ||
+                                    $localDay !== $day || $localMonth !== $month) {
                                     continue;
                                 }
 
@@ -219,11 +235,11 @@ class CronRule
                                     $dayExpr,
                                     $monthExpr,
                                     $weekdayExpr,
-                                    $local['minutes'],
-                                    $local['hours'],
-                                    $local['mday'],
-                                    $local['mon'],
-                                    $local['wday'],
+                                    $localMinute,
+                                    $localHour,
+                                    $localDay,
+                                    $localMonth,
+                                    $localWeekday,
                                 ) && ($earliest === null || $candidate < $earliest)) {
                                     $earliest = $candidate;
                                 }
@@ -247,11 +263,15 @@ class CronRule
      * Checks if current time matches cron expression.
      * Only checks once per minute to avoid duplicate executions.
      *
+     * The minute guard is absolute and the five fields are read on the project clock, so the
+     * repeated autumn hour fires once per absolute minute and the skipped spring hour not at all.
+     *
      * @return bool True if should run
+     * @throws EnvException When the project time zone cannot be read
      */
     public function shouldRun(): bool
     {
-        $currentTime = (float)time();
+        $currentTime = $this->currentTimestamp();
 
         // Don't run if already executed in current minute
         // Compare minute-level timestamps (lastRun is already stored at minute level)
@@ -261,13 +281,10 @@ class CronRule
             return false;
         }
 
-        // Get current time components for cron expression matching
-        $now = getdate();
-        $currentMinute = (int)$now['minutes'];
-        $currentHour = (int)$now['hours'];
-        $currentDay = (int)$now['mday'];
-        $currentMonth = (int)$now['mon'];
-        $currentWeekday = (int)$now['wday']; // 0 = Sunday, 6 = Saturday
+        // Get current time components for cron expression matching, weekday 0 = Sunday
+        [$currentMinute, $currentHour, $currentDay, $currentMonth, $currentWeekday] = self::calendarFields(
+            self::localTime($currentTime, new DateTimeZone(Hilos::$env[EnvConstants::HILOS_PROJECT_TIME_ZONE]->string())),
+        );
 
         // Parse and check cron expression
         $parts = self::parseExpression($this->expression);
@@ -290,11 +307,52 @@ class CronRule
 
         if ($matches) {
             $this->lastRun = $currentMinuteTimestamp;
-            $this->lastFiredAt = (int)$currentTime;
+            $this->lastFiredAt = $currentTime;
             return true;
         }
 
         return false;
+    }
+
+    /**
+     * Read the current Unix time, once per {@see shouldRun()}.
+     *
+     * The seam a test overrides to place the check at a fixed moment.
+     *
+     * @return int Current Unix time in seconds
+     */
+    protected function currentTimestamp(): int
+    {
+        return time();
+    }
+
+    /**
+     * Place an instant on the project clock.
+     *
+     * @param int $timestamp Unix time
+     * @param DateTimeZone $zone Project time zone of this calculation
+     * @return DateTimeImmutable The same instant in the project time zone
+     */
+    private static function localTime(int $timestamp, DateTimeZone $zone): DateTimeImmutable
+    {
+        return new DateTimeImmutable('@' . $timestamp)->setTimezone($zone);
+    }
+
+    /**
+     * Read the five calendar fields of an instant already on the project clock.
+     *
+     * @param DateTimeImmutable $local Instant in the project time zone
+     * @return list<int> Minute, hour, day of month, month and weekday, in expression order
+     */
+    private static function calendarFields(DateTimeImmutable $local): array
+    {
+        return [
+            (int)$local->format('i'),
+            (int)$local->format('G'),
+            (int)$local->format('j'),
+            (int)$local->format('n'),
+            (int)$local->format(self::WEEKDAY_FORMAT),
+        ];
     }
 
     /**

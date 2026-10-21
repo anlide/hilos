@@ -33,9 +33,10 @@ use Throwable;
  * - the newest {@see BackupRetentionPolicy::$errorCount} error records, which never enter the
  *   restore grids because they carry no restore value.
  *
- * Band and bucket membership are derived on the fly from each row's timestamp in the given
- * timezone; neither is ever stored on a row or in a sidecar. A row whose timestamp cannot be
- * parsed is kept, so a malformed index row is never silently deleted.
+ * Band and bucket membership are derived on the fly from each row's timestamp and the given
+ * instant, both on the calendar of the given timezone; neither is ever stored on a row or in a
+ * sidecar. A row whose timestamp cannot be parsed is kept, so a malformed index row is never
+ * silently deleted.
  *
  * Age is not the only bound. {@see selectForCeiling()} is a second, orthogonal pass over what the
  * ladder kept: when the store occupies more than {@see BackupRetentionPolicy::$maxTotalBytes} it
@@ -78,12 +79,13 @@ final class BackupPruner
      * Plans one rotation pass: returns the index rows whose stored files should be deleted.
      *
      * Pure - no I/O and no clock read; the caller supplies both the timezone the buckets are
-     * derived in and the instant the ages are measured from.
+     * derived in and the instant the ages are measured from. The instant may carry any zone: it
+     * is moved into the bucket timezone first, so the ages are counted on that calendar too.
      *
      * @param list<BackupHistory> $rows Current backup index rows
      * @param BackupRetentionPolicy $policy Retention ages and error count
-     * @param DateTimeZone $timezone Timezone the day/week/month/year buckets are derived in
-     * @param DateTimeImmutable $now Instant every row's age is measured against
+     * @param DateTimeZone $timezone Timezone the day/week/month/year buckets and ages are derived in
+     * @param DateTimeImmutable $now Instant every row's age is measured against, in any zone
      * @return list<BackupHistory> Rows to prune (never any pinned, error-retained, or kept representative)
      */
     public function selectForDeletion(
@@ -120,7 +122,7 @@ final class BackupPruner
             }
         }
 
-        $bands = $this->groupByBand($success, $times, $policy, $now);
+        $bands = $this->groupByBand($success, $times, $policy, $now->setTimezone($timezone));
         foreach ($bands as $format => $bandRows) {
             if ($format === self::BAND_KEEP_ALL) {
                 foreach ($bandRows as $row) {
@@ -413,10 +415,14 @@ final class BackupPruner
      * day, ISO week, month, and finally year. The band boundaries are computed once here
      * rather than per row.
      *
+     * Each boundary is a calendar step back on the clock of `$now`, not a fixed number of
+     * seconds: across a daylight saving change a day is 23 or 25 hours and a week one hour
+     * short of or over seven full days, which is why `$now` arrives in the bucket timezone.
+     *
      * @param list<BackupHistory> $success Success rows with parsed timestamps
      * @param array<string, DateTimeImmutable> $times Parsed timestamps keyed by backup id
      * @param BackupRetentionPolicy $policy Retention ages
-     * @param DateTimeImmutable $now Instant the ages are measured from
+     * @param DateTimeImmutable $now Instant the ages are measured from, in the bucket timezone
      * @return array<string, list<BackupHistory>> Rows keyed by band bucket format
      */
     private function groupByBand(

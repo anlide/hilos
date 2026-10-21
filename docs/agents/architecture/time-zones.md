@@ -63,7 +63,9 @@ start.
 Apply the project zone explicitly to cron and backup retention buckets; do not
 switch the process zone to switch the project clock. UTC process state must not
 make a calendar boundary depend on which process happened to calculate it.
-(not in the code yet — HIL-1581)
+`CronRule` builds its own `DateTimeZone` from the env value for every
+calculation, and `BackupPruner` receives one from its caller; neither calls
+`date_default_timezone_set()`.
 
 Every node of a cluster must declare the same project zone. Refuse a node whose
 project zone differs; accepting it would let the cluster disagree on schedules
@@ -154,7 +156,27 @@ offset in an export does not permit an offset string on the wire.
 Interpret **every cron expression** in the project zone, including next-run
 calculation and daylight saving time (DST). Calculate backup day, week, month
 and year retention buckets in the project zone too.
-(not in the code yet — HIL-1581)
+
+One class carries the cron half for every rule, whoever registered it: the
+daemon's own, an agent's, a backup schedule entry, the log rotation schedule.
+`CronRule::shouldRun()` and `CronRule::nextRunAfter()` read
+`HILOS_PROJECT_TIME_ZONE` once per calculation, build an explicit
+`DateTimeZone` from it and read the five fields from the instant placed on that
+calendar. The process zone is not switched and nothing keeps the project zone
+between calculations. The once-per-minute guard counts absolute minutes, so a
+local minute that does not exist is skipped in spring, and in autumn both
+absolute occurrences of a repeated local minute fire. `nextRunAfter()` returns
+the start of the matching minute as an absolute moment.
+
+`BackupPruner::selectForDeletion()` takes the zone and `now` as parameters and
+reads no clock. It first moves `now` into that zone, and only then subtracts the
+retention ages (`-N days`, `weeks`, `months`, `years`) of the bands, so an age
+is a calendar step in the project zone, DST included, and a `now` that arrives
+in UTC gives the same bands. The day, ISO-week, month and year buckets of every
+row are formatted in the same zone. `BackupAgent::pruneHistory()` passes the
+zone it builds from `HILOS_PROJECT_TIME_ZONE` and the current instant. The
+byte-ceiling pass keeps ordering rows in UTC: it asks which row is older, which
+no zone answers differently.
 
 The resulting next run is still an absolute moment: on the wire it follows
 [A Moment On The Wire](#a-moment-on-the-wire). A calendar used to calculate a

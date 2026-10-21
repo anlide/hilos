@@ -1332,6 +1332,14 @@ that must not go through the signal router.
 
 Cron fires only after `WORKERS_READY` and at most once per minute.
 
+An expression is executed in the project time zone
+(`HILOS_PROJECT_TIME_ZONE`), not in the process zone, which stays UTC:
+`CronRule::shouldRun()` matches the current minute against the five fields as
+the project's clock reads it, and `CronRule::nextRunAfter()` finds the next run
+on the same calendar. The zone is read per calculation and the process never
+switches to it. See [time-zones.md](time-zones.md#cron-retention-and-logs) for
+the DST behaviour.
+
 Cron runs on the leader (or standalone) node only, and last-run state is not
 persisted — a new leader schedules "from now". Because `shouldRun()` fires at most
 once for a matching minute, no catch-up burst is possible on a leadership change.

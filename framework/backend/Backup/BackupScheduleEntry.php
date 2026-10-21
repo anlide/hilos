@@ -11,14 +11,14 @@ use Hilos\Backup\Exception\BackupScheduleException;
  *
  * A validated, immutable projection of one project catalog schedule entry. The name is the
  * unique job identifier (and, for the daemon mechanism, the DAEMON/CRON signal name); the
- * cron expression is the standard five-field form evaluated in the server timezone; the
+ * cron expression is the standard five-field form evaluated in the project time zone; the
  * scope is what the run captures; the mechanism is which evaluator owns it.
  */
 final class BackupScheduleEntry
 {
     /**
      * @param string $name Unique job name
-     * @param string $expression Five-field cron expression (server timezone)
+     * @param string $expression Five-field cron expression (project time zone)
      * @param BackupScope $scope Scope the run captures
      * @param BackupScheduleMechanism $mechanism Evaluator that owns the entry
      */

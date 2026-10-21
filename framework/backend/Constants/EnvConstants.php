@@ -946,7 +946,7 @@ enum EnvConstants
     case LOG_ROTATION_MAX_LIVE_SIZE_BYTES;
 
     /**
-     * @var string Five-field cron expression (server timezone) on which the per-node log store
+     * @var string Five-field cron expression (project time zone) on which the per-node log store
      * owner rotates the live logs — the planned-rotation axis alongside the age and size axes.
      * Default '0 3 * * *', the nightly schedule of the Normal logging mode an installation starts
      * on (HIL-906). Set and empty disables the schedule axis — empty is an answer for this key, not
