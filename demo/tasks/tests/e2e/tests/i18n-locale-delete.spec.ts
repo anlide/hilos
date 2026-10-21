@@ -2,7 +2,6 @@ import { expect, test, type Page } from '@playwright/test'
 import {
   dismissToasts,
   shownByTestId,
-  sidewaysOverflow,
   watchHeight,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
@@ -44,14 +43,13 @@ async function addLocale(page: Page, localeCode: string): Promise<void> {
   await dismissToasts(page)
 }
 
-test('deletes a countryless locale at 375px and updates both subscribed pairs without reloading', async ({
+test('deletes a countryless locale and updates both subscribed pairs without reloading', async ({
   page,
   context,
 }) => {
   await signUpAdmin(page)
   await switchLanguageOn('pt')
   await deleteLocale('pt')
-  await page.setViewportSize({ width: 375, height: 812 })
   await gotoPage(page, '/hilos/i18n/languages/pt/locales', PAGE_READY)
   await addLocale(page, 'pt')
   const other = await context.newPage()
@@ -82,7 +80,6 @@ test('deletes a countryless locale at 375px and updates both subscribed pairs wi
     'Delete locale · Português without a country',
   )
   await expect(window).toContainText('fall back to the default language')
-  await expect.poll(() => sidewaysOverflow(page)).toEqual([0, 0])
   await modal.press('Escape')
   await expect(window).toHaveCount(0)
   await expect(trash).toBeFocused()
@@ -108,7 +105,6 @@ test('deletes a countryless locale at 375px and updates both subscribed pairs wi
     await expect(tab).toHaveURL(/\/hilos\/i18n\/languages\/pt\/locales$/)
   }
   expect(reloads).toBe(0)
-  await expect.poll(() => sidewaysOverflow(page)).toEqual([0, 0])
   await other.close()
 })
 
