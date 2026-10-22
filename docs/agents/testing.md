@@ -1,10 +1,15 @@
 # Testing — Agent Guide
 
 Quick reference for running tests across the repo. All test commands go
-through Docker (`docker compose ... run --rm chat-cli-test ...`) and are
+through Docker (`docker compose ... run --build --rm chat-cli-test ...`) and are
 wrapped in `composer` scripts — **do not invoke `phpunit` / `vendor/bin/phpunit`
 directly from the host**, especially on Windows (vendor binaries and MySQL
 live inside the test container).
+
+A test script or graph step builds the images it runs itself, from the plain
+Docker cache, before it starts: after a Dockerfile edit nothing needs rebuilding
+by hand before the tests. A failed build fails the step with a non-zero exit
+code, so tests never run on the old image.
 
 ---
 
@@ -28,7 +33,7 @@ Composer scripts live in the repo-root `composer.json`:
 | Script | What it does |
 |---|---|
 | `composer run test:framework:install-deps` | Install PHPUnit & framework dev deps inside the test container. |
-| `composer run test:framework:up` | Start `mysql-framework-test` and the backup receiver, and wait until both are healthy. |
+| `composer run test:framework:up` | Build the backup receiver image from the cache, start it with `mysql-framework-test`, and wait until both are healthy. |
 | `composer run test:framework:databases` | Recreate the databases of the integration pieces, `hilos-framework-test-1`…`4`, as root inside the database container. Needs `up`. |
 | `composer run test:framework:piece -- <K>` | Run integration piece K on its own database: the classes whose crc32 of the short name lands on K, as defined in `scripts/framework-pieces.php`. Needs `up` and `databases`. |
 | `composer run test:framework:unit` | Run framework unit tests (`framework/tests/Unit`). |

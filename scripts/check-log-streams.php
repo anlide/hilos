@@ -333,7 +333,7 @@ function runAliveScenario(array $box, array $records): array
         return ['failures' => [], 'harness' => $raised];
     }
     $marks = markStreams($box, logStreamsDaemonContainer());
-    $up = runFromStand($box, $box['compose'] . ' up -d ' . LOG_STREAMS_DAEMON_SERVICE, LOG_STREAMS_STAND_TIMEOUT_SECONDS);
+    $up = runFromStand($box, $box['compose'] . ' up -d --build ' . LOG_STREAMS_DAEMON_SERVICE, LOG_STREAMS_STAND_TIMEOUT_SECONDS);
     if (!$up['ok']) {
         return ['failures' => [], 'harness' => 'the daemon container did not start: ' . $up['note'] . "\n" . $up['output']];
     }
@@ -784,7 +784,7 @@ function clearForOwnContainer(array $box): ?string
     deleteFreezeState($box);
     $reset = runFromStand(
         $box,
-        $box['compose'] . ' --profile ' . LOG_STREAMS_CLI_PROFILE . ' run --rm ' . LOG_STREAMS_CLI_SERVICE . ' '
+        $box['compose'] . ' --profile ' . LOG_STREAMS_CLI_PROFILE . ' run --build --rm ' . LOG_STREAMS_CLI_SERVICE . ' '
             . LOG_STREAMS_CLI . ' ' . escapeshellarg('test:logs:reset'),
         LOG_STREAMS_STAND_TIMEOUT_SECONDS,
     );
@@ -823,7 +823,8 @@ function logStreamsOwnContainer(): string
  * `run` rather than `up`: the two scenarios need an environment and a mount the compose file
  * does not declare. `--use-aliases` keeps the service's network alias, which is how the daemon
  * is reached by name. Detached, and not `--rm`: the container log is read while it stands, and
- * the scenario removes it itself.
+ * the scenario removes it itself. `--build` comes first, like on the stand's `up` and the cli
+ * reset: an image older than its Dockerfile is rebuilt from cache, never run as it stands.
  *
  * @param array{root: string, cwd: string, compose: string, logDir: string} $box Where things are.
  * @param string $extra The `-e` and `-v` arguments, already quoted.
@@ -833,7 +834,7 @@ function startOwnContainer(array $box, string $extra): ?string
 {
     $ran = runFromStand(
         $box,
-        $box['compose'] . ' run -d --use-aliases --name ' . logStreamsOwnContainer() . ' ' . $extra . ' ' . LOG_STREAMS_DAEMON_SERVICE,
+        $box['compose'] . ' run --build -d --use-aliases --name ' . logStreamsOwnContainer() . ' ' . $extra . ' ' . LOG_STREAMS_DAEMON_SERVICE,
         LOG_STREAMS_STAND_TIMEOUT_SECONDS,
     );
     if (!$ran['ok']) {
