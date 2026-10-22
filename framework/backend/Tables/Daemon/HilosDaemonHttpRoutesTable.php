@@ -9,7 +9,6 @@ use Hilos\API\Router\HttpRouteTally;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
-use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -17,17 +16,19 @@ use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\DaemonSection\ClusterDaemonPicture;
 use Hilos\DaemonSection\ClusterDaemonPictureMirror;
+use Hilos\DaemonSection\DaemonPictureRowChanges;
+use Hilos\DaemonSection\DaemonPictureViewportTable;
 use Hilos\Pages\Daemon\AbstractHilosDaemonHttpServerPage;
 
 /**
  * HTTP routes of one node, projected only from the page worker's daemon picture mirror in picture order.
  *
  * A viewport without a node filter is empty. The mirror has no row change source, so
- * {@see AbstractHilosDaemonHttpServerPage::onPictureChanged()} resends complete windows
- * on a changed HTTP portion rather than waiting for a tick.
+ * {@see AbstractHilosDaemonHttpServerPage::onPictureChanged()} publishes picture mutations through the shared viewport classifier.
  */
-final class HilosDaemonHttpRoutesTable extends TableDefinition implements ViewportTable
+final class HilosDaemonHttpRoutesTable extends TableDefinition implements DaemonPictureViewportTable
 {
     public const string TABLE = 'hilosDaemonHttpRoutes';
     public const string FILTER_NODE = 'node';
@@ -52,6 +53,20 @@ final class HilosDaemonHttpRoutesTable extends TableDefinition implements Viewpo
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
         return null;
+    }
+
+    /**
+     * @param ?ClusterDaemonPicture $before Previous immutable picture
+     * @param TableQueryDTO $query Subject and viewer scope, independent of pagination and search membership
+     * @return list<TableRowMutationDTO> Changes to the complete subject set
+     * @throws TableRowKeyMissingException When a projected row carries no key
+     */
+    public function pictureMutations(?ClusterDaemonPicture $before, TableQueryDTO $query): array
+    {
+        return DaemonPictureRowChanges::between(
+            $this->makeRows($this->collectRows($before, $query)),
+            $this->makeRows($this->collectRows(ClusterDaemonPictureMirror::picture(), $query)),
+        );
     }
 
     /**
@@ -90,7 +105,7 @@ final class HilosDaemonHttpRoutesTable extends TableDefinition implements Viewpo
      */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
     {
-        return $this->containsRowInMemory($this->collectRows($query), $rowKey, $query);
+        return $this->containsRowInMemory($this->collectRows(ClusterDaemonPictureMirror::picture(), $query), $rowKey, $query);
     }
 
     /**
@@ -101,7 +116,7 @@ final class HilosDaemonHttpRoutesTable extends TableDefinition implements Viewpo
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
-        return $this->filterInMemory($this->collectRows($query), $query);
+        return $this->filterInMemory($this->collectRows(ClusterDaemonPictureMirror::picture(), $query), $query);
     }
 
     /** Configures the HTTP route row representation. */
@@ -111,17 +126,18 @@ final class HilosDaemonHttpRoutesTable extends TableDefinition implements Viewpo
     }
 
     /**
+     * @param ?ClusterDaemonPicture $picture Immutable source picture
      * @param TableQueryDTO $query Window filter naming one node
      * @return list<array<string, mixed>> Routes in picture order, then the unrouted tally
      */
-    private function collectRows(TableQueryDTO $query): array
+    private function collectRows(?ClusterDaemonPicture $picture, TableQueryDTO $query): array
     {
         $node = $query->filter[self::FILTER_NODE] ?? null;
         if (!is_string($node) || trim($node) === '') {
             return [];
         }
 
-        $http = ClusterDaemonPictureMirror::picture()?->node(trim($node))?->slot?->picture->http;
+        $http = $picture?->node(trim($node))?->slot?->picture->http;
         if ($http === null) {
             return [];
         }

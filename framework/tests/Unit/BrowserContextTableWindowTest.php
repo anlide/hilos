@@ -106,6 +106,7 @@ final class BrowserContextTableWindowTest extends TestCase
             TableWindowUnitBrowserContext::PAGE,
             'ak-1',
             $viewport,
+            'window-1',
         );
 
         $this->assertTrue($delivered);
@@ -135,12 +136,20 @@ final class BrowserContextTableWindowTest extends TestCase
                 TableWindowSignalData::firstAnchor => ['key' => 'b'],
                 TableWindowSignalData::lastAnchor => ['key' => 'b'],
                 TableWindowSignalData::rowsBefore => 1,
+                TableWindowSignalData::requestId => 'window-1',
             ],
             $signal->data->data->toArray(),
         );
 
         $this->assertSame(['b'], $viewport->rowIds());
         $this->assertSame(3, $viewport->totalCount());
+
+        // The held viewport is also used for unsolicited delivery: it must not remember this id.
+        new TableWindowUnitBrowserContext()->sendTableWindow(TableWindowUnitBrowserContext::PAGE, 'ak-1', $viewport);
+        $untracked = Hilos::$sr->getNextQueuedSignal();
+        $this->assertInstanceOf(WebSocketSignalData::class, $untracked?->data);
+        $this->assertInstanceOf(TableWindowSignalData::class, $untracked->data->data);
+        $this->assertArrayNotHasKey(TableWindowSignalData::requestId, $untracked->data->data->toArray());
     }
 
     public function testAWindowAskedForPastTheEndOfTheSetSaysTheWholeSetStandsBeforeIt(): void
@@ -177,6 +186,7 @@ final class BrowserContextTableWindowTest extends TestCase
             TableWindowUnitBrowserContext::PAGE,
             'ak-1',
             new TableViewportSubscription(tableKey: 'no_such_table'),
+            'window-refused',
         );
 
         $this->assertFalse($delivered);
@@ -190,6 +200,7 @@ final class BrowserContextTableWindowTest extends TestCase
                 TableWindowRefusedSignalData::page => TableWindowUnitBrowserContext::PAGE,
                 TableWindowRefusedSignalData::tableKey => 'no_such_table',
                 TableWindowRefusedSignalData::errorCode => TableWindowRefusalCode::NOT_SERVED,
+                TableWindowRefusedSignalData::requestId => 'window-refused',
             ],
             $signal->data->data->toArray(),
         );

@@ -265,9 +265,10 @@ function harness(
     listeners,
     initialListenerCount,
     controller: () => register.mock.calls[0]![1],
-    window: (rows: readonly TableRow[]) =>
+    window: (rows: readonly TableRow[], requestId?: string) =>
       emit('tableWindow', {
         data: {
+          ...(requestId === undefined ? {} : { requestId }),
           page: HilosPages.DAEMON,
           tableKey: 'hilosDaemonPlacement',
           rows,
@@ -358,7 +359,10 @@ describe('HilosDaemonPage', () => {
     expect(h.navigate).not.toHaveBeenCalled()
     expect(h.replacePath).not.toHaveBeenCalled()
     h.view.unmount()
-    expect(h.unregister).toHaveBeenCalledWith('hilosDaemonPlacement')
+    expect(h.unregister).toHaveBeenCalledWith(
+      'hilosDaemonPlacement',
+      h.register.mock.calls[0]?.[1],
+    )
     expect(
       [...h.listeners.values()].reduce((n, group) => n + group.size, 0),
     ).toBe(h.initialListenerCount)
@@ -547,7 +551,12 @@ describe('HilosDaemonPage', () => {
     fireEvent.change(h.find('hilos-table-search')!, { target: { value: '99' } })
     act(() => vi.advanceTimersByTime(1000))
     expect(h.find(PANEL)).toBeNull()
-    act(() => h.window(placementRows(['chat_room:99'])))
+    act(() =>
+      h.window(
+        placementRows(['chat_room:99']),
+        h.sendViewport.mock.calls.at(-1)?.[2].requestId,
+      ),
+    )
     expect(h.find(PANEL)).toBeNull()
     expect(h.find(CELL, table)?.getAttribute('aria-expanded')).toBe('false')
     expect(h.find('hilos-daemon-placement-instances')?.textContent).toBe('27')

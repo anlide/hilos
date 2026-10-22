@@ -2,7 +2,11 @@
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { FocusTrap, focusInitial } from '../../src/dom/focusTrap.js'
+import {
+  FocusTrap,
+  focusInitial,
+  registerFocusReturnFallback,
+} from '../../src/dom/focusTrap.js'
 
 afterEach(() => {
   document.body.innerHTML = ''
@@ -121,5 +125,86 @@ describe('FocusTrap', () => {
     trap.activate(root)
     trap.release()
     expect(document.activeElement).toBe(opener)
+  })
+
+  it('uses only the nearest live surface fallback when the opener disappears', () => {
+    const outer = mountRoot('<button>Outer fallback</button>')
+    const inner = document.createElement('section')
+    inner.innerHTML = '<input /><button>Open</button>'
+    outer.append(inner)
+    const fallback = inner.querySelector('input')!
+    const opener = inner.querySelector('button')!
+    const disposeOuter = registerFocusReturnFallback(outer, () => outer)
+    const disposeInner = registerFocusReturnFallback(inner, () => fallback)
+    const root = mountRoot()
+    opener.focus()
+    const trap = new FocusTrap()
+    trap.activate(root)
+    opener.remove()
+    expect(document.activeElement).toBe(root)
+    trap.release()
+    expect(document.activeElement).toBe(fallback)
+    disposeInner()
+    disposeOuter()
+  })
+
+  it.each(['hidden', 'inert', 'disabled'] as const)(
+    'rejects a connected %s opener without redirecting to a matching control',
+    (state) => {
+      const surface = mountRoot('<input /><button data-id="same">Open</button>')
+      const opener = surface.querySelector('button')!
+      const fallback = surface.querySelector('input')!
+      const dispose = registerFocusReturnFallback(surface, () => fallback)
+      const root = mountRoot()
+      const trap = new FocusTrap()
+      opener.focus()
+      trap.activate(root)
+      opener.setAttribute(state, '')
+      const unrelated = mountRoot('<button data-id="same">Other</button>')
+      trap.release()
+      expect(document.activeElement).toBe(fallback)
+      expect(document.activeElement).not.toBe(unrelated.querySelector('button'))
+      dispose()
+    },
+  )
+
+  it('invalidates an already captured fallback on disposal and forgets it on release', () => {
+    const surface = mountRoot('<button>Open</button><input />')
+    const opener = surface.querySelector('button')!
+    const fallback = surface.querySelector('input')!
+    const dispose = registerFocusReturnFallback(surface, () => fallback)
+    const root = mountRoot()
+    const trap = new FocusTrap()
+    opener.focus()
+    trap.activate(root)
+    opener.remove()
+    dispose()
+    trap.release()
+    expect(document.activeElement).toBe(root)
+    fallback.focus()
+    trap.release()
+    expect(document.activeElement).toBe(fallback)
+  })
+
+  it('preserves another control chosen while open and returns through nested dialogs', () => {
+    const opener = mountRoot('<button>Open</button>').querySelector('button')!
+    const root = mountRoot('<button>Details</button>')
+    const upper = mountRoot()
+    const trap = new FocusTrap()
+    const nested = new FocusTrap()
+    opener.focus()
+    trap.activate(root)
+    const details = root.querySelector('button')!
+    details.focus()
+    nested.activate(upper)
+    nested.release()
+    expect(document.activeElement).toBe(details)
+    trap.release()
+    expect(document.activeElement).toBe(opener)
+    trap.activate(root)
+    const other = mountRoot('<input />').querySelector('input')!
+    other.focus()
+    trap.release()
+    expect(document.activeElement).toBe(other)
   })
 })

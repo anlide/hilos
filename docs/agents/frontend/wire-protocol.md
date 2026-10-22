@@ -480,19 +480,29 @@ recognizes the object with `isHiddenValue` and hands the one `HIDDEN_VALUE` out
 for a field a viewer's screen draws as hidden (`readHideableString`,
 `readHideableBoolean`, `EntityCollection.hidden`).
 
-**Every accepted subscription is answered exactly once**, by one `page_response`
-carrying everything the page renders: the page's own part, its identity and its
-browser part with the first window of each viewport table (HIL-1236). A page
-that contributes no payload sends `page_response` with an empty one. The counts
-beside a window's filters follow the answer as a frame of their own, because the
-client has a window to put them on only once the answer opened it. A page re-sent
-after a failed delivery is answered the same way, by the same one frame. The
-frame is therefore an acknowledgement as much as a delivery — it is what the client waits
-on before it shows the page (`router.pageLoading`), so that a page is never shown
-and then taken away again by a denial still in flight. A subscription that is
-refused answers with `subscription_page_error` instead, and the client waits on
-that the same way; a page that answered neither would leave the client with
-nothing to wait for.
+**Every accepted page subscription is answered exactly once**, by one complete
+`page_response` carrying everything the page renders: the page's own part, its
+identity and its browser part with the first window of each viewport table
+(HIL-1236). A page that contributes no payload sends `page_response` with an
+empty one. The counts beside a window's filters follow the answer as a frame of
+their own, because the client has a window to put them on only once the answer
+opened it. A page re-sent after a failed delivery is answered the same way, by
+the same one complete frame. That complete frame is the acknowledgement the
+client waits on before it shows the page (`router.pageLoading`), so a page is
+never shown and then taken away by a denial still in flight. A subscription
+that is refused answers with `subscription_page_error` instead, and the client
+waits on that the same way; a page that answered neither would leave the client
+with nothing to wait for.
+
+A live page-data publisher may also send `page_response` with only changed
+`payload.data`. `BrowserContext::publishPageData()` sends this data-only update
+through the existing page subscription and viewer-hiding path; its payload
+contains no `entities`, `lists`, `tables`, `windows` or `refusedWindows`
+sections. It updates the current page scope but is not a subscription
+acknowledgement and does not replace the complete first answer. It also does
+not pay a page owed whole; only a complete page answer does
+([browser-source-fanout.md](../architecture/browser-source-fanout.md#what-a-debt-is-paid-with)).
+See [`BrowserContext`](../../../framework/backend/Core/Browser/Context/BrowserContext.php).
 
 When that refusal is a row deleted while the page was open, the same
 `subscription_page_error` may carry `transitionMessage`, a non-empty server
@@ -514,6 +524,31 @@ A page contributes the payload from the framework's `onSubscribe` via the
 `buildPagePayload` hook, so a page never hand-rolls the signal. The `tables`
 section rides the same envelope but the frontend consumes it last (the heavy
 windowed primitive); see [data-model.md](data-model.md).
+
+### Table window request correlation
+
+A client `table_viewport` frame may carry a top-level, non-empty `requestId`.
+The server echoes that optional string in `table_window.data.requestId` or
+`table_window_refused.data.requestId` when the frame answers that tracked
+request. Older untracked callers omit the field; a present empty string is
+invalid, and `null` is not sent. The key is part of the frame payload, not the
+server signal envelope: envelope `outcome`, routing and metadata are unchanged.
+It is distinct from action acknowledgements and the delivery marker used to
+order `signal_batch` subscription frames.
+
+The PHP WebSocket DTO preserves the scalar request id through worker IPC and
+parked delivery, and the window/refusal DTOs echo it on reply. It is not stored
+on the long-lived `TableViewportSubscription`: held-window descriptors in
+`page_subscribe` and reconnects omit it. Initial `page_response` windows and
+`refusedWindows`, including those in a complete recovery answer, have no id;
+neither do source-only or recovery catch-up `table_window` frames. Such a no-id
+snapshot remains authoritative for the displayed window, but it cannot
+acknowledge a tracked viewport request; only that request's own window or
+refusal does. These fields do not change the existing page-subscription
+delivery hold or inner-signal ordering. The active wire
+contracts are [`WebSocketTableViewportSignalDTO`](../../../framework/backend/Socket/WebSocket/DTO/WebSocketTableViewportSignalDTO.php),
+[`TableWindowSignalData`](../../../framework/backend/Core/Table/DTO/TableWindowSignalData.php),
+and [`TableWindowRefusedSignalData`](../../../framework/backend/Core/Table/DTO/TableWindowRefusedSignalData.php).
 
 ### Group subscriptions (0..N)
 

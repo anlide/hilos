@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\AdminViewMode\HiddenValue;
+use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\NodeRole;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -24,6 +25,7 @@ use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogConstants;
 use Hilos\Environment\EnvSource;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Tables\Daemon\HilosDaemonEnvDivergedTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvMismatchTableRow;
 use Hilos\Tables\Daemon\HilosDaemonEnvSourcesDifferTable;
@@ -39,11 +41,14 @@ final class HilosDaemonEnvMismatchTablesTest extends TestCase
     private const string ABSENT = 'HILOS_MISMATCH_TEST_ABSENT';
 
     private ?EnvAccessor $previousEnv = null;
+    private ?ClusterContext $previousCluster = null;
 
     protected function setUp(): void
     {
         parent::setUp();
         $this->previousEnv = Hilos::$env;
+        $this->previousCluster = Hilos::$cluster;
+        Hilos::$cluster = null;
         Hilos::$env = new EnvAccessor(DaemonEnvMismatchTestCatalog::class);
         ClusterDaemonPictureMirror::forgetPicture();
     }
@@ -52,13 +57,43 @@ final class HilosDaemonEnvMismatchTablesTest extends TestCase
     {
         ClusterDaemonPictureMirror::forgetPicture();
         Hilos::$env = $this->previousEnv;
+        Hilos::$cluster = $this->previousCluster;
         parent::tearDown();
     }
 
-    public function testEmptyMirrorAndUnsupportedSearch(): void
+    public function testPictureDiffMovesKeysBetweenBucketsAndKeepsViewerMasking(): void
+    {
+        $first = $this->node('a', true, [$this->fingerprint(self::TEXT, EnvSource::PROCESS, 'aaaaaaaaaaaaaaaa')]);
+        ClusterDaemonPictureMirror::applyPortion(new DaemonClusterPicturePortionSignalData(true, [
+            $first, $this->node('b', true, [$this->fingerprint(self::TEXT, EnvSource::PROCESS, 'bbbbbbbbbbbbbbbb')]),
+        ]));
+        $before = ClusterDaemonPictureMirror::picture();
+        ClusterDaemonPictureMirror::applyPortion(new DaemonClusterPicturePortionSignalData(true, [
+            $first, $this->node('b', true, [$this->fingerprint(self::TEXT, EnvSource::ENV_FILE, 'aaaaaaaaaaaaaaaa')]),
+        ]));
+        $query = new TableQueryDTO(limit: 1, pageIndex: 10, shownFields: []);
+        $departed = new HilosDaemonEnvDivergedTable()->pictureMutations($before, $query);
+        $arrived = new HilosDaemonEnvSourcesDifferTable()->pictureMutations($before, $query);
+        self::assertCount(1, $departed);
+        self::assertSame('delete', $departed[0]->type->value);
+        self::assertSame(self::TEXT, $departed[0]->rowKey);
+        self::assertCount(1, $arrived);
+        self::assertSame('create', $arrived[0]->type->value);
+        self::assertSame(self::TEXT, $arrived[0]->rowKey);
+        self::assertNull($arrived[0]->row->toArray()['value']);
+        self::assertStringNotContainsString('local-value', json_encode($arrived[0]->toArray(), JSON_THROW_ON_ERROR));
+        self::assertSame([], new HilosDaemonEnvSourcesDifferTable()->pictureMutations(ClusterDaemonPictureMirror::picture(), $query));
+    }
+
+    public function testUnknownMirrorRefusesWindowsAndUnsupportedSearch(): void
     {
         foreach ([new HilosDaemonEnvDivergedTable(), new HilosDaemonEnvSourcesDifferTable()] as $table) {
-            self::assertSame([], $table->getPage(new TableQueryDTO())->rows);
+            try {
+                $table->getPage(new TableQueryDTO());
+                self::fail('An unknown comparison answered with an empty window');
+            } catch (HilosException $failure) {
+                self::assertSame('Environment comparison has no source picture yet', $failure->getMessage());
+            }
             self::assertNull($table->containsRow(self::TEXT, new TableQueryDTO()));
             self::assertNull($table->defaultSort());
             self::assertSame(25, $table->windowSize());
@@ -68,6 +103,17 @@ final class HilosDaemonEnvMismatchTablesTest extends TestCase
             } catch (TableSearchNotSupportedException) {
                 $this->addToAssertionCount(1);
             }
+        }
+    }
+
+    public function testKnownEmptyPictureHasAuthoritativeEmptyBuckets(): void
+    {
+        ClusterDaemonPictureMirror::applyPortion(new DaemonClusterPicturePortionSignalData(true, []));
+        foreach ([new HilosDaemonEnvDivergedTable(), new HilosDaemonEnvSourcesDifferTable()] as $table) {
+            self::assertSame([], $table->getPage(new TableQueryDTO())->rows);
+            self::assertSame(0, $table->getPage(new TableQueryDTO())->totalCount);
+            self::assertTrue($table->getPage(new TableQueryDTO())->totalExact);
+            self::assertFalse($table->containsRow(self::TEXT, new TableQueryDTO()));
         }
     }
 

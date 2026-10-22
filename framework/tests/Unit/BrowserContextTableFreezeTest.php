@@ -155,6 +155,13 @@ final class BrowserContextTableFreezeTest extends TestCase
     public function testTheFirstGoodDeliveryAfterAFreezeIsTheWholeWindowAndItsFacetCounts(): void
     {
         $table = $this->boot(failOn: ['a']);
+        $viewport = Hilos::$sr->getTableViewport('ak-1', $table::TABLE);
+        $this->assertNotNull($viewport);
+        new FreezeUnitContext()->sendTableWindow(FreezeUnitContext::PAGE, 'ak-1', $viewport, 'before-freeze');
+        $tracked = $this->payloadsNamed(SignalTypeConstants::TABLE_WINDOW);
+        $this->assertCount(1, $tracked);
+        $this->assertSame('before-freeze', $tracked[0]->requestId);
+        $this->drain();
         Hilos::$sr?->setTableFacets('ak-1', $table::TABLE, [FreezeUnitTable::FILTER_LABEL => ['Alpha', 'Beta']]);
         $this->flushChange('a');
         $this->drain();
@@ -170,6 +177,8 @@ final class BrowserContextTableFreezeTest extends TestCase
         );
         $window = $queued[array_search(SignalTypeConstants::TABLE_WINDOW, $names, true)][1];
         $this->assertInstanceOf(TableWindowSignalData::class, $window);
+        $this->assertNull($window->requestId);
+        $this->assertArrayNotHasKey(TableWindowSignalData::requestId, $window->toArray());
         $this->assertSame($table::TABLE, $window->tableKey);
         $this->assertSame(['a', 'b'], array_map(static fn(array $row): string => (string) $row[PagePayload::rowKey], $window->rows));
         $this->assertSame(2, $window->totalCount);

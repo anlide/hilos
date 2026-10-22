@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+
 import { expect, test, type Page } from '@playwright/test'
 
 import {
@@ -12,6 +14,7 @@ import {
   shownByTestId,
   watchDaemonCronFrames,
   watchDaemonMismatchFrames,
+  watchSocketFrames,
   createSocketFrameReader,
   type SocketFrame,
 } from '../../../../../../framework/frontend/e2e/index.js'
@@ -38,6 +41,8 @@ import {
 
 const LEADER_AGENTS = ['hilos_index', 'hilos_daemon']
 const RESTART_AGENT = 'hilos_log_store'
+
+test.use({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' })
 
 // A host fault cannot be replayed against the same stand.
 test.describe.configure({ retries: 0 })
@@ -88,6 +93,12 @@ test('cluster daemon: foreign node pages, remote restart, environment mismatch a
       if (nodeId === followers[0]) {
         const nodePage = await first.context().newPage()
         const cron = watchDaemonCronFrames(nodePage)
+        const workerFrames: SocketFrame[] = []
+        const workers = watchSocketFrames(nodePage, (frame) => {
+          const wire = frame.wire as { data?: { page?: string } } | undefined
+          if (frame.failure || wire?.data?.page === 'hilos_daemon_workers')
+            workerFrames.push(frame)
+        })
         try {
           await gotoPage(nodePage, DAEMON_ROOT_PATH, PAGE_READY)
           await expectClusterOverview(reports, nodePage, initialPicture)
@@ -97,6 +108,34 @@ test('cluster daemon: foreign node pages, remote restart, environment mismatch a
           await expect(
             nodePage.getByTestId('hilos-daemon-inspector'),
           ).toHaveAttribute('data-node-id', remote.nodeId)
+          // A new worker in an unordered open window arrives as a count only.
+          // Open Workers after this exact agent's occupied worker reaches the
+          // real node picture, rather than expecting a background full window.
+          const started = new RegExp(
+            `Agent '${RESTART_AGENT}' started on worker #(\\d+)`,
+            'g',
+          )
+          const agentStart = () =>
+            [
+              ...readFileSync(remote.nodeLogs[remote.nodeId], 'utf8').matchAll(
+                started,
+              ),
+            ].at(-1)
+          await reports.poll(() => agentStart()?.[1]).toMatch(/^\d+$/)
+          const worker = nodePage.getByTestId(
+            `hilos-daemon-worker-${remote.nodeId}-monopolistic-${agentStart()![1]}`,
+          )
+          await reports(worker).toHaveAttribute('data-occupancy', 'occupied')
+          await test.info().attach('daemon-workers-ready-source', {
+            body: JSON.stringify({
+              nodeId: remote.nodeId,
+              agentId: RESTART_AGENT,
+              journal: agentStart()![0],
+              worker: await worker.getAttribute('data-id'),
+              occupancy: await worker.getAttribute('data-occupancy'),
+            }),
+            contentType: 'application/json',
+          })
           for (const [child, path] of [
             ['workers', 'workers'],
             ['agents', 'agents'],
@@ -244,7 +283,12 @@ test('cluster daemon: foreign node pages, remote restart, environment mismatch a
           }
         } finally {
           cron.stop()
+          workers.stop()
           try {
+            await test.info().attach('daemon-workers-reports', {
+              body: JSON.stringify(workerFrames),
+              contentType: 'application/json',
+            })
             await test.info().attach('daemon-cron-reports', {
               body: JSON.stringify(cron.frames),
               contentType: 'application/json',
@@ -407,7 +451,23 @@ test('cluster daemon: foreign node pages, remote restart, environment mismatch a
       body: JSON.stringify({ source: survivor.nodeId, ...after }),
       contentType: 'application/json',
     })
+  } catch (failure) {
+    await test.info().attach('daemon-primary-failure', {
+      body: JSON.stringify(
+        failure instanceof Error
+          ? {
+              name: failure.name,
+              message: failure.message,
+              stack: failure.stack,
+            }
+          : { failure: String(failure) },
+      ),
+      contentType: 'application/json',
+    })
+    throw failure
   } finally {
+    // Save every original follower's physical frames before closing any context.
+    // A timed-out close must not hide the other follower's recovery evidence.
     for (const candidate of candidates) {
       candidate.privacy.stop()
       await test.info().attach(`daemon-mismatch-privacy-${candidate.nodeId}`, {
@@ -417,6 +477,29 @@ test('cluster daemon: foreign node pages, remote restart, environment mismatch a
         }),
         contentType: 'application/json',
       })
+      for (const [index, observation] of candidate.pages.entries()) {
+        await test
+          .info()
+          .attach(`daemon-final-frames-${candidate.nodeId}-${index}`, {
+            body: JSON.stringify(observation.sinceMark()),
+            contentType: 'application/json',
+          })
+      }
+    }
+    for (const candidate of candidates) {
+      for (const [index, observation] of candidate.pages.entries()) {
+        const dom = await observation.page
+          .content()
+          .catch((failure: unknown) => String(failure))
+        await test
+          .info()
+          .attach(`daemon-final-dom-${candidate.nodeId}-${index}`, {
+            body: dom,
+            contentType: 'text/html',
+          })
+      }
+    }
+    for (const candidate of candidates) {
       await candidate.pages[0].page.context().close()
     }
   }

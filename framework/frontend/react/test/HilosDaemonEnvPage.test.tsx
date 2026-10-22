@@ -521,8 +521,8 @@ describe('HilosDaemonEnvPage', () => {
     h.response(environment([key('NEW')], 'n2'), false, [key('NEW')], [])
     expect(h.register).toHaveBeenCalledTimes(4)
     expect(h.unregister.mock.calls).toEqual([
-      ['hilosDaemonEnvKeys'],
-      ['hilosDaemonEnvOrphans'],
+      ['hilosDaemonEnvKeys', old[0]],
+      ['hilosDaemonEnvOrphans', old[1]],
     ])
     expect(
       [...h.activeWindows.values()].every((sink) => !old.includes(sink)),

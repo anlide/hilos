@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   bindPageScope,
   PAGE_SIGNAL_SCHEMAS,
@@ -9,8 +9,17 @@ import {
   SIGNAL_TYPE_PAGE_RESPONSE,
   SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR,
 } from '../../src/protocol/constants.js'
-import { type ConnectionState } from '../../src/connection/HilosConnection.js'
-import { type HilosConnection, type ProjectSignal } from '../../src/index.js'
+import {
+  HilosConnection,
+  type ConnectionState,
+} from '../../src/connection/HilosConnection.js'
+import { type ProjectSignal } from '../../src/index.js'
+import { bindTableViewport } from '../../src/subscription/bindTableViewport.js'
+import { normalizeTableRow } from '../../src/state/normalizer.js'
+import { subscribeSignal } from '../../src/state/signal.js'
+import { type TableRow } from '../../src/state/TableRowsStore.js'
+import { TableViewportController } from '../../src/table/TableViewportController.js'
+import { type TableGeometryCaptureRequest } from '../../src/table/tableViewportGeometry.js'
 
 /**
  * A connection double recording sent frames and replaying project signals. It
@@ -227,5 +236,247 @@ describe('bindPageScope', () => {
       { type: string; id: number } | undefined
     expect(ref?.type).toBe('user')
     expect(ref?.id).toBe(7)
+  })
+})
+
+// Drive the real connection parser and emitter: page-scope registration precedes table binding.
+describe('page and table presentation ingress', () => {
+  function fixture() {
+    const listeners = new Map<string, (event: { data?: unknown }) => void>()
+    const connection = new HilosConnection({
+      url: 'ws://test/ws',
+      projectSchemas: PAGE_SIGNAL_SCHEMAS,
+      webSocketFactory: () => ({
+        send: () => {},
+        close: () => {},
+        addEventListener: (type, listener) => {
+          listeners.set(type, listener)
+        },
+      }),
+    })
+    const scopes = new ScopeManager()
+    const pages = bindPageScope(connection, scopes)
+    pages.subscribe('main')
+    const scope = scopes.page()!
+    const initial = normalizeTableRow(scope, {
+      rowKey: 'a',
+      slots: { user: { id: 7, name: 'old' } },
+    })
+    const events: string[] = []
+    let extent = 107.25
+    const table = (tableKey: string) => {
+      const controller = new TableViewportController<TableRow>({
+        resolve: (row) => row,
+        sendViewport: () => {},
+        frame: { columns: [] },
+      })
+      controller.ingestSubscriptionWindow(
+        [initial],
+        1,
+        true,
+        null,
+        null,
+        10,
+        undefined,
+        [],
+      )
+      const capture = vi.fn((request: TableGeometryCaptureRequest) => {
+        events.push(`${tableKey}:capture`)
+        return {
+          records: request.records.map((measurement) => ({
+            measurement,
+            extent: { main: extent, work: 0, detail: 0, gap: 0, total: extent },
+            workGap: 0,
+          })),
+        }
+      })
+      const registration = controller.geometry.register(capture)
+      return {
+        controller,
+        registration,
+        capture,
+        bind: () =>
+          bindTableViewport(
+            connection,
+            scopes,
+            { page: 'main', tableKey },
+            controller,
+          ),
+      }
+    }
+    connection.connect()
+    const send = (page: string, payload: Record<string, unknown>) =>
+      listeners.get('message')?.({
+        data: JSON.stringify({
+          type: SIGNAL_TYPE_PAGE_RESPONSE,
+          data: { page, payload },
+        }),
+      })
+    const window = {
+      rows: [{ rowKey: 'a', slots: { user: { id: 7, name: 'new' } } }],
+      sort: [],
+      limit: 10,
+      totalCount: 1,
+      totalExact: true,
+      firstAnchor: null,
+      lastAnchor: null,
+    }
+    return {
+      connection,
+      scopes,
+      pages,
+      scope,
+      table,
+      send,
+      window,
+      events,
+      destroy: () => {
+        extent = 0
+      },
+    }
+  }
+
+  it('captures every registered controller once before the early scope listener writes', () => {
+    const f = fixture()
+    const first = f.table('first')
+    const second = f.table('second')
+    const unbindFirst = first.bind()
+    const unbindSecond = second.bind()
+    let writes = 0
+    const stop = subscribeSignal(
+      f.scope.entities.signal({ type: 'user', id: 7 }),
+      () => {
+        if (writes++ === 0) {
+          expect(f.events).toEqual(['first:capture', 'second:capture'])
+          expect(first.registration.record('a', 'wide')?.live?.total).toBe(
+            107.25,
+          )
+          expect(second.registration.record('a', 'wide')?.live?.total).toBe(
+            107.25,
+          )
+        }
+        f.events.push('store')
+        f.destroy()
+      },
+    )
+    f.connection.on('projectSignal', () => f.events.push('last-listener'))
+    f.send('main', {
+      entities: { user: { id: 7, name: 'page slot' } },
+      windows: { first: f.window, second: f.window },
+    })
+    expect(writes).toBe(3)
+    expect(first.capture).toHaveBeenCalledTimes(1)
+    expect(second.capture).toHaveBeenCalledTimes(1)
+    expect(f.events).toEqual([
+      'first:capture',
+      'second:capture',
+      'store',
+      'store',
+      'store',
+      'last-listener',
+    ])
+    expect(f.pages.pageLoading.get()).toBe(false)
+    expect(
+      f.scope.entities.signal({ type: 'user', id: 7 }).get()?.fields['name'],
+    ).toBe('new')
+    stop()
+    unbindFirst()
+    unbindSecond()
+    f.pages.unsubscribe()
+    first.controller.dispose()
+    second.controller.dispose()
+    f.connection.close()
+  })
+
+  it('prepares a late table binder replay before its first normalization', () => {
+    const f = fixture()
+    f.send('main', { windows: { first: f.window } })
+    const first = f.table('first')
+    const stop = subscribeSignal(
+      f.scope.entities.signal({ type: 'user', id: 7 }),
+      () => {
+        expect(first.registration.record('a', 'wide')?.live?.total).toBe(107.25)
+        f.destroy()
+      },
+    )
+    const unbind = first.bind()
+    expect(first.capture).toHaveBeenCalledTimes(1)
+    expect(
+      f.scope.entities.signal({ type: 'user', id: 7 }).get()?.fields['name'],
+    ).toBe('new')
+    expect(first.controller.rows.get()[0]?.rowKey).toBe('a')
+    stop()
+    unbind()
+    f.pages.unsubscribe()
+    first.controller.dispose()
+    f.connection.close()
+  })
+
+  it('only prepares on foreign page frames and does not change row or window identities', () => {
+    const f = fixture()
+    const first = f.table('first')
+    const unbind = first.bind()
+    const ticket = first.registration.measurement('a', 'wide')
+    f.send('other', {
+      entities: { user: { id: 7, name: 'foreign' } },
+      windows: { first: f.window },
+    })
+    expect(first.capture).toHaveBeenCalledTimes(1)
+    expect(first.registration.measurement('a', 'wide')).toEqual(ticket)
+    expect(first.controller.rows.get()[0]?.row).toEqual({
+      rowKey: 'a',
+      slots: { user: { type: 'user', id: 7 } },
+    })
+    expect(
+      f.scope.entities.signal({ type: 'user', id: 7 }).get()?.fields['name'],
+    ).toBe('old')
+    expect(f.pages.pageLoading.get()).toBe(true)
+    unbind()
+    first.capture.mockClear()
+    f.send('main', { data: { afterUnmount: true } })
+    expect(first.capture).not.toHaveBeenCalled()
+    f.pages.unsubscribe()
+    first.controller.dispose()
+    f.connection.close()
+  })
+
+  it('releases preparation after a throwing early listener and accepts the next frame', () => {
+    const f = fixture()
+    const first = f.table('first')
+    const stopThrowing = f.connection.on('projectSignal', () => {
+      throw new Error('listener failed')
+    })
+    const unbind = first.bind()
+    expect(() => f.send('main', { data: { first: true } })).toThrow(
+      'listener failed',
+    )
+    stopThrowing()
+    f.send('main', { windows: { first: f.window } })
+    expect(first.capture).toHaveBeenCalledTimes(2)
+    expect(first.controller.rows.get()[0]?.rowKey).toBe('a')
+    unbind()
+    f.pages.unsubscribe()
+    first.controller.dispose()
+    f.connection.close()
+  })
+
+  it('retires a refused window through the controller without normalizing table rows', () => {
+    const f = fixture()
+    const first = f.table('first')
+    const unbind = first.bind()
+    f.send('main', {
+      refusedWindows: { first: { errorCode: 'internal_error' } },
+    })
+    expect(first.capture).toHaveBeenCalledTimes(1)
+    expect(first.registration.measurement('a', 'wide')).toBeNull()
+    expect(first.controller.rows.get()).toEqual([])
+    expect(
+      f.scope.entities.signal({ type: 'user', id: 7 }).get()?.fields['name'],
+    ).toBe('old')
+    expect(f.pages.pageLoading.get()).toBe(false)
+    unbind()
+    f.pages.unsubscribe()
+    first.controller.dispose()
+    f.connection.close()
   })
 })

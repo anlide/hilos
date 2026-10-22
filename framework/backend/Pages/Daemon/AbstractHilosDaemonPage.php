@@ -12,7 +12,9 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
-use Hilos\Core\Table\Exception\TableRowKeyMissingException;
+use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\DaemonSection\ClusterDaemonPicture;
+use Hilos\DaemonSection\DaemonPictureViewportTable;
 use Hilos\DaemonSection\ClusterDaemonPictureMirror;
 use Hilos\Database\DatabaseException;
 use Hilos\Environment\Exception\EnvException;
@@ -46,78 +48,44 @@ abstract class AbstractHilosDaemonPage extends AbstractHilosDaemonSectionPage
 
     private static ?string $overviewFingerprint = null;
 
-    private static ?string $placementFingerprint = null;
-
     /**
-     * Re-answers changed root data, including full placement totals, whole.
-     * Instance-id changes with unchanged totals and unplaced types re-answer only the window.
-     *
-     * @throws HilosException When the picture cannot be encoded or a window cannot be served
-     * @throws InvalidArgumentException When the table-window signal cannot be named
-     * @throws TableRowKeyMissingException When a windowed row has no key
+     * @param ?ClusterDaemonPicture $before Immutable picture before this portion
+     * @throws HilosException When overview data cannot be projected or encoded
      * @throws EnvException When cluster mode cannot be read
      */
-    public static function onPictureChanged(): void
+    public static function onPictureChanged(?ClusterDaemonPicture $before): void
     {
-        $picture = ClusterDaemonPictureMirror::picture();
-        try {
-            $overviewFingerprint = json_encode(self::overview()?->toArray(), JSON_THROW_ON_ERROR);
-        } catch (JsonException $exception) {
-            throw new HilosException('Cannot fingerprint the daemon overview picture', previous: $exception);
-        }
-        $wholeAttempts = [];
-        if ($overviewFingerprint !== self::$overviewFingerprint) {
-            self::$overviewFingerprint = $overviewFingerprint;
-            foreach (Hilos::$sr?->getAcceptKeysForPage(self::PAGE) ?? [] as $acceptKey) {
-                if (Hilos::$browser === null || Hilos::$rt?->connectionsSource()?->get($acceptKey) === null) {
-                    continue;
-                }
-                Hilos::$browser->resendPageWhole(self::PAGE, $acceptKey);
-                // The void delivery API contains refusals and failures. Suppress a separate window
-                // after every whole attempt: an answer included it, and an error wiped its page scope.
-                $wholeAttempts[$acceptKey] = true;
-            }
-        }
-
-        $sections = [];
-        foreach ($picture?->nodes() ?? [] as $node) {
-            $processes = $node->slot?->picture->processes;
-            $agentIds = null;
-            if ($processes !== null) {
-                $agentIds = [];
-                foreach ($processes->workers as $worker) {
-                    foreach ($worker->agents as $agent) {
-                        $agentIds[] = $agent->id;
+        $fingerprint = null;
+        $previousFingerprint = self::$overviewFingerprint;
+        foreach (Hilos::$sr?->getAcceptKeysForPage(self::PAGE) ?? [] as $acceptKey) {
+            Hilos::$browser?->publishPageData(
+                self::PAGE,
+                $acceptKey,
+                static function () use ($acceptKey, &$fingerprint, $previousFingerprint): PagePayload {
+                    if (Hilos::$rt?->connectionsSource()?->get($acceptKey) === null) {
+                        return new PagePayload();
                     }
-                }
-            }
-            $sections[] = [$node->nodeId, $node->online, $agentIds];
-        }
-        try {
-            $fingerprint = json_encode([$sections, HilosDaemonPlacementTable::unplacedOf($picture)], JSON_THROW_ON_ERROR);
-        } catch (JsonException $exception) {
-            throw new HilosException('Cannot fingerprint the daemon placement picture', previous: $exception);
-        }
-        if ($fingerprint === self::$placementFingerprint) {
-            return;
-        }
-        self::$placementFingerprint = $fingerprint;
 
-        foreach (ClusterDaemonPictureMirror::viewerKeys() as $acceptKey) {
-            if (isset($wholeAttempts[$acceptKey])) {
-                continue;
-            }
-            $viewport = Hilos::$sr?->getTableViewport($acceptKey, HilosDaemonPlacementTable::TABLE);
-            if ($viewport === null) {
-                continue;
-            }
-            // A placement fact can pay a page debt too. The generic window road would send
-            // the whole page and then another window; keep recovery to the one page answer.
-            if (Hilos::$browser !== null && Hilos::$sr->hasPageDeliveryFailure($acceptKey)) {
-                Hilos::$browser->resendPageWhole(self::PAGE, $acceptKey);
-                continue;
-            }
-            Hilos::$browser?->sendTableWindow(HilosPageConstants::HILOS_DAEMON, $acceptKey, $viewport);
+                    $data = self::overview()?->toArray();
+                    try {
+                        $fingerprint = json_encode($data, JSON_THROW_ON_ERROR);
+                    } catch (JsonException $exception) {
+                        throw new HilosException('Cannot fingerprint the daemon overview picture', previous: $exception);
+                    }
+
+                    return new PagePayload(data: $fingerprint === $previousFingerprint ? [] : [self::DAEMON => $data]);
+                },
+                self::pageDataFields(),
+            );
+            Hilos::$browser?->publishTableMutations(
+                self::PAGE,
+                $acceptKey,
+                HilosDaemonPlacementTable::TABLE,
+                static fn (DaemonPictureViewportTable $table, TableQueryDTO $query): array => $table->pictureMutations($before, $query),
+            );
+        }
+        if ($fingerprint !== null) {
+            self::$overviewFingerprint = $fingerprint;
         }
     }
 
@@ -125,7 +93,6 @@ abstract class AbstractHilosDaemonPage extends AbstractHilosDaemonSectionPage
     public static function onPictureForgotten(): void
     {
         self::$overviewFingerprint = null;
-        self::$placementFingerprint = null;
     }
 
     /**
@@ -134,18 +101,32 @@ abstract class AbstractHilosDaemonPage extends AbstractHilosDaemonSectionPage
      * @return PagePayload Technical overview with full placement totals and primary database metadata
      * @throws InvalidArgumentException When a generated environment cell contradicts its state
      * @throws EnvException When cluster mode cannot be read
+     * @throws HilosException When the overview fingerprint cannot be encoded
      * @throws DatabaseException When the previously active database connection cannot be restored
      */
     protected function buildPagePayload(string $acceptKey, PageRouteParams $params): PagePayload
     {
+        $overview = self::overview()?->toArray();
+        try {
+            self::$overviewFingerprint = json_encode($overview, JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            throw new HilosException('Cannot fingerprint the daemon overview picture', previous: $exception);
+        }
+
         return new PagePayload(data: [
-            self::DAEMON => self::overview()?->toArray(),
+            self::DAEMON => $overview,
             self::DATABASE => (new HilosDaemonDatabaseReader())->read()?->toArray(),
         ]);
     }
 
     /** @return array<string, WireField> Both root diagnostics carry no personal data */
     protected function dataFields(): array
+    {
+        return self::pageDataFields();
+    }
+
+    /** @return array<string, WireField> The same root data declarations for initial and live answers */
+    private static function pageDataFields(): array
     {
         return [
             self::DAEMON => WireField::notPersonal(),

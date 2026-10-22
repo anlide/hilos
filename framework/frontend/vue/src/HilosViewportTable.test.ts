@@ -1,6 +1,6 @@
-import { mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { h } from 'vue'
+import { h, ref, shallowRef } from 'vue'
 import { TableViewportController } from '@hilos/core/base'
 import type {
   ActionHandle,
@@ -11,12 +11,17 @@ import type {
   TableViewportDescriptor,
 } from '@hilos/core/base'
 
+import HilosModal from './HilosModal.vue'
 import HilosViewportTable from './HilosViewportTable.vue'
 import { hilosPageHeadingIdKey } from './hilosPageHeading.js'
 import {
   hilosTableSelectionEdgeKey,
   type HilosTableSelectionEdge,
 } from './hilosTableSelectionEdge.js'
+
+// Every mount now owns DOM observers and listeners as well as signal mirrors.
+// Release them before the test environment removes its document and globals.
+enableAutoUnmount(afterEach)
 
 interface Row {
   name: string
@@ -110,7 +115,7 @@ describe('HilosViewportTable', () => {
 
     // Sorted by both columns means an arrow on both: one arrow would name one of
     // the two as the whole answer.
-    const arrows = wrapper.findAll('th i.bi')
+    const arrows = wrapper.findAll('th button > i.bi')
 
     expect(arrows).toHaveLength(2)
     expect(arrows.every((arrow) => arrow.classes('bi-arrow-down'))).toBe(true)
@@ -133,7 +138,11 @@ describe('HilosViewportTable', () => {
     // place is spoken beside the number instead.
     expect(
       wrapper.findAll('th .visually-hidden').map((said) => said.text()),
-    ).toEqual(['Sort column 1 of 2', 'Sort column 2 of 2'])
+    ).toEqual([
+      'Sort column 1 of 2',
+      'Sort column 2 of 2',
+      'Row state and controls',
+    ])
   })
 
   it('numbers nothing under an order of one column, where the arrow says it all', async () => {
@@ -287,7 +296,7 @@ describe('HilosViewportTable', () => {
     expect(row.classes()).not.toContain('table-success')
   })
 
-  it('grows the mark column with the waiting, header and body at once', async () => {
+  it('keeps the permanent mark column with and without waiting', async () => {
     const { controller } = makeController()
     controller.ingestWindow(
       [
@@ -300,8 +309,7 @@ describe('HilosViewportTable', () => {
       null,
       10,
     )
-    // An applied removal leaves a placeholder behind and nothing waiting, which is
-    // the state where the mark column must not stand.
+    // An applied removal keeps both its full-span slot and the state column.
     controller.ingestDelta({
       kind: 'row_removed',
       rowKey: 'a',
@@ -310,10 +318,10 @@ describe('HilosViewportTable', () => {
     controller.apply()
     const wrapper = mountTable(controller)
 
-    expect(wrapper.findAll('thead th')).toHaveLength(COLUMNS.length)
+    expect(wrapper.findAll('thead th')).toHaveLength(COLUMNS.length + 1)
     expect(
       wrapper.find('[data-id="hilos-table-placeholder"]').attributes('colspan'),
-    ).toBe(String(COLUMNS.length))
+    ).toBe(String(COLUMNS.length + 1))
 
     controller.ingestDelta({
       kind: 'row_moved',
@@ -672,7 +680,7 @@ describe('HilosViewportTable drawing the cells of a declared table', () => {
     const wrapper = mountCells(controller)
 
     const cells = wrapper.findAll('[data-id="hilos-table-row-a"] td')
-    expect(cells).toHaveLength(CELL_COLUMNS.length)
+    expect(cells).toHaveLength(CELL_COLUMNS.length + 1)
     expect(cells[0]?.find('.named').text()).toBe('Alice')
     expect(cells[1]?.find('.sized').text()).toBe('1.2 GB')
   })
@@ -710,7 +718,7 @@ describe('HilosViewportTable drawing the cells of a declared table', () => {
       },
     })
 
-    expect(wrapper.findAll('thead th')).toHaveLength(CELL_COLUMNS.length)
+    expect(wrapper.findAll('thead th')).toHaveLength(CELL_COLUMNS.length + 1)
     expect(wrapper.find('thead').text()).toContain('Size')
     expect(wrapper.find('.sized').exists()).toBe(true)
   })
@@ -778,7 +786,7 @@ describe('HilosViewportTable with a selection column', () => {
     expect(wrapper.find('[data-id="hilos-table-select-a"]').exists()).toBe(
       false,
     )
-    expect(wrapper.findAll('thead th')).toHaveLength(COLUMNS.length)
+    expect(wrapper.findAll('thead th')).toHaveLength(COLUMNS.length + 1)
   })
 
   it('puts the column first by default and last where the app asked for the end', () => {
@@ -899,17 +907,16 @@ describe('HilosViewportTable with a selection column', () => {
     const wrapper = mountWithEdge(controller)
     await wrapper.vm.$nextTick()
 
-    // The placeholder spans the declared columns and the checkbox column; nothing
-    // is waiting after the apply, so the row-state cell is not standing.
+    // Placeholder and empty state span declared, selection and permanent state columns.
     expect(
       wrapper.find('[data-id="hilos-table-placeholder"]').attributes('colspan'),
-    ).toBe(String(COLUMNS.length + 1))
+    ).toBe(String(COLUMNS.length + 2))
 
     const empty = makeController(BULK_FRAME)
     empty.controller.ingestWindow([], 0, true, null, null, 10)
     const emptyWrapper = mountWithEdge(empty.controller)
     expect(emptyWrapper.find('tbody td').attributes('colspan')).toBe(
-      String(COLUMNS.length + 1),
+      String(COLUMNS.length + 2),
     )
   })
 
@@ -932,7 +939,7 @@ describe('HilosViewportTable with a selection column', () => {
       (total, cell) => total + Number(cell.attributes('colspan') ?? 1),
       0,
     )
-    expect(span).toBe(COLUMNS.length + 1)
+    expect(span).toBe(COLUMNS.length + 2)
     expect(cells[0]?.attributes('colspan')).toBe('1')
   })
 })
@@ -1066,7 +1073,7 @@ describe('HilosViewportTable drawing a row as a card', () => {
     // The row keeps every cell, or it comes out narrower than its header; the
     // card keeps no label with nothing under it.
     expect(wrapper.findAll('[data-id="hilos-table-row-a"] td')).toHaveLength(
-      CARD_COLUMNS.length,
+      CARD_COLUMNS.length + 1,
     )
     expect(wrapper.findAll('[data-id="hilos-table-card-a"] dt')).toHaveLength(0)
     expect(
@@ -1132,7 +1139,7 @@ describe('HilosViewportTable drawing a row as a card', () => {
     }
   })
 
-  it('draws the empty tile instead of placeholders after convergence', () => {
+  it('retains placeholders without an empty tile when the count reaches zero', () => {
     const { controller } = makeController(CARD_FRAME)
     window(controller)
     controller.ingestDelta({
@@ -1150,9 +1157,9 @@ describe('HilosViewportTable drawing a row as a card', () => {
     const wrapper = mountCards(controller)
 
     expect(wrapper.findAll('[data-id="hilos-table-placeholder"]')).toHaveLength(
-      0,
+      4,
     )
-    expect(wrapper.findAll('[data-id="hilos-table-empty"]')).toHaveLength(2)
+    expect(wrapper.findAll('[data-id="hilos-table-empty"]')).toHaveLength(0)
   })
 
   it('tints a card amber while a change waits and green after one landed', () => {
@@ -1338,7 +1345,7 @@ describe('HilosViewportTable drawing a row as a card', () => {
     const right = mountCards(controller, 'end')
     expect(
       right
-        .find('[data-id="hilos-table-card-a"] .ms-auto input')
+        .find('[data-id="hilos-table-card-a"] .hilos-table-card-marks input')
         .attributes('data-id'),
     ).toBe('hilos-table-select-a')
   })
@@ -1748,6 +1755,7 @@ describe('HilosViewportTable drawing work over one row', () => {
       '1',
       '2',
       '1',
+      '1',
     ])
     expect(cells[1]?.find('[role="progressbar"]').exists()).toBe(true)
     expect(cells[0]?.find('[role="progressbar"]').exists()).toBe(false)
@@ -1763,7 +1771,7 @@ describe('HilosViewportTable drawing work over one row', () => {
     const cells = wrapper
       .get('[data-id="hilos-table-progress-row-a"]')
       .findAll('td')
-    expect(cells).toHaveLength(1)
+    expect(cells).toHaveLength(2)
     expect(cells[0]?.attributes('colspan')).toBe('1')
     expect(cells[0]?.find('[role="progressbar"]').exists()).toBe(true)
   })
@@ -2002,7 +2010,7 @@ describe('HilosViewportTable marking a source that went quiet', () => {
     const wrapper = mountTable(controller)
 
     expect(wrapper.findAll('thead th')).toHaveLength(SOURCED_COLUMNS.length + 1)
-    expect(wrapper.find('thead th:last-child').text()).toBe(
+    expect(wrapper.find('thead th:last-child > .visually-hidden').text()).toBe(
       'Row state and controls',
     )
     // Header and body read one condition, so the cell the header just made room
@@ -2015,7 +2023,7 @@ describe('HilosViewportTable marking a source that went quiet', () => {
     ).toBe(true)
   })
 
-  it('takes the strip, the snowflakes and the cell down when the source is current again', async () => {
+  it('takes the strip and live snowflakes down while keeping the state cell', async () => {
     const { controller } = makeController({ columns: SOURCED_COLUMNS })
     window(controller, ['connections'])
     const wrapper = mountTable(controller)
@@ -2036,7 +2044,7 @@ describe('HilosViewportTable marking a source that went quiet', () => {
     expect(wrapper.find('[data-id="hilos-table-sort-presence"]').exists()).toBe(
       true,
     )
-    expect(wrapper.findAll('thead th')).toHaveLength(SOURCED_COLUMNS.length)
+    expect(wrapper.findAll('thead th')).toHaveLength(SOURCED_COLUMNS.length + 1)
   })
 })
 
@@ -2308,14 +2316,14 @@ describe('HilosViewportTable drawing the states of the body', () => {
     )
     expect(tableRows).toHaveLength(2)
     // A cell for every column standing in the row, so the widths hold.
-    expect(tableRows[0]?.findAll('td')).toHaveLength(2)
+    expect(tableRows[0]?.findAll('td')).toHaveLength(3)
     expect(
       wrapper.findAll(
         '[data-id="hilos-table-cards"] [data-id="hilos-table-skeleton-row"]',
       ),
     ).toHaveLength(2)
     expect(wrapper.findAll('.placeholder[aria-hidden="true"]')).toHaveLength(
-      2 * 2,
+      3 * 2,
     )
     expect(
       wrapper
@@ -2511,4 +2519,688 @@ describe('HilosViewportTable rows with nothing to expand and wide fields', () =>
       false,
     )
   })
+})
+
+// These tests exercise DOM ownership and numeric wiring. Browser layout is the
+// separate G/B matrix; happy-dom supplies no CSS geometry evidence.
+describe('HilosViewportTable permanent geometry chrome', () => {
+  const combinations = [false, true].flatMap((stale) =>
+    ([null, 'move', 'remove'] as const).flatMap((pending) =>
+      (['absent', 'collapsed', 'expanded'] as const).map((detail) => ({
+        stale,
+        pending,
+        detail,
+      })),
+    ),
+  )
+
+  for (const edge of ['start', 'end'] as const) {
+    it.each(combinations)(
+      `${edge}: stale=$stale pending=$pending detail=$detail`,
+      async ({ stale, pending, detail }) => {
+        const columns: HilosTableColumn[] = [
+          { key: 'name', label: 'Name', source: 'people', progress: true },
+        ]
+        if (detail !== 'absent')
+          columns.push({ key: 'note', label: 'Note', detail: true })
+        const { controller } = makeController({
+          title: 'People',
+          columns,
+          bulkActions: [
+            {
+              key: 'archive',
+              label: 'Archive',
+              refusalTitle: "Couldn't archive",
+              run: neverRun,
+            },
+          ],
+        })
+        controller.ingestWindow(
+          [{ rowKey: 'a', slots: { name: 'Alice' } }],
+          1,
+          true,
+          null,
+          null,
+          10,
+        )
+        if (stale)
+          controller.ingestDelta({
+            kind: 'row_stale',
+            rowKey: 'a',
+            staleSources: ['people'],
+          })
+        if (detail === 'expanded') controller.expandRow('a', true)
+        if (pending === 'move')
+          controller.ingestDelta({
+            kind: 'row_moved',
+            rowKey: 'a',
+            row: { rowKey: 'a', slots: { name: 'Alice' } },
+            position: 0,
+          })
+        if (pending === 'remove')
+          controller.ingestDelta({
+            kind: 'row_removed',
+            rowKey: 'a',
+            reason: 'deleted',
+          })
+        const wrapper = mount(HilosViewportTable, {
+          props: { controller },
+          global: { provide: { [hilosTableSelectionEdgeKey as symbol]: edge } },
+        })
+        expect(wrapper.findAll('thead th')).toHaveLength(3)
+        expect(wrapper.findAll('colgroup col')).toHaveLength(3)
+        expect(
+          wrapper.get('tr[data-id="hilos-table-row-a"]').findAll('td'),
+        ).toHaveLength(3)
+        const holders = wrapper.findAll('.hilos-table-marks.invisible')
+        expect(holders).toHaveLength(3) // header, row, card
+        for (const holder of holders) {
+          expect(holder.attributes('aria-hidden')).toBe('true')
+          expect(holder.attributes()).toHaveProperty('inert')
+          expect(holder.findAll('.bi-snow')).toHaveLength(1)
+          expect(holder.findAll('.badge').map((badge) => badge.text())).toEqual(
+            ['Will move', 'Will leave'],
+          )
+          expect(holder.findAll('.btn')).toHaveLength(
+            detail === 'absent' ? 0 : 1,
+          )
+          expect(
+            holder
+              .find(
+                '[id], [data-id], [data-autofocus], button, input, [tabindex], a',
+              )
+              .exists(),
+          ).toBe(false)
+        }
+        expect(
+          wrapper.findAll('[data-id="hilos-table-expand-a"]'),
+        ).toHaveLength(detail === 'absent' ? 0 : 2)
+        expect(
+          wrapper.findAll('[data-id="hilos-table-stale-column-name"]'),
+        ).toHaveLength(stale ? 1 : 0)
+        expect(
+          wrapper.findAll('th .bi-snow.invisible, th .invisible .bi-snow'),
+        ).toHaveLength(2) // header mark + source mark
+        if (pending === 'remove') {
+          controller.apply()
+          await wrapper.vm.$nextTick()
+          const placeholders = wrapper.findAll(
+            '[data-id="hilos-table-placeholder"]',
+          )
+          expect(placeholders).toHaveLength(2)
+          expect(placeholders[0]?.attributes('colspan')).toBe('3')
+          for (const placeholder of placeholders)
+            expect(
+              placeholder.find('button, input, [id], [tabindex]').exists(),
+            ).toBe(false)
+          expect(
+            wrapper.findAll(
+              '[data-id="hilos-table-expand-a"], [data-id="hilos-table-select-a"], [data-id="hilos-table-row-detail-a"]',
+            ),
+          ).toHaveLength(0)
+        }
+        wrapper.unmount()
+        controller.dispose()
+      },
+    )
+  }
+
+  it('reserves declared detail room even where the record is not expandable', () => {
+    const controller = new TableViewportController<unknown>({
+      resolve: () => ({}),
+      sendViewport: () => {},
+      expandable: () => false,
+      frame: {
+        columns: [
+          { key: 'name', label: 'Name' },
+          { key: 'note', label: 'Note', detail: true },
+        ],
+      },
+    })
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: {} }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    const wrapper = mountTable(controller)
+    expect(wrapper.findAll('.hilos-table-marks.invisible > .btn')).toHaveLength(
+      3,
+    )
+    expect(
+      wrapper.findAll('button[data-id="hilos-table-expand-a"]'),
+    ).toHaveLength(0)
+    wrapper.unmount()
+    controller.dispose()
+  })
+
+  it('replaces every mirror, child subscription and geometry registration with its controller', async () => {
+    const first = makeController({
+      title: 'First',
+      columns: COLUMNS,
+      search: {},
+    }).controller
+    first.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    const second = makeController({
+      title: 'Second',
+      columns: TWO_COLUMNS,
+      search: {},
+    }).controller
+    second.ingestWindow(
+      [{ rowKey: 'b', slots: { name: 'Bob' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    const wrapper = mountTable(first)
+    await wrapper.setProps({ controller: second })
+    expect(wrapper.get('[data-id="hilos-table-title"]').text()).toBe('Second')
+    expect(wrapper.find('[data-id="hilos-table-row-a"]').exists()).toBe(false)
+    expect(wrapper.get('[data-id="hilos-table-row-b"]').text()).toContain('Bob')
+    expect(wrapper.findAll('thead th')).toHaveLength(3)
+    first.ingestWindow(
+      [{ rowKey: 'old', slots: { name: 'Obsolete' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    first.setSearch('obsolete')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).not.toContain('Obsolete')
+    expect(
+      (
+        wrapper.get('[data-id="hilos-table-search"]')
+          .element as HTMLInputElement
+      ).value,
+    ).toBe('')
+    second.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'b',
+      row: { rowKey: 'b', slots: { name: 'Bobby' } },
+    })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('[data-id="hilos-table-row-b"]').text()).toContain(
+      'Bobby',
+    )
+    wrapper.unmount()
+    // Unmounting one view does not destroy a controller still owned by the page.
+    second.ingestWindow(
+      [{ rowKey: 'c', slots: { name: 'Carol' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    expect(second.rows.get()[0]?.rowKey).toBe('c')
+    first.dispose()
+    second.dispose()
+  })
+})
+
+describe('HilosViewportTable capture and disappearing controls', () => {
+  const views: { unmount(): void }[] = []
+  afterEach(() => {
+    views.splice(0).forEach((wrapper) => wrapper.unmount())
+    vi.restoreAllMocks()
+    document.body.replaceChildren()
+  })
+
+  function numericDOM(searchVisible = true) {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+      function (this: HTMLElement) {
+        const id = this.dataset.id
+        const dimensions = (top: number, height: number, width = 400) =>
+          new DOMRect(0, top, width, height)
+        if (id === 'hilos-table-search' && !searchVisible)
+          return dimensions(0, 0, 0)
+        if (id === 'hilos-table-row-a') return dimensions(40, 41.25)
+        if (id === 'hilos-table-row-detail-a' && this.tagName === 'TR')
+          return dimensions(99.75, 60.25)
+        if (id === 'hilos-table-progress-row-a')
+          return this.tagName === 'TR'
+            ? dimensions(81.25, 18.5)
+            : dimensions(400, 24.5)
+        if (id === 'hilos-table-card-a') return dimensions(300, 260.75)
+        if (id === 'hilos-table-row-detail-a') return dimensions(340, 60.25)
+        if (this.classList.contains('hilos-table-work-reserve')) {
+          const space = this.classList.contains('hilos-table-work-space')
+            ? this
+            : this.querySelector<HTMLElement>('.hilos-table-work-space')
+          return dimensions(
+            81.25,
+            Number(space?.style.getPropertyValue('--hilos-table-work-px')),
+          )
+        }
+        if (this.classList.contains('hilos-table-replacement-row'))
+          return dimensions(0, 19)
+        if (this.classList.contains('hilos-table-reason-twins'))
+          return dimensions(0, 18)
+        if (this.tagName === 'TH')
+          return new DOMRect(
+            Array.from(this.parentElement!.children).indexOf(this) * 100,
+            0,
+            100,
+            20,
+          )
+        return dimensions(0, 100)
+      },
+    )
+  }
+
+  function painted(search = true) {
+    const { controller } = makeController({
+      title: 'People',
+      columns: [
+        { key: 'name', label: 'Name' },
+        { key: 'note', label: 'Note', detail: true },
+      ],
+      ...(search ? { search: {} } : {}),
+    })
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'Alice' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+    controller.expandRow('a', true)
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: 'job',
+      rowKey: 'a',
+      current: 1,
+      total: 2,
+      detail: { secret: 'work value' },
+    })
+    const wrapper = mount(HilosViewportTable, {
+      props: { controller },
+      attachTo: document.body,
+      slots: {
+        'cell-name': ({ row, rowKey }: { row: unknown; rowKey: string }) =>
+          h(
+            'button',
+            { 'data-id': `page-control-${rowKey}` },
+            (row as Row).name,
+          ),
+        'detail-note': () => 'private detail',
+        'row-progress': () => 'private work caption',
+      },
+    })
+    views.push(wrapper)
+    return { controller, wrapper }
+  }
+
+  it('gives the first own-removal replacement the complete old footprint, and returns focus to visible search', async () => {
+    numericDOM()
+    const { controller, wrapper } = painted()
+    await wrapper.vm.$nextTick()
+    ;(
+      wrapper.get('tr [data-id="page-control-a"]').element as HTMLElement
+    ).focus()
+    const firstInsertions: string[] = []
+    const insert = Node.prototype.insertBefore
+    vi.spyOn(Node.prototype, 'insertBefore').mockImplementation(function <
+      T extends Node,
+    >(this: Node, node: T, anchor: Node | null): T {
+      const result = insert.call(this, node, anchor) as T
+      if (node instanceof HTMLElement && node.isConnected) {
+        const sizing = node.querySelector<HTMLElement>(
+          '.hilos-table-record-space',
+        )
+        if (sizing?.closest('tr[data-id="hilos-table-row-a"]'))
+          firstInsertions.push(
+            sizing.style.getPropertyValue('--hilos-table-record-px'),
+          )
+      }
+      return result
+    })
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+      own: true,
+    })
+    await wrapper.vm.$nextTick()
+    const placeholder = wrapper.get(
+      'tr[data-id="hilos-table-row-a"] [data-id="hilos-table-placeholder"]',
+    )
+    expect(
+      placeholder.get('.hilos-table-record-space').attributes('style'),
+    ).toBe('--hilos-table-record-px: 119;')
+    expect(firstInsertions[0]).toBe('119')
+    expect(
+      wrapper
+        .get('[data-id="hilos-table-card-a"] .hilos-table-record-space')
+        .attributes('style'),
+    ).toBe('--hilos-table-record-px: 260.75;')
+    expect(placeholder.text()).not.toMatch(/Alice|private|work value/)
+    expect(
+      wrapper.findAll(
+        '[data-id="page-control-a"], [data-id="hilos-table-progress-row-a"], [data-id="hilos-table-row-detail-a"]',
+      ),
+    ).toHaveLength(0)
+    expect(document.activeElement).toBe(
+      wrapper.get('[data-id="hilos-table-search"]').element,
+    )
+    controller.dispose()
+  })
+
+  it('holds an empty numeric work block before Apply and consumes it once in the full placeholder', async () => {
+    numericDOM()
+    const { controller, wrapper } = painted()
+    await wrapper.vm.$nextTick()
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'left_set',
+    })
+    await wrapper.vm.$nextTick()
+    const reserves = wrapper.findAll('.hilos-table-work-reserve')
+    expect(reserves).toHaveLength(2)
+    expect(
+      reserves[0]?.get('.hilos-table-work-space').attributes('style'),
+    ).toBe('--hilos-table-work-px: 18.5;')
+    expect(reserves[1]?.attributes('style')).toBe(
+      '--hilos-table-work-px: 24.5;',
+    )
+    for (const reserve of reserves) {
+      expect(reserve.text()).toBe('')
+      expect(reserve.find('[data-id], button, input').exists()).toBe(false)
+    }
+    expect(wrapper.text()).not.toContain('private work caption')
+    controller.apply()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findAll('.hilos-table-work-reserve')).toHaveLength(0)
+    expect(
+      wrapper
+        .get('tr[data-id="hilos-table-row-a"] .hilos-table-record-space')
+        .attributes('style'),
+    ).toBe('--hilos-table-record-px: 119;')
+    controller.dispose()
+  })
+
+  it.each([false, true])(
+    'falls back to the root when search is absent/hidden: hidden=$0',
+    async (hidden) => {
+      numericDOM(false)
+      const { controller, wrapper } = painted(hidden)
+      await wrapper.vm.$nextTick()
+      ;(
+        wrapper.get('tr [data-id="page-control-a"]').element as HTMLElement
+      ).focus()
+      controller.ingestDelta({
+        kind: 'row_removed',
+        rowKey: 'a',
+        reason: 'deleted',
+        own: true,
+      })
+      await wrapper.vm.$nextTick()
+      expect(document.activeElement).toBe(wrapper.element)
+      expect(wrapper.attributes('tabindex')).toBe('-1')
+      controller.dispose()
+    },
+  )
+
+  it('keeps focus on a surviving record or outside the table', async () => {
+    numericDOM()
+    const { controller, wrapper } = painted()
+    await wrapper.vm.$nextTick()
+    const other = wrapper.get('tr [data-id="page-control-b"]')
+      .element as HTMLElement
+    other.focus()
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+      own: true,
+    })
+    await wrapper.vm.$nextTick()
+    expect(document.activeElement).toBe(other)
+    const outside = document.createElement('button')
+    document.body.append(outside)
+    outside.focus()
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'b',
+      reason: 'deleted',
+      own: true,
+    })
+    await wrapper.vm.$nextTick()
+    expect(document.activeElement).toBe(outside)
+    controller.dispose()
+  })
+})
+
+describe('HilosViewportTable modal focus lifetime', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    document.body.replaceChildren()
+  })
+
+  function fixture(search = true) {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+      function (this: HTMLElement) {
+        return this.closest('[hidden]')
+          ? new DOMRect()
+          : new DOMRect(0, 0, 400, 40)
+      },
+    )
+    const { controller } = makeController({
+      title: 'People',
+      columns: COLUMNS,
+      ...(search ? { search: {} } : {}),
+    })
+    function snapshot(name = 'Alice') {
+      controller.ingestWindow(
+        [{ rowKey: 'a', slots: { name } }],
+        1,
+        true,
+        null,
+        null,
+        10,
+      )
+    }
+    snapshot()
+    const current = shallowRef(controller)
+    const open = ref(false)
+    const tableMounted = ref(true)
+    const wrapper = mount(
+      {
+        setup: () => () =>
+          h('div', [
+            tableMounted.value
+              ? h(
+                  HilosViewportTable,
+                  { controller: current.value },
+                  {
+                    'cell-name': () =>
+                      h(
+                        'button',
+                        {
+                          'data-id': 'open-person',
+                          onClick: () => {
+                            open.value = true
+                          },
+                        },
+                        'Inspect',
+                      ),
+                  },
+                )
+              : null,
+            h(HilosModal, {
+              modelValue: open.value,
+              title: 'Inspect person',
+              initialFocus: 'dialog',
+              'onUpdate:modelValue': (value: boolean) => {
+                open.value = value
+              },
+            }),
+            h('button', { 'data-id': 'unrelated' }, 'Other control'),
+          ]),
+      },
+      { attachTo: document.body },
+    )
+    const opener = wrapper.get('tr [data-id="open-person"]')
+      .element as HTMLElement
+    async function activate() {
+      opener.focus()
+      opener.click()
+      await flushPromises()
+      expect(document.activeElement).toBe(
+        document.querySelector('[data-id="modal"]'),
+      )
+    }
+    async function close() {
+      document
+        .querySelector('[data-id="modal"]')
+        ?.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+        )
+      await flushPromises()
+      expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    }
+    return {
+      controller,
+      current,
+      tableMounted,
+      wrapper,
+      opener,
+      snapshot,
+      activate,
+      close,
+    }
+  }
+
+  it('returns to the connected opener after a live value update', async () => {
+    const f = fixture()
+    await f.activate()
+    f.controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Updated' } },
+    })
+    await flushPromises()
+    expect(f.opener.isConnected).toBe(true)
+    await f.close()
+    expect(document.activeElement).toBe(f.opener)
+    f.controller.dispose()
+  })
+
+  it.each(['same key', 'reused key', 'removed'] as const)(
+    'keeps the dialog focused through a fresh occurrence (%s), then returns to its table search',
+    async (replacement) => {
+      const f = fixture()
+      const occurrence = f.controller.rows.get()[0]!.occurrence
+      await f.activate()
+      const modal = document.activeElement
+      if (replacement === 'removed') {
+        f.controller.ingestDelta({
+          kind: 'row_removed',
+          rowKey: 'a',
+          reason: 'deleted',
+          own: true,
+        })
+      } else {
+        f.snapshot(replacement === 'reused key' ? 'Another person' : 'Alice')
+        expect(f.controller.rows.get()[0]!.occurrence).not.toBe(occurrence)
+      }
+      await flushPromises()
+      expect(f.opener.isConnected).toBe(false)
+      expect(document.activeElement).toBe(modal)
+      await f.close()
+      expect(document.activeElement).toBe(
+        f.wrapper.get('[data-id="hilos-table-search"]').element,
+      )
+      f.controller.dispose()
+    },
+  )
+
+  it.each(['absent', 'hidden'] as const)(
+    'returns a removed modal opener to the root with %s search',
+    async (search) => {
+      const f = fixture(search === 'hidden')
+      await f.activate()
+      if (search === 'hidden')
+        f.wrapper
+          .get('[data-id="hilos-table-search"]')
+          .element.setAttribute('hidden', '')
+      f.snapshot()
+      await flushPromises()
+      await f.close()
+      const root = f.wrapper.get('[data-id="hilos-viewport-table"]')
+      expect(document.activeElement).toBe(root.element)
+      expect(root.attributes('tabindex')).toBe('-1')
+      f.controller.dispose()
+    },
+  )
+
+  it('keeps an explicit focus choice outside the dialog after a replacement', async () => {
+    const f = fixture()
+    await f.activate()
+    const other = f.wrapper.get('[data-id="unrelated"]').element as HTMLElement
+    other.focus()
+    f.snapshot()
+    await flushPromises()
+    expect(document.activeElement).toBe(other)
+    await f.close()
+    expect(document.activeElement).toBe(other)
+    f.controller.dispose()
+  })
+
+  it.each(['controller', 'unmount'] as const)(
+    'invalidates a modal return callback after table %s',
+    async (change) => {
+      const f = fixture()
+      await f.activate()
+      const next = makeController({
+        title: 'Other table',
+        columns: COLUMNS,
+        search: {},
+      }).controller
+      if (change === 'controller') {
+        next.ingestWindow(
+          [{ rowKey: 'a', slots: { name: 'Unrelated' } }],
+          1,
+          true,
+          null,
+          null,
+          10,
+        )
+        f.current.value = next
+        await flushPromises()
+        const modal = document.activeElement
+        expect(f.opener.isConnected).toBe(false)
+        await f.close()
+        expect(document.activeElement).not.toBe(
+          f.wrapper.get('[data-id="hilos-table-search"]').element,
+        )
+        expect(modal?.isConnected).toBe(false)
+      } else {
+        f.tableMounted.value = false
+        await flushPromises()
+        await f.close()
+        expect(document.activeElement).not.toBe(f.opener)
+      }
+      f.controller.dispose()
+      next.dispose()
+    },
+  )
 })

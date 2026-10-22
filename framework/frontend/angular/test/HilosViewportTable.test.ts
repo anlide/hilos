@@ -1204,7 +1204,7 @@ describe('HilosViewportTable drawing a row as a card', () => {
     }
   })
 
-  it('draws the empty tile instead of placeholders after convergence', () => {
+  it('retains placeholders without an empty tile when the count reaches zero', () => {
     const controller = makeController(CARD_FRAME)
     window(controller)
     controller.ingestDelta({
@@ -1223,10 +1223,10 @@ describe('HilosViewportTable drawing a row as a card', () => {
 
     expect(
       root(fixture).querySelectorAll('[data-id="hilos-table-placeholder"]'),
-    ).toHaveLength(0)
+    ).toHaveLength(4)
     expect(
       root(fixture).querySelectorAll('[data-id="hilos-table-empty"]'),
-    ).toHaveLength(2)
+    ).toHaveLength(0)
   })
 
   it('tints a card amber while a change waits and green after one landed', () => {

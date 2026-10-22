@@ -49,6 +49,37 @@ final class BrowserContextLiveFacetCountsTest extends TestCase
         parent::tearDown();
     }
 
+    public function testPublishedMutationBatchCompletesOneRecountWithoutAnyDbOrRtFact(): void
+    {
+        $viewport = new TableViewportSubscription(LiveFacetUnitTable::TABLE, filter: ['status' => 'pending'], limit: self::WINDOW);
+        $table = new LiveFacetUnitTable([new LiveFacetUnitRow('1', 'pending')]);
+        $context = $this->boot($viewport, $table);
+        $this->declareFacets();
+        $table->rows[] = new LiveFacetUnitRow('2', 'pending');
+        $table->rows[] = new LiveFacetUnitRow('3', 'sent');
+        $context->publishTableMutations(LiveFacetUnitContext::PAGE, 'ak-1', LiveFacetUnitTable::TABLE,
+            static fn (): array => [
+                new TableRowMutationDTO(TableMutationType::Create, '2', new LiveFacetUnitRow('2', 'pending')),
+                new TableRowMutationDTO(TableMutationType::Create, '3', new LiveFacetUnitRow('3', 'sent')),
+            ]);
+        $context->flushToSignalRouter();
+        $names = [];
+        $facets = null;
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            $names[] = $signal->signalName->getName();
+            if ($signal->data->data instanceof TableFacetCountsSignalData) {
+                $facets = $signal->data->data;
+            }
+        }
+        self::assertSame([SignalTypeConstants::TABLE_VIEWPORT_COUNT, SignalTypeConstants::TABLE_FACET_COUNTS], $names);
+        self::assertNotNull($facets);
+        self::assertSame(3, $facets->facets->filters['status'][TableConstants::FACET_KEY_ANY]->count);
+        self::assertSame(2, $facets->facets->filters['status'][TableConstants::FACET_KEY_OPTIONS]['pending']->count);
+        self::assertSame(1, $facets->facets->filters['status'][TableConstants::FACET_KEY_OPTIONS]['sent']->count);
+        self::assertSame([], $context->flushToSignalRouter());
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
     public function testCreatedRowTriggersOneFacetCountsSignalWithAllDeclaredFiltersAfterFlush(): void
     {
         $viewport = $this->viewport();

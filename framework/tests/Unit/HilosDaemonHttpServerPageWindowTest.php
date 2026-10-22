@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Closure;
+use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Table\DTO\TableQueryDTO;
+
 use Hilos\API\Router\HttpRouteTally;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\NodeRole;
@@ -64,7 +68,10 @@ final class HilosDaemonHttpServerPageWindowTest extends TestCase
         Hilos::$cluster = null;
         ClusterDaemonPictureMirror::addViewer(self::VIEWER);
         ClusterDaemonPictureMirror::addViewer(self::OTHER_VIEWER);
-        Hilos::$sr->setTableViewport(self::VIEWER, new TableViewportSubscription(HilosDaemonHttpRoutesTable::TABLE));
+        Hilos::$sr->subscribeToPage(HilosPageConstants::HILOS_DAEMON_HTTP_SERVER,
+            new WebSocketPageSubscribeSignalDTO(self::VIEWER, HilosPageConstants::HILOS_DAEMON_HTTP_SERVER,
+                [HilosPageRouteParams::HILOS_DAEMON_NODE_ID => 'n1']));
+        Hilos::$sr->setTableViewport(self::VIEWER, new TableViewportSubscription(HilosDaemonHttpRoutesTable::TABLE, filter: ['node' => 'n1']));
     }
 
     /** Clears both page comparisons and restores the previous facade sources. */
@@ -82,30 +89,30 @@ final class HilosDaemonHttpServerPageWindowTest extends TestCase
         parent::tearDown();
     }
 
-    public function testOnlyHttpChangesResendOpenWindowsAndForgetAllowsTheSamePictureAgain(): void
+    public function testOnlyHttpChangesPublishMutationsAndForgetAllowsTheSamePictureAgain(): void
     {
         $agent = new DaemonHttpServerWindowTestAgent();
         $http = $this->http(new HttpRouteTally(2, 0, 0, 12));
         $agent->onSignalAgent(new AgentSignalData($this->portion($http)), 'collector', HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION);
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_HTTP_SERVER, self::VIEWER]], $this->browser()->windows);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_HTTP_SERVER, self::VIEWER]], $this->browser()->mutations);
 
-        $this->browser()->windows = [];
+        $this->browser()->mutations = [];
         $agent->onSignalAgent(new AgentSignalData($this->portion($http)), 'collector', HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION);
         $agent->onSignalAgent(
             new AgentSignalData($this->portion($http, cron: true)),
             'collector',
             HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION,
         );
-        self::assertSame([], $this->browser()->windows);
+        self::assertSame([], $this->browser()->mutations);
 
         $changed = $this->http(new HttpRouteTally(3, 1, 0, 18));
         $agent->onSignalAgent(new AgentSignalData($this->portion($changed)), 'collector', HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION);
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_HTTP_SERVER, self::VIEWER]], $this->browser()->windows);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_HTTP_SERVER, self::VIEWER]], $this->browser()->mutations);
 
-        $this->browser()->windows = [];
+        $this->browser()->mutations = [];
         $agent->onStop();
         $agent->onSignalAgent(new AgentSignalData($this->portion($changed)), 'collector', HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION);
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_HTTP_SERVER, self::VIEWER]], $this->browser()->windows);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_HTTP_SERVER, self::VIEWER]], $this->browser()->mutations);
     }
 
     /**
@@ -113,7 +120,7 @@ final class HilosDaemonHttpServerPageWindowTest extends TestCase
      *
      * @throws HilosException When the picture handler or HTTP fixture fails
      */
-    public function testFirstHttpReportResendsTheWholePageWithoutAnotherWindow(): void
+    public function testFirstHttpReportPublishesDataWithoutAnotherWindow(): void
     {
         $this->subscribe(self::VIEWER, 'n1');
         $agent = new DaemonHttpServerWindowTestAgent();
@@ -122,8 +129,8 @@ final class HilosDaemonHttpServerPageWindowTest extends TestCase
 
         $this->deliverNodes($agent, [$this->node('n1', true, $this->http(new HttpRouteTally(0, 0, 0, null)))]);
 
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_HTTP_SERVER, self::VIEWER]], $this->browser()->pages);
-        self::assertSame([], $this->browser()->windows);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_HTTP_SERVER, self::VIEWER]], $this->browser()->pageData);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_HTTP_SERVER, self::VIEWER]], $this->browser()->mutations);
     }
 
     /**
@@ -154,8 +161,9 @@ final class HilosDaemonHttpServerPageWindowTest extends TestCase
 
         $this->deliverNodes($agent, [$this->node('n1', true, $changed, sampledAt: $field === 'countingHours' ? 3610 : 10)]);
 
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_HTTP_SERVER, self::VIEWER]], $this->browser()->pages);
-        self::assertSame([], $this->browser()->windows);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_HTTP_SERVER, self::VIEWER]], $this->browser()->pageData);
+        self::assertSame(in_array($field, ['requests', 'serverErrors'], true)
+            ? [[HilosPageConstants::HILOS_DAEMON_HTTP_SERVER, self::VIEWER]] : [], $this->browser()->mutations);
     }
 
     /** @return iterable<string, array{string}> Every own HTTP summary field */
@@ -171,7 +179,7 @@ final class HilosDaemonHttpServerPageWindowTest extends TestCase
      *
      * @throws HilosException When the picture handler or HTTP fixture fails
      */
-    public function testRouteChangesWithTheSameTotalsSendOnlyTheWindow(): void
+    public function testRouteChangesWithTheSameTotalsPublishOnlyMutations(): void
     {
         $this->subscribe(self::VIEWER, 'n1');
         $agent = new DaemonHttpServerWindowTestAgent();
@@ -188,14 +196,14 @@ final class HilosDaemonHttpServerPageWindowTest extends TestCase
         ], $unrouted);
 
         $this->deliverNodes($agent, [$this->node('n1', true, $redistributed)]);
-        self::assertSame([], $this->browser()->pages);
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_HTTP_SERVER, self::VIEWER]], $this->browser()->windows);
+        self::assertSame([], $this->browser()->pageData);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_HTTP_SERVER, self::VIEWER]], $this->browser()->mutations);
 
         $this->clearDeliveries();
         $slower = new DaemonHttpPicture('127.0.0.1', 8080, 10, $redistributed->routes, new HttpRouteTally(1, 0, 0, 20));
         $this->deliverNodes($agent, [$this->node('n1', true, $slower)]);
-        self::assertSame([], $this->browser()->pages);
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_HTTP_SERVER, self::VIEWER]], $this->browser()->windows);
+        self::assertSame([], $this->browser()->pageData);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_HTTP_SERVER, self::VIEWER]], $this->browser()->mutations);
     }
 
     /**
@@ -212,18 +220,18 @@ final class HilosDaemonHttpServerPageWindowTest extends TestCase
         $this->clearDeliveries();
 
         $this->deliverNodes($agent, [$this->node('n1', false, $http)]);
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_HTTP_SERVER, self::VIEWER]], $this->browser()->pages);
-        self::assertSame([], $this->browser()->windows);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_HTTP_SERVER, self::VIEWER]], $this->browser()->pageData);
+        self::assertSame([], $this->browser()->mutations);
 
         $this->clearDeliveries();
         $this->deliverNodes($agent, [$this->node('n1', false, $http)]);
-        self::assertSame([], $this->browser()->pages);
-        self::assertSame([], $this->browser()->windows);
+        self::assertSame([], $this->browser()->pageData);
+        self::assertSame([], $this->browser()->mutations);
 
         $agent->onStop();
         $this->deliverNodes($agent, [$this->node('n1', false, $http)]);
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_HTTP_SERVER, self::VIEWER]], $this->browser()->pages);
-        self::assertSame([], $this->browser()->windows);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_HTTP_SERVER, self::VIEWER]], $this->browser()->pageData);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_HTTP_SERVER, self::VIEWER]], $this->browser()->mutations);
     }
 
     /**
@@ -242,8 +250,8 @@ final class HilosDaemonHttpServerPageWindowTest extends TestCase
 
         $this->deliverNodes($agent, [$this->node('n2', false, $http)], false);
 
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_HTTP_SERVER, self::OTHER_VIEWER]], $this->browser()->pages);
-        self::assertSame([], $this->browser()->windows);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_HTTP_SERVER, self::OTHER_VIEWER]], $this->browser()->pageData);
+        self::assertSame([], $this->browser()->mutations);
     }
 
     /**
@@ -262,8 +270,8 @@ final class HilosDaemonHttpServerPageWindowTest extends TestCase
         $this->deliverNodes($agent, [$this->node('n1', true, $http, cron: true)]);
         $this->deliverNodes($agent, [$this->node('n1', true, $http, sampledAt: 3609, cron: true)]);
 
-        self::assertSame([], $this->browser()->pages);
-        self::assertSame([], $this->browser()->windows);
+        self::assertSame([], $this->browser()->pageData);
+        self::assertSame([], $this->browser()->mutations);
     }
 
     /**
@@ -278,14 +286,14 @@ final class HilosDaemonHttpServerPageWindowTest extends TestCase
 
         $this->deliverNodes($agent, [$this->node('n1', false, null)]);
 
-        self::assertSame([], $this->browser()->pages);
+        self::assertSame([], $this->browser()->pageData);
     }
 
     /** Clears the browser spy between independent portions. */
     private function clearDeliveries(): void
     {
-        $this->browser()->pages = [];
-        $this->browser()->windows = [];
+        $this->browser()->pageData = [];
+        $this->browser()->mutations = [];
     }
 
     /**
@@ -384,35 +392,39 @@ final class DaemonHttpServerWindowTestAgent extends AbstractHilosDaemonAgent
 final class DaemonHttpServerWindowTestBrowser extends IdentityTestBrowser
 {
     /** @var list<array{string, string}> Delivered page and connection pairs */
-    public array $windows = [];
+    public array $mutations = [];
 
     /** @var list<array{string, string}> Re-answered page and connection pairs */
-    public array $pages = [];
+    public array $pageData = [];
 
     public function __construct()
     {
         parent::__construct(userId: 1, admin: true);
     }
 
-    /**
-     * @param string $page Page served
-     * @param string $acceptKey Viewer receiving the window
-     * @param TableViewportSubscription $viewport Requested viewport, unused here
-     * @return bool True after recording the delivery
-     */
-    public function sendTableWindow(string $page, string $acceptKey, TableViewportSubscription $viewport): bool
+    /** Records data-only publications and asserts the page never re-sends a window in them. */
+    public function publishPageData(string $page, string $acceptKey, Closure $build, array $fields): void
     {
-        $this->windows[] = [$page, $acceptKey];
-        return true;
+        $payload = $build();
+        if ($payload->isEmpty()) {
+            return;
+        }
+        TestCase::assertSame(['data'], array_keys($payload->toArray()));
+        $this->pageData[] = [$page, $acceptKey];
     }
 
-    /**
-     * @param string $page Page served
-     * @param string $acceptKey Viewer receiving the full answer
-     */
-    public function resendPageWhole(string $page, string $acceptKey): void
+    /** Records only nonempty typed diffs for the actual held subject and query. */
+    public function publishTableMutations(string $page, string $acceptKey, string $tableKey, Closure $build): void
     {
-        $this->pages[] = [$page, $acceptKey];
+        $viewport = Hilos::$sr?->getTableViewport($acceptKey, $tableKey);
+        if ($viewport === null) {
+            return;
+        }
+        $table = new HilosDaemonHttpRoutesTable();
+        $mutations = $build($table, new TableQueryDTO(filter: $viewport->filter));
+        if ($mutations !== []) {
+            $this->mutations[] = [$page, $acceptKey];
+        }
     }
 }
 

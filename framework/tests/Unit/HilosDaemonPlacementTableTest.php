@@ -60,6 +60,26 @@ final class HilosDaemonPlacementTableTest extends TestCase
         parent::tearDown();
     }
 
+    public function testPictureDiffKeepsSearchDepartureAnUpdateAndNarrowsMatchingBodies(): void
+    {
+        $this->picture($this->node('n1', $this->roster(['x:1', 'x:10'])));
+        $before = ClusterDaemonPictureMirror::picture();
+        $this->picture($this->node('n1', $this->roster(['x:10', 'x:20'])));
+        $table = new HilosDaemonPlacementTable();
+        $query = new TableQueryDTO(search: 'x:1', limit: 1, pageIndex: 7);
+        $mutations = $table->pictureMutations($before, $query);
+        self::assertCount(1, $mutations);
+        self::assertSame('update', $mutations[0]->type->value);
+        self::assertSame('x', $mutations[0]->rowKey);
+        self::assertSame(['x:10'], $mutations[0]->row->toArray()['nodes'][0]['agentIds']);
+        $before = ClusterDaemonPictureMirror::picture();
+        $this->picture($this->node('n1', $this->roster(['x:20'])));
+        $mutations = $table->pictureMutations($before, $query);
+        self::assertCount(1, $mutations);
+        self::assertSame('update', $mutations[0]->type->value);
+        self::assertFalse($table->containsRow('x', $table->scopeSearch($query)));
+    }
+
     public function testEmptyPictureKeepsEveryDeclaredTypeInPlacementOrder(): void
     {
         $table = new HilosDaemonPlacementTable();

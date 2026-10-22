@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Closure;
+use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Table\DTO\TableQueryDTO;
+
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\NodeRole;
 use Hilos\Constants\HilosPageConstants;
@@ -36,7 +40,7 @@ use Hilos\Tables\Daemon\HilosDaemonEnvSourcesDifferTable;
 use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
 use PHPUnit\Framework\TestCase;
 
-/** A picture portion makes the page agent resend changed summary pages or comparison windows. */
+/** A picture portion makes the page agent publish changed page data and typed comparison mutations. */
 final class HilosDaemonEnvMismatchPageWindowTest extends TestCase
 {
     private const string DIVERGED_VIEWER = 'diverged-viewer';
@@ -76,6 +80,10 @@ final class HilosDaemonEnvMismatchPageWindowTest extends TestCase
         Hilos::$cluster = new ClusterContext();
         foreach ([self::DIVERGED_VIEWER, self::SOURCES_VIEWER, self::NO_WINDOW_VIEWER] as $viewer) {
             ClusterDaemonPictureMirror::addViewer($viewer);
+        }
+        foreach ([self::DIVERGED_VIEWER, self::SOURCES_VIEWER] as $acceptKey) {
+            Hilos::$sr->subscribeToPage(HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH,
+                new WebSocketPageSubscribeSignalDTO($acceptKey, HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH));
         }
         Hilos::$sr->setTableViewport(self::DIVERGED_VIEWER, new TableViewportSubscription(HilosDaemonEnvDivergedTable::TABLE));
         Hilos::$sr->setTableViewport(self::SOURCES_VIEWER, new TableViewportSubscription(HilosDaemonEnvSourcesDifferTable::TABLE));
@@ -118,34 +126,34 @@ final class HilosDaemonEnvMismatchPageWindowTest extends TestCase
         $agent = new DaemonEnvMismatchWindowTestAgent();
         $original = $this->nodes('aaaa', 'bbbb', EnvSource::PROCESS, EnvSource::PROCESS);
         $this->deliver($agent, $original);
-        $this->assertBothWindows();
+        $this->assertDivergedMutations();
 
         $this->clearWindows();
         $this->deliver($agent, $original);
-        self::assertSame([], $this->browser()->windows);
+        self::assertSame([], $this->browser()->mutations);
 
         $changedLabel = $this->nodes('aaaa', 'cccc', EnvSource::PROCESS, EnvSource::PROCESS);
         $this->deliver($agent, $changedLabel);
-        $this->assertBothWindows();
+        $this->assertDivergedMutations();
 
         $this->clearWindows();
         $this->deliver($agent, [$changedLabel[0], $this->node('b', false, null)]);
-        $this->assertBothWindows();
+        $this->assertDivergedMutations();
 
         $this->clearWindows();
         $movedBucket = $this->nodes('aaaa', 'aaaa', EnvSource::PROCESS, EnvSource::ENV_FILE);
         $this->deliver($agent, $movedBucket);
-        $this->assertBothWindows();
+        $this->assertSourcesMutations();
 
         $this->clearWindows();
         $newCollectorLife = $this->nodes('dddd', 'dddd', EnvSource::PROCESS, EnvSource::ENV_FILE);
         $this->deliver($agent, $newCollectorLife);
-        $this->assertBothWindows();
+        $this->assertSourcesMutations();
 
         $this->clearWindows();
         $agent->onStop();
         $this->deliver($agent, $newCollectorLife);
-        $this->assertBothWindows();
+        $this->assertSourcesMutations();
     }
 
     public function testProcessCronAndSessionChangesDoNotResendComparisonWindows(): void
@@ -167,10 +175,10 @@ final class HilosDaemonEnvMismatchPageWindowTest extends TestCase
             standing: new DaemonNodeStanding(1, 1, false, null),
         );
         $this->deliver($agent, [new ClusterDaemonNodeView('a', true, new ClusterDaemonNodeSlot('a', $updated, 2))], false);
-        self::assertSame([], $this->browser()->windows);
+        self::assertSame([], $this->browser()->mutations);
     }
 
-    public function testSilentNodeWithEmptyBucketsResendsWholePageWithoutWindows(): void
+    public function testSilentNodeWithEmptyBucketsPublishesPageDataWithoutWindows(): void
     {
         $subscriber = 'page-subscriber';
         $this->subscribe($subscriber);
@@ -182,7 +190,7 @@ final class HilosDaemonEnvMismatchPageWindowTest extends TestCase
         ];
         $this->deliver($agent, $twoOnline);
         $this->clearWindows();
-        $this->browser()->pages = [];
+        $this->browser()->pageData = [];
 
         $oneSilent = [
             $twoOnline[0],
@@ -190,11 +198,11 @@ final class HilosDaemonEnvMismatchPageWindowTest extends TestCase
         ];
         $this->deliver($agent, $oneSilent);
 
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH, $subscriber]], $this->browser()->pages);
-        self::assertSame([], $this->browser()->windows);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH, $subscriber]], $this->browser()->pageData);
+        self::assertSame([], $this->browser()->mutations);
     }
 
-    public function testKeyMovedToPerNodeResendsWholePage(): void
+    public function testKeyMovedToPerNodePublishesPageData(): void
     {
         $subscriber = 'page-subscriber';
         $this->subscribe($subscriber);
@@ -206,7 +214,7 @@ final class HilosDaemonEnvMismatchPageWindowTest extends TestCase
         ];
         $this->deliver($agent, $initial);
         $this->clearWindows();
-        $this->browser()->pages = [];
+        $this->browser()->pageData = [];
 
         $perNodeNodes = [
             $this->node('a', true, [new NodeEnvironmentFingerprint('KEY', 'string', EnvSource::PROCESS, true, 'same')]),
@@ -214,7 +222,7 @@ final class HilosDaemonEnvMismatchPageWindowTest extends TestCase
         ];
         $this->deliver($agent, $perNodeNodes);
 
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH, $subscriber]], $this->browser()->pages);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH, $subscriber]], $this->browser()->pageData);
     }
 
     public function testCellDigestChangeResendsOnlyOpenWindows(): void
@@ -225,18 +233,18 @@ final class HilosDaemonEnvMismatchPageWindowTest extends TestCase
 
         $original = $this->nodes('aaaa', 'bbbb', EnvSource::PROCESS, EnvSource::PROCESS);
         $this->deliver($agent, $original);
-        $this->assertBothWindows();
+        $this->assertDivergedMutations();
         $this->clearWindows();
-        $this->browser()->pages = [];
+        $this->browser()->pageData = [];
 
         $changedLabel = $this->nodes('aaaa', 'cccc', EnvSource::PROCESS, EnvSource::PROCESS);
         $this->deliver($agent, $changedLabel);
 
-        self::assertSame([], $this->browser()->pages);
-        $this->assertBothWindows();
+        self::assertSame([], $this->browser()->pageData);
+        $this->assertDivergedMutations();
     }
 
-    public function testResentPageDoesNotReceiveTableWindowsInTheSamePass(): void
+    public function testDataPublicationDoesNotSuppressItsOwnTableMutations(): void
     {
         $this->subscribe(self::DIVERGED_VIEWER);
         $agent = new DaemonEnvMismatchWindowTestAgent();
@@ -244,10 +252,10 @@ final class HilosDaemonEnvMismatchPageWindowTest extends TestCase
         $nodes = $this->nodes('aaaa', 'bbbb', EnvSource::PROCESS, EnvSource::PROCESS);
         $this->deliver($agent, $nodes);
 
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH, self::DIVERGED_VIEWER]], $this->browser()->pages);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH, self::DIVERGED_VIEWER]], $this->browser()->pageData);
         self::assertSame([
-            [HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH, self::SOURCES_VIEWER, HilosDaemonEnvSourcesDifferTable::TABLE],
-        ], $this->browser()->windows);
+            [HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH, self::DIVERGED_VIEWER, HilosDaemonEnvDivergedTable::TABLE],
+        ], $this->browser()->mutations);
     }
 
     public function testClosedConnectionIsSkipped(): void
@@ -259,7 +267,7 @@ final class HilosDaemonEnvMismatchPageWindowTest extends TestCase
         $nodes = $this->nodes('aaaa', 'bbbb', EnvSource::PROCESS, EnvSource::PROCESS);
         $this->deliver($agent, $nodes);
 
-        self::assertSame([], $this->browser()->pages);
+        self::assertSame([], $this->browser()->pageData);
     }
 
     public function testRepeatedPictureSendsNothing(): void
@@ -271,15 +279,15 @@ final class HilosDaemonEnvMismatchPageWindowTest extends TestCase
         $nodes = $this->nodes('aaaa', 'bbbb', EnvSource::PROCESS, EnvSource::PROCESS);
         $this->deliver($agent, $nodes);
         $this->clearWindows();
-        $this->browser()->pages = [];
+        $this->browser()->pageData = [];
 
         $this->deliver($agent, $nodes);
 
-        self::assertSame([], $this->browser()->pages);
-        self::assertSame([], $this->browser()->windows);
+        self::assertSame([], $this->browser()->pageData);
+        self::assertSame([], $this->browser()->mutations);
     }
 
-    public function testAfterPictureForgottenResendsWholePageAgain(): void
+    public function testAfterPictureForgottenPublishesPageDataAgain(): void
     {
         $subscriber = 'page-subscriber';
         $this->subscribe($subscriber);
@@ -288,12 +296,12 @@ final class HilosDaemonEnvMismatchPageWindowTest extends TestCase
         $nodes = $this->nodes('aaaa', 'bbbb', EnvSource::PROCESS, EnvSource::PROCESS);
         $this->deliver($agent, $nodes);
         $this->clearWindows();
-        $this->browser()->pages = [];
+        $this->browser()->pageData = [];
 
         $agent->onStop();
         $this->deliver($agent, $nodes);
 
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH, $subscriber]], $this->browser()->pages);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH, $subscriber]], $this->browser()->pageData);
     }
 
     /**
@@ -351,18 +359,23 @@ final class HilosDaemonEnvMismatchPageWindowTest extends TestCase
     }
 
     /** Asserts one window for each interested viewer, and none for the third. */
-    private function assertBothWindows(): void
+    private function assertDivergedMutations(): void
     {
         self::assertSame([
             [HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH, self::DIVERGED_VIEWER, HilosDaemonEnvDivergedTable::TABLE],
-            [HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH, self::SOURCES_VIEWER, HilosDaemonEnvSourcesDifferTable::TABLE],
-        ], $this->browser()->windows);
+        ], $this->browser()->mutations);
     }
 
-    /** Clears the browser spy for the next portion. */
+    private function assertSourcesMutations(): void
+    {
+        self::assertSame([
+            [HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH, self::SOURCES_VIEWER, HilosDaemonEnvSourcesDifferTable::TABLE],
+        ], $this->browser()->mutations);
+    }
+
     private function clearWindows(): void
     {
-        $this->browser()->windows = [];
+        $this->browser()->mutations = [];
     }
 
     /** @return DaemonEnvMismatchWindowTestBrowser Mounted browser spy */
@@ -382,36 +395,39 @@ final class DaemonEnvMismatchWindowTestAgent extends AbstractHilosDaemonAgent
 final class DaemonEnvMismatchWindowTestBrowser extends IdentityTestBrowser
 {
     /** @var list<array{string, string, string}> Page, viewer and table key */
-    public array $windows = [];
+    public array $mutations = [];
 
     /** @var list<array{string, string}> Re-answered page and connection pairs */
-    public array $pages = [];
+    public array $pageData = [];
 
     public function __construct()
     {
         parent::__construct(userId: 1, admin: true);
     }
 
-    /**
-     * @param string $page Page served
-     * @param string $acceptKey Viewer receiving the window
-     * @param TableViewportSubscription $viewport Requested window descriptor
-     * @return bool True after recording the delivery
-     */
-    public function sendTableWindow(string $page, string $acceptKey, TableViewportSubscription $viewport): bool
+    /** Records data-only publications and asserts the page never re-sends a window in them. */
+    public function publishPageData(string $page, string $acceptKey, Closure $build, array $fields): void
     {
-        $this->windows[] = [$page, $acceptKey, $viewport->tableKey];
-
-        return true;
+        $payload = $build();
+        if ($payload->isEmpty()) {
+            return;
+        }
+        TestCase::assertSame(['data'], array_keys($payload->toArray()));
+        $this->pageData[] = [$page, $acceptKey];
     }
 
-    /**
-     * @param string $page Page served
-     * @param string $acceptKey Viewer receiving the full answer
-     */
-    public function resendPageWhole(string $page, string $acceptKey): void
+    /** Records only nonempty typed diffs for the actual held subject and query. */
+    public function publishTableMutations(string $page, string $acceptKey, string $tableKey, Closure $build): void
     {
-        $this->pages[] = [$page, $acceptKey];
+        $viewport = Hilos::$sr?->getTableViewport($acceptKey, $tableKey);
+        if ($viewport === null) {
+            return;
+        }
+        $table = ( $tableKey === HilosDaemonEnvDivergedTable::TABLE ? new HilosDaemonEnvDivergedTable() : new HilosDaemonEnvSourcesDifferTable());
+        $mutations = $build($table, new TableQueryDTO(filter: $viewport->filter));
+        if ($mutations !== []) {
+            $this->mutations[] = [$page, $acceptKey, $tableKey];
+        }
     }
 }
 

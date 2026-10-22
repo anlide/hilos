@@ -100,6 +100,23 @@ export {
   type TableViewportAnnounced,
 } from '../table/TableViewportController.js'
 export {
+  TableViewportGeometry,
+  type TableProjection,
+  type TablePresentationChange,
+  type TableRecordExtent,
+  type TableColumnTracks,
+  type TableGeometryRecord,
+  type TableGeometryLayout,
+  type TableGeometryMeasurement,
+  type TableWorkReserve,
+  type TableGeometrySample,
+  type TableGeometryCapture,
+  type TableGeometryCaptureRequest,
+  type TableRecordGeometry,
+  type TableGeometryRegistration,
+  type TableViewportGeometryView,
+} from '../table/tableViewportGeometry.js'
+export {
   HILOS_TABLE_ACTIONS_KEY,
   type HilosTableCardSlot,
   type HilosTableColumn,
@@ -232,6 +249,7 @@ export {
   FocusTrap,
   focusableElements,
   focusInitial,
+  registerFocusReturnFallback,
   type FocusPlacement,
 } from '../dom/focusTrap.js'
 export {

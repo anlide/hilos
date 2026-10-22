@@ -1,13 +1,18 @@
 import { test, expect, type Page } from '@playwright/test'
 import {
   dismissToasts,
+  expectDataFreeDeparture,
   shownByTestId,
   watchFirstRowTop,
+  watchTableFirstLive,
+  watchTableSearch,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf, setAdmin } from '../helpers/adminGrant'
 import { clickSubmit, signUp } from '../helpers/session'
 import { setAdminViewMode } from '../helpers/adminViewMode'
 import { gotoPage, PAGE_READY, PAGE_REFUSED } from '../helpers/page'
+
+test.use({ viewport: { width: 1440, height: 1000 } })
 
 // Backup admin e2e (/hilos/backup): the one flow a human would try — press the
 // button, watch the run, read the row, delete it. It is deliberately end-to-end
@@ -388,78 +393,233 @@ test('points to the verifier circle in Maintenance', async ({ page }) => {
 test('creates a backup, shows it as a completed row, and deletes it', async ({
   page,
 }) => {
+  const windows = await watchTableSearch(page, {
+    page: 'hilos_backup',
+    tableKey: 'hilosBackups',
+  })
   await openBackups(page)
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('Backups')
 
-  const rows = page.locator('[data-id^="hilos-table-row-"]')
-  // Row keys, not a row count: the first page may already be full (page size 10),
-  // and then a new backup replaces one rather than adding to the tally.
-  const keysOf = async (): Promise<string[]> =>
-    rows.evaluateAll((cells) =>
-      cells.map((cell) => cell.getAttribute('data-id') ?? ''),
-    )
-  const keysBefore = new Set(await keysOf())
-
-  // Create: the smallest scope, so the dump is quick.
-  await askCreate(page)
-
-  // Acceptance is acked at once and the request must not fail: a misconfigured
-  // storage root or CLI entry is refused synchronously and would toast here.
-  await expect(page.getByTestId('hilos-toast-error')).toHaveCount(0)
-
-  // The run shows as the bar above the table, and it is up before the child has done
-  // anything: the runtime row is written when the run is admitted, so the bar is not a
-  // race against a fast schema-only dump (HIL-820).
-  const bar = page.getByTestId('hilos-table-progress')
-  await expect(bar).toBeVisible({ timeout: 30_000 })
-  // The caption beside it is the page's, filled from the bar's own figures: the phase
-  // as the code names it, or "In progress" before the child has announced one.
-  await expect(bar).toContainText(
-    /In progress|dumping|archiving|digesting|publishing/,
-  )
-
-  // And the set holds no row for it. Every key here is a stored archive's own id — a
-  // run has no archive and therefore no key to invent one from, which is the whole
-  // point of the bar. No Apply gate is raised either: a bar is not a pending change.
-  for (const key of await keysOf()) {
-    expect(key).toMatch(/^hilos-table-row-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$/)
+  // Storage survives DB resets. Remove old archives through this stand's real
+  // controls, then take a NEW empty mount before observing the first arrival.
+  const stored = page.locator('tbody [data-id^="hilos-table-row-"]').filter({
+    has: page.locator('[data-id^="hilos-backup-delete-"]'),
+  })
+  while ((await stored.count()) > 0) {
+    const key = await stored.first().getAttribute('data-id')
+    expect(key).toBeTruthy()
+    await deleteBackup(page, key!)
+    await gotoPage(page, '/hilos/backup', PAGE_READY)
+    await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
   }
-  await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
-
-  // The archive arrives before the bar comes down (the agent rescans the store and only
-  // then clears the runtime), so there is no blink with neither of them on screen.
-  await expect
-    .poll(async () => (await keysOf()).some((key) => !keysBefore.has(key)), {
-      timeout: 30_000,
+  await gotoPage(page, '/hilos/backup', PAGE_READY)
+  await expect(shownByTestId(page, 'hilos-table-empty')).toBeVisible()
+  await expect(page.locator('[data-id^="hilos-table-row-"]')).toHaveCount(0)
+  try {
+    await expect
+      .poll(async () => {
+        const state = await windows.read()
+        const opening = state.frames.find(
+          (frame) => frame.wire.type === 'page_response',
+        )
+        const data = opening?.wire.data as
+          | { payload?: { windows?: { hilosBackups?: { rows?: unknown[] } } } }
+          | undefined
+        return data?.payload?.windows?.hilosBackups?.rows
+      })
+      .toEqual([])
+  } finally {
+    await test.info().attach('backup-initial-empty-window', {
+      body: JSON.stringify(await windows.read(), null, 2),
+      contentType: 'application/json',
     })
-    .toBe(true)
+  }
+  await watchPageLife(page)
+  const actionIds: string[] = []
+  const first = await watchTableFirstLive(
+    expect,
+    page,
+    'hilos-viewport-table',
+    actionIds,
+  )
+  try {
+    const rows = page.locator('[data-id^="hilos-table-row-"]')
+    // Keep the exact live-arrival guard as well as the known empty starting set.
+    const keysOf = async (): Promise<string[]> =>
+      rows.evaluateAll((cells) =>
+        cells.map((cell) => cell.getAttribute('data-id') ?? ''),
+      )
+    const keysBefore = new Set(await keysOf())
 
-  // Work that ended is not a deleted record: the bar goes and leaves nothing in its
-  // place — no placeholder, no empty block holding its margin.
-  await expect(bar).toHaveCount(0, { timeout: 30_000 })
+    // Create: the smallest scope, so the dump is quick.
+    await askCreate(page)
 
-  // The committed row carries its own fields — not an empty shell. Each of these
-  // read as a dash while the row payload was being swallowed as an entity.
-  const row = rows.first()
-  await expect(row).toContainText('schema-only')
-  await expect(row).toContainText('test')
-  await expect(row.getByText('success')).toBeVisible()
-  // A finished run always reports a duration, even a sub-second one.
-  await expect(row).toContainText(/\d+(s|m)/)
+    // Acceptance is acked at once and the request must not fail: a misconfigured
+    // storage root or CLI entry is refused synchronously and would toast here.
+    await expect(page.getByTestId('hilos-toast-error')).toHaveCount(0)
 
-  // Delete it again: the row this test created leaves the table without a reload,
-  // so the suite is idempotent on a shared storage directory.
-  const createdKey = await row.getAttribute('data-id')
-  await row.locator('[data-id^="hilos-backup-delete-"]').click()
-  await page.getByTestId('hilos-backup-delete-confirm').click()
-  await expect(page.getByTestId('hilos-toast-error')).toHaveCount(0)
-  // The row leaves either a placeholder or, when it was the last archive on this
-  // shared stand, an empty table. What must be gone is the backup itself — it
-  // stops offering its actions in both cases.
-  const deleted = page.locator(`[data-id="${createdKey}"]`)
-  await expect(
-    deleted.locator('[data-id^="hilos-backup-delete-"]'),
-  ).toHaveCount(0, { timeout: 15_000 })
+    // The run shows as the bar above the table, and it is up before the child has done
+    // anything: the runtime row is written when the run is admitted, so the bar is not a
+    // race against a fast schema-only dump (HIL-820).
+    const bar = page.getByTestId('hilos-table-progress')
+    await expect(bar).toBeVisible({ timeout: 30_000 })
+    // The caption beside it is the page's, filled from the bar's own figures: the phase
+    // as the code names it, or "In progress" before the child has announced one.
+    await expect(bar).toContainText(
+      /In progress|dumping|archiving|digesting|publishing/,
+    )
+
+    // And the set holds no row for it. Every key here is a stored archive's own id — a
+    // run has no archive and therefore no key to invent one from, which is the whole
+    // point of the bar. No Apply gate is raised either: a bar is not a pending change.
+    for (const key of await keysOf()) {
+      expect(key).toMatch(
+        /^hilos-table-row-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$/,
+      )
+    }
+    await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
+
+    // The archive arrives before the bar comes down (the agent rescans the store and only
+    // then clears the runtime), so there is no blink with neither of them on screen.
+    await expect
+      .poll(async () => (await keysOf()).some((key) => !keysBefore.has(key)), {
+        timeout: 30_000,
+      })
+      .toBe(true)
+
+    // Work that ended is not a deleted record: the bar goes and leaves nothing in its
+    // place — no placeholder, no empty block holding its margin.
+    await expect(bar).toHaveCount(0, { timeout: 30_000 })
+
+    // The committed row carries its own fields — not an empty shell. Each of these
+    // read as a dash while the row payload was being swallowed as an entity.
+    await expect(rows).toHaveCount(1)
+    const row = rows.first()
+    await expect(row).toContainText('schema-only')
+    await expect(row).toContainText('test')
+    await expect(row.getByText('success')).toBeVisible()
+    // A finished run always reports a duration, even a sub-second one.
+    await expect(row).toContainText(/\d+(s|m)/)
+
+    // Delete it again: the row this test created leaves the table without a reload,
+    // so the suite is idempotent on a shared storage directory.
+    const createdKey = await row.getAttribute('data-id')
+    expect(createdKey).toBeTruthy()
+    const backupId = createdKey!.replace('hilos-table-row-', '')
+    actionIds.push(
+      `hilos-backup-restore-${backupId}`,
+      `hilos-backup-delete-${backupId}`,
+    )
+    // This initiating browser receives the real own-create frame. Require the
+    // finished archive payload and its place in the original empty window.
+    await expect
+      .poll(async () => {
+        const state = await windows.read()
+        return state.frames
+          .filter(
+            (frame) =>
+              frame.direction === 'received' &&
+              frame.wire.type === 'table_viewport_own_create',
+          )
+          .map((frame) => {
+            const data = frame.wire.data as {
+              row: {
+                rowKey: string
+                slots: {
+                  backup: { finished: boolean; status: string; scope: string }
+                }
+              }
+              position: number
+              totalCount: number
+            }
+            return {
+              key: data.row.rowKey,
+              position: data.position,
+              totalCount: data.totalCount,
+              finished: data.row.slots.backup.finished,
+              status: data.row.slots.backup.status,
+              scope: data.row.slots.backup.scope,
+            }
+          })
+      })
+      .toEqual([
+        {
+          key: backupId,
+          position: 0,
+          totalCount: 1,
+          finished: true,
+          status: 'success',
+          scope: 'schema-only',
+        },
+      ])
+    expect(await pageLifeRecord(page)).toEqual({ connected: true, states: [] })
+    await test.info().attach('backup-first-live-bounds', {
+      body: await first.evidence(),
+      contentType: 'application/json',
+    })
+    await test.info().attach('backup-first-live-layout', {
+      body: await page.getByTestId('hilos-viewport-table').screenshot(),
+      contentType: 'image/png',
+    })
+    await first.check()
+    const restore = shownByTestId(page, `hilos-backup-restore-${backupId}`)
+    const remove = shownByTestId(page, `hilos-backup-delete-${backupId}`)
+    // Ordinary pointer opens Restore; keyboard reaches Delete in native tab order.
+    // Cancel the typed-id barrier: a restore itself would overwrite the stand.
+    await clickSubmit(restore)
+    await expect(
+      page.getByTestId('hilos-backup-restore-confirm'),
+    ).toBeDisabled()
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('hilos-backup-restore-confirm')).toHaveCount(
+      0,
+    )
+    await expect(restore).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(remove).toBeFocused()
+    await remove.press('Enter')
+    await expect(page.getByTestId('hilos-backup-delete-confirm')).toBeEnabled()
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('hilos-backup-delete-confirm')).toHaveCount(0)
+    await expect(remove).toBeFocused()
+    await clickSubmit(remove)
+    await clickSubmit(page.getByTestId('hilos-backup-delete-confirm'))
+    await expect(page.getByTestId('hilos-backup-delete-confirm')).toHaveCount(0)
+    await expect(page.getByTestId('hilos-toast-error')).toHaveCount(0)
+    // The last archive leaves one data-free slot in each mounted projection.
+    // Only a newly requested window can replace them with the empty tile.
+    const deleted = page.locator(`[data-id="${createdKey}"]`)
+    await expect(
+      deleted.locator('[data-id^="hilos-backup-delete-"]'),
+    ).toHaveCount(0, { timeout: 15_000 })
+    await expectDataFreeDeparture(expect, page, backupId, 'Removed', actionIds)
+    await expect(page.getByTestId('hilos-table-placeholder')).toHaveCount(2)
+    await expect(page.getByTestId('hilos-table-count')).toHaveText('0 – 0 of 0')
+    await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
+    await expect(page.getByTestId('hilos-table-pending-row')).toHaveCount(0)
+    await expect(page.getByTestId('hilos-table-empty')).toHaveCount(0)
+    await expect(page.getByTestId('hilos-table-no-matches')).toHaveCount(0)
+    for (const prefix of ['hilos-table-row-', 'hilos-table-card-']) {
+      await expect(page.getByTestId(`${prefix}${backupId}`)).toHaveText(
+        'Removed',
+      )
+    }
+    expect(await pageLifeRecord(page)).toEqual({ connected: true, states: [] })
+  } finally {
+    await test.info().attach('backup-first-live-frame-history', {
+      body: await first.history(),
+      contentType: 'application/json',
+    })
+    await test.info().attach('backup-empty-to-first-server-archive', {
+      body: JSON.stringify(
+        { frames: await windows.read(), life: await pageLifeRecord(page) },
+        null,
+        2,
+      ),
+      contentType: 'application/json',
+    })
+    await first.stop()
+  }
 })
 
 // HIL-1089: a live backup creation and deletion move the option numbers in an open

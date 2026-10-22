@@ -230,16 +230,46 @@ the last report arrival time only for a silent node; live reports arrive every
 5–60 seconds, and carrying their time would resend the page for each portion.
 
 `AbstractHilosDaemonNodePage` lets each page declare its own node data in
-`nodeData()`. The page agent compares its fingerprint per page and node; when
-that data changes, it resends the whole page to live viewers of that node. When
-only table rows change, it resends the window. The frontend draws a link to the
-diagram only when it has built the root address. Workers, Agents and Cron carry
-the line; Cron adds its own `cronReported` flag through `nodeData()`. HTTP carries
-both `node` and `http` through `nodeData()`: a changed heading or summary resends
-the whole page to viewers of that node, without a second table window in that
-pass. With unchanged node data, changed routes resend their window. The
-environment page is served by the node agent: its node line reads `clustered`
-from `environment` without a state word, and silence from `nodeSilent` (D-214).
+`nodeData()`. The page agent compares its fingerprint per page and node; with
+no page-wide delivery debt, changed data goes through
+`BrowserContext::publishPageData()` as a data-only `page_response` carrying only
+changed `payload.data`. It does not resend the page's browser tables or replace
+their held windows. The ordinary page subscription still answers with one
+complete first-render `page_response`. The publisher retains the current page
+subscription checks and viewer-hiding path; when a page is owed whole, the
+existing complete-answer recovery takes priority.
+
+Table rows travel separately through `BrowserContext::publishTableMutations()`
+and the existing viewer-scoped table classifier. When the daemon agent handles
+one `DAEMON_CLUSTER_PICTURE_PORTION`, it captures the immutable mirror before
+the portion, applies the portion, then runs the page publishers in that same
+worker callback. Its seven mirror-backed viewport tables — Placement, Workers,
+Agents, Cron, HTTP routes, Env diverged and Env sources differ — implement
+`DaemonPictureViewportTable::pictureMutations()`. They compare typed complete
+subject projections with `DaemonPictureRowChanges::between()`; this is a subject
+diff, not a diff of the currently paginated window. The normal classifier turns
+those mutations into its existing deltas, counts, facets, announcements and
+eligible tail appends. Picture batches settle counts from the final set once,
+so replaying an already-held picture after a mirror restart does not add create
+arithmetic to the count; unsolicited picture mutations use `originRequestId: null`,
+while DB/RT changes keep their existing origin. If a row leaves a search
+but remains in the subject, an update followed by `containsRow() === false`
+becomes `left_set`; a row that leaves the subject is deleted. When an unordered
+new row has no declared place, the count may change without inventing a
+position. No row-body history is cached, and derived pictures remain outside
+RT. See
+[`AbstractHilosDaemonAgent`](../../../framework/backend/Core/Agent/Hilos/AbstractHilosDaemonAgent.php),
+[`DaemonPictureRowChanges`](../../../framework/backend/DaemonSection/DaemonPictureRowChanges.php),
+[`DaemonPictureViewportTable`](../../../framework/backend/DaemonSection/DaemonPictureViewportTable.php),
+and [`BrowserContext`](../../../framework/backend/Core/Browser/Context/BrowserContext.php).
+
+The frontend draws a link to the diagram only when it has built the root
+address. Workers, Agents and Cron carry the line; Cron adds its own
+`cronReported` flag through `nodeData()`. HTTP carries both `node` and `http`
+through `nodeData()`: a change to either is a data-only page publication, while
+changed routes use the table mutation path independently. The environment page
+is served by the node agent: its node line reads `clustered` from `environment`
+without a state word, and silence from `nodeSilent` (D-214).
 
 ## What Never Leaves A Node
 
@@ -290,11 +320,23 @@ The Env mismatch page holds two tables, `hilosDaemonEnvDiverged` and
 per node a label, a type and a source. The one value they carry is the serving
 node's own, read in the page agent's process as the environment page reads its
 node's: never for a `sensitive` key, hidden for a view-mode viewer unless the
-catalog opens it. Their windows travel whole when a picture portion changes
-the comparison. The page's own part, `envMismatch`, names the cluster mode, the
-serving node and, once a picture exists, the picture's nodes, the answering
-ones, the count of each bucket and the `per_node` keys. It travels whole when it
-changes, and the windows ride with it.
+catalog opens it. Their rows use the same complete-subject mutation path above,
+under the viewer's held viewport and its existing privacy verdicts. The page's
+own part, `envMismatch`, names the cluster mode, the serving node and, once a
+picture exists, the picture's nodes, the answering ones, the count of each
+bucket and the `per_node` keys. With no page-wide debt, a changed summary is a
+data-only `page_response`; it does not resend either table window. A page owed
+whole follows the complete-answer recovery path.
+
+Before the mirror has a picture, `AbstractHilosDaemonEnvMismatchTable::query()`
+refuses with the existing `HilosException`. That state is unknown, not a
+known-empty set, so the page records the refused windows as owed. A later known
+picture lets the ordinary recovery send authoritative rows and totals for both
+tables; a genuinely empty bucket then returns its known zero. This null-mirror
+refusal belongs to these Env mismatch tables and does not describe every other
+Daemon table's source semantics. Window debt and its recovery follow
+[Coming Back Without A Reload](browser-source-fanout.md#coming-back-without-a-reload).
+See [`AbstractHilosDaemonEnvMismatchTable`](../../../framework/backend/Tables/Daemon/AbstractHilosDaemonEnvMismatchTable.php).
 
 The September 16 decision carried fingerprints in synchronized RT; the October 4
 decomposition moved them to the node frame, preserving the boundary on values.
@@ -464,9 +506,12 @@ the selection. A missing row, empty
 or unknown cell, silent or removed node, unknown picture, refusal or freeze
 clears the selection. Both desktop cells and narrow cards use the viewport's
 ordinary slots; ids wrap. Admin view-mode readers have
-the same local controls. A changed summary travels in the existing whole page
-answer with its window; changed ids with unchanged totals use the existing window
-delivery.
+the same local controls. A changed `daemon` summary travels in a data-only
+`page_response` when no page-wide debt is outstanding and leaves the placement
+window in place. Changed placement rows go through the existing table classifier
+independently; it sends row and count changes according to the held viewport,
+including when the summary is unchanged. If the page is owed whole, its complete
+answer takes priority over either partial publication.
 
 Keep WebSockets unbuilt after this section lands: it is outside this section's
 scope. For the layer-by-layer activation recipe, read

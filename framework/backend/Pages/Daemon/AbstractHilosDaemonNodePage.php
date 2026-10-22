@@ -4,7 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Pages\Daemon;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Constants\HilosPageRouteParams;
+use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\DaemonSection\ClusterDaemonPicture;
+use Hilos\DaemonSection\DaemonPictureViewportTable;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Page\PageRouteParams;
@@ -40,13 +45,13 @@ abstract class AbstractHilosDaemonNodePage extends AbstractHilosDaemonSectionPag
     }
 
     /**
-     * @return array<string, true> Connections re-answered with a whole page
+     * Publishes changed node data without replacing any held window.
+     *
      * @throws HilosException When the page data cannot be encoded
      * @throws EnvException When cluster mode cannot be read
      */
-    protected static function resendChangedNodePages(): array
+    protected static function publishChangedNodePages(): void
     {
-        $resent = [];
         // TODO: This payload uses the first portion of the cluster picture before the full snapshot;
         // a node missing from that portion reads as absent. Known exception to
         // docs/agents/signals/work-in-portions.md, "Part Or Whole".
@@ -55,28 +60,87 @@ abstract class AbstractHilosDaemonNodePage extends AbstractHilosDaemonSectionPag
         // framework/backend/Pages/Daemon/DTO/HilosDaemonOverviewData.php::fromPicture(),
         // and marking the portion as "still gathering".
         foreach (ClusterDaemonPictureMirror::picture()?->nodes() ?? [] as $node) {
-            try {
-                $fingerprint = json_encode(static::nodeData($node->nodeId), JSON_THROW_ON_ERROR);
-            } catch (JsonException $exception) {
-                throw new HilosException('Cannot fingerprint the daemon node heading', previous: $exception);
-            }
-            if ($fingerprint === (self::$nodeDataFingerprints[static::PAGE][$node->nodeId] ?? null)) {
-                continue;
-            }
-            self::$nodeDataFingerprints[static::PAGE][$node->nodeId] = $fingerprint;
+            $fingerprint = null;
+            $previousFingerprint = self::$nodeDataFingerprints[static::PAGE][$node->nodeId] ?? null;
             foreach (Hilos::$sr?->getAcceptKeysForPage(
                 static::PAGE,
                 HilosPageRouteParams::HILOS_DAEMON_NODE_ID,
                 $node->nodeId,
             ) ?? [] as $acceptKey) {
-                if (Hilos::$rt?->connectionsSource()?->get($acceptKey) !== null) {
-                    Hilos::$browser?->resendPageWhole(static::PAGE, $acceptKey);
-                    $resent[$acceptKey] = true;
-                }
+                Hilos::$browser?->publishPageData(
+                    static::PAGE,
+                    $acceptKey,
+                    static function () use ($acceptKey, $node, &$fingerprint, $previousFingerprint): PagePayload {
+                        if (Hilos::$rt?->connectionsSource()?->get($acceptKey) === null) {
+                            return new PagePayload();
+                        }
+
+                        $data = static::nodeData($node->nodeId);
+                        try {
+                            $fingerprint = json_encode($data, JSON_THROW_ON_ERROR);
+                        } catch (JsonException $exception) {
+                            throw new HilosException('Cannot fingerprint the daemon node heading', previous: $exception);
+                        }
+
+                        return new PagePayload(data: $fingerprint === $previousFingerprint
+                            ? [] : $data);
+                    },
+                    static::nodeDataFields(),
+                );
+            }
+            if ($fingerprint !== null) {
+                self::$nodeDataFingerprints[static::PAGE][$node->nodeId] = $fingerprint;
             }
         }
+    }
 
-        return $resent;
+    /**
+     * @param ?ClusterDaemonPicture $before Immutable picture before this portion
+     * @param string $tableKey Mirror table of this node page
+     * @throws HilosException When node page data cannot be projected
+     * @throws EnvException When cluster mode cannot be read
+     */
+    protected static function publishNodePicture(?ClusterDaemonPicture $before, string $tableKey): void
+    {
+        static::publishChangedNodePages();
+        foreach (Hilos::$sr?->getAcceptKeysForPage(static::PAGE) ?? [] as $acceptKey) {
+            Hilos::$browser?->publishTableMutations(
+                static::PAGE,
+                $acceptKey,
+                $tableKey,
+                static fn (DaemonPictureViewportTable $table, TableQueryDTO $query): array => $table->pictureMutations($before, $query),
+            );
+        }
+    }
+
+    /**
+     * @param string $nodeId Node whose complete page answer is being built
+     * @return PagePayload Current node data, remembered for the live data comparison
+     * @throws HilosException When the node data cannot be encoded
+     * @throws EnvException When cluster mode cannot be read
+     */
+    protected static function nodePagePayload(string $nodeId): PagePayload
+    {
+        $data = static::nodeData($nodeId);
+        try {
+            self::$nodeDataFingerprints[static::PAGE][$nodeId] = json_encode($data, JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            throw new HilosException('Cannot fingerprint the daemon node heading', previous: $exception);
+        }
+
+        return new PagePayload(data: $data);
+    }
+
+    /** @return array<string, WireField> Node-page data uses the same declarations on both delivery paths */
+    protected function dataFields(): array
+    {
+        return static::nodeDataFields();
+    }
+
+    /** @return array<string, WireField> The shared node heading carries no personal fields */
+    protected static function nodeDataFields(): array
+    {
+        return [self::NODE => WireField::notPersonal()];
     }
 
     /** Forgets only this page's node-line comparison state. */

@@ -80,12 +80,14 @@ what the table shows instead.
 
 **The answer says where the window sits**, as `rowsBefore` — how many rows of the
 set stand before its first row — and the client reads the page number and the
-footer range out of that: `firstRow = rowsBefore + 1`, `page = floor(rowsBefore /
-limit)`. This is the other half of addressing by key. The address says which rows
-to serve and cannot say where they landed, and a client that counted its own
-presses of Next instead would be telling the reader about presses rather than
-about the set: a row created above a standing window moves it through the set
-with nobody touching anything, and no count of presses knows of it (HIL-1093).
+footer range out of that. With live rows, `firstRow = rowsBefore + 1`; with no
+live rows, the range is `0–0` even while retained departed slots keep the body
+visible. The page is `floor(rowsBefore / limit)`. This is the other half of
+addressing by key. The address says which rows to serve and cannot say where they
+landed, and a client that counted its own presses of Next instead would be
+telling the reader about presses rather than about the set: a row created above
+a standing window moves it through the set with nobody touching anything, and no
+count of presses knows of it (HIL-1093).
 The place is a **report**, never an address — there is still no `offset` in the
 descriptor, and a window is never asked for by the place it should land at.
 
@@ -179,6 +181,44 @@ window. A reconnect is the same event with the same outcome: filter, sort, and
 page are restored so the reader does not lose their place, and whatever had
 accumulated before the break is gone — the window that arrives outranks it.
 
+### Correlating a requested window
+
+Each tracked browser `table_viewport` request carries an ephemeral, non-empty
+`requestId`. The server echoes it in `table_window.data.requestId` or
+`table_window_refused.data.requestId` only when that frame answers that request.
+The request field is optional for older untracked callers; an absent field is
+omitted on the wire, and a present empty string is invalid. The id belongs to
+this window request, not to an action acknowledgement or the signal-batch
+delivery marker. The WebSocket DTO and the two reply DTOs preserve the scalar
+through backend parsing and delivery, but the id is not held in the long-lived
+viewport subscription.
+
+`TableViewportController.acceptsWindowResponse(requestId?)` admits a tracked
+reply only while its id is the latest outstanding request. The subscription
+binding checks it before row normalization or store writes, and the controller
+checks again in `ingestWindow(..., requestId?)` and
+`ingestRefusal(errorCode, requestId?)`; an old or unknown tracked id is ignored.
+An accepted matching window or refusal completes that request, and the
+read-only `ReadonlySignal<string | null>`
+`lastAppliedWindowRequestId` changes only after the controller has applied the
+update. A latest refusal is terminal for that ask. An authoritative
+snapshot without an id remains valid — including a page's initial or recovered
+`windows` section and an untracked reconnect/source catch-up — but it does not
+acknowledge a tracked ask. Those snapshots therefore carry no request id.
+
+`HilosConnection.sendTableViewport()` sends the id on the one request. The
+descriptor reported by `tableWindowDescriptors()` and the `tableWindows` map in
+`page_subscribe` omit it, so reconnect does not replay an old ask. The
+controller resets request tracking when its socket, page scope or mount leaves;
+`unregisterTableWindow(tableKey, source?)` also prevents an old mount's cleanup
+from unregistering its replacement. A data-only `page_response` is not a window
+snapshot: it neither completes a window request nor changes the table's window
+identity or geometry generation. Those change only on a genuine window
+response or an intentional window boundary. See the current implementations in
+[`TableViewportController`](../../../framework/frontend/core/src/table/TableViewportController.ts),
+[`HilosConnection`](../../../framework/frontend/core/src/connection/HilosConnection.ts),
+and [`bindTableViewport`](../../../framework/frontend/core/src/subscription/bindTableViewport.ts).
+
 ## What the page declares
 
 > **The declaration below is drawn by all three views.** Vue, React, and Angular
@@ -262,9 +302,10 @@ on a narrow screen is a fourth and has its own section below:
   tells the reader the set is gone beside a footer counting it, and offering to
   create a row answers a question nobody asked; what it offers instead is the
   way back to the rows, which is `prevPage()` — the same thing Back does
-  (HIL-1093). A window that converged after its last live row left is not such a
-  page: with a count of zero it is `empty` or `empty_filtered`, as the same empty
-  window would be after a reload.
+  (HIL-1093). Retained departed slots keep the body in `rows` after its last live
+  row leaves; a zero count alone does not make this window `empty` or
+  `empty_filtered`. Those states describe a fresh empty window without retained
+  slots.
   `unavailable` is the sixth: the server refused this table's window — a
   `table_window_refused` frame, or the `refusedWindows` section of the page
   answer. The body draws the "List unavailable" tile; the way out is the next
@@ -696,7 +737,7 @@ reach that row while the delivered place stays put. This is the same side Show
 uses for a window taken before a key. Both live row frames carry `firstAnchor`
 and `lastAnchor` after the change; the keys are present even when their values
 are null. An inexact total clears it, whichever frame carried the total, as do a
-refusal, convergence to an empty set, and resetting the address. With no edge
+refusal, a count of zero, and resetting the address. With no edge
 known, Next uses the page count, or the full-window rule when the count is
 inexact. An unordered window has no edge to read. The server holds the same word
 on each window and moves it by these rules; an edit that carries a row the window
@@ -728,17 +769,95 @@ removals ever wait, and both are visible.
 Apply resolves exactly those two, on the rows already shown:
 
 - a **move** takes the row to the place the current order gives it;
-- a **removal** leaves a **placeholder** in the row's slot. The layout does not
-  collapse, nothing is pulled up from the next page, and the window does not
-  move. Otherwise Apply becomes a jump of the list and the reader loses the row
-  they were looking at. The placeholder names why the row left: `deleted` says
-  "Removed", `moved_out` says "Moved to another page", and `left_set` says "No
-  longer in this list"; its icon is the same one the waiting mark used before
-  Apply. It stays until the window changes, or until no live row is left over a
-  set whose count is zero. Then the window empties into the one a reload would
-  bring, and the body shows its empty state. The same holds for the reader's own
-  removal and for a count that arrives after Apply. A window of placeholders
-  over a set that still has rows elsewhere keeps them.
+- a **removal** leaves a **data-free placeholder** in the row's slot until the
+  replacement window arrives. Apply does not move the window, pull a row up from
+  the next page, or collapse the list. The placeholder shows the existing
+  framework reason: `deleted` says "Removed", `moved_out` says "Moved to another
+  page", and `left_set` says "No longer in this list". The departed slot keeps
+  its row key, occurrence and reason, plus numeric geometry; it keeps no source
+  row or rendered slot payload, detail values, selection state, focus target, or
+  progress payload. It is not a live member, a selection/detail/focus target, or
+  capacity for the window, and the local entity store is not cleared. A
+  placeholder over a set that still has live rows elsewhere stays too.
+
+The retained geometry covers the **complete record footprint** in each mounted
+projection. The wide projection includes the main row, work, detail, and all
+gaps; the card projection includes the whole card, including its border, padding,
+and external gap once, preserving fractional CSS pixels. Vue keeps a permanent
+state room and the full used wide colgroup under fixed layout; inert stale-mark
+holders in the header and state/detail room preserve their tracks, while card
+geometry stays independent. Only numeric allocations and column tracks survive
+departure, and only the existing reason is shown inside the placeholder.
+
+A foreign departure removes row-progress content immediately. If work was still
+visible, pending state keeps only its numeric work reserve; Apply combines that
+reserve once with the main row, detail, and gaps without double-counting the
+work or its gap. Work that ended before departure is not restored, and a later
+work-end does not shrink the placeholder.
+Live values and work on surviving rows continue to update; own removals remain
+immediate, and permitted own moves or placements may still reorder the window.
+
+`TableViewportController` is the sole numeric geometry owner and exposes a
+read-only geometry registration facade. Geometry is identified by mount, window,
+occurrence, and projection; a live measurement also carries its layout
+generation. Reusing a row key in a new snapshot creates a new appearance. The
+synchronous `withPresentationUpdate<T>(change, update)` boundary captures every
+affected mounted projection and the wide column tracks before the first
+destructive write, including normalization and row-progress removal. The
+optional `TableWindowSink` / `TableWindowDescriptorSource` hooks and
+`HilosConnection.withTablePresentationUpdate` wrap `rememberPageFrame` and all
+`projectSignal` listeners for `page_response`. The guarded direct
+`PageSubscription` entry and `bindTableViewport` normalize/store paths use the
+same boundary. Direct row/window controller inputs are protected too. Nested
+calls share one capture and unwind it in `finally`. `ResizeObserver` refreshes
+live measurements after publication. It is not the pre-departure capture, and
+stale layout tickets are rejected. The local presentation boundary does not
+change listener order, the reactive engine, wire/DTO/routes, or authentication
+guards and recovery.
+
+For Q1=A, a usable capture in either projection remains allocated across layout
+changes and only grows to fit the currently readable reason plus its shell and
+gap. A projection with no usable capture gets the Sass `3rem` body fallback plus
+shell and gap on its first visible display, latched in CSS pixels. Later
+font/rem/width changes do not recalculate that fallback, and a smaller reason
+floor never shrinks a grown allocation. A wide extent is not transferred to a
+card. Allocations stay until the replacement window or controller lifecycle
+releases them; there is no timer, compaction, or page-size cap.
+
+Vue's `useTableViewportGeometry` owns the native DOM refs and observers and
+releases them with the mount. A hidden or zero-size projection supplies no
+measurement and does not reveal departed content. Inert measurement holders
+contain no row data, IDs, or focusable controls. When departure removes the
+active control, focus returns to a visible search or otherwise the table root;
+a focus choice made during the update is preserved. Static fallback geometry
+lives in the sanctioned Vue Sass file, while validated fractional measurements
+pass through numeric CSS custom properties.
+
+Search, filter, order, page, Show, and refresh invalidate the prior window
+appearance. Replacement snapshots, reconnects, refusals, and resets replace its
+geometry records; controller replacement or unmount also disposes the old
+measurement registration. While a replacement is delayed, the outgoing
+data-free presentation may keep its numbers, but never its row payload.
+
+Counts update immediately and independently of Apply. A count of zero does not
+discard pending values or retained slots, and it does not request a replacement
+window. After the final removal is applied, the body remains `rows` with the
+truthful zero count and `0–0` range until that window is replaced; there is no
+empty tile or no-op Apply. Vue's `HilosTableFooter` stays visible for `rows` even
+when `firstRow` is zero, while a fresh empty snapshot still has no footer. An
+eligible unfiltered tail append may follow retained slots; those slots are not
+live members and consume no capacity. Existing append/own-create deduplication,
+fresh occurrence identities, anchors, and own-create edge eviction determine
+the live window and range. Search arrivals still follow the table's existing
+membership classification. Bots' inherited `containsRow()` returns `null`, so
+an arrival under search may update the count only. A
+`table_viewport_announce` changes only the count and the live room; Show requests
+a new window, and Apply does not Show.
+
+The shared core retention/ingress mechanism and Vue DOM geometry are built.
+React and Angular still need their geometry ports (HIL-1750 and HIL-1751), and
+declared height modes are separate work; this behavior does not introduce a
+height API.
 
 **Apply never brings a row in.** An announced row arrives through Show, which is
 a window change and not an Apply; a row that qualified for the tail was live from
@@ -1315,12 +1434,12 @@ addressed to the one connection it concerns:
 | Frame | Direction | Carries |
 |---|---|---|
 | `page_subscribe` | client → server | `page`, `params`, and an optional `tableWindows`: a map of `tableKey` → the body of a `table_viewport` frame without its address, `rendered` included — the windows this tab is already holding |
-| `page_response` | server → client, reply only | the page payload, whose fifth section `windows` is a map of `tableKey` → `rows`, `sort`, `limit`, `totalCount`, `totalExact`, `firstAnchor`, `lastAnchor`, `rowsBefore`, `progress` — the first window of each of the page's viewport tables, and the work running on it — and whose sixth section `refusedWindows` is a map of `tableKey` → `{ errorCode }` for each viewport table whose first window could not be built |
-| `table_viewport` | client → server | `page`, `tableKey`, `filter`, `sort` (a **list** of `{field, direction}`, in the sequence they apply), `limit`, an optional `rendered` (the fields inside the row slots the table draws; absent, rows are compared whole), and then either `anchor` + `anchorDirection` or `pageIndex` — never both |
+| `page_response` | server → client, complete subscription answer or data-only live publication | a complete answer carries the page payload and a `windows` map of `tableKey` → `rows`, `sort`, `limit`, `totalCount`, `totalExact`, `firstAnchor`, `lastAnchor`, `rowsBefore`, `progress` — the first window of each viewport table and its running work — plus an optional `refusedWindows` map of `tableKey` → `{ errorCode }`; a live data publication carries only changed `payload.data`, with no window section |
+| `table_viewport` | client → server | `page`, `tableKey`, `filter`, `sort` (a **list** of `{field, direction}`, in the sequence they apply), `limit`, an optional non-empty `requestId` (absent for untracked callers), an optional `rendered` (the fields inside the row slots the table draws; absent, rows are compared whole), and then either `anchor` + `anchorDirection` or `pageIndex` — never both |
 | `table_rendered` | client → server | `page`, `tableKey`, `rendered` (required, may be empty) — sent once, over the cold window the page's answer brought; nothing is sent back |
 | `table_row_focus` | client → server | `page`, `tableKey`, `rowKey` (required; empty releases the focus) — the row a tab holds in focus for an open dialog, sent on open, on close, and again with every window the tab receives; nothing is sent back while the window holds the row, and one `table_viewport_delta` of kind `row_removed` when it does not — with the row's body, or without one when the row is gone |
-| `table_window` | server → client, reply or catch-up of a window owed whole (see below) | `page`, `tableKey`, `rows`, `limit`, `totalCount`, `totalExact`, `pageCount`, `firstAnchor`, `lastAnchor`, `rowsBefore` (absent when the count is not exact, as `pageCount` is) |
-| `table_window_refused` | server → client, reply only | `page`, `tableKey`, `errorCode` (`internal_error` / `table_not_served`) |
+| `table_window` | server → client, reply or catch-up of a window owed whole (see below) | `page`, `tableKey`, `rows`, `limit`, `totalCount`, `totalExact`, `pageCount`, `firstAnchor`, `lastAnchor`, `rowsBefore` (absent when the count is not exact, as `pageCount` is), and the optional `requestId` only when answering a tracked `table_viewport` |
+| `table_window_refused` | server → client, reply only | `page`, `tableKey`, `errorCode` (`internal_error` / `table_not_served`), and the optional `requestId` only when refusing a tracked `table_viewport` |
 | `table_viewport_frozen` | server → client, live | `page`, `tableKey`, `since` (server ms of the first failure) — sent once per freeze |
 | `table_viewport_delta` | server → client, live | `page`, `tableKey`, `kind` (`row_updated` / `row_moved` / `row_removed` / `row_stale`), `rowKey`, `row` (on `row_removed` only for the row the tab holds in focus, and only while it is alive), `position` (`row_moved` only, absent when the table could not name the slot), `reason` (`row_removed` only: `deleted` / `left_set` / `moved_out` — the row was deleted, left the filtered set, or moved past an edge of the window), `staleSources` (`row_stale` only, in place of `row`) |
 | `table_viewport_append` | server → client, live | `page`, `tableKey`, `row`, `totalCount`, `totalExact`, `pageCount`, `firstAnchor`, `lastAnchor` — sent **only** when the row's place is the end of the window and the window has room; the anchors name the window after the append |
@@ -1338,6 +1457,12 @@ is a window the reader changed; in the `windows` section of the page's own
 declares — a cold load and a reconnect alike; and as the catch-up of a window
 owed whole. The third road carries a window that froze on the live road
 (HIL-1139), or one that was refused.
+A reply to a tracked `table_viewport` echoes that request's id; the page answer
+and an unsolicited catch-up omit it. A no-id catch-up still replaces the held
+window authoritatively, but it cannot complete a tracked request. A complete
+`page_response` remains the page subscription's one first-render answer; a later
+data-only `page_response` carries neither a table window nor a window-request
+acknowledgement.
 A window freezes when a change or a freshness
 move cannot be built for it, or anything further down its live road throws: the
 connection is told once with `table_viewport_frozen`, its rows stay where they

@@ -32,6 +32,24 @@ final class HilosDaemonCronTableTest extends TestCase
         parent::tearDown();
     }
 
+    public function testPictureDiffKeepsSilentRowsAndDistinguishesReportedEmpty(): void
+    {
+        $cron = new DaemonCronPicture(null, [new DaemonCronRulePicture(null, 'cleanup', '* * * * *', null, 120)]);
+        $this->picture($this->node('n1', $cron));
+        $before = ClusterDaemonPictureMirror::picture();
+        $this->picture($this->node('n1', $cron, false));
+        $table = new HilosDaemonCronTable();
+        $query = new TableQueryDTO(limit: 1, filter: ['node' => 'n1'], pageIndex: 5);
+        self::assertSame([], $table->pictureMutations($before, $query));
+        $before = ClusterDaemonPictureMirror::picture();
+        $this->picture($this->node('n1', new DaemonCronPicture(null, [])));
+        $mutations = $table->pictureMutations($before, $query);
+        self::assertCount(1, $mutations);
+        self::assertSame('delete', $mutations[0]->type->value);
+        self::assertSame('/cleanup', $mutations[0]->rowKey);
+        self::assertNull($mutations[0]->row);
+    }
+
     public function testNoPictureOrNodeFilterYieldsNoRows(): void
     {
         self::assertSame([], $this->rows('n1'));

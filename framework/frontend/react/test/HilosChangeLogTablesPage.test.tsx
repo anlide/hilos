@@ -332,7 +332,10 @@ describe('HilosChangeLogTablesPage', () => {
     )
     expect([...h.listeners.values()].some((set) => set.size > 0)).toBe(true)
     unmount()
-    expect(h.connection.unregisterTableWindow).toHaveBeenCalledWith(TABLE)
+    expect(h.connection.unregisterTableWindow).toHaveBeenCalledWith(
+      TABLE,
+      h.connection.registerTableWindow.mock.calls[0]?.[1],
+    )
     expect([...h.listeners.values()].every((set) => set.size === 0)).toBe(true)
   })
 })

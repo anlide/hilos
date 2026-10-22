@@ -5,9 +5,10 @@ language (tableFrame.ts, HilosTableFooter); the one thing it works out is which
 page numbers fit in the row, which is a question about the width of a strip and
 belongs to nobody else. Page numbers stand there exactly while the count is
 exact: a page is a place counted from an end of the set, and a count stopped at
-its ceiling has no such end (mockups/components/table section 8). On an empty
-window it draws nothing at all: "0 of 0" says nothing, and the body of the table
-is what speaks about emptiness. Internal to the Vue view layer on purpose: it is
+its ceiling has no such end (mockups/components/table section 8). A fresh empty
+window draws no footer. A window still showing pending rows or departed slots
+keeps its truthful count, including "0 of 0", until an explicit window change.
+Internal to the Vue view layer on purpose: it is
 not exported from index.ts, for the reason the bar is not. -->
 <script setup lang="ts" generic="R">
 import { computed } from 'vue'
@@ -35,6 +36,7 @@ const props = defineProps<{
 }>()
 
 const footer = useSignal(props.controller.frame.footer)
+const body = useSignal(props.controller.frame.body)
 
 // The total reads as "at least this many" when the count stopped at its ceiling,
 // which is what the trailing plus says.
@@ -83,7 +85,7 @@ const pages = computed<readonly PagerSlot[]>(() => {
 
 <template>
   <div
-    v-if="footer.firstRow > 0"
+    v-if="footer.firstRow > 0 || body === 'rows'"
     class="d-flex flex-wrap align-items-center gap-2 mt-3"
   >
     <span class="small text-body-secondary" data-id="hilos-table-count">

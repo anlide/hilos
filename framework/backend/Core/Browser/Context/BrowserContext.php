@@ -41,6 +41,7 @@ use Hilos\Core\Daemon\ContainedFailure;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Daemon\Worker\WorkerTickUnit;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
@@ -62,6 +63,7 @@ use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeSet;
+use Hilos\Core\Router\PageSubscription;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
@@ -224,6 +226,9 @@ abstract class BrowserContext
      * @var array<string, true>
      */
     private array $skippedForDeletedResource = [];
+
+    /** @var array<string, PageSubscription> Subscriptions tried whole or failed by a publisher until the flush ends */
+    private array $publishedWholeThisFlush = [];
 
     /** Fact 2, the database came back, is recorded and waits for the flush; cleared the moment it is tried. */
     private bool $databaseBack = false;
@@ -588,11 +593,17 @@ abstract class BrowserContext
      * @param string $page Page the table belongs to
      * @param string $acceptKey Subscribing WebSocket accept key
      * @param TableViewportSubscription $viewport Window descriptor; its delivered rows are updated
+     * @param ?string $requestId Correlation of this request only, never held on the viewport
      * @return bool Whether the window was delivered to the connection
      * @throws InvalidArgumentException When the table-window or refusal signal cannot be named
+     * @throws InvalidFormatException When the request id is empty
      */
-    public function sendTableWindow(string $page, string $acceptKey, TableViewportSubscription $viewport): bool
-    {
+    public function sendTableWindow(
+        string $page,
+        string $acceptKey,
+        TableViewportSubscription $viewport,
+        ?string $requestId = null,
+    ): bool {
         if (Hilos::$sr === null) {
             return false;
         }
@@ -652,6 +663,7 @@ abstract class BrowserContext
                 $acceptKey,
                 $viewport->tableKey,
                 TableWindowRefusalCode::NOT_SERVED,
+                $requestId,
             );
 
             return false;
@@ -664,12 +676,13 @@ abstract class BrowserContext
                 $acceptKey,
                 $viewport->tableKey,
                 TableWindowRefusalCode::INTERNAL_ERROR,
+                $requestId,
             );
 
             return false;
         }
 
-        $this->queueTableWindow($page, $acceptKey, $viewport->tableKey, $window);
+        $this->queueTableWindow($page, $acceptKey, $viewport->tableKey, $window, $requestId);
         // Only a window that left for the tab pays. A refusal sets the debt and does not pay it
         // (sendTableWindowRefusal()).
         Hilos::$sr->clearTableWindowDebt($acceptKey, $viewport->tableKey);
@@ -689,10 +702,17 @@ abstract class BrowserContext
      * @param string $acceptKey Connection the window is for
      * @param string $tableKey Table key of the window
      * @param BrowserTableWindow $window Built window
+     * @param ?string $requestId Request this window answers, absent on catch-up
      * @throws InvalidArgumentException When the table-window signal cannot be named
+     * @throws InvalidFormatException When the request id is empty
      */
-    private function queueTableWindow(string $page, string $acceptKey, string $tableKey, BrowserTableWindow $window): void
-    {
+    private function queueTableWindow(
+        string $page,
+        string $acceptKey,
+        string $tableKey,
+        BrowserTableWindow $window,
+        ?string $requestId = null,
+    ): void {
         $snapshot = $window->snapshot;
 
         $this->queueAddressedTableSignal(
@@ -707,6 +727,7 @@ abstract class BrowserContext
                 firstAnchor: $snapshot->firstAnchor,
                 lastAnchor: $snapshot->lastAnchor,
                 rowsBefore: $snapshot->rowsBefore,
+                requestId: $requestId,
             ),
             $acceptKey,
         );
@@ -1055,13 +1076,16 @@ abstract class BrowserContext
      * @param string $acceptKey Connection that asked for the window
      * @param string $tableKey Table whose window is refused
      * @param string $errorCode Machine-readable reason ({@see TableWindowRefusalCode})
+     * @param ?string $requestId Request this refusal answers, absent on untracked delivery
      * @throws InvalidArgumentException When the refusal signal cannot be named
+     * @throws InvalidFormatException When the request id is empty
      */
     private function sendTableWindowRefusal(
         string $page,
         string $acceptKey,
         string $tableKey,
         string $errorCode,
+        ?string $requestId = null,
     ): void {
         Hilos::$sr->oweTableWindow($acceptKey, $tableKey);
         Hilos::$sr->queueSignal(
@@ -1073,6 +1097,7 @@ abstract class BrowserContext
                     page: $page,
                     tableKey: $tableKey,
                     errorCode: $errorCode,
+                    requestId: $requestId,
                 ),
                 targetAcceptKey: $acceptKey,
             ),
@@ -1572,7 +1597,10 @@ abstract class BrowserContext
      */
     public function flushToSignalRouter(): array
     {
-        if ($this->changes->isEmpty() && $this->staleness === [] && !$this->databaseBack) {
+        if ($this->changes->isEmpty() && $this->staleness === [] && !$this->databaseBack
+            && $this->totalRecounts === [] && $this->facetRecounts === []
+            && $this->setAsideThisFlush === [] && $this->publishedWholeThisFlush === []
+        ) {
             return [];
         }
 
@@ -1591,6 +1619,7 @@ abstract class BrowserContext
             $this->setAsideThisFlush = [];
             $this->skippedThisFlush = [];
             $this->skippedForDeletedResource = [];
+            $this->publishedWholeThisFlush = [];
         }
     }
 
@@ -1933,7 +1962,9 @@ abstract class BrowserContext
         $failedSubscriptions = [];
         foreach ($this->changes->all() as $change) {
             foreach (Hilos::$sr->getPageSubscriptions() as $acceptKey => $subscription) {
-                if (isset($failedSubscriptions[$acceptKey]) || $this->isSkippedForDeletedResource((string) $acceptKey)) {
+                if (isset($failedSubscriptions[$acceptKey]) || $this->isSkippedForDeletedResource((string) $acceptKey)
+                    || isset($this->publishedWholeThisFlush[$acceptKey])
+                ) {
                     continue;
                 }
 
@@ -1965,7 +1996,9 @@ abstract class BrowserContext
 
         foreach ($this->staleness as $collectionKey => $stateIds) {
             foreach (Hilos::$sr->getPageSubscriptions() as $acceptKey => $subscription) {
-                if (isset($failedSubscriptions[$acceptKey]) || $this->isSkippedForDeletedResource((string) $acceptKey)) {
+                if (isset($failedSubscriptions[$acceptKey]) || $this->isSkippedForDeletedResource((string) $acceptKey)
+                    || isset($this->publishedWholeThisFlush[$acceptKey])
+                ) {
                     continue;
                 }
 
@@ -2004,7 +2037,9 @@ abstract class BrowserContext
         $this->recountMarkedWindows($failedSubscriptions);
 
         foreach ($this->buildBrowserPayloads($signalTables) as $acceptKey => $pages) {
-            if (isset($failedSubscriptions[$acceptKey]) || $this->isSkippedForDeletedResource((string) $acceptKey)) {
+            if (isset($failedSubscriptions[$acceptKey]) || $this->isSkippedForDeletedResource((string) $acceptKey)
+                    || isset($this->publishedWholeThisFlush[$acceptKey])
+                ) {
                 // Rows collected before the page was told it failed, or before this flush refused
                 // it for a deleted row, are not going out behind that frame. The failure mark
                 // stays, or the next flush would tell the page the same thing again.
@@ -2041,6 +2076,123 @@ abstract class BrowserContext
     }
 
     /**
+     * Publishes only a page's changed data through the normal guards and viewer bridge.
+     * A page owed whole is tried once this flush instead; a partial never pays that debt.
+     * The callback runs synchronously and is never retained by the context.
+     *
+     * @param string $page Subscribed page
+     * @param string $acceptKey Connection receiving the change
+     * @param Closure(): PagePayload $build Current data, or an empty payload when unchanged
+     * @param array<string, WireField> $fields Existing page-data field declarations
+     */
+    public function publishPageData(string $page, string $acceptKey, Closure $build, array $fields): void
+    {
+        $subscription = null;
+        try {
+            $subscription = $this->publicationSubscription($page, $acceptKey);
+            if ($subscription === null) {
+                return;
+            }
+            $payload = $build();
+            if ($payload->entities !== [] || $payload->lists !== [] || $payload->tables !== []
+                || $payload->windows !== [] || $payload->refusedWindows !== []
+            ) {
+                throw new LogicException('Page-data publication must carry only data');
+            }
+            if ($payload->data === [] || Hilos::$sr?->pageSubscription($acceptKey) !== $subscription) {
+                return;
+            }
+            $data = $this->isPageViewer($page, $acceptKey)
+                ? $this->hideForViewer($payload->data, $fields)
+                : $payload->data;
+            $this->queueAddressedTableSignal(
+                SignalTypeConstants::PAGE_RESPONSE,
+                new PageResponseSignalData($page, new PagePayload(data: $data)),
+                $acceptKey,
+            );
+        } catch (Throwable $failure) {
+            if ($subscription === null || Hilos::$sr?->pageSubscription($acceptKey) === $subscription) {
+                $this->failPublication($page, $acceptKey, $failure);
+            }
+        }
+    }
+
+    /**
+     * Publishes one subject projection through the same live classifier as DB/RT changes.
+     * Recounts finish once at the worker's flush even when there are no DB/RT source facts.
+     * These are final-set facts: a mirror's first picture after restart may name rows already held,
+     * so create arithmetic cannot establish the total. DB/RT callers keep mutation arithmetic.
+     * The callback runs synchronously; no picture or row-body cache is retained.
+     *
+     * @param string $page Subscribed page
+     * @param string $acceptKey Connection receiving the changes
+     * @param string $tableKey Page-bound viewport table
+     * @param Closure(ViewportTable, TableQueryDTO): list<TableRowMutationDTO> $build Changes for this viewer and subject
+     */
+    public function publishTableMutations(string $page, string $acceptKey, string $tableKey, Closure $build): void
+    {
+        try {
+            $subscription = $this->publicationSubscription($page, $acceptKey);
+            if ($subscription === null) {
+                return;
+            }
+            if (isset($this->setAsideThisFlush[$acceptKey][$tableKey])) {
+                return;
+            }
+            $bound = false;
+            foreach ($this->pageBindings($page) as $binding) {
+                $bound = $bound || $binding->browserKey === $tableKey;
+            }
+            if (!$bound) {
+                return;
+            }
+            $viewport = Hilos::$sr?->getTableViewport($acceptKey, $tableKey);
+            $table = $this->viewportTable($tableKey);
+            if ($viewport === null || $table === null) {
+                return;
+            }
+        } catch (Throwable $failure) {
+            $this->failPublication($page, $acceptKey, $failure);
+
+            return;
+        }
+
+        try {
+            $current = $this->viewportForViewer($page, $acceptKey, $viewport);
+            $mutations = $build($table, $table->scopeSearch($this->viewportQuery($current)));
+            if (Hilos::$sr?->pageSubscription($acceptKey) !== $subscription
+                || Hilos::$sr?->getTableViewport($acceptKey, $tableKey) !== $viewport
+            ) {
+                return;
+            }
+            if ($current !== $viewport) {
+                Hilos::$sr->setTableViewport($acceptKey, $current);
+            }
+            if (Hilos::$sr->isTableWindowOwed($acceptKey, $tableKey)) {
+                $this->catchUpOwedWindow($table, $current, $page, $acceptKey, $tableKey);
+
+                return;
+            }
+            $this->emitViewportMutations($table, $current, $mutations, $acceptKey, $page, $tableKey, recountTotal: true);
+        } catch (Throwable $failure) {
+            $held = Hilos::$sr?->getTableViewport($acceptKey, $tableKey);
+            if (Hilos::$sr?->pageSubscription($acceptKey) !== $subscription
+                || $held === null || ($held !== $viewport && $held !== ($current ?? null))
+            ) {
+                return;
+            }
+            $this->freezeViewport(
+                $page,
+                $acceptKey,
+                $tableKey,
+                "Viewport publication froze a window: table={$tableKey}, page={$page}, acceptKey={$acceptKey}, "
+                    . 'exception=' . $failure::class . ", message={$failure->getMessage()}, "
+                    . 'at=' . basename($failure->getFile()) . ':' . $failure->getLine(),
+            );
+        }
+    }
+
+    /**
      * Re-sends the whole page one agent owns after its node-local source changes.
      * A contained failure is logged; the private delivery path already tells the
      * subscriber and records the failure for recovery.
@@ -2055,6 +2207,65 @@ abstract class BrowserContext
                 "Browser could not re-send page {$page} to {$acceptKey}: {$contained->failure->getMessage()}",
             );
         }
+    }
+
+    /**
+     * @param string $page Page the publisher addresses
+     * @param string $acceptKey Current subscriber
+     * @return ?PageSubscription Admitted current identity, null when absent, refused or tried whole
+     * @throws Throwable When the page declaration or a source read fails unexpectedly
+     */
+    private function publicationSubscription(string $page, string $acceptKey): ?PageSubscription
+    {
+        $subscription = Hilos::$sr?->pageSubscription($acceptKey);
+        if ($subscription === null || $subscription->page !== $page || $this->isSkippedForDeletedResource($acceptKey)
+            || ($this->publishedWholeThisFlush[$acceptKey] ?? null) === $subscription
+        ) {
+            return null;
+        }
+        $config = $this->pageConfig($page) ?? BrowserPageConfig::fromArray([]);
+        try {
+            if ($this->protectedModeLocksOut($acceptKey)) {
+                return null;
+            }
+            $this->assertPageSourcesReady($page);
+            $this->validateParams($config->paramConfigs(), new PageRouteParams($subscription->stringParams()));
+            if (!$this->pageGuardsAllow($page, $config, $acceptKey, $subscription->stringParams())) {
+                return null;
+            }
+        } catch (PageInternalErrorException $failure) {
+            throw $failure;
+        } catch (PageSubscriptionException) {
+            return null;
+        }
+        if (Hilos::$sr->hasPageDeliveryFailure($acceptKey)) {
+            $this->resendPageWhole($page, $acceptKey);
+
+            return null;
+        }
+
+        return Hilos::$sr->pageSubscription($acceptKey) === $subscription ? $subscription : null;
+    }
+
+    /**
+     * @param string $page Failed page
+     * @param string $acceptKey Failed subscription
+     * @param Throwable $failure Contained publisher failure; diagnostics stay in the journal
+     */
+    private function failPublication(string $page, string $acceptKey, Throwable $failure): void
+    {
+        $subscription = Hilos::$sr?->pageSubscription($acceptKey);
+        if ($subscription === null || $subscription->page !== $page) {
+            return;
+        }
+        if (!Hilos::$sr->hasPageDeliveryFailure($acceptKey)) {
+            Logger::error(
+                "Browser publication failed: page={$page}, acceptKey={$acceptKey}, "
+                    . 'exception=' . $failure::class . ", message={$failure->getMessage()}",
+            );
+        }
+        $this->tellPageDeliveryFailed($page, $acceptKey);
+        $this->publishedWholeThisFlush[$acceptKey] = $subscription;
     }
 
     /**
@@ -2083,6 +2294,10 @@ abstract class BrowserContext
      */
     private function resendWholePage(string $page, string $acceptKey): array
     {
+        $current = Hilos::$sr?->pageSubscription($acceptKey);
+        if ($current !== null && $current->page === $page) {
+            $this->publishedWholeThisFlush[$acceptKey] = $current;
+        }
         $subscription = Hilos::$sr?->getPageSubscriptions()[$acceptKey] ?? [];
         $params = $subscription[SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY] ?? [];
         $owed = Hilos::$sr?->hasPageDeliveryFailure($acceptKey) === true;
@@ -2103,6 +2318,11 @@ abstract class BrowserContext
                 "page={$page} acceptKey={$acceptKey}",
                 $failure,
             )];
+        } finally {
+            $after = Hilos::$sr?->pageSubscription($acceptKey);
+            if ($current !== null && $after !== null && $after->page === $current->page && $after->params === $current->params) {
+                $this->publishedWholeThisFlush[$acceptKey] = $after;
+            }
         }
 
         if ($outcome === PageResendOutcome::Answered) {
@@ -3749,6 +3969,35 @@ abstract class BrowserContext
             return;
         }
 
+        $this->emitViewportMutations(
+            $table, $viewport, $mutations, $acceptKey, $page, $browserKey, $change->origin, $change->originRequestId,
+        );
+    }
+
+    /**
+     * @param ViewportTable $table Table whose complete mutations were built
+     * @param TableViewportSubscription $viewport Current held window
+     * @param list<TableRowMutationDTO> $mutations Changes for this subject and viewer
+     * @param string $acceptKey Target connection
+     * @param string $page Subscribed page
+     * @param string $browserKey Table key
+     * @param ?string $origin Author of a DB/RT change, null for unsolicited pictures
+     * @param ?string $originRequestId Author's action request, null for unsolicited pictures
+     * @param bool $recountTotal Whether final-set publication settles the count once after all mutations
+     * @throws TableRowKeyMissingException When a mutated row carries no key
+     * @throws InvalidArgumentException When a table frame cannot be named
+     */
+    private function emitViewportMutations(
+        ViewportTable $table,
+        TableViewportSubscription $viewport,
+        array $mutations,
+        string $acceptKey,
+        string $page,
+        string $browserKey,
+        ?string $origin = null,
+        ?string $originRequestId = null,
+        bool $recountTotal = false,
+    ): void {
         if ($mutations === []) {
             return;
         }
@@ -3765,8 +4014,13 @@ abstract class BrowserContext
             $this->facetRecounts[$acceptKey][$browserKey] = $page;
         }
 
+        if ($recountTotal) {
+            $this->markTotalRecount($acceptKey, $browserKey, $page);
+        }
         foreach ($mutations as $mutation) {
-            $this->emitViewportMutation($table, $viewport, $change, $mutation, $acceptKey, $page, $browserKey);
+            $this->emitViewportMutation(
+                $table, $viewport, $mutation, $acceptKey, $page, $browserKey, $origin, $originRequestId, $recountTotal,
+            );
         }
     }
 
@@ -3810,24 +4064,28 @@ abstract class BrowserContext
      *
      * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window; its delivered rows and total are updated in place
-     * @param SourceChange $change Grouped DB/RT source change the mutation was built for
      * @param TableRowMutationDTO $mutation Row mutation the table built for the change
      * @param string $acceptKey Target accept key
      * @param string $page Subscribed page key
      * @param string $browserKey Browser table key
+     * @param ?string $origin Author connection, null for unsolicited pictures
+     * @param ?string $originRequestId Author action request, null for unsolicited pictures
+     * @param bool $recountTotal Whether the batch will settle its final count instead of mutation arithmetic
      * @throws TableRowKeyMissingException When a mutated row is a placeholder and carries no key
      * @throws InvalidArgumentException When a table signal cannot be named
      */
     private function emitViewportMutation(
         ViewportTable $table,
         TableViewportSubscription $viewport,
-        SourceChange $change,
         TableRowMutationDTO $mutation,
         string $acceptKey,
         string $page,
         string $browserKey,
+        ?string $origin,
+        ?string $originRequestId,
+        bool $recountTotal,
     ): void {
-        $own = $change->origin !== null && $change->origin === $acceptKey;
+        $own = $origin !== null && $origin === $acceptKey;
         $rowKey = (string) $mutation->rowKey;
         $focused = Hilos::$sr->getTableFocus($acceptKey, $browserKey) === $rowKey;
         // A focused row the window does not hold is followed from here: nothing below reaches a row
@@ -3842,7 +4100,7 @@ abstract class BrowserContext
                 $acceptKey,
                 $page,
                 $browserKey,
-                $change->originRequestId,
+                $originRequestId,
             )) {
                 return;
             }
@@ -3891,7 +4149,9 @@ abstract class BrowserContext
             $this->emitViewportUnannounce($mutation, $acceptKey, $page, $browserKey);
         }
 
-        $this->emitViewportCount($table, $viewport, $mutation, $acceptKey, $page, $browserKey, $membership, $placement);
+        if (!$recountTotal) {
+            $this->emitViewportCount($table, $viewport, $mutation, $acceptKey, $page, $browserKey, $membership, $placement);
+        }
 
         // Ahead of the delta, which forgets a row it takes out of the window: a row the window held
         // when this change came is the delta's to judge, and announcing it as well would be a second answer.
@@ -5249,7 +5509,9 @@ abstract class BrowserContext
         }
 
         foreach ($allWindows as $acceptKey => $tables) {
-            if (isset($failedSubscriptions[$acceptKey]) || $this->isSkippedForDeletedResource((string) $acceptKey)) {
+            if (isset($failedSubscriptions[$acceptKey]) || $this->isSkippedForDeletedResource((string) $acceptKey)
+                || isset($this->publishedWholeThisFlush[$acceptKey])
+            ) {
                 continue;
             }
 
@@ -6972,6 +7234,7 @@ abstract class BrowserContext
      *
      * A connection that is not a viewer holds the window it asked for; one that stopped being a viewer
      * since its window was remembered holds it without the viewer's limit.
+     * An unchanged viewer scope keeps the delivered rows, digests and totals for live classification.
      *
      * @param string $page Page key the window belongs to
      * @param string $acceptKey Connection the window is for
@@ -6991,7 +7254,10 @@ abstract class BrowserContext
         }
         $shown = array_values(array_unique($shown));
 
-        return $viewport->withViewerScope($viewport->sort?->within($shown), $shown);
+        $sort = $viewport->sort?->within($shown);
+        return $viewport->shownFields === $shown && $viewport->sort === $sort
+            ? $viewport
+            : $viewport->withViewerScope($sort, $shown);
     }
 
     /**

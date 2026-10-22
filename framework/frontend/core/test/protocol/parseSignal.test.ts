@@ -7,6 +7,51 @@ import {
 import { SESSION_SIGNAL_SCHEMAS } from '../../src/session/sessionScope.js'
 
 describe('parseSignal', () => {
+  it.each(['table_window', 'table_window_refused'])(
+    'reads optional nonempty window correlation in %s data independently of envelope metadata',
+    (type) => {
+      const payload =
+        type === 'table_window'
+          ? {
+              page: 'p',
+              tableKey: 't',
+              rows: [],
+              totalCount: 0,
+              totalExact: true,
+              limit: 10,
+              firstAnchor: null,
+              lastAnchor: null,
+            }
+          : { page: 'p', tableKey: 't', errorCode: 'internal_error' }
+      for (const requestId of [undefined, 'mount:2']) {
+        const data = {
+          ...payload,
+          ...(requestId === undefined ? {} : { requestId }),
+        }
+        const envelope = { type, data, time: 42 }
+        expect(parseSignal(JSON.stringify(envelope))).toEqual({
+          ok: true,
+          signal: {
+            kind:
+              type === 'table_window' ? 'tableWindow' : 'tableWindowRefused',
+            data,
+            envelope,
+          },
+        })
+      }
+      for (const requestId of ['', 1, false, null, []]) {
+        expect(
+          parseSignal(
+            JSON.stringify({ type, data: { ...payload, requestId } }),
+          ),
+        ).toMatchObject({
+          ok: false,
+          failure: { kind: 'invalid-signal-data', type },
+        })
+      }
+    },
+  )
+
   it('shares the decoded-value reader, including failures and metadata', () => {
     const schemas = { changed: z.object({ count: z.number() }) }
     for (const value of [

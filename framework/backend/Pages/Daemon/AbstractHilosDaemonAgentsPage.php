@@ -29,9 +29,7 @@ use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
-use Hilos\Core\Table\Exception\TableRowKeyMissingException;
-use Hilos\DaemonSection\ClusterDaemonPictureMirror;
-use Hilos\DaemonSection\DaemonRestartingAgents;
+use Hilos\DaemonSection\ClusterDaemonPicture;
 use Hilos\DaemonSection\DTO\DaemonAgentRestartRequestSignalData;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -39,7 +37,6 @@ use Hilos\HilosException;
 use Hilos\Pages\Daemon\DTO\HilosDaemonAgentRestartActionDTO;
 use Hilos\Pages\Daemon\DTO\HilosDaemonNodeSubscribeParams;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
-use JsonException;
 
 /**
  * AbstractHilosDaemonAgentsPage - Abstract base for Hilos daemon agents list page.
@@ -68,63 +65,20 @@ abstract class AbstractHilosDaemonAgentsPage extends AbstractHilosDaemonNodePage
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_DAEMON_AGENTS,
     ];
 
-    private static ?string $agentsFingerprint = null;
-
     /**
-     * Re-sends changed node pages whole or changed agent windows.
-     *
-     * @throws HilosException When the picture cannot be encoded or a table source refuses a read
+     * @param ?ClusterDaemonPicture $before Immutable picture before this portion
+     * @throws HilosException When node page data cannot be projected
      * @throws EnvException When cluster mode cannot be read
-     * @throws InvalidArgumentException When the table-window signal cannot be named
-     * @throws TableRowKeyMissingException When a windowed row has no key
      */
-    public static function onPictureChanged(): void
+    public static function onPictureChanged(?ClusterDaemonPicture $before): void
     {
-        $resent = static::resendChangedNodePages();
-
-        $sections = [];
-        $picture = ClusterDaemonPictureMirror::picture();
-        foreach ($picture?->nodes() ?? [] as $node) {
-            $roster = $node->slot?->picture->processes;
-            $agents = null;
-            if ($roster !== null) {
-                $agents = [];
-                foreach ($roster->workers as $worker) {
-                    foreach ($worker->agents as $agent) {
-                        $agents[] = [$agent->id, $worker->index, $worker->kind, $agent->placement];
-                    }
-                }
-            }
-            $sections[] = [$node->nodeId, $agents, DaemonRestartingAgents::forNode($picture, $node->nodeId)];
-        }
-
-        try {
-            $fingerprint = json_encode($sections, JSON_THROW_ON_ERROR);
-        } catch (JsonException $exception) {
-            throw new HilosException('Cannot fingerprint the daemon agents picture', previous: $exception);
-        }
-        if ($fingerprint === self::$agentsFingerprint) {
-            return;
-        }
-        self::$agentsFingerprint = $fingerprint;
-
-        foreach (ClusterDaemonPictureMirror::viewerKeys() as $acceptKey) {
-            if (isset($resent[$acceptKey])) {
-                continue;
-            }
-            $viewport = Hilos::$sr?->getTableViewport($acceptKey, HilosDaemonAgentsTable::TABLE);
-            if ($viewport === null) {
-                continue;
-            }
-            Hilos::$browser?->sendTableWindow(HilosPageConstants::HILOS_DAEMON_AGENTS, $acceptKey, $viewport);
-        }
+        static::publishNodePicture($before, HilosDaemonAgentsTable::TABLE);
     }
 
     /** Forgets the comparison state when the page agent stops. */
     public static function onPictureForgotten(): void
     {
         self::forgetNodePages();
-        self::$agentsFingerprint = null;
     }
 
     /**
@@ -195,6 +149,7 @@ abstract class AbstractHilosDaemonAgentsPage extends AbstractHilosDaemonNodePage
     /**
      * @param string $acceptKey Subscribing connection
      * @param PageRouteParams $params Route params naming the node
+     * @throws HilosException When node data cannot be encoded
      * @return PagePayload Node line and first agent-report verdict
      * @throws MissingPageRouteParamException When the node id is absent
      * @throws EnvException When cluster mode cannot be read
@@ -203,11 +158,11 @@ abstract class AbstractHilosDaemonAgentsPage extends AbstractHilosDaemonNodePage
     {
         $nodeId = HilosDaemonNodeSubscribeParams::fromPageRouteParams($params)->nodeId;
 
-        return new PagePayload(data: static::nodeData($nodeId));
+        return static::nodePagePayload($nodeId);
     }
 
     /** @return array<string, WireField> Node and report status carry no personal data */
-    protected function dataFields(): array
+    protected static function nodeDataFields(): array
     {
         return [
             self::NODE => WireField::notPersonal(),

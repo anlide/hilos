@@ -10,7 +10,6 @@ use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
-use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -22,6 +21,8 @@ use Hilos\Core\Table\TableSearchMatch;
 use Hilos\Core\Table\TableSearchTerm;
 use Hilos\DaemonSection\ClusterDaemonPicture;
 use Hilos\DaemonSection\ClusterDaemonPictureMirror;
+use Hilos\DaemonSection\DaemonPictureRowChanges;
+use Hilos\DaemonSection\DaemonPictureViewportTable;
 use Hilos\DaemonSection\DaemonAgentPicture;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -30,10 +31,10 @@ use Hilos\Pages\Daemon\AbstractHilosDaemonPage;
 /**
  * Every declared project type has a row; instances come only from the page worker's mirror.
  * A silent node is unknown, never its last roster. Unplaced ids are the leader's verdict.
- * Instance search narrows cells here; {@see AbstractHilosDaemonPage::onPictureChanged()}
- * resends a complete window after a changed picture portion.
+ * Instance search narrows cells here;
+ * {@see AbstractHilosDaemonPage::onPictureChanged()} publishes mutations through the shared viewport classifier.
  */
-final class HilosDaemonPlacementTable extends TableDefinition implements ViewportTable
+final class HilosDaemonPlacementTable extends TableDefinition implements DaemonPictureViewportTable
 {
     public const string TABLE = 'hilosDaemonPlacement';
 
@@ -49,6 +50,32 @@ final class HilosDaemonPlacementTable extends TableDefinition implements Viewpor
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
         return null;
+    }
+
+    /**
+     * @param ?ClusterDaemonPicture $before Previous immutable picture
+     * @param TableQueryDTO $query Subject and viewer scope, independent of pagination and search membership
+     * @return list<TableRowMutationDTO> Changes to the complete subject set
+     * @throws TableRowKeyMissingException When a projected row carries no key
+     * @throws EnvException When cluster mode cannot be read
+     * @throws TableSearchNotSupportedException When the table does not support the requested search
+     */
+    public function pictureMutations(?ClusterDaemonPicture $before, TableQueryDTO $query): array
+    {
+        $query = $this->scopeSearch($query);
+        $current = ClusterDaemonPictureMirror::picture();
+        $mutations = DaemonPictureRowChanges::between(
+            $this->makeRows($this->collectRows($before, $query->withoutSearch())),
+            $this->makeRows($this->collectRows($current, $query->withoutSearch())),
+        );
+        $shown = [];
+        foreach ($this->makeRows($this->collectRows($current, $query)) as $row) {
+            $shown[$row->requireRowKey()] = $row;
+        }
+
+        return array_map(static fn (TableRowMutationDTO $mutation): TableRowMutationDTO => new TableRowMutationDTO(
+            $mutation->type, $mutation->rowKey, $shown[$mutation->rowKey] ?? $mutation->row,
+        ), $mutations);
     }
 
     /**
@@ -88,7 +115,7 @@ final class HilosDaemonPlacementTable extends TableDefinition implements Viewpor
      */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
     {
-        return $this->containsRowInMemory($this->collectRows($query), $rowKey, $query->withoutSearch());
+        return $this->containsRowInMemory($this->collectRows(ClusterDaemonPictureMirror::picture(), $query), $rowKey, $query->withoutSearch());
     }
 
     /**
@@ -113,7 +140,7 @@ final class HilosDaemonPlacementTable extends TableDefinition implements Viewpor
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
-        return $this->filterInMemory($this->collectRows($query), $query->withoutSearch());
+        return $this->filterInMemory($this->collectRows(ClusterDaemonPictureMirror::picture(), $query), $query->withoutSearch());
     }
 
     /** Configures the placement row representation. */
@@ -133,12 +160,12 @@ final class HilosDaemonPlacementTable extends TableDefinition implements Viewpor
     }
 
     /**
+     * @param ?ClusterDaemonPicture $picture Immutable source picture
      * @param TableQueryDTO $query Window search scope
      * @return list<array<string, mixed>> One row per declared type
      */
-    private function collectRows(TableQueryDTO $query): array
+    private function collectRows(?ClusterDaemonPicture $picture, TableQueryDTO $query): array
     {
-        $picture = ClusterDaemonPictureMirror::picture();
         $nodes = $picture?->nodes() ?? [];
         $agentsByNode = [];
         foreach ($nodes as $node) {

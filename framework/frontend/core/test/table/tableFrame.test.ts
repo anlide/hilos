@@ -327,6 +327,7 @@ describe('TableViewportController frame filters', () => {
     expect(sent).toHaveLength(1)
     // A declared frame sends the fields its columns draw with every window (HIL-880).
     expect(sent[0]).toEqual({
+      requestId: expect.any(String),
       filter: { kind: 'full' },
       sort: null,
       limit: 10,
@@ -660,7 +661,7 @@ describe('TableViewportController frame body', () => {
     expect(controller.frame.body.get()).toBe('empty_page')
   })
 
-  it('calls a window emptied from placeholders an empty set, not a page', () => {
+  it('keeps the rows body for retained placeholders over an empty set', () => {
     const { controller, open } = makeController(backupsFrame)
     open([{ rowKey: 'a', slots: {} }], 1, true, { id: 1 }, { id: 1 })
     controller.ingestDelta({
@@ -672,8 +673,22 @@ describe('TableViewportController frame body', () => {
 
     controller.apply()
 
-    expect(controller.rows.get()).toEqual([])
-    expect(controller.frame.body.get()).toBe('empty')
+    expect(controller.rows.get()).toEqual([
+      {
+        rowKey: 'a',
+        occurrence: 1,
+        row: null,
+        placeholder: true,
+        pending: null,
+        removal: 'deleted',
+        highlighted: false,
+        selected: false,
+        expanded: false,
+        expandable: false,
+        staleSources: [],
+      },
+    ])
+    expect(controller.frame.body.get()).toBe('rows')
   })
 
   it('calls a refused window unavailable', () => {

@@ -535,7 +535,12 @@ describe('HilosDaemonEnvMismatchPage', () => {
         .find('main')
         .findAll('th')
         .map((th) => th.text()),
-    ).toEqual(['Key', 'n1 · this node', 'n2'])
+    ).toEqual([
+      'Key',
+      'n1 · this node',
+      'n2',
+      'Will move Will leaveRow state and controls',
+    ])
 
     h.setSummary({
       clustered: true,
@@ -555,6 +560,12 @@ describe('HilosDaemonEnvMismatchPage', () => {
         .find('main')
         .findAll('th')
         .map((th) => th.text()),
-    ).toEqual(['Key', 'n1 · this node', 'n2', 'n3'])
+    ).toEqual([
+      'Key',
+      'n1 · this node',
+      'n2',
+      'n3',
+      'Will move Will leaveRow state and controls',
+    ])
   })
 })

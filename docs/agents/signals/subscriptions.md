@@ -100,6 +100,12 @@ second request in order to render the page it just subscribed to: the reply to
 placeholder — see [core-and-connection.md](../frontend/core-and-connection.md),
 "A page shows a placeholder until its subscription answers".
 
+That subscription answer remains one complete first-render frame. A live
+publisher may later send `page_response` with only changed page `data`; it has
+no browser windows and is a scope update, not another subscription answer or a
+window acknowledgement. The wire distinction is in
+[wire-protocol.md](../frontend/wire-protocol.md).
+
 That `page_response` is one logical signal; its physical WebSocket message may
 carry other signals in a `signal_batch`. For a browser-issued `page_subscribe`,
 the socket master starts an internal hold before routing the request. Application
@@ -288,6 +294,16 @@ than on the first page of the set — the server forgot it with the accept key,
 and the tab is the only side that still knows. A page a tab is navigating to
 has no controllers bound yet and so reports none; one rule, two scenes, and no
 flag saying which is which.
+
+The optional `requestId` on a client `table_viewport` is echoed only by the
+matching `table_window.data.requestId` or
+`table_window_refused.data.requestId`. Initial or recovered windows and
+`refusedWindows` in a complete `page_response`, plus untracked source or
+recovery catch-ups, carry no id. Any such delivery can still replace the window
+authoritatively, but it does not acknowledge a tracked ask;
+window correlation is separate from page-subscription delivery and action
+acknowledgements. See the exact fields and lifecycle in
+[table-subscription.md](../frontend/table-subscription.md#correlating-a-requested-window).
 
 ### The one legal neighbor: a group subscription
 

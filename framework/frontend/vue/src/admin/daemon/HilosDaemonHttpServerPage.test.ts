@@ -326,9 +326,9 @@ describe('HilosDaemonHttpServerPage', () => {
     expect(h.view.find('[data-id="hilos-daemon-http-requests"]').text()).toBe(
       (1284).toLocaleString(),
     )
-    expect(h.view.find('[data-id="hilos-table-row-GET /status"]').element).toBe(
-      row.element,
-    )
+    const replacement = h.view.find('[data-id="hilos-table-row-GET /status"]')
+    expect(replacement.element).not.toBe(row.element)
+    expect(replacement.text()).toBe(row.text())
     expect(h.view.find('[data-id="hilos-daemon-node-state"]').text()).toBe(
       'Silent',
     )

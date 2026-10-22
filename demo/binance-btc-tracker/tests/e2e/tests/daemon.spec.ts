@@ -1,7 +1,11 @@
 import { expect, test, type Page } from '@playwright/test'
 import { EventEmitter } from 'node:events'
 
-import { signUpAdmin } from '../helpers/adminGrant.js'
+import {
+  grantAdminToSelf,
+  setAdmin,
+  signUpAdmin,
+} from '../helpers/adminGrant.js'
 import {
   armViewerSubmit,
   expectViewerRestartRefused,
@@ -35,6 +39,10 @@ import {
   ROWS,
   fitsInScrollport,
   shownByTestId,
+  watchTableSearch,
+  watchTableModalFocus,
+  watchTableContinuity,
+  watchDaemonSource,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 // The live standalone Daemon section: navigation, placement, node reports,
@@ -277,8 +285,16 @@ test.describe('daemon overview', () => {
   for (const viewer of [false, true]) {
     test(`searches real placement ids and preserves local selection as ${viewer ? 'a view-mode reader' : 'an admin'}`, async ({
       page,
+      browser,
+      baseURL,
     }) => {
-      await page.setViewportSize({ width: 1280, height: 812 })
+      // Two real connection round trips traverse the node/collector/mirror chain.
+      test.slow()
+      const windows = await watchTableSearch(page, {
+        page: 'hilos_daemon',
+        tableKey: 'hilosDaemonPlacement',
+      })
+      await page.setViewportSize({ width: 1440, height: 812 })
       if (viewer) {
         await setAdminViewMode(true)
       } else {
@@ -308,100 +324,198 @@ test.describe('daemon overview', () => {
         `hilos-table-expand-${DAEMON_PLACEMENT_TYPE}`,
       )
       await expect(page.getByTestId(/^hilos-table-expand-/)).toHaveCount(0)
-      await cell.focus()
-      await cell.press('Enter')
-      await expect(cell).toHaveAttribute('aria-expanded', 'true')
-      await expect(selection).toBeVisible()
-      await expect(
-        detail.getByTestId('hilos-daemon-placement-selection'),
-      ).toBeVisible()
-      expect(
-        await row.evaluate((element) =>
-          element.nextElementSibling?.getAttribute('data-id'),
-        ),
-      ).toBe(`hilos-table-row-detail-${DAEMON_PLACEMENT_TYPE}`)
-      await expect(expand).toHaveAttribute('aria-expanded', 'true')
-      const ids = (await selection.locator('code').allTextContents()).slice(2)
-      expect(ids).toEqual([DAEMON_PLACEMENT_TYPE])
-      await expect(selection.locator('a, button')).toHaveCount(1)
-      await expand.click()
-      await expect(
-        page.getByTestId('hilos-daemon-placement-selection'),
-      ).toHaveCount(0)
-      await expect(cell).toHaveAttribute('aria-expanded', 'false')
-      await expect(expand).toHaveAttribute('aria-expanded', 'false')
-      await expand.focus()
-      await expand.press('Enter')
-      await expect(selection).toContainText(ids[0])
-      const collapse = shownByTestId(page, 'hilos-daemon-placement-collapse')
-      await collapse.focus()
-      await collapse.press('Space')
-      await expect(selection).toHaveCount(0)
-      await expect(cell).toHaveAttribute('aria-expanded', 'false')
-      await cell.focus()
-      await cell.press('Space')
-      await expect(selection).toContainText(ids[0])
+      const source = await watchDaemonSource(windows, page)
+      const focus = await watchTableModalFocus(cell)
+      const continuity: Awaited<ReturnType<typeof watchTableContinuity>>[] = []
+      const sources: Awaited<ReturnType<typeof watchDaemonSource>>[] = []
+      sources.push(source)
+      const proof: unknown[] = []
+      const initialKeys = await windows.rowKeys()
+      let actor: Page | undefined
+      let ids: string[]
+      try {
+        await source.singleConnection(expect)
+        await cell.focus()
+        await cell.press('Enter')
+        await expect(cell).toHaveAttribute('aria-expanded', 'true')
+        await expect(selection).toBeVisible()
+        await expect(
+          detail.getByTestId('hilos-daemon-placement-selection'),
+        ).toBeVisible()
+        expect(
+          await row.evaluate((element) =>
+            element.nextElementSibling?.getAttribute('data-id'),
+          ),
+        ).toBe(`hilos-table-row-detail-${DAEMON_PLACEMENT_TYPE}`)
+        await expect(expand).toHaveAttribute('aria-expanded', 'true')
+        ids = (await selection.locator('code').allTextContents()).slice(2)
+        expect(ids).toEqual([DAEMON_PLACEMENT_TYPE])
+        await expect(selection.locator('a, button')).toHaveCount(1)
+        await expand.click()
+        await expect(
+          page.getByTestId('hilos-daemon-placement-selection'),
+        ).toHaveCount(0)
+        await expect(cell).toHaveAttribute('aria-expanded', 'false')
+        await expect(expand).toHaveAttribute('aria-expanded', 'false')
+        await expand.focus()
+        await expand.press('Enter')
+        await expect(selection).toContainText(ids[0])
+        const collapse = shownByTestId(page, 'hilos-daemon-placement-collapse')
+        await collapse.focus()
+        await collapse.press('Space')
+        await expect(selection).toHaveCount(0)
+        await expect(cell).toHaveAttribute('aria-expanded', 'false')
+        await cell.focus()
+        await cell.press('Space')
+        await expect(selection).toContainText(ids[0])
+        await expect(cell).toBeFocused()
+        const pressed = await watchTableContinuity(cell, [
+          'hilos-daemon-placement-selection',
+        ])
+        continuity.push(pressed)
+        const opened = await windows.mark()
+        actor = await browser.newPage({
+          baseURL,
+          ignoreHTTPSErrors: true,
+          viewport: { width: 1440, height: 812 },
+        })
+        await gotoPage(actor, '/', PAGE_READY)
+        await expect(actor.getByTestId('conn-state')).toHaveText('connected')
+        await source.connectionOpened(expect, opened)
+        const closed = await windows.mark()
+        await actor.close()
+        await source.connectionClosed(expect, closed)
+        proof.push(await pressed.preserved(expect))
+        await expect(selection).toContainText(ids[0])
+        await expect(cell).toHaveAttribute('aria-expanded', 'true')
+        await expect(cell).toBeFocused()
 
-      const otherType = DAEMON_PLACEMENT_LONG_TYPE
-      await shownByTestId(
-        page,
-        `hilos-daemon-placement-cell-${otherType}-standalone`,
-      ).click()
-      await expect(detail).toHaveCount(0)
-      await expect(
-        table
-          .getByTestId(`hilos-table-row-detail-${otherType}`)
-          .getByTestId('hilos-daemon-placement-selection'),
-      ).toContainText(otherType)
-      await expect(selection).toHaveCount(1)
-      await expect(cell).toHaveAttribute('aria-expanded', 'false')
-      await cell.click()
-      await expect(
-        table.getByTestId(`hilos-table-row-detail-${otherType}`),
-      ).toHaveCount(0)
-      await expect(
-        detail.getByTestId('hilos-daemon-placement-selection'),
-      ).toContainText(ids[0])
+        const otherType = DAEMON_PLACEMENT_LONG_TYPE
+        await shownByTestId(
+          page,
+          `hilos-daemon-placement-cell-${otherType}-standalone`,
+        ).click()
+        await expect(detail).toHaveCount(0)
+        await expect(
+          table
+            .getByTestId(`hilos-table-row-detail-${otherType}`)
+            .getByTestId('hilos-daemon-placement-selection'),
+        ).toContainText(otherType)
+        await expect(selection).toHaveCount(1)
+        await expect(cell).toHaveAttribute('aria-expanded', 'false')
+        await cell.click()
+        await expect(
+          table.getByTestId(`hilos-table-row-detail-${otherType}`),
+        ).toHaveCount(0)
+        await expect(
+          detail.getByTestId('hilos-daemon-placement-selection'),
+        ).toContainText(ids[0])
 
-      const search = page.getByTestId('hilos-table-search')
-      await search.fill('')
-      await search.pressSequentially(ids[0], { delay: 10 })
-      await expect(table.locator(ROWS)).toHaveCount(1)
-      await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
-      await expect(selection).toHaveCount(0)
-      await expect(cell).toHaveAttribute('aria-expanded', 'false')
-      await cell.click()
-      await expect(selection).toContainText(ids[0])
-      await expectUnfilteredTotals(expect, page, totals)
+        const search = page.getByTestId('hilos-table-search')
+        const searched = await windows.mark()
+        await search.fill('')
+        await search.pressSequentially(ids[0], { delay: 10 })
+        await windows.settled(expect, searched, ids[0], [DAEMON_PLACEMENT_TYPE])
+        proof.push(await pressed.fresh(expect))
+        await expect(table.locator(ROWS)).toHaveCount(1)
+        await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+        await expect(selection).toHaveCount(0)
+        await expect(cell).toHaveAttribute('aria-expanded', 'false')
+        await cell.click()
+        await expect(selection).toContainText(ids[0])
+        await expectUnfilteredTotals(expect, page, totals)
 
-      await page.getByTestId('hilos-daemon-nodes-tab').click()
-      await expectStandaloneOverview(expect, page, DATABASE_HOST)
-      await expect(selection).toBeHidden()
-      await expectStandalonePlacement(expect, page)
-      await expect(search).toHaveValue(ids[0])
-      await expect(selection).toContainText(ids[0])
-      await expect(cell).toHaveAttribute('aria-expanded', 'true')
-      await cell.click()
-      await expect(
-        page.getByTestId('hilos-daemon-placement-selection'),
-      ).toHaveCount(0)
-      await expect(cell).toHaveAttribute('aria-expanded', 'false')
-      await cell.click()
-      await expect(selection).toBeVisible()
+        // A real data-only update after an exactly correlated search cannot reset
+        // its epoch, acknowledge another ask, or replace its retained occurrence.
+        const searchedControl = await watchTableContinuity(cell, [
+          'hilos-daemon-placement-selection',
+        ])
+        continuity.push(searchedControl)
+        const searchSource = await watchDaemonSource(windows, page)
+        sources.push(searchSource)
+        const searchOpened = await windows.mark()
+        actor = await browser.newPage({
+          baseURL,
+          ignoreHTTPSErrors: true,
+          viewport: { width: 1440, height: 812 },
+        })
+        await gotoPage(actor, '/', PAGE_READY)
+        await expect(actor.getByTestId('conn-state')).toHaveText('connected')
+        await searchSource.connectionOpened(expect, searchOpened)
+        proof.push(
+          await windows.settled(expect, searched, ids[0], [
+            DAEMON_PLACEMENT_TYPE,
+          ]),
+        )
+        const searchClosed = await windows.mark()
+        await actor.close()
+        await searchSource.connectionClosed(expect, searchClosed)
+        proof.push(await searchedControl.preserved(expect))
+        await expect(cell).toBeFocused()
+        await expect(selection).toContainText(ids[0])
+        if (viewer)
+          await expect(page.getByTestId('view-mode-banner')).toBeVisible()
 
-      await search.fill('')
-      await search.pressSequentially('no-such-placement-instance', {
-        delay: 10,
-      })
-      await expect(shownByTestId(page, 'hilos-table-no-matches')).toBeVisible()
-      await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
-      await expect(selection).toHaveCount(0)
-      await expectUnfilteredTotals(expect, page, totals)
-      await shownByTestId(page, 'hilos-table-no-matches-reset').click()
-      await expect(search).toHaveValue('')
-      await expect(cell).toBeVisible()
-      await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
-      await expect(selection).toHaveCount(0)
+        await page.getByTestId('hilos-daemon-nodes-tab').click()
+        await expectStandaloneOverview(expect, page, DATABASE_HOST)
+        await expect(selection).toBeHidden()
+        await expectStandalonePlacement(expect, page)
+        await expect(search).toHaveValue(ids[0])
+        await expect(selection).toContainText(ids[0])
+        await expect(cell).toHaveAttribute('aria-expanded', 'true')
+        await cell.click()
+        await expect(
+          page.getByTestId('hilos-daemon-placement-selection'),
+        ).toHaveCount(0)
+        await expect(cell).toHaveAttribute('aria-expanded', 'false')
+        await cell.click()
+        await expect(selection).toBeVisible()
+
+        const missing = await windows.mark()
+        await search.fill('')
+        await search.pressSequentially('no-such-placement-instance', {
+          delay: 10,
+        })
+        await windows.settled(expect, missing, 'no-such-placement-instance', [])
+        await expect(
+          shownByTestId(page, 'hilos-table-no-matches'),
+        ).toBeVisible()
+        await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+        await expect(selection).toHaveCount(0)
+        await expectUnfilteredTotals(expect, page, totals)
+        const reset = await windows.mark()
+        await shownByTestId(page, 'hilos-table-no-matches-reset').click()
+        await windows.settled(expect, reset, '', initialKeys)
+        await expect(search).toHaveValue('')
+        await expect(cell).toBeVisible()
+        await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+        await expect(selection).toHaveCount(0)
+      } finally {
+        await test.info().attach('placement-interaction', {
+          body: JSON.stringify(
+            {
+              frames: await windows.read(),
+              target: await focus.read(),
+              history: await focus.history(),
+              sources: sources.map((source) => source.read()),
+              continuity: await Promise.all(
+                continuity.map((watch) => watch.read()),
+              ),
+              proof,
+            },
+            null,
+            2,
+          ),
+          contentType: 'application/json',
+        })
+        await test.info().attach('placement-source-screenshot', {
+          body: await page.screenshot(),
+          contentType: 'image/png',
+        })
+        for (const watch of continuity) await watch.dispose()
+        await focus.dispose()
+        if (actor && !actor.isClosed()) await actor.close()
+      }
     })
   }
 
@@ -412,7 +526,7 @@ test.describe('daemon overview', () => {
     test.slow()
     await signUpAdmin(page)
     await gotoPage(page, DAEMON_ROOT_PATH, PAGE_READY)
-    await page.setViewportSize({ width: 1280, height: 812 })
+    await page.setViewportSize({ width: 1440, height: 812 })
     await expectStandaloneOverview(expect, page, DATABASE_HOST)
     const colors = await page.locator('html').evaluate((element) => {
       const style = getComputedStyle(element)
@@ -551,12 +665,18 @@ test.describe('daemon node pages', () => {
   for (const viewer of [false, true]) {
     test(`reads Workers and Cron with named tables and keyboard links as ${viewer ? 'a viewer' : 'an admin'}`, async ({
       page,
+      browser,
+      baseURL,
     }) => {
       // Three live pages and the worker log.
       test.slow()
+      const windows = await watchTableSearch(page, {
+        page: 'hilos_daemon_workers',
+        tableKey: 'hilosDaemonWorkers',
+      })
       await setAdminViewMode(viewer)
       if (!viewer) await signUpAdmin(page)
-      await page.setViewportSize({ width: 1280, height: 812 })
+      await page.setViewportSize({ width: 1440, height: 812 })
       await gotoPage(page, DAEMON_ROOT_PATH, PAGE_READY)
       await expectStandaloneOverview(expect, page, DATABASE_HOST)
       await page.getByTestId(DAEMON_WORKERS_CHILD).focus()
@@ -569,13 +689,75 @@ test.describe('daemon node pages', () => {
       await expect(surface).toHaveAccessibleName('Workers')
       const expand = shownByTestId(page, /^hilos-table-expand-/).first()
       await expect(expand).toBeVisible()
-      await expand.focus()
-      await expect(expand).toBeFocused()
-      await expand.press('Enter')
-      await expect(expand).toHaveAttribute('aria-expanded', 'true')
-      await expect(
-        shownByTestId(page, /^hilos-daemon-worker-agents-/),
-      ).toBeVisible()
+      const focus = await watchTableModalFocus(expand)
+      const source = await watchDaemonSource(windows, page)
+      let continuity:
+        Awaited<ReturnType<typeof watchTableContinuity>> | undefined
+      let actor: Page | undefined
+      let proof: unknown
+      try {
+        await expand.focus()
+        await expect(expand).toBeFocused()
+        await expand.press('Enter')
+        await expect(expand).toHaveAttribute('aria-expanded', 'true')
+        await expect(
+          shownByTestId(page, /^hilos-daemon-worker-agents-/),
+        ).toBeVisible()
+        await expect(expand).toBeFocused()
+        continuity = await watchTableContinuity(expand, [
+          'hilos-daemon-worker-agents-',
+        ])
+        const changed = await windows.mark()
+        // A separate admin starts its real indexed person owner. The target
+        // viewer keeps its own session and its view-mode access verdict.
+        actor = await browser.newPage({
+          baseURL,
+          ignoreHTTPSErrors: true,
+          viewport: { width: 1440, height: 812 },
+        })
+        const userId = await grantAdminToSelf(actor)
+        // Minting alone need not address an idle person owner. The existing
+        // grant command addresses exactly this new owner, even at admin=true.
+        await setAdmin(userId, true)
+        await source.workerAdded(expect, changed, userId)
+        proof = await continuity.preserved(expect)
+        await expect(expand).toBeFocused()
+        await expect(expand).toHaveAttribute('aria-expanded', 'true')
+        await expect(
+          shownByTestId(page, /^hilos-daemon-worker-agents-/),
+        ).toBeVisible()
+        if (viewer) {
+          await expect(page.getByTestId('view-mode-banner')).toBeVisible()
+          await expect(page.getByTestId('nav-admin')).toHaveAttribute(
+            'data-access',
+            'view',
+          )
+        }
+      } finally {
+        await test.info().attach(`workers-interaction`, {
+          body: JSON.stringify(
+            {
+              frames: await windows.read(),
+              target: await focus.read(),
+              history: await focus.history(),
+              source: source.read(),
+              continuity: await continuity?.read(),
+              proof,
+            },
+            null,
+            2,
+          ),
+          contentType: 'application/json',
+        })
+        await test.info().attach('workers-source-screenshot', {
+          body: await page.screenshot(),
+          contentType: 'image/png',
+        })
+        await continuity?.dispose()
+        await focus.dispose()
+        if (actor && !actor.isClosed()) await actor.close()
+      }
+
       const log = shownByTestId(page, /^hilos-daemon-worker-log-/).first()
       await expect(log).toHaveAttribute(
         'href',
@@ -621,9 +803,13 @@ test.describe('daemon node pages', () => {
     }) => {
       // It follows real page subscriptions and an agent's live log.
       test.slow()
+      const windows = await watchTableSearch(page, {
+        page: 'hilos_daemon_agents',
+        tableKey: 'hilosDaemonAgents',
+      })
       await setAdminViewMode(viewer)
       if (!viewer) await signUpAdmin(page)
-      await page.setViewportSize({ width: 1280, height: 812 })
+      await page.setViewportSize({ width: 1440, height: 812 })
       await gotoPage(page, DAEMON_ROOT_PATH, PAGE_READY)
       await expectStandaloneOverview(expect, page, DATABASE_HOST)
       const agents = page.getByTestId('hilos-admin-child-hilos_daemon_agents')
@@ -640,8 +826,17 @@ test.describe('daemon node pages', () => {
       await expect(page.getByTestId('hilos-daemon-node-solo')).toBeVisible()
       const search = page.getByTestId('hilos-table-search')
       await expect(search).toHaveAccessibleName('Search by agent id…')
+      const mark = await windows.mark()
       await search.fill('')
       await search.pressSequentially(RESTART_AGENT, { delay: 10 })
+      try {
+        await windows.settled(expect, mark, RESTART_AGENT, [RESTART_AGENT])
+      } finally {
+        await test.info().attach(`agents-search-frames`, {
+          body: JSON.stringify(await windows.read(), null, 2),
+          contentType: 'application/json',
+        })
+      }
       const row = shownByTestId(page, `hilos-table-row-${RESTART_AGENT}`)
       await expect(row).toBeVisible()
       await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
@@ -660,6 +855,7 @@ test.describe('daemon node pages', () => {
         )
       } else {
         await expect(restart).toBeEnabled()
+        const focus = await watchTableModalFocus(restart)
         await restart.focus()
         await restart.press('Enter')
         const modal = page.getByTestId('modal')
@@ -686,9 +882,33 @@ test.describe('daemon node pages', () => {
         })
         await modal.press('Enter')
         await expect(modal).toBeVisible()
+        const beforeClose = await focus.read()
+        await test.info().attach(`restart-before-close`, {
+          body: JSON.stringify(
+            { beforeClose, windows: await windows.read() },
+            null,
+            2,
+          ),
+          contentType: 'application/json',
+        })
+        expect(beforeClose.openerConnected).toBe(true)
+        expect(beforeClose.sameTrigger).toBe(true)
         await modal.press('Escape')
         await expect(modal).toHaveCount(0)
         await expect(restart).toBeFocused()
+        await test.info().attach(`restart-focus`, {
+          body: JSON.stringify(
+            {
+              beforeClose,
+              afterClose: await focus.read(),
+              windows: await windows.read(),
+            },
+            null,
+            2,
+          ),
+          contentType: 'application/json',
+        })
+        await focus.dispose()
       }
       const log = shownByTestId(page, `hilos-daemon-agent-log-${RESTART_AGENT}`)
       await expect(log).toHaveAttribute(
@@ -845,6 +1065,10 @@ test.describe('daemon environment', () => {
   }) => {
     // Registration and several server-window changes are real round trips.
     test.slow()
+    const windows = await watchTableSearch(page, {
+      page: 'hilos_daemon_env',
+      tableKey: 'hilosDaemonEnvKeys',
+    })
     await signUpAdmin(page)
     await gotoPage(page, DAEMON_ROOT_PATH, PAGE_READY)
     await expectStandaloneOverview(expect, page, DATABASE_HOST)
@@ -854,7 +1078,7 @@ test.describe('daemon environment', () => {
     await link.press('Enter')
     await expectDaemonPage(expect, page, 'hilos_daemon_env')
     await expect(page).toHaveURL(/\/hilos\/daemon\/standalone\/env$/)
-    await page.setViewportSize({ width: 1280, height: 812 })
+    await page.setViewportSize({ width: 1440, height: 812 })
     await expectStandaloneEnvironment(expect, page)
     const count = await page.getByTestId('hilos-daemon-env-keys').innerText()
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(
@@ -865,8 +1089,20 @@ test.describe('daemon environment', () => {
     }
     const search = page.getByTestId('hilos-table-search')
     await expect(search).toHaveAccessibleName('Key or value')
-    await search.fill('')
-    await search.pressSequentially('APP_ENV', { delay: 10 })
+    const searchFor = async (key: string): Promise<void> => {
+      const mark = await windows.mark()
+      try {
+        await search.fill('')
+        await search.pressSequentially(key, { delay: 10 })
+        await windows.settled(expect, mark, key, [key])
+      } finally {
+        await test.info().attach(`environment-search-${key}`, {
+          body: JSON.stringify(await windows.read(), null, 2),
+          contentType: 'application/json',
+        })
+      }
+    }
+    await searchFor('APP_ENV')
     const app = shownByTestId(page, 'hilos-table-row-APP_ENV')
     await expect(app).toContainText('test')
     await expect(app).toContainText('Launch environment')
@@ -874,26 +1110,64 @@ test.describe('daemon environment', () => {
     const attention = page.getByTestId('hilos-table-filter-attention')
     await expect(attention).toHaveAccessibleName('Needs attention only')
     await expect(attention).not.toBeChecked()
+    const attentionOn = await windows.mark()
     await attention.focus()
     await attention.press('Space')
     await expect(attention).toBeChecked()
+    try {
+      await windows.settled(expect, attentionOn, 'APP_ENV', [])
+    } finally {
+      await test.info().attach(`environment-attention-on`, {
+        body: JSON.stringify(await windows.read(), null, 2),
+        contentType: 'application/json',
+      })
+    }
     await expect(
       shownByTestId(page, 'hilos-daemon-env-keys-empty-attention'),
     ).toHaveText('No key needs attention.')
     await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
     await expect(page.getByTestId('hilos-daemon-env-keys')).toHaveText(count)
+    const attentionOff = await windows.mark()
     await attention.focus()
     await attention.press('Space')
     await expect(attention).not.toBeChecked()
+    try {
+      await windows.settled(expect, attentionOff, 'APP_ENV', ['APP_ENV'])
+    } finally {
+      await test.info().attach(`environment-attention-off`, {
+        body: JSON.stringify(await windows.read(), null, 2),
+        contentType: 'application/json',
+      })
+    }
     await expect(app).toContainText('test')
-    await search.fill('')
-    await search.pressSequentially('DB_PASSWORD', { delay: 10 })
+    await searchFor('DB_PASSWORD')
     const secret = shownByTestId(page, 'hilos-table-row-DB_PASSWORD')
     await expect(secret).toContainText(/Set · \d+ chars/)
     await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
     await expect(page.locator('body')).not.toContainText('hilos_pass')
-    await secret.scrollIntoViewIfNeeded()
-    await fitsInScrollport(secret)
+    const target = await watchTableModalFocus(secret)
+    try {
+      expect(await target.read()).toMatchObject({
+        openerConnected: true,
+        sameTrigger: true,
+      })
+      await secret.scrollIntoViewIfNeeded()
+      await fitsInScrollport(secret)
+      expect(await target.read()).toMatchObject({
+        openerConnected: true,
+        sameTrigger: true,
+      })
+    } finally {
+      await test.info().attach(`environment-target`, {
+        body: JSON.stringify(
+          { target: await target.read(), frames: await windows.read() },
+          null,
+          2,
+        ),
+        contentType: 'application/json',
+      })
+      await target.dispose()
+    }
     await page.getByTestId(DAEMON_ROOT_CRUMB).click()
     await expectStandaloneOverview(expect, page, DATABASE_HOST)
     // A cold mount must bind the same two windows with all keys selected.

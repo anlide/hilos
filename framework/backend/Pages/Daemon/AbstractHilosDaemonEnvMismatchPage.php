@@ -13,9 +13,10 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
-use Hilos\Core\Table\Exception\TableRowKeyMissingException;
+use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\DaemonSection\ClusterDaemonPicture;
+use Hilos\DaemonSection\DaemonPictureViewportTable;
 use Hilos\DaemonSection\ClusterDaemonPictureMirror;
-use Hilos\DaemonSection\ClusterEnvironmentKeyComparison;
 use Hilos\DaemonSection\DaemonEnvMismatchSummary;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -38,47 +39,25 @@ abstract class AbstractHilosDaemonEnvMismatchPage extends AbstractHilosDaemonSec
     ];
 
     private static ?string $summaryFingerprint = null;
-    private static ?string $comparisonFingerprint = null;
 
     /**
-     * Re-sends whole pages when the summary changes, or open windows only when the comparison's nodes, keys or cells change.
-     *
-     * @throws HilosException When the comparison cannot be encoded or a window cannot be served
-     * @throws EnvException When cluster mode or node id cannot be read from the environment
+     * @param ?ClusterDaemonPicture $before Immutable picture before this portion
+     * @throws HilosException When comparison metadata cannot be projected or encoded
+     * @throws EnvException When cluster mode or node id cannot be read
      * @throws ClusterException When cluster configuration or node identity is invalid
-     * @throws InvalidArgumentException When the table-window signal cannot be named or a cell is invalid
-     * @throws TableRowKeyMissingException When a windowed row has no key
+     * @throws InvalidArgumentException When an environment cell is invalid
      */
-    public static function onPictureChanged(): void
+    public static function onPictureChanged(?ClusterDaemonPicture $before): void
     {
-        $resent = self::resendChangedPage();
-
-        $comparison = ClusterDaemonPictureMirror::picture()?->environmentComparison();
-        $sections = $comparison === null ? [null] : [
-            $comparison->nodes,
-            self::fingerprintKeys($comparison->diverged),
-            self::fingerprintKeys($comparison->sourcesDiffer),
-        ];
-
-        try {
-            $fingerprint = json_encode($sections, JSON_THROW_ON_ERROR);
-        } catch (JsonException $exception) {
-            throw new HilosException('Cannot fingerprint the environment comparison', previous: $exception);
-        }
-        if ($fingerprint === self::$comparisonFingerprint) {
-            return;
-        }
-        self::$comparisonFingerprint = $fingerprint;
-
-        foreach (ClusterDaemonPictureMirror::viewerKeys() as $acceptKey) {
-            if (isset($resent[$acceptKey])) {
-                continue;
-            }
-            foreach ([HilosDaemonEnvDivergedTable::TABLE, HilosDaemonEnvSourcesDifferTable::TABLE] as $table) {
-                $viewport = Hilos::$sr?->getTableViewport($acceptKey, $table);
-                if ($viewport !== null) {
-                    Hilos::$browser?->sendTableWindow(HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH, $acceptKey, $viewport);
-                }
+        self::publishChangedPage();
+        foreach (Hilos::$sr?->getAcceptKeysForPage(self::PAGE) ?? [] as $acceptKey) {
+            foreach ([HilosDaemonEnvDivergedTable::TABLE, HilosDaemonEnvSourcesDifferTable::TABLE] as $tableKey) {
+                Hilos::$browser?->publishTableMutations(
+                    self::PAGE,
+                    $acceptKey,
+                    $tableKey,
+                    static fn (DaemonPictureViewportTable $table, TableQueryDTO $query): array => $table->pictureMutations($before, $query),
+                );
             }
         }
     }
@@ -87,31 +66,6 @@ abstract class AbstractHilosDaemonEnvMismatchPage extends AbstractHilosDaemonSec
     public static function onPictureForgotten(): void
     {
         self::$summaryFingerprint = null;
-        self::$comparisonFingerprint = null;
-    }
-
-    /**
-     * @param list<ClusterEnvironmentKeyComparison> $keys One comparison bucket
-     * @return list<array{string, list<array{string, string, ?string, ?string, ?string}>}> Keys and value-free cells
-     */
-    private static function fingerprintKeys(array $keys): array
-    {
-        $rows = [];
-        foreach ($keys as $key) {
-            $cells = [];
-            foreach ($key->cells as $cell) {
-                $cells[] = [
-                    $cell->nodeId,
-                    $cell->state->value,
-                    $cell->fingerprint?->type,
-                    $cell->fingerprint?->source->value,
-                    $cell->fingerprint?->digest,
-                ];
-            }
-            $rows[] = [$key->key, $cells];
-        }
-
-        return $rows;
     }
 
     /**
@@ -128,17 +82,31 @@ abstract class AbstractHilosDaemonEnvMismatchPage extends AbstractHilosDaemonSec
      * @param string $acceptKey Subscribing connection, unused
      * @param PageRouteParams $params Route parameters, unused
      * @return PagePayload Own page data with cluster mode, serving node and verdict counters
+     * @throws HilosException When summary data cannot be encoded
      * @throws EnvException When cluster mode or node id cannot be read from the environment
      * @throws ClusterException When cluster configuration or node identity is invalid
      * @throws InvalidArgumentException When environment comparison generates an invalid cell
      */
     protected function buildPagePayload(string $acceptKey, PageRouteParams $params): PagePayload
     {
-        return new PagePayload(data: [self::ENV_MISMATCH => self::summary()->toArray()]);
+        $summary = self::summary()->toArray();
+        try {
+            self::$summaryFingerprint = json_encode($summary, JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            throw new HilosException('Cannot fingerprint the environment mismatch page', previous: $exception);
+        }
+
+        return new PagePayload(data: [self::ENV_MISMATCH => $summary]);
     }
 
     /** @return array<string, WireField> Mismatch summary carries no personal data */
     protected function dataFields(): array
+    {
+        return self::pageDataFields();
+    }
+
+    /** @return array<string, WireField> The same summary declarations for initial and live answers */
+    private static function pageDataFields(): array
     {
         return [
             self::ENV_MISMATCH => WireField::notPersonal(),
@@ -161,32 +129,40 @@ abstract class AbstractHilosDaemonEnvMismatchPage extends AbstractHilosDaemonSec
     }
 
     /**
-     * @return array<string, true> Connections re-answered with a whole page
+     * Publishes the changed comparison summary without replacing its tables.
+     *
      * @throws HilosException When the page summary cannot be encoded
      * @throws EnvException When cluster mode or node id cannot be read from the environment
      * @throws ClusterException When cluster configuration or node identity is invalid
      * @throws InvalidArgumentException When environment comparison generates an invalid cell
      */
-    private static function resendChangedPage(): array
+    private static function publishChangedPage(): void
     {
-        try {
-            $fingerprint = json_encode(self::summary()->toArray(), JSON_THROW_ON_ERROR);
-        } catch (JsonException $exception) {
-            throw new HilosException('Cannot fingerprint the environment mismatch page', previous: $exception);
-        }
-        if ($fingerprint === self::$summaryFingerprint) {
-            return [];
-        }
-        self::$summaryFingerprint = $fingerprint;
-
-        $resent = [];
+        $fingerprint = null;
+        $previousFingerprint = self::$summaryFingerprint;
         foreach (Hilos::$sr?->getAcceptKeysForPage(self::PAGE) ?? [] as $acceptKey) {
-            if (Hilos::$rt?->connectionsSource()?->get($acceptKey) !== null) {
-                Hilos::$browser?->resendPageWhole(self::PAGE, $acceptKey);
-                $resent[$acceptKey] = true;
-            }
-        }
+            Hilos::$browser?->publishPageData(
+                self::PAGE,
+                $acceptKey,
+                static function () use ($acceptKey, &$fingerprint, $previousFingerprint): PagePayload {
+                    if (Hilos::$rt?->connectionsSource()?->get($acceptKey) === null) {
+                        return new PagePayload();
+                    }
 
-        return $resent;
+                    $data = self::summary()->toArray();
+                    try {
+                        $fingerprint = json_encode($data, JSON_THROW_ON_ERROR);
+                    } catch (JsonException $exception) {
+                        throw new HilosException('Cannot fingerprint the environment mismatch page', previous: $exception);
+                    }
+
+                    return new PagePayload(data: $fingerprint === $previousFingerprint ? [] : [self::ENV_MISMATCH => $data]);
+                },
+                self::pageDataFields(),
+            );
+        }
+        if ($fingerprint !== null) {
+            self::$summaryFingerprint = $fingerprint;
+        }
     }
 }

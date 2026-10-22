@@ -49,6 +49,30 @@ final class HilosDaemonAgentsTableTest extends TestCase
         parent::tearDown();
     }
 
+    public function testPictureDiffUsesSubjectRatherThanSearchOrPaginationForDeletes(): void
+    {
+        $this->picture($this->node('n1', new DaemonProcessRoster([
+            new DaemonWorkerPicture(1, WorkerConstants::TYPE_REGULAR, 100, 200, [
+                new DaemonAgentPicture('known:1', DaemonAgentPicture::SCOPE_CLUSTER, DaemonAgentPicture::PLACEMENT_POLICY),
+            ]),
+        ], [], 0)));
+        $before = ClusterDaemonPictureMirror::picture();
+        $this->picture($this->node('n1', new DaemonProcessRoster([
+            new DaemonWorkerPicture(2, WorkerConstants::TYPE_REGULAR, 100, 200, [
+                new DaemonAgentPicture('known:1', DaemonAgentPicture::SCOPE_CLUSTER, DaemonAgentPicture::PLACEMENT_POLICY),
+            ]),
+        ], [], 0)));
+        $table = new HilosDaemonAgentsTable();
+        $query = new TableQueryDTO(search: 'absent', limit: 1, filter: ['node' => 'n1'], pageIndex: 10);
+        $mutations = $table->pictureMutations($before, $query);
+        self::assertCount(1, $mutations);
+        self::assertSame('update', $mutations[0]->type->value);
+        self::assertSame('known:1', $mutations[0]->rowKey);
+        self::assertSame(2, $mutations[0]->row->toArray()['workerIndex']);
+        self::assertFalse($table->containsRow('known:1', $table->scopeSearch($query)));
+        self::assertSame([], $table->pictureMutations($before, new TableQueryDTO(filter: ['node' => 'other'])));
+    }
+
     public function testMissingPictureFilterSlotOrProcessesYieldsNoRows(): void
     {
         self::assertSame([], $this->rows('n1'));

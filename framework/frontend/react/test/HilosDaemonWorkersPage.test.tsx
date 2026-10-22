@@ -220,7 +220,10 @@ describe('HilosDaemonWorkersPage', () => {
         admin: true,
       }),
     )
-    expect(h.unregister).toHaveBeenCalledWith('hilosDaemonWorkers')
+    expect(h.unregister).toHaveBeenCalledWith(
+      'hilosDaemonWorkers',
+      h.register.mock.calls[0]?.[1],
+    )
     expect(h.register).toHaveBeenCalledTimes(2)
     expect(h.register.mock.calls[1]![1]).not.toBe(first)
     expect(

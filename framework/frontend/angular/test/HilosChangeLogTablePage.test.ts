@@ -729,7 +729,10 @@ describe('HilosChangeLogTablePage', () => {
     const before = element('hilos-viewport-table')
     r.go({ tableId: 'bot', record: '57' })
     await settle()
-    expect(h.connection.unregisterTableWindow).toHaveBeenCalledWith(HISTORY)
+    expect(h.connection.unregisterTableWindow).toHaveBeenCalledWith(
+      HISTORY,
+      h.connection.registerTableWindow.mock.calls[0]?.[1],
+    )
     expect(h.connection.registerTableWindow).toHaveBeenCalledTimes(2)
     // The table reads its controller's declaration once: the new window is
     // drawn by a table of its own.
@@ -756,7 +759,10 @@ describe('HilosChangeLogTablePage', () => {
     expect(h.connection.registerTableWindow).toHaveBeenCalledTimes(1)
     h.scope.data.set(CHANGE_LOG_TABLE_SECTION, { ...BOT, journaled: false })
     await settle()
-    expect(h.connection.unregisterTableWindow).toHaveBeenCalledWith(HISTORY)
+    expect(h.connection.unregisterTableWindow).toHaveBeenCalledWith(
+      HISTORY,
+      h.connection.registerTableWindow.mock.calls[0]?.[1],
+    )
     expect(h.connection.registerTableWindow).toHaveBeenCalledTimes(1)
     expect(
       document.querySelector('[data-id="hilos-viewport-table"]'),
@@ -856,7 +862,10 @@ describe('HilosChangeLogTablePage', () => {
     expect(r.leaves.size).toBe(1)
     await openReceipt(h)
     await unmount()
-    expect(h.connection.unregisterTableWindow).toHaveBeenCalledWith(HISTORY)
+    expect(h.connection.unregisterTableWindow).toHaveBeenCalledWith(
+      HISTORY,
+      h.connection.registerTableWindow.mock.calls[0]?.[1],
+    )
     expect([...h.listeners.values()].every((set) => set.size === 0)).toBe(true)
     expect(r.leaves.size).toBe(0)
     h.source.success(0, RECEIPT_REPLY)

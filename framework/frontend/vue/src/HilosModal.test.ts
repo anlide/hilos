@@ -664,4 +664,22 @@ describe('HilosModal', () => {
       document.querySelector('[data-id="modal-confirm-discard"]'),
     )
   })
+
+  it('returns focus when unmounted and leaves no queued activation behind', async () => {
+    const opener = document.createElement('button')
+    document.body.append(opener)
+    opener.focus()
+    const wrapper = mount(HilosModal, { props: { modelValue: true } })
+    await flushPromises()
+    expect(document.activeElement).toBe(
+      document.querySelector('[data-id="modal"]'),
+    )
+    wrapper.unmount()
+    expect(document.activeElement).toBe(opener)
+    const late = mount(HilosModal, { props: { modelValue: true } })
+    late.unmount()
+    await flushPromises()
+    expect(document.activeElement).toBe(opener)
+    expect(document.body.classList.contains('modal-open')).toBe(false)
+  })
 })

@@ -9,12 +9,13 @@ import { type HilosTableBulkAccepted } from '../../src/table/tableBulk.js'
 import { HILOS_TABLE_ACTIONS_KEY } from '../../src/table/hilosTableColumn.js'
 import { type HilosTableBulkAction } from '../../src/table/tableFrame.js'
 import { type HilosTableProgressFrame } from '../../src/table/tableProgress.js'
-import { createSignal } from '../../src/state/signal.js'
+import { createSignal, subscribeSignal } from '../../src/state/signal.js'
 import {
   type TableSortOrder,
   TableViewportController,
 } from '../../src/table/TableViewportController.js'
 import { HILOS_TABLE_OPENING_ORDER_KEY } from '../../src/table/tableSortOrder.js'
+import { type TableGeometryCaptureRequest } from '../../src/table/tableViewportGeometry.js'
 import { ingest } from '../../src/state/normalizer.js'
 import {
   deliveryCases,
@@ -23,11 +24,16 @@ import {
   probeDeliveryScope,
 } from '../state/fixtures/deliveryCoalescing.js'
 
-function makeController(pageSize = 10, initialOrder?: TableSortOrder) {
+function makeController(
+  pageSize = 10,
+  initialOrder?: TableSortOrder,
+  withFocus = false,
+) {
   const sent: TableViewportDescriptor[] = []
   const controller = new TableViewportController<TableRow>({
     resolve: (row) => row,
     sendViewport: (descriptor) => sent.push(descriptor),
+    ...(withFocus ? { sendFocus: () => {} } : {}),
     frame: { columns: [] },
   })
 
@@ -57,6 +63,106 @@ function makeController(pageSize = 10, initialOrder?: TableSortOrder) {
 }
 
 describe('TableViewportController', () => {
+  it('correlates actual sends, guards direct ingress and publishes completion after the accepted update', () => {
+    vi.useFakeTimers()
+    const { controller, sent, open } = makeController(10, undefined, true)
+    open([{ rowKey: 'a', slots: {} }], 1)
+    controller.setSearch('first')
+    const old = sent.at(-1)?.requestId
+    controller.setSearch('latest')
+    const latest = sent.at(-1)?.requestId
+    expect(old).toEqual(expect.any(String))
+    expect(latest).toEqual(expect.any(String))
+    expect(latest).not.toBe(old)
+    expect(controller.descriptor()).not.toHaveProperty('requestId')
+    controller.focusRow('a')
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: {} },
+      position: 1,
+    })
+    const occurrence = controller.rows.get()[0]?.occurrence
+    const pending = controller.pendingCount.get()
+    vi.advanceTimersByTime(400)
+    controller.ingestWindow([], 0, true, null, null, 10, null, old)
+    controller.ingestRefusal('internal_error', old)
+    controller.ingestRefusal('internal_error', 'unknown')
+    expect(controller.rows.get()[0]?.occurrence).toBe(occurrence)
+    expect(controller.pendingCount.get()).toBe(pending)
+    expect(controller.focusedRow.get()?.rowKey).toBe('a')
+    expect(controller.frame.body.get()).toBe('loading')
+    expect(controller.frame.refusal.get()).toBeNull()
+    controller.ingestWindow(
+      [{ rowKey: 'untracked', slots: {} }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    expect(controller.rows.get()[0]?.rowKey).toBe('untracked')
+    expect(controller.lastAppliedWindowRequestId.get()).toBeNull()
+    expect(controller.frame.body.get()).toBe('loading')
+    const completed: string[] = []
+    const stop = subscribeSignal(
+      controller.lastAppliedWindowRequestId,
+      (id) => {
+        if (id !== null) {
+          completed.push(id)
+          expect(controller.rows.get().map((row) => row.rowKey)).toEqual([
+            'accepted',
+          ])
+          expect(controller.frame.body.get()).toBe('rows')
+        }
+      },
+    )
+    controller.ingestWindow(
+      [{ rowKey: 'accepted', slots: {} }],
+      1,
+      true,
+      null,
+      null,
+      10,
+      0,
+      latest,
+    )
+    expect(completed).toEqual([latest])
+    controller.ingestWindow([], 0, true, null, null, 10, 0, latest)
+    expect(controller.rows.get()[0]?.rowKey).toBe('accepted')
+    stop()
+    controller.dispose()
+  })
+
+  it('ends old epochs without replay and keeps request identities unique across resets and mounts', () => {
+    vi.useFakeTimers()
+    const { controller, sent, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1)
+    controller.show()
+    const old = sent.at(-1)?.requestId
+    vi.advanceTimersByTime(400)
+    controller.resetWindowRequests()
+    open([{ rowKey: 'restored', slots: {} }], 1)
+    expect(controller.frame.body.get()).toBe('rows')
+    expect(sent).toHaveLength(1)
+    expect(controller.acceptsWindowResponse(old)).toBe(false)
+    controller.refresh()
+    const current = sent.at(-1)?.requestId
+    controller.ingestRefusal('internal_error', old)
+    expect(controller.frame.refusal.get()).toBeNull()
+    controller.ingestRefusal('internal_error', current)
+    expect(controller.lastAppliedWindowRequestId.get()).toBe(current)
+    expect(controller.frame.body.get()).toBe('unavailable')
+    const other = makeController()
+    other.open()
+    other.controller.refresh()
+    expect(new Set([old, current, other.sent[0]?.requestId]).size).toBe(3)
+    controller.dispose()
+    controller.ingestWindow([], 0, true, null, null, 10, 0, current)
+    expect(controller.lastAppliedWindowRequestId.get()).toBeNull()
+    other.controller.dispose()
+  })
+
   it.each(
     deliveryCases.filter(
       (testCase) =>
@@ -386,6 +492,7 @@ describe('TableViewportController', () => {
     expect(controller.frame.body.get()).toBe('loading')
     expect(sent).toEqual([
       {
+        requestId: expect.any(String),
         filter: { channel: 'mail' },
         sort: [{ field: 'field', direction: 'asc' }],
         limit: 25,
@@ -435,6 +542,7 @@ describe('TableViewportController', () => {
 
     expect(controller.search.get()).toBe('theme')
     expect(sent.at(-1)).toEqual({
+      requestId: expect.any(String),
       filter: { search: 'theme' },
       sort: null,
       limit: 10,
@@ -451,6 +559,7 @@ describe('TableViewportController', () => {
     controller.setSearch('theme')
     controller.setSearch('   ')
     expect(sent.at(-1)).toEqual({
+      requestId: expect.any(String),
       filter: {},
       sort: null,
       limit: 10,
@@ -468,6 +577,7 @@ describe('TableViewportController', () => {
     controller.setFilter('status', 'failed')
 
     expect(sent.at(-1)).toEqual({
+      requestId: expect.any(String),
       filter: { status: 'failed' },
       sort: null,
       limit: 10,
@@ -486,6 +596,7 @@ describe('TableViewportController', () => {
     controller.setFilter('channel', 'sms')
 
     expect(sent.at(-1)).toEqual({
+      requestId: expect.any(String),
       filter: { search: 'mail', status: 'failed', channel: 'sms' },
       sort: null,
       limit: 10,
@@ -504,6 +615,7 @@ describe('TableViewportController', () => {
     controller.setFilter('status', '')
 
     expect(sent.at(-1)).toEqual({
+      requestId: expect.any(String),
       filter: { channel: 'sms' },
       sort: null,
       limit: 10,
@@ -572,6 +684,7 @@ describe('TableViewportController', () => {
     controller.setSort('name')
 
     expect(sent.at(-1)).toEqual({
+      requestId: expect.any(String),
       filter: {},
       sort: null,
       limit: 10,
@@ -613,6 +726,7 @@ describe('TableViewportController', () => {
     controller.resetOrder()
 
     expect(sent.at(-1)).toEqual({
+      requestId: expect.any(String),
       filter: {},
       sort: [{ field: 'id', direction: 'asc' }],
       limit: 10,
@@ -633,6 +747,7 @@ describe('TableViewportController', () => {
     ])
 
     expect(sent.at(-1)).toEqual({
+      requestId: expect.any(String),
       filter: {},
       sort: [
         { field: 'channel', direction: 'desc' },
@@ -970,6 +1085,7 @@ describe('TableViewportController', () => {
     expect(controller.rows.get()).toEqual([
       {
         rowKey: 'a',
+        occurrence: 1,
         row: { rowKey: 'a', slots: {} },
         placeholder: false,
         pending: null,
@@ -1334,6 +1450,7 @@ describe('TableViewportController', () => {
     expect(rows).toHaveLength(2) // layout not collapsed
     expect(rows[0]).toEqual({
       rowKey: 'a',
+      occurrence: 1,
       row: null,
       placeholder: true,
       pending: null,
@@ -1393,7 +1510,7 @@ describe('TableViewportController', () => {
     expect(controller.rows.get().every((row) => row.placeholder)).toBe(true)
   })
 
-  it('empties a window whose last live row leaves an empty set on Apply', () => {
+  it('retains a window whose last live row leaves an empty set on Apply', () => {
     const { controller, open } = makeController()
     open([{ rowKey: 'a', slots: {} }], 1, true, { id: 1 }, { id: 1 })
     controller.ingestDelta({
@@ -1405,11 +1522,25 @@ describe('TableViewportController', () => {
 
     controller.apply()
 
-    expect(controller.rows.get()).toEqual([])
-    expect(controller.frame.body.get()).toBe('empty')
+    expect(controller.rows.get()).toEqual([
+      {
+        rowKey: 'a',
+        occurrence: 1,
+        row: null,
+        placeholder: true,
+        pending: null,
+        removal: 'deleted',
+        highlighted: false,
+        selected: false,
+        expanded: false,
+        expandable: false,
+        staleSources: [],
+      },
+    ])
+    expect(controller.frame.body.get()).toBe('rows')
   })
 
-  it('shows filtered emptiness when a searched window converges', () => {
+  it('retains departed slots when a searched set reaches zero', () => {
     const { controller, open } = makeController()
     controller.setSearch('nightly')
     open([{ rowKey: 'a', slots: {} }], 1, true, { id: 1 }, { id: 1 })
@@ -1422,11 +1553,25 @@ describe('TableViewportController', () => {
 
     controller.apply()
 
-    expect(controller.rows.get()).toEqual([])
-    expect(controller.frame.body.get()).toBe('empty_filtered')
+    expect(controller.rows.get()).toEqual([
+      {
+        rowKey: 'a',
+        occurrence: 1,
+        row: null,
+        placeholder: true,
+        pending: null,
+        removal: 'left_set',
+        highlighted: false,
+        selected: false,
+        expanded: false,
+        expandable: false,
+        staleSources: [],
+      },
+    ])
+    expect(controller.frame.body.get()).toBe('rows')
   })
 
-  it('converges when a zero count arrives after Apply', () => {
+  it('retains departed slots when a zero count arrives after Apply', () => {
     const { controller, open } = makeController()
     open([{ rowKey: 'a', slots: {} }], 1, true, { id: 1 }, { id: 1 })
     controller.ingestDelta({
@@ -1439,8 +1584,22 @@ describe('TableViewportController', () => {
 
     controller.ingestCount(0, true)
 
-    expect(controller.rows.get()).toEqual([])
-    expect(controller.frame.body.get()).toBe('empty')
+    expect(controller.rows.get()).toEqual([
+      {
+        rowKey: 'a',
+        occurrence: 1,
+        row: null,
+        placeholder: true,
+        pending: null,
+        removal: 'deleted',
+        highlighted: false,
+        selected: false,
+        expanded: false,
+        expandable: false,
+        staleSources: [],
+      },
+    ])
+    expect(controller.frame.body.get()).toBe('rows')
   })
 
   it('keeps a window of placeholders while the set still has rows', () => {
@@ -1455,13 +1614,14 @@ describe('TableViewportController', () => {
     controller.apply()
 
     expect(controller.rows.get()[0]).toMatchObject({
+      occurrence: 1,
       placeholder: true,
       removal: 'moved_out',
     })
     expect(controller.frame.body.get()).toBe('rows')
   })
 
-  it('keeps work and its report while convergence clears window marks', () => {
+  it('keeps work, its report and the filter condition while zero clears row marks', () => {
     const controller = new TableViewportController<TableRow>({
       resolve: (row) => row,
       sendViewport: () => {},
@@ -1514,9 +1674,28 @@ describe('TableViewportController', () => {
 
     controller.apply()
 
-    expect(controller.rows.get()).toEqual([])
+    expect(controller.rows.get()).toEqual([
+      {
+        rowKey: 'a',
+        occurrence: 1,
+        row: null,
+        placeholder: true,
+        pending: null,
+        removal: 'deleted',
+        highlighted: false,
+        selected: false,
+        expanded: false,
+        expandable: false,
+        staleSources: [],
+      },
+    ])
     expect(controller.rowsBefore.get()).toBe(0)
-    expect(controller.selection.target.get()).toBeNull()
+    expect(controller.selection.target.get()).toEqual({
+      kind: 'filter',
+      filter: {},
+    })
+    expect(controller.selection.count.get()).toBe(0)
+    expect(controller.selection.header.get()).toBe('none')
     expect(controller.announced.get().total).toBe(0)
     expect(controller.progress.table.get()?.progressKey).toBe('nightly')
     expect(controller.bulk.report.get()?.progressKey).toBe('delete-1')
@@ -1536,7 +1715,7 @@ describe('TableViewportController', () => {
     expect(controller.rowsBefore.get()).toBeNull()
   })
 
-  it('does not bring old placeholders back with a tail append after convergence', () => {
+  it('appends after retained placeholders when the empty set gains a row', () => {
     const { controller, open } = makeController()
     open([{ rowKey: 'a', slots: {} }], 1, true, { id: 1 }, { id: 1 })
     controller.ingestDelta({
@@ -1549,8 +1728,14 @@ describe('TableViewportController', () => {
 
     controller.ingestAppend({ rowKey: 'b', slots: {} }, 1, true, null, null)
 
-    expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['b'])
-    expect(controller.rows.get()[0]?.placeholder).toBe(false)
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['a', 'b'])
+    expect(controller.rows.get()[0]?.placeholder).toBe(true)
+    expect(controller.rows.get()[1]?.placeholder).toBe(false)
+    expect(controller.frame.footer.get()).toMatchObject({
+      firstRow: 1,
+      lastRow: 1,
+      totalCount: 1,
+    })
   })
 
   it('applies a live count update at once without pending', () => {
@@ -1923,6 +2108,7 @@ describe('TableViewportController', () => {
     expect(controller.pendingCount.get()).toBe(0)
     expect(controller.rows.get()[0]).toEqual({
       rowKey: 'a',
+      occurrence: 1,
       row: null,
       placeholder: true,
       pending: null,
@@ -2004,20 +2190,38 @@ describe('TableViewportController', () => {
 
   it('takes the skeleton down and stops its countdown when the window arrives', () => {
     vi.useFakeTimers()
-    const { controller, open } = makeController()
+    const { controller, sent, open } = makeController()
     open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
 
     controller.setSort('name')
     vi.advanceTimersByTime(400)
     expect(controller.frame.body.get()).toBe('loading')
-    open([{ rowKey: 'b', slots: {} }], 1, true, null, null)
+    controller.ingestWindow(
+      [{ rowKey: 'b', slots: {} }],
+      1,
+      true,
+      null,
+      null,
+      10,
+      null,
+      sent.at(-1)?.requestId,
+    )
     expect(controller.frame.body.get()).toBe('rows')
 
     // A window that arrives before the threshold leaves no countdown behind to fire into
     // the rows that came.
     controller.setSort('name')
     vi.advanceTimersByTime(100)
-    open([{ rowKey: 'c', slots: {} }], 1, true, null, null)
+    controller.ingestWindow(
+      [{ rowKey: 'c', slots: {} }],
+      1,
+      true,
+      null,
+      null,
+      10,
+      null,
+      sent.at(-1)?.requestId,
+    )
     vi.advanceTimersByTime(1000)
     expect(controller.frame.body.get()).toBe('rows')
   })
@@ -2039,7 +2243,7 @@ describe('TableViewportController', () => {
 
   it('says loading before it says nothing was found, and nothing found once the window lands', () => {
     vi.useFakeTimers()
-    const { controller, open } = makeController()
+    const { controller, sent, open } = makeController()
     open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
 
     controller.setSearch('no such key')
@@ -2048,7 +2252,16 @@ describe('TableViewportController', () => {
     // might name is not known yet.
     expect(controller.frame.body.get()).toBe('loading')
 
-    open([], 0, true, null, null)
+    controller.ingestWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      10,
+      null,
+      sent.at(-1)?.requestId,
+    )
     expect(controller.frame.body.get()).toBe('empty_filtered')
   })
 
@@ -3501,6 +3714,7 @@ describe('TableViewportController focus', () => {
     controller.apply()
     expect(controller.rows.get()[0]).toMatchObject({
       rowKey: 'a',
+      occurrence: 1,
       placeholder: true,
     })
 
@@ -3518,6 +3732,7 @@ describe('TableViewportController focus', () => {
     expect(controller.pendingCount.get()).toBe(0)
     expect(controller.rows.get()[0]).toMatchObject({
       rowKey: 'a',
+      occurrence: 1,
       placeholder: true,
       pending: null,
     })
@@ -3594,5 +3809,1060 @@ describe('TableViewportController focus', () => {
       row: { rowKey: 'a', slots: { v: 8 } },
     })
     expect(controller.focusedRow.get()).toEqual(rowB)
+  })
+})
+
+/** Fake numeric captures exercise the owner boundary without claiming DOM measurements. */
+function captureGeometry(
+  controller: TableViewportController<TableRow>,
+  extent: () => { main: number; work: number; detail: number; gap: number },
+) {
+  const capture = vi.fn((request: TableGeometryCaptureRequest) => {
+    const parts = extent()
+
+    return {
+      records: request.records.map((measurement) => ({
+        measurement,
+        extent: {
+          ...parts,
+          total: parts.main + parts.work + parts.detail + parts.gap,
+        },
+        workGap: parts.work > 0 ? 2 : 0,
+      })),
+      tracks: {
+        layout: request.layout,
+        tracks: { columnKeys: ['name'], widths: [123.5], tableWidth: 123.5 },
+      },
+    }
+  })
+  const registration = controller.geometry.register(capture)
+
+  return { registration, capture }
+}
+
+describe('TableViewportController retained presentation', () => {
+  it.each(['before-removal', 'before-apply', 'after-apply'] as const)(
+    'G06 retains slots and converges live metadata with count %s',
+    (timing) => {
+      const { controller, open, sent } = makeController(2)
+      open(
+        [{ rowKey: 'a', slots: { secret: 'live until Apply' } }],
+        1,
+        true,
+        { id: 1 },
+        { id: 1 },
+      )
+      const descriptor = controller.descriptor()
+      const { registration } = captureGeometry(controller, () => ({
+        main: 70.25,
+        work: 0,
+        detail: 30.5,
+        gap: 2.25,
+      }))
+      if (timing === 'before-removal') controller.ingestCount(0, true)
+      controller.ingestDelta({
+        kind: 'row_removed',
+        rowKey: 'a',
+        reason: 'deleted',
+      })
+      if (timing === 'before-apply') controller.ingestCount(0, true)
+      expect(controller.rows.get()[0]?.row?.slots).toEqual({
+        secret: 'live until Apply',
+      })
+      expect(controller.pendingCount.get()).toBe(1)
+      controller.apply()
+      if (timing === 'after-apply') controller.ingestCount(0, true)
+      expect(controller.rows.get()).toHaveLength(1)
+      expect(controller.rows.get()[0]).toMatchObject({
+        rowKey: 'a',
+        occurrence: 1,
+        row: null,
+        placeholder: true,
+        pending: null,
+        removal: 'deleted',
+        selected: false,
+        expanded: false,
+      })
+      expect(controller.frame.body.get()).toBe('rows')
+      expect(controller.frame.footer.get()).toMatchObject({
+        firstRow: 0,
+        lastRow: 0,
+        totalCount: 0,
+        hasNextPage: false,
+      })
+      expect(controller.pendingCount.get()).toBe(0)
+      expect(controller.applyAndResolve('a')).toBeNull()
+      expect(registration.record('a', 'wide')?.retained).toBe(103)
+      expect(controller.descriptor()).toEqual(descriptor)
+      expect(sent).toEqual([])
+    },
+  )
+
+  it('G07 counts live membership in a mixed window and appends strictly after its slots', () => {
+    const { controller, open } = makeController(3)
+    open(
+      ['a', 'b', 'c'].map((rowKey) => ({ rowKey, slots: {} })),
+      3,
+    )
+    const { registration } = captureGeometry(controller, () => ({
+      main: 41.5,
+      work: 0,
+      detail: 0,
+      gap: 2,
+    }))
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'b',
+      reason: 'left_set',
+    })
+    controller.apply()
+    controller.ingestCount(2, true)
+    expect(controller.frame.footer.get()).toMatchObject({
+      firstRow: 1,
+      lastRow: 2,
+      totalCount: 2,
+    })
+    controller.ingestAppend(
+      { rowKey: 'd', slots: {} },
+      3,
+      true,
+      { id: 1 },
+      { id: 4 },
+    )
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual([
+      'a',
+      'b',
+      'c',
+      'd',
+    ])
+    expect(controller.frame.footer.get()).toMatchObject({
+      firstRow: 1,
+      lastRow: 3,
+      totalCount: 3,
+    })
+    expect(registration.record('b', 'wide')?.retained).toBe(43.5)
+    expect(registration.tracks()).toEqual({
+      columnKeys: ['name'],
+      widths: [123.5],
+      tableWidth: 123.5,
+    })
+  })
+
+  it('G07 uses live capacity after many departures, keeping history through own-create and eviction', () => {
+    const { controller, open } = makeController(2)
+    open()
+    for (let index = 0; index < 25; index++) {
+      const rowKey = `gone-${index}`
+      controller.ingestAppend({ rowKey, slots: {} }, 1, true, null, null)
+      controller.ingestDelta({
+        kind: 'row_removed',
+        rowKey,
+        reason: 'deleted',
+        own: true,
+      })
+      controller.ingestCount(0, true)
+    }
+    controller.ingestAppend({ rowKey: 'a', slots: {} }, 1, false, null, null)
+    expect(controller.frame.footer.get().hasNextPage).toBe(false)
+    controller.ingestOwnCreate(
+      { rowKey: 'c', slots: {} },
+      1,
+      2,
+      false,
+      null,
+      null,
+    )
+    expect(controller.rows.get()).toHaveLength(27)
+    expect(
+      controller.rows
+        .get()
+        .slice(-2)
+        .map((row) => row.rowKey),
+    ).toEqual(['a', 'c'])
+    expect(controller.frame.footer.get().hasNextPage).toBe(true)
+    controller.ingestOwnCreate(
+      { rowKey: 'b', slots: {} },
+      1,
+      3,
+      true,
+      null,
+      null,
+    )
+    expect(controller.rows.get()).toHaveLength(27)
+    expect(
+      controller.rows
+        .get()
+        .slice(-2)
+        .map((row) => row.rowKey),
+    ).toEqual(['a', 'b'])
+    expect(controller.rows.get().filter((row) => row.placeholder)).toHaveLength(
+      25,
+    )
+    expect(controller.frame.footer.get()).toMatchObject({
+      firstRow: 1,
+      lastRow: 2,
+      totalCount: 3,
+    })
+  })
+
+  it('preserves the before-edge eviction direction with retained slots', () => {
+    const { controller, open } = makeController(2, [
+      { field: 'id', direction: 'asc' },
+    ])
+    open(
+      ['a', 'b'].map((rowKey) => ({ rowKey, slots: {} })),
+      8,
+      true,
+      { id: 3 },
+      { id: 4 },
+    )
+    controller.setPage(2)
+    controller.ingestWindow(
+      ['e', 'f'].map((rowKey) => ({ rowKey, slots: {} })),
+      8,
+      true,
+      { id: 5 },
+      { id: 6 },
+      2,
+      4,
+    )
+    controller.prevPage()
+    controller.ingestWindow(
+      ['c', 'd'].map((rowKey) => ({ rowKey, slots: {} })),
+      8,
+      true,
+      { id: 3 },
+      { id: 4 },
+      2,
+      2,
+    )
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'c',
+      reason: 'deleted',
+      own: true,
+    })
+    controller.ingestAppend(
+      { rowKey: 'f', slots: {} },
+      8,
+      true,
+      { id: 4 },
+      { id: 6 },
+    )
+    const { registration, capture } = captureGeometry(controller, () => ({
+      main: 40,
+      work: 0,
+      detail: 0,
+      gap: 2,
+    }))
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'd',
+      row: { rowKey: 'd', slots: { changed: true } },
+    })
+    controller.expandRow('d', true)
+    const old = registration.measurement('d', 'wide')
+    capture.mockClear()
+    controller.ingestOwnCreate(
+      { rowKey: 'e', slots: {} },
+      0,
+      9,
+      true,
+      { id: 5 },
+      { id: 6 },
+    )
+    expect(capture).toHaveBeenCalledTimes(1)
+    expect(
+      capture.mock.calls[0]?.[0].records.map((ticket) => ticket.record.rowKey),
+    ).toEqual(['d', 'd', 'f', 'f'])
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual([
+      'c',
+      'e',
+      'f',
+    ])
+    expect(controller.pendingCount.get()).toBe(0)
+    expect(registration.record('d', 'wide')).toBeNull()
+    if (old === null) throw new Error('missing departing ticket')
+    registration.measure({
+      measurement: old,
+      extent: { main: 999, work: 0, detail: 0, gap: 0, total: 999 },
+      workGap: 0,
+    })
+    expect(registration.record('d', 'wide')).toBeNull()
+  })
+
+  it('prepares every removal and mount before publishing the first placeholder', () => {
+    const { controller, open } = makeController()
+    open(
+      ['a', 'b', 'c'].map((rowKey) => ({ rowKey, slots: { secret: rowKey } })),
+      3,
+    )
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'b',
+      reason: 'left_set',
+    })
+    const first = captureGeometry(controller, () => {
+      expect(controller.rows.get().every((row) => !row.placeholder)).toBe(true)
+      return { main: 50.25, work: 0, detail: 80.5, gap: 3.25 }
+    })
+    const second = captureGeometry(controller, () => {
+      expect(first.registration.record('a', 'wide')?.retained).toBeNull()
+      return { main: 90.25, work: 0, detail: 0, gap: 2.5 }
+    })
+    const publications: string[][] = []
+    const stop = subscribeSignal(controller.rows, (rows) => {
+      if (!rows.some((row) => row.placeholder)) return
+      expect(first.registration.record('a', 'wide')?.retained).toBe(134)
+      expect(first.registration.record('b', 'wide')?.retained).toBe(134)
+      expect(second.registration.record('b', 'card')?.retained).toBe(92.75)
+      publications.push(
+        rows.filter((row) => row.placeholder).map((row) => row.rowKey),
+      )
+    })
+    controller.apply()
+    stop()
+    expect(publications.length).toBeGreaterThan(0)
+    expect(publications.every((keys) => keys.join() === 'a,b')).toBe(true)
+    expect(first.capture).toHaveBeenCalledTimes(1)
+    expect(second.capture).toHaveBeenCalledTimes(1)
+    expect(
+      first.capture.mock.calls[0]?.[0].records.map(
+        (ticket) => ticket.record.rowKey,
+      ),
+    ).toEqual(['a', 'a', 'b', 'b'])
+  })
+
+  it('captures early work before dropping its payload and merges fresh remaining parts once', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1)
+    controller.ingestProgress({
+      scope: 'row',
+      rowKey: 'a',
+      progressKey: 'work',
+      current: 1,
+      detail: { secret: 'discard' },
+    })
+    let main = 50.25
+    const { registration } = captureGeometry(controller, () => ({
+      main,
+      work: controller.progress.rows.get().has('a') ? 12.5 : 0,
+      detail: 30,
+      gap: controller.progress.rows.get().has('a') ? 6 : 4,
+    }))
+    const stop = subscribeSignal(controller.progress.rows, (rows) => {
+      if (!rows.has('a'))
+        expect(registration.record('a', 'wide')?.workReserve?.total).toBe(14.5)
+    })
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    stop()
+    expect(controller.progress.rows.get().size).toBe(0)
+    expect(controller.rows.get()[0]?.placeholder).toBe(false)
+    main = 60.5
+    controller.apply()
+    expect(registration.record('a', 'wide')?.retained).toBe(109)
+    controller.ingestProgress({
+      scope: 'row',
+      rowKey: 'a',
+      progressKey: 'work',
+      current: 2,
+      ended: true,
+    })
+    controller.ingestProgress({
+      scope: 'row',
+      rowKey: 'a',
+      progressKey: 'late',
+      current: 1,
+      detail: { secret: 'late' },
+    })
+    expect(registration.record('a', 'wide')?.retained).toBe(109)
+    expect(controller.progress.rows.get().size).toBe(0)
+  })
+
+  it('does not reserve work that ended normally before departure', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1)
+    controller.ingestProgress({
+      scope: 'row',
+      rowKey: 'a',
+      progressKey: 'work',
+      current: 1,
+    })
+    const { registration } = captureGeometry(controller, () => ({
+      main: 40,
+      work: controller.progress.rows.get().has('a') ? 12 : 0,
+      detail: 0,
+      gap: 3,
+    }))
+    controller.ingestProgress({
+      scope: 'row',
+      rowKey: 'a',
+      progressKey: 'work',
+      current: 2,
+      ended: true,
+    })
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+      own: true,
+    })
+    expect(registration.record('a', 'wide')?.retained).toBe(43)
+    expect(registration.record('a', 'wide')?.workReserve).toBeNull()
+  })
+
+  it('retires raw slots and ignores late value, move, own and stale updates to a departed occurrence', () => {
+    const resolve = vi.fn((row: TableRow) => row)
+    const controller = new TableViewportController<TableRow>({
+      resolve,
+      sendViewport: () => {},
+      sendFocus: () => {},
+      frame: { columns: [] },
+    })
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { secret: { entityType: 'private', id: 123 } } }],
+      1,
+      true,
+      null,
+      null,
+      2,
+    )
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { secret: 'pending' } },
+      position: 0,
+    })
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.apply()
+    // Inspect the storage boundary: row:null in the view alone cannot prove raw-slot retirement.
+    const stored = controller as unknown as {
+      windowSignal: { get(): readonly unknown[] }
+      pendingMoves: ReadonlyMap<string, unknown>
+    }
+    expect(stored.windowSignal.get()).toEqual([
+      { kind: 'departed', rowKey: 'a', occurrence: 1, reason: 'deleted' },
+    ])
+    expect([...stored.pendingMoves]).toEqual([])
+    resolve.mockClear()
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { secret: 'late' } },
+    })
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { secret: 'late' } },
+      position: 0,
+      own: true,
+    })
+    controller.ingestDelta({
+      kind: 'row_stale',
+      rowKey: 'a',
+      staleSources: ['secret'],
+    })
+    expect(controller.applyAndResolve('a')).toBeNull()
+    expect(controller.focusRow('a')).toBeNull()
+    expect(controller.focusedRow.get()).toBeUndefined()
+    expect(controller.pendingCount.get()).toBe(0)
+    expect(controller.rows.get()[0]?.staleSources).toEqual([])
+    expect(resolve).not.toHaveBeenCalled()
+    expect(stored.windowSignal.get()).toEqual([
+      { kind: 'departed', rowKey: 'a', occurrence: 1, reason: 'deleted' },
+    ])
+  })
+
+  describe.each([
+    { timing: 'foreign Apply', own: false },
+    { timing: 'immediate own move', own: true },
+  ])('G10 $timing uses live destinations', ({ own }) => {
+    it.each([
+      {
+        layout: 'preceding departure',
+        keys: ['p', 'a', 'b', 'c'],
+        removed: ['p'],
+        expected: ['p', 'a', 'c', 'b'],
+      },
+      {
+        layout: 'preceding and interleaved departures',
+        keys: ['p', 'a', 'q', 'b', 'c', 'r'],
+        removed: ['p', 'q', 'r'],
+        expected: ['p', 'a', 'q', 'c', 'b', 'r'],
+      },
+    ])(
+      'places a single move at rank one with $layout',
+      ({ keys, removed, expected }) => {
+        const { controller, open } = makeController()
+        open(
+          keys.map((rowKey) => ({ rowKey, slots: {} })),
+          keys.length,
+        )
+        const { registration } = captureGeometry(controller, () => ({
+          main: 50.5,
+          work: 0,
+          detail: 20,
+          gap: 2,
+        }))
+        for (const rowKey of removed) {
+          controller.ingestDelta({
+            kind: 'row_removed',
+            rowKey,
+            reason: 'deleted',
+          })
+        }
+        controller.apply()
+        const departed = controller.rows.get().filter((row) => row.placeholder)
+        const allocations = removed.map((rowKey) =>
+          registration.record(rowKey, 'wide'),
+        )
+        const occurrence = controller.rows
+          .get()
+          .find((row) => row.rowKey === 'c')?.occurrence
+        controller.ingestDelta({
+          kind: 'row_moved',
+          rowKey: 'c',
+          row: { rowKey: 'c', slots: { name: 'moved' } },
+          position: 1,
+          own,
+        })
+        if (!own) {
+          expect(controller.rows.get().map((row) => row.rowKey)).toEqual(keys)
+          expect(controller.pendingCount.get()).toBe(1)
+          controller.apply()
+        }
+        expect(controller.rows.get().map((row) => row.rowKey)).toEqual(expected)
+        expect(
+          controller.rows
+            .get()
+            .filter((row) => row.row !== null)
+            .map((row) => row.rowKey),
+        ).toEqual(['a', 'c', 'b'])
+        expect(
+          controller.rows.get().find((row) => row.rowKey === 'c'),
+        ).toMatchObject({
+          occurrence,
+          row: { slots: { name: 'moved' } },
+        })
+        expect(controller.rows.get().filter((row) => row.placeholder)).toEqual(
+          departed,
+        )
+        expect(
+          removed.map((rowKey) => registration.record(rowKey, 'wide')),
+        ).toEqual(allocations)
+        expect(
+          allocations.every((allocation) => allocation?.retained === 72.5),
+        ).toBe(true)
+        expect(controller.pendingCount.get()).toBe(0)
+      },
+    )
+
+    it.each([
+      { position: -3.9, expected: ['p', 'c', 'a', 'q', 'b', 'r'] },
+      { position: 1.9, expected: ['p', 'a', 'q', 'c', 'b', 'r'] },
+      { position: 99, expected: ['p', 'a', 'q', 'b', 'r', 'c'] },
+      // A null wire position is normalized to an absent controller position.
+      { position: undefined, expected: ['p', 'a', 'q', 'b', 'c', 'r'] },
+    ])(
+      'preserves clamping or absent position $position',
+      ({ position, expected }) => {
+        const { controller, open } = makeController()
+        open(
+          ['p', 'a', 'q', 'b', 'c', 'r'].map((rowKey) => ({
+            rowKey,
+            slots: {},
+          })),
+          6,
+        )
+        for (const rowKey of ['p', 'q', 'r']) {
+          controller.ingestDelta({
+            kind: 'row_removed',
+            rowKey,
+            reason: 'deleted',
+            own: true,
+          })
+        }
+        controller.ingestDelta({
+          kind: 'row_moved',
+          rowKey: 'c',
+          row: { rowKey: 'c', slots: { name: 'latest' } },
+          position,
+          own,
+        })
+        if (!own) controller.apply()
+        expect(controller.rows.get().map((row) => row.rowKey)).toEqual(expected)
+        expect(
+          controller.rows.get().find((row) => row.rowKey === 'c')?.row?.slots,
+        ).toEqual({ name: 'latest' })
+      },
+    )
+  })
+
+  it('G10 applies sorted destinations and immediate own values without losing departed geometry', () => {
+    const { controller, open } = makeController()
+    open(
+      ['p', 'a', 'b', 'c'].map((rowKey) => ({ rowKey, slots: {} })),
+      4,
+    )
+    const { registration } = captureGeometry(controller, () => ({
+      main: 50,
+      work: 0,
+      detail: 0,
+      gap: 2,
+    }))
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'p',
+      reason: 'deleted',
+    })
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'b',
+      row: { rowKey: 'b', slots: {} },
+      position: 2,
+    })
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'c',
+      row: { rowKey: 'c', slots: {} },
+      position: 1,
+    })
+    controller.apply()
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual([
+      'p',
+      'a',
+      'c',
+      'b',
+    ])
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'new' } },
+      position: 1,
+      own: true,
+    })
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'c',
+      row: { rowKey: 'c', slots: { name: 'latest' } },
+      own: true,
+    })
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual([
+      'p',
+      'c',
+      'a',
+      'b',
+    ])
+    expect(controller.rows.get()[2]).toMatchObject({
+      occurrence: 2,
+      row: { slots: { name: 'new' } },
+    })
+    expect(registration.record('p', 'wide')?.retained).toBe(52)
+  })
+
+  it.each(['search', 'filter', 'order', 'page', 'Show', 'refresh'] as const)(
+    'G08 retires old callbacks on %s without redisplaying departed slots',
+    (action) => {
+      const { controller, open } = makeController(2)
+      open(
+        ['a', 'b'].map((rowKey) => ({ rowKey, slots: { secret: rowKey } })),
+        8,
+      )
+      const { registration } = captureGeometry(controller, () => ({
+        main: 60,
+        work: 0,
+        detail: 0,
+        gap: 3,
+      }))
+      controller.ingestDelta({
+        kind: 'row_removed',
+        rowKey: 'a',
+        reason: 'deleted',
+        own: true,
+      })
+      const old = registration.measurement('a', 'wide')
+      if (old === null) throw new Error('missing outgoing ticket')
+      if (action === 'search') controller.setSearch('new')
+      if (action === 'filter') controller.setFilter('state', 'new')
+      if (action === 'order')
+        controller.setOrder([{ field: 'name', direction: 'asc' }])
+      if (action === 'page') controller.setPage(1)
+      if (action === 'Show') controller.show()
+      if (action === 'refresh') controller.refresh()
+      const current = registration.measurement('a', 'wide')
+      expect(current?.record.windowGeneration).not.toBe(
+        old.record.windowGeneration,
+      )
+      registration.allocate(old, 900, 999)
+      expect(controller.rows.get()[0]).toMatchObject({
+        rowKey: 'a',
+        row: null,
+        placeholder: true,
+      })
+      expect(registration.record('a', 'wide')?.retained).toBe(63)
+      controller.ingestWindow(
+        [{ rowKey: 'a', slots: { secret: 'new' } }],
+        1,
+        true,
+        null,
+        null,
+        2,
+      )
+      expect(controller.rows.get()[0]?.occurrence).not.toBe(
+        old.record.occurrence,
+      )
+      expect(registration.record('a', 'wide')?.retained).toBeNull()
+      expect(registration.tracks()).toBeNull()
+      controller.dispose()
+    },
+  )
+
+  it('issues a new occurrence and clears row state when an own create reuses a key', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1)
+    const { registration } = captureGeometry(controller, () => ({
+      main: 80,
+      work: 0,
+      detail: 30,
+      gap: 3,
+    }))
+    controller.expandRow('a', true)
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: {} },
+    })
+    controller.ingestProgress({
+      scope: 'row',
+      rowKey: 'a',
+      progressKey: 'old',
+      current: 1,
+    })
+    const old = registration.measurement('a', 'wide')
+    controller.ingestOwnCreate(
+      { rowKey: 'a', slots: { name: 'fresh' } },
+      0,
+      1,
+      true,
+      null,
+      null,
+    )
+    expect(controller.rows.get()).toHaveLength(1)
+    expect(controller.rows.get()[0]).toMatchObject({
+      occurrence: 2,
+      expanded: false,
+      selected: false,
+      highlighted: false,
+      pending: null,
+    })
+    expect(controller.progress.rows.get().size).toBe(0)
+    expect(registration.record('a', 'wide')).toMatchObject({
+      retained: null,
+      live: null,
+      workReserve: null,
+    })
+    if (old === null) throw new Error('missing old ticket')
+    registration.measure({
+      measurement: old,
+      extent: { main: 999, work: 0, detail: 0, gap: 0, total: 999 },
+      workGap: 0,
+    })
+    expect(registration.record('a', 'wide')?.live).toBeNull()
+  })
+
+  it('G08 replaces same-key reconnect occurrences and releases refusal/disposal registrations', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1)
+    const { registration, capture } = captureGeometry(controller, () => ({
+      main: 30,
+      work: 0,
+      detail: 0,
+      gap: 2,
+    }))
+    const old = registration.measurement('a', 'wide')
+    open([{ rowKey: 'a', slots: {} }], 1)
+    expect(controller.rows.get()[0]?.occurrence).toBe(2)
+    controller.ingestRefusal('denied')
+    expect(registration.record('a', 'wide')).toBeNull()
+    expect(controller.rows.get()).toEqual([])
+    open([{ rowKey: 'a', slots: {} }], 1)
+    expect(controller.rows.get()[0]?.occurrence).toBe(3)
+    controller.dispose()
+    capture.mockClear()
+    if (old === null) throw new Error('missing old ticket')
+    registration.measure({
+      measurement: old,
+      extent: { main: 999, work: 0, detail: 0, gap: 0, total: 999 },
+      workGap: 0,
+    })
+    controller.withPresentationUpdate({ kind: 'window' }, () => undefined)
+    expect(capture).not.toHaveBeenCalled()
+    expect(registration.record('a', 'wide')).toBeNull()
+    expect(registration.tracks()).toBeNull()
+    expect(() =>
+      controller.geometry.register(() => ({ records: [] })),
+    ).toThrow()
+  })
+
+  it('reuses preparation from an outer ingress boundary before direct controller mutations', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1)
+    let main = 60
+    const { registration, capture } = captureGeometry(controller, () => ({
+      main,
+      work: 0,
+      detail: 0,
+      gap: 3,
+    }))
+    const result = controller.withPresentationUpdate(
+      { kind: 'rows', rowKeys: ['a'] },
+      () => {
+        main = 1
+        controller.ingestDelta({
+          kind: 'row_removed',
+          rowKey: 'a',
+          reason: 'deleted',
+          own: true,
+        })
+        return 42
+      },
+    )
+    expect(result).toBe(42)
+    expect(capture).toHaveBeenCalledTimes(1)
+    expect(registration.record('a', 'wide')?.retained).toBe(63)
+  })
+})
+
+describe('TableViewportController live metadata boundaries', () => {
+  it('releases early work when a later live value cancels pending removal', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1)
+    controller.ingestProgress({
+      scope: 'row',
+      rowKey: 'a',
+      progressKey: 'old',
+      current: 1,
+    })
+    const { registration } = captureGeometry(controller, () => ({
+      main: 40,
+      work: controller.progress.rows.get().has('a') ? 12 : 0,
+      detail: 0,
+      gap: 3,
+    }))
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'moved_out',
+    })
+    expect(registration.record('a', 'wide')?.workReserve?.total).toBe(14)
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'back' } },
+    })
+    expect(registration.record('a', 'wide')?.workReserve).toBeNull()
+    expect(controller.pendingCount.get()).toBe(0)
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+      own: true,
+    })
+    expect(registration.record('a', 'wide')?.retained).toBe(43)
+  })
+
+  it('keeps an explicit server edge verdict after every visible member departed', () => {
+    const { controller, open } = makeController(1, [
+      { field: 'id', direction: 'asc' },
+    ])
+    open([{ rowKey: 'a', slots: {} }], 8)
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: {} }],
+      8,
+      true,
+      { id: 8 },
+      { id: 8 },
+      1,
+      7,
+    )
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+      own: true,
+    })
+    controller.ingestCount(9, true, false)
+    expect(controller.frame.footer.get()).toMatchObject({
+      firstRow: 0,
+      lastRow: 0,
+      totalCount: 9,
+      hasNextPage: false,
+    })
+    expect(controller.rowsBefore.get()).toBe(7)
+    controller.ingestCount(9, true, true)
+    expect(controller.frame.footer.get().hasNextPage).toBe(true)
+  })
+
+  it('captures before search publication and reuses preparation through nested reset calls', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1)
+    const events: string[] = []
+    const registration = controller.geometry.register(() => {
+      events.push('capture')
+      expect(controller.search.get()).toBe('')
+      return { records: [] }
+    })
+    const stop = subscribeSignal(controller.search, () => events.push('search'))
+    controller.setSearch('new')
+    stop()
+    expect(events).toEqual(['capture', 'search'])
+    registration.dispose()
+    controller.dispose()
+  })
+})
+
+describe('TableViewportController disposal', () => {
+  it('unsubscribes live declarations so controller replacement cannot send old intents', () => {
+    const visible = createSignal(true)
+    const choices = createSignal([{ value: 'up', label: 'Up' }])
+    const sendViewport = vi.fn()
+    const sendFacets = vi.fn()
+    const sendRendered = vi.fn()
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport,
+      sendFacets,
+      sendRendered,
+      frame: {
+        columns: () =>
+          visible.get() ? [{ key: 'name', label: 'Name', sortable: true }] : [],
+        filters: [
+          {
+            key: 'state',
+            kind: 'select',
+            label: 'State',
+            options: () => choices.get(),
+          },
+        ],
+      },
+    })
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: {} }],
+      1,
+      true,
+      null,
+      null,
+      2,
+    )
+    controller.setOrder([{ field: 'name', direction: 'asc' }])
+    controller.dispose()
+    sendViewport.mockClear()
+    sendFacets.mockClear()
+    sendRendered.mockClear()
+    visible.set(false)
+    choices.set([{ value: 'down', label: 'Down' }])
+    expect(sendViewport).not.toHaveBeenCalled()
+    expect(sendFacets).not.toHaveBeenCalled()
+    expect(sendRendered).not.toHaveBeenCalled()
+    expect(controller.rows.get()).toEqual([])
+  })
+})
+
+describe('TableViewportController first occurrence publication', () => {
+  it.each(['own-create', 'snapshot'] as const)(
+    'does not publish inherited pending state on a fresh %s occurrence',
+    (replacement) => {
+      const { controller, open } = makeController()
+      open([{ rowKey: 'a', slots: { name: 'old' } }], 1)
+      controller.ingestDelta({
+        kind: 'row_moved',
+        rowKey: 'a',
+        row: { rowKey: 'a', slots: { name: 'pending' } },
+        position: 0,
+      })
+      const seen: number[] = []
+      const stop = subscribeSignal(controller.rows, (rows) => {
+        const row = rows[0]
+        if (row?.occurrence !== 2) return
+        expect(row).toMatchObject({
+          pending: null,
+          highlighted: false,
+          row: { slots: { name: 'fresh' } },
+        })
+        seen.push(row.occurrence)
+      })
+      if (replacement === 'own-create')
+        controller.ingestOwnCreate(
+          { rowKey: 'a', slots: { name: 'fresh' } },
+          0,
+          1,
+          true,
+          null,
+          null,
+        )
+      else
+        controller.ingestWindow(
+          [{ rowKey: 'a', slots: { name: 'fresh' } }],
+          1,
+          true,
+          null,
+          null,
+          10,
+        )
+      stop()
+      expect(seen.length).toBeGreaterThan(0)
+    },
+  )
+})
+
+describe('TableViewportController append range after zero', () => {
+  it('bounds the fallback live range without changing the numbered address', () => {
+    const { controller, open } = makeController(2)
+    open([{ rowKey: 'a', slots: {} }], 8)
+    controller.setPage(3)
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: {} }],
+      8,
+      true,
+      { id: 8 },
+      { id: 8 },
+      2,
+    )
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+      own: true,
+    })
+    controller.ingestCount(0, true)
+    const address = controller.descriptor()
+    controller.ingestAppend(
+      { rowKey: 'b', slots: {} },
+      1,
+      true,
+      { id: 9 },
+      { id: 9 },
+    )
+    expect(controller.frame.footer.get()).toMatchObject({
+      firstRow: 1,
+      lastRow: 1,
+      totalCount: 1,
+    })
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['a', 'b'])
+    expect(controller.rowsBefore.get()).toBeNull()
+    expect(controller.descriptor()).toEqual(address)
   })
 })

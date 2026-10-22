@@ -752,6 +752,7 @@ class PageSignalRouter
      * @param string $source Signal source
      * @param string $name Signal name (page name)
      * @throws InvalidArgumentException When the table-window or refusal signal cannot be named
+     * @throws InvalidFormatException When the request id is empty
      */
     public function dispatchTableViewport(WebSocketTableViewportSignalDTO $data, string $source, string $name): void
     {
@@ -773,6 +774,7 @@ class PageSignalRouter
      * @param string $source Signal source
      * @param string $name Signal name (page name)
      * @throws InvalidArgumentException When the table-window or refusal signal cannot be named
+     * @throws InvalidFormatException When the request id is empty
      */
     private function runTableViewportFrame(WebSocketTableViewportSignalDTO $data, string $source, string $name): void
     {
@@ -791,7 +793,7 @@ class PageSignalRouter
         // window held and the window served are one window (HIL-1250).
         $viewport = Hilos::$browser?->viewportForViewer($name, $data->acceptKey, $viewport) ?? $viewport;
         Hilos::$sr?->setTableViewport($data->acceptKey, $viewport);
-        if (Hilos::$browser?->sendTableWindow($name, $data->acceptKey, $viewport) === false) {
+        if (Hilos::$browser?->sendTableWindow($name, $data->acceptKey, $viewport, $data->requestId) === false) {
             // The refusal frame already left sendTableWindow when the table is not served
             // or the window could not be built. This line is the door's own trace: a page
             // silently missing its table used to look the same as a page whose table is

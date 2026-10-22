@@ -382,7 +382,10 @@ describe('HilosDaemonHttpServerPage', () => {
       route({ rowKey: 'GET /n2', path: '/n2' }),
     ])
     h.window([route({ rowKey: 'GET /n2', path: '/n2' })])
-    expect(h.unregister).toHaveBeenCalledWith('hilosDaemonHttpRoutes')
+    expect(h.unregister).toHaveBeenCalledWith(
+      'hilosDaemonHttpRoutes',
+      h.register.mock.calls[0]?.[1],
+    )
     expect(h.register).toHaveBeenCalledTimes(2)
     expect(h.register.mock.calls[1]![1]).not.toBe(sink)
     expect(h.listeners.get('tableWindow')?.size).toBe(1)

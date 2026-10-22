@@ -342,6 +342,7 @@ function stubView() {
   const view = createHilosDaemonPlacementView(h.context, overview)
   const window = (
     ids: readonly string[] | null = ['chat_room:1', 'chat_room:2'],
+    requestId?: string,
   ) => {
     view.controller.ingestWindow(
       [
@@ -358,6 +359,8 @@ function stubView() {
       null,
       null,
       25,
+      null,
+      requestId,
     )
   }
   view.start()
@@ -587,7 +590,7 @@ describe('daemon placement view', () => {
       expect(h.view.controller.frame.body.get()).toBe('loading')
       expect(h.view.selectedCell.get()).toBeNull()
       h.view.openCell('chat_room', 'n1')
-      h.window(['chat_room:99'])
+      h.window(['chat_room:99'], h.sent.at(-1)?.descriptor.requestId)
       expect(h.view.selectedCell.get()).toBeNull()
       expect(h.view.controller.rows.get()[0]?.expanded).toBe(false)
       h.view.openCell('chat_room', 'n1')
@@ -595,7 +598,16 @@ describe('daemon placement view', () => {
       expect(h.view.controller.rows.get()[0]?.expanded).toBe(true)
       h.view.controller.setSearch('absent')
       vi.advanceTimersByTime(1000)
-      h.view.controller.ingestWindow([], 0, true, null, null, 25)
+      h.view.controller.ingestWindow(
+        [],
+        0,
+        true,
+        null,
+        null,
+        25,
+        null,
+        h.sent.at(-1)?.descriptor.requestId,
+      )
       h.window()
       expect(h.view.selectedCell.get()).toBeNull()
     } finally {
@@ -651,7 +663,10 @@ describe('daemon placement view', () => {
     expect(h.view.selectedCell.get()).toBeNull()
     expect(h.view.controller.rows.get()[0]?.expanded).toBe(false)
     expect(h.unbind).toHaveBeenCalledTimes(bindings)
-    expect(h.unregister).toHaveBeenCalledWith('hilosDaemonPlacement')
+    expect(h.unregister).toHaveBeenCalledWith(
+      'hilosDaemonPlacement',
+      h.view.controller,
+    )
     // Disposal leaves no window watcher that could restore an expansion on search.
     h.view.openCell('chat_room', 'n1')
     h.view.controller.setSearch('99')

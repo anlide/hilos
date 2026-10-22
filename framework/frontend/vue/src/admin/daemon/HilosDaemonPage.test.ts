@@ -252,9 +252,10 @@ function harness(
     sendRendered,
     listeners,
     controller: () => register.mock.calls[0]![1],
-    window: (rows: readonly TableRow[]) =>
+    window: (rows: readonly TableRow[], requestId?: string) =>
       emit('tableWindow', {
         data: {
+          ...(requestId === undefined ? {} : { requestId }),
           page: HilosPages.DAEMON,
           tableKey: 'hilosDaemonPlacement',
           rows,
@@ -812,7 +813,10 @@ describe('HilosDaemonPage placement', () => {
     expect(h.view.find('table').text()).toContain('n1 ★')
     expect(h.view.find('table').text()).toContain('n2')
     expect(h.view.find('table').text()).toContain('Policy-placed · lazy')
-    expect(h.view.find('table .badge').text()).toBe('Unplaced')
+    const badge = h.view
+      .findAll('table .badge')
+      .find((node) => !node.element.closest('[inert]'))
+    expect(badge?.text()).toBe('Unplaced')
     expect(h.view.find('table tr.table-danger').exists()).toBe(false)
     const cards = h.view.find('[data-id="hilos-table-cards"]')
     expect(cards.text()).toContain('Policy-placed · lazy')
@@ -872,7 +876,10 @@ describe('HilosDaemonPage placement', () => {
     expect(h.replacePath).not.toHaveBeenCalled()
     expect(h.register).toHaveBeenCalledTimes(1)
     h.view.unmount()
-    expect(h.unregister).toHaveBeenCalledWith('hilosDaemonPlacement')
+    expect(h.unregister).toHaveBeenCalledWith(
+      'hilosDaemonPlacement',
+      h.register.mock.calls[0]?.[1],
+    )
     // Only the central page binder remains; every per-table listener is gone.
     for (const [event, group] of h.listeners) {
       if (event.startsWith('table')) expect(group.size).toBe(0)
@@ -1067,7 +1074,10 @@ describe('HilosDaemonPage placement', () => {
       vi.advanceTimersByTime(1000)
       await nextTick()
       expect(h.view.find(panel).exists()).toBe(false)
-      h.window(placementRows(['chat_room:99']))
+      h.window(
+        placementRows(['chat_room:99']),
+        h.sendViewport.mock.calls.at(-1)?.[2].requestId,
+      )
       await nextTick()
       expect(h.view.find(panel).exists()).toBe(false)
       expect(h.view.find(cell).attributes('aria-expanded')).toBe('false')

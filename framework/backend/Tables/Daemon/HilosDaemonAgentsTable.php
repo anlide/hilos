@@ -10,7 +10,6 @@ use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
-use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -19,7 +18,10 @@ use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
+use Hilos\DaemonSection\ClusterDaemonPicture;
 use Hilos\DaemonSection\ClusterDaemonPictureMirror;
+use Hilos\DaemonSection\DaemonPictureRowChanges;
+use Hilos\DaemonSection\DaemonPictureViewportTable;
 use Hilos\DaemonSection\DaemonAgentPicture;
 use Hilos\DaemonSection\DaemonRestartingAgents;
 use Hilos\Hilos;
@@ -31,10 +33,9 @@ use Hilos\Pages\Daemon\AbstractHilosDaemonAgentsPage;
  *
  * Ownership comes from declarations on each agent class, not the picture: all nodes run
  * the same code. A viewport without a node filter is empty. The mirror has no row source,
- * so {@see AbstractHilosDaemonAgentsPage::onPictureChanged()} resends complete windows
- * after a changed process portion.
+ * so {@see AbstractHilosDaemonAgentsPage::onPictureChanged()} publishes mutations through the shared viewport classifier.
  */
-final class HilosDaemonAgentsTable extends TableDefinition implements ViewportTable
+final class HilosDaemonAgentsTable extends TableDefinition implements DaemonPictureViewportTable
 {
     public const string TABLE = 'hilosDaemonAgents';
     public const string FILTER_NODE = 'node';
@@ -63,6 +64,20 @@ final class HilosDaemonAgentsTable extends TableDefinition implements ViewportTa
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
         return null;
+    }
+
+    /**
+     * @param ?ClusterDaemonPicture $before Previous immutable picture
+     * @param TableQueryDTO $query Subject and viewer scope, independent of pagination and search membership
+     * @return list<TableRowMutationDTO> Changes to the complete subject set
+     * @throws TableRowKeyMissingException When a projected row carries no key
+     */
+    public function pictureMutations(?ClusterDaemonPicture $before, TableQueryDTO $query): array
+    {
+        return DaemonPictureRowChanges::between(
+            $this->makeRows($this->collectRows($before, $query)),
+            $this->makeRows($this->collectRows(ClusterDaemonPictureMirror::picture(), $query)),
+        );
     }
 
     /**
@@ -109,7 +124,7 @@ final class HilosDaemonAgentsTable extends TableDefinition implements ViewportTa
      */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
     {
-        return $this->containsRowInMemory($this->collectRows($query), $rowKey, $query);
+        return $this->containsRowInMemory($this->collectRows(ClusterDaemonPictureMirror::picture(), $query), $rowKey, $query);
     }
 
     /**
@@ -120,7 +135,7 @@ final class HilosDaemonAgentsTable extends TableDefinition implements ViewportTa
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
-        return $this->filterInMemory($this->collectRows($query), $query);
+        return $this->filterInMemory($this->collectRows(ClusterDaemonPictureMirror::picture(), $query), $query);
     }
 
     /** Configures the agent row representation. */
@@ -136,10 +151,11 @@ final class HilosDaemonAgentsTable extends TableDefinition implements ViewportTa
     }
 
     /**
+     * @param ?ClusterDaemonPicture $picture Immutable source picture
      * @param TableQueryDTO $query Window filter naming one node
      * @return list<array<string, mixed>> Live and restarting agents in natural id order
      */
-    private function collectRows(TableQueryDTO $query): array
+    private function collectRows(?ClusterDaemonPicture $picture, TableQueryDTO $query): array
     {
         $node = $query->filter[self::FILTER_NODE] ?? null;
         if (!is_string($node) || trim($node) === '') {
@@ -153,7 +169,6 @@ final class HilosDaemonAgentsTable extends TableDefinition implements ViewportTa
         // for the full snapshot, as the Daemon overview does in
         // framework/backend/Pages/Daemon/DTO/HilosDaemonOverviewData.php::fromPicture(),
         // and marking the portion as "still gathering".
-        $picture = ClusterDaemonPictureMirror::picture();
         if ($picture === null) {
             return [];
         }

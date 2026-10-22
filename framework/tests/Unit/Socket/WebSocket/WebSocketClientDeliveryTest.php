@@ -26,6 +26,7 @@ use Hilos\Socket\WebSocket\Delivery\DeliveryFrame;
 use Hilos\Socket\WebSocket\Delivery\DeliverySettingsMirror;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use Hilos\Socket\WebSocket\Exception\InvalidFrameException;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\WorkerDTO;
@@ -59,6 +60,25 @@ final class WebSocketClientDeliveryTest extends TestCase
         }
         Hilos::$env = $this->previousEnv;
         Hilos::$sr = $this->previousRouter;
+    }
+
+    public function testViewportCorrelationSurvivesTheClientFrameParser(): void
+    {
+        [$client] = $this->connection();
+        $client->acceptJson('{"type":"table_viewport","page":"p","tableKey":"t","limit":10,"requestId":"window:1"}');
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        $this->assertSame(SignalTypeConstants::TABLE_VIEWPORT, $signal?->signalType->getType());
+        $this->assertSame('p', $signal->signalName->getName());
+        $this->assertInstanceOf(WebSocketTableViewportSignalDTO::class, $signal->data);
+        $this->assertSame('window:1', $signal->data->requestId);
+        $this->assertSame($client->acceptKey, $signal->data->acceptKey);
+    }
+
+    public function testAnEmptyViewportCorrelationIsAnInvalidClientFrame(): void
+    {
+        [$client] = $this->connection();
+        $this->expectException(InvalidFrameException::class);
+        $client->acceptJson('{"type":"table_viewport","page":"p","tableKey":"t","limit":10,"requestId":""}');
     }
 
     public function testQuietDeliveryBatchesEventsAndPreservesInnerMetadataAndOrder(): void

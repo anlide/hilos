@@ -412,10 +412,11 @@ final class HilosDaemonOverviewPageTest extends TestCase
         $this->resender->attempts = [];
         $this->deliver([$this->node($report->withStanding(new DaemonNodeStanding(0, 0, false, null)))]);
         $response = $this->onlyResponse();
-        self::assertSame([['hilos_daemon', 'root']], $this->resender->attempts);
+        self::assertSame([], $this->resender->attempts);
         self::assertSame(['sessions' => 0, 'connections' => 0], $response->payload->data['daemon']['nodes'][0]['standing']);
-        self::assertSame($first->payload->data[PageCatalogConstants::WIRE_PAGE_LABEL],
-            $response->payload->data[PageCatalogConstants::WIRE_PAGE_LABEL]);
+        self::assertSame(['data'], array_keys($response->payload->toArray()));
+        self::assertSame(['daemon'], array_keys($response->payload->data));
+        self::assertSame($viewport, Hilos::$sr->getTableViewport('root', HilosDaemonPlacementTable::TABLE));
         self::assertSame($viewport->filter, Hilos::$sr->getTableViewport('root', HilosDaemonPlacementTable::TABLE)->filter);
     }
 
@@ -428,8 +429,11 @@ final class HilosDaemonOverviewPageTest extends TestCase
         $this->resender->attempts = [];
         $this->deliver([$this->node($report->withProcesses($this->roster('x:2')))]);
         $signals = $this->drain();
-        self::assertCount(1, $signals);
-        self::assertSame(SignalTypeConstants::TABLE_WINDOW, $signals[0]->signalName->getName());
+        self::assertSame([SignalTypeConstants::TABLE_VIEWPORT_DELTA, SignalTypeConstants::TABLE_VIEWPORT_COUNT],
+            array_map(static fn ($frame): string => $frame->signalName->getName(), $signals));
+        self::assertSame('row_removed', $signals[0]->data->data->kind);
+        self::assertSame('left_set', $signals[0]->data->data->reason);
+        self::assertSame(0, $signals[1]->data->data->totalCount);
         self::assertSame([], $this->resender->attempts);
 
         $repaired = $report->withProcesses($this->roster('x:2'))->sampledAt(500)
@@ -440,7 +444,7 @@ final class HilosDaemonOverviewPageTest extends TestCase
         AbstractHilosDaemonPage::onPictureForgotten();
         $this->deliver([$this->node($repaired, receivedAt: 501)]);
         $this->onlyResponse();
-        self::assertSame([['hilos_daemon', 'root']], $this->resender->attempts);
+        self::assertSame([], $this->resender->attempts);
     }
 
     public function testOnlyUnplacedTypesChangeResendsOneWholeAndIdsWithinATypeSendOnlyAWindow(): void
@@ -453,19 +457,19 @@ final class HilosDaemonOverviewPageTest extends TestCase
         $this->resender->attempts = [];
 
         $this->deliver([$this->node($report->withProcesses(new DaemonProcessRoster([], ['x:1'], 0)))]);
-        $response = $this->onlyResponse();
+        $response = $this->responseAmong([SignalTypeConstants::PAGE_RESPONSE, SignalTypeConstants::TABLE_VIEWPORT_COUNT]);
         self::assertSame(['x'], $response->payload->data['daemon']['placement']['unplacedTypes']);
-        self::assertArrayHasKey(HilosDaemonPlacementTable::TABLE, $response->payload->windows);
-        self::assertSame([['hilos_daemon', 'root']], $this->resender->attempts);
+        self::assertSame(['data'], array_keys($response->payload->toArray()));
+        self::assertSame([], $this->resender->attempts);
 
         $this->resender->attempts = [];
         $this->deliver([$this->node($report->withProcesses(new DaemonProcessRoster([], ['x:1', 'x:2'], 0)))]);
         $signals = $this->drain();
-        self::assertCount(1, $signals);
-        self::assertSame(SignalTypeConstants::TABLE_WINDOW, $signals[0]->signalName->getName());
+        self::assertSame([], $signals);
         self::assertSame([], $this->resender->attempts);
 
         $this->browser->admin = false;
+        $this->pageRouter->resendPage(HilosPageConstants::HILOS_DAEMON, 'root', []);
         $this->deliver([$this->node($report->withProcesses(new DaemonProcessRoster([], ['leader', 'x:1'], 0)))]);
         $signals = $this->drain();
         self::assertCount(1, $signals);
@@ -496,6 +500,7 @@ final class HilosDaemonOverviewPageTest extends TestCase
         $this->onlyResponse();
 
         $this->browser->admin = false;
+        $this->pageRouter->resendPage(HilosPageConstants::HILOS_DAEMON, 'root', []);
         $this->deliver([$this->node($report->withProcesses($this->roster('x:1', 'x:2', 'x:3')))]);
         $signals = $this->drain();
         self::assertCount(1, $signals);
@@ -514,8 +519,7 @@ final class HilosDaemonOverviewPageTest extends TestCase
         $this->onlyResponse();
         $this->deliver([$this->node($report->withProcesses($this->roster('x:1', 'x:2', 'x:3', 'x:4', 'x:6')))]);
         $signals = $this->drain();
-        self::assertCount(1, $signals);
-        self::assertSame(SignalTypeConstants::TABLE_WINDOW, $signals[0]->signalName->getName());
+        self::assertSame([], $signals);
     }
 
     public function testAFailedReleaseDropsTheViewerSoAPlacementFactSendsNothing(): void
@@ -529,15 +533,15 @@ final class HilosDaemonOverviewPageTest extends TestCase
         $this->deliver([$this->node($report->withProcesses($this->roster('x:2')))]);
         self::assertSame([], $this->drain());
         self::assertTrue(Hilos::$sr->hasPageDeliveryFailure('root'));
-        // The failure released the viewer. A placement-only change finds subscribers
-        // through that set, so it sends neither the owed page nor a window. The
-        // subscription and the debt stay for a later page answer.
+        // The failed full answer released the viewer, but the registry still owns the debt.
+        // A later picture fact reaches that subscription and retries its complete verdict.
         DaemonOverviewTestPage::$fails = false;
         $this->deliver([$this->node($report->withProcesses($this->roster('x:3')))]);
-        self::assertSame([], $this->drain());
-        self::assertTrue(Hilos::$sr->hasPageDeliveryFailure('root'));
+        $response = $this->onlyResponse();
+        self::assertArrayHasKey(HilosDaemonPlacementTable::TABLE, $response->payload->windows);
+        self::assertFalse(Hilos::$sr->hasPageDeliveryFailure('root'));
         self::assertSame(['root'], Hilos::$sr->getAcceptKeysForPage(HilosPageConstants::HILOS_DAEMON));
-        self::assertNotContains('root', ClusterDaemonPictureMirror::viewerKeys());
+        self::assertContains('root', ClusterDaemonPictureMirror::viewerKeys());
     }
 
     public function testAdminAndViewModeViewerReceiveBothDiagnosticFieldsThroughTheVerdict(): void
@@ -631,6 +635,7 @@ final class HilosDaemonOverviewPageTest extends TestCase
             new AgentSignalData(DaemonClusterPicturePortionSignalData::fromArray($portion->toArray())),
             'collector', HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION,
         );
+        self::assertSame([], $this->browser->flushToSignalRouter());
     }
 
     private function subscribe(string $key, string $page = HilosPageConstants::HILOS_DAEMON,
@@ -657,6 +662,22 @@ final class HilosDaemonOverviewPageTest extends TestCase
         self::assertInstanceOf(WebSocketSignalData::class, $signals[0]->data);
         self::assertInstanceOf(PageResponseSignalData::class, $signals[0]->data->data);
         return $signals[0]->data->data;
+    }
+
+    /**
+     * @param list<string> $names Exact frame order
+     * @return PageResponseSignalData The one data-only response among native live frames
+     */
+    private function responseAmong(array $names): PageResponseSignalData
+    {
+        $signals = $this->drain();
+        self::assertSame($names, array_map(static fn ($frame): string => $frame->signalName->getName(), $signals));
+        foreach ($signals as $signal) {
+            if ($signal->data->data instanceof PageResponseSignalData) {
+                return $signal->data->data;
+            }
+        }
+        self::fail('No page data response');
     }
 
     /** @return list<SignalDTO> Frames waiting for delivery */

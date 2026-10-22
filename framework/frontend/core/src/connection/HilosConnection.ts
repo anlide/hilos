@@ -84,6 +84,7 @@ import {
 } from './protectedModePass.js'
 import { isReconnectDragging } from './reconnectDragging.js'
 import { Emitter } from './events.js'
+import { type TablePresentationChange } from '../table/tableViewportGeometry.js'
 
 export type ConnectionState =
   'connecting' | 'connected' | 'reconnecting' | 'disconnected'
@@ -112,6 +113,8 @@ export type TableAnchorDirection = 'after' | 'before'
  * numbered page names the page, because a page nobody has shown has no anchor yet.
  */
 export interface TableViewportDescriptor {
+  /** Correlation for an outbound window request only; never a held descriptor. */
+  readonly requestId?: string
   readonly filter: Record<string, unknown>
   readonly sort:
     | readonly {
@@ -148,6 +151,13 @@ export interface TableViewportDescriptor {
 export interface TableWindowDescriptorSource {
   /** @return The window this table is holding, or null while it is holding none. */
   descriptor(): TableViewportDescriptor | null
+  /** End the local request epoch on disconnect, departure or re-subscribe. */
+  resetWindowRequests?(): void
+  /** Capture the live presentation before a synchronous store publication. */
+  withPresentationUpdate?<T>(
+    change: TablePresentationChange,
+    update: () => T,
+  ): T
 }
 
 /**
@@ -835,6 +845,9 @@ export class HilosConnection {
       [FIELD_TABLE_KEY]: tableKey,
       [FIELD_LIMIT]: descriptor.limit,
     }
+    if (descriptor.requestId !== undefined) {
+      frame[FIELD_REQUEST_ID] = descriptor.requestId
+    }
     if (descriptor.pageIndex === null) {
       frame[FIELD_ANCHOR] = descriptor.anchor
       frame[FIELD_ANCHOR_DIRECTION] = descriptor.anchorDirection
@@ -947,15 +960,64 @@ export class HilosConnection {
     tableKey: string,
     source: TableWindowDescriptorSource,
   ): void {
+    const previous = this.tableWindowSources.get(tableKey)
+    if (previous !== source) {
+      previous?.resetWindowRequests?.()
+    }
     this.tableWindowSources.set(tableKey, source)
+  }
+
+  /** Cancel tracked asks before a new socket or subscription answers the held windows. */
+  resetTableWindowRequests(): void {
+    for (const source of this.tableWindowSources.values()) {
+      source.resetWindowRequests?.()
+    }
+  }
+
+  /**
+   * Enter every mounted table's boundary before publishing to any page listener.
+   * Each source owns its synchronous preparation and finally cleanup; nesting
+   * keeps all of them active through the single update, including early scope
+   * normalization and later table ingestion.
+   *
+   * @param change The local presentation change to prepare.
+   * @param update The synchronous publication, called once inside all boundaries.
+   * @return The publication's result.
+   */
+  withTablePresentationUpdate<T>(
+    change: TablePresentationChange,
+    update: () => T,
+  ): T {
+    const sources = [...this.tableWindowSources.values()]
+    const enter = (index: number): T => {
+      const source = sources[index]
+      if (source === undefined) {
+        return update()
+      }
+
+      return source.withPresentationUpdate
+        ? source.withPresentationUpdate(change, () => enter(index + 1))
+        : enter(index + 1)
+    }
+
+    return enter(0)
   }
 
   /**
    * Drop one table's window from the report — its view has unmounted and holds nothing.
    *
    * @param tableKey The table key to drop.
+   * @param source The departing mount, when supplied; a replacement keeps its registration.
    */
-  unregisterTableWindow(tableKey: string): void {
+  unregisterTableWindow(
+    tableKey: string,
+    source?: TableWindowDescriptorSource,
+  ): void {
+    const current = this.tableWindowSources.get(tableKey)
+    if (source !== undefined && current !== source) {
+      return
+    }
+    current?.resetWindowRequests?.()
     this.tableWindowSources.delete(tableKey)
   }
 
@@ -973,7 +1035,9 @@ export class HilosConnection {
     for (const [tableKey, source] of this.tableWindowSources) {
       const descriptor = source.descriptor()
       if (descriptor !== null) {
-        descriptors[tableKey] = descriptor
+        const held = { ...descriptor }
+        delete held.requestId
+        descriptors[tableKey] = held
       }
     }
 
@@ -1088,8 +1152,15 @@ export class HilosConnection {
         }
         break
       case 'project':
-        this.rememberPageFrame(signal)
-        this.emitter.emit('projectSignal', signal)
+        if (signal.type === SIGNAL_TYPE_PAGE_RESPONSE) {
+          this.withTablePresentationUpdate({ kind: 'window' }, () => {
+            this.rememberPageFrame(signal)
+            this.emitter.emit('projectSignal', signal)
+          })
+        } else {
+          this.rememberPageFrame(signal)
+          this.emitter.emit('projectSignal', signal)
+        }
         break
       case 'tableWindow':
         this.emitter.emit('tableWindow', signal)
@@ -1429,6 +1500,9 @@ export class HilosConnection {
       return
     }
     this.currentState = state
+    if (state !== 'connected') {
+      this.resetTableWindowRequests()
+    }
     this.emitter.emit('state', state)
     // Nothing is going to answer on this socket, so the hold would become a blank
     // screen with no end to it. Fail open: draw the ordinary shell, which is

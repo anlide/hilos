@@ -589,7 +589,10 @@ describe('HilosChangeLogTablePage', () => {
     expect(h.connection.registerTableWindow).toHaveBeenCalledTimes(1)
     r.go({ tableId: 'bot', record: '57' })
     await settle()
-    expect(h.connection.unregisterTableWindow).toHaveBeenCalledWith(HISTORY)
+    expect(h.connection.unregisterTableWindow).toHaveBeenCalledWith(
+      HISTORY,
+      h.connection.registerTableWindow.mock.calls[0]?.[1],
+    )
     expect(h.connection.registerTableWindow).toHaveBeenCalledTimes(2)
     h.pushPageWindow()
     expect(h.connection.sendTableViewport).toHaveBeenCalledTimes(1)
@@ -682,7 +685,10 @@ describe('HilosChangeLogTablePage', () => {
     const { wrapper } = await mountPage(h)
     expect([...h.listeners.values()].some((set) => set.size > 0)).toBe(true)
     wrapper.unmount()
-    expect(h.connection.unregisterTableWindow).toHaveBeenCalledWith(HISTORY)
+    expect(h.connection.unregisterTableWindow).toHaveBeenCalledWith(
+      HISTORY,
+      h.connection.registerTableWindow.mock.calls[0]?.[1],
+    )
     expect([...h.listeners.values()].every((set) => set.size === 0)).toBe(true)
   })
 })

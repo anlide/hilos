@@ -22,6 +22,7 @@ import {
   SIGNAL_TYPE_PAGE_UNSUBSCRIBE,
 } from '../protocol/constants.js'
 import {
+  type HilosConnection,
   type HilosConnectionEventMap,
   type ConnectionState,
   type TableViewportDescriptor,
@@ -64,6 +65,10 @@ export interface PageSubscriptionConnection {
   ): () => void
   forgetPageFrames(): void
   tableWindowDescriptors(): Record<string, TableViewportDescriptor>
+  /** Older connection ports can omit the local window request lifecycle. */
+  resetTableWindowRequests?(): void
+  /** Older connection ports can omit the local table presentation boundary. */
+  withTablePresentationUpdate?: HilosConnection['withTablePresentationUpdate']
 }
 
 export class PageSubscription {
@@ -461,13 +466,19 @@ export class PageSubscription {
     if (!scope || pageKey !== this.current?.pageKey) {
       return false
     }
-    ingest(scope, payload, options)
-    if (this.pageErrorSignal.get()?.httpCode !== UNAUTHORIZED) {
-      this.pageErrorSignal.set(null)
-    }
-    this.pageLoadingSignal.set(false)
+    const update = (): boolean => {
+      ingest(scope, payload, options)
+      if (this.pageErrorSignal.get()?.httpCode !== UNAUTHORIZED) {
+        this.pageErrorSignal.set(null)
+      }
+      this.pageLoadingSignal.set(false)
 
-    return true
+      return true
+    }
+
+    return this.connection.withTablePresentationUpdate
+      ? this.connection.withTablePresentationUpdate({ kind: 'window' }, update)
+      : update()
   }
 
   /**
@@ -534,6 +545,7 @@ export class PageSubscription {
     if (!this.current || !this.sessionAnswered) {
       return
     }
+    this.connection.resetTableWindowRequests?.()
     const frame: Record<string, unknown> = {
       [FIELD_TYPE]: SIGNAL_TYPE_PAGE_SUBSCRIBE,
       [FIELD_PAGE]: this.current.pageKey,

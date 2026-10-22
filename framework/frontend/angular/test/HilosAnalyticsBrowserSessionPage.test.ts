@@ -332,7 +332,7 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
 
     h.navigate('58')
     expect(h.sendTableViewport).toHaveBeenCalledTimes(1)
-    expect(h.unregisterTableWindow).toHaveBeenCalledWith(TABLE)
+    expect(h.unregisterTableWindow).toHaveBeenCalledWith(TABLE, old)
     expect(h.registered.get(TABLE)).toBeDefined()
     expect(h.registered.get(TABLE)).not.toBe(old)
     const currentListeners = [...h.listeners.values()].flatMap((set) => [

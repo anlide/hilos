@@ -93,7 +93,7 @@
             "@test:e2e-install",
             "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm chat-e2e-runner sh -c \"set -e; echo '--- e2e: lint'; npm run lint; echo '--- e2e: format-check'; npm run format:check\""
         ],
-        "test:e2e-build": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-frontend-cli-test sh -c \"node ../../../framework/frontend/scripts/npm-install-if-stale.mjs && npm run build\"",
+        "test:e2e-build": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-frontend-cli-test sh -c \"node ../../../framework/frontend/scripts/npm-install-if-stale.mjs && npm run build && npm run test:table-geometry:build\"",
         "test:e2e-install": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm chat-e2e-runner node ../../../../framework/frontend/scripts/npm-install-if-stale.mjs",
         "test:e2e-check": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm chat-e2e-runner npm run check",
         "test:e2e-up": [

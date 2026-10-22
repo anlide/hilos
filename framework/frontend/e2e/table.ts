@@ -96,3 +96,237 @@ export async function tableRowKeyByText(
 
   return ((await row.getAttribute('data-id')) ?? '').slice(ROW_PREFIX.length)
 }
+
+/**
+ * Check permitted movement by stable record identities in the visible tree.
+ *
+ * @param expect The spec's expect.
+ * @param page The page containing the settled table.
+ * @param keys The record order the action is permitted to produce.
+ */
+export async function expectTableRowOrder(
+  expect: Expect,
+  page: Page,
+  keys: readonly string[],
+): Promise<void> {
+  const actual = await page
+    .getByTestId(TABLE)
+    .locator(`${ROWS}, [data-id^="hilos-table-card-"]`)
+    .filter({ visible: true })
+    .evaluateAll((rows) =>
+      rows.map((row) =>
+        row.getAttribute('data-id')?.replace(/^hilos-table-(row|card)-/, ''),
+      ),
+    )
+  expect(actual).toEqual(keys)
+}
+
+/**
+ * Capture the entire table, including slots below a shell's scrolling viewport.
+ * Only the screenshot lifts ancestor clipping; the table keeps its measured
+ * inline size so removing a scrollbar cannot rewrap the evidence.
+ * Call after stopping geometry observations.
+ *
+ * @param expect The spec's expect.
+ * @param page The page containing the settled table.
+ * @param tableId The stable table root selected by the spec.
+ * @returns The complete table's PNG.
+ */
+export async function screenshotTable(
+  expect: Expect,
+  page: Page,
+  tableId = TABLE,
+) {
+  const root = page.getByTestId(tableId)
+  await expect(root).toBeVisible()
+  const width = await root.evaluate(
+    (element) => element.getBoundingClientRect().width,
+  )
+  expect(width, 'the complete table has a visible inline size').toBeGreaterThan(
+    0,
+  )
+  return root.screenshot({
+    style: `:has([data-id="${tableId}"]) { overflow: visible !important; }
+      [data-id="${tableId}"] { box-sizing: border-box !important;
+        inline-size: ${width}px !important; min-inline-size: ${width}px !important;
+        max-inline-size: ${width}px !important; }`,
+  })
+}
+
+/**
+ * Open a test-only HTML entry, which has no product page subscription to await.
+ *
+ * @param expect The spec's expect.
+ * @param page The browser page.
+ * @param path The built fixture HTML address.
+ * @param readyId The fixture's declared readiness marker.
+ */
+export async function openTableFixture(
+  expect: Expect,
+  page: Page,
+  path: string,
+  readyId: string,
+): Promise<void> {
+  await page.goto(path)
+  await expect(page.getByTestId(readyId)).toBeVisible()
+}
+
+/**
+ * Check both mounted projections after a departure; hidden values count too.
+ *
+ * @param expect The spec's expect.
+ * @param page The page containing the table.
+ * @param rowKey The departed record's key.
+ * @param reason The only remaining visible sentence.
+ * @param valueIds All page-owned value/action IDs that must be retired.
+ */
+export async function expectDataFreeDeparture(
+  expect: Expect,
+  page: Page,
+  rowKey: string,
+  reason: string,
+  valueIds: readonly string[],
+): Promise<void> {
+  for (const id of valueIds) await expect(page.getByTestId(id)).toHaveCount(0)
+  for (const id of [
+    `hilos-table-select-${rowKey}`,
+    `hilos-table-expand-${rowKey}`,
+    `hilos-table-row-detail-${rowKey}`,
+    `hilos-table-progress-row-${rowKey}`,
+    `hilos-table-stale-row-${rowKey}`,
+    `hilos-table-pending-remove-${rowKey}`,
+  ]) {
+    await expect(page.getByTestId(id)).toHaveCount(0)
+  }
+  for (const prefix of ['hilos-table-row-', 'hilos-table-card-']) {
+    const record = page.getByTestId(`${prefix}${rowKey}`)
+    await expect(record.getByTestId('hilos-table-placeholder')).toHaveText(
+      reason,
+    )
+    await expect(record.locator('button, input, [tabindex], [id]')).toHaveCount(
+      0,
+    )
+    if (prefix === 'hilos-table-row-') {
+      const span = await record.evaluate((row) => ({
+        actual: row.querySelector('td')?.colSpan,
+        columns: row.closest('table')?.querySelectorAll('thead th').length,
+      }))
+      expect(
+        span.actual,
+        'placeholder spans every content/state/selection track',
+      ).toBe(span.columns)
+    }
+  }
+}
+
+/**
+ * Empty sizing holders reserve room without borrowing a control or its name.
+ *
+ * @param expect The spec's expect.
+ * @param page The page containing the table.
+ */
+export async function expectInertTableHolders(
+  expect: Expect,
+  page: Page,
+): Promise<void> {
+  const holders = page.locator(
+    '.hilos-table-marks.invisible, .hilos-table-room, th .bi-snow.invisible',
+  )
+  expect(await holders.count()).toBeGreaterThan(0)
+  for (const holder of await holders.all()) {
+    await expect(holder).toHaveAttribute('aria-hidden', 'true')
+    await expect(holder).toHaveAttribute('inert', '')
+    await expect(
+      holder.locator('[id], [data-id], input, button, a, [tabindex]'),
+    ).toHaveCount(0)
+  }
+}
+
+/**
+ * Refuse card labels, page badges or controls that escape the card's width.
+ * Vertical scrolling is allowed; truncating these facts horizontally is not.
+ *
+ * @param expect The spec's expect.
+ * @param page The page containing the table.
+ * @param tableId The stable table root selected by the spec.
+ */
+export async function expectTableCardContentFits(
+  expect: Expect,
+  page: Page,
+  tableId = TABLE,
+): Promise<void> {
+  const overflows = await page.getByTestId(tableId).evaluate((root) => {
+    const failures: unknown[] = []
+    for (const card of root.querySelectorAll('.card[data-id]')) {
+      if (!card.checkVisibility()) continue
+      const outer = card.getBoundingClientRect()
+      for (const element of card.querySelectorAll('dt, .badge, button')) {
+        if (!element.checkVisibility({ visibilityProperty: true })) continue
+        const box = element.getBoundingClientRect()
+        if (box.left < outer.left - 1 || box.right > outer.right + 1) {
+          failures.push({
+            text: element.textContent,
+            left: box.left,
+            right: box.right,
+            cardLeft: outer.left,
+            cardRight: outer.right,
+          })
+        }
+      }
+    }
+    return failures
+  })
+  expect(
+    overflows,
+    'labels, page badges and controls remain inside each card',
+  ).toEqual([])
+}
+
+/**
+ * A declared partial work track covers precisely its content column and the
+ * work row still accounts for every framework/content/selection column.
+ *
+ * @param expect The spec's expect.
+ * @param page The page containing the visible wide table.
+ * @param rowKey The working row's key.
+ * @param contentId A value inside the column declaring progress coverage.
+ */
+export async function expectTableProgressCoverage(
+  expect: Expect,
+  page: Page,
+  rowKey: string,
+  contentId: string,
+): Promise<void> {
+  const value = await shownByTestId(page, contentId).elementHandle()
+  if (!value) throw new Error(`Missing column value ${contentId}`)
+  try {
+    const bounds = await shownByTestId(
+      page,
+      `hilos-table-progress-row-${rowKey}`,
+    ).evaluate((row, value) => {
+      const cell = value.closest('td')
+      const progress = row.querySelector('[role="progressbar"]')?.closest('td')
+      if (!cell || !progress) throw new Error('Missing wide progress coverage')
+      const content = cell.getBoundingClientRect()
+      const work = progress.getBoundingClientRect()
+      return {
+        content: { left: content.left, right: content.right },
+        work: { left: work.left, right: work.right },
+        spans: [...row.querySelectorAll('td')].reduce(
+          (sum, cell) => sum + cell.colSpan,
+          0,
+        ),
+        columns: row.closest('table')?.querySelectorAll('thead th').length,
+      }
+    }, value)
+    expect(bounds.spans).toBe(bounds.columns)
+    expect(
+      Math.abs(bounds.content.left - bounds.work.left),
+    ).toBeLessThanOrEqual(1)
+    expect(
+      Math.abs(bounds.content.right - bounds.work.right),
+    ).toBeLessThanOrEqual(1)
+  } finally {
+    await value.dispose()
+  }
+}

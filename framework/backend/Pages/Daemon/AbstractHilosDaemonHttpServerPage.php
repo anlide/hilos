@@ -8,24 +8,21 @@ use Hilos\AdminViewMode\WireField;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
-use Hilos\Core\Table\Exception\TableRowKeyMissingException;
+use Hilos\DaemonSection\ClusterDaemonPicture;
 use Hilos\DaemonSection\ClusterDaemonPictureMirror;
-use Hilos\DaemonSection\DTO\DaemonMasterHttpSignalData;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Pages\Daemon\DTO\HilosDaemonNodeSubscribeParams;
 use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
-use JsonException;
 
 /**
  * Answers the node line and HTTP summary; routes arrive in the table window.
- * Changed node data resends the whole page, while route-only changes resend the window.
+ * Changed node data and route mutations publish independently through the shared browser paths.
  *
  * Projects must implement concrete class (e.g. Demo\Chat\Pages\Hilos\Daemon\DaemonHttpServerPage).
  */
@@ -51,53 +48,20 @@ abstract class AbstractHilosDaemonHttpServerPage extends AbstractHilosDaemonNode
     private const int SECONDS_PER_HOUR = 3600;
     private const int MAX_COUNTING_HOURS = 24;
 
-    private static ?string $httpFingerprint = null;
-
     /**
-     * Re-sends changed node pages whole or changed HTTP route windows.
-     *
-     * @throws HilosException When the picture cannot be encoded or a table source refuses a read
-     * @throws EnvException When cluster mode cannot be read for a node line
-     * @throws InvalidArgumentException When the table-window signal cannot be named
-     * @throws TableRowKeyMissingException When a windowed row has no key
+     * @param ?ClusterDaemonPicture $before Immutable picture before this portion
+     * @throws HilosException When node page data cannot be projected
+     * @throws EnvException When cluster mode cannot be read
      */
-    public static function onPictureChanged(): void
+    public static function onPictureChanged(?ClusterDaemonPicture $before): void
     {
-        $resent = static::resendChangedNodePages();
-
-        $sections = [];
-        foreach (ClusterDaemonPictureMirror::picture()?->nodes() ?? [] as $node) {
-            $http = $node->slot?->picture->http;
-            $sections[] = [$node->nodeId, $http === null ? null : DaemonMasterHttpSignalData::httpToArray($http)];
-        }
-
-        try {
-            $fingerprint = json_encode($sections, JSON_THROW_ON_ERROR);
-        } catch (JsonException $exception) {
-            throw new HilosException('Cannot fingerprint the daemon HTTP picture', previous: $exception);
-        }
-        if ($fingerprint === self::$httpFingerprint) {
-            return;
-        }
-        self::$httpFingerprint = $fingerprint;
-
-        foreach (ClusterDaemonPictureMirror::viewerKeys() as $acceptKey) {
-            if (isset($resent[$acceptKey])) {
-                continue;
-            }
-            $viewport = Hilos::$sr?->getTableViewport($acceptKey, HilosDaemonHttpRoutesTable::TABLE);
-            if ($viewport === null) {
-                continue;
-            }
-            Hilos::$browser?->sendTableWindow(HilosPageConstants::HILOS_DAEMON_HTTP_SERVER, $acceptKey, $viewport);
-        }
+        static::publishNodePicture($before, HilosDaemonHttpRoutesTable::TABLE);
     }
 
     /** Forgets the comparison state when the page agent stops. */
     public static function onPictureForgotten(): void
     {
         self::forgetNodePages();
-        self::$httpFingerprint = null;
     }
 
     /**
@@ -113,6 +77,7 @@ abstract class AbstractHilosDaemonHttpServerPage extends AbstractHilosDaemonNode
     /**
      * @param string $acceptKey Subscribing connection
      * @param PageRouteParams $params Route params naming the node
+     * @throws HilosException When node data cannot be encoded
      * @return PagePayload Node line and HTTP summary
      * @throws MissingPageRouteParamException When the node id is absent
      * @throws EnvException When cluster mode cannot be read for a node line
@@ -121,11 +86,11 @@ abstract class AbstractHilosDaemonHttpServerPage extends AbstractHilosDaemonNode
     {
         $nodeId = HilosDaemonNodeSubscribeParams::fromPageRouteParams($params)->nodeId;
 
-        return new PagePayload(data: static::nodeData($nodeId));
+        return static::nodePagePayload($nodeId);
     }
 
     /** @return array<string, WireField> Node and HTTP summary carry no personal data */
-    protected function dataFields(): array
+    protected static function nodeDataFields(): array
     {
         return [
             self::NODE => WireField::notPersonal(),

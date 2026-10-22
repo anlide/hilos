@@ -238,7 +238,10 @@ describe('HilosDaemonCronPage', () => {
         admin: true,
       }),
     )
-    expect(h.unregister).toHaveBeenCalledWith('hilosDaemonCron')
+    expect(h.unregister).toHaveBeenCalledWith(
+      'hilosDaemonCron',
+      h.register.mock.calls[0]?.[1],
+    )
     expect(h.register).toHaveBeenCalledTimes(2)
     expect(h.register.mock.calls[1]![1]).not.toBe(first)
     expect(

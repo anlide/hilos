@@ -10,8 +10,8 @@
 // PENDING so the table never rearranges under the user's hands. The user resolves
 // those with apply() — a moved row takes the slot the server named and a removed one
 // becomes a placeholder in its slot, carrying why it left (the layout never collapses,
-// no row is pulled from the next page). A window with no live rows over an empty set
-// converges to the empty window a reload would bring. Two live signals bypass the pending gate
+// no row is pulled from the next page). Departed slots remain even when the set is empty.
+// Two live signals bypass the pending gate
 // because they disrupt nothing: table_viewport_count updates the total/page count
 // (navigation metadata), and table_viewport_append adds a row at the tail when the
 // window is the last page with room. A third accumulates without waiting on
@@ -41,6 +41,7 @@ import {
   createSignal,
   subscribeSignal,
   type ReadonlySignal,
+  type Unsubscribe,
   type WritableSignal,
 } from '../state/signal.js'
 import {
@@ -83,6 +84,11 @@ import {
   type HilosTableSortOrder,
 } from './tableSortOrder.js'
 import { hilosTableStaleSources } from './tableStaleness.js'
+import {
+  TableViewportGeometry,
+  type TablePresentationChange,
+  type TableViewportGeometryView,
+} from './tableViewportGeometry.js'
 /** Sort direction for the active sort field. */
 export type SortDirection = 'asc' | 'desc'
 
@@ -269,6 +275,8 @@ export interface TableViewportAnnounced {
 /** A displayed row: its key, the resolved view-model, and whether it is a removed placeholder. */
 export interface TableViewportRow<R> {
   readonly rowKey: string
+  /** Identity of this appearance, minted by the local geometry owner. */
+  readonly occurrence: number
   /** The resolved view-model, or `null` when the row is a removed placeholder. */
   readonly row: R | null
   /** True when an applied removal replaced the row with a placeholder in its slot. */
@@ -334,6 +342,15 @@ export type TableFacetCountsByFilter = Readonly<
  * connection that reports its window on the next page subscribe.
  */
 export interface TableWindowSink {
+  /** Reject stale tracked replies before any normalization or presentation writes. */
+  acceptsWindowResponse?(requestId?: string): boolean
+  /** End the local request epoch when its socket, scope or mount leaves. */
+  resetWindowRequests?(): void
+  /** Optional synchronous capture before normalization or presentation writes. */
+  withPresentationUpdate?<T>(
+    change: TablePresentationChange,
+    update: () => T,
+  ): T
   ingestWindow(
     rows: readonly TableRow[],
     totalCount: number,
@@ -342,6 +359,7 @@ export interface TableWindowSink {
     lastAnchor: TableAnchor | null,
     limit: number,
     rowsBefore?: number | null,
+    requestId?: string,
   ): void
   ingestSubscriptionWindow(
     rows: readonly TableRow[],
@@ -393,8 +411,9 @@ export interface TableWindowSink {
    * code — one phrase covers every reason.
    *
    * @param errorCode Machine-readable reason the server named.
+   * @param requestId Correlation of a tracked request, absent for an unsolicited refusal.
    */
-  ingestRefusal(errorCode: string): void
+  ingestRefusal(errorCode: string, requestId?: string): void
   /**
    * Ingest word that this table's window stopped receiving its live changes
    * (`table_viewport_frozen`). The rows stay; the next window or refusal clears it.
@@ -496,7 +515,28 @@ export interface TableViewportControllerOptions<R> {
   frame: HilosTableFrame
 }
 
+/** A departed slot has no raw row, resolved value or reference to its slots. */
+type WindowEntry =
+  | {
+      readonly kind: 'live'
+      readonly rowKey: string
+      readonly occurrence: number
+      readonly row: TableRow
+    }
+  | {
+      readonly kind: 'departed'
+      readonly rowKey: string
+      readonly occurrence: number
+      readonly reason: TableRemovalReason
+    }
+
 export class TableViewportController<R> implements TableWindowSink {
+  private readonly geometryOwner = new TableViewportGeometry()
+  private readonly subscriptions: Unsubscribe[] = []
+
+  /** Scoped numeric registrations; only this controller writes identities. */
+  readonly geometry: TableViewportGeometryView = this.geometryOwner.view
+
   private readonly filterSignal: WritableSignal<Record<string, unknown>>
 
   /** Counts beside the options of the dropdown filters, by filter key, laid over one frame at a time. */
@@ -562,7 +602,7 @@ export class TableViewportController<R> implements TableWindowSink {
   /** Place the last row held by the window sits at, or null while it is empty. */
   private lastAnchor: TableAnchor | null = null
 
-  private readonly windowSignal = createSignal<readonly TableRow[]>([])
+  private readonly windowSignal = createSignal<readonly WindowEntry[]>([])
 
   private readonly totalCountSignal = createSignal(0)
 
@@ -572,15 +612,31 @@ export class TableViewportController<R> implements TableWindowSink {
   /** False until the first window arrives — lets the view tell "loading" from "empty". */
   private readonly loadedSignal = createSignal(false)
 
+  /** Browser-mount identity; no server or other controller reads this local epoch. */
+  private readonly windowRequestMount = Array.from(
+    globalThis.crypto.getRandomValues(new Uint32Array(4)),
+    (value) => value.toString(16),
+  ).join('-')
+
+  private windowRequestEpoch = 0
+
+  private windowRequestSequence = 0
+
+  private latestWindowRequestId: string | null = null
+
+  private windowRequestPending = false
+
+  private readonly lastAppliedWindowRequestIdSignal = createSignal<
+    string | null
+  >(null)
+
+  private disposed = false
+
   /** The refusal code the table is standing in, or null while a window holds. */
   private readonly refusalSignal = createSignal<string | null>(null)
 
   /** Server milliseconds the window froze at, or null while its live changes arrive. */
   private readonly frozenSinceSignal = createSignal<number | null>(null)
-
-  private readonly placeholdersSignal = createSignal<
-    ReadonlyMap<string, TableRemovalReason>
-  >(new Map())
 
   /**
    * The row keys the reader marked, held RAW — keys that left the window are not
@@ -869,6 +925,30 @@ export class TableViewportController<R> implements TableWindowSink {
    */
   private readonly offeredOrders: ReadonlySignal<readonly HilosTableSortOrder[]>
 
+  /** Capture affected mounts before any synchronous subscriber can see the update. */
+  withPresentationUpdate<T>(
+    change: TablePresentationChange,
+    update: () => T,
+  ): T {
+    return this.geometryOwner.withPresentationUpdate(change, update)
+  }
+
+  /** Release local numeric registrations and row payloads on controller replacement. */
+  dispose(): void {
+    this.disposed = true
+    this.resetWindowRequests()
+    for (const unsubscribe of this.subscriptions.splice(0)) {
+      unsubscribe()
+    }
+    this.clearWindowPending()
+    this.clearHighlights()
+    this.geometryOwner.dispose()
+    this.windowSignal.set([])
+    this.clearPending()
+    this.releaseFocus()
+    this.rowProgressSignal.set(new Map())
+  }
+
   constructor(private readonly options: TableViewportControllerOptions<R>) {
     this.filterSignal = createSignal<Record<string, unknown>>({
       ...(options.initialFilter ?? {}),
@@ -880,7 +960,6 @@ export class TableViewportController<R> implements TableWindowSink {
       return typeof value === 'string' ? value : ''
     })
     this.rows = computedSignal(() => {
-      const placeholders = this.placeholdersSignal.get()
       const pendingKinds = this.pendingKindSignal.get()
       const pendingRemovals = this.pendingRemovalSignal.get()
       const highlighted = this.highlightedKeysSignal.get()
@@ -889,16 +968,17 @@ export class TableViewportController<R> implements TableWindowSink {
       const allByFilter = this.allByFilterSignal.get()
 
       return this.windowSignal.get().map((raw) => {
-        const placeholderRemoval = placeholders.get(raw.rowKey)
-        const placeholder = placeholderRemoval !== undefined
+        const placeholder = raw.kind === 'departed'
+        const placeholderRemoval = placeholder ? raw.reason : null
         const pending = placeholder
           ? null
           : (pendingKinds.get(raw.rowKey) ?? null)
-        const row = placeholder ? null : options.resolve(raw)
+        const row = raw.kind === 'live' ? options.resolve(raw.row) : null
         const expandable = row !== null && (options.expandable?.(row) ?? true)
 
         return {
           rowKey: raw.rowKey,
+          occurrence: raw.occurrence,
           row,
           placeholder,
           pending,
@@ -914,7 +994,7 @@ export class TableViewportController<R> implements TableWindowSink {
           expandable,
           staleSources: placeholder
             ? NO_STALE_SOURCES
-            : (raw.staleSources ?? NO_STALE_SOURCES),
+            : (raw.row.staleSources ?? NO_STALE_SOURCES),
         }
       })
     })
@@ -941,9 +1021,9 @@ export class TableViewportController<R> implements TableWindowSink {
     })
     this.hasNextPage = computedSignal(() => {
       const hasRowsAfter = this.hasRowsAfterSignal.get()
-      const shown = this.windowSignal.get().length
+      const shown = this.liveRowKeys().length
       // An empty answer has no edge to page from; its address and page count decide.
-      if (hasRowsAfter !== null && shown > 0) {
+      if (hasRowsAfter !== null && this.windowSignal.get().length > 0) {
         return hasRowsAfter
       }
       const pageCount = this.pageCount.get()
@@ -1037,20 +1117,24 @@ export class TableViewportController<R> implements TableWindowSink {
       // connected socket and the server holds it, while a declaration sent at construction
       // would be dropped by a socket that is still connecting, and nothing would send it
       // again. The flag goes true once and never back, so this fires once.
-      subscribeSignal(this.loadedSignal, () => {
-        const declared = this.facetOptions.get()
-        if (Object.keys(declared).length > 0) {
-          sendFacets(declared)
-        }
-      })
+      this.subscriptions.push(
+        subscribeSignal(this.loadedSignal, () => {
+          const declared = this.facetOptions.get()
+          if (Object.keys(declared).length > 0) {
+            sendFacets(declared)
+          }
+        }),
+      )
       // After that every change of the options is declared, the empty declaration
       // included, which is how the server drops a list. A change before the first window
       // needs no frame of its own: the options are read fresh when that window lands.
-      subscribeSignal(this.facetOptions, (declared) => {
-        if (this.loadedSignal.get()) {
-          sendFacets(declared)
-        }
-      })
+      this.subscriptions.push(
+        subscribeSignal(this.facetOptions, (declared) => {
+          if (this.loadedSignal.get()) {
+            sendFacets(declared)
+          }
+        }),
+      )
     }
     if (options.expandable !== undefined) {
       // A row that lost what made it expandable closes for good: its key leaves the open
@@ -1071,88 +1155,92 @@ export class TableViewportController<R> implements TableWindowSink {
           )
           .map((view) => view.rowKey)
       })
-      subscribeSignal(lostExpansion, (lost) => {
-        if (lost.length === 0) {
-          return
-        }
-        const keys = new Set(this.expandedKeysSignal.get())
-        for (const rowKey of lost) {
-          keys.delete(rowKey)
-        }
-        this.expandedKeysSignal.set(keys)
-      })
+      this.subscriptions.push(
+        subscribeSignal(lostExpansion, (lost) => {
+          if (lost.length === 0) {
+            return
+          }
+          const keys = new Set(this.expandedKeysSignal.get())
+          for (const rowKey of lost) {
+            keys.delete(rowKey)
+          }
+          this.expandedKeysSignal.set(keys)
+        }),
+      )
     }
     let previousColumns = columns.get()
     let previousFilters = filters.get()
     let previousRendered = this.renderedKeys.get()
-    subscribeSignal(
-      resolvedFrame,
-      ({ columns: nextColumns, filters: nextFilters }) => {
-        const availableKeys = new Set(nextColumns.map(({ key }) => key))
-        const nextFilterKeys = new Set<string>()
-        const nextFilter = { ...this.filterSignal.get() }
-        for (const filter of nextFilters) {
-          if (filter.kind === 'date_range') {
-            nextFilterKeys.add(filter.fromKey)
-            nextFilterKeys.add(filter.toKey)
-          } else {
-            nextFilterKeys.add(filter.key)
-            if (
-              filter.kind === 'select' &&
-              nextFilter[filter.key] !== undefined &&
-              !filter
-                .options()
-                .some(({ value }) => value === nextFilter[filter.key])
-            ) {
-              delete nextFilter[filter.key]
+    this.subscriptions.push(
+      subscribeSignal(
+        resolvedFrame,
+        ({ columns: nextColumns, filters: nextFilters }) => {
+          const availableKeys = new Set(nextColumns.map(({ key }) => key))
+          const nextFilterKeys = new Set<string>()
+          const nextFilter = { ...this.filterSignal.get() }
+          for (const filter of nextFilters) {
+            if (filter.kind === 'date_range') {
+              nextFilterKeys.add(filter.fromKey)
+              nextFilterKeys.add(filter.toKey)
+            } else {
+              nextFilterKeys.add(filter.key)
+              if (
+                filter.kind === 'select' &&
+                nextFilter[filter.key] !== undefined &&
+                !filter
+                  .options()
+                  .some(({ value }) => value === nextFilter[filter.key])
+              ) {
+                delete nextFilter[filter.key]
+              }
             }
           }
-        }
-        for (const filter of previousFilters) {
-          const keys =
-            filter.kind === 'date_range'
-              ? [filter.fromKey, filter.toKey]
-              : [filter.key]
-          for (const key of keys) {
-            if (!nextFilterKeys.has(key)) {
-              delete nextFilter[key]
+          for (const filter of previousFilters) {
+            const keys =
+              filter.kind === 'date_range'
+                ? [filter.fromKey, filter.toKey]
+                : [filter.key]
+            for (const key of keys) {
+              if (!nextFilterKeys.has(key)) {
+                delete nextFilter[key]
+              }
             }
           }
-        }
-        const filterChanged =
-          Object.keys(nextFilter).length !==
-          Object.keys(this.filterSignal.get()).length
-        const currentOrder = this.orderSignal.get()
-        const orderChanged =
-          currentOrder !== undefined &&
-          currentOrder.some(
-            ({ field }) =>
-              previousColumns.some(({ key }) => key === field) &&
-              !availableKeys.has(field),
-          )
-        previousColumns = nextColumns
-        previousFilters = nextFilters
-        const nextRendered = this.renderedKeys.get()
-        const renderedChanged =
-          nextRendered.length !== previousRendered.length ||
-          nextRendered.some((key, index) => key !== previousRendered[index])
-        previousRendered = nextRendered
-        if (filterChanged || orderChanged) {
-          if (filterChanged) {
-            this.filterSignal.set(nextFilter)
+          const filterChanged =
+            Object.keys(nextFilter).length !==
+            Object.keys(this.filterSignal.get()).length
+          const currentOrder = this.orderSignal.get()
+          const orderChanged =
+            currentOrder !== undefined &&
+            currentOrder.some(
+              ({ field }) =>
+                previousColumns.some(({ key }) => key === field) &&
+                !availableKeys.has(field),
+            )
+          previousColumns = nextColumns
+          previousFilters = nextFilters
+          const nextRendered = this.renderedKeys.get()
+          const renderedChanged =
+            nextRendered.length !== previousRendered.length ||
+            nextRendered.some((key, index) => key !== previousRendered[index])
+          previousRendered = nextRendered
+          if (filterChanged || orderChanged) {
+            if (filterChanged) {
+              this.filterSignal.set(nextFilter)
+            }
+            if (orderChanged) {
+              this.orderSignal.set(this.openingOrder)
+            }
+            this.resetAddress()
+            if (this.loadedSignal.get()) {
+              this.changeWindow()
+            }
           }
-          if (orderChanged) {
-            this.orderSignal.set(this.openingOrder)
+          if (renderedChanged && this.loadedSignal.get()) {
+            options.sendRendered?.(nextRendered)
           }
-          this.resetAddress()
-          if (this.loadedSignal.get()) {
-            this.changeWindow()
-          }
-        }
-        if (renderedChanged && this.loadedSignal.get()) {
-          options.sendRendered?.(nextRendered)
-        }
-      },
+        },
+      ),
     )
     this.frameState = {
       declaration,
@@ -1177,12 +1265,22 @@ export class TableViewportController<R> implements TableWindowSink {
         hilosTableOrderLabel(this.orderSignal.get(), columns.get()),
       ),
       footer: computedSignal<HilosTableFooter>(() => {
-        const shown = this.windowSignal.get().length
+        const shown =
+          this.totalCountSignal.get() === 0 ? 0 : this.liveRowKeys().length
         const page = this.pageNumber.get()
         // Where the window reports no place, the range is still counted off the page, which
         // is what it was counted off everywhere before a window could say where it sits.
+        // A live exact count bounds that fallback, including an append after zero at an
+        // old numbered address. A server-reported place is kept as delivered.
+        const fallbackBefore = page * this.pageSizeSignal.get()
         const rowsBefore =
-          this.rowsBeforeSignal.get() ?? page * this.pageSizeSignal.get()
+          this.rowsBeforeSignal.get() ??
+          (this.totalExactSignal.get()
+            ? Math.min(
+                fallbackBefore,
+                Math.max(0, this.totalCountSignal.get() - shown),
+              )
+            : fallbackBefore)
         const firstRow = shown === 0 ? 0 : rowsBefore + 1
 
         return {
@@ -1387,6 +1485,29 @@ export class TableViewportController<R> implements TableWindowSink {
     return this.ownCreateRequestIdSignal
   }
 
+  /** Last tracked window or refusal applied, published after the controller update. */
+  get lastAppliedWindowRequestId(): ReadonlySignal<string | null> {
+    return this.lastAppliedWindowRequestIdSignal
+  }
+
+  /** A no-id snapshot remains authoritative; only the latest outstanding tracked id answers an ask. */
+  acceptsWindowResponse(requestId?: string): boolean {
+    return (
+      !this.disposed &&
+      (requestId === undefined ||
+        (this.windowRequestPending && requestId === this.latestWindowRequestId))
+    )
+  }
+
+  /** Cancel waiting without replaying an ask; the subscription delivers the desired window. */
+  resetWindowRequests(): void {
+    this.windowRequestEpoch += 1
+    this.latestWindowRequestId = null
+    this.windowRequestPending = false
+    this.lastAppliedWindowRequestIdSignal.set(null)
+    this.clearWindowPending()
+  }
+
   /**
    * Server milliseconds of the first failure since this table's window stopped receiving
    * its live changes, or null while they arrive. The view turns it into the reader's own
@@ -1405,7 +1526,10 @@ export class TableViewportController<R> implements TableWindowSink {
    * has no deltas of its own. A table on a live source never needs this.
    */
   refresh(): void {
-    this.send()
+    this.withPresentationUpdate({ kind: 'reset' }, () => {
+      this.geometryOwner.invalidateWindow()
+      this.send()
+    })
   }
 
   /**
@@ -1429,15 +1553,17 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param query The raw search text.
    */
   setSearch(query: string): void {
-    const filter = { ...this.filterSignal.get() }
-    if (query.trim() === '') {
-      delete filter[SEARCH_FILTER_KEY]
-    } else {
-      filter[SEARCH_FILTER_KEY] = query
-    }
-    this.filterSignal.set(filter)
-    this.resetAddress()
-    this.changeWindow()
+    this.withPresentationUpdate({ kind: 'reset' }, () => {
+      const filter = { ...this.filterSignal.get() }
+      if (query.trim() === '') {
+        delete filter[SEARCH_FILTER_KEY]
+      } else {
+        filter[SEARCH_FILTER_KEY] = query
+      }
+      this.filterSignal.set(filter)
+      this.resetAddress()
+      this.changeWindow()
+    })
   }
 
   /**
@@ -1470,17 +1596,19 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param values The filter-map entries to write; a null/undefined/'' value clears its key.
    */
   setFilters(values: Record<string, unknown>): void {
-    const filter = { ...this.filterSignal.get() }
-    for (const [key, value] of Object.entries(values)) {
-      if (value === null || value === undefined || value === '') {
-        delete filter[key]
-      } else {
-        filter[key] = value
+    this.withPresentationUpdate({ kind: 'reset' }, () => {
+      const filter = { ...this.filterSignal.get() }
+      for (const [key, value] of Object.entries(values)) {
+        if (value === null || value === undefined || value === '') {
+          delete filter[key]
+        } else {
+          filter[key] = value
+        }
       }
-    }
-    this.filterSignal.set(filter)
-    this.resetAddress()
-    this.changeWindow()
+      this.filterSignal.set(filter)
+      this.resetAddress()
+      this.changeWindow()
+    })
   }
 
   /**
@@ -1494,9 +1622,11 @@ export class TableViewportController<R> implements TableWindowSink {
    * same map — and "Nothing found" names the query and the filters together.
    */
   resetFilters(): void {
-    this.filterSignal.set({ ...(this.options.initialFilter ?? {}) })
-    this.resetAddress()
-    this.changeWindow()
+    this.withPresentationUpdate({ kind: 'reset' }, () => {
+      this.filterSignal.set({ ...(this.options.initialFilter ?? {}) })
+      this.resetAddress()
+      this.changeWindow()
+    })
   }
 
   /**
@@ -1515,28 +1645,30 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param field The field key to sort by.
    */
   setSort(field: string): void {
-    const current = this.orderSignal.get()
-    const cycle: readonly (TableSortOrder | undefined)[] = [
-      [{ field, direction: 'asc' }],
-      [{ field, direction: 'desc' }],
-      this.openingOrder,
-    ]
-    const shown = cycle.findIndex((state) => isSameOrder(state, current))
-    const next = cycle.findIndex(
-      (state, position) => position > shown && !isSameOrder(state, current),
-    )
-    const state = next < 0 ? cycle[0] : cycle[next]
-    if (isSameOrder(state, this.openingOrder)) {
-      // The cycle came home, and coming home is one operation however it was
-      // asked for — through the last click of the cycle here, or through the
-      // reset a page offers on its own.
-      this.resetOrder()
+    this.withPresentationUpdate({ kind: 'reset' }, () => {
+      const current = this.orderSignal.get()
+      const cycle: readonly (TableSortOrder | undefined)[] = [
+        [{ field, direction: 'asc' }],
+        [{ field, direction: 'desc' }],
+        this.openingOrder,
+      ]
+      const shown = cycle.findIndex((state) => isSameOrder(state, current))
+      const next = cycle.findIndex(
+        (state, position) => position > shown && !isSameOrder(state, current),
+      )
+      const state = next < 0 ? cycle[0] : cycle[next]
+      if (isSameOrder(state, this.openingOrder)) {
+        // The cycle came home, and coming home is one operation however it was
+        // asked for — through the last click of the cycle here, or through the
+        // reset a page offers on its own.
+        this.resetOrder()
 
-      return
-    }
-    this.orderSignal.set(state)
-    this.resetAddress()
-    this.changeWindow()
+        return
+      }
+      this.orderSignal.set(state)
+      this.resetAddress()
+      this.changeWindow()
+    })
   }
 
   /**
@@ -1552,9 +1684,11 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param order The order to run the window in.
    */
   setOrder(order: TableSortOrder): void {
-    this.orderSignal.set(order)
-    this.resetAddress()
-    this.changeWindow()
+    this.withPresentationUpdate({ kind: 'reset' }, () => {
+      this.orderSignal.set(order)
+      this.resetAddress()
+      this.changeWindow()
+    })
   }
 
   /**
@@ -1564,9 +1698,11 @@ export class TableViewportController<R> implements TableWindowSink {
    * here; a page is free to call it from a reset control of its own.
    */
   resetOrder(): void {
-    this.orderSignal.set(this.openingOrder)
-    this.resetAddress()
-    this.changeWindow()
+    this.withPresentationUpdate({ kind: 'reset' }, () => {
+      this.orderSignal.set(this.openingOrder)
+      this.resetAddress()
+      this.changeWindow()
+    })
   }
 
   /**
@@ -1588,12 +1724,14 @@ export class TableViewportController<R> implements TableWindowSink {
     if (pageCount === null) {
       return
     }
-    const target = Math.min(Math.max(0, page), Math.max(0, pageCount - 1))
-    this.pageSignal.set(target)
-    this.anchor = null
-    this.anchorDirection = 'after'
-    this.pageIndex = target
-    this.changeWindow()
+    this.withPresentationUpdate({ kind: 'reset' }, () => {
+      const target = Math.min(Math.max(0, page), Math.max(0, pageCount - 1))
+      this.pageSignal.set(target)
+      this.anchor = null
+      this.anchorDirection = 'after'
+      this.pageIndex = target
+      this.changeWindow()
+    })
   }
 
   /**
@@ -1611,25 +1749,27 @@ export class TableViewportController<R> implements TableWindowSink {
     if (!this.hasNextPage.get()) {
       return
     }
-    if (this.lastAnchor !== null) {
-      this.anchor = this.lastAnchor
-      this.anchorDirection = 'after'
-      this.pageIndex = null
-      this.pageSignal.set(this.pageSignal.get() + 1)
-    } else if (this.anchor !== null) {
-      this.anchorDirection = 'after'
-      this.pageIndex = null
-      this.pageSignal.set(this.pageSignal.get() + 1)
-    } else if (this.pageIndex !== null) {
-      this.pageIndex += 1
-      this.pageSignal.set(this.pageSignal.get() + 1)
-    } else {
-      // Nothing to move: the address is the start of the set and the window came back
-      // empty anyway. Asking for the same window again is not paging, and the rule that
-      // an empty window is not paged from is older than this leaf.
-      return
-    }
-    this.changeWindow()
+    this.withPresentationUpdate({ kind: 'reset' }, () => {
+      if (this.lastAnchor !== null) {
+        this.anchor = this.lastAnchor
+        this.anchorDirection = 'after'
+        this.pageIndex = null
+        this.pageSignal.set(this.pageSignal.get() + 1)
+      } else if (this.anchor !== null) {
+        this.anchorDirection = 'after'
+        this.pageIndex = null
+        this.pageSignal.set(this.pageSignal.get() + 1)
+      } else if (this.pageIndex !== null) {
+        this.pageIndex += 1
+        this.pageSignal.set(this.pageSignal.get() + 1)
+      } else {
+        // Nothing to move: the address is the start of the set and the window came back
+        // empty anyway. Asking for the same window again is not paging, and the rule that
+        // an empty window is not paged from is older than this leaf.
+        return
+      }
+      this.changeWindow()
+    })
   }
 
   /**
@@ -1647,26 +1787,28 @@ export class TableViewportController<R> implements TableWindowSink {
     if (!this.hasPreviousPage.get()) {
       return
     }
-    const rowsBefore = this.rowsBeforeSignal.get()
-    if (rowsBefore !== null && rowsBefore < this.pageSizeSignal.get()) {
-      this.anchor = null
-      this.anchorDirection = 'after'
-      this.pageIndex = null
-    } else if (this.firstAnchor !== null) {
-      this.anchor = this.firstAnchor
-      this.anchorDirection = 'before'
-      this.pageIndex = null
-    } else if (this.anchor !== null) {
-      this.anchorDirection =
-        this.anchorDirection === 'after' ? 'before' : 'after'
-      this.pageIndex = null
-    } else if (this.pageIndex !== null) {
-      this.pageIndex = Math.max(0, this.pageIndex - 1)
-    } else {
-      return
-    }
-    this.pageSignal.set(Math.max(0, this.pageSignal.get() - 1))
-    this.changeWindow()
+    this.withPresentationUpdate({ kind: 'reset' }, () => {
+      const rowsBefore = this.rowsBeforeSignal.get()
+      if (rowsBefore !== null && rowsBefore < this.pageSizeSignal.get()) {
+        this.anchor = null
+        this.anchorDirection = 'after'
+        this.pageIndex = null
+      } else if (this.firstAnchor !== null) {
+        this.anchor = this.firstAnchor
+        this.anchorDirection = 'before'
+        this.pageIndex = null
+      } else if (this.anchor !== null) {
+        this.anchorDirection =
+          this.anchorDirection === 'after' ? 'before' : 'after'
+        this.pageIndex = null
+      } else if (this.pageIndex !== null) {
+        this.pageIndex = Math.max(0, this.pageIndex - 1)
+      } else {
+        return
+      }
+      this.pageSignal.set(Math.max(0, this.pageSignal.get() - 1))
+      this.changeWindow()
+    })
   }
 
   /**
@@ -1680,26 +1822,32 @@ export class TableViewportController<R> implements TableWindowSink {
    *
    * @param errorCode Machine-readable reason the server named. The view does not
    *   branch on it — one phrase covers every code.
+   * @param requestId Request this refusal answers, absent for an untracked delivery.
    */
-  ingestRefusal(errorCode: string): void {
-    this.refusalSignal.set(errorCode)
-    this.frozenSinceSignal.set(null)
-    this.windowSignal.set([])
-    this.totalCountSignal.set(0)
-    this.totalExactSignal.set(true)
-    this.firstAnchor = null
-    this.lastAnchor = null
-    this.rowsBeforeSignal.set(null)
-    this.hasRowsAfterSignal.set(null)
-    this.pushedAboveSignal.set(false)
-    this.placeholdersSignal.set(new Map())
-    this.loadedSignal.set(true)
-    this.clearWindowPending()
-    this.clearHighlights()
-    this.clearPending()
-    this.clearAnnounced()
-    this.selectedKeysSignal.set(new Set())
-    this.expandedKeysSignal.set(new Set())
+  ingestRefusal(errorCode: string, requestId?: string): void {
+    if (!this.acceptsWindowResponse(requestId)) {
+      return
+    }
+    this.withPresentationUpdate({ kind: 'refusal' }, () => {
+      this.geometryOwner.replaceWindow([])
+      this.refusalSignal.set(errorCode)
+      this.frozenSinceSignal.set(null)
+      this.windowSignal.set([])
+      this.totalCountSignal.set(0)
+      this.totalExactSignal.set(true)
+      this.firstAnchor = null
+      this.lastAnchor = null
+      this.rowsBeforeSignal.set(null)
+      this.hasRowsAfterSignal.set(null)
+      this.pushedAboveSignal.set(false)
+      this.loadedSignal.set(true)
+      this.clearHighlights()
+      this.clearPending()
+      this.clearAnnounced()
+      this.selectedKeysSignal.set(new Set())
+      this.expandedKeysSignal.set(new Set())
+    })
+    this.completeWindowRequest(requestId)
   }
 
   /**
@@ -1748,6 +1896,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param lastAnchor Place the last row sits at, or null when the window is empty.
    * @param limit How many rows the window carries — the size the backend served it at.
    * @param rowsBefore Rows of the set standing before the window, or null when it reports none.
+   * @param requestId Request this window answers, absent for an unsolicited snapshot.
    */
   ingestWindow(
     rows: readonly TableRow[],
@@ -1757,61 +1906,67 @@ export class TableViewportController<R> implements TableWindowSink {
     lastAnchor: TableAnchor | null,
     limit: number,
     rowsBefore: number | null = null,
+    requestId?: string,
   ): void {
-    this.refusalSignal.set(null)
-    this.frozenSinceSignal.set(null)
-    this.windowSignal.set(rows.slice())
-    this.totalCountSignal.set(Math.max(0, totalCount))
-    this.totalExactSignal.set(totalExact)
-    this.firstAnchor = firstAnchor
-    this.lastAnchor = lastAnchor
-    this.rowsBeforeSignal.set(
-      rowsBefore === null ? null : Math.max(0, rowsBefore),
-    )
-    this.hasRowsAfterSignal.set(
-      totalExact &&
-        rowsBefore !== null &&
-        rows.length > 0 &&
-        limit > 0 &&
-        (this.orderSignal.get()?.length ?? 0) > 0
-        ? rowsBefore + rows.length < totalCount
-        : null,
-    )
-    this.pushedAboveSignal.set(false)
-    this.pageSizeSignal.set(Math.max(1, Math.trunc(limit)))
-    this.placeholdersSignal.set(new Map())
-    this.loadedSignal.set(true)
-    this.clearWindowPending()
-    this.clearHighlights()
-    this.clearPending()
-    this.clearAnnounced()
-    if (this.focusKey !== null) {
-      // The dialog over the row in focus stays open across windows: a page turn, a search and
-      // a reconnect all bring one, with the row in it or not. The body is taken from the window
-      // when the row is there; either way the focus is said again, and the server answers with
-      // the body only when the window it now holds lacks the row — the one rule that closes
-      // both the race (the row left while the focus was in flight) and the reconnect.
-      const held = rows.find((row) => row.rowKey === this.focusKey)
-      if (held !== undefined) {
-        this.focusBodySignal.set(held)
-      }
-      this.sendFocus(this.focusKey)
+    if (!this.acceptsWindowResponse(requestId)) {
+      return
     }
-    // A window also arrives where nobody changed one — a refresh a page asked for,
-    // a re-subscribe after a broken socket — and there the marks stay: the raw keys
-    // are narrowed to the rows that came, and the condition is untouched, being about
-    // the filter, which did not move. A window CHANGE has already cleared both.
-    const arrived = new Set(rows.map((row) => row.rowKey))
-    this.selectedKeysSignal.set(
-      new Set(
-        [...this.selectedKeysSignal.get()].filter((key) => arrived.has(key)),
-      ),
-    )
-    this.expandedKeysSignal.set(
-      new Set(
-        [...this.expandedKeysSignal.get()].filter((key) => arrived.has(key)),
-      ),
-    )
+    this.withPresentationUpdate({ kind: 'window' }, () => {
+      this.refusalSignal.set(null)
+      this.frozenSinceSignal.set(null)
+      this.clearHighlights()
+      this.clearPending()
+      this.geometryOwner.replaceWindow(rows.map((row) => row.rowKey))
+      this.windowSignal.set(rows.map((row) => this.liveEntry(row)))
+      this.totalCountSignal.set(Math.max(0, totalCount))
+      this.totalExactSignal.set(totalExact)
+      this.firstAnchor = firstAnchor
+      this.lastAnchor = lastAnchor
+      this.rowsBeforeSignal.set(
+        rowsBefore === null ? null : Math.max(0, rowsBefore),
+      )
+      this.hasRowsAfterSignal.set(
+        totalExact &&
+          rowsBefore !== null &&
+          rows.length > 0 &&
+          limit > 0 &&
+          (this.orderSignal.get()?.length ?? 0) > 0
+          ? rowsBefore + rows.length < totalCount
+          : null,
+      )
+      this.pushedAboveSignal.set(false)
+      this.pageSizeSignal.set(Math.max(1, Math.trunc(limit)))
+      this.loadedSignal.set(true)
+      this.clearAnnounced()
+      if (this.focusKey !== null) {
+        // The dialog over the row in focus stays open across windows: a page turn, a search and
+        // a reconnect all bring one, with the row in it or not. The body is taken from the window
+        // when the row is there; either way the focus is said again, and the server answers with
+        // the body only when the window it now holds lacks the row — the one rule that closes
+        // both the race (the row left while the focus was in flight) and the reconnect.
+        const held = rows.find((row) => row.rowKey === this.focusKey)
+        if (held !== undefined) {
+          this.focusBodySignal.set(held)
+        }
+        this.sendFocus(this.focusKey)
+      }
+      // A window also arrives where nobody changed one — a refresh a page asked for,
+      // a re-subscribe after a broken socket — and there the marks stay: the raw keys
+      // are narrowed to the rows that came, and the condition is untouched, being about
+      // the filter, which did not move. A window CHANGE has already cleared both.
+      const arrived = new Set(rows.map((row) => row.rowKey))
+      this.selectedKeysSignal.set(
+        new Set(
+          [...this.selectedKeysSignal.get()].filter((key) => arrived.has(key)),
+        ),
+      )
+      this.expandedKeysSignal.set(
+        new Set(
+          [...this.expandedKeysSignal.get()].filter((key) => arrived.has(key)),
+        ),
+      )
+    })
+    this.completeWindowRequest(requestId)
   }
 
   /**
@@ -1855,56 +2010,61 @@ export class TableViewportController<R> implements TableWindowSink {
     progress: readonly HilosTableProgressFrame[],
     rowsBefore: number | null = null,
   ): void {
-    this.replaceProgress(progress)
-    if (!this.openingOrderKnown) {
-      // Where the sort cycle and a reset come home to: the order the table opened in, which
-      // is the backend's declaration and never a later choice of the reader's.
-      //
-      // Taken BEFORE the order itself is published: this is a plain field, not a signal, so
-      // nothing recomputes when it lands, and the menu built off the order would otherwise
-      // word its way home from the moment before the table knew where home was.
-      this.openingOrder = sort
-      this.openingOrderKnown = true
-    }
-    this.orderSignal.set(sort)
-    const firstWindow = !this.loadedSignal.get()
-    if (firstWindow && this.opensWithPreset()) {
-      // The rows of this window are the whole set, the preset unknown to whoever served it.
-      // Showing them first and the preset's own rows a moment later would flash a table of
-      // everything under a page about one thing, so the skeleton stands until the right ones
-      // come — asked for at the size the backend declared.
-      this.pageSizeSignal.set(Math.max(1, Math.trunc(limit)))
-      this.send()
+    if (!this.acceptsWindowResponse()) {
       return
     }
-    this.ingestWindow(
-      rows,
-      totalCount,
-      totalExact,
-      firstAnchor,
-      lastAnchor,
-      limit,
-      rowsBefore,
-    )
-    if (!firstWindow) {
-      // A new owner holds the window again but has never heard this loaded controller's
-      // options. The first window already declares them through loadedSignal above.
-      const facets = this.facetOptions.get()
-      if (Object.keys(facets).length > 0) {
-        this.options.sendFacets?.(facets)
+    this.withPresentationUpdate({ kind: 'window' }, () => {
+      this.replaceProgress(progress)
+      if (!this.openingOrderKnown) {
+        // Where the sort cycle and a reset come home to: the order the table opened in, which
+        // is the backend's declaration and never a later choice of the reader's.
+        //
+        // Taken BEFORE the order itself is published: this is a plain field, not a signal, so
+        // nothing recomputes when it lands, and the menu built off the order would otherwise
+        // word its way home from the moment before the table knew where home was.
+        this.openingOrder = sort
+        this.openingOrderKnown = true
       }
-    }
-    if (
-      firstWindow &&
-      this.renderedKeys.get().length > 0 &&
-      this.options.sendRendered !== undefined
-    ) {
-      // The first window of a table that had none was served before the table mounted, so the
-      // server holds it without the fields the columns draw. A table coming back after a broken
-      // socket already reported them with its window, and a later answer to the same page finds
-      // this table loaded: only this one window ever needs telling (HIL-880).
-      this.options.sendRendered(this.renderedKeys.get())
-    }
+      this.orderSignal.set(sort)
+      const firstWindow = !this.loadedSignal.get()
+      if (firstWindow && this.opensWithPreset()) {
+        // The rows of this window are the whole set, the preset unknown to whoever served it.
+        // Showing them first and the preset's own rows a moment later would flash a table of
+        // everything under a page about one thing, so the skeleton stands until the right ones
+        // come — asked for at the size the backend declared.
+        this.pageSizeSignal.set(Math.max(1, Math.trunc(limit)))
+        this.send()
+        return
+      }
+      this.ingestWindow(
+        rows,
+        totalCount,
+        totalExact,
+        firstAnchor,
+        lastAnchor,
+        limit,
+        rowsBefore,
+      )
+      if (!firstWindow) {
+        // A new owner holds the window again but has never heard this loaded controller's
+        // options. The first window already declares them through loadedSignal above.
+        const facets = this.facetOptions.get()
+        if (Object.keys(facets).length > 0) {
+          this.options.sendFacets?.(facets)
+        }
+      }
+      if (
+        firstWindow &&
+        this.renderedKeys.get().length > 0 &&
+        this.options.sendRendered !== undefined
+      ) {
+        // The first window of a table that had none was served before the table mounted, so the
+        // server holds it without the fields the columns draw. A table coming back after a broken
+        // socket already reported them with its window, and a later answer to the same page finds
+        // this table loaded: only this one window ever needs telling (HIL-880).
+        this.options.sendRendered(this.renderedKeys.get())
+      }
+    })
   }
 
   /**
@@ -2038,54 +2198,71 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param frame The bar as it arrived.
    */
   ingestProgress(frame: HilosTableProgressFrame): void {
-    if (frame.scope === 'row') {
-      const { rowKey } = frame
-      if (rowKey === undefined) {
-        // Not a second rule: a row bar without its row is already dropped where frames are
-        // taken in (bindTableViewport.ts). This is what tells the type system so.
-        return
-      }
-      if (frame.ended === true) {
-        if (
-          this.rowProgressSignal.get().get(rowKey)?.progressKey ===
-          frame.progressKey
-        ) {
-          this.dropRowProgress(rowKey)
+    this.withPresentationUpdate(
+      {
+        kind: 'rows',
+        rowKeys: frame.rowKey === undefined ? [] : [frame.rowKey],
+      },
+      () => {
+        if (frame.scope === 'row') {
+          const { rowKey } = frame
+          if (rowKey === undefined) {
+            // Not a second rule: a row bar without its row is already dropped where frames are
+            // taken in (bindTableViewport.ts). This is what tells the type system so.
+            return
+          }
+          if (frame.ended === true) {
+            if (
+              this.rowProgressSignal.get().get(rowKey)?.progressKey ===
+              frame.progressKey
+            ) {
+              this.dropRowProgress(rowKey)
+            }
+
+            return
+          }
+          if (
+            this.windowSignal
+              .get()
+              .some(
+                (entry) => entry.rowKey === rowKey && entry.kind === 'departed',
+              )
+          ) {
+            return
+          }
+          this.rowProgressSignal.set(
+            new Map(this.rowProgressSignal.get()).set(
+              rowKey,
+              toTableProgress(frame),
+            ),
+          )
+
+          return
         }
 
-        return
-      }
-      this.rowProgressSignal.set(
-        new Map(this.rowProgressSignal.get()).set(
-          rowKey,
-          toTableProgress(frame),
-        ),
-      )
+        const place: WritableSignal<HilosTableProgress | null> =
+          frame.scope === 'table'
+            ? this.tableProgressSignal
+            : this.bulkProgressSignal
+        if (frame.ended === true) {
+          if (place.get()?.progressKey === frame.progressKey) {
+            place.set(null)
+          }
 
-      return
-    }
-
-    const place: WritableSignal<HilosTableProgress | null> =
-      frame.scope === 'table'
-        ? this.tableProgressSignal
-        : this.bulkProgressSignal
-    if (frame.ended === true) {
-      if (place.get()?.progressKey === frame.progressKey) {
-        place.set(null)
-      }
-
-      return
-    }
-    if (
-      frame.scope === 'bulk' &&
-      this.bulkReportSignal.get()?.progressKey !== frame.progressKey
-    ) {
-      // A new run is what clears the report of the last one, and nothing else does.
-      // Clearing it when the bar of the SAME run moves would erase a report that
-      // arrived first, which is the order the server sends the two in.
-      this.bulkReportSignal.set(null)
-    }
-    place.set(toTableProgress(frame))
+          return
+        }
+        if (
+          frame.scope === 'bulk' &&
+          this.bulkReportSignal.get()?.progressKey !== frame.progressKey
+        ) {
+          // A new run is what clears the report of the last one, and nothing else does.
+          // Clearing it when the bar of the SAME run moves would erase a report that
+          // arrived first, which is the order the server sends the two in.
+          this.bulkReportSignal.set(null)
+        }
+        place.set(toTableProgress(frame))
+      },
+    )
   }
 
   /**
@@ -2122,18 +2299,28 @@ export class TableViewportController<R> implements TableWindowSink {
     firstAnchor: TableAnchor | null,
     lastAnchor: TableAnchor | null,
   ): void {
-    if (this.refusalSignal.get() !== null) {
-      return
-    }
-    this.windowSignal.set([...this.windowSignal.get(), row])
-    this.totalCountSignal.set(Math.max(0, totalCount))
-    this.totalExactSignal.set(totalExact)
-    this.firstAnchor = firstAnchor
-    this.lastAnchor = lastAnchor
-    if (!totalExact) {
-      this.hasRowsAfterSignal.set(null)
-    }
-    this.takeFocusBody(row)
+    this.withPresentationUpdate({ kind: 'rows', rowKeys: [row.rowKey] }, () => {
+      if (this.refusalSignal.get() !== null) {
+        return
+      }
+      if (this.isLiveRow(row.rowKey)) {
+        return
+      }
+      const previous = this.windowSignal
+        .get()
+        .filter((entry) => entry.rowKey !== row.rowKey)
+      this.forgetRowState(row.rowKey)
+      this.geometryOwner.addRecord(row.rowKey)
+      this.windowSignal.set([...previous, this.liveEntry(row)])
+      this.totalCountSignal.set(Math.max(0, totalCount))
+      this.totalExactSignal.set(totalExact)
+      this.firstAnchor = firstAnchor
+      this.lastAnchor = lastAnchor
+      if (!totalExact) {
+        this.hasRowsAfterSignal.set(null)
+      }
+      this.takeFocusBody(row)
+    })
   }
 
   /**
@@ -2177,63 +2364,58 @@ export class TableViewportController<R> implements TableWindowSink {
     lastAnchor: TableAnchor | null,
     requestId?: string | null,
   ): void {
-    if (this.refusalSignal.get() !== null) {
-      return
-    }
-    this.ownCreateRequestIdSignal.set(requestId ?? null)
-    const fromTop = this.pageIndex === null && this.anchorDirection === 'before'
-    const rows = this.windowSignal
-      .get()
-      .filter((shown) => shown.rowKey !== row.rowKey)
-    const leaving = Math.max(0, rows.length + 1 - this.pageSizeSignal.get())
-    rows.splice(
-      Math.min(
-        Math.max(0, Math.trunc(position)) + (fromTop ? leaving : 0),
-        rows.length,
-      ),
-      0,
-      row,
-    )
-    const evicted = fromTop
-      ? rows.splice(0, leaving)
-      : rows.splice(this.pageSizeSignal.get())
-    this.windowSignal.set(rows)
-    this.totalCountSignal.set(Math.max(0, totalCount))
-    this.totalExactSignal.set(totalExact)
-    this.firstAnchor = firstAnchor
-    this.lastAnchor = lastAnchor
-    if (!totalExact) {
-      this.hasRowsAfterSignal.set(null)
-    } else if (
-      !fromTop &&
-      evicted.length > 0 &&
-      this.hasRowsAfterSignal.get() !== null
-    ) {
-      this.hasRowsAfterSignal.set(true)
-    }
-    if (fromTop && evicted.length > 0) {
-      this.pushedAboveSignal.set(true)
-    }
-    this.takeFocusBody(row)
-
-    const placeholders = new Map(this.placeholdersSignal.get())
-    // The mark and the open panel go with everything else held under these keys, and
-    // for the same reason: the row pushed past the edge is gone, and a key coming back
-    // as a fresh row must not arrive already marked or already open — nobody touched
-    // THIS row.
-    const selected = new Set(this.selectedKeysSignal.get())
-    const expanded = new Set(this.expandedKeysSignal.get())
-    for (const gone of [...evicted, row]) {
-      this.pendingMoves.delete(gone.rowKey)
-      this.pendingRemoved.delete(gone.rowKey)
-      placeholders.delete(gone.rowKey)
-      selected.delete(gone.rowKey)
-      expanded.delete(gone.rowKey)
-    }
-    this.placeholdersSignal.set(placeholders)
-    this.selectedKeysSignal.set(selected)
-    this.expandedKeysSignal.set(expanded)
-    this.refreshPendingSignals()
+    this.withPresentationUpdate({ kind: 'window' }, () => {
+      if (this.refusalSignal.get() !== null) {
+        return
+      }
+      const fromTop =
+        this.pageIndex === null && this.anchorDirection === 'before'
+      const rows = this.windowSignal
+        .get()
+        .filter((shown) => shown.rowKey !== row.rowKey)
+      const liveCount = rows.filter((entry) => entry.kind === 'live').length
+      const leaving = Math.max(0, liveCount + 1 - this.pageSizeSignal.get())
+      const destination =
+        Math.max(0, Math.trunc(position)) + (fromTop ? leaving : 0)
+      const index = this.livePositionIndex(rows, destination)
+      this.forgetRowState(row.rowKey)
+      this.geometryOwner.addRecord(row.rowKey)
+      rows.splice(index, 0, this.liveEntry(row))
+      const evicted: WindowEntry[] = []
+      for (let count = 0; count < leaving; count++) {
+        const edge = fromTop
+          ? rows.findIndex((entry) => entry.kind === 'live')
+          : rows.length -
+            1 -
+            [...rows].reverse().findIndex((entry) => entry.kind === 'live')
+        const gone = rows.splice(edge, 1)[0]
+        if (gone !== undefined) {
+          evicted.push(gone)
+          this.geometryOwner.retireRecord(gone.rowKey)
+          this.forgetRowState(gone.rowKey)
+        }
+      }
+      this.refreshPendingSignals()
+      this.windowSignal.set(rows)
+      this.ownCreateRequestIdSignal.set(requestId ?? null)
+      this.totalCountSignal.set(Math.max(0, totalCount))
+      this.totalExactSignal.set(totalExact)
+      this.firstAnchor = firstAnchor
+      this.lastAnchor = lastAnchor
+      if (!totalExact) {
+        this.hasRowsAfterSignal.set(null)
+      } else if (
+        !fromTop &&
+        evicted.length > 0 &&
+        this.hasRowsAfterSignal.get() !== null
+      ) {
+        this.hasRowsAfterSignal.set(true)
+      }
+      if (fromTop && evicted.length > 0) {
+        this.pushedAboveSignal.set(true)
+      }
+      this.takeFocusBody(row)
+    })
   }
 
   /**
@@ -2260,56 +2442,65 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param delta The normalized viewport delta.
    */
   ingestDelta(delta: TableViewportDelta): void {
-    if (this.refusalSignal.get() !== null) {
-      return
-    }
-    if (delta.kind === 'row_stale') {
-      this.applyRowStaleness(delta.rowKey, delta.staleSources)
-
-      return
-    }
-    if (this.focusKey !== null && delta.rowKey === this.focusKey) {
-      // Before the gate, and whatever it decides: the dialog over the row is not the screen the
-      // gate holds still. A removal without a body is the server saying the row is gone.
-      this.focusBodySignal.set(
-        delta.kind === 'row_removed' ? (delta.row ?? null) : delta.row,
-      )
-    }
-    if (delta.own === true) {
-      this.applyOwnDelta(delta)
-
-      return
-    }
-    switch (delta.kind) {
-      case 'row_updated':
-        this.applyRowValues(delta.rowKey, delta.row)
-
-        return
-      case 'row_moved':
-        if (this.isInWindow(delta.rowKey)) {
-          this.pendingRemoved.delete(delta.rowKey)
-          this.pendingMoves.set(delta.rowKey, {
-            row: delta.row,
-            position: delta.position,
-          })
+    this.withPresentationUpdate(
+      { kind: 'rows', rowKeys: [delta.rowKey] },
+      () => {
+        if (this.refusalSignal.get() !== null) {
+          return
         }
-        break
-      case 'row_removed':
-        // The bar goes at once, whatever the gate decides about the row: the row is gone on
-        // the server, so nobody will cover it with a bar again, and the end of its work may
-        // never arrive at all — leaving the bar hanging under a placeholder with nothing left
-        // to take it down.
-        this.dropRowProgress(delta.rowKey)
-        // A LIVE row of the window, not any key in it: a row in focus leaves a second time
-        // after its placeholder is standing (the server follows it past the window), and a
-        // wait on a placeholder is a badge whose Apply changes nothing on the screen.
-        if (this.isLiveRow(delta.rowKey)) {
-          this.pendingMoves.delete(delta.rowKey)
-          this.pendingRemoved.set(delta.rowKey, delta.reason)
+        if (delta.kind === 'row_stale') {
+          this.applyRowStaleness(delta.rowKey, delta.staleSources)
+
+          return
         }
-        break
-    }
-    this.refreshPendingSignals()
+        if (this.focusKey !== null && delta.rowKey === this.focusKey) {
+          // Before the gate, and whatever it decides: the dialog over the row is not the screen the
+          // gate holds still. A removal without a body is the server saying the row is gone.
+          this.focusBodySignal.set(
+            delta.kind === 'row_removed' ? (delta.row ?? null) : delta.row,
+          )
+        }
+        if (delta.own === true) {
+          this.applyOwnDelta(delta)
+
+          return
+        }
+        switch (delta.kind) {
+          case 'row_updated':
+            this.applyRowValues(delta.rowKey, delta.row)
+
+            return
+          case 'row_moved':
+            if (this.isLiveRow(delta.rowKey)) {
+              this.geometryOwner.releaseWork(delta.rowKey)
+              this.pendingRemoved.delete(delta.rowKey)
+              this.pendingMoves.set(delta.rowKey, {
+                row: delta.row,
+                position: delta.position,
+              })
+            }
+            break
+          case 'row_removed':
+            // The bar goes at once, whatever the gate decides about the row: the row is gone on
+            // the server, so nobody will cover it with a bar again, and the end of its work may
+            // never arrive at all — leaving the bar hanging under a placeholder with nothing left
+            // to take it down.
+            if (this.rowProgressSignal.get().has(delta.rowKey)) {
+              this.geometryOwner.reserveWork(delta.rowKey)
+            }
+            this.dropRowProgress(delta.rowKey)
+            // A LIVE row of the window, not any key in it: a row in focus leaves a second time
+            // after its placeholder is standing (the server follows it past the window), and a
+            // wait on a placeholder is a badge whose Apply changes nothing on the screen.
+            if (this.isLiveRow(delta.rowKey)) {
+              this.pendingMoves.delete(delta.rowKey)
+              this.pendingRemoved.set(delta.rowKey, delta.reason)
+            }
+            break
+        }
+        this.refreshPendingSignals()
+      },
+    )
   }
 
   /**
@@ -2323,16 +2514,21 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param row The row as the server rebuilt it.
    */
   private applyRowValues(rowKey: string, row: TableRow): void {
-    if (!this.isInWindow(rowKey)) {
+    if (!this.isLiveRow(rowKey)) {
       return
     }
     this.windowSignal.set(
       this.windowSignal
         .get()
-        .map((shown) => (shown.rowKey === rowKey ? row : shown)),
+        .map((shown) =>
+          shown.kind === 'live' && shown.rowKey === rowKey
+            ? { ...shown, row }
+            : shown,
+        ),
     )
     this.pendingMoves.delete(rowKey)
     this.pendingRemoved.delete(rowKey)
+    this.geometryOwner.releaseWork(rowKey)
     this.highlight(rowKey)
     this.refreshPendingSignals()
   }
@@ -2361,13 +2557,17 @@ export class TableViewportController<R> implements TableWindowSink {
     rowKey: string,
     staleSources: readonly string[],
   ): void {
-    if (!this.isInWindow(rowKey)) {
+    if (!this.isLiveRow(rowKey)) {
       return
     }
     this.windowSignal.set(
       this.windowSignal
         .get()
-        .map((row) => (row.rowKey === rowKey ? { ...row, staleSources } : row)),
+        .map((entry) =>
+          entry.kind === 'live' && entry.rowKey === rowKey
+            ? { ...entry, row: { ...entry.row, staleSources } }
+            : entry,
+        ),
     )
     const queued = this.pendingMoves.get(rowKey)
     if (queued) {
@@ -2391,22 +2591,20 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param delta The own-change echo (row_updated, row_moved or row_removed).
    */
   private applyOwnDelta(delta: LiveViewportDelta): void {
-    if (!this.isInWindow(delta.rowKey)) {
+    if (!this.isLiveRow(delta.rowKey)) {
       return
     }
     this.pendingMoves.delete(delta.rowKey)
     this.pendingRemoved.delete(delta.rowKey)
-    const placeholders = new Map(this.placeholdersSignal.get())
     if (delta.kind === 'row_updated' || delta.kind === 'row_moved') {
+      this.geometryOwner.releaseWork(delta.rowKey)
       this.windowSignal.set(
         this.placedWindow(delta.rowKey, delta.row, this.slotOf(delta)),
       )
       this.highlight(delta.rowKey)
-      placeholders.delete(delta.rowKey)
     } else {
-      placeholders.set(delta.rowKey, delta.reason)
+      this.departRows(new Map([[delta.rowKey, delta.reason]]))
     }
-    this.placeholdersSignal.set(placeholders)
     this.refreshPendingSignals()
     this.settleEmptyWindow()
   }
@@ -2415,39 +2613,42 @@ export class TableViewportController<R> implements TableWindowSink {
    * Apply accumulated pending changes to the displayed rows in place: updates
    * replace their row and removals become placeholders in their slot (the layout
    * is not collapsed and no row is pulled from another page). The window itself
-   * does not move; the count is already live and not part of pending. When every
-   * row became a placeholder and that live count is zero, the window converges
-   * to the empty window a reload would bring.
+   * does not move; the count is already live and not part of pending. Departed
+   * slots remain even when no live members remain.
    */
   apply(): void {
     if (this.pendingCountSignal.get() === 0) {
       return
     }
+    this.withPresentationUpdate(
+      {
+        kind: 'rows',
+        rowKeys: [...this.pendingRemoved.keys(), ...this.pendingMoves.keys()],
+      },
+      () => {
+        if (this.pendingRemoved.size > 0) {
+          this.departRows(this.pendingRemoved)
+        }
 
-    if (this.pendingRemoved.size > 0) {
-      const placeholders = new Map(this.placeholdersSignal.get())
-      for (const [rowKey, reason] of this.pendingRemoved) {
-        placeholders.set(rowKey, reason)
-      }
-      this.placeholdersSignal.set(placeholders)
-    }
+        // Departures first: server destinations count only live members, while their
+        // placeholders keep standing. Moves run by ascending destination, each against
+        // the live order the earlier ones have already settled.
+        const moves = [...this.pendingMoves.entries()].sort(
+          ([, one], [, other]) =>
+            (one.position ?? Number.MAX_SAFE_INTEGER) -
+            (other.position ?? Number.MAX_SAFE_INTEGER),
+        )
+        for (const [rowKey, move] of moves) {
+          this.windowSignal.set(
+            this.placedWindow(rowKey, move.row, move.position),
+          )
+          this.highlight(rowKey)
+        }
 
-    // Slots first, movement after: the placeholders of this same press are still standing
-    // in the window, so a slot the server named counts them exactly as the reader sees them.
-    // The moves themselves run by ascending slot, so each one lands against a window the
-    // earlier ones have already settled.
-    const moves = [...this.pendingMoves.entries()].sort(
-      ([, one], [, other]) =>
-        (one.position ?? Number.MAX_SAFE_INTEGER) -
-        (other.position ?? Number.MAX_SAFE_INTEGER),
+        this.clearPending()
+        this.settleEmptyWindow()
+      },
     )
-    for (const [rowKey, move] of moves) {
-      this.windowSignal.set(this.placedWindow(rowKey, move.row, move.position))
-      this.highlight(rowKey)
-    }
-
-    this.clearPending()
-    this.settleEmptyWindow()
   }
 
   /**
@@ -2519,11 +2720,9 @@ export class TableViewportController<R> implements TableWindowSink {
    */
   private freshRow(rowKey: string): TableRow | null {
     this.apply()
-    if (this.placeholdersSignal.get().has(rowKey)) {
-      return null
-    }
+    const entry = this.windowSignal.get().find((row) => row.rowKey === rowKey)
 
-    return this.windowSignal.get().find((row) => row.rowKey === rowKey) ?? null
+    return entry?.kind === 'live' ? entry.row : null
   }
 
   /**
@@ -2618,22 +2817,24 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param expanded Whether the panel is now open.
    */
   expandRow(rowKey: string, expanded: boolean): void {
-    if (
-      !this.isLiveRow(rowKey) ||
-      (expanded &&
-        !this.rows
-          .get()
-          .some((view) => view.rowKey === rowKey && view.expandable))
-    ) {
-      return
-    }
-    const keys = new Set(this.expandedKeysSignal.get())
-    if (expanded) {
-      keys.add(rowKey)
-    } else {
-      keys.delete(rowKey)
-    }
-    this.expandedKeysSignal.set(keys)
+    this.withPresentationUpdate({ kind: 'rows', rowKeys: [rowKey] }, () => {
+      if (
+        !this.isLiveRow(rowKey) ||
+        (expanded &&
+          !this.rows
+            .get()
+            .some((view) => view.rowKey === rowKey && view.expandable))
+      ) {
+        return
+      }
+      const keys = new Set(this.expandedKeysSignal.get())
+      if (expanded) {
+        keys.add(rowKey)
+      } else {
+        keys.delete(rowKey)
+      }
+      this.expandedKeysSignal.set(keys)
+    })
   }
 
   /**
@@ -2746,23 +2947,82 @@ export class TableViewportController<R> implements TableWindowSink {
     this.expandedKeysSignal.set(new Set())
   }
 
-  private isInWindow(rowKey: string): boolean {
-    return this.windowSignal.get().some((row) => row.rowKey === rowKey)
-  }
-
-  /** Whether the key is a row of the window that is still standing — not a placeholder. */
+  /** Whether the key is a member of the live set, rather than a retained slot. */
   private isLiveRow(rowKey: string): boolean {
-    return this.isInWindow(rowKey) && !this.placeholdersSignal.get().has(rowKey)
+    return this.windowSignal
+      .get()
+      .some((entry) => entry.kind === 'live' && entry.rowKey === rowKey)
   }
 
   /** The keys of the window's live rows, in window order. */
   private liveRowKeys(): readonly string[] {
-    const placeholders = this.placeholdersSignal.get()
-
     return this.windowSignal
       .get()
-      .map((row) => row.rowKey)
-      .filter((rowKey) => !placeholders.has(rowKey))
+      .filter((entry) => entry.kind === 'live')
+      .map((entry) => entry.rowKey)
+  }
+
+  /** Build a live entry using the geometry owner's already issued identity. */
+  private liveEntry(row: TableRow): WindowEntry {
+    const identity = this.geometryOwner.record(row.rowKey)
+    if (identity === null) {
+      throw new Error(`Missing table occurrence: ${row.rowKey}`)
+    }
+
+    return {
+      kind: 'live',
+      rowKey: row.rowKey,
+      occurrence: identity.occurrence,
+      row,
+    }
+  }
+
+  /** Retire all values after the surrounding presentation boundary captured them. */
+  private departRows(removals: ReadonlyMap<string, TableRemovalReason>): void {
+    const live = this.liveRowKeys()
+    const rows = this.windowSignal.get().map((entry): WindowEntry => {
+      const reason = removals.get(entry.rowKey)
+      if (entry.kind === 'departed' || reason === undefined) {
+        return entry
+      }
+      this.geometryOwner.depart(entry.rowKey, reason)
+      this.forgetRowState(entry.rowKey)
+      if (entry.rowKey === live[0]) {
+        this.firstAnchor = null
+      }
+      if (entry.rowKey === live[live.length - 1]) {
+        this.lastAnchor = null
+      }
+
+      return {
+        kind: 'departed',
+        rowKey: entry.rowKey,
+        occurrence: entry.occurrence,
+        reason,
+      }
+    })
+    this.windowSignal.set(rows)
+  }
+
+  /** Drop row-bound state when an occurrence leaves or a key is reused. */
+  private forgetRowState(rowKey: string): void {
+    this.pendingMoves.delete(rowKey)
+    this.pendingRemoved.delete(rowKey)
+    const selected = new Set(this.selectedKeysSignal.get())
+    const expanded = new Set(this.expandedKeysSignal.get())
+    const highlighted = new Set(this.highlightedKeysSignal.get())
+    selected.delete(rowKey)
+    expanded.delete(rowKey)
+    highlighted.delete(rowKey)
+    this.selectedKeysSignal.set(selected)
+    this.expandedKeysSignal.set(expanded)
+    this.highlightedKeysSignal.set(highlighted)
+    const timer = this.highlightTimers.get(rowKey)
+    if (timer !== undefined) {
+      clearTimeout(timer)
+      this.highlightTimers.delete(rowKey)
+    }
+    this.dropRowProgress(rowKey)
   }
 
   /**
@@ -2776,9 +3036,28 @@ export class TableViewportController<R> implements TableWindowSink {
   }
 
   /**
+   * Translate a server rank among live members into an insertion index, keeping
+   * departed slots in the window. A rank beyond the live rows appends at the tail.
+   *
+   * @param rows The window without the arriving or moving row.
+   * @param position The zero-based destination among live members.
+   * @returns The physical index before that live member, or the window's end.
+   */
+  private livePositionIndex(
+    rows: readonly WindowEntry[],
+    position: number,
+  ): number {
+    const live = rows.filter((entry) => entry.kind === 'live')
+    const before = live[Math.max(0, Math.trunc(position))]
+
+    return before === undefined ? rows.length : rows.indexOf(before)
+  }
+
+  /**
    * The window with one row rewritten, and moved to a slot when one was named.
    *
-   * A slot outside the window is pulled to its nearest edge rather than refused: the
+   * A position counts only live members; departed slots keep their place between them.
+   * A position outside the live window is pulled to its nearest edge rather than refused: the
    * number is the row's place at the moment the frame was raised, and the window is
    * authoritative only when it changes — clamping keeps the row visible where it was
    * heading, and the next window settles the rest.
@@ -2792,27 +3071,28 @@ export class TableViewportController<R> implements TableWindowSink {
     rowKey: string,
     row: TableRow,
     position: number | undefined,
-  ): readonly TableRow[] {
+  ): readonly WindowEntry[] {
     const rows = this.windowSignal
       .get()
-      .map((shown) => (shown.rowKey === rowKey ? row : shown))
+      .map((entry) =>
+        entry.kind === 'live' && entry.rowKey === rowKey
+          ? { ...entry, row }
+          : entry,
+      )
     if (position === undefined) {
       return rows
     }
-
-    const from = rows.findIndex((shown) => shown.rowKey === rowKey)
-    if (from < 0) {
+    const from = rows.findIndex(
+      (entry) => entry.kind === 'live' && entry.rowKey === rowKey,
+    )
+    const updated = rows[from]
+    if (updated === undefined) {
       return rows
     }
-    const moved = rows.slice()
-    moved.splice(from, 1)
-    moved.splice(
-      Math.min(Math.max(0, Math.trunc(position)), moved.length),
-      0,
-      row,
-    )
+    rows.splice(from, 1)
+    rows.splice(this.livePositionIndex(rows, position), 0, updated)
 
-    return moved
+    return rows
   }
 
   /**
@@ -2864,8 +3144,8 @@ export class TableViewportController<R> implements TableWindowSink {
   }
 
   /**
-   * Discard pending, placeholders, marks, the selection and the open panels, then
-   * request the new window and start the countdown to the skeleton.
+   * Discard pending, marks, selection and open panels, then request a new window.
+   * Outgoing departed slots keep only their numbers until the answer replaces them.
    *
    * The one place a selection or an expansion is cleared, and every input that
    * changes a window goes through here — search, filters, their reset, sort, a
@@ -2878,22 +3158,15 @@ export class TableViewportController<R> implements TableWindowSink {
    * drawn and comes back with its row.
    */
   private changeWindow(): void {
-    this.placeholdersSignal.set(new Map())
-    this.clearHighlights()
-    this.clearPending()
-    this.clearAnnounced()
-    this.clearSelection()
-    this.clearExpanded()
-    this.send()
-    // The rows of the previous window stay until the answer is late; only then does the
-    // body say so. A second change restarts the countdown rather than stacking a second one.
-    if (this.windowSkeletonTimer !== null) {
-      clearTimeout(this.windowSkeletonTimer)
-    }
-    this.windowSkeletonTimer = setTimeout(() => {
-      this.windowSkeletonTimer = null
-      this.windowPendingSignal.set(true)
-    }, WINDOW_SKELETON_MS)
+    this.withPresentationUpdate({ kind: 'reset' }, () => {
+      this.geometryOwner.invalidateWindow()
+      this.clearHighlights()
+      this.clearPending()
+      this.clearAnnounced()
+      this.clearSelection()
+      this.clearExpanded()
+      this.send()
+    })
   }
 
   /**
@@ -2967,14 +3240,8 @@ export class TableViewportController<R> implements TableWindowSink {
   }
 
   /**
-   * Empty a window that has no live rows over a set whose count is zero.
-   *
-   * The window is emptied rather than merely hidden behind its empty state: a
-   * later tail append must not bring old placeholders back beside the new row.
-   * Change marks, selection (including the all-by-filter condition), announced
-   * rows and open panels go with the empty set. Work bars and their finished
-   * report, the active query, facet counts, loading/refusal state and own-create
-   * correlation do not belong to this convergence and stay where they are.
+   * Retire obsolete live metadata at zero without deleting display history.
+   * The requested address/filter/order and set work/report keep their lifetimes.
    */
   private settleEmptyWindow(): void {
     if (
@@ -2985,8 +3252,6 @@ export class TableViewportController<R> implements TableWindowSink {
       return
     }
 
-    this.windowSignal.set([])
-    this.placeholdersSignal.set(new Map())
     this.firstAnchor = null
     this.lastAnchor = null
     if (this.rowsBeforeSignal.get() !== null) {
@@ -2997,7 +3262,7 @@ export class TableViewportController<R> implements TableWindowSink {
     this.clearHighlights()
     this.clearPending()
     this.clearAnnounced()
-    this.clearSelection()
+    this.selectedKeysSignal.set(new Set())
     this.clearExpanded()
   }
 
@@ -3088,6 +3353,34 @@ export class TableViewportController<R> implements TableWindowSink {
   }
 
   private send(): void {
-    this.options.sendViewport(this.currentDescriptor())
+    if (this.disposed) {
+      return
+    }
+    const requestId = `${this.windowRequestMount}:${this.windowRequestEpoch}:${++this.windowRequestSequence}`
+    this.latestWindowRequestId = requestId
+    this.windowRequestPending = true
+    if (this.windowSkeletonTimer !== null) {
+      clearTimeout(this.windowSkeletonTimer)
+    }
+    this.windowSkeletonTimer = setTimeout(() => {
+      this.windowSkeletonTimer = null
+      this.windowPendingSignal.set(true)
+    }, WINDOW_SKELETON_MS)
+    this.options.sendViewport({ ...this.currentDescriptor(), requestId })
+  }
+
+  /** Complete only the ask still current after synchronous controller subscribers ran. */
+  private completeWindowRequest(requestId?: string): void {
+    if (requestId === undefined) {
+      if (!this.windowRequestPending) {
+        this.clearWindowPending()
+      }
+      return
+    }
+    if (this.windowRequestPending && requestId === this.latestWindowRequestId) {
+      this.windowRequestPending = false
+      this.clearWindowPending()
+      this.lastAppliedWindowRequestIdSignal.set(requestId)
+    }
   }
 }

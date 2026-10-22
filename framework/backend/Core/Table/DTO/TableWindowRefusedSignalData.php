@@ -22,6 +22,7 @@ final class TableWindowRefusedSignalData extends BaseDTO implements SignalDataIn
     public const string page = 'page';
     public const string tableKey = 'tableKey';
     public const string errorCode = 'errorCode';
+    public const string requestId = 'requestId';
 
     /**
      * Creates a table-window refusal signal payload.
@@ -29,12 +30,18 @@ final class TableWindowRefusedSignalData extends BaseDTO implements SignalDataIn
      * @param string $page Page the table belongs to
      * @param string $tableKey Table key whose window is refused
      * @param string $errorCode Machine-readable reason ({@see TableWindowRefusalCode})
+     * @param ?string $requestId Request this refusal answers, absent for an untracked caller
+     * @throws InvalidFormatException When the request id is empty
      */
     public function __construct(
         public readonly string $page,
         public readonly string $tableKey,
         public readonly string $errorCode,
+        public readonly ?string $requestId = null,
     ) {
+        if ($requestId === '') {
+            throw new InvalidFormatException('Table window refusal requestId must not be empty');
+        }
     }
 
     /**
@@ -44,11 +51,16 @@ final class TableWindowRefusedSignalData extends BaseDTO implements SignalDataIn
      */
     public function toArray(): array
     {
-        return [
+        $payload = [
             self::page => $this->page,
             self::tableKey => $this->tableKey,
             self::errorCode => $this->errorCode,
         ];
+        if ($this->requestId !== null) {
+            $payload[self::requestId] = $this->requestId;
+        }
+
+        return $payload;
     }
 
     /**
@@ -64,6 +76,7 @@ final class TableWindowRefusedSignalData extends BaseDTO implements SignalDataIn
             page: self::requireString($data, self::page),
             tableKey: self::requireString($data, self::tableKey),
             errorCode: self::requireString($data, self::errorCode),
+            requestId: array_key_exists(self::requestId, $data) ? self::requireString($data, self::requestId) : null,
         );
     }
 }

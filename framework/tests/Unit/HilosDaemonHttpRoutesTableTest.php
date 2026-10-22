@@ -33,6 +33,23 @@ final class HilosDaemonHttpRoutesTableTest extends TestCase
         parent::tearDown();
     }
 
+    public function testPictureDiffUpdatesTalliesWithoutReplacingUnroutedOrWindow(): void
+    {
+        $this->picture($this->node('n1', new DaemonHttpPicture('localhost', 80, 0, [
+            new DaemonHttpRoutePicture('GET', '/health', null, new HttpRouteTally(1, 0, 0, 0)),
+        ], new HttpRouteTally(0, 0, 0, null))));
+        $before = ClusterDaemonPictureMirror::picture();
+        $this->picture($this->node('n1', new DaemonHttpPicture('localhost', 80, 0, [
+            new DaemonHttpRoutePicture('GET', '/health', null, new HttpRouteTally(2, 0, 0, 0)),
+        ], new HttpRouteTally(0, 0, 0, null))));
+        $table = new HilosDaemonHttpRoutesTable();
+        $mutations = $table->pictureMutations($before, new TableQueryDTO(limit: 1, filter: ['node' => 'n1'], pageIndex: 1));
+        self::assertCount(1, $mutations);
+        self::assertSame('update', $mutations[0]->type->value);
+        self::assertSame('GET/%2Fhealth', $mutations[0]->rowKey);
+        self::assertSame(2, $mutations[0]->row->toArray()['requests']);
+    }
+
     public function testMissingPictureFilterNodeSlotOrHttpYieldsNoRows(): void
     {
         self::assertSame([], $this->rows('n1'));

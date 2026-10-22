@@ -23,6 +23,7 @@ import {
   type NormalizerOptions,
 } from '../state/normalizer.js'
 import { type Scope, type ScopeManager } from '../state/ScopeManager.js'
+import { subscribeSignal } from '../state/signal.js'
 import {
   type TableSortOrder,
   type TableViewportDelta,
@@ -30,6 +31,7 @@ import {
 } from '../table/TableViewportController.js'
 import { type HilosTableProgressFrame } from '../table/tableProgress.js'
 import { hilosTableRemovalReason } from '../table/tablePlaceholder.js'
+import { type TablePresentationChange } from '../table/tableViewportGeometry.js'
 
 /** A table's address on the wire: the page it belongs to and its table key. */
 export interface TableViewportAddress {
@@ -58,6 +60,9 @@ export function bindTableViewport(
   sink: TableWindowSink,
   options: NormalizerOptions = {},
 ): () => void {
+  const unsubscribeScope = subscribeSignal({ get: () => scopes.page() }, () =>
+    sink.resetWindowRequests?.(),
+  )
   // The page scope only when it is still the table's page — a window racing in
   // after a navigation away must not normalize into the new page's scope.
   const currentScope = (): Scope | undefined => {
@@ -66,24 +71,35 @@ export function bindTableViewport(
     return scope?.key === address.page ? scope : undefined
   }
 
+  const withPresentationUpdate = <T>(
+    change: TablePresentationChange,
+    update: () => T,
+  ): T =>
+    sink.withPresentationUpdate
+      ? sink.withPresentationUpdate(change, update)
+      : update()
+
   const unsubscribeWindow = connection.on('tableWindow', (signal) => {
     const data = signal.data
     if (data.tableKey !== address.tableKey || data.page !== address.page) {
       return
     }
     const scope = currentScope()
-    if (!scope) {
+    if (!scope || sink.acceptsWindowResponse?.(data.requestId) === false) {
       return
     }
-    sink.ingestWindow(
-      data.rows.map((row) => normalizeTableRow(scope, row, options)),
-      data.totalCount,
-      data.totalExact,
-      data.firstAnchor,
-      data.lastAnchor,
-      data.limit,
-      data.rowsBefore ?? null,
-    )
+    withPresentationUpdate({ kind: 'window' }, () => {
+      sink.ingestWindow(
+        data.rows.map((row) => normalizeTableRow(scope, row, options)),
+        data.totalCount,
+        data.totalExact,
+        data.firstAnchor,
+        data.lastAnchor,
+        data.limit,
+        data.rowsBefore ?? null,
+        data.requestId,
+      )
+    })
   })
 
   const unsubscribeWindowRefused = connection.on(
@@ -94,10 +110,10 @@ export function bindTableViewport(
         return
       }
       const scope = currentScope()
-      if (!scope) {
+      if (!scope || sink.acceptsWindowResponse?.(data.requestId) === false) {
         return
       }
-      sink.ingestRefusal(data.errorCode)
+      sink.ingestRefusal(data.errorCode, data.requestId)
     },
   )
 
@@ -135,17 +151,19 @@ export function bindTableViewport(
       if (!scope) {
         return
       }
-      sink.ingestSubscriptionWindow(
-        window.rows.map((row) => normalizeTableRow(scope, row, options)),
-        window.totalCount,
-        window.totalExact,
-        window.firstAnchor,
-        window.lastAnchor,
-        window.limit,
-        toSortOrder(window.sort),
-        toProgressFrames(window.progress),
-        window.rowsBefore ?? null,
-      )
+      withPresentationUpdate({ kind: 'window' }, () => {
+        sink.ingestSubscriptionWindow(
+          window.rows.map((row) => normalizeTableRow(scope, row, options)),
+          window.totalCount,
+          window.totalExact,
+          window.firstAnchor,
+          window.lastAnchor,
+          window.limit,
+          toSortOrder(window.sort),
+          toProgressFrames(window.progress),
+          window.rowsBefore ?? null,
+        )
+      })
 
       return
     }
@@ -174,10 +192,16 @@ export function bindTableViewport(
     if (!scope) {
       return
     }
-    const delta = toViewportDelta(scope, data, options)
-    if (delta) {
-      sink.ingestDelta(delta)
+    const change = viewportDeltaChange(data)
+    if (!change) {
+      return
     }
+    withPresentationUpdate(change, () => {
+      const delta = toViewportDelta(scope, data, options)
+      if (delta) {
+        sink.ingestDelta(delta)
+      }
+    })
   })
 
   const unsubscribeCount = connection.on('tableViewportCount', (signal) => {
@@ -208,12 +232,17 @@ export function bindTableViewport(
     if (!scope) {
       return
     }
-    sink.ingestAppend(
-      normalizeTableRow(scope, data.row, options),
-      data.totalCount,
-      data.totalExact,
-      data.firstAnchor,
-      data.lastAnchor,
+    withPresentationUpdate(
+      { kind: 'rows', rowKeys: [String(data.row.rowKey)] },
+      () => {
+        sink.ingestAppend(
+          normalizeTableRow(scope, data.row, options),
+          data.totalCount,
+          data.totalExact,
+          data.firstAnchor,
+          data.lastAnchor,
+        )
+      },
     )
   })
 
@@ -228,15 +257,19 @@ export function bindTableViewport(
       if (!scope) {
         return
       }
-      sink.ingestOwnCreate(
-        normalizeTableRow(scope, data.row, options),
-        data.position,
-        data.totalCount,
-        data.totalExact,
-        data.firstAnchor,
-        data.lastAnchor,
-        data.requestId,
-      )
+      // An own create can evict an edge or replace a reused key: prepare every
+      // old record before normalizing even the newly arriving row's slots.
+      withPresentationUpdate({ kind: 'window' }, () => {
+        sink.ingestOwnCreate(
+          normalizeTableRow(scope, data.row, options),
+          data.position,
+          data.totalCount,
+          data.totalExact,
+          data.firstAnchor,
+          data.lastAnchor,
+          data.requestId,
+        )
+      })
     },
   )
 
@@ -308,6 +341,8 @@ export function bindTableViewport(
   })
 
   return () => {
+    unsubscribeScope()
+    sink.resetWindowRequests?.()
     unsubscribeWindow()
     unsubscribeWindowRefused()
     unsubscribeFrozen()
@@ -321,7 +356,7 @@ export function bindTableViewport(
     unsubscribeUnannounce()
     unsubscribeProgress()
     unsubscribeBulkReport()
-    connection.unregisterTableWindow(address.tableKey)
+    connection.unregisterTableWindow(address.tableKey, sink)
   }
 }
 
@@ -381,6 +416,29 @@ function toSortOrder(
         field: component.field,
         direction: component.direction,
       }))
+}
+
+/** Check the delta's required fields before entering a presentation boundary. */
+function viewportDeltaChange(
+  data: TableViewportDeltaSignalData,
+): TablePresentationChange | null {
+  switch (data.kind) {
+    case 'row_updated':
+    case 'row_moved':
+      if (data.row === undefined) {
+        return null
+      }
+      break
+    case 'row_removed':
+    case 'row_stale':
+      break
+    default:
+      return null
+  }
+
+  return data.rowKey === undefined
+    ? null
+    : { kind: 'rows', rowKeys: [String(data.rowKey)] }
 }
 
 /** Reduce a raw addressed delta to the controller's normalized delta, or null when malformed. */

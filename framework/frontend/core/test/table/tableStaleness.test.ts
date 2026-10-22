@@ -15,6 +15,7 @@ function makeRow(
 ): TableViewportRow<unknown> {
   return {
     rowKey,
+    occurrence: 1,
     row: placeholder ? null : {},
     placeholder,
     pending: null,

@@ -429,7 +429,11 @@ describe('HilosChangeLogPage', () => {
     expect(entry.textContent).toContain(
       'Changed past the application — no receipt',
     )
-    expect(entry.querySelector('.badge')).toBeNull()
+    expect(
+      [...entry.querySelectorAll('.badge')].filter(
+        (badge) => !badge.closest('[inert]'),
+      ),
+    ).toHaveLength(0)
   })
 
   it('keeps viewer figures and marks hidden people beside their numbers', async () => {

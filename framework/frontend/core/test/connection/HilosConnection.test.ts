@@ -3,9 +3,19 @@ import { z } from 'zod'
 import {
   HilosConnection,
   type ConnectionState,
+  type TableWindowDescriptorSource,
   type WebSocketLike,
 } from '../../src/connection/HilosConnection.js'
 import { type ProjectSignalSchemas } from '../../src/protocol/parseSignal.js'
+import { ScopeManager } from '../../src/state/ScopeManager.js'
+import { subscribeSignal } from '../../src/state/signal.js'
+import {
+  bindPageScope,
+  PAGE_SIGNAL_SCHEMAS,
+} from '../../src/subscription/bindPageScope.js'
+import { bindTableViewport } from '../../src/subscription/bindTableViewport.js'
+import { TableViewportController } from '../../src/table/TableViewportController.js'
+import { type TablePresentationChange } from '../../src/table/tableViewportGeometry.js'
 
 /**
  * Scripted stand-in for the browser WebSocket. Nothing fires on its own —
@@ -80,6 +90,143 @@ class MockWebSocket implements WebSocketLike {
 
 const WELCOME_A = '{"type":"handshake","data":{"build":"build-a"}}'
 const WELCOME_B = '{"type":"handshake","data":{"build":"build-b"}}'
+
+describe('table presentation dispatch', () => {
+  function source(name: string, events: string[]): TableWindowDescriptorSource {
+    return {
+      descriptor: () => null,
+      withPresentationUpdate<T>(
+        change: TablePresentationChange,
+        update: () => T,
+      ): T {
+        events.push(`${name}:${change.kind}`)
+        try {
+          return update()
+        } finally {
+          events.push(`${name}:finally`)
+        }
+      },
+    }
+  }
+
+  it('nests all optional sources around one update and returns its value', () => {
+    const { connection } = createConnection()
+    const events: string[] = []
+    const update = vi.fn(() => {
+      events.push('update')
+      return 42
+    })
+    expect(
+      connection.withTablePresentationUpdate({ kind: 'window' }, update),
+    ).toBe(42)
+    events.length = 0
+    update.mockClear()
+    connection.registerTableWindow('first', source('first', events))
+    connection.registerTableWindow('legacy', { descriptor: () => null })
+    connection.registerTableWindow('last', source('last', events))
+
+    expect(
+      connection.withTablePresentationUpdate({ kind: 'window' }, update),
+    ).toBe(42)
+    expect(update).toHaveBeenCalledTimes(1)
+    expect(events).toEqual([
+      'first:window',
+      'last:window',
+      'update',
+      'last:finally',
+      'first:finally',
+    ])
+  })
+
+  it('unwinds every source on throw and uses current registrations on the next call', () => {
+    const { connection } = createConnection()
+    const events: string[] = []
+    connection.registerTableWindow('first', source('old', events))
+    connection.registerTableWindow('last', source('last', events))
+    expect(() =>
+      connection.withTablePresentationUpdate({ kind: 'window' }, () => {
+        events.push('throw')
+        throw new Error('publication failed')
+      }),
+    ).toThrow('publication failed')
+    expect(events).toEqual([
+      'old:window',
+      'last:window',
+      'throw',
+      'last:finally',
+      'old:finally',
+    ])
+
+    connection.unregisterTableWindow('last')
+    connection.registerTableWindow('first', source('remount', events))
+    events.length = 0
+    connection.withTablePresentationUpdate(
+      { kind: 'rows', rowKeys: ['a'] },
+      () => events.push('next'),
+    )
+    expect(events).toEqual(['remount:rows', 'next', 'remount:finally'])
+  })
+
+  it('unwinds earlier sources when a later preparation throws before publication', () => {
+    const { connection } = createConnection()
+    const events: string[] = []
+    const update = vi.fn()
+    connection.registerTableWindow('first', source('first', events))
+    connection.registerTableWindow('throwing', {
+      descriptor: () => null,
+      withPresentationUpdate() {
+        throw new Error('capture failed')
+      },
+    })
+    expect(() =>
+      connection.withTablePresentationUpdate({ kind: 'window' }, update),
+    ).toThrow('capture failed')
+    expect(update).not.toHaveBeenCalled()
+    expect(events).toEqual(['first:window', 'first:finally'])
+    connection.unregisterTableWindow('throwing')
+    connection.withTablePresentationUpdate({ kind: 'window' }, update)
+    expect(update).toHaveBeenCalledTimes(1)
+  })
+
+  it('holds page_response through every project listener and remembers it before delivery', () => {
+    const { connection } = createConnection({
+      projectSchemas: { page_response: z.looseObject({ page: z.string() }) },
+    })
+    const events: string[] = []
+    connection.registerTableWindow('table', source('table', events))
+    connection.on('projectSignal', () => events.push('early'))
+    connection.on('projectSignal', () => events.push('late'))
+    connection.on('signal', () => events.push('signal'))
+    connection.connect()
+    MockWebSocket.last.message(
+      '{"type":"page_response","data":{"page":"main","payload":{"windows":{"table":{}}}}}',
+    )
+    expect(events).toEqual([
+      'table:window',
+      'early',
+      'late',
+      'table:finally',
+      'signal',
+    ])
+    const replay = vi.fn()
+    connection.on('projectSignal', replay)
+    expect(replay).toHaveBeenCalledTimes(1)
+    connection.close()
+  })
+
+  it('leaves other project signals in their existing dispatch path', () => {
+    const { connection } = createConnection({
+      projectSchemas: { subscription_page_state: z.looseObject({}) },
+    })
+    const events: string[] = []
+    connection.registerTableWindow('table', source('table', events))
+    connection.on('projectSignal', () => events.push('project'))
+    connection.connect()
+    MockWebSocket.last.message('{"type":"subscription_page_state","data":{}}')
+    expect(events).toEqual(['project'])
+    connection.close()
+  })
+})
 
 function createConnection(
   overrides: {
@@ -358,6 +505,184 @@ describe('action send', () => {
 })
 
 describe('table viewport send', () => {
+  it('applies only its tracked response in an ordered batch and recovers the desired window on a new socket', () => {
+    const { connection } = createConnection({
+      projectSchemas: PAGE_SIGNAL_SCHEMAS,
+    })
+    const scopes = new ScopeManager()
+    const pages = bindPageScope(connection, scopes)
+    connection.connect()
+    const socket = MockWebSocket.last
+    socket.open()
+    pages.subscribe('p')
+    pages.releaseOnSession()
+    const controller = new TableViewportController({
+      resolve: (row) => row,
+      sendViewport: (descriptor) =>
+        connection.sendTableViewport('p', 't', descriptor),
+      frame: { columns: [] },
+    })
+    const unbind = bindTableViewport(
+      connection,
+      scopes,
+      { page: 'p', tableKey: 't' },
+      controller,
+    )
+    const window = {
+      rows: [{ rowKey: 'initial', slots: {} }],
+      totalCount: 1,
+      totalExact: true,
+      limit: 10,
+      sort: [],
+      firstAnchor: null,
+      lastAnchor: null,
+    }
+    socket.message(
+      JSON.stringify({
+        type: 'page_response',
+        data: { page: 'p', payload: { windows: { t: window } } },
+      }),
+    )
+    expect(socket.sent).toHaveLength(1) // The page's first answer asks for no viewport.
+    controller.setSearch('first')
+    const old = (
+      JSON.parse(socket.sent.at(-1) as string) as { requestId: string }
+    ).requestId
+    controller.setSearch('second')
+    const current = (
+      JSON.parse(socket.sent.at(-1) as string) as { requestId: string }
+    ).requestId
+    const completed: string[] = []
+    const stop = subscribeSignal(
+      controller.lastAppliedWindowRequestId,
+      (id) => {
+        if (id !== null) {
+          completed.push(id)
+          expect(controller.rows.get().map((row) => row.rowKey)).toEqual([
+            'accepted',
+          ])
+        }
+      },
+    )
+    socket.message(
+      JSON.stringify({
+        type: 'signal_batch',
+        data: {
+          frames: [
+            {
+              type: 'table_window_refused',
+              data: {
+                page: 'p',
+                tableKey: 't',
+                errorCode: 'internal_error',
+                requestId: old,
+              },
+            },
+            {
+              type: 'page_response',
+              data: { page: 'p', payload: { data: { label: 'live' } } },
+            },
+            {
+              type: 'table_window',
+              data: {
+                ...window,
+                page: 'p',
+                tableKey: 't',
+                rows: [{ rowKey: 'accepted', slots: {} }],
+                requestId: current,
+              },
+            },
+            {
+              type: 'table_window',
+              data: { ...window, page: 'p', tableKey: 't', requestId: old },
+            },
+          ],
+        },
+      }),
+    )
+    expect(completed).toEqual([current])
+    controller.setSearch('desired')
+    const beforeDrop = (
+      JSON.parse(socket.sent.at(-1) as string) as { requestId: string }
+    ).requestId
+    socket.drop()
+    expect(controller.acceptsWindowResponse(beforeDrop)).toBe(false)
+    vi.advanceTimersByTime(1000)
+    const reconnected = MockWebSocket.last
+    reconnected.open()
+    pages.releaseOnSession()
+    expect(reconnected.sent).toHaveLength(1)
+    const report = JSON.parse(reconnected.sent[0] as string) as {
+      tableWindows: { t: Record<string, unknown> }
+    }
+    expect(report.tableWindows.t.filter).toEqual({ search: 'desired' })
+    expect(report.tableWindows.t).not.toHaveProperty('requestId')
+    reconnected.message(
+      JSON.stringify({
+        type: 'page_response',
+        data: { page: 'p', payload: { windows: { t: window } } },
+      }),
+    )
+    expect(controller.frame.body.get()).toBe('rows')
+    expect(controller.lastAppliedWindowRequestId.get()).toBeNull()
+    expect(reconnected.sent).toHaveLength(1)
+    controller.refresh()
+    const refused = (
+      JSON.parse(reconnected.sent.at(-1) as string) as { requestId: string }
+    ).requestId
+    pages.denyCurrentPage()
+    expect(controller.acceptsWindowResponse(refused)).toBe(false)
+    expect(controller.lastAppliedWindowRequestId.get()).toBeNull()
+    stop()
+    unbind()
+    controller.dispose()
+    connection.close()
+  })
+
+  it('sends correlation at the top level and strips it from held reports across replacement and disconnect', () => {
+    const { connection } = createConnection()
+    connection.connect()
+    const socket = MockWebSocket.last
+    socket.open()
+    const held = {
+      filter: {},
+      sort: null,
+      limit: 10,
+      anchor: null,
+      anchorDirection: 'after' as const,
+      pageIndex: null,
+    }
+    const descriptor = { ...held, requestId: 'mount:1' }
+    const reset = vi.fn()
+    const first = { descriptor: () => descriptor, resetWindowRequests: reset }
+    connection.registerTableWindow('t', first)
+    connection.sendTableViewport('p', 't', descriptor)
+    expect(JSON.parse(socket.sent.at(-1) as string)).toEqual({
+      type: 'table_viewport',
+      page: 'p',
+      tableKey: 't',
+      limit: 10,
+      anchor: null,
+      anchorDirection: 'after',
+      requestId: 'mount:1',
+    })
+    expect(connection.tableWindowDescriptors()).toEqual({ t: held })
+    socket.drop()
+    expect(reset).toHaveBeenCalledTimes(1)
+    const nextReset = vi.fn()
+    const replacement = {
+      descriptor: () => held,
+      resetWindowRequests: nextReset,
+    }
+    connection.registerTableWindow('t', replacement)
+    expect(reset).toHaveBeenCalledTimes(2)
+    connection.unregisterTableWindow('t', first)
+    expect(connection.tableWindowDescriptors()).toEqual({ t: held })
+    connection.unregisterTableWindow('t', replacement)
+    expect(nextReset).toHaveBeenCalledTimes(1)
+    expect(connection.tableWindowDescriptors()).toEqual({})
+  })
+
   it('frames a table viewport with its filter and order while connected', () => {
     const { connection } = createConnection()
     connection.connect()

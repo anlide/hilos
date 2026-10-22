@@ -3,13 +3,14 @@ import { test, expect, type Page } from '@playwright/test'
 import {
   clearCustomSetting,
   draftCustomSetting,
+  expectDataFreeDeparture,
   openSettingEdit,
-  overlapSpot,
   setCustomSetting,
   shownByTestId,
   watchHeight,
   watchLeft,
   watchTop,
+  watchTableSearch,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { setAdminViewMode } from '../helpers/adminViewMode'
@@ -30,6 +31,7 @@ import { clickSubmit, typeInto } from '../helpers/session'
 // database. This catalog has one free string key with no rule and no reader —
 // example_string — and the six two-tab tests all write it, so the file runs its
 // tests one by one, in order, instead of in parallel.
+test.use({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' })
 test.describe.configure({ mode: 'default' })
 
 /** Open the settings page and wait for the live table. */
@@ -511,27 +513,91 @@ test('deletes an orphan setting through the confirm modal', async ({
   // this test owns the row and needs no cleanup.
   const orphanKey = 'e2e_orphan_delete'
 
+  const windows = await watchTableSearch(page, {
+    page: 'hilos_settings',
+    tableKey: 'settings',
+  })
   await signUpAdmin(page)
   await openSettings(page)
-  await isolate(page, orphanKey)
+  const mark = await windows.mark()
+  await typeInto(page.getByTestId('hilos-table-search'), orphanKey)
+  try {
+    await windows.settled(expect, mark, orphanKey, [orphanKey])
+  } finally {
+    await test.info().attach('orphan-search', {
+      body: JSON.stringify(await windows.read(), null, 2),
+      contentType: 'application/json',
+    })
+  }
 
   // The delete affordance is orphan-only: a catalog key never exposes it, this
   // uncataloged row does.
   const deleteButton = shownByTestId(page, `hilos-settings-delete-${orphanKey}`)
   await expect(deleteButton).toBeVisible()
+  await expect(deleteButton).toBeEnabled()
+  await expect(deleteButton).toHaveAccessibleName('Delete orphan setting')
+  await expect(page.getByTestId('hilos-toast-error')).toHaveCount(0)
 
-  // Confirm-modal delete removes the DB row. The initiating tab applies its own
-  // change at once (no pending Apply gate); this is the last row under the search,
-  // so the window converges to the filtered empty state without a reload.
-  await deleteButton.click()
-  await page.getByTestId('hilos-settings-delete-confirm').click()
-  await expect(shownByTestId(page, 'hilos-table-no-matches')).toBeVisible()
-  await expect(page.getByTestId(`hilos-table-row-${orphanKey}`)).toHaveCount(0)
-  await expect(page.getByTestId('hilos-table-placeholder')).toHaveCount(0)
+  // Own deletion applies immediately. This window keeps exactly one data-free
+  // slot in each mounted projection until an explicit replacement is requested.
+  await clickSubmit(deleteButton)
+  const confirm = page.getByTestId('hilos-settings-delete-confirm')
+  await expect(page.getByTestId('modal')).toHaveAccessibleName(
+    `Delete · ${orphanKey}`,
+  )
+  await clickSubmit(confirm)
+  await expect(confirm).toHaveCount(0)
+  await expect(page.getByTestId('hilos-toast-error')).toHaveCount(0)
+  await expectDataFreeDeparture(expect, page, orphanKey, 'Removed', [
+    `hilos-settings-edit-${orphanKey}`,
+    `hilos-settings-reset-${orphanKey}`,
+    `hilos-settings-delete-${orphanKey}`,
+  ])
+  await expect(page.locator('[data-id^="hilos-table-row-"]')).toHaveAttribute(
+    'data-id',
+    `hilos-table-row-${orphanKey}`,
+  )
+  await expect(page.locator('[data-id^="hilos-table-card-"]')).toHaveAttribute(
+    'data-id',
+    `hilos-table-card-${orphanKey}`,
+  )
+  await expect(page.getByTestId('hilos-table-placeholder')).toHaveCount(2)
+  await expect(page.getByTestId('hilos-table-count')).toHaveText('0 – 0 of 0')
   await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
-  await expect(
-    page.getByTestId(`hilos-settings-delete-${orphanKey}`),
-  ).toHaveCount(0)
+  await expect(page.getByTestId('hilos-table-pending-row')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-table-no-matches')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-table-empty')).toHaveCount(0)
+  for (const prefix of ['hilos-table-row-', 'hilos-table-card-']) {
+    await expect(page.getByTestId(`${prefix}${orphanKey}`)).toHaveText(
+      'Removed',
+    )
+    await expect(page.getByTestId(`${prefix}${orphanKey}`)).not.toContainText(
+      'seed-value',
+    )
+  }
+
+  const emptyMark = await windows.mark()
+  const emptySearch = 'e2e_orphan_delete_missing'
+  try {
+    await typeInto(page.getByTestId('hilos-table-search'), emptySearch)
+    await windows.settled(expect, emptyMark, emptySearch, [])
+    await expect(shownByTestId(page, 'hilos-table-no-matches')).toBeVisible()
+    await expect(
+      shownByTestId(page, 'hilos-table-no-matches-terms'),
+    ).toContainText(`“${emptySearch}”`)
+    await expect(page.getByTestId('hilos-table-placeholder')).toHaveCount(0)
+    await expect(page.getByTestId(`hilos-table-row-${orphanKey}`)).toHaveCount(
+      0,
+    )
+    await expect(page.getByTestId(`hilos-table-card-${orphanKey}`)).toHaveCount(
+      0,
+    )
+  } finally {
+    await test.info().attach('orphan-replacement-empty', {
+      body: JSON.stringify(await windows.read(), null, 2),
+      contentType: 'application/json',
+    })
+  }
 })
 
 test('resets a custom setting to its catalog default through the confirm modal', async ({
@@ -618,17 +684,22 @@ test('refuses a bad value in the words of the rule that refused it', async ({
   // is nothing the framework held back to reveal.
   await expect(page.getByTestId('hilos-action-error-type')).toHaveCount(0)
 
-  // The toast overlaps the still-open dialog's Save button at this viewport.
-  // A second click through its card must reach the action and merge the repeat
-  // into the same toast; the overlap is checked before the click (HIL-1097).
-  const desktop = page.viewportSize() ?? { width: 1280, height: 720 }
-  await page.setViewportSize({ width: 1024, height: 500 })
+  // Repeat the ordinary Save at the desktop width: the refusal stays in its
+  // reserved room, the draft remains, and the repeat merges into one toast.
   const toast = page.getByTestId('hilos-toast-error')
   await expect(toast).toBeVisible()
-  const underCard = await overlapSpot(toast, save)
-  await save.click({ position: underCard })
+  await save.scrollIntoViewIfNeeded()
+  await expect(save).toBeVisible()
+  await expect(save).toBeEnabled()
+  await save.focus()
+  await save.click()
   await expect(toast.getByTestId('hilos-toast-repeats')).toHaveText('×2')
-  await page.setViewportSize(desktop)
+  await expect(refusal).toBeVisible()
+  await expect(refusal).toContainText('Value must be an integer of 0 or more')
+  await expect(value).toHaveValue('-1')
+  await slotRoom.unchanged()
+  await valueTop.unchanged()
+  await expect(toast).toHaveCount(1)
 
   // Nothing was written: the row still reads as the catalog default. Closing
   // goes through the discard guard, because the draft is dirty by construction.

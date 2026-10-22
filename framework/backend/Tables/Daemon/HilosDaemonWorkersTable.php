@@ -10,7 +10,6 @@ use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
-use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -18,17 +17,19 @@ use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\DaemonSection\ClusterDaemonPicture;
 use Hilos\DaemonSection\ClusterDaemonPictureMirror;
+use Hilos\DaemonSection\DaemonPictureRowChanges;
+use Hilos\DaemonSection\DaemonPictureViewportTable;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWorkersPage;
 
 /**
  * Workers of one node, projected only from the page worker's daemon picture mirror.
  *
  * A viewport without a node filter is empty. The mirror has no row change source, so
- * {@see AbstractHilosDaemonWorkersPage::onPictureChanged()} resends complete windows
- * on a changed process roster rather than waiting for a tick.
+ * {@see AbstractHilosDaemonWorkersPage::onPictureChanged()} publishes picture mutations through the shared viewport classifier.
  */
-final class HilosDaemonWorkersTable extends TableDefinition implements ViewportTable
+final class HilosDaemonWorkersTable extends TableDefinition implements DaemonPictureViewportTable
 {
     public const string TABLE = 'hilosDaemonWorkers';
     public const string FILTER_NODE = 'node';
@@ -51,6 +52,20 @@ final class HilosDaemonWorkersTable extends TableDefinition implements ViewportT
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
         return null;
+    }
+
+    /**
+     * @param ?ClusterDaemonPicture $before Previous immutable picture
+     * @param TableQueryDTO $query Subject and viewer scope, independent of pagination and search membership
+     * @return list<TableRowMutationDTO> Changes to the complete subject set
+     * @throws TableRowKeyMissingException When a projected row carries no key
+     */
+    public function pictureMutations(?ClusterDaemonPicture $before, TableQueryDTO $query): array
+    {
+        return DaemonPictureRowChanges::between(
+            $this->makeRows($this->collectRows($before, $query)),
+            $this->makeRows($this->collectRows(ClusterDaemonPictureMirror::picture(), $query)),
+        );
     }
 
     /**
@@ -90,7 +105,7 @@ final class HilosDaemonWorkersTable extends TableDefinition implements ViewportT
      */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
     {
-        return $this->containsRowInMemory($this->collectRows($query), $rowKey, $query);
+        return $this->containsRowInMemory($this->collectRows(ClusterDaemonPictureMirror::picture(), $query), $rowKey, $query);
     }
 
     /**
@@ -101,7 +116,7 @@ final class HilosDaemonWorkersTable extends TableDefinition implements ViewportT
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
-        return $this->filterInMemory($this->collectRows($query), $query);
+        return $this->filterInMemory($this->collectRows(ClusterDaemonPictureMirror::picture(), $query), $query);
     }
 
     /** Configures the worker row representation. */
@@ -111,10 +126,11 @@ final class HilosDaemonWorkersTable extends TableDefinition implements ViewportT
     }
 
     /**
+     * @param ?ClusterDaemonPicture $picture Immutable source picture
      * @param TableQueryDTO $query Window filter naming one node
      * @return list<array<string, mixed>> Workers in the node's picture order
      */
-    private function collectRows(TableQueryDTO $query): array
+    private function collectRows(?ClusterDaemonPicture $picture, TableQueryDTO $query): array
     {
         $node = $query->filter[self::FILTER_NODE] ?? null;
         if (!is_string($node) || trim($node) === '') {
@@ -128,7 +144,7 @@ final class HilosDaemonWorkersTable extends TableDefinition implements ViewportT
         // for the full snapshot, as the Daemon overview does in
         // framework/backend/Pages/Daemon/DTO/HilosDaemonOverviewData.php::fromPicture(),
         // and marking the portion as "still gathering".
-        $roster = ClusterDaemonPictureMirror::picture()?->node(trim($node))?->slot?->picture->processes;
+        $roster = $picture?->node(trim($node))?->slot?->picture->processes;
         if ($roster === null) {
             return [];
         }

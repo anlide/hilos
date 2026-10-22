@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -296,4 +297,38 @@ describe('core public entries', () => {
     expect(Object.keys(base)).not.toContain('createHilosSettingPresets')
     expect(Object.keys(base)).not.toContain('legalAdminDocumentSchema')
   })
+
+  it.each([
+    'base/index.ts',
+    'connection/HilosConnection.ts',
+    'subscription/PageSubscription.ts',
+    'subscription/bindTableViewport.ts',
+    'table/TableViewportController.ts',
+    'table/tableViewportGeometry.ts',
+  ])(
+    'keeps reviewed viewport owner %s in the eager source/output inventory',
+    (name) => {
+      const inventory = JSON.parse(
+        readFileSync(
+          join(packageRoot, 'bin/core-initial-sources.json'),
+          'utf8',
+        ),
+      ) as Record<string, { sourceSha256: string; outputSha256: string }>
+      const file = join(sourceRoot, name)
+      const content = readFileSync(file, 'utf8')
+      const compiled = ts.transpileModule(content, {
+        fileName: file,
+        compilerOptions: {
+          target: ts.ScriptTarget.ES2022,
+          module: ts.ModuleKind.ESNext,
+          sourceMap: true,
+          inlineSources: true,
+        },
+      }).outputText
+      expect(inventory[`src/${name}`]).toEqual({
+        sourceSha256: createHash('sha256').update(content).digest('hex'),
+        outputSha256: createHash('sha256').update(compiled).digest('hex'),
+      })
+    },
+  )
 })

@@ -558,8 +558,18 @@ final class WorkerManagerResendPageTest extends TestCase
         }
         $this->assertSame($logged, file_get_contents($this->logFile));
         $page->failureCode = null;
-        $this->assertTrue(Hilos::$browser->sendTableWindow(ResendWorkerTestPage::PAGE, 'ak-1', $viewport));
-        $this->assertSame([SignalTypeConstants::PAGE_RESPONSE, SignalTypeConstants::TABLE_WINDOW], $this->drainQueue());
+        $this->assertTrue(Hilos::$browser->sendTableWindow(ResendWorkerTestPage::PAGE, 'ak-1', $viewport, 'recover-window'));
+        $pageAnswer = Hilos::$sr->getNextQueuedSignal();
+        $windowAnswer = Hilos::$sr->getNextQueuedSignal();
+        $this->assertSame(
+            [SignalTypeConstants::PAGE_RESPONSE, SignalTypeConstants::TABLE_WINDOW],
+            [$pageAnswer?->signalName->getName(), $windowAnswer?->signalName->getName()],
+        );
+        $this->assertInstanceOf(WebSocketSignalData::class, $pageAnswer->data);
+        $this->assertInstanceOf(WebSocketSignalData::class, $windowAnswer->data);
+        $this->assertArrayNotHasKey('requestId', $pageAnswer->data->data->toArray());
+        $this->assertSame('recover-window', $windowAnswer->data->data->toArray()['requestId']);
+        $this->assertSame([], $this->drainQueue());
         $this->assertFalse(Hilos::$sr->hasPageDeliveryFailure('ak-1'));
     }
 

@@ -96,6 +96,41 @@ describe('HilosTableFooter', () => {
     expect(wrapper.find('[data-id="hilos-table-prev"]').exists()).toBe(false)
   })
 
+  it.each(['before', 'after'] as const)(
+    'keeps the footer when zero arrives %s Apply, until a fresh empty window',
+    async (countTiming) => {
+      const { controller } = makeController()
+      controller.ingestWindow(window(1), 1, true, null, null, 20)
+      const wrapper = mountFooter(controller)
+      controller.ingestDelta({
+        kind: 'row_removed',
+        rowKey: 'row-0',
+        reason: 'deleted',
+      })
+      if (countTiming === 'before') controller.ingestCount(0, true)
+      await wrapper.vm.$nextTick()
+      expect(wrapper.find('[data-id="hilos-table-count"]').text()).toBe(
+        countTiming === 'before' ? '0 – 0 of 0' : '1 – 1 of 1',
+      )
+
+      controller.apply()
+      await wrapper.vm.$nextTick()
+      expect(wrapper.find('[data-id="hilos-table-count"]').text()).toBe(
+        countTiming === 'before' ? '0 – 0 of 0' : '0 – 0 of 1',
+      )
+      controller.ingestCount(0, true)
+      await wrapper.vm.$nextTick()
+      expect(wrapper.find('[data-id="hilos-table-count"]').text()).toBe(
+        '0 – 0 of 0',
+      )
+
+      controller.ingestWindow([], 0, true, null, null, 20)
+      await wrapper.vm.$nextTick()
+      expect(wrapper.find('[data-id="hilos-table-count"]').exists()).toBe(false)
+      wrapper.unmount()
+    },
+  )
+
   it('draws nothing at all when the window was refused', () => {
     const { controller } = makeController()
     controller.ingestWindow(window(20), 128, true, null, null, 20)

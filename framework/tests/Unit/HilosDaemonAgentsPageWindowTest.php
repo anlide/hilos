@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Closure;
+use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Table\DTO\TableQueryDTO;
+
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\NodeRole;
 use Hilos\Constants\HilosPageConstants;
@@ -65,7 +69,10 @@ final class HilosDaemonAgentsPageWindowTest extends TestCase
         Hilos::$cluster = null;
         ClusterDaemonPictureMirror::addViewer(self::VIEWER);
         ClusterDaemonPictureMirror::addViewer(self::OTHER_VIEWER);
-        Hilos::$sr->setTableViewport(self::VIEWER, new TableViewportSubscription(HilosDaemonAgentsTable::TABLE));
+        Hilos::$sr->subscribeToPage(HilosPageConstants::HILOS_DAEMON_AGENTS,
+            new WebSocketPageSubscribeSignalDTO(self::VIEWER, HilosPageConstants::HILOS_DAEMON_AGENTS,
+                [HilosPageRouteParams::HILOS_DAEMON_NODE_ID => 'n1']));
+        Hilos::$sr->setTableViewport(self::VIEWER, new TableViewportSubscription(HilosDaemonAgentsTable::TABLE, filter: ['node' => 'n1']));
     }
 
     protected function tearDown(): void
@@ -83,35 +90,35 @@ final class HilosDaemonAgentsPageWindowTest extends TestCase
         parent::tearDown();
     }
 
-    public function testOnlyAgentChangesResendOpenWindowsAndForgetAllowsTheSamePictureAgain(): void
+    public function testOnlyAgentChangesPublishMutationsAndForgetAllowsTheSamePictureAgain(): void
     {
         $agent = new DaemonAgentsWindowTestAgent();
         $this->deliver($agent, $this->roster(1));
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->windows);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->mutations);
 
-        $this->browser()->windows = [];
+        $this->browser()->mutations = [];
         $this->deliver($agent, $this->roster(1));
         $this->deliver($agent, $this->roster(1, memory: 16384, pid: 999));
         $this->deliver($agent, $this->roster(1, unplaced: ['missing']), cron: true);
-        self::assertSame([], $this->browser()->windows);
+        self::assertSame([], $this->browser()->mutations);
 
         $this->deliver($agent, $this->roster(1, secondAgent: true));
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->windows);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->mutations);
 
-        $this->browser()->windows = [];
+        $this->browser()->mutations = [];
         $changed = $this->roster(3, secondAgent: true);
         $this->deliver($agent, $changed);
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->windows);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->mutations);
 
-        $this->browser()->windows = [];
+        $this->browser()->mutations = [];
         $changed = $this->roster(3, secondAgent: true, placement: DaemonAgentPicture::PLACEMENT_LEADER);
         $this->deliver($agent, $changed);
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->windows);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->mutations);
 
-        $this->browser()->windows = [];
+        $this->browser()->mutations = [];
         $agent->onStop();
         $this->deliver($agent, $changed);
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->windows);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->mutations);
     }
 
     public function testLeaderRestartMarkAloneResendsTheOriginalNodesWindowAndCompletionResendsAgain(): void
@@ -122,45 +129,46 @@ final class HilosDaemonAgentsPageWindowTest extends TestCase
             $this->node('n1', true, $this->roster(1)),
             $this->node('leader', true, new DaemonProcessRoster([], [], 0)),
         ]);
-        $this->browser()->pages = [];
-        $this->browser()->windows = [];
+        $this->browser()->pageData = [];
+        $this->browser()->mutations = [];
 
         $marked = new DaemonProcessRoster([], [], 0, [new DaemonRestartingAgent('agent:a', 'n1')]);
         $this->deliverNodes($agent, [$this->node('leader', true, $marked)], false);
-        self::assertSame([], $this->browser()->pages);
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->windows);
-        $this->browser()->windows = [];
+        self::assertSame([], $this->browser()->pageData);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->mutations);
+        $this->browser()->mutations = [];
         $this->deliverNodes($agent, [$this->node('leader', true, $marked)], false);
         $this->deliverNodes($agent, [$this->node('n1', true, $this->roster(1, memory: 16384))], false);
-        self::assertSame([], $this->browser()->windows);
+        self::assertSame([], $this->browser()->mutations);
 
         $this->deliverNodes($agent, [$this->node('leader', true, new DaemonProcessRoster([], [], 0))], false);
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->windows);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->mutations);
     }
 
-    public function testSilentNodeResendsItsWholePageWithoutAnotherWindow(): void
+    public function testSilentNodePublishesItsDataWithoutAnotherWindow(): void
     {
         $this->subscribe(self::VIEWER, 'n1');
         $agent = new DaemonAgentsWindowTestAgent();
         $roster = $this->roster(1);
         $this->deliver($agent, $roster);
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->pages);
-        self::assertSame([], $this->browser()->windows);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->pageData);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->mutations);
+        $this->browser()->mutations = [];
 
-        $this->browser()->pages = [];
+        $this->browser()->pageData = [];
         $this->deliverNodes($agent, [$this->node('n1', false, $roster)]);
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->pages);
-        self::assertSame([], $this->browser()->windows);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->pageData);
+        self::assertSame([], $this->browser()->mutations);
 
-        $this->browser()->pages = [];
+        $this->browser()->pageData = [];
         $this->deliverNodes($agent, [$this->node('n1', false, $roster)]);
-        self::assertSame([], $this->browser()->pages);
-        self::assertSame([], $this->browser()->windows);
+        self::assertSame([], $this->browser()->pageData);
+        self::assertSame([], $this->browser()->mutations);
 
         $agent->onStop();
         $this->deliverNodes($agent, [$this->node('n1', false, $roster)]);
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->pages);
-        self::assertSame([], $this->browser()->windows);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->pageData);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->mutations);
     }
 
     public function testOtherNodeStateChangeDoesNotResendThisNodesPage(): void
@@ -170,31 +178,32 @@ final class HilosDaemonAgentsPageWindowTest extends TestCase
         $agent = new DaemonAgentsWindowTestAgent();
         $roster = $this->roster(1);
         $this->deliverNodes($agent, [$this->node('n1', true, $roster), $this->node('n2', true, $roster)]);
-        $this->browser()->pages = [];
-        $this->browser()->windows = [];
+        $this->browser()->pageData = [];
+        $this->browser()->mutations = [];
 
         $this->deliverNodes($agent, [$this->node('n2', false, $roster)], false);
 
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::OTHER_VIEWER]], $this->browser()->pages);
-        self::assertSame([], $this->browser()->windows);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::OTHER_VIEWER]], $this->browser()->pageData);
+        self::assertSame([], $this->browser()->mutations);
     }
 
-    public function testFirstAgentReportResendsThePageButLaterRosterChangesSendOnlyTheWindow(): void
+    public function testFirstAgentReportPublishesDataButLaterRosterChangesPublishOnlyMutations(): void
     {
         $this->subscribe(self::VIEWER, 'n1');
         $agent = new DaemonAgentsWindowTestAgent();
         $this->deliverNodes($agent, [$this->node('n1', true, null)]);
-        $this->browser()->pages = [];
-        $this->browser()->windows = [];
+        $this->browser()->pageData = [];
+        $this->browser()->mutations = [];
 
         $this->deliver($agent, $this->roster(1));
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->pages);
-        self::assertSame([], $this->browser()->windows);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->pageData);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->mutations);
+        $this->browser()->mutations = [];
 
-        $this->browser()->pages = [];
+        $this->browser()->pageData = [];
         $this->deliver($agent, $this->roster(3));
-        self::assertSame([], $this->browser()->pages);
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->windows);
+        self::assertSame([], $this->browser()->pageData);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->mutations);
     }
 
     public function testClosedConnectionIsSkippedForWholePageResend(): void
@@ -204,7 +213,7 @@ final class HilosDaemonAgentsPageWindowTest extends TestCase
 
         $this->deliverNodes($agent, [$this->node('n1', false, null)]);
 
-        self::assertSame([], $this->browser()->pages);
+        self::assertSame([], $this->browser()->pageData);
     }
 
     public function testWorkersAndAgentsPagesKeepTheirOwnNodeLineFingerprints(): void
@@ -214,40 +223,40 @@ final class HilosDaemonAgentsPageWindowTest extends TestCase
         ClusterDaemonPictureMirror::applyPortion(new DaemonClusterPicturePortionSignalData(true, [
             $this->node('n1', true, $this->roster(1)),
         ]));
-        AbstractHilosDaemonWorkersPage::onPictureChanged();
-        AbstractHilosDaemonAgentsPage::onPictureChanged();
-        $this->browser()->pages = [];
-        $this->browser()->windows = [];
+        AbstractHilosDaemonWorkersPage::onPictureChanged(ClusterDaemonPictureMirror::picture());
+        AbstractHilosDaemonAgentsPage::onPictureChanged(ClusterDaemonPictureMirror::picture());
+        $this->browser()->pageData = [];
+        $this->browser()->mutations = [];
 
         ClusterDaemonPictureMirror::applyPortion(new DaemonClusterPicturePortionSignalData(true, [
             $this->node('n1', false, $this->roster(1)),
         ]));
-        AbstractHilosDaemonWorkersPage::onPictureChanged();
-        AbstractHilosDaemonAgentsPage::onPictureChanged();
+        AbstractHilosDaemonWorkersPage::onPictureChanged(ClusterDaemonPictureMirror::picture());
+        AbstractHilosDaemonAgentsPage::onPictureChanged(ClusterDaemonPictureMirror::picture());
         self::assertSame([
             [HilosPageConstants::HILOS_DAEMON_WORKERS, self::OTHER_VIEWER],
             [HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER],
-        ], $this->browser()->pages);
+        ], $this->browser()->pageData);
 
-        $this->browser()->pages = [];
+        $this->browser()->pageData = [];
         AbstractHilosDaemonWorkersPage::onPictureForgotten();
-        AbstractHilosDaemonAgentsPage::onPictureChanged();
-        self::assertSame([], $this->browser()->pages);
+        AbstractHilosDaemonAgentsPage::onPictureChanged(ClusterDaemonPictureMirror::picture());
+        self::assertSame([], $this->browser()->pageData);
 
         ClusterDaemonPictureMirror::applyPortion(new DaemonClusterPicturePortionSignalData(true, [
             $this->node('n1', true, $this->roster(1)),
         ]));
-        AbstractHilosDaemonAgentsPage::onPictureChanged();
-        AbstractHilosDaemonWorkersPage::onPictureChanged();
+        AbstractHilosDaemonAgentsPage::onPictureChanged(ClusterDaemonPictureMirror::picture());
+        AbstractHilosDaemonWorkersPage::onPictureChanged(ClusterDaemonPictureMirror::picture());
         self::assertSame([
             [HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER],
             [HilosPageConstants::HILOS_DAEMON_WORKERS, self::OTHER_VIEWER],
-        ], $this->browser()->pages);
+        ], $this->browser()->pageData);
 
-        $this->browser()->pages = [];
+        $this->browser()->pageData = [];
         AbstractHilosDaemonAgentsPage::onPictureForgotten();
-        AbstractHilosDaemonWorkersPage::onPictureChanged();
-        self::assertSame([], $this->browser()->pages);
+        AbstractHilosDaemonWorkersPage::onPictureChanged(ClusterDaemonPictureMirror::picture());
+        self::assertSame([], $this->browser()->pageData);
     }
 
     /** @return DaemonProcessRoster Agent roster for one worker */
@@ -342,35 +351,39 @@ final class DaemonAgentsWindowTestAgent extends AbstractHilosDaemonAgent
 final class DaemonAgentsWindowTestBrowser extends IdentityTestBrowser
 {
     /** @var list<array{string, string}> Delivered page and connection pairs */
-    public array $windows = [];
+    public array $mutations = [];
 
     /** @var list<array{string, string}> Re-answered page and connection pairs */
-    public array $pages = [];
+    public array $pageData = [];
 
     public function __construct()
     {
         parent::__construct(userId: 1, admin: true);
     }
 
-    /**
-     * @param string $page Page served
-     * @param string $acceptKey Viewer receiving the window
-     * @param TableViewportSubscription $viewport Requested viewport, unused here
-     * @return bool True after recording the delivery
-     */
-    public function sendTableWindow(string $page, string $acceptKey, TableViewportSubscription $viewport): bool
+    /** Records data-only publications and asserts the page never re-sends a window in them. */
+    public function publishPageData(string $page, string $acceptKey, Closure $build, array $fields): void
     {
-        $this->windows[] = [$page, $acceptKey];
-        return true;
+        $payload = $build();
+        if ($payload->isEmpty()) {
+            return;
+        }
+        TestCase::assertSame(['data'], array_keys($payload->toArray()));
+        $this->pageData[] = [$page, $acceptKey];
     }
 
-    /**
-     * @param string $page Page served
-     * @param string $acceptKey Viewer receiving the full answer
-     */
-    public function resendPageWhole(string $page, string $acceptKey): void
+    /** Records only nonempty typed diffs for the actual held subject and query. */
+    public function publishTableMutations(string $page, string $acceptKey, string $tableKey, Closure $build): void
     {
-        $this->pages[] = [$page, $acceptKey];
+        $viewport = Hilos::$sr?->getTableViewport($acceptKey, $tableKey);
+        if ($viewport === null) {
+            return;
+        }
+        $table = new HilosDaemonAgentsTable();
+        $mutations = $build($table, new TableQueryDTO(filter: $viewport->filter));
+        if ($mutations !== []) {
+            $this->mutations[] = [$page, $acceptKey];
+        }
     }
 }
 

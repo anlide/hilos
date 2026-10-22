@@ -46,6 +46,7 @@ class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, 
     public const string ANCHOR_DIRECTION = 'anchorDirection';
     public const string PAGE_INDEX = 'pageIndex';
     public const string RENDERED = 'rendered';
+    public const string REQUEST_ID = 'requestId';
 
     /**
      * Creates a table viewport signal DTO.
@@ -60,6 +61,8 @@ class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, 
      * @param TableAnchorDirection $anchorDirection Side of the anchor, and which edge a null anchor means
      * @param ?int $pageIndex Zero-based page to jump to, or null when the window is paged by anchor
      * @param list<string> $rendered Fields inside the row slots the tab draws, empty when it declared none
+     * @param ?string $requestId Correlation of this window request, absent for untracked callers
+     * @throws InvalidFormatException When the request id is empty
      */
     public function __construct(
         public readonly string $acceptKey,
@@ -72,7 +75,11 @@ class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, 
         public readonly TableAnchorDirection $anchorDirection = TableAnchorDirection::After,
         public readonly ?int $pageIndex = null,
         public readonly array $rendered = [],
+        public readonly ?string $requestId = null,
     ) {
+        if ($requestId === '') {
+            throw new InvalidFormatException('Table viewport requestId must not be empty');
+        }
     }
 
     public function getAcceptKey(): string
@@ -114,6 +121,10 @@ class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, 
 
         if ($this->rendered !== []) {
             $result[self::RENDERED] = $this->rendered;
+        }
+
+        if ($this->requestId !== null) {
+            $result[self::REQUEST_ID] = $this->requestId;
         }
 
         return $result;
@@ -166,6 +177,7 @@ class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, 
                     ?? throw new InvalidFormatException('Table viewport frame carries an unknown anchor direction'),
             pageIndex: $pageIndex,
             rendered: self::optionalStringList($data, self::RENDERED) ?? [],
+            requestId: array_key_exists(self::REQUEST_ID, $data) ? self::requireString($data, self::REQUEST_ID) : null,
         );
     }
 }

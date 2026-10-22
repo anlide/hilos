@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Closure;
+use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Table\DTO\TableQueryDTO;
+
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Consensus\ConsensusRole;
 use Hilos\Cluster\NodeRole;
@@ -28,10 +32,12 @@ use Hilos\DaemonSection\DaemonWorkerPicture;
 use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
 use Hilos\Hilos;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Pages\Daemon\AbstractHilosDaemonPage;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 
 /** Picture portions resend only changed placement windows to viewers who opened them. */
 final class HilosDaemonPlacementPageWindowTest extends TestCase
@@ -44,10 +50,13 @@ final class HilosDaemonPlacementPageWindowTest extends TestCase
     private ?ClusterContext $previousCluster;
     private string|false $previousClusterEnabled;
     private TableViewportSubscription $viewport;
+    private string $previousAppClass;
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->previousAppClass = Hilos::appClass();
+        new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, PlacementWindowTestHilos::class);
         $this->previousRouter = Hilos::$sr;
         $this->previousBrowser = Hilos::$browser;
         $this->previousCluster = Hilos::$cluster;
@@ -61,6 +70,8 @@ final class HilosDaemonPlacementPageWindowTest extends TestCase
         ClusterDaemonPictureMirror::addViewer(self::OTHER_VIEWER);
         $this->viewport = new TableViewportSubscription(HilosDaemonPlacementTable::TABLE,
             filter: [TableConstants::FILTER_KEY_SEARCH => 'x:1']);
+        Hilos::$sr->subscribeToPage(HilosPageConstants::HILOS_DAEMON,
+            new WebSocketPageSubscribeSignalDTO(self::VIEWER, HilosPageConstants::HILOS_DAEMON));
         Hilos::$sr->setTableViewport(self::VIEWER, $this->viewport);
     }
 
@@ -79,6 +90,7 @@ final class HilosDaemonPlacementPageWindowTest extends TestCase
             : putenv('CLUSTER_ENABLED=' . $this->previousClusterEnabled);
         putenv('CLUSTER_NODE_ID');
         putenv('CLUSTER_NODE_ROLE');
+        new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, $this->previousAppClass);
         parent::tearDown();
     }
 
@@ -89,25 +101,25 @@ final class HilosDaemonPlacementPageWindowTest extends TestCase
             $this->node('n2', true, $this->roster([]))]);
         $this->assertOneWindow();
 
-        $this->browser()->windows = [];
+        $this->browser()->mutations = [];
         $this->deliver($agent, [$this->node('n1', true, $this->roster(['x:1', 'x:2'])),
             $this->node('n2', true, $this->roster([]))]);
         $this->assertOneWindow();
 
-        $this->browser()->windows = [];
+        $this->browser()->mutations = [];
         $this->deliver($agent, [$this->node('n1', true, $this->roster([])),
             $this->node('n2', true, $this->roster(['x:1', 'x:2']))]);
         $this->assertOneWindow();
 
-        $this->browser()->windows = [];
+        $this->browser()->mutations = [];
         $this->deliver($agent, [$this->node('n1', true, $this->roster([])),
             $this->node('n2', false, $this->roster(['x:1', 'x:2']))]);
         $this->assertOneWindow();
 
-        $this->browser()->windows = [];
+        $this->browser()->mutations = [];
         $this->deliver($agent, [$this->node('n1', true, $this->roster([])),
             $this->node('n2', false, $this->roster(['x:1', 'x:2']))]);
-        self::assertSame([], $this->browser()->windows);
+        self::assertSame([], $this->browser()->mutations);
 
         $agent->onStop();
         $this->deliver($agent, [$this->node('n1', true, $this->roster([])),
@@ -126,13 +138,13 @@ final class HilosDaemonPlacementPageWindowTest extends TestCase
         $this->deliver($agent, [$this->node('n1', true, $roster, true)]);
         $this->assertOneWindow();
 
-        $this->browser()->windows = [];
+        $this->browser()->mutations = [];
         $changedMetrics = new DaemonProcessRoster([
             new DaemonWorkerPicture(1, WorkerConstants::TYPE_REGULAR, 456, 16384,
                 $roster->workers[0]->agents),
         ], $roster->unplacedAgentIds, 7);
         $this->deliver($agent, [$this->node('n1', true, $changedMetrics, true, new DaemonCronPicture(null, []), 2)]);
-        self::assertSame([], $this->browser()->windows);
+        self::assertSame([], $this->browser()->mutations);
 
         $this->deliver($agent, [$this->node('n1', true, $this->roster(['x:1'], ['x:other']), true)]);
         $this->assertOneWindow();
@@ -169,7 +181,7 @@ final class HilosDaemonPlacementPageWindowTest extends TestCase
 
     private function assertOneWindow(): void
     {
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON, self::VIEWER]], $this->browser()->windows);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON, self::VIEWER]], $this->browser()->mutations);
         self::assertSame($this->viewport, $this->browser()->viewports[array_key_last($this->browser()->viewports)]);
     }
 
@@ -187,7 +199,8 @@ final class PlacementWindowTestAgent extends AbstractHilosDaemonAgent
 final class PlacementWindowTestBrowser extends IdentityTestBrowser
 {
     /** @var list<array{string, string}> Delivered page and connection pairs */
-    public array $windows = [];
+    public array $mutations = [];
+    public array $pageData = [];
 
     /** @var list<TableViewportSubscription> Original viewer descriptors */
     public array $viewports = [];
@@ -197,11 +210,34 @@ final class PlacementWindowTestBrowser extends IdentityTestBrowser
         parent::__construct(userId: 1, admin: true);
     }
 
-    /** @return bool True after recording the requested window */
-    public function sendTableWindow(string $page, string $acceptKey, TableViewportSubscription $viewport): bool
+    /** Records data-only publications and asserts the page never re-sends a window in them. */
+    public function publishPageData(string $page, string $acceptKey, Closure $build, array $fields): void
     {
-        $this->windows[] = [$page, $acceptKey];
-        $this->viewports[] = $viewport;
-        return true;
+        $payload = $build();
+        if ($payload->isEmpty()) {
+            return;
+        }
+        TestCase::assertSame(['data'], array_keys($payload->toArray()));
+        $this->pageData[] = [$page, $acceptKey];
     }
+
+    /** Records only nonempty typed diffs for the actual held subject and query. */
+    public function publishTableMutations(string $page, string $acceptKey, string $tableKey, Closure $build): void
+    {
+        $viewport = Hilos::$sr?->getTableViewport($acceptKey, $tableKey);
+        if ($viewport === null) {
+            return;
+        }
+        $table = new HilosDaemonPlacementTable();
+        $mutations = $build($table, new TableQueryDTO(filter: $viewport->filter));
+        if ($mutations !== []) {
+            $this->mutations[] = [$page, $acceptKey];
+            $this->viewports[] = $viewport;
+        }
+    }
+}
+
+abstract class PlacementWindowTestHilos extends Hilos
+{
+    public const array AGENTS = ['x' => []];
 }

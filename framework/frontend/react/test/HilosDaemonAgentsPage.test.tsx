@@ -452,7 +452,10 @@ describe('HilosDaemonAgentsPage', () => {
         }),
       )
       expect(h.find('modal')).toBeNull()
-      expect(h.unregister).toHaveBeenCalledWith('hilosDaemonAgents')
+      expect(h.unregister).toHaveBeenCalledWith(
+        'hilosDaemonAgents',
+        h.register.mock.calls[0]?.[1],
+      )
       expect(h.register).toHaveBeenCalledTimes(2)
       expect(h.focus).toHaveBeenLastCalledWith(
         HilosPages.DAEMON_AGENTS,

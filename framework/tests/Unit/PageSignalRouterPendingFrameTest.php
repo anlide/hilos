@@ -232,6 +232,7 @@ final class PageSignalRouterPendingFrameTest extends TestCase
                 acceptKey: self::ACCEPT_KEY,
                 page: PendingFrameTestPage::PAGE,
                 tableKey: PendingFrameTestPage::TABLE_KEY,
+                requestId: 'parked-window',
             ),
             SignalSource::WEBSOCKET,
             PendingFrameTestPage::PAGE,
@@ -249,6 +250,7 @@ final class PageSignalRouterPendingFrameTest extends TestCase
         $router->releasePendingFrames();
 
         $this->assertSame([PendingFrameTestPage::TABLE_KEY], $browser->windows);
+        $this->assertSame(['parked-window'], $browser->windowRequestIds);
     }
 
     public function testATableLagHoldsAViewportFrameEvenOnceItsIdentityAndSubscriptionAreThere(): void
@@ -984,6 +986,9 @@ final class PendingFrameTestBrowser extends BrowserContext
     /** @var list<string> Table keys whose window delivery was reached */
     public array $windows = [];
 
+    /** @var list<?string> Request correlations of those deliveries */
+    public array $windowRequestIds = [];
+
     /** Whether the page guards refuse the next subscription verdict. */
     public bool $refuseSubscriptionAccess = false;
 
@@ -1037,11 +1042,18 @@ final class PendingFrameTestBrowser extends BrowserContext
      * @param string $page Page the table belongs to (unused)
      * @param string $acceptKey Subscribing WebSocket accept key (unused)
      * @param TableViewportSubscription $viewport Window descriptor
+     * @param ?string $requestId Window request correlation, unused by this fixture
      * @return bool Always true; reaching this method is what the test asserts
      */
-    public function sendTableWindow(string $page, string $acceptKey, TableViewportSubscription $viewport): bool
+    public function sendTableWindow(
+        string $page,
+        string $acceptKey,
+        TableViewportSubscription $viewport,
+        ?string $requestId = null,
+    ): bool
     {
         $this->windows[] = $viewport->tableKey;
+        $this->windowRequestIds[] = $requestId;
 
         return true;
     }

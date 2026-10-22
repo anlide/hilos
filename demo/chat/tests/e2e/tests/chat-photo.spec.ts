@@ -1,13 +1,12 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { shownByTestId } from '../../../../../framework/frontend/e2e/index.js'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { signUpAdmin } from '../helpers/adminGrant.js'
+import { openBotEdit, watchBotSearch } from '../helpers/bots.js'
 import { dictateModerationVerdict } from '../helpers/moderation.js'
 import { gotoPage } from '../helpers/page.js'
 import { nameForPhoto, picture, selectPhoto } from '../helpers/profilePhoto.js'
 import { clickSubmit, typeInto } from '../helpers/session.js'
-import { tableRowKeyByText } from '../helpers/table.js'
 
 // spec-owner: demo — the feed, Participants and /user/{id} are chat's own screens.
 
@@ -16,6 +15,8 @@ import { tableRowKeyByText } from '../helpers/table.js'
 // it wears no visible circle; a roster row and the person's page wear the
 // person's circle, and a bot row the circle of the bot's initials. A guest's
 // open screens follow the person's photo — set, then removed — without a reload.
+
+test.use({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' })
 
 /** The initials of a `Photo <model key>` name: the first and the last word's first letters. */
 const PHOTO_NAME_INITIALS = 'PM'
@@ -35,17 +36,15 @@ const QUIET_BOT_INITIALS = 'Q'
  * @param page An administrator's page.
  * @param name The seeded bot's name.
  * @param active Whether the bot is to be active.
+ * @param windows The observer installed before the first document.
  */
 async function setBotActive(
   page: Page,
   name: string,
   active: boolean,
+  windows: Awaited<ReturnType<typeof watchBotSearch>>,
 ): Promise<void> {
-  await gotoPage(page, '/hilos/app/bots')
-  await typeInto(page.getByTestId('hilos-table-search'), name)
-  const rowKey = await tableRowKeyByText(page, name)
-  await clickSubmit(shownByTestId(page, `admin-bots-edit-${rowKey}`))
-  await expect(page.getByTestId('admin-bots-name')).toHaveValue(name)
+  await openBotEdit(page, name, windows)
   await page.getByTestId('admin-bots-active').setChecked(active)
   await clickSubmit(page.getByTestId('admin-bots-save'))
   await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
@@ -170,16 +169,17 @@ test('a guest sees the circles of a series, the roster and the user page follow 
 // Every seeded bot is inactive and the main page lists only active ones, so the
 // test switches a quiet one on to have a bot row at all, and off again after.
 test('a bot row wears the circle of its initials', async ({ page }) => {
+  const windows = await watchBotSearch(page)
   await signUpAdmin(page)
 
   try {
-    await setBotActive(page, QUIET_BOT, true)
+    await setBotActive(page, QUIET_BOT, true, windows)
     await gotoPage(page, '/')
     const bot = page.getByTestId('bot').filter({
       has: page.getByTestId('bot-name').filter({ hasText: QUIET_BOT }),
     })
     await expect(bot.getByTestId('hilos-avatar')).toHaveText(QUIET_BOT_INITIALS)
   } finally {
-    await setBotActive(page, QUIET_BOT, false)
+    await setBotActive(page, QUIET_BOT, false, windows)
   }
 })

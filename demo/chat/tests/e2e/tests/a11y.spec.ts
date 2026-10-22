@@ -20,6 +20,8 @@ import { expectPasswordVisibility } from '../../../../../framework/frontend/e2e/
 // layer checks this on the settings table; the file grows as the a11y arc lands
 // its later steps (modals, app-shell, focus).
 
+test.use({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' })
+
 /** Open the settings page and wait for the live table. */
 async function openSettings(page: Page): Promise<void> {
   await gotoPage(page, '/hilos/settings')

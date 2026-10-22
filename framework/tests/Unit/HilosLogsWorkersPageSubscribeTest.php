@@ -407,9 +407,15 @@ final class LogsWorkersPageSubscribeTestBrowser extends IdentityTestBrowser
      * @param string $page Page the table belongs to (unused)
      * @param string $acceptKey Subscribing WebSocket accept key (unused)
      * @param TableViewportSubscription $viewport Window descriptor
+     * @param ?string $requestId Window request correlation, unused by this fixture
      * @return bool Always true; reaching this method is what the test asserts
      */
-    public function sendTableWindow(string $page, string $acceptKey, TableViewportSubscription $viewport): bool
+    public function sendTableWindow(
+        string $page,
+        string $acceptKey,
+        TableViewportSubscription $viewport,
+        ?string $requestId = null,
+    ): bool
     {
         $this->windows[] = $viewport->tableKey;
 

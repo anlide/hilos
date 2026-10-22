@@ -170,6 +170,7 @@ const tableRowFragmentSchema = z.looseObject({
 export const tableWindowSignalDataSchema = z.looseObject({
   page: z.string(),
   tableKey: z.string(),
+  requestId: z.string().min(1).optional(),
   rows: z.array(tableRowFragmentSchema),
   totalCount: z.number().int(),
   totalExact: z.boolean(),
@@ -191,6 +192,7 @@ export type TableWindowSignalData = z.infer<typeof tableWindowSignalDataSchema>
 export const tableWindowRefusedSignalDataSchema = z.looseObject({
   page: z.string(),
   tableKey: z.string(),
+  requestId: z.string().min(1).optional(),
   errorCode: z.string(),
 })
 

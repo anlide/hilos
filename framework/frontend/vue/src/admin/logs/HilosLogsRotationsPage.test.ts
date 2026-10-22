@@ -619,7 +619,10 @@ describe('HilosLogsRotationsPage', () => {
     await nextTick()
 
     expect(wrapper.text()).toContain('Moving to the archive')
-    expect(wrapper.find('.badge').classes()).toContain('text-bg-info')
+    const badge = wrapper
+      .findAll('.badge')
+      .find((node) => !node.element.closest('[inert]'))
+    expect(badge?.classes()).toContain('text-bg-info')
     expect(wrapper.findAll('[data-id="hilos-rotation-takeout"]')).toHaveLength(
       0,
     )

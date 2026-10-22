@@ -10,7 +10,6 @@ use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
-use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -18,7 +17,10 @@ use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\DaemonSection\ClusterDaemonPicture;
 use Hilos\DaemonSection\ClusterDaemonPictureMirror;
+use Hilos\DaemonSection\DaemonPictureRowChanges;
+use Hilos\DaemonSection\DaemonPictureViewportTable;
 use Hilos\DaemonSection\ClusterEnvironmentCellState;
 use Hilos\DaemonSection\ClusterEnvironmentComparison;
 use Hilos\DaemonSection\ClusterEnvironmentKeyComparison;
@@ -26,6 +28,7 @@ use Hilos\DaemonSection\NodeEnvironmentReading;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Pages\Daemon\AbstractHilosDaemonEnvMismatchPage;
 use Hilos\Runtime\State\Item\HilosClusterNode;
 
@@ -33,9 +36,9 @@ use Hilos\Runtime\State\Item\HilosClusterNode;
  * Rows are verdict buckets from the page worker's picture mirror; the page has no separate verdict.
  * Labels come from the collector, never a node hash. The only value comes from the serving
  * page agent's process, never for a sensitive key and hidden from a viewer unless its catalog
- * opens it. {@see AbstractHilosDaemonEnvMismatchPage::onPictureChanged()} resends whole windows.
+ * opens it. {@see AbstractHilosDaemonEnvMismatchPage::onPictureChanged()} publishes picture mutations through the shared viewport classifier.
  */
-abstract class AbstractHilosDaemonEnvMismatchTable extends TableDefinition implements ViewportTable
+abstract class AbstractHilosDaemonEnvMismatchTable extends TableDefinition implements DaemonPictureViewportTable
 {
     private const string ROW_SLOT = 'key';
 
@@ -43,6 +46,23 @@ abstract class AbstractHilosDaemonEnvMismatchTable extends TableDefinition imple
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
         return null;
+    }
+
+    /**
+     * @param ?ClusterDaemonPicture $before Previous immutable picture
+     * @param TableQueryDTO $query Subject and viewer scope, independent of pagination and search membership
+     * @return list<TableRowMutationDTO> Changes to the complete subject set
+     * @throws TableRowKeyMissingException When a projected row carries no key
+     * @throws EnvException When the process catalog or value cannot be read
+     * @throws ClusterException When the serving node cannot be identified
+     * @throws InvalidArgumentException When the picture comparison is invalid
+     */
+    public function pictureMutations(?ClusterDaemonPicture $before, TableQueryDTO $query): array
+    {
+        return DaemonPictureRowChanges::between(
+            $this->makeRows($this->collectRows($before, $query)),
+            $this->makeRows($this->collectRows(ClusterDaemonPictureMirror::picture(), $query)),
+        );
     }
 
     /**
@@ -76,10 +96,21 @@ abstract class AbstractHilosDaemonEnvMismatchTable extends TableDefinition imple
         ];
     }
 
-    /** @return ?bool Unknown: the mirror raises no row source events */
+    /**
+     * @param string|int $rowKey Key in this verdict bucket
+     * @param TableQueryDTO $query Viewer and search scope
+     * @return ?bool Bucket membership, unknown before the first picture
+     * @throws EnvException When the process catalog or value cannot be read
+     * @throws ClusterException When the serving node cannot be identified
+     * @throws InvalidArgumentException When the picture comparison is invalid
+     * @throws TableSearchNotSupportedException When search is requested
+     * @throws TableSearchFieldUnknownException When a declared search field is absent
+     */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
     {
-        return null;
+        $picture = ClusterDaemonPictureMirror::picture();
+
+        return $picture === null ? null : $this->containsRowInMemory($this->collectRows($picture, $query), $rowKey, $query);
     }
 
     /**
@@ -141,8 +172,12 @@ abstract class AbstractHilosDaemonEnvMismatchTable extends TableDefinition imple
     abstract protected function keysOf(ClusterEnvironmentComparison $comparison): array;
 
     /**
+     * An unknown mirror cannot pay a window's debt with a fabricated empty set.
+     * The normal refused-window path keeps it owed until a picture can answer it.
+     *
      * @param TableQueryDTO $query Window and viewer scope
      * @return TableSnapshotDTO Rows in verdict order
+     * @throws HilosException When the mirror has not received a picture yet
      * @throws EnvException When the process catalog or value cannot be read
      * @throws ClusterException When the serving node cannot be identified
      * @throws InvalidArgumentException When the picture comparison is invalid
@@ -151,7 +186,12 @@ abstract class AbstractHilosDaemonEnvMismatchTable extends TableDefinition imple
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
-        return $this->filterInMemory($this->collectRows($query), $query);
+        $picture = ClusterDaemonPictureMirror::picture();
+        if ($picture === null) {
+            throw new HilosException('Environment comparison has no source picture yet');
+        }
+
+        return $this->filterInMemory($this->collectRows($picture, $query), $query);
     }
 
     /** Configures the compared-key row representation. */
@@ -161,15 +201,16 @@ abstract class AbstractHilosDaemonEnvMismatchTable extends TableDefinition imple
     }
 
     /**
+     * @param ?ClusterDaemonPicture $picture Immutable source picture
      * @param TableQueryDTO $query Viewer scope
      * @return list<array<string, mixed>> Rows from the appropriate verdict bucket
      * @throws EnvException When the process catalog or value cannot be read
      * @throws ClusterException When the serving node cannot be identified
      * @throws InvalidArgumentException When the picture comparison is invalid
      */
-    private function collectRows(TableQueryDTO $query): array
+    private function collectRows(?ClusterDaemonPicture $picture, TableQueryDTO $query): array
     {
-        $comparison = ClusterDaemonPictureMirror::picture()?->environmentComparison();
+        $comparison = $picture?->environmentComparison();
         if ($comparison === null) {
             return [];
         }

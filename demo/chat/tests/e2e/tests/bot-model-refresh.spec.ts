@@ -3,19 +3,20 @@ import { test, expect, type Page } from '@playwright/test'
 import {
   clearCustomSetting,
   setCustomSetting,
-  shownByTestId,
 } from '../../../../../framework/frontend/e2e/index.js'
 import {
   dictateModelAnswer,
   modelKey,
 } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { signUpAdmin } from '../helpers/adminGrant'
+import { openBotEdit, watchBotSearch } from '../helpers/bots.js'
 import { dictateModerationVerdict } from '../helpers/moderation'
 import { gotoPage } from '../helpers/page'
 import { clickSubmit, typeInto } from '../helpers/session'
-import { tableRowKeyByText } from '../helpers/table'
 
 // spec-owner: demo — chat's live bot agents and the replies they publish
+
+test.use({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' })
 
 interface ActivatedBot {
   name: string
@@ -29,23 +30,15 @@ async function openSetting(page: Page, key: string): Promise<void> {
   await expect(page.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
 }
 
-/** Open a seeded bot's edit dialog after finding it in the live window. */
-async function openBot(page: Page, name: string): Promise<void> {
-  await gotoPage(page, '/hilos/app/bots')
-  await typeInto(page.getByTestId('hilos-table-search'), name)
-  const rowKey = await tableRowKeyByText(page, name)
-  await clickSubmit(shownByTestId(page, `admin-bots-edit-${rowKey}`))
-  await expect(page.getByTestId('admin-bots-name')).toHaveValue(name)
-}
-
 /** Activate a leader and put a unique key in the prompt it will send to the model. */
 async function activateBot(
   page: Page,
   name: string,
   key: string,
   activated: ActivatedBot[],
+  windows: Awaited<ReturnType<typeof watchBotSearch>>,
 ): Promise<void> {
-  await openBot(page, name)
+  await openBotEdit(page, name, windows)
   const description = await page
     .getByTestId('admin-bots-description')
     .inputValue()
@@ -60,8 +53,12 @@ async function activateBot(
 }
 
 /** Restore a seeded bot so another spec sees its original fixture. */
-async function restoreBot(page: Page, bot: ActivatedBot): Promise<void> {
-  await openBot(page, bot.name)
+async function restoreBot(
+  page: Page,
+  bot: ActivatedBot,
+  windows: Awaited<ReturnType<typeof watchBotSearch>>,
+): Promise<void> {
+  await openBotEdit(page, bot.name, windows)
   await typeInto(page.getByTestId('admin-bots-description'), bot.description)
   await page.getByTestId('admin-bots-active').uncheck()
   await clickSubmit(page.getByTestId('admin-bots-save'))
@@ -74,6 +71,7 @@ test('a saved invalid bot model logs an error and a later request uses the resto
   // The leaders each decide whether to react. Three message rounds give the role
   // another real context change if all three decline an earlier one.
   test.setTimeout(test.info().timeout * 5)
+  const windows = await watchBotSearch(page)
   await signUpAdmin(page)
   const settingKey = 'chat_bot_model'
   const botKey = modelKey()
@@ -90,7 +88,7 @@ test('a saved invalid bot model logs an error and a later request uses the resto
     await dictateModelAnswer(botKey, answer)
 
     for (const name of ['Marcus', 'Elena', 'David']) {
-      await activateBot(page, name, botKey, activated)
+      await activateBot(page, name, botKey, activated, windows)
     }
 
     await gotoPage(page, '/hilos/logs')
@@ -148,7 +146,7 @@ test('a saved invalid bot model logs an error and a later request uses the resto
       await clearCustomSetting(page, settingKey)
     }
     for (const bot of activated.reverse()) {
-      await restoreBot(page, bot)
+      await restoreBot(page, bot, windows)
     }
   }
 })

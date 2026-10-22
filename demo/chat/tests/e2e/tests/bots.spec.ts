@@ -1,16 +1,24 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Page, type TestInfo } from '@playwright/test'
 
 import {
   dismissToasts,
+  expectDataFreeDeparture,
+  expectTableRecordWrappingStress,
+  expectTableRowOrder,
+  screenshotTable,
+  settleTableLayout,
   shownByTestId,
   watchFirstRowTop,
+  watchTableAllocation,
+  watchTableGeometry,
+  type TableGeometryWatch,
   watchSocketFrames,
   type SocketFrame,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant'
-import { setAdminViewMode } from '../helpers/adminViewMode'
-import { gotoPage } from '../helpers/page'
-import { clickSubmit, typeInto } from '../helpers/session'
+import { signUpAdmin } from '../helpers/adminGrant.js'
+import { setAdminViewMode } from '../helpers/adminViewMode.js'
+import { gotoPage } from '../helpers/page.js'
+import { clickSubmit, typeInto } from '../helpers/session.js'
 import {
   expectTableTotal,
   goToLastPage,
@@ -18,7 +26,7 @@ import {
   tableRowKeyByText,
   tableRowKeys,
   tableTotal,
-} from '../helpers/table'
+} from '../helpers/table.js'
 
 // spec-owner: demo — chat's bots and their admin screen
 
@@ -71,6 +79,7 @@ import {
 // opens a socket of its own, and the table tells its own writes from foreign ones
 // by socket — so a second tab is a foreign writer.
 
+test.use({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' })
 test.describe.configure({ mode: 'serial' })
 
 /** Rows in a window of the bots table (BotsTable::windowSize). */
@@ -98,7 +107,7 @@ async function openBots(page: Page): Promise<void> {
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(
-    page.locator('[data-id^="hilos-table-row-"]').first(),
+    shownByTestId(page, /^hilos-table-(row|card)-/).first(),
   ).toBeVisible()
 }
 
@@ -109,6 +118,7 @@ async function openBots(page: Page): Promise<void> {
  * @param name The bot's name.
  */
 async function createBot(page: Page, name: string): Promise<void> {
+  await dismissToasts(page)
   await page.getByTestId('hilos-table-main-action').click()
   await typeInto(page.getByTestId('admin-bots-name'), name)
   await typeInto(page.getByTestId('admin-bots-description'), 'made by e2e')
@@ -230,6 +240,7 @@ async function deletePads(page: Page, names: string[]): Promise<void> {
  * @param rowKey The bot's row key.
  */
 async function deleteBot(page: Page, rowKey: string): Promise<void> {
+  await dismissToasts(page)
   await shownByTestId(page, `admin-bots-delete-${rowKey}`).click()
   await clickSubmit(page.getByTestId('admin-bots-delete-confirm'))
   await expect(page.getByTestId('admin-bots-delete-confirm')).toHaveCount(0)
@@ -260,6 +271,154 @@ function countTableWindows(page: Page): () => number {
         wire.type === 'table_window',
     ).length
   }
+}
+
+/** Narrow the real server set; the count settles the socket reply. */
+async function searchBots(
+  page: Page,
+  search: string,
+  total: number,
+): Promise<void> {
+  await typeInto(page.getByTestId('hilos-table-search'), search)
+  if (total === 0) {
+    await expect(shownByTestId(page, 'hilos-table-no-matches')).toBeVisible()
+  } else {
+    await expectTableTotal(page, total)
+  }
+  await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+}
+
+/** Apply pending membership/order changes without requesting another window. */
+async function applyBotChanges(page: Page): Promise<void> {
+  await clickSubmit(page.getByTestId('hilos-table-apply'))
+  await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
+}
+
+/** Both mounted branches owe only the static removal sentence. */
+async function expectBotDeparture(page: Page, key: string): Promise<void> {
+  await expectDataFreeDeparture(expect, page, key, 'Removed', [
+    `admin-bots-edit-${key}`,
+    `admin-bots-delete-${key}`,
+  ])
+  for (const prefix of ['row', 'card']) {
+    await expect(page.getByTestId(`hilos-table-${prefix}-${key}`)).toHaveText(
+      'Removed',
+    )
+  }
+}
+
+/** Retained slots, including zero live members, draw no empty-state tile. */
+async function expectNoBotEmptyTile(page: Page): Promise<void> {
+  for (const id of [
+    'hilos-table-empty',
+    'hilos-table-empty-page',
+    'hilos-table-no-matches',
+  ]) {
+    await expect(page.getByTestId(id)).toHaveCount(0)
+  }
+}
+
+/** Save inner table frames with their physical transport and outgoing descriptors. */
+function watchBotFrames(page: Page) {
+  const frames: {
+    time: number
+    direction: string
+    frame: unknown
+    transport?: SocketFrame
+  }[] = []
+  function save(direction: string, frame: unknown, transport?: SocketFrame) {
+    if (
+      frame !== null &&
+      typeof frame === 'object' &&
+      'type' in frame &&
+      typeof frame.type === 'string' &&
+      frame.type.startsWith('table_')
+    ) {
+      frames.push({ time: Date.now(), direction, frame, transport })
+    }
+  }
+  watchSocketFrames(page, (transport) => {
+    save('received', transport.wire, transport)
+  })
+  page.on('websocket', (socket) => {
+    socket.on('framesent', (event) => {
+      try {
+        save('sent', JSON.parse(event.payload.toString()))
+      } catch {
+        // Keepalive text is not a table frame.
+      }
+    })
+  })
+  return frames
+}
+
+/** Preserve the entire table and all fractional intermediate frames before checking. */
+async function botGeometryEvidence(
+  watch: TableGeometryWatch,
+  page: Page,
+  info: TestInfo,
+  name: string,
+): Promise<void> {
+  await dismissToasts(page)
+  await settleTableLayout(page)
+  await watch.stop()
+  await info.attach(`${name}-bounds`, {
+    body: await watch.evidence(),
+    contentType: 'application/json',
+  })
+  await info.attach(`${name}-layout`, {
+    body: await screenshotTable(expect, page),
+    contentType: 'image/png',
+  })
+  await watch.check()
+}
+
+/** Create an isolated real set and a cold reader on a second independent socket. */
+async function botProofSet(
+  page: Page,
+  size = 6,
+  placement: 'search' | 'last-page' = 'search',
+) {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await signUpAdmin(page)
+  await openBots(page)
+  const lastPage = placement === 'last-page'
+  const pads = lastPage ? await fillToWholePages(page, Date.now() - 1000) : []
+  const base = await tableTotal(page)
+  const prefix = `${lastPage ? 'ZZ' : 'Geo'} ${Date.now()}`
+  if (!lastPage) await searchBots(page, prefix, 0)
+  const names = Array.from({ length: size }, (_, index) => {
+    const title =
+      index === 1
+        ? 'Wide water willow '.repeat(12)
+        : index === 2
+          ? 'A surviving paragraph stands near the wrapping boundary '.repeat(3)
+          : `ordinary ${index}`
+    return `${prefix} ${(index + 1) * 10} ${title}`.trim()
+  })
+  const keys: string[] = []
+  for (const name of names) {
+    await createBot(page, name)
+    if (lastPage) {
+      await dismissToasts(page)
+      await goToLastPage(page)
+    }
+    keys.push(await tableRowKeyByText(page, name))
+  }
+  const reader = await page.context().newPage()
+  await reader.setViewportSize({ width: 1440, height: 1000 })
+  const windows = countTableWindows(reader)
+  const frames = watchBotFrames(reader)
+  await openBots(reader)
+  if (lastPage) {
+    await goToLastPage(reader)
+    await expectTableTotal(reader, base + size)
+  } else {
+    await searchBots(reader, prefix, size)
+  }
+  await expectTableRowOrder(expect, reader, keys)
+  await settleTableLayout(reader)
+  return { prefix, names, keys, reader, windows, frames, base, pads }
 }
 
 test('a bot created here takes the place the sort gives it, and edits and deletes live', async ({
@@ -808,41 +967,47 @@ test('a value edited in another tab lands in place, highlighted and with no gate
   await deleteBot(page, key)
 })
 
-test('a bot deleted in another tab, the last under a search, leaves Nothing found after Apply', async ({
+test('the last foreign deletion retains a data-free slot until an explicit window change', async ({
   page,
 }) => {
   const name = nameBeforeAll(Date.now())
+  const windows = countTableWindows(page)
 
   await signUpAdmin(page)
   await openBots(page)
   await createBot(page, name)
   const key = await tableRowKeyByText(page, name)
-
-  // A narrows its set to the one bot this test owns. B opens its own socket and
-  // narrows to the same row before deleting it, so A receives a foreign removal
-  // behind Apply rather than the author's immediate path.
-  await typeInto(page.getByTestId('hilos-table-search'), name)
-  await expect(page.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
+  await searchBots(page, name, 1)
   const tabB = await page.context().newPage()
   await openBots(tabB)
-  await typeInto(tabB.getByTestId('hilos-table-search'), name)
-  await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
+  await searchBots(tabB, name, 1)
+  const beforeApply = windows()
 
   await deleteBot(tabB, key)
-
+  await expectTableTotal(page, 0)
   await expect(
     shownByTestId(page, `hilos-table-pending-remove-${key}`),
   ).toBeVisible()
-  const apply = page.getByTestId('hilos-table-apply')
-  await expect(apply).toBeVisible()
-  await expect(apply).toBeEnabled()
-  await apply.click()
+  await expect(shownByTestId(page, `hilos-table-row-${key}`)).toContainText(
+    name,
+  )
+  await applyBotChanges(page)
 
-  // The set count is zero and no live row remains. Apply empties the window into
-  // the same filtered empty state a reload would bring, without reloading.
-  await expect(shownByTestId(page, 'hilos-table-no-matches')).toBeVisible()
+  await expectBotDeparture(page, key)
+  await expect(page.getByTestId('hilos-table-count')).toHaveText('0 – 0 of 0')
+  await expect(page.getByTestId('hilos-table-placeholder')).toHaveCount(2)
+  await expectNoBotEmptyTile(page)
+  expect(windows()).toBe(beforeApply)
+
+  // The new search asks the server for a new empty snapshot. Apply did not.
+  await searchBots(page, `${name} absent`, 0)
+  await expect.poll(windows).toBeGreaterThan(beforeApply)
+  await expect(shownByTestId(page, 'hilos-table-no-matches')).toContainText(
+    'Nothing found',
+  )
   await expect(page.getByTestId('hilos-table-placeholder')).toHaveCount(0)
   await expect(page.getByTestId(`hilos-table-row-${key}`)).toHaveCount(0)
+  await expect(page.getByTestId(`hilos-table-card-${key}`)).toHaveCount(0)
   await tabB.close()
 })
 
@@ -1171,4 +1336,497 @@ test('an own create on a Back window pushes its first row above and Back retriev
   await pageBackOnce(page)
   expect((await tableRowKeys(page))[0]).toBe(topKey)
   await deleteBot(page, key)
+})
+
+test.describe('server geometry', () => {
+  const projection = 'wide'
+  const recordId = (key: string) => `hilos-table-row-${key}`
+
+  for (const mode of ['sequential', 'batch'] as const) {
+    test(`${mode} foreign ordinary/widest/last departures retain all boundaries through zero`, async ({
+      page,
+    }, info) => {
+      // Six real creates/deletes, two sockets and typed long names exceed one CRUD tour.
+      test.setTimeout(test.info().timeout * 6)
+      const { prefix, names, keys, reader, windows, frames } =
+        await botProofSet(page)
+      const observed = await watchTableGeometry(expect, reader, {
+        bodyId: 'admin-bots-view',
+        projection,
+        rowKeys: keys.slice(2, 5),
+        lastKey: keys[5]!,
+      })
+      try {
+        await info.attach('real-wrapping-condition', {
+          body: await expectTableRecordWrappingStress(
+            expect,
+            reader,
+            [keys[1]!, ...keys.filter((_, index) => index !== 1)].map(recordId),
+            recordId(keys[2]!),
+          ),
+          contentType: 'application/json',
+        })
+        const beforeApply = windows()
+        let total = keys.length
+        const departures = [0, 1, 5]
+        for (const index of departures) {
+          const key = keys[index]!
+          await deleteBot(page, key)
+          total -= 1
+          await expectTableTotal(reader, total)
+          await expect(
+            shownByTestId(reader, `hilos-table-pending-remove-${key}`),
+          ).toBeVisible()
+          await expect(reader.getByTestId(recordId(key))).toContainText(
+            names[index]!,
+          )
+          await observed.check()
+          if (mode === 'sequential') {
+            await applyBotChanges(reader)
+            await expectBotDeparture(reader, key)
+            await observed.check()
+          }
+        }
+        if (mode === 'batch') await applyBotChanges(reader)
+        for (const index of departures)
+          await expectBotDeparture(reader, keys[index]!)
+        await expectTableRowOrder(expect, reader, keys)
+        await expect(reader.getByTestId('hilos-table-count')).toHaveText(
+          '1 – 3 of 3',
+        )
+        await expectNoBotEmptyTile(reader)
+
+        // Count reaches zero before Apply; pending rows still carry their last values.
+        for (const key of keys.slice(2, 5)) {
+          await deleteBot(page, key)
+          total -= 1
+          await expectTableTotal(reader, total)
+          await expect(
+            shownByTestId(reader, `hilos-table-pending-remove-${key}`),
+          ).toBeVisible()
+          await observed.check()
+        }
+        await applyBotChanges(reader)
+        for (const key of keys) await expectBotDeparture(reader, key)
+        await expect(reader.getByTestId('hilos-table-count')).toHaveText(
+          '0 – 0 of 0',
+        )
+        await expect(reader.getByTestId('hilos-table-placeholder')).toHaveCount(
+          12,
+        )
+        await expectNoBotEmptyTile(reader)
+        expect(windows()).toBe(beforeApply)
+        await botGeometryEvidence(observed, reader, info, 'pending-apply-zero')
+
+        // A new server window retires the numeric trace, with no document reload.
+        await searchBots(reader, `${prefix} absent`, 0)
+        await expect.poll(windows).toBeGreaterThan(beforeApply)
+        await expect(
+          shownByTestId(reader, 'hilos-table-no-matches'),
+        ).toContainText('Nothing found')
+        await expect(reader.getByTestId('hilos-table-placeholder')).toHaveCount(
+          0,
+        )
+      } finally {
+        await observed.stop()
+        await info.attach('server-frames', {
+          body: JSON.stringify(frames, null, 2),
+          contentType: 'application/json',
+        })
+        await reader.close()
+      }
+    })
+  }
+
+  test('Apply move and own create use server positions and edge eviction, preserving an unrelated slot', async ({
+    page,
+  }, info) => {
+    // Ten seeded-by-UI records plus move/create/cleanup round trips on both sockets.
+    test.setTimeout(test.info().timeout * 8)
+    const { prefix, keys, reader, windows, frames } = await botProofSet(
+      page,
+      10,
+    )
+    await deleteBot(page, keys[0]!)
+    await expect(
+      shownByTestId(reader, `hilos-table-pending-remove-${keys[0]}`),
+    ).toBeVisible()
+    await applyBotChanges(reader)
+    await expectBotDeparture(reader, keys[0]!)
+    const allocation = await watchTableAllocation(
+      expect,
+      reader,
+      keys[0]!,
+      projection,
+    )
+    try {
+      const beforeApply = windows()
+      await renameBot(page, keys[9]!, `${prefix} 5 moved`)
+      await expect(
+        shownByTestId(reader, `hilos-table-pending-move-${keys[9]}`),
+      ).toBeVisible()
+      await expectTableRowOrder(expect, reader, keys)
+      await applyBotChanges(reader)
+      await expectTableRowOrder(expect, reader, [
+        keys[0]!,
+        keys[9]!,
+        ...keys.slice(1, 9),
+      ])
+      await expect(reader.getByTestId(recordId(keys[9]!))).toContainText(
+        `${prefix} 5 moved`,
+      )
+      expect(windows()).toBe(beforeApply)
+      await expectBotDeparture(reader, keys[0]!)
+
+      await createBot(reader, `${prefix} 25 created here`)
+      const own = await tableRowKeyByText(reader, `${prefix} 25 created here`)
+      await expectTableTotal(reader, 10)
+      await expectTableRowOrder(expect, reader, [
+        keys[0]!,
+        keys[9]!,
+        keys[1]!,
+        own,
+        ...keys.slice(2, 9),
+      ])
+      await expect(reader.getByTestId('hilos-table-apply')).toHaveCount(0)
+
+      // Live capacity is ten; the retained slot neither spends room nor gets evicted.
+      await createBot(reader, `${prefix} 15 edge insertion`)
+      const edge = await tableRowKeyByText(
+        reader,
+        `${prefix} 15 edge insertion`,
+      )
+      await expectTableTotal(reader, 11)
+      await expectTableRowOrder(expect, reader, [
+        keys[0]!,
+        keys[9]!,
+        edge,
+        keys[1]!,
+        own,
+        ...keys.slice(2, 8),
+      ])
+      for (const branch of ['row', 'card']) {
+        await expect(
+          reader.getByTestId(`hilos-table-${branch}-${keys[8]}`),
+        ).toHaveCount(0)
+      }
+      await expectBotDeparture(reader, keys[0]!)
+      await expect(reader.getByTestId('hilos-table-next')).toBeEnabled()
+      await expect(reader.getByTestId('hilos-table-apply')).toHaveCount(0)
+
+      // An own removal takes effect immediately; another socket receives its gate.
+      await deleteBot(reader, own)
+      await expectBotDeparture(reader, own)
+      await expect(reader.getByTestId('hilos-table-apply')).toHaveCount(0)
+      await expectBotDeparture(reader, keys[0]!)
+      await botGeometryEvidence(
+        allocation,
+        reader,
+        info,
+        'allowed-placement-retained-slot',
+      )
+
+      // Refresh only for cleanup: Show/window changes may legitimately retire the trace.
+      await openBots(page)
+      await searchBots(page, prefix, 10)
+      for (const key of [...keys.slice(1), edge]) await deleteBot(page, key)
+    } finally {
+      await allocation.stop()
+      await info.attach('server-frames', {
+        body: JSON.stringify(frames, null, 2),
+        contentType: 'application/json',
+      })
+      if (!reader.isClosed()) await reader.close()
+    }
+  })
+
+  test('nonzero foreign and own server moves use live rank across preceding and interleaved departures', async ({
+    page,
+  }, info) => {
+    // Six UI creates, two deletions and two renames on independent sockets.
+    test.setTimeout(test.info().timeout * 6)
+    const { prefix, keys, reader, windows, frames } = await botProofSet(page)
+    const allocations: TableGeometryWatch[] = []
+    try {
+      for (const key of [keys[0]!, keys[3]!]) {
+        await deleteBot(page, key)
+        await expect(
+          shownByTestId(reader, `hilos-table-pending-remove-${key}`),
+        ).toBeVisible()
+        await applyBotChanges(reader)
+        await expectBotDeparture(reader, key)
+        allocations.push(
+          await watchTableAllocation(expect, reader, key, projection),
+        )
+      }
+      await expectTableRowOrder(expect, reader, keys)
+      const beforeApply = windows()
+      await renameBot(page, keys[5]!, `${prefix} 25 foreign move`)
+      await expect(
+        shownByTestId(reader, `hilos-table-pending-move-${keys[5]}`),
+      ).toBeVisible()
+      expect(frames).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            direction: 'received',
+            frame: expect.objectContaining({
+              type: 'table_viewport_delta',
+              data: expect.objectContaining({
+                page: 'admin_bots',
+                tableKey: 'bots',
+                kind: 'row_moved',
+                rowKey: Number(keys[5]),
+                position: 1,
+              }),
+            }),
+          }),
+        ]),
+      )
+      // Before Apply the foreign row still stands in its old place.
+      await expectTableRowOrder(expect, reader, keys)
+      await applyBotChanges(reader)
+      await expectTableRowOrder(expect, reader, [
+        keys[0]!,
+        keys[1]!,
+        keys[5]!,
+        keys[2]!,
+        keys[3]!,
+        keys[4]!,
+      ])
+      await expect(reader.getByTestId(recordId(keys[5]!))).toContainText(
+        `${prefix} 25 foreign move`,
+      )
+      for (const watch of allocations) await watch.check()
+
+      await renameBot(reader, keys[4]!, `${prefix} 22 own move`)
+      await expectTableRowOrder(expect, reader, [
+        keys[0]!,
+        keys[1]!,
+        keys[4]!,
+        keys[5]!,
+        keys[2]!,
+        keys[3]!,
+      ])
+      expect(frames).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            direction: 'received',
+            frame: expect.objectContaining({
+              type: 'table_viewport_delta',
+              data: expect.objectContaining({
+                page: 'admin_bots',
+                tableKey: 'bots',
+                kind: 'row_moved',
+                rowKey: Number(keys[4]),
+                position: 1,
+                own: true,
+              }),
+            }),
+          }),
+        ]),
+      )
+      await expect(reader.getByTestId(recordId(keys[4]!))).toContainText(
+        `${prefix} 22 own move`,
+      )
+      await expect(reader.getByTestId('hilos-table-apply')).toHaveCount(0)
+      expect(windows()).toBe(beforeApply)
+      await expectTableTotal(reader, 4)
+      for (const [index, key] of [keys[0]!, keys[3]!].entries()) {
+        await expectBotDeparture(reader, key)
+        await botGeometryEvidence(
+          allocations[index]!,
+          reader,
+          info,
+          `nonzero-move-unrelated-${index}`,
+        )
+      }
+      // Refresh only the actor for cleanup; the reader's trace stays live.
+      await openBots(page)
+      await searchBots(page, prefix, 4)
+      for (const key of [keys[1]!, keys[2]!, keys[4]!, keys[5]!])
+        await deleteBot(page, key)
+    } finally {
+      for (const watch of allocations) await watch.stop()
+      await info.attach('server-frames', {
+        body: JSON.stringify(frames, null, 2),
+        contentType: 'application/json',
+      })
+      if (!reader.isClosed()) await reader.close()
+    }
+  })
+
+  test('foreign append follows mixed and all-placeholder slots; Apply never substitutes for Show', async ({
+    page,
+  }, info) => {
+    // Bots cannot classify membership under search (containsRow returns null).
+    // The unfiltered last page supplies real append/announce with seed rows intact.
+    // Repeated real append/delete cycles and Show exceed one CRUD tour's cap.
+    test.setTimeout(test.info().timeout * 7)
+    const { prefix, keys, reader, windows, frames, base, pads } =
+      await botProofSet(page, 6, 'last-page')
+    const watches: TableGeometryWatch[] = []
+    const watch = async (lastKey: string) => {
+      const observed = await watchTableGeometry(expect, reader, {
+        bodyId: 'admin-bots-view',
+        projection,
+        rowKeys: keys.slice(2, 5),
+        lastKey,
+      })
+      watches.push(observed)
+      return observed
+    }
+    try {
+      const mixed = await watch(keys[5]!)
+      for (const key of [keys[0]!, keys[1]!, keys[5]!])
+        await deleteBot(page, key)
+      await expectTableTotal(reader, base + 3)
+      await applyBotChanges(reader)
+      for (const key of [keys[0]!, keys[1]!, keys[5]!])
+        await expectBotDeparture(reader, key)
+      await createBot(page, `${prefix} 70 mixed tail`)
+      const tail = await tableRowKeyByText(reader, `${prefix} 70 mixed tail`)
+      await expectTableRowOrder(expect, reader, [...keys, tail])
+      await expect(reader.getByTestId('hilos-table-count')).toHaveText(
+        `${base + 1} – ${base + 4} of ${base + 4}`,
+      )
+      await expect(reader.getByTestId('hilos-table-announce')).toHaveCount(0)
+      await botGeometryEvidence(mixed, reader, info, 'mixed-append-old-extent')
+
+      const zero = await watch(tail)
+      for (const key of [...keys.slice(2, 5), tail]) await deleteBot(page, key)
+      await expectTableTotal(reader, base)
+      await applyBotChanges(reader)
+      for (const key of [...keys, tail]) await expectBotDeparture(reader, key)
+      await expect(reader.getByTestId('hilos-table-count')).toHaveText(
+        `0 – 0 of ${base}`,
+      )
+      await expectNoBotEmptyTile(reader)
+      await botGeometryEvidence(
+        zero,
+        reader,
+        info,
+        'all-placeholder-departures',
+      )
+      // This cold window was shorter than its limit, so the server knows its
+      // end even without a source frame. Repeated real appends/departures
+      // grow the trace past ten slots while live capacity remains one.
+      const retained = [...keys, tail]
+      let lastRetained = tail
+      for (const ordinal of [80, 90, 100]) {
+        const appended = await watch(lastRetained)
+        const name = `${prefix} ${ordinal} cycle tail`
+        await createBot(page, name)
+        const key = await tableRowKeyByText(reader, name)
+        await expectTableRowOrder(expect, reader, [...retained, key])
+        await expect(reader.getByTestId('hilos-table-count')).toHaveText(
+          `${base + 1} – ${base + 1} of ${base + 1}`,
+        )
+        await expect(reader.getByTestId('hilos-table-announce')).toHaveCount(0)
+        await botGeometryEvidence(
+          appended,
+          reader,
+          info,
+          `cycle-${ordinal}-append`,
+        )
+        const removed = await watch(key)
+        await deleteBot(page, key)
+        await expectTableTotal(reader, base)
+        await expect(
+          shownByTestId(reader, `hilos-table-pending-remove-${key}`),
+        ).toBeVisible()
+        await applyBotChanges(reader)
+        await expectBotDeparture(reader, key)
+        await expect(reader.getByTestId('hilos-table-count')).toHaveText(
+          `0 – 0 of ${base}`,
+        )
+        await botGeometryEvidence(
+          removed,
+          reader,
+          info,
+          `cycle-${ordinal}-departure`,
+        )
+        retained.push(key)
+        lastRetained = key
+      }
+      const allPlaceholderAppend = await watch(lastRetained)
+      await createBot(page, `${prefix} 120 retained tail`)
+      const allPlaceholderTail = await tableRowKeyByText(
+        reader,
+        `${prefix} 120 retained tail`,
+      )
+      await expectTableRowOrder(expect, reader, [
+        ...retained,
+        allPlaceholderTail,
+      ])
+      await expect(reader.getByTestId('hilos-table-count')).toHaveText(
+        `${base + 1} – ${base + 1} of ${base + 1}`,
+      )
+      await expect(reader.getByTestId('hilos-table-announce')).toHaveCount(0)
+      await expect(reader.getByTestId('hilos-table-apply')).toHaveCount(0)
+      await botGeometryEvidence(
+        allPlaceholderAppend,
+        reader,
+        info,
+        'all-placeholder-append-old-extent',
+      )
+
+      const announcement = await watch(allPlaceholderTail)
+      const beforeShow = windows()
+      await createBot(page, `${prefix} 35 announced`)
+      const announced = await tableRowKeyByText(page, `${prefix} 35 announced`)
+      await expect(reader.getByTestId('hilos-table-announce')).toContainText(
+        '1 new row',
+      )
+      await expectTableTotal(reader, base + 2)
+      await expectTableRowOrder(expect, reader, [
+        ...retained,
+        allPlaceholderTail,
+      ])
+      await expect(reader.getByTestId(recordId(announced))).toHaveCount(0)
+      await deleteBot(page, allPlaceholderTail)
+      await expectTableTotal(reader, base + 1)
+      await expect(
+        shownByTestId(
+          reader,
+          `hilos-table-pending-remove-${allPlaceholderTail}`,
+        ),
+      ).toBeVisible()
+      await applyBotChanges(reader)
+      await expectBotDeparture(reader, allPlaceholderTail)
+      await expect(reader.getByTestId('hilos-table-count')).toHaveText(
+        `0 – 0 of ${base + 1}`,
+      )
+      await expect(reader.getByTestId('hilos-table-announce')).toContainText(
+        '1 new row',
+      )
+      await expect(reader.getByTestId(recordId(announced))).toHaveCount(0)
+      expect(windows()).toBe(beforeShow)
+      await botGeometryEvidence(
+        announcement,
+        reader,
+        info,
+        'announcement-apply-keeps-trace',
+      )
+
+      // Show is permitted to rearrange and erase departed occurrences.
+      await clickSubmit(reader.getByTestId('hilos-table-announce-show'))
+      await expect.poll(windows).toBeGreaterThan(beforeShow)
+      await expect(reader.getByTestId('hilos-table-announce')).toHaveCount(0)
+      await expectTableRowOrder(expect, reader, [announced])
+      await expect(reader.getByTestId('hilos-table-count')).toHaveText(
+        `${base + 1} – ${base + 1} of ${base + 1}`,
+      )
+      await expect(reader.getByTestId('hilos-table-placeholder')).toHaveCount(0)
+      await deleteBot(reader, announced)
+      await openBots(page)
+      await deletePads(page, pads)
+    } finally {
+      for (const observed of watches) await observed.stop()
+      await info.attach('server-frames', {
+        body: JSON.stringify(frames, null, 2),
+        contentType: 'application/json',
+      })
+      await reader.close()
+    }
+  })
 })

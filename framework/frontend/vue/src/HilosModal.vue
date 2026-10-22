@@ -156,6 +156,8 @@ const emit = defineEmits<{
 const dialog = ref<HTMLElement>()
 const confirmDialog = ref<HTMLElement>()
 const trap = new FocusTrap()
+let disposed = false
+let activation = 0
 const scrollLockOwner: ScrollLockOwner = {}
 const modalLayerOwner: ModalLayerOwner = {}
 // The layer this modal stands on: 0 over the page, 1 over another modal.
@@ -190,6 +192,7 @@ function activeRoot(): HTMLElement | undefined {
 watch(
   () => props.modelValue,
   (open) => {
+    const generation = ++activation
     modal.reset()
     // The label is the only thing the button says, so it starts over with the
     // dialog: a reopened modal reporting "Copied" is reporting the last visit.
@@ -198,8 +201,9 @@ watch(
       lockBodyScroll(document, scrollLockOwner)
       layerDepth.value = enterModalLayer(document, modalLayerOwner)
       void nextTick(() => {
+        if (disposed || generation !== activation || !props.modelValue) return
         const root = activeRoot()
-        if (root) {
+        if (root?.isConnected) {
           trap.activate(root, trapPlacement(props.initialFocus))
         }
       })
@@ -214,6 +218,9 @@ watch(
 )
 
 onUnmounted(() => {
+  disposed = true
+  activation++
+  trap.release()
   unlockBodyScroll(scrollLockOwner)
   leaveModalLayer(modalLayerOwner)
   leaveModalLayer(confirmLayerOwner)
@@ -227,8 +234,9 @@ watch(confirmVisible, (visible) => {
     leaveModalLayer(confirmLayerOwner)
   }
   void nextTick(() => {
+    if (disposed || !props.modelValue) return
     const root = activeRoot()
-    if (root) {
+    if (root?.isConnected) {
       trap.refocus(
         root,
         confirmVisible.value ? 'dialog' : trapPlacement(props.initialFocus),

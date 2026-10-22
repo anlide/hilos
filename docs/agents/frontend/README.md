@@ -28,8 +28,8 @@ document.
 | connection / authentication / authorization state, the authoritative-backend rule, per-datum loading and placeholder state, disconnect and stale-data UX, the protected-mode exception to no-refresh | [core-and-connection.md](core-and-connection.md) |
 | the handshake and cookie auth, the server-side session store, signals / actions / subscribe, discriminated-union parsing, requestId correlation, backend-authored refusal words and safe exception messages, build-version forced refresh | [wire-protocol.md](wire-protocol.md) |
 | the entity store, the four scopes (page / session / user / group), the normalizer boundary, entity references, the rowKey / sourceKey / entityType keys | [data-model.md](data-model.md) |
-| tables: viewport subscriptions, the live-change taxonomy and Apply, sort-key window deltas, selection and bulk actions, progress bars, custom filters, search-as-filter | [table-subscription.md](table-subscription.md) |
-| researching departed-record geometry, column-width retention and declared row heights in both table projections — HIL-1321 research, not an implemented contract | [table-row-geometry-research.md](table-row-geometry-research.md) |
+| tables: viewport subscriptions, the live-change taxonomy and Apply, sort-key window deltas, selection and bulk actions, progress bars, custom filters, search-as-filter, and the built core retention/ingress plus Vue departed-record geometry; React/Angular ports and declared height modes remain separate work | [table-subscription.md](table-subscription.md) |
+| historical HIL-1321 research on departed-record geometry, column-width retention and proposed height declarations; use [table-subscription.md](table-subscription.md) for the current core/Vue implementation boundary | [table-row-geometry-research.md](table-row-geometry-research.md) |
 | which sort orders a table may declare, what it refuses when asked for another, and what it answers — the index under every order, the primary key at its end, computed fields, mixed directions, stale sources, in-memory sets | [table-sort-orders.md](table-sort-orders.md) |
 | editing or creating in a known live place in a modal, the baseline / draft / incoming 3-way merge, surfacing conflicts, entity-deleted-while-open | [conflict-resolution.md](conflict-resolution.md) |
 | SDK packaging, the monorepo workspace, the two-tier component model and slots, Composer / tarball distribution | [sdk-packaging.md](sdk-packaging.md) |
@@ -67,7 +67,11 @@ before editing.
 - [data-model.md](data-model.md) — the scope-partitioned entity store, the single normalizer
   boundary, entity references, and the keying invariants.
 - [table-subscription.md](table-subscription.md) — viewport-scoped table subscriptions, the
-  live-change taxonomy and Apply, and a window anchored by its sort key.
+  live-change taxonomy and Apply, retained data-free departure slots, and the landed
+  core/Vue geometry boundary.
+- [table-row-geometry-research.md](table-row-geometry-research.md) — historical HIL-1321
+  decisions and proposals for departed geometry, retained widths and declared heights;
+  current implementation status is in `table-subscription.md`.
 - [table-sort-orders.md](table-sort-orders.md) — the sort orders a table may declare as a
   capability: the six rules, why each holds, and the three-part reply to a
   request for an order the table refuses.

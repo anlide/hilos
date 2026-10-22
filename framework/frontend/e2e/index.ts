@@ -29,6 +29,14 @@ export {
   watchLeft,
   watchTop,
   watchTopWithin,
+  watchTableGeometry,
+  watchTableHandoff,
+  watchTableFirstLive,
+  expectTableWrappingStress,
+  expectTableRecordWrappingStress,
+  settleTableLayout,
+  type TableGeometryPlan,
+  type TableGeometryWatch,
   Watched,
 } from './geometry.js'
 export {
@@ -53,6 +61,15 @@ export {
   type DeliverySettingUpdate,
   type DeliverySettingMutation,
 } from './deliverySettings.js'
+export {
+  watchTableAllocation,
+  setTableEnvironment,
+  loadLateTableFont,
+  expectTableLayoutZoom,
+  watchTableNativeLifecycle,
+  expectTableNativeLifecycle,
+  type TableEnvironment,
+} from './tableLifecycle.js'
 export {
   watchHandshakeFrames,
   type HandshakeFrameLog,
@@ -109,6 +126,13 @@ export {
   settleRemovedRow,
   shownByTestId,
   tableRowKeyByText,
+  openTableFixture,
+  expectDataFreeDeparture,
+  expectInertTableHolders,
+  expectTableCardContentFits,
+  expectTableProgressCoverage,
+  expectTableRowOrder,
+  screenshotTable,
 } from './table.js'
 export {
   abandonConsent,
@@ -277,6 +301,9 @@ export {
   type MonopolisticWorker,
 } from './daemonWorker.js'
 export { watchUploadFrames } from './uploadFrames.js'
+export { watchTableSearch, watchTableModalFocus } from './tableFocus.js'
+export { watchTableContinuity } from './tableContinuity.js'
+export { watchDaemonSource } from './daemonSource.js'
 export {
   bundleFiles,
   expectBundleRequests,

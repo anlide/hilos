@@ -44,6 +44,7 @@ final class TableWindowSignalData extends BaseDTO implements SignalDataInterface
     public const string firstAnchor = 'firstAnchor';
     public const string lastAnchor = 'lastAnchor';
     public const string rowsBefore = 'rowsBefore';
+    public const string requestId = 'requestId';
 
     /**
      * Creates a table window signal payload.
@@ -57,6 +58,8 @@ final class TableWindowSignalData extends BaseDTO implements SignalDataInterface
      * @param ?TableAnchorDTO $firstAnchor Place the first row sits at, or null when the window is empty
      * @param ?TableAnchorDTO $lastAnchor Place the last row sits at, or null when the window is empty
      * @param ?int $rowsBefore Rows of the set standing before the window, or null when the total is not exact
+     * @param ?string $requestId Request this window answers, absent for an unsolicited window
+     * @throws InvalidFormatException When the request id is empty
      */
     public function __construct(
         public readonly string $page,
@@ -68,7 +71,11 @@ final class TableWindowSignalData extends BaseDTO implements SignalDataInterface
         public readonly ?TableAnchorDTO $firstAnchor = null,
         public readonly ?TableAnchorDTO $lastAnchor = null,
         public readonly ?int $rowsBefore = null,
+        public readonly ?string $requestId = null,
     ) {
+        if ($requestId === '') {
+            throw new InvalidFormatException('Table window requestId must not be empty');
+        }
     }
 
     /**
@@ -90,6 +97,10 @@ final class TableWindowSignalData extends BaseDTO implements SignalDataInterface
         ];
         if ($this->rowsBefore !== null) {
             $payload[self::rowsBefore] = $this->rowsBefore;
+        }
+
+        if ($this->requestId !== null) {
+            $payload[self::requestId] = $this->requestId;
         }
 
         return $payload;
@@ -114,6 +125,7 @@ final class TableWindowSignalData extends BaseDTO implements SignalDataInterface
             firstAnchor: TableAnchorDTO::fromWire(self::optionalArray($data, self::firstAnchor)),
             lastAnchor: TableAnchorDTO::fromWire(self::optionalArray($data, self::lastAnchor)),
             rowsBefore: self::optionalInt($data, self::rowsBefore),
+            requestId: array_key_exists(self::requestId, $data) ? self::requireString($data, self::requestId) : null,
         );
     }
 }

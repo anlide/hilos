@@ -79,13 +79,14 @@ abstract class AbstractHilosDaemonAgent extends AbstractHilosAgent
         switch ($name) {
             case HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION:
                 if ($data->data instanceof DaemonClusterPicturePortionSignalData) {
+                    $before = ClusterDaemonPictureMirror::picture();
                     ClusterDaemonPictureMirror::applyPortion($data->data);
-                    AbstractHilosDaemonAgentsPage::onPictureChanged();
-                    AbstractHilosDaemonCronPage::onPictureChanged();
-                    AbstractHilosDaemonHttpServerPage::onPictureChanged();
-                    AbstractHilosDaemonWorkersPage::onPictureChanged();
-                    AbstractHilosDaemonEnvMismatchPage::onPictureChanged();
-                    AbstractHilosDaemonPage::onPictureChanged();
+                    AbstractHilosDaemonAgentsPage::onPictureChanged($before);
+                    AbstractHilosDaemonCronPage::onPictureChanged($before);
+                    AbstractHilosDaemonHttpServerPage::onPictureChanged($before);
+                    AbstractHilosDaemonWorkersPage::onPictureChanged($before);
+                    AbstractHilosDaemonEnvMismatchPage::onPictureChanged($before);
+                    AbstractHilosDaemonPage::onPictureChanged($before);
                 }
 
                 return;

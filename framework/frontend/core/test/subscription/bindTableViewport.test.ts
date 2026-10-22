@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { bindTableViewport } from '../../src/subscription/bindTableViewport.js'
 import {
   type HilosConnection,
   type TableAnchor,
+  type TableViewportDescriptor,
   type TableWindowDescriptorSource,
 } from '../../src/connection/HilosConnection.js'
 import { SIGNAL_TYPE_PAGE_RESPONSE } from '../../src/protocol/constants.js'
@@ -10,7 +11,10 @@ import { type PageResponseWire } from '../../src/protocol/scopePayload.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { type EntityRef } from '../../src/state/EntityStore.js'
 import { type TableRow } from '../../src/state/TableRowsStore.js'
+import { normalizeTableRow } from '../../src/state/normalizer.js'
+import { subscribeSignal } from '../../src/state/signal.js'
 import {
+  TableViewportController,
   type TableAnnouncePlacement,
   type TableFacetCountsByFilter,
   type TableSortOrder,
@@ -19,6 +23,7 @@ import {
 } from '../../src/table/TableViewportController.js'
 import { type HilosTableBulkReport } from '../../src/table/tableBulk.js'
 import { type HilosTableProgressFrame } from '../../src/table/tableProgress.js'
+import { type TableGeometryCaptureRequest } from '../../src/table/tableViewportGeometry.js'
 import {
   type TableBulkReportSignal,
   type TableFacetCountsSignal,
@@ -1538,5 +1543,335 @@ describe('bindTableViewport', () => {
       rowKey: 'a',
       slots: { user: { type: 'user', id: 7 } },
     })
+  })
+})
+
+// Synthetic extents model a synchronous destructive renderer; no browser geometry is claimed.
+describe('bindTableViewport presentation ingress', () => {
+  function fixture() {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    const scope = scopes.openPage('main')
+    const ref = { type: 'user', id: 7 }
+    const sent: TableViewportDescriptor[] = []
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: (descriptor) => sent.push(descriptor),
+      sendFocus: () => {},
+      frame: { columns: [] },
+    })
+    controller.ingestSubscriptionWindow(
+      [
+        normalizeTableRow(scope, {
+          rowKey: 'a',
+          slots: { user: { id: 7, name: 'old' } },
+        }),
+        { rowKey: 'b', slots: {} },
+      ],
+      2,
+      true,
+      null,
+      null,
+      2,
+      undefined,
+      [],
+    )
+    let oldExtent = 88.25
+    const capture = vi.fn((request: TableGeometryCaptureRequest) => ({
+      records: request.records.map((measurement) => ({
+        measurement,
+        extent:
+          measurement.layout.projection === 'wide'
+            ? { main: oldExtent, work: 0, detail: 0, gap: 0, total: oldExtent }
+            : null,
+        workGap: 0,
+      })),
+      tracks: {
+        layout: request.layout,
+        tracks: { columnKeys: ['name'], widths: [123.5], tableWidth: 123.5 },
+      },
+    }))
+    const registration = controller.geometry.register(capture)
+    const unbind = bind(connection, scopes, controller)
+    const writes: string[] = []
+    const stop = subscribeSignal(scope.entities.signal(ref), () => {
+      expect(capture).toHaveBeenCalledTimes(1)
+      expect(registration.tracks()?.tableWidth).toBe(123.5)
+      writes.push('store')
+      oldExtent = 0
+    })
+    return {
+      connection,
+      scopes,
+      scope,
+      controller,
+      registration,
+      capture,
+      unbind,
+      stop,
+      writes,
+      sent,
+    }
+  }
+
+  it('drops old and unknown replies before destructive entity subscribers, capture or controller writes', () => {
+    const f = fixture()
+    f.controller.setSearch('old')
+    const old = f.sent.at(-1)?.requestId
+    f.controller.setSearch('current')
+    const current = f.sent.at(-1)?.requestId
+    f.controller.focusRow('a')
+    f.controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: {} },
+      position: 1,
+    })
+    f.capture.mockClear()
+    const occurrence = f.controller.rows.get()[0]?.occurrence
+    const pending = f.controller.pendingCount.get()
+    const frame = {
+      ...ADDRESS,
+      rows: [{ rowKey: 'a', slots: { user: { id: 7, name: 'new' } } }],
+      totalCount: 1,
+      totalExact: true,
+      limit: 2,
+      firstAnchor: null,
+      lastAnchor: null,
+    }
+    for (const requestId of [old, 'unknown']) {
+      f.connection.emitWindow({ ...frame, requestId })
+      f.connection.emitWindowRefused({
+        ...ADDRESS,
+        errorCode: 'internal_error',
+        requestId,
+      })
+    }
+    expect(f.writes).toEqual([])
+    expect(f.capture).not.toHaveBeenCalled()
+    expect(
+      f.scope.entities.signal({ type: 'user', id: 7 }).get()?.fields['name'],
+    ).toBe('old')
+    expect(f.controller.rows.get()[0]?.occurrence).toBe(occurrence)
+    expect(f.controller.pendingCount.get()).toBe(pending)
+    expect(f.controller.focusedRow.get()?.rowKey).toBe('a')
+    f.connection.emitPageResponse({
+      page: 'main',
+      payload: { data: { label: 'live' } },
+    })
+    expect(f.controller.acceptsWindowResponse(current)).toBe(true)
+    expect(f.controller.rows.get()[0]?.occurrence).toBe(occurrence)
+    f.connection.emitWindow({ ...frame, requestId: current })
+    expect(f.writes).toEqual(['store'])
+    expect(f.capture).toHaveBeenCalledTimes(1)
+    expect(f.controller.lastAppliedWindowRequestId.get()).toBe(current)
+    f.stop()
+    f.unbind()
+    f.controller.dispose()
+  })
+
+  it('cancels a tracked ask on scope replacement and accepts a fresh untracked subscription without an extra ask', () => {
+    const f = fixture()
+    f.controller.refresh()
+    const old = f.sent.at(-1)?.requestId
+    f.scopes.openPage('main')
+    expect(f.controller.acceptsWindowResponse(old)).toBe(false)
+    f.connection.emitPageResponse({
+      page: 'main',
+      payload: {
+        windows: {
+          settings: {
+            rows: [{ rowKey: 'restored', slots: {} }],
+            totalCount: 1,
+            totalExact: true,
+            limit: 2,
+            sort: [],
+            firstAnchor: null,
+            lastAnchor: null,
+          },
+        },
+      },
+    })
+    expect(f.controller.rows.get().map((row) => row.rowKey)).toEqual([
+      'restored',
+    ])
+    expect(f.controller.frame.body.get()).toBe('rows')
+    expect(f.controller.lastAppliedWindowRequestId.get()).toBeNull()
+    expect(f.sent).toHaveLength(1)
+    f.connection.emitWindowRefused({
+      ...ADDRESS,
+      errorCode: 'internal_error',
+      requestId: old,
+    })
+    expect(f.controller.frame.refusal.get()).toBeNull()
+    f.stop()
+    f.unbind()
+    f.controller.dispose()
+  })
+
+  it.each([
+    'window',
+    'page',
+    'row_updated',
+    'row_moved',
+    'row_removed',
+    'append',
+    'own-create',
+  ] as const)(
+    'captures old numbers before normalization and sink publication for %s',
+    (kind) => {
+      const f = fixture()
+      const row = {
+        rowKey: kind === 'own-create' || kind === 'append' ? 'c' : 'a',
+        slots: { user: { id: 7, name: 'new' } },
+      }
+      const counts = {
+        totalCount: 3,
+        totalExact: true,
+        firstAnchor: null,
+        lastAnchor: null,
+      }
+      const stopRows = subscribeSignal(f.controller.rows, (rows) => {
+        if (kind === 'row_removed' && rows[0]?.placeholder) {
+          expect(f.registration.record('a', 'wide')?.retained).toBe(88.25)
+        }
+      })
+      switch (kind) {
+        case 'window':
+          f.connection.emitWindow({
+            ...ADDRESS,
+            ...counts,
+            rows: [row],
+            limit: 2,
+          })
+          break
+        case 'page':
+          f.connection.emitPageResponse({
+            page: 'main',
+            payload: {
+              windows: {
+                settings: { ...counts, rows: [row], limit: 2, sort: [] },
+              },
+            },
+          })
+          break
+        case 'append':
+          f.connection.emitAppend({ ...ADDRESS, ...counts, row })
+          break
+        case 'own-create':
+          f.connection.emitOwnCreate({
+            ...ADDRESS,
+            ...counts,
+            row,
+            position: 0,
+          })
+          break
+        default:
+          f.connection.emitDelta({
+            ...ADDRESS,
+            kind,
+            rowKey: 'a',
+            row,
+            position: 1,
+            own: true,
+            reason: 'deleted',
+          })
+      }
+      expect(f.writes).toEqual(['store'])
+      expect(
+        f.scope.entities.signal({ type: 'user', id: 7 }).get()?.fields['name'],
+      ).toBe('new')
+      expect(f.capture).toHaveBeenCalledTimes(1)
+      const expectedKeys =
+        kind === 'window' || kind === 'page' || kind === 'own-create'
+          ? ['a', 'a', 'b', 'b']
+          : kind === 'append'
+            ? []
+            : ['a', 'a']
+      expect(
+        f.capture.mock.calls[0]?.[0].records.map(
+          (ticket) => ticket.record.rowKey,
+        ),
+      ).toEqual(expectedKeys)
+      if (kind === 'own-create') {
+        expect(f.controller.rows.get().map((entry) => entry.rowKey)).toEqual([
+          'c',
+          'a',
+        ])
+      }
+      stopRows()
+      f.stop()
+      f.unbind()
+      f.registration.dispose()
+      f.controller.dispose()
+    },
+  )
+
+  it('does not prepare or write rejected addresses, stale/missing scopes or malformed deltas', () => {
+    const f = fixture()
+    const row = { rowKey: 'a', slots: { user: { id: 7, name: 'rejected' } } }
+    const frame = { ...ADDRESS, kind: 'row_updated', rowKey: 'a', row }
+    const ticket = f.registration.measurement('a', 'wide')
+    f.connection.emitDelta({ ...frame, page: 'elsewhere' })
+    f.connection.emitDelta({ ...frame, tableKey: 'other' })
+    f.connection.emitDelta({ ...frame, row: undefined })
+    f.connection.emitDelta({ ...frame, rowKey: undefined })
+    f.connection.emitDelta({ ...frame, kind: 'unknown' })
+    f.connection.emitPageResponse({ page: 'main', payload: {} })
+    f.connection.emitPageResponse({
+      page: 'other',
+      payload: {
+        refusedWindows: { settings: { errorCode: 'internal_error' } },
+      },
+    })
+    f.scopes.openPage('other')
+    f.connection.emitDelta(frame)
+    f.connection.emitPageResponse({
+      page: 'main',
+      payload: {
+        windows: {
+          settings: {
+            rows: [row],
+            sort: [],
+            limit: 2,
+            totalCount: 1,
+            totalExact: true,
+            firstAnchor: null,
+            lastAnchor: null,
+          },
+        },
+      },
+    })
+    f.scopes.dropPage()
+    f.connection.emitDelta(frame)
+    expect(f.capture).not.toHaveBeenCalled()
+    expect(f.writes).toEqual([])
+    expect(f.registration.measurement('a', 'wide')).toEqual(ticket)
+    f.stop()
+    f.unbind()
+    f.controller.dispose()
+  })
+
+  it('unregisters on unbind and captures only the remounted sink', () => {
+    const f = fixture()
+    f.unbind()
+    expect(f.connection.registered.size).toBe(0)
+    const frame = {
+      ...ADDRESS,
+      kind: 'row_removed',
+      rowKey: 'a',
+      own: true,
+      reason: 'deleted',
+    }
+    f.connection.emitDelta(frame)
+    expect(f.capture).not.toHaveBeenCalled()
+    const unbind = bind(f.connection, f.scopes, f.controller)
+    expect(f.connection.registered.get('settings')).toBe(f.controller)
+    f.connection.emitDelta(frame)
+    expect(f.capture).toHaveBeenCalledTimes(1)
+    expect(f.registration.record('a', 'wide')?.retained).toBe(88.25)
+    f.stop()
+    unbind()
+    f.controller.dispose()
   })
 })

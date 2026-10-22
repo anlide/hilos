@@ -4,6 +4,7 @@ import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { subscribeSignal } from '../../src/state/signal.js'
 import { type EntityRef } from '../../src/state/EntityStore.js'
 import {
+  HilosConnection,
   type ConnectionState,
   type HilosConnectionEventMap,
   type TableViewportDescriptor,
@@ -12,6 +13,9 @@ import {
   PROTECTED_MODE_INACTIVE,
   type ProtectedModeStatus,
 } from '../../src/protocol/protectedMode.js'
+import { TableViewportController } from '../../src/table/TableViewportController.js'
+import { type TableRow } from '../../src/state/TableRowsStore.js'
+import { type TableGeometryCaptureRequest } from '../../src/table/tableViewportGeometry.js'
 
 /** The connection events the double replays. */
 interface FakeConnectionEvents {
@@ -1370,4 +1374,141 @@ describe('a subscribe the freeze refused', () => {
     ])
     expect(connection.sent.length).toBe(1)
   })
+})
+
+// A direct page ingress must prepare real controller numbers before a store can notify.
+describe('PageSubscription presentation boundary', () => {
+  function fixture() {
+    const connection = new HilosConnection({ url: 'ws://test/ws' })
+    const scopes = new ScopeManager()
+    const pages = new PageSubscription(connection, scopes)
+    pages.subscribe('main')
+    pages.ingestPageResponse('main', {
+      entities: { user: { id: 7, name: 'old' } },
+    })
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: () => {},
+      frame: { columns: [] },
+    })
+    controller.ingestSubscriptionWindow(
+      [{ rowKey: 'a', slots: { user: { type: 'user', id: 7 } } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      [],
+    )
+    connection.registerTableWindow('settings', controller)
+    let extent = 91.5
+    const capture = vi.fn((request: TableGeometryCaptureRequest) => ({
+      records: request.records.map((measurement) => ({
+        measurement,
+        extent: { main: extent, work: 0, detail: 0, gap: 0, total: extent },
+        workGap: 0,
+      })),
+    }))
+    const registration = controller.geometry.register(capture)
+    return {
+      connection,
+      scopes,
+      pages,
+      controller,
+      capture,
+      registration,
+      destroy: () => {
+        extent = 0
+      },
+    }
+  }
+
+  it('prepares before a synchronous entity subscriber destroys the old representation', () => {
+    const f = fixture()
+    const stop = subscribeSignal(
+      f.scopes.entitySignal({ type: 'user', id: 7 }),
+      () => {
+        expect(f.registration.record('a', 'wide')?.live?.total).toBe(91.5)
+        f.destroy()
+      },
+    )
+    expect(
+      f.pages.ingestPageResponse('main', {
+        entities: { user: { id: 7, name: 'new' } },
+      }),
+    ).toBe(true)
+    expect(f.capture).toHaveBeenCalledTimes(1)
+    expect(
+      f.scopes.entitySignal({ type: 'user', id: 7 }).get()?.fields['name'],
+    ).toBe('new')
+    expect(f.pages.pageLoading.get()).toBe(false)
+    stop()
+    f.pages.unsubscribe()
+    f.controller.dispose()
+  })
+
+  it('keeps the current-page and missing-scope guards ahead of preparation', () => {
+    const f = fixture()
+    const ticket = f.registration.measurement('a', 'wide')
+    expect(
+      f.pages.ingestPageResponse('other', {
+        entities: { user: { id: 7, name: 'foreign' } },
+      }),
+    ).toBe(false)
+    expect(
+      f.scopes.entitySignal({ type: 'user', id: 7 }).get()?.fields['name'],
+    ).toBe('old')
+    f.scopes.dropPage()
+    expect(f.pages.ingestPageResponse('main', {})).toBe(false)
+    expect(f.capture).not.toHaveBeenCalled()
+    expect(f.registration.measurement('a', 'wide')).toEqual(ticket)
+    f.pages.unsubscribe()
+    f.controller.dispose()
+  })
+
+  it('unwinds a throwing normalizer and prepares the next direct ingress again', () => {
+    const f = fixture()
+    expect(() =>
+      f.pages.ingestPageResponse('main', {
+        entities: { user: { id: 7 } },
+        data: { user: 'collision' },
+      }),
+    ).toThrow("Payload key 'user' is both an entity slot and a data key")
+    expect(f.capture).toHaveBeenCalledTimes(1)
+    expect(f.registration.record('a', 'wide')?.live).toBeNull()
+    expect(
+      f.pages.ingestPageResponse('main', {
+        entities: { user: { id: 7, name: 'next' } },
+      }),
+    ).toBe(true)
+    expect(f.capture).toHaveBeenCalledTimes(2)
+    f.pages.unsubscribe()
+    f.controller.dispose()
+  })
+
+  it.each([401, 403, 404])(
+    'preserves page error recovery and loading for HTTP %s inside the boundary',
+    (httpCode) => {
+      const f = fixture()
+      f.pages.handleSubscriptionError({
+        page: 'main',
+        httpCode,
+        errorCode: 'denied',
+        title: 'Denied',
+        message: 'Denied',
+      })
+      expect(
+        f.pages.ingestPageResponse('main', { data: { value: 'accepted' } }),
+      ).toBe(true)
+      expect(f.pages.pageError.get()?.httpCode ?? null).toBe(
+        httpCode === 401 ? 401 : null,
+      )
+      expect(f.scopes.page()?.data.signal('value').get()).toBe('accepted')
+      expect(f.pages.pageLoading.get()).toBe(false)
+      expect(f.capture).toHaveBeenCalledTimes(1)
+      f.pages.unsubscribe()
+      f.controller.dispose()
+    },
+  )
 })
