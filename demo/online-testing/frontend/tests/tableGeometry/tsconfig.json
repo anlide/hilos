@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../out-tsc/table-geometry",
+    "types": [],
+    "strict": true
+  },
+  "angularCompilerOptions": {
+    "strictTemplates": true,
+    "extendedDiagnostics": {
+      "defaultCategory": "error"
+    }
+  },
+  "files": ["main.ts"],
+  "include": ["./*.ts"],
+  "references": []
+}

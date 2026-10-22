@@ -783,12 +783,17 @@ Apply resolves exactly those two, on the rows already shown:
 The retained geometry covers the **complete record footprint** in each mounted
 projection. The wide projection includes the main row, work, detail, and all
 gaps; the card projection includes the whole card, including its border, padding,
-and external gap once, preserving fractional CSS pixels. Vue and React keep a
-permanent state room and the full used wide colgroup under fixed layout; inert
-stale-mark holders in the header and state/detail room preserve their tracks,
-while card geometry stays independent. Only numeric allocations and column
-tracks survive departure, and only the existing reason is shown inside the
-placeholder.
+and external gap once, preserving fractional CSS pixels. Vue, React, and Angular
+keep a permanent state room and the full used wide colgroup under fixed layout;
+inert stale-mark holders in the header and state/detail room preserve their
+tracks, while card geometry stays independent. Angular uses the internal
+[`createTableViewportGeometry`](../../../framework/frontend/angular/src/tableViewportGeometry.ts)
+adapter; [`HilosTableGeometryTarget`](../../../framework/frontend/angular/src/HilosTableGeometryTarget.ts)
+binds real nodes to owner-issued occurrences, and
+[`HilosViewportTable`](../../../framework/frontend/angular/src/HilosViewportTable.ts)
+commits the root, table, and column-track keys after render. Only numeric
+allocations and column tracks survive departure, and only the existing reason
+is shown inside the placeholder.
 
 A foreign departure removes row-progress content immediately. If work was still
 visible, pending state keeps only its numeric work reserve; Apply combines that
@@ -830,6 +835,13 @@ The mounted Vue
 and React
 [`useTableViewportGeometry`](../../../framework/frontend/react/src/useTableViewportGeometry.ts)
 hooks own their native DOM refs and observers and release them with the mount.
+Angular uses a per-controller internal adapter; its synchronous capture still
+runs through the controller's existing `geometry`/`withPresentationUpdate`
+boundary before destructive publication. `HilosViewportTable` commits the
+rendered root, table, and column-track keys from `afterRenderEffect`, while
+`ResizeObserver` refreshes the live cache after publication. Adapter disposal
+releases its geometry registration, observers, listeners, and focus fallback
+when the controller is replaced or the table is unmounted.
 A hidden or zero-size projection supplies no measurement and does not reveal
 departed content. Inert measurement holders contain no row data, IDs, or
 focusable controls. When departure removes the active control, focus returns to
@@ -837,7 +849,9 @@ a visible search or otherwise the table root; a focus choice made during the
 update is preserved. Static fallback geometry lives in the sanctioned Vue
 [`hilos-styles.scss`](../../../framework/frontend/vue/src/hilos-styles.scss) and
 React [`hilos-styles.scss`](../../../framework/frontend/react/src/hilos-styles.scss)
-files, while validated fractional measurements pass through numeric CSS custom
+files and Angular's
+[`hilos-styles.scss`](../../../framework/frontend/angular/src/hilos-styles.scss),
+while validated fractional measurements pass through numeric CSS custom
 properties.
 
 Search, filter, order, page, Show, and refresh invalidate the prior window
@@ -850,9 +864,10 @@ Counts update immediately and independently of Apply. A count of zero does not
 discard pending values or retained slots, and it does not request a replacement
 window. After the final removal is applied, the body remains `rows` with the
 truthful zero count and `0–0` range until that window is replaced; there is no
-empty tile or no-op Apply. Both the Vue and React `HilosTableFooter` components
-stay visible for `rows` even when `firstRow` is zero, while a fresh empty
-snapshot still has no footer. An eligible unfiltered tail append may follow
+empty tile or no-op Apply. The Vue, React, and Angular
+[`HilosTableFooter`](../../../framework/frontend/angular/src/HilosTableFooter.ts)
+components stay visible for `rows` even when `firstRow` is zero, while a fresh
+empty snapshot still has no footer. An eligible unfiltered tail append may follow
 retained slots; those slots are not live members and consume no capacity.
 Existing append/own-create deduplication,
 fresh occurrence identities, anchors, and own-create edge eviction determine
@@ -862,9 +877,9 @@ an arrival under search may update the count only. A
 `table_viewport_announce` changes only the count and the live room; Show requests
 a new window, and Apply does not Show.
 
-The shared core retention/ingress mechanism and Vue and React DOM geometry are
-built. Only the Angular geometry port (HIL-1751) remains; declared height modes
-are separate work, and this behavior does not introduce a height API.
+The shared core retention/ingress mechanism and Vue, React, and Angular DOM
+geometry are built. Declared height modes remain separate future work, and this
+behavior does not introduce a height API.
 
 **Apply never brings a row in.** An announced row arrives through Show, which is
 a window change and not an Apply; a row that qualified for the tail was live from

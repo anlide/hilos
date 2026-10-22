@@ -66,14 +66,18 @@ Every modal names where focus lands, and the naming is visible at the mount.
   default for a project that mounts the SDK, never the close button.
 
 On close, `FocusTrap` returns to the original connected, visible, enabled
-trigger. Vue and React table mounts offer
+trigger. Vue, React, and Angular table mounts offer
 [`registerFocusReturnFallback(root, read)`](../../../framework/frontend/core/src/dom/focusTrap.ts)
 from `core/dom`: activation captures the nearest mount-local offer through a
 bubbling DOM request, and release calls `read` only if the trigger became
 unavailable. `read` returns the surface's current visible search, or its stable
 `tabindex="-1"` table root. Registration returns a `() => void` cleanup; call it
 when the mount is disposed or its controller is replaced. Cleanup removes the
-offer and invalidates callbacks already captured by an open trap.
+offer and invalidates callbacks already captured by an open trap. Angular's
+per-controller
+[`createTableViewportGeometry`](../../../framework/frontend/angular/src/tableViewportGeometry.ts)
+registers this fallback for its mounted root and releases it when the adapter is
+disposed or its controller is replaced.
 
 A fresh snapshot's occurrence is a different control even when its row key or
 `data-id` repeats; no replacement is guessed from those strings. An invisible
@@ -86,6 +90,8 @@ trigger return. The Vue registration and current fallback are wired in
 [`useTableViewportGeometry`](../../../framework/frontend/vue/src/useTableViewportGeometry.ts);
 the React mount wires the same API and fallback in
 [`useTableViewportGeometry`](../../../framework/frontend/react/src/useTableViewportGeometry.ts).
+Angular's fallback reads the current visible, enabled search or the table root
+from its adapter; it does not select another occurrence by row key or `data-id`.
 
 The empty default of `initialFocus` means the mark is in this file. The confirm
 step a dirty close raises is always the dialog itself: it has a heading, a

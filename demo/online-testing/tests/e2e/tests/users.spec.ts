@@ -2,6 +2,8 @@ import { test, expect, type Browser, type Page } from '@playwright/test'
 import {
   dismissToasts,
   expectHilosUserBlockSettled,
+  shownByTestId,
+  watchTableModalFocus,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf, setAdmin } from '../helpers/adminGrant.js'
 import { gotoPage, PAGE_REFUSED } from '../helpers/page.js'
@@ -165,26 +167,59 @@ test('a rename in one tab lands at once in another, raising no Apply', async ({
   await openUsers(page)
   await openUsers(tabB)
 
-  // Tab A opens the first user and renames it; its own detail applies at once.
-  await page.locator('[data-id^="hilos-users-open-"]').first().click()
-  await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
-  await page.getByTestId('hilos-user-edit').click()
-  await typeInto(page.getByTestId('hilos-user-name-input'), newName)
-  await page.getByTestId('hilos-user-save').click()
-  await expect(page.getByTestId('hilos-user-name')).toHaveText(newName)
+  const controlId = await page
+    .locator('[data-id^="hilos-users-open-"]')
+    .first()
+    .getAttribute('data-id')
+  expect(controlId).not.toBeNull()
+  const controlB = shownByTestId(tabB, controlId!)
+  await controlB.focus()
+  const native = await watchTableModalFocus(controlB)
+  try {
+    expect(await native.read()).toMatchObject({
+      openerConnected: true,
+      sameTrigger: true,
+      triggerFocused: true,
+      activeTag: 'A',
+    })
 
-  // Tab B receives the rename from the other connection and shows it at once: the
-  // window is ordered by id, so a rename moves nothing, and what the gate holds is
-  // the position and the membership of the rows rather than the fields of a record
-  // (HIL-793). The user is an entity reference, so the name cell tracks the rename
-  // reactively; what is new is that no Apply control is raised behind it, and no
-  // press is needed to make the screen true. First two-window test on the Angular layer.
-  await expect(tabB.locator('tbody tr', { hasText: newName })).toHaveCount(1)
-  await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
-  await expect(tabB.locator('tbody tr', { hasText: newName })).not.toHaveClass(
-    /table-warning/,
-  )
-  await tabB.close()
+    // Ordinary value updates keep the existing native control and focus. Its
+    // live contents may rewrap; a rename is not a departure or a height freeze.
+    await shownByTestId(page, controlId!).click()
+    await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
+    await clickSubmit(page.getByTestId('hilos-user-edit'))
+    await typeInto(page.getByTestId('hilos-user-name-input'), newName)
+    await clickSubmit(page.getByTestId('hilos-user-save'))
+    await expect(page.getByTestId('hilos-user-name-input')).toHaveCount(0)
+    await expect(page.getByTestId('hilos-user-name')).toHaveText(newName)
+
+    // The real socket changes the shown name without any Apply.
+    await expect(tabB.locator('tbody tr', { hasText: newName })).toHaveCount(1)
+    await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
+    await expect(
+      tabB.locator('tbody tr', { hasText: newName }),
+    ).not.toHaveClass(/table-warning/)
+    expect(await native.read()).toMatchObject({
+      openerConnected: true,
+      sameTrigger: true,
+      triggerFocused: true,
+      activeTag: 'A',
+    })
+    for (const entry of await native.history()) {
+      expect(entry.state).toMatchObject({
+        openerConnected: true,
+        sameTrigger: true,
+        triggerFocused: true,
+      })
+    }
+  } finally {
+    await test.info().attach('rename-native-control', {
+      body: JSON.stringify(await native.history(), null, 2),
+      contentType: 'application/json',
+    })
+    await native.dispose()
+    await tabB.close()
+  }
 })
 
 test('a revoked admin loses the gear and the door', async ({ page }) => {

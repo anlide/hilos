@@ -1,14 +1,14 @@
 // HilosViewportTable — the thin Angular view over the SERVER-WINDOWED
 // TableViewportController. Search, sort, and paging change the viewport
 // descriptor and are sent to the backend (NO local filtering); live changes
-// arrive as pending and are resolved with the Apply button. A removed row renders
-// as a placeholder in its slot while the set still has rows elsewhere. It holds
+// arrive as pending and are resolved with the Apply button. An applied removal
+// renders as a placeholder until a replacement window arrives, even at count zero. It holds
 // NO table logic (multiframework-core.md): the controller owns the descriptor,
 // pending, and Apply. Body cells come from the page — one
 // `<ng-template hilosTableCell="<column key>">` per declared column — plus one
-// framework-owned cell at the end of the row carrying what waits on that row;
-// the placeholder, header, paging, and the one room of live messages above the
-// rows stay framework-owned. The controller arrives via input, carrying core signals,
+// permanent framework-owned state cell at the end of each row, carrying what
+// waits on or is behind that row; the placeholder, header, paging, and the one
+// room of live messages above the rows stay framework-owned. The controller arrives via input, carrying core signals,
 // so the view mirrors them into Angular signals. It draws the bar and the footer
 // from the declaration (HilosTableBar, HilosTableFooter), and takes its columns,
 // its name, and the words it says when empty from there too. A table whose page
@@ -32,6 +32,8 @@ import { NgTemplateOutlet } from '@angular/common'
 import {
   ChangeDetectionStrategy,
   Component,
+  ElementRef,
+  afterRenderEffect,
   computed,
   contentChild,
   contentChildren,
@@ -39,6 +41,9 @@ import {
   inject,
   input,
   signal,
+  untracked,
+  viewChild,
+  viewChildren,
 } from '@angular/core'
 import type { TemplateRef, WritableSignal } from '@angular/core'
 import {
@@ -76,6 +81,11 @@ import { HilosTableEmptyState } from './HilosTableEmptyState.js'
 import { HilosTableFooter } from './HilosTableFooter.js'
 import { HilosTableLive } from './HilosTableLive.js'
 import { HilosTableProgress } from './HilosTableProgress.js'
+import { HilosTableGeometryTarget } from './HilosTableGeometryTarget.js'
+import {
+  createTableViewportGeometry,
+  type TableViewportGeometryAdapter,
+} from './tableViewportGeometry.js'
 import { HILOS_PAGE_HEADING_ID } from './hilosPageHeadingToken.js'
 import { HILOS_TABLE_SELECTION_EDGE } from './hilosTableSelectionEdge.js'
 
@@ -118,10 +128,11 @@ export interface BulkUntouchedContext {
     HilosTableFooter,
     HilosTableLive,
     HilosTableProgress,
+    HilosTableGeometryTarget,
     NgTemplateOutlet,
   ],
   template: `
-    <div [attr.data-id]="dataId()">
+    <div #geometryRoot tabindex="-1" [attr.data-id]="dataId()">
       <hilos-table-bar
         [controller]="controller()"
         [titleId]="titleId"
@@ -143,11 +154,50 @@ export interface BulkUntouchedContext {
 
       <!-- The scroll wrapper belongs to the wide table: once columns become
       lines of a card, there is nothing left to scroll sideways (Design D8). -->
-      <div class="table-responsive d-none d-md-block">
+      <div class="table-responsive d-none d-md-block position-relative">
+        <div
+          class="table hilos-table-room hilos-table-room-wide invisible"
+          aria-hidden="true"
+          inert
+          [style.--hilos-table-width-px]="geometry()?.tracks()?.tableWidth"
+        >
+          <div class="hilos-table-replacement-body">
+            <div class="hilos-table-replacement-row">
+              <div class="hilos-table-replacement-cell">
+                <div
+                  class="hilos-table-reason-twins hilos-stack text-center fst-italic"
+                >
+                  @for (reason of removalReasons; track reason) {
+                    <span
+                      ><i class="bi {{ placeholder(reason).icon }} me-1"></i
+                      >{{ placeholder(reason).text }}</span
+                    >
+                  }
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="hilos-table-fallback"></div>
+        </div>
         <table
+          #geometryTable
           class="table table-striped table-hover align-middle mb-0"
+          [class.hilos-table-fixed]="geometry()?.tracks() != null"
+          [style.--hilos-table-width-px]="geometry()?.tracks()?.tableWidth"
+          [style.--hilos-table-reason-px]="geometry()?.reasonFloors()?.wide"
           [attr.aria-labelledby]="nameId()"
         >
+          <!-- Used boundaries stay latched after the widest or last live row leaves. -->
+          <colgroup>
+            @for (key of columnTrackKeys(); track key) {
+              <col
+                class="hilos-table-track"
+                [style.--hilos-table-track-px]="
+                  geometry()?.trackWidths()?.[$index]
+                "
+              />
+            }
+          </colgroup>
           <thead>
             <tr>
               <!-- The checkbox column stands on the edge the installation chose,
@@ -190,20 +240,31 @@ export interface BulkUntouchedContext {
                           sortPositionLabel(place)
                         }}</span>
                       }
-                      @if (staleColumnKeys().has(column.key)) {
-                        <i
-                          class="bi bi-snow"
-                          [attr.data-id]="
-                            'hilos-table-stale-column-' + column.key
-                          "
-                          aria-hidden="true"
-                        ></i>
-                        <span class="visually-hidden">{{
-                          staleColumnText(column)
-                        }}</span>
+                      @if (column.source !== undefined) {
+                        <span class="hilos-stack">
+                          <i
+                            class="bi bi-snow invisible"
+                            aria-hidden="true"
+                            inert
+                          ></i>
+                          @if (staleColumnKeys().has(column.key)) {
+                            <i
+                              class="bi bi-snow"
+                              [attr.data-id]="
+                                'hilos-table-stale-column-' + column.key
+                              "
+                              aria-hidden="true"
+                            ></i>
+                          }
+                          <span class="visually-hidden">{{
+                            staleColumnKeys().has(column.key)
+                              ? staleColumnText(column)
+                              : ''
+                          }}</span>
+                        </span>
                       }
                     </button>
-                  } @else if (staleColumnKeys().has(column.key)) {
+                  } @else if (column.source !== undefined) {
                     <span class="d-inline-flex align-items-center gap-1">
                       {{ column.label }}
                       @if (sortComponent(column.key) !== undefined) {
@@ -212,27 +273,58 @@ export interface BulkUntouchedContext {
                           aria-hidden="true"
                         ></i>
                       }
-                      <i
-                        class="bi bi-snow"
-                        [attr.data-id]="
-                          'hilos-table-stale-column-' + column.key
-                        "
-                        aria-hidden="true"
-                      ></i>
-                      <span class="visually-hidden">{{
-                        staleColumnText(column)
-                      }}</span>
+                      <span class="hilos-stack">
+                        <i
+                          class="bi bi-snow invisible"
+                          aria-hidden="true"
+                          inert
+                        ></i>
+                        @if (staleColumnKeys().has(column.key)) {
+                          <i
+                            class="bi bi-snow"
+                            [attr.data-id]="
+                              'hilos-table-stale-column-' + column.key
+                            "
+                            aria-hidden="true"
+                          ></i>
+                        }
+                        <span class="visually-hidden">{{
+                          staleColumnKeys().has(column.key)
+                            ? staleColumnText(column)
+                            : ''
+                        }}</span>
+                      </span>
                     </span>
                   } @else {
                     {{ column.label }}
                   }
                 </th>
               }
-              @if (markColumn()) {
-                <th scope="col" class="text-end">
-                  <span class="visually-hidden">Row state and controls</span>
-                </th>
-              }
+              <th scope="col" class="text-end text-nowrap">
+                <span
+                  class="hilos-table-marks invisible"
+                  aria-hidden="true"
+                  inert
+                >
+                  <i class="bi bi-snow"></i>
+                  <span class="hilos-stack">
+                    <span
+                      class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                      ><i class="bi bi-arrows-move"></i> Will move</span
+                    >
+                    <span
+                      class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                      ><i class="bi bi-box-arrow-right"></i> Will leave</span
+                    >
+                  </span>
+                  @if (detailFields().length > 0) {
+                    <span class="btn btn-sm btn-outline-secondary">
+                      <i class="bi bi-chevron-down"></i>
+                    </span>
+                  }
+                </span>
+                <span class="visually-hidden">Row state and controls</span>
+              </th>
               @if (selectionEnabled() && selectionEdge === 'end') {
                 <th scope="col" class="hilos-table-selection-cell">
                   <input
@@ -276,10 +368,16 @@ export interface BulkUntouchedContext {
             </tbody>
           } @else {
             <tbody>
-              @for (view of rows(); track view.rowKey) {
+              @for (view of rows(); track view.occurrence) {
                 <tr
+                  [hilosTableGeometryTarget]="geometry()"
+                  [geometryRowKey]="view.rowKey"
+                  [geometryOccurrence]="view.occurrence"
+                  geometryProjection="wide"
+                  geometryPart="main"
                   [attr.data-id]="'hilos-table-row-' + view.rowKey"
                   [class]="rowClass(view)"
+                  [class.hilos-table-main]="!view.placeholder"
                 >
                   <!-- A row drawn as a placeholder carries no checkbox: there is
                 nothing to mark in the trace of a row that left, and the core would
@@ -304,14 +402,27 @@ export interface BulkUntouchedContext {
                   @if (view.placeholder) {
                     <td
                       [attr.colspan]="bodyColspan()"
-                      class="text-center text-muted fst-italic"
+                      class="hilos-table-placeholder-cell text-center text-body-secondary fst-italic"
                       data-id="hilos-table-placeholder"
                     >
-                      <i
-                        class="bi {{ placeholder(view.removal).icon }} me-1"
-                        aria-hidden="true"
-                      ></i>
-                      {{ placeholder(view.removal).text }}
+                      <div
+                        class="hilos-table-record-space"
+                        [style.--hilos-table-record-px]="
+                          geometry()?.recordPixels(
+                            view.rowKey,
+                            view.occurrence,
+                            'wide'
+                          )
+                        "
+                      >
+                        <span
+                          ><i
+                            class="bi {{ placeholder(view.removal).icon }} me-1"
+                            aria-hidden="true"
+                          ></i
+                          >{{ placeholder(view.removal).text }}</span
+                        >
+                      </div>
                     </td>
                   } @else {
                     <!-- The cell stands even where the page marked no template,
@@ -342,70 +453,107 @@ export interface BulkUntouchedContext {
                       </td>
                     }
                   }
-                  @if (markColumn() && !view.placeholder) {
+                  @if (!view.placeholder) {
                     <td class="text-end text-nowrap">
-                      <!-- The freshness mark comes first and the waiting badge
+                      <span class="hilos-stack">
+                        <span
+                          class="hilos-table-marks invisible"
+                          aria-hidden="true"
+                          inert
+                        >
+                          <i class="bi bi-snow"></i>
+                          <span class="hilos-stack">
+                            <span
+                              class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                              ><i class="bi bi-arrows-move"></i> Will move</span
+                            >
+                            <span
+                              class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                              ><i class="bi bi-box-arrow-right"></i> Will
+                              leave</span
+                            >
+                          </span>
+                          @if (detailFields().length > 0) {
+                            <span class="btn btn-sm btn-outline-secondary">
+                              <i class="bi bi-chevron-down"></i>
+                            </span>
+                          }
+                        </span>
+                        <span class="hilos-table-marks">
+                          <!-- The freshness mark comes first and the waiting badge
                       after it: a row can both wait and stand on values that are
                       behind, and neither statement stands in for the other. -->
-                      @if (view.staleSources.length > 0) {
-                        <i
-                          class="bi bi-snow me-1"
-                          [attr.data-id]="
-                            'hilos-table-stale-row-' + view.rowKey
-                          "
-                          aria-hidden="true"
-                        ></i>
-                        <span class="visually-hidden">{{ rowMark }}</span>
-                      }
-                      @if (view.pending === 'move') {
-                        <span
-                          class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
-                          [attr.data-id]="
-                            'hilos-table-pending-move-' + view.rowKey
-                          "
-                        >
-                          <i class="bi bi-arrows-move" aria-hidden="true"></i>
-                          Will move
-                        </span>
-                      } @else if (view.pending === 'remove') {
-                        <span
-                          class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
-                          [attr.data-id]="
-                            'hilos-table-pending-remove-' + view.rowKey
-                          "
-                        >
-                          <i
-                            class="bi bi-box-arrow-right"
-                            aria-hidden="true"
-                          ></i>
-                          Will leave
-                        </span>
-                      }
-                      <!-- The control comes last and stands at the very edge: the
+                          @if (view.staleSources.length > 0) {
+                            <i
+                              class="bi bi-snow"
+                              [attr.data-id]="
+                                'hilos-table-stale-row-' + view.rowKey
+                              "
+                              aria-hidden="true"
+                            ></i>
+                            <span class="visually-hidden">{{ rowMark }}</span>
+                          }
+                          @if (view.pending === 'move') {
+                            <span
+                              class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                              [attr.data-id]="
+                                'hilos-table-pending-move-' + view.rowKey
+                              "
+                            >
+                              <i
+                                class="bi bi-arrows-move"
+                                aria-hidden="true"
+                              ></i>
+                              Will move
+                            </span>
+                          } @else if (view.pending === 'remove') {
+                            <span
+                              class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                              [attr.data-id]="
+                                'hilos-table-pending-remove-' + view.rowKey
+                              "
+                            >
+                              <i
+                                class="bi bi-box-arrow-right"
+                                aria-hidden="true"
+                              ></i>
+                              Will leave
+                            </span>
+                          }
+                          <!-- The control comes last and stands at the very edge: the
                     badge STATES something about the row, while this one is the
                     only thing in the cell the reader acts on. -->
-                      @if (detailFields().length > 0 && view.expandable) {
-                        <button
-                          type="button"
-                          class="btn btn-sm btn-outline-secondary ms-1"
-                          [attr.data-id]="'hilos-table-expand-' + view.rowKey"
-                          [attr.aria-expanded]="view.expanded"
-                          [attr.aria-controls]="detailId(view.rowKey)"
-                          (click)="
-                            controller().expandRow(view.rowKey, !view.expanded)
-                          "
-                        >
-                          <i
-                            class="bi"
-                            [class.bi-chevron-up]="view.expanded"
-                            [class.bi-chevron-down]="!view.expanded"
-                            aria-hidden="true"
-                          ></i>
-                          <span class="visually-hidden">{{
-                            view.expanded ? detailCopy.hide : detailCopy.show
-                          }}</span>
-                        </button>
-                      }
+                          @if (detailFields().length > 0 && view.expandable) {
+                            <button
+                              type="button"
+                              class="btn btn-sm btn-outline-secondary"
+                              [attr.data-id]="
+                                'hilos-table-expand-' + view.rowKey
+                              "
+                              [attr.aria-expanded]="view.expanded"
+                              [attr.aria-controls]="detailId(view.rowKey)"
+                              (click)="
+                                controller().expandRow(
+                                  view.rowKey,
+                                  !view.expanded
+                                )
+                              "
+                            >
+                              <i
+                                class="bi"
+                                [class.bi-chevron-up]="view.expanded"
+                                [class.bi-chevron-down]="!view.expanded"
+                                aria-hidden="true"
+                              ></i>
+                              <span class="visually-hidden">{{
+                                view.expanded
+                                  ? detailCopy.hide
+                                  : detailCopy.show
+                              }}</span>
+                            </button>
+                          }
+                        </span>
+                      </span>
                     </td>
                   }
                   @if (
@@ -435,6 +583,11 @@ export interface BulkUntouchedContext {
               draws the placeholder above. -->
                 @if (!view.placeholder && rowBar(view.rowKey); as bar) {
                   <tr
+                    [hilosTableGeometryTarget]="geometry()"
+                    [geometryRowKey]="view.rowKey"
+                    [geometryOccurrence]="view.occurrence"
+                    geometryProjection="wide"
+                    geometryPart="work"
                     [attr.data-id]="'hilos-table-progress-row-' + view.rowKey"
                   >
                     @for (cell of progressCells(); track $index) {
@@ -459,6 +612,32 @@ export interface BulkUntouchedContext {
                       </td>
                     }
                   </tr>
+                } @else if (
+                  !view.placeholder &&
+                  (geometry()?.workPixels(view.rowKey, 'wide') ?? 0) > 0
+                ) {
+                  <tr
+                    class="hilos-table-work-reserve"
+                    aria-hidden="true"
+                    inert
+                    [hilosTableGeometryTarget]="geometry()"
+                    [geometryRowKey]="view.rowKey"
+                    [geometryOccurrence]="view.occurrence"
+                    geometryProjection="wide"
+                    geometryPart="work"
+                  >
+                    <td
+                      [attr.colspan]="bodyColspan()"
+                      class="hilos-table-placeholder-cell"
+                    >
+                      <div
+                        class="hilos-table-work-space"
+                        [style.--hilos-table-work-px]="
+                          geometry()?.workPixels(view.rowKey, 'wide')
+                        "
+                      ></div>
+                    </td>
+                  </tr>
                 }
 
                 <!-- The panel this row expands into, drawn after the row's own bar:
@@ -469,6 +648,11 @@ export interface BulkUntouchedContext {
                 @if (view.expanded && !view.placeholder) {
                   <tr
                     [id]="detailId(view.rowKey)"
+                    [hilosTableGeometryTarget]="geometry()"
+                    [geometryRowKey]="view.rowKey"
+                    [geometryOccurrence]="view.occurrence"
+                    geometryProjection="wide"
+                    geometryPart="detail"
                     class="table-active"
                     [attr.data-id]="'hilos-table-row-detail-' + view.rowKey"
                   >
@@ -539,33 +723,75 @@ export interface BulkUntouchedContext {
       says in words when it has no rows stands BESIDE it, a sentence not being an
       item of a list. -->
       @let layout = card();
-      <div class="d-md-none" data-id="hilos-table-cards">
+      <div class="d-md-none position-relative" data-id="hilos-table-cards">
+        <div
+          class="hilos-table-room hilos-table-room-card invisible card mb-2"
+          aria-hidden="true"
+          inert
+        >
+          <div class="card-body py-2 px-3">
+            <div
+              class="hilos-table-reason-twins hilos-stack text-center fst-italic small"
+            >
+              @for (reason of removalReasons; track reason) {
+                <span
+                  ><i class="bi {{ placeholder(reason).icon }} me-1"></i
+                  >{{ placeholder(reason).text }}</span
+                >
+              }
+            </div>
+            <div class="hilos-table-fallback"></div>
+          </div>
+        </div>
         @if (body() === 'rows') {
           <div role="list" [attr.aria-labelledby]="nameId()">
-            @for (view of rows(); track view.rowKey) {
+            @for (view of rows(); track view.occurrence) {
               <div
                 class="card mb-2"
+                [hilosTableGeometryTarget]="geometry()"
+                [geometryRowKey]="view.rowKey"
+                [geometryOccurrence]="view.occurrence"
+                geometryProjection="card"
+                geometryPart="main"
                 [class]="cardClass(view)"
                 role="listitem"
                 [attr.data-id]="'hilos-table-card-' + view.rowKey"
               >
                 <!-- A removed row keeps its place as a card of one line,
-                exactly as it keeps it as a row of one cell, until an empty
-                set makes the whole window converge (Flow F4). -->
+                exactly as it keeps it as a row of one cell, until a replacement
+                window arrives, even when the count reaches zero (Flow F4). -->
                 @if (view.placeholder) {
                   <div
                     class="card-body py-2 px-3 text-center text-body-secondary fst-italic small"
                     data-id="hilos-table-placeholder"
                   >
-                    <i
-                      class="bi {{ placeholder(view.removal).icon }} me-1"
-                      aria-hidden="true"
-                    ></i>
-                    {{ placeholder(view.removal).text }}
+                    <div
+                      class="hilos-table-record-space"
+                      [style.--hilos-table-record-px]="
+                        geometry()?.recordPixels(
+                          view.rowKey,
+                          view.occurrence,
+                          'card'
+                        )
+                      "
+                    >
+                      <span
+                        ><i
+                          class="bi {{ placeholder(view.removal).icon }} me-1"
+                          aria-hidden="true"
+                        ></i
+                        >{{ placeholder(view.removal).text }}</span
+                      >
+                    </div>
                   </div>
                 } @else {
-                  <div class="card-body py-2 px-3">
-                    <div class="d-flex align-items-start gap-2 mb-1">
+                  <div
+                    class="card-body py-2 px-3"
+                    [style.--hilos-table-reason-px]="
+                      geometry()?.reasonFloors()?.card
+                    "
+                  >
+                    <div class="d-flex flex-wrap align-items-start gap-2 mb-1">
                       <!-- The mark sits on the edge the installation chose, the
                       same edge it sits on in the row: one product disagreeing
                       with itself between its table and its card is the very
@@ -591,13 +817,8 @@ export interface BulkUntouchedContext {
                           />
                         </span>
                       }
-                      <!-- The right of the head, in one group: what the PAGE
-                      says about the row first, then what the FRAMEWORK says
-                      about it. The page's badge is not pushed out by a
-                      framework mark — on a wide screen the two stand in two
-                      different cells, and a card is a second projection of the
-                      same columns rather than a smaller set of facts (Flow
-                      F6). -->
+                      <!-- The page badge and framework marks have separate
+                      permanent places, so a mark never displaces the badge. -->
                       <span class="ms-auto d-flex align-items-center gap-1">
                         @if (cellFor(layout.badge); as badge) {
                           <ng-container
@@ -608,80 +829,115 @@ export interface BulkUntouchedContext {
                             }"
                           />
                         }
-                        @if (view.staleSources.length > 0) {
-                          <i
-                            class="bi bi-snow"
-                            [attr.data-id]="
-                              'hilos-table-stale-row-' + view.rowKey
-                            "
-                            aria-hidden="true"
-                          ></i>
-                          <span class="visually-hidden">{{ rowMark }}</span>
-                        }
-                        @if (view.pending === 'move') {
-                          <span
-                            class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
-                            [attr.data-id]="
-                              'hilos-table-pending-move-' + view.rowKey
-                            "
-                          >
-                            <i class="bi bi-arrows-move" aria-hidden="true"></i>
-                            Will move
-                          </span>
-                        } @else if (view.pending === 'remove') {
-                          <span
-                            class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
-                            [attr.data-id]="
-                              'hilos-table-pending-remove-' + view.rowKey
-                            "
-                          >
-                            <i
-                              class="bi bi-box-arrow-right"
-                              aria-hidden="true"
-                            ></i>
-                            Will leave
-                          </span>
-                        }
-                        <!-- The control comes after everything that merely
-                        STATES something about the record, exactly as it does at
-                        the end of a row: it is the one thing in the head the
-                        reader acts on. -->
-                        @if (detailFields().length > 0 && view.expandable) {
-                          <button
-                            type="button"
-                            class="btn btn-sm btn-outline-secondary"
-                            [attr.data-id]="'hilos-table-expand-' + view.rowKey"
-                            [attr.aria-expanded]="view.expanded"
-                            [attr.aria-controls]="cardDetailId(view.rowKey)"
-                            (click)="
-                              controller().expandRow(
-                                view.rowKey,
-                                !view.expanded
-                              )
-                            "
-                          >
-                            <i
-                              class="bi"
-                              [class.bi-chevron-up]="view.expanded"
-                              [class.bi-chevron-down]="!view.expanded"
-                              aria-hidden="true"
-                            ></i>
-                            <span class="visually-hidden">{{
-                              view.expanded ? detailCopy.hide : detailCopy.show
-                            }}</span>
-                          </button>
-                        }
-                        @if (selectionEnabled() && selectionEdge === 'end') {
-                          <input
-                            class="form-check-input mt-1"
-                            type="checkbox"
-                            aria-label="Select row"
-                            [attr.data-id]="'hilos-table-select-' + view.rowKey"
-                            [checked]="view.selected"
-                            (change)="onSelectRow(view.rowKey, $event)"
-                          />
-                        }
                       </span>
+                      <span
+                        class="hilos-table-card-marks d-flex justify-content-end"
+                      >
+                        <span class="hilos-stack">
+                          <span
+                            class="hilos-table-marks invisible"
+                            aria-hidden="true"
+                            inert
+                          >
+                            <i class="bi bi-snow"></i>
+                            <span class="hilos-stack">
+                              <span
+                                class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                                ><i class="bi bi-arrows-move"></i> Will
+                                move</span
+                              >
+                              <span
+                                class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                                ><i class="bi bi-box-arrow-right"></i> Will
+                                leave</span
+                              >
+                            </span>
+                            @if (detailFields().length > 0) {
+                              <span class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-chevron-down"></i>
+                              </span>
+                            }
+                          </span>
+                          <span class="hilos-table-marks">
+                            @if (view.staleSources.length > 0) {
+                              <i
+                                class="bi bi-snow"
+                                [attr.data-id]="
+                                  'hilos-table-stale-row-' + view.rowKey
+                                "
+                                aria-hidden="true"
+                              ></i>
+                              <span class="visually-hidden">{{ rowMark }}</span>
+                            }
+                            @if (view.pending === 'move') {
+                              <span
+                                class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                                [attr.data-id]="
+                                  'hilos-table-pending-move-' + view.rowKey
+                                "
+                              >
+                                <i
+                                  class="bi bi-arrows-move"
+                                  aria-hidden="true"
+                                ></i>
+                                Will move
+                              </span>
+                            } @else if (view.pending === 'remove') {
+                              <span
+                                class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                                [attr.data-id]="
+                                  'hilos-table-pending-remove-' + view.rowKey
+                                "
+                              >
+                                <i
+                                  class="bi bi-box-arrow-right"
+                                  aria-hidden="true"
+                                ></i>
+                                Will leave
+                              </span>
+                            }
+                            @if (detailFields().length > 0 && view.expandable) {
+                              <button
+                                type="button"
+                                class="btn btn-sm btn-outline-secondary"
+                                [attr.data-id]="
+                                  'hilos-table-expand-' + view.rowKey
+                                "
+                                [attr.aria-expanded]="view.expanded"
+                                [attr.aria-controls]="cardDetailId(view.rowKey)"
+                                (click)="
+                                  controller().expandRow(
+                                    view.rowKey,
+                                    !view.expanded
+                                  )
+                                "
+                              >
+                                <i
+                                  class="bi"
+                                  [class.bi-chevron-up]="view.expanded"
+                                  [class.bi-chevron-down]="!view.expanded"
+                                  aria-hidden="true"
+                                ></i>
+                                <span class="visually-hidden">{{
+                                  view.expanded
+                                    ? detailCopy.hide
+                                    : detailCopy.show
+                                }}</span>
+                              </button>
+                            }
+                          </span>
+                        </span>
+                      </span>
+                      @if (selectionEnabled() && selectionEdge === 'end') {
+                        <input
+                          class="form-check-input mt-1"
+                          type="checkbox"
+                          aria-label="Select row"
+                          [attr.data-id]="'hilos-table-select-' + view.rowKey"
+                          [checked]="view.selected"
+                          (change)="onSelectRow(view.rowKey, $event)"
+                        />
+                      }
                     </div>
 
                     <!-- What a column becomes on a narrow screen is a pair of a
@@ -714,6 +970,11 @@ export interface BulkUntouchedContext {
                     @if (view.expanded) {
                       <div
                         [id]="cardDetailId(view.rowKey)"
+                        [hilosTableGeometryTarget]="geometry()"
+                        [geometryRowKey]="view.rowKey"
+                        [geometryOccurrence]="view.occurrence"
+                        geometryProjection="card"
+                        geometryPart="detail"
                         class="mb-2"
                         [attr.data-id]="'hilos-table-row-detail-' + view.rowKey"
                       >
@@ -778,6 +1039,11 @@ export interface BulkUntouchedContext {
                     @if (rowBar(view.rowKey); as bar) {
                       <div
                         class="mt-2"
+                        [hilosTableGeometryTarget]="geometry()"
+                        [geometryRowKey]="view.rowKey"
+                        [geometryOccurrence]="view.occurrence"
+                        geometryProjection="card"
+                        geometryPart="work"
                         [attr.data-id]="
                           'hilos-table-progress-row-' + view.rowKey
                         "
@@ -798,6 +1064,22 @@ export interface BulkUntouchedContext {
                           label="Work on this row"
                         />
                       </div>
+                    } @else if (
+                      (geometry()?.workPixels(view.rowKey, 'card') ?? 0) > 0
+                    ) {
+                      <div
+                        class="hilos-table-work-space hilos-table-work-reserve"
+                        aria-hidden="true"
+                        inert
+                        [hilosTableGeometryTarget]="geometry()"
+                        [geometryRowKey]="view.rowKey"
+                        [geometryOccurrence]="view.occurrence"
+                        geometryProjection="card"
+                        geometryPart="work"
+                        [style.--hilos-table-work-px]="
+                          geometry()?.workPixels(view.rowKey, 'card')
+                        "
+                      ></div>
                     }
                   </div>
                 }
@@ -859,6 +1141,20 @@ export class HilosViewportTable<R> {
    * the two can be told apart from outside.
    */
   readonly dataId = input('hilos-viewport-table')
+
+  private readonly geometryRoot =
+    viewChild<ElementRef<HTMLElement>>('geometryRoot')
+  private readonly geometryTable =
+    viewChild<ElementRef<HTMLTableElement>>('geometryTable')
+  private readonly geometryTargets = viewChildren(HilosTableGeometryTarget)
+  protected readonly geometry = signal<TableViewportGeometryAdapter | null>(
+    null,
+  )
+  protected readonly removalReasons = [
+    'deleted',
+    'left_set',
+    'moved_out',
+  ] as const
 
   /** The icon and words for a removed-row placeholder. */
   protected placeholder(removal: TableRemovalReason | null): {
@@ -975,7 +1271,7 @@ export class HilosViewportTable<R> {
       return template === undefined ? [] : [{ column, template }]
     })
   })
-  // The marks, and the one sign that this table has them: a page that declared bulk
+  // The optional selection column is present only when the page declared bulk
   // operations (Flow F14).
   protected readonly selectionEnabled = computed(
     () => this.controller().selection.enabled,
@@ -987,6 +1283,20 @@ export class HilosViewportTable<R> {
   // provided nothing gets the left edge, where lists usually keep it.
   protected readonly selectionEdge =
     inject(HILOS_TABLE_SELECTION_EDGE, { optional: true }) ?? 'start'
+  // Stable full-track identities for the wide colgroup: declared cells, the
+  // permanent state cell, and the optional selection cell on its chosen edge.
+  protected readonly columnTrackKeys = computed(() => {
+    const keys = this.rowColumns().map((column) => `column:${column.key}`)
+    if (this.selectionEnabled() && this.selectionEdge === 'start') {
+      keys.unshift('selection')
+    }
+    keys.push('state')
+    if (this.selectionEnabled() && this.selectionEdge === 'end') {
+      keys.push('selection')
+    }
+
+    return keys
+  })
   // Which sources went quiet anywhere in the shown window, and which declared columns
   // are built from them — the columns whose headers and row cells carry the mark. The
   // sentence about them is the room of live messages' own (HilosTableLive).
@@ -1003,27 +1313,12 @@ export class HilosViewportTable<R> {
   )
   // The hidden words of the snowflake on a row — the core's, for the template.
   protected readonly rowMark = TABLE_STALENESS_COPY.rowMark
-  // The row-state cell stands while anything waits OR while a shown row's values are
-  // behind OR while the table declared a field to expand into: it carries all three,
-  // and a table with no pending change still needs it the moment a source goes quiet
-  // or a reader is given something to open. Header cell and body cell read this ONE
-  // condition, so the two cannot drift apart into a row wider than its header.
-  protected readonly markColumn = computed(
-    () =>
-      this.pendingCount() > 0 ||
-      this.staleSources().size > 0 ||
-      this.detailFields().length > 0,
-  )
   // Every cell that spans the whole row — the placeholder of a removed row, the panel
-  // a row expands into, the skeleton and the worded states — counts the columns left
-  // standing in the row plus the mark column while it stands plus the checkbox column
-  // while the table has marks. This is the ONE place the width is worked out, and
-  // everything that spans a row reads it rather than counting again.
+  // a row expands into, the skeleton and the worded states — counts the declared cells,
+  // the permanent state cell, and the optional selection cell. This is the ONE place
+  // the width is worked out, and every full-span row reads it rather than counting again.
   protected readonly bodyColspan = computed(
-    () =>
-      this.rowColumns().length +
-      (this.markColumn() ? 1 : 0) +
-      (this.selectionEnabled() ? 1 : 0),
+    () => this.rowColumns().length + 1 + (this.selectionEnabled() ? 1 : 0),
   )
   protected readonly titleId = `hilos-table-title-${viewportTableSeq++}`
   // The base every expanded row's panel takes its id from — minted the same way the
@@ -1046,7 +1341,6 @@ export class HilosViewportTable<R> {
   )
   protected readonly rows = signal<readonly TableViewportRow<R>[]>([])
   protected readonly order = signal<TableSortOrder | undefined>(undefined)
-  protected readonly pendingCount = signal(0)
   // Which state the body is in — rows, the skeleton, or one of the four worded
   // states. The core decides it (tableFrame.ts, HilosTableBody) so that the three
   // view layers cannot decide it three ways, and both branches read this one
@@ -1092,8 +1386,8 @@ export class HilosViewportTable<R> {
 
   // The cells of a row bar's row, in the order the columns are declared: runs of
   // marked columns merge into one covered cell, runs of unmarked ones into one
-  // empty cell, and the waiting cell is added exactly while it stands over the
-  // ordinary rows. No column marked means one covered cell across the whole row.
+  // empty cell, followed by the permanent state cell. No column marked means one
+  // covered cell across the declared columns.
   // The checkbox column takes an empty cell of its own on whichever edge it sits.
   //
   // The spans add up to bodyColspan by construction, which is what keeps the row
@@ -1113,9 +1407,7 @@ export class HilosViewportTable<R> {
     if (!columns.some((column) => column.progress === true)) {
       cells.splice(0, cells.length, { span: columns.length, covered: true })
     }
-    if (this.markColumn()) {
-      cells.push({ span: 1, covered: false })
-    }
+    cells.push({ span: 1, covered: false })
     if (this.selectionEnabled()) {
       const selectionCell: ProgressCell = { span: 1, covered: false }
       if (this.selectionEdge === 'start') {
@@ -1129,6 +1421,29 @@ export class HilosViewportTable<R> {
   })
 
   constructor() {
+    effect((onCleanup) => {
+      const controller = this.controller()
+      const adapter = untracked(() =>
+        createTableViewportGeometry(controller.geometry),
+      )
+      this.geometry.set(adapter)
+      onCleanup(() => adapter.dispose())
+    })
+    afterRenderEffect(() => {
+      const adapter = this.geometry()
+      const root = this.geometryRoot()?.nativeElement
+      const table = this.geometryTable()?.nativeElement
+      const keys = this.columnTrackKeys()
+      this.geometryTargets()
+      this.rows()
+      this.rowProgressBars()
+      this.body()
+      adapter?.revision()
+      adapter?.trackWidths()
+      adapter?.reasonFloors()
+      if (adapter && root && table)
+        untracked(() => adapter.commit(root, table, keys))
+    })
     // The controller arrives via input (not at construction) and carries core
     // signals, so mirror them into the Angular signals above once it is bound;
     // the cleanup drops the subscriptions if the controller is replaced.
@@ -1145,7 +1460,6 @@ export class HilosViewportTable<R> {
       const subscriptions = [
         bind(controller.rows, this.rows),
         bind(controller.order, this.order),
-        bind(controller.pendingCount, this.pendingCount),
         bind(controller.frame.body, this.body),
         bind(controller.frame.columns, this.frameColumns),
         bind(controller.frame.card, this.resolvedCard),

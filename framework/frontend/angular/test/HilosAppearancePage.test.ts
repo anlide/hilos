@@ -323,7 +323,18 @@ describe('HilosAppearancePage', () => {
     const headers = Array.from(root.querySelectorAll('table thead th')).map(
       (header) => header.textContent?.trim(),
     )
-    expect(headers).toEqual(['Setting', 'Current value', 'Default', ''])
+    expect(headers.slice(0, 4)).toEqual([
+      'Setting',
+      'Current value',
+      'Default',
+      '',
+    ])
+    expect(headers).toHaveLength(5)
+    expect(
+      root
+        .querySelector('table thead th:last-child .visually-hidden')
+        ?.textContent?.trim(),
+    ).toBe('Row state and controls')
     expect(root.querySelector('input[type="search"]')).toBeNull()
     expect(root.querySelector('table')?.textContent).toContain(
       'Theme switching',

@@ -7,12 +7,21 @@
 // admin pages draw it, where a table declaring no title is named by the page heading.
 // The last two open a row and a card into the panel of fields that did not fit a
 // column (HIL-816), whose values the host marks one template per field.
-import { Component } from '@angular/core'
+import { Component, signal } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { HilosPages, TableViewportController, createSignal } from '@hilos/core'
+import {
+  HilosPages,
+  TableViewportController,
+  createSignal,
+  bindTableViewport,
+  ScopeManager,
+  subscribeSignal,
+} from '@hilos/core'
 import type {
   ActionHandle,
+  HilosConnection,
+  TableGeometryCapture,
   HilosPageIdentity,
   HilosTableBulkAccepted,
   HilosRouter,
@@ -22,6 +31,7 @@ import type {
   TableViewportDescriptor,
 } from '@hilos/core'
 
+import { normalizeTableRow } from '../../core/src/state/normalizer.js'
 import { HilosAdminPage } from '../src/HilosAdminPage.js'
 import { HilosTableCell } from '../src/HilosTableCell.js'
 import { HilosTableDetail } from '../src/HilosTableDetail.js'
@@ -332,6 +342,17 @@ function mountDeclared(
   return fixture
 }
 
+function mountDeclaredWithEdge(
+  controller: TableViewportController<Row>,
+  edge: HilosTableSelectionEdge,
+): ComponentFixture<ViewportTableHost> {
+  TestBed.configureTestingModule({
+    providers: [{ provide: HILOS_TABLE_SELECTION_EDGE, useValue: edge }],
+  })
+
+  return mountDeclared(controller)
+}
+
 function query(
   fixture: ComponentFixture<unknown>,
   selector: string,
@@ -388,7 +409,7 @@ describe('HilosViewportTable', () => {
     // aria-sort names a direction and cannot say "second by importance", so the
     // place is spoken beside the number instead.
     expect(
-      all(fixture, 'th .visually-hidden').map((said) =>
+      all(fixture, 'th button .visually-hidden').map((said) =>
         said.textContent?.trim(),
       ),
     ).toEqual(['Sort column 1 of 2', 'Sort column 2 of 2'])
@@ -505,7 +526,7 @@ describe('HilosViewportTable', () => {
     expect(row?.classList.contains('table-success')).toBe(false)
   })
 
-  it('grows the mark column with the waiting, header and body at once', () => {
+  it('keeps the permanent state column after pending changes clear', () => {
     const { controller } = makePlainController()
     controller.ingestWindow(
       [
@@ -518,8 +539,7 @@ describe('HilosViewportTable', () => {
       null,
       10,
     )
-    // An applied removal leaves a placeholder behind and nothing waiting, which is
-    // the state where the mark column must not stand.
+    // An applied removal leaves a placeholder with its permanent state track.
     controller.ingestDelta({
       kind: 'row_removed',
       rowKey: 'a',
@@ -532,8 +552,8 @@ describe('HilosViewportTable', () => {
         'colspan',
       )
 
-    expect(all(fixture, 'thead th')).toHaveLength(COLUMNS.length)
-    expect(placeholderSpan()).toBe(String(COLUMNS.length))
+    expect(all(fixture, 'thead th')).toHaveLength(COLUMNS.length + 1)
+    expect(placeholderSpan()).toBe(String(COLUMNS.length + 1))
 
     controller.ingestDelta({
       kind: 'row_moved',
@@ -783,17 +803,19 @@ describe('HilosViewportTable', () => {
       expect(query(fixture, '[data-id="hilos-table-stale-row-b"]')).toBeNull()
     })
 
-    it('stands the mark cell up on a quiet source with nothing waiting at all', () => {
+    it('keeps the permanent state cell when a row source goes quiet', () => {
       const { controller } = makePlainController(SOURCED_COLUMNS)
       window(controller, ['connections'])
       const fixture = mountTable(controller)
 
       expect(headers(fixture)).toHaveLength(SOURCED_COLUMNS.length + 1)
-      expect(query(fixture, 'thead th:last-child')?.textContent?.trim()).toBe(
-        'Row state and controls',
-      )
-      // Header and body read one condition, so the cell the header just made room
-      // for is the one standing last in the row.
+      expect(
+        query(
+          fixture,
+          'thead th:last-child > .visually-hidden',
+        )?.textContent?.trim(),
+      ).toBe('Row state and controls')
+      // The state track was already present; its live snowflake now stands in it.
       const cells = all(fixture, '[data-id="hilos-table-row-a"] td')
       expect(
         cells[cells.length - 1]?.querySelector(
@@ -802,7 +824,7 @@ describe('HilosViewportTable', () => {
       ).not.toBeNull()
     })
 
-    it('takes the strip, the snowflakes and the cell down when the source is current again', () => {
+    it('clears live snowflakes while keeping the permanent state cell', () => {
       const { controller } = makePlainController(SOURCED_COLUMNS)
       window(controller, ['connections'])
       const fixture = mountTable(controller)
@@ -821,7 +843,7 @@ describe('HilosViewportTable', () => {
       expect(
         query(fixture, '[data-id="hilos-table-sort-presence"]'),
       ).not.toBeNull()
-      expect(headers(fixture)).toHaveLength(SOURCED_COLUMNS.length)
+      expect(headers(fixture)).toHaveLength(SOURCED_COLUMNS.length + 1)
     })
   })
 })
@@ -855,6 +877,49 @@ describe('HilosViewportTable with a declared frame', () => {
     ).toBe('1 – 1 of 128')
   })
 
+  it('keeps the retained zero footer, clears Apply, and hides it on a fresh empty snapshot', () => {
+    const controller = makeController()
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      1,
+      true,
+      null,
+      null,
+      20,
+    )
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.ingestCount(0, true)
+    const fixture = mountDeclared(controller)
+
+    expect(query(fixture, '[data-id="hilos-table-apply"]')).not.toBeNull()
+    controller.apply()
+    fixture.detectChanges()
+
+    expect(controller.frame.body.get()).toBe('rows')
+    expect(
+      query(fixture, '[data-id="hilos-table-count"]')?.textContent?.trim(),
+    ).toBe('0 – 0 of 0')
+    expect(query(fixture, '[data-id="hilos-table-apply"]')).toBeNull()
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelectorAll(
+        '[data-id="hilos-table-placeholder"]',
+      ),
+    ).toHaveLength(2)
+    expect(query(fixture, '[data-id="hilos-table-empty"]')).toBeNull()
+
+    controller.ingestWindow([], 0, true, null, null, 20)
+    fixture.detectChanges()
+    expect(controller.frame.body.get()).toBe('empty')
+    expect(query(fixture, '[data-id="hilos-table-count"]')).toBeNull()
+    expect(query(fixture, '[data-id="hilos-table-placeholder"]')).toBeNull()
+    fixture.destroy()
+    controller.dispose()
+  })
+
   it('draws one search bar and keeps Apply in the waiting strip', () => {
     const controller = makeController()
     controller.ingestWindow(
@@ -883,6 +948,155 @@ describe('HilosViewportTable with a declared frame', () => {
       query(fixture, '[data-id="hilos-table-pending"]')?.textContent?.trim(),
     ).toBe('1')
   })
+})
+
+describe('HilosViewportTable permanent state room', () => {
+  type Pending = 'move' | 'remove' | null
+  type Detail = 'absent' | 'collapsed' | 'expanded'
+  const cases = [false, true].flatMap((stale) =>
+    ([null, 'move', 'remove'] as const).flatMap((pending) =>
+      (['absent', 'collapsed', 'expanded'] as const).map((detail) => ({
+        stale,
+        pending,
+        detail,
+      })),
+    ),
+  )
+
+  for (const edge of ['start', 'end'] as const) {
+    it.each(cases)(
+      `${edge}: stale=$stale pending=$pending detail=$detail`,
+      ({
+        stale,
+        pending,
+        detail,
+      }: {
+        stale: boolean
+        pending: Pending
+        detail: Detail
+      }) => {
+        const columns: HilosTableColumn[] = [
+          { key: 'name', label: 'Name', source: 'people', progress: true },
+        ]
+        if (detail !== 'absent') {
+          columns.push({ key: 'note', label: 'Note', detail: true })
+        }
+        const frame: HilosTableFrame = {
+          title: 'People',
+          columns,
+          bulkActions: [
+            {
+              key: 'archive',
+              label: 'Archive',
+              refusalTitle: "Couldn't archive",
+              run: () => {
+                throw new Error('The declaration is only read here')
+              },
+            },
+          ],
+        }
+        const controller = makeController(frame)
+        controller.ingestWindow(
+          [{ rowKey: 'a', slots: { name: 'Alice' } }],
+          1,
+          true,
+          null,
+          null,
+          10,
+        )
+        if (stale) {
+          controller.ingestDelta({
+            kind: 'row_stale',
+            rowKey: 'a',
+            staleSources: ['people'],
+          })
+        }
+        if (detail === 'expanded') {
+          controller.expandRow('a', true)
+        }
+        if (pending === 'move') {
+          controller.ingestDelta({
+            kind: 'row_moved',
+            rowKey: 'a',
+            row: { rowKey: 'a', slots: { name: 'Alice' } },
+            position: 0,
+          })
+        } else if (pending === 'remove') {
+          controller.ingestDelta({
+            kind: 'row_removed',
+            rowKey: 'a',
+            reason: 'deleted',
+          })
+        }
+        const fixture = mountDeclaredWithEdge(controller, edge)
+        const root = fixture.nativeElement as HTMLElement
+        const holders = root.querySelectorAll('.hilos-table-marks.invisible')
+
+        expect(root.querySelectorAll('thead th')).toHaveLength(3)
+        expect(root.querySelectorAll('colgroup col')).toHaveLength(3)
+        expect(
+          root.querySelectorAll('[data-id="hilos-table-row-a"] td'),
+        ).toHaveLength(3)
+        expect(holders).toHaveLength(3)
+        for (const holder of holders) {
+          expect(holder.getAttribute('aria-hidden')).toBe('true')
+          expect(holder.hasAttribute('inert')).toBe(true)
+          expect(holder.querySelectorAll('.bi-snow')).toHaveLength(1)
+          expect(
+            Array.from(holder.querySelectorAll('.badge')).map((badge) =>
+              badge.textContent?.trim(),
+            ),
+          ).toEqual(['Will move', 'Will leave'])
+          expect(holder.querySelectorAll('.btn')).toHaveLength(
+            detail === 'absent' ? 0 : 1,
+          )
+          expect(
+            holder.querySelector(
+              '[id], [data-id], [data-autofocus], button, input, [tabindex], a',
+            ),
+          ).toBeNull()
+        }
+        expect(
+          root.querySelectorAll('[data-id="hilos-table-expand-a"]'),
+        ).toHaveLength(detail === 'absent' ? 0 : 2)
+        expect(
+          root.querySelectorAll('[data-id="hilos-table-stale-column-name"]'),
+        ).toHaveLength(stale ? 1 : 0)
+        expect(
+          root.querySelectorAll(
+            'th .bi-snow.invisible, th .hilos-table-marks.invisible .bi-snow',
+          ),
+        ).toHaveLength(2)
+
+        if (pending === 'remove') {
+          controller.apply()
+          fixture.detectChanges()
+          const placeholders = root.querySelectorAll(
+            '[data-id="hilos-table-placeholder"]',
+          )
+          expect(placeholders).toHaveLength(2)
+          for (const placeholder of placeholders) {
+            expect(
+              placeholder.querySelector('button, input, [id], [tabindex]'),
+            ).toBeNull()
+          }
+          expect(
+            root
+              .querySelector('td[data-id="hilos-table-placeholder"]')
+              ?.getAttribute('colspan'),
+          ).toBe('3')
+          expect(
+            root.querySelectorAll(
+              '[data-id="hilos-table-expand-a"], [data-id="hilos-table-select-a"], [data-id="hilos-table-row-detail-a"]',
+            ),
+          ).toHaveLength(0)
+        }
+
+        fixture.destroy()
+        controller.dispose()
+      },
+    )
+  }
 })
 
 describe('HilosViewportTable on an admin page', () => {
@@ -959,7 +1173,7 @@ describe('HilosViewportTable drawing the cells of a declared table', () => {
     const fixture = mountCells()
 
     const cells = rowCells(fixture)
-    expect(cells).toHaveLength(CELL_COLUMNS.length)
+    expect(cells).toHaveLength(CELL_COLUMNS.length + 1)
     expect(cells[0]?.querySelector('.named')?.textContent).toBe('Alice')
     // Found although the page wrapped it in a block of its own.
     expect(cells[1]?.querySelector('.sized')?.textContent).toBe('1.2 GB')
@@ -992,7 +1206,9 @@ describe('HilosViewportTable drawing the cells of a declared table', () => {
     fixture.detectChanges()
 
     const root = fixture.nativeElement as HTMLElement
-    expect(root.querySelectorAll('thead th')).toHaveLength(CELL_COLUMNS.length)
+    expect(root.querySelectorAll('thead th')).toHaveLength(
+      CELL_COLUMNS.length + 1,
+    )
     expect(root.querySelector('thead')?.textContent).toContain('Size')
     expect(root.querySelector('.sized')).not.toBeNull()
   })
@@ -1137,7 +1353,7 @@ describe('HilosViewportTable drawing a row as a card', () => {
     // card keeps no label with nothing under it.
     expect(
       root(fixture).querySelectorAll('[data-id="hilos-table-row-a"] td'),
-    ).toHaveLength(CARD_COLUMNS.length)
+    ).toHaveLength(CARD_COLUMNS.length + 1)
     expect(cardOf(fixture, 'a').querySelectorAll('dt')).toHaveLength(0)
     expect(cardOf(fixture, 'a').querySelector('.hilos-button-row')).toBeNull()
   })
@@ -1269,7 +1485,7 @@ describe('HilosViewportTable drawing a row as a card', () => {
     expect(card.classList.contains('border-success')).toBe(false)
   })
 
-  it('stands the framework marks beside the page badge, not instead of it', () => {
+  it('reserves a framework card-mark row beside the page badge', () => {
     const controller = makeController(CARD_FRAME)
     controller.ingestWindow(
       [{ rowKey: 'a', slots: { name: 'Alice' }, staleSources: ['sizes'] }],
@@ -1286,24 +1502,20 @@ describe('HilosViewportTable drawing a row as a card', () => {
     })
     const fixture = mountCards(controller)
 
-    const group = cardOf(fixture, 'a').querySelector('.ms-auto')
-    expect(group?.querySelector('.state-badge')).not.toBeNull()
+    const card = cardOf(fixture, 'a')
+    const badge = card.querySelector('.ms-auto')
+    const marks = card.querySelector('.hilos-table-card-marks')
+    expect(badge?.querySelector('.state-badge')).not.toBeNull()
     expect(
-      group?.querySelector('[data-id="hilos-table-stale-row-a"]'),
+      badge?.querySelector('[data-id="hilos-table-stale-row-a"]'),
+    ).toBeNull()
+    expect(
+      marks?.querySelector('[data-id="hilos-table-stale-row-a"]'),
     ).not.toBeNull()
     expect(
-      group?.querySelector('[data-id="hilos-table-pending-move-a"]'),
+      marks?.querySelector('[data-id="hilos-table-pending-move-a"]'),
     ).not.toBeNull()
-    // The page's badge first, then the freshness mark, then the waiting badge.
-    const marks = Array.from(group?.children ?? []).map(
-      (mark) => mark.getAttribute('data-id') ?? mark.className,
-    )
-    expect(marks.slice(0, 4)).toEqual([
-      'state-badge',
-      'hilos-table-stale-row-a',
-      'visually-hidden',
-      'hilos-table-pending-move-a',
-    ])
+    expect(badge?.nextElementSibling).toBe(marks)
   })
 
   it('puts the bar of a running job at the foot of the card', () => {
@@ -1423,7 +1635,7 @@ describe('HilosViewportTable drawing a row as a card', () => {
     const right = mountCards(controller, { edge: 'end' })
     expect(
       cardOf(right, 'a')
-        .querySelector('.ms-auto input')
+        .querySelector('.hilos-table-card-marks + input')
         ?.getAttribute('data-id'),
     ).toBe('hilos-table-select-a')
   })
@@ -1457,8 +1669,8 @@ describe('HilosViewportTable with a selection column', () => {
     throw new Error('the declaration is only read here')
   }
 
-  // The table of a page that declared one bulk operation — the one sign that it
-  // has marks at all, and the whole reason the column stands.
+  // The table of a page that declared one bulk operation, and therefore has a
+  // checkbox selection column in addition to the permanent state column.
   const BULK_FRAME: HilosTableFrame = {
     title: 'Backups',
     columns: COLUMNS,
@@ -1526,7 +1738,7 @@ describe('HilosViewportTable with a selection column', () => {
 
     expect(input(fixture, 'hilos-table-select-page')).toBeNull()
     expect(input(fixture, 'hilos-table-select-a')).toBeNull()
-    expect(all(fixture, 'thead th')).toHaveLength(COLUMNS.length)
+    expect(all(fixture, 'thead th')).toHaveLength(COLUMNS.length + 1)
   })
 
   it('puts the column first by default and last where the app asked for the end', () => {
@@ -1630,15 +1842,57 @@ describe('HilosViewportTable with a selection column', () => {
       query(fixture, '[data-id="hilos-table-placeholder"]')?.getAttribute(
         'colspan',
       ),
-    ).toBe(String(COLUMNS.length + 1))
+    ).toBe(String(COLUMNS.length + 2))
 
     const empty = makeController(BULK_FRAME)
     empty.ingestWindow([], 0, true, null, null, 10)
     const emptyTable = mountWithEdge(empty)
     expect(query(emptyTable, 'tbody td')?.getAttribute('colspan')).toBe(
-      String(COLUMNS.length + 1),
+      String(COLUMNS.length + 2),
     )
   })
+
+  it.each(['start', 'end'] as const)(
+    'keeps the row-progress tracks aligned with selection at the %s edge',
+    (edge) => {
+      const controller = makeController({
+        title: 'People',
+        columns: MARKED_COLUMNS,
+        bulkActions: BULK_FRAME.bulkActions,
+      })
+      window(controller)
+      controller.ingestProgress({
+        scope: 'row',
+        progressKey: 'archive-a',
+        rowKey: 'a',
+        current: 1,
+        total: 4,
+      })
+      const fixture = mountWithEdge(controller, edge)
+      const cells = Array.from(
+        (fixture.nativeElement as HTMLElement).querySelectorAll(
+          '[data-id="hilos-table-progress-row-a"] td',
+        ),
+      )
+
+      expect(
+        (fixture.nativeElement as HTMLElement).querySelectorAll('colgroup col'),
+      ).toHaveLength(6)
+      expect(cells.map((cell) => cell.getAttribute('colspan'))).toEqual(
+        edge === 'start'
+          ? ['1', '1', '2', '1', '1']
+          : ['1', '2', '1', '1', '1'],
+      )
+      expect(
+        cells.reduce(
+          (total, cell) => total + Number(cell.getAttribute('colspan')),
+          0,
+        ),
+      ).toBe(6)
+      fixture.destroy()
+      controller.dispose()
+    },
+  )
 })
 
 describe('HilosViewportTable drawing work in progress', () => {
@@ -1764,6 +2018,7 @@ describe('HilosViewportTable drawing work over one row', () => {
       '1',
       '2',
       '1',
+      '1',
     ])
     expect(cells[1]?.querySelector('[role="progressbar"]')).not.toBeNull()
     expect(cells[0]?.querySelector('[role="progressbar"]')).toBeNull()
@@ -1776,8 +2031,9 @@ describe('HilosViewportTable drawing work over one row', () => {
     const fixture = mount(PlainTableHost, controller)
 
     const cells = barCells(fixture)
-    expect(cells).toHaveLength(1)
+    expect(cells).toHaveLength(2)
     expect(cells[0]?.getAttribute('colspan')).toBe('1')
+    expect(cells[1]?.getAttribute('colspan')).toBe('1')
     expect(cells[0]?.querySelector('[role="progressbar"]')).not.toBeNull()
   })
 
@@ -1795,8 +2051,8 @@ describe('HilosViewportTable drawing work over one row', () => {
     const spans = barCells(fixture).map((cell) =>
       Number(cell.getAttribute('colspan')),
     )
-    // The header grew by the waiting column, and the bar row grew with it: the
-    // two are one sum, so the row can never be wider than its header.
+    // The state column remains represented in the bar row, which has the same
+    // total span as the header either side of a pending change.
     expect(spans.reduce((total, span) => total + span, 0)).toBe(
       (fixture.nativeElement as HTMLElement).querySelectorAll('thead th')
         .length,
@@ -2305,14 +2561,14 @@ describe('HilosViewportTable drawing the states of the body', () => {
     )
     expect(tableRows).toHaveLength(2)
     // A cell for every column standing in the row, so the widths hold.
-    expect(tableRows[0]?.querySelectorAll('td')).toHaveLength(2)
+    expect(tableRows[0]?.querySelectorAll('td')).toHaveLength(3)
     expect(
       all(
         fixture,
         '[data-id="hilos-table-cards"] [data-id="hilos-table-skeleton-row"]',
       ),
     ).toHaveLength(2)
-    expect(all(fixture, '.placeholder[aria-hidden="true"]')).toHaveLength(2 * 2)
+    expect(all(fixture, '.placeholder[aria-hidden="true"]')).toHaveLength(6)
     expect(
       all(fixture, '[role="status"]').filter(
         (node) => node.textContent?.trim() === 'Loading…',
@@ -2502,4 +2758,631 @@ describe('HilosViewportTable rows with nothing to expand and wide fields', () =>
     expect(query(fixture, '[data-id="hilos-table-row-detail-a"]')).toBeNull()
     expect(query(fixture, '[data-id="hilos-table-expand-a"]')).toBeNull()
   })
+})
+
+@Component({
+  imports: [HilosTableCell, HilosTableDetail, HilosViewportTable],
+  template: `
+    @if (controller(); as current) {
+      <hilos-viewport-table [controller]="current">
+        <ng-template hilosTableCell="name" let-row
+          ><span class="named">{{ row.name }}</span></ng-template
+        >
+        <ng-template hilosTableCell="kind"
+          ><span class="kind">full</span></ng-template
+        >
+        <ng-template hilosTableCell="actions"
+          ><button type="button" class="restore">Restore</button></ng-template
+        >
+        <ng-template hilosTableDetail="lastError" let-row
+          ><span class="reason">{{ row.name }} detail</span></ng-template
+        >
+        <ng-template #rowProgress>Private work payload</ng-template>
+      </hilos-viewport-table>
+    }
+  `,
+})
+class GeometryTableHost {
+  readonly controller = signal<TableViewportController<Row> | null>(null)
+}
+
+// The real Angular render/capture seam, with numeric rectangles. Native CSS and
+// the installed Sass/FESM delivery are proved by the separate browser fixture.
+describe('HilosViewportTable wired geometry', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  function observeGeometry(controller: TableViewportController<Row>) {
+    const source = controller.geometry
+    const captures = vi.fn<(capture: TableGeometryCapture) => void>()
+    const register = vi.fn((capture: Parameters<typeof source.register>[0]) =>
+      source.register((request) => {
+        const result = capture(request)
+        captures(result)
+        return result
+      }),
+    )
+    Object.defineProperty(controller, 'geometry', { value: { register } })
+    return { register, captures }
+  }
+
+  function geometryFixture() {
+    const measured: string[] = []
+    let detailHeight = 60.75
+    let mainHeight = 40.25
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+      function (this: HTMLElement) {
+        const id = this.getAttribute('data-id') ?? ''
+        measured.push(id)
+        if (
+          this.matches(
+            '.hilos-table-reason-twins, .hilos-table-record-space > span',
+          )
+        )
+          return new DOMRect(0, 0, 200, 22)
+        if (this.matches('.hilos-table-replacement-row'))
+          return new DOMRect(0, 0, 200, 23)
+        if (this.tagName === 'TH') {
+          const index = (this as HTMLTableCellElement).cellIndex
+          return new DOMRect(index * 100.25, 0, 100.25, 20)
+        }
+        if (id.startsWith('hilos-table-row-detail-'))
+          return new DOMRect(0, 78.75, 200.5, detailHeight)
+        if (id.startsWith('hilos-table-progress-row-'))
+          return new DOMRect(0, 60.25, 200.5, 18.5)
+        if (id.startsWith('hilos-table-row-'))
+          return new DOMRect(0, 20, 200.5, mainHeight)
+        if (id.startsWith('hilos-table-card-'))
+          return new DOMRect(0, 200, 200.5, 210.5)
+        return new DOMRect(0, 0, 200.5, 500)
+      },
+    )
+    const resolve = vi.fn(
+      (raw: { slots: Readonly<Record<string, unknown>> }) => ({
+        name: String(raw.slots['name']),
+      }),
+    )
+    const controller = new TableViewportController<Row>({
+      resolve,
+      sendViewport: () => {},
+      frame: CARD_DETAIL_FRAME,
+    })
+    ingestTwo(controller)
+    const { register, captures } = observeGeometry(controller)
+    const fixture = TestBed.createComponent(GeometryTableHost)
+    fixture.componentInstance.controller.set(controller)
+    fixture.detectChanges()
+    TestBed.tick()
+    return {
+      fixture,
+      controller,
+      resolve,
+      register,
+      captures,
+      measured,
+      main: (height: number) => {
+        mainHeight = height
+      },
+      detail: (height: number) => {
+        detailHeight = height
+      },
+    }
+  }
+
+  it.each(['deleted', 'left_set', 'moved_out'] as const)(
+    'first replacement retains the complete footprint for %s and removes payload from both mounted branches',
+    (reason) => {
+      const f = geometryFixture()
+      f.controller.expandRow('a', true)
+      f.controller.ingestProgress({
+        scope: 'row',
+        rowKey: 'a',
+        progressKey: 'pack-a',
+        current: 1,
+        total: 2,
+        detail: {},
+      })
+      f.fixture.detectChanges()
+      TestBed.tick()
+      // Change the DOM's dimensions without an observer/render. The ingress capture
+      // must see this final old layout, before any payload is destroyed.
+      f.detail(90.5)
+      f.controller.ingestDelta({
+        kind: 'row_removed',
+        rowKey: 'a',
+        reason,
+        own: true,
+      })
+      f.fixture.detectChanges()
+      const wide = query(f.fixture, 'tr[data-id="hilos-table-row-a"]')!
+      const card = query(f.fixture, '[data-id="hilos-table-card-a"]')!
+      expect(
+        wide.querySelector('.hilos-table-record-space')?.getAttribute('style'),
+      ).toContain('--hilos-table-record-px: 148.25')
+      expect(
+        card.querySelector('.hilos-table-record-space')?.getAttribute('style'),
+      ).toContain('--hilos-table-record-px: 210.5')
+      for (const node of [wide, card]) {
+        expect(node.textContent).toContain(
+          reason === 'deleted'
+            ? 'Removed'
+            : reason === 'left_set'
+              ? 'No longer'
+              : 'Moved',
+        )
+        expect(
+          node.querySelector(
+            'button, input, .named, .kind, .reason, .restore, [role="progressbar"]',
+          ),
+        ).toBeNull()
+      }
+      expect(
+        query(f.fixture, '[data-id="hilos-table-row-detail-a"]'),
+      ).toBeNull()
+      expect(
+        query(f.fixture, '[data-id="hilos-table-progress-row-a"]'),
+      ).toBeNull()
+      // The final tombstone is data-free and subsequent renders never resolve it.
+      expect(
+        f.controller.rows.get().find((view) => view.rowKey === 'a')?.row,
+      ).toBeNull()
+      f.resolve.mockClear()
+      f.fixture.detectChanges()
+      TestBed.tick()
+      expect(f.resolve).not.toHaveBeenCalled()
+      expect(
+        query(f.fixture, 'table')?.classList.contains('hilos-table-fixed'),
+      ).toBe(true)
+      expect(query(f.fixture, 'col')?.getAttribute('style')).toContain(
+        '--hilos-table-track-px',
+      )
+    },
+  )
+
+  it('renders an empty numeric work reserve before Apply and folds it into one replacement', () => {
+    const f = geometryFixture()
+    f.controller.ingestProgress({
+      scope: 'row',
+      rowKey: 'a',
+      progressKey: 'pack-a',
+      current: 1,
+      total: 2,
+      detail: {},
+    })
+    f.fixture.detectChanges()
+    TestBed.tick()
+    f.controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    f.fixture.detectChanges()
+    const reserves = [
+      ...(f.fixture.nativeElement as HTMLElement).querySelectorAll(
+        '.hilos-table-work-reserve',
+      ),
+    ]
+    expect(reserves).toHaveLength(2)
+    for (const reserve of reserves) {
+      expect(reserve.textContent?.trim()).toBe('')
+      expect(
+        reserve.querySelector('button, input, [role="progressbar"]'),
+      ).toBeNull()
+    }
+    f.controller.apply()
+    f.fixture.detectChanges()
+    expect(
+      (f.fixture.nativeElement as HTMLElement).querySelectorAll(
+        '.hilos-table-work-reserve',
+      ),
+    ).toHaveLength(0)
+    expect(
+      (f.fixture.nativeElement as HTMLElement).querySelectorAll(
+        '[data-id="hilos-table-placeholder"]',
+      ),
+    ).toHaveLength(2)
+  })
+
+  it('uses occurrence identity when the same key returns, and disposes a replaced controller registration', () => {
+    const f = geometryFixture()
+    const oldRow = query(f.fixture, 'tr[data-id="hilos-table-row-a"]')!
+    const oldCard = query(f.fixture, '[data-id="hilos-table-card-a"]')!
+    f.controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Replacement' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    f.fixture.detectChanges()
+    expect(query(f.fixture, 'tr[data-id="hilos-table-row-a"]')).not.toBe(oldRow)
+    expect(query(f.fixture, '[data-id="hilos-table-card-a"]')).not.toBe(oldCard)
+    const oldRegistration = f.register.mock.results[0]!.value as ReturnType<
+      TableViewportController<Row>['geometry']['register']
+    >
+    const other = makeController(CARD_DETAIL_FRAME)
+    ingestTwo(other)
+    const { register: nextRegister } = observeGeometry(other)
+    f.fixture.componentInstance.controller.set(other)
+    f.fixture.detectChanges()
+    TestBed.tick()
+    expect(nextRegister).toHaveBeenCalledTimes(1)
+    expect(oldRegistration.record('a', 'wide')).toBeNull()
+    f.measured.length = 0
+    f.controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+      own: true,
+    })
+    expect(f.measured).toHaveLength(0)
+    const registration = nextRegister.mock.results[0]!.value as ReturnType<
+      TableViewportController<Row>['geometry']['register']
+    >
+    f.fixture.destroy()
+    expect(registration.record('a', 'wide')).toBeNull()
+  })
+
+  it('keeps an unchanged after-render measurement quiet', () => {
+    const f = geometryFixture()
+    const registration = f.register.mock.results[0]!.value as ReturnType<
+      TableViewportController<Row>['geometry']['register']
+    >
+    const revision = registration.revision.get()
+    f.fixture.detectChanges()
+    TestBed.tick()
+    expect(registration.revision.get()).toBe(revision)
+  })
+  it('captures the real binder boundary before normalization publishes to the entity store', () => {
+    const f = geometryFixture()
+    const scopes = new ScopeManager()
+    const scope = scopes.openPage('geometry')
+    normalizeTableRow(scope, {
+      rowKey: 'a',
+      slots: { user: { id: 7, name: 'Old' } },
+    })
+    const listeners = new Map<string, (signal: unknown) => void>()
+    const connection = {
+      on: (event: string, listener: (signal: unknown) => void) => {
+        listeners.set(event, listener)
+        return () => listeners.delete(event)
+      },
+      registerTableWindow: () => {},
+      unregisterTableWindow: () => {},
+    } as unknown as HilosConnection
+    const unbind = bindTableViewport(
+      connection,
+      scopes,
+      { tableKey: 'people', page: 'geometry' },
+      f.controller,
+    )
+    f.captures.mockClear()
+    const stop = subscribeSignal(
+      scope.entities.signal({ type: 'user', id: 7 }),
+      () => {
+        expect(f.captures).toHaveBeenCalledTimes(1)
+        expect(f.captures.mock.calls[0]![0].records[0]?.extent?.main).toBe(
+          40.25,
+        )
+        f.main(1)
+      },
+    )
+    listeners.get('tableWindow')!({
+      data: {
+        page: 'geometry',
+        tableKey: 'people',
+        rows: [{ rowKey: 'a', slots: { user: { id: 7, name: 'New' } } }],
+        totalCount: 1,
+        totalExact: true,
+        limit: 10,
+        firstAnchor: null,
+        lastAnchor: null,
+      },
+    })
+    expect(f.captures).toHaveBeenCalledTimes(1)
+    expect(JSON.stringify(f.captures.mock.calls[0])).not.toMatch(
+      /slots|Alice|Bob|Private|HTMLElement/,
+    )
+    stop()
+    unbind()
+    scopes.dropPage()
+  })
+
+  it.each(['future_reason', undefined])(
+    'keeps geometry and the shared fallback for wire removal reason %s',
+    (reason) => {
+      const f = geometryFixture()
+      const scopes = new ScopeManager()
+      scopes.openPage('geometry')
+      const listeners = new Map<string, (signal: unknown) => void>()
+      const connection = {
+        on: (event: string, listener: (signal: unknown) => void) => {
+          listeners.set(event, listener)
+          return () => listeners.delete(event)
+        },
+        registerTableWindow: () => {},
+        unregisterTableWindow: () => {},
+      } as unknown as HilosConnection
+      const unbind = bindTableViewport(
+        connection,
+        scopes,
+        { tableKey: 'people', page: 'geometry' },
+        f.controller,
+      )
+      listeners.get('tableViewportDelta')!({
+        data: {
+          page: 'geometry',
+          tableKey: 'people',
+          kind: 'row_removed',
+          rowKey: 'a',
+          reason,
+          own: true,
+        },
+      })
+      f.fixture.detectChanges()
+      const root = f.fixture.nativeElement as HTMLElement
+      const placeholders = root.querySelectorAll(
+        '[data-id="hilos-table-placeholder"]',
+      )
+      expect(placeholders).toHaveLength(2)
+      for (const placeholder of placeholders) {
+        expect(placeholder.textContent?.trim()).toBe('Removed')
+        expect(placeholder.querySelector('.bi-dash-circle')).not.toBeNull()
+        expect(placeholder.querySelector('button, input, .named')).toBeNull()
+      }
+      expect(
+        query(
+          f.fixture,
+          'tr[data-id="hilos-table-row-a"] .hilos-table-record-space',
+        )?.getAttribute('style'),
+      ).toContain('--hilos-table-record-px')
+      unbind()
+      scopes.dropPage()
+    },
+  )
+
+  it.each(['before', 'between', 'after'] as const)(
+    'holds batch/last-row geometry and the zero footer when count arrives %s departure',
+    (timing) => {
+      const f = geometryFixture()
+      f.captures.mockClear()
+      f.measured.length = 0
+      const stop = subscribeSignal(f.controller.rows, () => {
+        expect(f.measured).toEqual(
+          expect.arrayContaining([
+            'hilos-table-row-a',
+            'hilos-table-row-b',
+            'hilos-table-card-a',
+            'hilos-table-card-b',
+          ]),
+        )
+      })
+      if (timing === 'before') f.controller.ingestCount(0, true)
+      f.controller.withPresentationUpdate(
+        { kind: 'rows', rowKeys: ['a', 'b'] },
+        () => {
+          f.controller.ingestDelta({
+            kind: 'row_removed',
+            rowKey: 'a',
+            reason: 'deleted',
+            own: true,
+          })
+          if (timing === 'between') f.controller.ingestCount(0, true)
+          f.controller.ingestDelta({
+            kind: 'row_removed',
+            rowKey: 'b',
+            reason: 'left_set',
+            own: true,
+          })
+        },
+      )
+      stop()
+      if (timing === 'after') f.controller.ingestCount(0, true)
+      expect(f.captures).toHaveBeenCalledTimes(1)
+      f.fixture.detectChanges()
+      const root = f.fixture.nativeElement as HTMLElement
+      expect(
+        root.querySelectorAll('[data-id="hilos-table-placeholder"]'),
+      ).toHaveLength(4)
+      expect(
+        query(f.fixture, '[data-id="hilos-table-count"]')?.textContent?.trim(),
+      ).toBe('0 – 0 of 0')
+      expect(
+        root.querySelector(
+          'button.restore, input[data-id^="hilos-table-select-"], .named, .reason, [role="progressbar"]',
+        ),
+      ).toBeNull()
+      expect(root.textContent).not.toMatch(/Alice|Bob|Private/)
+    },
+  )
+
+  it.each(['append', 'own-create'] as const)(
+    'treats a reused key from %s as a fresh appearance with the retained track latch',
+    (mode) => {
+      const f = geometryFixture()
+      f.controller.ingestDelta({
+        kind: 'row_removed',
+        rowKey: 'a',
+        reason: 'deleted',
+        own: true,
+      })
+      f.fixture.detectChanges()
+      const old = query(f.fixture, 'tr[data-id="hilos-table-row-a"]')
+      const latch = (
+        f.register.mock.results[0]!.value as ReturnType<
+          TableViewportController<Row>['geometry']['register']
+        >
+      ).tracks()
+      const row = { rowKey: 'a', slots: { name: 'Fresh' } }
+      if (mode === 'append') f.controller.ingestAppend(row, 2, true, null, null)
+      else
+        f.controller.ingestOwnCreate(
+          row,
+          0,
+          2,
+          true,
+          null,
+          null,
+          'create-request',
+        )
+      f.fixture.detectChanges()
+      expect(query(f.fixture, 'tr[data-id="hilos-table-row-a"]')).not.toBe(old)
+      expect(
+        query(f.fixture, 'tr[data-id="hilos-table-row-a"] .named')?.textContent,
+      ).toBe('Fresh')
+      expect(query(f.fixture, '[data-id="hilos-table-placeholder"]')).toBeNull()
+      expect(
+        (
+          f.register.mock.results[0]!.value as ReturnType<
+            TableViewportController<Row>['geometry']['register']
+          >
+        ).tracks(),
+      ).toBe(latch)
+    },
+  )
+
+  it.each(['snapshot', 'refusal', 'reset', 'reconnect', 'remount'] as const)(
+    'does not carry departed allocations into a %s lifetime',
+    (mode) => {
+      const f = geometryFixture()
+      f.controller.ingestDelta({
+        kind: 'row_removed',
+        rowKey: 'a',
+        reason: 'deleted',
+        own: true,
+      })
+      f.fixture.detectChanges()
+      const old = query(f.fixture, 'tr[data-id="hilos-table-row-a"]')
+      if (mode === 'refusal') {
+        f.controller.ingestRefusal('unavailable')
+        f.fixture.detectChanges()
+        expect(
+          query(f.fixture, '[data-id="hilos-table-placeholder"]'),
+        ).toBeNull()
+      }
+      if (mode === 'reset') f.controller.refresh()
+      if (mode === 'reconnect') {
+        f.controller.ingestFrozen(123)
+        f.controller.resetWindowRequests()
+      }
+      if (mode === 'remount') {
+        f.fixture.componentInstance.controller.set(null)
+        f.fixture.detectChanges()
+        f.fixture.componentInstance.controller.set(f.controller)
+      }
+      f.controller.ingestWindow(
+        [{ rowKey: 'a', slots: { name: 'New snapshot' } }],
+        1,
+        true,
+        null,
+        null,
+        10,
+      )
+      f.fixture.detectChanges()
+      expect(query(f.fixture, 'tr[data-id="hilos-table-row-a"]')).not.toBe(old)
+      expect(query(f.fixture, '.hilos-table-record-space')).toBeNull()
+      expect(
+        query(f.fixture, 'tr[data-id="hilos-table-row-a"] .named')?.textContent,
+      ).toBe('New snapshot')
+    },
+  )
+  it('retires an edge-evicted target and preserves occurrence through an Apply move', () => {
+    const f = geometryFixture()
+    f.controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'Alice' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      2,
+    )
+    f.fixture.detectChanges()
+    const edge = query(f.fixture, 'tr[data-id="hilos-table-row-b"]')!
+    f.controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'b',
+      reason: 'deleted',
+    })
+    f.controller.ingestOwnCreate(
+      { rowKey: 'c', slots: { name: 'Created' } },
+      0,
+      3,
+      true,
+      null,
+      null,
+      'request-c',
+    )
+    f.fixture.detectChanges()
+    expect(edge.isConnected).toBe(false)
+    expect(query(f.fixture, '[data-id="hilos-table-row-b"]')).toBeNull()
+    expect(
+      (
+        f.register.mock.results[0]!.value as ReturnType<
+          TableViewportController<Row>['geometry']['register']
+        >
+      ).record('b', 'wide'),
+    ).toBeNull()
+    const row = query(f.fixture, 'tr[data-id="hilos-table-row-a"]')!
+    f.controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Moved' } },
+      position: 0,
+    })
+    f.controller.apply()
+    f.fixture.detectChanges()
+    expect(query(f.fixture, 'tr[data-id="hilos-table-row-a"]')).toBe(row)
+    expect(row.querySelector('.named')?.textContent).toBe('Moved')
+    expect(row.querySelector('.hilos-table-record-space')).toBeNull()
+  })
+
+  it.each(['before', 'after'] as const)(
+    'keeps an early work reserve when progress ends %s the removal notice',
+    (timing) => {
+      const f = geometryFixture()
+      const work = (ended: boolean) =>
+        f.controller.ingestProgress({
+          scope: 'row',
+          rowKey: 'a',
+          progressKey: 'pack-a',
+          current: ended ? 2 : 1,
+          total: 2,
+          ended,
+        })
+      work(false)
+      f.fixture.detectChanges()
+      TestBed.tick()
+      if (timing === 'before') {
+        work(true)
+        f.fixture.detectChanges()
+      }
+      f.controller.ingestDelta({
+        kind: 'row_removed',
+        rowKey: 'a',
+        reason: 'deleted',
+      })
+      f.fixture.detectChanges()
+      if (timing === 'after') work(true)
+      expect(
+        (f.fixture.nativeElement as HTMLElement).querySelectorAll(
+          '.hilos-table-work-reserve',
+        ),
+      ).toHaveLength(timing === 'after' ? 2 : 0)
+      f.controller.apply()
+      f.fixture.detectChanges()
+      expect(query(f.fixture, '.hilos-table-work-reserve')).toBeNull()
+      expect(
+        query(
+          f.fixture,
+          'tr[data-id="hilos-table-row-a"] .hilos-table-record-space',
+        ),
+      ).not.toBeNull()
+    },
+  )
 })

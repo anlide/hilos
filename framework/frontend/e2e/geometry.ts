@@ -372,8 +372,8 @@ export async function watchTableGeometry(
 ): Promise<TableGeometryWatch> {
   expect(
     plan.rowKeys.length,
-    'watch at least three unchanged survivors',
-  ).toBeGreaterThanOrEqual(3)
+    'watch at least one occupied record',
+  ).toBeGreaterThanOrEqual(1)
   const root = page.getByTestId(plan.bodyId)
   const observation = await root.evaluateHandle((element, plan) => {
     const root = element as GeometryRoot
@@ -876,12 +876,14 @@ export async function expectTableRecordWrappingStress(
  * @param page The fixture page.
  * @param bodyId The stable wrapper containing the mounted table.
  * @param actionIds The first row's action controls, in keyboard order.
+ * @param controllerAttribute Optional fixture attribute exposing opaque controller identity.
  */
 export async function watchTableFirstLive(
   expect: Expect,
   page: Page,
   bodyId: string,
   actionIds: readonly string[],
+  controllerAttribute?: string,
 ) {
   const root = page.getByTestId(bodyId)
   const table = await root.locator('table').elementHandle()
@@ -894,177 +896,204 @@ export async function watchTableFirstLive(
       table.parentElement!.getBoundingClientRect().width / table.currentCSSZoom,
     fixed: table.classList.contains('hilos-table-fixed'),
   }))
-  const observation = await table.evaluateHandle((table) => {
-    // Read the mounted renderer's existing props, as watchTableSearch does.
-    // Keeping the object here observes replacement without a product test hook.
-    interface VNode {
-      readonly props?: { controller?: object }
-      readonly el?: Node
-      readonly component?: { subTree: VNode; isUnmounted: boolean }
-      readonly suspense?: { activeBranch?: VNode }
-      readonly children?: unknown
-    }
-    const currentController = () => {
-      let found: object | null = null
-      const visit = (node: VNode | null | undefined): void => {
-        if (!node || typeof node !== 'object' || found) return
-        if (
-          node.props?.controller &&
-          node.el instanceof Element &&
-          node.el.contains(table)
-        )
-          found = node.props.controller
-        if (node.component && !node.component.isUnmounted)
-          visit(node.component.subTree)
-        else if (Array.isArray(node.children))
-          for (const child of node.children) visit(child)
-        visit(node.suspense?.activeBranch)
+  const observation = await table.evaluateHandle(
+    (table, controllerAttribute) => {
+      // Read the mounted renderer's existing props, as watchTableSearch does.
+      // Keeping the object here observes replacement without a product test hook.
+      interface VNode {
+        readonly props?: { controller?: object }
+        readonly el?: Node
+        readonly component?: { subTree: VNode; isUnmounted: boolean }
+        readonly suspense?: { activeBranch?: VNode }
+        readonly children?: unknown
       }
-      for (const root of document.querySelectorAll('[data-v-app]'))
-        visit((root as Element & { _vnode?: VNode })._vnode)
-      // React's committed host fiber links upward to the public table props.
-      // Read its controller identity only; no SDK registry or test hook is needed.
-      interface Fiber {
-        readonly memoizedProps?: { controller?: object }
-        readonly return?: Fiber
-      }
-      const key = Object.keys(table).find((key) =>
-        key.startsWith('__reactFiber$'),
-      )
-      let fiber = key
-        ? (table as unknown as Record<string, Fiber>)[key]
-        : undefined
-      while (!found && fiber) {
-        found = fiber.memoizedProps?.controller ?? null
-        fiber = fiber.return
-      }
-      return found
-    }
-    const controller = currentController()
-    let running = true
-    let liveFrames = 0
-    let sameController = controller !== null
-    let sameContainer = true
-    let sameColumns = true
-    let sameLayout = true
-    const violations: unknown[] = []
-    const frames: unknown[] = []
-    const container = table.parentElement
-    const columns = table.querySelector('colgroup')
-    const layout = () => {
-      const root = table.closest<HTMLElement>(
-        '[data-id="hilos-viewport-table"]',
-      )!
-      const style = getComputedStyle(root)
-      return [
-        container!.getBoundingClientRect().width / table.currentCSSZoom,
-        table.currentCSSZoom,
-        style.fontFamily,
-        style.fontSize,
-        style.lineHeight,
-        style.letterSpacing,
-        style.wordSpacing,
-        getComputedStyle(document.documentElement).fontSize,
-        columns!.children.length,
-      ].join('|')
-    }
-    const initialLayout = layout()
-    const tracks = (selector: string) =>
-      [...table.querySelectorAll(selector)].map((cell) => {
-        const bounds = cell.getBoundingClientRect()
-        return [bounds.left, bounds.right]
-      })
-    const sample = () => {
-      if (!running) return
-      const actions = []
-      const rows = [
-        ...table.querySelectorAll('tbody tr[data-id^="hilos-table-row-"]'),
-      ]
-      if (rows.length > 0) {
-        liveFrames += 1
-        for (const row of rows) {
-          const marks = row.querySelector<HTMLElement>(
-            'td:last-child .hilos-table-marks:not(.invisible)',
+      const currentController = () => {
+        // Optimized kits without a browser component inspector can declare an
+        // opaque identity on the test fixture wrapper. Read it on every frame.
+        if (controllerAttribute) {
+          return (
+            table
+              .closest(`[${controllerAttribute}]`)
+              ?.getAttribute(controllerAttribute) ?? null
           )
-          if (!marks) continue
-          const state = marks.getBoundingClientRect()
-          for (const action of row.querySelectorAll<HTMLElement>(
-            'td button[data-id]',
-          )) {
-            if (!action.checkVisibility()) continue
-            const box = action.getBoundingClientRect()
-            const host = action.closest('td')!.getBoundingClientRect()
-            const hit = document.elementFromPoint(
-              (box.left + box.right) / 2,
-              (box.top + box.bottom) / 2,
+        }
+        let found: object | null = null
+        const visit = (node: VNode | null | undefined): void => {
+          if (!node || typeof node !== 'object' || found) return
+          if (
+            node.props?.controller &&
+            node.el instanceof Element &&
+            node.el.contains(table)
+          )
+            found = node.props.controller
+          if (node.component && !node.component.isUnmounted)
+            visit(node.component.subTree)
+          else if (Array.isArray(node.children))
+            for (const child of node.children) visit(child)
+          visit(node.suspense?.activeBranch)
+        }
+        for (const root of document.querySelectorAll('[data-v-app]'))
+          visit((root as Element & { _vnode?: VNode })._vnode)
+        // React's committed host fiber links upward to the public table props.
+        // Read its controller identity only; no SDK registry or test hook is needed.
+        interface Fiber {
+          readonly memoizedProps?: { controller?: object }
+          readonly return?: Fiber
+        }
+        const key = Object.keys(table).find((key) =>
+          key.startsWith('__reactFiber$'),
+        )
+        let fiber = key
+          ? (table as unknown as Record<string, Fiber>)[key]
+          : undefined
+        while (!found && fiber) {
+          found = fiber.memoizedProps?.controller ?? null
+          fiber = fiber.return
+        }
+        return found
+      }
+      const controller = currentController()
+      let running = true
+      let frame = 0
+      let liveFrames = 0
+      let sameController = controller !== null
+      let sameContainer = true
+      let sameColumns = true
+      let sameLayout = true
+      const violations: unknown[] = []
+      const frames: unknown[] = []
+      const container = table.parentElement
+      const columns = table.querySelector('colgroup')
+      const layout = () => {
+        const root = table.closest<HTMLElement>(
+          '[data-id="hilos-viewport-table"]',
+        )!
+        const style = getComputedStyle(root)
+        return [
+          container!.getBoundingClientRect().width / table.currentCSSZoom,
+          table.currentCSSZoom,
+          style.fontFamily,
+          style.fontSize,
+          style.lineHeight,
+          style.letterSpacing,
+          style.wordSpacing,
+          getComputedStyle(document.documentElement).fontSize,
+          columns!.children.length,
+        ].join('|')
+      }
+      const initialLayout = layout()
+      const tracks = (selector: string) =>
+        [...table.querySelectorAll(selector)].map((cell) => {
+          const bounds = cell.getBoundingClientRect()
+          return [bounds.left, bounds.right]
+        })
+      const sample = () => {
+        if (!running) return
+        const actions = []
+        const rows = [
+          ...table.querySelectorAll('tbody tr[data-id^="hilos-table-row-"]'),
+        ]
+        if (rows.length > 0) {
+          liveFrames += 1
+          for (const row of rows) {
+            const marks = row.querySelector<HTMLElement>(
+              'td:last-child .hilos-table-marks:not(.invisible)',
             )
-            const overlap =
-              Math.max(
-                0,
-                Math.min(box.right, state.right) -
-                  Math.max(box.left, state.left),
-              ) / action.currentCSSZoom
-            const reading = {
-              id: action.dataset.id,
-              overlap,
-              bounds: [box.left, box.top, box.right, box.bottom],
-              cell: [host.left, host.top, host.right, host.bottom],
-              marks: [state.left, state.top, state.right, state.bottom],
-              insideMarks: marks.contains(action),
-              hit: hit === action || action.contains(hit),
-              interceptor: hit?.outerHTML.slice(0, 240),
-            }
-            actions.push(reading)
-            if (
-              // A state/detail button belongs inside its own state room. It
-              // still has to fit its cell; page actions must stay outside marks.
-              (!marks.contains(action) && overlap > 0) ||
-              box.left < host.left - 1 ||
-              box.right > host.right + 1
-            ) {
-              violations.push({
-                at: performance.now(),
-                ...reading,
-              })
+            if (!marks) continue
+            const state = marks.getBoundingClientRect()
+            for (const action of row.querySelectorAll<HTMLElement>(
+              'td button[data-id]',
+            )) {
+              if (!action.checkVisibility()) continue
+              const box = action.getBoundingClientRect()
+              const host = action.closest('td')!.getBoundingClientRect()
+              const hit = document.elementFromPoint(
+                (box.left + box.right) / 2,
+                (box.top + box.bottom) / 2,
+              )
+              const overlap =
+                Math.max(
+                  0,
+                  Math.min(box.right, state.right) -
+                    Math.max(box.left, state.left),
+                ) / action.currentCSSZoom
+              const reading = {
+                id: action.dataset.id,
+                overlap,
+                bounds: [box.left, box.top, box.right, box.bottom],
+                cell: [host.left, host.top, host.right, host.bottom],
+                marks: [state.left, state.top, state.right, state.bottom],
+                insideMarks: marks.contains(action),
+                hit: hit === action || action.contains(hit),
+                interceptor: hit?.outerHTML.slice(0, 240),
+              }
+              actions.push(reading)
+              if (
+                // A state/detail button belongs inside its own state room. It
+                // still has to fit its cell; page actions must stay outside marks.
+                (!marks.contains(action) && overlap > 0) ||
+                box.left < host.left - 1 ||
+                box.right > host.right + 1
+              ) {
+                violations.push({
+                  at: performance.now(),
+                  ...reading,
+                })
+              }
             }
           }
         }
+        sameController &&= currentController() === controller
+        sameContainer &&= table.parentElement === container
+        sameColumns &&= table.querySelector('colgroup') === columns
+        sameLayout &&= layout() === initialLayout
+        frames.push({
+          at: performance.now(),
+          connected: table.isConnected,
+          sameController,
+          sameContainer,
+          sameColumns,
+          sameLayout,
+          zoom: table.currentCSSZoom,
+          fixed: table.classList.contains('hilos-table-fixed'),
+          tracks: tracks('thead th'),
+          usedTracks: tracks('tbody tr[data-id^="hilos-table-row-"] > td'),
+          actions,
+        })
       }
-      sameController &&= currentController() === controller
-      sameContainer &&= table.parentElement === container
-      sameColumns &&= table.querySelector('colgroup') === columns
-      sameLayout &&= layout() === initialLayout
-      frames.push({
-        at: performance.now(),
-        connected: table.isConnected,
-        sameController,
-        sameContainer,
-        sameColumns,
-        sameLayout,
-        zoom: table.currentCSSZoom,
-        fixed: table.classList.contains('hilos-table-fixed'),
-        tracks: tracks('thead th'),
-        usedTracks: tracks('tbody tr[data-id^="hilos-table-row-"] > td'),
-        actions,
+      const tick = () => {
+        sample()
+        if (running) frame = requestAnimationFrame(tick)
+      }
+      const mutations = new MutationObserver(sample)
+      mutations.observe(table, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        characterData: true,
       })
-      requestAnimationFrame(sample)
-    }
-    requestAnimationFrame(sample)
-    return {
-      read: () => ({
-        liveFrames,
-        sameController,
-        sameContainer,
-        sameColumns,
-        sameLayout,
-        violations,
-        frames,
-      }),
-      stop: () => {
-        running = false
-      },
-    }
-  })
+      sample()
+      frame = requestAnimationFrame(tick)
+      return {
+        read: () => ({
+          liveFrames,
+          sameController,
+          sameContainer,
+          sameColumns,
+          sameLayout,
+          violations,
+          frames,
+        }),
+        stop: () => {
+          sample()
+          running = false
+          cancelAnimationFrame(frame)
+          mutations.disconnect()
+        },
+      }
+    },
+    controllerAttribute,
+  )
   async function read() {
     const layout = await table!.evaluate((table) => {
       const zoom = table.currentCSSZoom

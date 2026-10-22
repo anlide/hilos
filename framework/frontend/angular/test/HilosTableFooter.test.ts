@@ -2,9 +2,8 @@
 // the Vue reference and the React port run, for the layer the Angular footer
 // draws: the range, the count, and the pager. Every case mounts a host that
 // binds the controller input.
-import { Component } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { TableViewportController } from '@hilos/core'
 import type { TableRow, TableViewportDescriptor } from '@hilos/core'
 
@@ -13,16 +12,6 @@ import { HilosTableFooter } from '../src/HilosTableFooter.js'
 // The footer says nothing about the declaration, but a table only draws one
 // when it has a frame — so the tests give it the smallest one there is.
 const FRAME = { title: 'Backups', columns: [{ key: 'name', label: 'Name' }] }
-
-/** A host binding the controller the footer reads. */
-@Component({
-  selector: 'test-table-footer-host',
-  imports: [HilosTableFooter],
-  template: `<hilos-table-footer [controller]="controller" />`,
-})
-class FooterHost {
-  controller!: TableViewportController<unknown>
-}
 
 function makeController(): {
   controller: TableViewportController<unknown>
@@ -65,9 +54,9 @@ function ingestPage(
 
 function mountFooter(
   controller: TableViewportController<unknown>,
-): ComponentFixture<FooterHost> {
-  const fixture = TestBed.createComponent(FooterHost)
-  fixture.componentInstance.controller = controller
+): ComponentFixture<HilosTableFooter<unknown>> {
+  const fixture = TestBed.createComponent(HilosTableFooter<unknown>)
+  fixture.componentRef.setInput('controller', controller)
   fixture.detectChanges()
 
   return fixture
@@ -133,6 +122,140 @@ describe('HilosTableFooter', () => {
 
     expect(byId(fixture, 'hilos-table-count')).toBeNull()
     expect(byId(fixture, 'hilos-table-prev')).toBeNull()
+  })
+
+  it.each(['before removal', 'before Apply', 'after Apply'] as const)(
+    'keeps the retained zero range when zero count arrives %s',
+    (timing) => {
+      const { controller, sent } = makeController()
+      controller.ingestWindow(window(1), 1, true, null, null, 20)
+      const fixture = mountFooter(controller)
+      const count = () =>
+        byId(fixture, 'hilos-table-count')?.textContent?.trim()
+      expect(count()).toBe('1 – 1 of 1')
+
+      if (timing === 'before removal') controller.ingestCount(0, true)
+      controller.ingestDelta({
+        kind: 'row_removed',
+        rowKey: 'row-0',
+        reason: 'deleted',
+      })
+      if (timing === 'before Apply') controller.ingestCount(0, true)
+      fixture.detectChanges()
+      expect(count()).toBe(
+        timing === 'after Apply' ? '1 – 1 of 1' : '0 – 0 of 0',
+      )
+
+      controller.apply()
+      fixture.detectChanges()
+      expect(controller.frame.body.get()).toBe('rows')
+      expect(count()).toBe(
+        timing === 'after Apply' ? '0 – 0 of 1' : '0 – 0 of 0',
+      )
+      if (timing === 'after Apply') {
+        controller.ingestCount(0, true)
+        fixture.detectChanges()
+      }
+      expect(count()).toBe('0 – 0 of 0')
+      expect(controller.pendingCount.get()).toBe(0)
+      expect(controller.rows.get()[0]?.placeholder).toBe(true)
+      expect(byId(fixture, 'hilos-table-prev')).toBeNull()
+      expect(byId(fixture, 'hilos-table-next')).toBeNull()
+      expect(sent).toEqual([])
+
+      controller.ingestWindow([], 0, true, null, null, 20)
+      fixture.detectChanges()
+      expect(count()).toBeUndefined()
+      fixture.destroy()
+      controller.dispose()
+    },
+  )
+
+  it('keeps a batch of last-row departures through a zero count and Apply', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(window(2), 2, true, null, null, 20)
+    const fixture = mountFooter(controller)
+    for (const rowKey of ['row-0', 'row-1']) {
+      controller.ingestDelta({ kind: 'row_removed', rowKey, reason: 'deleted' })
+    }
+    controller.ingestCount(0, true)
+    fixture.detectChanges()
+
+    expect(controller.pendingCount.get()).toBe(2)
+    expect(byId(fixture, 'hilos-table-count')?.textContent?.trim()).toBe(
+      '0 – 0 of 0',
+    )
+    controller.apply()
+    fixture.detectChanges()
+
+    expect(controller.frame.body.get()).toBe('rows')
+    expect(controller.rows.get().every((row) => row.placeholder)).toBe(true)
+    expect(byId(fixture, 'hilos-table-count')?.textContent?.trim()).toBe(
+      '0 – 0 of 0',
+    )
+    expect(byId(fixture, 'hilos-table-prev')).toBeNull()
+    expect(byId(fixture, 'hilos-table-next')).toBeNull()
+    fixture.destroy()
+    controller.dispose()
+  })
+
+  it('keeps the zero range after an own removal with no pending Apply', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(window(1), 1, true, null, null, 20)
+    const fixture = mountFooter(controller)
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'row-0',
+      reason: 'deleted',
+      own: true,
+    })
+    controller.ingestCount(0, true)
+    fixture.detectChanges()
+
+    expect(controller.frame.body.get()).toBe('rows')
+    expect(controller.pendingCount.get()).toBe(0)
+    expect(controller.rows.get()[0]?.placeholder).toBe(true)
+    expect(byId(fixture, 'hilos-table-count')?.textContent?.trim()).toBe(
+      '0 – 0 of 0',
+    )
+    fixture.destroy()
+    controller.dispose()
+  })
+
+  it('replaces both subscriptions with the controller and cleans them on destroy', () => {
+    const first = makeController().controller
+    first.ingestWindow(window(1), 1, true, null, null, 20)
+    const firstBodyGet = vi.spyOn(first.frame.body, 'get')
+    const firstFooterGet = vi.spyOn(first.frame.footer, 'get')
+    const fixture = mountFooter(first)
+
+    const second = makeController().controller
+    second.ingestWindow(window(2), 2, true, null, null, 20)
+    const secondBodyGet = vi.spyOn(second.frame.body, 'get')
+    const secondFooterGet = vi.spyOn(second.frame.footer, 'get')
+    fixture.componentRef.setInput('controller', second)
+    fixture.detectChanges()
+    fixture.detectChanges()
+    expect(byId(fixture, 'hilos-table-count')?.textContent?.trim()).toBe(
+      '1 – 2 of 2',
+    )
+
+    const firstBodyReads = firstBodyGet.mock.calls.length
+    const firstFooterReads = firstFooterGet.mock.calls.length
+    first.ingestRefusal('internal_error')
+    first.ingestCount(9, true)
+    expect(firstBodyGet).toHaveBeenCalledTimes(firstBodyReads)
+    expect(firstFooterGet).toHaveBeenCalledTimes(firstFooterReads)
+
+    fixture.destroy()
+    const secondBodyReads = secondBodyGet.mock.calls.length
+    const secondFooterReads = secondFooterGet.mock.calls.length
+    second.ingestRefusal('internal_error')
+    second.ingestCount(9, true)
+    expect(secondBodyGet).toHaveBeenCalledTimes(secondBodyReads)
+    expect(secondFooterGet).toHaveBeenCalledTimes(secondFooterReads)
+    first.dispose()
+    second.dispose()
   })
 
   it('draws nothing at all when the window was refused', () => {

@@ -5,9 +5,9 @@
 // numbers fit in the row, which is a question about the width of a strip and
 // belongs to nobody else. Page numbers stand there exactly while the count is
 // exact: a page is a place counted from an end of the set, and a count stopped at
-// its ceiling has no such end (mockups/components/table section 8). On an empty
-// window it draws nothing at all: "0 of 0" says nothing, and the body of the table
-// is what speaks about emptiness. Internal to the Angular view layer on purpose:
+// its ceiling has no such end (mockups/components/table section 8). A retained
+// rows body keeps its truthful zero range; a fresh empty snapshot draws no footer.
+// Internal to the Angular view layer on purpose:
 // it is not exported from index.ts, for the reason the bar is not. The Angular
 // port of the Vue reference (vue/src/HilosTableFooter.vue), under the same names
 // and words.
@@ -21,6 +21,7 @@ import {
 } from '@angular/core'
 import { subscribeSignal } from '@hilos/core/base'
 import type {
+  HilosTableBody,
   HilosTableFooter as HilosTableFooterState,
   TableViewportController,
 } from '@hilos/core/base'
@@ -45,7 +46,7 @@ const PAGER_SLOTS = 7
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (footer(); as footer) {
-      @if (footer.firstRow > 0) {
+      @if (footer.firstRow > 0 || body() === 'rows') {
         <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
           <span class="small text-body-secondary" data-id="hilos-table-count">
             {{ countLabel() }}
@@ -131,6 +132,7 @@ export class HilosTableFooter<R> {
   readonly controller = input.required<TableViewportController<R>>()
 
   protected readonly footer = signal<HilosTableFooterState | null>(null)
+  protected readonly body = signal<HilosTableBody>('loading')
 
   // The total reads as "at least this many" when the count stopped at its ceiling,
   // which is what the trailing plus says.
@@ -186,9 +188,21 @@ export class HilosTableFooter<R> {
     // signals, so the footer is mirrored once it is bound; the cleanup drops the
     // subscription if the controller is replaced.
     effect((onCleanup) => {
-      const source = this.controller().frame.footer
-      this.footer.set(source.get())
-      onCleanup(subscribeSignal(source, (value) => this.footer.set(value)))
+      const controller = this.controller()
+      const footerSource = controller.frame.footer
+      const bodySource = controller.frame.body
+      this.footer.set(footerSource.get())
+      this.body.set(bodySource.get())
+      const unsubscribeFooter = subscribeSignal(footerSource, (value) =>
+        this.footer.set(value),
+      )
+      const unsubscribeBody = subscribeSignal(bodySource, (value) =>
+        this.body.set(value),
+      )
+      onCleanup(() => {
+        unsubscribeFooter()
+        unsubscribeBody()
+      })
     })
   }
 

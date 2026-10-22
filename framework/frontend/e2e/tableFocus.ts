@@ -50,6 +50,32 @@ interface TableSearchMark {
   readonly documentStarted: number
   readonly socket: number
   readonly cursor: number
+  readonly rendered: readonly TableSearchRendered[]
+}
+
+interface TableSearchRendered {
+  readonly search: string | null
+  readonly rows: readonly string[]
+  readonly loading: boolean
+}
+
+/** Read only mounted DOM; this does not inspect an Angular controller. */
+async function renderedTables(page: Page): Promise<TableSearchRendered[]> {
+  return page.getByTestId('hilos-viewport-table').evaluateAll((roots) =>
+    roots.map((root) => ({
+      search:
+        root.querySelector<HTMLInputElement>('[data-id="hilos-table-search"]')
+          ?.value ?? null,
+      rows: [
+        ...root.querySelectorAll(
+          'tbody > tr[data-id^="hilos-table-row-"]:not([data-id^="hilos-table-row-detail-"])',
+        ),
+      ].map((row) =>
+        row.getAttribute('data-id')!.slice('hilos-table-row-'.length),
+      ),
+      loading: root.querySelector('[data-id="hilos-table-loading"]') !== null,
+    })),
+  )
 }
 
 /**
@@ -265,6 +291,104 @@ export async function watchTableSearch(
     return { ...state, frames: [...frames], observations: [...observations] }
   }
 
+  const correlate = (
+    state: Awaited<ReturnType<typeof read>>,
+    mark: TableSearchMark,
+  ) => {
+    const current = state.frames.filter((frame) => frame.socket === mark.socket)
+    const subscriptions = current.filter(
+      (frame) =>
+        frame.direction === 'sent' &&
+        [
+          'page_subscribe',
+          'page_update_subscription',
+          'page_unsubscribe',
+        ].includes(String(frame.wire.type)),
+    )
+    const subscription = subscriptions.at(-1)
+    const full = current.filter((frame) => {
+      if (frame.failure || frame.wire.type !== 'page_response') return false
+      const payload = deliveryObject(deliveryObject(frame.wire.data).payload)
+      const window = deliveryObject(
+        deliveryObject(payload.windows)[address.tableKey],
+      )
+      return (
+        Array.isArray(window.rows) ||
+        deliveryObject(payload.refusedWindows)[address.tableKey] !== undefined
+      )
+    })
+    const opening = full.at(-1)
+    const payload = deliveryObject(deliveryObject(opening?.wire.data).payload)
+    const initial = deliveryObject(
+      deliveryObject(payload.windows)[address.tableKey],
+    )
+    const problems: string[] = []
+    if (
+      !subscription ||
+      subscription.wire.page !== address.page ||
+      subscription.wire.type === 'page_unsubscribe'
+    )
+      problems.push('no current page subscription')
+    if (
+      !opening ||
+      !subscription ||
+      opening.index <= subscription.index ||
+      !Array.isArray(initial.rows)
+    )
+      problems.push('no initial window')
+    if (opening && opening.index >= mark.cursor)
+      problems.push('page replaced after mark')
+    if (
+      current.some(
+        (frame) =>
+          frame.index >= mark.cursor &&
+          [
+            'subscription_page_error',
+            'table_viewport_frozen',
+            'page_resubscribe',
+          ].includes(String(frame.wire.type)),
+      )
+    )
+      problems.push('scope refused, frozen or recovering')
+    const lastSent = current
+      .filter(
+        (frame) =>
+          frame.direction === 'sent' && frame.wire.type === 'table_viewport',
+      )
+      .at(-1)
+    const requestId = lastSent?.wire.requestId
+    const lastReply =
+      typeof requestId === 'string' && requestId.length > 0
+        ? current
+            .filter(
+              (frame) =>
+                !frame.failure &&
+                frame.direction === 'received' &&
+                ['table_window', 'table_window_refused'].includes(
+                  String(frame.wire.type),
+                ) &&
+                deliveryObject(frame.wire.data).requestId === requestId &&
+                frame.index > lastSent!.index,
+            )
+            .at(-1)
+        : undefined
+    const reply = deliveryObject(lastReply?.wire.data)
+    const replyRows = Array.isArray(reply.rows)
+      ? reply.rows.map((row) => String(deliveryObject(row).rowKey))
+      : undefined
+    const filter = deliveryObject(lastSent?.wire.filter)
+    return {
+      subscription,
+      opening,
+      problems,
+      lastSent,
+      requestId,
+      lastReply,
+      replyRows,
+      filter,
+    }
+  }
+
   let condition: unknown
   return {
     read: async () => ({ ...(await read()), condition }),
@@ -281,9 +405,94 @@ export async function watchTableSearch(
         documentStarted: state.documentStarted,
         socket: state.socket,
         cursor: state.physical.length,
+        rendered: await renderedTables(page),
       }
       condition = { mark }
       return mark
+    },
+    /**
+     * Explicit Angular proof: correlate the physical reply with the complete DOM
+     * outcome. Unlike settled(), this makes no internal-controller claim.
+     */
+    async renderedSettled(
+      expect: Expect,
+      mark: TableSearchMark,
+      filter: Readonly<Record<string, unknown>>,
+      rowKeys: readonly string[],
+    ) {
+      if (rowKeys.length === 0) {
+        expect(
+          mark.rendered,
+          'one nonempty outgoing mounted window',
+        ).toHaveLength(1)
+        expect(mark.rendered[0]!.rows.length).toBeGreaterThan(0)
+      }
+      let refusal: TableSearchFrame | undefined
+      await expect
+        .poll(async () => {
+          const state = await read()
+          const {
+            subscription,
+            opening,
+            problems,
+            lastSent,
+            lastReply,
+            replyRows,
+            filter: sentFilter,
+          } = correlate(state, mark)
+          const rendered = await renderedTables(page)
+          const queryMatches =
+            JSON.stringify(sentFilter) === JSON.stringify(filter) &&
+            rendered.length === 1 &&
+            rendered[0]!.search === (filter.search ?? '')
+          const rowsMatch = [replyRows, rendered[0]?.rows].every(
+            (keys) => JSON.stringify(keys) === JSON.stringify(rowKeys),
+          )
+          refusal =
+            lastReply?.wire.type === 'table_window_refused'
+              ? lastReply
+              : undefined
+          const actual = {
+            sameDocument: state.documentStarted === mark.documentStarted,
+            sameSocket: state.socket === mark.socket,
+            open: state.readyState === 1,
+            freshRequest:
+              lastSent !== undefined && lastSent.index >= mark.cursor,
+            completed:
+              refusal !== undefined ||
+              (lastReply !== undefined &&
+                queryMatches &&
+                rowsMatch &&
+                !rendered[0]!.loading),
+            problems,
+          }
+          condition = {
+            mark,
+            expected: { filter, rowKeys },
+            subscription,
+            opening,
+            lastSent,
+            lastReply,
+            rendered,
+            queryMatches,
+            rowsMatch,
+            actual,
+          }
+          return actual
+        })
+        .toEqual({
+          sameDocument: true,
+          sameSocket: true,
+          open: true,
+          freshRequest: true,
+          completed: true,
+          problems: [],
+        })
+      if (refusal)
+        throw new Error(
+          `Latest table window refused: ${JSON.stringify(refusal.wire.data)}`,
+        )
+      return condition
     },
     /** Await the latest post-mark addressed id, accepted by its live controller. */
     async settled(
@@ -296,92 +505,16 @@ export async function watchTableSearch(
       await expect
         .poll(async () => {
           const state = await read()
-          const current = state.frames.filter(
-            (frame) => frame.socket === mark.socket,
-          )
-          const subscriptions = current.filter(
-            (frame) =>
-              frame.direction === 'sent' &&
-              [
-                'page_subscribe',
-                'page_update_subscription',
-                'page_unsubscribe',
-              ].includes(String(frame.wire.type)),
-          )
-          const subscription = subscriptions.at(-1)
-          const full = current.filter((frame) => {
-            if (frame.failure || frame.wire.type !== 'page_response')
-              return false
-            const payload = deliveryObject(
-              deliveryObject(frame.wire.data).payload,
-            )
-            const window = deliveryObject(
-              deliveryObject(payload.windows)[address.tableKey],
-            )
-            return (
-              Array.isArray(window.rows) ||
-              deliveryObject(payload.refusedWindows)[address.tableKey] !==
-                undefined
-            )
-          })
-          const opening = full.at(-1)
-          const payload = deliveryObject(
-            deliveryObject(opening?.wire.data).payload,
-          )
-          const initial = deliveryObject(
-            deliveryObject(payload.windows)[address.tableKey],
-          )
-          const problems: string[] = []
-          if (
-            !subscription ||
-            subscription.wire.page !== address.page ||
-            subscription.wire.type === 'page_unsubscribe'
-          )
-            problems.push('no current page subscription')
-          if (
-            !opening ||
-            !subscription ||
-            opening.index <= subscription.index ||
-            !Array.isArray(initial.rows)
-          )
-            problems.push('no initial window')
-          if (opening && opening.index >= mark.cursor)
-            problems.push('page replaced after mark')
-          if (
-            current.some(
-              (frame) =>
-                frame.index >= mark.cursor &&
-                [
-                  'subscription_page_error',
-                  'table_viewport_frozen',
-                  'page_resubscribe',
-                ].includes(String(frame.wire.type)),
-            )
-          )
-            problems.push('scope refused, frozen or recovering')
-          const lastSent = current
-            .filter(
-              (frame) =>
-                frame.direction === 'sent' &&
-                frame.wire.type === 'table_viewport',
-            )
-            .at(-1)
-          const requestId = lastSent?.wire.requestId
-          const lastReply =
-            typeof requestId === 'string' && requestId.length > 0
-              ? current
-                  .filter(
-                    (frame) =>
-                      !frame.failure &&
-                      frame.direction === 'received' &&
-                      ['table_window', 'table_window_refused'].includes(
-                        String(frame.wire.type),
-                      ) &&
-                      deliveryObject(frame.wire.data).requestId === requestId &&
-                      frame.index > lastSent!.index,
-                  )
-                  .at(-1)
-              : undefined
+          const {
+            subscription,
+            opening,
+            problems,
+            lastSent,
+            requestId,
+            lastReply,
+            replyRows,
+            filter,
+          } = correlate(state, mark)
           const processed = lastReply?.application.find(
             (item) => item.appliedRequestId === requestId,
           )
@@ -390,11 +523,6 @@ export async function watchTableSearch(
               item.controller === processed?.controller &&
               item.appliedRequestId === requestId,
           )
-          const reply = deliveryObject(lastReply?.wire.data)
-          const replyRows = Array.isArray(reply.rows)
-            ? reply.rows.map((row) => String(deliveryObject(row).rowKey))
-            : undefined
-          const filter = deliveryObject(lastSent?.wire.filter)
           const queryMatches =
             (filter.search === undefined ? '' : filter.search) === search &&
             applied?.search === search &&
@@ -450,7 +578,7 @@ export async function watchTableSearch(
   }
 }
 
-/** Keep the actual opener identity through a modal and a table DOM replacement. */
+/** Keep native control identity and focus through live updates or a modal. */
 export async function watchTableModalFocus(trigger: Locator) {
   const handle = await trigger.evaluateHandle((opener) => {
     const root = opener.closest('[data-id="hilos-viewport-table"]')!
@@ -463,6 +591,7 @@ export async function watchTableModalFocus(trigger: Locator) {
       return {
         openerConnected: opener.isConnected,
         sameTrigger: current[0] === opener,
+        triggerFocused: active === opener,
         visibleTriggers: current.length,
         active: active?.getAttribute('data-id'),
         activeTag: active?.tagName,

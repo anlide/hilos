@@ -550,7 +550,9 @@ describe('HilosLogsRotationsPage', () => {
 
     expect(screenText(fixture)).toContain('Moving to the archive')
     expect(
-      (fixture.nativeElement as HTMLElement).querySelector('.badge')?.className,
+      (fixture.nativeElement as HTMLElement).querySelector(
+        '.table-responsive .badge.text-bg-info',
+      )?.className,
     ).toContain('text-bg-info')
     expect(allById(fixture, 'hilos-rotation-takeout')).toHaveLength(0)
     expect(allById(fixture, 'hilos-rotation-undo')).toHaveLength(0)

@@ -96,6 +96,33 @@
           },
           "defaultConfiguration": "production"
         },
+        "build-table-geometry": {
+          "builder": "@angular/build:application",
+          "options": {
+            "browser": "tests/tableGeometry/main.ts",
+            "index": "tests/tableGeometry/index.html",
+            "tsConfig": "tests/tableGeometry/tsconfig.json",
+            "outputPath": {
+              "base": "dist/__table_geometry",
+              "browser": ""
+            },
+            "baseHref": "./",
+            "assets": [],
+            "styles": [
+              "node_modules/bootstrap/dist/css/bootstrap.min.css",
+              "node_modules/bootstrap-icons/font/bootstrap-icons.css",
+              "node_modules/@hilos/angular/src/hilos-styles.scss"
+            ],
+            "preserveSymlinks": true,
+            "allowedCommonJsDependencies": ["@vue/reactivity"],
+            "aot": true,
+            "optimization": {
+              "scripts": true,
+              "styles": { "minify": true, "inlineCritical": false },
+              "fonts": true
+            }
+          }
+        },
         "serve": {
           "builder": "@angular/build:dev-server",
           "options": {

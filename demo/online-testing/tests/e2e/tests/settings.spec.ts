@@ -2,12 +2,19 @@ import { test, expect } from '@playwright/test'
 
 import {
   clearCustomSetting,
+  expectDataFreeDeparture,
   setCustomSetting,
+  settleTableLayout,
   shownByTestId,
+  watchHeight,
+  watchTableGeometry,
+  watchTableSearch,
+  watchTopWithin,
+  type TableGeometryWatch,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant.js'
 import { gotoPage } from '../helpers/page.js'
-import { typeInto } from '../helpers/session.js'
+import { clickSubmit, typeInto } from '../helpers/session.js'
 
 // Hilos settings admin e2e for the online-testing demo: activating the framework settings
 // feature configure-only (a catalog + a thin page + a project BrowserContext)
@@ -116,3 +123,171 @@ test('sets a custom value on a catalog key from its row and resets it, live', as
   // All of it happened over the live socket — no document reload.
   expect(fullLoads).toBe(loadsAfterColdLoad)
 })
+
+// Independent true orphans are seeded offline by test:db-prepare after reset,
+// before the daemon starts. Each destructive scenario owns its own key.
+for (const origin of ['own', 'foreign'] as const) {
+  test(`${origin} deletion retains the last settings record until a new search snapshot`, async ({
+    page,
+  }) => {
+    const key = `e2e_geometry_${origin}`
+    const sourceWindows = await watchTableSearch(page, {
+      page: 'hilos_settings',
+      tableKey: 'settings',
+    })
+    const tabB =
+      origin === 'foreign' ? await page.context().newPage() : undefined
+    const target = tabB ?? page
+    const windows = tabB
+      ? await watchTableSearch(tabB, {
+          page: 'hilos_settings',
+          tableKey: 'settings',
+        })
+      : sourceWindows
+    let geometry: TableGeometryWatch | undefined
+    try {
+      await grantAdminToSelf(page)
+      for (const view of tabB
+        ? [
+            { page, windows: sourceWindows },
+            { page: tabB, windows },
+          ]
+        : [{ page, windows }]) {
+        await gotoPage(view.page, '/hilos/settings')
+        await expect(
+          view.page.getByTestId('hilos-viewport-table'),
+        ).toBeVisible()
+        const mark = await view.windows.mark()
+        await typeInto(view.page.getByTestId('hilos-table-search'), key)
+        await view.windows.renderedSettled(expect, mark, { search: key }, [key])
+        await expect(view.page.getByTestId('hilos-table-count')).toHaveText(
+          '1 – 1 of 1',
+        )
+        await expect(
+          view.page.getByTestId(`hilos-table-row-${key}`),
+        ).toContainText('seed-value')
+      }
+      await settleTableLayout(target)
+      const table = target.getByTestId('hilos-viewport-table')
+      const height = await watchHeight(table)
+      const footer = await watchTopWithin(
+        target.getByTestId('hilos-table-count'),
+        table,
+      )
+      geometry = await watchTableGeometry(expect, target, {
+        bodyId: 'hilos-viewport-table',
+        projection: 'wide',
+        rowKeys: [key],
+        lastKey: key,
+      })
+
+      await clickSubmit(shownByTestId(page, `hilos-settings-delete-${key}`))
+      await expect(page.getByTestId('modal')).toHaveAccessibleName(
+        `Delete · ${key}`,
+      )
+      const confirm = page.getByTestId('hilos-settings-delete-confirm')
+      await clickSubmit(confirm)
+      await expect(confirm).toHaveCount(0)
+      await expect(page.getByTestId('hilos-toast-error')).toHaveCount(0)
+
+      if (origin === 'foreign') {
+        // Count zero is independent of the pending membership change. Both
+        // mounted projections still carry the old value until this tab applies.
+        await expect(
+          target.getByTestId(`hilos-table-pending-remove-${key}`),
+        ).toHaveCount(2)
+        await expect(target.getByTestId('hilos-table-pending')).toHaveText('1')
+        await expect(target.getByTestId('hilos-table-count')).toHaveText(
+          '0 – 0 of 0',
+        )
+        await expect(
+          target.getByTestId(`hilos-table-row-${key}`),
+        ).toContainText('seed-value')
+        await expect(target.getByTestId('hilos-table-placeholder')).toHaveCount(
+          0,
+        )
+        await geometry.check()
+        await height.unchanged()
+        await footer.unchanged()
+        await clickSubmit(target.getByTestId('hilos-table-apply'))
+      }
+      await expectDataFreeDeparture(expect, target, key, 'Removed', [
+        `hilos-settings-edit-${key}`,
+        `hilos-settings-reset-${key}`,
+        `hilos-settings-delete-${key}`,
+      ])
+      await expect(
+        target.locator('tbody > tr[data-id^="hilos-table-row-"]'),
+      ).toHaveAttribute('data-id', `hilos-table-row-${key}`)
+      await expect(
+        target.locator('[data-id^="hilos-table-card-"]'),
+      ).toHaveAttribute('data-id', `hilos-table-card-${key}`)
+      for (const prefix of ['hilos-table-row-', 'hilos-table-card-']) {
+        await expect(target.getByTestId(`${prefix}${key}`)).toHaveText(
+          'Removed',
+        )
+        await expect(target.getByTestId(`${prefix}${key}`)).not.toContainText(
+          'seed-value',
+        )
+      }
+      await expect(target.getByTestId('hilos-table-placeholder')).toHaveCount(2)
+      await expect(target.getByTestId('hilos-table-count')).toHaveText(
+        '0 – 0 of 0',
+      )
+      await expect(target.getByTestId('hilos-table-apply')).toHaveCount(0)
+      await expect(target.getByTestId('hilos-table-pending-row')).toHaveCount(0)
+      await expect(target.getByTestId('hilos-table-no-matches')).toHaveCount(0)
+      await expect(target.getByTestId('hilos-table-empty')).toHaveCount(0)
+      await geometry.check()
+      await height.unchanged()
+      await footer.unchanged()
+      await geometry.stop()
+
+      const emptyMark = await windows.mark()
+      const search = `${key}_missing`
+      await typeInto(target.getByTestId('hilos-table-search'), search)
+      await windows.renderedSettled(expect, emptyMark, { search }, [])
+      await expect(
+        shownByTestId(target, 'hilos-table-no-matches'),
+      ).toBeVisible()
+      await expect(
+        shownByTestId(target, 'hilos-table-no-matches-terms'),
+      ).toContainText(`“${search}”`)
+      await expect(target.getByTestId('hilos-table-placeholder')).toHaveCount(0)
+      await expect(target.getByTestId(`hilos-table-row-${key}`)).toHaveCount(0)
+      await expect(target.getByTestId(`hilos-table-card-${key}`)).toHaveCount(0)
+      await expect(target.getByTestId('hilos-table-count')).toHaveCount(0)
+    } finally {
+      if (geometry) {
+        await geometry.stop()
+        await test.info().attach(`${origin}-departure-geometry`, {
+          body: await geometry.evidence(),
+          contentType: 'application/json',
+        })
+      }
+      await test.info().attach(`${origin}-source-search`, {
+        body: JSON.stringify(
+          await sourceWindows
+            .read()
+            .catch((error: unknown) => ({ unavailable: String(error) })),
+          null,
+          2,
+        ),
+        contentType: 'application/json',
+      })
+      if (tabB) {
+        await test.info().attach(`${origin}-observer-search`, {
+          body: JSON.stringify(
+            await windows
+              .read()
+              .catch((error: unknown) => ({ unavailable: String(error) })),
+            null,
+            2,
+          ),
+          contentType: 'application/json',
+        })
+        await tabB.close()
+      }
+    }
+  })
+}

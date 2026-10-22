@@ -33,12 +33,15 @@ const opening = () => ({
     payload: { windows: { [address.tableKey]: windowData() } },
   },
 })
-const once = {
-  poll: (read: () => Promise<unknown>) => ({
-    toEqual: async (expected: unknown) =>
-      expect(await read()).toEqual(expected),
-  }),
-} as unknown as Expect
+const once = Object.assign(
+  (value: unknown, message?: string) => expect(value, message),
+  {
+    poll: (read: () => Promise<unknown>) => ({
+      toEqual: async (expected: unknown) =>
+        expect(await read()).toEqual(expected),
+    }),
+  },
+) as unknown as Expect
 
 const cleanups: (() => void)[] = []
 afterEach(() => {
@@ -68,6 +71,10 @@ async function browser(batched = false, full = true) {
       script(arg),
     evaluate: async (read: (arg: unknown) => unknown, arg: unknown) =>
       read(arg),
+    getByTestId: (id: string) => ({
+      evaluateAll: async (read: (roots: Element[]) => unknown) =>
+        read([...document.querySelectorAll(`[data-id="${id}"]`)]),
+    }),
   } as unknown as Page
   const watch = await watchTableSearch(page, address)
   const socket = new window.WebSocket('ws://test') as unknown as Socket
@@ -208,6 +215,34 @@ async function browser(batched = false, full = true) {
     bookmark = mark,
     check = once,
   ) => watch.settled(check, bookmark, search, keys)
+  // Independent DOM outcomes model a view commit without claiming that Vue's
+  // controller applied the reply. Keep the real mount, socket and decoder.
+  const render = async (search: string, keys: string[], loading = false) => {
+    await nextTick()
+    const root = host.querySelector('[data-id="hilos-viewport-table"]')!
+    root.querySelector<HTMLInputElement>(
+      '[data-id="hilos-table-search"]',
+    )!.value = search
+    root.querySelector('tbody')!.replaceChildren(
+      ...keys.map((key) => {
+        const row = document.createElement('tr')
+        row.dataset.id = `hilos-table-row-${key}`
+        return row
+      }),
+    )
+    root.querySelector('[data-id="hilos-table-loading"]')?.remove()
+    if (loading) {
+      const indicator = document.createElement('span')
+      indicator.dataset.id = 'hilos-table-loading'
+      root.append(indicator)
+    }
+  }
+  const renderedSettled = (
+    filter: Readonly<Record<string, unknown>> = { search: 'query' },
+    keys = ['same'],
+    bookmark = mark,
+    check = once,
+  ) => watch.renderedSettled(check, bookmark, filter, keys)
   return {
     watch,
     socket,
@@ -218,6 +253,8 @@ async function browser(batched = false, full = true) {
     reply,
     refusal,
     settled,
+    render,
+    renderedSettled,
     unmount,
     reset: () => {
       controller.resetFilters()
@@ -454,5 +491,231 @@ describe('passive table search completion', () => {
     await expect(b.settled('recovered', ['same'], recovered)).rejects.toThrow()
     new window.WebSocket('ws://reconnect')
     await expect(b.settled('recovered', ['same'], recovered)).rejects.toThrow()
+  })
+})
+
+describe('explicit rendered table search completion', () => {
+  it('marks the actual mounted DOM, including its search, ordered keys and loading', async () => {
+    const b = await browser()
+    expect(b.mark.rendered).toEqual([
+      { search: '', rows: ['same'], loading: false },
+    ])
+    await b.render('unapplied', ['second', 'first'], true)
+    expect((await b.watch.mark()).rendered).toEqual([
+      { search: 'unapplied', rows: ['second', 'first'], loading: true },
+    ])
+    b.unmount()
+    expect((await b.watch.mark()).rendered).toEqual([])
+  })
+
+  it('accepts an exact reply and full DOM outcome without weakening strict Vue completion', async () => {
+    const b = await browser(true)
+    b.ignore()
+    const id = b.send()
+    await b.render('query', ['second', 'first'])
+    await expect(
+      b.renderedSettled({ search: 'query' }, ['second', 'first']),
+    ).rejects.toThrow()
+    await b.receive(
+      batch({ type: 'neighbor', data: {} }, b.reply(id, ['second', 'first'])),
+    )
+    await b.renderedSettled({ search: 'query' }, ['second', 'first'])
+    expect(b.controller.lastAppliedWindowRequestId.get()).not.toBe(id)
+    expect(b.controller.rows.get().map((row) => row.rowKey)).toEqual(['same'])
+    await expect(b.settled('query', ['second', 'first'])).rejects.toThrow()
+  })
+
+  it.each([
+    { search: 'earlier', keys: ['first', 'second'], loading: false },
+    { search: 'query', keys: ['first'], loading: false },
+    { search: 'query', keys: ['second', 'first'], loading: false },
+    { search: 'query', keys: ['first', 'second', 'extra'], loading: false },
+    { search: 'query', keys: ['first', 'second'], loading: true },
+  ])(
+    'does not treat network receipt as the rendered outcome: %j',
+    async ({ search, keys, loading }) => {
+      const b = await browser()
+      b.ignore()
+      await b.receive(b.reply(b.send(), ['first', 'second']))
+      await b.render(search, keys, loading)
+      await expect(
+        b.renderedSettled({ search: 'query' }, ['first', 'second']),
+      ).rejects.toThrow()
+      await b.render('query', ['first', 'second'])
+      await b.renderedSettled({ search: 'query' }, ['first', 'second'])
+    },
+  )
+
+  it.each([['first'], ['second', 'first'], ['first', 'second', 'extra']])(
+    'requires the complete ordered reply key list as well as the DOM: %j',
+    async (...keys) => {
+      const b = await browser()
+      b.ignore()
+      const id = b.send()
+      await b.render('query', ['first', 'second'])
+      await b.receive(b.reply(id, keys))
+      await expect(
+        b.renderedSettled({ search: 'query' }, ['first', 'second']),
+      ).rejects.toThrow()
+      await b.receive(b.reply(id, ['first', 'second']))
+      await b.renderedSettled({ search: 'query' }, ['first', 'second'])
+    },
+  )
+
+  it('requires every outgoing filter value even when search and keys match', async () => {
+    const b = await browser()
+    b.ignore()
+    b.send()
+    b.controller.setFilter('status', 'active')
+    const id = JSON.parse(b.socket.sent.at(-1)!).requestId as string
+    await b.receive(b.reply(id))
+    await b.render('query', ['same'])
+    await expect(b.renderedSettled()).rejects.toThrow()
+    await expect(
+      b.renderedSettled({ search: 'query', status: 'other' }),
+    ).rejects.toThrow()
+    await b.renderedSettled({ search: 'query', status: 'active' })
+  })
+
+  it.each(['no-id', 'old', 'unknown', 'foreign-page', 'foreign-table'])(
+    'does not settle on a %s reply despite a matching DOM',
+    async (kind) => {
+      const b = await browser()
+      b.ignore()
+      const old = b.send('earlier')
+      const latest = b.send()
+      const id =
+        kind === 'no-id'
+          ? undefined
+          : kind === 'old'
+            ? old
+            : kind === 'unknown'
+              ? 'unknown'
+              : latest
+      const wire = b.reply(id)
+      if (kind === 'foreign-page') wire.data.page = 'foreign'
+      if (kind === 'foreign-table') wire.data.tableKey = 'foreign'
+      await b.receive(wire)
+      await b.render('query', ['same'])
+      await expect(b.renderedSettled()).rejects.toThrow()
+      await b.receive(b.reply(latest))
+      await b.renderedSettled()
+    },
+  )
+
+  it.each([undefined, ''])(
+    'requires a nonempty latest outgoing request id: %j',
+    async (requestId) => {
+      const b = await browser()
+      b.ignore()
+      const old = b.send()
+      b.socket.send(
+        JSON.stringify({
+          type: 'table_viewport',
+          ...address,
+          filter: { search: 'query' },
+          requestId,
+        }),
+      )
+      await b.receive(b.reply(old))
+      await b.render('query', ['same'])
+      await expect(b.renderedSettled()).rejects.toThrow()
+      await b.receive(b.reply(b.send('recovered')))
+      await b.render('recovered', ['same'])
+      await b.renderedSettled({ search: 'recovered' })
+    },
+  )
+
+  it('follows a newer request sent while waiting, even with unchanged rendered keys', async () => {
+    const b = await browser()
+    b.ignore()
+    const old = b.send('earlier')
+    await b.receive(b.reply(old))
+    await b.render('query', ['same'])
+    let polls = 0
+    const moving = {
+      poll: (read: () => Promise<unknown>) => ({
+        toEqual: async (expected: unknown) => {
+          expect(await read()).not.toEqual(expected)
+          polls++
+          const latest = b.send()
+          await b.render('query', ['same'])
+          await b.receive(b.reply(old))
+          expect(await read()).not.toEqual(expected)
+          await b.receive(b.reply(latest))
+          expect(await read()).toEqual(expected)
+        },
+      }),
+    } as unknown as Expect
+    await b.renderedSettled({ search: 'query' }, ['same'], b.mark, moving)
+    expect(polls).toBe(1)
+  })
+
+  it('requires a new reply and an empty DOM after a nonempty outgoing window', async () => {
+    const b = await browser()
+    b.ignore()
+    const old = b.send('earlier')
+    const latest = b.send()
+    await b.receive(b.reply(old, []))
+    await b.render('query', [])
+    await expect(b.renderedSettled({ search: 'query' }, [])).rejects.toThrow()
+    await b.render('query', ['same'])
+    await b.receive(b.reply(latest, []))
+    await expect(b.renderedSettled({ search: 'query' }, [])).rejects.toThrow()
+    await b.render('query', [])
+    await b.renderedSettled({ search: 'query' }, [])
+  })
+
+  it.each(['empty', 'unmounted'])(
+    'does not prove an actual empty result from an %s outgoing mount',
+    async (kind) => {
+      const b = await browser()
+      b.ignore()
+      await b.render('', [])
+      if (kind === 'unmounted') b.unmount()
+      const mark = await b.watch.mark()
+      await b.receive(b.reply(b.send(), []))
+      if (kind === 'empty') await b.render('query', [])
+      await expect(
+        b.renderedSettled({ search: 'query' }, [], mark),
+      ).rejects.toThrow()
+    },
+  )
+
+  it('does not reuse a matched request and DOM from before the mark', async () => {
+    const b = await browser()
+    b.ignore()
+    const id = b.send()
+    await b.receive(b.reply(id))
+    await b.render('query', ['same'])
+    await b.renderedSettled()
+    const mark = await b.watch.mark()
+    await b.receive(b.reply(id))
+    await expect(
+      b.renderedSettled({ search: 'query' }, ['same'], mark),
+    ).rejects.toThrow()
+  })
+
+  it('still requires an initial window rather than a data-only opening', async () => {
+    const b = await browser(true, false)
+    b.ignore()
+    await b.receive(b.reply(b.send()))
+    await b.render('query', ['same'])
+    await expect(b.renderedSettled()).rejects.toThrow()
+  })
+
+  it('reports the exact latest refusal as a refusal rather than rendered success', async () => {
+    const b = await browser()
+    b.ignore()
+    const old = b.send('earlier')
+    const latest = b.send()
+    await b.render('query', ['same'])
+    await b.receive(b.refusal(old))
+    await expect(b.renderedSettled()).rejects.toThrow()
+    await b.receive(b.refusal(latest))
+    await expect(b.renderedSettled()).rejects.toThrow(
+      'Latest table window refused:',
+    )
+    await expect(b.renderedSettled()).rejects.toThrow('internal_error')
   })
 })
