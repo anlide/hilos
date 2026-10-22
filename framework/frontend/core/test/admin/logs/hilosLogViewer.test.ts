@@ -5,10 +5,12 @@ import {
   hasLogViewerNodes,
   isLogViewerPinned,
   logLineClock,
+  logViewerLatestBatchPath,
   logViewerNodeOf,
   logViewerPendingLabel,
   logViewerPaneState,
   logViewerPath,
+  logViewerStreamKeys,
   logViewerStreamsOf,
   readLogViewerAddress,
   splitLogTrace,
@@ -33,7 +35,10 @@ import {
   ActionLifecycle,
   type ActionLifecycleSource,
 } from '../../../src/connection/actionLifecycle.js'
-import { type ActionSuccessSignal } from '../../../src/protocol/parseSignal.js'
+import {
+  type ActionErrorSignal,
+  type ActionSuccessSignal,
+} from '../../../src/protocol/parseSignal.js'
 import { type HilosConnection } from '../../../src/connection/HilosConnection.js'
 import { type ConnectionState } from '../../../src/connection/HilosConnection.js'
 import { type PageRouteMatch } from '../../../src/routing/PageRouter.js'
@@ -151,6 +156,7 @@ function selection(
 class FakeActions implements ActionLifecycleSource {
   readonly sent: { action: string; data: unknown; requestId?: string }[] = []
   private readonly listeners: ((signal: ActionSuccessSignal) => void)[] = []
+  private readonly errors: ((signal: ActionErrorSignal) => void)[] = []
 
   sendAction(action: string, data: unknown, requestId?: string): boolean {
     this.sent.push({ action, data, requestId })
@@ -162,6 +168,10 @@ class FakeActions implements ActionLifecycleSource {
     if (event === 'actionSuccess') {
       this.listeners.push(
         listener as unknown as (signal: ActionSuccessSignal) => void,
+      )
+    } else if (event === 'actionError') {
+      this.errors.push(
+        listener as unknown as (signal: ActionErrorSignal) => void,
       )
     }
 
@@ -178,6 +188,22 @@ class FakeActions implements ActionLifecycleSource {
         reply,
         requestId,
         envelope: { type: 'action_success', data: {} },
+      })
+    }
+  }
+
+  /** Refuse one dispatched read with the owner's own reason. */
+  refuse(requestId: string | undefined, reason: string): void {
+    for (const listener of this.errors) {
+      listener({
+        kind: 'actionError',
+        action: LOGS_FOLLOW_START_ACTION,
+        reason,
+        errorCode: undefined,
+        errorType: undefined,
+        errorDetail: undefined,
+        requestId,
+        envelope: { type: 'action_error', data: {} },
       })
     }
   }
@@ -432,11 +458,22 @@ describe('logViewerPath', () => {
   it('names no place in a file nobody chose, anchor or not', () => {
     expect(
       logViewerPath(selection({ stream: null, anchorAtMs: 1788000000250 })),
-    ).toBe('/hilos/logs/view')
+    ).toBe('/hilos/logs/view/node-1/live')
   })
 
-  it('stays bare while any slot is unchosen', () => {
-    expect(logViewerPath(selection({ stream: null }))).toBe('/hilos/logs/view')
+  it.each(['live', BATCH] as const)(
+    'roundtrips a node and source %s without guessing a stream',
+    (source) => {
+      const chosen = selection({ source, stream: null })
+      const path = logViewerPath(chosen)
+      expect(path).toBe(`/hilos/logs/view/node-1/${source}`)
+      expect(readLogViewerAddress(paramsOf(path))).toEqual(chosen)
+    },
+  )
+
+  it('stays bare while the node or source is unchosen', () => {
+    expect(logViewerPath(selection({ nodeId: null }))).toBe('/hilos/logs/view')
+    expect(logViewerPath(selection({ source: null }))).toBe('/hilos/logs/view')
     expect(logViewerPath(readLogViewerAddress({}))).toBe('/hilos/logs/view')
   })
 })
@@ -773,6 +810,90 @@ describe('the catalog', () => {
     ])
     expect(logViewerStreamsOf(node, null)).toEqual([])
   })
+
+  it('offers an explicit stream name without adding a file to the catalog', () => {
+    const picture = catalog()
+    const before = catalog()
+    const node = logViewerNodeOf(picture, 'node-1')
+
+    expect(logViewerStreamKeys(node, selection())).toEqual(['worker-0.log'])
+    expect(
+      logViewerStreamKeys(node, selection({ stream: 'agent-chat.log' })),
+    ).toEqual(['worker-0.log', 'agent-chat.log'])
+    expect(
+      logViewerStreamKeys(node, selection({ stream: 'unknown.log' })),
+    ).toEqual(['worker-0.log', 'unknown.log'])
+    expect(logViewerStreamKeys(null, selection())).toEqual(['worker-0.log'])
+    expect(logViewerStreamKeys(null, selection({ stream: null }))).toEqual([])
+    expect(picture).toEqual(before)
+  })
+})
+
+describe('logViewerLatestBatchPath', () => {
+  it('finds the maximum shared stamp of this stream and node without carrying the anchor', () => {
+    const picture = catalog()
+    const node = picture.nodes[0]
+    node.batches = [BATCH + 20, BATCH, BATCH + 10, BATCH + 30]
+    node.streams[1].batchTimestamps = [BATCH + 10, BATCH + 40, BATCH]
+    node.streams[0].batchTimestamps = [BATCH + 30]
+    picture.nodes[1].batches = [BATCH + 50]
+    picture.nodes[1].streams.push({
+      key: 'agent-chat.log',
+      class: 'agent',
+      live: false,
+      batchTimestamps: [BATCH + 50],
+    })
+    const chosen = selection({ stream: 'agent-chat.log', anchorAtMs: 1234 })
+    const before = { ...chosen }
+
+    expect(logViewerLatestBatchPath(picture, chosen)).toBe(
+      `/hilos/logs/view/node-1/${BATCH + 10}/agent-chat.log`,
+    )
+    expect(chosen).toEqual(before)
+  })
+
+  it('promises no archive without an available catalog and selected node', () => {
+    const picture = catalog()
+    expect(logViewerLatestBatchPath(null, selection())).toBeNull()
+    expect(
+      logViewerLatestBatchPath(catalog({ available: null }), selection()),
+    ).toBeNull()
+    expect(
+      logViewerLatestBatchPath(catalog({ available: false }), selection()),
+    ).toBeNull()
+    expect(
+      logViewerLatestBatchPath(picture, selection({ nodeId: 'unknown' })),
+    ).toBeNull()
+    expect(
+      logViewerLatestBatchPath(picture, selection({ nodeId: null })),
+    ).toBeNull()
+    picture.nodes[0].available = false
+    expect(logViewerLatestBatchPath(picture, selection())).toBeNull()
+  })
+
+  it('requires live and an archive belonging to the selected stream', () => {
+    const picture = catalog()
+    expect(
+      logViewerLatestBatchPath(picture, selection({ source: BATCH })),
+    ).toBeNull()
+    expect(
+      logViewerLatestBatchPath(picture, selection({ source: null })),
+    ).toBeNull()
+    expect(
+      logViewerLatestBatchPath(picture, selection({ stream: null })),
+    ).toBeNull()
+    expect(
+      logViewerLatestBatchPath(picture, selection({ stream: 'unknown.log' })),
+    ).toBeNull()
+    expect(
+      logViewerLatestBatchPath(
+        picture,
+        selection({ nodeId: 'node-2', stream: 'daemon.log' }),
+      ),
+    ).toBeNull()
+    picture.nodes[0].batches = []
+    expect(logViewerLatestBatchPath(picture, selection())).toBeNull()
+  })
 })
 
 describe('logViewerPaneState', () => {
@@ -795,6 +916,24 @@ describe('logViewerPaneState', () => {
       logViewerPaneState(catalog({ nodes: [] }), selection(), 0, true, false),
     ).toBe('empty')
   })
+
+  it.each([
+    null,
+    catalog({ available: null }),
+    catalog({ available: false }),
+    catalog({ nodes: [] }),
+    catalog(),
+  ])(
+    'keeps a concrete unreadable file answer ahead of catalog state',
+    (picture) => {
+      expect(logViewerPaneState(picture, selection(), 0, false, false)).toBe(
+        'missing',
+      )
+      expect(logViewerPaneState(picture, selection(), 1, false, false)).toBe(
+        'lines',
+      )
+    },
+  )
 
   it('answers for the file, and only then for the filter', () => {
     expect(
@@ -845,6 +984,36 @@ describe('logViewerPaneState', () => {
         false,
       ),
     ).toBe('unchosen')
+    expect(
+      logViewerPaneState(null, selection({ stream: null }), 0, false, false),
+    ).toBe('unknown')
+    expect(
+      logViewerPaneState(
+        catalog({ available: false }),
+        selection({ stream: null }),
+        0,
+        false,
+        false,
+      ),
+    ).toBe('unreadable')
+    expect(
+      logViewerPaneState(
+        catalog({ nodes: [] }),
+        selection({ stream: null }),
+        0,
+        false,
+        false,
+      ),
+    ).toBe('empty')
+    expect(
+      logViewerPaneState(
+        catalog(),
+        selection({ stream: null }),
+        0,
+        false,
+        false,
+      ),
+    ).toBe('unchosen')
   })
 })
 
@@ -884,6 +1053,172 @@ describe('createHilosLogViewer', () => {
     })
   })
 
+  it.each(['agent-chat.log', 'unknown.log'])(
+    'retains the explicit live stream %s through empty and late catalogs',
+    async (stream) => {
+      const path = `/hilos/logs/view/node-1/live/${stream}`
+      const { context, connection, actions, address } = viewer(path)
+      const view = createHilosLogViewer(context, address)
+      view.start()
+      const chosen = selection({ stream })
+      const requestId = actions.sent[0].requestId
+
+      expect(view.selection.get()).toEqual(chosen)
+      expect(logViewerStreamKeys(null, chosen)).toEqual([stream])
+      expect(view.busy.get()).toBe(true)
+      expect(view.readable.get()).toBe(true)
+      connection.sendCatalog(catalog({ nodes: [] }))
+      actions.answer(requestId, {
+        readable: false,
+        lines: [],
+        nextCursor: null,
+        hasMore: false,
+      })
+      await Promise.resolve()
+
+      expect(view.busy.get()).toBe(false)
+      expect(view.refusal.get()).toBeNull()
+      expect(
+        logViewerPaneState(
+          view.catalog.get(),
+          view.selection.get(),
+          view.rows.get().length,
+          view.readable.get(),
+          false,
+        ),
+      ).toBe('missing')
+      const picture = catalog()
+      connection.sendCatalog(picture)
+      expect(view.selection.get()).toEqual(chosen)
+      expect(logViewerStreamKeys(picture.nodes[0], chosen)).toEqual([
+        'worker-0.log',
+        stream,
+      ])
+      expect(picture).toEqual(catalog())
+      expect(logViewerStreamsOf(picture.nodes[0], 'live')).toEqual([
+        picture.nodes[0].streams[0],
+      ])
+      expect(view.followRequested.get()).toBe(true)
+      expect(view.following.get()).toBe(true)
+      expect(actions.sent).toHaveLength(1)
+      expect(address.written).toEqual([])
+      expect(logViewerPath(view.selection.get())).toBe(path)
+    },
+  )
+
+  it.each(['select', 'route'] as const)(
+    'does not carry a completed missing answer into a pending %s read',
+    async (navigation) => {
+      const { context, connection, actions, address } = viewer(
+        '/hilos/logs/view/node-1/live/agent-chat.log',
+      )
+      const view = createHilosLogViewer(context, address)
+      view.start()
+      connection.sendCatalog(catalog())
+      actions.answer(actions.sent.at(-1)?.requestId, {
+        readable: false,
+        lines: [],
+        nextCursor: null,
+        hasMore: false,
+      })
+      await Promise.resolve()
+      expect(view.readable.get()).toBe(false)
+      expect(view.busy.get()).toBe(false)
+
+      // Keep another A reply on the wire while the reader moves to B.
+      connection.reconnect()
+      const oldId = actions.sent.at(-1)?.requestId ?? ''
+      if (navigation === 'select') {
+        view.select({ stream: 'worker-0.log' })
+      } else {
+        address.navigate('/hilos/logs/view/node-1/live/worker-0.log')
+      }
+      const currentId = actions.sent.at(-1)?.requestId ?? ''
+      expect(view.selection.get()).toEqual(selection())
+      expect(view.busy.get()).toBe(true)
+      expect(view.readable.get()).toBe(true)
+      expect(view.refusal.get()).toBeNull()
+      expect(view.followRequested.get()).toBe(true)
+
+      actions.answer(oldId, {
+        readable: false,
+        lines: [],
+        nextCursor: 50,
+        hasMore: true,
+      })
+      connection.sendAppended({
+        followId: oldId,
+        lines: [wireLine('A must not land under B.')],
+      })
+      await Promise.resolve()
+      expect(view.busy.get()).toBe(true)
+      expect(view.readable.get()).toBe(true)
+      expect(view.rows.get()).toEqual([])
+      expect(view.hasMore.get()).toBe(false)
+      expect(view.following.get()).toBe(false)
+
+      actions.answer(currentId, {
+        readable: false,
+        lines: [],
+        nextCursor: null,
+        hasMore: false,
+      })
+      await Promise.resolve()
+      expect(view.busy.get()).toBe(false)
+      expect(view.readable.get()).toBe(false)
+      expect(view.following.get()).toBe(true)
+      expect(
+        logViewerPaneState(
+          view.catalog.get(),
+          view.selection.get(),
+          view.rows.get().length,
+          view.readable.get(),
+          false,
+        ),
+      ).toBe('missing')
+      expect(
+        logViewerLatestBatchPath(view.catalog.get(), view.selection.get()),
+      ).toBe(`/hilos/logs/view/node-1/${BATCH}/worker-0.log`)
+    },
+  )
+
+  it('opens a partial batch address without reading an arbitrary stream', () => {
+    const { context, connection, actions, address } = viewer(
+      `/hilos/logs/view/node-1/${BATCH}`,
+    )
+    const view = createHilosLogViewer(context, address)
+    view.start()
+    connection.sendCatalog(catalog())
+
+    expect(view.selection.get()).toEqual(
+      selection({ source: BATCH, stream: null }),
+    )
+    expect(actions.sent).toEqual([])
+    expect(address.written).toEqual([])
+  })
+
+  it('keeps a refusal of the selected file above an empty catalog', async () => {
+    const { context, connection, actions, address } = viewer(
+      '/hilos/logs/view/node-1/live/agent-chat.log',
+    )
+    const view = createHilosLogViewer(context, address)
+    view.start()
+    connection.sendCatalog(catalog({ nodes: [] }))
+    expect(view.busy.get()).toBe(true)
+
+    actions.refuse(actions.sent[0].requestId, 'The selected node is offline.')
+    await Promise.resolve()
+
+    expect(view.busy.get()).toBe(false)
+    expect(view.refusal.get()).toBe('The selected node is offline.')
+    expect(view.readable.get()).toBe(true)
+    expect(view.following.get()).toBe(false)
+    expect(view.followRequested.get()).toBe(true)
+    expect(view.selection.get()).toEqual(
+      selection({ stream: 'agent-chat.log' }),
+    )
+  })
+
   it('resolves an old standalone bookmark before reading the file', () => {
     const { context, connection, actions, address } = viewer(
       '/hilos/logs/view/-/live/daemon.log',
@@ -914,6 +1249,23 @@ describe('createHilosLogViewer', () => {
     expect(address.written).toEqual([
       '/hilos/logs/view/standalone/live/daemon.log',
     ])
+  })
+
+  it('resolves a partial legacy standalone address without choosing a stream', () => {
+    const { context, connection, actions, address } = viewer(
+      `/hilos/logs/view/-/${BATCH}`,
+    )
+    const view = createHilosLogViewer(context, address)
+    view.start()
+    connection.sendCatalog(
+      catalog({ clusterEnabled: false, nodes: [catalog().nodes[0]] }),
+    )
+
+    expect(view.selection.get()).toEqual(
+      selection({ source: BATCH, stream: null }),
+    )
+    expect(address.written).toEqual([`/hilos/logs/view/node-1/${BATCH}`])
+    expect(actions.sent).toEqual([])
   })
 
   it('reads a configured standalone node whose real id is the legacy dash', () => {
@@ -993,12 +1345,56 @@ describe('createHilosLogViewer', () => {
     expect(view.selection.get().stream).toBe('worker-0.log')
   })
 
+  it('keeps an archive-only stream when returning to live on the same node', () => {
+    const { context, connection, actions, address } = viewer(
+      `/hilos/logs/view/node-1/${BATCH}/agent-chat.log`,
+    )
+    const view = createHilosLogViewer(context, address)
+    view.start()
+    connection.sendCatalog(catalog())
+
+    view.select({ source: 'live' })
+
+    expect(view.selection.get()).toEqual(
+      selection({ stream: 'agent-chat.log' }),
+    )
+    expect(view.followRequested.get()).toBe(true)
+    expect(actions.sent.at(-1)?.action).toBe(LOGS_FOLLOW_START_ACTION)
+    expect(actions.lastRead().stream).toBe('agent-chat.log')
+    expect(address.written).toEqual([
+      '/hilos/logs/view/node-1/live/agent-chat.log',
+    ])
+  })
+
+  it('requires the new destination to offer the stream on another node or batch', () => {
+    const { context, connection, actions, address } = viewer(
+      `/hilos/logs/view/node-1/${BATCH}/agent-chat.log`,
+    )
+    const view = createHilosLogViewer(context, address)
+    view.start()
+    connection.sendCatalog(catalog())
+
+    view.select({ source: BATCH + 1 })
+    expect(view.selection.get()).toEqual(
+      selection({ source: BATCH + 1, stream: null }),
+    )
+    address.navigate(`/hilos/logs/view/node-1/${BATCH}/agent-chat.log`)
+    view.select({ nodeId: 'node-2', source: 'live' })
+    expect(view.selection.get()).toEqual(
+      selection({ nodeId: 'node-2', stream: null }),
+    )
+    expect(actions.sent).toHaveLength(2)
+    expect(address.written).toEqual([
+      `/hilos/logs/view/node-1/${BATCH + 1}`,
+      '/hilos/logs/view/node-2/live',
+    ])
+  })
+
   it('drops the stream when the new source does not have it, and keeps the rest', () => {
     // The same name in another place is another file, and one that is not there
     // at all cannot be opened: leaving it chosen would name nothing. What must
-    // NOT go with it is the choice that caused the drop — a half-made choice
-    // writes the bare address, and reading that echo back would undo the node
-    // the operator had just picked.
+    // NOT go with it is the choice that caused the drop — the partial address
+    // and its own echo must keep the node the operator had just picked.
     const { context, connection, address } = viewer(
       '/hilos/logs/view/node-1/live/worker-0.log',
     )
@@ -1014,7 +1410,7 @@ describe('createHilosLogViewer', () => {
       stream: null,
       anchorAtMs: null,
     })
-    expect(address.written).toEqual(['/hilos/logs/view'])
+    expect(address.written).toEqual(['/hilos/logs/view/node-2/live'])
   })
 
   it('drops a reply for the file it has moved off', async () => {
@@ -1057,6 +1453,30 @@ describe('createHilosLogViewer', () => {
       stream: 'daemon.log',
       anchorAtMs: null,
     })
+  })
+
+  it('follows Back and Forward between a complete and a partial address', () => {
+    const path = '/hilos/logs/view/node-1/live/agent-chat.log'
+    const { context, connection, actions, address } = viewer(path)
+    const view = createHilosLogViewer(context, address)
+    view.start()
+    connection.sendCatalog(catalog())
+
+    view.select({ nodeId: 'node-2' })
+    expect(actions.sent).toHaveLength(1)
+    expect(view.selection.get()).toEqual(
+      selection({ nodeId: 'node-2', stream: null }),
+    )
+    address.navigate(path)
+    expect(view.selection.get()).toEqual(
+      selection({ stream: 'agent-chat.log' }),
+    )
+    expect(actions.sent).toHaveLength(2)
+    address.navigate('/hilos/logs/view/node-2/live')
+    expect(view.selection.get()).toEqual(
+      selection({ nodeId: 'node-2', stream: null }),
+    )
+    expect(actions.sent).toHaveLength(2)
   })
 
   it('asks the server for the level and the substring rather than filtering', () => {
@@ -1197,6 +1617,51 @@ describe('the live tail', () => {
       substring: null,
     })
     expect(followId).not.toBe('')
+  })
+
+  it('receives the first line of a missing live file and drops frames after leaving it', async () => {
+    const { view, actions, address, connection, followId } = following(
+      '/hilos/logs/view/node-1/live/agent-chat.log',
+    )
+    connection.sendCatalog(catalog({ nodes: [] }))
+    expect(view.busy.get()).toBe(true)
+    actions.answer(followId, {
+      readable: false,
+      lines: [],
+      nextCursor: null,
+      hasMore: false,
+    })
+    await Promise.resolve()
+    expect(view.busy.get()).toBe(false)
+    expect(view.readable.get()).toBe(false)
+    expect(view.following.get()).toBe(true)
+    expect(view.followRequested.get()).toBe(true)
+
+    connection.sendAppended({ followId, lines: [wireLine('First entry')] })
+
+    expect(asEntry(view.rows.get()[0]).text).toBe('First entry')
+    expect(
+      logViewerPaneState(
+        view.catalog.get(),
+        view.selection.get(),
+        view.rows.get().length,
+        view.readable.get(),
+        false,
+      ),
+    ).toBe('lines')
+    expect(actions.sent).toHaveLength(1)
+    expect(address.written).toEqual([])
+    expect(view.selection.get()).toEqual(
+      selection({ stream: 'agent-chat.log' }),
+    )
+
+    view.select({ nodeId: 'node-2' })
+    connection.sendAppended({ followId, lines: [wireLine('Too late')] })
+    expect(view.rows.get()).toEqual([])
+    expect(actions.sent).toHaveLength(1)
+    expect(connection.sent).toEqual([
+      { action: LOGS_FOLLOW_STOP_ACTION, data: { nodeId: 'node-1' } },
+    ])
   })
 
   it('replaces the running tail with a new start when the level changes', () => {

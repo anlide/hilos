@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
   ActionLifecycle,
+  HILOS_ROUTE_DECLARATIONS,
   HIDDEN_VALUE,
   ScopeManager,
   bindAdminAccess,
@@ -10,13 +11,15 @@ import {
   LOG_LINES_APPENDED_SIGNAL,
   LOG_VIEWER_CATALOG_SIGNAL,
   LOGS_FOLLOW_START_ACTION,
+  LOGS_READ_LINES_ACTION,
+  createPageRouter,
   createSignal,
 } from '@hilos/core'
 import type {
+  Hideable,
   HilosConnection,
   HilosLogViewerCatalog,
   HilosRouter,
-  PageRouteMatch,
   ProjectSignal,
 } from '@hilos/core'
 
@@ -25,6 +28,8 @@ import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
 /** Any fixed batch, so a timestamp in a fixture means something to read. */
 const BATCH = 1800000000
+
+const LATEST_BATCH = BATCH + 200
 
 const releases: (() => void)[] = []
 
@@ -122,14 +127,31 @@ function clusterCatalog(): HilosLogViewerCatalog {
   }
 }
 
+/** A named node with an archived stream and an unsorted batch catalog. */
+function archivedStreamCatalog(): HilosLogViewerCatalog {
+  const picture = catalog({ clusterEnabled: true })
+  const node = picture.nodes[0]
+  node.nodeId = 'node-2'
+  node.batches = [LATEST_BATCH, BATCH]
+  node.streams[1].batchTimestamps = [BATCH, LATEST_BATCH + 100, LATEST_BATCH]
+  picture.nodes.push(clusterCatalog().nodes[0])
+
+  return picture
+}
+
 function router(params: Record<string, string> = {}): HilosRouter {
+  const routes = createPageRouter(HILOS_ROUTE_DECLARATIONS)
+  const path = routes.path(HilosPages.LOGS_VIEW, params) ?? ''
+  const currentRoute = createSignal(routes.match(path))
+  const currentPath = createSignal(path)
+  const publish = (nextPath: string): void => {
+    currentRoute.set(routes.match(nextPath))
+    currentPath.set(nextPath)
+  }
+
   return {
-    currentRoute: createSignal<PageRouteMatch>({
-      page: HilosPages.LOGS_VIEW,
-      params,
-      admin: true,
-    }),
-    currentPath: createSignal(''),
+    currentRoute,
+    currentPath,
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
@@ -140,8 +162,8 @@ function router(params: Record<string, string> = {}): HilosRouter {
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
     onLeave: () => () => {},
-    navigate: () => {},
-    replacePath: () => {},
+    navigate: publish,
+    replacePath: publish,
     start: () => {},
     stop: () => {},
   }
@@ -152,7 +174,7 @@ interface AppendedFrame {
   followId: string
   lines: {
     time: string | null
-    text: string
+    text: Hideable<string>
     level: string
     isContinuation: boolean
   }[]
@@ -172,6 +194,7 @@ function makeConnection(): {
   pushCatalog: (frame: HilosLogViewerCatalog) => void
   pushAppended: (frame: Partial<AppendedFrame> & { followId: string }) => void
   answer: (requestId: string | undefined, reply: unknown) => void
+  refuse: (requestId: string | undefined, reason: string) => void
 } {
   const listeners: Record<string, ((signal: never) => void)[]> = {}
   const sent: { action: string; data: unknown; requestId?: string }[] = []
@@ -213,10 +236,19 @@ function makeConnection(): {
         },
       })
     },
+    refuse(requestId: string | undefined, reason: string): void {
+      emit('actionError', {
+        kind: 'actionError',
+        action: sent.find((frame) => frame.requestId === requestId)?.action,
+        reason,
+        requestId,
+        envelope: { type: 'action_error', data: {} },
+      })
+    },
     answer(requestId: string | undefined, reply: unknown): void {
       emit('actionSuccess', {
         kind: 'actionSuccess',
-        action: LOGS_FOLLOW_START_ACTION,
+        action: sent.find((frame) => frame.requestId === requestId)?.action,
         message: undefined,
         reply,
         requestId,
@@ -228,6 +260,13 @@ function makeConnection(): {
 
 /** The address of the live file every follow test opens. */
 const LIVE_FILE = { nodeId: '-', source: 'live', stream: 'worker-0.log' }
+
+/** A full live address whose stream initially exists only in the archive. */
+const ARCHIVED_LIVE_FILE = {
+  nodeId: 'node-2',
+  source: 'live',
+  stream: 'agent-chat.log',
+}
 
 /** One line as it comes off the wire. */
 function wireLine(text: string, level = 'INFO', isContinuation = false) {
@@ -251,9 +290,10 @@ function wireLine(text: string, level = 'INFO', isContinuation = false) {
 function mountPage(
   connection: HilosConnection,
   params: Record<string, string> = {},
+  navigator: HilosRouter = router(params),
 ): HTMLElement {
   return render(
-    <HilosRouterContext.Provider value={router(params)}>
+    <HilosRouterContext.Provider value={navigator}>
       <HilosLogsViewPage
         context={{
           connection,
@@ -459,8 +499,8 @@ describe('HilosLogsViewPage', () => {
     ])
   })
 
-  it('drops the stream when the new source does not hold it', () => {
-    const { connection, pushCatalog } = makeConnection()
+  it('keeps the stream when returning to live without its file', () => {
+    const { connection, pushCatalog, sent } = makeConnection()
     const container = mountPage(connection, {
       nodeId: '-',
       source: String(BATCH),
@@ -472,9 +512,454 @@ describe('HilosLogsViewPage', () => {
       target: { value: 'live' },
     })
 
-    // The file is not in the live journal, so it stops being chosen rather than
-    // staying selected and naming nothing.
+    // Returning to live keeps the explicit stream and starts its tail even
+    // before that live file exists.
+    expect(byId(container, 'hilos-log-empty-unchosen')).toBeNull()
+    expect(sent.at(-1)?.action).toBe(LOGS_FOLLOW_START_ACTION)
+    expect(sent.at(-1)?.data).toEqual({
+      nodeId: 'standalone',
+      stream: 'agent-chat.log',
+      level: null,
+      substring: null,
+    })
+    expect(
+      (byId(container, 'hilos-log-stream') as HTMLSelectElement).value,
+    ).toBe('agent-chat.log')
+  })
+
+  it.each([true, false])(
+    'keeps the missing live name selected with known archive=%s',
+    async (hasArchive) => {
+      const { connection, pushCatalog, sent, answer } = makeConnection()
+      const navigator = router(ARCHIVED_LIVE_FILE)
+      const navigate = vi.spyOn(navigator, 'navigate')
+      const replace = vi.spyOn(navigator, 'replacePath')
+      const container = mountPage(connection, {}, navigator)
+      const picture = archivedStreamCatalog()
+      if (!hasArchive) {
+        picture.nodes[0].batches = []
+        picture.nodes[0].streams[1].batchTimestamps = []
+      }
+      pushCatalog(picture)
+      answer(sent.at(-1)?.requestId, {
+        readable: false,
+        lines: [],
+        nextCursor: null,
+        hasMore: false,
+      })
+      await settled()
+
+      const stream = byId(container, 'hilos-log-stream') as HTMLSelectElement
+      expect(stream.value).toBe('agent-chat.log')
+      expect(optionValues(stream)).toEqual([
+        '',
+        'worker-0.log',
+        'agent-chat.log',
+      ])
+      expect(
+        byId(container, 'hilos-log-empty-missing')?.textContent?.trim(),
+      ).toBe(
+        'This file cannot be read. The rotation may have carried it off, or nothing has written to it yet.' +
+          (hasArchive ? ' Open latest batch' : ''),
+      )
+      expect(byId(container, 'hilos-log-latest-batch') !== null).toBe(
+        hasArchive,
+      )
+      expect(byId(container, 'hilos-log-empty-unchosen')).toBeNull()
+      expect(
+        (byId(container, 'hilos-log-source') as HTMLSelectElement).value,
+      ).toBe('live')
+      expect(navigator.currentPath.get()).toBe(
+        '/hilos/logs/view/node-2/live/agent-chat.log',
+      )
+      expect(navigate).not.toHaveBeenCalled()
+      expect(replace).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([false, true])(
+    'opens the latest batch only on a link click (view mode: %s)',
+    async (viewMode) => {
+      if (viewMode) bindViewerSession()
+      const { connection, pushCatalog, sent, answer } = makeConnection()
+      const navigator = router(ARCHIVED_LIVE_FILE)
+      const navigate = vi.spyOn(navigator, 'navigate')
+      const replace = vi.spyOn(navigator, 'replacePath')
+      const container = mountPage(connection, {}, navigator)
+      const livePath = '/hilos/logs/view/node-2/live/agent-chat.log'
+      pushCatalog(archivedStreamCatalog())
+      answer(sent.at(-1)?.requestId, {
+        readable: false,
+        lines: [],
+        nextCursor: null,
+        hasMore: false,
+      })
+      await settled()
+
+      expect(
+        (byId(container, 'hilos-log-stream') as HTMLSelectElement).value,
+      ).toBe('agent-chat.log')
+      expect(byId(container, 'hilos-log-empty-missing')).not.toBeNull()
+      expect(byId(container, 'hilos-log-empty-unchosen')).toBeNull()
+      const link = byId(
+        container,
+        'hilos-log-latest-batch',
+      ) as HTMLAnchorElement
+      const batchPath = `/hilos/logs/view/node-2/${LATEST_BATCH}/agent-chat.log`
+      expect(link.tagName).toBe('A')
+      expect(link.textContent).toBe('Open latest batch')
+      expect(link.getAttribute('href')).toBe(batchPath)
+      expect(link.getAttribute('aria-disabled')).toBeNull()
+      expect(link.tabIndex).toBe(0)
+      expect(navigate).not.toHaveBeenCalled()
+      expect(replace).not.toHaveBeenCalled()
+      expect(navigator.currentPath.get()).toBe(livePath)
+
+      fireEvent.click(link, { button: 0 })
+      await settled()
+
+      expect(navigate).toHaveBeenCalledExactlyOnceWith(batchPath)
+      expect(navigator.currentPath.get()).toBe(batchPath)
+      const source = byId(container, 'hilos-log-source') as HTMLSelectElement
+      expect(source.value).toBe(String(LATEST_BATCH))
+      expect(source.selectedOptions[0].textContent).toBe(
+        `Batch — ${new Date(LATEST_BATCH * 1000).toLocaleString()}`,
+      )
+      expect(sent.at(-1)?.action).toBe(LOGS_READ_LINES_ACTION)
+      expect(sent.at(-1)?.data).toMatchObject({
+        nodeId: 'node-2',
+        source: 'batch',
+        batchTimestamp: LATEST_BATCH,
+        stream: 'agent-chat.log',
+      })
+      expect(
+        (byId(container, 'hilos-log-follow') as HTMLInputElement).disabled,
+      ).toBe(true)
+      expect(
+        sent.filter((frame) => frame.action === LOGS_FOLLOW_START_ACTION),
+      ).toHaveLength(1)
+      expect(byId(container, 'hilos-log-latest-batch')).toBeNull()
+
+      answer(sent.at(-1)?.requestId, {
+        readable: true,
+        lines: [
+          {
+            time: null,
+            text: viewMode ? HIDDEN_VALUE : 'Archived line.',
+            level: 'INFO',
+            isContinuation: false,
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+      })
+      await settled()
+      if (viewMode) {
+        expect(byId(container, 'hilos-hidden')).not.toBeNull()
+        expect(container.textContent).not.toContain('Archived line.')
+        for (const id of ['hilos-log-substring', 'hilos-log-search']) {
+          expect(byId(container, id)?.hasAttribute('disabled')).toBe(true)
+        }
+      } else {
+        expect(byId(container, 'hilos-log-entry')?.textContent).toContain(
+          'Archived line.',
+        )
+      }
+
+      fireEvent.change(source, { target: { value: 'live' } })
+      expect(
+        (byId(container, 'hilos-log-stream') as HTMLSelectElement).value,
+      ).toBe('agent-chat.log')
+      expect(source.value).toBe('live')
+      expect(navigator.currentPath.get()).toBe(livePath)
+      expect(sent.at(-1)?.action).toBe(LOGS_FOLLOW_START_ACTION)
+      expect(sent.at(-1)?.data).toMatchObject({
+        nodeId: 'node-2',
+        stream: 'agent-chat.log',
+      })
+    },
+  )
+
+  it('keeps a full unknown stream through a late catalog without guessing a file', async () => {
+    const { connection, pushCatalog, sent, answer } = makeConnection()
+    const navigator = router({ ...ARCHIVED_LIVE_FILE, stream: 'unknown.log' })
+    const navigate = vi.spyOn(navigator, 'navigate')
+    const replace = vi.spyOn(navigator, 'replacePath')
+    const container = mountPage(connection, {}, navigator)
+    const stream = byId(container, 'hilos-log-stream') as HTMLSelectElement
+    expect(stream.value).toBe('unknown.log')
+    answer(sent.at(-1)?.requestId, {
+      readable: false,
+      lines: [],
+      nextCursor: null,
+      hasMore: false,
+    })
+    await settled()
+    expect(byId(container, 'hilos-log-empty-missing')).not.toBeNull()
+
+    pushCatalog(archivedStreamCatalog())
+
+    expect(stream.value).toBe('unknown.log')
+    expect(optionValues(stream)).toEqual(['', 'worker-0.log', 'unknown.log'])
+    expect(byId(container, 'hilos-log-empty-missing')).not.toBeNull()
+    expect(byId(container, 'hilos-log-empty-unchosen')).toBeNull()
+    expect(byId(container, 'hilos-log-latest-batch')).toBeNull()
+    expect(navigate).not.toHaveBeenCalled()
+    expect(replace).not.toHaveBeenCalled()
+  })
+
+  it.each([false, true])(
+    'restores live lines after a late catalog without duplicate options in view mode=%s',
+    async (viewMode) => {
+      if (viewMode) bindViewerSession()
+      const { connection, pushCatalog, pushAppended, sent, answer } =
+        makeConnection()
+      const navigator = router(ARCHIVED_LIVE_FILE)
+      const navigate = vi.spyOn(navigator, 'navigate')
+      const replace = vi.spyOn(navigator, 'replacePath')
+      const container = mountPage(connection, {}, navigator)
+      const followId = sent.at(-1)?.requestId ?? ''
+      const stream = byId(container, 'hilos-log-stream') as HTMLSelectElement
+      expect(stream.value).toBe('agent-chat.log')
+      answer(followId, {
+        readable: false,
+        lines: [],
+        nextCursor: null,
+        hasMore: false,
+      })
+      await settled()
+
+      expect(byId(container, 'hilos-log-latest-batch')).toBeNull()
+      pushCatalog(archivedStreamCatalog())
+      expect(byId(container, 'hilos-log-empty-missing')).not.toBeNull()
+      expect(byId(container, 'hilos-log-empty-unchosen')).toBeNull()
+      expect(stream.value).toBe('agent-chat.log')
+      expect(
+        byId(container, 'hilos-log-latest-batch')?.getAttribute('href'),
+      ).toBe(`/hilos/logs/view/node-2/${LATEST_BATCH}/agent-chat.log`)
+      expect(navigator.currentPath.get()).toBe(
+        '/hilos/logs/view/node-2/live/agent-chat.log',
+      )
+      expect(navigate).not.toHaveBeenCalled()
+      expect(replace).not.toHaveBeenCalled()
+
+      const livePicture = archivedStreamCatalog()
+      livePicture.nodes[0].streams[1].live = true
+      pushCatalog(livePicture)
+      const line = wireLine('The live file now exists.')
+      pushAppended({
+        followId,
+        lines: [{ ...line, text: viewMode ? HIDDEN_VALUE : line.text }],
+      })
+
+      expect(stream.value).toBe('agent-chat.log')
+      expect(optionValues(stream)).toEqual([
+        '',
+        'worker-0.log',
+        'agent-chat.log',
+      ])
+      const entry = byId(container, 'hilos-log-entry')
+      expect(entry).not.toBeNull()
+      if (viewMode) {
+        expect(entry?.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+        expect(
+          byId(container, 'hilos-log-substring')?.hasAttribute('disabled'),
+        ).toBe(true)
+        expect(
+          byId(container, 'hilos-log-search')?.hasAttribute('disabled'),
+        ).toBe(true)
+      } else {
+        expect(entry?.textContent).toContain('The live file now exists.')
+      }
+      expect(byId(container, 'hilos-log-empty-missing')).toBeNull()
+      expect(byId(container, 'hilos-log-latest-batch')).toBeNull()
+      expect(navigate).not.toHaveBeenCalled()
+      expect(replace).not.toHaveBeenCalled()
+      expect(
+        sent.filter((frame) => frame.action === LOGS_FOLLOW_START_ACTION),
+      ).toHaveLength(1)
+    },
+  )
+
+  describe.each(['select', 'route'] as const)(
+    'after a missing file, %s',
+    (navigation) => {
+      it.each(['lines', 'silent', 'missing', 'refusal'] as const)(
+        'waits for the selected file before showing its %s outcome',
+        async (outcome) => {
+          const {
+            connection,
+            pushCatalog,
+            pushAppended,
+            sent,
+            answer,
+            refuse,
+          } = makeConnection()
+          const navigator = router(ARCHIVED_LIVE_FILE)
+          const container = mountPage(connection, {}, navigator)
+          pushCatalog(archivedStreamCatalog())
+          const oldId = sent.at(-1)?.requestId ?? ''
+          answer(oldId, {
+            readable: false,
+            lines: [],
+            nextCursor: null,
+            hasMore: false,
+          })
+          await settled()
+          expect(byId(container, 'hilos-log-empty-missing')).not.toBeNull()
+          expect(
+            byId(container, 'hilos-log-latest-batch')?.getAttribute('href'),
+          ).toBe(`/hilos/logs/view/node-2/${LATEST_BATCH}/agent-chat.log`)
+
+          if (navigation === 'select') {
+            fireEvent.change(byId(container, 'hilos-log-stream')!, {
+              target: { value: 'worker-0.log' },
+            })
+          } else {
+            act(() =>
+              navigator.navigate('/hilos/logs/view/node-2/live/worker-0.log'),
+            )
+          }
+          const currentId = sent.at(-1)?.requestId ?? ''
+          expect(currentId).not.toBe(oldId)
+          expect(sent.at(-1)?.action).toBe(LOGS_FOLLOW_START_ACTION)
+          expect(
+            (byId(container, 'hilos-log-node') as HTMLSelectElement).value,
+          ).toBe('node-2')
+          expect(
+            (byId(container, 'hilos-log-source') as HTMLSelectElement).value,
+          ).toBe('live')
+          expect(
+            (byId(container, 'hilos-log-stream') as HTMLSelectElement).value,
+          ).toBe('worker-0.log')
+          expect(
+            (byId(container, 'hilos-log-follow') as HTMLInputElement).checked,
+          ).toBe(true)
+          expect(
+            byId(container, 'hilos-log-earlier')?.hasAttribute('disabled'),
+          ).toBe(true)
+          for (const id of [
+            'hilos-log-empty-missing',
+            'hilos-log-latest-batch',
+            'hilos-log-refusal',
+          ]) {
+            expect(byId(container, id)).toBeNull()
+          }
+
+          pushAppended({
+            followId: oldId,
+            lines: [wireLine('Old file frame.')],
+          })
+          expect(byId(container, 'hilos-log-entry')).toBeNull()
+          if (outcome === 'refusal') {
+            refuse(currentId, 'The selected node is offline.')
+          } else {
+            answer(currentId, {
+              readable: outcome !== 'missing',
+              lines:
+                outcome === 'lines' ? [wireLine('Selected file line.')] : [],
+              nextCursor: outcome === 'lines' ? 100 : null,
+              hasMore: outcome === 'lines',
+            })
+          }
+          await settled()
+          expect(
+            (byId(container, 'hilos-log-stream') as HTMLSelectElement).value,
+          ).toBe('worker-0.log')
+          expect(byId(container, 'hilos-log-empty-missing') !== null).toBe(
+            outcome === 'missing',
+          )
+          expect(byId(container, 'hilos-log-latest-batch') !== null).toBe(
+            outcome === 'missing',
+          )
+          expect(byId(container, 'hilos-log-refusal') !== null).toBe(
+            outcome === 'refusal',
+          )
+          if (outcome === 'missing') {
+            expect(
+              byId(container, 'hilos-log-latest-batch')?.getAttribute('href'),
+            ).toBe(`/hilos/logs/view/node-2/${BATCH}/worker-0.log`)
+          } else if (outcome === 'refusal') {
+            expect(
+              byId(container, 'hilos-log-refusal')?.textContent?.trim(),
+            ).toBe('The selected node is offline.')
+          } else if (outcome === 'lines') {
+            expect(byId(container, 'hilos-log-entry')?.textContent).toContain(
+              'Selected file line.',
+            )
+            expect(
+              byId(container, 'hilos-log-earlier')?.hasAttribute('disabled'),
+            ).toBe(false)
+          } else {
+            expect(byId(container, 'hilos-log-empty-silent')).not.toBeNull()
+          }
+          expect(container.textContent).not.toContain('Old file frame.')
+        },
+      )
+    },
+  )
+
+  it('keeps node and batch without guessing a stream on a partial URL', () => {
+    const { connection, pushCatalog, sent } = makeConnection()
+    const navigator = router({ nodeId: 'node-2', source: String(BATCH) })
+    const container = mountPage(connection, {}, navigator)
+    pushCatalog(archivedStreamCatalog())
+
+    expect(navigator.currentPath.get()).toBe(
+      '/hilos/logs/view/node-2/1800000000',
+    )
+    expect(
+      (byId(container, 'hilos-log-source') as HTMLSelectElement).value,
+    ).toBe(String(BATCH))
+    expect(
+      (byId(container, 'hilos-log-stream') as HTMLSelectElement).value,
+    ).toBe('')
     expect(byId(container, 'hilos-log-empty-unchosen')).not.toBeNull()
+    expect(byId(container, 'hilos-log-latest-batch')).toBeNull()
+    expect(sent).toEqual([])
+  })
+
+  it('marks a vanished selected batch unavailable until it returns without duplicates', async () => {
+    const { connection, pushCatalog, sent, answer } = makeConnection()
+    const container = mountPage(connection, {
+      ...ARCHIVED_LIVE_FILE,
+      source: String(BATCH),
+    })
+    pushCatalog(archivedStreamCatalog())
+    const source = byId(container, 'hilos-log-source') as HTMLSelectElement
+    expect(source.value).toBe(String(BATCH))
+    expect(source.selectedOptions[0].textContent).not.toContain('unavailable')
+
+    const nextPicture = archivedStreamCatalog()
+    nextPicture.nodes[0].batches = [LATEST_BATCH]
+    nextPicture.nodes[0].streams[1].batchTimestamps = [LATEST_BATCH]
+    pushCatalog(nextPicture)
+    answer(sent.at(-1)?.requestId, {
+      readable: false,
+      lines: [],
+      nextCursor: null,
+      hasMore: false,
+    })
+    await settled()
+
+    expect(source.value).toBe(String(BATCH))
+    expect(source.querySelectorAll(`option[value="${BATCH}"]`)).toHaveLength(1)
+    expect(source.selectedOptions[0].textContent).toBe(
+      `Batch — ${new Date(BATCH * 1000).toLocaleString()} (unavailable)`,
+    )
+    expect(
+      (byId(container, 'hilos-log-stream') as HTMLSelectElement).value,
+    ).toBe('agent-chat.log')
+    expect(byId(container, 'hilos-log-empty-missing')).not.toBeNull()
+    expect(byId(container, 'hilos-log-latest-batch')).toBeNull()
+
+    pushCatalog(archivedStreamCatalog())
+
+    expect(source.value).toBe(String(BATCH))
+    expect(source.querySelectorAll(`option[value="${BATCH}"]`)).toHaveLength(1)
+    expect(source.selectedOptions[0].textContent).toBe(
+      `Batch — ${new Date(BATCH * 1000).toLocaleString()}`,
+    )
   })
 
   it('keeps the Earlier button dark until there is a page before this one', () => {

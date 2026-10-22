@@ -389,6 +389,25 @@ recorded where the person waiting cannot see it. An unreadable file is not such
 a failure — a missing file, a batch carried off, a refused path all come back as
 a successful page with `readable` false, the way the whole index answers.
 
+An explicit viewer address keeps its node, source and stream when the named
+file is absent from the latest catalog. Once that read completes, an unreadable
+fully named choice is shown as missing even if the catalog is empty; a partial
+address with only a node and source waits for the operator to choose a stream.
+The stream and batch selectors retain an explicitly chosen name as unavailable
+when it disappears, without claiming that the file still exists. A missing
+live choice stays live; the viewer never substitutes an archive, and a follow
+the operator turned off stays off.
+
+When a missing live choice has a known archive, the viewer offers a separate
+*Open latest batch* link. It uses the newest batch listed for that stream and
+that same available node, and clears the live anchor. The link appears only
+when that matching batch is known; following it is an explicit navigation, so
+the live address remains unchanged until chosen. Returning from a batch to
+live on the same node keeps the stream name even when its live file is absent.
+Other nodes or batches keep the name only when that destination offers it. A
+vanished selected batch remains an unavailable choice rather than silently
+changing the address.
+
 An ordinary read runs backwards: the first page and the *Earlier* button are
 the same tail query with and without a cursor. The one forward read is a read
 opened on an **anchor** (HIL-868) — the unix milliseconds of an entry, which is

@@ -28,10 +28,11 @@ import {
   hasLogViewerNodes,
   isLogViewerPinned,
   logLevelVariant,
+  logViewerLatestBatchPath,
   logViewerNodeOf,
   logViewerPaneState,
   logViewerPendingLabel,
-  logViewerStreamsOf,
+  logViewerStreamKeys,
   HILOS_LOG_LEVEL_OPTIONS,
   LOG_SOURCE_LIVE,
   LOG_VIEWER_PENDING_WIDEST_LABEL,
@@ -59,6 +60,7 @@ import {
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosHideable from '../../HilosHideable.vue'
+import HilosLink from '../../HilosLink.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import { useSignal } from '../../useSignal.js'
 
@@ -112,8 +114,9 @@ const clustered = computed(() => hasLogViewerNodes(catalog.value))
 const node = computed(() =>
   logViewerNodeOf(catalog.value, selection.value.nodeId),
 )
-const streams = computed(() =>
-  logViewerStreamsOf(node.value, selection.value.source),
+const streams = computed(() => logViewerStreamKeys(node.value, selection.value))
+const latestBatchPath = computed(() =>
+  logViewerLatestBatchPath(catalog.value, selection.value),
 )
 
 // Which state the pane is in — the discrimination is the headless's, because it
@@ -139,6 +142,12 @@ const entryCount = computed(
 // Newest batch first: an operator opening the archive is looking for what just
 // happened far more often than for what happened last month.
 const batches = computed(() => [...(node.value?.batches ?? [])].reverse())
+const unavailableBatch = computed(() =>
+  typeof selection.value.source === 'number' &&
+  !batches.value.includes(selection.value.source)
+    ? selection.value.source
+    : null,
+)
 
 /** The value the source select carries for one choice. */
 function sourceValue(source: typeof LOG_SOURCE_LIVE | number | null): string {
@@ -282,6 +291,9 @@ function toggle(entry: HilosLogViewerEntry): void {
             @change="onSource"
           >
             <option :value="LOG_SOURCE_LIVE">Live journal</option>
+            <option v-if="unavailableBatch !== null" :value="unavailableBatch">
+              Batch — {{ batchLabel(unavailableBatch) }} (unavailable)
+            </option>
             <option v-for="batch in batches" :key="batch" :value="batch">
               Batch — {{ batchLabel(batch) }}
             </option>
@@ -302,12 +314,8 @@ function toggle(entry: HilosLogViewerEntry): void {
             @change="onStream"
           >
             <option value="">Choose a stream</option>
-            <option
-              v-for="stream in streams"
-              :key="stream.key"
-              :value="stream.key"
-            >
-              {{ stream.key }}
+            <option v-for="stream in streams" :key="stream" :value="stream">
+              {{ stream }}
             </option>
           </select>
         </div>
@@ -531,6 +539,12 @@ function toggle(entry: HilosLogViewerEntry): void {
       >
         This file cannot be read. The rotation may have carried it off, or
         nothing has written to it yet.
+        <HilosLink
+          v-if="latestBatchPath !== null"
+          :to="latestBatchPath"
+          data-id="hilos-log-latest-batch"
+          >Open latest batch</HilosLink
+        >
       </p>
       <p
         v-else-if="paneState === 'nomatch'"

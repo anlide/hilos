@@ -353,29 +353,27 @@ export function readLogViewerAddress(
 /**
  * The address a selection resolves to.
  *
- * All three slots or none: the slots are positional, so a half-filled address
- * would name a different file rather than a partly known one. The level, the
- * substring and the byte cursor are deliberately absent — the first two change
- * every half minute, and the third stops meaning anything at the next rotation.
+ * A chosen node and source survive even before a stream is chosen; an anchor
+ * travels only with a stream. The level, the substring and the byte cursor are
+ * deliberately absent — the first two change every half minute, and the third
+ * stops meaning anything at the next rotation.
  * The place an entry was written at travels as its moment instead, which a
  * rotation does not take away.
  *
  * @param selection The file currently being read.
  */
 export function logViewerPath(selection: HilosLogViewerSelection): string {
-  if (
-    selection.nodeId === null ||
-    selection.source === null ||
-    selection.stream === null
-  ) {
+  if (selection.nodeId === null || selection.source === null) {
     return resolveHilosPath(HilosPages.LOGS_VIEW)
   }
 
   return resolveHilosPath(HilosPages.LOGS_VIEW, {
     [LOG_VIEWER_NODE_PARAM]: selection.nodeId,
     [LOG_VIEWER_SOURCE_PARAM]: String(selection.source),
-    [LOG_VIEWER_STREAM_PARAM]: selection.stream,
-    ...(selection.anchorAtMs === null
+    ...(selection.stream === null
+      ? {}
+      : { [LOG_VIEWER_STREAM_PARAM]: selection.stream }),
+    ...(selection.stream === null || selection.anchorAtMs === null
       ? {}
       : { [LOG_VIEWER_ANCHOR_PARAM]: String(selection.anchorAtMs) }),
   })
@@ -525,6 +523,64 @@ export function logViewerStreamsOf(
 }
 
 /**
+ * The stream names to display, including an explicit choice absent from the
+ * catalog. Offering that name does not claim that its file exists.
+ *
+ * @param node The chosen node, or null before its catalog arrives.
+ * @param selection The source and stream currently chosen.
+ */
+export function logViewerStreamKeys(
+  node: HilosLogViewerNode | null,
+  selection: HilosLogViewerSelection,
+): readonly string[] {
+  const keys = [
+    ...new Set(
+      logViewerStreamsOf(node, selection.source).map((stream) => stream.key),
+    ),
+  ]
+  if (selection.stream !== null && !keys.includes(selection.stream)) {
+    keys.push(selection.stream)
+  }
+
+  return keys
+}
+
+/**
+ * The latest available archive of the chosen live stream on its own node.
+ * Computing the link neither opens that archive nor changes the live choice.
+ *
+ * @param catalog The latest catalog, or null before the first one arrives.
+ * @param selection The live file currently chosen.
+ */
+export function logViewerLatestBatchPath(
+  catalog: HilosLogViewerCatalog | null,
+  selection: HilosLogViewerSelection,
+): string | null {
+  if (catalog?.available !== true || selection.source !== LOG_SOURCE_LIVE) {
+    return null
+  }
+
+  const node = logViewerNodeOf(catalog, selection.nodeId)
+  if (node?.available !== true) {
+    return null
+  }
+
+  const stream = node.streams.find((item) => item.key === selection.stream)
+  const batches = stream?.batchTimestamps.filter((timestamp) =>
+    node.batches.includes(timestamp),
+  )
+  if (batches === undefined || batches.length === 0) {
+    return null
+  }
+
+  return logViewerPath({
+    ...selection,
+    source: Math.max(...batches),
+    anchorAtMs: null,
+  })
+}
+
+/**
  * The node of the catalog a selection names, or null when the catalog has none.
  *
  * @param catalog The latest catalog, or null before the first one arrives.
@@ -573,11 +629,10 @@ export type HilosLogViewerPaneState =
  * apply: without a choice there can be no lines, and asking about the choice
  * first would make 'unchosen' unreachable behind a junk count.
  *
- * Otherwise the states of the CATALOG come first: a pane empty because no
- * picture arrived is empty for a reason that has nothing to do with the file or
- * the filter. Then the file - unchosen, or chosen and unreadable - and only then
- * the filter, which is the one state that means the read worked and found
- * nothing.
+ * A completed unreadable answer for a fully named file comes next, even when
+ * the catalog has no streams. Otherwise the catalog precedes the choice and
+ * filter. A fresh read clears the previous unreadable answer while it is
+ * pending; refusals have their own surface in the view and outrank this pane.
  *
  * @param catalog The latest catalog, or null before the first one arrives.
  * @param selection The file being read.
@@ -594,6 +649,14 @@ export function logViewerPaneState(
 ): HilosLogViewerPaneState {
   if (rowCount > 0 && selection.stream !== null) {
     return 'lines'
+  }
+  if (
+    selection.nodeId !== null &&
+    selection.source !== null &&
+    selection.stream !== null &&
+    !readable
+  ) {
+    return 'missing'
   }
   const state = logViewerCatalogState(catalog)
   if (state !== 'ready') {
@@ -849,9 +912,8 @@ export function createHilosLogViewer(
   // already moved off would otherwise land under the selects of another one.
   let generation = 0
   // The address this viewer itself last wrote, so its own echo is not read back
-  // as a navigation. A half-made choice resolves to the bare address, which
-  // carries LESS than the selection does - read back, it would throw away the
-  // node and the source the operator had just chosen.
+  // as a navigation. A choice still missing its node or source resolves to the
+  // bare address, which carries less than the selection does.
   let ownPath: string | null = null
 
   const publish = (items: readonly HilosLogViewerFeedItem[]): void => {
@@ -986,6 +1048,9 @@ export function createHilosLogViewer(
       followRequested.get()
     if (!older) {
       unfollow(!starts)
+      // An unreadable answer belongs to the completed read, never to the file
+      // or filter whose reply is now on its way. Keep Earlier's current pane.
+      readable.set(true)
     }
 
     generation += 1
@@ -1212,7 +1277,9 @@ export function createHilosLogViewer(
     }
     anchoredLineId = null
     selection.set(
-      change.stream === undefined ? withKeptStream(catalog.get(), next) : next,
+      change.stream === undefined
+        ? withKeptStream(catalog.get(), current, next)
+        : next,
     )
     ownPath = logViewerPath(selection.get())
     address.replacePath(ownPath)
@@ -1366,9 +1433,9 @@ export function createHilosLogViewer(
         }),
         // Back and forward move through addresses of this same page, so the
         // selection follows them. Rewriting our own address lands here too, and
-        // is skipped by the path rather than by comparing the selections: the
-        // address of a half-made choice is the bare one, which read back would
-        // undo the choice that produced it.
+        // is skipped by the path rather than by comparing the selections: a
+        // choice missing its node or source still writes the bare address,
+        // which read back would undo the choice that produced it.
         subscribeSignal(address.currentRoute, (route) => {
           const next = readLogViewerAddress(route.params)
           if (logViewerPath(next) === ownPath) {
@@ -1545,19 +1612,29 @@ function readAnchorSegment(segment: string): number | null {
 }
 
 /**
- * Keeps the chosen stream across a change of node or source when the new place
- * also holds it, and drops it when it does not.
+ * Keeps the chosen stream when returning to live on the same node, even when
+ * its live file is absent. Other destinations must offer the stream themselves.
  *
  * Dropping it is the honest answer: the same file name on another node is another
  * file, and one that is not in the new batch at all cannot be opened there.
  *
  * @param catalog The latest catalog, or null before the first one arrives.
+ * @param previous The selection before the node or source changed.
  * @param selection The selection with its new node or source already in it.
  */
 function withKeptStream(
   catalog: HilosLogViewerCatalog | null,
+  previous: HilosLogViewerSelection,
   selection: HilosLogViewerSelection,
 ): HilosLogViewerSelection {
+  if (
+    previous.nodeId === selection.nodeId &&
+    typeof previous.source === 'number' &&
+    selection.source === LOG_SOURCE_LIVE
+  ) {
+    return selection
+  }
+
   const streams = logViewerStreamsOf(
     logViewerNodeOf(catalog, selection.nodeId),
     selection.source,

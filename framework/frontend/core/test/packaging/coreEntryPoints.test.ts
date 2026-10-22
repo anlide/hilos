@@ -59,7 +59,13 @@ const timeZoneValues = [
   'readBrowserTimeZone',
   'resolveTimeZone',
 ]
-const expectedValues = [...legacy.value, ...timeZoneValues].sort()
+/** The viewer's new selectors, shared by the compatibility root and logs entry. */
+const logViewerValues = ['logViewerLatestBatchPath', 'logViewerStreamKeys']
+const expectedValues = [
+  ...legacy.value,
+  ...timeZoneValues,
+  ...logViewerValues,
+].sort()
 
 /**
  * Follow emitted ESM edges, so type-only imports never become fake runtime edges.

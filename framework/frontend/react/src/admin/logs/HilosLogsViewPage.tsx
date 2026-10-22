@@ -38,10 +38,11 @@ import {
   hasLogViewerNodes,
   isLogViewerPinned,
   logLevelVariant,
+  logViewerLatestBatchPath,
   logViewerNodeOf,
   logViewerPaneState,
   logViewerPendingLabel,
-  logViewerStreamsOf,
+  logViewerStreamKeys,
 } from '@hilos/core/admin/logs'
 import {
   HilosPages,
@@ -59,6 +60,7 @@ import type { PageRouteMatch } from '@hilos/core/base'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosHideable } from '../../HilosHideable.js'
+import { HilosLink } from '../../HilosLink.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
 import { useSignal } from '../../useSignal.js'
 
@@ -153,7 +155,8 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
   // option is furniture for a choice that does not exist.
   const clustered = hasLogViewerNodes(catalog)
   const node = logViewerNodeOf(catalog, selection.nodeId)
-  const streams = logViewerStreamsOf(node, selection.source)
+  const streams = logViewerStreamKeys(node, selection)
+  const latestBatchPath = logViewerLatestBatchPath(catalog, selection)
 
   // Which state the pane is in — the discrimination is the headless's, because it
   // is the same question in all three view frameworks. The count is of ROWS and
@@ -174,6 +177,10 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
   // Newest batch first: an operator opening the archive is looking for what just
   // happened far more often than for what happened last month.
   const batches = [...(node?.batches ?? [])].reverse()
+  const unavailableBatch =
+    typeof selection.source === 'number' && !batches.includes(selection.source)
+      ? selection.source
+      : null
 
   // The pane is the scrolling element, so it is the one whose position answers
   // "is the reader at the tail" — the threshold itself is the headless's, so that
@@ -284,6 +291,11 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
               }
             >
               <option value={LOG_SOURCE_LIVE}>Live journal</option>
+              {unavailableBatch !== null && (
+                <option value={unavailableBatch}>
+                  Batch — {batchLabel(unavailableBatch)} (unavailable)
+                </option>
+              )}
               {batches.map((batch) => (
                 <option key={batch} value={batch}>
                   Batch — {batchLabel(batch)}
@@ -311,8 +323,8 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
             >
               <option value="">Choose a stream</option>
               {streams.map((stream) => (
-                <option key={stream.key} value={stream.key}>
-                  {stream.key}
+                <option key={stream} value={stream}>
+                  {stream}
                 </option>
               ))}
             </select>
@@ -555,7 +567,12 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
             data-id="hilos-log-empty-missing"
           >
             This file cannot be read. The rotation may have carried it off, or
-            nothing has written to it yet.
+            nothing has written to it yet.{' '}
+            {latestBatchPath !== null && (
+              <HilosLink to={latestBatchPath} data-id="hilos-log-latest-batch">
+                Open latest batch
+              </HilosLink>
+            )}
           </p>
         ) : paneState === 'nomatch' ? (
           <p

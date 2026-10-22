@@ -915,10 +915,15 @@ test.describe('daemon node pages', () => {
         'href',
         /\/hilos\/logs\/view\/standalone\/live\/agent-/,
       )
+      const href = await log.getAttribute('href')
+      expect(href).not.toBeNull()
+      const stream = decodeURIComponent(
+        new URL(href ?? '', page.url()).pathname.split('/').at(-1) ?? '',
+      )
       await log.focus()
       await log.press('Enter')
       await expectDaemonPage(expect, page, 'hilos_logs_view')
-      await expect(page.getByTestId('hilos-log-stream')).not.toHaveValue('')
+      await expect(page.getByTestId('hilos-log-stream')).toHaveValue(stream)
       await page.goBack()
       await expectDaemonPage(expect, page, 'hilos_daemon_agents')
       await page.getByTestId(DAEMON_ROOT_CRUMB).click()

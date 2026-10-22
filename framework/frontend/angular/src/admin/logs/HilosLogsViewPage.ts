@@ -42,10 +42,11 @@ import {
   hasLogViewerNodes,
   isLogViewerPinned,
   logLevelVariant,
+  logViewerLatestBatchPath,
   logViewerNodeOf,
   logViewerPaneState,
   logViewerPendingLabel,
-  logViewerStreamsOf,
+  logViewerStreamKeys,
   readLogViewerAddress,
 } from '@hilos/core/admin/logs'
 import {
@@ -73,6 +74,7 @@ import type {
 import {
   HilosAdminPage,
   HilosHideable,
+  HilosLink,
   HILOS_ROUTER,
   hilosSignal,
 } from '@hilos/angular/base'
@@ -90,7 +92,7 @@ const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
 @Component({
   selector: 'hilos-logs-view-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosAdminPage, HilosHideable],
+  imports: [HilosAdminPage, HilosHideable, HilosLink],
   template: `
     <hilos-admin-page [page]="page">
       <div class="border rounded-3 p-3 mb-3">
@@ -143,6 +145,15 @@ const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
               <option [value]="live" [selected]="selection().source === live">
                 Live journal
               </option>
+              @let missingBatch = unavailableBatch();
+              @if (missingBatch !== null) {
+                <option
+                  [value]="missingBatch"
+                  [selected]="selection().source === missingBatch"
+                >
+                  Batch — {{ batchLabel(missingBatch) }} (unavailable)
+                </option>
+              }
               @for (batch of batches(); track batch) {
                 <option
                   [value]="batch"
@@ -169,12 +180,12 @@ const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
               <option value="" [selected]="(selection().stream ?? '') === ''">
                 Choose a stream
               </option>
-              @for (stream of streams(); track stream.key) {
+              @for (stream of streams(); track stream) {
                 <option
-                  [value]="stream.key"
-                  [selected]="stream.key === selection().stream"
+                  [value]="stream"
+                  [selected]="stream === selection().stream"
                 >
-                  {{ stream.key }}
+                  {{ stream }}
                 </option>
               }
             </select>
@@ -401,6 +412,11 @@ const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
           >
             This file cannot be read. The rotation may have carried it off, or
             nothing has written to it yet.
+            @if (latestBatchPath(); as path) {
+              <a [hilosLink]="path" data-id="hilos-log-latest-batch">
+                Open latest batch
+              </a>
+            }
           </p>
         } @else if (paneState() === 'nomatch') {
           <p
@@ -573,7 +589,10 @@ export class HilosLogsViewPage {
     logViewerNodeOf(this.catalog(), this.selection().nodeId),
   )
   protected readonly streams = computed(() =>
-    logViewerStreamsOf(this.node(), this.selection().source),
+    logViewerStreamKeys(this.node(), this.selection()),
+  )
+  protected readonly latestBatchPath = computed(() =>
+    logViewerLatestBatchPath(this.catalog(), this.selection()),
   )
 
   // Which state the pane is in — the discrimination is the headless's, because it
@@ -601,6 +620,12 @@ export class HilosLogsViewPage {
   protected readonly batches = computed(() =>
     [...(this.node()?.batches ?? [])].reverse(),
   )
+  protected readonly unavailableBatch = computed(() => {
+    const source = this.selection().source
+    return typeof source === 'number' && !this.batches().includes(source)
+      ? source
+      : null
+  })
 
   // Which stacks are open, by entry key. The key survives a page of older lines
   // arriving above, so an opened stack stays open when the pane grows upwards.

@@ -194,6 +194,8 @@ export {
   logViewerPath,
   logViewerNodeOf,
   logViewerStreamsOf,
+  logViewerStreamKeys,
+  logViewerLatestBatchPath,
   logViewerCatalogState,
   logViewerPaneState,
   logLevelVariant,
