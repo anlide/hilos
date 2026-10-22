@@ -40,6 +40,15 @@ not reach into the registry, and it does not list the collection among its reads
 in order to write it. What the declaration looks like is in *Interest And
 Ownership Are One Fact*; what it replaces is in *The Form That Is Gone*.
 
+The account erasure and the account merge are the two operations that write
+across other owners' tables today, under borrowed claims at the sessions holder
+([instance-owners.md](instance-owners.md#operations-over-many-instances)).
+[account-operations.md](account-operations.md) is the approved research design
+that brings them under this rule — one changing writer per table, and a
+recorded fact and a signal between owners instead of one transaction. It is a
+design and not code: the borrowed claims stay declared, the guard judges what
+it judges today, and no sentence there is callable.
+
 ## A Collection Written Outside The Application
 
 A collection whose rows are written by database triggers has no application
@@ -105,6 +114,18 @@ set is another matter, because the rows of a set are often brought into being by
 somebody else: it is borrowed by the same test — no `Add` among its folded
 operations — and waits at the start the same way. *A Claim Over A Set* has the
 case.
+
+The sessions holder's claims for the account erasure and the account merge are
+borrowed claims of this kind — `Update` and `Remove`, or `Remove` alone, over
+seventeen collections somebody else brings into being — and so are the chat
+holder's over the room tables. Nothing of the mechanism here changes for them.
+What the approved research design changes is who holds those writes: each goes
+to the owner of the rows, and the borrowed claim goes with the leaf that moves
+it ([Writer Map](account-operations.md#writer-map)). The standing case above
+changes the same way there — the notifications library keeps creating the
+journal rows, and the channel becomes the one writer of them afterwards,
+pruning included. None of it is built: the claims in the tree are the ones
+this section describes.
 
 The interest of a claim that may add is raised at the claim and not at the
 report that follows it. An agent writing its first row inside `onStart()` reads
@@ -334,6 +355,17 @@ whole table moves it — and a row whose set column is empty is in nobody's set
 and covered by no set claim. The two older widths do not look at the set keys. A
 row born after the agent's start is covered by construction, because the grant
 keeps a set key and not a list of rows collected at the start.
+
+**A row given from one set to another is the account merge's case.** The
+refusal above — a set claim does not move a row, only the holder of the whole
+table does — is why the merge of two accounts is the sessions holder's today
+([A Merged Account](people-table.md#a-merged-account)). The approved research
+design names a narrower right for the loser's agent: to give its rows away
+under one operation, judged by that operation's record and not by the width of
+a claim ([The Transfer Right](account-operations.md#the-transfer-right)). That
+right is a design and not code: no door for it exists in the tree, no width or
+mode is added here, and a set claim moving a row is refused as this section
+says.
 
 **One statement over one set asks for that set whole.** An UPDATE or DELETE cut
 by one value of the set column — every notification of one recipient, every
@@ -699,6 +731,15 @@ claims carry every operation. A set owner without `Add` beside the library that
 creates the rows is a declared shape and not a collision. Two by-row claims and
 a set-plus-row pair are not judged at all — which rows an instance holds, and
 whether a named row lies in the set, only the instance and database know.
+
+The sessions holder's borrowed claims for the account erasure and the merge
+pass here as that declared shape, each with the comment
+[instance-owners.md](instance-owners.md#operations-over-many-instances) asks
+for. The approved research design takes them away one real move at a time, the
+claim and its comment removed in the commit that lands the move
+([Cutting Inputs](account-operations.md#cutting-inputs), piece 8); until then
+the validator judges the declarations as they stand, and that page adds no
+refusal here.
 
 The width over a set brings a case that can be judged: two different classes
 holding sets of one table in full are refused as potential owners of the same

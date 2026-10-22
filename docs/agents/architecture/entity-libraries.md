@@ -41,6 +41,19 @@ entity owns the *set* operations — list, search, create, delete, and any comma
 that arrives without an instance to address. It does not own what is inside a row
 that has an instance owner.
 
+For the person, "delete" and the merge are today one transaction at the
+sessions holder over tables other owners hold
+([instance-owners.md](instance-owners.md#operations-over-many-instances)). The
+owner's reading of the unit (2026-10-18, rendered in
+[account-operations.md](account-operations.md#owner-decisions)) is narrower
+than the list above: the library creates an entity, of any fullness and with
+its children, and does not go on to edit it; an operation over many instances
+is coordinated by the sessions holder and carried out by each owner on its own
+rows. That
+page is the approved research design of the split erasure and merge and not
+code: the users library and the sessions holder keep the writes they have, and
+the read path and the placement axes below are not touched by it.
+
 `demo/chat/backend/Agents/LibraryAgent.php` is the prototype in the repository
 and also the shape the rule cuts: it registers two collections
 (`ChatDbContext::bots` and `ChatDbContext::moderatorPromptPieces`) in one
@@ -275,6 +288,15 @@ takes it from `AbstractAgent::defaultTruthSourceOperations()`, which
 edits a row it already wrote** (owner's decision, 2026-08-24) - the standard
 behaviour of a library rather than a switch each project throws, and the whole of
 the rule is that one override.
+
+The sentence is the rule, and the tree does not hold all of it yet: the
+notifications library still requeues a failed delivery and prunes the journal,
+re-subscribes a known push endpoint and marks one gone, and the users library
+removes an unfinished enrolment — each named in the
+[Writer Map](account-operations.md#writer-map) with the owner the approved
+research design hands it to (2026-10-18: *the library creates, and that is
+all*). Those writes stand, and their APIs with them, until a leaf cut from
+HIL-1674 moves each; the design removes none of them by itself.
 
 **A library may hold the write and no reading at all** (HIL-946). Where the
 collection stands in `DbContext::processWideReadCollections()`, the whole copy is
@@ -772,6 +794,8 @@ Answer `SUBSCRIPTION_PAGE_ERROR`. An empty list is a claim about the data.
   reaches a browser once a holder answers for the set.
 - [../signals/subscriptions.md](../signals/subscriptions.md) — one page
   subscription answers with everything the page renders.
+- [account-operations.md](account-operations.md) — the approved research design
+  of the split erasure and merge; the library creates, the owners write.
 - `framework/backend/Auth/Library/AbstractUsersLibraryAgent.php` — the first
   entity library in code (HIL-622): the users library, its command groups, and
   the frames it hands a finished sign-in to the sessions library with.

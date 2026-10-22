@@ -73,6 +73,18 @@ the holder of the whole table, because a claim over one set cannot cover both
 the origin and destination of that move. See [A Claim Over A Set](truth-source.md#a-claim-over-a-set).
 The sessions holder's existing erasure and merge are the declared shapes below.
 
+That is the division in the tree. The owner's reading of 2026-10-18 and the
+decisions of 2026-10-21 go one step further, rendered in
+[account-operations.md](account-operations.md#owner-decisions): the library
+creates and does not go on to edit; every edit, deletion and transfer of a row
+after its creation is the instance owner's — in the erasure each owner deletes
+its own rows in a transaction of its own, in the merge the loser's agent gives
+its rows away under a transfer right judged by the operation
+([The Transfer Right](account-operations.md#the-transfer-right)). That page is
+the approved research design and not code: until a leaf cut from HIL-1674 lands
+a move, the holder's erasure and merge stay the writers below, and the rules of
+ordinary edits on this page do not change.
+
 **Executors keep their working rows.** A delivery status, a personal data export
 and an administrator's export of acceptances stay with the executor that writes
 them. These are declared exceptions, with one writer for the work and no race
@@ -253,7 +265,9 @@ profile move belong to a separate leaf
 
 ## Operations Over Many Instances
 
-These are declared shapes, not debts waiting for an instance owner:
+These are declared shapes, not debts waiting for an instance owner — the
+implementation in the tree, kept by the owner's decision at the split
+(2026-10-04):
 
 - **Account erasure** is one transaction at the sessions holder over the whole
   circle of merged accounts. It removes the person's rows and child data
@@ -277,6 +291,24 @@ After an erasure or a merge commits, on any node, the agent of each erased
 person and the agent of the folded account stop themselves: the people row is
 gone, or a merge row has appeared under that account's id. An agent that was
 not up does not rise. The survivor's agent is not touched.
+
+The owner's decisions of 2026-10-18 and 2026-10-21 replace these shapes with a
+protocol, written up as the approved research design in
+[account-operations.md](account-operations.md) — not code, and nothing of it
+callable today. There the holder coordinates and each owner writes its own
+rows in a transaction of its own, with a recorded fact and a signal between
+owners ([Erasure](account-operations.md#erasure),
+[Merge](account-operations.md#merge)); `ChatAgent` deletes the erased person's
+messages of every room itself, in one transaction of its own, on the signal —
+the atomic reading of 2026-10-04 kept under one writer; the chat agent's
+unlink of the journal on a cleared history and the days an administrator sets
+for browser trust become hand-overs to each person's agent
+([Writer Map](account-operations.md#writer-map)); and the agent of an erased or
+folded account keeps its claims until its own part is confirmed and stops after
+it, raised again only to finish — the stop on the deleted row and on the merge
+row above is the code today, and the moved stop is the design. The borrowed
+claims and their comments stay in the code until the leaf that carries out each
+move lands; that leaf brings its norms and its markers into this page.
 
 Creating the first administrator is creation, so it remains a library operation;
 deleting the erased person's row is part of the erasure transaction, and
@@ -347,3 +379,5 @@ leaf for a chat room owner either: its candidacy above is not an assignment.
 - [people-table.md](people-table.md) — the person's own row and account merge.
 - [account-deletion.md](account-deletion.md) — the erasure transaction.
 - [../orm/entity.md](../orm/entity.md) — whose set a row belongs to.
+- [account-operations.md](account-operations.md) — the approved research design
+  that splits the erasure and the merge across owners; not code.

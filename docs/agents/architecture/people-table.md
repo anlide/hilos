@@ -90,6 +90,13 @@ recovered) or of a block flag that really changed, the person's agent sends the
 mandatory security notice (`SecurityNotifier`, HIL-294); a notice that cannot be
 queued goes to the agent's log and does not undo the write.
 
+The three set operations are the code today. The approved research design
+([Writer Map](account-operations.md#writer-map), the `users` row) keeps the
+first administrator with creation and gives the loser's block and the erased
+row's final delete to the person's own agent, each in the closing transaction
+of its own part; the holder coordinates and is not a second writer of the row.
+None of it is built.
+
 ## What The Framework Does For A Person
 
 Each operation below is the framework's on the target structure, and each row
@@ -242,6 +249,18 @@ refusal from `assertMergeable()` names both accounts by name and number, and a
 merged account by the live end of its chain (HIL-1294); the window and the
 console receive that one sentence.
 
+That one transaction is the merge in the tree. The approved research design
+([Merge](account-operations.md#merge)) keeps what the tombstone means and the
+order it is written in — the merge row first, the block second, every
+re-pointed row under its old id — and moves the writes: the loser's agent
+re-points its own ways in and second factor and writes the merge row and its
+block in one transaction of its own, under a transfer right judged by the
+operation; the survivor's agent takes the rows into memory and confirms; the
+lock and the re-read of the second-factor tables go; and the loser's agent,
+which stops today the moment the row appears, stops after its confirmed part.
+The keys, the chain and its readers below do not change. Nothing of it is
+built; `mergeAccounts()` is what runs.
+
 The second-factor choice is independent of the password choice. A protected
 loser requires an explicit transfer, or retaining the survivor's existing
 protection when both have one. All five second-factor tables leave no rows on
@@ -289,6 +308,16 @@ erasure back. The four columns of `hilos_session` also use RESTRICT: erasure
 signs out sessions bound to or impersonating the person, clears second-factor
 waits and lowers blocked-account cards before deleting the person. A forgotten
 session reference must refuse erasure too (HIL-1202).
+
+That rollback is the whole erasure's today, because the erasure is one
+transaction. Under the approved research design
+([Erasure](account-operations.md#erasure), step 7) the keys keep the same role
+as the last check: a forgotten row refuses the person's agent's final delete
+and rolls back that one transaction, the operation stays open at that step with
+the refusal named, and the end is proved by every owner's recorded result — the
+soft references among them, which no key catches. The keys, their `RESTRICT` /
+`SET NULL` choice and the absence of `CASCADE` do not change, and no key is
+added to a soft reference by it.
 
 Where a person is only mentioned inside another row, the row survives and the
 mention uses `ON DELETE SET NULL`: `hilos_file.owner_user_id`,
@@ -341,3 +370,5 @@ existing migration stubs; do not copy it into a new stub.
 - [../orm/entity.md](../orm/entity.md) — the verdict and the set an Entity
   declares; the soft references that keep their reason.
 - [truth-source.md](truth-source.md) — who owns the collection.
+- [account-operations.md](account-operations.md) — the approved research design
+  of the split erasure and merge; not code.

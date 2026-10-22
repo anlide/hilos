@@ -84,10 +84,23 @@ transaction. Never split a related change across ticks.
 
 Put what cannot be rolled back — a file on disk, an outside call — after the
 commit. An in-between state is allowed only when nobody can see it. Log a
-failure after the commit and do not retry it. The example is
-[`AbstractSessionsLibraryAgent::eraseAccount()`](../../../framework/backend/Auth/Library/AbstractSessionsLibraryAgent.php):
-the rows leave together, and file removal and export cleanup follow the commit,
-under [The Erasure](../architecture/account-deletion.md#the-erasure).
+failure after the commit and do not retry it. The example of one owner's
+related writes is
+[`AbstractUserAgent::renamePerson()`](../../../framework/backend/Users/Agent/AbstractUserAgent.php):
+the name and its journal row are written in one transaction, and what follows
+the commit — the notice to the person, the project's hook — is the library's,
+on the answer.
+[`AbstractSessionsLibraryAgent::eraseAccount()`](../../../framework/backend/Auth/Library/AbstractSessionsLibraryAgent.php)
+is the erasure as implemented today: the rows of every owner leave together in
+one transaction at the sessions holder, and file removal and export cleanup
+follow the commit, under
+[The Erasure](../architecture/account-deletion.md#the-erasure). It is not the
+example of this rule, because its one transaction crosses other owners'
+tables; the approved research design that replaces it keeps each owner's
+related writes in one transaction of that owner and puts a recorded fact and a
+signal between owners
+([account-operations.md](../architecture/account-operations.md)). Nothing of
+that design is built.
 
 ## After A Failure
 
@@ -106,6 +119,14 @@ Do not promise exactly-once execution. An ambiguous write or an after-commit
 step is not retried automatically; log it. A new attempt gets a new
 [receipt](../architecture/change-log.md#one-scheduled-attempt-across-parts)
 (HIL-1456). Each step must therefore be safe to repeat from the start.
+
+A step that is repeated is a step written to be repeated: a conditional write
+that wins once, a result recorded in the same transaction as the work so that
+a second ask answers with it. That is how the approved research design of the
+split erasure and merge finishes an unfinished operation — from the records its
+owners hold, not from a cursor and not by retrying an after-commit step
+([Recovery](../architecture/account-operations.md#recovery)). It is a design
+and not code, and it gives no after-commit step a retry.
 
 ## Anti-Patterns
 
