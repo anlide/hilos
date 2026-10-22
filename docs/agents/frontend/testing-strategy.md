@@ -122,9 +122,10 @@ it (the owner's rule, 2026-10-21). A spec does not:
 - repeat a scenario in the dark theme, or loop a test over the two palettes;
 - check how a screen looks in the dark theme — its colors, its contrast;
 - narrow the viewport — no `setViewportSize` and no context `viewport` below
-  the desktop width, no loop over widths — and so it does not check what only a
-  narrow screen draws: cards in place of rows, a row that scrolls sideways, a
-  form that holds still on a small screen.
+  the desktop width of 1024 px (1024 itself is allowed), no loop over
+  widths — and so it does not check what only a narrow screen draws: cards in
+  place of rows, a row that scrolls sideways, a form that holds still on a
+  small screen.
 
 The narrow screen and the dark palette stay behavior of the product, described
 in its docs and mockups; e2e is not where they are proved. A doc or a research
@@ -136,7 +137,19 @@ The theme feature is the one place the dark theme appears: its own specs
 it through the real controls or the system preference and check that the pick
 takes effect — the mode, the header and profile positions, the first frame — is
 stored and reaches other tabs and nodes. They do not run one scenario in both
-palettes to see it drawn twice, and they run at the desktop width too.
+palettes to see it drawn twice, and they run at the desktop width too. The
+names above describe them; the checker below knows them by exact path, so a new
+file named like one of them is refused the dark theme like any other spec.
+
+Checked automatically: `E2E-LIGHT-DESKTOP`
+(`framework/frontend/codestyle/e2eDisplay.ts`) reports, throughout
+`demo/*/tests/e2e`, a viewport width below 1024, a viewport width taken from a
+loop, and the dark theme chosen outside the theme specs. It judges only what
+the file proves, and its sites and blind spots are listed in
+[automated-checks.md](../code-style/automated-checks.md). This section is wider
+than the check: a narrow width or a width loop it cannot work out — a phone's
+device descriptor, a helper's result, arithmetic on a loop's variable — passes
+it silently and is still forbidden here.
 
 Why: a palette or a width multiplies a scenario without reaching a different
 server path. One leaf's 1440/375 × light/dark matrix grew chat-e2e from 180 to
