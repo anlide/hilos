@@ -41,6 +41,7 @@ import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
@@ -175,7 +176,12 @@ export function HilosSecurityOauthProviderPage({
   // A provider without both its client id and its secret is not offered at
   // sign-in, so resetting either of them may take the provider off the sign-in page.
   const resetStopsSignIn =
-    resetRow?.field === 'client_id' || resetRow?.field === 'client_secret'
+    !resetGone &&
+    provider?.configured === true &&
+    resetShown !== null &&
+    (resetShown.field === 'client_id' ||
+      resetShown.field === 'client_secret') &&
+    !resetShown.defaultSetState
 
   function openEdit(row: HilosOAuthFieldRow): void {
     // The window takes the row into focus, so the dialog edits the latest
@@ -296,8 +302,8 @@ export function HilosSecurityOauthProviderPage({
                   <button
                     type="button"
                     className="btn btn-sm btn-outline-secondary"
-                    title={`Reset ${row.label} to env/default`}
-                    aria-label={`Reset ${row.label} to env/default`}
+                    title="Reset to default"
+                    aria-label="Reset to default"
                     disabled={row.source !== 'db'}
                     data-id={`hilos-oauth-field-reset-${row.field}`}
                     onClick={() => openReset(row)}
@@ -474,19 +480,40 @@ export function HilosSecurityOauthProviderPage({
               {resetNowText(resetShown)}
             </dd>
             <dt className="col-4">Back to</dt>
-            <dd className="col-8" data-id="hilos-oauth-field-reset-default">
-              the env value, or the default when env has none
+            <dd
+              className="col-8 text-break"
+              data-id="hilos-oauth-field-reset-default"
+            >
+              {resetShown.secret ? (
+                resetShown.defaultSetState ? (
+                  'Set'
+                ) : (
+                  'Not set'
+                )
+              ) : (
+                <HilosHideable value={resetShown.defaultValue}>
+                  {(value) => (value === null || value === '' ? '—' : value)}
+                </HilosHideable>
+              )}{' '}
+              <span className="badge text-bg-secondary-subtle text-secondary-emphasis ms-2">
+                {SOURCE_LABEL[resetShown.defaultSource] ??
+                  resetShown.defaultSource}
+              </span>
             </dd>
           </dl>
         ) : null}
-        {resetStopsSignIn && provider ? (
-          <p
-            className="mb-0 mt-2 text-body-secondary"
-            data-id="hilos-oauth-field-reset-signin"
-          >
-            If env has none, sign-in with {provider.label} stops being offered.
+        <div className="hilos-stack mt-2 text-body-secondary">
+          <p className="mb-0 invisible" aria-hidden="true" inert>
+            After this reset, sign-in with {provider?.label} stops being
+            offered.
           </p>
-        ) : null}
+          {resetStopsSignIn ? (
+            <p className="mb-0" data-id="hilos-oauth-field-reset-signin">
+              After this reset, sign-in with {provider?.label} stops being
+              offered.
+            </p>
+          ) : null}
+        </div>
         {resetGone ? (
           <p
             className="mb-0 mt-2 text-body-secondary"

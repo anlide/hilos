@@ -85,6 +85,10 @@ export interface HilosChannelFieldRow {
   readonly value: Hideable<boolean | number | string | null>
   /** Where the effective value comes from. */
   readonly valueSource: ChannelValueSource
+  /** Value without the settings override, or null for a secret. */
+  readonly defaultValue: Hideable<boolean | number | string | null>
+  /** Where the fallback value comes from. */
+  readonly defaultValueSource: Exclude<ChannelValueSource, 'settings'>
   /** Whether the field is an env-only secret (shown as set/not-set, never edited). */
   readonly secret: boolean
   /** Whether the field can be edited in the admin (false for a secret). */
@@ -199,15 +203,18 @@ const HilosChannelFieldRowKey = {
   type: 'type',
   value: 'value',
   valueSource: 'valueSource',
+  defaultValue: 'defaultValue',
+  defaultValueSource: 'defaultValueSource',
   secret: 'secret',
   editable: 'editable',
 } as const
 
-/** Read a field's effective value, keeping its scalar type (or null for a secret). */
+/** Read a current or fallback field value, keeping its scalar type and hidden marker. */
 function readFieldValue(
   slot: Record<string, unknown>,
+  key: string,
 ): Hideable<boolean | number | string | null> {
-  const value = slot[HilosChannelFieldRowKey.value]
+  const value = slot[key]
 
   if (isHiddenValue(value)) {
     return HIDDEN_VALUE
@@ -265,8 +272,13 @@ export function resolveHilosChannelFieldRow(
     // Same rule as the channel row: an unlabelled field is shown by its own key.
     label: readStringOrNull(slot, HilosChannelFieldRowKey.label) ?? field,
     type: readString(slot, HilosChannelFieldRowKey.type),
-    value: readFieldValue(slot),
+    value: readFieldValue(slot, HilosChannelFieldRowKey.value),
     valueSource: toValueSource(slot[HilosChannelFieldRowKey.valueSource]),
+    defaultValue: readFieldValue(slot, HilosChannelFieldRowKey.defaultValue),
+    defaultValueSource:
+      slot[HilosChannelFieldRowKey.defaultValueSource] === 'env'
+        ? 'env'
+        : 'default',
     secret: readBoolean(slot, HilosChannelFieldRowKey.secret),
     editable: readBoolean(slot, HilosChannelFieldRowKey.editable),
   }
@@ -384,6 +396,8 @@ const FIELDS_COLUMNS: HilosTableColumnOf<HilosChannelFieldRow>[] = [
       HilosChannelFieldRowKey.type,
       HilosChannelFieldRowKey.label,
       HilosChannelFieldRowKey.value,
+      HilosChannelFieldRowKey.defaultValue,
+      HilosChannelFieldRowKey.defaultValueSource,
     ],
   },
 ]

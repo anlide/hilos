@@ -39,6 +39,9 @@ final class HilosCommunicationsChannelFieldsTableRow extends AbstractTableRow
     public const string secret = 'secret';
     public const string editable = 'editable';
 
+    public const string defaultValue = 'defaultValue';
+    public const string defaultValueSource = 'defaultValueSource';
+
     /**
      * @param string $rowKey Field settings key (row key, globally unique)
      * @param string $channel Owning channel name
@@ -49,6 +52,8 @@ final class HilosCommunicationsChannelFieldsTableRow extends AbstractTableRow
      * @param string $valueSource Where the effective value came from (settings|env|default)
      * @param bool $secret Whether the field is an env-only secret
      * @param bool $editable Whether the field can be edited in the admin (false for a secret)
+     * @param bool|float|int|string|null $defaultValue Value without the settings override, or null for a secret
+     * @param string $defaultValueSource Fallback layer (env|default)
      */
     public function __construct(
         public string $rowKey,
@@ -60,6 +65,8 @@ final class HilosCommunicationsChannelFieldsTableRow extends AbstractTableRow
         public string $valueSource,
         public bool $secret,
         public bool $editable,
+        public bool|float|int|string|null $defaultValue,
+        public string $defaultValueSource,
     ) {
     }
 
@@ -98,6 +105,8 @@ final class HilosCommunicationsChannelFieldsTableRow extends AbstractTableRow
             self::valueSource => $this->valueSource,
             self::secret => $this->secret,
             self::editable => $this->editable,
+            self::defaultValue => $this->defaultValue,
+            self::defaultValueSource => $this->defaultValueSource,
         ];
     }
 
@@ -110,6 +119,7 @@ final class HilosCommunicationsChannelFieldsTableRow extends AbstractTableRow
     public static function fromArray(array $data): static
     {
         $value = $data[self::value] ?? null;
+        $defaultValue = $data[self::defaultValue] ?? null;
 
         return new static(
             rowKey: (string) $data[self::rowKey],
@@ -121,6 +131,8 @@ final class HilosCommunicationsChannelFieldsTableRow extends AbstractTableRow
             valueSource: (string) $data[self::valueSource],
             secret: (bool) ($data[self::secret] ?? false),
             editable: (bool) ($data[self::editable] ?? false),
+            defaultValue: is_scalar($defaultValue) ? $defaultValue : null,
+            defaultValueSource: (string) $data[self::defaultValueSource],
         );
     }
 }

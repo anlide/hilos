@@ -89,6 +89,9 @@ describe('resolveHilosOAuthFieldRow', () => {
         value: 'abc123',
         source: 'db',
         setState: true,
+        defaultValue: '',
+        defaultSource: 'default',
+        defaultSetState: false,
       }),
     )
 
@@ -109,13 +112,54 @@ describe('resolveHilosOAuthFieldRow', () => {
         value: 'leaked-secret',
         source: 'db',
         setState: true,
+        defaultValue: 'leaked-fallback-secret',
+        defaultSource: 'default',
+        defaultSetState: false,
       }),
     )
 
     expect(row.secret).toBe(true)
     expect(row.value).toBeNull()
+    expect(row.defaultValue).toBeNull()
     expect(row.setState).toBe(true)
   })
+
+  it.each(['env-client', '', null, { _hidden: true }])(
+    'preserves a non-secret fallback %j',
+    (defaultValue) => {
+      const row = resolveHilosOAuthFieldRow(
+        slotRow('oauth:github/client_id', 'field', {
+          secret: false,
+          defaultValue,
+          defaultSource: 'env',
+          defaultSetState: true,
+        }),
+      )
+      expect(row.defaultValue).toBe(
+        typeof defaultValue === 'object' && defaultValue !== null
+          ? HIDDEN_VALUE
+          : defaultValue,
+      )
+      expect(row.defaultSource).toBe('env')
+      expect(row.defaultSetState).toBe(true)
+    },
+  )
+
+  it.each(['db', 'settings', undefined])(
+    'rejects %j as a fallback source',
+    (defaultSource) => {
+      const field = resolveHilosOAuthFieldRow(
+        slotRow('k', 'field', { defaultSource, defaultSetState: false }),
+      )
+      const redirect = resolveHilosOAuthRedirectRow(
+        slotRow('k', 'redirect', { defaultSource, defaultSetState: false }),
+      )
+      expect(field.defaultSource).toBe('default')
+      expect(redirect.defaultSource).toBe('default')
+      expect(field.defaultSetState).toBe(false)
+      expect(redirect.defaultSetState).toBe(false)
+    },
+  )
 
   it('narrows an unknown source to the default one', () => {
     const row = resolveHilosOAuthFieldRow(
@@ -137,6 +181,9 @@ describe('resolveHilosOAuthRedirectRow', () => {
         value: 'https://app.example/auth/callback',
         source: 'env',
         setState: true,
+        defaultValue: '',
+        defaultSource: 'default',
+        defaultSetState: false,
       }),
     )
 
@@ -145,6 +192,9 @@ describe('resolveHilosOAuthRedirectRow', () => {
       value: 'https://app.example/auth/callback',
       source: 'env',
       setState: true,
+      defaultValue: '',
+      defaultSource: 'default',
+      defaultSetState: false,
     })
   })
 
@@ -154,10 +204,14 @@ describe('resolveHilosOAuthRedirectRow', () => {
         value: { _hidden: true },
         source: 'env',
         setState: true,
+        defaultValue: { _hidden: true },
+        defaultSource: 'default',
+        defaultSetState: false,
       }),
     )
 
     expect(row.value).toBe(HIDDEN_VALUE)
+    expect(row.defaultValue).toBe(HIDDEN_VALUE)
   })
 })
 
@@ -183,12 +237,16 @@ describe('row focus on the tables a dialog edits over', () => {
   it('hands the return-address row into focus to the dialog over it, and lets it go with an empty key', () => {
     const focus: Focus[] = []
     const redirect = createHilosOAuthRedirect(focusContext(focus))
+    expect(redirect.controller.frame.declaration?.columns).toEqual([])
     redirect.controller.ingestSubscriptionWindow(
       [
         slotRow('oauth_redirect_uri', 'redirect', {
           value: 'https://app.example/auth/callback',
           source: 'db',
           setState: true,
+          defaultValue: '',
+          defaultSource: 'default',
+          defaultSetState: false,
         }),
       ],
       1,
@@ -203,6 +261,33 @@ describe('row focus on the tables a dialog edits over', () => {
     expect(redirect.controller.focusRow('oauth_redirect_uri')?.value).toBe(
       'https://app.example/auth/callback',
     )
+    expect(redirect.controller.focusedRow.get()).toMatchObject({
+      defaultValue: '',
+      defaultSource: 'default',
+      defaultSetState: false,
+    })
+    redirect.controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'oauth_redirect_uri',
+      row: slotRow('oauth_redirect_uri', 'redirect', {
+        value: 'updated',
+        source: 'db',
+        setState: true,
+        defaultValue: 'env-fallback',
+        defaultSource: 'env',
+        defaultSetState: true,
+      }),
+    })
+    expect(redirect.controller.focusedRow.get()).toMatchObject({
+      defaultValue: 'env-fallback',
+      defaultSource: 'env',
+      defaultSetState: true,
+    })
+    expect(redirect.controller.rows.get()[0]?.row).toMatchObject({
+      defaultValue: 'env-fallback',
+      defaultSource: 'env',
+      defaultSetState: true,
+    })
     redirect.controller.releaseFocus()
 
     expect(focus).toEqual([
@@ -225,6 +310,21 @@ describe('row focus on the tables a dialog edits over', () => {
       focusContext(focus),
       createSignal('oauth:github'),
     )
+    expect(
+      fields.controller.frame.columns
+        .get()
+        .find((column) => column.key === 'actions')?.reads,
+    ).toEqual([
+      'providerKey',
+      'field',
+      'label',
+      'secret',
+      'value',
+      'source',
+      'defaultValue',
+      'defaultSource',
+      'defaultSetState',
+    ])
     // The table opens with the provider preset, so its rows come in the answer to the
     // viewport it asks for, not in the page's own window.
     fields.controller.ingestWindow(
@@ -238,6 +338,9 @@ describe('row focus on the tables a dialog edits over', () => {
           value: 'abc123',
           source: 'db',
           setState: true,
+          defaultValue: '',
+          defaultSource: 'default',
+          defaultSetState: false,
         }),
       ],
       1,
@@ -250,6 +353,36 @@ describe('row focus on the tables a dialog edits over', () => {
     expect(fields.controller.focusRow('oauth:github/client_id')?.value).toBe(
       'abc123',
     )
+    expect(fields.controller.focusedRow.get()).toMatchObject({
+      defaultValue: '',
+      defaultSource: 'default',
+      defaultSetState: false,
+    })
+    fields.controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'oauth:github/client_id',
+      row: slotRow('oauth:github/client_id', 'field', {
+        providerKey: 'oauth:github',
+        field: 'client_id',
+        secret: false,
+        value: 'updated',
+        source: 'db',
+        setState: true,
+        defaultValue: 'env-fallback',
+        defaultSource: 'env',
+        defaultSetState: true,
+      }),
+    })
+    expect(fields.controller.focusedRow.get()).toMatchObject({
+      defaultValue: 'env-fallback',
+      defaultSource: 'env',
+      defaultSetState: true,
+    })
+    expect(fields.controller.rows.get()[0]?.row).toMatchObject({
+      defaultValue: 'env-fallback',
+      defaultSource: 'env',
+      defaultSetState: true,
+    })
     fields.controller.releaseFocus()
 
     expect(focus).toEqual([

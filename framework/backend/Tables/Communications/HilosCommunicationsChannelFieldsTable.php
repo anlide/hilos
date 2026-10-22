@@ -156,6 +156,10 @@ class HilosCommunicationsChannelFieldsTable extends TableDefinition implements S
             HilosCommunicationsChannelFieldsTableRow::value => WireField::settingFrom(
                 HilosCommunicationsChannelFieldsTableRow::rowKey,
             ),
+            HilosCommunicationsChannelFieldsTableRow::defaultValue => WireField::settingFrom(
+                HilosCommunicationsChannelFieldsTableRow::rowKey,
+            ),
+            HilosCommunicationsChannelFieldsTableRow::defaultValueSource => WireField::notPersonal(),
         ];
     }
 
@@ -278,7 +282,9 @@ class HilosCommunicationsChannelFieldsTable extends TableDefinition implements S
         AbstractDeliveryChannel $descriptor,
         ChannelConfigField $field,
     ): HilosCommunicationsChannelFieldsTableRow {
-        $resolved = new ChannelConfigResolver()->resolve($descriptor->name(), $field);
+        $resolver = new ChannelConfigResolver();
+        $resolved = $resolver->resolve($descriptor->name(), $field);
+        $default = $resolver->resolveDefault($field);
 
         return new HilosCommunicationsChannelFieldsTableRow(
             rowKey: DeliveryChannelSettings::fieldKey($descriptor->name(), $field->key),
@@ -290,6 +296,8 @@ class HilosCommunicationsChannelFieldsTable extends TableDefinition implements S
             valueSource: $resolved->source->value,
             secret: $field->secret,
             editable: !$field->secret,
+            defaultValue: $default->value,
+            defaultValueSource: $default->source->value,
         );
     }
 

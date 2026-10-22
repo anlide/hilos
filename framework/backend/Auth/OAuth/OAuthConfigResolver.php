@@ -59,19 +59,22 @@ final class OAuthConfigResolver
      */
     public function resolve(OAuthProviderDescriptor $descriptor, OAuthConfigField $field): ResolvedOAuthConfig
     {
-        $row = $this->row($descriptor->key);
-        $recipe = $descriptor->recipeConfig();
+        return $this->resolveField($descriptor, $field, $this->row($descriptor->key));
+    }
 
-        return match ($field) {
-            OAuthConfigField::CLIENT_ID => $this->layered(
-                $field->value,
-                $row?->clientId,
-                $descriptor->envClientIdKey,
-                $recipe->clientId,
-            ),
-            OAuthConfigField::SCOPE => $this->layered($field->value, $row?->scope, null, $recipe->scope),
-            OAuthConfigField::CLIENT_SECRET => $this->secretState($descriptor, $row, $recipe),
-        };
+    /**
+     * Resolves env and recipe layers without reading or changing the stored override.
+     *
+     * @param OAuthProviderDescriptor $descriptor Provider the field belongs to
+     * @param OAuthConfigField $field Field to resolve
+     * @return ResolvedOAuthConfig Default value and source, value always null for the client secret
+     * @throws DatabaseException Declared by the shared secret-state reader; no row is read here
+     * @throws EnvException When env metadata or a value is invalid, or a preset's endpoint base cannot be read
+     * @throws LogicException When the descriptor has no recipe
+     */
+    public function resolveDefault(OAuthProviderDescriptor $descriptor, OAuthConfigField $field): ResolvedOAuthConfig
+    {
+        return $this->resolveField($descriptor, $field, null);
     }
 
     /**
@@ -111,6 +114,17 @@ final class OAuthConfigResolver
         [$source, $value] = $this->pickRedirectUri();
 
         return new ResolvedOAuthConfig(self::REDIRECT_URI_FIELD, $source, $value, $value !== '');
+    }
+
+    /**
+     * Resolves the return address below the persisted setting without reading or changing it.
+     *
+     * @return ResolvedOAuthConfig Env return address or an empty default
+     * @throws EnvException When the env catalog metadata or value is invalid
+     */
+    public function resolveDefaultRedirectUri(): ResolvedOAuthConfig
+    {
+        return $this->layered(self::REDIRECT_URI_FIELD, null, $this->directoryClass()::redirectUriEnvKey(), '');
     }
 
     /**
@@ -177,6 +191,34 @@ final class OAuthConfigResolver
         }
 
         return new OAuthProviderRegistry($providers);
+    }
+
+    /**
+     * @param OAuthProviderDescriptor $descriptor Provider the field belongs to
+     * @param OAuthConfigField $field Field to resolve
+     * @param ?OAuthProvider $row Stored layer, or null to resolve only env and recipe
+     * @return ResolvedOAuthConfig Winning value and source, value always null for the client secret
+     * @throws DatabaseException When the stored secret state cannot be read
+     * @throws EnvException When env metadata or a value is invalid, or a preset's endpoint base cannot be read
+     * @throws LogicException When the descriptor has no recipe
+     */
+    private function resolveField(
+        OAuthProviderDescriptor $descriptor,
+        OAuthConfigField $field,
+        ?OAuthProvider $row,
+    ): ResolvedOAuthConfig {
+        $recipe = $descriptor->recipeConfig();
+
+        return match ($field) {
+            OAuthConfigField::CLIENT_ID => $this->layered(
+                $field->value,
+                $row?->clientId,
+                $descriptor->envClientIdKey,
+                $recipe->clientId,
+            ),
+            OAuthConfigField::SCOPE => $this->layered($field->value, $row?->scope, null, $recipe->scope),
+            OAuthConfigField::CLIENT_SECRET => $this->secretState($descriptor, $row, $recipe),
+        };
     }
 
     /**

@@ -25,8 +25,13 @@ function row(partial: Partial<HilosChannelFieldRow>): HilosChannelFieldRow {
     label: 'Port',
     type: 'integer',
     value: 25,
+    valueSource: 'settings',
+    defaultValue: 587,
+    defaultValueSource: 'default',
+    secret: false,
+    editable: true,
     ...partial,
-  } as HilosChannelFieldRow
+  }
 }
 
 function harness(rows: HilosChannelFieldRow[]) {

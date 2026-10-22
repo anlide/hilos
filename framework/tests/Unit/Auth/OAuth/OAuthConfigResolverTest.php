@@ -184,6 +184,93 @@ final class OAuthConfigResolverTest extends TestCase
         self::assertFalse($resolved->isSet);
     }
 
+    /** Credential previews expose the client id and only the secret's state. */
+    public function testDefaultReaderResolvesClientIdAndMasksSecretFromEnv(): void
+    {
+        putenv(self::CLIENT_ID_ENV->name . '=env-client');
+        putenv(self::CLIENT_SECRET_ENV->name . '=env-secret');
+
+        $clientId = $this->resolver()->resolveDefault(self::github(), OAuthConfigField::CLIENT_ID);
+        self::assertSame(OAuthConfigField::CLIENT_ID->value, $clientId->field);
+        self::assertSame(OAuthConfigSource::ENV, $clientId->source);
+        self::assertSame('env-client', $clientId->value);
+        self::assertTrue($clientId->isSet);
+
+        $secret = $this->resolver()->resolveDefault(self::github(), OAuthConfigField::CLIENT_SECRET);
+        self::assertSame(OAuthConfigField::CLIENT_SECRET->value, $secret->field);
+        self::assertSame(OAuthConfigSource::ENV, $secret->source);
+        self::assertNull($secret->value);
+        self::assertTrue($secret->isSet);
+    }
+
+    /** Empty credential env values let a populated recipe answer, including its secret state. */
+    public function testDefaultReaderSkipsEmptyEnvAndUsesRecipeForEveryField(): void
+    {
+        putenv(self::CLIENT_ID_ENV->name . '=');
+        putenv(self::CLIENT_SECRET_ENV->name . '=');
+        $descriptor = OAuthProviderDescriptor::fromRecipe(
+            self::handBuilt()->recipeConfig(),
+            'Acme',
+            self::CLIENT_ID_ENV,
+            self::CLIENT_SECRET_ENV,
+        );
+
+        foreach ([
+            [OAuthConfigField::CLIENT_ID, 'recipe-client'],
+            [OAuthConfigField::SCOPE, 'profile'],
+            [OAuthConfigField::CLIENT_SECRET, null],
+        ] as [$field, $value]) {
+            $resolved = $this->resolver()->resolveDefault($descriptor, $field);
+
+            self::assertSame($field->value, $resolved->field);
+            self::assertSame(OAuthConfigSource::DEFAULT, $resolved->source);
+            self::assertSame($value, $resolved->value);
+            self::assertTrue($resolved->isSet);
+        }
+    }
+
+    /** An empty env layer and an empty recipe leave each credential unset. */
+    public function testDefaultReaderReportsEmptyClientPairAsNotSet(): void
+    {
+        putenv(self::CLIENT_ID_ENV->name . '=');
+        putenv(self::CLIENT_SECRET_ENV->name . '=');
+
+        foreach ([OAuthConfigField::CLIENT_ID, OAuthConfigField::CLIENT_SECRET] as $field) {
+            $resolved = $this->resolver()->resolveDefault(self::github(), $field);
+
+            self::assertSame(OAuthConfigSource::DEFAULT, $resolved->source);
+            self::assertFalse($resolved->isSet);
+            if ($field === OAuthConfigField::CLIENT_SECRET) {
+                self::assertNull($resolved->value);
+            } else {
+                self::assertSame('', $resolved->value);
+            }
+        }
+    }
+
+    /** A reused resolver follows the current env facade rather than remembering an address. */
+    public function testDefaultRedirectReaderRechecksEnvAndHandlesMissingFacade(): void
+    {
+        $resolver = $this->resolver();
+        foreach (['https://env.example/callback', ''] as $value) {
+            putenv(self::REDIRECT_ENV->name . '=' . $value);
+            Hilos::$env = new EnvAccessor(EnvCatalogStub::class);
+
+            $resolved = $resolver->resolveDefaultRedirectUri();
+
+            self::assertSame(OAuthConfigResolver::REDIRECT_URI_FIELD, $resolved->field);
+            self::assertSame($value === '' ? OAuthConfigSource::DEFAULT : OAuthConfigSource::ENV, $resolved->source);
+            self::assertSame($value, $resolved->value);
+            self::assertSame($value !== '', $resolved->isSet);
+        }
+
+        Hilos::$env = null;
+        $resolved = $resolver->resolveDefaultRedirectUri();
+        self::assertSame(OAuthConfigSource::DEFAULT, $resolved->source);
+        self::assertSame('', $resolved->value);
+        self::assertFalse($resolved->isSet);
+    }
+
     /**
      * @return OAuthConfigResolver Resolver over the directory below
      */

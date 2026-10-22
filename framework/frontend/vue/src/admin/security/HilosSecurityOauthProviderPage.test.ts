@@ -30,6 +30,7 @@ import { hilosRouterKey } from '../../hilosRouterKey.js'
 
 const PROVIDER = 'oauth:github'
 const FIELDS_TABLE = 'hilosSecurityOauthProviderFields'
+const PROVIDERS_TABLE = 'hilosSecurityOauthProviders'
 const CLIENT_ID_KEY = `${PROVIDER}/client_id`
 const SECRET_KEY = `${PROVIDER}/client_secret`
 const SCOPE_KEY = `${PROVIDER}/scope`
@@ -83,6 +84,13 @@ function fieldSlot(
     value: secret ? null : value,
     source,
     setState: true,
+    defaultValue: secret
+      ? null
+      : field === 'scope'
+        ? 'read:user user:email'
+        : '',
+    defaultSource: 'default',
+    defaultSetState: field === 'scope',
   }
 }
 
@@ -97,9 +105,15 @@ const PROVIDER_SLOT: Record<string, unknown> = {
   clientIdSource: 'db',
 }
 
-function seededContext(clientId: string | null): {
+function seededContext(
+  clientId: string | null,
+  initialFields: Record<string, Record<string, unknown>> = {},
+  initialProvider: Record<string, unknown> | null = PROVIDER_SLOT,
+): {
   context: HilosSecurityOauthContext
   pushUpdate: (value: string | null, source?: string) => void
+  pushFieldUpdate: (field: string, changes: Record<string, unknown>) => void
+  pushProviderUpdate: (configured: boolean | null) => void
   pushRemove: (rowKey: string) => void
   answer: (
     outcome: 'success' | 'fail',
@@ -118,6 +132,11 @@ function seededContext(clientId: string | null): {
     [SECRET_KEY, fieldSlot('client_secret')],
     [SCOPE_KEY, fieldSlot('scope', 'read:user')],
   ])
+  for (const [field, changes] of Object.entries(initialFields)) {
+    const rowKey = `${PROVIDER}/${field}`
+    fields.set(rowKey, { ...fields.get(rowKey), ...changes })
+  }
+  let provider = initialProvider
   const focus: string[] = []
   const scopes = new ScopeManager()
   scopes.openPage(HilosPages.SECURITY_OAUTH_PROVIDER)
@@ -127,7 +146,9 @@ function seededContext(clientId: string | null): {
     const rows =
       tableKey === FIELDS_TABLE
         ? [...fields].map(([rowKey, field]) => ({ rowKey, slots: { field } }))
-        : [{ rowKey: PROVIDER, slots: { provider: PROVIDER_SLOT } }]
+        : provider === null
+          ? []
+          : [{ rowKey: PROVIDER, slots: { provider } }]
     const data = {
       page: HilosPages.SECURITY_OAUTH_PROVIDER,
       tableKey,
@@ -241,6 +262,34 @@ function seededContext(clientId: string | null): {
         kind: 'row_updated',
         rowKey: CLIENT_ID_KEY,
         row: { rowKey: CLIENT_ID_KEY, slots: { field } },
+      })
+    },
+    pushFieldUpdate(field: string, changes: Record<string, unknown>): void {
+      const rowKey = `${PROVIDER}/${field}`
+      const slot = { ...fields.get(rowKey), ...changes }
+      fields = new Map(fields).set(rowKey, slot)
+      pushDelta({
+        kind: 'row_updated',
+        rowKey,
+        row: { rowKey, slots: { field: slot } },
+      })
+    },
+    pushProviderUpdate(configured: boolean | null): void {
+      if (configured === null) {
+        provider = null
+        serveWindow(PROVIDERS_TABLE)
+        return
+      }
+      provider = {
+        ...PROVIDER_SLOT,
+        configured,
+        missingFields: configured ? 0 : 1,
+      }
+      pushDelta({
+        tableKey: PROVIDERS_TABLE,
+        kind: 'row_updated',
+        rowKey: PROVIDER,
+        row: { rowKey: PROVIDER, slots: { provider } },
       })
     },
     pushRemove(rowKey: string): void {
@@ -508,6 +557,12 @@ describe('HilosSecurityOauthProviderPage reset dialog', () => {
     expect(modalEl('modal')?.textContent).toContain('Reset · Client ID')
     expect(focus).toEqual([CLIENT_ID_KEY])
     expect(sent).toEqual([])
+    for (const field of ['client_id', 'client_secret', 'scope'] as const) {
+      expect(resetButton(field).title).toBe('Reset to default')
+      expect(resetButton(field).getAttribute('aria-label')).toBe(
+        'Reset to default',
+      )
+    }
   })
 
   it('shows the value now, where it goes back to, and what it costs sign-in', async () => {
@@ -518,21 +573,171 @@ describe('HilosSecurityOauthProviderPage reset dialog', () => {
       'Iv1.a',
     )
     expect(
-      modalEl('hilos-oauth-field-reset-default')?.textContent?.trim(),
-    ).toBe('the env value, or the default when env has none')
+      modalEl('hilos-oauth-field-reset-default')
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim(),
+    ).toBe('— Default')
     expect(modalEl('hilos-oauth-field-reset-signin')?.textContent?.trim()).toBe(
-      'If env has none, sign-in with GitHub stops being offered.',
+      'After this reset, sign-in with GitHub stops being offered.',
+    )
+    expect(
+      modalEl('hilos-oauth-field-reset-default')?.classList.contains(
+        'text-break',
+      ),
+    ).toBe(true)
+    const twin = modalEl(
+      'hilos-oauth-field-reset-signin',
+    )?.parentElement?.querySelector('.invisible')
+    expect(twin?.getAttribute('aria-hidden')).toBe('true')
+    expect(twin?.hasAttribute('inert')).toBe(true)
+    expect(twin?.textContent?.trim()).toBe(
+      modalEl('hilos-oauth-field-reset-signin')?.textContent?.trim(),
     )
   })
 
+  it.each([
+    { value: 'Iv1.env', source: 'env', expected: 'Iv1.env From env' },
+    { value: 'recipe-id', source: 'default', expected: 'recipe-id Default' },
+    { value: null, source: 'default', expected: '— Default' },
+    { value: '', source: 'env', expected: '— From env' },
+  ])(
+    'shows the non-secret fallback $value from $source',
+    async ({ value, source, expected }) => {
+      const { context } = seededContext('Iv1.a', {
+        client_id: {
+          defaultValue: value,
+          defaultSource: source,
+          defaultSetState: Boolean(value),
+        },
+      })
+      await openReset(context, 'client_id')
+
+      expect(
+        modalEl('hilos-oauth-field-reset-default')
+          ?.textContent?.replace(/\s+/g, ' ')
+          .trim(),
+      ).toBe(expected)
+    },
+  )
+
+  it('updates fallback and readiness in the open dialog without another action', async () => {
+    const { context, pushFieldUpdate, pushProviderUpdate, sent, focus } =
+      seededContext('Iv1.a')
+    await openReset(context, 'client_id')
+    expect(modalEl('hilos-oauth-field-reset-signin')).not.toBeNull()
+
+    pushFieldUpdate('client_id', {
+      value: 'Iv1.b',
+      defaultValue: 'Iv1.env',
+      defaultSource: 'env',
+      defaultSetState: true,
+    })
+    await settle()
+    expect(modalEl('hilos-oauth-field-reset-now')?.textContent?.trim()).toBe(
+      'Iv1.b',
+    )
+    expect(
+      modalEl('hilos-oauth-field-reset-default')
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim(),
+    ).toBe('Iv1.env From env')
+    expect(modalEl('hilos-oauth-field-reset-signin')).toBeNull()
+
+    pushFieldUpdate('client_id', {
+      defaultValue: '',
+      defaultSource: 'default',
+      defaultSetState: false,
+    })
+    await settle()
+    expect(
+      modalEl('hilos-oauth-field-reset-default')
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim(),
+    ).toBe('— Default')
+    expect(modalEl('hilos-oauth-field-reset-signin')).not.toBeNull()
+
+    pushProviderUpdate(false)
+    await settle()
+    expect(modalEl('hilos-oauth-field-reset-signin')).toBeNull()
+    pushProviderUpdate(true)
+    await settle()
+    expect(modalEl('hilos-oauth-field-reset-signin')).not.toBeNull()
+    expect(focus).toEqual([CLIENT_ID_KEY])
+    expect(sent).toEqual([])
+  })
+
+  it('has no warning when the provider is already unready', async () => {
+    const { context } = seededContext(
+      'Iv1.a',
+      {},
+      { ...PROVIDER_SLOT, configured: false, missingFields: 1 },
+    )
+    await openReset(context, 'client_id')
+
+    expect(modalEl('modal')).not.toBeNull()
+    expect(modalEl('hilos-oauth-field-reset-signin')).toBeNull()
+  })
+
+  it('drops the warning when the summary provider disappears under the open dialog', async () => {
+    const { context, pushProviderUpdate } = seededContext('Iv1.a')
+    await openReset(context, 'client_id')
+    expect(modalEl('hilos-oauth-field-reset-signin')).not.toBeNull()
+
+    pushProviderUpdate(null)
+    await settle()
+
+    expect(modalEl('modal')).not.toBeNull()
+    expect(modalEl('hilos-oauth-field-reset-signin')).toBeNull()
+  })
+
+  it('keeps a hidden fallback as a hidden mark even when unset', async () => {
+    const { context, pushFieldUpdate } = seededContext('Iv1.a')
+    await openReset(context, 'client_id')
+    pushFieldUpdate('client_id', {
+      defaultValue: { _hidden: true },
+      defaultSetState: false,
+    })
+    await settle()
+
+    const fallback = modalEl('hilos-oauth-field-reset-default')
+    expect(fallback?.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+    expect(fallback?.querySelector('.badge.ms-2')?.textContent?.trim()).toBe(
+      'Default',
+    )
+    expect(fallback?.textContent).not.toContain('[object Object]')
+    expect(fallback?.textContent).not.toContain('—')
+  })
+
   it('shows the secret as set, never its value', async () => {
-    const { context } = seededContext('Iv1.a')
+    const { context, pushFieldUpdate } = seededContext('Iv1.a', {
+      client_secret: { defaultValue: 'must-never-be-rendered' },
+    })
     await openReset(context, 'client_secret')
 
     expect(modalEl('hilos-oauth-field-reset-now')?.textContent?.trim()).toBe(
       'Set',
     )
+    expect(
+      modalEl('hilos-oauth-field-reset-default')
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim(),
+    ).toBe('Not set Default')
     expect(modalEl('hilos-oauth-field-reset-signin')).not.toBeNull()
+    expect(document.body.textContent).not.toContain('must-never-be-rendered')
+
+    pushFieldUpdate('client_secret', {
+      defaultValue: 'must-never-be-rendered',
+      defaultSetState: true,
+      defaultSource: 'env',
+    })
+    await settle()
+    expect(
+      modalEl('hilos-oauth-field-reset-default')
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim(),
+    ).toBe('Set From env')
+    expect(modalEl('hilos-oauth-field-reset-signin')).toBeNull()
+    expect(document.body.textContent).not.toContain('must-never-be-rendered')
   })
 
   it('Reset sends the reset and closes on success, letting the row go', async () => {
@@ -587,7 +792,7 @@ describe('HilosSecurityOauthProviderPage reset dialog', () => {
   })
 
   it('says a reset elsewhere and locks Reset', async () => {
-    const { context, pushUpdate } = seededContext('Iv1.a')
+    const { context, pushUpdate, sent } = seededContext('Iv1.a')
     await openReset(context, 'client_id')
     expect(modalEl('hilos-oauth-field-reset-gone')).toBeNull()
 
@@ -601,10 +806,33 @@ describe('HilosSecurityOauthProviderPage reset dialog', () => {
       'Iv1.env',
     )
     expect(confirmButton().disabled).toBe(true)
+    expect(modalEl('modal')).not.toBeNull()
+    expect(modalEl('hilos-oauth-field-reset-signin')).toBeNull()
+    confirmButton().click()
+    await settle()
+    expect(sent).toEqual([])
+  })
+
+  it('keeps the dialog and drops the warning when the focused field is deleted', async () => {
+    const { context, pushRemove, sent } = seededContext('Iv1.a')
+    await openReset(context, 'client_id')
+    pushRemove(CLIENT_ID_KEY)
+    await settle()
+
+    expect(modalEl('modal')).not.toBeNull()
+    expect(modalEl('hilos-oauth-field-reset-gone')?.textContent?.trim()).toBe(
+      'Already reset elsewhere.',
+    )
+    expect(modalEl('hilos-oauth-field-reset-signin')).toBeNull()
+    expect(confirmButton().disabled).toBe(true)
+    confirmButton().click()
+    expect(sent).toEqual([])
   })
 
   it('says nothing of sign-in when resetting the scope', async () => {
-    const { context } = seededContext('Iv1.a')
+    const { context } = seededContext('Iv1.a', {
+      scope: { defaultValue: '', defaultSetState: false },
+    })
     await openReset(context, 'scope')
 
     expect(modalEl('modal')?.textContent).toContain('Reset · Scope')

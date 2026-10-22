@@ -153,6 +153,12 @@ class HilosSecurityOAuthProviderFieldsTable extends TableDefinition implements S
                 HilosDbContext::oauthProviders,
                 ObjectOAuthProvider::clientId,
             ),
+            HilosSecurityOAuthProviderFieldsTableRow::defaultValue => WireField::column(
+                HilosDbContext::oauthProviders,
+                ObjectOAuthProvider::clientId,
+            ),
+            HilosSecurityOAuthProviderFieldsTableRow::defaultSource => WireField::notPersonal(),
+            HilosSecurityOAuthProviderFieldsTableRow::defaultSetState => WireField::notPersonal(),
         ];
     }
 
@@ -231,7 +237,9 @@ class HilosSecurityOAuthProviderFieldsTable extends TableDefinition implements S
      */
     private function rowForField(OAuthProviderDescriptor $descriptor, OAuthConfigField $field): HilosSecurityOAuthProviderFieldsTableRow
     {
-        $resolved = new OAuthConfigResolver()->resolve($descriptor, $field);
+        $resolver = new OAuthConfigResolver();
+        $resolved = $resolver->resolve($descriptor, $field);
+        $default = $resolver->resolveDefault($descriptor, $field);
 
         return new HilosSecurityOAuthProviderFieldsTableRow(
             rowKey: self::rowKeyFor($descriptor, $field),
@@ -243,6 +251,9 @@ class HilosSecurityOAuthProviderFieldsTable extends TableDefinition implements S
             value: $resolved->value,
             source: $resolved->source->value,
             setState: $resolved->isSet,
+            defaultValue: $default->value,
+            defaultSource: $default->source->value,
+            defaultSetState: $default->isSet,
         );
     }
 

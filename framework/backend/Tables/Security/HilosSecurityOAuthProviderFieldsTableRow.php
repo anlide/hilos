@@ -30,6 +30,10 @@ final class HilosSecurityOAuthProviderFieldsTableRow extends AbstractTableRow
     public const string source = 'source';
     public const string setState = 'setState';
 
+    public const string defaultValue = 'defaultValue';
+    public const string defaultSource = 'defaultSource';
+    public const string defaultSetState = 'defaultSetState';
+
     /**
      * @param string $rowKey Row key: the provider key and the field name
      * @param string $providerKey Owning provider key
@@ -40,6 +44,9 @@ final class HilosSecurityOAuthProviderFieldsTableRow extends AbstractTableRow
      * @param ?string $value Effective value, or null for the secret
      * @param string $source Layer the effective value comes from (db|env|default)
      * @param bool $setState Whether the effective value is non-empty
+     * @param ?string $defaultValue Value without the DB override, or null for a secret
+     * @param string $defaultSource Fallback layer (env|default)
+     * @param bool $defaultSetState Whether the fallback value is non-empty
      */
     public function __construct(
         public string $rowKey,
@@ -51,6 +58,9 @@ final class HilosSecurityOAuthProviderFieldsTableRow extends AbstractTableRow
         public ?string $value,
         public string $source,
         public bool $setState,
+        public ?string $defaultValue,
+        public string $defaultSource,
+        public bool $defaultSetState,
     ) {
     }
 
@@ -89,6 +99,9 @@ final class HilosSecurityOAuthProviderFieldsTableRow extends AbstractTableRow
             self::value => $this->value,
             self::source => $this->source,
             self::setState => $this->setState,
+            self::defaultValue => $this->defaultValue,
+            self::defaultSource => $this->defaultSource,
+            self::defaultSetState => $this->defaultSetState,
         ];
     }
 
@@ -101,6 +114,7 @@ final class HilosSecurityOAuthProviderFieldsTableRow extends AbstractTableRow
     public static function fromArray(array $data): static
     {
         $value = $data[self::value] ?? null;
+        $defaultValue = $data[self::defaultValue] ?? null;
 
         return new static(
             rowKey: (string) $data[self::rowKey],
@@ -112,6 +126,9 @@ final class HilosSecurityOAuthProviderFieldsTableRow extends AbstractTableRow
             value: is_string($value) ? $value : null,
             source: (string) $data[self::source],
             setState: (bool) $data[self::setState],
+            defaultValue: is_string($defaultValue) ? $defaultValue : null,
+            defaultSource: (string) $data[self::defaultSource],
+            defaultSetState: (bool) $data[self::defaultSetState],
         );
     }
 }

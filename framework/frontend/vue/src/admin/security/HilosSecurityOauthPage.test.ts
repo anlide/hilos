@@ -65,12 +65,22 @@ function redirectSlot(
     value,
     source: source ?? (value === '' ? 'default' : 'db'),
     setState: value !== '',
+    defaultValue: '',
+    defaultSource: 'default',
+    defaultSetState: false,
   }
 }
 
-function seededContext(initial: unknown): {
+function seededContext(
+  initial: unknown,
+  fallback: Record<string, unknown> = {},
+): {
   context: HilosSecurityOauthContext
-  pushUpdate: (value: unknown, source?: string) => void
+  pushUpdate: (
+    value: unknown,
+    source?: string,
+    fallback?: Record<string, unknown>,
+  ) => void
   pushRemove: () => void
   answer: (outcome: 'success' | 'fail', errorCode?: string) => void
   sent: Array<{
@@ -80,7 +90,7 @@ function seededContext(initial: unknown): {
   }>
   focus: string[]
 } {
-  let rows = [redirectSlot(initial)]
+  let rows = [{ ...redirectSlot(initial), ...fallback }]
   const focus: string[] = []
   const scopes = new ScopeManager()
   scopes.openPage(HilosPages.SECURITY_OAUTH)
@@ -230,8 +240,12 @@ function seededContext(initial: unknown): {
       scopes,
       actions,
     },
-    pushUpdate(value: unknown, source?: string): void {
-      rows = [redirectSlot(value, source)]
+    pushUpdate(
+      value: unknown,
+      source?: string,
+      fallback: Record<string, unknown> = {},
+    ): void {
+      rows = [{ ...redirectSlot(value, source), ...fallback }]
       pushDelta({
         kind: 'row_updated',
         rowKey: ROW_KEY,
@@ -463,6 +477,8 @@ describe('HilosSecurityOauthPage return-address reset dialog', () => {
     expect(modalEl('modal')?.textContent).toContain('Reset · Return address')
     expect(focus).toEqual([ROW_KEY])
     expect(sent).toEqual([])
+    expect(resetButton().title).toBe('Reset to default')
+    expect(resetButton().getAttribute('aria-label')).toBe('Reset to default')
   })
 
   it('shows the address now and where it goes back to', async () => {
@@ -473,9 +489,100 @@ describe('HilosSecurityOauthPage return-address reset dialog', () => {
       'https://a.example/cb',
     )
     expect(
-      modalEl('hilos-oauth-redirect-reset-default')?.textContent?.trim(),
-    ).toBe('the env value — empty when env has none')
+      modalEl('hilos-oauth-redirect-reset-default')
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim(),
+    ).toBe('— Default')
+    expect(
+      modalEl('hilos-oauth-redirect-reset-default')?.classList.contains(
+        'text-break',
+      ),
+    ).toBe(true)
+    expect(modalEl('hilos-oauth-field-reset-signin')).toBeNull()
   })
+
+  it.each([
+    {
+      value: 'https://env.example/cb',
+      source: 'env',
+      set: true,
+      expected: 'https://env.example/cb From env',
+    },
+    { value: '', source: 'default', set: false, expected: '— Default' },
+    { value: '', source: 'env', set: false, expected: '— From env' },
+  ])(
+    'shows fallback $value from $source',
+    async ({ value, source, set, expected }) => {
+      const { context } = seededContext('https://a.example/cb', {
+        defaultValue: value,
+        defaultSource: source,
+        defaultSetState: set,
+      })
+      await openReset(context)
+
+      expect(
+        modalEl('hilos-oauth-redirect-reset-default')
+          ?.textContent?.replace(/\s+/g, ' ')
+          .trim(),
+      ).toBe(expected)
+    },
+  )
+
+  it('updates fallback value, source and set state in the open dialog', async () => {
+    const { context, pushUpdate, sent, focus } = seededContext(
+      'https://a.example/cb',
+    )
+    await openReset(context)
+    pushUpdate('https://b.example/cb', 'db', {
+      defaultValue: 'https://env.example/cb',
+      defaultSource: 'env',
+      defaultSetState: true,
+    })
+    await settle()
+
+    expect(modalEl('hilos-oauth-redirect-reset-now')?.textContent?.trim()).toBe(
+      'https://b.example/cb',
+    )
+    expect(
+      modalEl('hilos-oauth-redirect-reset-default')
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim(),
+    ).toBe('https://env.example/cb From env')
+
+    pushUpdate('https://b.example/cb', 'db', {
+      defaultValue: '',
+      defaultSource: 'default',
+      defaultSetState: false,
+    })
+    await settle()
+    expect(
+      modalEl('hilos-oauth-redirect-reset-default')
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim(),
+    ).toBe('— Default')
+    expect(focus).toEqual([ROW_KEY])
+    expect(sent).toEqual([])
+  })
+
+  it.each([true, false])(
+    'keeps the hidden fallback mark when defaultSetState is %s',
+    async (defaultSetState) => {
+      const { context } = seededContext('https://a.example/cb', {
+        defaultValue: { _hidden: true },
+        defaultSource: 'env',
+        defaultSetState,
+      })
+      await openReset(context)
+
+      const fallback = modalEl('hilos-oauth-redirect-reset-default')
+      expect(fallback?.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+      expect(fallback?.querySelector('.badge.ms-2')?.textContent?.trim()).toBe(
+        'From env',
+      )
+      expect(fallback?.textContent).not.toContain('[object Object]')
+      expect(fallback?.textContent).not.toContain('—')
+    },
+  )
 
   it('Reset sends the reset and closes on success, letting the row go', async () => {
     const { context, sent, focus, answer } = seededContext(

@@ -152,8 +152,8 @@ const SOURCE_LABEL: Record<ChannelValueSource, string> = {
             <button
               type="button"
               class="btn btn-sm btn-outline-secondary"
-              title="Reset to env/default"
-              aria-label="Reset to env/default"
+              title="Reset to default"
+              aria-label="Reset to default"
               [disabled]="row.valueSource !== 'settings'"
               [attr.data-id]="'hilos-channel-field-reset-' + row.field"
               (click)="openReset(row)"
@@ -279,8 +279,15 @@ const SOURCE_LABEL: Record<ChannelValueSource, string> = {
               </hilos-hideable>
             </dd>
             <dt class="col-4">Back to</dt>
-            <dd class="col-8" data-id="hilos-channel-reset-default">
-              the env value, or the default when env has none
+            <dd class="col-8 text-break" data-id="hilos-channel-reset-default">
+              <hilos-hideable [value]="row.defaultValue">
+                <ng-template let-value>{{ displayValue(value) }}</ng-template>
+              </hilos-hideable>
+              <span
+                class="badge text-bg-secondary-subtle text-secondary-emphasis ms-2"
+              >
+                {{ defaultSourceLabel(row.defaultValueSource) }}
+              </span>
             </dd>
           </dl>
         }
@@ -520,6 +527,11 @@ export class HilosCommunicationsChannelPage {
    */
   protected sourceLabel(row: HilosChannelFieldRow): string {
     return SOURCE_LABEL[row.valueSource]
+  }
+
+  /** The words for where the field's fallback comes from. */
+  protected defaultSourceLabel(source: 'env' | 'default'): string {
+    return SOURCE_LABEL[source]
   }
 
   /**

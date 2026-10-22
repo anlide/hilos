@@ -60,17 +60,26 @@ function router(): HilosRouter {
 function redirectSlot(
   value: unknown,
   source?: string,
+  defaults: Record<string, unknown> = {},
 ): Record<string, unknown> {
   return {
     value,
     source: source ?? (value === '' ? 'default' : 'db'),
     setState: value !== '',
+    defaultValue: '',
+    defaultSource: 'default',
+    defaultSetState: false,
+    ...defaults,
   }
 }
 
 function seededContext(initial: unknown): {
   context: HilosSecurityOauthContext
-  pushUpdate: (value: string, source?: string) => void
+  pushUpdate: (
+    value: string,
+    source?: string,
+    defaults?: Record<string, unknown>,
+  ) => void
   pushRemove: () => void
   answer: (outcome: 'success' | 'fail') => void
   sent: Array<{
@@ -236,8 +245,12 @@ function seededContext(initial: unknown): {
       scopes,
       actions,
     },
-    pushUpdate(value: string, source?: string): void {
-      rows = [redirectSlot(value, source)]
+    pushUpdate(
+      value: string,
+      source?: string,
+      defaults: Record<string, unknown> = {},
+    ): void {
+      rows = [redirectSlot(value, source, defaults)]
       pushDelta({
         kind: 'row_updated',
         rowKey: ROW_KEY,
@@ -494,7 +507,71 @@ describe('HilosSecurityOauthPage return-address reset dialog', () => {
     )
     expect(
       byId('hilos-oauth-redirect-reset-default')?.textContent?.trim(),
-    ).toBe('the env value — empty when env has none')
+    ).toBe('— Default')
+    const reset = byId('hilos-oauth-redirect-reset') as HTMLButtonElement
+    expect(reset.title).toBe('Reset to default')
+    expect(reset.getAttribute('aria-label')).toBe('Reset to default')
+  })
+
+  it.each([
+    {
+      value: 'https://env.example/cb',
+      source: 'env',
+      set: true,
+      expected: 'https://env.example/cb From env',
+    },
+    { value: '', source: 'default', set: false, expected: '— Default' },
+    { value: '', source: 'env', set: false, expected: '— From env' },
+  ])(
+    'shows fallback $value from $source',
+    ({ value, source, set, expected }) => {
+      const { context, pushUpdate } = seededContext('https://a.example/cb')
+      openReset(context)
+      act(() => {
+        pushUpdate('https://a.example/cb', 'db', {
+          defaultValue: value,
+          defaultSource: source,
+          defaultSetState: set,
+        })
+      })
+      expect(
+        byId('hilos-oauth-redirect-reset-default')?.textContent?.trim(),
+      ).toBe(expected)
+    },
+  )
+
+  it('updates fallback value and source in the open dialog', () => {
+    const { context, pushUpdate } = seededContext('https://a.example/cb')
+    openReset(context)
+    act(() => {
+      pushUpdate('https://b.example/cb', 'db', {
+        defaultValue: 'https://env.example/cb',
+        defaultSource: 'env',
+        defaultSetState: true,
+      })
+    })
+    expect(byId('hilos-oauth-redirect-reset-now')?.textContent?.trim()).toBe(
+      'https://b.example/cb',
+    )
+    expect(
+      byId('hilos-oauth-redirect-reset-default')?.textContent?.trim(),
+    ).toBe('https://env.example/cb From env')
+  })
+
+  it.each([true, false])('keeps a hidden fallback hidden (%s)', (set) => {
+    const { context, pushUpdate } = seededContext('https://a.example/cb')
+    openReset(context)
+    act(() => {
+      pushUpdate('https://a.example/cb', 'db', {
+        defaultValue: { _hidden: true },
+        defaultSource: 'env',
+        defaultSetState: set,
+      })
+    })
+    const fallback = byId('hilos-oauth-redirect-reset-default')
+    expect(fallback?.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+    expect(fallback?.textContent).not.toContain('[object Object]')
+    expect(fallback?.textContent).not.toContain('Not set')
   })
 
   it('Reset sends the reset and closes on success, letting the row go', async () => {

@@ -47,12 +47,15 @@ function actionsSpy() {
   return { sent, actions }
 }
 
-const address = {
+const address: HilosOAuthRedirectRow = {
   key: 'auth.oauth.redirect',
   value: 'https://a.example/back',
   source: 'db',
   setState: true,
-} as HilosOAuthRedirectRow
+  defaultValue: '',
+  defaultSource: 'default',
+  defaultSetState: false,
+}
 
 describe('OAuth return-address window', () => {
   it('keeps the address as typed in the draft and sends it trimmed', async () => {
@@ -78,7 +81,7 @@ describe('OAuth return-address window', () => {
   })
 })
 
-const secret = {
+const secret: HilosOAuthFieldRow = {
   key: 'google.client_secret',
   providerKey: 'google',
   field: 'client_secret',
@@ -88,7 +91,10 @@ const secret = {
   value: null,
   source: 'db',
   setState: true,
-} as HilosOAuthFieldRow
+  defaultValue: null,
+  defaultSource: 'default',
+  defaultSetState: false,
+}
 
 describe('OAuth provider field window', () => {
   it('opens the secret empty, sends what was typed, and forgets it on close', async () => {

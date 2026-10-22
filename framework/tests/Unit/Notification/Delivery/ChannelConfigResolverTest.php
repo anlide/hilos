@@ -126,4 +126,87 @@ final class ChannelConfigResolverTest extends TestCase
         self::assertSame(ChannelConfigSource::DEFAULT, $resolved->source);
         self::assertNull($resolved->value);
     }
+
+    /** The catalog's port wins even when the descriptor declares another port. */
+    public function testDefaultReaderUsesEnvCatalogDefaultInsteadOfDescriptorDefault(): void
+    {
+        putenv(EnvConstants::MAIL_SMTP_PORT->name);
+        $field = new ChannelConfigField('port', 'Port', SettingsCatalogConstants::TYPE_INTEGER, false, EnvConstants::MAIL_SMTP_PORT, 25);
+
+        $resolved = new ChannelConfigResolver()->resolveDefault($field);
+
+        self::assertSame('port', $resolved->field);
+        self::assertSame(ChannelConfigSource::ENV, $resolved->source);
+        self::assertSame(587, $resolved->value);
+    }
+
+    /** Empty strings, zero and false are values rather than absent env layers. */
+    public function testDefaultReaderKeepsFalsyEnvValuesTyped(): void
+    {
+        $cases = [
+            [SettingsCatalogConstants::TYPE_STRING, EnvConstants::MAIL_FROM_ADDRESS, '', '', 'descriptor'],
+            [SettingsCatalogConstants::TYPE_INTEGER, EnvConstants::MAIL_SMTP_PORT, '0', 0, 25],
+            [SettingsCatalogConstants::TYPE_BOOLEAN, EnvConstants::BACKUP_ENABLED, 'false', false, true],
+            [SettingsCatalogConstants::TYPE_FLOAT, EnvConstants::CHAT_MODERATION_TIMEOUT_SEC, '0', 0.0, 1.0],
+        ];
+        try {
+            foreach ($cases as [$type, $envKey, $envValue, $expected, $default]) {
+                putenv($envKey->name . '=' . $envValue);
+                Hilos::$env = new EnvAccessor(EnvCatalogStub::class);
+                $field = new ChannelConfigField('typed', 'Typed', $type, false, $envKey, $default);
+
+                $resolved = new ChannelConfigResolver()->resolveDefault($field);
+
+                self::assertSame(ChannelConfigSource::ENV, $resolved->source);
+                self::assertSame($expected, $resolved->value);
+            }
+        } finally {
+            foreach ($cases as [, $envKey]) {
+                putenv($envKey->name);
+            }
+        }
+    }
+
+    /** Either missing env binding makes the descriptor the winning layer. */
+    public function testDefaultReaderUsesDescriptorWithoutEnvBackingOrFacade(): void
+    {
+        $resolver = new ChannelConfigResolver();
+        foreach ([null, EnvConstants::MAIL_SMTP_PORT] as $envKey) {
+            if ($envKey !== null) {
+                Hilos::$env = null;
+            }
+            $field = new ChannelConfigField('port', 'Port', SettingsCatalogConstants::TYPE_INTEGER, false, $envKey, 25);
+
+            $resolved = $resolver->resolveDefault($field);
+
+            self::assertSame(ChannelConfigSource::DEFAULT, $resolved->source);
+            self::assertSame(25, $resolved->value);
+        }
+    }
+
+    /** A reused resolver reports current secret state without exposing its value. */
+    public function testDefaultReaderMasksSecretAndRechecksEnvOnEveryRead(): void
+    {
+        $resolver = new ChannelConfigResolver();
+        $field = new ChannelConfigField(
+            'password',
+            'Password',
+            SettingsCatalogConstants::TYPE_STRING,
+            true,
+            EnvConstants::MAIL_SMTP_PASSWORD,
+        );
+        foreach (['secret' => ChannelConfigSource::ENV, '' => ChannelConfigSource::DEFAULT] as $value => $source) {
+            putenv(EnvConstants::MAIL_SMTP_PASSWORD->name . '=' . $value);
+            Hilos::$env = new EnvAccessor(EnvCatalogStub::class);
+
+            $resolved = $resolver->resolveDefault($field);
+
+            self::assertSame($source, $resolved->source);
+            self::assertNull($resolved->value);
+        }
+
+        Hilos::$env = null;
+        self::assertSame(ChannelConfigSource::DEFAULT, $resolver->resolveDefault($field)->source);
+        self::assertNull($resolver->resolveDefault($field)->value);
+    }
 }

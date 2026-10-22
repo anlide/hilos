@@ -33,6 +33,7 @@ import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 
 const PROVIDER = 'oauth:github'
 const FIELDS_TABLE = 'hilosSecurityOauthProviderFields'
+const PROVIDERS_TABLE = 'hilosSecurityOauthProviders'
 const CLIENT_ID_KEY = `${PROVIDER}/client_id`
 const SECRET_KEY = `${PROVIDER}/client_secret`
 const SCOPE_KEY = `${PROVIDER}/scope`
@@ -74,6 +75,11 @@ function fieldSlot(
   field: 'client_id' | 'client_secret' | 'scope',
   value: string | null = null,
   source = 'db',
+  fallback: {
+    defaultValue?: unknown
+    defaultSource?: 'env' | 'default'
+    defaultSetState?: boolean
+  } = {},
 ): Record<string, unknown> {
   const secret = field === 'client_secret'
 
@@ -86,6 +92,16 @@ function fieldSlot(
     value: secret ? null : value,
     source,
     setState: true,
+    defaultValue:
+      fallback.defaultValue !== undefined
+        ? fallback.defaultValue
+        : secret
+          ? null
+          : field === 'scope'
+            ? 'read:user user:email'
+            : '',
+    defaultSource: fallback.defaultSource ?? 'default',
+    defaultSetState: fallback.defaultSetState ?? field === 'scope',
   }
 }
 
@@ -100,9 +116,22 @@ const PROVIDER_SLOT: Record<string, unknown> = {
   clientIdSource: 'db',
 }
 
-function seededContext(clientId: string | null): {
+function seededContext(
+  clientId: string | null,
+  secretDefaultSetState = false,
+): {
   context: HilosSecurityOauthContext
-  pushUpdate: (value: string | null, source?: string) => void
+  pushUpdate: (
+    value: string | null,
+    source?: string,
+    fallback?: {
+      defaultValue?: unknown
+      defaultSource?: 'env' | 'default'
+      defaultSetState?: boolean
+    },
+  ) => void
+  pushProviderConfigured: (configured: boolean) => void
+  pushProviderRemove: () => void
   pushRemove: (rowKey: string) => void
   answer: (
     outcome: 'success' | 'fail',
@@ -118,9 +147,15 @@ function seededContext(clientId: string | null): {
 } {
   let fields = new Map<string, Record<string, unknown>>([
     [CLIENT_ID_KEY, fieldSlot('client_id', clientId)],
-    [SECRET_KEY, fieldSlot('client_secret')],
+    [
+      SECRET_KEY,
+      fieldSlot('client_secret', null, 'db', {
+        defaultSetState: secretDefaultSetState,
+      }),
+    ],
     [SCOPE_KEY, fieldSlot('scope', 'read:user')],
   ])
+  let providerSlot: Record<string, unknown> | null = { ...PROVIDER_SLOT }
   const focus: string[] = []
   const scopes = new ScopeManager()
   scopes.openPage(HilosPages.SECURITY_OAUTH_PROVIDER)
@@ -130,7 +165,9 @@ function seededContext(clientId: string | null): {
     const rows =
       tableKey === FIELDS_TABLE
         ? [...fields].map(([rowKey, field]) => ({ rowKey, slots: { field } }))
-        : [{ rowKey: PROVIDER, slots: { provider: PROVIDER_SLOT } }]
+        : providerSlot === null
+          ? []
+          : [{ rowKey: PROVIDER, slots: { provider: providerSlot } }]
     const data = {
       page: HilosPages.SECURITY_OAUTH_PROVIDER,
       tableKey,
@@ -146,12 +183,15 @@ function seededContext(clientId: string | null): {
       listener({ data })
     }
   }
-  const pushDelta = (data: Record<string, unknown>): void => {
+  const pushDelta = (
+    data: Record<string, unknown>,
+    tableKey = FIELDS_TABLE,
+  ): void => {
     for (const listener of deltaListeners) {
       listener({
         data: {
           page: HilosPages.SECURITY_OAUTH_PROVIDER,
-          tableKey: FIELDS_TABLE,
+          tableKey,
           ...data,
         },
       })
@@ -237,14 +277,32 @@ function seededContext(clientId: string | null): {
       scopes,
       actions,
     },
-    pushUpdate(value: string | null, source = 'db'): void {
-      const field = fieldSlot('client_id', value, source)
+    pushUpdate(value: string | null, source = 'db', fallback = {}): void {
+      const field = fieldSlot('client_id', value, source, fallback)
       fields = new Map(fields).set(CLIENT_ID_KEY, field)
       pushDelta({
         kind: 'row_updated',
         rowKey: CLIENT_ID_KEY,
         row: { rowKey: CLIENT_ID_KEY, slots: { field } },
       })
+    },
+    pushProviderConfigured(configured: boolean): void {
+      providerSlot = { ...providerSlot, configured }
+      pushDelta(
+        {
+          kind: 'row_updated',
+          rowKey: PROVIDER,
+          row: {
+            rowKey: PROVIDER,
+            slots: { provider: providerSlot },
+          },
+        },
+        PROVIDERS_TABLE,
+      )
+    },
+    pushProviderRemove(): void {
+      providerSlot = null
+      serveWindow(PROVIDERS_TABLE)
     },
     pushRemove(rowKey: string): void {
       fields = new Map(fields)
@@ -535,6 +593,10 @@ describe('HilosSecurityOauthProviderPage reset dialog', () => {
   it('opens on ↺ with the row in focus and sends nothing', () => {
     const { context, sent, focus } = seededContext('Iv1.a')
     const fixture = openReset(context, 'client_id')
+    const reset = resetButton(fixture, 'client_id')
+
+    expect(reset.getAttribute('title')).toBe('Reset to default')
+    expect(reset.getAttribute('aria-label')).toBe('Reset to default')
 
     expect(el(fixture, 'modal')?.textContent).toContain('Reset · Client ID')
     expect(focus).toEqual([CLIENT_ID_KEY])
@@ -549,13 +611,60 @@ describe('HilosSecurityOauthProviderPage reset dialog', () => {
       el(fixture, 'hilos-oauth-field-reset-now')?.textContent?.trim(),
     ).toBe('Iv1.a')
     expect(
-      el(fixture, 'hilos-oauth-field-reset-default')?.textContent?.trim(),
-    ).toBe('the env value, or the default when env has none')
+      el(fixture, 'hilos-oauth-field-reset-default')
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim(),
+    ).toBe('— Default')
     expect(
       el(fixture, 'hilos-oauth-field-reset-signin')
         ?.textContent?.replace(/\s+/g, ' ')
         .trim(),
-    ).toBe('If env has none, sign-in with GitHub stops being offered.')
+    ).toBe('After this reset, sign-in with GitHub stops being offered.')
+  })
+
+  it('shows the resolved fallback and source and follows live row changes', () => {
+    const { context, pushUpdate } = seededContext('Iv1.a')
+    pushUpdate('Iv1.a', 'db', {
+      defaultValue: 'Iv1.env',
+      defaultSource: 'env',
+      defaultSetState: true,
+    })
+    const fixture = openReset(context, 'client_id')
+
+    expect(
+      el(fixture, 'hilos-oauth-field-reset-default')
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim(),
+    ).toBe('Iv1.env From env')
+
+    pushUpdate('Iv1.a', 'db', {
+      defaultValue: '',
+      defaultSource: 'default',
+      defaultSetState: false,
+    })
+    fixture.detectChanges()
+
+    expect(
+      el(fixture, 'hilos-oauth-field-reset-default')
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim(),
+    ).toBe('— Default')
+  })
+
+  it('shows a hidden fallback marker without reading its value', () => {
+    const { context, pushUpdate } = seededContext('Iv1.a')
+    pushUpdate('Iv1.a', 'db', {
+      defaultValue: { _hidden: true },
+      defaultSource: 'default',
+      defaultSetState: false,
+    })
+    const fixture = openReset(context, 'client_id')
+
+    expect(
+      el(fixture, 'hilos-oauth-field-reset-default')?.querySelector(
+        '[data-id="hilos-hidden"]',
+      ),
+    ).not.toBeNull()
   })
 
   it('shows the secret as set, never its value', () => {
@@ -566,6 +675,28 @@ describe('HilosSecurityOauthProviderPage reset dialog', () => {
       el(fixture, 'hilos-oauth-field-reset-now')?.textContent?.trim(),
     ).toBe('Set')
     expect(el(fixture, 'hilos-oauth-field-reset-signin')).not.toBeNull()
+    expect(
+      el(fixture, 'hilos-oauth-field-reset-default')
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim(),
+    ).toBe('Not set Default')
+    expect(
+      el(fixture, 'hilos-oauth-field-reset-default')?.textContent,
+    ).not.toContain('Iv1.a')
+  })
+
+  it('shows a configured secret fallback only as Set', () => {
+    const { context } = seededContext('Iv1.a', true)
+    const fixture = openReset(context, 'client_secret')
+
+    expect(
+      el(fixture, 'hilos-oauth-field-reset-default')
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim(),
+    ).toBe('Set Default')
+    expect(
+      el(fixture, 'hilos-oauth-field-reset-default')?.textContent,
+    ).not.toContain('Iv1.a')
   })
 
   it('says nothing of sign-in when resetting the scope', () => {
@@ -573,6 +704,59 @@ describe('HilosSecurityOauthProviderPage reset dialog', () => {
     const fixture = openReset(context, 'scope')
 
     expect(el(fixture, 'modal')?.textContent).toContain('Reset · Scope')
+    expect(el(fixture, 'hilos-oauth-field-reset-signin')).toBeNull()
+  })
+
+  it('removes the warning when the live provider becomes unready or absent', () => {
+    const { context, pushProviderConfigured, pushProviderRemove } =
+      seededContext('Iv1.a')
+    const fixture = openReset(context, 'client_id')
+    expect(el(fixture, 'hilos-oauth-field-reset-signin')).not.toBeNull()
+
+    pushProviderConfigured(false)
+    fixture.detectChanges()
+    expect(el(fixture, 'hilos-oauth-field-reset-signin')).toBeNull()
+
+    pushProviderConfigured(true)
+    fixture.detectChanges()
+    expect(el(fixture, 'hilos-oauth-field-reset-signin')).not.toBeNull()
+
+    pushProviderRemove()
+    fixture.detectChanges()
+    expect(el(fixture, 'hilos-oauth-field-reset-signin')).toBeNull()
+  })
+
+  it('does not warn when the fallback keeps the provider configured or the reset is gone', () => {
+    const { context, pushUpdate, pushRemove } = seededContext('Iv1.a')
+    const fixture = openReset(context, 'client_id')
+    pushUpdate('Iv1.a', 'db', {
+      defaultValue: 'Iv1.env',
+      defaultSource: 'env',
+      defaultSetState: true,
+    })
+    fixture.detectChanges()
+    expect(el(fixture, 'hilos-oauth-field-reset-signin')).toBeNull()
+
+    pushUpdate('Iv1.a', 'db', {
+      defaultValue: '',
+      defaultSource: 'default',
+      defaultSetState: false,
+    })
+    fixture.detectChanges()
+    expect(el(fixture, 'hilos-oauth-field-reset-signin')).not.toBeNull()
+
+    pushUpdate('Iv1.env', 'env')
+    fixture.detectChanges()
+    expect(el(fixture, 'hilos-oauth-field-reset-signin')).toBeNull()
+
+    pushUpdate('Iv1.a', 'db', {
+      defaultValue: '',
+      defaultSource: 'default',
+      defaultSetState: false,
+    })
+    fixture.detectChanges()
+    pushRemove(CLIENT_ID_KEY)
+    fixture.detectChanges()
     expect(el(fixture, 'hilos-oauth-field-reset-signin')).toBeNull()
   })
 

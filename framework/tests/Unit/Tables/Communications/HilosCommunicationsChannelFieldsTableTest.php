@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Tables\Communications;
 
+use Hilos\Constants\EnvConstants;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Mutation\TableMutationType;
@@ -12,6 +13,7 @@ use Hilos\Database\Object\Item\Setting as ObjectSetting;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Environment\EnvAccessor;
+use Hilos\Environment\EnvCatalogStub;
 use Hilos\Hilos;
 use Hilos\Mail\Delivery\MailDeliveryChannel;
 use Hilos\Notification\Delivery\AbstractDeliveryChannel;
@@ -64,6 +66,7 @@ final class HilosCommunicationsChannelFieldsTableTest extends TestCase
         foreach ($rows as $row) {
             self::assertInstanceOf(HilosCommunicationsChannelFieldsTableRow::class, $row);
             self::assertSame(MailDeliveryChannel::NAME, $row->channel);
+            self::assertSame($row->toArray(), HilosCommunicationsChannelFieldsTableRow::fromArray($row->toArray())->toArray());
         }
     }
 
@@ -83,6 +86,8 @@ final class HilosCommunicationsChannelFieldsTableTest extends TestCase
 
         self::assertSame(SettingsCatalogConstants::TYPE_INTEGER, $row->type);
         self::assertSame(587, $row->value);
+        self::assertSame(587, $row->defaultValue);
+        self::assertSame(ChannelConfigSource::DEFAULT->value, $row->defaultValueSource);
         self::assertSame(ChannelConfigSource::DEFAULT->value, $row->valueSource);
         self::assertFalse($row->secret);
         self::assertTrue($row->editable);
@@ -93,8 +98,35 @@ final class HilosCommunicationsChannelFieldsTableTest extends TestCase
         $row = $this->rowFor(MailDeliveryChannel::FIELD_SMTP_PASSWORD);
 
         self::assertNull($row->value);
+        self::assertNull($row->defaultValue);
         self::assertTrue($row->secret);
         self::assertFalse($row->editable);
+    }
+
+    public function testEnvDefaultsAndSecretsTravelInSnapshotAndMutationWithoutSecretText(): void
+    {
+        putenv(EnvConstants::MAIL_SMTP_PORT->name . '=2525');
+        putenv(EnvConstants::MAIL_SMTP_PASSWORD->name . '=private-env-password');
+        try {
+            Hilos::$env = new EnvAccessor(EnvCatalogStub::class);
+            $port = $this->rowFor(MailDeliveryChannel::FIELD_SMTP_PORT);
+            self::assertSame(2525, $port->defaultValue);
+            self::assertSame(ChannelConfigSource::ENV->value, $port->defaultValueSource);
+            $secret = $this->rowFor(MailDeliveryChannel::FIELD_SMTP_PASSWORD);
+            self::assertNull($secret->value);
+            self::assertNull($secret->defaultValue);
+            self::assertSame(ChannelConfigSource::ENV->value, $secret->defaultValueSource);
+            self::assertNotContains('private-env-password', $secret->toArray());
+            $key = DeliveryChannelSettings::fieldKey(MailDeliveryChannel::NAME, MailDeliveryChannel::FIELD_SMTP_PORT);
+            $mutation = $this->table(new MailDeliveryChannel())->buildMutationForSourceEvent(
+                SourceChange::dbUpdated(HilosDbContext::settings, '7', [ObjectSetting::key => $key]),
+            );
+            self::assertNotNull($mutation);
+            self::assertSame($port->toArray(), $mutation->row->toArray());
+        } finally {
+            putenv(EnvConstants::MAIL_SMTP_PORT->name);
+            putenv(EnvConstants::MAIL_SMTP_PASSWORD->name);
+        }
     }
 
     public function testBrowserRowRidesSingleFieldSlot(): void
@@ -128,6 +160,7 @@ final class HilosCommunicationsChannelFieldsTableTest extends TestCase
         self::assertSame($fieldKey, $mutation->rowKey);
         self::assertInstanceOf(HilosCommunicationsChannelFieldsTableRow::class, $mutation->row);
         self::assertSame(MailDeliveryChannel::FIELD_FROM_ADDRESS, $mutation->row->field);
+        self::assertSame($this->rowFor(MailDeliveryChannel::FIELD_FROM_ADDRESS)->toArray(), $mutation->row->toArray());
     }
 
     public function testFieldSettingValueChangeResolvesTheKeyByRowId(): void
@@ -145,6 +178,7 @@ final class HilosCommunicationsChannelFieldsTableTest extends TestCase
         self::assertSame($fieldKey, $mutation->rowKey);
         self::assertInstanceOf(HilosCommunicationsChannelFieldsTableRow::class, $mutation->row);
         self::assertSame(MailDeliveryChannel::FIELD_FROM_ADDRESS, $mutation->row->field);
+        self::assertSame($this->rowFor(MailDeliveryChannel::FIELD_FROM_ADDRESS)->toArray(), $mutation->row->toArray());
     }
 
     public function testUnknownSettingRowIdIsIgnored(): void

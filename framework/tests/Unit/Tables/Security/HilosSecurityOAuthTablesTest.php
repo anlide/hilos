@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\Tables\Security;
 use Hilos\Auth\OAuth\OAuthConfigField;
 use Hilos\Auth\OAuth\OAuthConfigSource;
 use Hilos\Auth\OAuth\OAuthProviderDescriptor;
+use Hilos\Auth\OAuth\OAuthProviderDirectory;
 use Hilos\Auth\OAuth\OAuthProviderPreset;
 use Hilos\Auth\OAuth\OAuthSettingsCatalog;
 use Hilos\Constants\EnvConstants;
@@ -28,6 +29,7 @@ use Hilos\Tables\Security\HilosSecurityOAuthProvidersTableRow;
 use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
 use Hilos\Tables\Security\HilosSecurityOAuthRedirectTableRow;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 
 /**
  * Unit tests for the three OAuth admin tables (HIL-286).
@@ -122,6 +124,7 @@ final class HilosSecurityOAuthTablesTest extends TestCase
         foreach ($this->fieldsTable()->getFullSnapshot()->rows as $row) {
             self::assertNotContains(self::SECRET, $row->toArray());
             self::assertArrayNotHasKey('id', $row->toArray());
+            self::assertSame($row->toArray(), HilosSecurityOAuthProviderFieldsTableRow::fromArray($row->toArray())->toArray());
         }
     }
 
@@ -136,6 +139,9 @@ final class HilosSecurityOAuthTablesTest extends TestCase
 
         self::assertTrue($secret->secret);
         self::assertNull($secret->value);
+        self::assertNull($secret->defaultValue);
+        self::assertTrue($secret->defaultSetState);
+        self::assertSame(OAuthConfigSource::ENV->value, $secret->defaultSource);
         self::assertTrue($secret->setState);
         self::assertSame(OAuthConfigSource::ENV->value, $secret->source);
     }
@@ -146,9 +152,51 @@ final class HilosSecurityOAuthTablesTest extends TestCase
         $scope = $this->fieldRow(OAuthProviderPreset::GITHUB->value, OAuthConfigField::SCOPE);
 
         self::assertSame('env-client', $clientId->value);
+        self::assertSame('env-client', $clientId->defaultValue);
+        self::assertSame(OAuthConfigSource::ENV->value, $clientId->defaultSource);
+        self::assertTrue($clientId->defaultSetState);
         self::assertSame(OAuthConfigSource::ENV->value, $clientId->source);
         self::assertSame('read:user user:email', $scope->value);
+        self::assertSame('read:user user:email', $scope->defaultValue);
+        self::assertSame(OAuthConfigSource::DEFAULT->value, $scope->defaultSource);
+        self::assertTrue($scope->defaultSetState);
         self::assertSame(OAuthConfigSource::DEFAULT->value, $scope->source);
+    }
+
+    public function testEmptyFallbackFieldsReportNotSet(): void
+    {
+        foreach ([OAuthConfigField::CLIENT_ID, OAuthConfigField::CLIENT_SECRET] as $field) {
+            $row = $this->fieldRow(OAuthProviderPreset::GOOGLE->value, $field);
+            self::assertSame(OAuthConfigSource::DEFAULT->value, $row->defaultSource);
+            self::assertFalse($row->defaultSetState);
+            if ($field->isSecret()) {
+                self::assertNull($row->defaultValue);
+            } else {
+                self::assertSame('', $row->defaultValue);
+            }
+        }
+    }
+
+    public function testReturnAddressEnvFallbackTravelsInSnapshotAndMutation(): void
+    {
+        $appClass = Hilos::appClass();
+        new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, OAuthTablesTestHilos::class);
+        putenv(EnvConstants::MAIL_FROM_NAME->name . '=https://env.example/callback');
+        try {
+            Hilos::$env = new EnvAccessor(EnvCatalogStub::class);
+            $row = new HilosSecurityOAuthRedirectTable()->getFullSnapshot()->rows[0];
+            self::assertSame('https://env.example/callback', $row->defaultValue);
+            self::assertSame(OAuthConfigSource::ENV->value, $row->defaultSource);
+            self::assertTrue($row->defaultSetState);
+            $mutation = new HilosSecurityOAuthRedirectTable()->buildMutationForSourceEvent(
+                SourceChange::dbCreated(HilosDbContext::settings, '9', [ObjectSetting::key => OAuthSettingsCatalog::REDIRECT_URI_KEY]),
+            );
+            self::assertNotNull($mutation);
+            self::assertSame($row->toArray(), $mutation->row->toArray());
+        } finally {
+            putenv(EnvConstants::MAIL_FROM_NAME->name);
+            new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, $appClass);
+        }
     }
 
     public function testTheProviderFilterNarrowsBothTablesToOneProvider(): void
@@ -183,6 +231,10 @@ final class HilosSecurityOAuthTablesTest extends TestCase
         self::assertNotNull($fieldMutation);
         self::assertInstanceOf(HilosSecurityOAuthProviderFieldsTableRow::class, $fieldMutation->row);
         self::assertSame(OAuthConfigField::CLIENT_ID->value, $fieldMutation->row->field);
+        self::assertSame(
+            $this->fieldRow(OAuthProviderPreset::GITHUB->value, OAuthConfigField::CLIENT_ID)->toArray(),
+            $fieldMutation->row->toArray(),
+        );
     }
 
     public function testAFreshProviderRowCreatedForItsSecretRedrawsTheSecretRow(): void
@@ -242,6 +294,10 @@ final class HilosSecurityOAuthTablesTest extends TestCase
         self::assertSame(OAuthSettingsCatalog::REDIRECT_URI_KEY, $rows[0]->rowKey);
         self::assertSame(OAuthConfigSource::DEFAULT->value, $rows[0]->source);
         self::assertFalse($rows[0]->setState);
+        self::assertSame('', $rows[0]->defaultValue);
+        self::assertSame(OAuthConfigSource::DEFAULT->value, $rows[0]->defaultSource);
+        self::assertFalse($rows[0]->defaultSetState);
+        self::assertSame($rows[0]->toArray(), HilosSecurityOAuthRedirectTableRow::fromArray($rows[0]->toArray())->toArray());
     }
 
     public function testAChangeOfTheReturnAddressSettingRedrawsItsRow(): void
@@ -252,6 +308,7 @@ final class HilosSecurityOAuthTablesTest extends TestCase
 
         self::assertNotNull($mutation);
         self::assertSame(OAuthSettingsCatalog::REDIRECT_URI_KEY, $mutation->rowKey);
+        self::assertSame(new HilosSecurityOAuthRedirectTable()->getFullSnapshot()->rows[0]->toArray(), $mutation->row->toArray());
     }
 
     /**
@@ -337,5 +394,21 @@ final class HilosSecurityOAuthTablesTest extends TestCase
             ),
             OAuthProviderPreset::GOOGLE->value => OAuthProviderDescriptor::fromPreset(OAuthProviderPreset::GOOGLE, 'Google'),
         ];
+    }
+}
+
+/** Binds the return-address env source for row projection tests. */
+abstract class OAuthTablesTestHilos extends Hilos
+{
+    public const string OAUTH_PROVIDER_DIRECTORY = OAuthTablesTestDirectory::class;
+}
+
+/** Directory whose return address uses a framework catalog env key. */
+final class OAuthTablesTestDirectory extends OAuthProviderDirectory
+{
+    /** @return EnvConstants Env key of the test return address */
+    public static function redirectUriEnvKey(): EnvConstants
+    {
+        return EnvConstants::MAIL_FROM_NAME;
     }
 }

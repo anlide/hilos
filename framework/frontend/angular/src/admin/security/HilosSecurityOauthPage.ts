@@ -136,8 +136,8 @@ const SOURCE_LABEL: Record<OAuthValueSource, string> = {
               <button
                 type="button"
                 class="btn btn-sm btn-outline-secondary"
-                title="Reset return address to env"
-                aria-label="Reset return address to env"
+                title="Reset to default"
+                aria-label="Reset to default"
                 [disabled]="redirectRow()?.source !== 'db'"
                 data-id="hilos-oauth-redirect-reset"
                 (click)="openReset()"
@@ -294,8 +294,20 @@ const SOURCE_LABEL: Record<OAuthValueSource, string> = {
               }
             </dd>
             <dt class="col-4">Back to</dt>
-            <dd class="col-8" data-id="hilos-oauth-redirect-reset-default">
-              the env value — empty when env has none
+            <dd
+              class="col-8 text-break"
+              data-id="hilos-oauth-redirect-reset-default"
+            >
+              <hilos-hideable [value]="row.defaultValue">
+                <ng-template let-value>
+                  {{ row.defaultSetState ? defaultValueText(value) : '—' }}
+                </ng-template>
+              </hilos-hideable>
+              <span
+                class="badge text-bg-secondary-subtle text-secondary-emphasis ms-2"
+              >
+                {{ sourceLabel(row.defaultSource) }}
+              </span>
             </dd>
           </dl>
         }
@@ -439,6 +451,11 @@ export class HilosSecurityOauthPage {
    */
   protected sourceLabel(source: OAuthValueSource): string {
     return SOURCE_LABEL[source]
+  }
+
+  /** Human-readable return address fallback. */
+  protected defaultValueText(value: string): string {
+    return value === '' ? '—' : value
   }
 
   /** The provider's configuration page path (its {providerId} route param is the key). */

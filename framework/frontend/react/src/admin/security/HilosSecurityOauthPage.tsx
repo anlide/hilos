@@ -244,8 +244,8 @@ export function HilosSecurityOauthPage({
               <button
                 type="button"
                 className="btn btn-sm btn-outline-secondary"
-                title="Reset return address to env"
-                aria-label="Reset return address to env"
+                title="Reset to default"
+                aria-label="Reset to default"
                 disabled={redirectRow?.source !== 'db'}
                 data-id="hilos-oauth-redirect-reset"
                 onClick={openReset}
@@ -436,8 +436,17 @@ export function HilosSecurityOauthPage({
               )}
             </dd>
             <dt className="col-4">Back to</dt>
-            <dd className="col-8" data-id="hilos-oauth-redirect-reset-default">
-              the env value — empty when env has none
+            <dd
+              className="col-8 text-break"
+              data-id="hilos-oauth-redirect-reset-default"
+            >
+              <HilosHideable value={resetShown.defaultValue}>
+                {(value) => (resetShown.defaultSetState ? value || '—' : '—')}
+              </HilosHideable>{' '}
+              <span className="badge text-bg-secondary-subtle text-secondary-emphasis ms-2">
+                {SOURCE_LABEL[resetShown.defaultSource] ??
+                  resetShown.defaultSource}
+              </span>
             </dd>
           </dl>
         ) : null}

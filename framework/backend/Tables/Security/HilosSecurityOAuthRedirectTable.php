@@ -116,6 +116,9 @@ class HilosSecurityOAuthRedirectTable extends TableDefinition implements SelfSna
             HilosSecurityOAuthRedirectTableRow::source => WireField::notPersonal(),
             HilosSecurityOAuthRedirectTableRow::setState => WireField::notPersonal(),
             HilosSecurityOAuthRedirectTableRow::value => WireField::settingFrom(HilosSecurityOAuthRedirectTableRow::rowKey),
+            HilosSecurityOAuthRedirectTableRow::defaultValue => WireField::settingFrom(HilosSecurityOAuthRedirectTableRow::rowKey),
+            HilosSecurityOAuthRedirectTableRow::defaultSource => WireField::notPersonal(),
+            HilosSecurityOAuthRedirectTableRow::defaultSetState => WireField::notPersonal(),
         ];
     }
 
@@ -157,13 +160,18 @@ class HilosSecurityOAuthRedirectTable extends TableDefinition implements SelfSna
      */
     private function row(): HilosSecurityOAuthRedirectTableRow
     {
-        $resolved = new OAuthConfigResolver()->resolveRedirectUri();
+        $resolver = new OAuthConfigResolver();
+        $resolved = $resolver->resolveRedirectUri();
+        $default = $resolver->resolveDefaultRedirectUri();
 
         return new HilosSecurityOAuthRedirectTableRow(
             rowKey: OAuthSettingsCatalog::REDIRECT_URI_KEY,
             value: (string) $resolved->value,
             source: $resolved->source->value,
             setState: $resolved->isSet,
+            defaultValue: (string) $default->value,
+            defaultSource: $default->source->value,
+            defaultSetState: $default->isSet,
         );
     }
 

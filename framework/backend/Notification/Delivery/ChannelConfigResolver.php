@@ -47,9 +47,7 @@ final class ChannelConfigResolver
     public function resolve(string $channel, ChannelConfigField $field): ResolvedChannelConfig
     {
         if ($field->secret) {
-            $source = $this->envIsSet($field->envKey) ? ChannelConfigSource::ENV : ChannelConfigSource::DEFAULT;
-
-            return new ResolvedChannelConfig($field->key, $source, null);
+            return $this->resolveDefault($field);
         }
 
         $settingKey = DeliveryChannelSettings::fieldKey($channel, $field->key);
@@ -59,6 +57,24 @@ final class ChannelConfigResolver
                 ChannelConfigSource::SETTINGS,
                 $this->settingValue($settingKey, $field->type),
             );
+        }
+
+        return $this->resolveDefault($field);
+    }
+
+    /**
+     * Resolves the layers below the persisted override without reading or changing it.
+     *
+     * @param ChannelConfigField $field Field descriptor to resolve
+     * @return ResolvedChannelConfig Env or descriptor default, value always null for a secret
+     * @throws EnvException When the env catalog metadata or value is invalid
+     */
+    public function resolveDefault(ChannelConfigField $field): ResolvedChannelConfig
+    {
+        if ($field->secret) {
+            $source = $this->envIsSet($field->envKey) ? ChannelConfigSource::ENV : ChannelConfigSource::DEFAULT;
+
+            return new ResolvedChannelConfig($field->key, $source, null);
         }
 
         if ($field->envKey !== null && Hilos::$env !== null) {

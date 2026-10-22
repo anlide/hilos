@@ -52,6 +52,7 @@ import {
   HilosActionError,
   HilosAdminPage,
   HilosEditNotice,
+  HilosHideable,
   HilosModal,
   HilosTableCell,
   HilosViewportTable,
@@ -91,6 +92,7 @@ function resetNowText(row: HilosOAuthFieldRow): string {
     HilosAdminPage,
     HilosActionError,
     HilosEditNotice,
+    HilosHideable,
     HilosModal,
     HilosTableCell,
     HilosViewportTable,
@@ -161,8 +163,8 @@ function resetNowText(row: HilosOAuthFieldRow): string {
             <button
               type="button"
               class="btn btn-sm btn-outline-secondary"
-              [title]="'Reset ' + row.label + ' to env/default'"
-              [attr.aria-label]="'Reset ' + row.label + ' to env/default'"
+              title="Reset to default"
+              aria-label="Reset to default"
               [disabled]="row.source !== 'db'"
               [attr.data-id]="'hilos-oauth-field-reset-' + row.field"
               (click)="openReset(row)"
@@ -316,22 +318,39 @@ function resetNowText(row: HilosOAuthFieldRow): string {
               {{ resetNowText(row) }}
             </dd>
             <dt class="col-4">Back to</dt>
-            <dd class="col-8" data-id="hilos-oauth-field-reset-default">
-              the env value, or the default when env has none
+            <dd
+              class="col-8 text-break"
+              data-id="hilos-oauth-field-reset-default"
+            >
+              @if (row.secret) {
+                {{ row.defaultSetState ? 'Set' : 'Not set' }}
+              } @else {
+                <hilos-hideable [value]="row.defaultValue">
+                  <ng-template let-value>
+                    {{ defaultValueText(value) }}
+                  </ng-template>
+                </hilos-hideable>
+              }
+              <span
+                class="badge text-bg-secondary-subtle text-secondary-emphasis ms-2"
+              >
+                {{ sourceLabel(row.defaultSource) }}
+              </span>
             </dd>
           </dl>
         }
-        @if (resetStopsSignIn()) {
-          @if (provider(); as owner) {
-            <p
-              class="mb-0 mt-2 text-body-secondary"
-              data-id="hilos-oauth-field-reset-signin"
-            >
-              If env has none, sign-in with {{ owner.label }} stops being
+        <div class="hilos-stack mt-2 text-body-secondary">
+          <p class="mb-0 invisible" aria-hidden="true" inert>
+            After this reset, sign-in with {{ provider()?.label }} stops being
+            offered.
+          </p>
+          @if (resetStopsSignIn()) {
+            <p class="mb-0" data-id="hilos-oauth-field-reset-signin">
+              After this reset, sign-in with {{ provider()?.label }} stops being
               offered.
             </p>
           }
-        }
+        </div>
         @if (resetGone()) {
           <p
             class="mb-0 mt-2 text-body-secondary"
@@ -470,9 +489,15 @@ export class HilosSecurityOauthProviderPage {
   // A provider without both its client id and its secret is not offered at
   // sign-in, so resetting either of them may take the provider off the sign-in page.
   protected readonly resetStopsSignIn = computed(() => {
-    const field = this.resetRow()?.field
+    const row = this.resetShown()
 
-    return field === 'client_id' || field === 'client_secret'
+    return (
+      !this.resetGone() &&
+      this.provider()?.configured === true &&
+      row !== null &&
+      (row.field === 'client_id' || row.field === 'client_secret') &&
+      !row.defaultSetState
+    )
   })
 
   constructor() {
@@ -524,6 +549,11 @@ export class HilosSecurityOauthProviderPage {
   /** What the reset dialog shows as the value now; the secret never reads back. */
   protected resetNowText(row: HilosOAuthFieldRow): string {
     return resetNowText(row)
+  }
+
+  /** Human-readable fallback for a non-secret field. */
+  protected defaultValueText(value: string | null): string {
+    return value === null || value === '' ? '—' : value
   }
 
   protected openReset(row: HilosOAuthFieldRow): void {

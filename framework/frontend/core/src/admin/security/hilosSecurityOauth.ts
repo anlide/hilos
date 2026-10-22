@@ -25,6 +25,7 @@ import { HilosPages } from '../../routing/hilosPages.js'
 import {
   readBoolean,
   readHideableString,
+  readHideableStringOrNull,
   readString,
   readStringOrNull,
 } from '../../state/fieldReaders.js'
@@ -94,6 +95,12 @@ export interface HilosOAuthFieldRow {
   readonly source: OAuthValueSource
   /** Whether the effective value is non-empty — for the secret, "set" or "not set". */
   readonly setState: boolean
+  /** Value without the persisted override, or null for a secret. */
+  readonly defaultValue: Hideable<string | null>
+  /** Where the fallback value comes from. */
+  readonly defaultSource: Exclude<OAuthValueSource, 'db'>
+  /** Whether the fallback value is non-empty. */
+  readonly defaultSetState: boolean
 }
 
 /** The one row of the return-address table. */
@@ -106,6 +113,12 @@ export interface HilosOAuthRedirectRow {
   readonly source: OAuthValueSource
   /** Whether the address is non-empty. */
   readonly setState: boolean
+  /** Return address without the persisted override; empty when env has none. */
+  readonly defaultValue: Hideable<string>
+  /** Where the fallback value comes from. */
+  readonly defaultSource: Exclude<OAuthValueSource, 'db'>
+  /** Whether the fallback value is non-empty. */
+  readonly defaultSetState: boolean
 }
 
 // Wire keys: the three framework tables, their inline row slots, and the action
@@ -216,6 +229,9 @@ const HilosOAuthFieldRowKey = {
   value: 'value',
   source: 'source',
   setState: 'setState',
+  defaultValue: 'defaultValue',
+  defaultSource: 'defaultSource',
+  defaultSetState: 'defaultSetState',
 } as const
 
 /** Payload keys of the return-address row slot (mirrors the backend row shape). */
@@ -223,6 +239,9 @@ const HilosOAuthRedirectRowKey = {
   value: 'value',
   source: 'source',
   setState: 'setState',
+  defaultValue: 'defaultValue',
+  defaultSource: 'defaultSource',
+  defaultSetState: 'defaultSetState',
 } as const
 
 /**
@@ -284,6 +303,12 @@ export function resolveHilosOAuthFieldRow(row: TableRow): HilosOAuthFieldRow {
     value: secret ? null : readStringOrNull(slot, HilosOAuthFieldRowKey.value),
     source: toValueSource(slot[HilosOAuthFieldRowKey.source]),
     setState: readBoolean(slot, HilosOAuthFieldRowKey.setState),
+    defaultValue: secret
+      ? null
+      : readHideableStringOrNull(slot, HilosOAuthFieldRowKey.defaultValue),
+    defaultSource:
+      slot[HilosOAuthFieldRowKey.defaultSource] === 'env' ? 'env' : 'default',
+    defaultSetState: readBoolean(slot, HilosOAuthFieldRowKey.defaultSetState),
   }
 }
 
@@ -302,6 +327,18 @@ export function resolveHilosOAuthRedirectRow(
     value: readHideableString(slot, HilosOAuthRedirectRowKey.value),
     source: toValueSource(slot[HilosOAuthRedirectRowKey.source]),
     setState: readBoolean(slot, HilosOAuthRedirectRowKey.setState),
+    defaultValue: readHideableString(
+      slot,
+      HilosOAuthRedirectRowKey.defaultValue,
+    ),
+    defaultSource:
+      slot[HilosOAuthRedirectRowKey.defaultSource] === 'env'
+        ? 'env'
+        : 'default',
+    defaultSetState: readBoolean(
+      slot,
+      HilosOAuthRedirectRowKey.defaultSetState,
+    ),
   }
 }
 
@@ -382,6 +419,9 @@ const FIELDS_COLUMNS: HilosTableColumnOf<HilosOAuthFieldRow>[] = [
       HilosOAuthFieldRowKey.secret,
       HilosOAuthFieldRowKey.value,
       HilosOAuthFieldRowKey.source,
+      HilosOAuthFieldRowKey.defaultValue,
+      HilosOAuthFieldRowKey.defaultSource,
+      HilosOAuthFieldRowKey.defaultSetState,
     ],
   },
 ]

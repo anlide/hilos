@@ -92,12 +92,19 @@ interface FieldSlot {
   type: string
   value: unknown
   valueSource: string
+  defaultValue: unknown
+  defaultValueSource: 'env' | 'default'
   secret: boolean
   editable: boolean
 }
 
 /** The `from` field of the sms channel, with the given effective value and source. */
-function fromField(value: string, valueSource = 'settings'): FieldSlot {
+function fromField(
+  value: unknown,
+  valueSource = 'settings',
+  defaultValue: unknown = 'Hilos',
+  defaultValueSource: 'env' | 'default' = 'default',
+): FieldSlot {
   return {
     channel: 'sms',
     field: 'from',
@@ -105,6 +112,8 @@ function fromField(value: string, valueSource = 'settings'): FieldSlot {
     type: 'string',
     value,
     valueSource,
+    defaultValue,
+    defaultValueSource,
     secret: false,
     editable: true,
   }
@@ -581,6 +590,10 @@ describe('HilosCommunicationsChannelPage reset dialog', () => {
   it('opens on ↺ with the row in focus and sends nothing', () => {
     const { context, sent, focus } = seededContext([fromField('+1000')])
     const fixture = openReset(context)
+    const reset = el(fixture, 'hilos-channel-field-reset-from')
+
+    expect(reset?.getAttribute('title')).toBe('Reset to default')
+    expect(reset?.getAttribute('aria-label')).toBe('Reset to default')
 
     expect(el(fixture, 'modal')?.textContent).toContain(
       'Reset · From (sender id)',
@@ -598,7 +611,39 @@ describe('HilosCommunicationsChannelPage reset dialog', () => {
     )
     expect(
       el(fixture, 'hilos-channel-reset-default')?.textContent?.trim(),
-    ).toBe('the env value, or the default when env has none')
+    ).toBe('Hilos Default')
+  })
+
+  it.each([
+    [0, '0'],
+    [false, 'Off'],
+    [null, '—'],
+    ['', '—'],
+  ])('keeps the channel fallback value %s typed', (value, expected) => {
+    const { context } = seededContext([fromField('+1000', 'settings', value)])
+    const fixture = openReset(context)
+
+    expect(
+      el(fixture, 'hilos-channel-reset-default')?.textContent?.trim(),
+    ).toBe(`${expected} Default`)
+  })
+
+  it('shows the env fallback source and follows a live row update', () => {
+    const { context, pushUpdate } = seededContext([
+      fromField('+1000', 'settings', '+1200', 'env'),
+    ])
+    const fixture = openReset(context)
+
+    expect(
+      el(fixture, 'hilos-channel-reset-default')?.textContent?.trim(),
+    ).toBe('+1200 From env')
+
+    pushUpdate(fromField('+1000', 'settings', false, 'default'))
+    fixture.detectChanges()
+
+    expect(
+      el(fixture, 'hilos-channel-reset-default')?.textContent?.trim(),
+    ).toBe('Off Default')
   })
 
   it('Reset sends the reset and closes on success, letting the row go', async () => {

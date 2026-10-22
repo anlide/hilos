@@ -202,6 +202,9 @@ function clientIdRow(): WireRow {
       value: 'Iv1.0123456789',
       source: 'env',
       setState: true,
+      defaultValue: 'Iv1.0123456789',
+      defaultSource: 'env',
+      defaultSetState: true,
     },
   }
 }
@@ -219,6 +222,9 @@ function secretRow(overrides: Record<string, unknown> = {}): WireRow {
       value: null,
       source: 'default',
       setState: false,
+      defaultValue: null,
+      defaultSource: 'default',
+      defaultSetState: false,
       ...overrides,
     },
   }
@@ -435,6 +441,13 @@ function fieldSlot(
     value: secret ? null : value,
     source,
     setState: true,
+    defaultValue: secret
+      ? null
+      : field === 'scope'
+        ? 'read:user user:email'
+        : '',
+    defaultSource: 'default',
+    defaultSetState: field === 'scope',
   }
 }
 
@@ -449,9 +462,17 @@ const PROVIDER_SLOT: Record<string, unknown> = {
   clientIdSource: 'db',
 }
 
-function seededContext(clientId: string | null): {
+function seededContext(
+  clientId: string | null,
+  hasProvider = true,
+): {
   context: HilosSecurityOauthContext
   pushUpdate: (value: string | null, source?: string) => void
+  pushFieldUpdate: (
+    field: 'client_id' | 'client_secret' | 'scope',
+    overrides: Record<string, unknown>,
+  ) => void
+  pushProviderUpdate: (provider: Record<string, unknown> | null) => void
   pushRemove: (rowKey: string) => void
   answer: (
     outcome: 'success' | 'fail',
@@ -470,6 +491,9 @@ function seededContext(clientId: string | null): {
     [SECRET_KEY, fieldSlot('client_secret')],
     [SCOPE_KEY, fieldSlot('scope', 'read:user')],
   ])
+  let provider: Record<string, unknown> | null = hasProvider
+    ? PROVIDER_SLOT
+    : null
   const focus: string[] = []
   const scopes = new ScopeManager()
   scopes.openPage(HilosPages.SECURITY_OAUTH_PROVIDER)
@@ -479,7 +503,9 @@ function seededContext(clientId: string | null): {
     const rows =
       tableKey === FIELDS_TABLE
         ? [...fields].map(([rowKey, field]) => ({ rowKey, slots: { field } }))
-        : [{ rowKey: PROVIDER, slots: { provider: PROVIDER_SLOT } }]
+        : provider
+          ? [{ rowKey: PROVIDER, slots: { provider } }]
+          : []
     const data = {
       page: HilosPages.SECURITY_OAUTH_PROVIDER,
       tableKey,
@@ -495,12 +521,12 @@ function seededContext(clientId: string | null): {
       listener({ data })
     }
   }
-  const pushDelta = (data: Record<string, unknown>): void => {
+  const pushDelta = (tableKey: string, data: Record<string, unknown>): void => {
     for (const listener of deltaListeners) {
       listener({
         data: {
           page: HilosPages.SECURITY_OAUTH_PROVIDER,
-          tableKey: FIELDS_TABLE,
+          tableKey,
           ...data,
         },
       })
@@ -595,16 +621,49 @@ function seededContext(clientId: string | null): {
     pushUpdate(value: string | null, source = 'db'): void {
       const field = fieldSlot('client_id', value, source)
       fields = new Map(fields).set(CLIENT_ID_KEY, field)
-      pushDelta({
+      pushDelta(FIELDS_TABLE, {
         kind: 'row_updated',
         rowKey: CLIENT_ID_KEY,
         row: { rowKey: CLIENT_ID_KEY, slots: { field } },
       })
     },
+    pushFieldUpdate(
+      fieldName: 'client_id' | 'client_secret' | 'scope',
+      overrides: Record<string, unknown>,
+    ): void {
+      const rowKey = `${PROVIDER}/${fieldName}`
+      const field = { ...fields.get(rowKey), ...overrides }
+      fields = new Map(fields).set(rowKey, field)
+      pushDelta(FIELDS_TABLE, {
+        kind: 'row_updated',
+        rowKey,
+        row: { rowKey, slots: { field } },
+      })
+    },
+    pushProviderUpdate(next: Record<string, unknown> | null): void {
+      provider = next
+      if (next) {
+        pushDelta(PROVIDERS_TABLE, {
+          kind: 'row_updated',
+          rowKey: PROVIDER,
+          row: { rowKey: PROVIDER, slots: { provider: next } },
+        })
+      } else {
+        pushDelta(PROVIDERS_TABLE, {
+          kind: 'row_removed',
+          rowKey: PROVIDER,
+          reason: 'deleted',
+        })
+      }
+    },
     pushRemove(rowKey: string): void {
       fields = new Map(fields)
       fields.delete(rowKey)
-      pushDelta({ kind: 'row_removed', rowKey, reason: 'deleted' })
+      pushDelta(FIELDS_TABLE, {
+        kind: 'row_removed',
+        rowKey,
+        reason: 'deleted',
+      })
     },
     // Answer the last action sent, the way the server replies to it.
     answer(
@@ -879,7 +938,7 @@ describe('HilosSecurityOauthProviderPage reset dialog', () => {
     expect(sent).toEqual([])
   })
 
-  it('shows the value now, where it goes back to, and what it costs sign-in', () => {
+  it('shows the fallback, its source, and the sign-in consequence', () => {
     const { context } = seededContext('Iv1.a')
     openReset(context, 'client_id')
 
@@ -887,19 +946,141 @@ describe('HilosSecurityOauthProviderPage reset dialog', () => {
       'Iv1.a',
     )
     expect(byId('hilos-oauth-field-reset-default')?.textContent?.trim()).toBe(
-      'the env value, or the default when env has none',
+      '— Default',
     )
     expect(byId('hilos-oauth-field-reset-signin')?.textContent?.trim()).toBe(
-      'If env has none, sign-in with GitHub stops being offered.',
+      'After this reset, sign-in with GitHub stops being offered.',
     )
+    for (const field of ['client_id', 'client_secret', 'scope']) {
+      expect(resetButton(field).title).toBe('Reset to default')
+      expect(resetButton(field).getAttribute('aria-label')).toBe(
+        'Reset to default',
+      )
+    }
+  })
+
+  it.each([
+    { value: 'Iv1.env', source: 'env', expected: 'Iv1.env From env' },
+    { value: 'recipe-id', source: 'default', expected: 'recipe-id Default' },
+    { value: null, source: 'default', expected: '— Default' },
+    { value: '', source: 'env', expected: '— From env' },
+  ])(
+    'shows the non-secret fallback $value from $source',
+    ({ value, source, expected }) => {
+      const { context, pushFieldUpdate } = seededContext('Iv1.a')
+      openReset(context, 'client_id')
+      act(() => {
+        pushFieldUpdate('client_id', {
+          defaultValue: value,
+          defaultSource: source,
+          defaultSetState: Boolean(value),
+        })
+      })
+      expect(byId('hilos-oauth-field-reset-default')?.textContent?.trim()).toBe(
+        expected,
+      )
+    },
+  )
+
+  it('updates fallback and live provider readiness in the open dialog', () => {
+    const { context, pushFieldUpdate, pushProviderUpdate, focus, sent } =
+      seededContext('Iv1.a')
+    openReset(context, 'client_id')
+    expect(byId('hilos-oauth-field-reset-signin')).not.toBeNull()
+
+    act(() => {
+      pushFieldUpdate('client_id', {
+        value: 'Iv1.b',
+        defaultValue: 'Iv1.env',
+        defaultSource: 'env',
+        defaultSetState: true,
+      })
+    })
+    expect(byId('hilos-oauth-field-reset-now')?.textContent?.trim()).toBe(
+      'Iv1.b',
+    )
+    expect(byId('hilos-oauth-field-reset-default')?.textContent?.trim()).toBe(
+      'Iv1.env From env',
+    )
+    expect(byId('hilos-oauth-field-reset-signin')).toBeNull()
+
+    act(() => {
+      pushFieldUpdate('client_id', {
+        defaultValue: '',
+        defaultSource: 'default',
+        defaultSetState: false,
+      })
+      pushProviderUpdate({
+        ...PROVIDER_SLOT,
+        configured: false,
+        missingFields: 1,
+      })
+    })
+    expect(byId('hilos-oauth-field-reset-signin')).toBeNull()
+    act(() => {
+      pushProviderUpdate(PROVIDER_SLOT)
+    })
+    expect(byId('hilos-oauth-field-reset-signin')).not.toBeNull()
+    expect(focus).toEqual([CLIENT_ID_KEY])
+    expect(sent).toEqual([])
+  })
+
+  it('has no warning when the provider is absent', () => {
+    const { context } = seededContext('Iv1.a', false)
+    renderPage(context)
+    expect(byId('hilos-oauth-provider-not-found')).not.toBeNull()
+    expect(byId('hilos-oauth-field-reset-signin')).toBeNull()
+  })
+
+  it('keeps a hidden fallback hidden even when its set state is false', () => {
+    const { context, pushFieldUpdate } = seededContext('Iv1.a')
+    openReset(context, 'client_id')
+    act(() => {
+      pushFieldUpdate('client_id', {
+        defaultValue: { _hidden: true },
+        defaultSource: 'env',
+        defaultSetState: false,
+      })
+    })
+    const fallback = byId('hilos-oauth-field-reset-default')
+    expect(fallback?.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+    expect(fallback?.textContent).not.toContain('[object Object]')
+    expect(fallback?.textContent).not.toContain('—')
+  })
+
+  it('has no warning when a non-secret fallback is set or the field is a scope', () => {
+    const { context, pushFieldUpdate } = seededContext('Iv1.a')
+    openReset(context, 'client_id')
+    act(() => {
+      pushFieldUpdate('client_id', { defaultSetState: true })
+    })
+    expect(byId('hilos-oauth-field-reset-signin')).toBeNull()
+
+    fireEvent.click(cancelButton())
+    fireEvent.click(resetButton('scope'))
+    expect(byId('hilos-oauth-field-reset-signin')).toBeNull()
   })
 
   it('shows the secret as set, never its value', () => {
-    const { context } = seededContext('Iv1.a')
+    const { context, pushFieldUpdate } = seededContext('Iv1.a')
     openReset(context, 'client_secret')
 
     expect(byId('hilos-oauth-field-reset-now')?.textContent?.trim()).toBe('Set')
+    expect(byId('hilos-oauth-field-reset-default')?.textContent?.trim()).toBe(
+      'Not set Default',
+    )
     expect(byId('hilos-oauth-field-reset-signin')).not.toBeNull()
+    act(() => {
+      pushFieldUpdate('client_secret', {
+        defaultValue: 'must-never-be-rendered',
+        defaultSetState: true,
+        defaultSource: 'env',
+      })
+    })
+    expect(byId('hilos-oauth-field-reset-default')?.textContent?.trim()).toBe(
+      'Set From env',
+    )
+    expect(document.body.textContent).not.toContain('must-never-be-rendered')
   })
 
   it('says nothing of sign-in when resetting the scope', () => {
@@ -963,6 +1144,7 @@ describe('HilosSecurityOauthProviderPage reset dialog', () => {
     expect(byId('hilos-oauth-field-reset-gone')?.textContent?.trim()).toBe(
       'Already reset elsewhere.',
     )
+    expect(byId('hilos-oauth-field-reset-signin')).toBeNull()
     expect(byId('hilos-oauth-field-reset-now')?.textContent?.trim()).toBe(
       'Iv1.env',
     )

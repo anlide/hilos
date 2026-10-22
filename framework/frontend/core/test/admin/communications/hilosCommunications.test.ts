@@ -95,6 +95,8 @@ describe('resolveHilosChannelFieldRow', () => {
         type: 'integer',
         value: 587,
         valueSource: 'env',
+        defaultValue: 587,
+        defaultValueSource: 'env',
         secret: false,
         editable: true,
       }),
@@ -108,6 +110,8 @@ describe('resolveHilosChannelFieldRow', () => {
       type: 'integer',
       value: 587,
       valueSource: 'env',
+      defaultValue: 587,
+      defaultValueSource: 'env',
       secret: false,
       editable: true,
     })
@@ -123,12 +127,15 @@ describe('resolveHilosChannelFieldRow', () => {
         // A secret's value is null on the wire; even a leaked value would be dropped.
         value: null,
         valueSource: 'env',
+        defaultValue: null,
+        defaultValueSource: 'env',
         secret: true,
         editable: false,
       }),
     )
 
     expect(row.value).toBeNull()
+    expect(row.defaultValue).toBeNull()
     expect(row.secret).toBe(true)
     expect(row.editable).toBe(false)
   })
@@ -142,6 +149,8 @@ describe('resolveHilosChannelFieldRow', () => {
         type: 'integer',
         value: { _hidden: true },
         valueSource: 'env',
+        defaultValue: 587,
+        defaultValueSource: 'env',
         secret: false,
         editable: true,
       }),
@@ -149,6 +158,38 @@ describe('resolveHilosChannelFieldRow', () => {
 
     expect(row.value).toBe(HIDDEN_VALUE)
   })
+
+  it.each([false, true, 0, 0.5, 587, '', 'env.example', null])(
+    'preserves the fallback scalar or null %j',
+    (defaultValue) => {
+      const row = resolveHilosChannelFieldRow(
+        fieldRow('k', { defaultValue, defaultValueSource: 'env' }),
+      )
+      expect(row.defaultValue).toBe(defaultValue)
+      expect(row.defaultValueSource).toBe('env')
+    },
+  )
+
+  it('keeps a hidden fallback as the canonical marker', () => {
+    const row = resolveHilosChannelFieldRow(
+      fieldRow('k', {
+        defaultValue: { _hidden: true },
+        defaultValueSource: 'default',
+      }),
+    )
+    expect(row.defaultValue).toBe(HIDDEN_VALUE)
+    expect(row.defaultValueSource).toBe('default')
+  })
+
+  it.each(['settings', 'invalid', undefined])(
+    'rejects %j as a fallback source',
+    (defaultValueSource) => {
+      const row = resolveHilosChannelFieldRow(
+        fieldRow('k', { defaultValueSource }),
+      )
+      expect(row.defaultValueSource).toBe('default')
+    },
+  )
 
   it('narrows an unknown value source to default', () => {
     const row = resolveHilosChannelFieldRow(
@@ -239,6 +280,21 @@ describe('createHilosChannelFields', () => {
     )
     const declaration = fields.controller.frame.declaration
 
+    expect(
+      fields.controller.frame.columns
+        .get()
+        .find((column) => column.key === 'actions')?.reads,
+    ).toEqual([
+      'editable',
+      'valueSource',
+      'channel',
+      'field',
+      'type',
+      'label',
+      'value',
+      'defaultValue',
+      'defaultValueSource',
+    ])
     expect(declaration?.title).toBeUndefined()
     expect(declaration?.search).toBeUndefined()
     expect(declaration?.empty?.title).toBe(

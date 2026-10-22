@@ -36,6 +36,7 @@ import ConflictHeader from '../../ConflictHeader.vue'
 import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosEditNotice from '../../HilosEditNotice.vue'
+import HilosHideable from '../../HilosHideable.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import LoadingButton from '../../LoadingButton.vue'
@@ -153,12 +154,14 @@ const resetShown = computed(() => liveRow.value ?? resetRow.value)
 const resetGone = computed(
   () => liveRow.value === undefined || liveRow.value.source !== 'db',
 )
-// A provider without both its client id and its secret is not offered at sign-in,
-// so resetting either of them may take the provider off the sign-in page.
+// Warn only when this reset removes a required value from a ready provider.
 const resetStopsSignIn = computed(
   () =>
-    resetRow.value?.field === 'client_id' ||
-    resetRow.value?.field === 'client_secret',
+    !resetGone.value &&
+    provider.value?.configured === true &&
+    (resetShown.value?.field === 'client_id' ||
+      resetShown.value?.field === 'client_secret') &&
+    !resetShown.value.defaultSetState,
 )
 
 /** What the reset dialog shows as the value now; the secret never reads back. */
@@ -281,8 +284,8 @@ async function submitReset(): Promise<void> {
           <button
             type="button"
             class="btn btn-sm btn-outline-secondary"
-            :title="`Reset ${row.label} to env/default`"
-            :aria-label="`Reset ${row.label} to env/default`"
+            title="Reset to default"
+            aria-label="Reset to default"
             :disabled="row.source !== 'db'"
             :data-id="`hilos-oauth-field-reset-${row.field}`"
             @click="openReset(row)"
@@ -420,17 +423,37 @@ async function submitReset(): Promise<void> {
           {{ resetNowText(resetShown) }}
         </dd>
         <dt class="col-4">Back to</dt>
-        <dd class="col-8" data-id="hilos-oauth-field-reset-default">
-          the env value, or the default when env has none
+        <dd class="col-8 text-break" data-id="hilos-oauth-field-reset-default">
+          <template v-if="resetShown.secret">
+            {{ resetShown.defaultSetState ? 'Set' : 'Not set' }}
+          </template>
+          <HilosHideable v-else :value="resetShown.defaultValue">
+            <template #default="{ value }">
+              {{ value === null || value === '' ? '—' : value }}
+            </template>
+          </HilosHideable>
+          {{ ' ' }}
+          <span
+            class="badge text-bg-secondary-subtle text-secondary-emphasis ms-2"
+          >
+            {{ SOURCE_LABEL[resetShown.defaultSource] }}
+          </span>
         </dd>
       </dl>
-      <p
-        v-if="resetStopsSignIn && provider"
-        class="mb-0 mt-2 text-body-secondary"
-        data-id="hilos-oauth-field-reset-signin"
-      >
-        If env has none, sign-in with {{ provider.label }} stops being offered.
-      </p>
+      <div class="hilos-stack mt-2 text-body-secondary">
+        <p class="mb-0 invisible" aria-hidden="true" inert>
+          After this reset, sign-in with {{ provider?.label }} stops being
+          offered.
+        </p>
+        <p
+          v-if="resetStopsSignIn"
+          class="mb-0"
+          data-id="hilos-oauth-field-reset-signin"
+        >
+          After this reset, sign-in with {{ provider?.label }} stops being
+          offered.
+        </p>
+      </div>
       <p
         v-if="resetGone"
         class="mb-0 mt-2 text-body-secondary"

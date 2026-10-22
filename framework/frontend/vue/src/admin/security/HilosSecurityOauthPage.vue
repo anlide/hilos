@@ -238,8 +238,8 @@ async function submitReset(): Promise<void> {
             <button
               type="button"
               class="btn btn-sm btn-outline-secondary"
-              title="Reset return address to env"
-              aria-label="Reset return address to env"
+              title="Reset to default"
+              aria-label="Reset to default"
               :disabled="redirectRow?.source !== 'db'"
               data-id="hilos-oauth-redirect-reset"
               @click="openReset"
@@ -383,8 +383,21 @@ async function submitReset(): Promise<void> {
           <template v-else>Not set</template>
         </dd>
         <dt class="col-4">Back to</dt>
-        <dd class="col-8" data-id="hilos-oauth-redirect-reset-default">
-          the env value — empty when env has none
+        <dd
+          class="col-8 text-break"
+          data-id="hilos-oauth-redirect-reset-default"
+        >
+          <HilosHideable :value="resetShown.defaultValue">
+            <template #default="{ value }">
+              {{ resetShown.defaultSetState ? value : '—' }}
+            </template>
+          </HilosHideable>
+          {{ ' ' }}
+          <span
+            class="badge text-bg-secondary-subtle text-secondary-emphasis ms-2"
+          >
+            {{ SOURCE_LABEL[resetShown.defaultSource] }}
+          </span>
         </dd>
       </dl>
       <p

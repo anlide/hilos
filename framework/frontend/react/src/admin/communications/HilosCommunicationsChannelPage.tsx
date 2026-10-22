@@ -281,8 +281,8 @@ export function HilosCommunicationsChannelPage({
                 <button
                   type="button"
                   className="btn btn-sm btn-outline-secondary"
-                  title="Reset to env/default"
-                  aria-label="Reset to env/default"
+                  title="Reset to default"
+                  aria-label="Reset to default"
                   disabled={row.valueSource !== 'settings'}
                   data-id={`hilos-channel-field-reset-${row.field}`}
                   onClick={() => openReset(row)}
@@ -438,8 +438,17 @@ export function HilosCommunicationsChannelPage({
               </HilosHideable>
             </dd>
             <dt className="col-4">Back to</dt>
-            <dd className="col-8" data-id="hilos-channel-reset-default">
-              the env value, or the default when env has none
+            <dd
+              className="col-8 text-break"
+              data-id="hilos-channel-reset-default"
+            >
+              <HilosHideable value={resetShown.defaultValue}>
+                {(value) => hilosChannelDisplayValue(value)}
+              </HilosHideable>{' '}
+              <span className="badge text-bg-secondary-subtle text-secondary-emphasis ms-2">
+                {SOURCE_LABEL[resetShown.defaultValueSource] ??
+                  resetShown.defaultValueSource}
+              </span>
             </dd>
           </dl>
         ) : null}

@@ -63,17 +63,29 @@ function router(): HilosRouter {
 function redirectSlot(
   value: unknown,
   source?: string,
+  defaultValue: unknown = '',
+  defaultSource: 'env' | 'default' = 'default',
+  defaultSetState = defaultValue !== '',
 ): Record<string, unknown> {
   return {
     value,
     source: source ?? (value === '' ? 'default' : 'db'),
     setState: value !== '',
+    defaultValue,
+    defaultSource,
+    defaultSetState,
   }
 }
 
 function seededContext(initial: unknown): {
   context: HilosSecurityOauthContext
-  pushUpdate: (value: string, source?: string) => void
+  pushUpdate: (
+    value: unknown,
+    source?: string,
+    defaultValue?: unknown,
+    defaultSource?: 'env' | 'default',
+    defaultSetState?: boolean,
+  ) => void
   pushRemove: () => void
   answer: (outcome: 'success' | 'fail') => void
   sent: Array<{
@@ -233,8 +245,22 @@ function seededContext(initial: unknown): {
       scopes,
       actions,
     },
-    pushUpdate(value: string, source?: string): void {
-      rows = [redirectSlot(value, source)]
+    pushUpdate(
+      value: unknown,
+      source?: string,
+      defaultValue?: unknown,
+      defaultSource?: 'env' | 'default',
+      defaultSetState?: boolean,
+    ): void {
+      rows = [
+        redirectSlot(
+          value,
+          source,
+          defaultValue,
+          defaultSource,
+          defaultSetState,
+        ),
+      ]
       pushDelta({
         kind: 'row_updated',
         rowKey: ROW_KEY,
@@ -495,6 +521,10 @@ describe('HilosSecurityOauthPage return-address reset dialog', () => {
   it('opens on ↺ with the row in focus and sends nothing', () => {
     const { context, sent, focus } = seededContext('https://a.example/cb')
     const fixture = openReset(context)
+    const reset = el(fixture, 'hilos-oauth-redirect-reset')
+
+    expect(reset?.getAttribute('title')).toBe('Reset to default')
+    expect(reset?.getAttribute('aria-label')).toBe('Reset to default')
 
     expect(el(fixture, 'modal')?.textContent).toContain(
       'Reset · Return address',
@@ -511,8 +541,55 @@ describe('HilosSecurityOauthPage return-address reset dialog', () => {
       el(fixture, 'hilos-oauth-redirect-reset-now')?.textContent?.trim(),
     ).toBe('https://a.example/cb')
     expect(
-      el(fixture, 'hilos-oauth-redirect-reset-default')?.textContent?.trim(),
-    ).toBe('the env value — empty when env has none')
+      el(fixture, 'hilos-oauth-redirect-reset-default')
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim(),
+    ).toBe('— Default')
+  })
+
+  it('shows the resolved address and source and follows live fallback updates', () => {
+    const { context, pushUpdate } = seededContext('https://a.example/cb')
+    pushUpdate(
+      'https://a.example/cb',
+      'db',
+      'https://env.example/cb',
+      'env',
+      true,
+    )
+    const fixture = openReset(context)
+
+    expect(
+      el(fixture, 'hilos-oauth-redirect-reset-default')
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim(),
+    ).toBe('https://env.example/cb From env')
+
+    pushUpdate('https://a.example/cb', 'db', '', 'default', false)
+    fixture.detectChanges()
+
+    expect(
+      el(fixture, 'hilos-oauth-redirect-reset-default')
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim(),
+    ).toBe('— Default')
+  })
+
+  it('keeps a hidden fallback hidden when its set state is empty', () => {
+    const { context, pushUpdate } = seededContext('https://a.example/cb')
+    pushUpdate(
+      'https://a.example/cb',
+      'db',
+      { _hidden: true },
+      'default',
+      false,
+    )
+    const fixture = openReset(context)
+
+    expect(
+      el(fixture, 'hilos-oauth-redirect-reset-default')?.querySelector(
+        '[data-id="hilos-hidden"]',
+      ),
+    ).not.toBeNull()
   })
 
   it('Reset sends the reset and closes on success, letting the row go', async () => {

@@ -9,12 +9,20 @@ use Hilos\AdminViewMode\HiddenValue;
 use Hilos\AdminViewMode\ViewerFields;
 use Hilos\Auth\Method\AuthMethodSettings;
 use Hilos\Auth\StepUp\StepUpSettings;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Object\Item\OAuthProvider as ObjectOAuthProvider;
 use Hilos\Log\LogSettingsCatalog;
 use Hilos\Notification\Delivery\DeliveryChannelSettings;
 use Hilos\Pages\Logs\DTO\HilosLogsOverviewSignalData;
 use Hilos\Pages\Logs\DTO\HilosLogsRotationsSignalData;
+use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
+use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTableRow;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTableRow;
+use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
+use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTableRow;
+use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
+use Hilos\Tables\Security\HilosSecurityOAuthRedirectTableRow;
 use Hilos\Tables\Security\HilosSecuritySignInMethodsTable;
 use Hilos\Tables\Security\HilosSecuritySignInMethodsTableRow;
 use Hilos\Tables\Security\HilosSecurityStepUpTable;
@@ -59,6 +67,66 @@ final class SettingOriginFieldsTest extends TestCase
                 static fn(string $key): bool => $key === AuthMethodSettings::DISABLED_KEY,
             )[HilosSecuritySignInMethodsTableRow::enabled],
         );
+    }
+
+    public function testChannelAndRedirectFallbacksFollowTheSameSettingVerdictAsCurrentValues(): void
+    {
+        $cases = [
+            [new HilosCommunicationsChannelFieldsTable(), [
+                HilosCommunicationsChannelFieldsTableRow::rowKey => 'notifications.channel.mail.host',
+                HilosCommunicationsChannelFieldsTableRow::value => 'stored.example',
+                HilosCommunicationsChannelFieldsTableRow::defaultValue => 'env.example',
+                HilosCommunicationsChannelFieldsTableRow::defaultValueSource => 'env',
+            ], HilosCommunicationsChannelFieldsTableRow::defaultValueSource],
+            [new HilosSecurityOAuthRedirectTable(), [
+                HilosSecurityOAuthRedirectTableRow::rowKey => 'oauth_redirect_uri',
+                HilosSecurityOAuthRedirectTableRow::value => 'https://stored.example/callback',
+                HilosSecurityOAuthRedirectTableRow::defaultValue => '',
+                HilosSecurityOAuthRedirectTableRow::defaultSource => 'default',
+                HilosSecurityOAuthRedirectTableRow::defaultSetState => false,
+            ], HilosSecurityOAuthRedirectTableRow::defaultSource],
+        ];
+        foreach ($cases as [$table, $row, $sourceKey]) {
+            foreach ([false, true] as $shown) {
+                $masked = ViewerFields::hide(
+                    $row,
+                    $table->wireFields(),
+                    self::columnsShown(),
+                    static fn(string $key): bool => $shown && $key === $row['rowKey'],
+                );
+                self::assertSame($shown ? $row['value'] : HiddenValue::mark(), $masked['value']);
+                self::assertSame($shown ? $row['defaultValue'] : HiddenValue::mark(), $masked['defaultValue']);
+                self::assertSame($row[$sourceKey], $masked[$sourceKey]);
+                if (array_key_exists('defaultSetState', $row)) {
+                    self::assertFalse($masked['defaultSetState']);
+                }
+            }
+        }
+    }
+
+    public function testOAuthFallbackFollowsClientIdColumnVerdictAndKeepsSecretNull(): void
+    {
+        $fields = new HilosSecurityOAuthProviderFieldsTable()->wireFields();
+        foreach ([null, 'fallback-client'] as $defaultValue) {
+            $row = [
+                HilosSecurityOAuthProviderFieldsTableRow::value => $defaultValue === null ? null : 'stored-client',
+                HilosSecurityOAuthProviderFieldsTableRow::defaultValue => $defaultValue,
+                HilosSecurityOAuthProviderFieldsTableRow::defaultSource => 'env',
+                HilosSecurityOAuthProviderFieldsTableRow::defaultSetState => true,
+            ];
+            foreach ([false, true] as $shown) {
+                $masked = ViewerFields::hide(
+                    $row,
+                    $fields,
+                    static fn(string $collection, string $field): bool => $shown
+                        && $collection === HilosDbContext::oauthProviders && $field === ObjectOAuthProvider::clientId,
+                );
+                self::assertSame($shown ? $row['value'] : HiddenValue::mark(), $masked['value']);
+                self::assertSame($shown ? $defaultValue : HiddenValue::mark(), $masked['defaultValue']);
+                self::assertSame('env', $masked['defaultSource']);
+                self::assertTrue($masked['defaultSetState']);
+            }
+        }
     }
 
     public function testStepUpSwitchNeedsBothSettingsOpen(): void

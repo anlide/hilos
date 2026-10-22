@@ -18,6 +18,7 @@ import {
 } from '@hilos/core/base'
 import type { HilosCommunicationsContext } from '@hilos/core/admin/communications'
 import type {
+  Hideable,
   HilosConnection,
   HilosPageIdentity,
   HilosRouter,
@@ -92,6 +93,8 @@ interface FieldSlot {
   type: string
   value: boolean | number | string | null
   valueSource: string
+  defaultValue: Hideable<boolean | number | string | null>
+  defaultValueSource: 'env' | 'default'
   secret: boolean
   editable: boolean
 }
@@ -105,6 +108,8 @@ function fromField(value: string, valueSource = 'settings'): FieldSlot {
     type: 'string',
     value,
     valueSource,
+    defaultValue: 'Hilos',
+    defaultValueSource: 'default',
     secret: false,
     editable: true,
   }
@@ -560,6 +565,8 @@ describe('HilosCommunicationsChannelPage reset dialog', () => {
     expect(modalEl('modal')?.textContent).toContain('Reset · From (sender id)')
     expect(focus).toEqual([ROW_KEY])
     expect(sent).toEqual([])
+    expect(resetButton().title).toBe('Reset to default')
+    expect(resetButton().getAttribute('aria-label')).toBe('Reset to default')
   })
 
   it('shows the value now and where it goes back to', async () => {
@@ -569,9 +576,82 @@ describe('HilosCommunicationsChannelPage reset dialog', () => {
     expect(modalEl('hilos-channel-reset-now')?.textContent?.trim()).toBe(
       '+1000',
     )
-    expect(modalEl('hilos-channel-reset-default')?.textContent?.trim()).toBe(
-      'the env value, or the default when env has none',
+    expect(
+      modalEl('hilos-channel-reset-default')
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim(),
+    ).toBe('Hilos Default')
+    expect(
+      modalEl('hilos-channel-reset-default')?.classList.contains('text-break'),
+    ).toBe(true)
+  })
+
+  it.each([
+    { value: '+env', source: 'env' as const, expected: '+env From env' },
+    { value: null, source: 'default' as const, expected: '— Default' },
+    { value: '', source: 'env' as const, expected: '— From env' },
+    { value: 0, source: 'default' as const, expected: '0 Default' },
+    { value: false, source: 'env' as const, expected: 'Off From env' },
+  ])(
+    'renders fallback $value from $source without losing falsy values',
+    async ({ value, source, expected }) => {
+      const { context } = seededContext([
+        {
+          ...fromField('+1000'),
+          defaultValue: value,
+          defaultValueSource: source,
+        },
+      ])
+      await openReset(context)
+
+      expect(
+        modalEl('hilos-channel-reset-default')
+          ?.textContent?.replace(/\s+/g, ' ')
+          .trim(),
+      ).toBe(expected)
+    },
+  )
+
+  it('updates the fallback value and source in the open dialog', async () => {
+    const { context, pushUpdate, focus, sent } = seededContext([
+      fromField('+1000'),
+    ])
+    await openReset(context)
+
+    pushUpdate({
+      ...fromField('+2000'),
+      defaultValue: '+env',
+      defaultValueSource: 'env',
+    })
+    await settle()
+
+    expect(modalEl('hilos-channel-reset-now')?.textContent?.trim()).toBe(
+      '+2000',
     )
+    expect(
+      modalEl('hilos-channel-reset-default')
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim(),
+    ).toBe('+env From env')
+    expect(focus).toEqual([ROW_KEY])
+    expect(sent).toEqual([])
+  })
+
+  it('keeps a hidden fallback hidden in the open dialog', async () => {
+    const { context, pushUpdate } = seededContext([fromField('+1000')])
+    await openReset(context)
+
+    pushUpdate({ ...fromField('+1000'), defaultValue: { _hidden: true } })
+    await settle()
+
+    const fallback = modalEl('hilos-channel-reset-default')
+    expect(fallback?.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+    expect(fallback?.querySelector('.badge.ms-2')?.textContent?.trim()).toBe(
+      'Default',
+    )
+    expect(fallback?.textContent).not.toContain('Hilos')
+    expect(fallback?.textContent).not.toContain('[object Object]')
+    expect(fallback?.textContent).not.toContain('—')
   })
 
   it('Reset sends the reset and closes on success, letting the row go', async () => {

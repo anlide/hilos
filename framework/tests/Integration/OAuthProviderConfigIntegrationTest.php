@@ -7,6 +7,7 @@ namespace Hilos\Tests\Integration;
 use Hilos\Auth\OAuth\OAuthConfigField;
 use Hilos\Auth\OAuth\OAuthConfigResolver;
 use Hilos\Auth\OAuth\OAuthConfigSource;
+use Hilos\Auth\OAuth\OAuthProviderConfig;
 use Hilos\Auth\OAuth\OAuthProviderDescriptor;
 use Hilos\Auth\OAuth\OAuthProviderDirectory;
 use Hilos\Auth\OAuth\OAuthProviderPreset;
@@ -39,6 +40,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTableRow;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * Integration tests for the stored layer of an OAuth provider's configuration (HIL-286).
@@ -299,6 +301,19 @@ final class OAuthProviderConfigIntegrationTest extends FrameworkIntegrationTestC
         $this->assertSame(OAuthConfigField::CLIENT_SECRET->value, $mutation->row->field);
         $this->assertTrue($mutation->row->setState);
         $this->assertSame('db', $mutation->row->source);
+        $this->assertNull($mutation->row->value);
+        $this->assertNull($mutation->row->defaultValue);
+        $this->assertSame('env', $mutation->row->defaultSource);
+        $this->assertTrue($mutation->row->defaultSetState);
+        $this->assertNotContains('admin-secret', $mutation->row->toArray());
+        $this->assertNotContains('env-secret', $mutation->row->toArray());
+        foreach ($fieldsTable->getFullSnapshot()->rows as $snapshotRow) {
+            $this->assertNotContains('admin-secret', $snapshotRow->toArray());
+            $this->assertNotContains('env-secret', $snapshotRow->toArray());
+            if ($snapshotRow->getRowKey() === $mutation->rowKey) {
+                $this->assertSame($mutation->row->toArray(), $snapshotRow->toArray());
+            }
+        }
 
         $row->actions->writeClientSecret(null);
 
@@ -322,6 +337,9 @@ final class OAuthProviderConfigIntegrationTest extends FrameworkIntegrationTestC
         $this->assertSame(OAuthConfigField::CLIENT_SECRET->value, $mutationAfterReset->row->field);
         $this->assertTrue($mutationAfterReset->row->setState);
         $this->assertSame('env', $mutationAfterReset->row->source);
+        $this->assertNull($mutationAfterReset->row->defaultValue);
+        $this->assertSame('env', $mutationAfterReset->row->defaultSource);
+        $this->assertTrue($mutationAfterReset->row->defaultSetState);
     }
 
     public function testAStoredReturnAddressWinsOverEnv(): void
@@ -342,6 +360,184 @@ final class OAuthProviderConfigIntegrationTest extends FrameworkIntegrationTestC
 
         $this->assertSame(OAuthConfigSource::ENV, $resolved->source);
         $this->assertSame(self::ENV_REDIRECT, $resolved->value);
+    }
+
+    /**
+     * @param OAuthConfigField $field Stored field to preview and reset
+     * @param bool $useEnv Whether the credential env pair is populated
+     * @param bool $useRecipe Whether the recipe contains non-empty field values
+     * @param OAuthConfigSource $source Expected layer below the stored override
+     * @param ?string $value Expected preview value, null for a secret
+     * @param bool $isSet Expected preview state
+     */
+    #[DataProvider('defaultFieldCases')]
+    public function testDefaultPreviewLeavesStoredFieldIntactAndMatchesItsReset(
+        OAuthConfigField $field,
+        bool $useEnv,
+        bool $useRecipe,
+        OAuthConfigSource $source,
+        ?string $value,
+        bool $isSet,
+    ): void {
+        if (!$useEnv) {
+            putenv(self::CLIENT_ID_ENV->name . '=');
+            putenv(self::CLIENT_SECRET_ENV->name . '=');
+        }
+        [$recipeClientId, $recipeSecret, $recipeScope] = $useRecipe
+            ? ['recipe-client', 'recipe-secret', 'profile']
+            : ['', '', ''];
+        $descriptor = OAuthProviderDescriptor::fromRecipe(
+            new OAuthProviderConfig(
+                key: OAuthProviderPreset::GITHUB->value,
+                clientId: $recipeClientId,
+                clientSecret: $recipeSecret,
+                authorizeUrl: 'https://example.test/authorize',
+                tokenUrl: 'https://example.test/token',
+                userInfoUrl: 'https://example.test/userinfo',
+                scope: $recipeScope,
+                redirectUri: '',
+                subjectKey: 'sub',
+                emailKey: 'email',
+                nameKey: 'name',
+            ),
+            'GitHub',
+            self::CLIENT_ID_ENV,
+            self::CLIENT_SECRET_ENV,
+        );
+        $row = $this->row();
+        $row->actions->updateClientId('admin-client');
+        $row->actions->updateScope('admin-scope');
+        $row->actions->writeClientSecret('admin-secret');
+        $stored = Database::sql('SELECT `client_id`, `scope`, `client_secret` FROM `hilos_oauth_provider` WHERE `id` = ?', [$row->id])->rows();
+        self::assertCount(1, $stored);
+        self::assertSame('admin-client', $stored[0]['client_id']);
+        self::assertSame('admin-scope', $stored[0]['scope']);
+        self::assertSame('admin-secret', $stored[0]['client_secret']);
+        $this->announced = [];
+        $this->drainQueuedSignals();
+
+        $preview = $this->resolver()->resolveDefault($descriptor, $field);
+        $fieldsTable = new class($descriptor) extends HilosSecurityOAuthProviderFieldsTable {
+            /** @param OAuthProviderDescriptor $descriptor Provider whose fallback layers the case declares */
+            public function __construct(private readonly OAuthProviderDescriptor $descriptor)
+            {
+                parent::__construct();
+            }
+
+            protected function providers(): array
+            {
+                return [$this->descriptor->key => $this->descriptor];
+            }
+        };
+        $snapshot = $fieldsTable->getFullSnapshot();
+        self::assertCount(count(OAuthConfigField::cases()), $snapshot->rows);
+        foreach ($snapshot->rows as $snapshotRow) {
+            self::assertNotContains('admin-secret', $snapshotRow->toArray());
+            self::assertNotContains('env-secret', $snapshotRow->toArray());
+            self::assertNotContains('recipe-secret', $snapshotRow->toArray());
+            if ($snapshotRow->field === $field->value) {
+                self::assertSame('db', $snapshotRow->source);
+                self::assertSame($value, $snapshotRow->defaultValue);
+                self::assertSame($source->value, $snapshotRow->defaultSource);
+                self::assertSame($isSet, $snapshotRow->defaultSetState);
+                self::assertTrue($snapshotRow->setState);
+                self::assertSame(
+                    match ($field) {
+                        OAuthConfigField::CLIENT_ID => 'admin-client',
+                        OAuthConfigField::SCOPE => 'admin-scope',
+                        OAuthConfigField::CLIENT_SECRET => null,
+                    },
+                    $snapshotRow->value,
+                );
+            }
+        }
+
+        self::assertSame($field->value, $preview->field);
+        self::assertSame($source, $preview->source);
+        self::assertSame($value, $preview->value);
+        self::assertSame($isSet, $preview->isSet);
+        self::assertSame(
+            $stored,
+            Database::sql('SELECT `client_id`, `scope`, `client_secret` FROM `hilos_oauth_provider` WHERE `id` = ?', [$row->id])->rows(),
+        );
+        self::assertSame([], $this->announced);
+        self::assertSame([], $this->drainQueuedSignals());
+        self::assertSame(OAuthConfigSource::DB, $this->resolver()->resolve($descriptor, $field)->source);
+
+        switch ($field) {
+            case OAuthConfigField::CLIENT_ID:
+                $row->actions->updateClientId(null);
+                break;
+            case OAuthConfigField::SCOPE:
+                $row->actions->updateScope(null);
+                break;
+            case OAuthConfigField::CLIENT_SECRET:
+                $row->actions->writeClientSecret(null);
+                break;
+        }
+
+        self::assertEquals($preview, $this->resolver()->resolve($descriptor, $field));
+    }
+
+    /**
+     * @return array<string, array{OAuthConfigField, bool, bool, OAuthConfigSource, ?string, bool}> Field fallback cases
+     */
+    public static function defaultFieldCases(): array
+    {
+        return [
+            'client id env' => [OAuthConfigField::CLIENT_ID, true, true, OAuthConfigSource::ENV, 'env-client', true],
+            'client id recipe' => [OAuthConfigField::CLIENT_ID, false, true, OAuthConfigSource::DEFAULT, 'recipe-client', true],
+            'client id empty' => [OAuthConfigField::CLIENT_ID, false, false, OAuthConfigSource::DEFAULT, '', false],
+            'scope recipe' => [OAuthConfigField::SCOPE, true, true, OAuthConfigSource::DEFAULT, 'profile', true],
+            'scope empty' => [OAuthConfigField::SCOPE, true, false, OAuthConfigSource::DEFAULT, '', false],
+            'secret env' => [OAuthConfigField::CLIENT_SECRET, true, true, OAuthConfigSource::ENV, null, true],
+            'secret recipe' => [OAuthConfigField::CLIENT_SECRET, false, true, OAuthConfigSource::DEFAULT, null, true],
+            'secret empty' => [OAuthConfigField::CLIENT_SECRET, false, false, OAuthConfigSource::DEFAULT, null, false],
+        ];
+    }
+
+    /**
+     * @param bool $useEnv Whether the return-address env value is populated
+     * @param string $value Expected return address below the override
+     */
+    #[DataProvider('defaultRedirectCases')]
+    public function testDefaultRedirectPreviewLeavesOverrideIntactAndMatchesItsReset(bool $useEnv, string $value): void
+    {
+        if (!$useEnv) {
+            putenv(self::REDIRECT_ENV->name . '=');
+        }
+        $this->storeReturnAddress('https://admin.example/auth/callback');
+        $stored = Database::sql('SELECT `value` FROM `hilos_setting` WHERE `key` = ?', [OAuthSettingsCatalog::REDIRECT_URI_KEY])->rows();
+        self::assertSame([['value' => 'https://admin.example/auth/callback']], $stored);
+        $this->announced = [];
+        $this->drainQueuedSignals();
+
+        $preview = $this->resolver()->resolveDefaultRedirectUri();
+
+        self::assertSame(OAuthConfigResolver::REDIRECT_URI_FIELD, $preview->field);
+        self::assertSame($useEnv ? OAuthConfigSource::ENV : OAuthConfigSource::DEFAULT, $preview->source);
+        self::assertSame($value, $preview->value);
+        self::assertSame($useEnv, $preview->isSet);
+        self::assertSame(
+            $stored,
+            Database::sql('SELECT `value` FROM `hilos_setting` WHERE `key` = ?', [OAuthSettingsCatalog::REDIRECT_URI_KEY])->rows(),
+        );
+        self::assertSame([], $this->announced);
+        self::assertSame([], $this->drainQueuedSignals());
+        self::assertSame(OAuthConfigSource::DB, $this->resolver()->resolveRedirectUri()->source);
+
+        Hilos::$db->settings[OAuthSettingsCatalog::REDIRECT_URI_KEY]->actions->delete();
+
+        self::assertArrayNotHasKey(OAuthSettingsCatalog::REDIRECT_URI_KEY, Hilos::$db->settings);
+        self::assertEquals($preview, $this->resolver()->resolveRedirectUri());
+    }
+
+    /**
+     * @return array<string, array{bool, string}> Populated and empty return-address env cases
+     */
+    public static function defaultRedirectCases(): array
+    {
+        return ['env' => [true, self::ENV_REDIRECT], 'empty default' => [false, '']];
     }
 
     /**
