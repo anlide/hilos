@@ -267,7 +267,7 @@ waive either gate.
 to copy it. For a catalog-initialized project, use pull and then apply the generated
 migrations; do not take that older wording as a second source-delivery recipe.
 
-### Initial adoption and future baselines
+### Initial adoption and new-project baselines
 
 The catalog was connected to the six reviewed demos by an appended no-op `adopt` up/down
 pair in each project. Existing migration history stays unchanged. Adoption records only
@@ -282,10 +282,33 @@ origin; only projects initialized for this catalog are supported`. Pull does not
 adoption from table names or certify an external schema. There is no general legacy
 adoption procedure here.
 
-A new project receives its framework tables as one composite baseline in their current
-form, marked with the catalog version it was built from (not in the code yet — HIL-1519).
-The origin parser already accepts multiple units and parts for that future baseline;
-it is not a baseline generator. Do not use pull as a new-project generator.
+A new project declares its framework features in `Hilos::FEATURES`, creates an empty
+`backend/Database/Migration/Schema/` track, and runs the baseline command before deployment:
+
+```bash
+php backend/Bootstrap/cli.php db:framework:baseline
+```
+
+`FrameworkMigrationBaselineCommand` is database-free and uses the current
+`Migration::trackPath()` and `Hilos::appClass()` only. It writes one composite pair,
+`001_framework_baseline.sql` and `001_framework_baseline_down.sql`, from the selected
+framework units' catalog-verified current stubs in canonical UTF-8/LF form. Selection
+includes core `user` and `session`, units required by the declared features, and
+`verifier_circle` when the facade has a runtime factory. The origin records the exact units
+and selected change parts, including bootstrap-owned units; those units contribute no DDL.
+The up body follows unit dependency order and the down body reverses it. Both files carry
+origin metadata and exact body hashes.
+
+On first use, the numeric `Schema` track must be empty. A completed, verified baseline is
+skipped on repeat without rebuilding it, even if the feature declaration or catalog has
+since advanced. If publication stopped after one direction, a repeat completes it only when
+that file exactly matches the expected baseline. Any other occupied track on first use or
+damaged baseline is refused. Publication uses the shared exclusive source lock and
+no-replace writer described above. Commit the pair, then apply it through the ordinary
+`db:migration:up`; its rollback is the ordinary guarded `db:migration:down`. The baseline
+command never initializes the application or database or applies SQL. Use
+`db:framework:pull` for later framework changes or newly selected features. This creates
+sources for a new project; it does not certify or adopt an unknown legacy schema.
 
 **Why not a migration track of the framework's own.** Considered, and set aside by the owner
 on 2026-10-08. A track of its own needs a track in the `migration` journal, two levels in

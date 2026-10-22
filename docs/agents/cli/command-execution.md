@@ -147,10 +147,15 @@ hand.
 agent (HIL-729 brought them in from chat; before that the framework had none).
 
 **`cli-source-write`** — `db:framework:pull` writes versioned project migration sources
-before deployment. It declares `CommandExecution::cliSourceWrite()` with the reason
+before deployment and declares `CommandExecution::cliSourceWrite()` with the reason
 `writes versioned project migration sources before deployment; no running daemon owns these files`.
-It is database-free and needs no command-channel address or presence probe. This site
-does not admit writes to installation state: migrations, seeds and fixtures retain
+`db:framework:baseline` writes one new project's composite framework baseline to its
+configured Schema track before deployment. It uses `Migration::trackPath()` and
+`Hilos::appClass()`, takes no options or positional arguments, and does not apply SQL. It
+declares `CommandExecution::cliSourceWrite()` with the reason
+`writes a composite framework baseline into versioned project sources before deployment; no running daemon owns these files`.
+Both commands are database-free and need no command-channel address or presence probe. This
+site does not admit writes to installation state: migrations, seeds and fixtures retain
 their existing `cli-offline-write` gate.
 
 ## When a command's daemon half is missing

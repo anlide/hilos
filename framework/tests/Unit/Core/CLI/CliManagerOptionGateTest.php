@@ -10,8 +10,11 @@ use Hilos\Core\CLI\CliManager;
 use Hilos\Core\CLI\Commands\CommandExecution;
 use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Core\CLI\Commands\HelpCommand;
+use Hilos\Database\Migration;
+use Hilos\Hilos;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 
 /**
  * Pins the gate that answers help and refuses an option a command did not declare,
@@ -198,6 +201,43 @@ final class CliManagerOptionGateTest extends TestCase
             ['Unknown option --adopt for db:framework:pull; see php cli.php help db:framework:pull'],
             $manager->standardError,
         );
+    }
+
+    public function testBaselineHelpDoesNotNeedConfiguredSourcesOrFacade(): void
+    {
+        $appClass = new ReflectionProperty(Hilos::class, 'appClass');
+        $migrationListPath = new ReflectionProperty(Migration::class, 'migrationListPath');
+        $previousAppClass = $appClass->getValue();
+        $previousMigrationListPath = $migrationListPath->getValue();
+        try {
+            $appClass->setValue(null, 'UnavailableBaselineFacade');
+            $migrationListPath->setValue(null, null);
+            $manager = $this->manager([CliCommands::DB_FRAMEWORK_BASELINE, '--help']);
+            self::assertFalse($manager->requiresDatabase(CliCommands::DB_FRAMEWORK_BASELINE));
+
+            [$answered, $stdout] = $this->capture(fn (): ?int => $manager->answerWithoutRunning());
+
+            self::assertSame(ExitCode::SUCCESS, $answered);
+            self::assertStringContainsString('Command: db:framework:baseline', $stdout);
+            self::assertStringContainsString('run db:framework:pull', $stdout);
+            self::assertSame([], $manager->standardError);
+        } finally {
+            $appClass->setValue(null, $previousAppClass);
+            $migrationListPath->setValue(null, $previousMigrationListPath);
+        }
+    }
+
+    public function testBaselineRejectsProjectAndForceOptionsBeforeSourcesAreRead(): void
+    {
+        foreach (['--projects=/nonexistent/registry.json', '--force'] as $option) {
+            $manager = $this->manager([CliCommands::DB_FRAMEWORK_BASELINE, $option]);
+
+            self::assertSame(ExitCode::INVALID_ARGUMENT, $manager->answerWithoutRunning());
+            self::assertSame(
+                ["Unknown option " . explode('=', $option)[0] . ' for db:framework:baseline; see php cli.php help db:framework:baseline'],
+                $manager->standardError,
+            );
+        }
     }
 
     /**

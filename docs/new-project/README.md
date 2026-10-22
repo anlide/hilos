@@ -58,15 +58,17 @@ demo/<name>/
 
 Namespace `Demo\<Name>\`, autoload root `backend/`. The binance-btc-tracker
 backend is the canonical minimal set — the base below plus sign-in by password,
-the empty admin dashboard and the four footer pages, 47 PHP files and one
-migration per framework table it needs; mirror it file by file:
+the empty admin dashboard and the four footer pages, 47 PHP files. Mirror its
+scaffold code file by file; create framework table migrations with the composite
+baseline command in step 7:
 
 1. **Bootstrap** (`backend/Bootstrap/`): `docker.php` (container PID-1:
    env init → DB connect with retry → migrations → `Hilos::init()` → watchdog
    over `daemon.php`), `daemon.php` (servers + `/status` route + main loop),
    `worker.php`, `cli.php`, `phpunit.php`. All five are boilerplate — copy and
    rename the namespace.
-2. **Facade** `backend/Hilos.php` extends `\Hilos\Hilos`: `PAGES`, `AGENTS`
+2. **Facade** `backend/Hilos.php` extends `\Hilos\Hilos`: declare the framework
+   features this project includes in `FEATURES`, then add its `PAGES`, `AGENTS`
    registries, `createDb()` (the only abstract member), optional
    `ENV_CATALOG`, and `DATABASE_GUARANTEES` naming both
    `DatabaseGuarantee::ONE_LOGICAL_DATABASE` and
@@ -103,16 +105,32 @@ migration per framework table it needs; mirror it file by file:
    rejects EVERY action; validate against `Hilos::getPageActionRoutes()`).
 7. **Database**: `Database` (configure/connect from `DB_*` env),
    `<Name>DbContext extends HilosDbContext` (can be empty — the base registers
-   the framework settings collection), an `EnvCatalog` overriding the
-   `DB_DATABASE` default (the framework stub default is an empty string), and
-   migration 001 = a copy of
-   `framework/backend/Database/Migration/Stub/create_hilos_setting.sql`
-   (+`_down`). The settings table is mandatory because `HilosDbContext`
-   registers the collection unconditionally. A project that builds an RT
-   context owes a second one: a copy of `create_hilos_verifier_circle.sql`
-   (+`_down`) from the same directory — the context mounts the freeze row, a
-   node that can freeze admits its verification window by the circle, and the
-   topology unit test below refuses the project without it.
+   the framework settings collection), and an `EnvCatalog` overriding the
+   `DB_DATABASE` default (the framework stub default is an empty string). The
+   settings collection is mounted unconditionally, so declare
+   `HilosFeature::SETTINGS` in `FEATURES`; the baseline selects its required
+   `setting` unit. Create the empty project track and generate its initial
+   framework schema from the facade's `FEATURES` declaration:
+
+   ```bash
+   mkdir -p backend/Database/Migration/Schema
+   php backend/Bootstrap/cli.php db:framework:baseline
+   ```
+
+   The database-free command writes one composite up/down pair using the current
+   framework stubs for the core units and the units required by the declared
+   features. It also selects `verifier_circle` when the facade builds an RT
+   context. The origin records exact selected units, change parts, and body
+   hashes; bootstrap-owned units are recorded there but their DDL remains with
+   migration initialization. Commit the pair, then use the ordinary
+   `db:migration:up` command to apply it. The baseline command does not connect
+   to a database or execute SQL. Repeating it skips a verified baseline without
+   rebuilding it; after an interrupted write it completes only an exact matching
+   half-pair. Keep project-owned schema changes in their own migrations. Use
+   `db:framework:pull` for later framework changes and newly selected feature
+   units; this is not a legacy schema adoption command. The deferred feature
+   check in the topology test below still verifies the selected schema units,
+   including `verifier_circle` for projects with an RT context.
 8. **Topology registry unit test** (`tests/Unit/`): pins registry/class-constant
    consistency and asserts that the action/signal/table routes the project has not
    opted into yet stay empty. Transport-only is a starting state, not a permanent

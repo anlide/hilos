@@ -16,6 +16,7 @@ reason in its `execution()` declaration. See
 
 | Command | Site | Description |
 |---|---|---|
+| `db:framework:baseline` | `cli-source-write` | Write one composite framework baseline pair for the current project's new, empty Schema track; does not apply SQL |
 | `db:framework:pull [--projects=<path>]` | `cli-source-write` | Copy missing framework SQL pairs into versioned project tracks without applying SQL or contacting a daemon |
 | `db:migration:up` | `cli-offline-write` | Apply all pending migrations |
 | `db:migration:down` | `cli-offline-write` | Roll back last applied migration |
@@ -31,7 +32,18 @@ reading `.env`, initializing a database, or switching the active facade. The rep
 `composer db:framework:pull` uses `scripts/framework-migrations.php`, the same CLI manager
 and command, and `framework-projects.json` to address all six demos.
 
-The command supports origin-aware tracks. It does not infer provenance from an unknown
+`db:framework:baseline` takes no options or positional arguments. It uses only the current
+project's configured Schema track and facade, and writes its single initial
+`001_framework_baseline.sql` / `_down.sql` pair from the framework units selected for that
+facade. Run it for a new project, commit the pair, then apply it through the ordinary
+`db:migration:up` command. It prints the actual files created and their paths; a verified
+baseline is skipped on repeat with advice to use `db:framework:pull` for later updates. An
+interrupted pair is completed only from an exact matching half. Other occupied tracks are
+refused. Failures go to stderr with a nonzero exit and report any partial result. The
+command does not initialize the application or database, contact a daemon, or apply SQL;
+use `db:framework:pull` for later framework updates.
+
+The pull command supports origin-aware tracks. It does not infer provenance from an unknown
 legacy track. It checks every target before publishing, then rechecks under each track's
 source lock. It prints created files or skipped targets on stdout and failures on stderr;
 any failure returns nonzero. Publication is per file, not a transaction across projects:
@@ -222,7 +234,8 @@ way. `CliApplication` asks `CliManager::requiresDatabase()` and skips the connec
 unregistered command name skips it too, so a typo answers `Unknown command` instead of a
 connection failure.
 
-Marked today: `db:framework:pull` (writes source files without reading a database),
+Marked today: `db:framework:baseline` and `db:framework:pull` (write versioned source files
+without reading a database),
 `db:wait` (its poll *is* the connect, and it has to run before the server
 answers), `agent:restart` (the master coordinates the stop and start over its command
 socket, and the CLI process has no database work), `test:orm:forget` (only the addressed

@@ -26,6 +26,7 @@ class FrameworkMigrationInstaller
     private const int TEMP_NAME_BYTES = 16;
     private const string ORIGIN_MARKER = 'hilos-framework:';
     private const string GENERATED_PREFIX = 'framework_';
+    private const string BASELINE_NAME = 'framework_baseline';
 
     private readonly FrameworkSchemaCatalog $schema;
     private readonly FrameworkMigrationCatalog $catalog;
@@ -78,6 +79,44 @@ class FrameworkMigrationInstaller
         return $this->run(
             array_map(static fn (FrameworkMigrationProject $project): FrameworkMigrationPlan => new FrameworkMigrationPlan($project, []), $projects),
             fn (FrameworkMigrationPlan $plan): FrameworkMigrationPlan => $this->planProject($plan->project),
+        );
+    }
+
+    /**
+     * @param FrameworkMigrationProject ...$projects Existing source directories for new projects
+     * @return list<FrameworkMigrationPlan> Infrastructure baseline plans in target order; no SQL files are written
+     * @throws DatabaseException When a track is occupied, provenance is invalid or selected sources cannot form a baseline
+     * @throws IncompleteFeatureActivationException When a facade declares an unknown feature
+     * @throws FsException When a source directory is absent, unreadable or cannot be locked
+     */
+    public function planBaseline(FrameworkMigrationProject ...$projects): array
+    {
+        $plans = [];
+        $seen = [];
+        foreach ($projects as $project) {
+            $this->claimTarget($project, $seen);
+            $plans[] = FsPath::withLock(
+                $project->root . '/' . self::LOCK_FILE,
+                false,
+                fn (): FrameworkMigrationPlan => $this->planBaselineProject($project),
+            );
+        }
+
+        return $plans;
+    }
+
+    /**
+     * Preflights every baseline, then replans under the shared writer's exclusive source lock.
+     * A verified historical baseline is skipped; this does not check applied SQL or today's feature coverage.
+     *
+     * @param FrameworkMigrationProject ...$projects Existing source directories for new projects
+     * @return FrameworkMigrationResult Actual publications and failures, including an interrupted first half
+     */
+    public function executeBaseline(FrameworkMigrationProject ...$projects): FrameworkMigrationResult
+    {
+        return $this->run(
+            array_map(static fn (FrameworkMigrationProject $project): FrameworkMigrationPlan => new FrameworkMigrationPlan($project, []), $projects),
+            fn (FrameworkMigrationPlan $plan): FrameworkMigrationPlan => $this->planBaselineProject($plan->project),
         );
     }
 
@@ -243,6 +282,66 @@ class FrameworkMigrationInstaller
         }
 
         return new FrameworkMigrationResult($outcomes);
+    }
+
+    /**
+     * @param FrameworkMigrationProject $project Track read under the caller's source lock
+     * @return FrameworkMigrationPlan One initial pair, an exact half-pair recovery, or a verified historical skip
+     * @throws DatabaseException When the track is not new or resumable, or selected sources or historical provenance are invalid
+     * @throws IncompleteFeatureActivationException When a facade declares an unknown feature
+     * @throws FsException When project or stub sources cannot be read
+     */
+    private function planBaselineProject(FrameworkMigrationProject $project): FrameworkMigrationPlan
+    {
+        $track = $this->readTrack($project);
+        $base = str_pad('1', self::INDEX_DIGITS, '0', STR_PAD_LEFT) . '_' . self::BASELINE_NAME;
+        $upName = $base . '.sql';
+        $downName = $base . '_down.sql';
+        $baselines = array_values(array_filter(
+            $track,
+            static fn (FrameworkMigrationTrackEntry $entry): bool => $entry->origin?->kind === FrameworkMigrationOrigin::BASELINE,
+        ));
+        if ($baselines !== []) {
+            if (
+                count($baselines) !== 1 || $baselines[0] !== $track[0]
+                || $baselines[0]->index !== 1 || $baselines[0]->upName !== $upName || $baselines[0]->downName !== $downName
+            ) {
+                throw new DatabaseException("Framework baseline must be the single initial pair {$upName}, {$downName} in {$project->root}");
+            }
+
+            return $this->preparePlan($project, [], $track);
+        }
+        if ($track !== [] && (
+            count($track) !== 1 || $track[0]->index !== 1
+            || ($track[0]->upName !== null && $track[0]->upName !== $upName)
+            || ($track[0]->downName !== null && $track[0]->downName !== $downName)
+            || ($track[0]->upName !== null && $track[0]->downName !== null)
+        )) {
+            throw new DatabaseException("Framework baseline requires an empty numeric migration track in {$project->root}");
+        }
+
+        $units = $this->schema->selectedUnits($project->facade);
+        $keys = array_column($units, 'key');
+        $this->catalog->verifyCurrentStubs($keys);
+        $parts = $this->catalog->partsForUnits($keys);
+        $up = [];
+        $down = [];
+        foreach ($units as $unit) {
+            if (!$unit->bootstrapOwned) {
+                $up[] = FrameworkMigrationOrigin::canonicalSql(FsPath::read($unit->upPath));
+                $down[] = FrameworkMigrationOrigin::canonicalSql(FsPath::read($unit->downPath));
+            }
+        }
+        $upBody = implode("\n", $up);
+        $downBody = implode("\n", array_reverse($down));
+        $pair = new FrameworkMigrationPair(
+            self::BASELINE_NAME,
+            FrameworkMigrationOrigin::forBodies(FrameworkMigrationOrigin::BASELINE, $keys, $parts, $upBody, $downBody),
+            $upBody,
+            $downBody,
+        );
+
+        return $this->preparePlan($project, [$pair], $track);
     }
 
     /**

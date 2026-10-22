@@ -117,6 +117,9 @@ final class CliCommands
     /** @var string Command: Pull missing framework migration sources into project tracks */
     public const string DB_FRAMEWORK_PULL = 'db:framework:pull';
 
+    /** @var string Command: Create the composite framework baseline for the current project */
+    public const string DB_FRAMEWORK_BASELINE = 'db:framework:baseline';
+
     /** @var string Command: Apply database seeds */
     public const string SEED_APPLY = 'db:seed:apply';
 

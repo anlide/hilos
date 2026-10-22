@@ -43,11 +43,13 @@ final class OfflineWriteGateTest extends TestCase
         try {
             self::assertNull(DaemonPresenceProbe::address());
             $this->expectOutputString('');
-            self::assertNull(new ReflectionMethod(CliApplication::class, 'refuseOfflineWriteBesideALiveDaemon')->invoke(
-                null,
-                CommandExecution::cliSourceWrite('writes versioned sources'),
-                CliCommands::DB_FRAMEWORK_PULL,
-            ));
+            foreach ([CliCommands::DB_FRAMEWORK_PULL, CliCommands::DB_FRAMEWORK_BASELINE] as $commandName) {
+                self::assertNull(new ReflectionMethod(CliApplication::class, 'refuseOfflineWriteBesideALiveDaemon')->invoke(
+                    null,
+                    CommandExecution::cliSourceWrite('writes versioned sources'),
+                    $commandName,
+                ));
+            }
         } finally {
             $previousHost === false ? putenv('HILOS_DAEMON_HOST') : putenv('HILOS_DAEMON_HOST=' . $previousHost);
             $previousPort === false ? putenv('COMMAND_PORT') : putenv('COMMAND_PORT=' . $previousPort);

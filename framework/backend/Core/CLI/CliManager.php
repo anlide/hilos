@@ -52,6 +52,7 @@ use Hilos\Core\CLI\Commands\BackupTestResetCommand;
 use Hilos\Core\CLI\Commands\DbTestResetCommand;
 use Hilos\Core\CLI\Commands\LogsTestResetCommand;
 use Hilos\Core\CLI\Commands\DbWaitCommand;
+use Hilos\Core\CLI\Commands\FrameworkMigrationBaselineCommand;
 use Hilos\Core\CLI\Commands\FrameworkMigrationPullCommand;
 use Hilos\Core\CLI\Commands\HelpCommand;
 use Hilos\Core\CLI\Commands\ImpersonateStartCommand;
@@ -205,6 +206,7 @@ class CliManager
         $this->commands[CliCommands::MIGRATION_RELEASE] = new MigrationReleaseCommand();
         $this->commands[CliCommands::CHANGE_LOG_GENERATE] = new ChangeLogGenerateCommand();
         $this->commands[CliCommands::DB_FRAMEWORK_PULL] = new FrameworkMigrationPullCommand();
+        $this->commands[CliCommands::DB_FRAMEWORK_BASELINE] = new FrameworkMigrationBaselineCommand();
         $this->commands[CliCommands::SEED_APPLY] = new SeedApplyCommand();
         $this->commands[CliCommands::DB_SCHEMA_STATUS] = new DbSchemaStatusCommand();
         $this->commands[CliCommands::DB_WAIT] = new DbWaitCommand();
