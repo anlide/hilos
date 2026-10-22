@@ -137,7 +137,7 @@ it('shows a guest the text and the history, newest first, with nothing to accept
     revisions[0]!.querySelector('[data-id="terms-history-current"]'),
   ).not.toBeNull()
   expect(one('terms-history-accepted')).toBeNull()
-  expect(one('terms-accept')).toBeNull()
+  expect(one('legal-document-accept')).toBeNull()
 })
 
 it('confirms in green a reader holding the revision in force', async () => {
@@ -160,7 +160,7 @@ it('confirms in green a reader holding the revision in force', async () => {
       `[data-revision="${substantial.revisionId}"] [data-id="terms-history-accepted"]`,
     ),
   ).not.toBeNull()
-  expect(one('terms-accept')).toBeNull()
+  expect(one('legal-document-accept')).toBeNull()
 })
 
 it('shows the comparison after wording-only changes, without Accept', async () => {
@@ -173,7 +173,7 @@ it('shows the comparison after wording-only changes, without Accept', async () =
   )
   await settle()
   expect(one('terms-reader')!.getAttribute('data-state')).toBe('reworded')
-  fireEvent.click(one('terms-changes-open')!)
+  fireEvent.click(one('legal-document-changes-open')!)
   await settle()
   expect(one('terms-changes-modal')!.textContent).toContain('Old wording')
   expect(one('terms-changes-accept')).toBeNull()
@@ -183,8 +183,8 @@ it('accepts the Terms alone from the plate while a decision is due', async () =>
   const { dispatch } = drawTerms(DUE, { standing: IN_WINDOW })
   await settle()
   expect(one('terms-reader')!.getAttribute('data-state')).toBe('due')
-  expect(one('terms-reader-plate')).not.toBeNull()
-  fireEvent.click(one('terms-accept')!)
+  expect(one('legal-document-reader-plate')).not.toBeNull()
+  fireEvent.click(one('legal-document-accept')!)
   expect(dispatch).toHaveBeenCalledWith('hilos_legal_accept', {
     acceptedRevisions: { terms: substantial.revisionId },
   })
@@ -206,12 +206,14 @@ it('keeps the refusal of an acceptance in its room under the buttons', async () 
     })),
   )
   await settle()
-  expect(one('terms-reader-plate')!.textContent).toContain(
+  expect(one('legal-document-reader-plate')!.textContent).toContain(
     'account frozen · deadline passed 1 October 2026',
   )
-  fireEvent.click(one('terms-accept')!)
+  fireEvent.click(one('legal-document-accept')!)
   await settle()
-  expect(one('terms-accept-refusal')!.textContent).toContain('The terms moved.')
+  expect(one('legal-document-accept-refusal')!.textContent).toContain(
+    'The terms moved.',
+  )
 })
 
 it('accepts from the comparison window and closes it on success', async () => {
@@ -226,7 +228,7 @@ it('accepts from the comparison window and closes it on success', async () => {
     })),
   )
   await settle()
-  fireEvent.click(one('terms-changes-open')!)
+  fireEvent.click(one('legal-document-changes-open')!)
   await settle()
   fireEvent.click(one('terms-changes-accept')!)
   expect(dispatch).toHaveBeenCalledTimes(1)
@@ -275,8 +277,8 @@ it('opens an older revision through the page own read', async () => {
 it('shows the state under a takeover but offers no acceptance', async () => {
   drawTerms(DUE, { standing: IN_WINDOW, impersonated: true })
   await settle()
-  expect(one('terms-accept')).toBeNull()
-  expect(one('terms-reader-impersonated')!.textContent).toBe(
+  expect(one('legal-document-accept')).toBeNull()
+  expect(one('legal-document-reader-impersonated')!.textContent).toBe(
     'Only Bob can accept the terms.',
   )
 })

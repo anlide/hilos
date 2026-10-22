@@ -1,15 +1,19 @@
-// The public Privacy page (HilosPages.PRIVACY). A framework-declared static
-// page; this project supplies the content and nothing else. The frame, the
-// heading and the erase block under the prose are the framework's
+// The public Privacy page (HilosPages.PRIVACY). A framework-declared public
+// page; this project supplies the introduction. The frame, the
+// heading, policy text, reader and erase block are the framework's
 // (HilosPrivacyPage), and this demo declares no browser value of its own, so it
 // hands in no `values`. See views/About/About.tsx.
 import { HilosPrivacyPage } from '@hilos/react/base'
 
-import { actions, connection } from '../../bootstrap/connection'
+import { actions, connection } from '../../bootstrap/connection.js'
+import { scopes } from '../../bootstrap/session.js'
+
+/** One context for the page's lifetime: the page keys its store on it. */
+const context = { connection, scopes, actions }
 
 export default function Privacy() {
   return (
-    <HilosPrivacyPage connection={connection} actions={actions}>
+    <HilosPrivacyPage context={context}>
       <p>
         This demo stores only the data needed to show its real-time features:
         your chosen display name and the tasks you create.

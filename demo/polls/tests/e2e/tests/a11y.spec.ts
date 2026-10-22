@@ -1,7 +1,9 @@
 import { test, expect, type Page } from '@playwright/test'
 import { grantAdminToSelf } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
+import { holdLegalRevision } from '../helpers/legalHold.js'
 import {
+  clickSubmit,
   enterIdentifierAndPassword,
   logout,
   openSignIn,
@@ -187,4 +189,112 @@ test('password visibility toggle operates from keyboard on sign-in', async ({
   )
   // Ensure the surface remains open: toggling password visibility does not submit the form.
   await expect(page.getByTestId('auth-surface')).toBeVisible()
+})
+
+test('Privacy comparison and erase expose names, keyboard focus and live regions', async ({
+  page,
+}) => {
+  const person = await signUp(page)
+  await gotoPage(page, '/privacy')
+  const reader = page.getByTestId('privacy-reader')
+  await expect(reader).toHaveAttribute('data-state', 'covered')
+  await expect(reader.getByTestId('legal-document-reader-line')).toContainText(
+    'You accepted the revision of 9 October 2026',
+  )
+  await expect(reader.locator('i')).toHaveAttribute('aria-hidden', 'true')
+
+  try {
+    await holdLegalRevision(person.userId, 'privacy', '2026-09-17')
+    await expect(reader).toHaveAttribute('data-state', 'due')
+    await expect(
+      reader.getByTestId('legal-document-reader-plate'),
+    ).toContainText('deadline passed 9 October 2026')
+    const directSlot = reader.getByTestId('legal-document-accept-refusal-slot')
+    await expect(directSlot).toHaveAttribute('role', 'alert')
+    await expect(directSlot).toHaveAttribute('aria-live', 'assertive')
+    await expect(
+      reader.getByTestId('legal-document-accept-refusal-idle'),
+    ).toHaveAttribute('aria-hidden', 'true')
+
+    const open = reader.getByTestId('legal-document-changes-open')
+    await expect(open).toHaveAccessibleName('What changed')
+    await open.focus()
+    await open.press('Enter')
+    const dialog = page
+      .getByTestId('modal')
+      .filter({ has: page.getByTestId('privacy-changes-modal') })
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toHaveAttribute('role', 'dialog')
+    await expect(dialog).toHaveAttribute('aria-modal', 'true')
+    await expect(dialog).toHaveAccessibleName(
+      'What changed · 17 September 2026 → 9 October 2026',
+    )
+    await expect(dialog).toBeFocused()
+    const refusal = dialog.getByTestId('privacy-changes-refusal-slot')
+    await expect(refusal).toHaveAttribute('role', 'alert')
+    await expect(refusal).toHaveAttribute('aria-live', 'assertive')
+    await expect(
+      dialog.getByTestId('privacy-changes-refusal-idle'),
+    ).toHaveAttribute('aria-hidden', 'true')
+    await expect(dialog.getByTestId('privacy-changes-refusal')).toHaveCount(0)
+
+    // Reverse Tab at the first control wraps to the last, and Tab wraps back.
+    const headerClose = dialog.getByTestId('modal-close')
+    const accept = dialog.getByTestId('privacy-changes-accept')
+    await headerClose.focus()
+    await headerClose.press('Shift+Tab')
+    await expect(accept).toBeFocused()
+    await accept.press('Tab')
+    await expect(headerClose).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(dialog).toHaveCount(0)
+    await expect(open).toBeFocused()
+
+    await open.press('Enter')
+    await expect(dialog).toBeVisible()
+    await clickSubmit(dialog.getByTestId('privacy-changes-close'))
+    await expect(dialog).toHaveCount(0)
+    await expect(open).toBeFocused()
+    await open.press('Enter')
+    await expect(dialog).toBeVisible()
+    await clickSubmit(dialog.getByTestId('modal-close'))
+    await expect(dialog).toHaveCount(0)
+    await expect(open).toBeFocused()
+
+    const erase = page.getByTestId('privacy-erase')
+    const status = erase.locator('..').locator('[role="status"]')
+    await expect(status).toHaveAttribute('aria-live', 'polite')
+    await expect(status).toBeEmpty()
+    await expect(erase).toHaveAccessibleName('Erase and sign out')
+    await erase.focus()
+    await erase.press('Enter')
+    const confirmation = page
+      .getByTestId('modal')
+      .filter({ has: page.getByTestId('privacy-erase-list') })
+    await expect(confirmation).toHaveAccessibleName(
+      'Erase everything this browser keeps?',
+    )
+    await expect(confirmation).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(confirmation).toHaveCount(0)
+    await expect(erase).toBeFocused()
+    await erase.press('Enter')
+    await expect(confirmation).toBeVisible()
+    await clickSubmit(page.getByTestId('privacy-erase-confirm'))
+    await expect(confirmation).toHaveCount(0)
+    await expect(page.getByTestId('privacy-erase-done')).toBeVisible()
+    await expect(reader).toHaveAttribute('data-state', 'guest')
+    await expect(
+      page.getByTestId('privacy-erase-done').locator('..'),
+    ).toHaveAttribute('role', 'status')
+    await expect(
+      page.getByTestId('privacy-erase-done').locator('..'),
+    ).toHaveAttribute('aria-live', 'polite')
+    await expect(page.getByTestId('privacy-erase-done')).not.toHaveAttribute(
+      'role',
+    )
+  } finally {
+    // Browser erase leaves the account and its held acceptance intact.
+    await holdLegalRevision(person.userId, 'privacy', '2026-10-09')
+  }
 })

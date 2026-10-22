@@ -481,6 +481,10 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_TERMS_REVISION_TEXT],
         );
         $this->assertSame(
+            HilosPageConstants::HILOS_PRIVACY,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_PRIVACY_REVISION_TEXT],
+        );
+        $this->assertSame(
             [HilosSignalConstants::HILOS_SESSION_STATE => SessionStateSignalData::class],
             EcommerceShopAgent::AGENT_SIGNALS,
         );

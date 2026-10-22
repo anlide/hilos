@@ -2,12 +2,14 @@ import { type ActionLifecycle } from '../../src/connection/actionLifecycle.js'
 import { type HilosConnection } from '../../src/connection/HilosConnection.js'
 import { type ProjectSignal } from '../../src/protocol/parseSignal.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
+import { ingest } from '../../src/state/normalizer.js'
 import {
   type HilosLegalAgreement,
   type HilosLegalClause,
   type HilosLegalChange,
 } from '../../src/legal/legalAgreements.js'
 import { type HilosLegalTerms } from '../../src/legal/legalTerms.js'
+import { type HilosLegalPrivacy } from '../../src/legal/legalPrivacy.js'
 
 export const first = {
   revisionId: '2026-09-17',
@@ -151,6 +153,8 @@ export function legalContext(
       if (event === 'projectSignal') listeners.add(listener)
       return () => listeners.delete(listener)
     },
+    // This signal-only connection keeps no buffered page frames.
+    forgetPageFrames(): void {},
   } as unknown as HilosConnection
   const scopes = new ScopeManager()
   const page = scopes.openPage(options.page ?? 'hilos_profile_agreements')
@@ -177,6 +181,53 @@ export function legalContext(
       for (const listener of listeners)
         listener({ kind: 'project', type, data, envelope: {} } as ProjectSignal)
     },
+    /** Deliver a complete page answer through the normalizer before notifying readers. */
+    answer(
+      data: Readonly<Record<string, unknown>>,
+      pageKey = options.page ?? 'hilos_profile_agreements',
+    ) {
+      const currentPage = scopes.page()
+      if (currentPage?.key === pageKey)
+        ingest(currentPage, { data: { ...data } })
+      for (const listener of listeners)
+        listener({
+          kind: 'project',
+          type: 'page_response',
+          data: { page: pageKey, payload: { data } },
+        } as ProjectSignal)
+    },
     listenerCount: () => listeners.size,
   }
+}
+
+/** Privacy moves independently of the Terms revision in the fixtures. */
+export const privacyCurrent = {
+  ...substantial,
+  revisionId: '2026-10-05',
+  publishedOn: '2026-10-05',
+  effectiveOn: '2026-11-14',
+}
+export const privacySection: HilosLegalPrivacy = {
+  current: privacyCurrent,
+  clauses: [{ ...clause, clauseKey: 'standard.session_data' }],
+  revisions: [
+    { ...first, origin: 'first', previousSetVersion: null },
+    { ...privacyCurrent, origin: 'project', previousSetVersion: 1 },
+  ],
+  changes: null,
+}
+export const privacySectionBehind: HilosLegalPrivacy = {
+  ...privacySection,
+  changes: {
+    fromRevisionId: first.revisionId,
+    toRevisionId: privacyCurrent.revisionId,
+    changes: [{ ...change, clauseKey: 'standard.session_data' }],
+  },
+}
+
+/** A reader behind the policy, independently of their Terms acceptance. */
+export const privacyAgreement: HilosLegalAgreement = {
+  ...termsAgreement('window', first, '2026-11-14'),
+  document: 'privacy',
+  current: privacyCurrent,
 }

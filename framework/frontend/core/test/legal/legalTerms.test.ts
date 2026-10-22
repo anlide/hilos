@@ -64,6 +64,7 @@ function termsWorld(
     page: 'hilos_terms',
     data: { legalTerms: section, legalAgreements: termsAgreements(agreement) },
   })
+  world.context.scopes.session.data.set('currentUser', { type: 'user', id: 1 })
   const store = createHilosLegalTermsStore(world.context)
   const stop = store.start()
 
@@ -286,10 +287,10 @@ describe('the Terms page store', () => {
         { person: BOB, frozen: false, now: NOVEMBER_FIRST },
       ).state,
     ).toBe('loading')
-    world.page.data.set(
-      'legalAgreements',
-      termsAgreements(termsAgreement('none', null)),
-    )
+    world.answer({
+      legalTerms: termsSection,
+      legalAgreements: termsAgreements(termsAgreement('none', null)),
+    })
     expect(world.store.agreement.get()?.standing).toBe('none')
     world.stop()
   })
@@ -308,10 +309,10 @@ describe('the Terms page store', () => {
     expect(await accepted).toBe(true)
     expect(resubscribes(world.frames)).toHaveLength(1)
     expect(world.store.accepting.get()).toBe(true)
-    world.page.data.set(
-      'legalAgreements',
-      termsAgreements(termsAgreement('covered', substantial)),
-    )
+    world.answer({
+      legalTerms: termsSection,
+      legalAgreements: termsAgreements(termsAgreement('covered', substantial)),
+    })
     expect(world.store.accepting.get()).toBe(false)
     expect(world.store.agreement.get()?.standing).toBe('covered')
     world.stop()

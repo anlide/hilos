@@ -258,20 +258,30 @@ built are hidden through `HILOS_UNBUILT_PAGES` (see
 
 The public framework pages are tier 2 as well. A public page is no longer prose
 alone — License carries a dependency inventory with a search, a filter, a
-per-row modal and an export; Privacy an erase of what this browser holds, behind
-a confirmation; About a support modal; Terms the revision this reader accepted —
-and none of that behavior has a project-specific half, so the framework owns
-it: `HilosAboutPage`, `HilosTermsPage`, `HilosPrivacyPage` and
+per-row modal and an export; Privacy reads the policy and reader's standing and
+offers an erase of what this browser holds behind a confirmation; About has a
+support modal; Terms reads the revision and reader's standing and displays its
+revision history. All four have framework-owned behavior, and Terms and Privacy
+also carry catalog text. The framework owns these parts: `HilosAboutPage`,
+`HilosTermsPage`, `HilosPrivacyPage` and
 `HilosLicensePage` under `@hilos/vue/src/public/` (and the React / Angular
 twins), one file per page. Each renders the tier-1 `HilosStaticPage` frame with
-the page's own title around two things: the project's prose, taken through the
-**default slot** and placed above (with `HilosLicensePage` as the exception: its
-own license text comes from the project root `LICENSE` file via the
-`projectLicenseText` property of the `inventory` snapshot, not through default
-slot/children), and the framework's behavior block for that page, placed below.
-The framework owns the frame and the behavior; the project owns the words.
-Leaving the behavior as blocks a project pastes in would make "Privacy without
-the erase button" indistinguishable from a deliberate choice.
+the page's own title. Terms and Privacy use the shared
+`HilosLegalDocumentReader` and take `context: HilosLegalContext`, an object with
+`connection`, `scopes` and `actions`. Their reader comes before the project's
+optional introduction; the legal text follows it. Terms keeps its history list
+on the page, while Privacy has no history list and keeps its browser erase block
+below the policy. Privacy keeps its optional
+`values?: readonly HilosBrowserValue[]` input for browser values it erases.
+About and the legal pages
+take project prose through the **default slot** (children in React and projected
+content in Angular). `HilosLicensePage` is the exception: its project license
+text comes from the root `LICENSE` file through `projectLicenseText` in the
+`inventory` snapshot, not through slot/children. The framework owns the frame,
+the behavior and the legal catalog text; the project owns its introduction and
+the words of its other public content. Leaving the behavior as blocks a project
+pastes in would make "Privacy without the erase button" indistinguishable from
+a deliberate choice.
 
 No aggregate collects the four — there is no `hilosPublicViews()`. Each needs a
 project-supplied input, which is the same exception `hilosAdminViews.ts` already
@@ -279,18 +289,20 @@ makes for `HilosUsersPage` / `HilosSettingsPage` / `HilosBackupPage`: a project
 mounts them directly under their `HilosPages` keys. A project that wants its own
 License page mounts its own component under `HilosPages.LICENSE` and gets none
 of the framework behavior — the existing extension model, and the reason About,
-Privacy and Terms take their prose through a slot rather than through
-configuration. `HilosLicensePage` takes `inventory` as a prop/input and renders
+Privacy and Terms take their project introduction through a slot rather than
+through configuration. `HilosLicensePage` takes `inventory` as a prop/input and renders
 both the project's own text and the dependency inventory, so a project mounts the
 component thinly without prose slots (`<HilosLicensePage :inventory="hilosLicenseInventory" />`).
 The project's own view keeps its file and its name (`views/License/License.vue`
 and the twins) and mounts the framework page instead of `HilosStaticPage`;
 nothing else in the project moves — not the page key, not the route, not the
 footer link, not the prerender entry's component map. A behavior block takes
-its data as an input, never as a fetch from inside the page: `HilosLicensePage`
-takes the inventory as a prop, and the project passes the snapshot its own build
-produced ([build-and-docker.md](build-and-docker.md), *SSG and the public
-surface*). Each page is created by the leaf that first needs it:
+its first-render data in its own page subscription. The legal catalog is read by
+the backend; the legal pages use their page context and add no companion
+first-render request. `HilosLicensePage` takes the inventory as a prop, and the
+project passes the snapshot its own build produced
+([build-and-docker.md](build-and-docker.md), *SSG and the public surface*). Each
+page is created by the leaf that first needs it:
 `HilosLicensePage`, `HilosPrivacyPage`, `HilosAboutPage`, `HilosTermsPage`.
 
 The mechanism across both tiers is the same — slots + scoped slots + shared
@@ -346,18 +358,20 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   The shell is a fixed-height viewport column whose main region owns the scroll,
   so a page either scrolls inside it or fills it and scrolls an inner region;
   the footer links come from the framework (`HILOS_FOOTER_LINKS`), so every
-  project shows the same About / Terms / Privacy / License set and supplies only
-  each page's content;
+  project shows the same About / Terms / Privacy / License set and supplies the
+  page's project content: prose for About, Terms and Privacy, optional browser
+  values for Privacy's erase, and the inventory snapshot for License;
 - **`HilosStaticPage`** — the frame for a static page: a centered reading
   column with a heading, the project filling the body. It frames a project's own
   static pages, and it is what the four public framework pages (tier 2, above)
   render inside themselves; it is neither the public pages' component nor
   widened for their behavior. The public pages are declared in `@hilos/core`
-  (`HilosPages` / `HILOS_PAGE_ROUTES`) and subscribe like any page. About,
-  Privacy and License carry no payload, so their visible content is the
-  project's prose plus the framework's behavior block; Terms carries the text of
-  the revision in force and the reader's standing, and the project gives it an
-  introduction only;
+  (`HilosPages` / `HILOS_PAGE_ROUTES`) and subscribe like any page. About and
+  License carry no page payload. Terms carries its current legal document and
+  reader state; Privacy carries `legalPrivacy` and, for a signed-in reader with a
+  published policy, `legalAgreements`. Both legal pages receive the connection,
+  scopes and tracked actions through `HilosLegalContext`, and the project gives
+  them an introduction only;
 - a **`HilosErrorBoundary`** wrapping each page or major block, so one
   component's runtime error degrades locally instead of blanking the long-lived
   SPA;

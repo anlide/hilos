@@ -1,7 +1,11 @@
 import { test, expect, type BrowserContext } from '@playwright/test'
 
-import { isSessionCookie } from '../../../../../framework/frontend/e2e/index.js'
-import { gotoPage } from '../helpers/page.js'
+import {
+  isSessionCookie,
+  watchClientDocument,
+} from '../../../../../framework/frontend/e2e/index.js'
+import { gotoPage, PAGE_READY } from '../helpers/page.js'
+import { clickSubmit, login, openSignIn, signUp } from '../helpers/session.js'
 
 // The erase on /privacy (HIL-839), and the three things only a real browser can
 // answer for it.
@@ -48,7 +52,11 @@ test('the erase empties this browser and moves it onto a new session', async ({
   page,
   context,
 }) => {
-  await gotoPage(page, '/privacy')
+  const person = await signUp(page)
+  await gotoPage(page, '/privacy', PAGE_READY)
+  const document = await watchClientDocument(page)
+  const reader = page.getByTestId('privacy-reader')
+  await expect(reader).toHaveAttribute('data-state', 'covered')
 
   // Seed one value in each store the registry names, through the very keys the
   // framework declares — a spec that seeded keys of its own would prove the sweep
@@ -76,7 +84,7 @@ test('the erase empties this browser and moves it onto a new session', async ({
   const arrived = await cookieValue(context, isSessionCookie)
   expect(arrived).not.toBe('')
 
-  await page.getByTestId('privacy-erase').click()
+  await clickSubmit(page.getByTestId('privacy-erase'))
   // The confirmation names what goes, one line per registry entry, so the person
   // agrees to a list rather than to an adjective.
   await expect(page.getByTestId('privacy-erase-list')).toBeVisible()
@@ -90,12 +98,8 @@ test('the erase empties this browser and moves it onto a new session', async ({
     'Remembered theme settings for this site',
   )
 
-  const confirm = page.getByTestId('privacy-erase-confirm')
-  await confirm.scrollIntoViewIfNeeded()
-  await expect(confirm).toBeVisible()
-  await expect(confirm).toBeEnabled()
-  await confirm.focus()
-  await confirm.click()
+  await clickSubmit(page.getByTestId('privacy-erase-confirm'))
+  await expect(page.getByTestId('privacy-erase-list')).toHaveCount(0)
 
   // Settled: the block has become the outcome, which is what the page promises
   // instead of navigating or reloading.
@@ -137,4 +141,23 @@ test('the erase empties this browser and moves it onto a new session', async ({
 
   // And the person is still on the page they walked to, reading what it said.
   expect(new URL(page.url()).pathname).toBe('/privacy')
+  await expect(reader).toHaveAttribute('data-state', 'guest')
+  await expect(reader).not.toContainText('You accepted')
+  await expect(page.getByTestId('privacy-changes-modal')).toHaveCount(0)
+  await expect(page.getByTestId('nav-profile-name')).toHaveCount(0)
+  await expect(done).toBeVisible()
+  await document.unchanged()
+
+  // The account and its acceptance still exist. Signing back in also leaves the
+  // erase outcome in place: it belongs to the sweep, not the reader's identity.
+  await openSignIn(page)
+  await login(page, person.email)
+  await expect(reader).toHaveAttribute('data-state', 'covered')
+  await expect(page.getByTestId('nav-profile-name')).toHaveAttribute(
+    'title',
+    person.name,
+  )
+  await expect(done).toBeVisible()
+  await document.unchanged()
+  await document.dispose()
 })

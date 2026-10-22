@@ -9,10 +9,8 @@
 // the server's answer, never ahead of it. The history is everybody's, a guest's
 // included: every revision opens through the page's own read.
 //
-// The store's effect runs on the prerender as well, and is harmless there: it
-// registers listeners and sends nothing, so the prerendered file carries the
-// heading, the introduction and the loading line under it. Bootstrap classes
-// only, no CSS of its own (styling-rules.md).
+// The store starts only in the browser. Prerendering carries the heading,
+// introduction and loading line without live listeners. Bootstrap classes only.
 import {
   ChangeDetectionStrategy,
   Component,
@@ -20,7 +18,10 @@ import {
   effect,
   input,
   signal,
+  inject,
+  PLATFORM_ID,
 } from '@angular/core'
+import { isPlatformBrowser } from '@angular/common'
 import {
   createHilosLegalRevisionReader,
   createHilosLegalTermsStore,
@@ -47,6 +48,7 @@ import { hilosSignal } from '../hilosSignal.js'
 import { HilosStaticPage } from '../HilosStaticPage.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { HilosLegalChanges } from '../legal/HilosLegalChanges.js'
+import { HilosLegalDocumentReader } from '../legal/HilosLegalDocumentReader.js'
 import { HilosLegalRevisionText } from '../legal/HilosLegalRevisionText.js'
 
 /** The public Terms page: the reader's standing, the text in force and the history. */
@@ -59,6 +61,7 @@ import { HilosLegalRevisionText } from '../legal/HilosLegalRevisionText.js'
     HilosStaticPage,
     LoadingButton,
     HilosLegalChanges,
+    HilosLegalDocumentReader,
     HilosLegalRevisionText,
   ],
   template: `
@@ -69,99 +72,14 @@ import { HilosLegalRevisionText } from '../legal/HilosLegalRevisionText.js'
           data-id="terms-reader"
           [attr.data-state]="line().state"
         >
-          @if (line().state === 'due') {
-            <div class="alert alert-warning mb-0">
-              <p class="mb-2" data-id="terms-reader-line">
-                <i
-                  class="bi bi-exclamation-triangle-fill me-1"
-                  aria-hidden="true"
-                ></i>
-                {{ line().line }}
-              </p>
-              @if (line().plate; as plate) {
-                <div
-                  class="d-flex flex-wrap align-items-center gap-2 rounded px-3 py-2 mb-2 small"
-                  [class]="
-                    'bg-' +
-                    plate.tone +
-                    '-subtle text-' +
-                    plate.tone +
-                    '-emphasis'
-                  "
-                  data-id="terms-reader-plate"
-                  [attr.data-tone]="plate.tone"
-                >
-                  <i [class]="'bi ' + plate.icon" aria-hidden="true"></i>
-                  <strong>{{ plate.text }}</strong>
-                  @if (plate.detail !== null) {
-                    <span>{{ plate.detail }}</span>
-                  }
-                </div>
-              }
-              @if (line().onlyPerson; as onlyPerson) {
-                <p class="small mb-2" data-id="terms-reader-impersonated">
-                  {{ onlyPerson }}
-                </p>
-              }
-              <div class="d-flex flex-wrap gap-2">
-                @if (line().canAccept) {
-                  <button
-                    hilosLoadingButton
-                    class="btn-sm btn-primary"
-                    data-id="terms-accept"
-                    [loading]="accepting()"
-                    (click)="onAccept()"
-                  >
-                    {{ copy.accept }}
-                  </button>
-                }
-                @if (line().canCompare) {
-                  <button
-                    type="button"
-                    class="btn btn-sm btn-outline-secondary"
-                    data-id="terms-changes-open"
-                    (click)="comparing.set(true)"
-                  >
-                    {{ copy.whatChanged }}
-                  </button>
-                }
-              </div>
-              @if (line().canAccept) {
-                <hilos-form-error
-                  [message]="comparing() ? null : refusal()"
-                  dataId="terms-accept-refusal"
-                  [announce]="true"
-                />
-              }
-            </div>
-          } @else {
-            <div class="d-flex flex-wrap align-items-center gap-2">
-              <p
-                class="mb-0"
-                [class.invisible]="hidden()"
-                data-id="terms-reader-line"
-                [attr.aria-hidden]="hidden()"
-              >
-                @if (green()) {
-                  <i
-                    class="bi bi-check-circle-fill text-success me-1"
-                    aria-hidden="true"
-                  ></i>
-                }
-                {{ line().line }}
-              </p>
-              @if (line().canCompare) {
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-secondary"
-                  data-id="terms-changes-open"
-                  (click)="comparing.set(true)"
-                >
-                  {{ copy.whatChanged }}
-                </button>
-              }
-            </div>
-          }
+          <hilos-legal-document-reader
+            [line]="line()"
+            [copy]="copy"
+            [accepting]="accepting()"
+            [refusal]="comparing() ? null : refusal()"
+            (accept)="onAccept()"
+            (compare)="comparing.set(true)"
+          />
         </div>
       }
 
@@ -273,6 +191,7 @@ import { HilosLegalRevisionText } from '../legal/HilosLegalRevisionText.js'
 
       <hilos-modal
         [open]="changes() !== null"
+        [busy]="accepting()"
         [title]="changesTitle()"
         initialFocus="dialog"
         size="wide"
@@ -301,6 +220,7 @@ import { HilosLegalRevisionText } from '../legal/HilosLegalRevisionText.js'
             type="button"
             class="btn btn-secondary"
             data-id="terms-changes-close"
+            [disabled]="accepting()"
             (click)="requestClose()"
           >
             {{ reconsentCopy.close }}
@@ -322,6 +242,7 @@ import { HilosLegalRevisionText } from '../legal/HilosLegalRevisionText.js'
   `,
 })
 export class HilosTermsPage {
+  private readonly platformId = inject(PLATFORM_ID)
   /** The connection, scopes and action lifecycle the page reads and accepts through. */
   readonly context = input.required<HilosLegalContext>()
   protected readonly copy = LEGAL_TERMS_COPY
@@ -356,12 +277,6 @@ export class HilosTermsPage {
       frozen: this.standing()?.frozen === true,
       now: Date.now(),
     }),
-  )
-  protected readonly green = computed(
-    () => this.line().state === 'covered' || this.line().state === 'reworded',
-  )
-  protected readonly hidden = computed(
-    () => this.line().state === 'loading' && this.terms() === undefined,
   )
   protected readonly history = computed<HilosLegalHistoryRevision[]>(
     () => this.terms()?.revisions.slice().reverse() ?? [],
@@ -399,6 +314,7 @@ export class HilosTermsPage {
 
   constructor() {
     effect((onCleanup) => {
+      if (!isPlatformBrowser(this.platformId)) return
       const store = this.store()
       const reader = this.reader()
       const standing = sessionAccountStanding(this.context().scopes)

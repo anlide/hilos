@@ -1318,6 +1318,18 @@ final class TasksTopologyRegistryTest extends TestCase
         ));
     }
 
+    public function testPublicPrivacyReadUsesTheExistingPageOwner(): void
+    {
+        $this->assertSame(
+            HilosPageConstants::HILOS_PRIVACY,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_PRIVACY_REVISION_TEXT],
+        );
+        $this->assertSame(
+            AgentType::HILOS_INDEX,
+            Hilos::getActionAgentRoutes()[HilosSignalConstants::HILOS_PRIVACY_REVISION_TEXT],
+        );
+    }
+
     public function testProjectTopologyPassesStartupValidation(): void
     {
         // The first check init() runs, and the one every project boots under. It judges

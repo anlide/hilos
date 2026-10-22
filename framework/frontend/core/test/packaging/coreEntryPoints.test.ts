@@ -65,11 +65,41 @@ const logViewerValues = ['logViewerLatestBatchPath', 'logViewerStreamKeys']
 const pageHeadValues = ['hilosTabLinks']
 /** The page head's types past the snapshot, resolved through root and base. */
 const pageHeadTypes = ['HilosPageHeadAction', 'HilosPageTabLink']
+/** Public legal document APIs added for the Privacy page and shared SDK reader. */
+const publicLegalValues = [
+  'LEGAL_PRIVACY_SECTION',
+  'PRIVACY_REVISION_TEXT_ACTION',
+  'legalPrivacySchema',
+  'legalPrivacySectionSchema',
+  'LEGAL_PRIVACY_COPY',
+  'createHilosLegalPrivacyStore',
+  'describeHilosLegalPrivacyReader',
+  'legalPublicDocumentSchema',
+  'legalPublicDocumentSectionSchema',
+  'LEGAL_PUBLIC_DOCUMENT_COPY',
+  'createHilosLegalPublicDocumentStore',
+  'describeHilosLegalPublicDocumentReader',
+]
+const publicLegalTypes = [
+  'HilosLegalPrivacy',
+  'HilosLegalPrivacyReaderState',
+  'HilosLegalPrivacyReader',
+  'HilosLegalPrivacyReaderContext',
+  'HilosLegalPrivacyStore',
+  'HilosLegalPublicDocument',
+  'HilosLegalPublicDocumentCopy',
+  'HilosLegalPublicDocumentReaderState',
+  'HilosLegalPublicDocumentReader',
+  'HilosLegalPublicDocumentReaderContext',
+  'HilosLegalPublicDocumentOptions',
+  'HilosLegalPublicDocumentStore',
+]
 const expectedValues = [
   ...legacy.value,
   ...timeZoneValues,
   ...logViewerValues,
   ...pageHeadValues,
+  ...publicLegalValues,
 ].sort()
 
 /**
@@ -175,7 +205,7 @@ describe('core public entries', () => {
         true,
       )
     }
-    for (const name of pageHeadValues) {
+    for (const name of [...pageHeadValues, ...publicLegalValues]) {
       expect(base, name).toHaveProperty(name)
       expect(Object.is(base[name as keyof typeof base], root[name]), name).toBe(
         true,
@@ -299,9 +329,9 @@ describe('core public entries', () => {
         .filter(([, symbol]) => symbol.flags & ts.SymbolFlags.Type)
         .map(([name]) => name)
         .sort(),
-    ).toEqual([...legacy.type, ...pageHeadTypes].sort())
+    ).toEqual([...legacy.type, ...pageHeadTypes, ...publicLegalTypes].sort())
     const baseExports = exportsOf('base/index.ts')
-    for (const name of pageHeadTypes) {
+    for (const name of [...pageHeadTypes, ...publicLegalTypes]) {
       expect(root.get(name), name).toBeDefined()
       expect(baseExports.get(name), name).toBe(root.get(name))
     }
@@ -327,6 +357,13 @@ describe('core public entries', () => {
       'base/index.ts',
     ])
     expect(closure).toContain('connection/restoreProgress.ts')
+    for (const module of [
+      'legalPublicDocument',
+      'legalPrivacy',
+      'legalTerms',
+    ]) {
+      expect(closure).toContain(`legal/${module}.ts`)
+    }
     for (const protocol of [
       'accountStandingSignals',
       'backupSignals',
@@ -349,30 +386,27 @@ describe('core public entries', () => {
     'subscription/bindTableViewport.ts',
     'table/TableViewportController.ts',
     'table/tableViewportGeometry.ts',
-  ])(
-    'keeps reviewed viewport owner %s in the eager source/output inventory',
-    (name) => {
-      const inventory = JSON.parse(
-        readFileSync(
-          join(packageRoot, 'bin/core-initial-sources.json'),
-          'utf8',
-        ),
-      ) as Record<string, { sourceSha256: string; outputSha256: string }>
-      const file = join(sourceRoot, name)
-      const content = readFileSync(file, 'utf8')
-      const compiled = ts.transpileModule(content, {
-        fileName: file,
-        compilerOptions: {
-          target: ts.ScriptTarget.ES2022,
-          module: ts.ModuleKind.ESNext,
-          sourceMap: true,
-          inlineSources: true,
-        },
-      }).outputText
-      expect(inventory[`src/${name}`]).toEqual({
-        sourceSha256: createHash('sha256').update(content).digest('hex'),
-        outputSha256: createHash('sha256').update(compiled).digest('hex'),
-      })
-    },
-  )
+    'legal/legalTerms.ts',
+    'legal/legalPublicDocument.ts',
+    'legal/legalPrivacy.ts',
+  ])('keeps reviewed owner %s in the eager source/output inventory', (name) => {
+    const inventory = JSON.parse(
+      readFileSync(join(packageRoot, 'bin/core-initial-sources.json'), 'utf8'),
+    ) as Record<string, { sourceSha256: string; outputSha256: string }>
+    const file = join(sourceRoot, name)
+    const content = readFileSync(file, 'utf8')
+    const compiled = ts.transpileModule(content, {
+      fileName: file,
+      compilerOptions: {
+        target: ts.ScriptTarget.ES2022,
+        module: ts.ModuleKind.ESNext,
+        sourceMap: true,
+        inlineSources: true,
+      },
+    }).outputText
+    expect(inventory[`src/${name}`]).toEqual({
+      sourceSha256: createHash('sha256').update(content).digest('hex'),
+      outputSha256: createHash('sha256').update(compiled).digest('hex'),
+    })
+  })
 })

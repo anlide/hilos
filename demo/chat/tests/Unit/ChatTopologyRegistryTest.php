@@ -971,6 +971,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_CHANGE_LOG_RECEIPT_READ => HilosPageConstants::HILOS_CHANGE_LOG,
             HilosSignalConstants::HILOS_CHANGE_LOG_ENTRY_READ => HilosPageConstants::HILOS_CHANGE_LOG,
             HilosSignalConstants::HILOS_TERMS_REVISION_TEXT => HilosPageConstants::HILOS_TERMS,
+            HilosSignalConstants::HILOS_PRIVACY_REVISION_TEXT => HilosPageConstants::HILOS_PRIVACY,
         ], Hilos::getPageActionRoutes());
     }
 
@@ -1063,6 +1064,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_CHANGE_LOG_RECEIPT_READ => AgentType::HILOS_CHANGE_LOG,
             HilosSignalConstants::HILOS_CHANGE_LOG_ENTRY_READ => AgentType::HILOS_CHANGE_LOG,
             HilosSignalConstants::HILOS_TERMS_REVISION_TEXT => AgentType::HILOS_INDEX,
+            HilosSignalConstants::HILOS_PRIVACY_REVISION_TEXT => AgentType::HILOS_INDEX,
         ], Hilos::getActionAgentRoutes());
     }
 

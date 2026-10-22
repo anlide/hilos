@@ -92,8 +92,8 @@
     "outputSha256": "0ba08342c48f9f6398a879320b2c5d70ef51bda56be225919a77e4cabf599633"
   },
   "src/base/index.ts": {
-    "sourceSha256": "70e71511112cba1b61b38cc2cfdd193d497cb9a1cee49bca57890dc905b39661",
-    "outputSha256": "6c777f8c900c486ce5b332939d458359a5546950ac5972e6b94a397afa498872"
+    "sourceSha256": "452d40eb0d9e5548529a9eb4fa71e1b8d68b29965dc431adcf24066f09687277",
+    "outputSha256": "f3dd7733b125966d7e3d22a50d812fd0687cf90521aac841e54af6e1090754f7"
   },
   "src/bootstrap/bootHilos.ts": {
     "sourceSha256": "a5ddce13305c6fff6e7f1e6b299e31b400ba1ed59dc0c87c1bfe874c11949cfa",
@@ -227,6 +227,14 @@
     "sourceSha256": "56b5885ecc527f134ab08fb9a3e5efe69c1ce430040c2cdb2c96d33f462ec8de",
     "outputSha256": "285ae8879d1507d036ffcc236d98d79f35b35752ee498499ac5f617b33346af2"
   },
+  "src/legal/legalPrivacy.ts": {
+    "sourceSha256": "fbcf35064d03a4d30c04697711b209e3ab813d29540e6ef96ff041576e2d685f",
+    "outputSha256": "ed22b3be94738b9c14f5f9739a0f24ad79d473ac7880db96fd0c7cbd462402fc"
+  },
+  "src/legal/legalPublicDocument.ts": {
+    "sourceSha256": "bb2cdda4864209e053f6087f9a01e85262b693ce07682343fee6cb9de5037eae",
+    "outputSha256": "478b43d48a0ef570903630c11ec1827775205404c6b9f945e7fc1a9f70b93c5e"
+  },
   "src/legal/legalReconsent.ts": {
     "sourceSha256": "5f4a8359e2f19521393c4f26ce2f393e7af972ee06153c37783c692f31be6c5a",
     "outputSha256": "c698ccd9a256f6792bb23886ea810fd90709e868c1c3fc3951d0c542fb8e634f"
@@ -236,8 +244,8 @@
     "outputSha256": "e38dcdc2eddb4eef06815c286e0d7fb60fd02b3af8da7b8424d7844e6b17c41a"
   },
   "src/legal/legalTerms.ts": {
-    "sourceSha256": "0efbaf31cbf77babb8ffa094be9a34b8a18069c78fd620ccfe1d7bb299a7831b",
-    "outputSha256": "30fae3784b961067b4ec3c9de18d1dfe01c2d6a33cfc84ebd490e142ba6fd930"
+    "sourceSha256": "ea515644b09686008e02c5bc9aecf973fcf2e96094c194de1c4f9cf38591056e",
+    "outputSha256": "1f08e96117edd5519f909be3fdcd217e60c4661704fbd6c1a22990adc9ca316f"
   },
   "src/license/licenseInventory.ts": {
     "sourceSha256": "47b6c47519287902c77f68f20603b03c6e95ba66b504b3fc7121a33e68bbb550",

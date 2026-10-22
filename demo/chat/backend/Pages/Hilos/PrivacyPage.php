@@ -10,8 +10,8 @@ use Hilos\Pages\AbstractHilosPrivacyPage;
 /**
  * PrivacyPage - Privacy page implementation for the chat demo.
  *
- * The framework page sends no payload; only the owning agent type is bound
- * here.
+ * The page answer includes `legalPrivacy` and, for a signed-in reader with a
+ * published policy, `legalAgreements`; this class binds the owning agent type.
  */
 final class PrivacyPage extends AbstractHilosPrivacyPage
 {

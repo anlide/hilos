@@ -282,50 +282,80 @@ The two profile routes are `/profile/agreements` and
 `/profile/agreements/history`. The profile supplies no browser action to
 accept a revision; registration and re-consent call the command entry above.
 
-## Public Terms page
+## Public Terms and Privacy pages
 
-The body of `/terms` (`AbstractHilosTermsPage`, the SDK's `HilosTermsPage`) is
-the text of the Terms revision in force, composed from the project's catalog —
-the same text a person accepts at registration, opens in the history and
-compares. The project's own prose is only an optional introduction the view
-slots above it. A project that declares no Terms, or whose catalog is faulty,
-shows one line saying no terms are published, with no history.
+The bodies of `/terms` (`AbstractHilosTermsPage`, the SDK's `HilosTermsPage`)
+and `/privacy` (`AbstractHilosPrivacyPage`, the SDK's `HilosPrivacyPage`) use the
+current revision composed from the project's legal catalog. The project supplies
+an optional introduction; the legal reader comes first, the introduction follows
+it, and the catalog text follows the introduction. Terms also displays its
+revision history. Privacy returns revision data but does not display a revision
+history list; its browser erase block follows the policy text. A project that
+declares no document, or whose catalog is faulty, gets a null document section
+and the page's unpublished line.
 
-The page is public, and its answer depends on the reader:
+Both routes are public and use their own page subscription. Privacy declares
+`HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_PRIVACY`
+(`subscription_page_hilos_privacy`) in `BROWSER[BrowserConfigKey::SIGNAL]` and
+answers in the existing `page_response` with `page: 'hilos_privacy'`,
+`params: {}`, and `data`. It has no companion subscription signal or first-render
+request. The acting reader comes from the server's
+`resolveActionUserId($acceptKey)`, not a client-supplied id.
 
-- `legalTerms` goes to everyone: `current`, its `clauses`, every declared
-  revision in `revisions` (the `legalRevisions` row shape, in declaration
-  order), and `changes` — the comparison of the held revision with the one in
-  force for a signed-in reader whose held revision is not the one in force,
-  `null` for anybody else. The whole section is `null` without Terms;
-- `legalAgreements` goes only to a signed-in reader, and only beside a
-  non-null `legalTerms`: the lightweight state in the profile's shape. The
-  reader joins the agreements group after the answer.
+The Terms page sends `legalTerms` to everyone: `current`, its composed `clauses`,
+all declared `revisions` in declaration order, and `changes` — the comparison of
+the held revision with the revision in force when they differ, otherwise `null`.
+The whole section is `null` without Terms. Privacy likewise always includes
+`data.legalPrivacy`: it is `null` without a published, readable Privacy policy;
+otherwise it has `current`, `clauses`, `revisions`, and `changes` in the same
+`LegalWire` shapes. `current` carries `revisionId`, `publishedOn`, `effectiveOn`,
+`significance`, `setVersion`, and `deviationCount`; `publishedOn` and
+`effectiveOn` are `YYYY-MM-DD` dates. Clause rows carry
+`clauseKey`, `standardStatement`, `source`, `statement`, `text`, and `direction`.
+Privacy revisions add `origin` (`first`, `project`, or `standard`) and nullable
+`previousSetVersion` to the revision metadata and stay in declaration order. Its
+`changes` is `null` unless the signed-in reader's held revision differs from the
+one in force; then it carries `fromRevisionId`, `toRevisionId`, and changed,
+added or removed rows `{clauseKey, title, kind, before, after}`. Each non-null
+side carries `source`, `statement`, `text`, and `direction`.
 
-A revision of the history opens through the page's own read,
-`hilos_terms_revision_text` (`{document: 'terms', revisionId}`, replying in
-the shape of `hilos_legal_revision_text`). It is not an authenticated action:
-a guest reads it too. One action cannot belong to two pages, so the profile's
-read is not reused here. Any other document, or an undeclared revision, is a
-`ValidationException`.
+With a signed-in reader and a non-null document section, the page answer also
+includes the existing `legalAgreements` projection:
+`{documents: [{document, current, held, acceptedAt, accepted, standing, deadline}]}`.
+Each `accepted` row is `{revisionId, acceptedAt}`. `acceptedAt` values are epoch
+milliseconds; `deadline` is a `YYYY-MM-DD` date.
+Guests and readers without a published document do not receive this section.
+The reader joins `LegalAgreementsGroup` after the page answer.
 
-Acceptance is the re-consent action `hilos_legal_accept` carrying the Terms
-revision in force alone: the documents are independent, and the privacy policy
-is accepted in the shell's re-consent window. Under a takeover the page shows
+A Terms history revision opens through the page's own public read,
+`hilos_terms_revision_text` (`{document: 'terms', revisionId}`), replying in the
+shape of `hilos_legal_revision_text`. Privacy has its own public read,
+`hilos_privacy_revision_text`, declared in `READING_ACTIONS` and available to a
+guest. `PrivacyRevisionTextActionDTO` accepts
+`{document: 'privacy', revisionId}`; the reply is the existing
+`LegalRevisionTextReplyDTO` shape `{document, revisionId, clauses}` in the
+action ACK. An unsupported document or unknown revision raises
+`ValidationException` with `Unknown legal document` or `Unknown legal revision`.
+Each read belongs to its public page; neither reuses the profile action.
+
+Acceptance uses the existing `hilos_legal_accept` action with only the current
+revision shown on that page: Terms sends
+`{acceptedRevisions: {terms: revisionId}}`, and Privacy sends
+`{acceptedRevisions: {privacy: revisionId}}`. Under a takeover each page shows
 the reader's state and offers no acceptance. A person with no acceptance on
 record is shown the revision in force and asked nothing.
 
-The page asks for its whole answer again in three cases: a group frame moved
-the held or current Terms revision, the person in the tab changed (sign-in,
-sign-out, a takeover starting or ending), and an acceptance landed or was
-refused. A change of rights does not answer a public page again
-([page-access-control.md](page-access-control.md), "Pages a rights change
-cannot move are skipped"), so nobody else would. Until the answer arrives the
-text and comparison already shown stay; a frame that moved only the privacy
-policy updates the state directly.
+Each page asks for its whole answer again when a group frame moves that
+document's held or current revision, the acting person in the tab changes
+(sign-in, sign-out, or a takeover starting or ending), or its acceptance lands
+or is refused. A frame about the other document alone does not make this page
+request a new page answer. Until its own answer arrives, the page keeps the coherent
+text and comparison it already showed. A change of rights does not answer a
+public page again ([page-access-control.md](page-access-control.md), "Pages a
+rights change cannot move are skipped").
 
-The prerendered file carries the heading, the introduction and the loading
-line: the catalog lives on the server and the frontend build does not read it
+The prerendered files carry their legal loading states, not catalog text: the
+catalog lives on the server and the frontend build does not read it
 ([build-and-docker.md](../frontend/build-and-docker.md), *SSG and the public
 surface*).
 

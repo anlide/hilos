@@ -1,18 +1,19 @@
-<!-- The public Privacy page (HilosPages.PRIVACY). A framework-declared static
-page; this project supplies the content and nothing else. The frame, the heading
-and the erase block under the prose are the framework's (HilosPrivacyPage), and
+<!-- The public Privacy page (HilosPages.PRIVACY). A framework-declared public
+page; this project supplies the introduction. The frame, heading,
+policy text, reader and erase block are the framework's (HilosPrivacyPage), and
 this demo declares no browser value of its own, so it hands in no `values`.
 See views/About/About.vue. -->
 <script setup lang="ts">
 import { HilosPrivacyPage } from '@hilos/vue/base'
 
-import { actions, connection } from '../../bootstrap/connection'
+import { actions, connection } from '../../bootstrap/connection.js'
+import { scopes } from '../../bootstrap/session.js'
 
 defineOptions({ name: 'PrivacyPage' })
 </script>
 
 <template>
-  <HilosPrivacyPage :connection="connection" :actions="actions">
+  <HilosPrivacyPage :context="{ connection, scopes, actions }">
     <p>
       This demo stores what an account and its sign-in need: your email address,
       your password in hashed form, the display name taken from the address, the

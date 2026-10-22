@@ -19,6 +19,7 @@ final class LegalAgreementsProjector
     public const string TEXTS_SECTION = 'legalAgreementTexts';
     public const string REVISIONS_SECTION = 'legalRevisions';
     public const string TERMS_SECTION = 'legalTerms';
+    public const string PRIVACY_SECTION = 'legalPrivacy';
 
     /**
      * @param int $userId Person whose acceptance state to read
@@ -112,7 +113,29 @@ final class LegalAgreementsProjector
      */
     public static function terms(?int $userId, string $today): ?array
     {
-        $document = LegalDocument::TERMS;
+        return self::documentSection(LegalDocument::TERMS, $userId, $today);
+    }
+
+    /**
+     * @param ?int $userId Reader acting through the session, or null for a guest
+     * @param string $today Server calendar date, YYYY-MM-DD
+     * @return ?array<string, mixed> Privacy text, history and held comparison; null without a sound published policy
+     * @throws HilosException When the acceptance lookup fails
+     */
+    public static function privacy(?int $userId, string $today): ?array
+    {
+        return self::documentSection(LegalDocument::PRIVACY, $userId, $today);
+    }
+
+    /**
+     * @param LegalDocument $document Public document to project
+     * @param ?int $userId Reader acting through the session, or null for a guest
+     * @param string $today Server calendar date, YYYY-MM-DD
+     * @return ?array<string, mixed> Current text, declared history and held comparison; null for an absent or faulty catalog
+     * @throws HilosException When the acceptance lookup fails
+     */
+    private static function documentSection(LegalDocument $document, ?int $userId, string $today): ?array
+    {
         try {
             if (!in_array($document, LegalCatalogResolver::documents(), true)) {
                 return null;

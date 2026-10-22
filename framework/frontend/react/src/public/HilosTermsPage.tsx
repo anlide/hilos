@@ -33,6 +33,7 @@ import { HilosModal } from '../HilosModal.js'
 import { HilosStaticPage } from '../HilosStaticPage.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { HilosLegalChanges } from '../legal/HilosLegalChanges.js'
+import { HilosLegalDocumentReader } from '../legal/HilosLegalDocumentReader.js'
 import { HilosLegalRevisionText } from '../legal/HilosLegalRevisionText.js'
 import { useSignal } from '../useSignal.js'
 
@@ -80,7 +81,6 @@ export function HilosTermsPage({ context, children }: HilosTermsPageProps) {
     frozen: standing?.frozen === true,
     now: Date.now(),
   })
-  const green = line.state === 'covered' || line.state === 'reworded'
   const accepted = new Set(
     person === null
       ? []
@@ -107,88 +107,19 @@ export function HilosTermsPage({ context, children }: HilosTermsPageProps) {
   const onAccept = async (): Promise<void> => {
     if (await store.accept()) setComparing(false)
   }
-  const hidden = line.state === 'loading' && terms === undefined
-  const compareButton = line.canCompare && (
-    <button
-      type="button"
-      className="btn btn-sm btn-outline-secondary"
-      data-id="terms-changes-open"
-      onClick={() => setComparing(true)}
-    >
-      {COPY.whatChanged}
-    </button>
-  )
 
   return (
     <HilosStaticPage title="Terms">
       {line.state !== 'unpublished' && (
         <div className="mb-4" data-id="terms-reader" data-state={line.state}>
-          {line.state === 'due' ? (
-            <div className="alert alert-warning mb-0">
-              <p className="mb-2" data-id="terms-reader-line">
-                <i
-                  className="bi bi-exclamation-triangle-fill me-1"
-                  aria-hidden="true"
-                />
-                {line.line}
-              </p>
-              {line.plate !== null && (
-                <div
-                  className={`d-flex flex-wrap align-items-center gap-2 rounded px-3 py-2 mb-2 small bg-${line.plate.tone}-subtle text-${line.plate.tone}-emphasis`}
-                  data-id="terms-reader-plate"
-                  data-tone={line.plate.tone}
-                >
-                  <i className={`bi ${line.plate.icon}`} aria-hidden="true" />
-                  <strong>{line.plate.text}</strong>
-                  {line.plate.detail !== null && (
-                    <span>{line.plate.detail}</span>
-                  )}
-                </div>
-              )}
-              {line.onlyPerson !== null && (
-                <p className="small mb-2" data-id="terms-reader-impersonated">
-                  {line.onlyPerson}
-                </p>
-              )}
-              <div className="d-flex flex-wrap gap-2">
-                {line.canAccept && (
-                  <LoadingButton
-                    className="btn-sm btn-primary"
-                    data-id="terms-accept"
-                    loading={accepting}
-                    onClick={() => void onAccept()}
-                  >
-                    {COPY.accept}
-                  </LoadingButton>
-                )}
-                {compareButton}
-              </div>
-              {line.canAccept && (
-                <HilosFormError
-                  message={comparing ? null : refusal}
-                  dataId="terms-accept-refusal"
-                  announce
-                />
-              )}
-            </div>
-          ) : (
-            <div className="d-flex flex-wrap align-items-center gap-2">
-              <p
-                className={`mb-0${hidden ? ' invisible' : ''}`}
-                data-id="terms-reader-line"
-                aria-hidden={hidden}
-              >
-                {green && (
-                  <i
-                    className="bi bi-check-circle-fill text-success me-1"
-                    aria-hidden="true"
-                  />
-                )}
-                {line.line}
-              </p>
-              {compareButton}
-            </div>
-          )}
+          <HilosLegalDocumentReader
+            line={line}
+            copy={COPY}
+            accepting={accepting}
+            refusal={comparing ? null : refusal}
+            onAccept={() => void onAccept()}
+            onCompare={() => setComparing(true)}
+          />
         </div>
       )}
 
@@ -317,6 +248,7 @@ export function HilosTermsPage({ context, children }: HilosTermsPageProps) {
 
       <HilosModal
         open={changes !== null}
+        busy={accepting}
         title={
           changes === null
             ? ''
@@ -333,6 +265,7 @@ export function HilosTermsPage({ context, children }: HilosTermsPageProps) {
               type="button"
               className="btn btn-secondary"
               data-id="terms-changes-close"
+              disabled={accepting}
               onClick={requestClose}
             >
               {LEGAL_RECONSENT_COPY.close}

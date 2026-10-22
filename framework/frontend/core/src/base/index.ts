@@ -1360,6 +1360,8 @@ export {
   type HilosLegalTermsStore,
   createHilosLegalTermsStore,
 } from '../legal/legalTerms.js'
+export * from '../legal/legalPublicDocument.js'
+export * from '../legal/legalPrivacy.js'
 export {
   LEGAL_ACCEPTANCES_SIGNAL,
   legalAcceptanceFiltersSchema,

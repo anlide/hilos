@@ -213,6 +213,9 @@ final class HilosSignalConstants
     /** Browser subscription signal of the public Terms page (HIL-501). */
     public const string SUBSCRIPTION_PAGE_HILOS_TERMS = 'subscription_page_hilos_terms';
 
+    /** Browser subscription signal of the public Privacy page (HIL-1608). */
+    public const string SUBSCRIPTION_PAGE_HILOS_PRIVACY = 'subscription_page_hilos_privacy';
+
     /** Subscription signal for the profile's "Your data" section. */
     public const string SUBSCRIPTION_PAGE_HILOS_PROFILE_DATA = 'subscription_page_hilos_profile_data';
 
@@ -224,6 +227,9 @@ final class HilosSignalConstants
 
     /** Client → server: read {document: 'terms', revisionId} on the public Terms page; reply {document, revisionId, clauses} (HIL-501). */
     public const string HILOS_TERMS_REVISION_TEXT = 'hilos_terms_revision_text';
+
+    /** Client → server: read {document: 'privacy', revisionId} on the public Privacy page; reply {document, revisionId, clauses}. */
+    public const string HILOS_PRIVACY_REVISION_TEXT = 'hilos_privacy_revision_text';
 
     /** Subscription signal for Hilos settings page. */
     public const string SUBSCRIPTION_PAGE_HILOS_SETTINGS = 'subscription_page_hilos_settings';

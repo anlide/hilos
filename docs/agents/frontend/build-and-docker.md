@@ -287,12 +287,14 @@ The build is **hybrid**. The authenticated, real-time area is a pure SPA shell
 auth). The public, SEO-relevant surface — the framework's footer pages (About,
 Terms, Privacy, License; `HILOS_FOOTER_LINKS`) — is **statically prerendered**,
 all four pages, through the view framework's own server renderer. A public page
-is no longer prose alone — three of the four carry framework-owned behavior and
-Terms its text and a line that differs per reader ([sdk-packaging.md](sdk-packaging.md),
-tier 2) — and no page leaves the prerendered set for having a per-reader part. What
-is prerendered is the **guest view**: what a person with no session sees. The
-per-reader part arrives over the page subscription once the SPA has mounted, on
-a page that is by then a live SPA page like any other. /terms and /privacy are
+is no longer prose alone — all four pages carry framework-owned behavior, while
+Terms and Privacy also carry catalog text and a line that differs per reader
+([sdk-packaging.md](sdk-packaging.md), tier 2) — and no page leaves
+the prerendered set for having a per-reader part. What
+is prerendered is the **guest view**: what a person with no session sees. For the
+legal pages, the catalog document and any reader-specific part arrive over the
+page subscription once the SPA has mounted, on a page that is by then a live SPA
+page like any other. /terms and /privacy are
 the most linked-to surfaces the product has and the reason this pipeline
 exists; dropping one to avoid a line only a signed-in reader sees would trade
 the page for the line. Three rules follow, and every public page keeps them:
@@ -339,15 +341,16 @@ the page for the line. Three rules follow, and every public page keeps them:
   build, a dev start or a type check reads it.
 
 What each static file contains: /about the prose, the support block and the
-modal in its closed state; /privacy the prose and the erase block, button
-included, inert until the SPA mounts; /license the project's root LICENSE text
-and the full inventory; /terms the heading and the project's introduction, with
-the text of the revision in force, its date, the reader's line and the history
-absent from the file and arriving over the subscription — the legal catalog lives
-on the server, and the frontend build does not read it. The backend pages behind
-About, Privacy and License answer the subscription with nothing; Terms answers
-with its own section ([legal-documents.md](../architecture/legal-documents.md),
-*Public Terms page*).
+modal in its closed state; /privacy the heading, reader and policy loading
+states, the project's introduction and the erase block, button included, inert
+until the SPA mounts; /license the project's root LICENSE text and the full
+inventory; /terms the heading, reader loading state, project introduction and
+policy loading state, with the revision history absent from the file and arriving over the
+subscription. The legal catalog lives on the server, and the frontend build
+does not read it. The backend pages behind About and License answer their
+subscriptions with nothing; Terms and Privacy answer with their own legal
+sections ([legal-documents.md](../architecture/legal-documents.md), *Public
+Terms and Privacy pages*).
 
 Vue and React run a Vite SSR build of a prerender entry that writes a flat
 `<route>.html` (and `robots.txt` + `sitemap.xml`). Angular uses its **native

@@ -114,7 +114,7 @@ it('shows a guest the text and the history, newest first, with nothing to accept
     true,
   )
   expect(view.find('[data-id="terms-history-accepted"]').exists()).toBe(false)
-  expect(view.find('[data-id="terms-accept"]').exists()).toBe(false)
+  expect(view.find('[data-id="legal-document-accept"]').exists()).toBe(false)
 })
 
 it('confirms in green a reader holding the revision in force', async () => {
@@ -136,7 +136,7 @@ it('confirms in green a reader holding the revision in force', async () => {
       .find('[data-id="terms-history-accepted"]')
       .exists(),
   ).toBe(true)
-  expect(view.find('[data-id="terms-accept"]').exists()).toBe(false)
+  expect(view.find('[data-id="legal-document-accept"]').exists()).toBe(false)
 })
 
 it('shows the comparison after wording-only changes, without Accept', async () => {
@@ -151,7 +151,7 @@ it('shows the comparison after wording-only changes, without Accept', async () =
   expect(view.get('[data-id="terms-reader"]').attributes('data-state')).toBe(
     'reworded',
   )
-  await view.get('[data-id="terms-changes-open"]').trigger('click')
+  await view.get('[data-id="legal-document-changes-open"]').trigger('click')
   await flushPromises()
   expect(
     document.querySelector('[data-id="terms-changes-modal"]')?.textContent,
@@ -177,8 +177,10 @@ it('accepts the Terms alone from the plate while a decision is due', async () =>
   expect(view.get('[data-id="terms-reader"]').attributes('data-state')).toBe(
     'due',
   )
-  expect(view.find('[data-id="terms-reader-plate"]').exists()).toBe(true)
-  await view.get('[data-id="terms-accept"]').trigger('click')
+  expect(view.find('[data-id="legal-document-reader-plate"]').exists()).toBe(
+    true,
+  )
+  await view.get('[data-id="legal-document-accept"]').trigger('click')
   expect(dispatch).toHaveBeenCalledWith('hilos_legal_accept', {
     acceptedRevisions: { terms: substantial.revisionId },
   })
@@ -200,14 +202,14 @@ it('keeps the refusal of an acceptance in its room under the buttons', async () 
     })),
   )
   await flushPromises()
-  expect(view.get('[data-id="terms-reader-plate"]').text()).toContain(
+  expect(view.get('[data-id="legal-document-reader-plate"]').text()).toContain(
     'account frozen · deadline passed 1 October 2026',
   )
-  await view.get('[data-id="terms-accept"]').trigger('click')
+  await view.get('[data-id="legal-document-accept"]').trigger('click')
   await flushPromises()
-  expect(view.get('[data-id="terms-accept-refusal"]').text()).toContain(
-    'The terms moved.',
-  )
+  expect(
+    view.get('[data-id="legal-document-accept-refusal"]').text(),
+  ).toContain('The terms moved.')
 })
 
 it('accepts from the comparison window and closes it on success', async () => {
@@ -231,7 +233,7 @@ it('accepts from the comparison window and closes it on success', async () => {
     })),
   )
   await flushPromises()
-  await view.get('[data-id="terms-changes-open"]').trigger('click')
+  await view.get('[data-id="legal-document-changes-open"]').trigger('click')
   await flushPromises()
   const accept = document.querySelector<HTMLButtonElement>(
     '[data-id="terms-changes-accept"]',
@@ -292,10 +294,10 @@ it('shows the state under a takeover but offers no acceptance', async () => {
     },
   )
   await flushPromises()
-  expect(view.find('[data-id="terms-accept"]').exists()).toBe(false)
-  expect(view.get('[data-id="terms-reader-impersonated"]').text()).toBe(
-    'Only Bob can accept the terms.',
-  )
+  expect(view.find('[data-id="legal-document-accept"]').exists()).toBe(false)
+  expect(
+    view.get('[data-id="legal-document-reader-impersonated"]').text(),
+  ).toBe('Only Bob can accept the terms.')
 })
 
 it('says that no Terms are published, with no reader line and no history', async () => {

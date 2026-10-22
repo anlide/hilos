@@ -41,7 +41,7 @@ test('a guest reads the revision in force and opens an older one from the histor
     revisions.first().getByTestId('terms-history-current'),
   ).toBeVisible()
   await expect(page.getByTestId('terms-history-accepted')).toHaveCount(0)
-  await expect(page.getByTestId('terms-accept')).toHaveCount(0)
+  await expect(reader.getByTestId('legal-document-accept')).toHaveCount(0)
 
   // An older revision opens through the page's own read, open to a guest.
   await clickSubmit(
@@ -79,7 +79,7 @@ test('a person who accepted at sign-up sees the revision in force as theirs', as
       )
       .getByTestId('terms-history-accepted'),
   ).toBeVisible()
-  await expect(page.getByTestId('terms-accept')).toHaveCount(0)
+  await expect(reader.getByTestId('legal-document-accept')).toHaveCount(0)
 
   // Signing out in the tab turns the line back into a guest's, without a reload.
   await logout(page)
@@ -102,12 +102,12 @@ test('the page follows a revision moved under it, and accepting there lifts the 
   // No reload: the group frame makes the page ask again, and the freeze arrives
   // with the sessions library's next tick - /terms stays open while frozen.
   await expect(reader).toHaveAttribute('data-state', 'due')
-  await expect(page.getByTestId('terms-reader-plate')).toContainText(
+  await expect(reader.getByTestId('legal-document-reader-plate')).toContainText(
     'account frozen · deadline passed 1 October 2026',
   )
   await expect(page.getByTestId('legal-frozen-screen')).toHaveCount(0)
 
-  await clickSubmit(page.getByTestId('terms-changes-open'))
+  await clickSubmit(reader.getByTestId('legal-document-changes-open'))
   const comparison = page.getByTestId('terms-changes-modal')
   await expect(comparison).toBeVisible()
   const wide = comparison.getByTestId('legal-changes-wide')
