@@ -68,6 +68,7 @@ use Demo\Chat\Browser\Data\SelfConnectionBrowserData;
 use Demo\Chat\Browser\Data\UserMergeBrowserData;
 use Demo\Chat\Browser\Data\UserPhotoBrowserData;
 use Demo\Chat\Browser\Data\UserPresenceBrowserData;
+use Demo\Chat\Browser\List\BotProfileBrowserList;
 use Demo\Chat\Browser\List\MainBotsBrowserList;
 use Demo\Chat\Browser\List\MainEventsBrowserList;
 use Demo\Chat\Browser\List\MainUsersBrowserList;
@@ -687,6 +688,7 @@ final class Hilos extends HilosFacade
         HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::class,
         ProfileSessionsBrowserList::LIST => ProfileSessionsBrowserList::class,
         ProfileDevicesBrowserList::LIST => ProfileDevicesBrowserList::class,
+        BotProfileBrowserList::LIST => BotProfileBrowserList::class,
     ];
 
     public const array BROWSER_DATA = [
@@ -739,6 +741,13 @@ final class Hilos extends HilosFacade
             ProfileDevicesBrowserList::LIST => [
                 BrowserParamKey::PARAMS => [
                     BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
+                ],
+            ],
+        ],
+        BotPage::PAGE => [
+            BotProfileBrowserList::LIST => [
+                BrowserParamKey::PARAMS => [
+                    BotPageSubscribeParams::BOT_ID => ChatBrowserRef::BOT_ID,
                 ],
             ],
         ],

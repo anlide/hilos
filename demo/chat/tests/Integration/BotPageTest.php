@@ -6,8 +6,10 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\LibraryAgent;
 use Demo\Chat\Browser\Data\BotStatusBrowserData;
+use Demo\Chat\Browser\List\BotProfileBrowserList;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Object\Item\Bot;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\BotPage;
@@ -19,6 +21,7 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Page\ActionRouteConfig;
+use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\HilosPageFactory;
@@ -29,14 +32,18 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
 /**
- * The bot card answers one page response: the profile, and the lifecycle status
- * the browser snapshot already holds for that bot.
+ * The bot card answers one page response: the profile, both as the page entity and
+ * as the first portion of the `botProfile` list, and the lifecycle status the
+ * browser snapshot already holds for that bot. Later writes to that bot reach the open card
+ * as deltas of the same list.
  */
 final class BotPageTest extends IntegrationTestCase
 {
@@ -82,25 +89,37 @@ final class BotPageTest extends IntegrationTestCase
     public function testExistingIdAnswersWithTheProfileAndTheCurrentStatus(): void
     {
         $botId = $this->createBot('Present bot', true);
+        $this->createBot('Neighbour bot', true);
         $this->writeStatus($botId, StateBotAgentStatus::STATUS_JOINED);
         $before = Hilos::$rt->botAgentStatuses[(string)$botId]->toArray();
 
         $response = $this->pageResponse($this->subscribe($botId));
 
         self::assertSame($this->profileOf($botId), $response->payload->entities[BotPage::ENTITY_SLOT]);
+        self::assertSame($this->profileItemsOf($botId), $this->profileItems($response));
+        self::assertSame(
+            $response->payload->entities[BotPage::ENTITY_SLOT],
+            $this->profileItems($response)[0][PagePayload::slots][ChatDbContext::bots],
+        );
         self::assertSame($before, $response->payload->data[BotStatusBrowserData::DATA]);
         self::assertSame($before, Hilos::$rt->botAgentStatuses[(string)$botId]->toArray());
     }
 
     public function testNoStatusRowArrivesEmptyAndDoesNotStartTheBot(): void
     {
-        $botId = $this->createBot('Quiet bot', false);
+        $botId = $this->createBareBot('Quiet bot');
 
         $signals = $this->subscribe($botId);
         $response = $this->pageResponse($signals);
 
         self::assertSame($this->profileOf($botId), $response->payload->entities[BotPage::ENTITY_SLOT]);
         self::assertFalse($response->payload->entities[BotPage::ENTITY_SLOT][Bot::active]);
+        self::assertSame($this->profileItemsOf($botId), $this->profileItems($response));
+        $listed = $this->profileItems($response)[0][PagePayload::slots][ChatDbContext::bots];
+        self::assertSame($response->payload->entities[BotPage::ENTITY_SLOT], $listed);
+        self::assertFalse($listed[Bot::active]);
+        $nullable = [Bot::description, Bot::style, Bot::topics, Bot::personality];
+        self::assertSame($nullable, array_keys(array_intersect_key($listed, array_flip($nullable))));
         self::assertSame([], $response->payload->data[BotStatusBrowserData::DATA]);
         self::assertNull(Hilos::$rt->botAgentStatuses[(string)$botId]);
         self::assertFalse(Hilos::$db->bots[$botId]->active);
@@ -133,6 +152,71 @@ final class BotPageTest extends IntegrationTestCase
         self::assertSame($botId, $left->payload->data[BotStatusBrowserData::DATA][StateBotAgentStatus::botId]);
         self::assertSame($leftBefore, Hilos::$rt->botAgentStatuses[(string)$botId]->toArray());
         self::assertSame($otherBefore, Hilos::$rt->botAgentStatuses[(string)$otherBotId]->toArray());
+    }
+
+    public function testRenamingAndDeactivatingTheOpenBotReachesTheCardAsABotProfileDelta(): void
+    {
+        $botId = $this->createBot('Before rename', true);
+        $this->pageResponse($this->subscribe($botId));
+
+        Hilos::$db->bots[$botId]->actions->update(name: 'After rename', active: false);
+        $delta = $this->pageResponse($this->flushBotSync($botId));
+
+        self::assertSame($this->profileItemsOf($botId), $this->profileItems($delta));
+        $profile = $this->profileItems($delta)[0][PagePayload::slots][ChatDbContext::bots];
+        self::assertSame('After rename', $profile[Bot::name]);
+        self::assertFalse($profile[Bot::active]);
+    }
+
+    public function testClearingTheOpenBotsTextsSendsEveryClearedKeyExplicitly(): void
+    {
+        $botId = $this->createBot('Cleared bot', true);
+        $this->pageResponse($this->subscribe($botId));
+
+        Hilos::$db->bots[$botId]->actions->update(description: '', style: '', topics: '', personality: '');
+        $delta = $this->pageResponse($this->flushBotSync($botId));
+
+        self::assertSame($this->profileItemsOf($botId), $this->profileItems($delta));
+        $profile = $this->profileItems($delta)[0][PagePayload::slots][ChatDbContext::bots];
+        foreach ([Bot::description, Bot::style, Bot::topics, Bot::personality] as $cleared) {
+            self::assertArrayHasKey($cleared, $profile);
+            self::assertSame('', $profile[$cleared]);
+        }
+        self::assertSame('Cleared bot', $profile[Bot::name]);
+        self::assertTrue($profile[Bot::active]);
+    }
+
+    public function testAnotherBotsChangeDoesNotOpenItsProfileOnTheCard(): void
+    {
+        $botId = $this->createBot('Open bot', true);
+        $otherBotId = $this->createBot('Other bot', true);
+        $this->pageResponse($this->subscribe($botId));
+
+        Hilos::$db->bots[$otherBotId]->actions->update(name: 'Other renamed', active: false);
+        $signals = $this->flushBotSync($otherBotId);
+
+        foreach ($signals as $signal) {
+            $frame = json_encode($signal->data->toArray(), JSON_THROW_ON_ERROR);
+            self::assertStringNotContainsString('Other renamed', $frame);
+            self::assertStringNotContainsString('Other bot', $frame);
+            if ($signal->signalName->getName() !== SignalTypeConstants::PAGE_RESPONSE) {
+                continue;
+            }
+            self::assertInstanceOf(WebSocketSignalData::class, $signal->data);
+            self::assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
+            $payload = $signal->data->data->payload;
+            self::assertSame([], $payload->entities);
+            self::assertSame([], $payload->data);
+            foreach ($payload->lists as $list) {
+                foreach ($list[PagePayload::items] ?? [] as $item) {
+                    self::assertNotSame($otherBotId, $item[PagePayload::itemKey]);
+                    self::assertNotSame($otherBotId, $item[PagePayload::slots][ChatDbContext::bots][Bot::id]);
+                }
+                if (array_key_exists(PagePayload::deleted, $list)) {
+                    self::assertSame([$otherBotId], $list[PagePayload::deleted]);
+                }
+            }
+        }
     }
 
     public function testMissingAndInvalidIdsAre400AndAnUnknownIdIs404(): void
@@ -204,6 +288,19 @@ final class BotPageTest extends IntegrationTestCase
     }
 
     /**
+     * @param string $name Display name, the only profile field it is given
+     * @return int Created inactive bot id, its description, style, topics, and personality never given
+     */
+    private function createBareBot(string $name): int
+    {
+        $bot = Hilos::$db->bots->actions->create($name, active: false);
+        self::assertIsInt($bot->id);
+        $this->botIds[] = $bot->id;
+
+        return $bot->id;
+    }
+
+    /**
      * @param int $botId Bot the row belongs to
      * @param string $status Lifecycle marker
      */
@@ -249,6 +346,39 @@ final class BotPageTest extends IntegrationTestCase
         $subscription = new WebSocketPageSubscribeSignalDTO(self::ACCEPT_KEY, BotPage::PAGE, $params);
         Hilos::$sr->subscribeToPage(BotPage::PAGE, $subscription);
         $this->router()->dispatchPageSubscribe($subscription, SignalSource::WEBSOCKET, BotPage::PAGE);
+
+        return $this->takeQueuedSignals();
+    }
+
+    /**
+     * Takes the DB sync the bot's update queued and passes it through the browser the way the
+     * daemon does, so the open card receives whatever the browser fans out for it.
+     *
+     * @param int $botId Bot whose update was just written
+     * @return list<SignalDTO> Signals the browser flush queued
+     */
+    private function flushBotSync(int $botId): array
+    {
+        $sync = null;
+        foreach ($this->takeQueuedSignals() as $signal) {
+            if (
+                $signal->data instanceof DbSyncUpdatedSignalData
+                && $signal->data->collectionKey === ChatDbContext::bots
+                && $signal->data->idString === (string)$botId
+            ) {
+                $sync = $signal->data;
+            }
+        }
+        self::assertInstanceOf(DbSyncUpdatedSignalData::class, $sync);
+
+        $browser = Hilos::$browser ?? self::fail('The browser was not initialized');
+        $browser->record(SourceChange::dbUpdated(
+            $sync->collectionKey,
+            $sync->idString,
+            $sync->row,
+            previous: $sync->previous,
+        ));
+        $browser->flushToSignalRouter();
 
         return $this->takeQueuedSignals();
     }
@@ -321,6 +451,27 @@ final class BotPageTest extends IntegrationTestCase
         self::assertInstanceOf(PageSubscriptionErrorSignalData::class, $error);
 
         return $error;
+    }
+
+    /**
+     * @param PageResponseSignalData $response The one page response of a subscribe
+     * @return list<array<string, mixed>> Items of the `botProfile` list it carries
+     */
+    private function profileItems(PageResponseSignalData $response): array
+    {
+        return $response->payload->lists[BotProfileBrowserList::LIST][PagePayload::items];
+    }
+
+    /**
+     * @param int $botId Bot whose profile the card carries
+     * @return list<array<string, mixed>> The one `botProfile` item the card expects, keyed by that bot
+     */
+    private function profileItemsOf(int $botId): array
+    {
+        return [[
+            PagePayload::itemKey => $botId,
+            PagePayload::slots => [ChatDbContext::bots => $this->profileOf($botId)],
+        ]];
     }
 
     /**

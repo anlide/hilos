@@ -1,9 +1,12 @@
 // The bot detail page selectors: the requested bot resolved by reference into
 // the profile the page renders, plus its reactive agent runtime status. The
-// profile arrives as a page entity (BotPage::buildPagePayload), so a rename in
-// the bots admin fans out here for free; the status rides the reactive
-// `botStatus` data slot, so a join/leave flips `online` without re-streaming the
-// profile. The view reads this signal and never touches a raw store.
+// page entity `bot` (BotPage::buildPagePayload) supplies the reference; profile
+// freshness (a rename or a cleared field in the bots admin) comes from the
+// `botProfile` list (backend BotProfileBrowserList), whose `bots` slot is
+// normalized into the same Bots entity, so `Bots.signal(ref)` sees the change.
+// The status rides the reactive `botStatus` data slot, so a join/leave flips
+// `online` without re-streaming the profile. The view reads this signal and
+// never touches a raw store.
 import {
   computedSignal,
   readString,
@@ -11,12 +14,12 @@ import {
   type ReadonlySignal,
 } from '@hilos/core/base'
 
-import { scopes } from '../../bootstrap/session'
-import { Bots } from '../../types'
-import { type BotDetail } from './types/BotDetail'
+import { scopes } from '../../bootstrap/session.js'
+import { Bots } from '../../types/index.js'
+import { type BotDetail } from './types/BotDetail.js'
 
-// Wire keys: the bot profile entity slot (backend BotPage::ENTITY_SLOT) and the
-// agent status data slot (backend ChatBrowserTable::BOT_STATUS).
+// Wire keys: the bot entity slot (backend BotPage::ENTITY_SLOT) and the
+// agent status data slot (backend ChatBrowserData::BOT_STATUS).
 const BOT_ENTITY_SLOT = 'bot'
 const BOT_STATUS_DATA = 'botStatus'
 // The runtime status field and its joined marker, mirroring the backend

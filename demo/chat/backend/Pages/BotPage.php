@@ -8,6 +8,7 @@ use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Agents\LibraryAgent;
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\ChatBrowserSource;
+use Demo\Chat\Browser\List\BotProfileBrowserList;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
@@ -36,10 +37,12 @@ use Hilos\Core\Exception\LogicException;
  *
  * Handles subscription, unsubscription, and actions for the bot page.
  * Contributes the requested bot's profile as a page-scope entity through
- * buildPagePayload(); the runtime lifecycle status rides the reactive browser
- * snapshot (the `botStatus` data source), so it stays out of the one-shot
- * entity payload. A missing, malformed, or unknown `id` surfaces as a
- * structured subscription error.
+ * buildPagePayload(), which gives the page its first reference to the bot. The
+ * profile is kept current while the page is open by the `botProfile` browser
+ * list ({@see BotProfileBrowserList}), and the runtime lifecycle status rides the
+ * `botStatus` data source, so neither depends on the one-shot entity payload.
+ * A missing, malformed, or unknown `id` surfaces as a structured subscription
+ * error.
  *
  * @property LibraryAgent $agent
  */
@@ -91,10 +94,12 @@ final class BotPage extends AbstractPage
 
     /**
      * Builds the bot detail page payload: the requested bot's profile as a
-     * page-scope entity the frontend resolves by reference. The row is read
-     * strictly, because the DB_EXISTS guard has already refused a subscription
-     * naming a bot that is not there: an absent row here means the guard did not
-     * run, and a quiet empty page would hide that.
+     * page-scope entity the frontend resolves by reference. This is only the
+     * initial reference; later profile changes reach the open page through
+     * {@see BotProfileBrowserList}, whose first portion rides the same response.
+     * The row is read strictly, because the DB_EXISTS guard has already refused
+     * a subscription naming a bot that is not there: an absent row here means the
+     * guard did not run, and a quiet empty page would hide that.
      *
      * @param string $acceptKey WebSocket accept key of the subscribing connection (unused; the profile is the same for everyone)
      * @param PageRouteParams $params Route params for the page subscription
