@@ -681,10 +681,10 @@ kinds, never a copy of the moderator or admin engine. Read
 The target activation order is:
 
 1. Declare `HilosFeature::MODERATION` in `FEATURES`. This does not enable
-   `PROFILE_PHOTO`. (not in the code yet — HIL-1623)
-2. Bind the framework kind directory, or a project subclass retaining its
+   `PROFILE_PHOTO`.
+2. Keep the framework kind directory, which `MODERATION_KIND_DIRECTORY` names
+   by default, or point that constant at a project subclass retaining its
    parent entries and adding the project's kinds.
-   (not in the code yet — HIL-1623)
 3. Activate the framework rules migration/ORM and its designated writer. Use
    the migration and writer contract HIL-1624 supplies, without inventing a
    project storage path. (not in the code yet — HIL-1624)

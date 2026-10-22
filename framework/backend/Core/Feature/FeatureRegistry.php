@@ -16,6 +16,7 @@ use Hilos\Core\Feature\Definition\HilosUsersFeature;
 use Hilos\Core\Feature\Definition\I18nFeature;
 use Hilos\Core\Feature\Definition\ImagesFeature;
 use Hilos\Core\Feature\Definition\LogsFeature;
+use Hilos\Core\Feature\Definition\ModerationFeature;
 use Hilos\Core\Feature\Definition\NotificationDeliveryFeature;
 use Hilos\Core\Feature\Definition\NotificationsFeature;
 use Hilos\Core\Feature\Definition\ProfilePhotoFeature;
@@ -108,6 +109,7 @@ class FeatureRegistry
             new UploadsFeature(),
             new ImagesFeature(),
             new ProfilePhotoFeature(),
+            new ModerationFeature(),
             new AnalyticsFeature(),
             new ChangeLogFeature(),
         ];

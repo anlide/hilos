@@ -84,6 +84,8 @@ use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
+use Demo\Chat\Moderation\ChatModerationKindDirectory;
+use Demo\Chat\Moderation\ChatModerationKindKey;
 use Demo\Chat\Pages\DTO\Profile\RenameActionDTO;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
@@ -287,6 +289,10 @@ use Hilos\Log\DTO\LogsTakeoutConfirmSignalData;
 use Hilos\Log\DTO\LogsTakeoutUndoSignalData;
 use Hilos\Log\DTO\NodeLogIndexSignalData;
 use Hilos\Mail\DTO\MailSendSignalData;
+use Hilos\Moderation\ModerationInput;
+use Hilos\Moderation\ModerationKind;
+use Hilos\Moderation\ModerationKindDirectory;
+use Hilos\Moderation\ModerationKindKey;
 use Hilos\Notification\DTO\DeferredNotificationHandoverSignalData;
 use Hilos\Notification\DTO\DeliveryRetrySignalData;
 use Hilos\Notification\DTO\NotificationChannelPreferenceActionDTO;
@@ -2053,6 +2059,92 @@ final class ChatTopologyRegistryTest extends TestCase
         Hilos::validateFeatureActivation();
 
         $this->addToAssertionCount(1);
+    }
+
+    public function testModerationKindDirectorySnapshot(): void
+    {
+        // The kinds the chat publishes to the moderator, pinned by hand: the framework's name and
+        // photo first, untouched, then the chat's text and picture kinds. The chat takes profile
+        // photos, so the photo kind is in the set. The old ModeratorAgent keeps its own prompts.
+        $this->assertSame(ChatModerationKindDirectory::class, Hilos::moderationKindDirectoryClass());
+
+        $kinds = Hilos::moderationKinds();
+
+        $this->assertSame(
+            [
+                ModerationKindKey::PROFILE_NAME,
+                ModerationKindKey::PROFILE_PHOTO,
+                ChatModerationKindKey::MESSAGE,
+                ChatModerationKindKey::MESSAGE_PICTURE,
+            ],
+            array_keys($kinds),
+        );
+        $this->assertSame(['chat_message', 'chat_message_picture'], [
+            ChatModerationKindKey::MESSAGE,
+            ChatModerationKindKey::MESSAGE_PICTURE,
+        ]);
+
+        $frameworkKinds = ModerationKindDirectory::all(true);
+        $this->assertEquals($frameworkKinds[ModerationKindKey::PROFILE_NAME], $kinds[ModerationKindKey::PROFILE_NAME]);
+        $this->assertEquals($frameworkKinds[ModerationKindKey::PROFILE_PHOTO], $kinds[ModerationKindKey::PROFILE_PHOTO]);
+
+        $this->assertSame(
+            [
+                ModerationKindKey::PROFILE_NAME => [
+                    'title' => 'Profile name',
+                    'input' => 'text',
+                    'reasons' => ['insult', 'threat', 'hate_speech', 'sexual', 'spam', 'impersonation'],
+                    'defaultRules' => [
+                        'Default policy: allow benign display names.',
+                        'Block explicit insults, threats, hate speech, sexual content, spam, and impersonation.',
+                        'If uncertain, return allow=true.',
+                    ],
+                    'verdictTo' => HilosAgentType::HILOS_USERS_LIBRARY,
+                ],
+                ModerationKindKey::PROFILE_PHOTO => [
+                    'title' => 'Profile photo',
+                    'input' => 'image',
+                    'reasons' => ['nudity', 'violence', 'hate'],
+                    'defaultRules' => [
+                        'Default policy: allow ordinary photos, drawings and logos.',
+                        'Block only nudity or sexual content, graphic violence, and hate symbols.',
+                        'If uncertain, return allow=true.',
+                    ],
+                    'verdictTo' => HilosAgentType::HILOS_USERS_LIBRARY,
+                ],
+                ChatModerationKindKey::MESSAGE => [
+                    'title' => 'Chat message',
+                    'input' => 'text_with_files',
+                    'reasons' => ['insult', 'threat', 'hate_speech', 'sexual', 'spam'],
+                    'defaultRules' => [
+                        'Default policy: allow benign messages.',
+                        'Block only explicit insults, threats, hate speech, sexual content, and obvious spam.',
+                        'If uncertain, return allow=true.',
+                    ],
+                    'verdictTo' => AgentType::CHAT,
+                ],
+                ChatModerationKindKey::MESSAGE_PICTURE => [
+                    'title' => 'Chat message picture',
+                    'input' => 'image',
+                    'reasons' => ['nudity', 'violence', 'hate'],
+                    'defaultRules' => [
+                        'Default policy: allow ordinary pictures, screenshots and drawings.',
+                        'Block only nudity or sexual content, graphic violence, and hate symbols.',
+                        'If uncertain, return allow=true.',
+                    ],
+                    'verdictTo' => AgentType::CHAT,
+                ],
+            ],
+            array_map(static fn (ModerationKind $kind): array => [
+                'title' => $kind->title,
+                'input' => $kind->input->value,
+                'reasons' => $kind->reasons,
+                'defaultRules' => $kind->defaultRules,
+                'verdictTo' => $kind->verdictTo,
+            ], $kinds),
+        );
+        $this->assertSame(ModerationInput::TEXT_WITH_FILES, $kinds[ChatModerationKindKey::MESSAGE]->input);
+        $this->assertSame(ModerationInput::IMAGE, $kinds[ChatModerationKindKey::MESSAGE_PICTURE]->input);
     }
 
     public function testDeclaredFeaturesHaveWhatStartupCannotCheck(): void

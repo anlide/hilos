@@ -6,14 +6,17 @@ moderator or its rules, or activating the Moderation section.
 This is the target architecture of HIL-1569, written ahead of its code. Each
 pending rule names the leaf that implements it; that leaf clears its markers
 in the same commit, following [../rule-authoring.md](../rule-authoring.md),
-*A Rule Written Ahead Of Its Code*. Names below identify approved kinds,
-profiles and addresses; they do not prescribe future PHP classes or payloads.
+*A Rule Written Ahead Of Its Code*. *Check Kinds* names the PHP classes that
+declare kinds; elsewhere, names identify approved kinds, profiles and
+addresses and do not prescribe future PHP classes or payloads.
 
 ## Core Rule
 
-Moderation is a framework mechanism enabled by `HilosFeature::MODERATION`.
-Declare a check kind in the framework directory, extended by the project when
-it has kinds of its own. (not in the code yet — HIL-1623)
+Moderation is a framework feature, `HilosFeature::MODERATION`. Declare a check
+kind in the framework directory, extended by the project when it has kinds of
+its own; startup checks that directory as *Check Kinds* describes. The feature
+enables the moderation mechanism itself, the moderator and its checks.
+(not in the code yet — HIL-1625)
 
 Send every check through one door to one moderator per cluster. Keep checking
 separate from applying: the verdict goes to the agent declared by the kind;
@@ -24,41 +27,64 @@ writing the subject remains its owner's work.
 
 A kind declares its stable key, display name, input type (`TEXT`, `IMAGE` or
 `TEXT_WITH_FILES`), refusal reasons, built-in rules and verdict recipient
-agent. The `hilos_` prefix is reserved for the framework.
-(not in the code yet — HIL-1623)
+agent; in the code it is a
+[ModerationKind](../../../framework/backend/Moderation/ModerationKind.php) with
+a `ModerationInput`. The `hilos_` prefix is reserved for the framework.
 
 The framework declares `hilos_profile_name` for text and `hilos_profile_photo`
-for an image. Declare the photo kind only when `PROFILE_PHOTO` is enabled;
-`MODERATION` does not enable profile photos.
-(not in the code yet — HIL-1623)
+for an image. The photo kind is published only while `PROFILE_PHOTO` is
+enabled: the directory always declares it, and leaves it out only after the
+whole declaration has been judged, so a bad photo entry is refused even in a
+project without profile photos. `MODERATION` does not enable profile photos.
 
 Chat adds `chat_message` for text with attachment information and
-`chat_message_picture` for an individual image.
-(not in the code yet — HIL-1623)
+`chat_message_picture` for an individual image; the verdicts of both go to the
+chat agent.
 
-Extend the directory by retaining the parent's entries and appending the
-project's kinds, as the existing
+The framework directory is
+[ModerationKindDirectory](../../../framework/backend/Moderation/ModerationKindDirectory.php).
+Extend it by retaining the parent's entries and appending the project's kinds
+in `kinds()`, then point the Hilos facade's `MODERATION_KIND_DIRECTORY` at the
+subclass, as
 [StepUpOperationDirectory](../../../framework/backend/Auth/StepUp/StepUpOperationDirectory.php)
 and [ChatStepUpOperationDirectory](../../../demo/chat/backend/Auth/ChatStepUpOperationDirectory.php)
-do for operations. This is an inheritance sketch, not a callable moderation
-API; HIL-1623 chooses the class and method names:
+do for operations. Chat's
+[ChatModerationKindDirectory](../../../demo/chat/backend/Moderation/ChatModerationKindDirectory.php):
 
-```text
-Framework directory
-  hilos_profile_name       TEXT
-  hilos_profile_photo      IMAGE, only with PROFILE_PHOTO
-Project directory extends Framework directory
-  retain parent entries
-  append chat_message          TEXT_WITH_FILES
-  append chat_message_picture  IMAGE
+```php
+protected static function kinds(): array
+{
+    return [
+        ...parent::kinds(),
+        new ModerationKind(
+            ChatModerationKindKey::MESSAGE,
+            'Chat message',
+            ModerationInput::TEXT_WITH_FILES,
+            ['insult', 'threat', 'hate_speech', 'sexual', 'spam'],
+            ['Default policy: allow benign messages.', /* … */],
+            AgentType::CHAT,
+        ),
+        new ModerationKind(ChatModerationKindKey::MESSAGE_PICTURE, /* … */),
+    ];
+}
 ```
 
-The moderation directory follows that shape.
-(not in the code yet — HIL-1623)
+The declaration is a list in the order of the administration screen, not a
+map: a key typed twice reaches the duplicate check instead of silently
+replacing the first entry. Read a kind as `Hilos::moderationKinds()[$key]` —
+the published kinds keyed by kind key, read afresh from constants on every
+call; there is no separate find or get, and a key the set does not hold is the
+caller's to refuse by its own contract.
 
-Refuse startup for a duplicate kind, a project declaration using `hilos_`, an
-unregistered recipient agent, or an invalid directory class. Do not silently
-drop or replace a bad declaration. (not in the code yet — HIL-1623)
+Refuse startup for a declaration that is not a list of kinds, a duplicate
+kind, a project declaration using `hilos_`, a framework kind dropped or
+changed, an unregistered recipient agent, or an invalid directory class. Do
+not silently drop or replace a bad declaration. The check runs while
+`MODERATION` is declared, and also whenever the facade points
+`MODERATION_KIND_DIRECTORY` at a directory of its own; the framework default
+with the feature off owes no recipients. A recipient is judged only on the
+published kinds, so the photo kind's recipient is judged only with
+`PROFILE_PHOTO`.
 
 ## Rules Per Kind
 

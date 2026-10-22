@@ -77,6 +77,9 @@ enum HilosFeature: string
     /** A person's photo, uploaded, optionally checked, and shown through the files registry. */
     case PROFILE_PHOTO = 'profile_photo';
 
+    /** Moderation: kinds of check declared in a directory, each verdict sent to the agent its kind names (HIL-1623). */
+    case MODERATION = 'moderation';
+
     /** Analytics through node journals: the collector in every process, the journal agent of each node and the cluster writer (HIL-1154). */
     case ANALYTICS = 'analytics';
 

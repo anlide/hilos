@@ -82,6 +82,8 @@ use Hilos\Files\Upload\AbstractUploadTarget;
 use Hilos\Files\Upload\ProfilePhotoUploadTarget;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Mail\HilosMailer;
+use Hilos\Moderation\ModerationKind;
+use Hilos\Moderation\ModerationKindDirectory;
 use Hilos\Sms\HilosSmsSender;
 use Hilos\Notification\Delivery\DeliveryChannelRegistry;
 use Hilos\Notification\HilosNotifier;
@@ -208,6 +210,17 @@ abstract class Hilos implements TruthSourceOwner
      * @var class-string<StepUpOperationDirectory>
      */
     protected const string STEP_UP_OPERATION_DIRECTORY = StepUpOperationDirectory::class;
+
+    /**
+     * Moderation kind directory class (HIL-1623).
+     *
+     * The framework default declares a person's display name and profile photo. A project points
+     * this at its own subclass to append the kinds it checks; the declaration is metadata, read
+     * whether or not the project takes moderation.
+     *
+     * @var class-string<ModerationKindDirectory>
+     */
+    protected const string MODERATION_KIND_DIRECTORY = ModerationKindDirectory::class;
 
     /**
      * OAuth provider directory class (HIL-286).
@@ -642,6 +655,32 @@ abstract class Hilos implements TruthSourceOwner
     public static function stepUpOperationDirectoryClass(): string
     {
         return static::appClass()::STEP_UP_OPERATION_DIRECTORY;
+    }
+
+    /**
+     * Returns the project's moderation kind directory class (HIL-1623).
+     *
+     * @return class-string<ModerationKindDirectory> Moderation kind directory class
+     */
+    public static function moderationKindDirectoryClass(): string
+    {
+        return static::appClass()::MODERATION_KIND_DIRECTORY;
+    }
+
+    /**
+     * Returns the project's moderation kinds keyed by kind key, in administration order (HIL-1623).
+     *
+     * Read afresh on every call from constants alone: no database, no runtime, nothing kept. The
+     * profile photo kind is in the set only while the project takes profile photos; a key the set
+     * does not hold is the caller's to refuse by its own contract.
+     *
+     * @return array<string, ModerationKind> Moderation kinds keyed by kind key
+     * @throws InvalidArgumentException When the project's directory is malformed, repeats a key, uses the
+     *     framework's key prefix for its own kind, or drops or changes a framework kind
+     */
+    public static function moderationKinds(): array
+    {
+        return static::moderationKindDirectoryClass()::all(static::hasFeature(HilosFeature::PROFILE_PHOTO));
     }
 
     /**

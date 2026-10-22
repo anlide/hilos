@@ -17,6 +17,7 @@ use Hilos\Files\Image\ImagesAgent;
 use Hilos\Files\Image\ImageVariant;
 use Hilos\Files\Upload\AbstractUploadTarget;
 use Hilos\Hilos;
+use Hilos\Moderation\ModerationKindDirectory;
 use Hilos\Pages\Users\AbstractHilosUserPage;
 use Hilos\Tables\Users\HilosUserPhotoBrowserTable;
 
@@ -42,6 +43,9 @@ use Hilos\Tables\Users\HilosUserPhotoBrowserTable;
 final class FeatureActivationValidator
 {
     private const string FRAMEWORK_NAME_PREFIX = 'hilos_';
+
+    /** Facade constant naming the moderation kind directory. */
+    private const string MODERATION_KIND_DIRECTORY = 'MODERATION_KIND_DIRECTORY';
 
     /**
      * @param FeatureRegistry $registry Definitions to validate the declaration against
@@ -122,6 +126,7 @@ final class FeatureActivationValidator
             $errors,
         );
         $this->validateProfilePhoto($hilosClass, $declared, $agents, $pages, $tables, $browserTables, $pageTables, $errors);
+        $this->validateModeration($hilosClass, $declared, $agents, $errors);
 
         if ($errors !== []) {
             throw IncompleteFeatureActivationException::forErrors($hilosClass, $errors);
@@ -591,6 +596,50 @@ final class FeatureActivationValidator
                 $pageTables,
                 $errors,
             );
+        }
+    }
+
+    /**
+     * Checks the moderation kind directory a facade names and the agent each kind's verdict goes to (HIL-1623).
+     *
+     * Judged while HilosFeature::MODERATION is declared, and also whenever the facade points
+     * MODERATION_KIND_DIRECTORY at a directory of its own: a project that wrote a declaration owes
+     * a valid one before it takes the feature. The framework default with the feature off is left
+     * alone, so a project without sign-in does not owe the people library the framework kinds
+     * send their verdicts to.
+     *
+     * The directory and the profile photo flag are both read off the facade being checked, which
+     * need not be the running one, and the class is checked before it is asked. The directory
+     * refuses a bad declaration with one exception class, and that refusal joins the others
+     * instead of escaping; a recipient is judged only on the kinds the directory hands out.
+     *
+     * @param class-string<Hilos> $hilosClass Project facade being checked
+     * @param list<HilosFeature> $declared Enabled features
+     * @param array $agents Agent registry
+     * @param list<string> $errors Accumulated activation refusals
+     */
+    private function validateModeration(string $hilosClass, array $declared, array $agents, array &$errors): void
+    {
+        if (!in_array(HilosFeature::MODERATION, $declared, true)
+            && !$this->pointsAtProjectCatalog($hilosClass, self::MODERATION_KIND_DIRECTORY)) {
+            return;
+        }
+        $directory = Hilos::catalogConstantOf($hilosClass, self::MODERATION_KIND_DIRECTORY);
+        if (!is_string($directory) || !class_exists($directory) || !is_a($directory, ModerationKindDirectory::class, true)) {
+            $errors[] = self::MODERATION_KIND_DIRECTORY . ' names ' . (is_string($directory) ? $directory : get_debug_type($directory))
+                . ', which is not ' . ModerationKindDirectory::class . ' or a subclass';
+            return;
+        }
+        try {
+            $kinds = $directory::all(in_array(HilosFeature::PROFILE_PHOTO, $declared, true));
+        } catch (InvalidArgumentException $e) {
+            $errors[] = $e->getMessage();
+            return;
+        }
+        foreach ($kinds as $key => $kind) {
+            if (!array_key_exists($kind->verdictTo, $agents)) {
+                $errors[] = "{$directory} sends moderation verdicts of {$key} to {$kind->verdictTo}, but AGENTS has no such agent";
+            }
         }
     }
 
