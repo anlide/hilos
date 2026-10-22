@@ -30,6 +30,9 @@ final class DeliveryCoalescer
 
     private int $sequence = 0;
 
+    /** Prepared text bytes of the survivors, kept as they change rather than summed on demand. */
+    private int $heldBytes = 0;
+
     /**
      * A boundary clears indices on both sides without releasing the physical delivery window.
      * The whole incoming frame stays intact when any section cannot be safely merged.
@@ -57,10 +60,12 @@ final class DeliveryCoalescer
                 return;
             }
             unset($this->frames[$this->indices[$key]]);
+            $this->heldBytes -= strlen($previous->json);
             $frame = $merged;
         }
         $position = $this->sequence++;
         $this->frames[$position] = $frame;
+        $this->heldBytes += strlen($frame->json);
         $this->indices[$key] = $position;
         $this->writes = array_replace($this->writes, $writes);
     }
@@ -69,6 +74,18 @@ final class DeliveryCoalescer
     public function hasFrames(): bool
     {
         return $this->frames !== [];
+    }
+
+    /** @return int Survivors held now */
+    public function getFrameCount(): int
+    {
+        return count($this->frames);
+    }
+
+    /** @return int Prepared text bytes of the survivors held now, a replaced or merged frame no longer among them */
+    public function getHeldBytes(): int
+    {
+        return $this->heldBytes;
     }
 
     /** @return list<DeliveryFrame> Survivors in the order of their last occurrences */
@@ -87,6 +104,7 @@ final class DeliveryCoalescer
         $this->indices = [];
         $this->writes = [];
         $this->sequence = 0;
+        $this->heldBytes = 0;
     }
 
     /** @param DeliveryFrame $frame Independently observable event or structural transition */
@@ -95,6 +113,7 @@ final class DeliveryCoalescer
         $this->indices = [];
         $this->writes = [];
         $this->frames[$this->sequence++] = $frame;
+        $this->heldBytes += strlen($frame->json);
     }
 
     /**

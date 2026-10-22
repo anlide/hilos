@@ -13,8 +13,9 @@ use Hilos\HilosException;
  * The framework-owned base every project's connection stands on: it owns the pair
  * that presence is made of — the WebSocket `acceptKey` (the collection id,
  * immutable), the authenticated `userId` (null while the connection is
- * anonymous, re-pointed by the authenticate/deauthenticate seam), and when the
- * socket opened. A project that
+ * anonymous, re-pointed by the authenticate/deauthenticate seam), when the
+ * socket opened, and whether the socket has gone quiet long enough to doubt the
+ * person behind it is still there (`probablyOffline`, HIL-1566). A project that
  * also carries browser sessions stands on {@see HilosSessionConnection} instead,
  * the stage above this one; choosing the stage is the only way to not carry a
  * field, because a subclass cannot drop a property its parent declares.
@@ -39,6 +40,7 @@ abstract class HilosConnection extends RtState
     public const string acceptKey = 'acceptKey';
     public const string userId = 'userId';
     public const string connectedAt = 'connectedAt';
+    public const string probablyOffline = 'probablyOffline';
 
     /** WebSocket accept key (primary id). */
     private(set) string $acceptKey = '';
@@ -48,6 +50,14 @@ abstract class HilosConnection extends RtState
 
     /** Unix timestamp when this socket row was created. */
     private(set) int $connectedAt = 0;
+
+    /**
+     * Whether the socket stayed silent past its liveness window and is doubted, though still open.
+     *
+     * A doubted connection is still registered and still counted; the flag only qualifies it,
+     * and it is lowered again the moment the socket is heard from.
+     */
+    public bool $probablyOffline = false;
 
     /**
      * Creates a connection row for a freshly opened socket.
@@ -158,10 +168,15 @@ abstract class HilosConnection extends RtState
         $this->acceptKey = $acceptKey;
         $this->userId = $userId;
         $this->connectedAt = time();
+        $this->probablyOffline = false;
     }
 
     /**
      * Hydrates the base fields from a serialized runtime row.
+     *
+     * The doubt flag is required like the moment the socket opened: {@see baseToArray()}
+     * writes it on every row, so a full row without it, or with it as another type, is a
+     * broken row and is refused rather than read as a socket nobody doubts.
      *
      * @param array<string, mixed> $row Serialized runtime row
      * @throws InvalidFormatException When the row lost a base field or carries it as another type
@@ -171,12 +186,13 @@ abstract class HilosConnection extends RtState
         $this->acceptKey = self::requireString($row, self::acceptKey);
         $this->userId = self::optionalInt($row, self::userId);
         $this->connectedAt = self::requireInt($row, self::connectedAt);
+        $this->probablyOffline = self::requireBool($row, self::probablyOffline);
     }
 
     /**
      * Returns the base fields {@see toArray()} merges the project ones over.
      *
-     * @return array<string, mixed> Base fields (acceptKey, userId, connectedAt)
+     * @return array<string, mixed> Base fields (acceptKey, userId, connectedAt, probablyOffline)
      */
     protected function baseToArray(): array
     {
@@ -184,21 +200,23 @@ abstract class HilosConnection extends RtState
             self::acceptKey => $this->acceptKey,
             self::userId => $this->userId,
             self::connectedAt => $this->connectedAt,
+            self::probablyOffline => $this->probablyOffline,
         ];
     }
 
     /**
      * Applies the mutable base fields from an inbound RT diff.
      *
-     * The accept key is the immutable id and is never in a diff; only the user id
-     * (bound and unbound by the authenticate seam) can change.
+     * The accept key is the immutable id and is never in a diff; the user id (bound
+     * and unbound by the authenticate seam) and the doubt flag are what can change.
      *
      * @param array<string, mixed> $diff Partial update
-     * @throws InvalidFormatException When the diff carries the user id as a non-integer
+     * @throws InvalidFormatException When the diff carries the user id as a non-integer or the doubt flag as a non-boolean
      */
     protected function applyBaseDiff(array $diff): void
     {
         $this->userId = self::patchOptionalInt($diff, self::userId, $this->userId);
         $this->connectedAt = self::patchInt($diff, self::connectedAt, $this->connectedAt);
+        $this->probablyOffline = self::patchBool($diff, self::probablyOffline, $this->probablyOffline);
     }
 }

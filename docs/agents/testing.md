@@ -385,7 +385,7 @@ scenario on a single shape is retired (HIL-1218).
 
 | Demo | View | Hilos cluster | MariaDB | Scenarios |
 |---|---|---|---|---|
-| binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server, primary + derived journal | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes, 23 verifier circle on every master, 25 freeze settles on every master, 29 a node with a cluster directory of its own refused on both ends, 30 a ready data export copy outlives the node its agent lived on, 32 a node with another admin view mode refused on both ends, 33 every master takes browsers, 34 a tab is the same on every master under protected mode, 35 rt row deleted while cut off is swept, 36 a slave cut off with its leader stops its work before it runs elsewhere, 38 manual maintenance from any node, 41 i18n catalog taken once and skipped after holder restart, 42 a node with another default language refused on both ends, 44 replicated waiting fleet survives leader death and quorum loss, then starts when slots return without another ask, 45 upload pool across nodes: reservations, worker receipts, crossing waits and peer generations |
+| binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server, primary + derived journal | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes, 23 verifier circle on every master, 25 freeze settles on every master, 29 a node with a cluster directory of its own refused on both ends, 30 a ready data export copy outlives the node its agent lived on, 32 a node with another admin view mode refused on both ends, 33 every master takes browsers, 34 a tab is the same on every master under protected mode, 35 rt row deleted while cut off is swept, 36 a slave cut off with its leader stops its work before it runs elsewhere, 38 manual maintenance from any node, 41 i18n catalog taken once and skipped after holder restart, 42 a node with another default language refused on both ends, 44 replicated waiting fleet survives leader death and quorum loss, then starts when slots return without another ask, 45 upload pool across nodes: reservations, worker receipts, crossing waits and peer generations, 46 browser liveness across masters |
 | ecommerce-shop | React | one master and two slaves of unequal room, `ram=10` and `ram=4`, each with `slots=64` | one server, primary + derived journal | 3 placement, 4 slave-kill failover, 6 hot-join, 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused, 16 recreated node leaves no phantom fleet (parked, P-441/2), 18 capacity is consumed, 19 worker death on a live node, 37 costless agents consume slots, 39 person agents across nodes, 43 waiting ballast retries after a slave returns without another ask (cleanup checked with `composer -d demo/ecommerce-shop run test:cluster:scenarios -- 43 37 18`) |
 | online-testing | Angular | three equal masters that host work themselves | one server, primary + derived journal | 11 cross-node db fact, 15 db interest addressing, 21 schema rolled out once by nodes that start together, 22 a node reading another database refused on both ends, 24 a cut-off leader stops its work before it runs elsewhere, 40 journal triggers installed once and unchanged on ordinary restart |
 
@@ -468,6 +468,46 @@ and that carrier's full matrix are:
 composer -d demo/binance-btc-tracker run test:cluster:scenarios -- 41 42
 composer -d demo/binance-btc-tracker run test:cluster:scenarios
 ```
+
+Scenario **46** on binance-btc-tracker proves
+[browser socket liveness](architecture/event-loop.md#browser-socket-liveness) across
+masters (HIL-1566; `scenario_46_browser_liveness_across_masters` in
+[`scenarios.py`](../../framework/docker/cluster/scenarios.py)). A raw socket is held
+through the entry on a master that does not lead (the `liveness-hold` command of
+[`cluster.py`](../../framework/docker/cluster/cluster.py)), the owner of `connections`
+is the singleton on the leader, and the row is read on the third master. The socket's
+master alone is recreated with spans of 2000/3000/6000/60000 ms (`own-env`); the
+rest of the stand keeps the framework's 40/50/120/600 s, and the original environment is
+restored in `finally`. The scenario requires that a socket silent past the
+probably-offline span is doubted in the observer's row no earlier than the span, and
+cleared once it answers; that a transition made while the owner's worker is stopped is
+missed (the observer's row stays as it was), and, after the worker is killed and the
+leader starts the owner again, repaired by the socket's master's own check within two
+ping intervals plus ten seconds, for a missed `true` and a missed `false` alike; that the
+master closes a socket silent past the close timeout and drops one that floods pings and
+reads no pong past the 8 MiB cap, the cap's log line being in that master's log and no
+other's; and that another socket of the same master, and every node, live on. The
+scenario also resumes a stopped worker in `finally`. It needs three masters and the
+entry, and runs before the freeze pair 23/25:
+
+```bash
+composer -d demo/binance-btc-tracker run test:cluster:scenarios -- 46
+```
+
+The single-node half is `presence-liveness.spec.ts` in each demo's `tests/e2e/tests/`
+(Vue, React, Angular). Each demo's `docker/docker-compose.test.yml` runs the master at a
+fortieth of the production spans and in their proportions
+(`WEBSOCKET_PING_IDLE_MS=1000`, `WEBSOCKET_PING_INTERVAL_MS=1250`,
+`WEBSOCKET_PROBABLY_OFFLINE_MS=3000`, `WEBSOCKET_CLOSE_TIMEOUT_MS=15000`), because no
+browser keeps silent: Chromium answers a ping in its network service whatever its page
+is doing. The spec therefore opens raw sockets with the cookies of a browser context
+(`openRawWebSocket()` from
+[`rawWebSocket.ts`](../../framework/frontend/e2e/rawWebSocket.ts)) that can keep their
+pong back, and an administrator watches the person on the people list and the card: online
+while one socket answers, probably offline while every socket is doubted, offline when
+none is left. The spec keeps no clock of its own; each step waits for what the master did
+to a socket, the pings it sent into the silence and the close, and then for what the
+observer was told.
 
 The Hilos shapes keep their original purpose: quorum, network partitions and
 TLS on binance-btc-tracker; placement and failover with a stable leader on

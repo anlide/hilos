@@ -17,10 +17,11 @@ use Hilos\Runtime\View\Item\HilosConnection;
 /**
  * Write operations for a single connection (HIL-509).
  *
- * The two writes a live socket takes: it closes, and the user behind it changes.
- * Both are on the presence stage, because the session token is written when the
- * row is created and never after — so there is no session-stage twin of this
- * class. A project subclasses this and adds its own per-socket writes.
+ * The three writes a live socket takes: it closes, the user behind it changes, and
+ * it falls silent or is heard from again (HIL-1566). All are on the presence stage,
+ * because the session token is written when the row is created and never after — so
+ * there is no session-stage twin of this class. A project subclasses this and adds
+ * its own per-socket writes.
  *
  * @template TItem of HilosConnection
  * @extends RtActions<TItem, StateHilosConnection>
@@ -71,5 +72,28 @@ abstract class HilosConnectionActions extends RtActions
         if ($changed) {
             GroupMembership::leaveAll($this->state->acceptKey);
         }
+    }
+
+    /**
+     * Raises or lowers the doubt that the person behind this connection is still there.
+     *
+     * The socket stays registered and counted either way; the flag only qualifies it for
+     * presence. Writing the value the row already holds is not a change and sends nothing, so
+     * a liveness report repeated about a socket still in the same state costs no sync.
+     *
+     * @param bool $probablyOffline Whether the socket went silent past its liveness window
+     * @throws RtActionsCollectionNameNullException When the collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When the caller is not the truth source
+     */
+    public function setProbablyOffline(bool $probablyOffline): void
+    {
+        $this->ensureCanWrite();
+
+        if ($this->state->probablyOffline === $probablyOffline) {
+            return;
+        }
+        $this->state->probablyOffline = $probablyOffline;
+
+        $this->sync();
     }
 }

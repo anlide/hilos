@@ -9,6 +9,7 @@ use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosConnection;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -31,12 +32,14 @@ final class HilosConnectionStateTest extends TestCase
         $this->assertSame(42, $connection->userId);
         $this->assertGreaterThan(0, $connection->connectedAt);
         $this->assertSame('seeded', $connection->label);
+        $this->assertFalse($connection->probablyOffline, 'a socket that just opened is not doubted');
         $this->assertSame(1, $connection->baselineMarks);
         $this->assertSame(
             [
                 HilosConnection::acceptKey => 'ak-1',
                 HilosConnection::userId => 42,
                 HilosConnection::connectedAt => $connection->connectedAt,
+                HilosConnection::probablyOffline => false,
                 PresenceConnectionFixture::label => 'seeded',
             ],
             $connection->toArray(),
@@ -49,6 +52,7 @@ final class HilosConnectionStateTest extends TestCase
             HilosConnection::acceptKey => 'ak-2',
             HilosConnection::userId => null,
             HilosConnection::connectedAt => 1710000000,
+            HilosConnection::probablyOffline => false,
             PresenceConnectionFixture::label => 'guest',
         ]);
 
@@ -65,6 +69,7 @@ final class HilosConnectionStateTest extends TestCase
         PresenceConnectionFixture::fromRow([
             HilosConnection::userId => 42,
             HilosConnection::connectedAt => 1710000000,
+            HilosConnection::probablyOffline => false,
             PresenceConnectionFixture::label => 'guest',
         ]);
     }
@@ -87,6 +92,125 @@ final class HilosConnectionStateTest extends TestCase
         $this->assertNull($connection->userId);
     }
 
+    public function testTheDoubtFlagTravelsThroughTheRowOnBothStages(): void
+    {
+        $presence = PresenceConnectionFixture::create('ak-6', 42);
+        $presence->probablyOffline = true;
+        $session = SessionConnectionFixture::create('ak-7', 5, 'tok-a', 17);
+        $session->probablyOffline = true;
+
+        $this->assertTrue($presence->toArray()[HilosConnection::probablyOffline]);
+        $this->assertTrue(PresenceConnectionFixture::fromRow($presence->toArray())->probablyOffline);
+        $this->assertTrue($session->toArray()[HilosConnection::probablyOffline]);
+        $hydrated = SessionConnectionFixture::fromRow($session->toArray());
+        $this->assertTrue($hydrated->probablyOffline);
+        $this->assertSame('tok-a', $hydrated->sessionToken);
+        $this->assertSame('seeded', $hydrated->label);
+    }
+
+    /**
+     * A full row that does not carry the flag is a broken row on the presence stage: nothing is
+     * minted for a key that did not arrive, and the row is refused like one that lost the moment
+     * its socket opened.
+     */
+    public function testAPresenceRowWithoutTheDoubtFlagIsRefused(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        PresenceConnectionFixture::fromRow([
+            HilosConnection::acceptKey => 'ak-8',
+            HilosConnection::userId => 42,
+            HilosConnection::connectedAt => 1710000000,
+            PresenceConnectionFixture::label => 'old',
+        ]);
+    }
+
+    /**
+     * The same refusal one stage up: the session half carried in full does not stand in for the
+     * base field the row lost.
+     */
+    public function testASessionRowWithoutTheDoubtFlagIsRefused(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        SessionConnectionFixture::fromRow([
+            HilosConnection::acceptKey => 'ak-9',
+            HilosConnection::userId => 5,
+            HilosConnection::connectedAt => 1710000000,
+            HilosSessionConnection::sessionToken => 'tok-a',
+            HilosSessionConnection::sessionId => 17,
+            SessionConnectionFixture::label => 'old',
+        ]);
+    }
+
+    /**
+     * @return array<string, array{mixed}> Values that are present under the flag's key and are not a boolean
+     */
+    public static function nonBooleanFlags(): array
+    {
+        return [
+            'null' => [null],
+            'integer' => [1],
+            'string' => ['true'],
+        ];
+    }
+
+    #[DataProvider('nonBooleanFlags')]
+    public function testFromRowRefusesADoubtFlagThatIsNotABoolean(mixed $flag): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        PresenceConnectionFixture::fromRow([
+            HilosConnection::acceptKey => 'ak-10',
+            HilosConnection::userId => 42,
+            HilosConnection::connectedAt => 1710000000,
+            HilosConnection::probablyOffline => $flag,
+            PresenceConnectionFixture::label => 'guest',
+        ]);
+    }
+
+    #[DataProvider('nonBooleanFlags')]
+    public function testApplyDiffRefusesADoubtFlagThatIsNotABoolean(mixed $flag): void
+    {
+        $connection = SessionConnectionFixture::create('ak-11', 5, 'tok-a', 17);
+
+        $this->expectException(InvalidFormatException::class);
+
+        $connection->applyDiff([HilosConnection::probablyOffline => $flag]);
+    }
+
+    /**
+     * A diff carries what changed: the flag moves when the diff carries it, and a diff about any
+     * other field - base, session or the project's own - leaves it where it was.
+     */
+    public function testApplyDiffMovesTheDoubtFlagOnlyWhenItCarriesIt(): void
+    {
+        $connection = SessionConnectionFixture::create('ak-12', 5, 'tok-a', 17);
+
+        $connection->applyDiff([
+            HilosConnection::probablyOffline => true,
+            SessionConnectionFixture::label => 'moved',
+        ]);
+        $this->assertTrue($connection->probablyOffline);
+        $this->assertSame('moved', $connection->label);
+        $this->assertSame(5, $connection->userId);
+        $this->assertSame('tok-a', $connection->sessionToken);
+
+        $connection->applyDiff([
+            HilosConnection::userId => 6,
+            HilosSessionConnection::sessionToken => 'tok-b',
+            SessionConnectionFixture::label => 'again',
+        ]);
+        $this->assertTrue($connection->probablyOffline, 'a diff that does not carry the flag leaves it raised');
+        $this->assertSame(6, $connection->userId);
+        $this->assertSame('tok-b', $connection->sessionToken);
+        $this->assertSame('again', $connection->label);
+
+        $connection->applyDiff([HilosConnection::probablyOffline => false]);
+        $this->assertFalse($connection->probablyOffline);
+        $this->assertSame('again', $connection->label);
+    }
+
     public function testPresenceStageCarriesNoSessionToken(): void
     {
         $this->assertFalse(property_exists(PresenceConnectionFixture::class, HilosSessionConnection::sessionToken));
@@ -106,6 +230,7 @@ final class HilosConnectionStateTest extends TestCase
                 HilosConnection::acceptKey => 'ak-4',
                 HilosConnection::userId => 5,
                 HilosConnection::connectedAt => $connection->connectedAt,
+                HilosConnection::probablyOffline => false,
                 HilosSessionConnection::sessionToken => 'tok-a',
                 HilosSessionConnection::sessionId => 17,
                 SessionConnectionFixture::label => 'seeded',

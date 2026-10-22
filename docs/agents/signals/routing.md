@@ -138,6 +138,17 @@ the new record instead. Both deliveries use ordinary agent placement, including 
 elsewhere in the cluster. A move to a page of the same agent is replaced inside that
 agent's own worker, where the previous subscription lives.
 
+`connection_liveness` (HIL-1566) goes the way `connection_close` does: a `WEBSOCKET`
+service signal routed by type alone to `getDefaultWebSocketLifecycleAgentType()`, whose
+agent must own the connections collection because it writes the connection's
+`probablyOffline` flag with `setProbablyOffline()` and is refused by the row's own write
+check otherwise. The master raises it when a socket goes silent past its probably-offline
+span, when it is heard from again, and to repeat a transition the owner missed
+([event-loop.md](../architecture/event-loop.md#browser-socket-liveness)). A browser cannot
+send it: neither the connection nor its state is the browser's to choose, so a frame
+naming that type is an unknown frame and is refused like any other. A connection already
+gone is nothing to do; a late transition never brings a row back.
+
 ## Agent → agent
 
 ```php

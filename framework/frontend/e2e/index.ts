@@ -48,6 +48,12 @@ export {
   type SocketFrame,
 } from './socket.js'
 export {
+  openRawWebSocket,
+  type RawWebSocket,
+  type RawWebSocketCloser,
+  type RawWebSocketStand,
+} from './rawWebSocket.js'
+export {
   deliveryObject,
   waitDeliveryBoundary,
   watchDeliveryFrames,

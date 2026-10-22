@@ -25,6 +25,18 @@ final class SignalTypeConstants
     /** @var string Connection close signal type */
     public const string CONNECTION_CLOSE = 'connection_close';
 
+    /**
+     * Connection liveness transition signal type (server-internal, never read from a browser).
+     *
+     * The master socket of one connection raises it when the socket goes silent past its liveness
+     * window or is heard from again, and the owner of the connections collection writes the doubt
+     * flag of that row. A browser frame naming this type is an unknown frame: neither the
+     * connection nor its state is the browser's to choose.
+     *
+     * @var string
+     */
+    public const string CONNECTION_LIVENESS = 'connection_liveness';
+
     /** @var string Page subscribe signal type */
     public const string PAGE_SUBSCRIBE = 'page_subscribe';
 

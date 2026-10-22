@@ -155,6 +155,33 @@ enum EnvConstants
     /** @var string WebSocket server port */
     case WEBSOCKET_PORT;
 
+    /**
+     * @var string Duration in ms a browser socket may stay silent before the master sends it an
+     * RFC ping; any well-formed inbound frame restarts the count. Below the probably-offline
+     * span. Default 40000.
+     */
+    case WEBSOCKET_PING_IDLE_MS;
+
+    /**
+     * @var string Interval in ms between the RFC pings a still-silent browser socket is sent
+     * after the first one. Default 50000.
+     */
+    case WEBSOCKET_PING_INTERVAL_MS;
+
+    /**
+     * @var string Duration in ms of browser socket silence from which the connection counts as
+     * probably offline; counted from the last inbound frame, as the close is. Between the ping
+     * idle span and the close timeout. Default 120000.
+     */
+    case WEBSOCKET_PROBABLY_OFFLINE_MS;
+
+    /**
+     * @var string Duration in ms of browser socket silence after which the master closes the
+     * connection without waiting for its outbound bytes. Above the probably-offline span.
+     * Default 600000.
+     */
+    case WEBSOCKET_CLOSE_TIMEOUT_MS;
+
     /** @var string Maximum bytes one read() takes from one socket */
     case SOCKET_READ_BUFFER_SIZE;
 

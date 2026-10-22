@@ -166,8 +166,9 @@ The rules to apply when building a view or an SDK component:
 - **Never convey meaning by color alone (1.4.1).** A status shown as a colored
   dot or swatch must also carry text. Use a visible text badge where one fits, or
   a `visually-hidden` text span next to a decorative dot; mark the dot
-  `aria-hidden="true"`. The presence indicators (online/offline) are the
-  reference: a text badge, or a hidden label beside an `aria-hidden` dot.
+  `aria-hidden="true"`. The presence indicators (online, probably offline,
+  offline) are the reference: a text badge, or a hidden label beside an
+  `aria-hidden` dot.
 - **Tables expose their accessibility tree.** `HilosViewportTable` takes its
   name from its declared `title`, or from the admin page heading when no title
   is declared, through `aria-labelledby`. The name is already visible as a

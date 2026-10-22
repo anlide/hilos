@@ -9,6 +9,8 @@ import {
   createHilosUserLifecycle,
   createHilosUsersTable,
   createHilosUserStanding,
+  hilosPresenceBadge,
+  HILOS_PRESENCE_WIDEST_LABEL,
   hilosStandingBadge,
   HILOS_USER_ANALYTICS_ENABLED_KEY,
   hilosUserAnalyticsEnabled,
@@ -28,6 +30,7 @@ import {
   type HilosUserLifecycleChoice,
   resolveHilosMergeCandidateRow,
   resolveHilosUserRow,
+  toHilosPresence,
   type HilosUserCardWindow,
   type HilosUserDetailRow,
   type HilosUsersContext,
@@ -1237,6 +1240,95 @@ describe('hilosStandingBadge (HIL-945)', () => {
       label: 'Merged',
       tone: 'secondary',
       icon: 'bi-sign-merge-left',
+    })
+  })
+})
+
+describe('a presence in doubt (HIL-1566)', () => {
+  it('keeps each of the three presences and reads anything else as offline', () => {
+    expect(toHilosPresence('online')).toBe('online')
+    expect(toHilosPresence('probably_offline')).toBe('probably_offline')
+    expect(toHilosPresence('offline')).toBe('offline')
+    expect(toHilosPresence('probably offline')).toBe('offline')
+    expect(toHilosPresence('away')).toBe('offline')
+    expect(toHilosPresence(undefined)).toBe('offline')
+    expect(toHilosPresence({ _hidden: true })).toBe('offline')
+  })
+
+  it('says every presence in words and a doubt in the warning tone', () => {
+    expect(hilosPresenceBadge('online')).toEqual({
+      label: 'online',
+      tone: 'success',
+    })
+    expect(hilosPresenceBadge('probably_offline')).toEqual({
+      label: 'probably offline',
+      tone: 'warning',
+    })
+    expect(hilosPresenceBadge('offline')).toEqual({
+      label: 'offline',
+      tone: 'secondary',
+    })
+    const labels = (['online', 'probably_offline', 'offline'] as const).map(
+      (presence) => hilosPresenceBadge(presence).label,
+    )
+    for (const label of labels) {
+      expect(HILOS_PRESENCE_WIDEST_LABEL.length).toBeGreaterThanOrEqual(
+        label.length,
+      )
+    }
+    expect(labels).toContain(HILOS_PRESENCE_WIDEST_LABEL)
+  })
+
+  it('reads a doubt off the people row and counts the doubted connections still', () => {
+    const { scopes, users } = userStore()
+    const page = scopes.page()!
+    const ref = { type: 'user', id: 4 }
+    page.entities.upsert(ref, { id: 4, name: 'Olena', lastActivity: null })
+    page.tables.upsert('hilosUsers', 4, {
+      users: ref,
+      connections: { presence: 'probably_offline', onlineSessionCount: 2 },
+    })
+    const rows = scopes.pageTableSignal('hilosUsers')
+
+    expect(resolveHilosUserRow(rows.get()[0], users)).toMatchObject({
+      presence: 'probably_offline',
+      onlineSessionCount: 2,
+      lastActivity: null,
+    })
+  })
+
+  it('follows the card from its first answer through every live change', () => {
+    const { scopes, users } = userStore()
+    const page = scopes.page()!
+    const ref = { type: 'user', id: 1 }
+    page.entities.upsert(ref, { id: 1, name: 'Alice', lastActivity: null })
+    const connections = (presence: string, onlineSessionCount: number) => {
+      page.tables.upsert('userDetail', 1, {
+        users: ref,
+        connections: { presence, onlineSessionCount },
+      })
+    }
+    connections('probably_offline', 1)
+    const detail = createHilosUserDetail({ scopes, users } as HilosUsersContext)
+
+    expect(detail.get()).toMatchObject({
+      presence: 'probably_offline',
+      onlineSessionCount: 1,
+    })
+    connections('online', 2)
+    expect(detail.get()).toMatchObject({
+      presence: 'online',
+      onlineSessionCount: 2,
+    })
+    connections('probably_offline', 2)
+    expect(detail.get()).toMatchObject({
+      presence: 'probably_offline',
+      onlineSessionCount: 2,
+    })
+    connections('offline', 0)
+    expect(detail.get()).toMatchObject({
+      presence: 'offline',
+      onlineSessionCount: 0,
     })
   })
 })

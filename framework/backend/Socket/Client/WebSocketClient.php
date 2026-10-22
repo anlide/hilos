@@ -35,7 +35,9 @@ use Hilos\ProtectedMode\ProtectedModeAdmissionConstants;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\Exception\RtBaseException;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\View\Item\HilosSessionRotation;
+use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\WebSocket\Delivery\DeliveryFrame;
@@ -49,6 +51,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupUpdateSubscriptionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketLivenessSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
@@ -62,6 +65,8 @@ use Hilos\Socket\WebSocket\Exception\InvalidFrameSequenceException;
 use Hilos\Socket\WebSocket\Exception\ReservedOpcodeException;
 use Hilos\Socket\WebSocket\Exception\UnknownOpcodeException;
 use Hilos\Socket\WebSocket\Exception\UnsupportedProtocolVersionException;
+use Hilos\Socket\WebSocket\Liveness\WebSocketLiveness;
+use Hilos\Socket\WebSocket\Liveness\WebSocketLivenessConfig;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\WebSocketFrameDTO;
@@ -166,8 +171,17 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /** Convert the process monotonic clock to the delivery queue's milliseconds. */
     private const int NANOSECONDS_PER_MILLISECOND = 1_000_000;
 
+    /**
+     * Outbound backpressure cap of one browser socket: the serialized bytes it is expected to be
+     * sent, the transport buffer and the delivery queue together. Not a promise about PHP memory.
+     */
+    private const int MAX_WRITE_BUFFER_BYTES = 8 * 1024 * 1024;
+
     /** @var bool Whether WebSocket handshake is completed */
     protected bool $handshakeCompleted = false;
+
+    /** A browser that stops draining is dropped at the cap, whether or not it answers pings. */
+    protected int $maxWriteBufferBytes = self::MAX_WRITE_BUFFER_BYTES;
 
     /**
      * @var ?ConnectionDropper Master seam closing OTHER connections, wired in by the server
@@ -202,6 +216,12 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
 
     /** @var array<string, WebSocketPageSubscribeSignalDTO|WebSocketPageUpdateSubscriptionSignalDTO> Accepted pending requests */
     private array $deliveryRequests = [];
+
+    /**
+     * Deadlines private to this TCP connection; no worker or peer reads them, and they end with it.
+     * Null until the handshake completes, and the check does not run before that.
+     */
+    private ?WebSocketLiveness $liveness = null;
 
     /**
      * @var ?string Peer address this connection was accepted from, read once on the 101
@@ -266,7 +286,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @throws InvalidFrameException If frame payload is invalid
      * @throws AgentUnknownActionException When action name is not allowed
      * @throws UnsupportedOperationException When an internal signal branch is unreachable
-     * @throws EnvException When the build timestamp env value cannot be read
+     * @throws EnvException When the build timestamp or liveness env values cannot be read, or the liveness spans are out of order
      * @throws RandomException When the secure random source refuses a handshake secret
      * @throws InvalidFormatException When the upgrade request's query string carries a non-string value
      * @throws InvalidArgumentException When a signal the frame turns into cannot be named
@@ -287,6 +307,9 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                 }
 
                 $this->handleFrame($frame);
+                // Taken whole by the parser and its handler, so the browser is there. A malformed
+                // frame threw above and a partial one is still waiting in the buffer: neither counts.
+                $this->liveness?->recordReceived($this->deliveryNowMs());
             }
         } catch (InvalidFrameException $failure) {
             // Delete raw input before releasing its pending receipts; cancel may have removed
@@ -382,8 +405,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                 break;
 
             case self::OPCODE_PONG:
-                // Pong frame - acknowledgment of ping
-                // Handle pong if needed (e.g., update last ping time)
+                // Pong frame - acknowledgment of ping; its arrival is the whole proof of life,
+                // recorded with every other whole frame in processReadBuffer()
                 break;
 
             case 0x3:
@@ -414,7 +437,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @throws HandshakeFailedException When handshake validation fails
      * @throws SocketException When socket error occurs
      * @throws UnsupportedProtocolVersionException When protocol version is not 13
-     * @throws EnvException When the build timestamp, cookie or environment env values cannot be read
+     * @throws EnvException When the build timestamp, cookie, environment or liveness env values cannot be read,
+     *                      or the liveness spans are out of order
      * @throws RandomException When the secure random source refuses this connection's secrets
      */
     private function handleHandshake(): void
@@ -428,6 +452,10 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $delimiterLen = strlen(HttpConstants::HTTP_DELIMITER);
         $request = substr($this->readBuffer, 0, $delimiterPos + $delimiterLen);
         $this->readBuffer = substr($this->readBuffer, strlen($request));
+
+        // Read before anything of this handshake is minted, announced or written: spans that
+        // cannot hold refuse the connection here, rather than leave it unchecked or fail each tick.
+        $livenessConfig = WebSocketLivenessConfig::fromEnv();
 
         // Parse request line to extract path and query parameters
         $requestLine = $this->parseRequestLine($request);
@@ -525,6 +553,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
 
         $this->writeBuffer .= $response;
         $this->handshakeCompleted = true;
+        $this->liveness = new WebSocketLiveness($livenessConfig, $this->deliveryNowMs());
         // Before the welcome, never after: the welcome tells this connection whether the mode
         // locks it out, and a verifier that presented a valid pass no longer is locked out.
         $this->admitProtectedModePass($queryParams);
@@ -653,6 +682,12 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         if ($this->deliveryQueue !== null) {
             $this->effectiveDeliveryQueue();
         }
+        // Before the drain: with the queue held or not yet due, the transport buffer may be empty
+        // and parent::write() would return before its own check.
+        $this->enforceOutboundCap();
+        if ($this->shouldClose) {
+            return;
+        }
         $this->drainDelivery();
         parent::write();
 
@@ -665,6 +700,16 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     public function hasPendingWrite(): bool
     {
         return parent::hasPendingWrite() || ($this->deliveryQueue?->hasFrames() ?? false);
+    }
+
+    /**
+     * A drain moves bytes from the queue into the transport buffer, so they count once.
+     *
+     * @return int Transport bytes plus what the delivery queue holds, a held subscription included
+     */
+    protected function outboundBackpressureBytes(): int
+    {
+        return parent::outboundBackpressureBytes() + ($this->deliveryQueue?->getPendingBytes() ?? 0);
     }
 
     /**
@@ -696,7 +741,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $this->deliverySettingsMirror = $mirror;
     }
 
-    /** @return int Monotonic milliseconds; overridable for deterministic transport tests */
+    /** @return int Monotonic milliseconds of the delivery and liveness clocks; overridable for deterministic transport tests */
     protected function deliveryNowMs(): int
     {
         return intdiv(hrtime(true), self::NANOSECONDS_PER_MILLISECOND);
@@ -1209,6 +1254,9 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /**
      * Queue one immutable frame prepared once for all recipients by the master.
      *
+     * A socket already to close takes nothing more; one the frame takes past the outbound cap is
+     * marked to close, and the server's ordinary drop releases what it held.
+     *
      * @param DeliveryFrame $frame Shared prepared application text
      * @throws InvalidStateException When handshake not completed
      * @throws InvalidFormatException When the effective window or a merged envelope is invalid
@@ -1219,8 +1267,12 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         if (!$this->handshakeCompleted) {
             throw new InvalidStateException("Cannot send frame: WebSocket handshake not completed");
         }
+        if ($this->shouldClose) {
+            return;
+        }
 
         $this->effectiveDeliveryQueue()->enqueue($frame, $this->deliveryNowMs());
+        $this->enforceOutboundCap();
     }
 
     /**
@@ -1287,8 +1339,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      */
     public function sendFrameBinary(string $data): void
     {
-        $header = $this->buildFrameHeader(strlen($data), self::OPCODE_BINARY);
-        $this->writeBuffer .= $header . $data;
+        $this->writeTransportFrame(self::OPCODE_BINARY, $data);
     }
 
     /**
@@ -1298,8 +1349,51 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      */
     private function sendPong(string $data): void
     {
-        $header = $this->buildFrameHeader(strlen($data), self::OPCODE_PONG);
-        $this->writeBuffer .= $header . $data;
+        $this->writeTransportFrame(self::OPCODE_PONG, $data);
+    }
+
+    /**
+     * Send an RFC ping with an empty payload; the browser answers it with a pong on its own,
+     * with no page code involved.
+     */
+    private function sendPing(): void
+    {
+        $this->writeTransportFrame(self::OPCODE_PING, '');
+    }
+
+    /**
+     * Append a frame straight to the transport buffer, past the delivery queue, and hold it to the
+     * outbound cap. A socket already to close takes nothing more.
+     *
+     * @param int $opcode Frame opcode
+     * @param string $payload Payload data
+     */
+    private function writeTransportFrame(int $opcode, string $payload): void
+    {
+        if ($this->shouldClose) {
+            return;
+        }
+        $this->writeBuffer .= $this->buildFrameHeader(strlen($payload), $opcode) . $payload;
+        $this->enforceOutboundCap();
+    }
+
+    /**
+     * Header bytes {@see buildFrameHeader()} puts before a payload of this length, so that what
+     * waits to be framed can be counted before it is.
+     *
+     * @param int $length Payload length
+     * @return int Header length in bytes
+     */
+    public static function frameHeaderBytes(int $length): int
+    {
+        if ($length < self::PAYLOAD_LEN_16BIT) {
+            return self::HEADER_LEN_BASE;
+        }
+        if ($length <= self::PAYLOAD_LEN_16BIT_MAX) {
+            return self::HEADER_LEN_16BIT;
+        }
+
+        return self::HEADER_LEN_64BIT;
     }
 
     /**
@@ -1914,12 +2008,55 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     ): void;
 
     /**
-     * Tick method - called on each server tick.
+     * Keeps this socket's liveness: closes it after the close timeout of silence, otherwise
+     * settles whether it is probably offline, tells the connection's owner of a change, checks the
+     * owner's row when the check is due and pings the browser when a ping is due.
+     *
+     * The decisions are {@see WebSocketLiveness}'s; this side only hands it the moment and
+     * carries them out. Runs from the completed handshake to the decision to close, and not
+     * outside it. The close does not wait for the outbound bytes, as closeOnceWritten() would:
+     * a browser silent this long does not read them, so the socket is marked for the server's
+     * ordinary drop on this very tick. The ping is an RFC control frame written straight to the
+     * transport buffer, as the pong is: it leaves the delivery queue, its window and any held
+     * subscription as they were, and does not count as the browser speaking.
+     *
+     * The flag leaves this socket only as a signal to the owner of the connections: the master
+     * writes no runtime row, and the owner writes one only when the flag changes. A change is
+     * told at once; the check repeats it only when the row this process holds still disagrees
+     * ({@see reconcileLiveness()}).
+     *
+     * @throws InvalidArgumentException When the liveness signal cannot be named
+     * @throws InvalidFormatException When the socket has no accept key to name in the signal
+     * @throws RtActionsStateCollectionNullException When the connections registry has no state collection behind it
      */
     public function onTick(): void
     {
-        // No periodic operations by default for WebSocket clients
-        // Can be overridden in child classes if needed
+        if ($this->liveness === null || $this->shouldClose) {
+            return;
+        }
+
+        $nowMs = $this->deliveryNowMs();
+        if ($this->liveness->isCloseDue($nowMs)) {
+            $this->markShouldClose();
+            return;
+        }
+        $transitionDue = $this->liveness->isProbablyOfflineTransitionDue($nowMs);
+        if ($transitionDue) {
+            // Both transitions are found here, the one place the connection's owner hears of them.
+            $this->liveness->settleProbablyOffline($nowMs);
+            $this->queueLiveness($this->liveness->probablyOffline);
+        }
+        if ($this->liveness->isReconcileDue($nowMs)) {
+            // A transition on this tick has just told the owner the very value a disagreeing row would repeat.
+            if (!$transitionDue) {
+                $this->reconcileLiveness($this->liveness->probablyOffline);
+            }
+            $this->liveness->recordReconciled($nowMs);
+        }
+        if ($this->liveness->isPingDue($nowMs)) {
+            $this->sendPing();
+            $this->liveness->recordPingSent($nowMs);
+        }
     }
 
     /**
@@ -1998,5 +2135,52 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $forwarded = HttpHeaderHelper::get($headers, HttpConstants::HEADER_X_REAL_IP);
 
         return $forwarded !== null && filter_var($forwarded, FILTER_VALIDATE_IP) !== false ? $forwarded : $peerIp;
+    }
+
+    /**
+     * Repeats this socket's flag to the connection's owner when the runtime row this process holds disagrees.
+     *
+     * The rare repair of a transition the owner missed - stopped, restarted, or cut off from this
+     * node while it was told. The row is read by its own key out of the copy every process holds
+     * ({@see RtContext::declareProcessWideReads()}): no database, no walk over the connections,
+     * nothing written. A row or a registry that is not here is passed over until the next check:
+     * the master registers no row and writes none, and the copy may simply not be back yet. An
+     * equal row only spares a repeat; it is not an acknowledgement, so the next real transition
+     * is told all the same.
+     *
+     * @param bool $probablyOffline Flag this socket holds now
+     * @throws InvalidArgumentException When the liveness signal cannot be named
+     * @throws InvalidFormatException When the socket has no accept key to name in the signal
+     * @throws RtActionsStateCollectionNullException When the connections registry has no state collection behind it
+     */
+    private function reconcileLiveness(bool $probablyOffline): void
+    {
+        $connections = Hilos::$rt?->connectionsRegistry();
+        if (!isset($connections[$this->acceptKey])) {
+            return;
+        }
+        if ($connections[$this->acceptKey]->probablyOffline !== $probablyOffline) {
+            $this->queueLiveness($probablyOffline);
+        }
+    }
+
+    /**
+     * Tells the owner of the connections which liveness state this socket is in.
+     *
+     * Queued as an internal WebSocket signal, as the close is, and routed by the type alone; the
+     * owner writes the flag and skips an equal one without a sync.
+     *
+     * @param bool $probablyOffline Flag this socket holds now
+     * @throws InvalidArgumentException When the liveness signal cannot be named
+     * @throws InvalidFormatException When the socket has no accept key to name in the signal
+     */
+    private function queueLiveness(bool $probablyOffline): void
+    {
+        Hilos::$sr->queueSignal(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::CONNECTION_LIVENESS),
+            new SignalName(SignalTypeConstants::CONNECTION_LIVENESS),
+            new WebSocketLivenessSignalDTO(acceptKey: $this->acceptKey, probablyOffline: $probablyOffline),
+        );
     }
 }

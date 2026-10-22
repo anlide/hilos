@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Source\SourceChange;
@@ -264,6 +265,85 @@ final class HilosUsersTableIntegrationTest extends HilosSessionIntegrationTestCa
         );
 
         self::userRow($mutation, TableMutationType::Update, $ann);
+    }
+
+    /**
+     * A connection falling silent changes nothing but its doubt, so the diff carries no person and
+     * the live row names whose row to refresh; with every connection doubted the row says the
+     * person is probably offline and still counts both tabs (HIL-1566).
+     *
+     * @throws HilosException On database or runtime error
+     */
+    public function testDoubtingEveryConnectionRefreshesThePersonAsProbablyOffline(): void
+    {
+        $ann = self::seedPerson('Ann');
+        $this->connections()->actions->register(self::FIRST_TAB, $ann);
+        $this->connections()->actions->register(self::SECOND_TAB, $ann);
+        $this->connections()[self::FIRST_TAB]->actions->setProbablyOffline(true);
+        $this->connections()[self::SECOND_TAB]->actions->setProbablyOffline(true);
+
+        $mutation = $this->table()->buildMutationForSourceEvent(SourceChange::rtUpdated(
+            UsersTableTestRtContext::connections,
+            self::SECOND_TAB,
+            [StateHilosConnection::probablyOffline => true],
+            previous: [StateHilosConnection::probablyOffline => false],
+        ));
+
+        $row = self::userRow($mutation, TableMutationType::Update, $ann);
+        $this->assertSame(2, $row->onlineSessionCount);
+        $this->assertSame(HilosUserPresenceSummary::PRESENCE_PROBABLY_OFFLINE, $row->presence);
+        $this->assertSame(
+            [
+                HilosUserTableRow::presence => HilosUserPresenceSummary::PRESENCE_PROBABLY_OFFLINE,
+                HilosUserTableRow::onlineSessionCount => 2,
+            ],
+            $this->table()->browserRow($row)[BrowserPageSignalData::sources][AbstractHilosUsersTable::SLOT_CONNECTIONS],
+            'the presence rides the connections slot it always did, and the flag itself does not',
+        );
+    }
+
+    /**
+     * @throws HilosException On database or runtime error
+     */
+    public function testOneConnectionStillHeardKeepsThePersonOnline(): void
+    {
+        $ann = self::seedPerson('Ann');
+        $this->connections()->actions->register(self::FIRST_TAB, $ann);
+        $this->connections()->actions->register(self::SECOND_TAB, $ann);
+        $this->connections()[self::FIRST_TAB]->actions->setProbablyOffline(true);
+
+        $mutation = $this->table()->buildMutationForSourceEvent(SourceChange::rtUpdated(
+            UsersTableTestRtContext::connections,
+            self::FIRST_TAB,
+            [StateHilosConnection::probablyOffline => true],
+            previous: [StateHilosConnection::probablyOffline => false],
+        ));
+
+        $row = self::userRow($mutation, TableMutationType::Update, $ann);
+        $this->assertSame(2, $row->onlineSessionCount);
+        $this->assertSame(HilosUserPresenceSummary::PRESENCE_ONLINE, $row->presence);
+    }
+
+    /**
+     * @throws HilosException On database or runtime error
+     */
+    public function testHearingADoubtedConnectionAgainRefreshesThePersonAsOnline(): void
+    {
+        $ann = self::seedPerson('Ann');
+        $this->connections()->actions->register(self::FIRST_TAB, $ann);
+        $this->connections()[self::FIRST_TAB]->actions->setProbablyOffline(true);
+        $this->connections()[self::FIRST_TAB]->actions->setProbablyOffline(false);
+
+        $mutation = $this->table()->buildMutationForSourceEvent(SourceChange::rtUpdated(
+            UsersTableTestRtContext::connections,
+            self::FIRST_TAB,
+            [StateHilosConnection::probablyOffline => false],
+            previous: [StateHilosConnection::probablyOffline => true],
+        ));
+
+        $row = self::userRow($mutation, TableMutationType::Update, $ann);
+        $this->assertSame(1, $row->onlineSessionCount);
+        $this->assertSame(HilosUserPresenceSummary::PRESENCE_ONLINE, $row->presence);
     }
 
     /**

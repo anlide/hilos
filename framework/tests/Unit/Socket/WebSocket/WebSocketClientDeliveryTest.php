@@ -18,12 +18,16 @@ use Hilos\Files\Upload\UploadMemoryInput;
 use Hilos\Files\Upload\UploadMemoryPool;
 use Hilos\Files\Upload\UploadMemoryPoolSink;
 use Hilos\Hilos;
+use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\Client\WorkerClient;
+use Hilos\Socket\Server\WebSocketServer;
+use Hilos\Socket\SocketException;
 use Hilos\Socket\Transport\PlainSocketTransport;
 use Hilos\Socket\Transport\SocketTransportInterface;
 use Hilos\Socket\WebSocket\Delivery\DeliveryFrame;
 use Hilos\Socket\WebSocket\Delivery\DeliverySettingsMirror;
+use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
@@ -39,10 +43,22 @@ use Socket;
 /** Real one-process socket bytes, with a monotonic clock controlled by each test. */
 final class WebSocketClientDeliveryTest extends TestCase
 {
+    /** Outbound cap of one browser socket, as the contract states it. */
+    private const int CAP = 8 * 1024 * 1024;
+
+    /** RFC 6455 header of a frame whose payload needs the 64-bit length. */
+    private const int LONG_HEADER_BYTES = 10;
+
+    private const int MEBIBYTE = 1024 * 1024;
+
     private ?EnvAccessor $previousEnv;
     private ?SignalRouter $previousRouter;
     /** @var list<array{DeliveryTestClient, Socket}> Connections and their browser ends */
     private array $connections = [];
+    /** @var list<Socket> Browser ends of the connections a test server holds */
+    private array $servedBrowsers = [];
+    /** @var list<CapTestServer> Servers whose remaining connections close after the test */
+    private array $servers = [];
 
     protected function setUp(): void
     {
@@ -57,6 +73,14 @@ final class WebSocketClientDeliveryTest extends TestCase
         foreach ($this->connections as [$client, $peer]) {
             $client->close();
             socket_close($peer);
+        }
+        foreach ($this->servers as $server) {
+            foreach ($server->heldClients() as $client) {
+                $client->close();
+            }
+        }
+        foreach ($this->servedBrowsers as $browser) {
+            socket_close($browser);
         }
         Hilos::$env = $this->previousEnv;
         Hilos::$sr = $this->previousRouter;
@@ -497,6 +521,150 @@ final class WebSocketClientDeliveryTest extends TestCase
         self::assertSame([['opcode' => 1, 'text' => 'fresh']], $this->readFrames($freshPeer));
     }
 
+    public function testOutboundBytesCountTheQueueOnceAndFollowEveryPartialWrite(): void
+    {
+        [$client, $peer] = $this->connection(partial: true);
+        $this->prime($client, $peer);
+        $client->now = 100;
+        $texts = ['{"type":"toast","data":1}', '{"type":"toast","data":2}', 'opaque', str_repeat('x', 300)];
+        foreach ($texts as $text) {
+            $client->sendFrame($text);
+        }
+        $queued = $client->outboundBytes();
+        self::assertSame(0, $client->transportBytes());
+
+        $client->now = 1000;
+        $client->write();
+        self::assertSame($client->transportBytes(), $client->outboundBytes());
+        self::assertSame($queued - 32, $client->outboundBytes());
+        $bytes = $this->pump($client, $peer);
+        self::assertSame($queued, strlen($bytes));
+        self::assertSame(0, $client->outboundBytes());
+        self::assertSame([
+            '{"type":"signal_batch","data":{"frames":[' . $texts[0] . ',' . $texts[1] . ']}}', $texts[2], $texts[3],
+        ], array_column(self::parseFrames($bytes), 'text'));
+    }
+
+    /** @return iterable<string, array{bool}> Where the bytes wait: the delivery queue, or the transport buffer */
+    public static function capPaths(): iterable
+    {
+        yield 'queue only' => [true];
+        yield 'transport only' => [false];
+    }
+
+    /** @param bool $queued Whether the bytes wait in the delivery queue rather than the transport buffer */
+    #[DataProvider('capPaths')]
+    public function testExactlyTheCapStaysOpenAndIsDeliveredWhole(bool $queued): void
+    {
+        [$client, $peer] = $this->connection();
+        $this->prime($client, $peer);
+        $client->now = 100;
+        $payload = str_repeat('x', self::CAP - self::LONG_HEADER_BYTES);
+        $this->sendLarge($client, $payload, $queued);
+        self::assertFalse($client->shouldClose());
+        self::assertSame(self::CAP, $client->outboundBytes());
+        self::assertSame($queued ? 0 : self::CAP, $client->transportBytes());
+
+        $client->now = 1000;
+        $bytes = $this->pump($client, $peer);
+        self::assertFalse($client->shouldClose());
+        self::assertSame(self::CAP, strlen($bytes));
+        $frames = self::parseFrames($bytes);
+        self::assertSame([$queued ? 1 : 2], array_column($frames, 'opcode'));
+        self::assertTrue($frames[0]['text'] === $payload);
+    }
+
+    /** @param bool $queued Whether the bytes wait in the delivery queue rather than the transport buffer */
+    #[DataProvider('capPaths')]
+    public function testOneByteOverTheCapClosesAndTheSocketTakesNothingMore(bool $queued): void
+    {
+        [$client, $peer] = $this->connection();
+        $this->prime($client, $peer);
+        $client->now = 100;
+        $this->sendLarge($client, str_repeat('x', self::CAP - self::LONG_HEADER_BYTES + 1), $queued);
+        self::assertTrue($client->shouldClose());
+        self::assertSame(0, $client->transportBytes());
+
+        $held = $client->outboundBytes();
+        $client->sendFrame('late');
+        $client->sendFrameBinary('late');
+        self::assertSame($held, $client->outboundBytes());
+        $client->now = 1000;
+        $client->write();
+        self::assertSame('', $this->readBytes($peer));
+        $client->close();
+        self::assertFalse($client->hasPendingWrite());
+        self::assertSame(0, $client->outboundBytes());
+    }
+
+    public function testAHeldSubscriptionOverTheCapClosesWithoutReleasingItsIncompletePacket(): void
+    {
+        [$client, $peer] = $this->connection();
+        $client->acceptJson('{"type":"page_subscribe","page":"p"}');
+        self::assertSame(SignalTypeConstants::PAGE_SUBSCRIBE, Hilos::$sr->getNextQueuedSignal()?->signalType->getType());
+        $chunk = str_repeat('x', self::MEBIBYTE);
+        // Seven framed mebibytes stay under the cap, the eighth takes the queue past it.
+        for ($sent = 1; $sent <= 7; $sent++) {
+            $client->sendFrame($chunk);
+            $client->write();
+        }
+        self::assertFalse($client->shouldClose());
+        self::assertSame(0, $client->transportBytes());
+        self::assertSame('', $this->readBytes($peer));
+
+        $client->sendFrame($chunk);
+        self::assertTrue($client->shouldClose());
+        $client->write();
+        self::assertSame('', $this->readBytes($peer));
+        $client->close();
+        self::assertFalse($client->hasPendingWrite());
+    }
+
+    public function testABrowserThatAnswersPingsButReadsNothingIsDroppedWhileTheOtherSocketLives(): void
+    {
+        $server = new CapTestServer();
+        $this->servers[] = $server;
+        [$stuck, $stuckBrowser] = $this->handshaken($server);
+        [$live, $liveBrowser] = $this->handshaken($server);
+        $chunk = str_repeat('x', self::MEBIBYTE);
+        $toasts = [];
+        $received = [];
+        for ($second = 40; $second < 60 && in_array($stuck, $server->heldClients(), true); $second++) {
+            $stuck->now = $second * 1000;
+            $live->now = $second * 1000;
+            $before = $stuck->outboundBytes();
+            $stuck->sendFrame($chunk);
+            self::assertSame($before + self::LONG_HEADER_BYTES + self::MEBIBYTE > self::CAP, $stuck->shouldClose());
+            $toasts[] = '{"type":"toast","data":' . $second . '}';
+            $live->sendFrame(end($toasts));
+            $server->onTick();
+            $received = [...$received, ...$this->readFrames($liveBrowser)];
+            if (in_array($stuck, $server->heldClients(), true)) {
+                // An unsolicited pong: the browser keeps answering while it reads nothing it is sent.
+                $pong = self::maskedFrame(0x8A, '');
+                self::assertSame(strlen($pong), socket_write($stuckBrowser, $pong));
+            }
+        }
+        self::assertSame([$live], $server->heldClients());
+        $closes = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->signalType->getType() === SignalTypeConstants::CONNECTION_CLOSE) {
+                self::assertInstanceOf(WebSocketCloseSignalDTO::class, $signal->data);
+                $closes[] = $signal->data->acceptKey;
+            }
+        }
+        self::assertSame([$stuck->acceptKey], $closes);
+
+        $live->now = 61000;
+        $toasts[] = '{"type":"toast","data":61}';
+        $live->sendFrame(end($toasts));
+        $server->onTick();
+        $received = [...$received, ...$this->readFrames($liveBrowser)];
+        $texts = array_column(array_filter($received, static fn (array $frame): bool => $frame['opcode'] === 1), 'text');
+        self::assertSame($toasts, $texts);
+        self::assertSame([$live], $server->heldClients());
+    }
+
     /** @return array{DeliveryTestClient, Socket} Real connected client/browser sockets */
     private function connection(bool $partial = false): array
     {
@@ -517,13 +685,89 @@ final class WebSocketClientDeliveryTest extends TestCase
         self::assertSame([['opcode' => 1, 'text' => 'prime']], $this->readFrames($peer));
     }
 
-    /** @return list<array{opcode: int, text: string}> Complete RFC frames actually written to the browser socket */
-    private function readFrames(Socket $peer): array
+    /**
+     * @param DeliveryTestClient $client Connection the bytes go to
+     * @param string $payload Payload past the 16-bit frame length
+     * @param bool $queued Whether it waits in the delivery queue rather than the transport buffer
+     */
+    private function sendLarge(DeliveryTestClient $client, string $payload, bool $queued): void
+    {
+        if ($queued) {
+            $client->sendFrame($payload);
+        } else {
+            $client->sendFrameBinary($payload);
+        }
+    }
+
+    /** @return string Every byte the client writes until nothing is left, read by a browser that keeps up */
+    private function pump(WebSocketClient $client, Socket $peer): string
+    {
+        $bytes = '';
+        for ($turn = 0; $turn < 1000 && ($turn === 0 || $client->hasPendingWrite()); $turn++) {
+            $client->write();
+            $bytes .= $this->readBytes($peer);
+        }
+        self::assertFalse($client->hasPendingWrite());
+
+        return $bytes;
+    }
+
+    /**
+     * @param CapTestServer $server Server that holds the connection
+     * @return array{CapTestClient, Socket} Connection whose real handshake completed at moment 0, its 101 and welcome read
+     */
+    private function handshaken(CapTestServer $server): array
+    {
+        $pair = [];
+        self::assertTrue(socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $pair));
+        socket_set_nonblock($pair[0]);
+        socket_set_nonblock($pair[1]);
+        $client = new CapTestClient($pair[0]);
+        $server->seedClient($client);
+        $this->servedBrowsers[] = $pair[1];
+        $request = "GET /ws HTTP/1.1\r\nHost: localhost:8092\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+            . 'Sec-WebSocket-Key: ' . base64_encode('0123456789abcdef') . "\r\nSec-WebSocket-Version: 13\r\n\r\n";
+        self::assertSame(strlen($request), socket_write($pair[1], $request));
+        $server->onTick();
+        self::assertStringStartsWith('HTTP/1.1 101', $this->readBytes($pair[1]));
+        self::assertSame(SignalTypeConstants::HANDSHAKE, Hilos::$sr->getNextQueuedSignal()?->signalType->getType());
+
+        return [$client, $pair[1]];
+    }
+
+    /**
+     * @param int $firstByte FIN bit and opcode
+     * @param string $payload Payload shorter than 126 bytes
+     * @return string The frame as a browser sends it, masked
+     */
+    private static function maskedFrame(int $firstByte, string $payload): string
+    {
+        $mask = 'mask';
+
+        return chr($firstByte) . chr(0x80 | strlen($payload)) . $mask
+            . ($payload ^ substr(str_repeat($mask, intdiv(strlen($payload), 4) + 1), 0, strlen($payload)));
+    }
+
+    /** @return string Every byte waiting on the browser end */
+    private function readBytes(Socket $peer): string
     {
         $bytes = '';
         while (($chunk = (new PlainSocketTransport($peer))->read(65536)) !== false && $chunk !== '') {
             $bytes .= $chunk;
         }
+
+        return $bytes;
+    }
+
+    /** @return list<array{opcode: int, text: string}> Complete RFC frames actually written to the browser socket */
+    private function readFrames(Socket $peer): array
+    {
+        return self::parseFrames($this->readBytes($peer));
+    }
+
+    /** @return list<array{opcode: int, text: string}> Complete RFC frames in the given bytes */
+    private static function parseFrames(string $bytes): array
+    {
         $frames = [];
         while ($bytes !== '') {
             self::assertGreaterThanOrEqual(2, strlen($bytes));
@@ -564,6 +808,18 @@ final class DeliveryTestClient extends WebSocketClient
     {
         $this->prepared[] = $frame;
         parent::sendDeliveryFrame($frame);
+    }
+
+    /** @return int Bytes the outbound cap is held against */
+    public function outboundBytes(): int
+    {
+        return $this->outboundBackpressureBytes();
+    }
+
+    /** @return int Bytes framed in the transport buffer */
+    public function transportBytes(): int
+    {
+        return strlen($this->writeBuffer);
     }
 
     public function acceptJson(string $json): void
@@ -654,5 +910,78 @@ final class DeliveryTestDropper implements ConnectionDropper
     public function dropWebSocketConnection(string $acceptKey): bool
     {
         return false;
+    }
+}
+
+/** Server whose browsers are handed to it by the test, ticked by its real loop and dropped through its real door. */
+final class CapTestServer extends WebSocketServer
+{
+    public function __construct()
+    {
+        parent::__construct('127.0.0.1', 0);
+    }
+
+    /** @param CapTestClient $client Browser this server now holds */
+    public function seedClient(CapTestClient $client): void
+    {
+        $this->clients[] = $client;
+    }
+
+    /** @return list<WebSocketClientInterface> Browsers the server still holds */
+    public function heldClients(): array
+    {
+        return array_values($this->clients);
+    }
+
+    protected function onStart(): void
+    {
+    }
+
+    /**
+     * @param resource $socket Unused accepted socket
+     * @return WebSocketClientInterface Never returned
+     * @throws SocketException Always, since this test does not accept clients
+     */
+    protected function onCreateClient($socket): WebSocketClientInterface
+    {
+        throw new SocketException('the delivery test accepts no clients');
+    }
+}
+
+/** Real client through a real handshake, so its liveness runs; only its clock and peer address are the test's. */
+final class CapTestClient extends WebSocketClient
+{
+    public int $now = 0;
+
+    /** @return int Bytes the outbound cap is held against */
+    public function outboundBytes(): int
+    {
+        return $this->outboundBackpressureBytes();
+    }
+
+    protected function deliveryNowMs(): int
+    {
+        return $this->now;
+    }
+
+    protected function getClientIp(): string
+    {
+        return '127.0.0.1';
+    }
+
+    /**
+     * @param array<string, string> $headers Unused handshake headers
+     * @param string $acceptKey Unused connection key
+     * @param array<string, string> $cookies Unused cookies
+     * @param ?string $clientIp Unused client address
+     * @param RequestQueryParams $queryParams Unused query
+     */
+    protected function onHandshake(
+        array $headers,
+        string $acceptKey,
+        array $cookies,
+        ?string $clientIp,
+        RequestQueryParams $queryParams,
+    ): void {
     }
 }

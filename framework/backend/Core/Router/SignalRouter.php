@@ -285,10 +285,11 @@ class SignalRouter
     /**
      * Returns the fallback owner for WebSocket lifecycle service signals.
      *
-     * Covers CONNECTION_CLOSE and WEBSOCKET/CRON, and HANDSHAKE only in a project that
-     * registers no sessions library: the handshake is the one of the three that resolves a
-     * session, so where a library owns sessions it is addressed there instead (HIL-710).
-     * The close stays here because the connection row it ends is the project's.
+     * Covers CONNECTION_CLOSE, CONNECTION_LIVENESS and WEBSOCKET/CRON, and HANDSHAKE only in a
+     * project that registers no sessions library: the handshake is the one of them that resolves
+     * a session, so where a library owns sessions it is addressed there instead (HIL-710). The
+     * close and the liveness transition stay here because the connection row they write is the
+     * project's (HIL-1566).
      *
      * @return ?string Fallback agent type
      */
@@ -301,8 +302,8 @@ class SignalRouter
      * Resolves service-signal owner agent types from the project router protected hooks.
      *
      * Covers DAEMON/SYSTEM bootstrap, generic DAEMON/CRON, and WebSocket lifecycle
-     * (HANDSHAKE, CONNECTION_CLOSE, WEBSOCKET/CRON). Returns an empty list for any
-     * signal these hooks do not own.
+     * (HANDSHAKE, CONNECTION_CLOSE, CONNECTION_LIVENESS, WEBSOCKET/CRON). Returns an empty
+     * list for any signal these hooks do not own.
      *
      * @param string $source Signal source identifier
      * @param string $signalTypeValue Signal type value
@@ -324,6 +325,7 @@ class SignalRouter
 
         if ($source === SignalSource::WEBSOCKET && in_array($signalTypeValue, [
             SignalTypeConstants::CONNECTION_CLOSE,
+            SignalTypeConstants::CONNECTION_LIVENESS,
             SignalTypeConstants::CRON,
         ], true)) {
             return $this->nonEmptyAgentTypes([$this->getDefaultWebSocketLifecycleAgentType()]);

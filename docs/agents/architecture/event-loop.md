@@ -33,6 +33,10 @@ Client sockets still leave only through `dropClient()`; do not close one outside
 - Server accept events (new connections)
 - Client read events (incoming data)
 - Write buffer flush after read
+- Each client's `onTick()`, once per master tick: `AbstractServer::onTick()` runs
+  `read()`, `onTick()`, `write()` for every client in turn and drops the one that
+  answers `shouldClose()`. A browser socket keeps its liveness there, see
+  [Browser Socket Liveness](#browser-socket-liveness)
 
 Callbacks are wrapped in try/catch — exceptions are logged but do not crash the loop.
 
@@ -72,6 +76,92 @@ string copies and transport overhead occupy additional memory. Reducing the
 setting preserves issued windows and stops new grants while the pool has no
 room. Keep reading worker, peer and control sockets when it is full: their
 facts are what release the capacity.
+
+## Browser Socket Liveness
+
+An open TCP connection says nothing about the person behind it. The master pings
+every browser socket that goes quiet, doubts one that stays quiet, and closes one
+that stays quiet too long (HIL-1566). The deadlines are decided by
+`Socket/WebSocket/Liveness/WebSocketLiveness`, which reads no clock and no
+environment; `WebSocketClient::onTick()` hands it the socket's monotonic
+milliseconds and carries out what it answers. The state is private to the socket
+and dies with it: no worker and no peer reads it, and the master writes no runtime
+row for it. `onTick()` runs from the completed handshake to the decision to close
+and does no blocking work: arithmetic, one frame appended to the write buffer, a
+queued signal and an array read of a copy the process already holds.
+
+**Four spans, read at every handshake.** `WebSocketLivenessConfig::fromEnv()` reads
+them when the upgrade request arrives, before anything of that handshake is minted,
+and the socket keeps them for its life. All four are milliseconds, counted from the
+last frame the browser sent, and they are independent deadlines from that moment,
+not a sum:
+
+| Environment value | Default | Meaning |
+|---|---|---|
+| `WEBSOCKET_PING_IDLE_MS` | 40000 | silence before the first ping |
+| `WEBSOCKET_PING_INTERVAL_MS` | 50000 | spacing of the pings while the silence lasts |
+| `WEBSOCKET_PROBABLY_OFFLINE_MS` | 120000 | silence from which the socket is doubted |
+| `WEBSOCKET_CLOSE_TIMEOUT_MS` | 600000 | silence at which the master closes it |
+
+The idle and interval spans must be positive and the order `WEBSOCKET_PING_IDLE_MS`
+< `WEBSOCKET_PROBABLY_OFFLINE_MS` < `WEBSOCKET_CLOSE_TIMEOUT_MS` must hold. A
+combination that breaks either throws `EnvInvalidValueException` at the handshake,
+which refuses that connection: a check that switched itself off, or refused again
+on every tick, would hide the same mistake. The test stands shorten the spans; see
+[testing.md](../testing.md) under scenario 46.
+
+**What counts as the browser speaking.** A whole frame of any opcode, taken by the
+parser and then handled (`processReadBuffer()`). A malformed frame throws and a
+partial one still waits in the read buffer, so neither counts. A pong is the whole
+proof of life, and a browser answers an RFC ping on its own, with no page code
+involved. Nothing this side writes counts, a ping it sent included.
+
+**What the master does with the silence**, in the order `onTick()` checks it:
+
+- **Close.** At `WEBSOCKET_CLOSE_TIMEOUT_MS` the socket is marked with
+  `markShouldClose()` and the same pass of `AbstractServer::onTick()` takes it
+  through `dropClient()` (see above) without waiting for its outbound bytes, as
+  `closeOnceWritten()` would: a browser silent this long does not read them. From
+  that moment the socket is pinged no more, changes no flag and is checked against
+  no row.
+- **Doubt.** At `WEBSOCKET_PROBABLY_OFFLINE_MS` the socket settles as probably
+  offline, and the tick after a whole frame settles it back. Either way the
+  socket queues a `connection_liveness` signal naming its accept key and the new
+  state, routed to the owner of the connections collection, which writes the
+  `probablyOffline` flag of that connection's row
+  ([../signals/routing.md](../signals/routing.md),
+  [../runtime/rt-state.md](../runtime/rt-state.md)).
+- **Check of the row.** Every `WEBSOCKET_PING_INTERVAL_MS` from the handshake, and
+  not moved by frames, the socket reads its connection's row from the copy of the
+  connections registry every process holds. When the flag there disagrees with the
+  socket's, it queues the signal again. The check writes nothing and costs no
+  database: it repairs a transition the owner missed because it was stopped,
+  restarted or cut off from this node. A row or registry that is not there is
+  passed over until the next check. A transition on the same tick has just told
+  the owner the value a disagreeing row would repeat, so that tick does not check.
+- **Ping.** After `WEBSOCKET_PING_IDLE_MS` of silence an RFC ping with an empty
+  payload, then one every `WEBSOCKET_PING_INTERVAL_MS` from the send, so a late
+  tick sends one ping and not the ones it missed. A frame from the browser moves
+  the next ping a whole idle span away. The ping is written straight to the
+  transport buffer past the delivery queue, as the pong is, so it leaves the
+  queue, its window and any held subscription as they were.
+
+**Outbound cap: 8 MiB.** A socket whose browser stays alive but does not read is
+not caught by silence, because it keeps answering pings. `WebSocketClient` therefore
+caps what is queued to it at `MAX_WRITE_BUFFER_BYTES` (8 MiB), counted as the
+transport buffer plus `DeliveryQueue::getPendingBytes()`: what `drain()` would hand
+the socket for everything held now, a held subscription included, with batch
+wrappers, separators and frame headers. The queue keeps that count as it changes,
+so asking walks nothing. `AbstractClient::enforceOutboundCap()` does the drop:
+exactly at the cap the client stays; past it the master logs a warning, empties the
+write buffer and marks the socket to close, and the server's ordinary `dropClient()`
+releases what the queue held. It is called wherever the bytes grow: in `write()`
+before the drain, because with the queue held or not yet due the transport buffer
+may be empty and `AbstractClient::write()` would return before its own check; after
+a frame is queued; and after a ping, a pong or a binary frame is appended. A socket
+already marked to close takes nothing more. An uncapped client (`0`, the default of
+an HTTP response) is never dropped here; the cluster peer link and the browser
+socket set a cap.
 
 ## What blocks the loop
 

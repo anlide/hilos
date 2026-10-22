@@ -29,6 +29,7 @@ use Hilos\HilosException;
  * @property-read string $acceptKey WebSocket accept key
  * @property-read ?int $userId Authenticated user id, or null while anonymous
  * @property-read int $connectedAt Unix timestamp when the socket row was created
+ * @property-read bool $probablyOffline Whether the socket went silent past its liveness window and is doubted
  * @property-read HilosConnectionActions $actions Write operations for this connection
  */
 abstract class HilosConnection extends RtItem
@@ -36,7 +37,7 @@ abstract class HilosConnection extends RtItem
     /**
      * Delegates the base fields to the backing row and resolves item actions.
      *
-     * @param string $name Property name (acceptKey, userId, actions)
+     * @param string $name Property name (acceptKey, userId, connectedAt, probablyOffline, actions)
      * @return mixed Property value or item actions
      * @throws RtItemActionsClassException When the item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
@@ -48,6 +49,7 @@ abstract class HilosConnection extends RtItem
             StateHilosConnection::acceptKey => $this->_state->acceptKey,
             StateHilosConnection::userId => $this->_state->userId,
             StateHilosConnection::connectedAt => $this->_state->connectedAt,
+            StateHilosConnection::probablyOffline => $this->_state->probablyOffline,
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };

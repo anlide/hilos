@@ -37,10 +37,10 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
 
     /**
      * Backpressure cap on the outbound buffer in bytes; 0 disables it (the default,
-     * so HTTP/WebSocket responses stay unbounded). A subclass that talks to a fixed
-     * peer set (the cluster peer link) sets a cap so a peer that stops draining
-     * (hung, overwhelmed) drops that one link instead of growing the buffer until
-     * the whole daemon hits the PHP memory limit and crash-loops.
+     * so HTTP responses stay unbounded). A subclass whose peer may stop draining (the
+     * cluster peer link, a browser socket) sets a cap so a hung or overwhelmed peer
+     * drops that one link instead of growing the buffer until the whole daemon hits
+     * the PHP memory limit and crash-loops.
      */
     protected int $maxWriteBufferBytes = 0;
 
@@ -154,15 +154,8 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
             return;
         }
 
-        // Backpressure: a capped client whose peer has stopped draining is dropped
-        // rather than buffered to the process memory limit. Closing the one bad link
-        // is recoverable (the mesh re-dials); an OOM takes the whole daemon down.
-        if ($this->maxWriteBufferBytes > 0 && $this->outboundBackpressureBytes() > $this->maxWriteBufferBytes) {
-            Logger::warning(
-                "Outbound buffer exceeded {$this->maxWriteBufferBytes} bytes; dropping the link to shed backpressure",
-            );
-            $this->writeBuffer = '';
-            $this->markShouldClose();
+        $this->enforceOutboundCap();
+        if ($this->shouldClose) {
             return;
         }
 
@@ -211,6 +204,30 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     protected function outboundBackpressureBytes(): int
     {
         return strlen($this->writeBuffer);
+    }
+
+    /**
+     * Backpressure: a capped client whose peer has stopped draining is dropped rather than
+     * buffered to the process memory limit. Closing the one bad link is recoverable (the mesh
+     * re-dials, a browser reconnects); an OOM takes the whole daemon down.
+     *
+     * Exactly at the cap the client stays, and an uncapped one is never dropped here. write()
+     * checks before handing the buffer to the transport; a subclass whose bytes can grow while
+     * write() returns before that check calls it where they grow.
+     */
+    protected function enforceOutboundCap(): void
+    {
+        if ($this->maxWriteBufferBytes <= 0 || $this->shouldClose
+            || $this->outboundBackpressureBytes() <= $this->maxWriteBufferBytes
+        ) {
+            return;
+        }
+
+        Logger::warning(
+            "Outbound buffer exceeded {$this->maxWriteBufferBytes} bytes; dropping the link to shed backpressure",
+        );
+        $this->writeBuffer = '';
+        $this->markShouldClose();
     }
 
     /**
@@ -378,6 +395,8 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
      *
      * Must be implemented by child classes to perform periodic operations (e.g., timeout checks).
      * Can be left empty if no periodic operations are needed.
+     *
+     * @throws HilosException When the implementation's periodic work fails
      */
     abstract public function onTick(): void;
 

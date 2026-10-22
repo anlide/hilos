@@ -211,6 +211,43 @@ final class DeliveryCoalescerTest extends TestCase
         self::assertSame([$next], $coalescer->drain());
     }
 
+    public function testHeldBytesAreTheTextOfTheSurvivorsThroughReplaceMergeAndBoundaries(): void
+    {
+        $frames = [
+            self::frame('table_viewport_count', ['page' => 'p', 'tableKey' => 't', 'total' => 100]),
+            self::frame('page_response', ['page' => 'p', 'payload' => ['data' => ['x' => 1]]]),
+            self::frame('table_viewport_count', ['page' => 'p', 'tableKey' => 't', 'total' => 2]),
+            self::frame('page_response', ['page' => 'p', 'payload' => ['data' => ['y' => str_repeat('y', 40)]]]),
+            self::frame('toast', ['text' => 'event']),
+            DeliveryFrame::fromJson('opaque'),
+            self::frame('page_response', ['page' => 'p', 'payload' => ['data' => ['x' => 3]]]),
+        ];
+        $replacedOrMerged = false;
+        for ($length = 0; $length <= count($frames); $length++) {
+            $coalescer = new DeliveryCoalescer();
+            foreach (array_slice($frames, 0, $length) as $frame) {
+                $coalescer->append($frame);
+            }
+            $held = [$coalescer->getFrameCount(), $coalescer->getHeldBytes()];
+            $survivors = $coalescer->drain();
+            $replacedOrMerged = $replacedOrMerged || count($survivors) < $length;
+            self::assertSame(
+                [count($survivors), array_sum(array_map(static fn (DeliveryFrame $frame): int => strlen($frame->json), $survivors))],
+                $held,
+                "after {$length} frames",
+            );
+            self::assertSame([0, 0], [$coalescer->getFrameCount(), $coalescer->getHeldBytes()]);
+        }
+        self::assertTrue($replacedOrMerged);
+
+        $coalescer = new DeliveryCoalescer();
+        foreach ($frames as $frame) {
+            $coalescer->append($frame);
+        }
+        $coalescer->clear();
+        self::assertSame([0, 0], [$coalescer->getFrameCount(), $coalescer->getHeldBytes()]);
+    }
+
     /**
      * @param string $type Wire signal type
      * @param array<string, mixed> $body Wire body

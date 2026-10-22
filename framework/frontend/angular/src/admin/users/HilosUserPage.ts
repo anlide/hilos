@@ -15,7 +15,9 @@
 // one verdict (createHilosUserStanding, HIL-945): the badge beside the presence
 // in the header shows the standing shown, and the access section draws the
 // block, the freeze — a fact with no control — and the deletion from the same
-// verdict. A window whose action takes something away — the merge, rights, the
+// verdict. The presence badge says the word the people list says (HIL-1566) and
+// holds the room of the widest one, so a live change of it moves nothing beside
+// it. A window whose action takes something away — the merge, rights, the
 // block, the deletion — first asks the server whether the administrator must
 // confirm it is them, and opens on that step when it must
 // (createHilosUserCardStepUp, HIL-1275). The takeover lives here too (HIL-1170,
@@ -64,6 +66,8 @@ import {
   HILOS_USER_IMPERSONATION_COPY,
   HILOS_USER_MERGED_COPY,
   HILOS_USER_LIFECYCLE_COPY,
+  HILOS_PRESENCE_WIDEST_LABEL,
+  hilosPresenceBadge,
   hilosStandingBadge,
   hilosUserAnalyticsEnabled,
   hilosUserAnalyticsPath,
@@ -178,7 +182,14 @@ function focusWindow(body: HTMLElement | undefined): void {
             <span class="h5 mb-0" data-id="hilos-user-name"
               ><hilos-hideable [value]="detail.name"
             /></span>
-            <span class="badge text-bg-secondary">{{ detail.presence }}</span>
+            <span class="hilos-stack d-inline-grid">
+              <span class="badge invisible" aria-hidden="true">{{
+                presenceWidest
+              }}</span>
+              <span class="badge" [class]="'text-bg-' + presenceBadge().tone">{{
+                presenceBadge().label
+              }}</span>
+            </span>
             @if (standingBadge(); as badge) {
               <span
                 class="badge"
@@ -1035,6 +1046,11 @@ export class HilosUserPage {
   private readonly graceDays = signal<Hideable<number> | null>(null)
   private readonly lifecycleNow = signal(Date.now())
   private readonly standing = signal<HilosAccountStanding | null>(null)
+  protected readonly presenceWidest = HILOS_PRESENCE_WIDEST_LABEL
+  // The header draws it only under a row, so the absent row's word is never seen.
+  protected readonly presenceBadge = computed(() =>
+    hilosPresenceBadge(this.detail()?.presence ?? 'offline'),
+  )
   protected readonly standingBadge = computed(() => {
     const standing = this.standing()
 

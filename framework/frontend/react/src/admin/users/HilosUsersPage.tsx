@@ -10,14 +10,18 @@
 // in the address too (`/hilos/users/terms`, HIL-945): the legal section's root
 // links its count there, and changing the filter rewrites the address. An
 // account folded into another one wears a gray "Merged" badge beside its name
-// (HIL-1292). Bootstrap classes only (styling-rules.md).
+// (HIL-1292). The presence badge says one of three words (HIL-1566) and holds the
+// room of the widest one, so a presence changing live neither moves the row nor
+// spills out of its column. Bootstrap classes only (styling-rules.md).
 import { useContext, useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { HILOS_TABLE_ACTIONS_KEY, HilosPages } from '@hilos/core/base'
 import {
   USER_ONLINE_SESSION_COUNT_FIELD,
   USER_PRESENCE_FIELD,
+  HILOS_PRESENCE_WIDEST_LABEL,
   createHilosUsersTable,
+  hilosPresenceBadge,
   hilosStandingBadge,
 } from '@hilos/core/admin/users'
 import type { HilosUserRow, HilosUsersContext } from '@hilos/core/admin/users'
@@ -85,17 +89,20 @@ export function HilosUsersPage({ context, rowActions }: HilosUsersPageProps) {
               ) : null}
             </>
           ),
-          [USER_PRESENCE_FIELD]: (row) => (
-            <span
-              className={`badge ${
-                row.presence === 'online'
-                  ? 'text-bg-success'
-                  : 'text-bg-secondary'
-              }`}
-            >
-              {row.presence}
-            </span>
-          ),
+          [USER_PRESENCE_FIELD]: (row) => {
+            const badge = hilosPresenceBadge(row.presence)
+
+            return (
+              <span className="hilos-stack d-inline-grid">
+                <span className="badge invisible" aria-hidden="true">
+                  {HILOS_PRESENCE_WIDEST_LABEL}
+                </span>
+                <span className={`badge text-bg-${badge.tone}`}>
+                  {badge.label}
+                </span>
+              </span>
+            )
+          },
           [USER_ONLINE_SESSION_COUNT_FIELD]: (row) => row.onlineSessionCount,
           lastActivity: (row) => row.lastActivity ?? '—',
           [HILOS_TABLE_ACTIONS_KEY]: (row) => rowActions?.(row),

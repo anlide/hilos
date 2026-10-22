@@ -73,7 +73,7 @@ removing it. It is said by standing on a lower stage:
 
 | Stage | Row carries | Seams it unlocks |
 |---|---|---|
-| `HilosConnection` | `acceptKey`, `?int userId` | `findAuthenticated()`, `findByUser()`, presence in the users table |
+| `HilosConnection` | `acceptKey`, `?int userId`, `connectedAt`, `bool probablyOffline` | `findAuthenticated()`, `findByUser()`, presence in the users table: `online`, `probably_offline` or `offline` |
 | `HilosSessionConnection` | the above plus `?string sessionToken` | `findAllBySessionToken()`, the sessions library's read of a session's sockets, the session carry-over |
 
 A new framework seam names the **minimum** stage it needs, never the fullest. A
@@ -111,6 +111,33 @@ signature with the token, and a `final` method cannot be overridden. It is
 browsers subscribe, which means there are connections; the deferred activation
 check refuses a runtime context that answers `connectionsSource()` with null.
 A headless project (`PAGES = []`) is asked for none.
+
+**`probablyOffline` is a base field with one writer (HIL-1566).** It says the
+browser socket stayed silent past its liveness window and is doubted though still
+open. The row stays registered and counted either way; the flag only qualifies it.
+A new row starts `false`. A full row reads it with `requireBool`, so a row that
+lost the key or carries another type is refused like any broken base field, and a
+diff reads it with `patchBool`, so a diff about another field leaves it as it was.
+
+- **The owner writes it, the master reads it.** The owner of the connections
+  collection writes the flag through the item action `setProbablyOffline()` of
+  `HilosConnectionActions`, when the master's `connection_liveness` signal reaches
+  it ([../signals/routing.md](../signals/routing.md)). The handler runs as the
+  addressed agent, so the row's own write check holds that agent to its claim: the
+  agent that answers the lifecycle signals must be the one that owns the
+  collection. Writing the value the row already holds is no change and sends no
+  sync. The master never writes the flag: it reads the row from its process copy
+  to find a transition the owner missed and tell it again
+  ([../architecture/event-loop.md](../architecture/event-loop.md#browser-socket-liveness)).
+- **A project writes nothing for it.** The signal handler, the action and the
+  presence reading are the framework's, so a project only keeps its own fields
+  named around the base ones.
+- **Presence has three states.** `HilosConnections::summaryForUser()` answers
+  `offline` when no connection is counted, `probably_offline` when every counted
+  connection is doubted, and `online` otherwise: one socket still answering is a
+  person who is still here. A doubted connection stays in `onlineSessionCount`
+  until it closes. The doubt is not the freshness of a replica (`stale`): a copy
+  can be fresh and doubted, or frozen and trusted.
 
 ## Writing to state
 

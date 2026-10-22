@@ -107,7 +107,7 @@ abstract class HilosSessionConnection extends HilosConnection
     }
 
     /**
-     * @return array<string, mixed> Base fields of both stages (acceptKey, userId, connectedAt, sessionToken, sessionId)
+     * @return array<string, mixed> Base fields of both stages (acceptKey, userId, connectedAt, probablyOffline, sessionToken, sessionId)
      */
     protected function baseToArray(): array
     {

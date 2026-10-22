@@ -12,7 +12,9 @@
 // the backend fail ack inside the modal. The person's standing is one verdict
 // (createHilosUserStanding, HIL-945): the badge beside the presence in the
 // header shows the standing shown, and the access section draws the block, the
-// freeze — a fact with no control — and the deletion from the same verdict. A
+// freeze — a fact with no control — and the deletion from the same verdict. The
+// presence badge says the word the people list says (HIL-1566) and holds the room
+// of the widest one, so a live change of it moves nothing beside it. A
 // window whose action takes something away — the merge, rights, the block, the
 // deletion — first asks the server whether the administrator must confirm it is
 // them, and opens on that step when it must (createHilosUserCardStepUp,
@@ -53,6 +55,8 @@ import {
   HILOS_USER_IMPERSONATION_COPY,
   HILOS_USER_MERGED_COPY,
   HILOS_USER_LIFECYCLE_COPY,
+  HILOS_PRESENCE_WIDEST_LABEL,
+  hilosPresenceBadge,
   hilosStandingBadge,
   hilosUserAnalyticsEnabled,
   hilosUserAnalyticsPath,
@@ -186,6 +190,8 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   }, [userStanding, editor])
   const standingBadge =
     standing === null ? null : hilosStandingBadge(standing.shown)
+  // The header draws it only under a row, so the absent row's word is never seen.
+  const presenceBadge = hilosPresenceBadge(detail?.presence ?? 'offline')
   const frozenRow = hilosUserFrozenRow(standing)
   // A merged account (HIL-1292): the notice under the header stands in for
   // every action section, which the core leaves empty for it.
@@ -733,7 +739,14 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
               <span className="h5 mb-0" data-id="hilos-user-name">
                 <HilosHideable value={detail.name} />
               </span>
-              <span className="badge text-bg-secondary">{detail.presence}</span>
+              <span className="hilos-stack d-inline-grid">
+                <span className="badge invisible" aria-hidden="true">
+                  {HILOS_PRESENCE_WIDEST_LABEL}
+                </span>
+                <span className={`badge text-bg-${presenceBadge.tone}`}>
+                  {presenceBadge.label}
+                </span>
+              </span>
               {standingBadge !== null && (
                 <span
                   className={`badge text-bg-${standingBadge.tone}`}

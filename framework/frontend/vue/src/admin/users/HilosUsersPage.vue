@@ -9,11 +9,15 @@ person's card since HIL-1170. The bar's "Past deadline on" filter narrows the
 list to the people past one legal document's deadline and lives in the address
 too (`/hilos/users/terms`, HIL-945): the legal section's root links its count
 there, and changing the filter rewrites the address. An account folded into
-another one wears a gray "Merged" badge beside its name (HIL-1292).
+another one wears a gray "Merged" badge beside its name (HIL-1292). The presence
+badge says one of three words (HIL-1566) and holds the room of the widest one, so
+a presence changing live neither moves the row nor spills out of its column.
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   createHilosUsersTable,
+  HILOS_PRESENCE_WIDEST_LABEL,
+  hilosPresenceBadge,
   hilosStandingBadge,
   type HilosUserRow,
   type HilosUsersContext,
@@ -68,13 +72,16 @@ const mergedBadge = hilosStandingBadge('merged')
         ></template
       >
       <template #cell-presence="{ row }">
-        <span
-          class="badge"
-          :class="
-            row.presence === 'online' ? 'text-bg-success' : 'text-bg-secondary'
-          "
-          >{{ row.presence }}</span
-        >
+        <span class="hilos-stack d-inline-grid">
+          <span class="badge invisible" aria-hidden="true">{{
+            HILOS_PRESENCE_WIDEST_LABEL
+          }}</span>
+          <span
+            class="badge"
+            :class="`text-bg-${hilosPresenceBadge(row.presence).tone}`"
+            >{{ hilosPresenceBadge(row.presence).label }}</span
+          >
+        </span>
       </template>
       <template #cell-onlineSessionCount="{ row }">{{
         row.onlineSessionCount

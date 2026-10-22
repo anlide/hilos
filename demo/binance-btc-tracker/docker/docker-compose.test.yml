@@ -105,6 +105,16 @@ services:
       - WORKER_COMM_PORT=8091
       - WEBSOCKET_HOST=0.0.0.0
       - WEBSOCKET_PORT=8092
+      # The liveness spans of a browser socket (HIL-1566) at a fortieth of
+      # production's 40/50/120/600 s and in its proportions: the first ping after
+      # 1 s of silence, the next every 1.25 s, probably offline at 3 s, closed at
+      # 15 s. presence-liveness.spec waits them out on raw sockets that can keep
+      # silent; a browser answers every ping on its own, so the rest of the suite
+      # never comes near them.
+      - WEBSOCKET_PING_IDLE_MS=1000
+      - WEBSOCKET_PING_INTERVAL_MS=1250
+      - WEBSOCKET_PROBABLY_OFFLINE_MS=3000
+      - WEBSOCKET_CLOSE_TIMEOUT_MS=15000
       # Trust this stand's own nginx, by address, to name the visitor behind it
       # (HIL-680). One address and not a pool: the websocket port below is published
       # as well, and a connection that reaches it without passing through nginx

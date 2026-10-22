@@ -199,11 +199,14 @@ test('shows the connected user as online with a live session', async ({
   // Regression: a connected user must render online with at least one live
   // session. The detail table's computed presence fields were never populated
   // (the project browser context returned null), so the live user rendered as
-  // offline with 0 sessions.
+  // offline with 0 sessions. The presence badge stands over an invisible twin
+  // holding the room of its widest word (HIL-1566); the visible one is read.
   await expect(page.getByTestId('hilos-user-sessions')).toHaveText(/[1-9]/)
-  await expect(page.locator('[data-id="hilos-user-detail"] .badge')).toHaveText(
-    'online',
-  )
+  await expect(
+    page
+      .locator('[data-id="hilos-user-detail"] .badge')
+      .filter({ visible: true }),
+  ).toHaveText('online')
 })
 
 // HIL-327: the /hilos/users viewport table on volume. `test:user:seed` seeds 25

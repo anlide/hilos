@@ -2128,3 +2128,93 @@ describe('HilosUserPage link to the person in Analytics (HIL-1420)', () => {
     )
   })
 })
+
+describe('HilosUserPage presence (HIL-1566)', () => {
+  afterEach(() => {
+    cleanup()
+    document.body.classList.remove('modal-open')
+  })
+
+  const change = async (fn: () => void) => {
+    await act(async () => {
+      fn()
+    })
+  }
+
+  /**
+   * The header's presence: the room the twin holds, and the badge drawn over it.
+   */
+  function presence(): {
+    room: HTMLElement | null
+    twin: HTMLElement | null
+    badge: HTMLElement | null
+  } {
+    const room = document.querySelector<HTMLElement>(
+      '[data-id="hilos-user-detail"] .card-header .hilos-stack.d-inline-grid',
+    )
+
+    return {
+      room,
+      twin: room?.querySelector<HTMLElement>('.badge.invisible') ?? null,
+      badge: room?.querySelector<HTMLElement>('.badge:not(.invisible)') ?? null,
+    }
+  }
+
+  it('says the list word in the header from the first answer through every live change', async () => {
+    const context = userContext(true)
+    renderPage(context)
+    const connections = (value: string, onlineSessionCount: number) => {
+      context.scopes.page()?.tables.upsert('userDetail', 1, {
+        users: { type: 'user', id: 1 },
+        connections: { presence: value, onlineSessionCount },
+      })
+    }
+    const sessions = () => byId('hilos-user-sessions')?.textContent?.trim()
+
+    expect(presence().badge?.textContent?.trim()).toBe('online')
+    expect(presence().badge?.classList.contains('text-bg-success')).toBe(true)
+    expect(presence().twin?.textContent?.trim()).toBe('probably offline')
+    expect(presence().twin?.getAttribute('aria-hidden')).toBe('true')
+    // The twin is the only other badge in the card, and it is not seen.
+    expect(
+      Array.from(
+        document.querySelectorAll('[data-id="hilos-user-detail"] .badge'),
+      ).filter((badge) => !badge.classList.contains('invisible')),
+    ).toEqual([presence().badge])
+
+    await change(() => connections('probably_offline', 1))
+    expect(presence().badge?.textContent?.trim()).toBe('probably offline')
+    expect(presence().badge?.classList.contains('text-bg-warning')).toBe(true)
+    expect(presence().badge?.classList.contains('text-bg-secondary')).toBe(
+      false,
+    )
+    expect(sessions()).toBe('1')
+    expect(document.body.textContent).not.toContain('probably_offline')
+
+    // The standing badge stands beside it and does not change it.
+    await change(() => {
+      context.scopes
+        .page()
+        ?.data.set(
+          'accountStanding',
+          standing({ shown: 'blocked', blocked: true }),
+        )
+    })
+    expect(byId('user-standing-badge')?.textContent?.trim()).toBe('Blocked')
+    expect(presence().badge?.textContent?.trim()).toBe('probably offline')
+    await change(() => {
+      context.standingFrame({ userId: 1, accountStanding: standing({}) })
+    })
+
+    await change(() => connections('online', 2))
+    expect(presence().badge?.textContent?.trim()).toBe('online')
+    expect(presence().badge?.classList.contains('text-bg-success')).toBe(true)
+    expect(sessions()).toBe('2')
+
+    await change(() => connections('offline', 0))
+    expect(presence().badge?.textContent?.trim()).toBe('offline')
+    expect(presence().badge?.classList.contains('text-bg-secondary')).toBe(true)
+    expect(presence().twin?.textContent?.trim()).toBe('probably offline')
+    expect(sessions()).toBe('0')
+  })
+})

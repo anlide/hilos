@@ -311,6 +311,30 @@ export async function signUp(page: Page): Promise<string> {
   return email
 }
 
+/** A person a spec signed up: the address, the display name and the durable id. */
+export interface SignedInUser {
+  email: string
+  name: string
+  userId: number
+}
+
+/**
+ * Make a fresh account the way {@link signUp} does, and read back who it is.
+ *
+ * The id is the main page's self-user-id marker, which is filled once the session
+ * upgrade has landed — {@link signUp} has already waited for the name, so the id
+ * read here is the new account's.
+ *
+ * @param page Playwright page, in a browser context that has not signed in.
+ * @returns The registered address, its display name and the account's user id.
+ */
+export async function signUpPerson(page: Page): Promise<SignedInUser> {
+  const email = await signUp(page)
+  const userId = Number(await page.getByTestId('self-user-id').textContent())
+
+  return { email, name: nameFromEmail(email), userId }
+}
+
 /**
  * Sign out through the shell control and wait for the anonymous state to settle.
  *

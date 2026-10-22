@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Socket\WebSocket;
 
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\WebSocket\Delivery\DeliveryFrame;
 use Hilos\Socket\WebSocket\Delivery\DeliveryQueue;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -331,6 +332,95 @@ final class DeliveryQueueTest extends TestCase
         self::assertSame([], $queue->drain(2001));
         self::assertSame([$frame->json], $queue->drain(2001, force: true));
         self::assertSame([], $queue->drain(2001, force: true));
+    }
+
+    public function testPendingBytesAreWhatTheDrainHandsTheSocketAfterEveryChange(): void
+    {
+        $frames = [
+            self::viewportCount(100),
+            self::page('x', '1'),
+            self::viewportCount(2),
+            self::page('y', str_repeat('y', 200)),
+            DeliveryFrame::fromJson('legacy text'),
+            self::event(1),
+            DeliveryFrame::fromJson('{"type":"signal_batch","data":{"frames":[{"type":"event","data":1}]}}'),
+            self::viewportCount(3),
+            DeliveryFrame::fromJson(str_repeat('z', 70000)),
+            self::event(2),
+            self::page('big', str_repeat('b', 70000)),
+            self::page('big', 'small again'),
+        ];
+        for ($length = 0; $length <= count($frames); $length++) {
+            $queue = new DeliveryQueue();
+            foreach (array_slice($frames, 0, $length) as $frame) {
+                $queue->enqueue($frame, 0);
+            }
+            $pending = $queue->getPendingBytes();
+            self::assertSame(self::framedBytes($queue->drain(0, force: true)), $pending, "after {$length} frames");
+            self::assertSame(0, $queue->getPendingBytes());
+        }
+    }
+
+    public function testAHeldSubscriptionCountsUntilItsPacketIsReleasedOrDiscarded(): void
+    {
+        $queue = new DeliveryQueue();
+        $queue->beginSubscription('s', 0);
+        foreach ([self::event(1), DeliveryFrame::fromJson('legacy text'), self::page('x', '1')] as $frame) {
+            $queue->enqueue($frame, 0);
+        }
+        $pending = $queue->getPendingBytes();
+        self::assertSame([], $queue->drain(0, force: true));
+        self::assertSame($pending, $queue->getPendingBytes());
+        $queue->completeDelivery('s', 0);
+        self::assertSame($pending, self::framedBytes($queue->drain(0)));
+
+        $queue->beginSubscription('old', 0);
+        $queue->enqueue(self::event(2), 0);
+        $queue->beginSubscription('new', 0);
+        self::assertSame(0, $queue->getPendingBytes());
+        $queue->enqueue(DeliveryFrame::fromJson('legacy text'), 0);
+        $queue->cancelDelivery('new');
+        self::assertSame(0, $queue->getPendingBytes());
+        $queue->enqueue(DeliveryFrame::fromJson('legacy text'), 0);
+        $queue->enqueue(self::event(3), 0);
+        $queue->close();
+        self::assertSame(0, $queue->getPendingBytes());
+
+        $queue->enqueue(self::event(4), 0);
+        $queue->enqueue(DeliveryFrame::fromJson('legacy text'), 0);
+        $pending = $queue->getPendingBytes();
+        self::assertSame(self::framedBytes($queue->drain(0)), $pending);
+    }
+
+    /**
+     * @param list<string> $packages Packages one drain released
+     * @return int Bytes they take on the socket, each with the header the client frames it with
+     */
+    private static function framedBytes(array $packages): int
+    {
+        return array_sum(array_map(
+            static fn (string $package): int => WebSocketClient::frameHeaderBytes(strlen($package)) + strlen($package),
+            $packages,
+        ));
+    }
+
+    /**
+     * @param int $total Fixture row count
+     * @return DeliveryFrame Count frame the next count of the same table replaces
+     */
+    private static function viewportCount(int $total): DeliveryFrame
+    {
+        return DeliveryFrame::fromEnvelope(['type' => 'table_viewport_count', 'data' => ['page' => 'p', 'tableKey' => 't', 'total' => $total]]);
+    }
+
+    /**
+     * @param string $source Data source the patch writes
+     * @param string $value Its value
+     * @return DeliveryFrame Page patch the next patch of the same page merges with
+     */
+    private static function page(string $source, string $value): DeliveryFrame
+    {
+        return DeliveryFrame::fromEnvelope(['type' => 'page_response', 'data' => ['page' => 'p', 'payload' => ['data' => [$source => $value]]]]);
     }
 
     /**

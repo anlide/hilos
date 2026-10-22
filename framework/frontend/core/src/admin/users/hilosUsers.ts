@@ -101,10 +101,17 @@ export {
   ACCOUNT_STANDING_SIGNAL_SCHEMAS,
 } from '../../protocol/accountStandingSignals.js'
 
-/** A user's connection presence; a string union so a third state extends it. */
-export type HilosPresence = 'online' | 'offline'
+/**
+ * A user's connection presence: at least one live connection, connections that
+ * all stopped answering the server's ping, or none at all (HIL-1566).
+ */
+export type HilosPresence = 'online' | 'probably_offline' | 'offline'
 
-const PRESENCE_VALUES: readonly HilosPresence[] = ['online', 'offline']
+const PRESENCE_VALUES: readonly HilosPresence[] = [
+  'online',
+  'probably_offline',
+  'offline',
+]
 
 /**
  * Narrow a raw slot value to a HilosPresence, defaulting to `offline`.
@@ -115,6 +122,44 @@ export function toHilosPresence(value: unknown): HilosPresence {
   return PRESENCE_VALUES.includes(value as HilosPresence)
     ? (value as HilosPresence)
     : 'offline'
+}
+
+/**
+ * The badge a presence is drawn as, in the people list and on the card alike: a
+ * word, so the state never rests on its color alone, and a Bootstrap tone.
+ */
+export interface HilosPresenceBadge {
+  /** The badge's word. */
+  readonly label: 'online' | 'probably offline' | 'offline'
+  /** The Bootstrap color of the badge. */
+  readonly tone: 'success' | 'warning' | 'secondary'
+}
+
+/**
+ * The widest word a presence badge says. An invisible twin of the badge holds it,
+ * so the badge keeps one width while the presence changes under it live
+ * (styling-rules.md, "The room a live message takes").
+ */
+export const HILOS_PRESENCE_WIDEST_LABEL: HilosPresenceBadge['label'] =
+  'probably offline'
+
+/**
+ * The badge for a presence: green for a live connection, yellow for connections
+ * that are all in doubt, gray for none.
+ *
+ * @param presence The presence shown.
+ */
+export function hilosPresenceBadge(
+  presence: HilosPresence,
+): HilosPresenceBadge {
+  switch (presence) {
+    case 'online':
+      return { label: 'online', tone: 'success' }
+    case 'probably_offline':
+      return { label: 'probably offline', tone: 'warning' }
+    default:
+      return { label: 'offline', tone: 'secondary' }
+  }
 }
 
 /** One row of the Hilos users table — the framework users view-model. */

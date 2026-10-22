@@ -80,6 +80,12 @@ abstract class HilosConnections extends RtCollection implements HilosPresenceSou
      * single number over all of them, and a number partly assembled out of copies nobody
      * is hearing about is not a fresh number.
      *
+     * The doubt runs the other way (HIL-1566): the person is probably offline only when every
+     * connection counted is doubted, because one socket still answering is a person who is
+     * still here. Doubted connections stay in the count until they close. The two answers are
+     * independent, so the walk does not stop at the first frozen row before the doubt is read
+     * off every one.
+     *
      * @param ?int $userId User id to summarize active runtime connections for
      * @return HilosUserPresenceSummary Runtime presence and session count summary
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
@@ -88,14 +94,16 @@ abstract class HilosConnections extends RtCollection implements HilosPresenceSou
     {
         $stateConnections = $this->getStateCollection()->findByUser($userId);
         $stale = false;
-        foreach (array_keys($stateConnections) as $stateId) {
+        $probablyOffline = $stateConnections !== [];
+        foreach ($stateConnections as $stateId => $stateConnection) {
             if ($this->getRtItemForKey((string) $stateId)?->staleSince() !== null) {
                 $stale = true;
-
-                break;
+            }
+            if (!$stateConnection->probablyOffline) {
+                $probablyOffline = false;
             }
         }
 
-        return new HilosUserPresenceSummary(count($stateConnections), $stale);
+        return new HilosUserPresenceSummary(count($stateConnections), $stale, $probablyOffline);
     }
 }

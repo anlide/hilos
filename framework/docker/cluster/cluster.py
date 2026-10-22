@@ -21,6 +21,10 @@ Usage: framework/docker/cluster/run <compose-file> <command> [args]
   entry-welcome <master> [<token>] [<pass>]  welcome verdict through the stand entry (scenario 34, HIL-1305)
   direct-upgrade <node>    upgrade directly on a node (scenario 33, HIL-1304)
   entry-hold <master> up|down  keep or close a socket through the entry (scenario 33, HIL-1304)
+  liveness-hold <name> up <master>|answer|silent|flood|state|down
+                       hold a raw socket through the entry that answers the master's pings,
+                       keeps silent or floods it with pings, and print what it saw
+                       (scenario 46, HIL-1566)
   kill <node>          docker kill -9 a node container (simulate node-down)
   start <node>         (re)start a node container, reusing it as it is
   recreate <node>      replace a node with a pristine container
@@ -39,8 +43,8 @@ Usage: framework/docker/cluster/run <compose-file> <command> [args]
   own-directory <node> on|off
                        recreate a node with an empty copy of the stand's cluster directory
                        of its own / back on the stand's (scenario 29, HIL-1243)
-  own-env <node> NAME=value|off  recreate a node with one environment variable of its own
-                       / back on the stand's (scenario 32, HIL-1274)
+  own-env <node> NAME=value...|off  recreate a node with environment values of its own
+                       / back on the stand's (scenario 32, HIL-1274; several, scenario 46)
   db-sql <statement> [<member>]
                        run one SQL statement in the stand's database, or on one member of a
                        clustered one (scenario 26, HIL-1230), and print its rows (scenario 22
@@ -80,7 +84,7 @@ from stand import StandRefused, load_stand  # noqa: E402
 REFUSED = 2
 
 COMMANDS = ("up", "down", "restart", "status", "inspect", "inspect-local", "client",
-            "entry-upgrade", "entry-welcome", "direct-upgrade", "entry-hold",
+            "entry-upgrade", "entry-welcome", "direct-upgrade", "entry-hold", "liveness-hold",
             "kill", "start", "recreate", "crash-daemon", "kill-worker", "freeze-worker",
             "container-id", "container-log",
             "partition", "heal", "cut", "mend", "logs",

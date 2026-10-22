@@ -2,6 +2,8 @@
 
 export {
   toHilosPresence,
+  hilosPresenceBadge,
+  HILOS_PRESENCE_WIDEST_LABEL,
   resolveHilosUserRow,
   createHilosUsersTable,
   createHilosUserDetail,
@@ -72,6 +74,7 @@ export {
   type HilosPasswordFate,
   type HilosPasswordFateChoice,
   type HilosPresence,
+  type HilosPresenceBadge,
   type HilosUserDetailRow,
   type HilosUserRow,
   type HilosUsersContext,

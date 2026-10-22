@@ -17,6 +17,7 @@ use Hilos\Runtime\View\Collection\HilosSessionConnections;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 use Hilos\Runtime\View\Item\HilosConnection;
 use Hilos\Runtime\View\Item\HilosSessionConnection;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -128,6 +129,188 @@ final class HilosConnectionsViewTest extends TestCase
         }
 
         $this->assertTrue($connections->summaryForUser(1)->stale);
+    }
+
+    /**
+     * @return array<string, array{list<array{string, ?int, bool}>, list<string>, string, int, bool}>
+     *     Rows (accept key, person, doubted), rows frozen, then the presence, count and freshness of person 1
+     */
+    public static function doubtCases(): array
+    {
+        $cases = [
+            'no connection' => [[['ak-x', 2, true]], [], HilosUserPresenceSummary::PRESENCE_OFFLINE, 0, false],
+            'one healthy' => [[['ak-1', 1, false]], [], HilosUserPresenceSummary::PRESENCE_ONLINE, 1, false],
+            'one doubted' => [[['ak-1', 1, true]], [], HilosUserPresenceSummary::PRESENCE_PROBABLY_OFFLINE, 1, false],
+            'two sessions, both healthy' => [
+                [['ak-1', 1, false], ['ak-2', 1, false]],
+                [],
+                HilosUserPresenceSummary::PRESENCE_ONLINE,
+                2,
+                false,
+            ],
+            'two sessions, both doubted' => [
+                [['ak-1', 1, true], ['ak-2', 1, true]],
+                [],
+                HilosUserPresenceSummary::PRESENCE_PROBABLY_OFFLINE,
+                2,
+                false,
+            ],
+            'one doubted, one healthy' => [
+                [['ak-1', 1, true], ['ak-2', 1, false]],
+                [],
+                HilosUserPresenceSummary::PRESENCE_ONLINE,
+                2,
+                false,
+            ],
+            'another person\'s doubt' => [
+                [['ak-1', 1, false], ['ak-x', 2, true]],
+                [],
+                HilosUserPresenceSummary::PRESENCE_ONLINE,
+                1,
+                false,
+            ],
+        ];
+        $frozen = [
+            'one healthy, frozen' => [[['ak-1', 1, false]], ['ak-1'], HilosUserPresenceSummary::PRESENCE_ONLINE, 1, true],
+            'one doubted, frozen' => [
+                [['ak-1', 1, true]],
+                ['ak-1'],
+                HilosUserPresenceSummary::PRESENCE_PROBABLY_OFFLINE,
+                1,
+                true,
+            ],
+            'two sessions, both doubted, one frozen' => [
+                [['ak-1', 1, true], ['ak-2', 1, true]],
+                ['ak-2'],
+                HilosUserPresenceSummary::PRESENCE_PROBABLY_OFFLINE,
+                2,
+                true,
+            ],
+            'the doubted one frozen first, the healthy one after it' => [
+                [['ak-1', 1, true], ['ak-2', 1, false]],
+                ['ak-1'],
+                HilosUserPresenceSummary::PRESENCE_ONLINE,
+                2,
+                true,
+            ],
+            'the healthy one frozen, the doubted one after it' => [
+                [['ak-1', 1, false], ['ak-2', 1, true]],
+                ['ak-1'],
+                HilosUserPresenceSummary::PRESENCE_ONLINE,
+                2,
+                true,
+            ],
+            'only another person frozen' => [
+                [['ak-1', 1, true], ['ak-x', 2, false]],
+                ['ak-x'],
+                HilosUserPresenceSummary::PRESENCE_PROBABLY_OFFLINE,
+                1,
+                false,
+            ],
+        ];
+
+        return $cases + $frozen;
+    }
+
+    /**
+     * The doubt and the freshness are two answers read off the same rows, and neither moves the
+     * other: a person is probably offline only when every connection counted is doubted, the
+     * doubted ones stay in the count, and a frozen copy marks the summary stale whatever the
+     * presence. The frozen row standing first pins that the walk does not stop at it before the
+     * doubt of the rows after it is read.
+     *
+     * @param list<array{string, ?int, bool}> $rows Accept key, person and doubt of each row
+     * @param list<string> $frozenKeys Rows whose copy stopped being updated
+     * @param string $presence Presence expected for person 1
+     * @param int $count Session count expected for person 1
+     * @param bool $stale Freshness expected for person 1
+     */
+    #[DataProvider('doubtCases')]
+    public function testTheSummaryCallsAPersonProbablyOfflineOnlyWhenEveryConnectionIsDoubted(
+        array $rows,
+        array $frozenKeys,
+        string $presence,
+        int $count,
+        bool $stale,
+    ): void {
+        $connections = $this->doubtedConnections($rows);
+        if ($frozenKeys !== []) {
+            RtStaleness::mark(self::COLLECTION, $frozenKeys, 1000.0);
+        }
+
+        $summary = $connections->summaryForUser(1);
+
+        $this->assertSame($presence, $summary->presence);
+        $this->assertSame($count, $summary->onlineSessionCount);
+        $this->assertSame($stale, $summary->stale);
+    }
+
+    /**
+     * A doubted connection that changes person takes its doubt along: the person it left is
+     * judged by what remains, the person it joined by what it brings.
+     */
+    public function testTheDoubtFollowsAConnectionToItsNewPerson(): void
+    {
+        $state = PresenceViewStates::init();
+        $healthy = PresenceViewConnection::create('ak-1', 1);
+        $doubted = PresenceViewConnection::create('ak-2', 1);
+        $doubted->probablyOffline = true;
+        $state->add($healthy);
+        $state->add($doubted);
+        $connections = PresenceViewConnections::init();
+        $connections->setStateCollection($state);
+        $connections->setCollectionName(self::COLLECTION);
+        $this->assertSame(HilosUserPresenceSummary::PRESENCE_ONLINE, $connections->summaryForUser(1)->presence);
+
+        $healthy->userId = 2;
+
+        $left = $connections->summaryForUser(1);
+        $this->assertSame(HilosUserPresenceSummary::PRESENCE_PROBABLY_OFFLINE, $left->presence);
+        $this->assertSame(1, $left->onlineSessionCount);
+        $joined = $connections->summaryForUser(2);
+        $this->assertSame(HilosUserPresenceSummary::PRESENCE_ONLINE, $joined->presence);
+        $this->assertSame(1, $joined->onlineSessionCount);
+    }
+
+    public function testTheSessionStageSummarizesTheDoubtTheSameWay(): void
+    {
+        $state = SessionViewStates::init();
+        foreach (['view-ak-1', 'view-ak-2'] as $acceptKey) {
+            $doubted = SessionViewConnection::create($acceptKey, 1, 'tok-x');
+            $doubted->probablyOffline = true;
+            $state->add($doubted);
+        }
+        $state->add(SessionViewConnection::create('view-ak-3', 2, 'tok-y'));
+        $connections = SessionViewConnections::init();
+        $connections->setStateCollection($state);
+
+        $summary = $connections->summaryForUser(1);
+
+        $this->assertSame(HilosUserPresenceSummary::PRESENCE_PROBABLY_OFFLINE, $summary->presence);
+        $this->assertSame(2, $summary->onlineSessionCount);
+        $this->assertSame(HilosUserPresenceSummary::PRESENCE_ONLINE, $connections->summaryForUser(2)->presence);
+    }
+
+    /**
+     * Builds a presence-stage view over the given rows, each with its own doubt.
+     *
+     * @param list<array{string, ?int, bool}> $rows Accept key, person and doubt of each row
+     * @return PresenceViewConnections View collection over the rows
+     */
+    private function doubtedConnections(array $rows): PresenceViewConnections
+    {
+        $state = PresenceViewStates::init();
+        foreach ($rows as [$acceptKey, $userId, $doubted]) {
+            $connection = PresenceViewConnection::create($acceptKey, $userId);
+            $connection->probablyOffline = $doubted;
+            $state->add($connection);
+        }
+
+        $view = PresenceViewConnections::init();
+        $view->setStateCollection($state);
+        $view->setCollectionName(self::COLLECTION);
+
+        return $view;
     }
 
     /**

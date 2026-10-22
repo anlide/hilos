@@ -105,6 +105,10 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::TERM->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::WEBSOCKET_HOST->name => self::required(EnvCatalogConstants::TYPE_STRING, perNode: true),
             EnvConstants::WEBSOCKET_PORT->name => self::required(EnvCatalogConstants::TYPE_INTEGER),
+            EnvConstants::WEBSOCKET_PING_IDLE_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 40000, emptyIsMissing: true),
+            EnvConstants::WEBSOCKET_PING_INTERVAL_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 50000, emptyIsMissing: true),
+            EnvConstants::WEBSOCKET_PROBABLY_OFFLINE_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 120000, emptyIsMissing: true),
+            EnvConstants::WEBSOCKET_CLOSE_TIMEOUT_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 600000, emptyIsMissing: true),
             EnvConstants::SOCKET_READ_BUFFER_SIZE->name => self::entry(
                 EnvCatalogConstants::TYPE_INTEGER,
                 65536,

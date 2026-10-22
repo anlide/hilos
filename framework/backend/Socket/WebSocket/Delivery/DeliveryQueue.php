@@ -7,10 +7,17 @@ namespace Hilos\Socket\WebSocket\Delivery;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Socket\Client\WebSocketClient;
 
 /** Socket-local coalescing and cadence; subscription token lifecycle is wired in HIL-1565 slice 8. */
 final class DeliveryQueue
 {
+    /** Opening of the batch drain() wraps two or more envelopes in, written once for packing and counting. */
+    private const string BATCH_OPEN = '{"' . SignalPayloadConstants::FIELD_TYPE . '":"' . SignalTypeConstants::SIGNAL_BATCH
+        . '","' . SignalPayloadConstants::FIELD_DATA . '":{"' . SignalPayloadConstants::FIELD_FRAMES . '":[';
+    private const string BATCH_SEPARATOR = ',';
+    private const string BATCH_CLOSE = ']}}';
+
     private DeliveryCoalescer $coalescer;
     private int $windowMs;
     private ?int $lastDeliveryAt = null;
@@ -21,6 +28,18 @@ final class DeliveryQueue
 
     /** @var array<string, true> Master-minted pending update tokens */
     private array $updates = [];
+
+    /**
+     * Transport bytes of the packages an opaque frame has already closed, frame headers included.
+     * No merge reaches behind an opaque frame, so they stay as counted until the frames go.
+     */
+    private int $closedPackageBytes = 0;
+
+    /** Survivor text bytes inside the closed packages; the rest of the coalescer's is the open run. */
+    private int $closedTextBytes = 0;
+
+    /** Survivors inside the closed packages; the rest of the coalescer's are the open run. */
+    private int $closedFrameCount = 0;
 
     /**
      * @param int $windowMs Effective positive delivery window in milliseconds
@@ -71,6 +90,21 @@ final class DeliveryQueue
     }
 
     /**
+     * Counted as the queue changes, so asking walks nothing: the closed packages plus the open run
+     * measured from the coalescer's survivors.
+     *
+     * @return int Transport bytes drain() would hand the socket for everything held now, a held
+     *             subscription included, with batch wrappers, separators and frame headers
+     */
+    public function getPendingBytes(): int
+    {
+        return $this->closedPackageBytes + self::packageBytes(
+            $this->coalescer->getFrameCount() - $this->closedFrameCount,
+            $this->coalescer->getHeldBytes() - $this->closedTextBytes,
+        );
+    }
+
+    /**
      * @param DeliveryFrame $frame Prepared immutable broadcast frame
      * @param int $nowMs Caller-supplied monotonic milliseconds
      * @throws InvalidFormatException When a merged envelope cannot be encoded
@@ -81,6 +115,9 @@ final class DeliveryQueue
             $frame,
             barrier: $this->isHeld() && $frame->getType() === SignalTypeConstants::PAGE_RESPONSE,
         );
+        if (self::standsAlone($frame)) {
+            $this->closeOpenRun($frame);
+        }
         if ($frame->isUrgent()) {
             $this->acceptRequest($nowMs);
         }
@@ -109,6 +146,7 @@ final class DeliveryQueue
         self::requireDeliveryId($deliveryId);
         if ($this->isHeld()) {
             $this->coalescer->clear();
+            $this->forgetClosedPackages();
         }
         $this->updates = [];
         $this->subscriptionId = $deliveryId;
@@ -158,6 +196,7 @@ final class DeliveryQueue
         if ($this->subscriptionId === $deliveryId) {
             $this->subscriptionId = null;
             $this->coalescer->clear();
+            $this->forgetClosedPackages();
             $this->urgent = false;
             $this->immediateUntil = null;
         }
@@ -186,7 +225,7 @@ final class DeliveryQueue
         $packages = [];
         $envelopes = [];
         foreach ($this->coalescer->drain() as $frame) {
-            if ($frame->getType() === null || $frame->getType() === SignalTypeConstants::SIGNAL_BATCH) {
+            if (self::standsAlone($frame)) {
                 if ($envelopes !== []) {
                     $packages[] = self::pack($envelopes);
                     $envelopes = [];
@@ -199,6 +238,7 @@ final class DeliveryQueue
         if ($envelopes !== []) {
             $packages[] = self::pack($envelopes);
         }
+        $this->forgetClosedPackages();
         $this->urgent = false;
         $this->lastDeliveryAt = $nowMs;
         $this->nextDueAt = $nowMs + $this->windowMs;
@@ -210,6 +250,7 @@ final class DeliveryQueue
     public function close(): void
     {
         $this->coalescer->clear();
+        $this->forgetClosedPackages();
         $this->subscriptionId = null;
         $this->updates = [];
         $this->lastDeliveryAt = null;
@@ -230,6 +271,15 @@ final class DeliveryQueue
     }
 
     /**
+     * @param DeliveryFrame $frame Survivor about to be packed
+     * @return bool Whether it is a package of its own: opaque text or a batch already built
+     */
+    private static function standsAlone(DeliveryFrame $frame): bool
+    {
+        return $frame->getType() === null || $frame->getType() === SignalTypeConstants::SIGNAL_BATCH;
+    }
+
+    /**
      * @param non-empty-list<DeliveryFrame> $frames Existing envelope JSON parts, reused byte for byte
      * @return string Bare envelope or one non-nested batch
      */
@@ -239,8 +289,49 @@ final class DeliveryQueue
             return $frames[0]->json;
         }
 
-        return '{"' . SignalPayloadConstants::FIELD_TYPE . '":"' . SignalTypeConstants::SIGNAL_BATCH
-            . '","' . SignalPayloadConstants::FIELD_DATA . '":{"' . SignalPayloadConstants::FIELD_FRAMES . '":['
-            . implode(',', array_map(static fn (DeliveryFrame $frame): string => $frame->json, $frames)) . ']}}';
+        return self::BATCH_OPEN
+            . implode(self::BATCH_SEPARATOR, array_map(static fn (DeliveryFrame $frame): string => $frame->json, $frames))
+            . self::BATCH_CLOSE;
+    }
+
+    /**
+     * @param int $frames Survivors drain() packs together, or the one that stands alone
+     * @param int $textBytes Their prepared text bytes
+     * @return int Transport bytes of the package drain() makes of them, its frame header included; none for no survivor
+     */
+    private static function packageBytes(int $frames, int $textBytes): int
+    {
+        if ($frames === 0) {
+            return 0;
+        }
+        $packageBytes = $frames === 1
+            ? $textBytes
+            : strlen(self::BATCH_OPEN) + $textBytes + ($frames - 1) * strlen(self::BATCH_SEPARATOR) + strlen(self::BATCH_CLOSE);
+
+        return WebSocketClient::frameHeaderBytes($packageBytes) + $packageBytes;
+    }
+
+    /**
+     * Closes the run before an opaque frame just appended, and the frame's own package after it.
+     *
+     * @param DeliveryFrame $frame The coalescer's last survivor, appended as a boundary
+     */
+    private function closeOpenRun(DeliveryFrame $frame): void
+    {
+        $textBytes = strlen($frame->json);
+        $this->closedPackageBytes += self::packageBytes(
+            $this->coalescer->getFrameCount() - $this->closedFrameCount - 1,
+            $this->coalescer->getHeldBytes() - $this->closedTextBytes - $textBytes,
+        ) + self::packageBytes(1, $textBytes);
+        $this->closedTextBytes = $this->coalescer->getHeldBytes();
+        $this->closedFrameCount = $this->coalescer->getFrameCount();
+    }
+
+    /** The coalescer has just let every survivor go, so no package is left to count. */
+    private function forgetClosedPackages(): void
+    {
+        $this->closedPackageBytes = 0;
+        $this->closedTextBytes = 0;
+        $this->closedFrameCount = 0;
     }
 }

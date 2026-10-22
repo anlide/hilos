@@ -19,6 +19,7 @@ final class HilosUserPresenceSummary
     public const string onlineSessionCount = 'onlineSessionCount';
 
     public const string PRESENCE_ONLINE = 'online';
+    public const string PRESENCE_PROBABLY_OFFLINE = 'probably_offline';
     public const string PRESENCE_OFFLINE = 'offline';
 
     public readonly string $presence;
@@ -34,13 +35,26 @@ final class HilosUserPresenceSummary
      * The default is fresh, so a presence source that knows nothing of clusters keeps the
      * constructor it had and answers the truth for a single node.
      *
+     * The doubt is a third question again (HIL-1566): sockets that are still open, and so still
+     * counted, may all have gone silent, and the person is then probably gone without having
+     * closed anything. It moves the presence only and leaves the count its meaning; with nothing
+     * counted the person is offline whatever the doubt says. It is not the freshness either: a
+     * replica can be fresh and doubted, or frozen and trusted. The default is no doubt, so a
+     * presence source that knows nothing of liveness keeps the constructor it had.
+     *
      * @param int $onlineSessionCount Number of active runtime sessions
      * @param bool $stale Whether any of those connections is a copy that stopped being updated
+     * @param bool $probablyOffline Whether every one of those connections went silent and is doubted
      */
     public function __construct(
         public readonly int $onlineSessionCount,
         public readonly bool $stale = false,
+        bool $probablyOffline = false,
     ) {
-        $this->presence = $onlineSessionCount > 0 ? self::PRESENCE_ONLINE : self::PRESENCE_OFFLINE;
+        $this->presence = match (true) {
+            $onlineSessionCount <= 0 => self::PRESENCE_OFFLINE,
+            $probablyOffline => self::PRESENCE_PROBABLY_OFFLINE,
+            default => self::PRESENCE_ONLINE,
+        };
     }
 }

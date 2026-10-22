@@ -62,7 +62,10 @@ interface ClientInterface
     /**
      * Called on each server tick before read() and write().
      *
-     * Allows clients to perform periodic operations (e.g., timeout checks).
+     * Allows clients to perform periodic operations (e.g., timeout checks). A failure belongs to
+     * this one client: the server contains it, logs it and drops the client.
+     *
+     * @throws HilosException When the implementation's periodic work fails
      */
     public function onTick(): void;
 }

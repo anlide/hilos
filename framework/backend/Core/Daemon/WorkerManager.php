@@ -32,6 +32,7 @@ use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\View\Collection\RtCollection;
 use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\DTO\RtStalenessSignalData;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Router\AgentSignalData;
@@ -90,6 +91,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupUpdateSubscriptionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketLivenessSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
@@ -597,6 +599,8 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * @throws TableRowKeyMissingException When a windowed table row is a placeholder and carries no key
      * @throws InvalidArgumentException When a command handler cannot name its reply, a re-decision
      *     its page, or a frozen-replica verdict its signal
+     * @throws RtTruthSourceWriteNotAllowedException When a connection liveness transition reaches an
+     *     agent that does not own the connection row it names
      * @throws HilosException When a collection refuses to be re-read - after the database was
      *     replaced, or when this worker is first told it may read that collection
      */
@@ -1830,6 +1834,8 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * @throws PageSignalRouterNotFoundException When page routing is requested for an unsupported agent
      * @throws TableRowKeyMissingException When a windowed table row is a placeholder and carries no key
      * @throws InvalidArgumentException When a command handler cannot name its reply
+     * @throws RtTruthSourceWriteNotAllowedException When a connection liveness transition reaches an
+     *     agent that does not own the connection row it names
      * @throws HilosException Whatever the applied write emptying a dropped collection raises
      */
     private function handleAgentMessage(DaemonAgentMessageDTO $data): void
@@ -1936,6 +1942,20 @@ abstract class WorkerManager extends BaseManager implements PageResender
                     $agent->onSignalConnectionClose($signalData, $source, $name);
                 } else {
                     Logger::error("onSignalConnectionClose - invalid signal data type: " . get_class($signalData));
+                }
+                break;
+
+            case SignalTypeConstants::CONNECTION_LIVENESS:
+                if ($signalData instanceof WebSocketLivenessSignalDTO) {
+                    // Written as the addressed agent, so the row's own write checks that agent's
+                    // claim. A connection already gone - or a project that keeps none - is nothing
+                    // to do: a late transition never brings a row back (HIL-1566).
+                    $connections = Hilos::$rt?->connectionsRegistry();
+                    if (isset($connections[$signalData->acceptKey])) {
+                        $connections[$signalData->acceptKey]->actions->setProbablyOffline($signalData->probablyOffline);
+                    }
+                } else {
+                    Logger::error("connectionLiveness - invalid signal data type: " . get_class($signalData));
                 }
                 break;
 

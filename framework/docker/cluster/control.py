@@ -11,7 +11,9 @@ member of a clustered database asked, HIL-1230). It also recreates a node with a
 the stand's cluster directory of its own: the directory guard refuses it (HIL-1242/HIL-1243).
 Assertions live in the scenario matrix (scenarios.py), which reads each node's
 `test:cluster:inspect` reply and compares it against the expected invariants. It can also
-recreate a node with one environment variable of its own (scenario 32, HIL-1274).
+recreate a node with environment values of its own (scenario 32, HIL-1274; several at once for
+scenario 46, HIL-1566), and hold a raw browser socket through the entry that answers the master's
+pings, keeps silent or floods it, as it is told (scenario 46, HIL-1566).
 
 A command that the scenarios drive answers with an Outcome - its exit code, what it would print,
 and what it would complain - and prints nothing itself: the matrix reads the answer, and
@@ -498,6 +500,175 @@ def entry_hold(stand, master, action):
     return _run(["docker", "exec", "-d", stand.cli_container, "sh", "-c", script])
 
 
+# One raw browser socket held through the entry inside the stand's CLI container, told by its mode
+# file how to treat the master's RFC pings (HIL-1566): `answer` sends a masked pong for each, as a
+# browser does on its own, and one unasked pong the moment it is told to; `silent` reads on and
+# sends nothing; `flood` stops reading and sends masked pings of the largest control payload, so
+# that the master's pongs pile up in its outbound bytes. A whole frame of any kind is what tells the
+# master the browser is there, so `silent` is the one mode the master sees as silence. What the
+# socket saw and did is published in its state file, written whole by a rename; nothing is printed.
+LIVENESS_HOLD_PHP = r'''
+$entry = $argv[1];
+$master = $argv[2];
+$base = $argv[3];
+$modeFile = $base . '.mode';
+$stateFile = $base . '.state';
+$floodLimit = 256 * 1024 * 1024;
+$status = ['state' => 'connecting', 'master' => $master, 'upstream' => '', 'mode' => null,
+    'pingsSeen' => 0, 'pongsSent' => 0, 'lastSentAt' => null, 'floodBytes' => 0,
+    'closedBy' => null, 'closedAt' => null];
+$publish = static function (array $change) use (&$status, $stateFile): void {
+    $status = array_replace($status, $change);
+    file_put_contents($stateFile . '.next', json_encode($status));
+    rename($stateFile . '.next', $stateFile);
+};
+// A write to a socket the master dropped warns as it fails; the failure is read from its result.
+set_error_handler(static fn (): bool => true);
+file_put_contents($base . '.pid', (string)getmypid());
+$context = stream_context_create(['ssl' => ['verify_peer' => false, 'verify_peer_name' => false]]);
+$socket = stream_socket_client("tls://{$entry}:443", $number, $error, 5, STREAM_CLIENT_CONNECT, $context);
+if ($socket === false) { $publish(['state' => 'failed', 'closedBy' => "connect: {$error}"]); exit(1); }
+stream_set_timeout($socket, 5);
+$key = base64_encode(random_bytes(16));
+fwrite($socket, "GET /ws HTTP/1.1\r\nHost: {$entry}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+    . "Sec-WebSocket-Version: 13\r\nSec-WebSocket-Key: {$key}\r\nCookie: hilos_stand_master={$master}\r\n\r\n");
+$buffer = '';
+while (($boundary = strpos($buffer, "\r\n\r\n")) === false) {
+    $piece = fread($socket, 4096);
+    if ($piece === false || $piece === '') { $publish(['state' => 'failed', 'closedBy' => 'no 101 response']); exit(1); }
+    $buffer .= $piece;
+}
+$headers = substr($buffer, 0, $boundary);
+$buffer = substr($buffer, $boundary + 4);
+if (!preg_match('/^HTTP\/1\.[01] 101/', $headers)) {
+    $publish(['state' => 'failed', 'closedBy' => 'upgrade refused: ' . strtok($headers, "\r\n")]); exit(1);
+}
+preg_match('/^X-Hilos-Stand-Master:\s*([^\r\n]+)/im', $headers, $upstream);
+stream_set_blocking($socket, false);
+$frame = static function (int $opcode, string $payload): string {
+    $mask = random_bytes(4);
+    $length = strlen($payload);
+    return chr(0x80 | $opcode) . chr(0x80 | $length) . $mask
+        . ($payload ^ substr(str_repeat($mask, intdiv($length, 4) + 1), 0, $length));
+};
+$close = static function (string $why) use ($publish): never {
+    $publish(['state' => 'closed', 'closedBy' => $why, 'closedAt' => microtime(true)]);
+    exit(0);
+};
+$flood = str_repeat($frame(0x9, str_repeat('p', 125)), 512);
+$mode = null;
+$outbound = '';
+$publish(['state' => 'open', 'upstream' => trim($upstream[1] ?? '')]);
+while (true) {
+    $busy = false;
+    $wanted = trim((string)file_get_contents($modeFile));
+    if ($wanted !== $mode && in_array($wanted, ['answer', 'silent', 'flood'], true)) {
+        $mode = $wanted;
+        $change = ['mode' => $mode];
+        if ($mode === 'answer') {
+            $outbound .= $frame(0xA, '');
+            $change['pongsSent'] = $status['pongsSent'] + 1;
+        }
+        $publish($change);
+    }
+    if ($mode === 'flood') {
+        if ($outbound === '' && $status['floodBytes'] < $floodLimit) {
+            $outbound = $flood;
+        }
+    } else {
+        $piece = fread($socket, 65536);
+        if ($piece === false || ($piece === '' && feof($socket))) { $close('eof'); }
+        $busy = $piece !== '';
+        $buffer .= $piece;
+        while (strlen($buffer) >= 2) {
+            $length = ord($buffer[1]) & 127;
+            $offset = 2;
+            if ($length === 126) {
+                if (strlen($buffer) < 4) { break; }
+                $length = unpack('n', substr($buffer, 2, 2))[1];
+                $offset = 4;
+            } elseif ($length === 127) {
+                if (strlen($buffer) < 10) { break; }
+                $words = unpack('N2', substr($buffer, 2, 8));
+                $length = $words[1] * 4294967296 + $words[2];
+                $offset = 10;
+            }
+            if (strlen($buffer) < $offset + $length) { break; }
+            $opcode = ord($buffer[0]) & 15;
+            $payload = substr($buffer, $offset, $length);
+            $buffer = substr($buffer, $offset + $length);
+            if ($opcode === 0x8) { $close('close frame'); }
+            if ($opcode === 0x9) {
+                $change = ['pingsSeen' => $status['pingsSeen'] + 1];
+                if ($mode === 'answer') {
+                    $outbound .= $frame(0xA, $payload);
+                    $change['pongsSent'] = $status['pongsSent'] + 1;
+                }
+                $publish($change);
+            }
+        }
+    }
+    if ($outbound !== '') {
+        $written = fwrite($socket, $outbound);
+        if ($written === false) { $close('write failed'); }
+        if ($written > 0) {
+            $busy = true;
+            $outbound = substr($outbound, $written);
+            if ($mode === 'flood') {
+                $flooded = $status['floodBytes'] + $written;
+                if (intdiv($flooded, 1048576) !== intdiv($status['floodBytes'], 1048576)) {
+                    $publish(['floodBytes' => $flooded, 'lastSentAt' => microtime(true)]);
+                } else {
+                    $status['floodBytes'] = $flooded;
+                }
+            } elseif ($outbound === '') {
+                $publish(['lastSentAt' => microtime(true)]);
+            }
+        }
+    }
+    if (!$busy) {
+        usleep(20000);
+    }
+}
+'''
+LIVENESS_HOLD_MODES = ("answer", "silent", "flood")
+LIVENESS_HOLD_USAGE = "usage: cluster liveness-hold <name> {up <master>|answer|silent|flood|state|down}"
+
+
+def liveness_hold(stand, name, action, master=None):
+    """Hold one raw browser socket by name through the entry, tell it how to treat the master's
+    pings, read what it saw, or close it (scenario 46, HIL-1566).
+
+    `up` opens it on a named master in the `answer` mode, `state` prints its state file, and a
+    mode takes effect on the socket's next turn, within a few tens of milliseconds.
+    """
+    if stand.entry is None:
+        raise StandRefused(f"{stand.project} has no browser entry (x-hilos-cluster.entry)")
+    if not re.fullmatch(r"[a-z0-9-]+", name):
+        raise StandRefused(LIVENESS_HOLD_USAGE)
+    base = f"/tmp/hilos-liveness-{name}"
+    down = (f'if [ -f {base}.pid ]; then read hold < {base}.pid; kill "$hold" 2>/dev/null || true; fi; '
+            f"rm -f {base}.pid {base}.mode {base}.state {base}.state.next")
+    if action == "up" and master in stand.masters:
+        prepared = _run(["docker", "exec", stand.cli_container, "sh", "-c", f"{down}; printf answer > {base}.mode"])
+        if prepared.code != 0:
+            return prepared
+        return _said(_run(["docker", "exec", "-d", stand.cli_container, "php", "-r", LIVENESS_HOLD_PHP,
+                           stand.entry.ip, master, base]),
+                     f"cluster: holding liveness socket {name} on {master}")
+    if master is not None:
+        raise StandRefused(LIVENESS_HOLD_USAGE)
+    if action in LIVENESS_HOLD_MODES:
+        return _said(_run(["docker", "exec", stand.cli_container, "sh", "-c", f"printf {action} > {base}.mode"]),
+                     f"cluster: liveness socket {name} told to {action}")
+    if action == "state":
+        return _run(["docker", "exec", stand.cli_container, "cat", f"{base}.state"])
+    if action == "down":
+        return _said(_run(["docker", "exec", stand.cli_container, "sh", "-c", down]),
+                     f"cluster: closed liveness socket {name}")
+    raise StandRefused(LIVENESS_HOLD_USAGE)
+
+
 def _json_reply(raw):
     """The JSON object a CLI reply carries after whatever it printed first, or None."""
     brace = raw.find("{")
@@ -918,19 +1089,21 @@ def own_directory(stand, node_id, action=None):
     raise StandRefused("usage: cluster own-directory <node> {on|off}")
 
 
-def own_env(stand, node_id, assignment=None):
-    """Recreate one member with one environment value of its own, or return to the stand's."""
+def own_env(stand, node_id, *assignments):
+    """Recreate one member with environment values of its own, or return to the stand's.
+
+    Several values go in one recreate, for a scenario whose values only hold together - the
+    liveness spans of scenario 46, which the handshake refuses out of order (HIL-1566)."""
     node = stand.member(node_id)
-    if assignment == "off":
+    if assignments == ("off",):
         return _said(compose(stand, "up", "-d", "--force-recreate", node.service),
                      f"cluster: recreated {node.container} on the stand's environment")
-    if assignment is not None and "=" in assignment:
-        name, value = assignment.split("=", 1)
-        if name:
-            override = {"services": {node.service: {"environment": {name: value}}}}
-            return _said(_recreate_with_override(stand, node, override),
-                         f"cluster: recreated {node.container} with {name}={value} of its own")
-    raise StandRefused("usage: cluster own-env <node> {NAME=value|off}")
+    pairs = [assignment.split("=", 1) for assignment in assignments if "=" in assignment]
+    if assignments and len(pairs) == len(assignments) and all(name for name, _ in pairs):
+        override = {"services": {node.service: {"environment": dict(pairs)}}}
+        return _said(_recreate_with_override(stand, node, override),
+                     f"cluster: recreated {node.container} with {' '.join(assignments)} of its own")
+    raise StandRefused("usage: cluster own-env <node> {NAME=value...|off}")
 
 
 def cluster_directory_exec(stand, node_id, *argv):
@@ -1057,8 +1230,8 @@ def execute(stand, command, *args):
         return own_directory(stand, *args[:2])
     if command == "own-env":
         if not args:
-            raise StandRefused("usage: cluster own-env <node> {NAME=value|off}")
-        return own_env(stand, *args[:2])
+            raise StandRefused("usage: cluster own-env <node> {NAME=value...|off}")
+        return own_env(stand, *args)
     if command == "db-sql":
         return db_sql(stand, *args[:2])
     if command == "db-log":
@@ -1087,6 +1260,10 @@ def execute(stand, command, *args):
         if len(args) != 2:
             raise StandRefused("usage: cluster entry-hold <master> {up|down}")
         return entry_hold(stand, *args)
+    if command == "liveness-hold":
+        if not 2 <= len(args) <= 3:
+            raise StandRefused(LIVENESS_HOLD_USAGE)
+        return liveness_hold(stand, *args)
     if command in ("cut", "mend"):
         return NODE_COMMANDS[command](stand, *args)
     if not args:

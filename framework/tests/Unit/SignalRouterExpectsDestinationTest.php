@@ -60,6 +60,7 @@ final class SignalRouterExpectsDestinationTest extends TestCase
             SignalTypeConstants::SYSTEM,
             SignalTypeConstants::HANDSHAKE,
             SignalTypeConstants::CONNECTION_CLOSE,
+            SignalTypeConstants::CONNECTION_LIVENESS,
         ] as $signalType) {
             $this->assertFalse(
                 $router->expectsDestination($this->signal($signalType)),

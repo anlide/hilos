@@ -12,7 +12,9 @@ table, closing the modal); a failure surfaces from the backend fail ack inside t
 modal. The person's standing is one verdict (createHilosUserStanding, HIL-945):
 the badge beside the presence in the header shows the standing shown, and the
 access section draws the block, the freeze — a fact with no control — and the
-deletion from the same verdict. A window whose action takes something away —
+deletion from the same verdict. The presence badge says the word the people list
+says (HIL-1566) and holds the room of the widest one, so a live change of it moves
+nothing beside it. A window whose action takes something away —
 the merge, rights, the block, the deletion — first asks the server whether the
 administrator must confirm it is them, and opens on that step when it must
 (createHilosUserCardStepUp, HIL-1275). The takeover lives here too (HIL-1170,
@@ -57,6 +59,8 @@ import {
   HILOS_USER_MERGED_COPY,
   HILOS_USER_LIFECYCLE_COPY,
   HILOS_USER_ANALYTICS_LINK_LABEL,
+  HILOS_PRESENCE_WIDEST_LABEL,
+  hilosPresenceBadge,
   hilosStandingBadge,
   hilosUserAnalyticsEnabled,
   hilosUserAnalyticsPath,
@@ -168,6 +172,10 @@ const userStanding = createHilosUserStanding(props.context)
 const standing = useSignal(userStanding.standing)
 const standingBadge = computed(() =>
   standing.value === null ? null : hilosStandingBadge(standing.value.shown),
+)
+// The header draws it only under a row, so the absent row's word is never seen.
+const presenceBadge = computed(() =>
+  hilosPresenceBadge(detail.value?.presence ?? 'offline'),
 )
 const frozenRow = computed(() => hilosUserFrozenRow(standing.value))
 // A merged account (HIL-1292): the notice under the header stands in for every
@@ -641,7 +649,14 @@ function submit(): void {
           <span class="h5 mb-0" data-id="hilos-user-name"
             ><HilosHideable :value="detail.name"
           /></span>
-          <span class="badge text-bg-secondary">{{ detail.presence }}</span>
+          <span class="hilos-stack d-inline-grid">
+            <span class="badge invisible" aria-hidden="true">{{
+              HILOS_PRESENCE_WIDEST_LABEL
+            }}</span>
+            <span class="badge" :class="`text-bg-${presenceBadge.tone}`">{{
+              presenceBadge.label
+            }}</span>
+          </span>
           <span
             v-if="standingBadge !== null"
             class="badge"

@@ -10,7 +10,10 @@
 // and lives in the address too (`/hilos/users/terms`, HIL-945): the legal
 // section's root links its count there, and changing the filter rewrites the
 // address. An account folded into another one wears a gray "Merged" badge
-// beside its name (HIL-1292). Bootstrap classes only (styling-rules.md).
+// beside its name (HIL-1292). The presence badge says one of three words
+// (HIL-1566) and holds the room of the widest one, so a presence changing live
+// neither moves the row nor spills out of its column. Bootstrap classes only
+// (styling-rules.md).
 import { NgTemplateOutlet } from '@angular/common'
 import {
   ChangeDetectionStrategy,
@@ -24,7 +27,9 @@ import {
 import type { TemplateRef } from '@angular/core'
 import { HilosPages } from '@hilos/core/base'
 import {
+  HILOS_PRESENCE_WIDEST_LABEL,
   createHilosUsersTable,
+  hilosPresenceBadge,
   hilosStandingBadge,
 } from '@hilos/core/admin/users'
 import type { HilosUserRow, HilosUsersContext } from '@hilos/core/admin/users'
@@ -75,15 +80,15 @@ export interface UsersRowActionsContext {
           }
         </ng-template>
         <ng-template hilosTableCell="presence" let-row>
-          <span
-            [class]="
-              'badge ' +
-              (row.presence === 'online'
-                ? 'text-bg-success'
-                : 'text-bg-secondary')
-            "
-            >{{ row.presence }}</span
-          >
+          @let badge = presenceBadge(row.presence);
+          <span class="hilos-stack d-inline-grid">
+            <span class="badge invisible" aria-hidden="true">{{
+              widestPresence
+            }}</span>
+            <span class="badge" [class]="'text-bg-' + badge.tone">{{
+              badge.label
+            }}</span>
+          </span>
         </ng-template>
         <ng-template hilosTableCell="onlineSessionCount" let-row>{{
           row.onlineSessionCount
@@ -111,6 +116,10 @@ export class HilosUsersPage {
   // The one badge the list draws: the merged standing, read off the row's merge
   // slot rather than off a standing the list does not carry.
   protected readonly mergedBadge = hilosStandingBadge('merged')
+  // The presence badge: the word and tone of a row's presence, drawn over an
+  // invisible twin of the widest word.
+  protected readonly presenceBadge = hilosPresenceBadge
+  protected readonly widestPresence = HILOS_PRESENCE_WIDEST_LABEL
   // The lapsed filter is read from the address the page opened on and written
   // back as it changes; mounted without a navigator, the list opens whole and
   // leaves the address alone.

@@ -135,6 +135,19 @@ final class HilosUserDetailBrowserTableTest extends TestCase
         );
     }
 
+    /**
+     * A connection that falls silent or is heard again changes nothing but its doubt flag, so the
+     * card's presence is rebuilt on every connection update and the flag itself never rides the
+     * card: the row names no narrow trigger list and ships no field past the person (HIL-1566).
+     */
+    public function testTheConnectionsRowRebuildsPresenceOnAnyConnectionUpdate(): void
+    {
+        $row = $this->rowOf(self::CONNECTIONS);
+
+        $this->assertArrayNotHasKey(BrowserTableFieldKey::TRIGGERS, $row);
+        $this->assertNotContains(HilosConnection::probablyOffline, $row[BrowserTableFieldKey::FIELDS]);
+    }
+
     public function testSurvivorPasswordPresenceDeclaresTheIdentitySource(): void
     {
         $row = $this->rowOf(self::IDENTITIES);
