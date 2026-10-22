@@ -1,12 +1,14 @@
 # Framework change sources, format 1
 
-`../catalog.json` is the immutable genesis: each known schema unit has an
-`upSha256` and `downSha256` of the real stubs at the catalog's introduction.
-Bootstrap-owned units have both values `null`, since migration initialization
-owns their DDL. The schema unit registry remains `FrameworkSchemaCatalog`;
-the genesis neither defines tables nor duplicates feature requirements.
-Do not rewrite genesis when a stub changes, and do not reconstruct historical
-ALTER statements. Append a change group and update the current stubs instead.
+`../catalog.json` is the immutable genesis: each schema unit known at the
+catalog's introduction has an `upSha256` and `downSha256` of the real stubs at
+that moment. Bootstrap-owned units have both values `null`, since migration
+initialization owns their DDL. The schema unit registry remains
+`FrameworkSchemaCatalog`; the genesis neither defines tables nor duplicates
+feature requirements. Do not rewrite genesis when a stub changes or a unit is
+added, and do not reconstruct historical ALTER statements. Append a change group
+and update the current stubs instead; a unit added after genesis is opened by
+its introducing part (below).
 
 A group is `Change/<id>/change.json`. Its id is a UTC timestamp with six
 microsecond digits, `YYYYMMDDHHMMSSffffff_HIL-<ticket>_<slug>` (20 digits before
@@ -52,6 +54,30 @@ unit are refused; a later timestamp never resolves an ambiguous ending. The
 last part in that chain declares the current stub hashes in `afterStub*Sha256`.
 With no parts, the current stub must match genesis. Bootstrap-owned parts have
 both `afterStub*Sha256` values `null`.
+
+## A unit after genesis
+
+A unit absent from genesis, such as a framework table added later, is opened by
+exactly one part with `"introducesUnit": true`. The field is optional and only a
+JSON boolean; absent means `false`, so earlier manifests read unchanged. The
+introducing part heads the unit's explicit chain: every later part of the unit
+requires it directly or transitively. Its `up` creates the unit, and its
+`afterStub*Sha256` are the unit's first snapshot; the last part of the chain
+declares the current one, as for any unit. The whole chain of such a unit,
+dependencies in other units included, is checked when the catalog is read,
+whether a project selects the unit or not.
+
+Refused when the catalog is read: a unit missing from genesis with no
+introducing part (`Framework genesis misses schema unit …`), even when ordinary
+parts carry stub hashes for it; a second introducing part of one unit; an
+introducing part that is not the head of its chain; and an introduction of a
+genesis unit or of a bootstrap-owned unit.
+
+A project that selects the unit receives its current stub as an `install` pair
+recording every part of the unit, the introducing one included, like any other
+newly installed unit; the introducing SQL is not replayed. The flag belongs to
+the source manifest only: origin part references and headers keep the fields
+below, and their provenance names the exact immutable part.
 
 ## Origin pair, format 1
 

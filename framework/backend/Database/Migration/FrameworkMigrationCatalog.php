@@ -33,7 +33,7 @@ final class FrameworkMigrationCatalog
      *
      * @param FrameworkSchemaCatalog $schema Single source of unit and feature metadata
      * @param string $directory Framework migration source root, replaceable with a temporary tree in tests
-     * @throws DatabaseException When genesis, manifests, identities, source files or confined paths are invalid
+     * @throws DatabaseException When genesis, manifests, identities, source files, confined paths or a unit's introduction are invalid
      */
     public function __construct(
         private readonly FrameworkSchemaCatalog $schema = new FrameworkSchemaCatalog(),
@@ -45,6 +45,7 @@ final class FrameworkMigrationCatalog
         } catch (FsException $exception) {
             throw new DatabaseException('Cannot read framework migration catalog: ' . $exception->getMessage(), previous: $exception);
         }
+        $this->verifyUnitCoverage();
     }
 
     /**
@@ -92,6 +93,7 @@ final class FrameworkMigrationCatalog
 
     /**
      * Checks the latest explicitly ordered snapshot, or genesis when the unit has no parts.
+     * A unit introduced after genesis takes its first snapshot from its introducing part, the head of its chain.
      *
      * @param ?list<string> $units Unit keys to check, or the entire schema catalog
      * @throws DatabaseException When a selected graph is invalid, a stub cannot be read, or it drifted from its declared form
@@ -245,11 +247,6 @@ final class FrameworkMigrationCatalog
             $this->genesisUp[$unit->key] = $entry->upSha256;
             $this->genesisDown[$unit->key] = $entry->downSha256;
         }
-        foreach ($this->schema->allUnits() as $unit) {
-            if (!array_key_exists($unit->key, $this->genesisUp)) {
-                throw new DatabaseException("Framework genesis misses schema unit {$unit->key}");
-            }
-        }
     }
 
     /** Every manifest is read even for an unselected unit, so duplicate group IDs cannot be overwritten. */
@@ -294,6 +291,7 @@ final class FrameworkMigrationCatalog
             || !is_string($data->up ?? null) || !is_string($data->down ?? null)
             || !is_array($data->requires ?? null)
             || !property_exists($data, 'afterStubUpSha256') || !property_exists($data, 'afterStubDownSha256')
+            || (property_exists($data, 'introducesUnit') && !is_bool($data->introducesUnit))
         ) {
             throw new DatabaseException("Malformed framework migration part in {$id}");
         }
@@ -325,7 +323,69 @@ final class FrameworkMigrationCatalog
             $downSql,
             $data->afterStubUpSha256,
             $data->afterStubDownSha256,
+            $data->introducesUnit ?? false,
         );
+    }
+
+    /**
+     * Genesis covers the units it lists; any other unit exists only through exactly one introducing part.
+     * That part heads the unit's explicit chain; orderedParts() refuses a branch, so every later part depends on it.
+     * An ordinary part never introduces a unit, whatever stub hashes it carries.
+     */
+    private function verifyUnitCoverage(): void
+    {
+        $introductions = [];
+        foreach ($this->parts as $key => $part) {
+            if (!$part->introducesUnit) {
+                continue;
+            }
+            if (array_key_exists($part->unit, $this->genesisUp)) {
+                throw new DatabaseException("Framework part {$key} cannot introduce genesis unit {$part->unit}");
+            }
+            if ($this->schema->unit($part->unit)->bootstrapOwned) {
+                throw new DatabaseException("Framework part {$key} cannot introduce bootstrap-owned unit {$part->unit}");
+            }
+            if (isset($introductions[$part->unit])) {
+                throw new DatabaseException(
+                    "Framework unit {$part->unit} is introduced by more than one part: {$introductions[$part->unit]}, {$key}",
+                );
+            }
+            $introductions[$part->unit] = $key;
+        }
+        foreach ($this->schema->allUnits() as $unit) {
+            if (array_key_exists($unit->key, $this->genesisUp)) {
+                continue;
+            }
+            $introduction = $introductions[$unit->key]
+                ?? throw new DatabaseException("Framework genesis misses schema unit {$unit->key} and no change part introduces it");
+            $head = array_values(array_filter(
+                $this->orderedParts($this->chainOf($unit->key)),
+                static fn (FrameworkMigrationPart $part): bool => $part->unit === $unit->key,
+            ))[0];
+            if ($head->key() !== $introduction) {
+                throw new DatabaseException("Framework unit {$unit->key} must open its chain with {$introduction}, not {$head->key()}");
+            }
+        }
+    }
+
+    /**
+     * @param string $unit Unit whose whole chain is checked
+     * @return array<string, FrameworkMigrationPart> The unit's parts with their present transitive dependencies of any unit
+     */
+    private function chainOf(string $unit): array
+    {
+        $chain = array_filter($this->parts, static fn (FrameworkMigrationPart $part): bool => $part->unit === $unit);
+        $pending = array_keys($chain);
+        while ($pending !== []) {
+            foreach ($chain[array_pop($pending)]->requires as $dependency) {
+                if (!isset($chain[$dependency]) && isset($this->parts[$dependency])) {
+                    $chain[$dependency] = $this->parts[$dependency];
+                    $pending[] = $dependency;
+                }
+            }
+        }
+
+        return $chain;
     }
 
     /** Path resolution is physical as well as lexical: no absolute paths, dot segments or escaping symlinks. */

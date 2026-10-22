@@ -268,7 +268,7 @@ final class ChangeLogRestoreIntegrationTest extends IntegrationTestCase
         $live = self::triggerCatalog();
         $names = array_map(static fn (JournalTriggerFile $file): string => $file->name, $files);
         sort($names);
-        $this->assertCount(18, $names);
+        $this->assertCount(21, $names);
         $this->assertSame($names, array_keys($live));
         foreach ($files as $file) {
             $this->assertTrue($file->matches($live[$file->name], ChangeLogDatabase::configuredName()), $file->name);

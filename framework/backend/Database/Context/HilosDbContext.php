@@ -31,6 +31,7 @@ use Hilos\Database\View\Collection\Languages as DbCollectionLanguages;
 use Hilos\Database\View\Collection\LanguageNames as DbCollectionLanguageNames;
 use Hilos\Database\View\Collection\Locales as DbCollectionLocales;
 use Hilos\Database\View\Collection\I18nReflows as DbCollectionI18nReflows;
+use Hilos\Database\View\Collection\ModerationRules as DbCollectionModerationRules;
 use Hilos\Database\View\Collection\NotificationDeliveries as DbCollectionNotificationDeliveries;
 use Hilos\Database\View\Collection\NotificationPreferences as DbCollectionNotificationPreferences;
 use Hilos\Database\View\Collection\Notifications as DbCollectionNotifications;
@@ -67,6 +68,7 @@ use Hilos\Database\Actions\Collection\LanguagesActions;
 use Hilos\Database\Actions\Collection\LanguageNamesActions;
 use Hilos\Database\Actions\Collection\LocalesActions;
 use Hilos\Database\Actions\Collection\I18nReflowsActions;
+use Hilos\Database\Actions\Collection\ModerationRulesActions;
 use Hilos\Database\Actions\Collection\NotificationPreferencesActions;
 use Hilos\Database\Actions\Collection\NotificationsActions;
 use Hilos\Database\Actions\Collection\OAuthProvidersActions;
@@ -88,6 +90,7 @@ use Hilos\Database\Actions\Item\AccountDeletionActions;
 use Hilos\Database\Actions\Item\CountryActions;
 use Hilos\Database\Actions\Item\CountryNameActions;
 use Hilos\Database\Actions\Item\I18nReflowActions;
+use Hilos\Database\Actions\Item\ModerationRuleActions;
 use Hilos\Database\Actions\Item\DataExportActions;
 use Hilos\Database\Actions\Item\LegalAcceptanceExportActions;
 use Hilos\Database\Actions\Item\FileActions;
@@ -156,6 +159,7 @@ use Hilos\Database\Exception\InvalidMountedCollectionException;
  * @property-read DbCollectionCountryNames $countryNames
  * @property-read DbCollectionLocales $locales
  * @property-read DbCollectionI18nReflows $i18nReflows Fingerprint of the catalog last taken into the reference tables
+ * @property-read DbCollectionModerationRules $moderationRules Administrators' own rules per moderation kind
  */
 abstract class HilosDbContext extends DbContext
 {
@@ -230,6 +234,7 @@ abstract class HilosDbContext extends DbContext
     public const string locale = 'locale';
     public const string i18nReflows = 'i18nReflows';
     public const string i18nReflow = 'i18nReflow';
+    public const string moderationRules = 'moderationRules';
 
     /**
      * The layer names a refusal of a framework extension calls the three declared classes by;
@@ -298,6 +303,8 @@ abstract class HilosDbContext extends DbContext
      * Languages, countries and locales load whole on first read, and so does the one-row record
      * of the catalog reflow (HIL-1472). Mounting their collections does not read their tables,
      * so a project without those tables stays inert until asked.
+     * Administrators' own moderation rules (HIL-1624) load whole on first read as well, and a
+     * project without hilos_moderation_rule stays inert until a rule is read or written.
      *
      * People load by key when a session, page or library asks for a person. A question about
      * everyone uses DbCollectionUsers::listAll(); mounting users stays inert where nobody signs in.
@@ -522,6 +529,13 @@ abstract class HilosDbContext extends DbContext
             DbCollectionI18nReflows::class,
             I18nReflowsActions::class,
             I18nReflowActions::class,
+        );
+        $this->mountFramework(
+            self::moderationRules,
+            Objects::LAZY_STRATEGY_NONE,
+            DbCollectionModerationRules::class,
+            ModerationRulesActions::class,
+            ModerationRuleActions::class,
         );
         $this->mountFramework(
             self::users,

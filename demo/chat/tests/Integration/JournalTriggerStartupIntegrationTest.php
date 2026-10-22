@@ -117,7 +117,7 @@ final class JournalTriggerStartupIntegrationTest extends IntegrationTestCase
             copy($file, $this->path . '/' . basename($file));
         }
         JournalTriggerInstaller::apply();
-        $this->assertCount(18, self::catalog());
+        $this->assertCount(21, self::catalog());
         $before = self::ddlCounts();
         JournalTriggerInstaller::apply();
         $this->assertSame($before, self::ddlCounts(), 'A repeated start must execute no trigger DDL');
@@ -265,8 +265,8 @@ final class JournalTriggerStartupIntegrationTest extends IntegrationTestCase
             $blocker->close();
             Database::sql('SET SESSION lock_wait_timeout = ' . $timeout);
         }
-        $this->assertCount(9, self::catalog(), 'The three earlier tables must already have all three triggers');
-        $this->assertSame(['bot' => 3, 'hilos_identity' => 3, 'hilos_second_factor' => 3],
+        $this->assertCount(12, self::catalog(), 'The four earlier tables must already have all three triggers');
+        $this->assertSame(['bot' => 3, 'hilos_identity' => 3, 'hilos_moderation_rule' => 3, 'hilos_second_factor' => 3],
             array_count_values(array_column(self::catalog(), 'EVENT_OBJECT_TABLE')));
         $before = self::ddlCounts();
         JournalTriggerInstaller::apply();

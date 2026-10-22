@@ -189,6 +189,15 @@ The sources live under `framework/backend/Database/Migration/`:
   and the immutable `Change/<id>/change.json` groups with their plain up/down SQL parts.
   A part belongs to one schema unit; a shared table stays one unit even when several
   features require it. Selection is the union of units, not the name of an SQL folder.
+- A unit added after genesis, a new framework table, is a new unit in
+  `FrameworkSchemaCatalog` with its stub pair, opened by exactly one change part with
+  `"introducesUnit": true` at the head of its explicit chain; genesis stays as it is.
+  The introducing part's `afterStub*Sha256` is its first snapshot, the last part of its
+  chain the current one. A unit outside genesis without that part — whatever stub hashes
+  its ordinary parts carry — a second introducing part, one that is not the head of the
+  chain, and an introduction of a genesis or bootstrap-owned unit are refused when the
+  catalog is read. A project that selects the unit receives its current stub as an
+  `install` pair recording all its parts; origin headers carry no new field.
 
 For the next framework table change:
 

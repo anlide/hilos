@@ -26,6 +26,7 @@ use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Entity\Item\Identity;
+use Hilos\Database\Entity\Item\ModerationRule;
 use Hilos\Database\Entity\Item\SecondFactor;
 use Hilos\Database\Entity\Item\Setting;
 use Hilos\Database\Entity\Item\User;
@@ -63,7 +64,7 @@ final class JournalCoverageTest extends IntegrationTestCase
         $this->assertSame(ChangeLogDatabase::configuredName(), Database::getConnectionConfig(ChangeLogDatabase::CONNECTION_INDEX)->database);
     }
 
-    public function testExactlySixConfigurationTablesPassOnTheLiveSchema(): void
+    public function testExactlySevenConfigurationTablesPassOnTheLiveSchema(): void
     {
         $schemas = LiveSchemaReader::read(DatabaseConnectionDefaults::PRIMARY_INDEX);
         $pii = PiiRegistry::collect();
@@ -72,16 +73,19 @@ final class JournalCoverageTest extends IntegrationTestCase
         $names = array_map(static fn(string $entity): string => $entity::_table, array_values($mounted));
         sort($names, SORT_STRING);
         $this->assertSame([
-            'bot', 'hilos_identity', 'hilos_second_factor', 'hilos_setting', 'hilos_user', 'moderator_prompt_piece',
+            'bot', 'hilos_identity', 'hilos_moderation_rule', 'hilos_second_factor', 'hilos_setting', 'hilos_user',
+            'moderator_prompt_piece',
         ], $names);
         $this->assertNotContains('event', $names);
         $this->assertNotContains('event_message', $names);
-        foreach ([User::class, Identity::class, SecondFactor::class, Setting::class, Bot::class, ModeratorPromptPiece::class] as $entityClass) {
+        foreach ([
+            User::class, Identity::class, SecondFactor::class, Setting::class, ModerationRule::class, Bot::class, ModeratorPromptPiece::class,
+        ] as $entityClass) {
             $this->assertContains($entityClass, $mounted);
             $this->assertArrayHasKey($entityClass::_table, $schemas);
             $placements = JournalColumnPolicy::forTable($entityClass, $schemas[$entityClass::_table], $pii);
             $this->assertCount(count($schemas[$entityClass::_table]->columns), $placements);
-            if ($entityClass === Bot::class || $entityClass === ModeratorPromptPiece::class) {
+            if (in_array($entityClass, [ModerationRule::class, Bot::class, ModeratorPromptPiece::class], true)) {
                 foreach ($placements as $column => $placement) {
                     $this->assertSame($column === $entityClass::_primary
                         ? JournalColumnMode::RECORD_KEY : JournalColumnMode::VALUE, $placement->mode);

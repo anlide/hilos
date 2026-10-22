@@ -65,16 +65,22 @@ columns the ORM does not map, when the journal connection is configured. A table
 with no Entity cannot opt in through this declaration.
 
 The framework tables under the journal are `hilos_user`, `hilos_identity`,
-`hilos_second_factor` and `hilos_setting`. A secret is declared separately from
+`hilos_second_factor`, `hilos_setting` and `hilos_moderation_rule`. A declared
+table the project's database does not have is skipped: the coverage gate and
+the generator judge only live tables, so `hilos_moderation_rule` is journaled
+only where a project has taken it. A secret is declared separately from
 its anonymization strategy: `NULLIFY` can describe data that is not a secret,
 and `hilos_second_factor` is purged whole. Its key still identifies a row, while
 every non-key, non-secret, non-noisy column is journaled only as a fact.
 
 In a demo, journal what a person changes by a decision, not the stream.
-All six demos declare `HilosFeature::CHANGE_LOG`. Chat journals exactly six
-tables: the four framework tables above, `bot` and `moderator_prompt_piece`.
-Binance-btc-tracker, ecommerce-shop, tasks, online-testing and polls each journal
-exactly the four framework tables; this activation adds no subject tables.
+All six demos declare `HilosFeature::CHANGE_LOG`. Chat journals seven tables:
+all five framework tables above, its own `bot`, and `moderator_prompt_piece`,
+the old rules table that stays journaled beside `hilos_moderation_rule` until
+HIL-1627 removes it. Binance-btc-tracker, ecommerce-shop, tasks, online-testing
+and polls each journal the four framework tables other than
+`hilos_moderation_rule`, which none of them has until it declares `MODERATION`;
+this activation adds no subject tables.
 Messages, events, attachments, guests and rename histories stay outside the
 journal. Quotes and votes are streams, not decisions.
 The column mode for a custom trigger belongs to phase 2, HIL-1413.
@@ -632,8 +638,8 @@ headers, alone. It does not install SQL in the database.
 
 All six demos configure the journal connection and use `DockerApplication`'s
 same startup sequence before starting a daemon, worker or socket. Chat commits
-18 generated triggers for its six journaled tables; every other demo commits
-12 for the four framework tables. Generation runs through the existing test
+21 generated triggers for its seven journaled tables; every other demo commits
+12 for its four framework tables. Generation runs through the existing test
 CLI after migrations, and a repeat leaves matching files untouched.
 
 Startup then follows these steps:

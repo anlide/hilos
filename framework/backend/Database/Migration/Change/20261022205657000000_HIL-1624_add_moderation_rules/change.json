@@ -1,0 +1,15 @@
+{
+    "format": 1,
+    "id": "20261022205657000000_HIL-1624_add_moderation_rules",
+    "parts": [
+        {
+            "unit": "moderation_rule",
+            "introducesUnit": true,
+            "up": "create_hilos_moderation_rule.sql",
+            "down": "create_hilos_moderation_rule_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "19b2663be034f5f0c658e17a4f387a05ec4b3be8d6023f618bfc73d2238ba5dc",
+            "afterStubDownSha256": "62a45b5fb2c723f7d5126e3eeb0df8871ed775735829fe3f1b7ab0630e7d0379"
+        }
+    ]
+}

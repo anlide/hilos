@@ -23,6 +23,7 @@ final readonly class FrameworkMigrationPart
      * @param ?string $downSql Canonical rollback SQL, absent on an origin reference
      * @param ?string $afterStubUpSha256 Up stub digest after this part, null for bootstrap ownership or a reference
      * @param ?string $afterStubDownSha256 Down stub digest after this part, null for bootstrap ownership or a reference
+     * @param bool $introducesUnit Whether the source manifest opens a unit absent from genesis, false on a reference
      * @throws DatabaseException When identity, digests, source pair or dependency keys are malformed
      */
     public function __construct(
@@ -35,6 +36,7 @@ final readonly class FrameworkMigrationPart
         public ?string $downSql = null,
         public ?string $afterStubUpSha256 = null,
         public ?string $afterStubDownSha256 = null,
+        public bool $introducesUnit = false,
     ) {
         self::keyOf($changeId, $unit);
         self::assertHash($upSha256);

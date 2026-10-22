@@ -123,7 +123,8 @@ final class ChangeLogDashboardPageIntegrationTest extends IntegrationTestCase
 
         $before = $this->overview('change-log-admin');
         self::assertSame([
-            'bot', 'hilos_identity', 'hilos_second_factor', 'hilos_setting', 'hilos_user', 'moderator_prompt_piece',
+            'bot', 'hilos_identity', 'hilos_moderation_rule', 'hilos_second_factor', 'hilos_setting', 'hilos_user',
+            'moderator_prompt_piece',
         ], $before['journaledTables']);
         self::assertGreaterThanOrEqual(count($before['journaledTables']), $before['liveTables']);
         self::assertIsInt($before['journalEntries']);

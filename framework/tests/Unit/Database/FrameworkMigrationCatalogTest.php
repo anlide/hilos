@@ -116,6 +116,18 @@ final class FrameworkMigrationCatalogTest extends TestCase
         $this->assertEquals($catalog->selectedUnits(SchemaCoreHilos::class), $catalog->selectedUnits(SchemaNoTablesHilos::class));
     }
 
+    public function testModerationSelectsTheRulesUnitOnlyWhileItIsDeclared(): void
+    {
+        $catalog = new FrameworkSchemaCatalog();
+
+        $this->assertSame(
+            ['migration', 'migration_claim', 'admin_view_mode_latch', 'database_marker', 'user', 'session', 'moderation_rule'],
+            array_column($catalog->selectedUnits(SchemaModerationHilos::class), 'key'),
+        );
+        $this->assertNotContains('moderation_rule', array_column($catalog->selectedUnits(SchemaCoreHilos::class), 'key'));
+        $this->assertNotContains('moderation_rule', array_column($catalog->selectedUnits(SchemaNoModerationHilos::class), 'key'));
+    }
+
     public function testI18nOrdersTheCountryBeforeTheLocaleStubThatAltersIt(): void
     {
         $units = new FrameworkSchemaCatalog()->selectedUnits(SchemaI18nHilos::class);
@@ -447,6 +459,35 @@ final class SchemaChangeLogHilos extends SchemaCoreHilos
     protected const array FEATURES = [HilosFeature::CHANGE_LOG];
 }
 
+final class SchemaModerationHilos extends SchemaCoreHilos
+{
+    protected const array FEATURES = [HilosFeature::MODERATION];
+}
+
+/** The all-features declaration without moderation, so no other feature drags the rules unit in. */
+final class SchemaNoModerationHilos extends SchemaCoreHilos
+{
+    protected const array FEATURES = [
+        HilosFeature::SETTINGS,
+        HilosFeature::HILOS_USERS,
+        HilosFeature::BACKUP,
+        HilosFeature::LOGS,
+        HilosFeature::DAEMON,
+        HilosFeature::I18N,
+        HilosFeature::NOTIFICATIONS,
+        HilosFeature::NOTIFICATION_DELIVERY,
+        HilosFeature::AUTH_THROTTLE,
+        HilosFeature::CODE_CHANNELS,
+        HilosFeature::AUTH,
+        HilosFeature::FILES,
+        HilosFeature::UPLOADS,
+        HilosFeature::IMAGES,
+        HilosFeature::PROFILE_PHOTO,
+        HilosFeature::ANALYTICS,
+        HilosFeature::CHANGE_LOG,
+    ];
+}
+
 final class SchemaAllFeaturesHilos extends SchemaCoreHilos
 {
     protected const array FEATURES = [
@@ -465,6 +506,7 @@ final class SchemaAllFeaturesHilos extends SchemaCoreHilos
         HilosFeature::UPLOADS,
         HilosFeature::IMAGES,
         HilosFeature::PROFILE_PHOTO,
+        HilosFeature::MODERATION,
         HilosFeature::ANALYTICS,
         HilosFeature::CHANGE_LOG,
     ];

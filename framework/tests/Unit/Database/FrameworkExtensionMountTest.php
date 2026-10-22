@@ -25,6 +25,7 @@ use Hilos\Database\View\Collection\Languages as DbCollectionLanguages;
 use Hilos\Database\View\Collection\LanguageNames as DbCollectionLanguageNames;
 use Hilos\Database\View\Collection\Locales as DbCollectionLocales;
 use Hilos\Database\View\Collection\I18nReflows as DbCollectionI18nReflows;
+use Hilos\Database\View\Collection\ModerationRules as DbCollectionModerationRules;
 use Hilos\Database\View\Collection\LegalAcceptances as DbCollectionLegalAcceptances;
 use Hilos\Database\View\Collection\NotificationDeliveries as DbCollectionNotificationDeliveries;
 use Hilos\Database\View\Collection\NotificationPreferences as DbCollectionNotificationPreferences;
@@ -106,6 +107,7 @@ final class FrameworkExtensionMountTest extends TestCase
         HilosDbContext::countryNames => DbCollectionCountryNames::class,
         HilosDbContext::locales => DbCollectionLocales::class,
         HilosDbContext::i18nReflows => DbCollectionI18nReflows::class,
+        HilosDbContext::moderationRules => DbCollectionModerationRules::class,
         HilosDbContext::users => DbCollectionUsers::class,
         HilosDbContext::userRenames => DbCollectionUserRenames::class,
         HilosDbContext::userMerges => DbCollectionUserMerges::class,

@@ -289,6 +289,8 @@ use Hilos\Log\DTO\LogsTakeoutConfirmSignalData;
 use Hilos\Log\DTO\LogsTakeoutUndoSignalData;
 use Hilos\Log\DTO\NodeLogIndexSignalData;
 use Hilos\Mail\DTO\MailSendSignalData;
+use Hilos\Moderation\Library\ModerationRulesLibraryAgent;
+use Hilos\Moderation\Library\ModerationRulesLibraryAgentDaemon;
 use Hilos\Moderation\ModerationInput;
 use Hilos\Moderation\ModerationKind;
 use Hilos\Moderation\ModerationKindDirectory;
@@ -739,13 +741,13 @@ final class ChatTopologyRegistryTest extends TestCase
             AgentType::HILOS_AUTH_CODE,
         ], $nodeScoped);
 
-        // The six libraries, the backup agent, the delivery shards, the log aggregator and the auth throttle: one
+        // The seven libraries, the backup agent, the delivery shards, the log aggregator and the auth throttle: one
         // instance cluster-wide (per shard index, for the shards), on the node policy picks. An
         // entity library is placed rather than pinned by rule, and each has a reason
         // of its own besides: minting an account is a claim one process holds wherever it sits,
         // every handshake touches sessions, every worker emits into notifications, every published
         // file is bound and swept by one owner, every admin screen writes settings through one
-        // hand, and the i18n reference has one writer. The uploads and images agents are placed the same
+        // hand, the i18n reference has one writer, and so do the moderation rules. The uploads and images agents are placed the same
         // way, beside the files library they hand files to through the cluster's tmp, on whatever
         // node each lands. The backup agent owns a directory on one node's disk, so it has to stay
         // with it: following
@@ -766,6 +768,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosAgentType::HILOS_IMAGES,
             HilosAgentType::HILOS_SETTINGS_LIBRARY,
             HilosAgentType::HILOS_I18N_LIBRARY,
+            HilosAgentType::HILOS_MODERATION_RULES_LIBRARY,
             HilosAgentType::HILOS_BACKUP,
             AgentType::HILOS_MAIL,
             AgentType::HILOS_SMS,
@@ -775,6 +778,29 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosAgentType::HILOS_ANALYTICS_WRITER,
             AgentType::HILOS_AUTH_THROTTLE,
         ], $policyPlaced);
+    }
+
+    /**
+     * The moderation rules have their one writer registered ahead of the feature (HIL-1624): the
+     * framework pair itself, without a project subclass, placed once for the cluster. Moderation
+     * stays off until the chat switches it on with its moderator (HIL-1625).
+     */
+    public function testModerationRulesLibraryIsRegisteredWhileModerationStaysOff(): void
+    {
+        $this->assertNotContains(HilosFeature::MODERATION, Hilos::featuresOf(Hilos::class));
+
+        $entry = Hilos::AGENTS[HilosAgentType::HILOS_MODERATION_RULES_LIBRARY];
+        $this->assertSame([
+            AgentRegistryKey::WORKER => ModerationRulesLibraryAgent::class,
+            AgentRegistryKey::DAEMON => ModerationRulesLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ], $entry);
+        $this->assertSame(ModerationRulesLibraryAgent::class, AgentRegistry::workerClass($entry));
+        $this->assertSame(ModerationRulesLibraryAgentDaemon::class, AgentRegistry::daemonClass($entry));
+        $this->assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
+        $this->assertFalse(AgentRegistry::requiresIndex($entry));
+        $this->assertTrue((new ModerationRulesLibraryAgentDaemon())->requiresMonopolisticProcess());
     }
 
     public function testBotAgentRegistryRequiresIndex(): void

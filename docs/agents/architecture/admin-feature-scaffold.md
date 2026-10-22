@@ -663,10 +663,12 @@ For its data and privacy boundaries, read
 
 The schema, receipt, trigger and restore contracts live in
 [change-log.md](change-log.md). All six demos activate the backend section.
-Chat journals the four framework tables plus `bot` and `moderator_prompt_piece`;
-binance-btc-tracker, ecommerce-shop, tasks, online-testing and polls each journal
-only the four framework tables. Chat and binance-btc-tracker mount all three Vue pages
-of the section. The remaining view mounts keep the leaf boundaries above. Where
+Chat journals five framework tables, `hilos_moderation_rule` among them, plus
+`bot` and `moderator_prompt_piece`; binance-btc-tracker, ecommerce-shop, tasks,
+online-testing and polls each journal only the four framework tables they have,
+without the rules table until they declare `MODERATION`. Chat and
+binance-btc-tracker mount all three Vue pages of the section. The remaining
+view mounts keep the leaf boundaries above. Where
 Backup is already active, it collects the six journal verdicts from the journal
 Entities mounted by `CHANGE_LOG`. (not in the code yet — HIL-1615)
 Until those Entities land, keep `ChangeLogTablesWithoutEntity` under connection
@@ -685,9 +687,14 @@ The target activation order is:
 2. Keep the framework kind directory, which `MODERATION_KIND_DIRECTORY` names
    by default, or point that constant at a project subclass retaining its
    parent entries and adding the project's kinds.
-3. Activate the framework rules migration/ORM and its designated writer. Use
-   the migration and writer contract HIL-1624 supplies, without inventing a
-   project storage path. (not in the code yet — HIL-1624)
+3. Run `db:framework:pull`: with `MODERATION` declared it brings the
+   framework schema unit `moderation_rule` — the `hilos_moderation_rule`
+   table the ORM mounts as `moderationRules` — into the project's
+   migrations. Register the rules' single writer, the framework pair
+   `ModerationRulesLibraryAgent` and its daemon, under
+   `HilosAgentType::HILOS_MODERATION_RULES_LIBRARY` with
+   `AgentPlacement::POLICY` and no project subclass. Do not invent a project
+   storage path for rules.
 4. Register the moderator's agent/daemon pair and wire the framework profiles
    and settings. HIL-1625 defines their exact declarations; this recipe adds no
    extra required agents. (not in the code yet — HIL-1625)

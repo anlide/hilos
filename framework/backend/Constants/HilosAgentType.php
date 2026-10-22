@@ -88,6 +88,9 @@ final class HilosAgentType
     /** Cluster library owning the language, country and locale reference. */
     public const string HILOS_I18N_LIBRARY = 'hilos_i18n_library';
 
+    /** Cluster library owning administrators' own moderation rules of every kind. */
+    public const string HILOS_MODERATION_RULES_LIBRARY = 'hilos_moderation_rules_library';
+
     /** @var string Hilos log store agent (per-node monopolistic owner of the log directory and of the node's log index) */
     public const string HILOS_LOG_STORE = 'hilos_log_store';
 

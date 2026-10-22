@@ -73,7 +73,7 @@ final class FrameworkMigrationSourcesTest extends TestCase
         $schema = new FrameworkSchemaCatalog();
         $catalog = new FrameworkMigrationCatalog($schema);
         $catalog->verifyCurrentStubs();
-        $this->assertCount(42, $schema->allUnits());
+        $this->assertCount(43, $schema->allUnits());
         $this->assertSame(
             [
                 '20261021021039718057_HIL-1580_add_user_time_zone/user',
@@ -286,6 +286,126 @@ final class FrameworkMigrationSourcesTest extends TestCase
     public static function badGenesisCases(): array
     {
         return [['format'], ['missing'], ['duplicate'], ['bootstrap-hash'], ['unknown'], ['bad-hash'], ['json']];
+    }
+
+    public function testUnitAfterGenesisIsIntroducedByItsPartAndDeliveredAsItsCurrentInstall(): void
+    {
+        $this->leaveOutOfGenesis('extra');
+        $this->introduce(self::EARLY, 'extra');
+        $this->catalog()->verifyCurrentStubs(['extra']);
+        $this->change(self::LATE, ['extra'], [[self::EARLY, 'extra']]);
+        file_put_contents($this->schema->unit('extra')->upPath, "CREATE extra WITH column;\n");
+        $this->editManifest(self::LATE, static function (array &$data): void {
+            $data['parts'][0]['afterStubUpSha256'] = hash('sha256', "CREATE extra WITH column;\n");
+        });
+        $catalog = $this->catalog();
+        $catalog->verifyCurrentStubs();
+        $parts = $catalog->partsForUnits(['extra']);
+        $this->assertSame([self::EARLY, self::LATE], array_column($parts, 'changeId'));
+        $this->assertSame([true, false], array_column($parts, 'introducesUnit'));
+        $this->assertSame(['changeId', 'unit', 'upSha256', 'downSha256'], array_keys($parts[0]->toArray()));
+        $origin = FrameworkMigrationOrigin::forBodies('install', ['extra'], $parts, 'CREATE extra WITH column;', 'DROP extra;');
+        $verified = $catalog->verifyPair(...$this->pair($origin, 'CREATE extra WITH column;', 'DROP extra;'));
+        $this->assertSame([], $catalog->missingParts(['extra'], [$verified]));
+    }
+
+    #[DataProvider('directions')]
+    public function testUnitAfterGenesisDetectsDriftFromItsIntroducedStub(string $direction): void
+    {
+        $this->leaveOutOfGenesis('extra');
+        $this->introduce(self::EARLY, 'extra');
+        file_put_contents($this->root . '/Stub/extra' . $direction . '.sql', "CHANGED\n");
+        $this->expectException(DatabaseException::class);
+        $this->expectExceptionMessage('Framework stub drift for unit extra');
+        $this->catalog()->verifyCurrentStubs(['extra']);
+    }
+
+    #[DataProvider('nonBoolIntroductions')]
+    public function testIntroducesUnitIsOnlyABool(mixed $value): void
+    {
+        $this->leaveOutOfGenesis('extra');
+        $this->introduce(self::EARLY, 'extra');
+        $this->editManifest(self::EARLY, static function (array &$data) use ($value): void {
+            $data['parts'][0]['introducesUnit'] = $value;
+        });
+        $this->expectException(DatabaseException::class);
+        $this->expectExceptionMessage('Malformed framework migration part');
+        $this->catalog();
+    }
+
+    public static function nonBoolIntroductions(): array
+    {
+        return [[null], [1], [0], ['true'], [[]]];
+    }
+
+    #[DataProvider('invalidIntroductionCases')]
+    public function testInvalidIntroductionIsRefused(string $case, string $message): void
+    {
+        $this->leaveOutOfGenesis('extra');
+        switch ($case) {
+            case 'twice':
+                $this->introduce(self::EARLY, 'extra');
+                $this->introduce(self::LATE, 'extra', [[self::EARLY, 'extra']]);
+                break;
+            case 'not-first':
+                $this->change(self::EARLY, ['extra']);
+                $this->introduce(self::LATE, 'extra', [[self::EARLY, 'extra']]);
+                break;
+            case 'ordinary-only':
+                $this->change(self::EARLY, ['extra']);
+                $this->change(self::LATE, ['extra'], [[self::EARLY, 'extra']]);
+                break;
+            case 'genesis-unit':
+                $this->introduce(self::LAST, 'extra');
+                $this->introduce(self::EARLY, 'user');
+                break;
+            case 'genesis-bootstrap':
+                $this->introduce(self::LAST, 'extra');
+                $this->introduce(self::EARLY, 'migration');
+                break;
+            case 'bootstrap':
+                $this->introduce(self::LAST, 'extra');
+                $this->leaveOutOfGenesis('migration');
+                $this->introduce(self::EARLY, 'migration');
+                break;
+            case 'branch':
+                $this->introduce(self::EARLY, 'extra');
+                $this->change(self::LATE, ['extra']);
+                break;
+            case 'cycle':
+                $this->introduce(self::EARLY, 'extra', [[self::LATE, 'extra']]);
+                $this->change(self::LATE, ['extra'], [[self::EARLY, 'extra']]);
+                break;
+            case 'lost-dependency':
+                $this->introduce(self::EARLY, 'extra');
+                $this->change(self::LATE, ['extra'], [[self::EARLY, 'extra'], [self::LAST, 'user']]);
+                break;
+            case 'lost-hash':
+                $this->introduce(self::EARLY, 'extra');
+                $this->editManifest(self::EARLY, static function (array &$data): void {
+                    $data['parts'][0]['afterStubDownSha256'] = null;
+                });
+                break;
+        }
+        $this->expectException(DatabaseException::class);
+        $this->expectExceptionMessage($message);
+        $this->catalog();
+    }
+
+    public static function invalidIntroductionCases(): array
+    {
+        return [
+            ['twice', 'Framework unit extra is introduced by more than one part'],
+            ['not-first', 'Framework unit extra must open its chain with ' . self::LATE . '/extra, not ' . self::EARLY . '/extra'],
+            ['ordinary-only', 'Framework genesis misses schema unit extra'],
+            ['genesis-unit', 'cannot introduce genesis unit user'],
+            ['genesis-bootstrap', 'cannot introduce genesis unit migration'],
+            ['bootstrap', 'cannot introduce bootstrap-owned unit migration'],
+            ['branch', 'Ambiguous framework change branches for unit extra'],
+            ['cycle', 'Framework migration part dependency cycle'],
+            ['lost-dependency', 'requires missing or unselected part ' . self::LAST . '/user'],
+            ['lost-hash', 'Unit extra requires both stub hashes'],
+        ];
     }
 
     public function testChangeOriginChecksBothBodiesAgainstImmutableSource(): void
@@ -623,6 +743,20 @@ final class FrameworkMigrationSourcesTest extends TestCase
             ];
         }
         $this->writeJson($path . '/change.json', ['format' => 1, 'id' => $id, 'parts' => $parts]);
+    }
+
+    /** @param list<array{string, string}> $requires */
+    private function introduce(string $id, string $unit, array $requires = []): void
+    {
+        $this->change($id, [$unit], $requires);
+        $this->editManifest($id, static function (array &$data): void { $data['parts'][0]['introducesUnit'] = true; });
+    }
+
+    private function leaveOutOfGenesis(string $unit): void
+    {
+        $data = json_decode(file_get_contents($this->root . '/catalog.json'), true, flags: JSON_THROW_ON_ERROR);
+        $data['units'] = array_values(array_filter($data['units'], static fn (array $entry): bool => $entry['unit'] !== $unit));
+        $this->writeJson('/catalog.json', $data);
     }
 
     private function editManifest(string $id, callable $edit): void

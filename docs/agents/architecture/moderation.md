@@ -7,8 +7,9 @@ This is the target architecture of HIL-1569, written ahead of its code. Each
 pending rule names the leaf that implements it; that leaf clears its markers
 in the same commit, following [../rule-authoring.md](../rule-authoring.md),
 *A Rule Written Ahead Of Its Code*. *Check Kinds* names the PHP classes that
-declare kinds; elsewhere, names identify approved kinds, profiles and
-addresses and do not prescribe future PHP classes or payloads.
+declare kinds, and *Rules Per Kind* the ones that store and write rules;
+elsewhere, names identify approved kinds, profiles and addresses and do not
+prescribe future PHP classes or payloads.
 
 ## Core Rule
 
@@ -92,19 +93,52 @@ Store custom rules in `hilos_moderation_rule`, addressing the kind by a string
 key, not an ENUM. A kind's custom rules replace its built-in rules **whole**;
 they are not appended. With no custom rows, including after the last one is
 deleted, the built-in rules apply again.
-(not in the code yet — HIL-1624)
 
-Use the rules' single designated writer and the normal framework write path;
-neither a page nor the moderator writes SQL to change them. HIL-1624 defines
-the complete schema, writer identity, anonymization verdict and change-log
-policy; this document does not choose those contracts.
-(not in the code yet — HIL-1624)
+Read the rules a check of one kind applies as
+`Hilos::$db->moderationRules->effectiveForKind($kind)`: the kind's own rule
+texts in id order, or its `defaultRules` while it has none. The kind is looked
+up in `Hilos::moderationKinds()` whether or not `MODERATION` is on, so an
+unknown kind, and the photo kind without `PROFILE_PHOTO`, is an
+`InvalidArgumentException`; a database failure propagates rather than turning
+into the built-in rules. The list is computed on every call and kept nowhere.
 
-On a fresh chat seed, the three current message rules become custom rules for
-`chat_message`, and the three name rules become custom rules for
-`hilos_profile_name`. Profile photos and message pictures use their built-in
-rules. Do not migrate old rule rows into the new table.
-(not in the code yet — HIL-1624)
+The table has `id` (`INT UNSIGNED` auto-increment primary key), `kind`
+(`VARCHAR(64)`, ASCII binary) and `rule` (`TEXT`), with an index on `kind` and
+no foreign key, ENUM or unique key; its reference DDL is
+[create_hilos_moderation_rule.sql](../../../framework/backend/Database/Migration/Stub/create_hilos_moderation_rule.sql),
+the framework schema unit `moderation_rule`. `MODERATION` requires the table,
+so a project receives it through `db:framework:pull` with the feature. The ORM
+chain `ModerationRule`/`ModerationRules` is mounted as `moderationRules` with
+`LAZY_STRATEGY_NONE`, loaded whole on first read.
+
+Change rules only through their single writer,
+[ModerationRulesLibraryAgent](../../../framework/backend/Moderation/Library/ModerationRulesLibraryAgent.php)
+under `HilosAgentType::HILOS_MODERATION_RULES_LIBRARY`; neither a page nor the
+moderator writes SQL to change them. The library claims `moderationRules`
+whole with every operation in `OWNS_DB` — no owner per kind or per rule — and
+its daemon is a monopolistic cluster singleton the project registers with
+`AgentPlacement::POLICY`; `MODERATION` requires it as a shared agent. Its
+doors are the collection action `create($kind, $rule)`, which refuses a kind
+the directory does not publish with `ValidationException`, and the item actions
+`update($rule)` and `delete()`; any other agent is refused at all three, and a
+rule's kind never changes. `create` and `update` refuse blank text and text
+over the Object's `MAX_RULE_BYTES` with `ValidationException`, and store any
+other text as given.
+
+Every column is judged not personal (`_pii = []`; `_piiNotPersonal` lists
+`id`, `kind` and `rule`): a rule is an administrator's policy text, not data
+about a person. The Entity is `_journaled`: where the table exists, the change
+log keeps `id` as the record key and `kind` and `rule` as values; see
+[change-log.md](change-log.md#what-an-entity-declares).
+
+On a fresh chat seed,
+[006_framework_moderation_rules.sql](../../../demo/chat/backend/Database/Migration/Seed/006_framework_moderation_rules.sql)
+makes the three current message rules custom rules for `chat_message`, and the
+three name rules custom rules for `hilos_profile_name`. Profile photos and
+message pictures use their built-in rules. Do not migrate old rule rows into
+the new table. Chat carries the table before it declares `MODERATION` through
+the framework install pair `101_framework_install_moderation_rule`, the same
+pair `db:framework:pull` writes with the feature.
 
 ## One Door And One Moderator
 
@@ -212,7 +246,7 @@ Profile photos in polls are separate work. (not in the code yet — HIL-1645)
 - Do not add a project photo checker; use the moderation feature's photo kind
   once the photo path moves. (not in the code yet — HIL-1625)
 - Do not append custom rules to built-ins; custom rows replace the entire
-  built-in set. (not in the code yet — HIL-1624)
+  built-in set.
 - Do not add an LLM container or bypass the router on a stand; use the existing
   `/model` resident as [stand-services.md](../stand-services.md) prescribes.
 

@@ -8,6 +8,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\Entity\Item\Identity;
+use Hilos\Database\Entity\Item\ModerationRule;
 use Hilos\Database\Entity\Item\SecondFactor;
 use Hilos\Database\Entity\Item\Setting;
 use Hilos\Database\Entity\Item\User;
@@ -45,7 +46,7 @@ final class JournalCoverageGuardTest extends TestCase
         $this->assertSame(DatabaseConnectionDefaults::PRIMARY_INDEX, Database::getCurrentIndex());
     }
 
-    public function testTheFrameworkCatalogContainsExactlyFourDeclaredEntities(): void
+    public function testTheFrameworkCatalogContainsExactlyFiveDeclaredEntities(): void
     {
         Hilos::$db = new JournalFrameworkDbContext();
         Hilos::$db->configure();
@@ -54,6 +55,7 @@ final class JournalCoverageGuardTest extends TestCase
             HilosDbContext::settings => Setting::class,
             HilosDbContext::identities => Identity::class,
             HilosDbContext::secondFactors => SecondFactor::class,
+            HilosDbContext::moderationRules => ModerationRule::class,
             HilosDbContext::users => User::class,
         ], JournaledTables::mounted());
     }

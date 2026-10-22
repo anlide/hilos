@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\Database;
 use Hilos\Database\Migration\FrameworkMigrationCatalog;
 use Hilos\Database\Migration\FrameworkMigrationInstaller;
 use Hilos\Database\Migration\FrameworkMigrationOrigin;
+use Hilos\Database\Migration\FrameworkMigrationPart;
 use Hilos\Database\Migration\FrameworkMigrationProjectRegistry;
 use Hilos\Database\Migration\FrameworkSchemaCatalog;
 use Hilos\Fs\FsPath;
@@ -92,6 +93,23 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 self::assertCount(1, $change->parts);
                 self::assertSame('20261022124515804554_HIL-1582_browser_time_zones/' . $unit, $change->parts[0]->key());
                 $origins[] = $change;
+            }
+            if ($index === 0) {
+                // Chat takes the rules table ahead of MODERATION, for its seed (HIL-1624).
+                $unit = $schema->unit('moderation_rule');
+                $base = $project->root . '/101_framework_install_moderation_rule';
+                $up = FsPath::read($base . '.sql');
+                $down = FsPath::read($base . '_down.sql');
+                $install = $catalog->verifyPair($up, $down);
+                self::assertSame(FrameworkMigrationOrigin::INSTALL, $install->kind);
+                self::assertSame(['moderation_rule'], $install->units);
+                self::assertSame(
+                    array_map(static fn (FrameworkMigrationPart $part): array => $part->toArray(), $catalog->partsForUnits(['moderation_rule'])),
+                    array_map(static fn (FrameworkMigrationPart $part): array => $part->toArray(), $install->parts),
+                );
+                self::assertSame(FsPath::read($unit->upPath), substr($up, strpos($up, "\n") + 1));
+                self::assertSame(FsPath::read($unit->downPath), substr($down, strpos($down, "\n") + 1));
+                $origins[] = $install;
             }
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }

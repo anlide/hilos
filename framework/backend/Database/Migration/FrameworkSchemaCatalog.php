@@ -180,6 +180,7 @@ class FrameworkSchemaCatalog
             $this->tableUnit('file_variant', 'hilos_file_variant', [self::FILE]),
             $this->tableUnit('user_photo', 'hilos_user_photo', [self::USER, self::FILE]),
             $this->tableUnit(self::VERIFIER_CIRCLE, 'hilos_verifier_circle'),
+            $this->tableUnit('moderation_rule', 'hilos_moderation_rule'),
             new FrameworkSchemaUnit(
                 'analytics',
                 FrameworkTablesWithoutEntity::analyticsTables(),

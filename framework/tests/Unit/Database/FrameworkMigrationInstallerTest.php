@@ -606,6 +606,50 @@ final class FrameworkMigrationInstallerTest extends TestCase
         $this->assertSame([], $installer->publish($plan)->projects[0]->publishedPaths);
     }
 
+    /**
+     * A project takes a feature's table before it declares the feature, as chat takes `hilos_moderation_rule`
+     * for its seed (HIL-1624): the reviewed pair is the one the ordinary pull would write, and that pull,
+     * once the feature is on, knows the unit installed and writes no second installation.
+     */
+    public function testExplicitInstallWhileTheFeatureIsOffIsTheInstallTheOrdinaryPullKnowsOnceItIsOn(): void
+    {
+        $this->change(self::EARLY, 'shared');
+        $catalog = new FrameworkMigrationCatalog($this->schema, $this->root . '/source');
+        $installer = $this->installer();
+        $off = $this->project('feature-off');
+        $this->assertSame([], $installer->plan($off)[0]->publications, 'The ordinary pull selects no feature unit while the feature is off');
+        $shared = $this->schema->unit('shared');
+        $up = file_get_contents($shared->upPath);
+        $down = file_get_contents($shared->downPath);
+        $pair = new FrameworkMigrationPair(
+            'framework_install_shared',
+            FrameworkMigrationOrigin::forBodies('install', ['shared'], $catalog->partsForUnits(['shared']), $up, $down),
+            $up,
+            $down,
+        );
+        $pulled = $installer->plan($this->project('feature-on', facade: InstallerFeatureHilos::class))[0]->publications;
+        $this->assertCount(1, $pulled);
+        $this->assertSame($pulled[0]->pair->name, $pair->name);
+        $this->assertSame($pulled[0]->pair->upSql, $pair->upSql);
+        $this->assertSame($pulled[0]->pair->downSql, $pair->downSql);
+
+        $plan = $installer->planSources($off, $pair);
+        $this->assertSame(2, $plan->publications[0]->index);
+        $this->assertFalse($installer->publish($plan)->hasFailures());
+        $this->assertSame([], $installer->planSources($off, $pair)->publications, 'The same origin again is already delivered');
+        $this->assertSame([], $installer->publish($plan)->projects[0]->publishedPaths);
+
+        $on = new FrameworkMigrationProject($off->root, InstallerFeatureHilos::class);
+        $this->assertSame([], $installer->plan($on)[0]->publications);
+        $outcome = $installer->execute($on);
+        $this->assertFalse($outcome->hasFailures());
+        $this->assertSame([], $outcome->projects[0]->publishedPaths);
+        $this->assertSame([
+            '001_adopt_framework_catalog.sql', '001_adopt_framework_catalog_down.sql',
+            '002_framework_install_shared.sql', '002_framework_install_shared_down.sql',
+        ], $this->sqlFiles($on));
+    }
+
     public function testExplicitPlanPathsAreRebuiltAndAllArtifactTargetsArePreflighted(): void
     {
         $one = $this->project('one', initialize: false);
