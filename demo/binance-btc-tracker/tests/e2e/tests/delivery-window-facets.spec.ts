@@ -6,6 +6,7 @@ import {
   dropSocket,
   ROWS,
   shownByTestId,
+  type SocketFrame,
   watchDeliveryFrames,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant.js'
@@ -160,17 +161,62 @@ test('logs initial answers keep own state, response and declared facets in one p
     expect(object(window).limit).toBe(descriptor.limit)
     await expect(page.getByTestId('conn-state')).toHaveText('connected')
     await expectPageReady(page)
-    // Byte totals and ordering can change while disconnected. The visible rows
-    // must come from the restored snapshot, in its actual server order.
-    await expect
-      .poll(() =>
-        page
-          .locator(ROWS)
-          .evaluateAll((rows) =>
-            rows.map((row) => row.getAttribute('data-id')),
-          ),
+    // Byte totals and ordering can change while disconnected, and keep changing
+    // after the reconnect: the table is live, and viewing it grows the owner's
+    // own log. The visible rows must therefore match the latest window the
+    // server sent on the restored socket, in its actual server order — the
+    // restored snapshot itself until a later table_window replaces it.
+    const logKeysWindow = (
+      frame: SocketFrame,
+    ): Record<string, unknown> | undefined => {
+      const wire = object(frame.wire)
+      const data = object(wire.data)
+      if (data.page !== 'hilos_logs_keys') {
+        return undefined
+      }
+      if (wire.type === 'page_response') {
+        const section = object(object(data.payload).windows).hilosLogKeys
+        return section === undefined ? undefined : object(section)
+      }
+      return wire.type === 'table_window' && data.tableKey === 'hilosLogKeys'
+        ? data
+        : undefined
+    }
+    const latestLogKeysWindow = () => {
+      const frames = log.packets
+        .filter((packet) => packet.socket === socket + 1)
+        .flatMap((packet) => packet.frames)
+      return frames.slice(frames.indexOf(reply) + 1).reduce(
+        (latest, frame) => {
+          const found = logKeysWindow(frame)
+          return found === undefined ? latest : { frame, window: found }
+        },
+        { frame: reply, window: object(window) },
       )
-      .toEqual(restoredKeys)
+    }
+    await expect
+      .poll(async () => {
+        const before = latestLogKeysWindow()
+        const shown = await page
+          .locator(ROWS)
+          .evaluateAll((rows) => rows.map((row) => row.getAttribute('data-id')))
+        const latest = latestLogKeysWindow()
+        if (latest.frame !== before.frame) {
+          return { shown, changed: 'a newer window arrived during the read' }
+        }
+        const latestRows = latest.window.rows
+        if (!Array.isArray(latestRows)) {
+          return { shown, window: latest.window }
+        }
+        const expected = latestRows.map(
+          (row) => `hilos-table-row-${String(object(row).rowKey)}`,
+        )
+        return shown.length === expected.length &&
+          shown.every((key, index) => key === expected[index])
+          ? null
+          : { shown, expected }
+      })
+      .toBeNull()
     expect(restoredKeys.some((key) => rowKeysBefore.includes(key))).toBe(true)
     await shownByTestId(page, 'hilos-table-filter-class').click()
     await expect(shownByTestId(page, 'hilos-table-facet-class-any')).toHaveText(

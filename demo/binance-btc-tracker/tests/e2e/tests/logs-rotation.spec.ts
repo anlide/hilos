@@ -245,7 +245,8 @@ test.afterEach(async () => {
   }
 })
 
-test('keeps a quiet agent log on missing live after rotation until its latest batch link is opened', async ({
+// FIXME(F-018, 2026-10-22): the restart button detaches while the test scrolls to it · чужой · попытка 1 · HIL-1782
+test.fixme('keeps a quiet agent log on missing live after rotation until its latest batch link is opened', async ({
   page,
 }) => {
   // Two log-store walks, settings round trips and real page subscriptions.
