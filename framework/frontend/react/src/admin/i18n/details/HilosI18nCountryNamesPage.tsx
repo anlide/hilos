@@ -7,6 +7,8 @@ import {
   HILOS_I18N_COUNTRY_NAMES,
   HILOS_I18N_COUNTRY_NAME_COPY,
   HILOS_I18N_COUNTRY_NAME_DELETE_COPY,
+  HILOS_I18N_COUNTRY_MARKS,
+  hilosI18nCountryDisplayName,
   type HilosI18nCountryContext,
   type HilosI18nCountryNameDeleteTarget,
   type HilosI18nNameRow,
@@ -14,8 +16,8 @@ import {
 import { HilosAdminPage } from '../../../HilosAdminPage.js'
 import { LoadingButton } from '../../../LoadingButton.js'
 import { HilosRouterContext } from '../../../hilosRouterContext.js'
+import { usePageInstanceName } from '../../../usePageInstanceName.js'
 import { useSignal } from '../../../useSignal.js'
-import { HilosI18nCountryHeader } from './HilosI18nCountryHeader.js'
 import { HilosI18nCountryNameDelete } from './HilosI18nCountryNameDelete.js'
 import { HilosI18nCountryNameWindow } from './HilosI18nCountryNameWindow.js'
 import { HilosI18nNamesTable } from './HilosI18nNamesTable.js'
@@ -40,13 +42,11 @@ export function HilosI18nCountryNamesPage({
     setBinding({ context, revision: binding.revision + 1 })
   const code = (route.params.countryCode as string | undefined) ?? ''
   return (
-    <HilosAdminPage page={HilosPages.I18N_COUNTRY_NAMES}>
-      <CountryNames
-        key={`${binding.revision}:${code}`}
-        context={context}
-        code={code}
-      />
-    </HilosAdminPage>
+    <CountryNames
+      key={`${binding.revision}:${code}`}
+      context={context}
+      code={code}
+    />
   )
 }
 
@@ -65,6 +65,25 @@ function CountryNames({
     [router],
   )
   const liveCard = useMemo(() => createHilosI18nCountryCard(context), [context])
+  // The shell is drawn here, under the hook's own re-render, so the head shows
+  // the bound name in its first paint. The name belongs to the country.
+  const name = useMemo(
+    () =>
+      computedSignal(() => {
+        const page = context.scopes.page()?.key
+        if (
+          page !== HilosPages.I18N_COUNTRY &&
+          page !== HilosPages.I18N_COUNTRY_NAMES
+        )
+          return undefined
+        const current = liveCard.get()
+        return current === null
+          ? undefined
+          : hilosI18nCountryDisplayName(current)
+      }),
+    [context, liveCard],
+  )
+  usePageInstanceName(context.scopes, HilosPages.I18N_COUNTRY, name)
   const card = useSignal(liveCard),
     loading = useSignal(router.pageLoading)
   const names = useMemo(
@@ -178,13 +197,63 @@ function CountryNames({
     )
   }
   return (
-    <>
+    <HilosAdminPage
+      page={HilosPages.I18N_COUNTRY_NAMES}
+      headKind="entity"
+      tabsLabel="Country pages"
+      headVisual={
+        card ? (
+          <span
+            className="hilos-avatar-md rounded-3 bg-secondary-subtle text-body-emphasis d-inline-flex align-items-center justify-content-center flex-shrink-0 fw-semibold text-uppercase"
+            aria-hidden="true"
+            data-id="country-head-tile"
+          >
+            {card.code}
+          </span>
+        ) : undefined
+      }
+      headMeta={
+        card ? (
+          <span
+            className="font-monospace small text-body-secondary text-uppercase"
+            data-id="country-head-code"
+          >
+            {card.code}
+          </span>
+        ) : undefined
+      }
+      headBadges={
+        card?.summary.isOwn ? (
+          <span
+            className={`badge ${HILOS_I18N_COUNTRY_MARKS.own.tone}`}
+            title="This country is absent from the catalog and source."
+            data-id="country-head-own"
+          >
+            <i
+              className={`bi ${HILOS_I18N_COUNTRY_MARKS.own.icon}`}
+              aria-hidden="true"
+            />
+            <span className="visually-hidden">
+              {HILOS_I18N_COUNTRY_MARKS.own.label}. This country is absent from
+              the catalog and source.
+            </span>
+          </span>
+        ) : undefined
+      }
+      headDescription={
+        card ? (
+          <p
+            className="text-body-secondary mb-0"
+            data-id="country-head-description"
+          >
+            Currency {card.currencySymbol} {card.currencyCode} · Default locale{' '}
+            {card.summary.defaultLocaleCode ?? 'not chosen'}
+          </p>
+        ) : undefined
+      }
+    >
       {card ? (
         <>
-          <HilosI18nCountryHeader
-            card={card}
-            activePage={HilosPages.I18N_COUNTRY_NAMES}
-          />
           <section className="mb-4" data-id="country-names">
             <h2 className="h5 d-flex flex-wrap align-items-center gap-2">
               Names in different languages
@@ -286,6 +355,6 @@ function CountryNames({
         source={source}
       />
       <HilosI18nCountryNameWindow window={nameWindow} />
-    </>
+    </HilosAdminPage>
   )
 }

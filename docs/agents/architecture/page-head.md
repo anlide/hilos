@@ -19,7 +19,9 @@ The page module supplies the block's content. The shared component presents it
 without a registry of concrete pages or their content, and without choosing the
 page in place of the navigator. The head belongs to the page's answer, not to
 the application shell. Vue's shared head is `HilosPageHead`, mounted by
-`HilosAdminPage`; both country tabs use it.
+`HilosAdminPage`; both country tabs use it. React's is a `HilosPageHead` of
+its own, mounted by its `HilosAdminPage`, and both React country tabs use it
+too.
 
 The **owner** is the section or entity whose pages share that head and row.
 Each tab is a separate page with its own address. A non-entity child of a tab
@@ -32,7 +34,7 @@ the head. Preserve the heading's connection to a table's accessible name; do
 not add a second heading for the entity block. See
 [accessibility.md](../frontend/accessibility.md). The shared Vue head preserves
 this relationship: its `h1` carries the heading id `HilosAdminPage` provides,
-under a section head and an entity block alike.
+under a section head and an entity block alike. React's head does the same.
 
 Rule 7 of the approved design puts entity management — edit, copy, delete — in
 the body of **Overview**, with properties, summaries and aggregates. Each list
@@ -59,7 +61,8 @@ are listed under Implementation Status And Binding Points.
 Do not draw a chain of one link. The last link is text, never a link to itself.
 The application resolves addresses from page keys and route params. An
 intermediate link without an address remains text: do not substitute another
-address or discard the link. The shared Vue head draws the breadcrumb this way.
+address or discard the link. The shared Vue head draws the breadcrumb this way,
+and so does React's.
 
 ## Tabs
 
@@ -77,14 +80,15 @@ each page and calls `AbstractPage::isTabApplicable()` with the owner's route
 params; an absent or inapplicable page removes its branch. Filtering to pages
 built in the active view layer remains part of each frontend adoption: Vue
 drops every tab `HilosRouter.resolvePath` gives no address for, through
-`hilosTabLinks`; React (not in the code yet — HIL-1604), and
+`hilosTabLinks`; React drops the same tabs through the same function, and
 Angular (not in the code yet — HIL-1605).
 
 Draw at most one row. With only one eligible tab, hide the row but keep the
 head. Do not put counts, badges, alarm dots or disabled tabs in it; counts and
 alerts belong on Overview. A switch inside a page without its own address is
 not this navigation row. Vue's shared row counts its tabs after that client-side
-filter: fewer than two left hide the row and keep the head.
+filter: fewer than two left hide the row and keep the head. React's row does
+the same.
 
 ## One Reply And Live Name
 
@@ -138,16 +142,34 @@ while the current page is Country or Country Names; no card yields `undefined`,
 and unmount disposes that page's binding. This name binding and the Vue title
 path are implemented; no extra mount action or name-catalog request is made.
 
+React places the same binding through the hook
+`usePageInstanceName(scopes, page, name)`, exported from `@hilos/react/base`
+and the root. The hook registers `bindPageInstanceName` in a layout effect and
+returns its disposer as the effect's cleanup, so unmount, or a new `scopes`,
+`page` or `name`, releases the registration. It never registers in render: an
+interrupted or replayed render, as under StrictMode, would leave a producer
+with no committed view to dispose it, and a server render would register for
+a view nobody mounts. After registering, the hook re-renders its own subtree
+before paint, so the head below it shows the name in its first paint instead
+of waiting for its own subscription. The source must be one stable signal for
+the view's lifetime; a source made anew in render rebinds on every pass and
+never settles. Both React country pages bind under `HilosPages.I18N_COUNTRY`
+from the keyed component that holds the card, with the same source as Vue's,
+and draw `HilosAdminPage` inside it. The React browser title takes the old
+path, with no new writer: `bootHilos` computes `router.currentTitle` from the
+identity, and `HilosLayout` mirrors it into `document.title`.
+
 An admin-view-mode viewer gets the same row as an administrator. The name is
 the one already permitted in that viewer's entity block; neither breadcrumb
 nor browser title may recover a hidden real person's name. Actions remain
 governed by the page's [view-mode rules](admin-view-mode.md). Vue's shared head
 uses that permitted block: the name is the owner label the page binds from its
 own data, the rest is the page's slot content, and `HilosAdminPage` provides the
-admin view mode under the shared head as under the legacy one.
+admin view mode under the shared head as under the legacy one. React's head
+takes the same block from its page's props, and its `HilosAdminPage` provides
+the view mode and the heading id around either head too.
 
-React must provide the same head, name binding and reactive browser title
-(not in the code yet — HIL-1604).
+React provides the same head, name binding and reactive browser title.
 
 Angular must provide the same head, name binding and reactive browser title
 (not in the code yet — HIL-1605).
@@ -163,26 +185,28 @@ name must not appear in separate flashes. The Vue head is drawn inside the page
 view, so the existing
 [page-loading behavior](../frontend/core-and-connection.md) covers it: the
 departing page, its current tab included, stays an inert copy, and the delayed
-page skeleton has no breadcrumb or row. A mounted head whose answer has not
-arrived draws only an `aria-hidden` skeleton — a tile, round for a section and
-square for an entity, and two bars — with no breadcrumb, row, name, slot
-content or button.
+page skeleton has no breadcrumb or row. React's head is drawn inside the same
+page view, `HilosView`, and gets the same behavior. A mounted head whose answer
+has not arrived draws only an `aria-hidden` skeleton — a tile, round for a
+section and square for an entity, and two bars — with no breadcrumb, row, name,
+slot content or button.
 
 Use link navigation semantics, not an in-page tab widget. The last column names
-how the shared Vue presentation meets each rule:
+how the shared Vue and React presentations meet each rule:
 
 | Surface | Required markup and behavior | Implementation |
 |---|---|---|
-| Breadcrumb | `nav` with a translatable accessible name, `ol`, and `aria-current="page"` only on the last, non-link entry; decorative separators are not read aloud | Vue: `HilosBreadcrumb` in `HilosPageHead`, named by `breadcrumbLabel`; the last entry is text with `aria-current="page"`. Its separators are Bootstrap's CSS `::before` content, not kept from being read aloud (not in the code yet — HIL-1602) |
-| Tab row | `nav` with a translatable accessible name for the owner, `ul` / `li` / `a`, and `aria-current="page"` only on the current tab; no `role="tablist"` or arrow-key tab-widget model | Vue: `HilosPageHead`'s `nav` named by `tabsLabel`, `ul` / `li` / `HilosLink`; `active` and `aria-current="page"` are set by page key, never by the link's own path match |
-| At 375 px | Breadcrumb wraps onto lines without truncation or horizontal scrolling; the row scrolls sideways without wrapping, centers the current tab within its scroll limits, and clips neighboring tabs at the edges; no fading or More menu | Vue: Bootstrap's wrapping breadcrumb with `text-break`; the row's `ul` is `flex-nowrap overflow-x-auto` over non-shrinking `text-nowrap` tabs, centered after mount, on a new current page or row, and on a resize of the row |
+| Breadcrumb | `nav` with a translatable accessible name, `ol`, and `aria-current="page"` only on the last, non-link entry; decorative separators are not read aloud | Vue: `HilosBreadcrumb` in `HilosPageHead`, named by `breadcrumbLabel`; the last entry is text with `aria-current="page"`. Its separators are Bootstrap's CSS `::before` content, not kept from being read aloud (not in the code yet — HIL-1602). React: `HilosBreadcrumb` in `HilosPageHead`, named by `breadcrumbLabel`; the last entry is text with `aria-current="page"`. Each separator is an `aria-hidden` slash span, and the scoped `.hilos-breadcrumb` rule in `hilos-styles.scss` switches Bootstrap's `::before` off, so no separator is read aloud |
+| Tab row | `nav` with a translatable accessible name for the owner, `ul` / `li` / `a`, and `aria-current="page"` only on the current tab; no `role="tablist"` or arrow-key tab-widget model | Vue: `HilosPageHead`'s `nav` named by `tabsLabel`, `ul` / `li` / `HilosLink`; `active` and `aria-current="page"` are set by page key, never by the link's own path match. React: the same `nav` named by `tabsLabel`, `ul` / `li` / `HilosLink`; `active` and an explicit `aria-current` are set by page key, and the explicit value keeps the link's own path match from marking another tab |
+| At 375 px | Breadcrumb wraps onto lines without truncation or horizontal scrolling; the row scrolls sideways without wrapping, centers the current tab within its scroll limits, and clips neighboring tabs at the edges; no fading or More menu | Vue: Bootstrap's wrapping breadcrumb with `text-break`; the row's `ul` is `flex-nowrap overflow-x-auto` over non-shrinking `text-nowrap` tabs, centered after mount, on a new current page or row, and on a resize of the row. React: the same classes and the same wrapping breadcrumb; the centering runs in a layout effect after mount and when the current page or the row's page keys change, and a `ResizeObserver` on the row covers a resize |
 
 The admin dashboard keeps its section cards, without breadcrumb or tab row.
 A guest on an admin address gets no admin head or identity data. Error surfaces
 have no page head, breadcrumb or row. The shared Vue head preserves these
 boundaries: only `HilosAdminPage` draws it, for an answer that names
 `pageHeadOwner`; `HilosDashboardPage` does not use that shell; and the routed
-outlet's error page or auth surface replaces the whole page view.
+outlet's error page or auth surface replaces the whole page view. React's head
+keeps the same three.
 
 ## Deleted While Open
 
@@ -259,16 +283,59 @@ gate or enable Internationalization as a whole.
      <!-- the tab's body: Main and State on Overview, the names table on Names -->
    </HilosAdminPage>
    ```
+
+   In React, `HilosAdminPage` takes the same inputs as props: `headKind`,
+   `tabsLabel`, and the block's content as `headVisual`, `headMeta`,
+   `headBadges` and `headDescription`. Each is a `ReactNode`: `undefined` keeps
+   the head's default for it, `null` turns it off. The React country is the
+   same on both tabs (classes omitted):
+
+   ```tsx
+   <HilosAdminPage
+     page={HilosPages.I18N_COUNTRY}
+     headKind="entity"
+     tabsLabel="Country pages"
+     headVisual={
+       card ? (
+         <span aria-hidden="true" data-id="country-head-tile">
+           {card.code}
+         </span>
+       ) : undefined
+     }
+     headMeta={
+       card ? <span data-id="country-head-code">{card.code}</span> : undefined
+     }
+     headBadges={
+       card?.summary.isOwn ? (
+         <span className="badge" data-id="country-head-own">…</span>
+       ) : undefined
+     }
+     headDescription={
+       card ? (
+         <p data-id="country-head-description">
+           Currency … · Default locale …
+         </p>
+       ) : undefined
+     }
+   >
+     {/* the tab's body: Main and State on Overview, the names table on Names */}
+   </HilosAdminPage>
+   ```
 4. Bind each tab's live instance name to the owner's entry and browser title
    through `bindPageInstanceName(scopes, ownerPageKey, name)`. The Vue country
    pages use this binding from setup and dispose it on unmount; the shared Vue
-   head draws that name as its `h1`.
+   head draws that name as its `h1`. React calls
+   `usePageInstanceName(scopes, ownerPageKey, name)` instead, from the
+   component that also draws `HilosAdminPage`: the hook registers in a layout
+   effect, not in render, so an interrupted or replayed render leaves no
+   producer behind, and it releases the registration when the view unmounts.
 5. Remove this owner's manual head, manual row and child-navigation cards as
    the shared head takes over. Preserve dashboard section cards and unchanged
    owners. The first Vue replacement is the country: its manual header and row
    are removed, and `HilosAdminPage` draws no child cards under the shared head.
-6. Use the equivalent shared head and name path for React
-   (not in the code yet — HIL-1604).
+   The React country's manual header is removed the same way.
+6. Use the same shared head and name path in React: the `head*` props of step 3
+   and the hook of step 4.
 7. Use the equivalent shared head and name path for Angular
    (not in the code yet — HIL-1605).
 8. Move this owner's navigation checks from child cards to tabs, using the
@@ -290,10 +357,10 @@ These are navigation scenarios, not declarations of page keys, routes or
 activation. The backend owner, breadcrumb and tab calculations are implemented;
 Country is the only owner currently opted in. Its server reply carries the
 catalog head skeleton; `<name>` is data from the page, not a literal caption.
-The core binding, the title path and the shared Vue Country head are
-implemented, with React and Angular following in HIL-1604 and HIL-1605. Bold
-marks the current tab. Roles, Users and the other examples wait for their own
-redraws; naming them here does not enable them.
+The core binding, the title path and the shared Country head in Vue and React
+are implemented, with Angular following in HIL-1605. Bold marks the current
+tab. Roles, Users and the other examples wait for their own redraws; naming
+them here does not enable them.
 
 | Open page | Owner | Breadcrumb | Row |
 |---|---|---|---|
@@ -320,9 +387,9 @@ sequence without studying these files. They do not specify a future API.
 | Backend catalog | `PageCatalogProviderInterface::pages()`, `PageCatalogConstants`, `HilosPageCatalog::CATALOG`, `TopologyValidator::validatePageCatalogEntry()` and `validatePageCatalogHead()` | Optional `breadcrumb`, `entity` and `pageHead` fields; validation checks their types, owner placement and non-empty captions for tabs of an adopted owner. Country is the only current owner opted in. |
 | Backend owner and row calculation | `PageCatalogResolver::identity()`, `rowOwner()`, `rowOwnerOf()`, `breadcrumb()`, `head()`, `children()` and private `pageTabs()` | Resolves the nearest entity or top-level admin section, uses legacy page-label breadcrumbs for unadopted owners, and builds the adopted breadcrumb and depth-first row. The row filters pages the project serves and pages applicable to the owner's route params. |
 | Backend assembly | `AbstractPage::onSubscribe()`, `withPageIdentity()`, `servedPageCards()` and `PageHead::toArray()` | Adds `pageHeadOwner`, `pageBreadcrumb`, `pageTabs` and empty `pageChildren` to the same `page_response`. The readonly `PageHead` is built for the subscription; `pageLabel` and `pageLead` remain the subscribing page's identity, with the existing admin/viewer payload precedence. |
-| Name and Vue title | `framework/frontend/core/src/admin/identity/hilosPageInstanceName.ts`, `framework/frontend/core/src/admin/identity/hilosPageIdentity.ts`, `framework/frontend/core/src/routing/pageTitle.ts`, `framework/frontend/core/src/bootstrap/bootHilos.ts` | `bindPageInstanceName()` keeps a live source per scope manager and owner page key; `pageIdentity()` applies it to matching crumbs and the optional `pageHeadOwner`; `bootHilos` reads identity inside the reactive title closure. `resolvePageTitle()` chooses project title, framework footer label, owner label, then catalog label. The country Vue pages bind their page-scoped card name during setup, and the shared Vue head draws it. |
+| Name and title | `framework/frontend/core/src/admin/identity/hilosPageInstanceName.ts`, `framework/frontend/core/src/admin/identity/hilosPageIdentity.ts`, `framework/frontend/core/src/routing/pageTitle.ts`, `framework/frontend/core/src/bootstrap/bootHilos.ts`; `framework/frontend/react/src/usePageInstanceName.ts`, `framework/frontend/react/src/HilosLayout.tsx` | `bindPageInstanceName()` keeps a live source per scope manager and owner page key; `pageIdentity()` applies it to matching crumbs and the optional `pageHeadOwner`; `bootHilos` reads identity inside the reactive title closure. `resolvePageTitle()` chooses project title, framework footer label, owner label, then catalog label. The country Vue pages bind their page-scoped card name during setup, and the shared Vue head draws it. The country React pages bind the same name through `usePageInstanceName()` in a layout effect, the React head draws it, and `HilosLayout` mirrors `router.currentTitle` into `document.title`; React has no title writer of its own. |
 | Vue head and country | `framework/frontend/vue/src/HilosPageHead.vue`, `HilosBreadcrumb.vue`, `HilosAdminPage.vue`; `framework/frontend/core/src/routing/hilosAdmin.ts`; `framework/frontend/vue/src/admin/i18n/details/HilosI18nCountryPage.vue`, `HilosI18nCountryNamesPage.vue` | In the code: the shared head, block and row; `HilosAdminPage` draws it for an answer naming `pageHeadOwner`; both country tabs stand on it with the Overview · Names row |
-| React parity | `framework/frontend/react/src/HilosAdminPage.tsx` and its country page modules | Equivalent head, states, accessibility, live name and title (not in the code yet — HIL-1604) |
+| React head and country | `framework/frontend/react/src/HilosPageHead.tsx`, `HilosBreadcrumb.tsx`, `HilosAdminPage.tsx`, `usePageInstanceName.ts`; `framework/frontend/core/src/routing/hilosAdmin.ts`; `framework/frontend/react/src/admin/i18n/details/HilosI18nCountryPage.tsx`, `HilosI18nCountryNamesPage.tsx` | In the code: the shared head, block and row; `HilosAdminPage` draws it for an answer naming `pageHeadOwner`; the live-name hook; both country tabs stand on it with the Overview · Names row |
 | Angular parity | `framework/frontend/angular/src/HilosAdminPage.ts` and its country page modules | Equivalent head, states, accessibility, live name and title (not in the code yet — HIL-1605) |
 | Live 404, server | `AbstractPage::resolvePageResource`, `PageResource::db`, `BrowserContext::refuseDeletedPageResources`, `PageSignalRouter::refuseDeletedResource` | In the code: other open windows get `not_found` and `transitionMessage`; the initiator keeps its acknowledgement and goes to the country list |
 | Live 404, clients | The page error surfaces in all three view layers | Show that line, remove the head and preserve an open modal draft (not in the code yet — HIL-1603) |
@@ -352,12 +419,12 @@ describe the subscribing page, including Analytics' existing use of
 `pageLabel`. The page payload still wins over catalog identity for an
 administrator (`$payload->data + $shell`); the shell wins for an admin-view-mode
 viewer (`$shell + $payload->data`) after the page's own data is hidden. Both
-country tabs draw the shared Vue head described below. The country's display
-name comes from `hilosI18nCountryDisplayName(card)`: `null` and `''` produce
-`Unnamed country`, and any other name is returned unchanged, without trimming
-or translation. The country code stays separate from the name, in the block's
-tile and the mark beside the title. Country addresses use the unique,
-unchanging `countryCode` in `/hilos/i18n/countries/{countryCode}` and
+country tabs draw the shared head described below, in Vue and in React. The
+country's display name comes from `hilosI18nCountryDisplayName(card)`: `null`
+and `''` produce `Unnamed country`, and any other name is returned unchanged,
+without trimming or translation. The country code stays separate from the name,
+in the block's tile and the mark beside the title. Country addresses use the
+unique, unchanging `countryCode` in `/hilos/i18n/countries/{countryCode}` and
 `/hilos/i18n/countries/{countryCode}/names`; renaming a country does not change
 its URL, and equal display names do not share an address. Do not turn the legacy
 chain into the owner's chain on pages whose owner has not opted in.
@@ -391,6 +458,20 @@ is `action`, a `HilosPageHeadAction` `{ page, label, params? }`: it opens
 target context, and is not drawn without an address. There is no slot for free
 buttons.
 
+React's `HilosPageHead`, exported from `@hilos/react/base` and the root, draws
+the same head from the same identity and takes the same props — `identity`,
+`page`, `params`, `resolvePath`, `headingId`, `kind`, `breadcrumbLabel`,
+`tabsLabel` and `action` — with the same defaults; `identity` is optional, as
+the answer may not have arrived. The block's content comes as `ReactNode`
+props `visual`, `meta`, `badges` and `description` in place of slots: omitted
+(`undefined`) keeps a section's icon and lead, and `null` turns that default
+off; an entity has no default to keep. Without a valid `pageHeadOwner` the
+head draws only its `aria-hidden` skeleton. The row is centered in
+`useLayoutEffect`, with a `ResizeObserver` on the row's list that is attached
+when the row is drawn and released when it goes or the head unmounts. Its
+`HilosBreadcrumb` takes an optional `label` and `className`, shows only the
+last crumb as current, and draws each separator as an `aria-hidden` slash span.
+
 `HilosAdminPage` draws `HilosPageHead` when the answer names `pageHeadOwner`,
 with no heading, lead or child cards of its own; an answer without an owner
 keeps the legacy head, cards and stub. It provides its heading id and the admin
@@ -402,6 +483,16 @@ head's own icon and lead. `headKind` never opts a page in;
 before the answer it only puts the page on the head's skeleton instead of the
 legacy one.
 
+React's `HilosAdminPage` does the same with the props `headKind`,
+`headAction`, `breadcrumbLabel` and `tabsLabel`, and the `ReactNode` props
+`headVisual`, `headMeta`, `headBadges` and `headDescription`, which reach the
+head as `visual`, `meta`, `badges` and `description`: omitted keeps the
+head's default, `null` turns it off. With a valid `pageHeadOwner` it draws only
+the shared head, with no heading, lead or child cards of its own. Its heading
+id and the admin view mode are provided by context around either head, and
+`headKind` before the answer picks the head's skeleton instead of the legacy
+one, as in Vue.
+
 The head's `data-id`s are `hilos-page-head`, `hilos-page-head-block`,
 `hilos-page-head-title`, `hilos-page-head-action`, `hilos-page-head-skeleton`,
 `hilos-page-tabs` and `hilos-page-tab-<page>`, beside the breadcrumb's
@@ -409,7 +500,10 @@ The head's `data-id`s are `hilos-page-head`, `hilos-page-head-block`,
 `country-head-tile`, `country-head-code`, `country-head-own` and
 `country-head-description`; the binance e2e specs `i18n-country-card`,
 `i18n-country-names`, `i18n-country-name-write` and `i18n-country-name-delete`
-read them.
+read them. The React head and country draw the same `data-id`s: the React demo
+`tasks` reads them in its country specs, and `ecommerce-shop` checks the
+country head through `expectCountryPageHead` in
+`framework/frontend/e2e/i18n.ts`.
 
 The implementing leaf clears only the markers for behavior it lands, in the
 same commit, following [rule-authoring.md](../rule-authoring.md#a-rule-written-ahead-of-its-code).

@@ -10,12 +10,12 @@ test('opens a reflowed country card directly with read-only details and staged t
   await signUpAdmin(page)
   await gotoPage(page, '/hilos/i18n/countries/us', PAGE_READY)
 
-  await expect(page.getByTestId('country-card-title')).toHaveText(
+  await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
     'United States',
   )
-  await expect(page.getByTestId('country-card-code-badge')).toHaveText('us')
-  await expect(page.getByTestId('country-card-own')).toHaveCount(0)
-  await expect(page.getByTestId('country-card-line')).toHaveText(
+  await expect(page.getByTestId('country-head-code')).toHaveText('us')
+  await expect(page.getByTestId('country-head-own')).toHaveCount(0)
+  await expect(page.getByTestId('country-head-description')).toHaveText(
     'Currency $ USD · Default locale not chosen',
   )
   await expect(page.getByTestId('country-card-code')).toHaveText('us')
@@ -29,18 +29,18 @@ test('opens a reflowed country card directly with read-only details and staged t
   )
   await expect(page.getByTestId('country-card-frozen')).toHaveCount(0)
 
-  const tabs = page.getByTestId('country-card-tabs')
-  await expect(tabs).toContainText('Main')
+  const tabs = page.getByTestId('hilos-page-tabs')
+  await expect(tabs).toContainText('Overview')
   await expect(tabs).toContainText('Names')
   await expect(tabs.locator('a')).toHaveCount(2)
   await expect(
-    page.getByTestId('country-card-tab-hilos_i18n_country'),
+    page.getByTestId('hilos-page-tab-hilos_i18n_country'),
   ).toHaveAttribute('href', '/hilos/i18n/countries/us')
   await expect(
-    page.getByTestId('country-card-tab-hilos_i18n_country'),
+    page.getByTestId('hilos-page-tab-hilos_i18n_country'),
   ).toHaveAttribute('aria-current', 'page')
   await expect(
-    page.getByTestId('country-card-tab-hilos_i18n_country_names'),
+    page.getByTestId('hilos-page-tab-hilos_i18n_country_names'),
   ).toHaveAttribute('href', '/hilos/i18n/countries/us/names')
   await expect(
     page.getByTestId('country-card-main').locator('button, input'),

@@ -9,6 +9,8 @@ import {
   el,
   click,
   change,
+  lastCrumb,
+  retiredCountryHeaderLeft,
   settle,
 } from './hilosI18nHarness.js'
 import { nameRow } from './hilosI18nDetailsHarness.js'
@@ -41,23 +43,54 @@ function setup(viewer = false) {
 }
 
 describe('React country names page', () => {
-  it('waits for the card, draws live counts and tabs, then distinguishes its deletion', () => {
+  it('waits for the card, draws the country block and the Overview · Names row, then distinguishes its deletion', () => {
     const h = setup()
-    expect(el('country-card-header')).toBeNull()
+    expect(el('hilos-page-head-skeleton')).not.toBeNull()
+    expect(el('country-head-tile')).toBeNull()
+    expect(el('hilos-page-tabs')).toBeNull()
     expect(el('hilos-viewport-table')).toBeNull()
     expect(
       document.querySelector('[aria-label="Loading country"]'),
     ).not.toBeNull()
     act(() => h.card())
-    expect(document.querySelectorAll('h1')).toHaveLength(1)
+    const headings = document.querySelectorAll('h1')
+    expect(headings).toHaveLength(1)
+    expect(headings[0]!.getAttribute('data-id')).toBe('hilos-page-head-title')
+    expect(headings[0]!.textContent).toBe('Guernsey')
+    // The chain ends at the country, not at Names.
+    expect(lastCrumb()).toBe('Guernsey')
+    const block = el('hilos-page-head-block')
     expect(
-      el('country-card-tab-hilos_i18n_country_names').getAttribute(
+      block.querySelector('[data-id="country-head-tile"]')!.textContent,
+    ).toBe('gg')
+    expect(
+      block.querySelector('[data-id="country-head-code"]')!.textContent,
+    ).toBe('gg')
+    expect(block.querySelector('[data-id="country-head-own"]')).not.toBeNull()
+    expect(
+      block.querySelector('[data-id="country-head-description"]')!.textContent,
+    ).toBe('Currency £ GBP · Default locale not chosen')
+    expect(block.textContent).not.toMatch(/[0-9]/)
+    expect(retiredCountryHeaderLeft()).toBe(false)
+    expect(el('hilos-admin-children')).toBeNull()
+    expect(
+      document.querySelectorAll('[data-id="hilos-page-tabs"]'),
+    ).toHaveLength(1)
+    expect(el('hilos-page-tabs').getAttribute('aria-label')).toBe(
+      'Country pages',
+    )
+    expect(
+      el('hilos-page-tab-hilos_i18n_country_names').getAttribute(
         'aria-current',
       ),
     ).toBe('page')
-    expect(el('country-card-tab-hilos_i18n_country').getAttribute('href')).toBe(
+    expect(el('hilos-page-tab-hilos_i18n_country').textContent).toBe('Overview')
+    expect(el('hilos-page-tab-hilos_i18n_country').getAttribute('href')).toBe(
       '/hilos/i18n/countries/gg',
     )
+    expect(
+      el('hilos-page-tab-hilos_i18n_country').getAttribute('aria-current'),
+    ).toBeNull()
     act(() =>
       h.card({
         ...countryCard,
@@ -71,14 +104,70 @@ describe('React country names page', () => {
         },
       }),
     )
-    expect(el('country-card-title').textContent).toBe('Live country')
-    expect(el('country-card-line').textContent).toContain('en-GG')
+    expect(el('hilos-page-head-title').textContent).toBe('Live country')
+    expect(el('country-head-description').textContent).toBe(
+      'Currency £ GBP · Default locale en-GG',
+    )
     expect(document.body.textContent).not.toMatch(/Preview|Synchroniz|Flags/)
     act(() => h.card(null))
     expect(el('country-names-unavailable')).not.toBeNull()
+    expect(el('hilos-page-head-title').textContent).toBe('Country')
+    expect(el('country-head-tile')).toBeNull()
+    expect(el('country-head-description')).toBeNull()
     expect(el('hilos-viewport-table')).toBeNull()
     expect(h.calls).toEqual([])
   })
+  it.each([
+    ['Guernsey', 'Guernsey', false],
+    [null, 'Unnamed country', true],
+    ['', 'Unnamed country', false],
+  ] as const)(
+    'binds %j from the Names tab as the country name %j, follows the next country and releases it on unmount (viewer %s)',
+    (name, expected, viewer) => {
+      const h = setup(viewer)
+      const identity = h.navigation.pageIdentity
+      act(() =>
+        h.card({ ...countryCard, summary: { ...countryCard.summary, name } }),
+      )
+      expect(lastCrumb()).toBe(expected)
+      expect(document.querySelectorAll('h1')).toHaveLength(1)
+      expect(el('hilos-page-head-title').textContent).toBe(expected)
+      expect(identity.get()?.pageHeadOwner?.label).toBe(expected)
+      expect(identity.get()?.label).toBe('Country names')
+      expect(el('country-head-code').textContent).toBe('gg')
+      expect(el('hilos-page-tabs')).not.toBeNull()
+      act(() =>
+        h.card({
+          ...countryCard,
+          summary: { ...countryCard.summary, name: 'Renamed' },
+        }),
+      )
+      expect(lastCrumb()).toBe('Renamed')
+      expect(el('hilos-page-head-title').textContent).toBe('Renamed')
+      act(() => {
+        h.route.set({
+          page: HilosPages.I18N_COUNTRY_NAMES,
+          params: { countryCode: 'fr' },
+          admin: true,
+        })
+        h.card({
+          ...countryCard,
+          countryId: 103,
+          code: 'fr',
+          summary: { ...countryCard.summary, name: 'France' },
+        })
+      })
+      expect(el('hilos-page-head-title').textContent).toBe('France')
+      expect(identity.get()?.pageHeadOwner?.label).toBe('France')
+      expect(el('country-head-code').textContent).toBe('fr')
+      expect(el('hilos-page-tab-hilos_i18n_country').getAttribute('href')).toBe(
+        '/hilos/i18n/countries/fr',
+      )
+      h.view.unmount()
+      expect(identity.get()?.pageHeadOwner?.label).toBe('Country')
+      expect(identity.get()?.breadcrumb.at(-1)?.label).toBe('Country')
+    },
+  )
   it('renders add/edit/delete by null for bases and corrections in both projections', () => {
     const h = setup()
     act(() => h.card())

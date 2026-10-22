@@ -25,6 +25,7 @@ export { useRtStaleness } from '../useRtStaleness.js'
 export { useReconnectDragging } from '../useReconnectDragging.js'
 export { useFirstFrameHold } from '../useFirstFrameHold.js'
 export { useSignal } from '../useSignal.js'
+export { usePageInstanceName } from '../usePageInstanceName.js'
 export { useEntity } from '../useEntity.js'
 export { useTrackedAction, type TrackedAction } from '../useTrackedAction.js'
 export { HilosRouterContext } from '../hilosRouterContext.js'
@@ -79,6 +80,7 @@ export {
   HilosBreadcrumb,
   type HilosBreadcrumbProps,
 } from '../HilosBreadcrumb.js'
+export { HilosPageHead, type HilosPageHeadProps } from '../HilosPageHead.js'
 export { ConflictHeader, type ConflictHeaderProps } from '../ConflictHeader.js'
 export {
   ConflictActions,

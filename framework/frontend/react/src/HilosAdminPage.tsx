@@ -9,11 +9,19 @@
 // A page's local childParams override only the cards' route parameters, leaving
 // the breadcrumb on the current address.
 //
-// Under the heading the shell always draws the section's sub-navigation cards —
-// one for every child the live params can resolve — and a page's own content
-// (children) is drawn beneath them: the way on stands above what the admin came
-// for, and no page's content can cost its children their cards. A leaf that
-// passes no content gets a stub empty-state instead.
+// A page whose answer names a head owner (pageHeadOwner: its owner opted in to
+// the shared head) gets HilosPageHead in place of all that — the breadcrumb, the
+// owner's block and its one row of tabs, and no heading, lead or cards of the
+// shell's own (docs/agents/architecture/page-head.md). The answer alone decides
+// it: the head props only dress the owner's block, and on a page without an owner
+// they are ignored. Until an answer arrives, a page that names its head kind
+// already stands on that head's skeleton rather than on the legacy one.
+//
+// Under the legacy heading the shell always draws the section's sub-navigation
+// cards — one for every child the live params can resolve — and a page's own
+// content (children) is drawn beneath them: the way on stands above what the
+// admin came for, and no page's content can cost its children their cards. A
+// leaf that passes no content gets a stub empty-state instead.
 //
 // While the identity is still on the wire the heading is a neutral placeholder
 // and neither the cards nor the stub is drawn; a page's own content already is,
@@ -21,9 +29,9 @@
 // printed, and an empty h1 under the same data-id would make "the name did not
 // arrive" look exactly like "the name arrived empty".
 //
-// The heading carries an id the shell provides to what it holds: a table that
-// declares no title of its own takes its accessible name from this heading, which
-// already names it.
+// The heading — the legacy one or the shared head's — carries an id the shell
+// provides to what it holds: a table that declares no title of its own takes its
+// accessible name from this heading, which already names it.
 //
 // The shell also tells what it holds whether a viewer of the admin view mode
 // stands here (hilosAdminAccess is 'view', HIL-1253): the controls of the mode
@@ -36,10 +44,11 @@ import {
   hilosChildLinks,
   hilosCrumbLinks,
 } from '@hilos/core/base'
-import type { HilosAdminChild } from '@hilos/core/base'
+import type { HilosAdminChild, HilosPageHeadAction } from '@hilos/core/base'
 
 import { HilosBreadcrumb } from './HilosBreadcrumb.js'
 import { HilosLink } from './HilosLink.js'
+import { HilosPageHead } from './HilosPageHead.js'
 import { HilosAdminViewModeContext } from './hilosLookOnly.js'
 import { HilosPageHeadingIdContext } from './hilosPageHeadingContext.js'
 import { HilosRouterContext } from './hilosRouterContext.js'
@@ -56,18 +65,53 @@ export interface HilosAdminPageProps {
    * leaf with nothing to show yet, and the shell draws its stub empty state.
    */
   children?: ReactNode
+  /**
+   * The shared head's kind: a section head or an entity block. It does not opt
+   * the owner in; it only lets the skeleton stand before the answer arrives.
+   */
+  headKind?: 'section' | 'entity'
+  /** The one transition the shared head offers as a button. */
+  headAction?: HilosPageHeadAction
+  /** The shared head's breadcrumb navigation's accessible name. */
+  breadcrumbLabel?: string
+  /** The shared head's tab row navigation's accessible name. */
+  tabsLabel?: string
+  /**
+   * The shared head's block picture: an entity's tile or avatar. Omitted keeps
+   * the section's icon; null turns it off.
+   */
+  headVisual?: ReactNode
+  /** A short mark beside the shared head's title, such as the entity's code. */
+  headMeta?: ReactNode
+  /** Status badges beside the shared head's title. */
+  headBadges?: ReactNode
+  /**
+   * The line under the shared head's title. Omitted keeps the section's lead;
+   * null turns it off.
+   */
+  headDescription?: ReactNode
 }
 
 /**
- * The admin section shell: breadcrumb, heading, lead, the cards to the page's
- * children, and the page's own content beneath them.
+ * The admin section shell: the breadcrumb, heading and lead with the cards to the
+ * page's children — or the shared head when the answer names an owner — and the
+ * page's own content beneath them.
  *
- * @param props The page key, optional local child params and own content.
+ * @param props The page key, optional local child params, own content and the
+ *   shared head's inputs.
  */
 export function HilosAdminPage({
   page,
   childParams,
   children,
+  headKind,
+  headAction,
+  breadcrumbLabel,
+  tabsLabel,
+  headVisual,
+  headMeta,
+  headBadges,
+  headDescription,
 }: HilosAdminPageProps) {
   const router = useContext(HilosRouterContext)
   if (!router) {
@@ -78,22 +122,46 @@ export function HilosAdminPage({
   const adminAccess = useSignal(hilosAdminAccess)
   const route = useSignal(router.currentRoute)
   const identity = useSignal(router.pageIdentity)
+  // The answer's owner opts the page in; before the answer, the kind the page
+  // names picks the shared head's skeleton over the legacy one.
+  const sharedHead =
+    identity === undefined
+      ? headKind !== undefined
+      : identity.pageHeadOwner !== undefined
   const crumbs = hilosCrumbLinks(
     identity?.breadcrumb ?? [],
     route.params,
     router.resolvePath,
   )
-  const adminChildren = hilosChildLinks(
-    identity?.children ?? [],
-    { ...route.params, ...childParams },
-    router.resolvePath,
-  )
+  const adminChildren = sharedHead
+    ? []
+    : hilosChildLinks(
+        identity?.children ?? [],
+        { ...route.params, ...childParams },
+        router.resolvePath,
+      )
 
   return (
     <HilosPageHeadingIdContext.Provider value={headingId}>
       <HilosAdminViewModeContext.Provider value={adminAccess === 'view'}>
         <section data-id="hilos-admin-page" data-page={page}>
-          {identity === undefined ? (
+          {sharedHead ? (
+            <HilosPageHead
+              identity={identity}
+              page={page}
+              params={route.params}
+              resolvePath={router.resolvePath}
+              headingId={headingId}
+              kind={headKind}
+              action={headAction}
+              breadcrumbLabel={breadcrumbLabel}
+              tabsLabel={tabsLabel}
+              visual={headVisual}
+              meta={headMeta}
+              badges={headBadges}
+              description={headDescription}
+            />
+          ) : identity === undefined ? (
             <div
               className="placeholder-glow mb-3"
               data-id="hilos-admin-title-skeleton"

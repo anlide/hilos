@@ -246,6 +246,7 @@ export {
 } from './daemonRestart.js'
 
 export {
+  expectCountryPageHead,
   expectDefaultLanguageHeader,
   expectDeletedCountryCard,
   expectDeletedCountryCardReloaded,

@@ -86,6 +86,51 @@ export const countryCard: HilosI18nCountryCard = {
     deleteReason: null,
   },
 }
+/** The country's catalog lead: the owner's, and the main tab's own. */
+const COUNTRY_OWNER_LEAD =
+  'A single country: currency, default locale, and state.'
+
+/**
+ * The shell either country tab answers with beside its card: the tab's own
+ * catalog label and lead, the country as the owner (the catalog gives it no
+ * icon), the chain through Countries ending at the country (not at Names), the
+ * Overview · Names row and no child cards. Other pages keep the legacy identity.
+ *
+ * @param page The subscribing page key.
+ */
+function countryTabShell(page: string): Record<string, unknown> | null {
+  const tab =
+    page === HilosPages.I18N_COUNTRY
+      ? { label: 'Country', lead: COUNTRY_OWNER_LEAD }
+      : page === HilosPages.I18N_COUNTRY_NAMES
+        ? {
+            label: 'Country names',
+            lead: 'How this country is named in each language.',
+          }
+        : null
+  return tab === null
+    ? null
+    : {
+        pageLabel: tab.label,
+        pageLead: tab.lead,
+        pageHeadOwner: {
+          page: HilosPages.I18N_COUNTRY,
+          label: 'Country',
+          lead: COUNTRY_OWNER_LEAD,
+        },
+        pageBreadcrumb: [
+          { page: HilosPages.DASHBOARD, label: 'Hilos' },
+          { page: HilosPages.I18N, label: 'Internationalization' },
+          { page: HilosPages.I18N_COUNTRIES, label: 'Countries' },
+          { page: HilosPages.I18N_COUNTRY, label: 'Country' },
+        ],
+        pageTabs: [
+          { page: HilosPages.I18N_COUNTRY, label: 'Overview' },
+          { page: HilosPages.I18N_COUNTRY_NAMES, label: 'Names' },
+        ],
+        pageChildren: [],
+      }
+}
 const releases: (() => void)[] = []
 afterEach(async () => {
   cleanup()
@@ -200,6 +245,8 @@ export function harness(
     pageIdentity: pageIdentity(scopes),
     resolvePath: (key: string, params?: Record<string, string>) => {
       const countryPath = `/hilos/i18n/countries/${params?.countryCode}`
+      if (key === HilosPages.DASHBOARD) return '/hilos'
+      if (key === HilosPages.I18N) return '/hilos/i18n'
       if (key === HilosPages.I18N_COUNTRIES) return '/hilos/i18n/countries'
       if (key === HilosPages.I18N_COUNTRY) return countryPath
       if (key === HilosPages.I18N_COUNTRY_NAMES) return `${countryPath}/names`
@@ -239,10 +286,14 @@ export function harness(
       )
     },
     card(value: unknown = isCountry ? countryCard : languageCard) {
-      scope.data.set('pageLabel', 'Language details')
-      scope.data.set('pageLead', '')
-      scope.data.set('pageBreadcrumb', [])
-      scope.data.set('pageChildren', [])
+      const shell = countryTabShell(page) ?? {
+        pageLabel: 'Language details',
+        pageLead: '',
+        pageBreadcrumb: [],
+        pageChildren: [],
+      }
+      for (const [key, field] of Object.entries(shell))
+        scope.data.set(key, field)
       scope.data.set(isCountry ? 'countryCard' : 'languageCard', value)
       loading.set(false)
     },
@@ -292,6 +343,30 @@ export function click(id: string): void {
 }
 export function change(id: string, value: string): void {
   fireEvent.change(el(id), { target: { value } })
+}
+
+/** The last breadcrumb entry's own text, without its silent separator. */
+export function lastCrumb(): string | null | undefined {
+  return document.querySelector('[data-id="hilos-breadcrumb"] li:last-child')
+    ?.lastChild?.textContent
+}
+
+/** The data-ids the manual country header carried; none of them stays. */
+const RETIRED_COUNTRY_HEADER = [
+  'country-card-header',
+  'country-card-title',
+  'country-card-tabs',
+  'country-card-code-badge',
+  'country-card-own',
+  'country-card-line',
+]
+
+/** Whether anything of the manual country header is left, its tabs included. */
+export function retiredCountryHeaderLeft(): boolean {
+  return (
+    RETIRED_COUNTRY_HEADER.some((id) => el(id) !== null) ||
+    document.querySelector('[data-id^="country-card-tab-"]') !== null
+  )
 }
 export async function settle(run: () => void): Promise<void> {
   await act(async () => {

@@ -2,6 +2,7 @@
 // '@hilos/react' is exported here. Behavior is covered by the module tests.
 import { expect, expectTypeOf, it } from 'vitest'
 import { HilosPages } from '@hilos/core'
+import type { ReadonlySignal, ScopeManager } from '@hilos/core'
 import {
   HilosAuthGateContext,
   HilosAuthSurface,
@@ -24,6 +25,7 @@ import {
   HilosAnalyticsPersonPage,
   HilosAppearancePage,
   hilosAdminViews,
+  HilosPageHead,
   HilosPageHeadingIdContext,
   HilosRouterContext,
   HilosSkeleton,
@@ -34,6 +36,7 @@ import {
   HilosView,
   useConnectionState,
   useLookOnly,
+  usePageInstanceName,
   useReconnectDragging,
 } from '../src/index.js'
 
@@ -51,7 +54,9 @@ import type {
   HilosAnalyticsBrowserSessionPageProps,
   HilosAnalyticsPersonPageProps,
   HilosAppearancePageProps,
+  HilosPageHeadProps,
 } from '../src/index.js'
+import * as base from '../src/base/index.js'
 
 it('exports the @hilos/react public surface', () => {
   expect(useConnectionState).toBeTypeOf('function')
@@ -64,6 +69,8 @@ it('exports the @hilos/react public surface', () => {
   expect(HilosLayout).toBeTypeOf('function')
   expect(HilosThemeMenu).toBeTypeOf('function')
   expect(HilosDropdown).toBeTypeOf('function')
+  expect(HilosPageHead).toBeTypeOf('function')
+  expect(usePageInstanceName).toBeTypeOf('function')
   expect(HilosRouterContext).toBeTypeOf('object')
   expect(HilosPageHeadingIdContext).toBeTypeOf('object')
   expect(HilosTakeoverViewOnlyContext).toBeTypeOf('object')
@@ -147,4 +154,23 @@ it('exports the Appearance context page and leaves it out of the default map', (
   expectTypeOf<
     Parameters<typeof HilosAppearancePage>[0]
   >().toEqualTypeOf<HilosAppearancePageProps>()
+})
+
+it('exports the shared page head once, from the base entry the root re-exports', () => {
+  expect(base.HilosPageHead).toBe(HilosPageHead)
+  expectTypeOf<
+    Parameters<typeof HilosPageHead>[0]
+  >().toEqualTypeOf<HilosPageHeadProps>()
+  expectTypeOf<base.HilosPageHeadProps>().toEqualTypeOf<HilosPageHeadProps>()
+})
+
+it('exports the live instance name hook once, from the base entry the root re-exports', () => {
+  expect(base.usePageInstanceName).toBe(usePageInstanceName)
+  expectTypeOf(usePageInstanceName).toEqualTypeOf<
+    (
+      scopes: ScopeManager,
+      page: string,
+      name: ReadonlySignal<string | undefined>,
+    ) => void
+  >()
 })

@@ -619,3 +619,12 @@ body.modal-open .toast-container > * {
   bottom: -0.1rem;
   line-height: 1;
 }
+
+// WHY: Bootstrap draws the breadcrumb slash as ::before content, which a screen
+// reader may speak between two crumbs, and no utility switches a pseudo-element
+// off; an aria-hidden span gives the same look and stays silent.
+// WHAT: HilosBreadcrumb's trail, whose items carry that span, so the stock
+// separator is dropped there only (mockups/components/breadcrumb).
+.hilos-breadcrumb .breadcrumb-item + .breadcrumb-item::before {
+  content: none;
+}

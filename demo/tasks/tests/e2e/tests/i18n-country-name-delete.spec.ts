@@ -20,7 +20,9 @@ const CANCEL = 'i18n-country-name-delete-cancel'
 /** Open the fixture's names and its corrections through the native row chevron. */
 async function openNames(page: Page): Promise<void> {
   await gotoPage(page, NAMES_PATH, PAGE_READY)
-  await expect(page.getByTestId('country-card-title')).toHaveText('qj')
+  await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
+    'Unnamed country',
+  )
   await expect(i18nNameRow(page, 'country', 'qk')).toContainText('Fixture base')
   await clickSubmit(
     i18nNameRow(page, 'country', 'qk').getByTestId(/^hilos-table-expand-/),

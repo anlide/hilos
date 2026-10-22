@@ -3,10 +3,11 @@ import type { Expect, Locator, Page } from '@playwright/test'
 import type { PageErrorFrameLog } from './pageErrorFrames.js'
 import { shownByTestId } from './table.js'
 
-// The country card's page key and the server's 404 catalog. This folder does
+// The country tabs' page keys and the server's 404 catalog. This folder does
 // not import the core, so the words are copied. A live deletion adds the line
 // on the frame; a later subscribe omits the key. The screen does not draw it.
 const COUNTRY_CARD_PAGE = 'hilos_i18n_country'
+const COUNTRY_NAMES_PAGE = 'hilos_i18n_country_names'
 const COUNTRY_NOT_FOUND_TITLE = 'Page Not Found'
 const COUNTRY_NOT_FOUND_MESSAGE = 'The page you are looking for does not exist.'
 const COUNTRY_DELETED_LINE = 'It was deleted just now.'
@@ -81,6 +82,70 @@ export async function expectI18nName(
     ),
   ).toBeVisible()
   await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
+}
+
+/**
+ * The shared head of a country on either of its tabs: the one h1, the last
+ * crumb and the browser tab carry the shown name, the Overview and Names links
+ * keep the code-based addresses whatever the name, only the tab on screen is
+ * current, and no child cards stand under the head. The row's labels and the
+ * country's own block stay in the spec.
+ *
+ * @param expect The spec's expect.
+ * @param page A page on the country's Overview or Names tab.
+ * @param country The country's code, the name the head shows, the application
+ *   name the browser tab composes it with, and the page key of the tab on screen.
+ */
+export async function expectCountryPageHead(
+  expect: Expect,
+  page: Page,
+  country: { code: string; name: string; appName: string; currentPage: string },
+): Promise<void> {
+  await expect(page.getByTestId('hilos-page-head')).toBeVisible()
+  await expect(page.getByTestId('hilos-page-head-skeleton')).toHaveCount(0)
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveAttribute('data-id', 'hilos-page-head-title')
+  await expect(heading).toHaveText(country.name)
+  await expect(page).toHaveTitle(`${country.name} · ${country.appName}`)
+
+  const lastCrumb = page
+    .getByTestId('hilos-breadcrumb')
+    .locator('[aria-current]')
+  await expect(lastCrumb).toHaveCount(1)
+  await expect(lastCrumb).toHaveAttribute('aria-current', 'page')
+  // The crumb's own words: a kit may draw its divider as a decoration hidden
+  // from assistive technology inside the crumb, and that is not the name.
+  await expect
+    .poll(() =>
+      lastCrumb.evaluate((crumb) => {
+        const words = crumb.cloneNode(true) as Element
+        for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
+          hidden.remove()
+        return words.textContent?.trim()
+      }),
+    )
+    .toBe(country.name)
+  await expect(lastCrumb.locator('xpath=following-sibling::*')).toHaveCount(0)
+
+  const tabs = page.getByTestId('hilos-page-tabs')
+  const overviewPath = `/hilos/i18n/countries/${country.code}`
+  for (const [key, href] of [
+    [COUNTRY_CARD_PAGE, overviewPath],
+    [COUNTRY_NAMES_PAGE, `${overviewPath}/names`],
+  ] as const) {
+    const tab = tabs.getByTestId(`hilos-page-tab-${key}`)
+    await expect(tab).toHaveAttribute('href', href)
+    if (key === country.currentPage) {
+      await expect(tab).toHaveAttribute('aria-current', 'page')
+    } else {
+      await expect(tab).not.toHaveAttribute('aria-current')
+    }
+  }
+  await expect(tabs.locator('[aria-current]')).toHaveCount(1)
+
+  await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
+  await expect(page.getByTestId(/^hilos-admin-child-/)).toHaveCount(0)
 }
 
 /**
