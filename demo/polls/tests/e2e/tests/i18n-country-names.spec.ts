@@ -16,29 +16,29 @@ test('opens the names of a reflowed country directly with the shared header, tab
   await gotoPage(page, '/hilos/i18n/countries/us/names', PAGE_READY)
   const actionsBeforeReading = actionRequests()
 
-  await expect(page.getByTestId('country-card-title')).toHaveText(
+  await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
     'United States',
   )
-  await expect(page.getByTestId('country-card-code-badge')).toHaveText('us')
-  await expect(page.getByTestId('country-card-own')).toHaveCount(0)
-  await expect(page.getByTestId('country-card-line')).toHaveText(
+  await expect(page.getByTestId('country-head-code')).toHaveText('us')
+  await expect(page.getByTestId('country-head-own')).toHaveCount(0)
+  await expect(page.getByTestId('country-head-description')).toHaveText(
     'Currency $ USD · Default locale not chosen',
   )
 
-  const tabs = page.getByTestId('country-card-tabs')
-  await expect(tabs).toContainText('Main')
+  const tabs = page.getByTestId('hilos-page-tabs')
+  await expect(tabs).toContainText('Overview')
   await expect(tabs).toContainText('Names')
   await expect(tabs.locator('a')).toHaveCount(2)
 
-  const namesTab = page.getByTestId('country-card-tab-hilos_i18n_country_names')
+  const namesTab = page.getByTestId('hilos-page-tab-hilos_i18n_country_names')
   await expect(namesTab).toHaveAttribute('aria-current', 'page')
   await expect(namesTab).toHaveAttribute(
     'href',
     '/hilos/i18n/countries/us/names',
   )
 
-  const mainTab = page.getByTestId('country-card-tab-hilos_i18n_country')
-  await expect(mainTab).toHaveAttribute('href', '/hilos/i18n/countries/us')
+  const overviewTab = page.getByTestId('hilos-page-tab-hilos_i18n_country')
+  await expect(overviewTab).toHaveAttribute('href', '/hilos/i18n/countries/us')
 
   const enRow = i18nNameRow(page, 'country', 'en')
   await expect(enRow).toContainText('English')

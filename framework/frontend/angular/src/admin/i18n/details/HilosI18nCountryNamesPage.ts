@@ -1,21 +1,27 @@
 // HilosI18nCountryNamesPage — the names of one country
 // (HilosPages.I18N_COUNTRY_NAMES): how the country the address names is called
-// in every language of the system (HIL-1483). The card's header and tabs,
-// shared with the main country page, stand above the one names table, with the
-// three states of the main page: the loading skeleton, the card with its table,
-// and the unavailable alert once it is gone. The table, the card, the add/edit
-// window and the deletion dispatch are the core's (createHilosI18nNamesTable
-// and its neighbors); this view owns the buttons it hands the table — a plus
-// where nothing is stored (null), a pencil over a stored value even when it is
-// empty ('') — and the opening of the delete confirmation over the row it takes
-// into focus. A correction is offered wherever a base is stored, an empty one
-// included. One row is in focus at a time: opening one window lets the other go
-// first, closing a window lets go only of its own, and neither window opens
-// over the other's write in flight. The confirmation is opened only over a
-// fresh row of the country the address still names, with the value it removes
-// fixed from that row. The table and the card are bound to one project context
-// and follow the address's country themselves — another country is a new
-// window of the same table. The windows are bound to that context and to the
+// in every language of the system (HIL-1483). The country's block in the shared
+// page head — the same block and Overview · Names row as on the main country
+// page, its content from this page's live card — stands above the one names
+// table, with the three states of the main page: the loading skeleton, the card
+// with its table, and the unavailable alert once it is gone. The card also
+// names the country in the page owner and its breadcrumb entry while a country
+// tab stands (bindPageInstanceName), bound with the table. The table, the card,
+// the add/edit window and the deletion dispatch are the core's
+// (createHilosI18nNamesTable and its neighbors); this view owns the buttons it
+// hands the table, and the content of the head's block — the code tile, the
+// code, the custom-country mark and the currency and default-locale line; the
+// name in the head is the bound owner label, not drawn here. The buttons are a
+// plus where nothing is stored (null) and a pencil over a stored value even
+// when it is empty (''), and the view opens the delete confirmation over the
+// row it takes into focus. A correction is offered wherever a base is stored,
+// an empty one included. One row is in focus at a time: opening one window lets
+// the other go first, closing a window lets go only of its own, and neither
+// window opens over the other's write in flight. The confirmation is opened
+// only over a fresh row of the country the address still names, with the value
+// it removes fixed from that row. The table and the card are bound to one
+// project context and follow the address's country themselves — another
+// country is a new window of the same table. The windows are bound to that context and to the
 // country the address names now: either changing replaces them whole, with
 // their tracked actions, so an answer to the former subject reaches nothing;
 // the single-pass @for over each binding, tracked by what it made, is what
@@ -32,14 +38,20 @@ import {
   viewChild,
 } from '@angular/core'
 import {
+  HILOS_I18N_COUNTRY_MARKS,
   HILOS_I18N_COUNTRY_NAMES,
   HILOS_I18N_COUNTRY_NAME_COPY,
   HILOS_I18N_COUNTRY_NAME_DELETE_COPY,
   createHilosI18nCountryCard,
   createHilosI18nCountryNameWindow,
   createHilosI18nNamesTable,
+  hilosI18nCountryDisplayName,
 } from '@hilos/core/admin/i18n'
-import { HilosPages, computedSignal } from '@hilos/core/base'
+import {
+  HilosPages,
+  bindPageInstanceName,
+  computedSignal,
+} from '@hilos/core/base'
 import type {
   HilosI18nCountryCard,
   HilosI18nCountryContext,
@@ -54,7 +66,6 @@ import {
   hilosSignal,
   mirrorHilosSignal,
 } from '@hilos/angular/base'
-import { HilosI18nCountryHeader } from './HilosI18nCountryHeader.js'
 import { HilosI18nCountryNameDelete } from './HilosI18nCountryNameDelete.js'
 import { HilosI18nCountryNameWindow } from './HilosI18nCountryNameWindow.js'
 import { HilosI18nNamesTable } from './HilosI18nNamesTable.js'
@@ -65,17 +76,55 @@ import { HilosI18nNamesTable } from './HilosI18nNamesTable.js'
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     HilosAdminPage,
-    HilosI18nCountryHeader,
     HilosI18nCountryNameDelete,
     HilosI18nCountryNameWindow,
     HilosI18nNamesTable,
     LoadingButton,
   ],
   template: `
-    <hilos-admin-page [page]="page">
+    <hilos-admin-page [page]="page" headKind="entity" tabsLabel="Country pages">
       @for (subject of [binding()]; track subject.names) {
         @if (card(); as current) {
-          <hilos-i18n-country-header [card]="current" [activePage]="page" />
+          <ng-template #headVisual>
+            <span
+              class="hilos-avatar-md rounded-3 bg-secondary-subtle text-body-emphasis d-inline-flex align-items-center justify-content-center flex-shrink-0 fw-semibold text-uppercase"
+              aria-hidden="true"
+              data-id="country-head-tile"
+              >{{ current.code }}</span
+            >
+          </ng-template>
+          <ng-template #headMeta>
+            <span
+              class="font-monospace small text-body-secondary text-uppercase"
+              data-id="country-head-code"
+              >{{ current.code }}</span
+            >
+          </ng-template>
+          @if (current.summary.isOwn) {
+            <ng-template #headBadges>
+              <span
+                [class]="'badge ' + marks.own.tone"
+                title="This country is absent from the catalog and source."
+                data-id="country-head-own"
+              >
+                <i [class]="'bi ' + marks.own.icon" aria-hidden="true"></i>
+                <span class="visually-hidden"
+                  >{{ marks.own.label }}. This country is absent from the
+                  catalog and source.</span
+                >
+              </span>
+            </ng-template>
+          }
+          <ng-template #headDescription>
+            <p
+              class="text-body-secondary mb-0"
+              data-id="country-head-description"
+            >
+              Currency {{ current.currencySymbol }} {{ current.currencyCode }} ·
+              Default locale
+              {{ current.summary.defaultLocaleCode ?? 'not chosen' }}
+            </p>
+          </ng-template>
           <section class="mb-4" data-id="country-names">
             <h2 class="h5 d-flex flex-wrap align-items-center gap-2">
               Names in different languages
@@ -205,6 +254,7 @@ export class HilosI18nCountryNamesPage {
   protected readonly page = HilosPages.I18N_COUNTRY_NAMES
   protected readonly nameCopy = HILOS_I18N_COUNTRY_NAME_COPY
   protected readonly copy = HILOS_I18N_COUNTRY_NAME_DELETE_COPY
+  protected readonly marks = HILOS_I18N_COUNTRY_MARKS
 
   private readonly router = inject(HILOS_ROUTER)
   protected readonly loading = hilosSignal(this.router.pageLoading)
@@ -275,13 +325,33 @@ export class HilosI18nCountryNamesPage {
   private opening = 0
 
   constructor() {
-    // Bind the table to the connection and mirror the card and the focused row;
-    // a new binding, or the end of this page, unbinds it and lets its row go.
+    // Bind the table to the connection, mirror the card and the focused row,
+    // and name the country in the head from that same core card, never from
+    // the mirror, while a country tab stands; a new binding, or the end of this
+    // page, unbinds it, lets its row go and lets the former name go.
     effect((onCleanup) => {
       const binding = this.binding()
+      const { card, context } = binding
       const stops = [
-        mirrorHilosSignal(binding.card, this.card),
+        mirrorHilosSignal(card, this.card),
         mirrorHilosSignal(binding.names.controller.focusedRow, this.focusedRow),
+        bindPageInstanceName(
+          context.scopes,
+          HilosPages.I18N_COUNTRY,
+          computedSignal(() => {
+            const page = context.scopes.page()?.key
+            if (
+              page !== HilosPages.I18N_COUNTRY &&
+              page !== HilosPages.I18N_COUNTRY_NAMES
+            ) {
+              return undefined
+            }
+            const current = card.get()
+            return current === null
+              ? undefined
+              : hilosI18nCountryDisplayName(current)
+          }),
+        ),
       ]
       binding.names.start()
       onCleanup(() => {

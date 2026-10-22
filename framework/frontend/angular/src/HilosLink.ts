@@ -4,7 +4,11 @@
 // router is provided. Only the plain primary click is intercepted and handed to
 // the core navigator (HilosRouter), turning it into a no-refresh page
 // transition that leaves the WebSocket connection untouched. It marks itself
-// aria-current="page" when it points at the active route.
+// aria-current="page" when it points at the active route, unless the caller
+// decides the mark through hilosLinkCurrent: a trail or a row of tabs knows its
+// current entry better than a path match does. The input is the caller's only
+// way to decide it, since this directive's dynamic host binding wins over an
+// [attr.aria-current] the template puts on the same anchor.
 import {
   Directive,
   HostListener,
@@ -29,18 +33,31 @@ export class HilosLink {
   /** The target location pathname; the `hilosLink` attribute value. */
   readonly hilosLink = input.required<string>()
 
+  /**
+   * The current-page mark the caller decides; the `hilosLinkCurrent` input.
+   * 'page' or null wins over the path match; undefined, the default, leaves
+   * the mark to the path match.
+   */
+  readonly hilosLinkCurrent = input<'page' | null | undefined>(undefined)
+
   private readonly router = inject(HILOS_ROUTER, { optional: true })
 
-  // Mark the anchor aria-current="page" when it targets the active route;
-  // without a router (the hard-link fallback) there is no path to compare.
+  // Unless the caller decided, mark the anchor aria-current="page" when it
+  // targets the active route; without a router (the hard-link fallback) there
+  // is no path to compare.
   private readonly currentPath = this.router
     ? hilosSignal(this.router.currentPath)
     : signal('')
-  protected readonly ariaCurrent = computed(() =>
-    this.router !== null && this.currentPath() === this.hilosLink()
+  protected readonly ariaCurrent = computed(() => {
+    const decided = this.hilosLinkCurrent()
+    if (decided !== undefined) {
+      return decided
+    }
+
+    return this.router !== null && this.currentPath() === this.hilosLink()
       ? 'page'
-      : null,
-  )
+      : null
+  })
 
   /**
    * Intercept the plain primary click and navigate in place.

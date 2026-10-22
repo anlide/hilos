@@ -1,10 +1,15 @@
 // HilosI18nCountryPage — the main card of one country (HilosPages.I18N_COUNTRY):
-// the shared header and tabs, the main fields with the view/edit window, and the
-// state — switching on and off, and deleting. The card is one page-scoped datum
-// the page answer brings and its live updates refresh
+// the country's block in the shared page head, the main fields with the
+// view/edit window, and the state — switching on and off, and deleting. The card
+// is one page-scoped datum the page answer brings and its live updates refresh
 // (createHilosI18nCountryCard); the switches and the delete read their verdicts
-// from it, and the server checks every one of them again. The windows belong to
-// one binding: the project context and the country the address names now, read
+// from it, and the same card fills the block the shell hands the head — the code
+// tile, the code, the custom-country mark and the currency and default-locale
+// line — while the name in the head is the owner label bound here, not drawn
+// here. The server checks every verdict again. The same card names the country
+// in the page owner and its breadcrumb entry while a country tab stands
+// (bindPageInstanceName), bound with the card. The windows belong to one
+// binding: the project context and the country the address names now, read
 // live from the navigator. A new context or another country replaces the
 // binding whole — its windows, their tracked actions and their sessions — so an
 // answer to the former subject reaches nothing; the single-pass @for over the
@@ -23,14 +28,20 @@ import {
 } from '@angular/core'
 import {
   HILOS_I18N_COUNTRY_DELETE_COPY,
+  HILOS_I18N_COUNTRY_MARKS,
   HILOS_I18N_COUNTRY_WINDOW_COPY,
   createHilosI18nCountryCard,
   createHilosI18nCountryCardWindow,
   createHilosI18nCountryDelete,
   hilosI18nCountryDeleteFromCard,
   hilosI18nCountryDeleteReason,
+  hilosI18nCountryDisplayName,
 } from '@hilos/core/admin/i18n'
-import { HilosPages, computedSignal } from '@hilos/core/base'
+import {
+  HilosPages,
+  bindPageInstanceName,
+  computedSignal,
+} from '@hilos/core/base'
 import type {
   HilosI18nCountryCard,
   HilosI18nCountryContext,
@@ -44,7 +55,6 @@ import {
   mirrorHilosSignal,
 } from '@hilos/angular/base'
 import { HilosI18nCountryDelete } from './HilosI18nCountryDelete.js'
-import { HilosI18nCountryHeader } from './HilosI18nCountryHeader.js'
 import { HilosI18nCountrySwitchOff } from './HilosI18nCountrySwitchOff.js'
 import { HilosI18nCountrySwitchOn } from './HilosI18nCountrySwitchOn.js'
 import { HilosI18nCountryWindow } from './HilosI18nCountryWindow.js'
@@ -56,16 +66,54 @@ import { HilosI18nCountryWindow } from './HilosI18nCountryWindow.js'
   imports: [
     HilosAdminPage,
     HilosI18nCountryDelete,
-    HilosI18nCountryHeader,
     HilosI18nCountrySwitchOff,
     HilosI18nCountrySwitchOn,
     HilosI18nCountryWindow,
   ],
   template: `
-    <hilos-admin-page [page]="page">
+    <hilos-admin-page [page]="page" headKind="entity" tabsLabel="Country pages">
       @for (subject of [binding()]; track subject.window) {
         @if (card(); as current) {
-          <hilos-i18n-country-header [card]="current" [activePage]="page" />
+          <ng-template #headVisual>
+            <span
+              class="hilos-avatar-md rounded-3 bg-secondary-subtle text-body-emphasis d-inline-flex align-items-center justify-content-center flex-shrink-0 fw-semibold text-uppercase"
+              aria-hidden="true"
+              data-id="country-head-tile"
+              >{{ current.code }}</span
+            >
+          </ng-template>
+          <ng-template #headMeta>
+            <span
+              class="font-monospace small text-body-secondary text-uppercase"
+              data-id="country-head-code"
+              >{{ current.code }}</span
+            >
+          </ng-template>
+          @if (current.summary.isOwn) {
+            <ng-template #headBadges>
+              <span
+                [class]="'badge ' + marks.own.tone"
+                title="This country is absent from the catalog and source."
+                data-id="country-head-own"
+              >
+                <i [class]="'bi ' + marks.own.icon" aria-hidden="true"></i>
+                <span class="visually-hidden"
+                  >{{ marks.own.label }}. This country is absent from the
+                  catalog and source.</span
+                >
+              </span>
+            </ng-template>
+          }
+          <ng-template #headDescription>
+            <p
+              class="text-body-secondary mb-0"
+              data-id="country-head-description"
+            >
+              Currency {{ current.currencySymbol }} {{ current.currencyCode }} ·
+              Default locale
+              {{ current.summary.defaultLocaleCode ?? 'not chosen' }}
+            </p>
+          </ng-template>
 
           <section class="mb-4" data-id="country-card-main">
             <div class="d-flex align-items-center gap-2 mb-2">
@@ -230,6 +278,7 @@ export class HilosI18nCountryPage {
   protected readonly page = HilosPages.I18N_COUNTRY
   protected readonly copy = HILOS_I18N_COUNTRY_WINDOW_COPY
   protected readonly deleteCopy = HILOS_I18N_COUNTRY_DELETE_COPY
+  protected readonly marks = HILOS_I18N_COUNTRY_MARKS
 
   private readonly router = inject(HILOS_ROUTER)
   protected readonly loading = hilosSignal(this.router.pageLoading)
@@ -268,10 +317,31 @@ export class HilosI18nCountryPage {
   )
 
   constructor() {
-    // Mirror the bound card; a new binding starts with its delete closed.
+    // Mirror the bound card and name the country in the head from that same
+    // core card, never from the mirror, while a country tab stands; a new
+    // binding starts with its delete closed and lets the former name go.
     effect((onCleanup) => {
-      const stop = mirrorHilosSignal(this.binding().card, this.card)
+      const { context, card } = this.binding()
+      const stop = mirrorHilosSignal(card, this.card)
+      const unbindName = bindPageInstanceName(
+        context.scopes,
+        HilosPages.I18N_COUNTRY,
+        computedSignal(() => {
+          const page = context.scopes.page()?.key
+          if (
+            page !== HilosPages.I18N_COUNTRY &&
+            page !== HilosPages.I18N_COUNTRY_NAMES
+          ) {
+            return undefined
+          }
+          const current = card.get()
+          return current === null
+            ? undefined
+            : hilosI18nCountryDisplayName(current)
+        }),
+      )
       onCleanup(() => {
+        unbindName()
         stop()
         this.deleteTarget.set(null)
       })

@@ -28,6 +28,7 @@ import type {
   HilosI18nNameRow,
   HilosRouter,
   PageRouteMatch,
+  Scope,
 } from '@hilos/core'
 import { afterEach, vi } from 'vitest'
 
@@ -333,6 +334,50 @@ const COUNTRY_PAGES: readonly string[] = [
   HilosPages.I18N_COUNTRY_NAMES,
 ]
 
+/** The country's catalog lead: the owner's, and the main tab's own. */
+const COUNTRY_OWNER_LEAD =
+  'A single country: currency, default locale, and state.'
+
+/** Each country tab's own catalog label and lead. */
+const COUNTRY_TAB_IDENTITY: Record<string, { label: string; lead: string }> = {
+  [HilosPages.I18N_COUNTRY]: { label: 'Country', lead: COUNTRY_OWNER_LEAD },
+  [HilosPages.I18N_COUNTRY_NAMES]: {
+    label: 'Country names',
+    lead: 'How this country is named in each language.',
+  },
+}
+
+/**
+ * Answer the way a country tab does beside its card: the tab's own catalog
+ * label and lead, the country as the owner (the catalog gives it no icon), the
+ * chain through Countries ending at the country (not at Names), the
+ * Overview · Names row and no child cards.
+ *
+ * @param scope The page scope the answer lands in.
+ * @param page The country tab that subscribed.
+ */
+export function answerAsCountryTab(scope: Scope, page: string): void {
+  const tab = COUNTRY_TAB_IDENTITY[page]!
+  scope.data.set('pageLabel', tab.label)
+  scope.data.set('pageLead', tab.lead)
+  scope.data.set('pageHeadOwner', {
+    page: HilosPages.I18N_COUNTRY,
+    label: 'Country',
+    lead: COUNTRY_OWNER_LEAD,
+  })
+  scope.data.set('pageBreadcrumb', [
+    { page: HilosPages.DASHBOARD, label: 'Hilos' },
+    { page: HilosPages.I18N, label: 'Internationalization' },
+    { page: HilosPages.I18N_COUNTRIES, label: 'Countries' },
+    { page: HilosPages.I18N_COUNTRY, label: 'Country' },
+  ])
+  scope.data.set('pageTabs', [
+    { page: HilosPages.I18N_COUNTRY, label: 'Overview' },
+    { page: HilosPages.I18N_COUNTRY_NAMES, label: 'Names' },
+  ])
+  scope.data.set('pageChildren', [])
+}
+
 /** The list pages of the bench, whose address names no subject. */
 const LIST_PAGES: readonly string[] = [
   HilosPages.I18N_LANGUAGES,
@@ -503,12 +548,20 @@ export function i18nBench(
       scope.data.set('languageCard', value)
       loading.set(false)
     },
-    /** Set the country card the page answer carries; null or junk clears it. */
+    /**
+     * Set the country card the page answer carries; null or junk clears it. A
+     * country tab answers beside it with the country's head, every time the
+     * same; another page keeps the legacy identity.
+     */
     countryCard(value: unknown = countryCard): void {
-      scope.data.set('pageLabel', 'Country')
-      scope.data.set('pageLead', '')
-      scope.data.set('pageBreadcrumb', [])
-      scope.data.set('pageChildren', [])
+      if (COUNTRY_PAGES.includes(page)) {
+        answerAsCountryTab(scope, page)
+      } else {
+        scope.data.set('pageLabel', 'Country')
+        scope.data.set('pageLead', '')
+        scope.data.set('pageBreadcrumb', [])
+        scope.data.set('pageChildren', [])
+      }
       scope.data.set('countryCard', value)
       loading.set(false)
     },
@@ -556,6 +609,33 @@ export function i18nBench(
 
 /** A bench as {@link i18nBench} returns it. */
 export type I18nBench = ReturnType<typeof i18nBench>
+
+/**
+ * The country's name as the core identity projects it from the bench's page
+ * scope: the owner's label and the last breadcrumb entry's.
+ *
+ * @param bench The bench whose navigator projects the identity.
+ */
+export function countryName(bench: I18nBench): (string | undefined)[] {
+  const identity = bench.router.pageIdentity.get()
+
+  return [identity?.pageHeadOwner?.label, identity?.breadcrumb.at(-1)?.label]
+}
+
+/** The last breadcrumb entry's own text as drawn, without its silent separator. */
+export function lastCrumb(): string | undefined {
+  const entry = document.querySelector(
+    '[data-id="hilos-breadcrumb"] li:last-child',
+  )
+
+  return entry === null
+    ? undefined
+    : [...entry.childNodes]
+        .filter((node) => node.nodeType === Node.TEXT_NODE)
+        .map((node) => node.textContent)
+        .join('')
+        .trim()
+}
 
 /**
  * Mount a component over a bench, with its inputs set before the first render.

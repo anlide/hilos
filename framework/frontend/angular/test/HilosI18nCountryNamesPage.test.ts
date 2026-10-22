@@ -1,24 +1,36 @@
 // The Angular names page of a country over the real table binder and action
-// lifecycle: the three states with the shared header, the plus and the pencil by
+// lifecycle: the three states under the country's block in the shared head,
+// the plus and the pencil by
 // null against '' in the row and the correction alike, corrections under an
 // empty base, the delete confirmation opened over the fresh row in focus with
 // its value fixed, a known base that returns from the catalog on its own echo,
 // one row in focus shared by both windows and neither interrupting the other's
 // write, a route change, a card that disappears under an open confirmation, a
-// viewer of the admin view mode, and the table let go when the page ends. The
-// windows' own behavior is tested beside them; the rules are the core's.
+// viewer of the admin view mode, the table let go when the page ends, and the
+// country's live name in the page owner and its breadcrumb entry. The windows'
+// own behavior is tested beside them; the rules are the core's.
 import { HilosPages } from '@hilos/core'
 import { describe, expect, it } from 'vitest'
 
 import { HilosI18nCountryNamesPage } from '../src/admin/i18n/details/HilosI18nCountryNamesPage.js'
 import {
+  answerAsCountryTab,
   countryCard,
+  countryName,
   i18nBench,
+  lastCrumb,
   mountOver,
   usInEnglish,
   usInFrench,
   usInSpanish,
 } from './helpers/hilosI18n.js'
+
+/** The one h1 of the page as drawn: the shared head's title. */
+function title(): string | undefined {
+  return document
+    .querySelector('[data-id="hilos-page-head-title"]')
+    ?.textContent?.trim()
+}
 
 function setup(viewer = false) {
   const bench = i18nBench(
@@ -46,7 +58,7 @@ function deleteInputs(h: ReturnType<typeof setup>) {
 }
 
 describe('HilosI18nCountryNamesPage', () => {
-  it('tells loading from a card that is gone and draws the header and tabs above one names table', () => {
+  it('tells loading from a card that is gone and draws the country block in the shared head above one names table', () => {
     const bench = i18nBench(HilosPages.I18N_COUNTRY_NAMES, [usInEnglish])
     const h = mountOver(HilosI18nCountryNamesPage, bench, {
       context: bench.context,
@@ -54,21 +66,33 @@ describe('HilosI18nCountryNamesPage', () => {
     expect(
       document.querySelector('[aria-label="Loading country"]'),
     ).not.toBeNull()
-    expect(h.el('country-card-header')).toBeNull()
+    expect(h.el('hilos-page-head-skeleton')).not.toBeNull()
+    expect(h.el('country-head-tile')).toBeNull()
     expect(document.querySelector('table')).toBeNull()
     h.act(() => bench.countryCard())
-    expect(document.querySelectorAll('h1')).toHaveLength(1)
+    const headings = document.querySelectorAll('h1')
+    expect(headings).toHaveLength(1)
+    expect(headings[0]!.getAttribute('data-id')).toBe('hilos-page-head-title')
+    expect(title()).toBe('United States')
+    expect(lastCrumb()).toBe('United States')
+    expect(h.el('country-head-tile')?.textContent?.trim()).toBe('us')
+    expect(h.el('country-head-code')?.textContent?.trim()).toBe('us')
+    expect(h.el('country-head-description')?.textContent?.trim()).toBe(
+      'Currency $ USD · Default locale not chosen',
+    )
+    expect(h.el('country-head-own')).toBeNull()
     expect(h.el('country-names')?.querySelector('h2')?.textContent).toContain(
       'Names in different languages',
     )
-    expect(
-      h
-        .el(`country-card-tab-${HilosPages.I18N_COUNTRY_NAMES}`)
-        ?.classList.contains('active'),
-    ).toBe(true)
-    expect(
-      h.el(`country-card-tab-${HilosPages.I18N_COUNTRY}`)?.getAttribute('href'),
-    ).toBe('/hilos/i18n/countries/us')
+    expect(h.el('hilos-page-tabs')?.getAttribute('aria-label')).toBe(
+      'Country pages',
+    )
+    const names = h.el(`hilos-page-tab-${HilosPages.I18N_COUNTRY_NAMES}`)
+    expect(names?.classList.contains('active')).toBe(true)
+    expect(names?.getAttribute('aria-current')).toBe('page')
+    const overview = h.el(`hilos-page-tab-${HilosPages.I18N_COUNTRY}`)
+    expect(overview?.getAttribute('href')).toBe('/hilos/i18n/countries/us')
+    expect(overview?.getAttribute('aria-current')).toBeNull()
     expect(document.querySelector('table')).not.toBeNull()
     h.act(() =>
       bench.countryCard({
@@ -76,12 +100,27 @@ describe('HilosI18nCountryNamesPage', () => {
         summary: { ...countryCard.summary, name: 'USA' },
       }),
     )
-    expect(h.el('country-card-title')?.textContent?.trim()).toBe('USA')
+    expect(title()).toBe('USA')
+    expect(lastCrumb()).toBe('USA')
+    h.act(() =>
+      bench.countryCard({
+        ...countryCard,
+        summary: { ...countryCard.summary, name: '', isOwn: true },
+      }),
+    )
+    expect(title()).toBe('Unnamed country')
+    expect(lastCrumb()).toBe('Unnamed country')
+    expect(h.el('country-head-code')?.textContent?.trim()).toBe('us')
+    expect(
+      h.el('country-head-own')?.querySelector('.visually-hidden')?.textContent,
+    ).toContain('Custom country.')
     h.act(() => bench.countryCard([]))
     expect(document.querySelector('table')).toBeNull()
     expect(h.el('country-names-unavailable')?.textContent).toContain(
       'no longer available',
     )
+    expect(h.el('country-head-tile')).toBeNull()
+    expect(title()).toBe('Country')
   })
 
   it('draws the plus by null and the pencil by "" in rows, corrections and cards, with a trash on every stored value', () => {
@@ -328,5 +367,66 @@ describe('HilosI18nCountryNamesPage', () => {
     expect(h.focuses.at(-1)).toBe('')
     expect(h.unregister).toHaveBeenCalled()
     expect(h.listenerCount()).toBe(h.unmounted)
+  })
+
+  it('names the country from the first paint, renames it live over the same table, and lets the name go with its binding', () => {
+    const bench = i18nBench(HilosPages.I18N_COUNTRY_NAMES, [usInEnglish])
+    bench.countryCard({
+      ...countryCard,
+      summary: { ...countryCard.summary, name: null },
+    })
+    const h = mountOver(HilosI18nCountryNamesPage, bench, {
+      context: bench.context,
+    })
+    expect(lastCrumb()).toBe('Unnamed country')
+    expect(countryName(bench)).toEqual(['Unnamed country', 'Unnamed country'])
+    const table = document.querySelector('table')
+    for (const [live, shown] of [
+      ['USA', 'USA'],
+      ['', 'Unnamed country'],
+      ['  Spaced  ', '  Spaced  '],
+    ] as const) {
+      h.act(() =>
+        bench.countryCard({
+          ...countryCard,
+          summary: { ...countryCard.summary, name: live },
+        }),
+      )
+      expect(countryName(bench)).toEqual([shown, shown])
+    }
+    expect(document.querySelector('table')).toBe(table)
+    expect(bench.unregister).not.toHaveBeenCalled()
+    h.act(() =>
+      bench.route.set({ ...bench.route.get(), params: { countryCode: 'ca' } }),
+    )
+    h.act(() => bench.countryCard(null))
+    expect(countryName(bench)).toEqual(['Country', 'Country'])
+    h.act(() =>
+      bench.countryCard({
+        ...countryCard,
+        countryId: 103,
+        code: 'ca',
+        summary: { ...countryCard.summary, name: 'Canada' },
+      }),
+    )
+    expect(countryName(bench)).toEqual(['Canada', 'Canada'])
+    const next = i18nBench(HilosPages.I18N_COUNTRY_NAMES, [usInEnglish])
+    h.act(() => h.fixture.componentRef.setInput('context', next.context))
+    expect(countryName(bench)).toEqual(['Country', 'Country'])
+    h.act(() => next.countryCard())
+    expect(countryName(next)).toEqual(['United States', 'United States'])
+    const other = next.scopes.openPage(HilosPages.I18N_LANGUAGE)
+    other.data.set('pageLabel', 'Language')
+    other.data.set('pageBreadcrumb', [
+      { page: HilosPages.I18N_COUNTRY, label: 'Country' },
+    ])
+    other.data.set('countryCard', countryCard)
+    expect(next.router.pageIdentity.get()?.breadcrumb[0]?.label).toBe('Country')
+    const main = next.scopes.openPage(HilosPages.I18N_COUNTRY)
+    answerAsCountryTab(main, HilosPages.I18N_COUNTRY)
+    main.data.set('countryCard', countryCard)
+    expect(countryName(next)).toEqual(['United States', 'United States'])
+    h.fixture.destroy()
+    expect(countryName(next)).toEqual(['Country', 'Country'])
   })
 })

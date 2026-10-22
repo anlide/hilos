@@ -1,23 +1,104 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { countSentFrames } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
+import {
+  expectDocumentUnchanged,
+  expectPageReady,
+  gotoPage,
+  markDocument,
+  PAGE_READY,
+} from '../helpers/page.js'
+import { clickSubmit } from '../helpers/session.js'
 
-test('opens a reflowed country card directly with read-only details and staged tabs', async ({
+const OVERVIEW = 'hilos_i18n_country'
+const NAMES = 'hilos_i18n_country_names'
+const OVERVIEW_PATH = '/hilos/i18n/countries/us'
+const NAMES_PATH = '/hilos/i18n/countries/us/names'
+
+/**
+ * The shared head of the reflowed United States on either tab: the one h1 with
+ * the live name, the browser tab composed with the polls application name, the
+ * country's own block, the breadcrumb ending in the name as text, and the
+ * Overview · Names row of native links with only the rendered tab current. The
+ * hand-made country header and the child cards the legacy shell drew under its
+ * heading are gone.
+ */
+async function expectCountryHead(page: Page, current: string): Promise<void> {
+  await expect(page.getByTestId('hilos-page-head')).toBeVisible()
+  await expect(page.getByTestId('hilos-page-head-skeleton')).toHaveCount(0)
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveAttribute('data-id', 'hilos-page-head-title')
+  await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
+    'United States',
+  )
+  await expect(page).toHaveTitle('United States · Hilos Polls')
+
+  const crumbs = page.getByTestId('hilos-breadcrumb')
+  await expect(crumbs).toHaveAccessibleName('Breadcrumb')
+  await expect(
+    page.getByTestId('hilos-breadcrumb-hilos_i18n_countries'),
+  ).toHaveAttribute('href', '/hilos/i18n/countries')
+  // The last crumb is the page itself: text, not a link, and its words are the
+  // name alone — the divider before it is hidden from assistive technology.
+  const lastCrumb = crumbs.locator('[aria-current]')
+  await expect(lastCrumb).toHaveCount(1)
+  await expect(lastCrumb).toHaveAttribute('aria-current', 'page')
+  await expect(lastCrumb.locator('a')).toHaveCount(0)
+  await expect(lastCrumb).toMatchAriaSnapshot('- listitem: United States')
+
+  const block = page.getByTestId('hilos-page-head-block')
+  await expect(block.getByTestId('country-head-tile')).toHaveText('us')
+  await expect(block.getByTestId('country-head-code')).toHaveText('us')
+  await expect(block.getByTestId('country-head-own')).toHaveCount(0)
+  await expect(block.getByTestId('country-head-description')).toHaveText(
+    'Currency $ USD · Default locale not chosen',
+  )
+  await expect(page.getByTestId('hilos-page-head-action')).toHaveCount(0)
+
+  const tabs = page.getByTestId('hilos-page-tabs')
+  await expect(tabs).toHaveAccessibleName('Country pages')
+  await expect(tabs.getByRole('link')).toHaveText(['Overview', 'Names'])
+  const overview = tabs.getByTestId(`hilos-page-tab-${OVERVIEW}`)
+  const names = tabs.getByTestId(`hilos-page-tab-${NAMES}`)
+  await expect(overview).toHaveAttribute('href', OVERVIEW_PATH)
+  await expect(names).toHaveAttribute('href', NAMES_PATH)
+  for (const [tab, key] of [
+    [overview, OVERVIEW],
+    [names, NAMES],
+  ] as const) {
+    if (key === current) {
+      await expect(tab).toHaveAttribute('aria-current', 'page')
+      await expect(tab).toHaveClass(/\bactive\b/)
+    } else {
+      await expect(tab).not.toHaveAttribute('aria-current')
+      await expect(tab).not.toHaveClass(/\bactive\b/)
+    }
+  }
+
+  await expect(page.getByTestId('country-card-header')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
+  await expect(page.getByTestId(`hilos-admin-child-${NAMES}`)).toHaveCount(0)
+}
+
+/**
+ * The names table on the Names tab declares no title of its own, so the one h1
+ * of the shared head names it.
+ */
+async function expectNamesTableNamed(page: Page): Promise<void> {
+  await expect(
+    page.getByTestId('country-names').getByRole('table'),
+  ).toHaveAccessibleName('United States')
+}
+
+test('opens a reflowed country card directly with read-only details under the shared head', async ({
   page,
 }) => {
   const deleteRequests = countSentFrames(page, 'hilos_i18n_country_delete')
   await signUpAdmin(page)
-  await gotoPage(page, '/hilos/i18n/countries/us', PAGE_READY)
+  await gotoPage(page, OVERVIEW_PATH, PAGE_READY)
 
-  await expect(page.getByTestId('country-card-title')).toHaveText(
-    'United States',
-  )
-  await expect(page.getByTestId('country-card-code-badge')).toHaveText('us')
-  await expect(page.getByTestId('country-card-own')).toHaveCount(0)
-  await expect(page.getByTestId('country-card-line')).toHaveText(
-    'Currency $ USD · Default locale not chosen',
-  )
+  await expectCountryHead(page, OVERVIEW)
   await expect(page.getByTestId('country-card-code')).toHaveText('us')
   await expect(page.getByTestId('country-card-currency')).toHaveText('$ USD')
   await expect(page.getByTestId('country-card-default-locale')).toHaveText(
@@ -28,20 +109,6 @@ test('opens a reflowed country card directly with read-only details and staged t
     'the built-in catalog knows this country',
   )
   await expect(page.getByTestId('country-card-frozen')).toHaveCount(0)
-
-  const tabs = page.getByTestId('country-card-tabs')
-  await expect(tabs).toContainText('Main')
-  await expect(tabs).toContainText('Names')
-  await expect(tabs.locator('a')).toHaveCount(2)
-  await expect(
-    page.getByTestId('country-card-tab-hilos_i18n_country'),
-  ).toHaveAttribute('href', '/hilos/i18n/countries/us')
-  await expect(
-    page.getByTestId('country-card-tab-hilos_i18n_country'),
-  ).toHaveAttribute('aria-current', 'page')
-  await expect(
-    page.getByTestId('country-card-tab-hilos_i18n_country_names'),
-  ).toHaveAttribute('href', '/hilos/i18n/countries/us/names')
   await expect(
     page.getByTestId('country-card-main').locator('button, input'),
   ).toHaveCount(1)
@@ -70,7 +137,65 @@ test('opens a reflowed country card directly with read-only details and staged t
   await expect(page.getByTestId('i18n-country-delete-window')).toHaveCount(0)
   await expect(page.getByTestId('country-card-code')).toHaveText('us')
 
+  await gotoPage(page, NAMES_PATH, PAGE_READY)
+  await expectCountryHead(page, NAMES)
+  await expect(page).toHaveURL(new RegExp(`${NAMES_PATH}$`))
+  await expect(page.getByTestId('country-names')).toBeVisible()
+  await expectNamesTableNamed(page)
+
   await gotoPage(page, '/hilos/i18n/countries', PAGE_READY)
   await gotoPage(page, '/hilos/i18n', PAGE_READY)
   expect(deleteRequests()).toBe(0)
+})
+
+test('moves between Overview and Names in place on the shared head row and keeps it through a reload', async ({
+  page,
+}) => {
+  await signUpAdmin(page)
+  await gotoPage(page, OVERVIEW_PATH, PAGE_READY)
+  await expectCountryHead(page, OVERVIEW)
+  const tabs = page.getByTestId('hilos-page-tabs')
+  const overview = tabs.getByTestId(`hilos-page-tab-${OVERVIEW}`)
+  const names = tabs.getByTestId(`hilos-page-tab-${NAMES}`)
+
+  // A tab is a native link the router takes over: no new document on a switch.
+  await markDocument(page)
+  await clickSubmit(names)
+  await expect(page).toHaveURL(new RegExp(`${NAMES_PATH}$`))
+  await expectPageReady(page)
+  await expectCountryHead(page, NAMES)
+  await expect(page.getByTestId('country-names')).toBeVisible()
+  await expect(page.getByTestId('country-card-main')).toHaveCount(0)
+  await expectNamesTableNamed(page)
+  await expectDocumentUnchanged(page)
+
+  // The way back from the keyboard: the row is plain links in the tab order,
+  // not a tab widget, and a link answers Enter.
+  await names.focus()
+  await names.press('Shift+Tab')
+  await expect(overview).toBeFocused()
+  await overview.press('Enter')
+  await expect(page).toHaveURL(new RegExp(`${OVERVIEW_PATH}$`))
+  await expectPageReady(page)
+  await expectCountryHead(page, OVERVIEW)
+  await expect(page.getByTestId('country-card-main')).toBeVisible()
+  await expect(page.getByTestId('country-names')).toHaveCount(0)
+  await expectDocumentUnchanged(page)
+
+  await page.reload()
+  await expectPageReady(page)
+  await expect(page).toHaveURL(new RegExp(`${OVERVIEW_PATH}$`))
+  await expectCountryHead(page, OVERVIEW)
+  await expect(page.getByTestId('country-card-main')).toBeVisible()
+
+  await clickSubmit(names)
+  await expect(page).toHaveURL(new RegExp(`${NAMES_PATH}$`))
+  await expectPageReady(page)
+  await expectCountryHead(page, NAMES)
+  await page.reload()
+  await expectPageReady(page)
+  await expect(page).toHaveURL(new RegExp(`${NAMES_PATH}$`))
+  await expectCountryHead(page, NAMES)
+  await expect(page.getByTestId('country-names')).toBeVisible()
+  await expectNamesTableNamed(page)
 })

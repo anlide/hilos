@@ -68,6 +68,7 @@ try {
       'HilosView',
       'HilosAdminPage',
       'HilosModal',
+      'HilosPageHead',
     ]
       .map((name) => `root.${name} === base.${name}`)
       .join(' && ')}

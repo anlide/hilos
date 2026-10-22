@@ -32,6 +32,7 @@ import {
   HilosMaintenance,
   HilosModal,
   HilosOAuthCallbackPage,
+  HilosPageHead,
   HilosProfileTheme,
   HilosSettingsPage,
   HilosSkeleton,
@@ -57,6 +58,7 @@ import {
   hilosAdminViews,
   injectLookOnly,
 } from '../src/index.js'
+import * as base from '../src/base/index.js'
 
 it('exports the @hilos/angular public surface', () => {
   expect(connectionStateSignal).toBeTypeOf('function')
@@ -79,6 +81,7 @@ it('exports the @hilos/angular public surface', () => {
   expect(HilosMaintenance).toBeTypeOf('function')
   expect(LoadingButton).toBeTypeOf('function')
   expect(HilosBreadcrumb).toBeTypeOf('function')
+  expect(HilosPageHead).toBeTypeOf('function')
   expect(ConflictHeader).toBeTypeOf('function')
   expect(ConflictActions).toBeTypeOf('function')
   expect(HilosAdminPage).toBeTypeOf('function')
@@ -134,4 +137,8 @@ it('exports the two Analytics context pages and leaves them out of the default m
     HilosPages.ANALYTICS_BROWSER_SESSION,
   )
   expect(hilosAdminViews()).not.toHaveProperty(HilosPages.ANALYTICS_PERSON)
+})
+
+it('exports the shared page head once, from the base entry the root re-exports', () => {
+  expect(base.HilosPageHead).toBe(HilosPageHead)
 })

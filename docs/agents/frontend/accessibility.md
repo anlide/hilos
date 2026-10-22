@@ -150,7 +150,10 @@ app-wide a11y structure:
   aria-live="polite"` region re-renders the current title, so a screen reader
   hears the page change the no-refresh route swap would otherwise hide.
 - **`aria-current="page"`** — `HilosLink` marks itself current when it targets
-  the active path (from the core router's `currentPath` signal).
+  the active path (from the core router's `currentPath` signal). In Angular a
+  caller that knows its current entry decides the mark through the optional
+  `hilosLinkCurrent` input: `'page'` and `null` win over the path match,
+  `undefined`, the default, leaves it.
 - **`<html lang>`** — each demo's `index.html` declares the page language (3.1.1).
 
 ## Component and page patterns

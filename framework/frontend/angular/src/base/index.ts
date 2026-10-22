@@ -56,6 +56,7 @@ export { HilosTermsPage } from '../public/HilosTermsPage.js'
 export { LoadingButton } from '../LoadingButton.js'
 export { HilosSwitch } from '../HilosSwitch.js'
 export { HilosBreadcrumb } from '../HilosBreadcrumb.js'
+export { HilosPageHead } from '../HilosPageHead.js'
 export { ConflictHeader } from '../ConflictHeader.js'
 export {
   ConflictActions,

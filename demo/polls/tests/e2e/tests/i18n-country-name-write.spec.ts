@@ -5,6 +5,7 @@ import {
   i18nNameRow,
   shownByTestId,
   watchHeight,
+  watchI18nLivePages,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import { setAdminViewMode } from '../helpers/adminViewMode.js'
@@ -12,22 +13,31 @@ import {
   clearCountryNamesFixture,
   seedCountryNamesFixture,
 } from '../helpers/i18n.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
+import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
 import { clickSubmit, typeInto } from '../helpers/session.js'
 
+const COUNTRY_PATH = '/hilos/i18n/countries/qj'
 const NAMES_PATH = '/hilos/i18n/countries/qj/names'
+const OVERVIEW_TAB = 'hilos_i18n_country'
+const NAMES_TAB = 'hilos_i18n_country_names'
+const APP_NAME = 'Hilos Polls'
+const UNNAMED = 'Unnamed country'
 const WINDOW = 'i18n-country-name-window'
 const INPUT = 'i18n-country-name-input'
 const SUBMIT = 'i18n-country-name-submit'
 const CANCEL = 'i18n-country-name-cancel'
 const TITLE = 'i18n-country-name-title'
 const NOTICE = 'i18n-country-name-notice'
+const DELETE_WINDOW = 'i18n-country-name-delete-window'
+const DELETE_CONFIRM = 'i18n-country-name-delete-confirm'
 const DUPLICATE = 'A name already exists for this language or locale.'
 
 /** Open the fixture without creating the env-language name or the FR correction. */
 async function openNames(page: Page): Promise<void> {
   await gotoPage(page, NAMES_PATH, PAGE_READY)
-  await expect(page.getByTestId('country-card-title')).toHaveText('qj')
+  await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
+    'Unnamed country',
+  )
   await expect(shownByTestId(page, 'i18n-names-none-en')).toHaveText('No name')
   await expect(shownByTestId(page, 'i18n-country-name-add-en')).toBeVisible()
   await expect(shownByTestId(page, 'i18n-country-name-edit-qk')).toBeVisible()
@@ -81,6 +91,145 @@ async function expectName(
   await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
 }
 
+/** Write the default-language name from its modal and wait for the tracked success. */
+async function writeName(
+  page: Page,
+  control: string,
+  value: string,
+  message: string,
+): Promise<void> {
+  await openName(page, control)
+  await typeInto(page.getByTestId(INPUT), value)
+  await saveName(page, message)
+}
+
+/** Delete the default-language name through its confirmation and wait for the reply. */
+async function deleteName(page: Page): Promise<void> {
+  await dismissToasts(page)
+  await clickSubmit(shownByTestId(page, 'i18n-names-delete-en'))
+  await expect(page.getByTestId(DELETE_WINDOW)).toBeVisible()
+  await clickSubmit(page.getByTestId(DELETE_CONFIRM))
+  await expect(page.getByTestId(DELETE_WINDOW)).toHaveCount(0)
+  await expect(
+    page
+      .getByTestId('hilos-toast-success')
+      .filter({ hasText: 'Name of qj in English (en) removed.' }),
+  ).toBeVisible()
+}
+
+/**
+ * Both windows name the country alike in the one h1, the last crumb and the
+ * browser tab, and each keeps its own address on the code: the window's URL, the
+ * hrefs of both tabs and the code in the head block never follow the name.
+ */
+async function expectBothHeads(
+  windows: readonly { tab: Page; path: string }[],
+  name: string,
+): Promise<void> {
+  for (const { tab, path } of windows) {
+    const heading = tab.getByRole('heading', { level: 1 })
+    await expect(heading).toHaveCount(1)
+    await expect(heading).toHaveAttribute('data-id', 'hilos-page-head-title')
+    await expect(tab.getByTestId('hilos-page-head-title')).toHaveText(name)
+    const lastCrumb = tab
+      .getByTestId('hilos-breadcrumb')
+      .locator('[aria-current="page"]')
+    // The words are the name alone: the divider before the crumb is hidden from
+    // assistive technology, so only the accessibility tree reads them clean.
+    await expect(lastCrumb).toMatchAriaSnapshot(`- listitem: ${name}`)
+    await expect(lastCrumb.locator('a')).toHaveCount(0)
+    await expect(tab).toHaveTitle(`${name} · ${APP_NAME}`)
+    await expect(tab.getByTestId('country-head-code')).toHaveText('qj')
+    await expect(tab).toHaveURL(new RegExp(`${path}$`))
+    await expect(
+      tab.getByTestId(`hilos-page-tab-${OVERVIEW_TAB}`),
+    ).toHaveAttribute('href', COUNTRY_PATH)
+    await expect(
+      tab.getByTestId(`hilos-page-tab-${NAMES_TAB}`),
+    ).toHaveAttribute('href', NAMES_PATH)
+  }
+}
+
+test('keeps the live country name and code URLs in Names and Overview through create, rename, empty save and delete', async ({
+  page,
+  context,
+}) => {
+  // Four writes, each read live in two windows and again after a reload and a direct entry.
+  test.slow()
+  await clearCountryNamesFixture()
+  const observer = await context.newPage()
+  try {
+    await seedCountryNamesFixture()
+    await signUpAdmin(page)
+    await openNames(page)
+    await gotoPage(observer, COUNTRY_PATH, PAGE_READY)
+    const windows = [
+      { tab: page, path: NAMES_PATH },
+      { tab: observer, path: COUNTRY_PATH },
+    ]
+    await expectBothHeads(windows, UNNAMED)
+
+    for (const step of [
+      {
+        name: 'Country from UI',
+        write: () =>
+          writeName(
+            page,
+            'add-en',
+            'Country from UI',
+            'Name of Country from UI (qj) in English (en) added.',
+          ),
+      },
+      {
+        name: 'Renamed country',
+        write: () =>
+          writeName(
+            page,
+            'edit-en',
+            'Renamed country',
+            'Name of Renamed country (qj) in English (en) saved.',
+          ),
+      },
+      {
+        name: UNNAMED,
+        write: async () => {
+          await writeName(
+            page,
+            'edit-en',
+            '',
+            'Name of qj in English (en) saved.',
+          )
+          // A saved empty name is a name, not its absence.
+          await expect(page.getByTestId('i18n-names-none-en')).toHaveCount(0)
+        },
+      },
+      {
+        name: UNNAMED,
+        write: async () => {
+          await deleteName(page)
+          await expect(shownByTestId(page, 'i18n-names-none-en')).toHaveText(
+            'No name',
+          )
+        },
+      },
+    ]) {
+      const live = await watchI18nLivePages(expect, [page, observer])
+      await step.write()
+      await expectBothHeads(windows, step.name)
+      await live.unchanged()
+
+      // The writer reloads on Names; the observer enters Overview from the address.
+      await page.reload()
+      await expectPageReady(page)
+      await gotoPage(observer, COUNTRY_PATH, PAGE_READY)
+      await expectBothHeads(windows, step.name)
+    }
+  } finally {
+    await observer.close()
+    await clearCountryNamesFixture()
+  }
+})
+
 test('writes country names and corrections live in two tabs, including literal empty values', async ({
   page,
   context,
@@ -98,7 +247,7 @@ test('writes country names and corrections live in two tabs, including literal e
     await typeInto(page.getByTestId(INPUT), 'Country from UI')
     await saveName(page, 'Name of Country from UI (qj) in English (en) added.')
     for (const tab of [page, observer]) {
-      await expect(tab.getByTestId('country-card-title')).toHaveText(
+      await expect(tab.getByTestId('hilos-page-head-title')).toHaveText(
         'Country from UI',
       )
       await expectName(tab, 'en', 'Country from UI')
@@ -210,7 +359,9 @@ test('refuses a concurrent correction ADD and keeps its draft', async ({
       await expect(shownByTestId(tab, 'i18n-names-none-en')).toHaveText(
         'No name',
       )
-      await expect(tab.getByTestId('country-card-title')).toHaveText('qj')
+      await expect(tab.getByTestId('hilos-page-head-title')).toHaveText(
+        'Unnamed country',
+      )
     }
     const trigger = shownByTestId(page, 'i18n-country-name-locale-add-qk-FR')
     await expect(trigger).toHaveAccessibleName(
@@ -376,7 +527,9 @@ test('lets a viewer open, draft and cancel every country name form without writi
       await clickSubmit(page.getByTestId('modal-confirm-discard'))
       await expect(page.getByTestId(WINDOW)).toHaveCount(0)
     }
-    await expect(page.getByTestId('country-card-title')).toHaveText('qj')
+    await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
+      'Unnamed country',
+    )
     await expect(shownByTestId(page, 'i18n-names-none-en')).toHaveText(
       'No name',
     )

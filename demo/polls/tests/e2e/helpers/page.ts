@@ -140,3 +140,41 @@ export async function gotoAuthReturn(
   await page.goto(pathWithQuery)
   await expect(page.getByTestId(relayId)).toBeAttached()
 }
+
+/**
+ * The property a marked document carries on `window`, and the whole of the
+ * mechanism: it survives anything that leaves the document alone, and nothing
+ * survives the document being replaced.
+ */
+const DOCUMENT_MARK = '__hilosE2eDocumentMark'
+
+/**
+ * Mark the document the page is showing, so a later check can tell it apart
+ * from one that replaced it.
+ *
+ * Called BEFORE a move the router is meant to take over in place — a click on a
+ * native link of the page head — and read back with
+ * {@link expectDocumentUnchanged} once the new page has answered.
+ *
+ * @param page The Playwright page.
+ */
+export async function markDocument(page: Page): Promise<void> {
+  await page.evaluate((mark) => {
+    ;(window as unknown as Record<string, boolean>)[mark] = true
+  }, DOCUMENT_MARK)
+}
+
+/**
+ * Assert that the document marked by {@link markDocument} is still the one on
+ * screen: the move happened in place, without a new document.
+ *
+ * @param page The Playwright page, after the expected state has arrived.
+ */
+export async function expectDocumentUnchanged(page: Page): Promise<void> {
+  expect(
+    await page.evaluate(
+      (mark) => (window as unknown as Record<string, boolean>)[mark],
+      DOCUMENT_MARK,
+    ),
+  ).toBe(true)
+}
