@@ -196,11 +196,16 @@ function CountryNames({
           },
     )
   }
+  // A country deleted elsewhere under the open page turns it into the shell's
+  // 404 (HIL-1603): head and table go, and the name window stays in modals with
+  // its draft, its live source now empty, so it says Deleted.
   return (
     <HilosAdminPage
       page={HilosPages.I18N_COUNTRY_NAMES}
       headKind="entity"
       tabsLabel="Country pages"
+      preserveModalDraftsOnDelete
+      modals={<HilosI18nCountryNameWindow window={nameWindow} />}
       headVisual={
         card ? (
           <span
@@ -354,7 +359,6 @@ function CountryNames({
         target={target}
         source={source}
       />
-      <HilosI18nCountryNameWindow window={nameWindow} />
     </HilosAdminPage>
   )
 }

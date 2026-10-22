@@ -29,9 +29,25 @@ It also hosts the auth gate (HIL-165): when the project registers an
 `authSurface`, an anonymous 401 mounts that surface IN PLACE of ErrorPage, and
 the `authGate`'s modal shows the same surface over the live page for a gated
 action. Both dismiss and resume through the core gate — no navigation. Omit the
-pair and behavior is unchanged: a 401 renders ErrorPage like any status. -->
+pair and behavior is unchanged: a 401 renders ErrorPage like any status.
+
+A page shell may take over the refusal of its own deleted resource (HIL-1603):
+the outlet provides its retainForResourceDeletion to what it mounts
+(hilosPageErrorBoundaryKey), and while the core state holds the page on such a
+refusal (retainedOnError) the outlet draws no ErrorPage of its own and leaves the
+mounted page where it is — the same branch, so the same instance, and the
+windows it keeps open with their drafts — for the shell to draw the error in
+place of its content. Every other refusal still replaces the page here. -->
 <script setup lang="ts">
-import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
+import {
+  computed,
+  inject,
+  onMounted,
+  onUnmounted,
+  provide,
+  ref,
+  watch,
+} from 'vue'
 import type { Component } from 'vue'
 import {
   AUTH_SURFACE_HEADING_ID,
@@ -46,6 +62,7 @@ import type { AuthGate, PageView } from '@hilos/core/base'
 import ErrorPage from './ErrorPage.vue'
 import HilosModal from './HilosModal.vue'
 import HilosSkeleton from './HilosSkeleton.vue'
+import { hilosPageErrorBoundaryKey } from './hilosPageErrorBoundaryKey.js'
 import { hilosRouterKey } from './hilosRouterKey.js'
 import { useSignal } from './useSignal.js'
 
@@ -78,9 +95,11 @@ watch(
   { immediate: true },
 )
 onUnmounted(pageViewState.dispose)
+provide(hilosPageErrorBoundaryKey, pageViewState.retainForResourceDeletion)
 const pageError = useSignal(pageViewState.error)
 const pageLoading = useSignal(pageViewState.loading)
 const view = useSignal(pageViewState.view)
+const retainedOnError = useSignal(pageViewState.retainedOnError)
 const modalOpen = useSignal(props.authGate?.modalOpen ?? modalClosed)
 
 const skeletonFlag = createDeferredFlagState(DEFAULT_SKELETON_DELAY_MS)
@@ -138,7 +157,9 @@ function onModalToggle(open: boolean): void {
   <div data-id="hilos-page-state" :data-state="pageState" hidden />
   <div ref="pageSlot" class="hilos-page-slot">
     <component :is="props.authSurface" v-if="showAuthInPlace" />
-    <ErrorPage v-else-if="pageError" :error="pageError" />
+    <!-- A held page skips this branch and stays in the next one: the branch is
+    what keeps the instance, so no wrapper may move the page out of it. -->
+    <ErrorPage v-else-if="pageError && !retainedOnError" :error="pageError" />
     <component :is="view" v-else-if="view && !pageLoading" />
     <div
       v-else-if="pageLoading && showSkeleton"

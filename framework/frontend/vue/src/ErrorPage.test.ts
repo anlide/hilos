@@ -86,6 +86,86 @@ describe('ErrorPage', () => {
   })
 })
 
+/** The live 404 of a page whose resource was deleted while it stood open. */
+const DELETED: PageSubscriptionError = {
+  ...NOT_FOUND,
+  transitionMessage: 'It was deleted just now.',
+}
+
+describe('ErrorPage transition line', () => {
+  // The description is the paragraph right after the title: once the line is
+  // there, p.text-body-secondary names two paragraphs.
+  const DESCRIPTION = '.lead + p'
+  const LINE = '[data-id="page-error-transition-message"]'
+
+  it('draws the line under the description and before the way home', () => {
+    const wrapper = mount(ErrorPage, { props: { error: DELETED } })
+
+    const surface = wrapper.get('[data-id="page-error"]')
+    const description = surface.get(DESCRIPTION)
+    const line = surface.get(LINE)
+    const home = surface.get('[data-id="page-error-home"]')
+    expect(description.text()).toBe(NOT_FOUND.message)
+    expect(description.classes()).toEqual(['text-body-secondary', 'mb-1'])
+    expect(line.element.tagName).toBe('P')
+    expect(line.classes()).toEqual(['small', 'text-body-secondary'])
+    expect(line.text()).toBe('It was deleted just now.')
+    expect(description.element.nextElementSibling).toBe(line.element)
+    expect(line.element.nextElementSibling).toBe(home.element)
+    expect(surface.findAll('h1')).toHaveLength(1)
+    expect(surface.findAll('[data-id="page-error-home"]')).toHaveLength(1)
+  })
+
+  it('shows any server line literally, never as markup', () => {
+    const wrapper = mount(ErrorPage, {
+      props: {
+        error: { ...DELETED, transitionMessage: 'Gone <b>now</b> & for good' },
+      },
+    })
+
+    const line = wrapper.get(LINE)
+    expect(line.text()).toBe('Gone <b>now</b> & for good')
+    expect(line.find('b').exists()).toBe(false)
+    expect(line.element.innerHTML).toBe(
+      'Gone &lt;b&gt;now&lt;/b&gt; &amp; for good',
+    )
+  })
+
+  it('draws neither the line nor its margin for a refusal without the key', () => {
+    const wrapper = mount(ErrorPage, { props: { error: NOT_FOUND } })
+
+    const surface = wrapper.get('[data-id="page-error"]')
+    expect(surface.find(LINE).exists()).toBe(false)
+    expect(surface.get(DESCRIPTION).classes()).toEqual(['text-body-secondary'])
+    expect(surface.findAll('p')).toHaveLength(2)
+  })
+
+  it('takes the line away when the next refusal carries no key', async () => {
+    const wrapper = mount(ErrorPage, { props: { error: DELETED } })
+
+    await wrapper.setProps({ error: NOT_FOUND })
+    expect(wrapper.find(LINE).exists()).toBe(false)
+    expect(wrapper.get(DESCRIPTION).classes()).toEqual(['text-body-secondary'])
+
+    await wrapper.setProps({
+      error: { ...FORBIDDEN, transitionMessage: 'Moved.' },
+    })
+    expect(wrapper.get(LINE).text()).toBe('Moved.')
+    await wrapper.setProps({ error: FORBIDDEN })
+    expect(wrapper.find(LINE).exists()).toBe(false)
+    expect(wrapper.findAll('h1')).toHaveLength(1)
+    expect(wrapper.findAll('[data-id="page-error-home"]')).toHaveLength(1)
+  })
+
+  it('hands the anchor of its way home to the shell that draws it', () => {
+    const wrapper = mount(ErrorPage, { props: { error: DELETED } })
+
+    expect(wrapper.vm.homeLink()).toBe(
+      wrapper.get('[data-id="page-error-home"]').element,
+    )
+  })
+})
+
 function routerWith(pageError: PageSubscriptionError | null): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({

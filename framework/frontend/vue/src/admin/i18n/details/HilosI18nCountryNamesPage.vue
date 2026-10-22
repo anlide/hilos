@@ -4,6 +4,9 @@ every language of the system (HIL-1483). The country's shared head — the same
 block and Overview · Names row as on the main country page, its content from this
 page's live card — stands above the names table, with three states: loading
 skeleton, card with table, and unavailable alert when deleted.
+A country deleted elsewhere under the open page turns it into the shell's 404
+(preserveModalDraftsOnDelete, HIL-1603): head and table go, and the name window
+stays in #modals with its draft, its live source now empty, so it says Deleted.
 Bootstrap classes only, painted with classes that follow the theme
 (styling-rules.md). -->
 <script setup lang="ts">
@@ -192,6 +195,7 @@ onUnmounted(() => {
     :page="HilosPages.I18N_COUNTRY_NAMES"
     head-kind="entity"
     tabs-label="Country pages"
+    preserve-modal-drafts-on-delete
   >
     <template v-if="card" #head-visual>
       <span
@@ -330,6 +334,8 @@ onUnmounted(() => {
       :target="target"
       :source="source"
     />
-    <HilosI18nCountryNameWindow :window="nameWindow" />
+    <template #modals>
+      <HilosI18nCountryNameWindow :window="nameWindow" />
+    </template>
   </HilosAdminPage>
 </template>

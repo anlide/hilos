@@ -30,6 +30,15 @@
 // the `authGate`'s modal shows the same surface over the live page for a gated
 // action. Both dismiss and resume through the core gate — no navigation. Omit
 // the pair and behavior is unchanged: a 401 renders ErrorPage like any status.
+//
+// A page shell may take over the refusal of its own deleted resource (HIL-1603):
+// the outlet provides its retainForResourceDeletion to what it mounts
+// (HilosPageErrorBoundaryContext), and while the core state holds the page on
+// such a refusal (retainedOnError) the outlet draws no ErrorPage of its own and
+// leaves the mounted page where it is — the same element in the same place, so
+// the same instance, and the windows it keeps open with their drafts — for the
+// shell to draw the error in place of its content. Every other refusal still
+// replaces the page here.
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ComponentType, ReactNode } from 'react'
 import {
@@ -48,6 +57,7 @@ import {
 import { ErrorPage } from './ErrorPage.js'
 import { HilosModal } from './HilosModal.js'
 import { HilosSkeleton } from './HilosSkeleton.js'
+import { HilosPageErrorBoundaryContext } from './hilosPageErrorBoundaryContext.js'
 import { HilosRouterContext } from './hilosRouterContext.js'
 import { useSignal } from './useSignal.js'
 
@@ -56,6 +66,9 @@ const MODAL_CLOSED = createSignal(false)
 
 /** No component is ready before the outlet's layout effect connects core. */
 const VIEW_EMPTY = createSignal<ComponentType | undefined>(undefined)
+
+/** Nothing is held before the outlet's layout effect connects core. */
+const NOT_RETAINED = createSignal(false)
 
 /** Props for {@link HilosView}: the page-key → component map and the auth slot. */
 export interface HilosViewProps {
@@ -114,6 +127,9 @@ export function HilosView({
   const pageError = useSignal(pageViewState?.error ?? router.pageError)
   const pageLoading = useSignal(pageViewState?.loading ?? router.pageLoading)
   const View = useSignal(pageViewState?.view ?? VIEW_EMPTY)
+  const retainedOnError = useSignal(
+    pageViewState?.retainedOnError ?? NOT_RETAINED,
+  )
   const modalOpen = useSignal(authGate?.modalOpen ?? MODAL_CLOSED)
   const AuthSurface = authSurface
 
@@ -155,11 +171,13 @@ export function HilosView({
   // The same choice the Vue peer makes in its template: the surface in place of
   // a 401'd page, the error surface for any other denial, the mapped page once it
   // answered, its skeleton while the wait lasts. (`AuthSurface` is re-tested only
-  // so TypeScript narrows it.)
+  // so TypeScript narrows it.) A held page skips the error and stays the same
+  // `<View />` in the same place: that is what keeps its instance, so no wrapper
+  // or key may set it apart from the page it was before the refusal.
   let content: ReactNode
   if (showAuthInPlace && AuthSurface) {
     content = <AuthSurface />
-  } else if (pageError) {
+  } else if (pageError && !retainedOnError) {
     content = <ErrorPage error={pageError} />
   } else if (View && !pageLoading) {
     content = <View />
@@ -180,7 +198,11 @@ export function HilosView({
     <>
       <div data-id="hilos-page-state" data-state={pageState} hidden />
       <div ref={slotRef} className="hilos-page-slot">
-        {content}
+        <HilosPageErrorBoundaryContext.Provider
+          value={pageViewState?.retainForResourceDeletion}
+        >
+          {content}
+        </HilosPageErrorBoundaryContext.Provider>
       </div>
       <div
         ref={departureRef}

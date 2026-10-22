@@ -3,14 +3,18 @@ import {
   ActionError,
   createSignal,
   bindAdminAccess,
+  createAppPageRouter,
+  createHilosRouter,
   HilosPages,
   pageIdentity,
+  PageSubscription,
   ScopeManager,
   type ActionResult,
   type ActionLifecycle,
   type HilosConnection,
   type HilosRouter,
   type PageRouteMatch,
+  type PageSubscriptionError,
   type Scope,
 } from '@hilos/core/base'
 import {
@@ -21,12 +25,14 @@ import {
   type HilosI18nCountryContext,
 } from '@hilos/core/admin/i18n'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { markRaw, nextTick } from 'vue'
+import { defineComponent, h, markRaw, nextTick } from 'vue'
 
 import HilosI18nCountryNamesPage from './HilosI18nCountryNamesPage.vue'
 import HilosI18nCountryNameDelete from './HilosI18nCountryNameDelete.vue'
 import HilosI18nCountryNameWindow from './HilosI18nCountryNameWindow.vue'
 import HilosI18nNamesTable from './HilosI18nNamesTable.vue'
+import ErrorPage from '../../../ErrorPage.vue'
+import HilosView from '../../../HilosView.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
 
 const initialCard: HilosI18nCountryCard = {
@@ -238,7 +244,11 @@ function harness(
       provide: { [hilosRouterKey as symbol]: navigation },
       stubs: options.realShell
         ? {}
-        : { HilosAdminPage: { template: '<main><slot /></main>' } },
+        : {
+            HilosAdminPage: {
+              template: '<main><slot /><slot name="modals" /></main>',
+            },
+          },
     },
   })
   mounted.push(view)
@@ -1123,5 +1133,336 @@ describe('country name windows sharing focus during tracked writes', () => {
     expect(
       document.querySelector('[data-id="i18n-country-name-delete-window"]'),
     ).toBeNull()
+  })
+})
+
+/** The ordinary 404 of a country names page whose country does not exist. */
+const NAMES_NOT_FOUND: PageSubscriptionError = {
+  page: HilosPages.I18N_COUNTRY_NAMES,
+  httpCode: 404,
+  errorCode: 'not_found',
+  title: 'Page Not Found',
+  message: 'The page you are looking for does not exist.',
+}
+
+/** The live 404 a viewer gets when the country is deleted under its names. */
+const NAMES_DELETED: PageSubscriptionError = {
+  ...NAMES_NOT_FOUND,
+  transitionMessage: 'It was deleted just now.',
+}
+
+/**
+ * A writing language with no name yet. Names refer to their country and stop
+ * its deletion, so a country that can be deleted has none, and the window open
+ * under its deletion is the one its plus opens.
+ */
+const WRITING_ROW = {
+  inLanguageId: 51,
+  nameId: null,
+  rowKey: '51',
+  code: 'qk',
+  nativeName: 'Writing',
+  name: null,
+  corrections: [],
+}
+
+/**
+ * The names page as an app mounts it: the routed outlet over the real navigator
+ * and page subscription. A refusal then reaches the page the way the server's
+ * does — the error is set and the page scope emptied under it (HIL-1600) — so
+ * the name window loses its card because the scope went, not because a test
+ * cleared it.
+ */
+function liveNamesPage() {
+  const scopes = new ScopeManager()
+  scopes.session.data.set('adminViewMode', false)
+  releases.push(bindAdminAccess(scopes))
+  const subscription = new PageSubscription(
+    {
+      state: 'connected',
+      reconnectDragging: false,
+      send: () => true,
+      on: () => () => {},
+      forgetPageFrames: () => {},
+      tableWindowDescriptors: () => ({}),
+    },
+    scopes,
+  )
+  let path = '/hilos/i18n/countries/us/names'
+  const navigation = createHilosRouter(createAppPageRouter({}), subscription, {
+    pathname: () => path,
+    pushState: (next) => {
+      path = next
+    },
+    replaceState: (next) => {
+      path = next
+    },
+    onPopState: () => () => {},
+  })
+  navigation.start()
+  releases.push(navigation.stop)
+  const dispatch = vi.fn()
+  const context: HilosI18nCountryContext = {
+    ...seededContext().context,
+    scopes,
+    actions: { dispatch } as unknown as ActionLifecycle,
+  }
+  const pageMounts = vi.fn()
+  const Names = markRaw(
+    defineComponent(() => {
+      pageMounts()
+      return () => h(HilosI18nCountryNamesPage, { context: markRaw(context) })
+    }),
+  )
+  const view = mount(HilosView, {
+    props: { pages: { [HilosPages.I18N_COUNTRY_NAMES]: Names } },
+    attachTo: document.body,
+    global: { provide: { [hilosRouterKey as symbol]: navigation } },
+  })
+  mounted.push(view)
+
+  return {
+    view,
+    subscription,
+    navigation,
+    dispatch,
+    pageMounts,
+    /** Answer the subscription the way the names page does, its table with it. */
+    answer: async () => {
+      answerAsNames(scopes.page()!)
+      subscription.ingestPageResponse(HilosPages.I18N_COUNTRY_NAMES, {
+        data: { [COUNTRY_CARD_DATA]: initialCard },
+      })
+      await settlePage()
+      view
+        .getComponent(HilosI18nNamesTable)
+        .props('controller')
+        .ingestWindow(
+          [{ rowKey: '51', slots: { language: WRITING_ROW } }],
+          1,
+          true,
+          null,
+          null,
+          100,
+        )
+      await settlePage()
+    },
+  }
+}
+
+/**
+ * Open the base name's add window from its plus in the table and type a draft
+ * into it.
+ *
+ * @param live The answered page.
+ */
+async function draftName(live: ReturnType<typeof liveNamesPage>) {
+  const opener = live.view.get('tr [data-id="i18n-country-name-add-qk"]')
+  ;(opener.element as HTMLElement).focus()
+  await opener.trigger('click')
+  await settlePage()
+  const input = document.querySelector<HTMLInputElement>(
+    '[data-id="i18n-country-name-input"]',
+  )!
+  expect(document.activeElement).toBe(input)
+  input.value = 'Draft name'
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  await settlePage()
+
+  return { opener: opener.element as HTMLElement, input }
+}
+
+describe('country names under a country deleted elsewhere', () => {
+  afterEach(() => {
+    document.body.classList.remove('modal-open')
+  })
+
+  it('keeps the name window and its draft above the one 404, refuses Save, and returns focus home from the table opener', async () => {
+    const live = liveNamesPage()
+    await live.answer()
+    const { opener, input } = await draftName(live)
+
+    live.subscription.handleSubscriptionError(NAMES_DELETED)
+    await settlePage()
+
+    expect(live.pageMounts).toHaveBeenCalledTimes(1)
+    expect(document.querySelector('[data-id="i18n-country-name-input"]')).toBe(
+      input,
+    )
+    expect(input.value).toBe('Draft name')
+    expect(input.disabled).toBe(false)
+    expect(document.activeElement).toBe(input)
+    expect(
+      document.querySelector('[data-id="i18n-country-name-notice"]')
+        ?.textContent,
+    ).toContain('Deleted elsewhere — your text stays to copy.')
+    const submit = document.querySelector<HTMLButtonElement>(
+      '[data-id="i18n-country-name-submit"]',
+    )!
+    expect(submit.disabled).toBe(true)
+    expect(submit.textContent).toBe('Deleted')
+    const shell = live.view.get('[data-id="hilos-admin-page"]')
+    expect(live.view.findAllComponents(ErrorPage)).toHaveLength(1)
+    expect(shell.get('[data-id="page-error-transition-message"]').text()).toBe(
+      'It was deleted just now.',
+    )
+    for (const gone of [
+      'hilos-page-head',
+      'hilos-breadcrumb',
+      'hilos-page-tabs',
+      'country-names',
+      'country-names-unavailable',
+    ]) {
+      expect(live.view.find(`[data-id="${gone}"]`).exists()).toBe(false)
+    }
+    expect(live.view.find('table').exists()).toBe(false)
+    expect(opener.isConnected).toBe(false)
+    const headings = live.view.findAll('h1')
+    expect(headings).toHaveLength(1)
+    expect(headings[0].text()).toBe('404')
+
+    input
+      .closest('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    submit.click()
+    await settlePage()
+    expect(live.dispatch).not.toHaveBeenCalled()
+
+    document
+      .querySelector<HTMLButtonElement>('[data-id="i18n-country-name-cancel"]')!
+      .click()
+    await settlePage()
+    expect(document.querySelector('[data-id="i18n-country-name-input"]')).toBe(
+      input,
+    )
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-confirm-discard"]')!
+      .click()
+    await settlePage()
+
+    expect(
+      document.querySelector('[data-id="i18n-country-name-window"]'),
+    ).toBeNull()
+    expect(live.view.findAllComponents(ErrorPage)).toHaveLength(1)
+    expect(
+      live.view.find('[data-id="page-error-transition-message"]').exists(),
+    ).toBe(true)
+    expect(document.activeElement).toBe(
+      live.view.get('[data-id="page-error-home"]').element,
+    )
+    expect(live.dispatch).not.toHaveBeenCalled()
+  })
+
+  it('draws the same 404 in place of the head and the table with no window open', async () => {
+    const live = liveNamesPage()
+    await live.answer()
+
+    live.subscription.handleSubscriptionError(NAMES_DELETED)
+    await settlePage()
+
+    const shell = live.view.get('[data-id="hilos-admin-page"]')
+    expect(live.view.findAllComponents(ErrorPage)).toHaveLength(1)
+    expect(shell.get('[data-id="page-error-transition-message"]').text()).toBe(
+      'It was deleted just now.',
+    )
+    expect(live.view.find('[data-id="hilos-page-head"]').exists()).toBe(false)
+    expect(live.view.find('table').exists()).toBe(false)
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    expect(
+      live.view.get('[data-id="hilos-page-state"]').attributes('data-state'),
+    ).toBe('error')
+  })
+
+  it('keeps the window and its draft through a later 404 that brings no line', async () => {
+    const live = liveNamesPage()
+    await live.answer()
+    const { input } = await draftName(live)
+    live.subscription.handleSubscriptionError(NAMES_DELETED)
+    await settlePage()
+
+    live.subscription.handleSubscriptionError(NAMES_NOT_FOUND)
+    await settlePage()
+
+    expect(
+      live.view.find('[data-id="page-error-transition-message"]').exists(),
+    ).toBe(false)
+    expect(live.view.findAllComponents(ErrorPage)).toHaveLength(1)
+    expect(
+      live.view
+        .get('[data-id="hilos-admin-page"]')
+        .find('[data-id="page-error"]')
+        .exists(),
+    ).toBe(true)
+    expect(document.querySelector('[data-id="i18n-country-name-input"]')).toBe(
+      input,
+    )
+    expect(input.value).toBe('Draft name')
+    expect(live.pageMounts).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    {
+      name: "the server's 403",
+      leave: (live: ReturnType<typeof liveNamesPage>) =>
+        live.subscription.handleSubscriptionError({
+          ...NAMES_NOT_FOUND,
+          httpCode: 403,
+          errorCode: 'forbidden',
+          title: 'Forbidden',
+          message: 'Server refusal words',
+        }),
+      code: '403',
+    },
+    {
+      name: 'the access the client saw go',
+      leave: (live: ReturnType<typeof liveNamesPage>) =>
+        live.navigation.denyCurrentPage(),
+      code: '403',
+    },
+    {
+      name: 'leaving for another country',
+      leave: (live: ReturnType<typeof liveNamesPage>) =>
+        live.navigation.navigate('/hilos/i18n/countries/fr/names'),
+      code: null,
+    },
+  ])(
+    'takes the window and its draft away on $name after the 404',
+    async ({ leave, code }) => {
+      const live = liveNamesPage()
+      await live.answer()
+      await draftName(live)
+      live.subscription.handleSubscriptionError(NAMES_DELETED)
+      await settlePage()
+
+      leave(live)
+      await settlePage()
+
+      expect(
+        document.querySelector('[data-id="i18n-country-name-window"]'),
+      ).toBeNull()
+      expect(document.querySelector('[data-id="modal"]')).toBeNull()
+      expect(live.view.find('[data-id="hilos-admin-page"]').exists()).toBe(
+        false,
+      )
+      if (code === null) {
+        expect(live.view.find('[data-id="page-error"]').exists()).toBe(false)
+      } else {
+        expect(live.view.findAllComponents(ErrorPage)).toHaveLength(1)
+        expect(
+          live.view.get('[data-id="page-error"]').attributes('data-error-code'),
+        ).toBe(code)
+      }
+    },
+  )
+
+  it('never mounts the names page for a 404 that answers its first subscribe', async () => {
+    const live = liveNamesPage()
+
+    live.subscription.handleSubscriptionError(NAMES_NOT_FOUND)
+    await settlePage()
+
+    expect(live.pageMounts).not.toHaveBeenCalled()
+    expect(live.view.find('[data-id="hilos-admin-page"]').exists()).toBe(false)
+    expect(live.view.findAllComponents(ErrorPage)).toHaveLength(1)
   })
 })

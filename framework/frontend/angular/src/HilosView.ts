@@ -31,6 +31,15 @@
 // the `authGate`'s modal shows the same surface over the live page for a gated
 // action. Both dismiss and resume through the core gate — no navigation. Omit
 // the pair and behavior is unchanged: a 401 renders ErrorPage like any status.
+//
+// A page shell may take over the refusal of its own deleted resource (HIL-1603):
+// the outlet provides its retainForResourceDeletion to the page it mounts
+// (HILOS_PAGE_ERROR_BOUNDARY), and while the core state holds the page on such a
+// refusal (retainedOnError) the outlet draws no ErrorPage of its own and leaves
+// the mounted page where it is — the same branch and the same outlet, so the
+// same instance, and the windows it keeps open with their drafts — for the shell
+// to draw the error in place of its content. Every other refusal still replaces
+// the page here.
 import { NgComponentOutlet } from '@angular/common'
 import {
   afterNextRender,
@@ -41,6 +50,7 @@ import {
   ElementRef,
   effect,
   inject,
+  Injector,
   input,
   signal,
   viewChild,
@@ -59,6 +69,7 @@ import type { AuthGate, PageView } from '@hilos/core/base'
 import { ErrorPage } from './ErrorPage.js'
 import { HilosModal } from './HilosModal.js'
 import { HilosSkeleton } from './HilosSkeleton.js'
+import { HILOS_PAGE_ERROR_BOUNDARY } from './hilosPageErrorBoundaryToken.js'
 import { hilosSignal } from './hilosSignal.js'
 import { HILOS_ROUTER } from './hilosRouterToken.js'
 
@@ -80,10 +91,16 @@ import { HILOS_ROUTER } from './hilosRouterToken.js'
     <div #pageSlot class="hilos-page-slot">
       @if (showAuthInPlace()) {
         <ng-container [ngComponentOutlet]="authSurfaceType()" />
-      } @else if (pageError(); as error) {
+      } @else if (ownError(); as error) {
         <hilos-error-page [error]="error" />
       } @else if (!pageLoading()) {
-        <ng-container [ngComponentOutlet]="view() ?? null" />
+        <!-- A held page skips the branch above and stays in this one: the
+        branch and the outlet are what keep its instance, so no wrapper may move
+        the page out of them. -->
+        <ng-container
+          [ngComponentOutlet]="view() ?? null"
+          [ngComponentOutletInjector]="pageInjector"
+        />
       } @else if (showSkeleton()) {
         <div class="h-100" data-id="hilos-page-skeleton">
           <span class="visually-hidden" role="status">Loading…</span>
@@ -176,6 +193,21 @@ export class HilosView {
   protected readonly view = hilosSignal(this.pageViewState.view)
   protected readonly pageError = hilosSignal(this.pageViewState.error)
   protected readonly pageLoading = hilosSignal(this.pageViewState.loading)
+  private readonly retainedOnError = hilosSignal(
+    this.pageViewState.retainedOnError,
+  )
+  // What the mounted page resolves its dependencies through: the outlet's own
+  // injector with the offer to its page shell on top. One for the outlet's life,
+  // so handing it over never rebuilds the page.
+  protected readonly pageInjector = Injector.create({
+    providers: [
+      {
+        provide: HILOS_PAGE_ERROR_BOUNDARY,
+        useValue: this.pageViewState.retainForResourceDeletion,
+      },
+    ],
+    parent: inject(Injector),
+  })
   private readonly skeletonFlag = createDeferredFlagState(
     DEFAULT_SKELETON_DELAY_MS,
   )
@@ -187,6 +219,12 @@ export class HilosView {
   // it lands.
   protected readonly pageState = computed<string>(() =>
     this.pageError() ? 'error' : this.pageLoading() ? 'loading' : 'ready',
+  )
+
+  // The refusal this outlet draws itself: every one but the one a held page's
+  // shell draws in place of its content.
+  protected readonly ownError = computed(() =>
+    this.retainedOnError() ? null : this.pageError(),
   )
 
   // The project's own skeleton for the page, or null for the default one.

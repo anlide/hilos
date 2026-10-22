@@ -5,12 +5,30 @@ import { shownByTestId } from './table.js'
 
 // The country tabs' page keys and the server's 404 catalog. This folder does
 // not import the core, so the words are copied. A live deletion adds the line
-// on the frame; a later subscribe omits the key. The screen does not draw it.
+// on the frame and the screen draws it under the 404; a later subscribe omits
+// the key, and the screen draws no line.
 const COUNTRY_CARD_PAGE = 'hilos_i18n_country'
 const COUNTRY_NAMES_PAGE = 'hilos_i18n_country_names'
 const COUNTRY_NOT_FOUND_TITLE = 'Page Not Found'
 const COUNTRY_NOT_FOUND_MESSAGE = 'The page you are looking for does not exist.'
 const COUNTRY_DELETED_LINE = 'It was deleted just now.'
+
+/**
+ * Each country tab as its 404 names it: the page key on the frame, the address
+ * after the country's code, and the tab's own words for a body it cannot draw.
+ */
+const COUNTRY_TABS = {
+  overview: {
+    page: COUNTRY_CARD_PAGE,
+    path: '',
+    unavailable: 'country-card-unavailable',
+  },
+  names: {
+    page: COUNTRY_NAMES_PAGE,
+    path: '/names',
+    unavailable: 'country-names-unavailable',
+  },
+} as const
 
 // The rows and checks of the languages and countries section that all three kits
 // perform alike, because the section's data-id controls match across the SDKs.
@@ -228,9 +246,16 @@ export async function expectNoOtherLanguageNames(
   ).toHaveText('No other languages yet')
 }
 
-/** The country-card 404 fields, or undefined when this frame is another refusal. */
+/**
+ * The country 404 fields of one tab, or undefined when this frame is another
+ * refusal or the refusal of the other tab.
+ *
+ * @param frame One refusal frame from the log.
+ * @param tab The country tab the frame must name.
+ */
 function countryNotFound(
   frame: PageErrorFrameLog,
+  tab: keyof typeof COUNTRY_TABS,
 ): Record<string, unknown> | undefined {
   const data = frame.data
   if (data === null || typeof data !== 'object' || Array.isArray(data)) {
@@ -239,7 +264,7 @@ function countryNotFound(
   const fields = data as Record<string, unknown>
   if (
     frame.type !== 'subscription_page_error' ||
-    fields.page !== COUNTRY_CARD_PAGE ||
+    fields.page !== COUNTRY_TABS[tab].page ||
     fields.httpCode !== 404 ||
     fields.errorCode !== 'not_found' ||
     fields.title !== COUNTRY_NOT_FOUND_TITLE ||
@@ -250,14 +275,28 @@ function countryNotFound(
   return fields
 }
 
-/** The server 404 on the same country address. The deletion line is not drawn. */
+/**
+ * The server 404 on the same address of the country's tab, in place of the
+ * whole page: no head, crumbs or tabs, and none of the tab's own body. The line
+ * under the 404 is drawn only by a live deletion.
+ *
+ * @param expect The spec's expect.
+ * @param page The window on the deleted country's tab.
+ * @param countryCode The deleted country's code, still in the address.
+ * @param tab The tab the window stands on.
+ * @param line Whether the deletion line stands under the 404.
+ */
 async function expectCountryNotFoundScreen(
   expect: Expect,
   page: Page,
   countryCode: string,
+  tab: keyof typeof COUNTRY_TABS,
+  line: boolean,
 ): Promise<void> {
   await expect(page).toHaveURL(
-    new RegExp(`/hilos/i18n/countries/${countryCode}$`),
+    new RegExp(
+      `/hilos/i18n/countries/${countryCode}${COUNTRY_TABS[tab].path}$`,
+    ),
   )
   await expect(page.getByTestId('hilos-page-state')).toHaveAttribute(
     'data-state',
@@ -268,29 +307,46 @@ async function expectCountryNotFoundScreen(
   await expect(error).toHaveAttribute('data-error-code', '404')
   await expect(error).toContainText(COUNTRY_NOT_FOUND_TITLE)
   await expect(error).toContainText(COUNTRY_NOT_FOUND_MESSAGE)
-  await expect(page.getByTestId('country-card-unavailable')).toHaveCount(0)
+  const deletion = error.getByTestId('page-error-transition-message')
+  if (line) {
+    await expect(deletion).toBeVisible()
+    await expect(deletion).toHaveText(COUNTRY_DELETED_LINE)
+  } else {
+    await expect(deletion).toHaveCount(0)
+  }
+  for (const gone of [
+    'hilos-page-head',
+    'hilos-breadcrumb',
+    'hilos-page-tabs',
+    COUNTRY_TABS[tab].unavailable,
+  ]) {
+    await expect(page.getByTestId(gone)).toHaveCount(0)
+  }
 }
 
 /**
- * A second window whose country was just deleted: the address stays, the
- * screen is the server 404, and the live frame carries the deletion line.
+ * A second window whose country was just deleted: the address of its tab
+ * stays, the screen is the server 404 with the deletion line under it, and the
+ * live frame of that tab carries the line.
  *
  * @param expect The spec's expect.
- * @param page The window that was open on the country card.
+ * @param page The window that was open on the country's tab.
  * @param frames Frames observed on that window since before it opened.
  * @param countryCode The deleted country's code, still in the address.
+ * @param tab The tab the window was open on; Overview unless named.
  */
 export async function expectDeletedCountryCard(
   expect: Expect,
   page: Page,
   frames: readonly PageErrorFrameLog[],
   countryCode: string,
+  tab: keyof typeof COUNTRY_TABS = 'overview',
 ): Promise<void> {
-  await expectCountryNotFoundScreen(expect, page, countryCode)
+  await expectCountryNotFoundScreen(expect, page, countryCode, tab, true)
   await expect
     .poll(() =>
       frames.some((frame) => {
-        const fields = countryNotFound(frame)
+        const fields = countryNotFound(frame, tab)
         return fields?.transitionMessage === COUNTRY_DELETED_LINE
       }),
     )
@@ -298,13 +354,14 @@ export async function expectDeletedCountryCard(
 }
 
 /**
- * The same 404 after a reload. The new frame omits the deletion-line key.
+ * The same 404 after a reload, with no line: the new frame omits its key.
  *
  * @param expect The spec's expect.
- * @param page The window reloaded on the deleted country's address.
+ * @param page The window reloaded on the deleted country's tab.
  * @param frames Frames observed on that window, including the reload.
  * @param countryCode The deleted country's code, still in the address.
  * @param loggedBeforeReload How many frames the log held before the reload.
+ * @param tab The tab the window was reloaded on; Overview unless named.
  */
 export async function expectDeletedCountryCardReloaded(
   expect: Expect,
@@ -312,12 +369,13 @@ export async function expectDeletedCountryCardReloaded(
   frames: readonly PageErrorFrameLog[],
   countryCode: string,
   loggedBeforeReload: number,
+  tab: keyof typeof COUNTRY_TABS = 'overview',
 ): Promise<void> {
-  await expectCountryNotFoundScreen(expect, page, countryCode)
+  await expectCountryNotFoundScreen(expect, page, countryCode, tab, false)
   await expect
     .poll(() =>
       frames.slice(loggedBeforeReload).some((frame) => {
-        const fields = countryNotFound(frame)
+        const fields = countryNotFound(frame, tab)
         return (
           fields !== undefined && !Object.hasOwn(fields, 'transitionMessage')
         )

@@ -222,8 +222,10 @@ A guest on an admin address gets no admin head or identity data. Error surfaces
 have no page head, breadcrumb or row. The shared Vue head preserves these
 boundaries: only `HilosAdminPage` draws it, for an answer that names
 `pageHeadOwner`; `HilosDashboardPage` does not use that shell; and the routed
-outlet's error page or auth surface replaces the whole page view. React's and
-Angular's heads keep the same three.
+outlet's error page or auth surface replaces the whole page view — or, for a
+page that opts in to [Deleted While Open](#deleted-while-open), the shell's own
+error page replaces its head and body. React's and Angular's heads keep the
+same three.
 
 ## Deleted While Open
 
@@ -253,8 +255,24 @@ and the field on the wire in
 
 On all three frontends, that live 404 replaces the page and removes its head,
 breadcrumb and row, while an already-open modal keeps its draft above the
-error. Show the server's one line only on the live transition; a reload shows
-the ordinary 404 without it (not in the code yet — HIL-1603).
+error. The boundary is opt-in: a page passes `preserveModalDraftsOnDelete` to
+`HilosAdminPage` (default off) and hands the shell its dialogs apart from its
+body (Vue `#modals`, React `modals`, Angular `#pageModals` beside `#pageBody`).
+The current error then replaces the head, breadcrumb, row, cards and body with
+one `ErrorPage`, and only the dialogs stay on the same mount; the routed outlet
+keeps the same page instance instead of drawing its own error. Both country tabs
+opt in with their edit window, the country window and the name window. Their
+delete dialogs stay in the body and go with it. Without the opt-in the outlet
+replaces the whole page, as before.
+
+The server's one line is the existing `error.transitionMessage`, drawn by
+`ErrorPage` as plain text under the description whenever the current error
+carries it, and only then. Show it only on the live transition; a reload shows
+the ordinary 404 without it. Only a 404 `not_found` is held. A loss of access
+(a 401, 403 or 503) is another refusal, so the page and its dialogs are
+destroyed as usual, as they are on a full answer, a navigation or a params
+change. The outlet-to-shell hand-off is in
+[multiframework-core.md](../frontend/multiframework-core.md#page-code-and-first-answer-state).
 
 ## Adoption Workflow
 
@@ -346,10 +364,18 @@ gate or enable Internationalization as a whole.
    `badges` and `description`, each a `TemplateRef<unknown> | undefined`. A
    template the page does not declare keeps the head's default for that part,
    and a template given in its place replaces the default. The Angular country
-   is the same on both tabs (classes omitted):
+   is the same on both tabs (classes omitted). Its head templates stand beside
+   the `#pageBody` and `#pageModals` of [Deleted While Open](#deleted-while-open),
+   not inside them: the shell reads them from the page's content, and under the
+   live 404 it draws neither head nor body.
 
    ```html
-   <hilos-admin-page [page]="page" headKind="entity" tabsLabel="Country pages">
+   <hilos-admin-page
+     [page]="page"
+     headKind="entity"
+     tabsLabel="Country pages"
+     [preserveModalDraftsOnDelete]="true"
+   >
      @if (card(); as current) {
        <ng-template #headVisual>
          <span aria-hidden="true" data-id="country-head-tile">{{ current.code }}</span>
@@ -365,8 +391,13 @@ gate or enable Internationalization as a whole.
        <ng-template #headDescription>
          <p data-id="country-head-description">Currency … · Default locale …</p>
        </ng-template>
-       <!-- the tab's body: Main and State on Overview, the names table on Names -->
      }
+     <ng-template #pageBody>
+       <!-- the tab's body: Main and State on Overview, the names table on Names -->
+     </ng-template>
+     <ng-template #pageModals>
+       <!-- the tab's edit window: the country window or the name window -->
+     </ng-template>
    </hilos-admin-page>
    ```
 4. Bind each tab's live instance name to the owner's entry and browser title
@@ -442,7 +473,7 @@ sequence without studying these files. They do not specify a future API.
 | React head and country | `framework/frontend/react/src/HilosPageHead.tsx`, `HilosBreadcrumb.tsx`, `HilosAdminPage.tsx`, `usePageInstanceName.ts`; `framework/frontend/core/src/routing/hilosAdmin.ts`; `framework/frontend/react/src/admin/i18n/details/HilosI18nCountryPage.tsx`, `HilosI18nCountryNamesPage.tsx` | In the code: the shared head, block and row; `HilosAdminPage` draws it for an answer naming `pageHeadOwner`; the live-name hook; both country tabs stand on it with the Overview · Names row |
 | Angular head and country | `framework/frontend/angular/src/HilosPageHead.ts`, `HilosBreadcrumb.ts`, `HilosLink.ts`, `HilosAdminPage.ts`; `framework/frontend/core/src/routing/hilosAdmin.ts`; `framework/frontend/angular/src/admin/i18n/details/HilosI18nCountryPage.ts`, `HilosI18nCountryNamesPage.ts` | In the code: the shared head, block and row; `HilosAdminPage` draws it for an answer naming `pageHeadOwner`; the live name bound in the country pages' effect; both country tabs stand on it with the Overview · Names row |
 | Live 404, server | `AbstractPage::resolvePageResource`, `PageResource::db`, `BrowserContext::refuseDeletedPageResources`, `PageSignalRouter::refuseDeletedResource` | In the code: other open windows get `not_found` and `transitionMessage`; the initiator keeps its acknowledgement and goes to the country list |
-| Live 404, clients | The page error surfaces in all three view layers | Show that line, remove the head and preserve an open modal draft (not in the code yet — HIL-1603) |
+| Live 404, clients | `framework/frontend/core/src/routing/pageViewState.ts`, `framework/frontend/core/src/dom/focusTrap.ts`; per kit under `framework/frontend/{vue,react,angular}/src/`: `ErrorPage`, `HilosView`, `HilosAdminPage` and the internal bridge `hilosPageErrorBoundaryKey.ts` (Vue), `hilosPageErrorBoundaryContext.ts` (React), `hilosPageErrorBoundaryToken.ts` (Angular); both country tabs in `admin/i18n/details/` (`HilosI18nCountryPage`, `HilosI18nCountryNamesPage`) | In the code: `ErrorPage` draws `error.transitionMessage` as a line; the outlet keeps a registered page through a live 404 `not_found`; `HilosAdminPage` with `preserveModalDraftsOnDelete` replaces head, row, cards and body with one `ErrorPage` and keeps its dialogs mounted, returning their focus to Back to home; both country tabs opt in with their edit window |
 | Adoption gate | HIL-1606 | Shared e2e navigation coverage before other owners' redraws (not in the code yet — HIL-1606) |
 
 `PageCatalogConstants` names the optional catalog fields `breadcrumb`, `entity`

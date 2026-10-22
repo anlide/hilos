@@ -1,16 +1,22 @@
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { StrictMode, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { afterEach, vi } from 'vitest'
 import {
   ActionLifecycle,
   bindAdminAccess,
+  COUNTRY_CARD_DATA,
+  createAppPageRouter,
+  createHilosRouter,
   createSignal,
   hilosToasts,
   pageIdentity,
   HilosPages,
+  PageSubscription,
   ScopeManager,
   type HilosConnection,
   type HilosI18nCountryCard,
+  type HilosI18nCountryContext,
   type HilosI18nCountryRow,
   type HilosI18nLanguageCard,
   type HilosI18nLanguageContext,
@@ -20,6 +26,7 @@ import {
   type HilosRouter,
   type PageRouteMatch,
 } from '@hilos/core'
+import { HilosView } from '../src/HilosView.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
 export const language: HilosI18nLanguageRow = {
@@ -242,6 +249,7 @@ export function harness(
   const navigation = {
     currentRoute: route,
     pageLoading: loading,
+    pageError: createSignal(null),
     pageIdentity: pageIdentity(scopes),
     resolvePath: (key: string, params?: Record<string, string>) => {
       const countryPath = `/hilos/i18n/countries/${params?.countryCode}`
@@ -329,6 +337,86 @@ export function harness(
         reason,
         errorType: 'ValidationException',
         errorDetail: 'The dependency appeared',
+      })
+    },
+  }
+}
+
+/**
+ * A country tab as an app mounts it: the routed outlet under StrictMode over the
+ * real navigator and page subscription, with harness()'s connection and action
+ * lifecycle underneath. A refusal then reaches the tab the way the server's does
+ * — the error is set and the page scope emptied under it (HIL-1600) — so a
+ * window loses its source because the scope went, not because a test cleared it.
+ *
+ * @param page The country tab's page key.
+ * @param rows The rows its table window serves.
+ * @param tab The tab itself, drawn over the harness's context.
+ */
+export function liveCountryTab(
+  page: string,
+  rows: Parameters<typeof harness>[1],
+  tab: (context: HilosI18nCountryContext) => ReactNode,
+) {
+  const h = harness(page, rows)
+  const subscription = new PageSubscription(
+    {
+      state: 'connected',
+      reconnectDragging: false,
+      send: () => true,
+      on: () => () => {},
+      forgetPageFrames: () => {},
+      tableWindowDescriptors: () => ({}),
+    },
+    h.scopes,
+  )
+  let path =
+    page === HilosPages.I18N_COUNTRY_NAMES
+      ? '/hilos/i18n/countries/gg/names'
+      : '/hilos/i18n/countries/gg'
+  const navigation = createHilosRouter(createAppPageRouter({}), subscription, {
+    pathname: () => path,
+    pushState: (next) => {
+      path = next
+    },
+    replaceState: (next) => {
+      path = next
+    },
+    onPopState: () => () => {},
+  })
+  navigation.start()
+  releases.push(navigation.stop)
+  const mounted = vi.fn()
+  function Tab() {
+    useEffect(() => {
+      mounted()
+    }, [])
+    return tab(h.context)
+  }
+  const view = render(
+    <StrictMode>
+      <HilosRouterContext.Provider value={navigation}>
+        <HilosView pages={{ [page]: Tab }} />
+      </HilosRouterContext.Provider>
+    </StrictMode>,
+  )
+  return {
+    ...h,
+    view,
+    subscription,
+    navigation,
+    mounted,
+    path: () => path,
+    /**
+     * Answer the subscription the way the tab does, its shell with its card.
+     *
+     * @param card The card the answer carries.
+     */
+    async answer(card: HilosI18nCountryCard = countryCard) {
+      await settle(() => {
+        subscription.ingestPageResponse(page, {
+          data: { ...countryTabShell(page), [COUNTRY_CARD_DATA]: card },
+        })
       })
     },
   }

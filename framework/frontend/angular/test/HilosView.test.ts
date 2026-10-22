@@ -2,7 +2,11 @@
 // in the page's place instead of white, never before the delay, gone on the
 // answer, and never over a refusal. The page-state marker the e2e suites of all
 // three demos wait on keeps its three values through all of it.
-import { Component, type Type } from '@angular/core'
+//
+// And a page shell that draws the deletion of its own resource (HIL-1603): the
+// outlet keeps the opted-in page mounted, its open dialog and draft with it,
+// while the shell draws the one ErrorPage in place of its content.
+import { Component, signal, type Type } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   createAuthGate,
@@ -14,6 +18,7 @@ import {
 } from '@hilos/core'
 import type {
   AuthGate,
+  HilosPageIdentity,
   HilosRouter,
   NavigablePages,
   NavigationEnvironment,
@@ -24,6 +29,8 @@ import type {
 } from '@hilos/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { HilosAdminPage } from '../src/HilosAdminPage.js'
+import { HilosModal } from '../src/HilosModal.js'
 import { HilosView } from '../src/HilosView.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 import { hilosAdminViews } from '@hilos/angular/admin-views'
@@ -430,6 +437,7 @@ function controlledRouter(
 ) {
   const pageLoading = createSignal(false)
   const pageError = createSignal<PageSubscriptionError | null>(null)
+  const pageIdentity = createSignal<HilosPageIdentity | undefined>(undefined)
   const awaitPageAnswer = () => {
     pageError.set(null)
     pageLoading.set(true)
@@ -445,6 +453,7 @@ function controlledRouter(
       ...navigablePages(),
       pageLoading,
       pageError,
+      pageIdentity,
       subscribe,
       unsubscribe: () => {
         pageLoading.set(false)
@@ -472,7 +481,7 @@ function controlledRouter(
     pageError.set(null)
     pageLoading.set(false)
   }
-  return { router, pageLoading, pageError, subscribe, answer }
+  return { router, pageLoading, pageError, pageIdentity, subscribe, answer }
 }
 
 /** Mount inputs before Angular runs effects that read required inputs. */
@@ -1053,4 +1062,264 @@ it('mounts a project override without running the default admin descriptor', () 
   })
   expect(find(fixture, 'known-page')).not.toBeNull()
   expect(load).not.toHaveBeenCalled()
+})
+
+/** The ordinary 404 of a card whose resource no longer exists. */
+const CARD_NOT_FOUND: PageSubscriptionError = {
+  page: 'lazy',
+  httpCode: 404,
+  errorCode: 'not_found',
+  title: 'Page Not Found',
+  message: 'The page you are looking for does not exist.',
+}
+
+/** The live 404 of a card whose resource was deleted while it stood open. */
+const CARD_DELETED: PageSubscriptionError = {
+  ...CARD_NOT_FOUND,
+  transitionMessage: 'It was deleted just now.',
+}
+
+const CARD_IDENTITY: HilosPageIdentity = {
+  label: 'Poland',
+  lead: 'One country.',
+  breadcrumb: [{ page: 'lazy', label: 'Poland' }],
+  children: [],
+}
+
+/**
+ * A card on the admin shell with one dialog in #pageModals, opened from a
+ * button in its #pageBody. The draft is the card's own state, so it lives
+ * exactly as long as the card's instance does.
+ *
+ * @param preserve Whether the card opts in.
+ */
+function shellPage(preserve: boolean) {
+  const mounted = vi.fn()
+  @Component({
+    selector: 'test-card-page',
+    imports: [HilosAdminPage, HilosModal],
+    template: `
+      <hilos-admin-page page="lazy" [preserveModalDraftsOnDelete]="preserve">
+        <ng-template #pageBody>
+          <p data-id="page-body">The card</p>
+          <button type="button" data-id="open-draft" (click)="open.set(true)">
+            Rename
+          </button>
+        </ng-template>
+        <ng-template #pageModals>
+          <hilos-modal [(open)]="open" title="Rename">
+            <input
+              data-id="draft"
+              data-autofocus
+              [value]="draft()"
+              (input)="onDraft($event)"
+            />
+          </hilos-modal>
+        </ng-template>
+      </hilos-admin-page>
+    `,
+  })
+  class Card {
+    protected readonly preserve = preserve
+    protected readonly open = signal(false)
+    protected readonly draft = signal('')
+
+    constructor() {
+      mounted()
+    }
+
+    protected onDraft(event: Event): void {
+      this.draft.set((event.target as HTMLInputElement).value)
+    }
+  }
+
+  return { component: Card, mounted }
+}
+
+describe('HilosView and a page shell under a live deletion', () => {
+  afterEach(() => {
+    TestBed.resetTestingModule()
+    document.body.innerHTML = ''
+  })
+
+  /** Every page error drawn anywhere in the document. */
+  function pageErrors(): NodeListOf<Element> {
+    return document.querySelectorAll('[data-id="page-error"]')
+  }
+
+  function draftInput(): HTMLInputElement | null {
+    return document.querySelector<HTMLInputElement>('[data-id="draft"]')
+  }
+
+  /**
+   * Open the card, its dialog from the card's button, and type a draft.
+   *
+   * @param preserve Whether the card opts in.
+   * @param kind Whether the outlet maps the card eagerly or behind a loader.
+   */
+  async function openCard(preserve: boolean, kind: 'eager' | 'lazy' = 'eager') {
+    const page = shellPage(preserve)
+    const harness = controlledRouter('/lazy/1')
+    harness.pageIdentity.set(CARD_IDENTITY)
+    const fixture = mountPages(harness.router, {
+      main: KnownPage,
+      lazy:
+        kind === 'eager'
+          ? page.component
+          : lazyPage(() => Promise.resolve(page.component)),
+    })
+    harness.answer()
+    await settleCode(fixture)
+    const opener = find(fixture, 'open-draft') as HTMLElement
+    opener.focus()
+    opener.click()
+    fixture.detectChanges()
+    const draft = draftInput()!
+    draft.value = 'my draft'
+    draft.dispatchEvent(new Event('input'))
+    fixture.detectChanges()
+    expect(page.mounted).toHaveBeenCalledTimes(1)
+    expect(draft.value).toBe('my draft')
+    expect(document.activeElement).toBe(draft)
+    const fail = (error: PageSubscriptionError) => {
+      harness.pageError.set(error)
+      fixture.detectChanges()
+    }
+
+    return { ...harness, fixture, page, draft, fail }
+  }
+
+  it.each(['eager', 'lazy'] as const)(
+    'keeps the %s card, its dialog and the draft while the shell draws the one error',
+    async (kind) => {
+      const { fixture, fail, page, draft } = await openCard(true, kind)
+      expect(find(fixture, 'hilos-admin-title')?.textContent?.trim()).toBe(
+        'Poland',
+      )
+
+      fail(CARD_DELETED)
+
+      expect(page.mounted).toHaveBeenCalledTimes(1)
+      expect(draftInput()).toBe(draft)
+      expect(draft.value).toBe('my draft')
+      expect(pageErrors()).toHaveLength(1)
+      const shell = find(fixture, 'hilos-admin-page')
+      expect(shell?.contains(pageErrors()[0])).toBe(true)
+      expect(
+        shell
+          ?.querySelector('[data-id="page-error-transition-message"]')
+          ?.textContent?.trim(),
+      ).toBe('It was deleted just now.')
+      for (const gone of [
+        'hilos-breadcrumb',
+        'hilos-admin-title',
+        'page-body',
+        'open-draft',
+      ]) {
+        expect(find(fixture, gone)).toBeNull()
+      }
+      expect(document.querySelectorAll('h1')).toHaveLength(1)
+      expect(marker(fixture)).toBe('error')
+    },
+  )
+
+  it('keeps the hold through a plain 404 that brings no line', async () => {
+    const { fixture, fail, page, draft } = await openCard(true)
+    fail(CARD_DELETED)
+
+    fail({ ...CARD_NOT_FOUND })
+
+    expect(find(fixture, 'page-error-transition-message')).toBeNull()
+    expect(pageErrors()).toHaveLength(1)
+    expect(find(fixture, 'hilos-admin-page')?.contains(pageErrors()[0])).toBe(
+      true,
+    )
+    expect(page.mounted).toHaveBeenCalledTimes(1)
+    expect(draftInput()).toBe(draft)
+    expect(draft.value).toBe('my draft')
+  })
+
+  it.each([
+    { httpCode: 401, errorCode: 'unauthorized' },
+    { httpCode: 403, errorCode: 'forbidden' },
+    { httpCode: 503, errorCode: 'unavailable' },
+  ])(
+    'takes the held card and its dialog away on a $httpCode',
+    async ({ httpCode, errorCode }) => {
+      const { fixture, fail } = await openCard(true)
+      fail(CARD_DELETED)
+
+      fail({
+        ...CARD_NOT_FOUND,
+        httpCode,
+        errorCode,
+        title: 'Refused',
+        message: 'Server refusal words',
+      })
+
+      expect(find(fixture, 'hilos-admin-page')).toBeNull()
+      expect(find(fixture, 'modal')).toBeNull()
+      expect(pageErrors()).toHaveLength(1)
+      expect(pageErrors()[0].getAttribute('data-error-code')).toBe(
+        String(httpCode),
+      )
+      expect((fixture.nativeElement as HTMLElement).textContent).toContain(
+        'Server refusal words',
+      )
+    },
+  )
+
+  it('takes the held card and its dialog away on navigation', async () => {
+    const { fixture, fail, answer } = await openCard(true)
+    fail(CARD_DELETED)
+
+    ;(find(fixture, 'page-error-home') as HTMLElement).click()
+    answer()
+    fixture.detectChanges()
+
+    expect(find(fixture, 'known-page')).not.toBeNull()
+    expect(find(fixture, 'hilos-admin-page')).toBeNull()
+    expect(find(fixture, 'modal')).toBeNull()
+    expect(pageErrors()).toHaveLength(0)
+  })
+
+  it('replaces a card that did not opt in, line and all', async () => {
+    const { fixture, fail, page } = await openCard(false)
+
+    fail(CARD_DELETED)
+
+    expect(find(fixture, 'hilos-admin-page')).toBeNull()
+    expect(find(fixture, 'modal')).toBeNull()
+    expect(pageErrors()).toHaveLength(1)
+    expect(
+      find(fixture, 'page-error-transition-message')?.textContent?.trim(),
+    ).toBe('It was deleted just now.')
+    expect(page.mounted).toHaveBeenCalledTimes(1)
+  })
+
+  it('never mounts an opted-in card that is refused before it is shown', async () => {
+    const page = shellPage(true)
+    const { router, pageError, pageLoading } = controlledRouter('/lazy/1')
+    pageError.set(CARD_DELETED)
+    pageLoading.set(false)
+    const fixture = mountPages(router, { lazy: page.component })
+    await settleCode(fixture)
+
+    expect(page.mounted).not.toHaveBeenCalled()
+    expect(find(fixture, 'hilos-admin-page')).toBeNull()
+    expect(pageErrors()).toHaveLength(1)
+  })
+
+  it('leaves focus in the open dialog and returns it to Back to home on close', async () => {
+    const { fixture, fail, draft } = await openCard(true)
+
+    fail(CARD_DELETED)
+    expect(document.activeElement).toBe(draft)
+
+    ;(find(fixture, 'modal-close') as HTMLElement).click()
+    fixture.detectChanges()
+
+    expect(find(fixture, 'modal')).toBeNull()
+    expect(document.activeElement).toBe(find(fixture, 'page-error-home'))
+  })
 })

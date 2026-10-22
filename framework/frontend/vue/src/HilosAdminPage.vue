@@ -34,6 +34,17 @@ accessible name from this heading, which already names it.
 The shell also tells what it holds whether a viewer of the admin view mode
 stands here (hilosAdminAccess is 'view', HIL-1253): the controls of the mode
 read that themselves and stand plainly disabled (HIL-1261).
+
+A page whose resource can be deleted under it opts in with
+preserveModalDraftsOnDelete (HIL-1603) and puts its dialogs in the #modals slot.
+Then the current page error replaces the head, the cards and the page's content
+with one ErrorPage, while #modals stays on the same mount, under the same heading
+and view-mode providers, so an open dialog keeps its draft above the 404. Inside
+the routed outlet the shell registers, once mounted, to hold its page through a
+live deletion (hilosPageErrorBoundaryKey); outside one it simply draws the error.
+Its root offers the dialogs' focus return a fallback, the Back to home link of
+the error drawn here, for an opener that went away with the content. Without the
+opt-in nothing changes: the outlet replaces the whole page on any refusal.
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
@@ -41,13 +52,24 @@ import {
   hilosChildLinks,
   hilosCrumbLinks,
   type HilosPageHeadAction,
+  registerFocusReturnFallback,
 } from '@hilos/core/base'
-import { computed, inject, provide, useId } from 'vue'
+import {
+  computed,
+  inject,
+  onMounted,
+  onUnmounted,
+  provide,
+  ref,
+  useId,
+} from 'vue'
 
+import ErrorPage from './ErrorPage.vue'
 import HilosBreadcrumb from './HilosBreadcrumb.vue'
 import HilosLink from './HilosLink.vue'
 import HilosPageHead from './HilosPageHead.vue'
 import { hilosAdminViewModeKey } from './hilosAdminViewMode.js'
+import { hilosPageErrorBoundaryKey } from './hilosPageErrorBoundaryKey.js'
 import { hilosPageHeadingIdKey } from './hilosPageHeading.js'
 import { hilosRouterKey } from './hilosRouterKey.js'
 import { useSignal } from './useSignal.js'
@@ -67,6 +89,12 @@ const props = defineProps<{
   breadcrumbLabel?: string
   /** The shared head's tab row navigation's accessible name. */
   tabsLabel?: string
+  /**
+   * Draw the page error in place of the content and keep #modals mounted under
+   * it, so a dialog open when the page's resource is deleted keeps its draft.
+   * Read once, when the shell is created: a page opts in for its whole mount.
+   */
+  preserveModalDraftsOnDelete?: boolean
 }>()
 
 defineSlots<{
@@ -80,6 +108,8 @@ defineSlots<{
   'head-badges'?(): unknown
   /** The line under the shared head's title. */
   'head-description'?(): unknown
+  /** The page's dialogs: the one part an opted-in page error leaves mounted. */
+  modals?(): unknown
 }>()
 
 const router = inject(hilosRouterKey)
@@ -120,91 +150,135 @@ const children = computed(() =>
         resolvePath,
       ),
 )
+
+const retainForResourceDeletion = inject(hilosPageErrorBoundaryKey, undefined)
+// Without the opt-in the shell never draws a refusal and reads nothing it did
+// not read before: the outlet replaces the whole page with its own ErrorPage,
+// as it always has.
+const pageError = props.preserveModalDraftsOnDelete
+  ? useSignal(router.pageError)
+  : null
+const refusal = computed(() => pageError?.value ?? null)
+const root = ref<HTMLElement | null>(null)
+const errorPage = ref<InstanceType<typeof ErrorPage> | null>(null)
+const releases: (() => void)[] = []
+// Only once mounted: the outlet holds the component it shows at the moment of
+// registration, and a shell that registered earlier would match nothing. The
+// focus fallback is offered before any dialog of the page can open, and lives
+// and dies with this root.
+onMounted(() => {
+  if (!props.preserveModalDraftsOnDelete || root.value === null) {
+    return
+  }
+  releases.push(
+    registerFocusReturnFallback(
+      root.value,
+      () => errorPage.value?.homeLink() ?? null,
+    ),
+  )
+  if (retainForResourceDeletion) {
+    releases.push(retainForResourceDeletion(props.page))
+  }
+})
+onUnmounted(() => {
+  for (const release of releases.splice(0)) {
+    release()
+  }
+})
 </script>
 
 <template>
-  <section data-id="hilos-admin-page" :data-page="page">
-    <HilosPageHead
-      v-if="sharedHead"
-      :identity="identity"
-      :page="page"
-      :params="params"
-      :resolve-path="resolvePath"
-      :heading-id="headingId"
-      :kind="headKind"
-      :action="headAction"
-      :breadcrumb-label="breadcrumbLabel"
-      :tabs-label="tabsLabel"
-    >
-      <template v-if="$slots['head-visual']" #visual>
-        <slot name="head-visual" />
-      </template>
-      <template v-if="$slots['head-meta']" #meta>
-        <slot name="head-meta" />
-      </template>
-      <template v-if="$slots['head-badges']" #badges>
-        <slot name="head-badges" />
-      </template>
-      <template v-if="$slots['head-description']" #description>
-        <slot name="head-description" />
-      </template>
-    </HilosPageHead>
-    <template v-else-if="identity">
-      <HilosBreadcrumb :crumbs="crumbs" />
-      <h1 :id="headingId" class="h4 mb-1" data-id="hilos-admin-title">
-        {{ identity.label }}
-      </h1>
-      <p v-if="identity.lead" class="text-body-secondary">
-        {{ identity.lead }}
-      </p>
-    </template>
-    <div
-      v-else
-      class="placeholder-glow mb-3"
-      data-id="hilos-admin-title-skeleton"
-    >
-      <span class="placeholder col-3 d-block mb-2 rounded"></span>
-      <span class="placeholder col-6 d-block rounded"></span>
-    </div>
-
-    <div
-      v-if="children.length"
-      class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3 mb-4"
-      data-id="hilos-admin-children"
-    >
-      <div v-for="child in children" :key="child.page" class="col">
-        <HilosLink
-          :to="child.to"
-          class="card h-100 shadow-sm border-0 text-decoration-none link-body-emphasis"
-          :data-id="`hilos-admin-child-${child.page}`"
-        >
-          <div class="card-body d-flex flex-column gap-1">
-            <span
-              class="h6 mb-0 d-flex align-items-center justify-content-between gap-2"
-            >
-              <span>{{ child.label }}</span>
-              <i
-                class="bi bi-chevron-right text-body-secondary"
-                aria-hidden="true"
-              ></i>
-            </span>
-            <span class="small text-body-secondary">{{ child.lead }}</span>
-          </div>
-        </HilosLink>
-      </div>
-    </div>
-
-    <slot>
-      <div
-        v-if="!children.length && identity"
-        class="border rounded p-4 text-center text-body-secondary"
-        data-id="hilos-admin-empty"
+  <section ref="root" data-id="hilos-admin-page" :data-page="page">
+    <ErrorPage v-if="refusal" ref="errorPage" :error="refusal" />
+    <template v-else>
+      <HilosPageHead
+        v-if="sharedHead"
+        :identity="identity"
+        :page="page"
+        :params="params"
+        :resolve-path="resolvePath"
+        :heading-id="headingId"
+        :kind="headKind"
+        :action="headAction"
+        :breadcrumb-label="breadcrumbLabel"
+        :tabs-label="tabsLabel"
       >
-        <i class="bi bi-cone-striped fs-2 d-block mb-2" aria-hidden="true"></i>
-        <p class="mb-0">
-          Stub page — real content arrives with this section's implementation.
+        <template v-if="$slots['head-visual']" #visual>
+          <slot name="head-visual" />
+        </template>
+        <template v-if="$slots['head-meta']" #meta>
+          <slot name="head-meta" />
+        </template>
+        <template v-if="$slots['head-badges']" #badges>
+          <slot name="head-badges" />
+        </template>
+        <template v-if="$slots['head-description']" #description>
+          <slot name="head-description" />
+        </template>
+      </HilosPageHead>
+      <template v-else-if="identity">
+        <HilosBreadcrumb :crumbs="crumbs" />
+        <h1 :id="headingId" class="h4 mb-1" data-id="hilos-admin-title">
+          {{ identity.label }}
+        </h1>
+        <p v-if="identity.lead" class="text-body-secondary">
+          {{ identity.lead }}
         </p>
+      </template>
+      <div
+        v-else
+        class="placeholder-glow mb-3"
+        data-id="hilos-admin-title-skeleton"
+      >
+        <span class="placeholder col-3 d-block mb-2 rounded"></span>
+        <span class="placeholder col-6 d-block rounded"></span>
       </div>
-    </slot>
+
+      <div
+        v-if="children.length"
+        class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3 mb-4"
+        data-id="hilos-admin-children"
+      >
+        <div v-for="child in children" :key="child.page" class="col">
+          <HilosLink
+            :to="child.to"
+            class="card h-100 shadow-sm border-0 text-decoration-none link-body-emphasis"
+            :data-id="`hilos-admin-child-${child.page}`"
+          >
+            <div class="card-body d-flex flex-column gap-1">
+              <span
+                class="h6 mb-0 d-flex align-items-center justify-content-between gap-2"
+              >
+                <span>{{ child.label }}</span>
+                <i
+                  class="bi bi-chevron-right text-body-secondary"
+                  aria-hidden="true"
+                ></i>
+              </span>
+              <span class="small text-body-secondary">{{ child.lead }}</span>
+            </div>
+          </HilosLink>
+        </div>
+      </div>
+
+      <slot>
+        <div
+          v-if="!children.length && identity"
+          class="border rounded p-4 text-center text-body-secondary"
+          data-id="hilos-admin-empty"
+        >
+          <i
+            class="bi bi-cone-striped fs-2 d-block mb-2"
+            aria-hidden="true"
+          ></i>
+          <p class="mb-0">
+            Stub page — real content arrives with this section's implementation.
+          </p>
+        </div>
+      </slot>
+    </template>
+    <!-- After the branch, never inside it: switching to the error keeps this
+    slot mounted, and the dialogs teleport to <body> wherever it stands. -->
+    <slot name="modals" />
   </section>
 </template>

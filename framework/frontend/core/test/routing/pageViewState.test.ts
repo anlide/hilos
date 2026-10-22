@@ -502,3 +502,216 @@ describe('createPageViewState', () => {
     expect(state.loading.get()).toBe(false)
   })
 })
+
+const deleted: PageSubscriptionError = {
+  page: 'a',
+  httpCode: 404,
+  errorCode: 'not_found',
+  title: 'Page Not Found',
+  message: 'The page you are looking for does not exist.',
+  transitionMessage: 'It was deleted just now.',
+}
+
+const missing: PageSubscriptionError = {
+  page: 'a',
+  httpCode: 404,
+  errorCode: 'not_found',
+  title: 'Page Not Found',
+  message: 'The page you are looking for does not exist.',
+}
+
+/** Page `a` answered and mounted, its shell registered, then deleted live. */
+function retainedHarness() {
+  const opened = harness('/a/7')
+  opened.state.setPages({ a: componentA, b: componentB })
+  opened.answer()
+  const release = opened.state.retainForResourceDeletion('a')
+  opened.pageError.set(deleted)
+  return { ...opened, release }
+}
+
+describe('PageViewState.retainForResourceDeletion', () => {
+  it.each(['eager', 'lazy'])(
+    'keeps the mounted %s page under a live deletion until a full answer',
+    async (kind) => {
+      const pending = deferred<Component>()
+      const { state, pageError, answer } = harness('/a/7')
+      state.setPages({
+        a: kind === 'eager' ? componentA : lazyPage(() => pending.promise),
+      })
+      pending.resolve(componentA)
+      await pending.promise
+      answer()
+      expect(state.view.get()).toBe(componentA)
+      state.retainForResourceDeletion('a')
+
+      pageError.set(deleted)
+
+      expect(state.view.get()).toBe(componentA)
+      expect(state.error.get()).toBe(deleted)
+      expect(state.loading.get()).toBe(false)
+      expect(state.retainedOnError.get()).toBe(true)
+      answer()
+      expect(state.retainedOnError.get()).toBe(false)
+      expect(state.view.get()).toBe(componentA)
+      expect(state.error.get()).toBeNull()
+    },
+  )
+
+  it.each([
+    ['nobody', null],
+    ['another page', 'b'],
+  ])('drops the page when %s registered', (_label, page) => {
+    const { state, pageError, answer } = harness('/a/7')
+    state.setPages({ a: componentA })
+    answer()
+    if (page !== null) state.retainForResourceDeletion(page)
+
+    pageError.set(deleted)
+
+    expect(state.view.get()).toBeUndefined()
+    expect(state.error.get()).toBe(deleted)
+    expect(state.loading.get()).toBe(false)
+    expect(state.retainedOnError.get()).toBe(false)
+  })
+
+  it('drops the page under a plain 404 that names no deletion', () => {
+    const { state, pageError, answer } = harness('/a/7')
+    state.setPages({ a: componentA })
+    answer()
+    state.retainForResourceDeletion('a')
+
+    pageError.set(missing)
+
+    expect(state.view.get()).toBeUndefined()
+    expect(state.retainedOnError.get()).toBe(false)
+  })
+
+  it('never mounts an eager page whose first answer is the deletion', () => {
+    const { state, pageError } = harness('/a/7')
+    state.setPages({ a: componentA })
+    state.retainForResourceDeletion('a')
+
+    pageError.set(deleted)
+
+    expect(state.view.get()).toBeUndefined()
+    expect(state.error.get()).toBe(deleted)
+    expect(state.retainedOnError.get()).toBe(false)
+  })
+
+  it('never mounts a lazy page whose code lands after the deletion', async () => {
+    const pending = deferred<Component>()
+    const { state, pageError, answer } = harness('/a/7')
+    state.setPages({ a: lazyPage(() => pending.promise) })
+    answer()
+    state.retainForResourceDeletion('a')
+    pageError.set(deleted)
+
+    pending.resolve(componentA)
+    await pending.promise
+
+    expect(state.view.get()).toBeUndefined()
+    expect(state.error.get()).toBe(deleted)
+    expect(state.retainedOnError.get()).toBe(false)
+  })
+
+  it('never mounts a page whose import failed before the deletion', async () => {
+    const pending = deferred<Component>()
+    const { state, pageError, answer } = harness('/a/7')
+    state.setPages({ a: lazyPage(() => pending.promise) })
+    answer()
+    state.retainForResourceDeletion('a')
+    pending.reject(new Error('chunk failed'))
+    await Promise.resolve()
+
+    pageError.set(deleted)
+
+    expect(state.view.get()).toBeUndefined()
+    expect(state.error.get()).toBe(deleted)
+    expect(state.retainedOnError.get()).toBe(false)
+  })
+
+  it('keeps the shell through a later plain 404 and reads the line from it', () => {
+    const { state, pageError } = retainedHarness()
+
+    pageError.set(missing)
+
+    expect(state.retainedOnError.get()).toBe(true)
+    expect(state.view.get()).toBe(componentA)
+    expect(state.error.get()).toBe(missing)
+    expect(state.error.get()?.transitionMessage).toBeUndefined()
+  })
+
+  it.each([
+    [403, 'forbidden'],
+    [401, 'unauthorized'],
+    [503, 'unavailable'],
+    [404, 'not_served'],
+  ])('releases the shell on a %i %s refusal', (httpCode, errorCode) => {
+    const { state, pageError } = retainedHarness()
+    const refusal: PageSubscriptionError = {
+      page: 'a',
+      httpCode,
+      errorCode,
+      title: 'Refused',
+      message: 'The page is refused.',
+    }
+
+    pageError.set(refusal)
+
+    expect(state.retainedOnError.get()).toBe(false)
+    expect(state.view.get()).toBeUndefined()
+    expect(state.error.get()).toBe(refusal)
+    pageError.set(missing)
+    expect(state.retainedOnError.get()).toBe(false)
+  })
+
+  it.each(['navigation', 'params', 'descriptor', 'dispose'])(
+    'releases the shell on %s',
+    (cause) => {
+      const { router, state } = retainedHarness()
+
+      if (cause === 'navigation') router.navigate('/b')
+      else if (cause === 'params') router.replacePath('/a/8')
+      else if (cause === 'descriptor') state.setPages({ a: componentB })
+      else state.dispose()
+
+      expect(state.retainedOnError.get()).toBe(false)
+      expect(state.view.get()).toBeUndefined()
+    },
+  )
+
+  it("lets an old generation's late release leave the new owner", () => {
+    const { router, state, pageError, answer } = harness('/a/7')
+    state.setPages({ a: componentA })
+    answer()
+    const releaseOld = state.retainForResourceDeletion('a')
+    router.navigate('/a/8')
+    answer()
+    const releaseNew = state.retainForResourceDeletion('a')
+
+    releaseOld()
+    pageError.set(deleted)
+
+    expect(state.retainedOnError.get()).toBe(true)
+    expect(state.view.get()).toBe(componentA)
+    releaseNew()
+    expect(state.retainedOnError.get()).toBe(false)
+    expect(state.view.get()).toBeUndefined()
+  })
+
+  it('keeps the second owner of a setup, cleanup, setup registration', () => {
+    const { state, pageError, answer } = harness('/a/7')
+    state.setPages({ a: componentA })
+    answer()
+    const first = state.retainForResourceDeletion('a')
+    first()
+    state.retainForResourceDeletion('a')
+    first()
+
+    pageError.set(deleted)
+
+    expect(state.retainedOnError.get()).toBe(true)
+    expect(state.view.get()).toBe(componentA)
+  })
+})

@@ -8,16 +8,20 @@
 // answer; the one h1 of either head carries the id the shell provides to what
 // it holds. The third describe is the admin view mode (HIL-1261): the shell
 // tells what it holds whether a viewer stands here, from the core access, live
-// across a grant and a revoke.
+// across a grant and a revoke. The fourth is a page whose resource is deleted
+// under it (HIL-1603): opted in, the shell draws the page error in place of its
+// content and either head, and keeps #pageModals.
 import { Component, inject, signal, type Type } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
+  FocusTrap,
   HilosPages,
   ScopeManager,
   TableViewportController,
   bindAdminAccess,
   bindSessionScope,
   createSignal,
+  registerFocusReturnFallback,
 } from '@hilos/core'
 import type {
   HilosConnection,
@@ -25,13 +29,16 @@ import type {
   HilosPageIdentity,
   HilosRouter,
   PageRouteMatch,
+  PageSubscriptionError,
+  PageViewState,
   ProjectSignal,
 } from '@hilos/core'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosAdminPage } from '../src/HilosAdminPage.js'
 import { HilosViewportTable } from '../src/HilosViewportTable.js'
-import { injectLookOnly } from '../src/hilosLookOnly.js'
+import { HILOS_ADMIN_VIEW_MODE, injectLookOnly } from '../src/hilosLookOnly.js'
+import { HILOS_PAGE_ERROR_BOUNDARY } from '../src/hilosPageErrorBoundaryToken.js'
 import { HILOS_PAGE_HEADING_ID } from '../src/hilosPageHeadingToken.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 
@@ -696,5 +703,329 @@ describe('HilosAdminPage and the admin view mode', () => {
     session.handshake({ id: 7, admin: false }, true)
     fixture.detectChanges()
     expect(probe(fixture)).toBe('true')
+  })
+})
+
+/** Counts every #pageModals content the shells of a case create. */
+const modalsCreated = vi.fn()
+
+/** What #pageModals is provided: the heading id and the view mode. */
+@Component({
+  selector: 'test-modals-probe',
+  template: `<span data-id="modals-probe"
+    >{{ headingId }} {{ viewMode() }}</span
+  >`,
+})
+class ModalsProbe {
+  protected readonly headingId = inject(HILOS_PAGE_HEADING_ID)
+  protected readonly viewMode = inject(HILOS_ADMIN_VIEW_MODE)
+
+  constructor() {
+    modalsCreated()
+  }
+}
+
+/** A page that hands the shell its content and its dialogs as templates. */
+@Component({
+  selector: 'test-admin-held-host',
+  imports: [HilosAdminPage, ModalsProbe],
+  template: `
+    <hilos-admin-page
+      [page]="page"
+      [preserveModalDraftsOnDelete]="preserveModalDraftsOnDelete"
+    >
+      <ng-template #pageBody>
+        <button type="button" data-id="opener">Rename</button>
+      </ng-template>
+      <ng-template #pageModals>
+        <test-modals-probe />
+      </ng-template>
+    </hilos-admin-page>
+  `,
+})
+class HeldHost {
+  page: string = HilosPages.I18N
+  preserveModalDraftsOnDelete = true
+}
+
+describe('HilosAdminPage under a deleted resource', () => {
+  /** The live 404 of a section whose resource was deleted while it stood open. */
+  const DELETED: PageSubscriptionError = {
+    page: HilosPages.I18N,
+    httpCode: 404,
+    errorCode: 'not_found',
+    title: 'Page Not Found',
+    message: 'The page you are looking for does not exist.',
+    transitionMessage: 'It was deleted just now.',
+  }
+
+  afterEach(() => {
+    TestBed.resetTestingModule()
+    modalsCreated.mockClear()
+    document.body.innerHTML = ''
+  })
+
+  /**
+   * Mount the page over a page error the test sets, outside any outlet unless
+   * one is offered.
+   *
+   * @param preserve Whether the page opts in.
+   * @param identity What the section answered with.
+   * @param retain The outlet's offer, when the shell stands inside one.
+   */
+  function mountHeld(
+    preserve: boolean,
+    identity: HilosPageIdentity = SECTION_IDENTITY,
+    retain?: PageViewState<unknown>['retainForResourceDeletion'],
+  ) {
+    const pageError = createSignal<PageSubscriptionError | null>(null)
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: HILOS_ROUTER, useValue: { ...router(identity), pageError } },
+        ...(retain === undefined
+          ? []
+          : [{ provide: HILOS_PAGE_ERROR_BOUNDARY, useValue: retain }]),
+      ],
+    })
+    const fixture = TestBed.createComponent(HeldHost)
+    fixture.componentInstance.preserveModalDraftsOnDelete = preserve
+    fixture.detectChanges()
+    const setError = (error: PageSubscriptionError | null) => {
+      pageError.set(error)
+      fixture.detectChanges()
+    }
+
+    return { fixture, setError }
+  }
+
+  /**
+   * Open a trap from an opener in the shell while a surface around the shell
+   * offers its own fallback. Where focus lands on close names whose offer the
+   * trap took when the opener is gone.
+   *
+   * @param opener The control that opens the dialog.
+   */
+  function trapFrom(opener: HTMLElement) {
+    const outer = document.createElement('button')
+    outer.type = 'button'
+    document.body.append(outer)
+    const releaseOuter = registerFocusReturnFallback(document.body, () => outer)
+    opener.focus()
+    const dialog = document.createElement('div')
+    dialog.tabIndex = -1
+    document.body.append(dialog)
+    const trap = new FocusTrap()
+    trap.activate(dialog, 'dialog')
+
+    return {
+      outer,
+      close: () => {
+        trap.release()
+        releaseOuter()
+      },
+    }
+  }
+
+  /** A fake outlet offer that records each registration and its release. */
+  function outlet() {
+    const live = new Set<string>()
+    const shown: boolean[] = []
+    const retain = vi.fn((page: string) => {
+      const own = `${page}#${retain.mock.calls.length}`
+      live.add(own)
+      // The registration has to see the shell already on screen.
+      shown.push(
+        document.querySelector('[data-id="hilos-admin-page"]') !== null,
+      )
+
+      return () => {
+        live.delete(own)
+      }
+    })
+
+    return { retain, live, shown }
+  }
+
+  it('draws #pageBody under the cards in place of the stub', () => {
+    const { fixture } = mountHeld(true, LEAF_IDENTITY)
+
+    expect(el(fixture, 'opener')).not.toBeNull()
+    expect(el(fixture, 'hilos-admin-empty')).toBeNull()
+  })
+
+  it('draws the page error in place of its head, cards and content, and keeps #pageModals', () => {
+    const { fixture, setError } = mountHeld(true)
+    const probe = el(fixture, 'modals-probe')!
+    const provided = probe.textContent
+    expect(el(fixture, 'hilos-admin-children')).not.toBeNull()
+
+    setError(DELETED)
+
+    const section = el(fixture, 'hilos-admin-page')!
+    expect(section.querySelectorAll('[data-id="page-error"]')).toHaveLength(1)
+    expect(
+      section
+        .querySelector('[data-id="page-error-transition-message"]')
+        ?.textContent?.trim(),
+    ).toBe('It was deleted just now.')
+    for (const gone of [
+      'hilos-breadcrumb',
+      'hilos-admin-title',
+      'hilos-admin-children',
+      'opener',
+    ]) {
+      expect(el(fixture, gone)).toBeNull()
+    }
+    const headings = section.querySelectorAll('h1')
+    expect(headings).toHaveLength(1)
+    expect(headings[0].textContent?.trim()).toBe('404')
+    expect(el(fixture, 'modals-probe')).toBe(probe)
+    expect(section.contains(probe)).toBe(true)
+    expect(modalsCreated).toHaveBeenCalledTimes(1)
+    expect(probe.textContent).toBe(provided)
+    expect(provided).toMatch(/^hilos-admin-title-\d+ false$/)
+  })
+
+  it('draws the page error in place of the shared head too, and keeps #pageModals', () => {
+    const { fixture, setError } = mountHeld(true, OWNER_IDENTITY)
+    const probe = el(fixture, 'modals-probe')!
+    const provided = probe.textContent
+    expect(el(fixture, 'hilos-page-head')).not.toBeNull()
+
+    setError(DELETED)
+
+    const section = el(fixture, 'hilos-admin-page')!
+    expect(section.querySelectorAll('[data-id="page-error"]')).toHaveLength(1)
+    for (const gone of [
+      'hilos-page-head',
+      'hilos-breadcrumb',
+      'hilos-page-tabs',
+      'hilos-admin-title',
+      'opener',
+    ]) {
+      expect(el(fixture, gone)).toBeNull()
+    }
+    const headings = section.querySelectorAll('h1')
+    expect(headings).toHaveLength(1)
+    expect(headings[0].textContent?.trim()).toBe('404')
+    expect(el(fixture, 'modals-probe')).toBe(probe)
+    expect(modalsCreated).toHaveBeenCalledTimes(1)
+    expect(probe.textContent).toBe(provided)
+
+    setError(null)
+
+    expect(el(fixture, 'page-error')).toBeNull()
+    expect(el(fixture, 'hilos-page-head-title')?.textContent?.trim()).toBe(
+      'Internationalization',
+    )
+    expect(el(fixture, 'opener')).not.toBeNull()
+    expect(modalsCreated).toHaveBeenCalledTimes(1)
+  })
+
+  it('draws its content again once the page error is gone', () => {
+    const { fixture, setError } = mountHeld(true)
+
+    setError(DELETED)
+    setError(null)
+
+    expect(el(fixture, 'page-error')).toBeNull()
+    expect(el(fixture, 'hilos-admin-title')?.textContent?.trim()).toBe(
+      'Internationalization',
+    )
+    expect(el(fixture, 'opener')).not.toBeNull()
+    expect(modalsCreated).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps its content under a page error without the opt-in', () => {
+    const { fixture, setError } = mountHeld(false)
+
+    setError(DELETED)
+
+    expect(el(fixture, 'page-error')).toBeNull()
+    expect(el(fixture, 'hilos-admin-title')?.textContent?.trim()).toBe(
+      'Internationalization',
+    )
+    expect(el(fixture, 'opener')).not.toBeNull()
+    expect(el(fixture, 'modals-probe')).not.toBeNull()
+  })
+
+  it('reads no page error without the opt-in', () => {
+    // A navigator that carries no page error at all, as a page's own test may
+    // build one: the shell without the opt-in must not reach for it.
+    const navigation = {
+      ...router(SECTION_IDENTITY),
+      pageError: undefined,
+    } as unknown as HilosRouter
+    TestBed.configureTestingModule({
+      providers: [{ provide: HILOS_ROUTER, useValue: navigation }],
+    })
+    const fixture = TestBed.createComponent(ContentHost)
+    fixture.detectChanges()
+
+    expect(el(fixture, 'hilos-admin-title')?.textContent?.trim()).toBe(
+      'Internationalization',
+    )
+    expect(el(fixture, 'page-body')).not.toBeNull()
+  })
+
+  it('returns focus to its Back to home once the opener went away with the content', () => {
+    const { fixture, setError } = mountHeld(true)
+    const opener = el(fixture, 'opener') as HTMLElement
+    const { close } = trapFrom(opener)
+
+    setError(DELETED)
+    close()
+
+    expect(opener.isConnected).toBe(false)
+    expect(document.activeElement).toBe(el(fixture, 'page-error-home'))
+  })
+
+  it('leaves a lost opener to the surface around it without the opt-in', () => {
+    const { fixture } = mountHeld(false)
+    const opener = el(fixture, 'opener') as HTMLElement
+    const { outer, close } = trapFrom(opener)
+
+    opener.remove()
+    close()
+
+    expect(document.activeElement).toBe(outer)
+  })
+
+  it('stops answering for its root once destroyed', () => {
+    const { fixture, setError } = mountHeld(true)
+    setError(DELETED)
+    const section = el(fixture, 'hilos-admin-page') as HTMLElement
+    const home = el(fixture, 'page-error-home') as HTMLElement
+    fixture.destroy()
+    // The old root back in the document with its Back to home and an opener
+    // inside it: its own target is there and available, so only an offer the
+    // shell failed to withdraw could still win over the surface around it.
+    document.body.append(section)
+    section.append(home)
+    const opener = document.createElement('button')
+    opener.type = 'button'
+    section.append(opener)
+    const { outer, close } = trapFrom(opener)
+
+    opener.remove()
+    close()
+
+    expect(document.activeElement).toBe(outer)
+  })
+
+  it('registers with the outlet by page once rendered, only with the opt-in, and releases it on destroy', () => {
+    const optedIn = outlet()
+    const { fixture } = mountHeld(true, SECTION_IDENTITY, optedIn.retain)
+    expect(optedIn.retain).toHaveBeenCalledTimes(1)
+    expect(optedIn.retain).toHaveBeenCalledWith(HilosPages.I18N)
+    expect(optedIn.shown).toEqual([true])
+    expect(optedIn.live.size).toBe(1)
+    fixture.destroy()
+    expect(optedIn.live.size).toBe(0)
+
+    TestBed.resetTestingModule()
+    const legacy = outlet()
+    mountHeld(false, SECTION_IDENTITY, legacy.retain)
+    expect(legacy.retain).not.toHaveBeenCalled()
   })
 })

@@ -35,24 +35,49 @@
 //
 // The shell also tells what it holds whether a viewer of the admin view mode
 // stands here (hilosAdminAccess is 'view', HIL-1253): the controls of the mode
-// read that themselves and stand plainly disabled (HIL-1261). Bootstrap
-// classes only.
-import { useContext, useId } from 'react'
+// read that themselves and stand plainly disabled (HIL-1261).
+//
+// A page whose resource can be deleted under it opts in with
+// preserveModalDraftsOnDelete (HIL-1603) and passes its dialogs as modals. Then
+// the current page error replaces the head, the cards and the page's content
+// with one ErrorPage, while modals stays on the same mount, under the same
+// heading and view-mode providers, so an open dialog keeps its draft above the
+// 404. Inside the routed outlet the shell registers, once mounted, to hold its
+// page through a live deletion (HilosPageErrorBoundaryContext); outside one it
+// simply draws the error. Its root offers the dialogs' focus return a fallback,
+// the Back to home link of the error drawn here, for an opener that went away
+// with the content. Without the opt-in nothing changes: the outlet replaces the
+// whole page on any refusal. Bootstrap classes only.
+import { useContext, useId, useLayoutEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
 import {
+  createSignal,
   hilosAdminAccess,
   hilosChildLinks,
   hilosCrumbLinks,
+  registerFocusReturnFallback,
 } from '@hilos/core/base'
-import type { HilosAdminChild, HilosPageHeadAction } from '@hilos/core/base'
+import type {
+  HilosAdminChild,
+  HilosPageHeadAction,
+  PageError,
+} from '@hilos/core/base'
 
+import { ErrorPage } from './ErrorPage.js'
 import { HilosBreadcrumb } from './HilosBreadcrumb.js'
 import { HilosLink } from './HilosLink.js'
 import { HilosPageHead } from './HilosPageHead.js'
 import { HilosAdminViewModeContext } from './hilosLookOnly.js'
+import { HilosPageErrorBoundaryContext } from './hilosPageErrorBoundaryContext.js'
 import { HilosPageHeadingIdContext } from './hilosPageHeadingContext.js'
 import { HilosRouterContext } from './hilosRouterContext.js'
 import { useSignal } from './useSignal.js'
+
+/**
+ * A stable empty page error for a shell without the opt-in, which reads nothing
+ * from the navigator it did not read before.
+ */
+const NO_PAGE_ERROR = createSignal<PageError | null>(null)
 
 /** Props for {@link HilosAdminPage}. */
 export interface HilosAdminPageProps {
@@ -90,6 +115,13 @@ export interface HilosAdminPageProps {
    * null turns it off.
    */
   headDescription?: ReactNode
+  /**
+   * Draw the page error in place of the content and keep modals mounted under
+   * it, so a dialog open when the page's resource is deleted keeps its draft.
+   */
+  preserveModalDraftsOnDelete?: boolean
+  /** The page's dialogs: the one part an opted-in page error leaves mounted. */
+  modals?: ReactNode
 }
 
 /**
@@ -112,6 +144,8 @@ export function HilosAdminPage({
   headMeta,
   headBadges,
   headDescription,
+  preserveModalDraftsOnDelete = false,
+  modals,
 }: HilosAdminPageProps) {
   const router = useContext(HilosRouterContext)
   if (!router) {
@@ -141,53 +175,90 @@ export function HilosAdminPage({
         router.resolvePath,
       )
 
+  // Without the opt-in the shell never draws a refusal and reads nothing it did
+  // not read before: the outlet replaces the whole page with its own ErrorPage,
+  // as it always has.
+  const refusal = useSignal(
+    preserveModalDraftsOnDelete ? router.pageError : NO_PAGE_ERROR,
+  )
+  const retainForResourceDeletion = useContext(HilosPageErrorBoundaryContext)
+  const root = useRef<HTMLElement>(null)
+  // Only once mounted: the outlet holds the component it shows at the moment of
+  // registration, and a shell that registered earlier would match nothing. The
+  // focus fallback is offered before any dialog of the page can open, and lives
+  // and dies with this root.
+  useLayoutEffect(() => {
+    const section = root.current
+    if (!preserveModalDraftsOnDelete || section === null) {
+      return
+    }
+    const releaseFocus = registerFocusReturnFallback(section, () =>
+      section.querySelector<HTMLElement>('[data-id="page-error-home"]'),
+    )
+    const releaseRetention = retainForResourceDeletion?.(page)
+    return () => {
+      releaseRetention?.()
+      releaseFocus()
+    }
+  }, [preserveModalDraftsOnDelete, page, retainForResourceDeletion])
+
   return (
     <HilosPageHeadingIdContext.Provider value={headingId}>
       <HilosAdminViewModeContext.Provider value={adminAccess === 'view'}>
-        <section data-id="hilos-admin-page" data-page={page}>
-          {sharedHead ? (
-            <HilosPageHead
-              identity={identity}
-              page={page}
-              params={route.params}
-              resolvePath={router.resolvePath}
-              headingId={headingId}
-              kind={headKind}
-              action={headAction}
-              breadcrumbLabel={breadcrumbLabel}
-              tabsLabel={tabsLabel}
-              visual={headVisual}
-              meta={headMeta}
-              badges={headBadges}
-              description={headDescription}
-            />
-          ) : identity === undefined ? (
-            <div
-              className="placeholder-glow mb-3"
-              data-id="hilos-admin-title-skeleton"
-            >
-              <span className="placeholder col-3 d-block mb-2 rounded" />
-              <span className="placeholder col-6 d-block rounded" />
-            </div>
+        <section ref={root} data-id="hilos-admin-page" data-page={page}>
+          {refusal ? (
+            <ErrorPage error={refusal} />
           ) : (
             <>
-              <HilosBreadcrumb crumbs={crumbs} />
-              <h1
-                id={headingId}
-                className="h4 mb-1"
-                data-id="hilos-admin-title"
-              >
-                {identity.label}
-              </h1>
-              {identity.lead ? (
-                <p className="text-body-secondary">{identity.lead}</p>
-              ) : null}
+              {sharedHead ? (
+                <HilosPageHead
+                  identity={identity}
+                  page={page}
+                  params={route.params}
+                  resolvePath={router.resolvePath}
+                  headingId={headingId}
+                  kind={headKind}
+                  action={headAction}
+                  breadcrumbLabel={breadcrumbLabel}
+                  tabsLabel={tabsLabel}
+                  visual={headVisual}
+                  meta={headMeta}
+                  badges={headBadges}
+                  description={headDescription}
+                />
+              ) : identity === undefined ? (
+                <div
+                  className="placeholder-glow mb-3"
+                  data-id="hilos-admin-title-skeleton"
+                >
+                  <span className="placeholder col-3 d-block mb-2 rounded" />
+                  <span className="placeholder col-6 d-block rounded" />
+                </div>
+              ) : (
+                <>
+                  <HilosBreadcrumb crumbs={crumbs} />
+                  <h1
+                    id={headingId}
+                    className="h4 mb-1"
+                    data-id="hilos-admin-title"
+                  >
+                    {identity.label}
+                  </h1>
+                  {identity.lead ? (
+                    <p className="text-body-secondary">{identity.lead}</p>
+                  ) : null}
+                </>
+              )}
+              {adminChildren.length > 0 ? childCards(adminChildren) : null}
+              {children === undefined
+                ? leafStub(adminChildren, identity !== undefined)
+                : children}
             </>
           )}
-          {adminChildren.length > 0 ? childCards(adminChildren) : null}
-          {children === undefined
-            ? leafStub(adminChildren, identity !== undefined)
-            : children}
+          {/* After the branch, never inside it: switching to the error keeps
+              modals mounted, and the dialogs portal to <body> wherever they
+              stand. */}
+          {modals}
         </section>
       </HilosAdminViewModeContext.Provider>
     </HilosPageHeadingIdContext.Provider>

@@ -1,22 +1,26 @@
 import { mount } from '@vue/test-utils'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  FocusTrap,
   HilosPages,
   ScopeManager,
   bindAdminAccess,
   bindSessionScope,
   createSignal,
   createAppPageRouter,
+  registerFocusReturnFallback,
 } from '@hilos/core/base'
 import type {
   HilosConnection,
   HilosPageIdentity,
   HilosRouter,
   PageRouteMatch,
+  PageSubscriptionError,
   ProjectSignal,
 } from '@hilos/core/base'
 import { defineComponent, h, inject, nextTick } from 'vue'
 
+import ErrorPage from './ErrorPage.vue'
 import HilosAdminPage from './HilosAdminPage.vue'
 import { useAdminViewMode } from './hilosAdminViewMode.js'
 import { hilosPageHeadingIdKey } from './hilosPageHeading.js'
@@ -508,5 +512,220 @@ describe('HilosAdminPage and the admin view mode', () => {
     session.handshake({ id: 7, admin: false }, true)
     await wrapper.vm.$nextTick()
     expect(wrapper.find('[data-id="probe"]').text()).toBe('true')
+  })
+})
+
+describe('HilosAdminPage under a deleted resource', () => {
+  /** The live 404 of a section whose resource was deleted while it stood open. */
+  const DELETED: PageSubscriptionError = {
+    page: HilosPages.I18N,
+    httpCode: 404,
+    errorCode: 'not_found',
+    title: 'Page Not Found',
+    message: 'The page you are looking for does not exist.',
+    transitionMessage: 'It was deleted just now.',
+  }
+
+  const wrappers: { unmount(): void }[] = []
+
+  afterEach(() => {
+    for (const wrapper of wrappers.splice(0)) {
+      wrapper.unmount()
+    }
+    document.body.innerHTML = ''
+  })
+
+  /**
+   * Mount the shell alone, outside any outlet, over a page error the test sets.
+   * Its #modals holds a probe of what the shell provides, counting its mounts.
+   *
+   * @param preserve Whether the page opts in.
+   */
+  function standalone(preserve: boolean) {
+    const pageError = createSignal<PageSubscriptionError | null>(null)
+    const modalsMounted = vi.fn()
+    const ModalsProbe = defineComponent(() => {
+      modalsMounted()
+      const headingId = inject(hilosPageHeadingIdKey)
+      const viewMode = useAdminViewMode()
+
+      return () =>
+        h(
+          'span',
+          { 'data-id': 'modals-probe' },
+          `${headingId} ${viewMode.value}`,
+        )
+    })
+    const wrapper = mount(HilosAdminPage, {
+      props: { page: HilosPages.I18N, preserveModalDraftsOnDelete: preserve },
+      slots: {
+        default: () =>
+          h('button', { type: 'button', 'data-id': 'opener' }, 'Rename'),
+        modals: () => h(ModalsProbe),
+      },
+      global: {
+        provide: {
+          [hilosRouterKey as symbol]: {
+            ...router(SECTION_IDENTITY),
+            pageError,
+          },
+        },
+      },
+      attachTo: document.body,
+    })
+    wrappers.push(wrapper)
+
+    return { wrapper, pageError, modalsMounted }
+  }
+
+  /**
+   * Open a trap from an opener in the shell while a surface around the shell
+   * offers its own fallback. Where focus lands on close names whose offer the
+   * trap took when the opener is gone.
+   *
+   * @param opener The control that opens the dialog.
+   */
+  function trapFrom(opener: HTMLElement) {
+    const outer = document.createElement('button')
+    outer.type = 'button'
+    document.body.append(outer)
+    const releaseOuter = registerFocusReturnFallback(document.body, () => outer)
+    opener.focus()
+    const dialog = document.createElement('div')
+    dialog.tabIndex = -1
+    document.body.append(dialog)
+    const trap = new FocusTrap()
+    trap.activate(dialog, 'dialog')
+
+    return {
+      outer,
+      close: () => {
+        trap.release()
+        releaseOuter()
+      },
+    }
+  }
+
+  it('draws the page error in place of its head, cards and content, and keeps #modals', async () => {
+    const { wrapper, pageError, modalsMounted } = standalone(true)
+    const probe = wrapper.get('[data-id="modals-probe"]')
+    const provided = probe.text()
+    expect(wrapper.find('[data-id="hilos-admin-children"]').exists()).toBe(true)
+
+    pageError.set(DELETED)
+    await nextTick()
+
+    const shell = wrapper.get('[data-id="hilos-admin-page"]')
+    expect(shell.findAllComponents(ErrorPage)).toHaveLength(1)
+    expect(shell.get('[data-id="page-error-transition-message"]').text()).toBe(
+      'It was deleted just now.',
+    )
+    for (const gone of [
+      'hilos-breadcrumb',
+      'hilos-admin-title',
+      'hilos-admin-children',
+      'opener',
+    ]) {
+      expect(wrapper.find(`[data-id="${gone}"]`).exists()).toBe(false)
+    }
+    const headings = wrapper.findAll('h1')
+    expect(headings).toHaveLength(1)
+    expect(headings[0].text()).toBe('404')
+    expect(wrapper.get('[data-id="modals-probe"]').element).toBe(probe.element)
+    expect(modalsMounted).toHaveBeenCalledTimes(1)
+    expect(probe.text()).toBe(provided)
+    expect(provided).toMatch(/^\S+ false$/)
+  })
+
+  it('keeps its content under a page error without the opt-in', async () => {
+    const { wrapper, pageError } = standalone(false)
+
+    pageError.set(DELETED)
+    await nextTick()
+
+    expect(wrapper.findComponent(ErrorPage).exists()).toBe(false)
+    expect(wrapper.get('[data-id="hilos-admin-title"]').text()).toBe(
+      'Internationalization',
+    )
+    expect(wrapper.find('[data-id="opener"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="modals-probe"]').exists()).toBe(true)
+  })
+
+  it('reads no page error without the opt-in', () => {
+    // A navigator that carries no page error at all, as a page's own test
+    // may build one: the shell without the opt-in must not reach for it.
+    const navigation = {
+      ...router(SECTION_IDENTITY),
+      pageError: undefined,
+    } as unknown as HilosRouter
+    const wrapper = mount(HilosAdminPage, {
+      props: { page: HilosPages.I18N },
+      global: { provide: { [hilosRouterKey as symbol]: navigation } },
+    })
+    wrappers.push(wrapper)
+
+    expect(wrapper.get('[data-id="hilos-admin-title"]').text()).toBe(
+      'Internationalization',
+    )
+  })
+
+  it('returns focus to its Back to home once the opener went away with the content', async () => {
+    const { wrapper, pageError } = standalone(true)
+    const opener = wrapper.get('[data-id="opener"]').element as HTMLElement
+    const { close } = trapFrom(opener)
+
+    pageError.set(DELETED)
+    await nextTick()
+    close()
+
+    expect(opener.isConnected).toBe(false)
+    expect(document.activeElement).toBe(
+      wrapper.get('[data-id="page-error-home"]').element,
+    )
+  })
+
+  it('leaves a lost opener to the surface around it without the opt-in', () => {
+    const { wrapper } = standalone(false)
+    const opener = wrapper.get('[data-id="opener"]').element as HTMLElement
+    const { outer, close } = trapFrom(opener)
+
+    opener.remove()
+    close()
+
+    expect(document.activeElement).toBe(outer)
+  })
+
+  it('stops answering for its root once unmounted', () => {
+    const { wrapper } = standalone(true)
+    const section = wrapper.element as HTMLElement
+    const opener = section.querySelector<HTMLElement>('[data-id="opener"]')!
+    // The request a dialog's trap sends from its opener (core/dom/focusTrap.ts),
+    // sent here with no owner around the shell. An unmounted shell's ErrorPage
+    // is gone, so a leaked offer would answer null and lose to any surface
+    // around it: only whether the request was answered at all tells it apart.
+    const answered = (): boolean => {
+      const request: { fallback?: () => HTMLElement | null } = {}
+      opener.dispatchEvent(
+        new CustomEvent('hilos-focus-return-request', {
+          bubbles: true,
+          detail: request,
+        }),
+      )
+
+      return request.fallback !== undefined
+    }
+    expect(answered()).toBe(true)
+    wrappers.splice(0)
+    wrapper.unmount()
+    // The old root back in the document with its opener: only an offer the
+    // shell failed to withdraw could still answer for it.
+    document.body.append(section)
+    expect(answered()).toBe(false)
+    const { outer, close } = trapFrom(opener)
+
+    opener.remove()
+    close()
+
+    expect(document.activeElement).toBe(outer)
   })
 })

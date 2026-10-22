@@ -36,10 +36,14 @@ function available(element: HTMLElement | null): element is HTMLElement {
 }
 
 /**
- * Offer a mount-local fallback for modal openers inside `root`. The nearest
- * owner answers a bubbling request on activation; no document registry or
- * lookup of a replacement control is involved. Disposal invalidates callbacks
- * already captured by an open trap as well as removing the listener.
+ * Offer a mount-local fallback for modal openers inside `root`. Every owner
+ * around the opener answers a bubbling request on activation, and the answer
+ * stays nearest first: the nearest owner's target wins while it is available,
+ * and an outer owner is read only when every nearer one gives none — it was
+ * disposed, its root left the document, or its target is null or unavailable.
+ * No document registry or lookup of a replacement control is involved.
+ * Disposal invalidates callbacks already captured by an open trap as well as
+ * removing the listener.
  *
  * @param root The connected surface that owns the opener.
  * @param fallback Read the surface's current visible fallback on release.
@@ -51,10 +55,14 @@ export function registerFocusReturnFallback(
 ): () => void {
   let active = true
   const answer = (event: Event) => {
-    const request = event as CustomEvent<FocusReturnRequest>
-    request.detail.fallback = () =>
-      active && root.isConnected ? fallback() : null
-    event.stopPropagation()
+    const request = (event as CustomEvent<FocusReturnRequest>).detail
+    const nearer = request.fallback
+    request.fallback = () => {
+      const target = nearer?.() ?? null
+      if (available(target)) return target
+
+      return active && root.isConnected ? fallback() : null
+    }
   }
   root.addEventListener(FOCUS_RETURN_REQUEST, answer)
   return () => {
@@ -175,8 +183,9 @@ export class FocusTrap {
   }
 
   /**
-   * Return to the available opener, or its mount's current fallback when it
-   * disappeared. An explicit focus choice outside the dialog is preserved.
+   * Return to the available opener, or, when it disappeared, the current
+   * fallback of the nearest mount around it that still gives an available one.
+   * An explicit focus choice outside the dialog is preserved.
    * Every handle is released even when there is no longer a return target.
    */
   release(): void {

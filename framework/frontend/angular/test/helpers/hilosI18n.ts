@@ -3,14 +3,22 @@
 // over a connection whose delivery alone is replaced, so a test speaks in the
 // frames the server would send — the languages, countries, names or locales
 // table by the page. A test mounts a component into TestBed through it, reads
-// the DOM by data-id, and drives the window with native events.
+// the DOM by data-id, and drives the window with native events. A country tab
+// can also stand where an app puts it: in the routed outlet over the real
+// navigator and page subscription (liveCountryTab).
+import { NgComponentOutlet } from '@angular/common'
+import { Component } from '@angular/core'
 import type { Provider, Type } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   ActionLifecycle,
+  COUNTRY_CARD_DATA,
   HilosPages,
+  PageSubscription,
   ScopeManager,
   bindAdminAccess,
+  createAppPageRouter,
+  createHilosRouter,
   createSignal,
   hilosToasts,
   pageIdentity,
@@ -28,10 +36,12 @@ import type {
   HilosI18nNameRow,
   HilosRouter,
   PageRouteMatch,
+  PageSubscriptionError,
   Scope,
 } from '@hilos/core'
 import { afterEach, vi } from 'vitest'
 
+import { HilosView } from '../../src/HilosView.js'
 import { HILOS_ROUTER } from '../../src/hilosRouterToken.js'
 
 /** A switched-off language from the built-in catalog, free to delete. */
@@ -348,34 +358,49 @@ const COUNTRY_TAB_IDENTITY: Record<string, { label: string; lead: string }> = {
 }
 
 /**
- * Answer the way a country tab does beside its card: the tab's own catalog
- * label and lead, the country as the owner (the catalog gives it no icon), the
- * chain through Countries ending at the country (not at Names), the
- * Overview · Names row and no child cards.
+ * What a country tab answers with beside its card: the tab's own catalog label
+ * and lead, the country as the owner (the catalog gives it no icon), the chain
+ * through Countries ending at the country (not at Names), the Overview · Names
+ * row and no child cards.
+ *
+ * @param page The country tab that subscribed.
+ */
+function countryTabAnswer(page: string): Record<string, unknown> {
+  const tab = COUNTRY_TAB_IDENTITY[page]!
+
+  return {
+    pageLabel: tab.label,
+    pageLead: tab.lead,
+    pageHeadOwner: {
+      page: HilosPages.I18N_COUNTRY,
+      label: 'Country',
+      lead: COUNTRY_OWNER_LEAD,
+    },
+    pageBreadcrumb: [
+      { page: HilosPages.DASHBOARD, label: 'Hilos' },
+      { page: HilosPages.I18N, label: 'Internationalization' },
+      { page: HilosPages.I18N_COUNTRIES, label: 'Countries' },
+      { page: HilosPages.I18N_COUNTRY, label: 'Country' },
+    ],
+    pageTabs: [
+      { page: HilosPages.I18N_COUNTRY, label: 'Overview' },
+      { page: HilosPages.I18N_COUNTRY_NAMES, label: 'Names' },
+    ],
+    pageChildren: [],
+  }
+}
+
+/**
+ * Answer the way a country tab does beside its card
+ * ({@link countryTabAnswer}).
  *
  * @param scope The page scope the answer lands in.
  * @param page The country tab that subscribed.
  */
 export function answerAsCountryTab(scope: Scope, page: string): void {
-  const tab = COUNTRY_TAB_IDENTITY[page]!
-  scope.data.set('pageLabel', tab.label)
-  scope.data.set('pageLead', tab.lead)
-  scope.data.set('pageHeadOwner', {
-    page: HilosPages.I18N_COUNTRY,
-    label: 'Country',
-    lead: COUNTRY_OWNER_LEAD,
-  })
-  scope.data.set('pageBreadcrumb', [
-    { page: HilosPages.DASHBOARD, label: 'Hilos' },
-    { page: HilosPages.I18N, label: 'Internationalization' },
-    { page: HilosPages.I18N_COUNTRIES, label: 'Countries' },
-    { page: HilosPages.I18N_COUNTRY, label: 'Country' },
-  ])
-  scope.data.set('pageTabs', [
-    { page: HilosPages.I18N_COUNTRY, label: 'Overview' },
-    { page: HilosPages.I18N_COUNTRY_NAMES, label: 'Names' },
-  ])
-  scope.data.set('pageChildren', [])
+  for (const [key, value] of Object.entries(countryTabAnswer(page))) {
+    scope.data.set(key, value)
+  }
 }
 
 /** The list pages of the bench, whose address names no subject. */
@@ -666,6 +691,120 @@ export function mountOver<T>(
 
   return driver(fixture)
 }
+
+/**
+ * A country tab as an app mounts it: the routed outlet over the real navigator
+ * and page subscription, with the bench's connection and action lifecycle
+ * underneath. A refusal then reaches the tab the way the server's does — the
+ * error is set and the page scope emptied under it (HIL-1600) — so a window
+ * loses its source because the scope went, not because a test cleared it.
+ *
+ * @param page The country tab's page key.
+ * @param tab The tab's page component, given the bench's context.
+ * @param rows The rows its table window serves.
+ */
+export function liveCountryTab(
+  page: string,
+  tab: Type<unknown>,
+  rows: readonly BenchRow[] = [],
+) {
+  const bench = i18nBench(page, rows)
+  const subscription = new PageSubscription(
+    {
+      state: 'connected',
+      reconnectDragging: false,
+      send: () => true,
+      on: () => () => {},
+      forgetPageFrames: () => {},
+      tableWindowDescriptors: () => ({}),
+    },
+    bench.scopes,
+  )
+  let path = bench.paths.resolvePath(page, { countryCode: 'us' }) ?? ''
+  const navigation = createHilosRouter(createAppPageRouter({}), subscription, {
+    pathname: () => path,
+    pushState: (next) => {
+      path = next
+    },
+    replaceState: (next) => {
+      path = next
+    },
+    onPopState: () => () => {},
+  })
+  navigation.start()
+  releases.push(navigation.stop)
+  const mounted = vi.fn()
+
+  // What the app maps the page key to: the tab over the bench's context. Its
+  // construction is the tab's mount, so a held page is one that never counts
+  // again.
+  @Component({
+    selector: 'test-country-tab',
+    imports: [NgComponentOutlet],
+    template: `
+      <ng-container
+        [ngComponentOutlet]="tab"
+        [ngComponentOutletInputs]="inputs"
+      />
+    `,
+  })
+  class CountryTab {
+    protected readonly tab = tab
+    protected readonly inputs = { context: bench.context }
+
+    constructor() {
+      mounted()
+    }
+  }
+
+  TestBed.configureTestingModule({
+    providers: [{ provide: HILOS_ROUTER, useValue: navigation }],
+  })
+  const fixture = TestBed.createComponent(HilosView)
+  fixture.componentRef.setInput('pages', { [page]: CountryTab })
+  fixture.detectChanges()
+  document.body.append(fixture.nativeElement as HTMLElement)
+  const view = driver(fixture)
+
+  return {
+    ...view,
+    context: bench.context,
+    scopes: bench.scopes,
+    calls: bench.calls,
+    succeed: bench.succeed,
+    subscription,
+    navigation,
+    mounted,
+    /** The address the navigator stands on now. */
+    path: (): string => path,
+    /**
+     * Answer the subscription the way the tab does: the country's head beside
+     * its card.
+     *
+     * @param card The card the answer carries.
+     */
+    async answer(card: HilosI18nCountryCard = countryCard): Promise<void> {
+      await view.settle(() => {
+        subscription.ingestPageResponse(page, {
+          data: { ...countryTabAnswer(page), [COUNTRY_CARD_DATA]: card },
+        })
+      })
+    },
+    /**
+     * Refuse the subscription the way the server's subscription_page_error does.
+     *
+     * @param error The refusal.
+     */
+    async refuse(error: PageSubscriptionError): Promise<void> {
+      await view.settle(() => {
+        subscription.handleSubscriptionError(error)
+      })
+    },
+  }
+}
+
+/** A live tab as {@link liveCountryTab} returns it. */
+export type LiveCountryTab = ReturnType<typeof liveCountryTab>
 
 /**
  * The DOM verbs of a mounted fixture; each one renders what it changed.

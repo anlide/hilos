@@ -95,6 +95,86 @@ describe('ErrorPage', () => {
   })
 })
 
+/** The live 404 of a page whose resource was deleted while it stood open. */
+const DELETED: PageSubscriptionError = {
+  ...NOT_FOUND,
+  transitionMessage: 'It was deleted just now.',
+}
+
+describe('ErrorPage transition line', () => {
+  afterEach(cleanup)
+
+  // The description is the paragraph right after the title: once the line is
+  // there, p.text-body-secondary names two paragraphs.
+  const DESCRIPTION = '.lead + p'
+  const LINE = '[data-id="page-error-transition-message"]'
+
+  it('draws the line under the description and before the way home', () => {
+    const { container } = render(<ErrorPage error={DELETED} />)
+
+    const surface = container.querySelector('[data-id="page-error"]')!
+    const description = surface.querySelector(DESCRIPTION)!
+    const line = surface.querySelector(LINE)!
+    const home = surface.querySelector('[data-id="page-error-home"]')!
+    expect(description.textContent).toBe(NOT_FOUND.message)
+    expect(description.className).toBe('text-body-secondary mb-1')
+    expect(line.tagName).toBe('P')
+    expect(line.className).toBe('small text-body-secondary')
+    expect(line.textContent).toBe('It was deleted just now.')
+    expect(description.nextElementSibling).toBe(line)
+    expect(line.nextElementSibling).toBe(home)
+    expect(surface.querySelectorAll('h1')).toHaveLength(1)
+    expect(
+      surface.querySelectorAll('[data-id="page-error-home"]'),
+    ).toHaveLength(1)
+  })
+
+  it('shows any server line literally, never as markup', () => {
+    const { container } = render(
+      <ErrorPage
+        error={{ ...DELETED, transitionMessage: 'Gone <b>now</b> & for good' }}
+      />,
+    )
+
+    const line = container.querySelector(LINE)!
+    expect(line.textContent).toBe('Gone <b>now</b> & for good')
+    expect(line.querySelector('b')).toBeNull()
+    expect(line.innerHTML).toBe('Gone &lt;b&gt;now&lt;/b&gt; &amp; for good')
+  })
+
+  it('draws neither the line nor its margin for a refusal without the key', () => {
+    const { container } = render(<ErrorPage error={NOT_FOUND} />)
+
+    const surface = container.querySelector('[data-id="page-error"]')!
+    expect(surface.querySelector(LINE)).toBeNull()
+    expect(surface.querySelector(DESCRIPTION)?.className).toBe(
+      'text-body-secondary',
+    )
+    expect(surface.querySelectorAll('p')).toHaveLength(2)
+  })
+
+  it('takes the line away when the next refusal carries no key', () => {
+    const { container, rerender } = render(<ErrorPage error={DELETED} />)
+
+    rerender(<ErrorPage error={NOT_FOUND} />)
+    expect(container.querySelector(LINE)).toBeNull()
+    expect(container.querySelector(DESCRIPTION)?.className).toBe(
+      'text-body-secondary',
+    )
+
+    rerender(
+      <ErrorPage error={{ ...FORBIDDEN, transitionMessage: 'Moved.' }} />,
+    )
+    expect(container.querySelector(LINE)?.textContent).toBe('Moved.')
+    rerender(<ErrorPage error={FORBIDDEN} />)
+    expect(container.querySelector(LINE)).toBeNull()
+    expect(container.querySelectorAll('h1')).toHaveLength(1)
+    expect(
+      container.querySelectorAll('[data-id="page-error-home"]'),
+    ).toHaveLength(1)
+  })
+})
+
 function routerWith(pageError: PageSubscriptionError | null): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({

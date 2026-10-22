@@ -68,9 +68,13 @@ Every modal names where focus lands, and the naming is visible at the mount.
 On close, `FocusTrap` returns to the original connected, visible, enabled
 trigger. Vue, React, and Angular table mounts offer
 [`registerFocusReturnFallback(root, read)`](../../../framework/frontend/core/src/dom/focusTrap.ts)
-from `core/dom`: activation captures the nearest mount-local offer through a
-bubbling DOM request, and release calls `read` only if the trigger became
-unavailable. `read` returns the surface's current visible search, or its stable
+from `core/dom`: activation captures the mount-local offers around the trigger
+through a bubbling DOM request, nearest first, and release calls `read` only if
+the trigger became unavailable. The nearest offer's available target wins; an
+outer offer is read only when every nearer one gives none — it was cleaned up,
+its root left the document, or its target is `null` or unavailable — so a
+surface around a table still catches a return when the table itself is gone.
+`read` returns the surface's current visible search, or its stable
 `tabindex="-1"` table root. Registration returns a `() => void` cleanup; call it
 when the mount is disposed or its controller is replaced. Cleanup removes the
 offer and invalidates callbacks already captured by an open trap. Angular's

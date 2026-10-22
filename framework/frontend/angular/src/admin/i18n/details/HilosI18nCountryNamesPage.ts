@@ -21,11 +21,15 @@
 // only over a fresh row of the country the address still names, with the value
 // it removes fixed from that row. The table and the card are bound to one
 // project context and follow the address's country themselves — another
-// country is a new window of the same table. The windows are bound to that context and to the
-// country the address names now: either changing replaces them whole, with
-// their tracked actions, so an answer to the former subject reaches nothing;
-// the single-pass @for over each binding, tracked by what it made, is what
-// React writes as a key. Bootstrap classes only, painted with classes that
+// country is a new window of the same table. The windows are bound to that
+// context and to the country the address names now: either changing replaces
+// them whole, with their tracked actions, so an answer to the former subject
+// reaches nothing; the single-pass @for over each binding, tracked by what it
+// made, is what React writes as a key. A country deleted elsewhere under the
+// open page turns it into the shell's 404 (preserveModalDraftsOnDelete,
+// HIL-1603): the shared head goes with the shell and the table with #pageBody,
+// and the name window stays in #pageModals with its draft, its live source now
+// empty, so it says Deleted. Bootstrap classes only, painted with classes that
 // follow the theme (styling-rules.md).
 import {
   ChangeDetectionStrategy,
@@ -82,7 +86,12 @@ import { HilosI18nNamesTable } from './HilosI18nNamesTable.js'
     LoadingButton,
   ],
   template: `
-    <hilos-admin-page [page]="page" headKind="entity" tabsLabel="Country pages">
+    <hilos-admin-page
+      [page]="page"
+      headKind="entity"
+      tabsLabel="Country pages"
+      [preserveModalDraftsOnDelete]="true"
+    >
       @for (subject of [binding()]; track subject.names) {
         @if (card(); as current) {
           <ng-template #headVisual>
@@ -125,125 +134,139 @@ import { HilosI18nNamesTable } from './HilosI18nNamesTable.js'
               {{ current.summary.defaultLocaleCode ?? 'not chosen' }}
             </p>
           </ng-template>
-          <section class="mb-4" data-id="country-names">
-            <h2 class="h5 d-flex flex-wrap align-items-center gap-2">
-              Names in different languages
-              <span
-                class="badge bg-body-tertiary text-body-secondary border fw-normal"
-                >A row for every language</span
-              >
-            </h2>
-            <hilos-i18n-names-table
-              [controller]="subject.names.controller"
-              [nameActions]="nameActions"
-              [correctionActions]="correctionActions"
-            />
-          </section>
-          <ng-template #nameActions let-row>
-            <button
-              type="button"
-              class="btn btn-sm btn-outline-secondary"
-              [attr.aria-label]="
-                nameCopy.open(row.name === null, label(current), row.nativeName)
-              "
-              [attr.data-id]="
-                'i18n-country-name-' +
-                (row.name === null ? 'add' : 'edit') +
-                '-' +
-                row.code
-              "
-              (click)="openName(row)"
-            >
-              <i
-                [class]="
-                  'bi ' + (row.name === null ? 'bi-plus-lg' : 'bi-pencil')
-                "
-                aria-hidden="true"
-              ></i>
-            </button>
-            @if (row.name !== null) {
-              <button
-                hilosLoadingButton
-                class="btn-sm btn-outline-danger"
-                [attr.aria-label]="copy.baseLabel(row.nativeName)"
-                [attr.data-id]="'i18n-names-delete-' + row.code"
-                (click)="openDelete(row)"
-              >
-                <i class="bi bi-trash" aria-hidden="true"></i>
-              </button>
-            }
-          </ng-template>
-          <ng-template #correctionActions let-row let-correction="correction">
-            @if (row.name !== null) {
+        }
+      }
+      <ng-template #pageBody>
+        @for (subject of [binding()]; track subject.names) {
+          @if (card(); as current) {
+            <section class="mb-4" data-id="country-names">
+              <h2 class="h5 d-flex flex-wrap align-items-center gap-2">
+                Names in different languages
+                <span
+                  class="badge bg-body-tertiary text-body-secondary border fw-normal"
+                  >A row for every language</span
+                >
+              </h2>
+              <hilos-i18n-names-table
+                [controller]="subject.names.controller"
+                [nameActions]="nameActions"
+                [correctionActions]="correctionActions"
+              />
+            </section>
+            <ng-template #nameActions let-row>
               <button
                 type="button"
                 class="btn btn-sm btn-outline-secondary"
                 [attr.aria-label]="
                   nameCopy.open(
-                    correction.name === null,
+                    row.name === null,
                     label(current),
-                    row.nativeName,
-                    correction.localeCode
+                    row.nativeName
                   )
                 "
                 [attr.data-id]="
-                  'i18n-country-name-locale-' +
-                  (correction.name === null ? 'add' : 'edit') +
+                  'i18n-country-name-' +
+                  (row.name === null ? 'add' : 'edit') +
                   '-' +
-                  correction.localeCode
+                  row.code
                 "
-                (click)="openName(row, correction.localeId)"
+                (click)="openName(row)"
               >
                 <i
                   [class]="
-                    'bi ' +
-                    (correction.name === null ? 'bi-plus-lg' : 'bi-pencil')
+                    'bi ' + (row.name === null ? 'bi-plus-lg' : 'bi-pencil')
                   "
                   aria-hidden="true"
                 ></i>
               </button>
-            }
-            @if (correction.name !== null) {
-              <button
-                hilosLoadingButton
-                class="btn-sm btn-outline-danger"
-                [attr.aria-label]="copy.overrideLabel(correction.localeCode)"
-                [attr.data-id]="'i18n-names-delete-' + correction.localeCode"
-                (click)="openDelete(row, correction.localeId)"
-              >
-                <i class="bi bi-trash" aria-hidden="true"></i>
-              </button>
-            }
-          </ng-template>
-        } @else if (loading()) {
-          <div
-            class="placeholder-glow"
-            role="status"
-            aria-label="Loading country"
-          >
-            <span class="placeholder col-6 d-block mb-2 rounded"></span>
-            <span class="placeholder col-4 d-block rounded"></span>
-          </div>
-        } @else {
-          <p
-            class="alert alert-secondary"
-            role="status"
-            data-id="country-names-unavailable"
-          >
-            Country details are no longer available.
-          </p>
+              @if (row.name !== null) {
+                <button
+                  hilosLoadingButton
+                  class="btn-sm btn-outline-danger"
+                  [attr.aria-label]="copy.baseLabel(row.nativeName)"
+                  [attr.data-id]="'i18n-names-delete-' + row.code"
+                  (click)="openDelete(row)"
+                >
+                  <i class="bi bi-trash" aria-hidden="true"></i>
+                </button>
+              }
+            </ng-template>
+            <ng-template #correctionActions let-row let-correction="correction">
+              @if (row.name !== null) {
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-secondary"
+                  [attr.aria-label]="
+                    nameCopy.open(
+                      correction.name === null,
+                      label(current),
+                      row.nativeName,
+                      correction.localeCode
+                    )
+                  "
+                  [attr.data-id]="
+                    'i18n-country-name-locale-' +
+                    (correction.name === null ? 'add' : 'edit') +
+                    '-' +
+                    correction.localeCode
+                  "
+                  (click)="openName(row, correction.localeId)"
+                >
+                  <i
+                    [class]="
+                      'bi ' +
+                      (correction.name === null ? 'bi-plus-lg' : 'bi-pencil')
+                    "
+                    aria-hidden="true"
+                  ></i>
+                </button>
+              }
+              @if (correction.name !== null) {
+                <button
+                  hilosLoadingButton
+                  class="btn-sm btn-outline-danger"
+                  [attr.aria-label]="copy.overrideLabel(correction.localeCode)"
+                  [attr.data-id]="'i18n-names-delete-' + correction.localeCode"
+                  (click)="openDelete(row, correction.localeId)"
+                >
+                  <i class="bi bi-trash" aria-hidden="true"></i>
+                </button>
+              }
+            </ng-template>
+          } @else if (loading()) {
+            <div
+              class="placeholder-glow"
+              role="status"
+              aria-label="Loading country"
+            >
+              <span class="placeholder col-6 d-block mb-2 rounded"></span>
+              <span class="placeholder col-4 d-block rounded"></span>
+            </div>
+          } @else {
+            <p
+              class="alert alert-secondary"
+              role="status"
+              data-id="country-names-unavailable"
+            >
+              Country details are no longer available.
+            </p>
+          }
+          @for (address of [windows()]; track address.window) {
+            <hilos-i18n-country-name-delete
+              [open]="deleteOpen()"
+              [context]="subject.context"
+              [target]="target()"
+              [source]="source()"
+              (closed)="closeDelete()"
+            />
+          }
         }
+      </ng-template>
+      <ng-template #pageModals>
         @for (address of [windows()]; track address.window) {
-          <hilos-i18n-country-name-delete
-            [open]="deleteOpen()"
-            [context]="subject.context"
-            [target]="target()"
-            [source]="source()"
-            (closed)="closeDelete()"
-          />
           <hilos-i18n-country-name-window [window]="address.window" />
         }
-      }
+      </ng-template>
     </hilos-admin-page>
   `,
 })

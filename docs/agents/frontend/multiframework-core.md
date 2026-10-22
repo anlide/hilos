@@ -74,11 +74,33 @@ instance (Vue setup, Angular field), outside repeated rendering. Cache identity
 is the descriptor object, not the page key, URL or loader function.
 
 `PageViewState<T>` exposes `view: ReadonlySignal<T | undefined>`,
-`loading: ReadonlySignal<boolean>` and `error: ReadonlySignal<PageError | null>`,
-plus `setPages(pages: Readonly<Record<string, PageView<T>>>): void` and
-`dispose(): void`. All three `HilosView` implementations adapt this one core
-machine to their framework's signals and render it; no `React.lazy`/`Suspense`,
+`loading: ReadonlySignal<boolean>`, `error: ReadonlySignal<PageError | null>`
+and `retainedOnError: ReadonlySignal<boolean>`, plus
+`setPages(pages: Readonly<Record<string, PageView<T>>>): void`,
+`retainForResourceDeletion(page: string): Unsubscribe` and `dispose(): void`.
+All three `HilosView` implementations adapt this one core machine to their
+framework's signals and render it; no `React.lazy`/`Suspense`,
 `defineAsyncComponent` or Angular `@defer` wrapper is required.
+
+`retainedOnError` is true while `view` keeps the component already mounted under
+the current refusal: `error` is that refusal, `loading` is false, and the
+adapter draws no `ErrorPage` of its own, so the same page instance and the
+windows it keeps open stay for its shell to draw the error. The shell registers
+with `retainForResourceDeletion(page)` once its page is mounted and gets a
+disposer that removes only its own registration. A live 404 `not_found` carrying
+`transitionMessage` starts the hold on that page, route and component, and a
+later plain 404 of the same subscription continues it. A full answer, any other
+status or code (a loss of access included), a navigation, a params change, a new
+descriptor and `dispose` release it. The registration lives in one outlet's
+closure, not in `Hilos::$db` or `Hilos::$rt`.
+
+Each `HilosView` hands the shell only that function, never the state, through an
+internal bridge: `hilosPageErrorBoundaryKey` (Vue provide/inject),
+`HilosPageErrorBoundaryContext` (React context) and `HILOS_PAGE_ERROR_BOUNDARY`
+(Angular token, set through the outlet's `ngComponentOutletInjector`). Outside
+an outlet nothing is provided and a shell stands alone, drawing the error
+itself. The shell side is in
+[page-head.md](../architecture/page-head.md#deleted-while-open).
 
 Each outlet instance owns its cache. Selections sharing a descriptor share an
 in-flight promise; successful components are reused on return. A late completion

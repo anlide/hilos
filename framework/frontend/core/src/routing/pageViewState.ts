@@ -6,10 +6,17 @@ import {
   createSignal,
   type ReadonlySignal,
   subscribeSignal,
+  type Unsubscribe,
 } from '../state/signal.js'
 import { type HilosRouter } from './HilosRouter.js'
 import { PAGE_LOAD_FAILED_ERROR, type PageError } from './pageError.js'
 import { type LazyPageView, type PageView } from './pageView.js'
+
+/** HTTP status of a resource the server no longer finds. */
+const RESOURCE_NOT_FOUND_STATUS = 404
+
+/** The server's code for that missing resource; not a route or unbuilt miss. */
+const RESOURCE_NOT_FOUND_CODE = 'not_found'
 
 /** The routed outlet's shared code, data, and refusal state. */
 export interface PageViewState<T> {
@@ -20,11 +27,25 @@ export interface PageViewState<T> {
   /** The server refusal takes precedence over a local import failure. */
   readonly error: ReadonlySignal<PageError | null>
   /**
+   * The registered page draws the current refusal itself: `view` keeps the
+   * component already mounted for this route, so the windows it owns stay.
+   */
+  readonly retainedOnError: ReadonlySignal<boolean>
+  /**
    * Replace the page map, noticing a replaced descriptor at the current key.
    *
    * @param pages The outlet's eager and deferred page entries.
    */
   setPages(pages: Readonly<Record<string, PageView<T>>>): void
+  /**
+   * Register the mounted page as the shell that draws a deletion of its own
+   * resource. Only a live 404 naming that transition starts the hold, on the
+   * same page, route, and mounted component; it never mounts a page.
+   *
+   * @param page The page key the registering shell serves.
+   * @returns A function that removes this registration, never a later one.
+   */
+  retainForResourceDeletion(page: string): Unsubscribe
   /** Detach listeners and prevent late imports from publishing state. */
   dispose(): void
 }
@@ -38,6 +59,14 @@ interface ViewSnapshot<T> {
   view: T | undefined
   loading: boolean
   error: PageError | null
+  retainedOnError: boolean
+}
+
+/** One shell's claim on the component mounted for one route generation. */
+interface Retention<T> {
+  readonly page: string
+  readonly generation: number
+  readonly view: T | undefined
 }
 
 /** Identify the descriptor by its tag, never by a component being callable. */
@@ -63,6 +92,7 @@ export function createPageViewState<T>(router: HilosRouter): PageViewState<T> {
     view: undefined,
     loading: router.pageError.get() === null && router.pageLoading.get(),
     error: router.pageError.get(),
+    retainedOnError: false,
   })
   const cache = new Map<LazyPageView<T>, LoadedView<T> | PendingView<T>>()
   let pages: Readonly<Record<string, PageView<T>>> = {}
@@ -71,31 +101,52 @@ export function createPageViewState<T>(router: HilosRouter): PageViewState<T> {
   let disposed = false
   let departing = false
   let awaitingSubscription = false
+  let retention: Retention<T> | null = null
 
   const view = computedSignal(() => snapshot.get().view)
   const loading = computedSignal(() => snapshot.get().loading)
   const error = computedSignal(() => snapshot.get().error)
+  const retainedOnError = computedSignal(() => snapshot.get().retainedOnError)
+
+  // A live 404 that names the deletion starts the hold; while held, a later
+  // plain 404 of the same subscription continues it. Only the component the
+  // shell registered from after mounting on this route generation is kept.
+  function retains(serverError: PageError | null, loaded: T): boolean {
+    return (
+      serverError !== null &&
+      serverError.httpCode === RESOURCE_NOT_FOUND_STATUS &&
+      serverError.errorCode === RESOURCE_NOT_FOUND_CODE &&
+      (serverError.transitionMessage !== undefined ||
+        snapshot.get().retainedOnError) &&
+      retention !== null &&
+      retention.generation === generation &&
+      retention.page === router.currentRoute.get().page &&
+      retention.view === loaded
+    )
+  }
 
   function publish(): void {
     if (disposed) {
       return
     }
+    const serverError = router.pageError.get()
     const failure =
-      router.pageError.get() ??
-      (load.status === 'failed' ? PAGE_LOAD_FAILED_ERROR : null)
+      serverError ?? (load.status === 'failed' ? PAGE_LOAD_FAILED_ERROR : null)
     const waiting =
       failure === null &&
       router.currentRoute.get().page !== null &&
       (awaitingSubscription ||
         router.pageLoading.get() ||
         load.status === 'pending')
+    const retained = load.status === 'ready' && retains(serverError, load.view)
     snapshot.set({
       view:
-        !waiting && failure === null && load.status === 'ready'
+        load.status === 'ready' && (retained || (!waiting && failure === null))
           ? load.view
           : undefined,
       loading: waiting,
       error: failure,
+      retainedOnError: retained,
     })
   }
 
@@ -215,13 +266,28 @@ export function createPageViewState<T>(router: HilosRouter): PageViewState<T> {
     view,
     loading,
     error,
+    retainedOnError,
     setPages: (next) => {
       if (!disposed) {
         pages = next
         select(false)
       }
     },
+    retainForResourceDeletion: (page) => {
+      const own: Retention<T> = { page, generation, view: snapshot.get().view }
+      retention = own
+      return () => {
+        if (retention === own) {
+          retention = null
+          publish()
+        }
+      }
+    },
     dispose: () => {
+      retention = null
+      if (snapshot.get().retainedOnError) {
+        publish()
+      }
       disposed = true
       generation += 1
       offLeave()

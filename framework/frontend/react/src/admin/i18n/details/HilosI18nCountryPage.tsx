@@ -84,11 +84,16 @@ function CountryCard({ context }: HilosI18nCountryPageProps) {
   )
   const source = hilosI18nCountryDeleteFromCard(card),
     copy = HILOS_I18N_COUNTRY_WINDOW_COPY
+  // A country deleted elsewhere under the open card turns it into the shell's
+  // 404 (HIL-1603): head and body go, and the edit window stays in modals with
+  // its draft, its live source now empty, so it says Deleted.
   return (
     <HilosAdminPage
       page={HilosPages.I18N_COUNTRY}
       headKind="entity"
       tabsLabel="Country pages"
+      preserveModalDraftsOnDelete
+      modals={<HilosI18nCountryWindow window={countryWindow} />}
       headVisual={
         card ? (
           <span
@@ -273,7 +278,6 @@ function CountryCard({ context }: HilosI18nCountryPageProps) {
           </p>
         )
       )}
-      <HilosI18nCountryWindow window={countryWindow} />
       <HilosI18nCountryDelete
         open={target !== null}
         target={target}

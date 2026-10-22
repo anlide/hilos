@@ -6,11 +6,15 @@ import {
   i18nLocaleRow,
   settleRemovedRow,
   shownByTestId,
+  watchI18nLivePages,
   watchPageErrorFrames,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import { gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit } from '../helpers/session.js'
+import { clickSubmit, typeInto } from '../helpers/session.js'
+
+/** What an edit window says once its row went under it. */
+const DELETED_NOTICE = 'Deleted elsewhere — your text stays to copy.'
 
 /** Create this spec's isolated custom country through both add steps. */
 async function addCountry(page: Page, countryCode: string): Promise<void> {
@@ -41,6 +45,38 @@ async function addCountry(page: Page, countryCode: string): Promise<void> {
   await dismissToasts(page)
 }
 
+/** Delete the country from its own card's State, where the page stands. */
+async function deleteFromCard(page: Page, countryCode: string): Promise<void> {
+  const open = page.getByTestId('country-card-delete')
+  await clickSubmit(open)
+  const confirm = page.getByTestId('i18n-country-delete-confirm')
+  await clickSubmit(confirm)
+  await expect(confirm).toHaveCount(0)
+  await expect(page).toHaveURL(/\/hilos\/i18n\/countries$/)
+  await expect(page.getByTestId('hilos-toast-success')).toContainText(
+    `Country ${countryCode} deleted.`,
+  )
+}
+
+/**
+ * Close the window over the 404 through its dirty confirm; the 404 stays.
+ *
+ * @param page The viewer whose window holds a draft.
+ * @param windowId The window's data-id.
+ * @param cancelId Its Cancel's data-id.
+ */
+async function discardDraft(
+  page: Page,
+  windowId: string,
+  cancelId: string,
+): Promise<void> {
+  await clickSubmit(page.getByTestId(cancelId))
+  const discard = page.getByTestId('modal-confirm-discard')
+  await clickSubmit(discard)
+  await expect(discard).toHaveCount(0)
+  await expect(page.getByTestId(windowId)).toHaveCount(0)
+}
+
 test('deletes a custom country from the list and updates a second subscribed card', async ({
   page,
   context,
@@ -58,6 +94,11 @@ test('deletes a custom country from the list and updates a second subscribed car
   const frames = watchPageErrorFrames(other)
   await gotoPage(other, '/hilos/i18n/countries/qx', PAGE_READY)
   await expect(other.getByTestId('country-card-code')).toHaveText('qx')
+  await clickSubmit(other.getByTestId('country-card-edit'))
+  const symbol = other.getByTestId('i18n-country-edit-currency-symbol')
+  await expect(symbol).toBeFocused()
+  await typeInto(symbol, 'Q$')
+  const live = await watchI18nLivePages(expect, [other])
 
   await opener.scrollIntoViewIfNeeded()
   await expect(opener).toBeEnabled()
@@ -76,6 +117,18 @@ test('deletes a custom country from the list and updates a second subscribed car
   )
   await expect(page).toHaveURL(/\/hilos\/i18n\/countries$/)
   await expectDeletedCountryCard(expect, other, frames, 'qx')
+  // The edit window stays above the 404 with the draft, and cannot save it.
+  await expect(other.getByTestId('i18n-country-window')).toBeVisible()
+  await expect(symbol).toHaveValue('Q$')
+  await expect(other.getByTestId('i18n-country-notice')).toContainText(
+    DELETED_NOTICE,
+  )
+  const save = other.getByTestId('i18n-country-save')
+  await expect(save).toBeDisabled()
+  await expect(save).toContainText('Deleted')
+  await discardDraft(other, 'i18n-country-window', 'i18n-country-cancel')
+  await expectDeletedCountryCard(expect, other, frames, 'qx')
+  await live.unchanged()
   const loggedBeforeReload = frames.length
   await other.reload()
   await expectDeletedCountryCardReloaded(
@@ -85,6 +138,7 @@ test('deletes a custom country from the list and updates a second subscribed car
     'qx',
     loggedBeforeReload,
   )
+  await expect(other.getByTestId('i18n-country-window')).toHaveCount(0)
 
   // The ordinary table removal gate may leave Apply, then a placeholder or an empty window.
   await dismissToasts(page)
@@ -103,15 +157,7 @@ test('deletes a custom country from State and returns to the list after success'
   const frames = watchPageErrorFrames(other)
   await gotoPage(other, '/hilos/i18n/countries/qy', PAGE_READY)
   await expect(other.getByTestId('country-card-code')).toHaveText('qy')
-  const open = page.getByTestId('country-card-delete')
-  await clickSubmit(open)
-  const confirm = page.getByTestId('i18n-country-delete-confirm')
-  await clickSubmit(confirm)
-  await expect(confirm).toHaveCount(0)
-  await expect(page).toHaveURL(/\/hilos\/i18n\/countries$/)
-  await expect(page.getByTestId('hilos-toast-success')).toContainText(
-    'Country qy deleted.',
-  )
+  await deleteFromCard(page, 'qy')
   await expectDeletedCountryCard(expect, other, frames, 'qy')
   const search = page.getByTestId('hilos-table-search')
   await search.fill('')
@@ -121,6 +167,55 @@ test('deletes a custom country from State and returns to the list after success'
       .getByTestId(/^hilos-table-row-/)
       .filter({ has: page.getByTestId('i18n-countries-link-qy') }),
   ).toHaveCount(0)
+  await other.close()
+})
+
+test('deletes a custom country under a second Names tab and keeps its name draft above the 404', async ({
+  page,
+  context,
+}) => {
+  await signUpAdmin(page)
+  // No name and no locale: either would stop the deletion.
+  await addCountry(page, 'qn')
+  await gotoPage(page, '/hilos/i18n/countries/qn', PAGE_READY)
+  const other = await context.newPage()
+  const frames = watchPageErrorFrames(other)
+  await gotoPage(other, '/hilos/i18n/countries/qn/names', PAGE_READY)
+  await clickSubmit(shownByTestId(other, 'i18n-country-name-add-en'))
+  const input = other.getByTestId('i18n-country-name-input')
+  await expect(input).toBeFocused()
+  await typeInto(input, 'Draft name')
+  const live = await watchI18nLivePages(expect, [other])
+
+  await deleteFromCard(page, 'qn')
+  await expectDeletedCountryCard(expect, other, frames, 'qn', 'names')
+  // The add window stays above the 404 with the draft, and cannot save it.
+  await expect(other.getByTestId('i18n-country-name-window')).toBeVisible()
+  await expect(input).toHaveValue('Draft name')
+  await expect(other.getByTestId('i18n-country-name-notice')).toContainText(
+    DELETED_NOTICE,
+  )
+  const submit = other.getByTestId('i18n-country-name-submit')
+  await expect(submit).toBeDisabled()
+  await expect(submit).toContainText('Deleted')
+  await discardDraft(
+    other,
+    'i18n-country-name-window',
+    'i18n-country-name-cancel',
+  )
+  await expectDeletedCountryCard(expect, other, frames, 'qn', 'names')
+  await live.unchanged()
+  const loggedBeforeReload = frames.length
+  await other.reload()
+  await expectDeletedCountryCardReloaded(
+    expect,
+    other,
+    frames,
+    'qn',
+    loggedBeforeReload,
+    'names',
+  )
+  await expect(other.getByTestId('i18n-country-name-window')).toHaveCount(0)
   await other.close()
 })
 

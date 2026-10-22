@@ -28,6 +28,68 @@ function mountRoot(html = ''): HTMLElement {
   return root
 }
 
+/**
+ * Surfaces nested one inside the other in the document, each holding its own
+ * fallback button, with the opener inside the innermost one.
+ *
+ * @param count How many surfaces wrap the opener.
+ * @returns The surfaces and their buttons, outermost first, and the opener.
+ */
+function nestedSurfaces(count: number): {
+  surfaces: HTMLElement[]
+  targets: HTMLButtonElement[]
+  opener: HTMLButtonElement
+} {
+  const surfaces: HTMLElement[] = []
+  const targets: HTMLButtonElement[] = []
+  let parent: HTMLElement = document.body
+  for (let index = 0; index < count; index++) {
+    const surface = document.createElement('section')
+    const target = document.createElement('button')
+    target.type = 'button'
+    surface.append(target)
+    parent.append(surface)
+    surfaces.push(surface)
+    targets.push(target)
+    parent = surface
+  }
+  const opener = document.createElement('button')
+  opener.type = 'button'
+  parent.append(opener)
+
+  return { surfaces, targets, opener }
+}
+
+/**
+ * Open a trap on a fresh dialog from `opener`, the way a modal mount does.
+ *
+ * @param opener The control focused when the dialog opens.
+ * @returns The dialog root and its active trap.
+ */
+function openFrom(opener: HTMLElement): {
+  dialog: HTMLElement
+  trap: FocusTrap
+} {
+  const dialog = mountRoot()
+  const trap = new FocusTrap()
+  opener.focus()
+  trap.activate(dialog)
+
+  return { dialog, trap }
+}
+
+/**
+ * A connected, visible button outside every surface: a fallback that hands it
+ * out proves only that its own offer is still honored.
+ *
+ * @returns The stray button.
+ */
+function strayButton(): HTMLButtonElement {
+  return mountRoot('<button type="button">Stray</button>').querySelector(
+    'button',
+  )!
+}
+
 describe('focusInitial', () => {
   it('focuses the marked element when a mark is present', () => {
     const root = mountRoot(
@@ -127,7 +189,7 @@ describe('FocusTrap', () => {
     expect(document.activeElement).toBe(opener)
   })
 
-  it('uses only the nearest live surface fallback when the opener disappears', () => {
+  it('prefers the nearest live surface fallback when the opener disappears', () => {
     const outer = mountRoot('<button>Outer fallback</button>')
     const inner = document.createElement('section')
     inner.innerHTML = '<input /><button>Open</button>'
@@ -207,4 +269,101 @@ describe('FocusTrap', () => {
     trap.release()
     expect(document.activeElement).toBe(other)
   })
+})
+
+describe('registerFocusReturnFallback around nested surfaces', () => {
+  it('returns to an available opener before any surface fallback', () => {
+    const { surfaces, targets, opener } = nestedSurfaces(2)
+    registerFocusReturnFallback(surfaces[0], () => targets[0])
+    registerFocusReturnFallback(surfaces[1], () => targets[1])
+    const { trap } = openFrom(opener)
+    trap.release()
+    expect(document.activeElement).toBe(opener)
+  })
+
+  it('keeps the nearest available target over an available outer one', () => {
+    const { surfaces, targets, opener } = nestedSurfaces(2)
+    registerFocusReturnFallback(surfaces[0], () => targets[0])
+    registerFocusReturnFallback(surfaces[1], () => targets[1])
+    const { trap } = openFrom(opener)
+    opener.remove()
+    trap.release()
+    expect(document.activeElement).toBe(targets[1])
+  })
+
+  it.each(['withdrawn', 'detached'] as const)(
+    'asks the outer surface once the nearer one is %s',
+    (loss) => {
+      const { surfaces, targets, opener } = nestedSurfaces(2)
+      const stray = strayButton()
+      registerFocusReturnFallback(surfaces[0], () => targets[0])
+      const disposeNearer = registerFocusReturnFallback(
+        surfaces[1],
+        () => stray,
+      )
+      const { trap } = openFrom(opener)
+      if (loss === 'withdrawn') {
+        opener.remove()
+        disposeNearer()
+      } else {
+        surfaces[1].remove()
+      }
+      trap.release()
+      expect(document.activeElement).toBe(targets[0])
+    },
+  )
+
+  it.each(['null', 'hidden', 'inert', 'disabled'] as const)(
+    'asks the outer surface when the nearer target is %s',
+    (state) => {
+      const { surfaces, targets, opener } = nestedSurfaces(2)
+      registerFocusReturnFallback(surfaces[0], () => targets[0])
+      registerFocusReturnFallback(surfaces[1], () =>
+        state === 'null' ? null : targets[1],
+      )
+      if (state !== 'null') targets[1].setAttribute(state, '')
+      const { trap } = openFrom(opener)
+      opener.remove()
+      trap.release()
+      expect(document.activeElement).toBe(targets[0])
+    },
+  )
+
+  it('walks out to the outermost surface that still gives a target', () => {
+    const { surfaces, targets, opener } = nestedSurfaces(3)
+    registerFocusReturnFallback(surfaces[0], () => targets[0])
+    const disposeMiddle = registerFocusReturnFallback(
+      surfaces[1],
+      () => targets[1],
+    )
+    registerFocusReturnFallback(surfaces[2], () => null)
+    const { trap } = openFrom(opener)
+    opener.remove()
+    disposeMiddle()
+    trap.release()
+    expect(document.activeElement).toBe(targets[0])
+  })
+
+  it.each(['withdrawn', 'detached'] as const)(
+    'leaves focus in the dialog when the outer surface is %s after capture too',
+    (loss) => {
+      const { surfaces, opener } = nestedSurfaces(2)
+      const stray = strayButton()
+      const disposeOuter = registerFocusReturnFallback(surfaces[0], () => stray)
+      const disposeNearer = registerFocusReturnFallback(
+        surfaces[1],
+        () => stray,
+      )
+      const { dialog, trap } = openFrom(opener)
+      opener.remove()
+      disposeNearer()
+      if (loss === 'withdrawn') {
+        disposeOuter()
+      } else {
+        surfaces[0].remove()
+      }
+      trap.release()
+      expect(document.activeElement).toBe(dialog)
+    },
+  )
 })

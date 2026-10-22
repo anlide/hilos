@@ -1,20 +1,23 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
-import { useContext } from 'react'
+import { StrictMode, useContext, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import {
+  FocusTrap,
   HilosPages,
   ScopeManager,
   TableViewportController,
   bindAdminAccess,
   bindSessionScope,
   createSignal,
+  registerFocusReturnFallback,
 } from '@hilos/core'
 import type {
   HilosConnection,
   HilosPageIdentity,
   HilosRouter,
   PageRouteMatch,
+  PageSubscriptionError,
   ProjectSignal,
 } from '@hilos/core'
 
@@ -22,6 +25,7 @@ import { HilosAdminPage } from '../src/HilosAdminPage.js'
 import type { HilosAdminPageProps } from '../src/HilosAdminPage.js'
 import { HilosViewportTable } from '../src/HilosViewportTable.js'
 import { HilosAdminViewModeContext } from '../src/hilosLookOnly.js'
+import { HilosPageErrorBoundaryContext } from '../src/hilosPageErrorBoundaryContext.js'
 import { HilosPageHeadingIdContext } from '../src/hilosPageHeadingContext.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
@@ -692,5 +696,296 @@ describe('HilosAdminPage and the admin view mode', () => {
     expect(container.querySelector('[data-id="probe"]')?.textContent).toBe(
       'true',
     )
+  })
+})
+
+describe('HilosAdminPage under a deleted resource', () => {
+  /** The live 404 of a section whose resource was deleted while it stood open. */
+  const DELETED: PageSubscriptionError = {
+    page: HilosPages.I18N,
+    httpCode: 404,
+    errorCode: 'not_found',
+    title: 'Page Not Found',
+    message: 'The page you are looking for does not exist.',
+    transitionMessage: 'It was deleted just now.',
+  }
+
+  afterEach(() => {
+    cleanup()
+    document.body.innerHTML = ''
+  })
+
+  /**
+   * The shell over a page error the test sets, its content one opener and its
+   * modals a probe of what the shell provides, counting its mounts.
+   *
+   * @param preserve Whether the page opts in.
+   */
+  function shell(preserve: boolean) {
+    const pageError = createSignal<PageSubscriptionError | null>(null)
+    const modalsMounted = vi.fn()
+    function ModalsProbe() {
+      const headingId = useContext(HilosPageHeadingIdContext)
+      const viewMode = useContext(HilosAdminViewModeContext)
+      useEffect(() => {
+        modalsMounted()
+      }, [])
+
+      return (
+        <span data-id="modals-probe">{`${headingId} ${String(viewMode)}`}</span>
+      )
+    }
+    const navigation: HilosRouter = { ...router(SECTION_IDENTITY), pageError }
+    const element = (
+      <HilosRouterContext.Provider value={navigation}>
+        <HilosAdminPage
+          page={HilosPages.I18N}
+          preserveModalDraftsOnDelete={preserve}
+          modals={<ModalsProbe />}
+        >
+          <button type="button" data-id="opener">
+            Rename
+          </button>
+        </HilosAdminPage>
+      </HilosRouterContext.Provider>
+    )
+
+    return { element, pageError, modalsMounted }
+  }
+
+  /**
+   * Mount the shell alone, outside any outlet.
+   *
+   * @param preserve Whether the page opts in.
+   */
+  function standalone(preserve: boolean) {
+    const { element, ...rest } = shell(preserve)
+
+    return { ...render(element), ...rest }
+  }
+
+  /**
+   * Open a trap from an opener in the shell while a surface around the shell
+   * offers its own fallback. Where focus lands on close names whose offer the
+   * trap took when the opener is gone.
+   *
+   * @param opener The control that opens the dialog.
+   */
+  function trapFrom(opener: HTMLElement) {
+    const outer = document.createElement('button')
+    outer.type = 'button'
+    document.body.append(outer)
+    const releaseOuter = registerFocusReturnFallback(document.body, () => outer)
+    opener.focus()
+    const dialog = document.createElement('div')
+    dialog.tabIndex = -1
+    document.body.append(dialog)
+    const trap = new FocusTrap()
+    trap.activate(dialog, 'dialog')
+
+    return {
+      outer,
+      close: () => {
+        trap.release()
+        releaseOuter()
+      },
+    }
+  }
+
+  /**
+   * A fake outlet offer that records each registration and its release.
+   */
+  function outlet() {
+    const live = new Set<string>()
+    const shown: boolean[] = []
+    const retain = vi.fn((page: string) => {
+      const own = `${page}#${retain.mock.calls.length}`
+      live.add(own)
+      // The registration has to see the shell already on screen.
+      shown.push(
+        document.querySelector('[data-id="hilos-admin-page"]') !== null,
+      )
+
+      return () => {
+        live.delete(own)
+      }
+    })
+
+    return { retain, live, shown }
+  }
+
+  it('draws the page error in place of its head, cards and content, and keeps modals', () => {
+    const { container, pageError, modalsMounted } = standalone(true)
+    const probe = container.querySelector('[data-id="modals-probe"]')!
+    const provided = probe.textContent
+    expect(
+      container.querySelector('[data-id="hilos-admin-children"]'),
+    ).not.toBeNull()
+
+    act(() => pageError.set(DELETED))
+
+    const section = container.querySelector('[data-id="hilos-admin-page"]')!
+    expect(section.querySelectorAll('[data-id="page-error"]')).toHaveLength(1)
+    expect(
+      section.querySelector('[data-id="page-error-transition-message"]')
+        ?.textContent,
+    ).toBe('It was deleted just now.')
+    for (const gone of [
+      'hilos-breadcrumb',
+      'hilos-admin-title',
+      'hilos-admin-children',
+      'opener',
+    ]) {
+      expect(container.querySelector(`[data-id="${gone}"]`)).toBeNull()
+    }
+    const headings = container.querySelectorAll('h1')
+    expect(headings).toHaveLength(1)
+    expect(headings[0].textContent).toBe('404')
+    expect(container.querySelector('[data-id="modals-probe"]')).toBe(probe)
+    expect(modalsMounted).toHaveBeenCalledTimes(1)
+    expect(probe.textContent).toBe(provided)
+    expect(provided).toMatch(/^\S+ false$/)
+  })
+
+  it('draws its content again once the page error is gone', () => {
+    const { container, pageError } = standalone(true)
+
+    act(() => pageError.set(DELETED))
+    act(() => pageError.set(null))
+
+    expect(container.querySelector('[data-id="page-error"]')).toBeNull()
+    expect(
+      container.querySelector('[data-id="hilos-admin-title"]')?.textContent,
+    ).toBe('Internationalization')
+    expect(container.querySelector('[data-id="opener"]')).not.toBeNull()
+  })
+
+  it('keeps its content under a page error without the opt-in', () => {
+    const { container, pageError } = standalone(false)
+
+    act(() => pageError.set(DELETED))
+
+    expect(container.querySelector('[data-id="page-error"]')).toBeNull()
+    expect(
+      container.querySelector('[data-id="hilos-admin-title"]')?.textContent,
+    ).toBe('Internationalization')
+    expect(container.querySelector('[data-id="opener"]')).not.toBeNull()
+    expect(container.querySelector('[data-id="modals-probe"]')).not.toBeNull()
+  })
+
+  it('reads no page error without the opt-in', () => {
+    // A navigator that carries no page error at all, as a page's own test
+    // may build one: the shell without the opt-in must not reach for it.
+    const navigation = {
+      ...router(SECTION_IDENTITY),
+      pageError: undefined,
+    } as unknown as HilosRouter
+    const { container } = render(
+      <HilosRouterContext.Provider value={navigation}>
+        <HilosAdminPage page={HilosPages.I18N} />
+      </HilosRouterContext.Provider>,
+    )
+
+    expect(
+      container.querySelector('[data-id="hilos-admin-title"]')?.textContent,
+    ).toBe('Internationalization')
+  })
+
+  it('returns focus to its Back to home once the opener went away with the content', () => {
+    const { container, pageError } = standalone(true)
+    const opener = container.querySelector<HTMLElement>('[data-id="opener"]')!
+    const { close } = trapFrom(opener)
+
+    act(() => pageError.set(DELETED))
+    close()
+
+    expect(opener.isConnected).toBe(false)
+    expect(document.activeElement).toBe(
+      container.querySelector('[data-id="page-error-home"]'),
+    )
+  })
+
+  it('leaves a lost opener to the surface around it without the opt-in', () => {
+    const { container } = standalone(false)
+    const opener = container.querySelector<HTMLElement>('[data-id="opener"]')!
+    const { outer, close } = trapFrom(opener)
+
+    opener.remove()
+    close()
+
+    expect(document.activeElement).toBe(outer)
+  })
+
+  it('stops answering for its root once unmounted', () => {
+    const { container, pageError, unmount } = standalone(true)
+    act(() => pageError.set(DELETED))
+    const section = container.querySelector<HTMLElement>(
+      '[data-id="hilos-admin-page"]',
+    )!
+    const home = section.querySelector('[data-id="page-error-home"]')
+    unmount()
+    // The old root back in the document with its Back to home and an opener
+    // inside it: its own target is there and available, so only an offer the
+    // shell failed to withdraw could still win over the surface around it.
+    document.body.append(section)
+    expect(section.querySelector('[data-id="page-error-home"]')).toBe(home)
+    const opener = document.createElement('button')
+    opener.type = 'button'
+    section.append(opener)
+    const { outer, close } = trapFrom(opener)
+
+    opener.remove()
+    close()
+
+    expect(document.activeElement).toBe(outer)
+  })
+
+  it('registers with the outlet by page once mounted, only with the opt-in, and releases it on unmount', () => {
+    const optedIn = outlet()
+    const { element } = shell(true)
+    const { unmount } = render(
+      <HilosPageErrorBoundaryContext.Provider value={optedIn.retain}>
+        {element}
+      </HilosPageErrorBoundaryContext.Provider>,
+    )
+    expect(optedIn.retain).toHaveBeenCalledTimes(1)
+    expect(optedIn.retain).toHaveBeenCalledWith(HilosPages.I18N)
+    expect(optedIn.shown).toEqual([true])
+    expect(optedIn.live.size).toBe(1)
+    unmount()
+    expect(optedIn.live.size).toBe(0)
+
+    const legacy = outlet()
+    render(
+      <HilosPageErrorBoundaryContext.Provider value={legacy.retain}>
+        {shell(false).element}
+      </HilosPageErrorBoundaryContext.Provider>,
+    )
+    expect(legacy.retain).not.toHaveBeenCalled()
+  })
+
+  it('holds one registration and one focus offer through StrictMode', () => {
+    const strict = outlet()
+    const { element, pageError } = shell(true)
+    const { container, unmount } = render(
+      <StrictMode>
+        <HilosPageErrorBoundaryContext.Provider value={strict.retain}>
+          {element}
+        </HilosPageErrorBoundaryContext.Provider>
+      </StrictMode>,
+    )
+    expect(strict.shown.every(Boolean)).toBe(true)
+    expect(strict.live.size).toBe(1)
+    const opener = container.querySelector<HTMLElement>('[data-id="opener"]')!
+    const { close } = trapFrom(opener)
+
+    act(() => pageError.set(DELETED))
+    close()
+
+    expect(document.activeElement).toBe(
+      container.querySelector('[data-id="page-error-home"]'),
+    )
+    unmount()
+    expect(strict.live.size).toBe(0)
   })
 })

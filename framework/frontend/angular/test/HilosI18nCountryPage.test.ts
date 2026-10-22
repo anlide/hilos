@@ -8,13 +8,21 @@
 // its ack, a viewer of the admin view mode, a new country or context under
 // open windows, and the country's live name in the page owner and its
 // breadcrumb entry. The verdicts themselves are the core's and are tested there.
+//
+// And the card in the routed outlet over the real navigator and page
+// subscription when its country is deleted elsewhere (HIL-1603): the one 404 in
+// place of the shared head and the body, the edit window and its draft kept
+// above it with Save refused, focus returned home on close, and every other way
+// out as before.
 import { TestBed } from '@angular/core/testing'
 import {
+  COUNTRY_CARD_DATA,
   HILOS_I18N_COUNTRY_DELETE_COPY,
   HILOS_I18N_COUNTRY_SWITCH_ON_COPY,
   HilosPages,
   hilosToasts,
 } from '@hilos/core'
+import type { PageSubscriptionError } from '@hilos/core'
 import { describe, expect, it } from 'vitest'
 
 import { HilosI18nCountryPage } from '../src/admin/i18n/details/HilosI18nCountryPage.js'
@@ -24,8 +32,10 @@ import {
   countryName,
   i18nBench,
   lastCrumb,
+  liveCountryTab,
   mountOver,
 } from './helpers/hilosI18n.js'
+import type { LiveCountryTab } from './helpers/hilosI18n.js'
 
 function setup(viewer = false) {
   const bench = i18nBench(HilosPages.I18N_COUNTRY, [], viewer)
@@ -689,5 +699,268 @@ describe('HilosI18nCountryPage', () => {
     expect(countryName(next)).toEqual(['United States', 'United States'])
     later.destroy()
     expect(countryName(next)).toEqual(['Country', 'Country'])
+  })
+
+  it('binds a new edit window for another country, free of the save the former one still has out', async () => {
+    const h = setup()
+    h.act(() => h.countryCard())
+    h.click('country-card-edit')
+    h.type('i18n-country-edit-currency-symbol', 'US$')
+    h.click('i18n-country-save')
+    expect(h.calls).toHaveLength(1)
+    const former = document.querySelector('hilos-i18n-country-window')
+    h.act(() =>
+      h.route.set({
+        page: HilosPages.I18N_COUNTRY,
+        params: { countryCode: 'fr' },
+        admin: true,
+      }),
+    )
+    expect(h.el('modal')).toBeNull()
+    expect(document.querySelector('hilos-i18n-country-window')).not.toBe(former)
+    h.act(() => h.countryCard())
+    h.click('country-card-edit')
+    expect(h.el<HTMLButtonElement>('i18n-country-cancel')?.disabled).toBe(false)
+    await h.settle(() => h.refuse(0, 'The former country refused.'))
+    expect(h.el('modal')).not.toBeNull()
+    expect(h.el('i18n-country-error')?.textContent).not.toContain(
+      'The former country refused.',
+    )
+  })
+})
+
+/** The ordinary 404 of a country that does not exist. */
+const COUNTRY_NOT_FOUND: PageSubscriptionError = {
+  page: HilosPages.I18N_COUNTRY,
+  httpCode: 404,
+  errorCode: 'not_found',
+  title: 'Page Not Found',
+  message: 'The page you are looking for does not exist.',
+}
+
+/** The live 404 a viewer gets when the country is deleted under the open card. */
+const DELETED_ELSEWHERE: PageSubscriptionError = {
+  ...COUNTRY_NOT_FOUND,
+  transitionMessage: 'It was deleted just now.',
+}
+
+/** The card of the address's country once nothing refers to it any more. */
+const deletableCard = {
+  ...countryCard,
+  summary: {
+    ...countryCard.summary,
+    isOwn: true,
+    locales: [],
+    localeCount: 0,
+    nameCount: 0,
+    catalogDefaultLocaleCode: null,
+    canDelete: true,
+    deleteReason: null,
+  },
+}
+
+function liveCard(): LiveCountryTab {
+  return liveCountryTab(HilosPages.I18N_COUNTRY, HilosI18nCountryPage)
+}
+
+/**
+ * Open the edit window from Main and type a currency symbol into it.
+ *
+ * @param live The answered card.
+ */
+function draftSymbol(live: LiveCountryTab) {
+  live.el('country-card-edit')!.focus()
+  live.click('country-card-edit')
+  const symbol = live.el<HTMLInputElement>('i18n-country-edit-currency-symbol')!
+  expect(document.activeElement).toBe(symbol)
+  live.type('i18n-country-edit-currency-symbol', 'US$')
+  expect(symbol.value).toBe('US$')
+
+  return { symbol, mounts: live.mounted.mock.calls.length }
+}
+
+/** Every page error drawn, wherever it stands. */
+function pageErrors(): NodeListOf<Element> {
+  return document.querySelectorAll('[data-id="page-error"]')
+}
+
+describe('HilosI18nCountryPage under a country deleted elsewhere', () => {
+  it('keeps the edit window and its draft above the one 404, refuses Save, and returns focus home on close', async () => {
+    const live = liveCard()
+    await live.answer()
+    expect(live.el('hilos-page-head-block')).not.toBeNull()
+    expect(live.el('country-head-tile')).not.toBeNull()
+    const { symbol, mounts } = draftSymbol(live)
+    expect(mounts).toBe(1)
+
+    await live.refuse(DELETED_ELSEWHERE)
+
+    expect(live.mounted).toHaveBeenCalledTimes(mounts)
+    expect(live.el('i18n-country-edit-currency-symbol')).toBe(symbol)
+    expect(symbol.value).toBe('US$')
+    expect(symbol.disabled).toBe(false)
+    expect(document.activeElement).toBe(symbol)
+    expect(live.el('i18n-country-notice')?.textContent).toContain(
+      'Deleted elsewhere — your text stays to copy.',
+    )
+    const save = live.el<HTMLButtonElement>('i18n-country-save')!
+    expect(save.disabled).toBe(true)
+    expect(save.textContent).toContain('Deleted')
+    const shell = live.el('hilos-admin-page')!
+    expect(pageErrors()).toHaveLength(1)
+    expect(shell.contains(pageErrors()[0]!)).toBe(true)
+    expect(
+      shell
+        .querySelector('[data-id="page-error-transition-message"]')
+        ?.textContent?.trim(),
+    ).toBe('It was deleted just now.')
+    for (const gone of [
+      'hilos-page-head',
+      'hilos-breadcrumb',
+      'hilos-page-head-title',
+      'hilos-admin-title',
+      'hilos-page-tabs',
+      'country-head-tile',
+      'country-card-main',
+      'country-card-state',
+      'country-card-unavailable',
+      'country-card-edit',
+    ]) {
+      expect(live.el(gone)).toBeNull()
+    }
+    const headings = document.querySelectorAll('h1')
+    expect(headings).toHaveLength(1)
+    expect(headings[0]!.textContent?.trim()).toBe('404')
+
+    live.submit(symbol.form)
+    live.click('i18n-country-save')
+    expect(live.calls).toEqual([])
+
+    live.click('i18n-country-cancel')
+    expect(live.el('modal-confirm-discard')).not.toBeNull()
+    expect(live.el('i18n-country-edit-currency-symbol')).toBe(symbol)
+    await live.settle(() => live.el('modal-confirm-discard')!.click())
+
+    expect(live.el('i18n-country-window')).toBeNull()
+    expect(pageErrors()).toHaveLength(1)
+    expect(live.el('page-error-transition-message')).not.toBeNull()
+    expect(document.activeElement).toBe(live.el('page-error-home'))
+    expect(live.calls).toEqual([])
+  })
+
+  it('draws the same 404 in place of the card with no window open', async () => {
+    const live = liveCard()
+    await live.answer()
+
+    await live.refuse(DELETED_ELSEWHERE)
+
+    expect(pageErrors()).toHaveLength(1)
+    expect(
+      live
+        .el('hilos-admin-page')
+        ?.querySelector('[data-id="page-error-transition-message"]')
+        ?.textContent?.trim(),
+    ).toBe('It was deleted just now.')
+    expect(live.el('hilos-page-head')).toBeNull()
+    expect(live.el('country-card-main')).toBeNull()
+    expect(live.el('modal')).toBeNull()
+    expect(live.el('hilos-page-state')?.getAttribute('data-state')).toBe(
+      'error',
+    )
+  })
+
+  it('keeps the window and its draft through a later 404 that brings no line', async () => {
+    const live = liveCard()
+    await live.answer()
+    const { symbol, mounts } = draftSymbol(live)
+    await live.refuse(DELETED_ELSEWHERE)
+
+    await live.refuse(COUNTRY_NOT_FOUND)
+
+    expect(live.el('page-error-transition-message')).toBeNull()
+    expect(pageErrors()).toHaveLength(1)
+    expect(live.el('hilos-admin-page')?.contains(pageErrors()[0]!)).toBe(true)
+    expect(live.el('i18n-country-edit-currency-symbol')).toBe(symbol)
+    expect(symbol.value).toBe('US$')
+    expect(live.mounted).toHaveBeenCalledTimes(mounts)
+  })
+
+  it.each([
+    {
+      name: "the server's 403",
+      leave: (live: LiveCountryTab) =>
+        live.subscription.handleSubscriptionError({
+          ...COUNTRY_NOT_FOUND,
+          httpCode: 403,
+          errorCode: 'forbidden',
+          title: 'Forbidden',
+          message: 'Server refusal words',
+        }),
+      code: '403',
+    },
+    {
+      name: 'the access the client saw go',
+      leave: (live: LiveCountryTab) => live.navigation.denyCurrentPage(),
+      code: '403',
+    },
+    {
+      name: 'leaving for another country',
+      leave: (live: LiveCountryTab) =>
+        live.navigation.navigate('/hilos/i18n/countries/fr'),
+      code: null,
+    },
+  ])(
+    'takes the window and its draft away on $name after the 404',
+    async ({ leave, code }) => {
+      const live = liveCard()
+      await live.answer()
+      draftSymbol(live)
+      await live.refuse(DELETED_ELSEWHERE)
+
+      await live.settle(() => leave(live))
+
+      expect(live.el('i18n-country-window')).toBeNull()
+      expect(live.el('modal')).toBeNull()
+      expect(live.el('hilos-admin-page')).toBeNull()
+      if (code === null) {
+        expect(pageErrors()).toHaveLength(0)
+      } else {
+        expect(pageErrors()).toHaveLength(1)
+        expect(pageErrors()[0]!.getAttribute('data-error-code')).toBe(code)
+      }
+    },
+  )
+
+  it('never mounts the card for a 404 that answers its first subscribe', async () => {
+    const live = liveCard()
+
+    await live.refuse(COUNTRY_NOT_FOUND)
+
+    expect(live.mounted).not.toHaveBeenCalled()
+    expect(live.el('hilos-admin-page')).toBeNull()
+    expect(pageErrors()).toHaveLength(1)
+    expect(live.el('page-error-transition-message')).toBeNull()
+  })
+
+  it('still takes its own successful deletion to Countries', async () => {
+    const live = liveCard()
+    await live.answer(deletableCard)
+    live.click('country-card-delete')
+    live.click('i18n-country-delete-confirm')
+    expect(live.calls).toMatchObject([
+      {
+        action: 'hilos_i18n_country_delete',
+        payload: { countryId: countryCard.countryId },
+      },
+    ])
+    // The initiator is sent the row's removal, never the refusal.
+    live.act(() => live.scopes.page()!.data.set(COUNTRY_CARD_DATA, []))
+    expect(live.el('i18n-country-delete-window')).not.toBeNull()
+
+    await live.settle(() => live.succeed())
+
+    expect(live.path()).toBe('/hilos/i18n/countries')
+    expect(pageErrors()).toHaveLength(0)
+    expect(live.el('i18n-country-delete-window')).toBeNull()
   })
 })

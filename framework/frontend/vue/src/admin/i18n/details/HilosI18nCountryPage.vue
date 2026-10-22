@@ -2,7 +2,11 @@
 page-scoped browser datum supplies both the initial view and live updates, the
 content of the country's block in the shared head among them: the code tile, the
 code, the custom-country mark and the currency and default-locale line. The name
-in the head is the live owner label this page binds, not drawn here. -->
+in the head is the live owner label this page binds, not drawn here.
+
+A country deleted elsewhere under the open card turns it into the shell's 404
+(preserveModalDraftsOnDelete, HIL-1603): head and body go, and the edit window
+stays in #modals with its draft, its live source now empty, so it says Deleted. -->
 <script setup lang="ts">
 import {
   createHilosI18nCountryCard,
@@ -82,6 +86,7 @@ const deleted = (): void => {
     :page="HilosPages.I18N_COUNTRY"
     head-kind="entity"
     tabs-label="Country pages"
+    preserve-modal-drafts-on-delete
   >
     <template v-if="card" #head-visual>
       <span
@@ -251,7 +256,6 @@ const deleted = (): void => {
     >
       Country details are no longer available.
     </p>
-    <HilosI18nCountryWindow :window="window" />
     <HilosI18nCountryDelete
       v-model="deleteOpen"
       :target="deleteTarget"
@@ -259,5 +263,8 @@ const deleted = (): void => {
       :delete-country="deleteCountry"
       @deleted="deleted"
     />
+    <template #modals>
+      <HilosI18nCountryWindow :window="window" />
+    </template>
   </HilosAdminPage>
 </template>
