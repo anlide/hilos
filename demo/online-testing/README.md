@@ -198,7 +198,8 @@ by equal shares, the leader last only among equal shares — it takes its share
 after the two that do not lead. All three share one
 MariaDB 11.4 server, `online-testing-cluster-mysql`, with the primary database
 and its derived journal. The database is at 10.223.0.10; all of the stand sits
-on subnet 10.223, and nothing is published on the host. It is a compose project of its own,
+on default subnet `10.223.0.0/16`. This local aggregate publishes nothing on the
+host. It is a compose project of its own,
 `hilos-online-testing-cluster`, because the e2e steps take their whole project
 down when they start.
 
@@ -216,12 +217,16 @@ nothing is run.
 
 | Command | What it does |
 |---|---|
-| `composer run test:cluster:up` | build the images and start the database, the three nodes and the cli container |
+| `composer run test:cluster:up` | build/recreate the default database, three nodes, entry and CLI, retaining data and protected mode |
+| `composer run test:cluster:restart` | ordinary down/up with current code, retaining both databases and protected mode |
 | `composer run test:cluster:status` | the containers and one line of each node's view: phase, leader, placements |
+| `composer run test:cluster:inspect -- m1` | inspect one node as JSON |
+| `composer run test:cluster:logs -- m1` | follow one node's container logs; Ctrl-C stops following |
+| `composer run test:cluster:client -- m1 test:cluster:inspect` | run an existing CLI command through the selected node |
 | `composer run test:cluster:scenarios` | the stand's scenario matrix on a fresh stand; `-- 21 40` points the schema and journal-trigger checks |
 | `composer run test:cluster:e2e` | Analytics through all three source/viewer master pairs on a fresh stand; build first with `test:e2e-build` |
 | `composer run test:cluster:down-volumes` | take the stand down and wipe its primary and journal databases |
-| `composer run test:cluster:down` | take the stand down the way the test runner does |
+| `composer run test:cluster:down` | stop the stand, retaining database data and protected-mode stores |
 
 The browser suite uses the same three masters with an nginx entry at
 10.223.0.30 and Mailpit at 10.223.0.20, without host ports. The entry serves
@@ -236,7 +241,9 @@ The full graph's `online-testing-cluster-e2e` follows `online-testing-e2e` and
 shares a group with the scenario matrix. Its snapshot keeps every node's logs
 and Playwright evidence before teardown. A direct browser run has no snapshot
 collector: save `data/logs-cluster/` and `tests/e2e/playwright-report/cluster-live/`
-before repeating it, since the next fresh run clears the node logs.
+before repeating it, since the next fresh browser run clears the stopped nodes'
+logs and archives. It preserves `.gitkeep` and every `protected-mode.state.json*`
+store, including unfinished stores; ordinary `up` does not clear logs.
 
 The harness commands — `kill`, `partition`, `crash-daemon`, `inspect` and the
 rest — use the shell entry point from this demo directory. It builds and runs a
@@ -266,6 +273,81 @@ only when that deletion is intended:
 ```bash
 ../../framework/docker/cluster/run docker/docker-compose.cluster.yml down --volumes
 ```
+
+### Compose layout and lifecycle
+
+The root includes one merged pair, `docker/cluster/local.yml` and
+`docker/cluster/tooling.yml`. Local services extend `database.yml`, `node.yml`
+and `entry.yml` there; the canonical services add no extra nodes. Compose 2.40.3,
+pinned by the harness, resolves `ports: !reset []` and per-node
+`env_file: !override`. Local nodes load tracked `.env.example`, `common.env`
+and their fixed `nodes/<id>.env`. The CLI is default-on, with `APP_ENV=test`
+and explicit cluster DB/command settings; nodes use `APP_ENV=dev`. The CLI
+mounts tracked `tests/.env.example` read-only at `/app/tests/.env`, inside
+`/app/tests` tmpfs so Docker cannot create a missing mount target on the host
+bind. Test suites keep their own services; no host env file is copied or
+overwritten. Mailpit and Playwright use the `e2e` profile.
+
+From this demo directory, ordinary startup is one direct Compose command:
+
+```bash
+docker compose -f docker/docker-compose.cluster.yml up -d --build --force-recreate
+```
+
+`test:cluster:up` runs that command without a separate all-profile build or log
+cleanup. Ordinary down/up and `test:cluster:restart` preserve primary/journal
+rows and protected-mode stores. A saved manual maintenance window remains
+`verifying`. Inspect it with
+`composer run test:cluster:client -- m1 protected-mode:inspect`; manual
+maintenance opens with `maintenance:disable`, a test freeze with
+`test:protected-mode:open`, and a backup restore with `protected-mode:open`,
+through the recorded initiator and the same client alias.
+
+Every new scenario/browser invocation validates prerequisites, resets the
+database once with `down --volumes`, starts the stand and opens recognized saved
+protected mode through its owner before fleet/browser readiness. Unknown
+identities, malformed stores/replies, refusals and timeouts fail startup.
+No global reset is inserted between scenarios, retries or browser phases, and
+there is no `--keep-db` mode: a new invocation discards ordinary fixtures.
+
+Names and the `/dev/shm` DB directory take `HILOS_STAND_SUFFIX`; the subnet takes
+`HILOS_STAND_NET_ONLINE_TESTING_CLUSTER`, and CPU weight takes
+`HILOS_STAND_CPU_SHARES`. The nodes and entry share host `data/data_export`;
+the entry mounts Angular's `frontend/dist` at `/usr/share/nginx/html`. See the
+shared guide's
+[stand instances](../../docs/agents/testing.md#the-full-run--one-graph-a-bounded-number-of-lanes)
+and [cluster lifecycle](../../docs/agents/testing.md#cluster-compose-model).
+
+### Standalone components
+
+Copy `docker/cluster/standalone.env.example` outside the checkout, edit its
+paths/endpoints and prepare the selected runtime file from
+`docker/cluster/nodes/m1.env`. From this demo directory:
+
+```bash
+docker compose --env-file /srv/hilos/online-testing.env -p online-db -f docker/cluster/database.yml config
+docker compose --env-file /srv/hilos/online-testing.env -p online-m1 -f docker/cluster/node.yml config
+docker compose --env-file /srv/hilos/online-testing.env -p online-entry -f docker/cluster/entry.yml config
+# After provisioning the inputs, start only this node on its server:
+docker compose --env-file /srv/hilos/online-testing.env -p online-m1 -f docker/cluster/node.yml up -d --build
+```
+
+`--env-file` supplies Compose interpolation; `HILOS_CLUSTER_NODE_ENV` selects
+the separate runtime file loaded after `common.env`. Build/bind paths resolve
+from `docker/cluster`. The example binds on `0.0.0.0`, publishes DB `3306`,
+peer `18095`, WebSocket `18092`, HTTP `18090`, and entry `80/443`; command and
+worker IPC ports stay private. Runtime DB/advertise/seeds must name reachable
+server endpoints, excluding the node itself from seeds. Entry upstreams use
+complete `HILOS_CLUSTER_WS_M1/M2/M3` and `HILOS_CLUSTER_HTTP_M1/M2/M3` host:port
+pairs, allowing different ports per master. The entrypoints preserve nginx's
+own variables during substitution.
+
+Provide built dependencies/Angular frontend, matching mutual-TLS files, trusted
+proxy ranges and the same pre-provisioned export storage on every node and entry
+via `HILOS_CLUSTER_DATA_EXPORT_DIR`. This only binds an existing shared directory;
+it provisions no remote hosts or storage. Standalone config resolution has been
+checked; real multi-host deployment has not been tested, and the harness stays
+local.
 
 ### Database
 
@@ -303,10 +385,11 @@ refreshes its grant without DROP or reset. Provisioning again and restarting
 on the same data directory preserve both primary and journal rows. The stand
 mounts `/dev/shm/hilos-online-testing-cluster-mysql-data` and the shared
 `test-stand.cnf`; `test:cluster:down` preserves that data, while
-`test:cluster:down-volumes` and each fresh scenario run clear it. Local and test
-volumes are separate and are not part of this transition.
+`test:cluster:down-volumes` and each fresh scenario/browser invocation clear it.
+The directory survives container replacement only until host reboot: `/dev/shm`
+is host memory. Local and test volumes are separate from this transition.
 
-This is a new, separate disposable data directory. The former Galera data
+Historical migration: this is a separate disposable data directory. The former Galera data
 stays at `/dev/shm/hilos-online-testing-cluster-galera1-data`,
 `/dev/shm/hilos-online-testing-cluster-galera2-data` and
 `/dev/shm/hilos-online-testing-cluster-galera3-data`: do not delete those
@@ -333,7 +416,7 @@ Reissuing means a new set in full: the old authority's key is gone, so no
 single file can be replaced alone. The commands run in the image of the
 stand's cli container, which exists after the first
 `composer -d demo/online-testing run test:cluster:up` (or `docker compose -f
-demo/online-testing/docker/docker-compose.cluster.yml --profile cli build
+demo/online-testing/docker/docker-compose.cluster.yml build
 online-testing-cluster-cli`). The framework's own commands print PEM to stdout
 and the host shell writes the files, so they come out owned by you rather than
 root. Keep the authority file (`cluster-ca.pem`) outside the repository and

@@ -1,0 +1,29 @@
+# Standalone MariaDB, also extended by the local stand. No Hilos-node dependency.
+services:
+  database:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    image: mariadb:11.4
+    labels:
+      hilos.role: database
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
+      MYSQL_DATABASE: ${DB_DATABASE:-hilos-demo-ecommerce-shop-cluster}
+      MYSQL_USER: ${DB_USERNAME:-hilos}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-hilos_pass}
+      TZ: UTC
+    volumes:
+      - ${HILOS_CLUSTER_DB_DATA_DIR:-/dev/shm/hilos-ecommerce-shop-cluster-mysql-data${HILOS_STAND_SUFFIX:-}}:/var/lib/mysql
+      - ../../../../framework/docker/mysql/test-stand.cnf:/etc/mysql/conf.d/zz-hilos-test-stand.cnf:ro
+      - ../mysql/init-change-log.sh:/docker-entrypoint-initdb.d/init-change-log.sh:ro
+      - ../mysql/provision-change-log.sh:/usr/local/bin/provision-change-log.sh:ro
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_0900_ai_ci
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    ports:
+      - "${HILOS_CLUSTER_BIND_ADDRESS:-127.0.0.1}:${HILOS_CLUSTER_DB_PUBLISHED_PORT:-3306}:3306"

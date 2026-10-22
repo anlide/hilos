@@ -17,6 +17,11 @@ A command that the scenarios drive answers with an Outcome - its exit code, what
 and what it would complain - and prints nothing itself: the matrix reads the answer, and
 cluster.py prints it for a person. The commands only a person runs (up, down, status, logs)
 print as they go.
+
+Ordinary up builds and recreates the default services in one Compose call; up, down and restart
+preserve saved protected mode, and only down with volumes wipes the database. Test startup opens
+recognized freezes through existing owner commands before fleet readiness. Browser-test log
+cleanup runs separately with nodes stopped, preserving every freeze store and .gitkeep.
 """
 
 import csv
@@ -27,9 +32,11 @@ import re
 import shlex
 import subprocess
 import sys
+import tempfile
+import time
 from collections import namedtuple
 
-from stand import StandRefused
+from stand import StandRefused, resolved_config
 
 Outcome = namedtuple("Outcome", "code out err")
 
@@ -40,10 +47,11 @@ CLI_ENTRY = ["php", "backend/Bootstrap/cli.php"]
 NETNS_IMAGE = "alpine:3.24.2"
 
 
-def _run(args, merge_stderr=False, input_text=None):
+def _run(args, merge_stderr=False, input_text=None, timeout=None):
     """Run a command for its outcome, capturing both streams (or one merged stream)."""
     proc = subprocess.run(args, input=input_text, text=True, stdout=subprocess.PIPE,
-                          stderr=subprocess.STDOUT if merge_stderr else subprocess.PIPE)
+                          stderr=subprocess.STDOUT if merge_stderr else subprocess.PIPE,
+                          timeout=timeout)
     return Outcome(proc.returncode, proc.stdout or "", proc.stderr or "")
 
 
@@ -73,26 +81,11 @@ def _logged_nodes(stand):
     return [*stand.members.values(), *([stand.stranger] if stand.stranger is not None else [])]
 
 
-def ensure_env(stand):
-    """The demo's env files from their examples, and where the nodes' log directories go, before a start.
-
-    The parent of each node's log directory, not the directory itself: docker creates that one on
-    the node's first start, owned by root like everything the daemon writes into it.
-    """
-    demo = stand.demo_dir
-    for env in (demo / ".env", demo / "tests" / ".env"):
-        example = env.with_name(".env.example")
-        if not env.exists() and example.exists():
-            env.write_bytes(example.read_bytes())
-    for node in _logged_nodes(stand):
-        node.log_dir.parent.mkdir(parents=True, exist_ok=True)
-
-
-def _freeze_files(stand):
-    """The freeze files a node's last run may have left, as the cli container sees them.
+def _test_log_directories(stand):
+    """Node log directories as the CLI container sees them, validated before any cleanup.
 
     The cli container mounts the demo at /app and nothing else of the host, so a node whose log
-    directory is not inside the demo is refused here, before anything is built or started.
+    directory is not strictly inside the demo is refused before anything is built or removed.
     """
     demo = stand.demo_dir.resolve()
     paths = []
@@ -102,48 +95,51 @@ def _freeze_files(stand):
         except ValueError:
             raise StandRefused(f"{stand.project}: node {node.id} logs to {node.log_dir}, outside "
                                f"{stand.demo_dir}, which the cli container cannot reach") from None
-        paths.append(f"/app/{inside.as_posix()}/protected-mode.state.json*")
+        if not inside.parts:
+            raise StandRefused(f"{stand.project}: node {node.id} logs to the demo root")
+        paths.append(f"/app/{inside.as_posix()}")
     return paths
 
 
-def up(stand, prog, *, clean_logs=False):
-    """Build images, prepare node logs, clear freezes, and start the stand."""
-    freeze_files = _freeze_files(stand)
-    ensure_env(stand)
-    print("cluster: building images...", flush=True)
-    # Every profile, so the stranger's image too: a scenario starts it from a finished image rather
-    # than building one in the middle of the matrix.
-    code = compose(stand, "--profile", "*", "build", capture=False)
-    if code != 0:
-        return code
-    if clean_logs:
-        # A fresh browser stand must not inherit the accumulated rotation archives of earlier
-        # runs. Their indexes share the worker channel with browser requests and can leave those
-        # requests behind megabytes of old fixture metadata. Keep every tracked .gitkeep.
-        directories = [str(pathlib.PurePosixPath(path).parent) for path in freeze_files]
-        code = compose(
-            stand, *_cli_profiles(stand), "run", "--rm", stand.cli_service,
-            "sh", "-c", 'mkdir -p "$@" && find "$@" -mindepth 1 ! -name .gitkeep -delete',
-            "cluster-e2e-log-reset", *directories, capture=False,
-        )
-        if code != 0:
-            return code
-    # Clear any freeze the last run left on a node, from INSIDE a container: a node's log directory
-    # is owned by root (the daemons run as root in their containers) and unlink asks permission of
-    # the DIRECTORY, so an rm from the host cannot reach it. On the up rather than on the teardown
-    # for the same reason as the three demos (HOTFIX d5f0ad75): a run killed hard never reaches its
-    # own teardown, but it always reaches the next up.
-    code = compose(stand, *_cli_profiles(stand), "run", "--rm", stand.cli_service,
-                   "sh", "-c", "rm -f " + " ".join(freeze_files), capture=False)
-    if code != 0:
-        return code
-    # The database, and a one-off schema step if the stand still has one, are not named: compose
-    # starts whatever the members depend on.
+def clear_test_logs(stand):
+    """Clear old browser-test logs inside a fresh CLI image, with every node stopped.
+
+    Keep .gitkeep and every protected-mode.state.json* file, including unfinished stores.
+    Validate all paths before deleting any file; find never follows symlinks out of a log tree.
+    """
+    directories = _test_log_directories(stand)
+    running = compose(stand, "--profile", "*", "ps", "--status", "running", "--services")
+    if running.code != 0:
+        return running.code
+    live = set(running.out.splitlines()) & {node.service for node in _logged_nodes(stand)}
+    if live:
+        raise StandRefused(f"test log cleanup needs stopped nodes: {', '.join(sorted(live))}")
+    script = '''set -eu
+for directory do
+    if [ -e "$directory" ] && [ ! -d "$directory" ]; then
+        echo "test log path is not a directory: $directory" >&2; exit 1
+    fi
+    parent=$directory
+    while [ "$parent" != / ]; do
+        if [ -L "$parent" ]; then
+            echo "test log path crosses a symlink: $directory" >&2; exit 1
+        fi
+        parent=$(dirname "$parent")
+    done
+done
+mkdir -p "$@"
+find "$@" -depth -mindepth 1 ! -type d ! -name .gitkeep ! -name 'protected-mode.state.json*' -delete
+find "$@" -depth -mindepth 1 -type d ! -name .gitkeep ! -name 'protected-mode.state.json*' -empty -delete
+'''
+    return compose(stand, *_cli_profiles(stand), "run", "--build", "--rm", "--no-deps",
+                   stand.cli_service, "sh", "-c", script, "cluster-e2e-log-reset",
+                   *directories, capture=False)
+
+
+def up(stand, prog):
+    """Build and recreate the default Compose services, retaining database and freeze stores."""
     print(f"cluster: starting {len(stand.members)} nodes and the cli container...", flush=True)
-    services = [node.service for node in stand.members.values()]
-    if stand.entry is not None:
-        services.append(stand.entry.service)
-    code = compose(stand, *_cli_profiles(stand), "up", "-d", *services, stand.cli_service, capture=False)
+    code = compose(stand, "up", "-d", "--build", "--force-recreate", capture=False)
     if code != 0:
         return code
     print("cluster: up. Give the mesh a few seconds to elect a leader, then:")
@@ -176,7 +172,7 @@ def down(stand, volumes=False):
 
 def up_e2e(stand):
     """Raise the browser profile services after the cluster members and entry are running."""
-    return compose(stand, "--profile", "e2e", "up", "-d", *stand.e2e.services, capture=False)
+    return compose(stand, "--profile", "e2e", "up", "-d", "--build", *stand.e2e.services, capture=False)
 
 
 def run_e2e_runner(stand, env, *argv):
@@ -211,14 +207,131 @@ def inspect_local(stand, node_id):
                  *CLI_ENTRY, "test:cluster:inspect"])
 
 
-def client(stand, node_id, *args):
-    """Run one of the test-only client commands against a node (HIL-668). A scenario opens no
-    browser, so one is attached through the CLI rather than by a socket, and the
-    addressed/fan-out signals are raised the same way -- everything past that point is the
-    production path."""
+def client(stand, node_id, *args, timeout=None):
+    """Run a CLI command against a node, optionally bounded by a subprocess timeout.
+
+    A scenario opens no browser, so one is attached through test client commands rather than
+    by a socket, and addressed/fan-out signals are raised the same way (HIL-668). Test startup
+    also uses this channel for protected-mode inspection and the existing owner's open command.
+    """
     node = stand.member(node_id)
     return _run(["docker", "exec", "-e", f"HILOS_DAEMON_HOST={node.ip}", stand.cli_container,
-                 *CLI_ENTRY, *args])
+                 *CLI_ENTRY, *args], timeout=timeout)
+
+
+def ensure_open_for_tests(stand, timeout):
+    """Open a saved, recognized freeze through its owner before waiting for the test fleet.
+
+    Inspect every master, including while agents are stopped. Only unreachable command channels
+    are polled during startup; refusals and malformed replies stop the run. The shared deadline
+    bounds subprocesses too. A successful drive still owes an inactive snapshot on every master.
+    """
+    deadline = time.monotonic() + timeout
+    snapshots = {}
+
+    def refuse(node_id, reason):
+        snapshot = snapshots.get(node_id, {})
+        raise StandRefused(f"test startup: node={node_id} phase={snapshot.get('phase', 'unknown')!r} "
+                           f"operation={snapshot.get('operation', 'unknown')!r}: {reason}")
+
+    def call(node_id, command, context):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            refuse(context, f"timeout waiting for {command} on {node_id}")
+        try:
+            return client(stand, node_id, command, timeout=remaining)
+        except subprocess.TimeoutExpired:
+            refuse(context, f"timeout running {command} on {node_id}")
+
+    def pause(node_id):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            refuse(node_id, "timeout waiting for all masters to become inactive")
+        time.sleep(min(1.0, remaining))  # scenarios.POLL_INTERVAL
+
+    def snapshot(node_id, *, wait_channel=False, context=None):
+        context = node_id if context is None else context
+        while True:
+            outcome = call(node_id, "protected-mode:inspect", context)
+            if outcome.code == 0:
+                break
+            # CommandChannelClientTrait distinguishes an absent channel from a refusal or a
+            # daemon that heard the request but never answered. Retry only the absent channel.
+            if wait_channel and outcome.err.strip().startswith("Cannot reach the daemon command channel at "):
+                pause(context)
+                continue
+            refuse(context, f"protected-mode:inspect on {node_id} failed: {outcome.err or outcome.out}")
+        try:
+            data = json.loads(outcome.out)
+        except json.JSONDecodeError:
+            refuse(context, f"malformed protected-mode:inspect JSON on {node_id}")
+        if not isinstance(data, dict):
+            refuse(context, f"malformed protected-mode:inspect snapshot on {node_id}")
+        snapshots[node_id] = data
+        fields = ("rtMounted", "phase", "operation", "initiatorAgentType",
+                  "initiatorAgentIndex", "initiatorNodeId")
+        if any(field not in data for field in fields) or data.get("rtMounted") is not True:
+            refuse(context, f"missing protected-mode snapshot fields or runtime on {node_id}")
+        if data["phase"] not in ("inactive", "activating", "active", "verifying", "deactivating"):
+            refuse(context, f"invalid protected-mode phase on {node_id}")
+        if data["phase"] == "inactive":
+            if any(data[field] is not None for field in fields[2:]):
+                refuse(context, f"inactive snapshot retains an operation or initiator on {node_id}")
+        else:
+            opener(node_id)
+        return data
+
+    def opener(node_id):
+        data = snapshots[node_id]
+        operation = data["operation"]
+        owner = data["initiatorAgentType"]
+        initiator = data["initiatorNodeId"]
+        # Both existing carriers are singletons. A different index, even of a recognized type,
+        # does not identify the instance that owns these commands.
+        if (not isinstance(operation, str) or not operation
+                or data["initiatorAgentIndex"] is not None
+                or not isinstance(initiator, str) or initiator not in stand.members):
+            refuse(node_id, "unknown operation or initiator identity/node")
+        if owner == "hilos_index":
+            # ProtectedModeTestDriverTrait accepts any nonempty operation except manual
+            # maintenance. Identity, rather than an operation-name prefix, identifies its freeze.
+            command = ("maintenance:disable" if operation == "manual_maintenance"
+                       else "test:protected-mode:open")
+        elif owner == "hilos_backup" and operation == "restore":
+            command = "protected-mode:open"
+        else:
+            refuse(node_id, f"unknown protected-mode owner/operation: {owner!r}")
+        return initiator, command
+
+    for node_id in stand.masters:
+        snapshot(node_id, wait_channel=True)
+    frozen = [node_id for node_id in stand.masters if snapshots[node_id]["phase"] != "inactive"]
+    if not frozen:
+        return 0
+    source = frozen[0]
+    identity_fields = ("operation", "initiatorAgentType", "initiatorAgentIndex", "initiatorNodeId")
+    identity = tuple(snapshots[source][field] for field in identity_fields)
+    for node_id in frozen:
+        if tuple(snapshots[node_id][field] for field in identity_fields) != identity:
+            refuse(node_id, "masters disagree about the operation or initiator")
+    initiator, command = opener(source)
+    # A freeze may originate on a slave. Reach its command channel too, without waiting for
+    # fleet placement (which a full freeze deliberately prevents).
+    current = snapshot(initiator, wait_channel=True, context=source)
+    if initiator in stand.masters and (current["phase"] == "inactive"
+            or tuple(current[field] for field in identity_fields) != identity):
+        refuse(initiator, "initiator snapshot changed before the open command")
+    print(f"cluster: opening saved protected mode via {command} on {initiator}", flush=True)
+    outcome = call(initiator, command, source)
+    if outcome.code != 0:
+        refuse(source, f"{command} on {initiator} failed: {outcome.err or outcome.out}")
+    while True:
+        for node_id in stand.masters:
+            snapshot(node_id)
+        pending = [node_id for node_id in stand.masters if snapshots[node_id]["phase"] != "inactive"]
+        if not pending:
+            return 0
+        pause(pending[0])
 
 
 def _upgrade_curl(url, cookie=None, seconds=3):
@@ -755,22 +868,31 @@ def stranger(stand, action=None):
         raise StandRefused(f"{stand.project} has no stranger (x-hilos-cluster.stranger)")
     node = stand.stranger
     if action == "up":
-        return compose(stand, "--profile", node.profile, "up", "-d", "--no-deps", node.service)
+        return compose(stand, "--profile", node.profile, "up", "-d", "--build", "--no-deps", node.service)
     if action == "down":
         return compose(stand, "--profile", node.profile, "rm", "-sf", node.service)
     raise StandRefused("usage: cluster stranger {up|down}")
 
 
 def _recreate_with_override(stand, node, override):
-    """Replace a node with a compose override passed on stdin, after removing its old container.
+    """Replace a node using a resolved JSON base and a compose override passed on stdin.
 
+    Flatten includes before removing the container so imported services can be overridden.
     Compose may otherwise keep an existing mount when its type changes (own-directory).
     """
-    removed = compose(stand, "rm", "-sf", node.service)
-    if removed.code != 0:
-        return removed
-    return _run(["docker", "compose", "-f", str(stand.compose), "-f", "-", "up", "-d",
-                 "--force-recreate", node.service], input_text=json.dumps(override))
+    config = resolved_config(stand.compose)
+    base = tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", prefix="hilos-cluster-",
+                                       suffix=".json", dir="/tmp", delete=False)
+    try:
+        with base:
+            json.dump(config, base)
+        removed = compose(stand, "rm", "-sf", node.service)
+        if removed.code != 0:
+            return removed
+        return _run(["docker", "compose", "-f", base.name, "-f", "-", "up", "-d",
+                     "--force-recreate", node.service], input_text=json.dumps(override))
+    finally:
+        pathlib.Path(base.name).unlink()
 
 
 def own_directory(stand, node_id, action=None):

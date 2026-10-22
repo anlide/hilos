@@ -1,0 +1,31 @@
+# CLI is default-on; it is the cluster harness command carrier, not a browser suite.
+services:
+  ecommerce-shop-cluster-cli:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    build: ..
+    container_name: ecommerce-shop-cluster-cli${HILOS_STAND_SUFFIX:-}
+    working_dir: /app
+    command: ["sleep", "infinity"]
+    # This carrier runs backend commands, not tests. Keep the runtime target off the
+    # /app host bind so a missing read-only env target cannot create tests/.env.
+    tmpfs:
+      - /app/tests
+    environment:
+      APP_ENV: test
+      DB_HOST: ecommerce-shop-cluster-mysql
+      DB_PORT: "3306"
+      DB_DATABASE: hilos-demo-ecommerce-shop-cluster
+      DB_USERNAME: hilos
+      DB_PASSWORD: hilos_pass
+      COMMAND_PORT: "8094"
+    volumes:
+      - ../..:/app
+      - ${HILOS_CLUSTER_TEST_ENV_FILE:-../../tests/.env.example}:/app/tests/.env:ro
+      - ../../../../composer.json:/hilos/composer.json:ro
+      - ../../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../../framework:/hilos/framework:ro
+    depends_on:
+      ecommerce-shop-cluster-mysql:
+        condition: service_healthy
+    networks:
+      - cluster-net

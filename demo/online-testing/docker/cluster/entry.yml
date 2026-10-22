@@ -1,0 +1,15 @@
+# Standalone nginx entry, also extended by the local stand.
+services:
+  entry:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    build:
+      context: ..
+      dockerfile: Dockerfile.nginx
+    env_file: [./entry.env]
+    volumes:
+      - ../nginx.cluster.conf.template:/etc/nginx/nginx.conf.template:ro
+      - ../../frontend/dist:/usr/share/nginx/html:ro
+      - ${HILOS_CLUSTER_DATA_EXPORT_DIR:-../../data/data_export}:/data_export:ro
+    ports:
+      - "${HILOS_CLUSTER_BIND_ADDRESS:-127.0.0.1}:${HILOS_CLUSTER_ENTRY_HTTP_PUBLISHED_PORT:-80}:80"
+      - "${HILOS_CLUSTER_BIND_ADDRESS:-127.0.0.1}:${HILOS_CLUSTER_ENTRY_HTTPS_PUBLISHED_PORT:-443}:443"

@@ -204,8 +204,9 @@ masters, `m1`–`m3`, that declare no capacity and so take no placed work; two
 slaves, `s1` and `s2`, both `worker,ram=10`; and `x1`, a node certified by an
 authority the cluster does not trust, under the compose profile `stranger` so
 it never comes up with the rest. All of them share one MariaDB 11.4 server,
-with the primary database and its derived journal, on subnet 10.221. Nothing
-is published on the host. It is a compose project of its own,
+with the primary database and its derived journal, on default subnet
+`10.221.0.0/16`. This local aggregate publishes nothing on the host.
+It is a compose project of its own,
 `hilos-binance-btc-tracker-cluster`, because the e2e steps
 take their whole project down when they start.
 The one nginx entry is `10.221.0.30` inside the stand network, unpublished on the
@@ -228,7 +229,9 @@ lived on, 32 a node with another admin view mode refused on both ends,
 protected mode, 35 rt row deleted while cut off is swept, and 36 a slave
 cut off with its leader stops its work (skipped as flaky since 2026-10-10;
 `docs/agents/testing.md`, "The cluster stands — three demos, three shapes"),
-and 44 waiting work survives leadership changes. The
+38 manual maintenance from any node, 41 i18n catalog taken once, 42 another
+default language refused, 44 waiting work survives leadership changes, and
+45 upload pool across nodes. The
 `entry-welcome <master> [<token>] [<pass>]` harness command reads the first
 WebSocket welcome through the stand entry and reports whether that browser is
 inside or on the maintenance stub.
@@ -238,12 +241,16 @@ production the rows are carried and nothing is run.
 
 | Command | What it does |
 |---|---|
-| `composer run test:cluster:up` | build the images and start the database, the five nodes and the cli container |
+| `composer run test:cluster:up` | build/recreate the default database, five nodes, entry and CLI, retaining data and protected mode |
+| `composer run test:cluster:restart` | ordinary down/up with current code, retaining both databases and protected mode |
 | `composer run test:cluster:status` | the containers and one line of each node's view: phase, leader, placements |
+| `composer run test:cluster:inspect -- m1` | inspect one node as JSON |
+| `composer run test:cluster:logs -- m1` | follow one node's container logs; Ctrl-C stops following |
+| `composer run test:cluster:client -- m1 test:cluster:inspect` | run an existing CLI command through the selected node |
 | `composer run test:cluster:scenarios` | the stand's scenario matrix on a fresh stand; `-- 17 20` runs only the ones named |
-| `composer run test:cluster:e2e` | the browser suite on a fresh stand in live and after-loss phases; `-- --grep circle` points it |
+| `composer run test:cluster:e2e` | fresh browser suite: Daemon/recovery, live, after-loss; build first with `test:e2e-build`; `-- --grep circle` points it |
 | `composer run test:cluster:down-volumes` | take the stand down, database included |
-| `composer run test:cluster:down` | take the stand down the way the test runner does |
+| `composer run test:cluster:down` | stop the stand, retaining database data and protected-mode stores |
 
 Scenario 44 temporarily gives both slaves `worker,ram=10,slots=16`. Extra fleet
 indices 2000..2032 fill the slots until one stays `unplaced` with `nodeId=null`
@@ -298,7 +305,9 @@ the harness to stop the slave holding its archive; after placement moves,
 `cluster/after-loss` checks the archive's out-of-reach row and offline log refusal.
 The stand remains up after this command, as it does after `test:cluster:scenarios`.
 Every browser run starts with empty node log directories, rotation archives
-included; copy the previous run's logs before starting the next one.
+included, except `.gitkeep` and `protected-mode.state.json*` stores and unfinished
+stores. Cleanup runs with nodes stopped and never removes a saved freeze.
+Copy the previous run's logs before starting the next one.
 
 The harness commands — `kill`, `partition`, `cut`, `crash-daemon`, `inspect`,
 `stranger up`, `own-directory s1 on` and the rest — use the shell entry point
@@ -329,6 +338,80 @@ only when that deletion is intended:
 ```bash
 ../../framework/docker/cluster/run docker/docker-compose.cluster.yml down --volumes
 ```
+
+### Compose layout and lifecycle
+
+The root includes one merged pair, `docker/cluster/local.yml` and
+`docker/cluster/tooling.yml`. Local services extend `database.yml`, `node.yml`
+and `entry.yml` in that directory; the canonical services add no extra nodes.
+Compose 2.40.3 (pinned by the harness) supports the local `ports: !reset []`
+and per-node `env_file: !override`. Local nodes load tracked `.env.example`,
+`common.env` and their fixed `nodes/<id>.env`. The CLI is default-on, with
+`APP_ENV=test` and explicit cluster DB/command settings; nodes use `APP_ENV=dev`.
+The CLI mounts tracked `tests/.env.example` read-only at `/app/tests/.env`,
+inside `/app/tests` tmpfs so Docker cannot create a missing mount target on the
+host bind. Test suites keep their own services. No host env file is copied or
+overwritten. Only browser tooling uses `e2e`; the stranger uses `stranger`.
+
+From this demo directory, ordinary startup is one direct Compose command:
+
+```bash
+docker compose -f docker/docker-compose.cluster.yml up -d --build --force-recreate
+```
+
+`test:cluster:up` runs that command, without building unused profiles or clearing
+logs. Ordinary down/up and `test:cluster:restart` preserve primary/journal rows
+and protected-mode stores. A manual maintenance window remains `verifying`
+across restart. Inspect it with
+`composer run test:cluster:client -- m1 protected-mode:inspect`; use
+`maintenance:disable` through the same alias to open manual maintenance.
+Test freezes open with `test:protected-mode:open`, backup restores with
+`protected-mode:open`, through their recorded initiator.
+
+Each new scenario/browser invocation validates prerequisites, resets the
+database once with `down --volumes`, starts the stand and opens recognized saved
+protected mode through its owner before waiting for fleet/browser readiness.
+Unknown identities, malformed stores/replies, refusals and timeouts fail startup.
+There is no database reset between scenarios, retries or browser phases, and no
+`--keep-db` mode. These fresh test calls discard ordinary fixtures.
+
+Names, the shared export volume and the `/dev/shm` DB directory take
+`HILOS_STAND_SUFFIX`; the subnet takes
+`HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER`, and CPU weight takes
+`HILOS_STAND_CPU_SHARES`. See the shared guide's
+[stand instances](../../docs/agents/testing.md#the-full-run--one-graph-a-bounded-number-of-lanes)
+and [cluster lifecycle](../../docs/agents/testing.md#cluster-compose-model).
+
+### Standalone components
+
+`docker/cluster/standalone.env.example` describes one component on one server.
+Copy it outside the checkout, edit its paths/endpoints and prepare the selected
+runtime file from `docker/cluster/nodes/m1.env`. From this demo directory:
+
+```bash
+docker compose --env-file /srv/hilos/standalone.env -p tracker-db -f docker/cluster/database.yml config
+docker compose --env-file /srv/hilos/standalone.env -p tracker-m1 -f docker/cluster/node.yml config
+docker compose --env-file /srv/hilos/standalone.env -p tracker-entry -f docker/cluster/entry.yml config
+# After provisioning the inputs, start only this node on its server:
+docker compose --env-file /srv/hilos/standalone.env -p tracker-m1 -f docker/cluster/node.yml up -d --build
+```
+
+`--env-file` supplies Compose interpolation; `HILOS_CLUSTER_NODE_ENV` selects
+the separate runtime file loaded after `common.env`. Build/bind paths resolve
+from `docker/cluster`. The example binds on `0.0.0.0`, publishes DB `3306`,
+peer `18095`, WebSocket `18092`, HTTP `18090`, and entry `80/443`; command and
+worker IPC ports stay private. Runtime DB/advertise/seeds must name reachable
+server endpoints, excluding the node itself from seeds. Entry upstreams use
+complete `HILOS_CLUSTER_WS_M1/M2/M3` and `HILOS_CLUSTER_HTTP_M1/M2/M3` host:port
+pairs, allowing different ports per master. The entrypoints preserve nginx's
+own variables during substitution.
+
+Provide built dependencies/frontend, matching mutual-TLS files, trusted proxy
+ranges and the same pre-provisioned export storage on every node and entry via
+`HILOS_CLUSTER_DATA_EXPORT_DIR`. The local aggregate uses its named volume;
+standalone binds an existing shared directory. This configuration provisions
+neither remote hosts nor shared storage. Config resolution has been checked;
+real multi-host deployment has not been tested, and the harness stays local.
 
 ### Database
 
@@ -366,8 +449,9 @@ refreshes its grant without DROP or reset. Provisioning again and restarting
 on the same data directory preserve both primary and journal rows. The stand
 mounts `/dev/shm/hilos-binance-btc-tracker-cluster-mysql-data` and the shared
 `test-stand.cnf`; `test:cluster:down` preserves that data, while
-`test:cluster:down-volumes` and each fresh scenario run clear it. Local and test
-volumes are separate and are not part of this transition.
+`test:cluster:down-volumes` and each fresh scenario/browser invocation clear it.
+The directory survives container replacement only until host reboot: `/dev/shm`
+is host memory. Local and test volumes are separate from this transition.
 
 ### TLS fixtures
 

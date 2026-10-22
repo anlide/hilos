@@ -23,9 +23,9 @@ fi
 
 # Substitute env vars in nginx config
 export FRONTEND_HTML_UPSTREAM="${FRONTEND_HTML_UPSTREAM:-online-testing-daemon-local}"
-# HILOS_CLUSTER_NET is the first two octets of the cluster stand's network, which moves with
-# the stand instance; the cluster entry's upstreams name node addresses on it. Other
-# templates do not mention it, so substituting it there changes nothing.
-envsubst '${FRONTEND_HTML_UPSTREAM} ${HILOS_CLUSTER_NET}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
+# Keep the allowlist explicit: nginx variables such as $host, $http_upgrade and
+# $upstream_addr remain for nginx to evaluate, and non-cluster templates need only
+# FRONTEND_HTML_UPSTREAM.
+envsubst '${FRONTEND_HTML_UPSTREAM} ${HILOS_CLUSTER_WS_M1} ${HILOS_CLUSTER_WS_M2} ${HILOS_CLUSTER_WS_M3} ${HILOS_CLUSTER_HTTP_M1} ${HILOS_CLUSTER_HTTP_M2} ${HILOS_CLUSTER_HTTP_M3}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
 
 exec "$@"

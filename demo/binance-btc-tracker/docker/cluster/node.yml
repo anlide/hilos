@@ -1,0 +1,28 @@
+# One node definition. Identity and peer addresses belong to the selected runtime env file.
+services:
+  node:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    build: ..
+    restart: "no"
+    command: ["php", "backend/Bootstrap/docker.php"]
+    env_file:
+      - ../../.env.example
+      - ./common.env
+      - ${HILOS_CLUSTER_NODE_ENV:-./nodes/m1.env}
+    # Explicit command-channel invariants, shared by every node and checked at source.
+    environment:
+      HILOS_DAEMON_HOST: 127.0.0.1
+      COMMAND_HOST: 0.0.0.0
+      COMMAND_PORT: "8094"
+    volumes:
+      - ../..:/app
+      - ${HILOS_CLUSTER_DATA_EXPORT_DIR:-../../data/data_export}:/app/data/data_export
+      - ../../../../composer.json:/hilos/composer.json:ro
+      - ../../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../../framework:/hilos/framework:ro
+      - ${HILOS_CLUSTER_LOG_DIR:-../../data/logs-cluster/node}:/var/log/hilos
+    # Peer, WebSocket and HTTP only; worker IPC and command ports stay private.
+    ports:
+      - "${HILOS_CLUSTER_BIND_ADDRESS:-127.0.0.1}:${HILOS_CLUSTER_PEER_PUBLISHED_PORT:-8095}:8095"
+      - "${HILOS_CLUSTER_BIND_ADDRESS:-127.0.0.1}:${HILOS_CLUSTER_WS_PUBLISHED_PORT:-8092}:8092"
+      - "${HILOS_CLUSTER_BIND_ADDRESS:-127.0.0.1}:${HILOS_CLUSTER_HTTP_PUBLISHED_PORT:-8090}:8090"

@@ -198,8 +198,8 @@ class Stand:
         return self.member(node_id)
 
 
-def load_stand(compose_path):
-    """Read the stand out of its compose file, or raise StandRefused naming what is missing."""
+def resolved_config(compose_path):
+    """Read the full Compose model with every profile, naming the source file on refusal."""
     shown = str(compose_path)
     compose = Path(compose_path).resolve()
     proc = subprocess.run(
@@ -208,8 +208,12 @@ def load_stand(compose_path):
     if proc.returncode != 0:
         said = proc.stderr.strip().splitlines()
         raise StandRefused(f"{shown}: docker compose config failed: {said[-1] if said else proc.returncode}")
-    config = json.loads(proc.stdout)
-    return stand_from_config(shown, compose, config)
+    return json.loads(proc.stdout)
+
+
+def load_stand(compose_path):
+    """Read the stand out of its compose file, or raise StandRefused naming what is missing."""
+    return stand_from_config(str(compose_path), Path(compose_path).resolve(), resolved_config(compose_path))
 
 
 def stand_from_config(shown, compose, config):

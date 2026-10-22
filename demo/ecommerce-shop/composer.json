@@ -111,7 +111,11 @@
         "test:cluster:down": "@php ../../scripts/down-stands.php ecommerce-shop-cluster",
         "test:cluster:down-volumes": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml down --volumes",
         "test:cluster:status": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml status",
-        "test:cluster:scenarios": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml scenarios"
+        "test:cluster:scenarios": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml scenarios",
+        "test:cluster:restart": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml restart",
+        "test:cluster:inspect": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml inspect",
+        "test:cluster:logs": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml logs",
+        "test:cluster:client": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml client"
     },
     "config": {
         "process-timeout": 0,

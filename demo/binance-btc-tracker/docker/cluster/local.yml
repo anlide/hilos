@@ -1,0 +1,162 @@
+# Local bindings only. Canonical services never join this aggregate themselves.
+# !reset/!override are intentional: standalone ports, env and storage must not accumulate.
+services:
+  binance-btc-tracker-cluster-entry:
+    extends: {file: ./entry.yml, service: entry}
+    container_name: binance-btc-tracker-cluster-entry${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    volumes:
+      - data-export:/data_export:ro
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.30
+
+  binance-btc-tracker-cluster-mysql:
+    extends: {file: ./database.yml, service: database}
+    container_name: binance-btc-tracker-cluster-mysql${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.10
+
+  binance-btc-tracker-cluster-m1:
+    extends: {file: ./node.yml, service: node}
+    container_name: binance-btc-tracker-cluster-m1${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    # Fixed local identity: HILOS_CLUSTER_NODE_ENV selects only a standalone node.
+    env_file: !override
+      - ../../.env.example
+      - ./common.env
+      - ./nodes/m1.env
+    # One collector address for the shared application schema.
+    labels:
+      hilos.role: app
+    volumes:
+      - data-export:/app/data/data_export
+      - ../../data/logs-cluster/m1:/var/log/hilos
+    depends_on:
+      binance-btc-tracker-cluster-mysql:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.11
+
+  binance-btc-tracker-cluster-m2:
+    extends: {file: ./node.yml, service: node}
+    container_name: binance-btc-tracker-cluster-m2${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    # Fixed local identity: HILOS_CLUSTER_NODE_ENV selects only a standalone node.
+    env_file: !override
+      - ../../.env.example
+      - ./common.env
+      - ./nodes/m2.env
+    volumes:
+      - data-export:/app/data/data_export
+      - ../../data/logs-cluster/m2:/var/log/hilos
+    depends_on:
+      binance-btc-tracker-cluster-mysql:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.12
+
+  binance-btc-tracker-cluster-m3:
+    extends: {file: ./node.yml, service: node}
+    container_name: binance-btc-tracker-cluster-m3${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    # Fixed local identity: HILOS_CLUSTER_NODE_ENV selects only a standalone node.
+    env_file: !override
+      - ../../.env.example
+      - ./common.env
+      - ./nodes/m3.env
+    volumes:
+      - data-export:/app/data/data_export
+      - ../../data/logs-cluster/m3:/var/log/hilos
+    depends_on:
+      binance-btc-tracker-cluster-mysql:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.13
+
+  binance-btc-tracker-cluster-s1:
+    extends: {file: ./node.yml, service: node}
+    container_name: binance-btc-tracker-cluster-s1${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    # Fixed local identity: HILOS_CLUSTER_NODE_ENV selects only a standalone node.
+    env_file: !override
+      - ../../.env.example
+      - ./common.env
+      - ./nodes/s1.env
+    volumes:
+      - data-export:/app/data/data_export
+      - ../../data/logs-cluster/s1:/var/log/hilos
+    depends_on:
+      binance-btc-tracker-cluster-mysql:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.14
+
+  binance-btc-tracker-cluster-s2:
+    extends: {file: ./node.yml, service: node}
+    container_name: binance-btc-tracker-cluster-s2${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    # Fixed local identity: HILOS_CLUSTER_NODE_ENV selects only a standalone node.
+    env_file: !override
+      - ../../.env.example
+      - ./common.env
+      - ./nodes/s2.env
+    volumes:
+      - data-export:/app/data/data_export
+      - ../../data/logs-cluster/s2:/var/log/hilos
+    depends_on:
+      binance-btc-tracker-cluster-mysql:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.15
+
+  binance-btc-tracker-cluster-x1:
+    extends: {file: ./node.yml, service: node}
+    container_name: binance-btc-tracker-cluster-x1${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    # Fixed local identity: HILOS_CLUSTER_NODE_ENV selects only a standalone node.
+    env_file: !override
+      - ../../.env.example
+      - ./common.env
+      - ./nodes/x1.env
+    # Foreign-authority node, raised only by the stranger scenarios.
+    profiles: [stranger]
+    volumes:
+      - data-export:/app/data/data_export
+      - ../../data/logs-cluster/x1:/var/log/hilos
+    depends_on:
+      binance-btc-tracker-cluster-mysql:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.16
+
+volumes:
+  # This stand needs its own volume: local and test mount the demo's host data/data_export,
+  # while the export agent deletes files without ready rows in its own database at start
+  # and hourly. The full run may run this cluster step beside e2e. All six nodes share
+  # this disk, and the harness's down --volumes clears it with the database each run.
+  data-export:
+    name: hilos-binance-btc-tracker-cluster-data-export${HILOS_STAND_SUFFIX:-}
+
+networks:
+  cluster-net:
+    name: hilos-binance-btc-tracker-cluster-net${HILOS_STAND_SUFFIX:-}
+    driver: bridge
+    ipam:
+      config:
+        # Deliberately outside 172.16.0.0/12 and 192.168.0.0/16 — Docker's default
+        # address pools. The nodes need fixed addresses (peers advertise them, and
+        # `cluster heal` reconnects a partitioned node on its original IP), so this
+        # subnet is claimed, not assigned. Inside a default pool that claim loses a
+        # race: any other stack whose network came up first may already hold the
+        # range, and then the whole cluster fails to start with "Pool overlaps with
+        # other one on this address space". 10.0.0.0/8 is never auto-assigned.
+        - subnet: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.0/16

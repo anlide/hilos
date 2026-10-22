@@ -1,0 +1,85 @@
+# Local bindings only. The canonical standalone services do not enter this aggregate.
+# Local ports and the per-node env selection replace standalone defaults explicitly.
+services:
+  online-testing-cluster-mysql:
+    extends: {file: ./database.yml, service: database}
+    container_name: online-testing-cluster-mysql${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.10
+
+  online-testing-cluster-m1:
+    extends: {file: ./node.yml, service: node}
+    container_name: online-testing-cluster-m1${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    env_file: !override
+      - ../../.env.example
+      - ./common.env
+      - ./nodes/m1.env
+    labels:
+      hilos.role: app
+    volumes:
+      - ../../data/data_export:/app/data/data_export
+      - ../../data/logs-cluster/m1:/var/log/hilos
+    depends_on:
+      online-testing-cluster-mysql:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.11
+
+  online-testing-cluster-m2:
+    extends: {file: ./node.yml, service: node}
+    container_name: online-testing-cluster-m2${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    env_file: !override
+      - ../../.env.example
+      - ./common.env
+      - ./nodes/m2.env
+    volumes:
+      - ../../data/data_export:/app/data/data_export
+      - ../../data/logs-cluster/m2:/var/log/hilos
+    depends_on:
+      online-testing-cluster-mysql:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.12
+
+  online-testing-cluster-m3:
+    extends: {file: ./node.yml, service: node}
+    container_name: online-testing-cluster-m3${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    env_file: !override
+      - ../../.env.example
+      - ./common.env
+      - ./nodes/m3.env
+    volumes:
+      - ../../data/data_export:/app/data/data_export
+      - ../../data/logs-cluster/m3:/var/log/hilos
+    depends_on:
+      online-testing-cluster-mysql:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.13
+
+  online-testing-cluster-entry:
+    extends: {file: ./entry.yml, service: entry}
+    container_name: online-testing-cluster-entry${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    volumes:
+      - ../../data/data_export:/data_export:ro
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.30
+
+networks:
+  cluster-net:
+    name: hilos-online-testing-cluster-net${HILOS_STAND_SUFFIX:-}
+    driver: bridge
+    ipam:
+      config:
+        # Docker does not auto-assign 10/8, so these advertised addresses stay claimable.
+        - subnet: 10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.0/16

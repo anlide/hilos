@@ -1,0 +1,77 @@
+# CLI is default-on; only Mailpit and Playwright use the e2e profile.
+# The caller supplies HILOS_DAEMON_HOST per command when addressing a member.
+services:
+  binance-btc-tracker-cluster-cli:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    build: ..
+    container_name: binance-btc-tracker-cluster-cli${HILOS_STAND_SUFFIX:-}
+    working_dir: /app
+    command: ["sleep", "infinity"]
+    # This carrier runs backend commands, not the test suite. Its runtime env
+    # target must live off the /app host bind: Docker creates a missing bind
+    # target even for a read-only file mount, otherwise leaving tests/.env behind.
+    tmpfs:
+      - /app/tests
+    environment:
+      APP_ENV: test
+      DB_HOST: binance-btc-tracker-cluster-mysql
+      DB_PORT: "3306"
+      # Not inherited: this service carries no anchor. Same schema as the nodes
+      # (HIL-712).
+      DB_DATABASE: hilos-demo-binance-btc-tracker-cluster
+      DB_USERNAME: hilos
+      DB_PASSWORD: hilos_pass
+      COMMAND_PORT: "8094"
+    volumes:
+      - ../..:/app
+      # Tracked default; runtime DB env above takes precedence over its test DB.
+      - ${HILOS_CLUSTER_TEST_ENV_FILE:-../../tests/.env.example}:/app/tests/.env:ro
+      - ../../../../composer.json:/hilos/composer.json:ro
+      - ../../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../../framework:/hilos/framework:ro
+    depends_on:
+      binance-btc-tracker-cluster-mysql:
+        condition: service_healthy
+    networks:
+      - cluster-net
+
+  binance-btc-tracker-cluster-mailpit:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    image: axllent/mailpit:v1.21
+    container_name: binance-btc-tracker-cluster-mailpit${HILOS_STAND_SUFFIX:-}
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+      TZ: UTC
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+    profiles: [e2e]
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.20
+
+  binance-btc-tracker-cluster-e2e-runner:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    image: mcr.microsoft.com/playwright:v1.60.0-noble
+    container_name: binance-btc-tracker-cluster-e2e-runner${HILOS_STAND_SUFFIX:-}
+    # The browser's scratch lives in memory: chromium runs with
+    # --disable-dev-shm-usage, so its shared memory and profile churn land in
+    # /tmp - gigabytes per suite written through the container layer to disk.
+    tmpfs:
+      - /tmp
+    volumes:
+      - ../../../..:/hilos
+    working_dir: /hilos/demo/binance-btc-tracker/tests/e2e
+    environment:
+      CI: "1"
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      COMMAND_PORT: "8094"
+      MAILPIT_URL: http://binance-btc-tracker-cluster-mailpit:8025
+      HILOS_E2E_TIMEOUT_SCALE: ${HILOS_E2E_TIMEOUT_SCALE:-}
+    profiles: [e2e]
+    networks:
+      - cluster-net

@@ -11,22 +11,22 @@ http {
         '' close;
     }
 
-    upstream hilos_ws_m1 { server ${HILOS_CLUSTER_NET}.0.11:8092; }
-    upstream hilos_ws_m2 { server ${HILOS_CLUSTER_NET}.0.12:8092; }
-    upstream hilos_ws_m3 { server ${HILOS_CLUSTER_NET}.0.13:8092; }
+    upstream hilos_ws_m1 { server ${HILOS_CLUSTER_WS_M1}; }
+    upstream hilos_ws_m2 { server ${HILOS_CLUSTER_WS_M2}; }
+    upstream hilos_ws_m3 { server ${HILOS_CLUSTER_WS_M3}; }
     upstream hilos_ws_masters {
-        server ${HILOS_CLUSTER_NET}.0.11:8092;
-        server ${HILOS_CLUSTER_NET}.0.12:8092;
-        server ${HILOS_CLUSTER_NET}.0.13:8092;
+        server ${HILOS_CLUSTER_WS_M1};
+        server ${HILOS_CLUSTER_WS_M2};
+        server ${HILOS_CLUSTER_WS_M3};
     }
 
-    upstream hilos_http_m1 { server ${HILOS_CLUSTER_NET}.0.11:8090; }
-    upstream hilos_http_m2 { server ${HILOS_CLUSTER_NET}.0.12:8090; }
-    upstream hilos_http_m3 { server ${HILOS_CLUSTER_NET}.0.13:8090; }
+    upstream hilos_http_m1 { server ${HILOS_CLUSTER_HTTP_M1}; }
+    upstream hilos_http_m2 { server ${HILOS_CLUSTER_HTTP_M2}; }
+    upstream hilos_http_m3 { server ${HILOS_CLUSTER_HTTP_M3}; }
     upstream hilos_http_masters {
-        server ${HILOS_CLUSTER_NET}.0.11:8090;
-        server ${HILOS_CLUSTER_NET}.0.12:8090;
-        server ${HILOS_CLUSTER_NET}.0.13:8090;
+        server ${HILOS_CLUSTER_HTTP_M1};
+        server ${HILOS_CLUSTER_HTTP_M2};
+        server ${HILOS_CLUSTER_HTTP_M3};
     }
 
     map $cookie_hilos_stand_master $hilos_stand_ws {

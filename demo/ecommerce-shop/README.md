@@ -204,8 +204,8 @@ unequal room on purpose — `s1` declares `worker,ram=10,slots=64`, `s2`
 not by their number; the slots are what lets them take placed work at all.
 All three share one MariaDB 11.4 server, `ecommerce-shop-cluster-mysql`,
 with the primary database and its derived journal. It is the only database
-address the nodes and cli know. The stand uses subnet 10.222, publishes nothing
-on the host and has a compose project of its own,
+address the nodes and cli know. The local aggregate uses default subnet
+`10.222.0.0/16`, publishes nothing on the host and has a compose project of its own,
 `hilos-ecommerce-shop-cluster`, because the e2e steps take their whole project
 down when they start.
 
@@ -223,11 +223,15 @@ Playwright stand and in production the rows are carried and nothing is run.
 
 | Command | What it does |
 |---|---|
-| `composer run test:cluster:up` | build the images and start the database, the three nodes and the cli container |
+| `composer run test:cluster:up` | build/recreate the default database, three nodes and CLI, retaining data and protected mode |
+| `composer run test:cluster:restart` | ordinary down/up with current code, retaining both databases and protected mode |
 | `composer run test:cluster:status` | the containers and one line of each node's view: phase, leader, placements |
+| `composer run test:cluster:inspect -- m1` | inspect one node as JSON |
+| `composer run test:cluster:logs -- m1` | follow one node's container logs; Ctrl-C stops following |
+| `composer run test:cluster:client -- m1 test:cluster:inspect` | run an existing CLI command through the selected node |
 | `composer run test:cluster:scenarios` | the stand's scenario matrix on a fresh stand; `-- 14 18` runs only the ones named |
 | `composer run test:cluster:down-volumes` | take the stand down and wipe its primary and journal databases |
-| `composer run test:cluster:down` | take the stand down the way the test runner does |
+| `composer run test:cluster:down` | stop the stand, retaining database data and protected-mode stores |
 
 Scenario 43 stops both slaves after the ordinary fleet starts. The lone master
 declares no capacity, so one uniquely indexed ballast stays `unplaced` with
@@ -302,6 +306,75 @@ only when that deletion is intended:
 ../../framework/docker/cluster/run docker/docker-compose.cluster.yml down --volumes
 ```
 
+### Compose layout and lifecycle
+
+The root includes one merged pair, `docker/cluster/local.yml` and
+`docker/cluster/tooling.yml`. Local services extend the canonical `database.yml`
+and `node.yml` there; the canonical services add no extra nodes. Compose 2.40.3,
+pinned by the harness, resolves `ports: !reset []` and per-node
+`env_file: !override`. Each local node loads tracked `.env.example`,
+`common.env` and its fixed `nodes/<id>.env`. The CLI is default-on, with
+`APP_ENV=test` and explicit cluster DB/command settings; nodes use `APP_ENV=dev`.
+The CLI mounts tracked `tests/.env.example` read-only at `/app/tests/.env`,
+inside `/app/tests` tmpfs so Docker cannot create a missing mount target on the
+host bind. Test suites keep their own services; no host env file is copied or
+overwritten. This cluster stand has no entry, browser profile or extra export
+volume.
+
+From this demo directory, ordinary startup is one direct Compose command:
+
+```bash
+docker compose -f docker/docker-compose.cluster.yml up -d --build --force-recreate
+```
+
+`test:cluster:up` runs that command without a separate all-profile build or log
+cleanup. Ordinary down/up and `test:cluster:restart` preserve primary/journal
+rows and protected-mode stores. A saved manual maintenance window remains
+`verifying`. Inspect it with
+`composer run test:cluster:client -- m1 protected-mode:inspect`; manual
+maintenance opens with `maintenance:disable`, a test freeze with
+`test:protected-mode:open`, and a backup restore with `protected-mode:open`,
+through the recorded initiator and the same client alias.
+
+Every new scenario invocation checks its prerequisites, resets the database
+once with `down --volumes`, starts the stand and opens recognized saved protected
+mode through its owner before fleet readiness. Unknown identities, malformed
+stores/replies, refusals and timeouts fail startup. No global reset is inserted
+between scenarios or retries, and there is no `--keep-db` mode: a new matrix
+discards accumulated ordinary fixtures.
+
+Names and the `/dev/shm` DB directory take `HILOS_STAND_SUFFIX`; the subnet takes
+`HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER`, and CPU weight takes
+`HILOS_STAND_CPU_SHARES`. See the shared guide's
+[stand instances](../../docs/agents/testing.md#the-full-run--one-graph-a-bounded-number-of-lanes)
+and [cluster lifecycle](../../docs/agents/testing.md#cluster-compose-model).
+
+### Standalone components
+
+Copy `docker/cluster/standalone.env.example` outside the checkout, edit its
+paths/endpoints and prepare the selected runtime file from
+`docker/cluster/nodes/m1.env`. From this demo directory:
+
+```bash
+docker compose --env-file /srv/hilos/ecommerce.env -p ecommerce-db -f docker/cluster/database.yml config
+docker compose --env-file /srv/hilos/ecommerce.env -p ecommerce-m1 -f docker/cluster/node.yml config
+# After provisioning the inputs, start only this node on its server:
+docker compose --env-file /srv/hilos/ecommerce.env -p ecommerce-m1 -f docker/cluster/node.yml up -d --build
+```
+
+`--env-file` supplies Compose interpolation; `HILOS_CLUSTER_NODE_ENV` selects
+the separate runtime file loaded after `common.env`. Build/bind paths resolve
+from `docker/cluster`. The example binds on `0.0.0.0` and publishes DB `3306`,
+peer `18095`, WebSocket `18092` and HTTP `18090`; command and worker IPC ports
+stay private. Prepare reachable DB/advertise/seed endpoints, excluding the
+node itself from seeds, matching mutual-TLS files and built dependencies.
+Each slave needs its own runtime identity and capability values. Supply trusted
+proxy ranges and shared storage if the deployed application uses them; this
+headless stand supplies neither a proxy entry nor an export-storage mount.
+These files provision no remote hosts or storage. Standalone config resolution
+has been checked; real multi-host deployment has not been tested, and the
+harness remains a local single-host runner.
+
 ### Database
 
 One MariaDB 11.4 server holds `hilos-demo-ecommerce-shop-cluster` and
@@ -339,9 +412,10 @@ on the same data directory preserve both primary and journal rows. The stand
 mounts `/dev/shm/hilos-ecommerce-shop-cluster-mysql-data` and the shared
 `test-stand.cnf`; `test:cluster:down` preserves that data, while
 `test:cluster:down-volumes` and each fresh scenario run clear it. Local and test
-volumes are separate and are not part of this transition.
+volumes are separate and are not part of this transition. `/dev/shm` is host
+memory: container replacement retains it, but a host reboot clears it.
 
-The former replica is removed by the old compose file's `down`; its data
+Historical migration: the former replica is removed by the old compose file's `down`; its data
 stays at `/dev/shm/hilos-ecommerce-shop-cluster-replica-data`. Scenario 31
 remains in the shared harness, with no current stand carrying it. Specialized
 database topologies and six new demos are P-567, deferred to 2026-10-24;
@@ -363,7 +437,7 @@ Reissuing means a new set in full: the old authority's key is gone, so no
 single file can be replaced alone. The commands run in the image of the
 stand's cli container, which exists after the first
 `composer -d demo/ecommerce-shop run test:cluster:up` (or `docker compose -f
-demo/ecommerce-shop/docker/docker-compose.cluster.yml --profile cli build
+demo/ecommerce-shop/docker/docker-compose.cluster.yml build
 ecommerce-shop-cluster-cli`). The framework's own commands print PEM to stdout
 and the host shell writes the files, so they come out owned by you rather than
 root. Keep the authority file (`cluster-ca.pem`) outside the repository and

@@ -18,10 +18,11 @@ use PHPUnit\Framework\TestCase;
  *
  * Read line by line on purpose: the repository has no YAML parser (neither ext-yaml nor
  * symfony/yaml is a dependency), and a guard over configuration is not worth a dependency that
- * every install would then carry. What the line reader must understand is the cluster stack's
- * merge keys - its five nodes declare almost nothing of their own and inherit the rest from two
- * anchors - so a service is judged by the union of its own lines and those of every anchor it
- * merges. Without that union the same five nodes would fail five times over values they do have.
+ * every install would then carry. Legacy cluster stacks use local merge keys, so a service is
+ * judged by the union of its own lines and those of every anchor it merges. Canonical cluster
+ * parts live in `docker/cluster/*.yml`; their `node.yml` declares the daemon command and channel
+ * values explicitly. This source guard does not resolve includes, extends or env files: the
+ * stand's Compose validation checks the effective aggregate model.
  *
  * The same reader holds the production stacks to one more value, the admin view mode
  * (HIL-1249): the demos are shown with it on, and a production node that starts with it off
@@ -85,6 +86,7 @@ final class DemoStackComposeGuardTest extends TestCase
     public function testDaemonServiceDeclaresItsAddressAndCommandChannel(): void
     {
         $daemons = 0;
+        $daemonFiles = [];
 
         foreach ($this->composeFiles() as $relativePath => $path) {
             foreach ($this->servicesOf($path) as $service => $lines) {
@@ -93,6 +95,7 @@ final class DemoStackComposeGuardTest extends TestCase
                 }
 
                 $daemons++;
+                $daemonFiles[$path] = true;
                 foreach ([self::DAEMON_HOST, self::COMMAND_HOST, self::COMMAND_PORT] as $name) {
                     $this->assertNotNull(
                         $this->valueOf($lines, $name),
@@ -103,6 +106,19 @@ final class DemoStackComposeGuardTest extends TestCase
         }
 
         $this->assertGreaterThan(0, $daemons, 'no daemon service was found at all - the reader stopped seeing them');
+
+        $root = $this->repositoryRoot();
+        foreach (glob($root . '/demo/*/docker/docker-compose.cluster.yml') ?: [] as $clusterRoot) {
+            $canonicalNode = dirname($clusterRoot) . '/cluster/node.yml';
+            $daemonSource = is_file($canonicalNode) ? $canonicalNode : $clusterRoot;
+            $relativePath = substr($daemonSource, strlen($root) + 1);
+
+            $this->assertArrayHasKey(
+                $daemonSource,
+                $daemonFiles,
+                "{$relativePath}: no cluster daemon service was found - the reader must see this cluster source"
+            );
+        }
     }
 
     /**
@@ -305,7 +321,7 @@ final class DemoStackComposeGuardTest extends TestCase
     }
 
     /**
-     * Every compose file of every demo, keyed by its path from the repository root.
+     * Root compose files and canonical cluster parts, keyed by their repository-relative paths.
      *
      * @return array<string, string> Repository-relative path => absolute path
      */
@@ -315,8 +331,10 @@ final class DemoStackComposeGuardTest extends TestCase
         $files = [];
 
         foreach (glob($root . '/demo/*', GLOB_ONLYDIR) ?: [] as $demo) {
-            foreach (glob($demo . '/docker/docker-compose*.yml') ?: [] as $path) {
-                $files[substr($path, strlen($root) + 1)] = $path;
+            foreach (['/docker/docker-compose*.yml', '/docker/cluster/*.yml'] as $pattern) {
+                foreach (glob($demo . $pattern) ?: [] as $path) {
+                    $files[substr($path, strlen($root) + 1)] = $path;
+                }
             }
         }
 

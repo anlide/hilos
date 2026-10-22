@@ -502,8 +502,8 @@ binance-btc-tracker the fleet and the runtime set probe; ecommerce-shop the
 fleet, the claimer and the ballast; online-testing the fleet and the database
 probe.
 
-The stand's compose file is the one place its nodes are written, and there is
-no second copy: a node is a service with `CLUSTER_ENABLED=true` and a
+The stand's resolved Compose model is the one place its nodes are written, and
+there is no second copy: a node is a service with `CLUSTER_ENABLED=true` and a
 `CLUSTER_NODE_ID`, and its container, address, role, `ram` and log directory
 are read off that service — what the node itself reads. What compose cannot
 say stands in a top-level `x-hilos-cluster` block of the same file: `cli`, the
@@ -518,6 +518,58 @@ compose file. A scenario the stand names but cannot carry by its shape — too
 few masters or slaves, no stranger, no cluster directory — is refused before
 the stand is raised, and so is a stand that leaves out what the harness reads.
 
+### Cluster Compose model
+
+Each demo's root `docker/docker-compose.cluster.yml` keeps the project name and
+`x-hilos-cluster`. One `include` path-list merges `cluster/local.yml` with
+`cluster/tooling.yml`. Local services extend the canonical `database.yml`,
+`node.yml` and, where present, `entry.yml` in that directory. Those canonical
+services do not become extra nodes in the aggregate. Compose 2.40.3, pinned in
+the harness, resolves this model directly, including `!reset` and `!override`.
+
+The local aggregate removes standalone port publications with `ports: !reset []`.
+Every local node replaces `env_file` with the tracked demo `.env.example`,
+`common.env` and its fixed `nodes/<id>.env`, in that order. A global
+`HILOS_CLUSTER_NODE_ENV` therefore cannot replace local node identities. Bind
+paths and build contexts resolve from `docker/cluster`; mounts merge by their
+container target, retaining per-node logs and the stand's export storage.
+Binance shares one named export volume among its nodes and entry. Online-testing
+shares its host `data/data_export` and serves Angular's `frontend/dist` at
+`/usr/share/nginx/html`. Ecommerce-shop has no entry, cluster browser suite or
+additional export volume.
+
+The CLI carrier is default-on. It uses `APP_ENV=test`, explicit cluster database
+credentials and command port, and mounts tracked `tests/.env.example` read-only
+at `/app/tests/.env` (selectable through `HILOS_CLUSTER_TEST_ENV_FILE`). Its
+`/app/tests` is tmpfs: Docker would otherwise create a missing nested file-mount
+target on the host project bind. This carrier runs backend commands; the test
+suites keep their existing separate services. Nodes use `APP_ENV=dev` and
+tracked defaults. Cluster startup neither copies nor overwrites host `.env`
+files. Only Mailpit and Playwright need the `e2e` profile; Binance's foreign
+node uses `stranger`.
+
+From a demo directory, one direct command starts its ordinary local aggregate:
+
+```bash
+docker compose -f docker/docker-compose.cluster.yml up -d --build --force-recreate
+```
+
+The canonical components can also be resolved and started separately with
+Compose on their own server. Each demo's `docker/cluster/standalone.env.example`
+and README show `--env-file`, a distinct project per component, published
+database/peer/WebSocket/HTTP ports and, where present, entry ports.
+`--env-file` supplies Compose interpolation; `HILOS_CLUSTER_NODE_ENV` selects
+the separate runtime file loaded after `common.env`. The operator supplies
+routable database, advertise and seed endpoints, matching mutual-TLS files,
+trusted proxy ranges, built dependencies/frontend and any shared export storage
+visible to every node and entry. Entry upstreams are complete `host:port` pairs
+in `HILOS_CLUSTER_WS_M1/M2/M3` and `HILOS_CLUSTER_HTTP_M1/M2/M3`.
+The nginx entrypoints substitute only those endpoints and
+`FRONTEND_HTML_UPSTREAM`, preserving nginx's own variables and noncluster
+templates. Standalone config has been checked; deployment across real hosts has
+not been tested. The harness remains a local single-host runner and provisions
+no remote machines or shared storage.
+
 ### Cluster harness runner
 
 From a demo directory, run
@@ -528,6 +580,33 @@ The existing `composer run test:cluster:*` names remain convenient entry points.
 `scripts/down-stands.php`; calling the shell runner's `down` is a standalone
 path. Use `down --volumes` only when intentionally deleting the stand's
 database data.
+
+`up` uses the single root Compose command above. It builds and recreates default
+services with current code; it does not build every optional profile. The first
+optional `e2e` or `stranger` startup builds its own services. `restart` performs
+ordinary `down` followed by `up`. Ordinary `up`, `down` and `restart` retain both
+databases and protected-mode stores, including a saved manual maintenance window.
+They do not clear logs or open a freeze. The demo aliases include
+`test:cluster:restart`, `test:cluster:inspect -- m1`,
+`test:cluster:logs -- m1` (follow; Ctrl-C stops it) and
+`test:cluster:client -- m1 test:cluster:inspect`.
+
+Every new `scenarios` or `e2e` invocation, pointed or unpointed, checks its
+prerequisites before one `down --volumes` and a fresh `up`. There is no further
+global database reset between scenarios, retries or browser phases, and no
+`--keep-db` mode. This test boundary deliberately discards accumulated fixtures;
+it is separate from the ordinary lifecycle that preserves them.
+
+Before fleet/browser readiness, test startup inspects every master's protected
+mode and opens a recognized saved operation through its recorded initiator:
+`maintenance:disable` for `manual_maintenance` owned by `hilos_index`,
+`test:protected-mode:open` for that owner's test freeze, and
+`protected-mode:open` for `restore` owned by `hilos_backup`. It waits for all
+masters to become inactive within one bounded deadline. An unknown identity,
+malformed store/reply, refused command or timeout fails startup. No freeze file
+is deleted to make the test pass. For ordinary operation, use
+`test:cluster:client -- <node> protected-mode:inspect` to inspect the saved
+identity and the corresponding owner's command to open it.
 
 The shell launcher needs ordinary Linux shell utilities, the Docker CLI and an
 accessible local Unix Docker socket. It requires Linux and a selected local
@@ -560,8 +639,11 @@ intact. When defined, the launcher passes the existing
 `HILOS_STAND_SUFFIX`, `HILOS_STAND_CPU_SHARES`,
 `HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER`,
 `HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER` and
-`HILOS_STAND_NET_ONLINE_TESTING_CLUSTER` variables. It does not forward
-arbitrary host environment variables. A mistaken direct call to `cluster.py`
+`HILOS_STAND_NET_ONLINE_TESTING_CLUSTER` variables. Its explicit deployment
+allowlist also carries the `HILOS_CLUSTER_*` runtime-file/storage selections,
+bind address, published ports and six entry upstream endpoints defined in the
+standalone examples. It preserves absent versus empty values and does not
+forward arbitrary host environment variables. A mistaken direct call to `cluster.py`
 under Python earlier than 3.10 exits before imports with a shell-runner hint;
 Python 3.10+ is not a host prerequisite.
 
@@ -581,7 +663,10 @@ Every server of a fleet's database, whether one server or a member of a cluster,
 keeps its data in a host directory under `/dev/shm` and mounts
 `framework/docker/mysql/test-stand.cnf`. A new fleet database server does the
 same. The harness wipes these directories on `down --volumes`; a member killed
-and started again keeps its data. Each current stand mounts its existing
+and started again keeps its data, as does ordinary `down/up` or `restart`.
+This is host-memory persistence only: a host reboot clears `/dev/shm`.
+Stand suffixes keep those directories separate, alongside namespaced projects,
+containers, networks and named volumes. Each current stand mounts its existing
 `mysql/init-change-log.sh` at `/docker-entrypoint-initdb.d/init-change-log.sh`
 and `mysql/provision-change-log.sh` at `/usr/local/bin/provision-change-log.sh`.
 Fresh initialization creates and grants the derived journal before Hilos
@@ -686,9 +771,11 @@ frames and socket/document recovery proof are Playwright attachments under
 `test-results/cluster-daemon`; the harness prints restoration/convergence too.
 The scenario and browser
 steps share a group because both reset the same compose project (HIL-1232).
-Before the browser stand starts, its node log directories are emptied, including
-rotation archives, while tracked `.gitkeep` files stay. Save a failed run's logs
-before starting another. The step runner copies `data/logs-cluster/<node>/` to
+Before the browser stand starts, a fresh CLI image clears its stopped nodes'
+log directories, including rotation archives, while retaining `.gitkeep` and
+every `protected-mode.state.json*` store, including unfinished `.tmp` files.
+Ordinary `up` does not run this cleanup. Save a failed run's logs before
+starting another. The step runner copies `data/logs-cluster/<node>/` to
 `artifacts/binance-btc-tracker-cluster-e2e/nodes/<node>/` at every verdict,
 before teardown. Live logs and this run's archive and staging trees keep their
 relative paths. A missing root or unreadable source is listed in `SNAPSHOT.txt`

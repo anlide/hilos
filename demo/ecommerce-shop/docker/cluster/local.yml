@@ -1,0 +1,72 @@
+# Local bindings only. Canonical services never join this aggregate themselves.
+# !reset/!override keep standalone ports and node env selections out of local services.
+services:
+  ecommerce-shop-cluster-mysql:
+    extends: {file: ./database.yml, service: database}
+    container_name: ecommerce-shop-cluster-mysql${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER:-222}.0.10
+
+  ecommerce-shop-cluster-m1:
+    extends: {file: ./node.yml, service: node}
+    container_name: ecommerce-shop-cluster-m1${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    env_file: !override
+      - ../../.env.example
+      - ./common.env
+      - ./nodes/m1.env
+    labels:
+      hilos.role: app
+    volumes:
+      - ../../data/logs-cluster/m1:/var/log/hilos
+    depends_on:
+      ecommerce-shop-cluster-mysql:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER:-222}.0.11
+
+  ecommerce-shop-cluster-s1:
+    extends: {file: ./node.yml, service: node}
+    container_name: ecommerce-shop-cluster-s1${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    env_file: !override
+      - ../../.env.example
+      - ./common.env
+      - ./nodes/s1.env
+    volumes:
+      - ../../data/logs-cluster/s1:/var/log/hilos
+    depends_on:
+      ecommerce-shop-cluster-mysql:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER:-222}.0.14
+
+  ecommerce-shop-cluster-s2:
+    extends: {file: ./node.yml, service: node}
+    container_name: ecommerce-shop-cluster-s2${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    env_file: !override
+      - ../../.env.example
+      - ./common.env
+      - ./nodes/s2.env
+    volumes:
+      - ../../data/logs-cluster/s2:/var/log/hilos
+    depends_on:
+      ecommerce-shop-cluster-mysql:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER:-222}.0.15
+
+networks:
+  cluster-net:
+    name: hilos-ecommerce-shop-cluster-net${HILOS_STAND_SUFFIX:-}
+    driver: bridge
+    ipam:
+      config:
+        # Docker never auto-assigns 10/8, so these advertised addresses stay claimable.
+        - subnet: 10.${HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER:-222}.0.0/16

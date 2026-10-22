@@ -9,10 +9,10 @@ Usage: framework/docker/cluster/run <compose-file> <command> [args]
   (the compose file relative to the current directory; a demo calls
   ../../framework/docker/cluster/run from its composer scripts)
 
-  up                   build every image, then start the nodes (they roll the schema out
-                       under a claim in the database, HIL-1228) and the cli container.
+  up                   build and recreate default services in one Compose up, retaining DB
+                       and protected-mode stores; nodes roll the schema out under a DB claim.
   down [--volumes]     stop and remove the stack (add --volumes to wipe the DB)
-  restart              down, then up
+  restart              down without volumes, then up; retain DB and protected mode
   status               docker ps for the stack + a one-line inspect per node
   inspect <node>       print a node's test:cluster:inspect JSON
   inspect-local <node> the same, asked from inside the node's own container
@@ -51,10 +51,11 @@ Usage: framework/docker/cluster/run <compose-file> <command> [args]
   db-start <member>    start that member's existing container again
   db-proxy             print the state of every server behind the stand's database proxy
   scenarios [n ...]    run the scenario matrix on a fresh stand: the stand's scenarios, or
-                       the ones named, which must be the stand's
+                       the ones named, which must be the stand's; open saved freezes via CLI
   e2e [--daemon] [Playwright args]  run the cluster browser suite on a fresh stand:
                        daemon leader loss + recovery, then live and after-loss;
-                       --daemon selects daemon only; other pointing keeps the older phases
+                       --daemon selects daemon only; other pointing keeps the older phases;
+                       clear old logs, preserve freeze stores and open through their owners
 
 Exit code: 0 done (a green matrix), 1 failed (a red matrix), 2 the stand or the call refused.
 """
@@ -132,6 +133,7 @@ def run_scenarios(stand, args, prog):
     if code != 0:
         print(f"cluster: the stand did not come up (exit {code}); no scenario ran", file=sys.stderr)
         return 1
+    control.ensure_open_for_tests(stand, scenarios.CONVERGE_TIMEOUT)
     return scenarios.run_matrix(stand, numbers)
 
 
@@ -145,7 +147,11 @@ def run_e2e(stand, args, prog):
         raise StandRefused(f"e2e: no index.html or index.csr.html at {bundle} - build it: composer run test:e2e-build")
     code = control.down(stand, volumes=True)
     if code == 0:
-        code = control.up(stand, prog, clean_logs=True)
+        code = control.clear_test_logs(stand)
+    if code == 0:
+        code = control.up(stand, prog)
+    if code == 0:
+        control.ensure_open_for_tests(stand, scenarios.CONVERGE_TIMEOUT)
     if code == 0:
         code = control.up_e2e(stand)
     if code != 0:
