@@ -1,0 +1,24 @@
+{
+    "format": 1,
+    "id": "20261022124515804554_HIL-1582_browser_time_zones",
+    "parts": [
+        {
+            "unit": "session",
+            "up": "add_session_browser_time_zone.sql",
+            "down": "add_session_browser_time_zone_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "590e883f28b0f4fe1786fe1bdbb9fd2ee8b82f58b301ac105ac1733f8afb77d8",
+            "afterStubDownSha256": "266759368da3c7656ed84f4435275d2a140c539aea98a2165606e465d3f12128"
+        },
+        {
+            "unit": "user",
+            "up": "add_user_last_browser_time_zone.sql",
+            "down": "add_user_last_browser_time_zone_down.sql",
+            "requires": [
+                {"changeId": "20261021021039718057_HIL-1580_add_user_time_zone", "unit": "user"}
+            ],
+            "afterStubUpSha256": "a40edaf606dd86e32921782085276789b4ff594373ee2b3809bec3aecd3442da",
+            "afterStubDownSha256": "c51fdef7a88ead7047c9c14f60f39df9955251291c267b7cca94927fa318df35"
+        }
+    ]
+}

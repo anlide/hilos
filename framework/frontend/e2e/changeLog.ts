@@ -146,7 +146,72 @@ export async function expectChangeLogValues(
   ).toHaveText(after)
 }
 
-/** Registration journals the person and identity as facts without values. */
+/**
+ * A person's history opens with the registration: the creation as a fact, and
+ * the time zone the browser named at sign-up as a fact without its value, both
+ * on the registration's receipt. Reads that receipt's number.
+ *
+ * @param expect The spec's expect.
+ * @param page The page showing one person's history.
+ * @returns The registration's receipt number.
+ */
+export async function expectRegistrationHistory(
+  expect: Expect,
+  page: Page,
+): Promise<string> {
+  const creationKey = await tableRowKeyByText(expect, page, 'Created as a fact')
+  const zoneKey = await tableRowKeyByText(
+    expect,
+    page,
+    'last_browser_time_zone: Personal — no value',
+  )
+  await expect(shownByTestId(page, `hilos-table-row-${zoneKey}`)).toContainText(
+    'updated',
+  )
+  const creation = shownByTestId(
+    page,
+    `hilos-change-log-history-receipt-${creationKey}`,
+  )
+  await expect(creation).toHaveAccessibleName(/^Receipt #\d+$/)
+  const receiptId = ((await creation.getAttribute('aria-label')) ?? '').slice(
+    'Receipt #'.length,
+  )
+  await expect(
+    shownByTestId(page, `hilos-change-log-history-receipt-${zoneKey}`),
+  ).toHaveAccessibleName(`Receipt #${receiptId}`)
+
+  return receiptId
+}
+
+/**
+ * The feed row of a registration's receipt names the action and sums the
+ * person's two entries beside the identity's creation. Reads the row key.
+ *
+ * @param expect The spec's expect.
+ * @param page The page showing the feed.
+ * @param receiptId The registration's receipt number.
+ * @returns The feed row key.
+ */
+export async function expectRegistrationFeedRow(
+  expect: Expect,
+  page: Page,
+  receiptId: string,
+): Promise<string> {
+  const rowKey = `receipt:${receiptId}`
+  const row = shownByTestId(page, `hilos-table-row-${rowKey}`)
+  await expect(row).toContainText('hilos_complete_registration')
+  await expect(row).toContainText(
+    /hilos_user · 2 records, hilos_identity #\d+ · created/,
+  )
+
+  return rowKey
+}
+
+/**
+ * Registration journals the person and identity as facts without values; the
+ * time zone the browser named at sign-up rides the same receipt as a fact
+ * without its value.
+ */
 export async function expectRegistrationReceiptFacts(
   expect: Expect,
   page: Page,
@@ -155,16 +220,25 @@ export async function expectRegistrationReceiptFacts(
   const detail = page.getByTestId('hilos-change-log-detail')
   await expect(detail).toContainText(`hilos_user #${userId}`)
   await expect(detail).toContainText('hilos_identity #')
-  const creations = detail.getByTestId(/^hilos-change-log-entry-\d+$/)
-  await expect(creations).toHaveCount(2)
-  for (const creation of await creations.all()) {
-    await expect(creation).toContainText(
-      'Created as a fact; values belong to the record itself.',
-    )
-    await expect(creation.getByTestId(/^hilos-change-log-value-/)).toHaveCount(
-      0,
-    )
-    await expect(creation).not.toContainText('@example.test')
+  const entries = detail.getByTestId(/^hilos-change-log-entry-\d+$/)
+  await expect(entries).toHaveCount(3)
+  await expect(
+    entries.filter({
+      hasText: 'Created as a fact; values belong to the record itself.',
+    }),
+  ).toHaveCount(2)
+  const zone = entries.filter({ hasText: 'last_browser_time_zone' })
+  await expect(zone).toHaveCount(1)
+  await expect(zone).toContainText(`hilos_user #${userId}`)
+  await expect(zone).toContainText('updated')
+  await expect(zone).toContainText('Personal — no value')
+  const browserTimeZone = await page.evaluate(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+  )
+  await expect(zone).not.toContainText(browserTimeZone)
+  for (const entry of await entries.all()) {
+    await expect(entry.getByTestId(/^hilos-change-log-value-/)).toHaveCount(0)
+    await expect(entry).not.toContainText('@example.test')
   }
 }
 

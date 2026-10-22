@@ -7,6 +7,7 @@ import {
   dismissToasts,
   expectChangeLogFeedRow,
   expectChangeLogReceiptOpen,
+  expectRegistrationHistory,
   expectTrackedTableRecord,
   expectTrackedTableWhole,
   shownByTestId,
@@ -61,10 +62,13 @@ test('follows a block receipt to the history of its record and back to the whole
       'hilos_user',
       String(person.userId),
     )
-    const editKey = await tableRowKeyByText(expect, page, 'updated')
+    // The registration's receipt also carries the zone the browser named at
+    // sign-up, a second update of this record, so the block is found by its change.
+    await expectRegistrationHistory(expect, page)
+    const editKey = await tableRowKeyByText(expect, page, 'block: 0 → 1')
     const edit = shownByTestId(page, `hilos-table-row-${editKey}`)
     await expect(edit).toContainText(`#${person.userId}`)
-    await expect(edit).toContainText('block: 0 → 1')
+    await expect(edit).toContainText('updated')
     await expect(edit).toContainText('Web')
 
     await shownByTestId(

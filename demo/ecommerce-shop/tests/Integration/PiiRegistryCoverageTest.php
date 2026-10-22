@@ -69,6 +69,15 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
     /** Personal preference the pass must clear from the probe row. */
     private const string PROBE_USER_TIME_ZONE = 'Europe/Warsaw';
 
+    /** Last usable zone a browser of the person named (HIL-1582); the pass must clear it from the probe row. */
+    private const string PROBE_USER_LAST_BROWSER_TIME_ZONE = 'America/New_York';
+
+    /** Token the probe session is written with, so the pass has a session row to purge. */
+    private const string PROBE_SESSION_TOKEN = 'pii-coverage-probe-session';
+
+    /** Zone the probe session carries; the table is purged whole, so the row itself must be gone. */
+    private const string PROBE_SESSION_BROWSER_TIME_ZONE = 'Asia/Tokyo';
+
     /**
      * Every table the demo creates must carry a classification, and every column it
      * classifies must be able to carry its strategy.
@@ -173,7 +182,10 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
         Database::transactionStart();
         try {
             $probeId = self::insertProbeUser();
+            self::insertProbeSession();
             $this->assertSame(self::PROBE_USER_TIME_ZONE, self::probeUserTimeZone($probeId));
+            $this->assertSame(self::PROBE_USER_LAST_BROWSER_TIME_ZONE, self::probeUserLastBrowserTimeZone($probeId));
+            $this->assertSame(1, self::probeSessionCount());
             foreach ($statements as $statement) {
                 Database::sqlRun($statement);
             }
@@ -182,6 +194,8 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
             // prove the pass rewrites rather than passes over.
             $this->assertSame('User ' . $probeId, self::probeUserName($probeId));
             $this->assertNull(self::probeUserTimeZone($probeId));
+            $this->assertNull(self::probeUserLastBrowserTimeZone($probeId));
+            $this->assertSame(0, self::probeSessionCount());
         } finally {
             Database::transactionRollback();
         }
@@ -216,8 +230,12 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
     private static function insertProbeUser(): int
     {
         Database::sqlRun(
-            'INSERT INTO `hilos_user` (`name`, `time_zone`) VALUES (?, ?)',
-            SqlParamCollection::fromArray([self::PROBE_USER_NAME, self::PROBE_USER_TIME_ZONE]),
+            'INSERT INTO `hilos_user` (`name`, `time_zone`, `last_browser_time_zone`) VALUES (?, ?, ?)',
+            SqlParamCollection::fromArray([
+                self::PROBE_USER_NAME,
+                self::PROBE_USER_TIME_ZONE,
+                self::PROBE_USER_LAST_BROWSER_TIME_ZONE,
+            ]),
         );
         Database::sql(
             'SELECT `id` FROM `hilos_user` WHERE `name` = ? ORDER BY `id` DESC LIMIT 1',
@@ -256,5 +274,51 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
         $timeZone = Database::field('time_zone');
 
         return $timeZone === null ? null : (string)$timeZone;
+    }
+
+    /**
+     * @param int $probeId Primary key of the probe row
+     * @return ?string Stored last browser time zone, or null after anonymization
+     * @throws DatabaseException When the query fails
+     */
+    private static function probeUserLastBrowserTimeZone(int $probeId): ?string
+    {
+        Database::sql(
+            'SELECT `last_browser_time_zone` FROM `hilos_user` WHERE `id` = ?',
+            SqlParamCollection::fromArray([$probeId]),
+        );
+        $timeZone = Database::field('last_browser_time_zone');
+
+        return $timeZone === null ? null : (string)$timeZone;
+    }
+
+    /**
+     * Writes one session row that carries a browser time zone, inside the caller's transaction.
+     *
+     * Raw SQL for the same reason as the probe user: the row exists to meet the statement the
+     * database runs, not the object layer.
+     *
+     * @throws DatabaseException When the insert fails
+     */
+    private static function insertProbeSession(): void
+    {
+        Database::sqlRun(
+            'INSERT INTO `hilos_session` (`token`, `browser_time_zone`) VALUES (?, ?)',
+            SqlParamCollection::fromArray([self::PROBE_SESSION_TOKEN, self::PROBE_SESSION_BROWSER_TIME_ZONE]),
+        );
+    }
+
+    /**
+     * @return int Number of probe session rows the table still holds
+     * @throws DatabaseException When the query fails
+     */
+    private static function probeSessionCount(): int
+    {
+        Database::sql(
+            'SELECT COUNT(*) AS `probe_count` FROM `hilos_session` WHERE `token` = ?',
+            SqlParamCollection::fromArray([self::PROBE_SESSION_TOKEN]),
+        );
+
+        return (int)Database::field('probe_count');
     }
 }

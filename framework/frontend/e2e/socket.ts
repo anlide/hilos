@@ -18,6 +18,18 @@ export interface SocketFrame {
 }
 
 /**
+ * Tell the application's socket by its path alone. The core puts the browser's
+ * time zone, and on a protected node the presented pass, into the query of every
+ * socket it opens, so a glob over the whole address that ends in `/ws` misses
+ * it. Hand it to `routeWebSocket` as the address matcher.
+ *
+ * @param url The address of a socket the page opens.
+ */
+export function isApplicationSocket(url: URL): boolean {
+  return url.pathname === '/ws'
+}
+
+/**
  * Read physical messages from one socket through the core decoder. A failed
  * outer or binary message produces one observation; invalid inners stay in order
  * beside valid ones. No synthetic inner JSON replaces the physical raw text.

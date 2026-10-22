@@ -115,6 +115,11 @@ function installStore(name: 'localStorage' | 'sessionStorage'): void {
   })
 }
 
+// Taken before any fake clock: the fake timers stand an Intl of their own in,
+// and its formatters still answer from the engine's own prototype.
+const engineDateTimeFormat = Intl.DateTimeFormat
+const resolved = new engineDateTimeFormat().resolvedOptions()
+
 beforeEach(() => {
   vi.useFakeTimers()
   // The core runs where there is no browser at all, so the stores are optional by
@@ -122,10 +127,17 @@ beforeEach(() => {
   // sessionStorage, the maintenance hint in localStorage.
   installStore('sessionStorage')
   installStore('localStorage')
+  // Every socket url names the browser's zone; one zone for every case, whatever
+  // zone the machine running the suite is in.
+  vi.spyOn(engineDateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+    ...resolved,
+    timeZone: 'Europe/Warsaw',
+  })
 })
 
 afterEach(() => {
   vi.useRealTimers()
+  vi.restoreAllMocks()
   Reflect.deleteProperty(globalThis, 'sessionStorage')
   Reflect.deleteProperty(globalThis, 'localStorage')
 })
@@ -357,7 +369,9 @@ describe('a verifier presents a pass', () => {
 
     connection.presentProtectedModePass('the-key')
 
-    expect(MockWebSocket.last.url).toBe('ws://test/ws?hilosPass=the-key')
+    expect(MockWebSocket.last.url).toBe(
+      'ws://test/ws?browserTimeZone=Europe%2FWarsaw&hilosPass=the-key',
+    )
   })
 
   it('ignores a blank code instead of reconnecting for nothing', () => {
@@ -383,7 +397,9 @@ describe('a verifier presents a pass', () => {
     admitted.emit('close')
     vi.runOnlyPendingTimers()
 
-    expect(MockWebSocket.last.url).toBe('ws://test/ws?hilosPass=the-key')
+    expect(MockWebSocket.last.url).toBe(
+      'ws://test/ws?browserTimeZone=Europe%2FWarsaw&hilosPass=the-key',
+    )
   })
 
   it('says the code was rejected when the reconnect comes back still locked out', () => {
@@ -427,7 +443,9 @@ describe('a verifier presents a pass', () => {
     admitted.emit('close')
     vi.runOnlyPendingTimers()
 
-    expect(MockWebSocket.last.url).toBe('ws://test/ws')
+    expect(MockWebSocket.last.url).toBe(
+      'ws://test/ws?browserTimeZone=Europe%2FWarsaw',
+    )
   })
 
   it('drops a key the welcome says opens nothing, whoever closed the window', () => {
@@ -443,7 +461,9 @@ describe('a verifier presents a pass', () => {
     admitted.emit('close')
     vi.runOnlyPendingTimers()
 
-    expect(MockWebSocket.last.url).toBe('ws://test/ws')
+    expect(MockWebSocket.last.url).toBe(
+      'ws://test/ws?browserTimeZone=Europe%2FWarsaw',
+    )
   })
 
   it('drops the key when the mode lifts', () => {
@@ -459,7 +479,9 @@ describe('a verifier presents a pass', () => {
     admitted.emit('close')
     vi.runOnlyPendingTimers()
 
-    expect(MockWebSocket.last.url).toBe('ws://test/ws')
+    expect(MockWebSocket.last.url).toBe(
+      'ws://test/ws?browserTimeZone=Europe%2FWarsaw',
+    )
   })
 })
 

@@ -1,7 +1,11 @@
 import { EventEmitter } from 'node:events'
 import type { Page, WebSocketRoute } from '@playwright/test'
 import { describe, expect, it } from 'vitest'
-import { createSocketFrameReader, watchSocketFrames } from '../socket.js'
+import {
+  createSocketFrameReader,
+  isApplicationSocket,
+  watchSocketFrames,
+} from '../socket.js'
 import { watchThemeFrames } from '../themeFrames.js'
 import { watchHandshakeFrames } from '../handshakeFrames.js'
 import { watchPageErrorFrames } from '../pageErrorFrames.js'
@@ -55,14 +59,17 @@ function proxy() {
       close = listener
     },
   }
-  page.routeWebSocket = async (_url, handler) => {
+  const routed: Parameters<Page['routeWebSocket']>[0][] = []
+  page.routeWebSocket = async (url, handler) => {
     if (typeof handler !== 'function')
       throw new Error('Expected a route handler')
+    routed.push(url)
     await handler(client as unknown as WebSocketRoute)
   }
   return {
     page,
     connect,
+    routed,
     sent,
     outgoing,
     incoming: (message: string | Buffer) => incoming(message),
@@ -292,6 +299,26 @@ describe('shared incoming socket observations', () => {
 })
 
 describe('real-message proxy holds', () => {
+  it('routes the application socket by its path, whatever its query names', async () => {
+    const pageRoute = proxy()
+    await holdPageReply(pageRoute.page, 'target')
+    const uploadRoute = proxy()
+    await watchUploadFrames(uploadRoute.page, 'test', () => {}).holdCredits()
+    for (const { routed } of [pageRoute, uploadRoute]) {
+      expect(routed).toEqual([isApplicationSocket])
+    }
+    expect(
+      [
+        'wss://stand.test/ws',
+        'wss://stand.test/ws?browserTimeZone=Europe%2FWarsaw',
+        'wss://stand.test/ws?browserTimeZone=UTC&pass=p',
+        'wss://stand.test/wsx?browserTimeZone=UTC',
+        'wss://stand.test/ws/next',
+        'https://stand.test/assets/ws',
+      ].map((address) => isApplicationSocket(new URL(address))),
+    ).toEqual([true, true, true, false, false, false])
+  })
+
   it('holds a complete page-reply message and successors without changing bytes or order', async () => {
     const route = proxy()
     const hold = await holdPageReply(route.page, 'target')

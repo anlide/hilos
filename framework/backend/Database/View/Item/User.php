@@ -30,6 +30,7 @@ use Hilos\HilosException;
  * @property-read ?string $themePick Light, dark or system; null when there is no personal position
  * @property-read bool $themePickInitialized Whether an account choice was ever saved, including a reset
  * @property-read ?string $timeZone Exact IANA time zone; null for Automatic
+ * @property-read ?string $lastBrowserTimeZone Last usable IANA time zone a browser of this person named; null when none has
  * @property-read UserActions $actions Actions for write operations on this user
  */
 class User extends DbItem
@@ -54,6 +55,7 @@ class User extends DbItem
             ObjectUser::themePick => $this->_object->themePick,
             ObjectUser::themePickInitialized => $this->_object->themePickInitialized,
             ObjectUser::timeZone => $this->_object->timeZone,
+            ObjectUser::lastBrowserTimeZone => $this->_object->lastBrowserTimeZone,
             default => parent::__get($name),
         };
     }

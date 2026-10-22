@@ -26,6 +26,7 @@ class User extends Entity
     public const string theme_pick = 'theme_pick';
     public const string theme_pick_initialized = 'theme_pick_initialized';
     public const string time_zone = 'time_zone';
+    public const string last_browser_time_zone = 'last_browser_time_zone';
 
     // Table meta information
     public const string _table = 'hilos_user';
@@ -41,6 +42,7 @@ class User extends Entity
         self::theme_pick,
         self::theme_pick_initialized,
         self::time_zone,
+        self::last_browser_time_zone,
     ];
 
     // Column types
@@ -53,6 +55,7 @@ class User extends Entity
         self::theme_pick => PhpType::STRING->value,
         self::theme_pick_initialized => PhpType::BOOLEAN->value,
         self::time_zone => PhpType::STRING->value,
+        self::last_browser_time_zone => PhpType::STRING->value,
     ];
 
     // Indexes
@@ -70,6 +73,7 @@ class User extends Entity
     public const array _pii = [
         self::name => AnonymizationStrategy::FAKE_NAME,
         self::time_zone => AnonymizationStrategy::NULLIFY,
+        self::last_browser_time_zone => AnonymizationStrategy::NULLIFY,
     ];
 
     public const array _piiNotPersonal = [
@@ -90,4 +94,5 @@ class User extends Entity
     public ?string $theme_pick = null;
     public bool $theme_pick_initialized;
     public ?string $time_zone = null;
+    public ?string $last_browser_time_zone = null;
 }

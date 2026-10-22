@@ -1,6 +1,10 @@
 import { createHash } from 'node:crypto'
 import type { Page, WebSocket, WebSocketRoute } from '@playwright/test'
-import { createSocketFrameReader, type SocketFrame } from './socket.js'
+import {
+  createSocketFrameReader,
+  isApplicationSocket,
+  type SocketFrame,
+} from './socket.js'
 
 interface UploadObservation {
   readonly id: string
@@ -180,7 +184,7 @@ export function watchUploadFrames(
       const credits: { clientUploadId: string; sendUpToBytes: number }[] = []
       let open = false
       const held = new Map<WebSocketRoute, (string | Buffer)[]>()
-      await page.routeWebSocket('**/ws', (socket) => {
+      await page.routeWebSocket(isApplicationSocket, (socket) => {
         const read = createSocketFrameReader(++sockets)
         const server = socket.connectToServer()
         const buffered: (string | Buffer)[] = []

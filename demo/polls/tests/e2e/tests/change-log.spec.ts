@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test'
 import {
   CHANGE_LOG_BLOCK_ACTION,
   CHANGE_LOG_PATH,
+  CHANGE_LOG_TABLES_PATH,
   chooseChangeLogFeedTable,
   dismissToasts,
   expectChangeLogDashboardCard,
@@ -10,7 +11,10 @@ import {
   expectChangeLogOverview,
   expectChangeLogReceiptOpen,
   expectChangeLogValues,
+  expectRegistrationFeedRow,
+  expectRegistrationHistory,
   expectRegistrationReceiptFacts,
+  expectTrackedTableRecord,
   shownByTestId,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
@@ -81,14 +85,15 @@ test('its registration receipt shows person and identity creation as facts witho
   page,
 }) => {
   const userId = await signUpAdmin(page)
+  // The zone the browser names at sign-up rides the registration's receipt, so
+  // the feed sums the person's entries without a key: the history names it.
+  await gotoPage(page, `${CHANGE_LOG_TABLES_PATH}/hilos_user/${userId}`)
+  await expectTrackedTableRecord(expect, page, 'hilos_user', String(userId))
+  const receiptId = await expectRegistrationHistory(expect, page)
   await gotoPage(page, CHANGE_LOG_PATH)
-  const { rowKey } = await expectChangeLogFeedRow(
-    expect,
-    page,
-    `hilos_user #${userId} · created`,
-    'hilos_complete_registration',
-  )
+  const rowKey = await expectRegistrationFeedRow(expect, page, receiptId)
   await shownByTestId(page, `hilos-change-log-open-${rowKey}`).click()
+  await expectChangeLogReceiptOpen(expect, page, receiptId)
   await expectRegistrationReceiptFacts(expect, page, userId)
   await page.getByTestId('hilos-change-log-detail-close').click()
   await expect(page.getByTestId('modal')).toHaveCount(0)

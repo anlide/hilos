@@ -52,6 +52,11 @@ use Hilos\Database\PhpType;
  * block threw it out and an unblock signs it back in; clear - it was refused at sign-in and an
  * unblock walks it through the second-factor gate.
  *
+ * `browser_time_zone` is the IANA time zone this session's browser named on its last connection
+ * (HIL-1582), a guest's browser too: the physical zone of the browser, kept for work done for this
+ * session without a browser. It is not the person's own choice (`hilos_user.time_zone`); a missing
+ * or unusable report clears only this column. Server-side only, never part of the browser row.
+ *
  * @method static EntitySessions get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntitySessions getAll()
  */
@@ -76,6 +81,7 @@ class Session extends Entity
     public const string ip_address = 'ip_address';
     public const string blocked_user_id = 'blocked_user_id';
     public const string blocked_signed_in = 'blocked_signed_in';
+    public const string browser_time_zone = 'browser_time_zone';
 
     public const string _table = 'hilos_session';
     public const string _primary = self::id;
@@ -99,6 +105,7 @@ class Session extends Entity
         self::ip_address,
         self::blocked_user_id,
         self::blocked_signed_in,
+        self::browser_time_zone,
     ];
 
     public const array _types = [
@@ -121,6 +128,7 @@ class Session extends Entity
         self::ip_address => PhpType::STRING->value,
         self::blocked_user_id => PhpType::INTEGER->value,
         self::blocked_signed_in => PhpType::BOOLEAN->value,
+        self::browser_time_zone => PhpType::STRING->value,
     ];
 
     public const array _foreign = [
@@ -179,4 +187,5 @@ class Session extends Entity
     public ?string $ip_address = null;
     public ?int $blocked_user_id = null;
     public bool $blocked_signed_in = false;
+    public ?string $browser_time_zone = null;
 }

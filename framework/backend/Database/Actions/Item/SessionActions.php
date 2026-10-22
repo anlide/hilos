@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace Hilos\Database\Actions\Item;
 
 use Hilos\Auth\SecondFactor\SecondFactorPendingMode;
+use Hilos\Auth\Session\BrowserTimeZone;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Auth\Session\SessionToken;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Collection\SessionsActions;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
@@ -484,6 +486,35 @@ class SessionActions extends DbActions
         }
 
         $this->object->deviceName = $deviceName;
+        $this->object->sync();
+    }
+
+    /**
+     * Stores the IANA time zone the browser of this session named on its last connection (HIL-1582).
+     *
+     * Writes the one field and leaves lastSeenAt and the expiry to the handshake's own touch. The connection
+     * boundary hands over a name already normalized, or null when the browser named none usable.
+     *
+     * @param ?string $browserTimeZone Exact IANA identifier, or null when the browser named none usable
+     * @throws ItemNotFoundForUpdateException When the session is not persisted (id is null)
+     * @throws ValidationException When the name is not an identifier of the IANA catalog
+     * @throws HilosException On database error
+     */
+    public function setBrowserTimeZone(?string $browserTimeZone): void
+    {
+        $this->ensureCanWrite();
+
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('Session not found for setBrowserTimeZone (id is null)');
+        }
+        if ($browserTimeZone !== null && !BrowserTimeZone::isValid($browserTimeZone)) {
+            throw new ValidationException('The browser time zone is not a valid IANA time zone.');
+        }
+        if ($this->object->browserTimeZone === $browserTimeZone) {
+            return;
+        }
+
+        $this->object->browserTimeZone = $browserTimeZone;
         $this->object->sync();
     }
 

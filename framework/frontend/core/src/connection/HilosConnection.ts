@@ -85,6 +85,7 @@ import {
 import { isReconnectDragging } from './reconnectDragging.js'
 import { Emitter } from './events.js'
 import { type TablePresentationChange } from '../table/tableViewportGeometry.js'
+import { readBrowserTimeZone } from '../timeZone/timeZoneBrowser.js'
 
 export type ConnectionState =
   'connecting' | 'connected' | 'reconnecting' | 'disconnected'
@@ -314,6 +315,14 @@ const ROTATION_REPLY_GRACE_MS = 10000
  * safe to act on: the worst a stale one can cost is this wait.
  */
 const FIRST_FRAME_HOLD_TIMEOUT_MS = 1500
+
+/**
+ * The socket url parameter that names the zone this browser runs in.
+ *
+ * Reserved: the connection owns it on every socket it opens, so a copy already
+ * standing in the configured url is replaced, never sent beside the current one.
+ */
+const BROWSER_TIME_ZONE_PARAM = 'browserTimeZone'
 
 /**
  * The name prefix that marks a project signal as a page's own state frame.
@@ -1422,15 +1431,42 @@ export class HilosConnection {
     }
   }
 
-  /** The socket url, carrying a presented pass so admission is decided on the 101. */
+  /**
+   * The socket url, carrying the zone this browser runs in and a presented pass,
+   * so both are known on the 101.
+   *
+   * The zone is read again for every socket, because the system zone may change
+   * while the page lives. It is the browser's own, never the person's zone or the
+   * project's; a browser that cannot say leaves the parameter out. The configured
+   * query keeps its pairs in their order, less any copy of the reserved
+   * {@link BROWSER_TIME_ZONE_PARAM}.
+   */
   private socketUrl(): string {
-    if (this.presentedPass === undefined) {
-      return this.url
+    const queryStart = this.url.indexOf('?')
+    const address = queryStart === -1 ? this.url : this.url.slice(0, queryStart)
+    const query = queryStart === -1 ? '' : this.url.slice(queryStart + 1)
+    const pairs =
+      query === ''
+        ? []
+        : query
+            .split('&')
+            .filter(
+              (pair) => !new URLSearchParams(pair).has(BROWSER_TIME_ZONE_PARAM),
+            )
+
+    const browserTimeZone = readBrowserTimeZone()
+    if (browserTimeZone !== null) {
+      pairs.push(
+        `${BROWSER_TIME_ZONE_PARAM}=${encodeURIComponent(browserTimeZone)}`,
+      )
+    }
+    if (this.presentedPass !== undefined) {
+      pairs.push(
+        `${PROTECTED_MODE_PASS_PARAM}=${encodeURIComponent(this.presentedPass)}`,
+      )
     }
 
-    const separator = this.url.includes('?') ? '&' : '?'
-
-    return `${this.url}${separator}${PROTECTED_MODE_PASS_PARAM}=${encodeURIComponent(this.presentedPass)}`
+    return pairs.length === 0 ? address : `${address}?${pairs.join('&')}`
   }
 
   private scheduleReconnect(): void {

@@ -259,7 +259,7 @@ final class EntrypointPreludeTest extends TestCase
     }
 
     /**
-     * Supplies genesis and the current user change to the real source gate, without opening a database.
+     * Supplies genesis and the current user and session changes to the real source gate, without opening a database.
      *
      * @throws DatabaseException When the no-op adoption pair is invalid
      */
@@ -300,6 +300,21 @@ final class EntrypointPreludeTest extends TestCase
         }
         if (file_put_contents($track . '/002_user_time_zone_down.sql', $change->downSql) === false) {
             $this->fail('Cannot write user time zone down source');
+        }
+        foreach (['session' => '003', 'user' => '004'] as $unit => $number) {
+            $part = new FrameworkMigrationCatalog()->part('20261022124515804554_HIL-1582_browser_time_zones', $unit);
+            $change = new FrameworkMigrationPair(
+                $unit . '_browser_time_zone',
+                FrameworkMigrationOrigin::forBodies(FrameworkMigrationOrigin::CHANGE, [$unit], [$part], $part->upSql, $part->downSql),
+                $part->upSql,
+                $part->downSql,
+            );
+            if (file_put_contents($track . '/' . $number . '_' . $change->name . '.sql', $change->upSql) === false) {
+                $this->fail("Cannot write {$unit} browser time zone up source");
+            }
+            if (file_put_contents($track . '/' . $number . '_' . $change->name . '_down.sql', $change->downSql) === false) {
+                $this->fail("Cannot write {$unit} browser time zone down source");
+            }
         }
     }
 

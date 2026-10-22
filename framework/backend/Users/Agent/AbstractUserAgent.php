@@ -10,6 +10,7 @@ use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\Command\AuthMessages;
 use Hilos\Auth\SecondFactor\SecondFactorPersonEdits;
 use Hilos\Auth\SecurityNotice\SecurityNotifier;
+use Hilos\Auth\Session\BrowserTimeZone;
 use Hilos\Auth\StepUp\StepUpConfirmations;
 use Hilos\Auth\WebAuthn\Exception\WebAuthnVerificationException;
 use Hilos\Constants\HilosAgentType;
@@ -38,6 +39,8 @@ use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Item\UserActions;
+use Hilos\Database\ChangeLog\JournalReceiptData;
+use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -72,6 +75,7 @@ use Hilos\Users\DTO\UserEmailChangeDoneSignalData;
 use Hilos\Users\DTO\UserEmailChangeSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkDoneSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
+use Hilos\Users\DTO\UserLastBrowserTimeZoneWriteSignalData;
 use Hilos\Users\DTO\UserNotificationChannelSetSignalData;
 use Hilos\Users\DTO\UserNotificationReadSignalData;
 use Hilos\Users\DTO\UserPasskeyUseDoneSignalData;
@@ -143,9 +147,11 @@ use Throwable;
  * from {@see AbstractSessionsLibraryAgent}. The theme choice comes from the coordinator that
  * accepts the person's pick (HIL-1427). The agent writes and always answers - a refusal included,
  * because the coordinator continues only on the answer and something is waiting on it - and the
- * coordinator does what follows the write. Creating a way in, an enrolment, a set of backup codes
- * or a removal stays with the libraries that create it. When the person is erased, or folded into
- * someone else, the agent stops itself.
+ * coordinator does what follows the write. One frame is not an ask: the last usable zone a browser
+ * of the person named, which the sessions library reports and nothing waits on (HIL-1582), is
+ * written without an answer, and its refusal goes to this agent's log. Creating a way in, an
+ * enrolment, a set of backup codes or a removal stays with the libraries that create it. When the
+ * person is erased, or folded into someone else, the agent stops itself.
  */
 abstract class AbstractUserAgent extends AbstractAgent
 {
@@ -179,6 +185,10 @@ abstract class AbstractUserAgent extends AbstractAgent
         HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE => [
             AgentSignalConfigKey::INDEX_FIELD => UserTimeZoneWriteSignalData::userId,
             AgentSignalConfigKey::DTO => UserTimeZoneWriteSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_LAST_BROWSER_TIME_ZONE_WRITE => [
+            AgentSignalConfigKey::INDEX_FIELD => UserLastBrowserTimeZoneWriteSignalData::userId,
+            AgentSignalConfigKey::DTO => UserLastBrowserTimeZoneWriteSignalData::class,
         ],
         HilosSignalConstants::HILOS_USER_PASSWORD_REHASH => [
             AgentSignalConfigKey::INDEX_FIELD => UserPasswordRehashSignalData::userId,
@@ -403,7 +413,9 @@ abstract class AbstractUserAgent extends AbstractAgent
      * subscription dropped or a device removed are answered the same way (HIL-1408): the notifications
      * library waits on the answer, and the tabs hear a read or a channel change only after the write.
      * A standing deletion canceled, and a profile photo set or removed, are answered the same way
-     * (HIL-1409): the users library waits on the answer.
+     * (HIL-1409): the users library waits on the answer. The last zone a browser named is the one
+     * frame not answered (HIL-1582): the sessions library reports it in the background, so a refusal
+     * is written to this agent's log.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
@@ -488,6 +500,11 @@ abstract class AbstractUserAgent extends AbstractAgent
 
                 $this->refuseAnotherPerson($timeZoneWrite->userId, $name);
                 $this->handleTimeZoneWrite($timeZoneWrite);
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_LAST_BROWSER_TIME_ZONE_WRITE:
+                $this->handleLastBrowserTimeZoneWrite($data->data, $name);
 
                 return;
 
@@ -1065,6 +1082,26 @@ abstract class AbstractUserAgent extends AbstractAgent
     }
 
     /**
+     * Remembers the last usable zone a browser of this person named, without touching activity time (HIL-1582).
+     *
+     * The person's own zone choice stays as it is. Whether the account may be written was settled at
+     * the entry of the frame; the row is read here as required. Not final, for the reason
+     * {@see self::renamePerson()} gives.
+     *
+     * @param string $lastBrowserTimeZone Exact IANA identifier the browser named
+     * @throws ItemNotFoundForUpdateException When the person's row has no persisted id
+     * @throws ValidationException When the identifier is outside the IANA catalog
+     * @throws LogicException When the people collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type
+     * @throws DatabaseException When the person's row is not there, or cannot be loaded
+     * @throws HilosException On database or truth-source failure while writing the zone
+     */
+    protected function writeLastBrowserTimeZone(string $lastBrowserTimeZone): void
+    {
+        Hilos::$db->users[$this->userId]->actions->setLastBrowserTimeZone($lastBrowserTimeZone);
+    }
+
+    /**
      * Stores a password hash on the person's password row (HIL-1405).
      *
      * One write for three asks - a rehash on sign-in, and a recovery and a change in the profile
@@ -1574,6 +1611,44 @@ abstract class AbstractUserAgent extends AbstractAgent
         }
 
         $this->sendToAgent($ask->replySignal, UserTimeZoneWriteDoneSignalData::to($ask, $refusal));
+    }
+
+    /**
+     * Remembers the zone a browser of this person named; a background write that answers nobody (HIL-1582).
+     *
+     * The person is checked first ({@see AddressablePerson::require()}): one erased, or folded into
+     * someone else, is not written, and the write is not carried over to another person. A zone the
+     * person's memory already holds writes nothing and opens no receipt - every reconnect of a tab
+     * repeats it. A change rides the receipt the frame came under, a sign-in's, and otherwise gets
+     * this agent's own. Any refusal goes to this agent's log, without the zone: it is the person's data.
+     *
+     * @param UserLastBrowserTimeZoneWriteSignalData $report Person at the keyboard and the zone the browser named
+     * @param string $name Frame name, for the refusal
+     * @throws AgentException When the frame names another person
+     */
+    private function handleLastBrowserTimeZoneWrite(UserLastBrowserTimeZoneWriteSignalData $report, string $name): void
+    {
+        $this->refuseAnotherPerson($report->userId, $name);
+        try {
+            AddressablePerson::require($this->userId);
+            if (Hilos::$db->users[$this->userId]->lastBrowserTimeZone === $report->lastBrowserTimeZone) {
+                return;
+            }
+
+            if (JournalReceiptScope::currentId() === null) {
+                JournalReceiptScope::run(
+                    JournalReceiptData::agent(BrowserTimeZone::JOURNAL_ACTION, $this->getId()),
+                    fn () => $this->writeLastBrowserTimeZone($report->lastBrowserTimeZone),
+                );
+            } else {
+                $this->writeLastBrowserTimeZone($report->lastBrowserTimeZone);
+            }
+        } catch (WiringRefusal $wiring) {
+            // Told apart from a refused write: no later report cures a process that may not read the person.
+            $this->logAgentError("Last browser time zone for #{$this->userId} refused by wiring: {$wiring->getMessage()}");
+        } catch (Throwable $e) {
+            $this->logAgentError("Last browser time zone for #{$this->userId} not written: {$e->getMessage()}");
+        }
     }
 
     /**

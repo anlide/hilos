@@ -15,6 +15,7 @@ use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\ChangeLog\JournalTriggerFiles;
 use Hilos\Database\ChangeLog\JournalTriggerInstaller;
 use Hilos\Database\ChangeLog\Section\ChangeLogHistoryFilter;
+use Hilos\Database\ChangeLog\Section\ChangeLogHistoryRow;
 use Hilos\Database\Migration;
 use Hilos\Database\Schema\JournalColumnMode;
 use Hilos\Backup\Anonymization\LiveSchemaReader;
@@ -39,6 +40,18 @@ use Hilos\Hilos as HilosFacade;
 /** The chat migration schema satisfies the Entity declarations the daemon judges. */
 final class JournalCoverageTest extends IntegrationTestCase
 {
+    /** Journal tables in the order their rows are removed, children before parents. */
+    private const array JOURNAL_CLEANUP_ORDER = [
+        'hilos_change_log_value', 'hilos_change_log_change', 'hilos_change_log',
+        'hilos_change_log_receipt', 'hilos_change_log_field', 'hilos_change_log_table',
+    ];
+
+    /** Zone the first write of a person's browser memory carries. */
+    private const string FIRST_BROWSER_ZONE = 'America/New_York';
+
+    /** Zone the changing write of a person's browser memory carries. */
+    private const string SECOND_BROWSER_ZONE = 'Asia/Tokyo';
+
     /** Direct CLI/worker initialization connects the journal even when facade initialization is deferred. */
     public function testDeferredFacadeInitializationLeavesPrimarySelected(): void
     {
@@ -87,21 +100,7 @@ final class JournalCoverageTest extends IntegrationTestCase
 
     public function testProjectConfigurationCrudHasReceiptsAndCompleteValues(): void
     {
-        Migration::setMigrationListPath(dirname(__DIR__, 2) . '/backend/Database/Migration');
-        Migration::setMigrationName('Schema');
-        JournalTriggerFiles::setPath(dirname(__DIR__, 2) . '/backend/Database/Migration/Triggers');
-        Database::sql('SELECT * FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE()');
-        $originalTriggers = Database::rows();
-        $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
-        $cleanupOrder = [
-            'hilos_change_log_value', 'hilos_change_log_change', 'hilos_change_log',
-            'hilos_change_log_receipt', 'hilos_change_log_field', 'hilos_change_log_table',
-        ];
-        $baseline = [];
-        foreach ($cleanupOrder as $table) {
-            Database::sql("SELECT COALESCE(MAX(`id`), 0) AS id FROM {$journal}.`{$table}`");
-            $baseline[$table] = (int)Database::field('id');
-        }
+        $scratch = $this->openJournalScratch();
         $botId = null;
         $pieceId = null;
         try {
@@ -167,26 +166,86 @@ final class JournalCoverageTest extends IntegrationTestCase
                 }
             }
         } finally {
-            Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
-            Database::setJournalReceiptId(null);
-            Database::sql('SELECT TRIGGER_NAME FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE()');
-            foreach (Database::rows() as $trigger) {
-                Database::sql('DROP TRIGGER `' . $trigger['TRIGGER_NAME'] . '`');
+            $this->closeJournalScratch($scratch, static function () use (&$botId, &$pieceId): void {
+                if (isset(Hilos::$db->bots[$botId])) {
+                    Hilos::$db->bots[$botId]->actions->delete();
+                }
+                if (isset(Hilos::$db->moderatorPromptPieces[$pieceId])) {
+                    Hilos::$db->moderatorPromptPieces[$pieceId]->actions->delete();
+                }
+            });
+        }
+    }
+
+    /**
+     * A person's last browser time zone is a personal column: its change is journaled as the fact of the
+     * change, an equal write leaves no record, and neither the entry nor the receipt carries the zone (HIL-1582).
+     */
+    public function testLastBrowserTimeZoneOfAPersonIsJournaledAsAFactOnly(): void
+    {
+        $scratch = $this->openJournalScratch();
+        $personId = null;
+        try {
+            JournalTriggerInstaller::apply();
+            $firstReceiptId = null;
+            JournalReceiptScope::run(JournalReceiptData::web(1453, null, 1453, 'person.zone.first', 'test-agent'),
+                function () use (&$personId, &$firstReceiptId): void {
+                    $firstReceiptId = JournalReceiptScope::currentId();
+                    $personId = (int)Hilos::$db->users->actions->createWithName('Journal zone person')->id;
+                    Hilos::$db->users[$personId]->actions->setLastBrowserTimeZone(self::FIRST_BROWSER_ZONE);
+                });
+            $this->assertNotNull($personId);
+            $reader = new ChangeLogSectionReader();
+            $history = $this->userHistory($reader, $personId);
+            $this->assertSame(['create', 'update'], array_map(static fn($row): string => $row->entry->mutation, $history));
+
+            JournalReceiptScope::run(JournalReceiptData::web(1453, null, 1453, 'person.zone.same', 'test-agent'),
+                function () use ($personId): void {
+                    Hilos::$db->users[$personId]->actions->setLastBrowserTimeZone(self::FIRST_BROWSER_ZONE);
+                });
+            $this->assertCount(2, $this->userHistory($reader, $personId), 'An equal write must leave no journal record');
+
+            JournalReceiptScope::run(JournalReceiptData::web(1453, null, 1453, 'person.zone.second', 'test-agent'),
+                function () use ($personId): void {
+                    Hilos::$db->users[$personId]->actions->setLastBrowserTimeZone(self::SECOND_BROWSER_ZONE);
+                });
+            $history = $this->userHistory($reader, $personId);
+            $this->assertSame(['create', 'update', 'update'], array_map(static fn($row): string => $row->entry->mutation, $history));
+            $this->assertSame([], $history[0]->entry->changes);
+            foreach ([1, 2] as $index) {
+                $entry = $reader->entry($history[$index]->entry->id);
+                $this->assertNotNull($entry);
+                $this->assertCount(1, $entry->changes);
+                $change = $entry->changes[0];
+                $this->assertSame('last_browser_time_zone', $change->field);
+                $this->assertSame('fact', $change->kind);
+                $this->assertTrue($change->oldPresent);
+                $this->assertTrue($change->newPresent);
+                $this->assertNull($change->oldValue);
+                $this->assertNull($change->newValue);
             }
-            if (isset(Hilos::$db->bots[$botId])) {
-                Hilos::$db->bots[$botId]->actions->delete();
+            $this->assertSame($firstReceiptId, $history[1]->entry->receiptId);
+            $this->assertSame('person.zone.second', $history[2]->receipt?->action);
+
+            // No receipt of the three, and nothing the journal stored since the test began, names a zone.
+            $zones = [self::FIRST_BROWSER_ZONE, self::SECOND_BROWSER_ZONE];
+            foreach ($history as $row) {
+                $this->assertNotNull($row->receipt);
+                $attribution = json_encode([
+                    $row->receipt->channel, $row->receipt->action, $row->receipt->agent, $row->receipt->source,
+                ], JSON_THROW_ON_ERROR);
+                foreach ($zones as $zone) {
+                    $this->assertStringNotContainsString($zone, $attribution);
+                }
             }
-            if (isset(Hilos::$db->moderatorPromptPieces[$pieceId])) {
-                Hilos::$db->moderatorPromptPieces[$pieceId]->actions->delete();
-            }
-            foreach ($cleanupOrder as $table) {
-                Database::sqlRun("DELETE FROM {$journal}.`{$table}` WHERE `id` > ?", [$baseline[$table]]);
-            }
-            foreach ($originalTriggers as $trigger) {
-                Database::sql('CREATE TRIGGER `' . $trigger['TRIGGER_NAME'] . '` ' . $trigger['ACTION_TIMING']
-                    . ' ' . $trigger['EVENT_MANIPULATION'] . ' ON `' . $trigger['EVENT_OBJECT_TABLE']
-                    . '` FOR EACH ROW ' . $trigger['ACTION_STATEMENT']);
-            }
+            $this->assertSame(0, $this->journalRowsNaming($scratch, $zones));
+            $this->assertSame(0, $this->receiptsOfAction($scratch, 'person.zone.same'));
+        } finally {
+            $this->closeJournalScratch($scratch, static function () use (&$personId): void {
+                if ($personId !== null && isset(Hilos::$db->users[$personId])) {
+                    Hilos::$db->users[$personId]->actions->delete();
+                }
+            });
         }
     }
 
@@ -226,6 +285,112 @@ final class JournalCoverageTest extends IntegrationTestCase
         } finally {
             HilosFacade::$db = $original;
         }
+    }
+
+    /**
+     * Points the journal at this project's trigger files and remembers what the schema and the journal held.
+     *
+     * @return array{triggers: list<array<string, mixed>>, baseline: array<string, int>} Triggers present
+     *     and the largest id of each journal table before the test wrote anything
+     */
+    private function openJournalScratch(): array
+    {
+        Migration::setMigrationListPath(dirname(__DIR__, 2) . '/backend/Database/Migration');
+        Migration::setMigrationName('Schema');
+        JournalTriggerFiles::setPath(dirname(__DIR__, 2) . '/backend/Database/Migration/Triggers');
+        Database::sql('SELECT * FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE()');
+        $triggers = Database::rows();
+        $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
+        $baseline = [];
+        foreach (self::JOURNAL_CLEANUP_ORDER as $table) {
+            Database::sql("SELECT COALESCE(MAX(`id`), 0) AS id FROM {$journal}.`{$table}`");
+            $baseline[$table] = (int)Database::field('id');
+        }
+
+        return ['triggers' => $triggers, 'baseline' => $baseline];
+    }
+
+    /**
+     * Gives the schema and the journal back as openJournalScratch() found them.
+     *
+     * @param array{triggers: list<array<string, mixed>>, baseline: array<string, int>} $scratch What openJournalScratch() returned
+     * @param callable $removeRows Removes the rows the test wrote, called while no trigger is installed
+     */
+    private function closeJournalScratch(array $scratch, callable $removeRows): void
+    {
+        $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
+        Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        Database::setJournalReceiptId(null);
+        Database::sql('SELECT TRIGGER_NAME FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE()');
+        foreach (Database::rows() as $trigger) {
+            Database::sql('DROP TRIGGER `' . $trigger['TRIGGER_NAME'] . '`');
+        }
+        $removeRows();
+        foreach (self::JOURNAL_CLEANUP_ORDER as $table) {
+            Database::sqlRun("DELETE FROM {$journal}.`{$table}` WHERE `id` > ?", [$scratch['baseline'][$table]]);
+        }
+        foreach ($scratch['triggers'] as $trigger) {
+            Database::sql('CREATE TRIGGER `' . $trigger['TRIGGER_NAME'] . '` ' . $trigger['ACTION_TIMING']
+                . ' ' . $trigger['EVENT_MANIPULATION'] . ' ON `' . $trigger['EVENT_OBJECT_TABLE']
+                . '` FOR EACH ROW ' . $trigger['ACTION_STATEMENT']);
+        }
+    }
+
+    /**
+     * @param ChangeLogSectionReader $reader Journal reader
+     * @param int $personId Primary key of the person
+     * @return list<ChangeLogHistoryRow> Journal rows of the person, oldest first
+     */
+    private function userHistory(ChangeLogSectionReader $reader, int $personId): array
+    {
+        return $reader->historyWindow('hilos_user', new ChangeLogHistoryFilter(recordKey: [$personId]),
+            false, null, TableAnchorDirection::After, 10);
+    }
+
+    /**
+     * Counts what the journal stored since openJournalScratch() in the places a value could land: changes and receipts.
+     *
+     * @param array{triggers: list<array<string, mixed>>, baseline: array<string, int>} $scratch What openJournalScratch() returned
+     * @param list<string> $needles Strings that must not be there
+     * @return int Rows holding any of them
+     */
+    private function journalRowsNaming(array $scratch, array $needles): int
+    {
+        $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
+        $found = 0;
+        foreach ($needles as $needle) {
+            $like = '%' . $needle . '%';
+            Database::sql(
+                "SELECT COUNT(*) AS found FROM {$journal}.`hilos_change_log_change` WHERE `id` > ? "
+                . 'AND (`old_value` LIKE ? OR `new_value` LIKE ?)',
+                [$scratch['baseline']['hilos_change_log_change'], $like, $like],
+            );
+            $found += (int)Database::field('found');
+            Database::sql(
+                "SELECT COUNT(*) AS found FROM {$journal}.`hilos_change_log_receipt` WHERE `id` > ? "
+                . 'AND CONCAT_WS(\'|\', `channel`, `action`, `agent`, `source`) LIKE ?',
+                [$scratch['baseline']['hilos_change_log_receipt'], $like],
+            );
+            $found += (int)Database::field('found');
+        }
+
+        return $found;
+    }
+
+    /**
+     * @param array{triggers: list<array<string, mixed>>, baseline: array<string, int>} $scratch What openJournalScratch() returned
+     * @param string $action Action name the receipt was opened with
+     * @return int Receipts of that action the journal still holds since openJournalScratch()
+     */
+    private function receiptsOfAction(array $scratch, string $action): int
+    {
+        $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
+        Database::sql(
+            "SELECT COUNT(*) AS found FROM {$journal}.`hilos_change_log_receipt` WHERE `id` > ? AND `action` = ?",
+            [$scratch['baseline']['hilos_change_log_receipt'], $action],
+        );
+
+        return (int)Database::field('found');
     }
 }
 

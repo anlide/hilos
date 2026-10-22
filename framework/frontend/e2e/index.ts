@@ -54,6 +54,11 @@ export {
   type RawWebSocketStand,
 } from './rawWebSocket.js'
 export {
+  expectWelcomedSockets,
+  watchOpenedSockets,
+  type OpenedSocket,
+} from './connection.js'
+export {
   deliveryObject,
   waitDeliveryBoundary,
   watchDeliveryFrames,
@@ -196,6 +201,8 @@ export {
   expectChangeLogReceiptOpen,
   expectChangeLogReceiptWriter,
   expectChangeLogValues,
+  expectRegistrationFeedRow,
+  expectRegistrationHistory,
   expectRegistrationReceiptFacts,
   expectTrackedTablesPage,
   expectChangeLogReference,

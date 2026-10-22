@@ -17,13 +17,17 @@ Written Ahead Of Its Code*).
 ## Core Rule
 
 The person is the framework's table `hilos_user`, with the columns `id`, `name`,
-`admin`, `block`, `last_activity`, `theme_pick`, `time_zone`. Its Entity declares
+`admin`, `block`, `last_activity`, `theme_pick`, `time_zone`,
+`last_browser_time_zone`. Its Entity declares
 `Entity::SET_STANDALONE` with `_setRoot = true` — a person belongs to
 nobody's set and is the root other tables hang their sets on — and the verdicts
-`FAKE_NAME` on `name` and `NULLIFY` on `time_zone`. The collection key `users`
-is mounted by `HilosDbContext`. The core `user` schema unit is selected
-independently of admin features. `time_zone` is nullable `VARCHAR(64)` with
-default `NULL`. In a catalog-initialized project, run `db:framework:pull` and apply its
+`FAKE_NAME` on `name` and `NULLIFY` on `time_zone` and `last_browser_time_zone`.
+The collection key `users` is mounted by `HilosDbContext`. The core `user` schema
+unit is selected independently of admin features. `time_zone` and
+`last_browser_time_zone` are nullable `VARCHAR(64)` with default `NULL`; the second
+is kept apart from the person's own choice and off every browser payload. The
+person's agent writes into it the last usable zone a browser of the person
+reported. In a catalog-initialized project, run `db:framework:pull` and apply its
 generated project migrations for the current `create_hilos_user.sql` form and
 subsequent changes; see the
 [migration canon](../orm/migrations.md#framework-tables-in-a-project-hil-1326).

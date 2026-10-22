@@ -40,6 +40,7 @@ use Hilos\Database\SqlParamCollection;
  * @property ?string $ipAddress
  * @property ?int $blockedUserId
  * @property bool $blockedSignedIn
+ * @property ?string $browserTimeZone IANA time zone the browser named on its last connection; null when it named none usable
  */
 class Session extends Object_
 {
@@ -65,6 +66,7 @@ class Session extends Object_
     public const string ipAddress = 'ipAddress';
     public const string blockedUserId = 'blockedUserId';
     public const string blockedSignedIn = 'blockedSignedIn';
+    public const string browserTimeZone = 'browserTimeZone';
 
     /**
      * Returns the value of a session object property by name.
@@ -73,7 +75,7 @@ class Session extends Object_
      *     lastSeenAt, expiresAt, pendingRegistrationIdentifier, pendingRegistrationSince, pendingAck,
      *     pendingSecondFactorUserId, pendingSecondFactorMode, pendingSecondFactorUntil,
      *     pendingSecondFactorAttempts, pendingSecondFactorAck, deviceName, ipAddress, blockedUserId,
-     *     blockedSignedIn)
+     *     blockedSignedIn, browserTimeZone)
      * @return mixed Property value or parent method result
      * @throws DatabaseException If entity access fails
      */
@@ -99,6 +101,7 @@ class Session extends Object_
             self::ipAddress => $this->entity->ip_address,
             self::blockedUserId => $this->entity->blocked_user_id,
             self::blockedSignedIn => $this->entity->blocked_signed_in,
+            self::browserTimeZone => $this->entity->browser_time_zone,
             default => parent::__get($property),
         };
     }
@@ -137,6 +140,7 @@ class Session extends Object_
             self::ipAddress => $this->entity->ip_address = is_scalar($value) ? (string)$value : null,
             self::blockedUserId => $this->entity->blocked_user_id = $value === null ? null : (int)$value,
             self::blockedSignedIn => $this->entity->blocked_signed_in = (bool)$value,
+            self::browserTimeZone => $this->entity->browser_time_zone = $value === null ? null : (string)$value,
             default => parent::__set($property, $value),
         };
     }
@@ -151,7 +155,8 @@ class Session extends Object_
      * second-factor step it waits on and the blocked account it lost (with how it lost it) are surfaced to the frontend
      * through the session state frame and the handshake response, not this row. `ipAddress` is kept off too and
      * reaches the browser by no other road: whether a screen shows the address a session came from is the redraw's
-     * decision (D-166).
+     * decision (D-166). `browserTimeZone` stays server-side as well: it serves work done for this session without a
+     * browser, and showing it on a session row is a later screen's decision (HIL-1586).
      *
      * @return array<string, mixed> Key => value array
      */

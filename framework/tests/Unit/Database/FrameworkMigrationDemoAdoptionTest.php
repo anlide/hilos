@@ -34,6 +34,11 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             'Demo\\BinanceBtcTracker\\Hilos', 'Demo\\EcommerceShop\\Hilos', 'Demo\\OnlineTesting\\Hilos',
         ], array_column($projects, 'facade'));
         $indices = [97, 53, 53, 43, 42, 42];
+        $browserTimeZoneIndices = [99, 59, 59, 45, 45, 45];
+        $browserTimeZones = [
+            'session' => '07a4fbd825b000f57571647973c8814230f60651773b8b19d4c8634b7dacf464',
+            'user' => '57ecdc04ffd0dc9bad816b7d3eb0bd3cbe48486ffe4490ae42c25ec8339255da',
+        ];
         $excluded = [
             [],
             ['notification_delivery', 'file', 'file_variant', 'user_photo'],
@@ -78,6 +83,16 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             self::assertCount(1, $change->parts);
             self::assertSame('20261021021039718057_HIL-1580_add_user_time_zone/user', $change->parts[0]->key());
             $origins[] = $change;
+            foreach (array_keys($browserTimeZones) as $offset => $unit) {
+                $base = $project->root . '/' . sprintf('%03d', $browserTimeZoneIndices[$index] + $offset)
+                    . '_framework_change_' . $browserTimeZones[$unit];
+                $change = $catalog->verifyPair(FsPath::read($base . '.sql'), FsPath::read($base . '_down.sql'));
+                self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+                self::assertSame([$unit], $change->units);
+                self::assertCount(1, $change->parts);
+                self::assertSame('20261022124515804554_HIL-1582_browser_time_zones/' . $unit, $change->parts[0]->key());
+                $origins[] = $change;
+            }
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $plans = new FrameworkMigrationInstaller()->plan(...$projects);

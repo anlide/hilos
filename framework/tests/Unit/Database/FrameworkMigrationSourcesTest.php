@@ -75,7 +75,11 @@ final class FrameworkMigrationSourcesTest extends TestCase
         $catalog->verifyCurrentStubs();
         $this->assertCount(42, $schema->allUnits());
         $this->assertSame(
-            ['20261021021039718057_HIL-1580_add_user_time_zone/user'],
+            [
+                '20261021021039718057_HIL-1580_add_user_time_zone/user',
+                '20261022124515804554_HIL-1582_browser_time_zones/session',
+                '20261022124515804554_HIL-1582_browser_time_zones/user',
+            ],
             array_map(
                 static fn (FrameworkMigrationPart $part): string => $part->key(),
                 $catalog->selectedParts(MigrationSourceCoreHilos::class),

@@ -140,6 +140,7 @@ use Hilos\Users\DTO\UserEmailChangeDoneSignalData;
 use Hilos\Users\DTO\UserEmailChangeSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkDoneSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
+use Hilos\Users\DTO\UserLastBrowserTimeZoneWriteSignalData;
 use Hilos\Users\DTO\UserNotificationChannelSetSignalData;
 use Hilos\Users\DTO\UserNotificationReadSignalData;
 use Hilos\Users\DTO\UserPasskeyUseDoneSignalData;
@@ -702,6 +703,15 @@ final class HilosSignalConstants
      * Carried by {@see UserTimeZoneWriteDoneSignalData}; resumes the coordinator's waiting action.
      */
     public const string HILOS_USER_TIME_ZONE_WRITE_DONE = 'hilos_user_time_zone_write_done';
+
+    /**
+     * Sessions library → the person at the keyboard's agent: remember the usable zone a browser named (HIL-1582).
+     *
+     * Sent on every connection and every sign-in that brings a usable zone, a repeat included: an
+     * earlier frame may not have arrived. Carried by {@see UserLastBrowserTimeZoneWriteSignalData}; a
+     * background write that nobody waits on, so no answer comes back.
+     */
+    public const string HILOS_USER_LAST_BROWSER_TIME_ZONE_WRITE = 'hilos_user_last_browser_time_zone_write';
 
     /**
      * The person's agent → sessions library: the block flag is written, or why not (HIL-1404).

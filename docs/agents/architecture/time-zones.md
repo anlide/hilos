@@ -170,20 +170,90 @@ in the admin table is a separate later change (HIL-1588).
 ## What The Browser Reports And The Person Keeps
 
 The browser reports its IANA zone on **every connection and reconnection**,
-including a guest's; the session stores it. An absent or invalid browser zone
-does not supply a usable zone to the fallback chain.
-(not in the code yet — HIL-1582)
+including a guest's, as the query parameter `browserTimeZone` of the socket
+address. [HilosConnection](../../../framework/frontend/core/src/connection/HilosConnection.ts)
+builds the address in `socketUrl()` and reads `readBrowserTimeZone()` again
+before every new socket, because the system zone may change while the page
+lives. The address carries exactly one `browserTimeZone`: a copy in the
+configured query is dropped, and a browser that cannot say leaves the parameter
+out. It is the browser's own zone, never the person's choice or the project's.
+The master adds no work for it; the parameter rides the handshake DTO's
+`queryParams` to the sessions library in a worker.
 
-For a signed-in person, also persist the **last time zone reported by that
-person's browser** on the person. This is separate from the session's zone.
-Offline text must not search surviving sessions for it: session cleanup or
+The [sessions library](../../../framework/backend/Auth/Library/AbstractSessionsLibraryAgent.php)
+writes it on every handshake, a guest's included, onto the session row
+`hilos_session.browser_time_zone` through
+[SessionActions::setBrowserTimeZone()](../../../framework/backend/Database/Actions/Item/SessionActions.php).
+[BrowserTimeZone](../../../framework/backend/Auth/Session/BrowserTimeZone.php)
+decides what is kept: a name is usable only as an exact member of
+`DateTimeZone::listIdentifiers(DateTimeZone::ALL_WITH_BC)`, so `UTC` and
+backward aliases are kept as the browser named them and never rewritten to a
+canonical name, while an empty or padded string, an unknown name, a numeric
+offset and an abbreviation are kept as none. An absent or unusable name never
+refuses the connection and does not supply a usable zone to the fallback chain;
+it clears only the session's column, and a repeat of the stored value writes
+nothing. A guest therefore writes the session and nothing else.
+
+For a signed-in person, also persist the **last usable time zone reported by
+that person's browser** on the person, in `hilos_user.last_browser_time_zone`.
+This is separate from the session's zone and from the person's own
+`time_zone`. The sessions library does not write the row: it sends the usable
+zone of the session to the agent of the person at the keyboard as
+`hilos_user_last_browser_time_zone_write`
+([UserLastBrowserTimeZoneWriteSignalData](../../../framework/backend/Users/DTO/UserLastBrowserTimeZoneWriteSignalData.php),
+`userId` and `lastBrowserTimeZone`), from one seam used at two moments: a
+signed-in browser connecting, and a browser that signs in or registers without
+reconnecting, whose session already holds the zone it named on its handshake. A
+guest and a browser that named no usable zone send nothing. The frame is sent
+every time, a repeat included, because an earlier one may not have arrived; one
+that cannot be queued goes to the library's log, without the zone, and the
+connection or the sign-in stands.
+
+[AbstractUserAgent](../../../framework/backend/Users/Agent/AbstractUserAgent.php)
+receives it on its indexed route and writes its own row through
+[UserActions::setLastBrowserTimeZone()](../../../framework/backend/Database/Actions/Item/UserActions.php).
+It is a background write that nobody waits on, so no answer frame comes back,
+and a refusal goes to the agent's log, without the zone. A zone equal to the
+stored one writes nothing and opens no receipt: the agent compares its own row
+before the change-log receipt, so the repeat of every reconnect leaves no
+journal row either. A change rides the receipt of the frame it came under, a
+sign-in's, and otherwise the agent's own receipt with the action
+`browser_time_zone_report`. The write does not touch `last_activity` and does
+not restate the person's sessions.
+
+The person's memory keeps the **last usable** zone. A report with no usable
+zone writes nothing there, and no action clears the column: only restore
+anonymization does. Offline text must not search surviving sessions for it, and
+none needs to: the person's row is the one place to read. Session cleanup or
 expiry must not lose the person's last browser zone (owner's decision,
-2026-10-17, HIL-1582:26745). (not in the code yet — HIL-1582)
+2026-10-17, HIL-1582:26745). Deleting or purging sessions touches no person's
+row, and a token rotation at sign-in moves the token and the person on the same
+session row and leaves `browser_time_zone` as it was.
+
+The zone describes the physical browser, so the person who gets it is the one
+at its keyboard. Under an administrator's impersonation that is the
+administrator
+([Session::userAtKeyboard()](../../../framework/backend/Database/Object/Item/Session.php)
+answers the impersonator, otherwise the signed-in person): the administrator's
+agent receives the report, and the impersonated account never does and does not
+change. Which zone a screen reads while an administrator acts as someone else
+is a separate decision that this mechanism does not make.
+
+Neither value reaches a browser. `Session::toArray()` and `User::toArray()` omit
+them, the handshake response does not carry them, and the readers of the zone
+on the screen use the browser's own `readBrowserTimeZone()`, not a server echo.
 
 Both the session's browser zone and the person's last browser zone are personal
-data. Hide them in admin view mode and erase them during restore anonymization.
-The implementation leaf owns the storage fields and the reporting channel;
-this document does not name them. (not in the code yet — HIL-1582)
+data. The [User Entity](../../../framework/backend/Database/Entity/Item/User.php)
+classifies `last_browser_time_zone` as personal with `NULLIFY`, and the
+[Session Entity](../../../framework/backend/Database/Entity/Item/Session.php)
+is `PURGE` as a whole, so restore anonymization erases both
+([backup-anonymization.md](backup-anonymization.md)). The journal of the person
+records that `last_browser_time_zone` changed without its value
+([change-log.md](change-log.md)). No admin table row shows either value and no
+browser payload carries it, so admin view mode has nothing of them to hide
+([admin-view-mode.md](admin-view-mode.md)); a visible row would be a separate
+later change that reads the same personal-field verdict.
 
 ## Server Text And Human-Readable Exports
 
@@ -307,6 +377,6 @@ This documentation leaf does not clear them on the strength of a plan.
 - The first day of the week and localized month names belong to HIL-1424.
 - Suggestions of a country's time zones remain undecided. A locale does not
   store a time zone; see [languages and countries](languages-and-countries.md).
-- Exact storage schemas, env keys, APIs and the channel that reports a browser
-  zone belong to their implementation leaves. This rule declares no new DB/RT
-  fields, signals, DTOs or routes; those changes still pass the contract gate.
+- Exact storage schemas, env keys and APIs belong to their implementation
+  leaves. This rule declares no new DB/RT fields, signals, DTOs or routes; those
+  changes still pass the contract gate.

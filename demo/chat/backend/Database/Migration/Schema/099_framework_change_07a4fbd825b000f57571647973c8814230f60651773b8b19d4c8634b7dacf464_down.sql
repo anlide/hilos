@@ -1,0 +1,2 @@
+-- hilos-framework: {"format":1,"kind":"change","units":["session"],"parts":[{"changeId":"20261022124515804554_HIL-1582_browser_time_zones","unit":"session","upSha256":"a4d49cd6df1b07709373e358c6187bd8f61abbfa8dd254cd5dec7e9fb6353e08","downSha256":"5463fc2cadbf87264a2b701cb3f3662086c3c474a99d56e9f4ccfab678d02932"}],"upSha256":"a4d49cd6df1b07709373e358c6187bd8f61abbfa8dd254cd5dec7e9fb6353e08","downSha256":"5463fc2cadbf87264a2b701cb3f3662086c3c474a99d56e9f4ccfab678d02932"}
+ALTER TABLE `hilos_session` DROP COLUMN `browser_time_zone`;

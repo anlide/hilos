@@ -38,6 +38,7 @@ use Hilos\HilosException;
  * @property-read ?string $ipAddress Network address of the last connection, or null when unknown or not kept
  * @property-read ?int $blockedUserId Blocked account this browser lost or was refused, or null when it holds no such card
  * @property-read bool $blockedSignedIn Whether that card threw a signed-in browser out (true) or refused a sign-in (false)
+ * @property-read ?string $browserTimeZone IANA time zone the browser named on its last connection, or null when it named none usable
  * @property-read SessionActions $actions Actions for write operations on this session
  */
 class Session extends DbItem
@@ -73,6 +74,7 @@ class Session extends DbItem
             ObjectSession::ipAddress => $this->_object->ipAddress,
             ObjectSession::blockedUserId => $this->_object->blockedUserId,
             ObjectSession::blockedSignedIn => $this->_object->blockedSignedIn,
+            ObjectSession::browserTimeZone => $this->_object->browserTimeZone,
             default => parent::__get($name),
         };
     }

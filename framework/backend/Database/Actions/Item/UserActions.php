@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\Actions\Item;
 
 use DateTimeZone;
+use Hilos\Auth\Session\BrowserTimeZone;
 use Hilos\Database\Object\Item\User as ObjectUser;
 use Hilos\Database\View\Item\User;
 use Hilos\Core\Exception\EmptyValueException;
@@ -169,6 +170,33 @@ class UserActions extends DbActions
         }
 
         $this->object->timeZone = $timeZone;
+        $this->object->sync();
+    }
+
+    /**
+     * Remembers the last usable IANA time zone a browser of this person named, without changing activity time (HIL-1582).
+     *
+     * Clearing is not a request this method takes: the memory leaves the row only by anonymization.
+     *
+     * @param string $lastBrowserTimeZone Exact IANA identifier including backward aliases
+     * @throws ItemNotFoundForUpdateException When the user has no persisted id
+     * @throws ValidationException When the name is not an identifier of the IANA catalog
+     * @throws HilosException On database or truth-source failure
+     */
+    public function setLastBrowserTimeZone(string $lastBrowserTimeZone): void
+    {
+        $this->ensureCanWrite();
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('User not found for setLastBrowserTimeZone (id is null)');
+        }
+        if (!BrowserTimeZone::isValid($lastBrowserTimeZone)) {
+            throw new ValidationException('The browser time zone is not a valid IANA time zone.');
+        }
+        if ($this->object->lastBrowserTimeZone === $lastBrowserTimeZone) {
+            return;
+        }
+
+        $this->object->lastBrowserTimeZone = $lastBrowserTimeZone;
         $this->object->sync();
     }
 

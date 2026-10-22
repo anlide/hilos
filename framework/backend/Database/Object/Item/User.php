@@ -23,6 +23,7 @@ use Hilos\Database\Object\Collection\Users as ObjectUsers;
  * @property ?string $themePick
  * @property bool $themePickInitialized
  * @property ?string $timeZone Exact IANA time zone; null for Automatic
+ * @property ?string $lastBrowserTimeZone Last usable IANA time zone a browser of this person named; null when none has
  */
 class User extends Object_
 {
@@ -37,6 +38,7 @@ class User extends Object_
     public const string themePick = 'themePick';
     public const string themePickInitialized = 'themePickInitialized';
     public const string timeZone = 'timeZone';
+    public const string lastBrowserTimeZone = 'lastBrowserTimeZone';
 
     /**
      * Returns the value of a user object property by name.
@@ -56,6 +58,7 @@ class User extends Object_
             self::themePick => $this->entity->theme_pick,
             self::themePickInitialized => $this->entity->theme_pick_initialized,
             self::timeZone => $this->entity->time_zone,
+            self::lastBrowserTimeZone => $this->entity->last_browser_time_zone,
             default => parent::__get($property),
         };
     }
@@ -77,12 +80,16 @@ class User extends Object_
             self::themePick => $this->entity->theme_pick = $value === null ? null : (string)$value,
             self::themePickInitialized => $this->entity->theme_pick_initialized = (bool)$value,
             self::timeZone => $this->entity->time_zone = $value === null ? null : (string)$value,
+            self::lastBrowserTimeZone => $this->entity->last_browser_time_zone = $value === null ? null : (string)$value,
             default => parent::__set($property, $value),
         };
     }
 
     /**
-     * Converts the user object to an associative array with all fields.
+     * Converts the user object to an associative array with its browser-facing fields.
+     *
+     * `lastBrowserTimeZone` is intentionally excluded: it is read server-side through {@see __get} for work done
+     * for the person without a browser, and no browser payload carries it (HIL-1582).
      *
      * @return array<string, mixed> Key => value array
      */

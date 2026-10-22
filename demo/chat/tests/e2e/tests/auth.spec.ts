@@ -1,13 +1,18 @@
 import { test, expect, type Page } from '@playwright/test'
 
 import {
+  armSocketDrop,
+  dropSocket,
+  expectWelcomedSockets,
   watchHeight,
+  watchOpenedSockets,
   watchTop,
   watchTopWithin,
+  type OpenedSocket,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdmin, signUpAdmin } from '../helpers/adminGrant'
 import { readRegisterCode } from '../helpers/mail'
-import { expectPageRefused, gotoPage } from '../helpers/page'
+import { expectPageRefused, gotoPage, PAGE_READY } from '../helpers/page'
 import {
   clickSubmit,
   enterIdentifierAndPassword,
@@ -35,7 +40,9 @@ import {
 //   - wrong password handling inline and unknown address leading to registration;
 //   - button position stability across steps;
 //   - password screen stability when magic link is toggled by an administrator;
-//   - re-deciding open admin and profile pages on logout in place.
+//   - re-deciding open admin and profile pages on logout in place;
+//   - the browser's own time zone named on every socket, a guest's and a
+//     signed-in person's alike (HIL-1582).
 
 test('registers and signs back in through the gated profile surface, resuming it in place', async ({
   page,
@@ -84,6 +91,86 @@ test('registers and signs back in through the gated profile surface, resuming it
   await expect(page.getByTestId('auth-surface')).toHaveCount(0)
   expect(new URL(page.url()).pathname).toBe('/profile')
   expect(fullLoads).toBe(0)
+})
+
+/** The socket query parameter the core names the browser's own zone in. */
+const BROWSER_TIME_ZONE_PARAM = 'browserTimeZone'
+
+/**
+ * A zone neither the stand's runner nor the chat project runs in, so a socket
+ * naming it can only have read it from the browser.
+ */
+const BROWSER_TIME_ZONE = 'Pacific/Auckland'
+
+/**
+ * Every value the socket's address gives the zone parameter, decoded: one entry
+ * when the client named the zone once, none when it named none.
+ *
+ * @param socket A socket the page opened.
+ */
+function namedZones(socket: OpenedSocket): string[] {
+  return socket.url.searchParams.getAll(BROWSER_TIME_ZONE_PARAM)
+}
+
+test.describe('in a browser that runs in its own time zone', () => {
+  test.use({ timezoneId: BROWSER_TIME_ZONE })
+
+  test('names the zone once on every socket, for a guest and for a signed-in person', async ({
+    page,
+  }) => {
+    // Only the transport is proved here: the zone rides the address of each
+    // socket and the server welcomes that socket. What the server keeps of it is
+    // the integration test's (BrowserTimeZoneSessionIntegrationTest).
+    await armSocketDrop(page)
+    const sockets = watchOpenedSockets(page)
+
+    // A guest's first socket: the gated profile is refused and the sign-in
+    // surface mounts over a socket the server welcomed.
+    await gotoPage(page, '/profile')
+    await expect(page.getByTestId('auth-surface')).toBeVisible()
+    await expectWelcomedSockets(expect, sockets, 1)
+    expect(sockets.map(namedZones)).toEqual([[BROWSER_TIME_ZONE]])
+
+    // The same connection, reconnecting after a drop, reads the zone again and
+    // names it once, not on top of the copy the previous socket carried.
+    await dropSocket(page)
+    await expectWelcomedSockets(expect, sockets, 2)
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
+    expect(sockets.map(namedZones)).toEqual([
+      [BROWSER_TIME_ZONE],
+      [BROWSER_TIME_ZONE],
+    ])
+
+    // Registering signs the session in place, with no document reload. The
+    // sign-in rotates the session, and the socket the client opens to collect
+    // the new cookie names the zone as well.
+    let fullLoads = 0
+    page.on('load', () => {
+      fullLoads += 1
+    })
+    await register(page, uniqueEmail())
+    await expect(page.getByTestId('profile-name')).toBeVisible()
+    await expect(page.getByTestId('auth-surface')).toHaveCount(0)
+    expect(fullLoads).toBe(0)
+    await expectWelcomedSockets(expect, sockets, 3)
+    expect(sockets.map(namedZones)).toEqual([
+      [BROWSER_TIME_ZONE],
+      [BROWSER_TIME_ZONE],
+      [BROWSER_TIME_ZONE],
+    ])
+
+    // Opened anew, the page comes back signed in over a socket that names the
+    // zone: the parameter costs the person nothing of their session.
+    await gotoPage(page, '/profile', PAGE_READY)
+    await expect(page.getByTestId('profile-name')).toBeVisible()
+    await expectWelcomedSockets(expect, sockets, 4)
+    expect(sockets.map(namedZones)).toEqual([
+      [BROWSER_TIME_ZONE],
+      [BROWSER_TIME_ZONE],
+      [BROWSER_TIME_ZONE],
+      [BROWSER_TIME_ZONE],
+    ])
+  })
 })
 
 test('answers a wrong password inline, and an unknown address with the registration path', async ({

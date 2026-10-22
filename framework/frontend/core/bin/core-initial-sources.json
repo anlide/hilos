@@ -132,8 +132,8 @@
     "outputSha256": "313d1d2bbdf02baf35df06dba3c58af3e5cf323e1892b4f383927394f61d367e"
   },
   "src/connection/HilosConnection.ts": {
-    "sourceSha256": "89cffda731c21709285d0217d8291cd03c6964ef42af212ba6754149d62bffce",
-    "outputSha256": "4be5d19c9b3d3e8676007291d05029e8ec21b1d7dc8c934f51a736c0e70ec0ef"
+    "sourceSha256": "dc646dea4160bf0e9d4e9f82b14db547c9be878cc85f1a54009e8288282721f7",
+    "outputSha256": "1290771989dba3a003878e4b4eb39bc7ee36c0c25bfefd125afacd444c3df4a5"
   },
   "src/connection/actionLifecycle.ts": {
     "sourceSha256": "6d2414fec68e787d62f43a778fd8ddf1f314d99134a9f2e1c5e32c900597d045",

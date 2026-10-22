@@ -57,6 +57,7 @@ use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRevokeDoneSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRevokeSignalData;
+use Hilos\Users\DTO\UserLastBrowserTimeZoneWriteSignalData;
 use Hilos\Users\DTO\UserStepUpCreditDoneSignalData;
 use Hilos\Users\DTO\UserStepUpCreditSignalData;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
@@ -71,6 +72,7 @@ use Hilos\Auth\SecondFactor\SecondFactorPendingMode;
 use Hilos\Auth\SecondFactor\SecondFactorPolicy;
 use Hilos\Auth\SecondFactor\SecondFactorSettings;
 use Hilos\Auth\SecurityNotice\SecurityNotifier;
+use Hilos\Auth\Session\BrowserTimeZone;
 use Hilos\Auth\Session\DTO\AccountBlockChangedSignalData;
 use Hilos\Auth\Session\DTO\BrowserEraseActionDTO;
 use Hilos\Auth\Session\DTO\DeferredSessionCarryoverHandoverSignalData;
@@ -1324,6 +1326,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * If expiry, block or a dead cookie moves the session onto a new token (HIL-1126),
      * this same handshake frame carries the ticket and the browser reconnects on its new cookie.
      *
+     * The browser names its time zone on the socket address (HIL-1582). Every connection writes
+     * onto the session what it named - a guest's too, and a name that is not a usable zone as none -
+     * and a signed-in browser hands it to the person at the keyboard ({@see self::reportBrowserTimeZone()}).
+     *
      * @param WebSocketHandshakeSignalDTO $data Accept key and the daemon-resolved session token
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
@@ -1354,6 +1360,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $session->actions->setDeviceName($deviceName);
         }
         $this->keepConnectionAddress($session, $data->clientIp);
+        $session->actions->setBrowserTimeZone(
+            BrowserTimeZone::normalize($data->queryParams->getString(BrowserTimeZone::QUERY_PARAM)),
+        );
+        $this->reportBrowserTimeZone($session);
         $this->parkPendingAuthStep($data->acceptKey, $session);
 
         $pendingAuthStep = $this->pendingAuthStepFor($session);
@@ -2538,6 +2548,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * and the row behind it answers every tab this frame does not name.
      *
      * The access log gets its sign-in row here, once the session holds the person ({@see logSignIn()}).
+     * The zone the browser named on its handshake goes to the person at the keyboard here too
+     * (HIL-1582, {@see reportBrowserTimeZone()}), so a sign-in without a reconnect fills the memory.
      *
      * The person is told of the sign-in here too, once the writes commit (HIL-294,
      * {@see announceSignIn()}), and not in the access log, which the privacy text can switch
@@ -2591,6 +2603,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
         $liveToken = $rotated ?? $sessionToken;
         $this->logSignIn($session, $userId);
+        $this->reportBrowserTimeZone($session);
 
         // This session belongs to somebody now, so whatever registration it left
         // half-finished is over - by having just completed, or by having been abandoned
@@ -2749,6 +2762,39 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 $this->logAgentError("Sign-in notice for #{$userId} failed: {$e->getMessage()}");
             }
         });
+    }
+
+    /**
+     * Hands the usable zone a session's browser named to the agent of the person at its keyboard (HIL-1582).
+     *
+     * The one seam of both moments the person gets it: a signed-in browser connecting
+     * ({@see onSignalHandshake()}), and a browser signed in without reconnecting
+     * ({@see authenticateSession()}). Sent every time, a repeat included - an earlier frame may not
+     * have arrived - and the person's agent writes nothing for a zone it already holds. The zone is
+     * the browser's, so it goes to the person at the keyboard: an administrator taking over somebody
+     * else's account keeps it, and the target never gets it. A guest and a browser that named no
+     * usable zone send nothing. A frame that cannot be queued is written to this agent's log, without
+     * the zone; the connection or the sign-in stands. The person's row is the person's agent's to
+     * write, never this library's.
+     *
+     * @param Session $session Session whose browser zone and person at the keyboard are read
+     */
+    private function reportBrowserTimeZone(Session $session): void
+    {
+        $atKeyboard = $session->userAtKeyboard();
+        $browserTimeZone = $session->browserTimeZone;
+        if ($atKeyboard === null || $browserTimeZone === null) {
+            return;
+        }
+
+        try {
+            $this->sendToAgent(
+                HilosSignalConstants::HILOS_USER_LAST_BROWSER_TIME_ZONE_WRITE,
+                new UserLastBrowserTimeZoneWriteSignalData($atKeyboard, $browserTimeZone),
+            );
+        } catch (HilosException $e) {
+            $this->logAgentError("Browser time zone report for #{$atKeyboard} failed: {$e->getMessage()}");
+        }
     }
 
     /**

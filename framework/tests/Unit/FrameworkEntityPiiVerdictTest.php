@@ -103,4 +103,10 @@ final class FrameworkEntityPiiVerdictTest extends TestCase
         $this->assertSame(AnonymizationStrategy::NULLIFY, User::_pii[User::time_zone]);
         $this->assertNotContains(User::time_zone, User::_piiNotPersonal);
     }
+
+    public function testUserLastBrowserTimeZoneIsPersonalAndNullified(): void
+    {
+        $this->assertSame(AnonymizationStrategy::NULLIFY, User::_pii[User::last_browser_time_zone]);
+        $this->assertNotContains(User::last_browser_time_zone, User::_piiNotPersonal);
+    }
 }

@@ -230,6 +230,7 @@ describe('table presentation dispatch', () => {
 
 function createConnection(
   overrides: {
+    url?: string
     expectedBuild?: string
     projectSchemas?: ProjectSignalSchemas
   } = {},
@@ -245,13 +246,37 @@ function createConnection(
   return { connection, states }
 }
 
+const intl = Object.getOwnPropertyDescriptor(globalThis, 'Intl')
+// Taken before any fake clock: the fake timers stand an Intl of their own in,
+// and its formatters still answer from the engine's own prototype.
+const engineDateTimeFormat = Intl.DateTimeFormat
+const resolved = new engineDateTimeFormat().resolvedOptions()
+
+/**
+ * Make the engine report `timeZone` as this browser's zone, whatever zone the
+ * machine running the suite is in.
+ *
+ * @param timeZone The zone the next reads report.
+ */
+function reportZone(timeZone: unknown): void {
+  vi.spyOn(engineDateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+    ...resolved,
+    timeZone: timeZone as string,
+  })
+}
+
 beforeEach(() => {
   vi.useFakeTimers()
   MockWebSocket.instances = []
+  reportZone('Europe/Warsaw')
 })
 
 afterEach(() => {
   vi.useRealTimers()
+  vi.restoreAllMocks()
+  if (intl !== undefined) {
+    Object.defineProperty(globalThis, 'Intl', intl)
+  }
 })
 
 describe('connection machine', () => {
@@ -284,7 +309,9 @@ describe('connection machine', () => {
 
     connection.connect()
     expect(connection.state).toBe('connecting')
-    expect(MockWebSocket.last.url).toBe('ws://test/ws')
+    expect(MockWebSocket.last.url).toBe(
+      'ws://test/ws?browserTimeZone=Europe%2FWarsaw',
+    )
 
     MockWebSocket.last.open()
     expect(connection.state).toBe('connected')
@@ -449,6 +476,125 @@ describe('connection machine', () => {
     connection.connect()
     expect(connection.state).toBe('connecting')
     expect(MockWebSocket.instances).toHaveLength(2)
+  })
+})
+
+describe('browser time zone on the socket url', () => {
+  it('adds the zone after the configured query of an absolute url', () => {
+    const { connection } = createConnection({
+      url: 'wss://test.example:8443/ws?room=7&debug&note=a%20b',
+    })
+    connection.connect()
+
+    expect(MockWebSocket.last.url).toBe(
+      'wss://test.example:8443/ws?room=7&debug&note=a%20b&browserTimeZone=Europe%2FWarsaw',
+    )
+  })
+
+  it('adds the zone to a relative url', () => {
+    const { connection } = createConnection({ url: '/ws' })
+    connection.connect()
+
+    expect(MockWebSocket.last.url).toBe('/ws?browserTimeZone=Europe%2FWarsaw')
+  })
+
+  it('replaces every copy of the reserved parameter standing in the configured url', () => {
+    const { connection } = createConnection({
+      url: '/ws?browserTimeZone=Mars%2FStale&room=7&browser%54imeZone=Asia%2FTokyo',
+    })
+    connection.connect()
+
+    expect(MockWebSocket.last.url).toBe(
+      '/ws?room=7&browserTimeZone=Europe%2FWarsaw',
+    )
+  })
+
+  it('carries the zone beside a presented pass', () => {
+    const { connection } = createConnection({ url: '/ws?room=7' })
+    connection.connect()
+    MockWebSocket.last.open()
+
+    connection.presentProtectedModePass('the key')
+
+    expect(MockWebSocket.last.url).toBe(
+      '/ws?room=7&browserTimeZone=Europe%2FWarsaw&hilosPass=the%20key',
+    )
+  })
+
+  it('reads the zone again for the socket a reconnect opens', () => {
+    const { connection } = createConnection({
+      url: '/ws?browserTimeZone=Mars%2FStale',
+    })
+    connection.connect()
+    MockWebSocket.last.open()
+
+    reportZone('Asia/Tokyo')
+    MockWebSocket.last.drop()
+    vi.advanceTimersByTime(1000)
+
+    expect(MockWebSocket.instances).toHaveLength(2)
+    expect(MockWebSocket.last.url).toBe('/ws?browserTimeZone=Asia%2FTokyo')
+  })
+
+  it.each([
+    ['an unusable name', () => reportZone('+02:00')],
+    [
+      'a throwing resolver',
+      () =>
+        vi
+          .spyOn(engineDateTimeFormat.prototype, 'resolvedOptions')
+          .mockImplementation(() => {
+            throw new RangeError('refused')
+          }),
+    ],
+    [
+      'no Intl at all',
+      () =>
+        Object.defineProperty(globalThis, 'Intl', {
+          configurable: true,
+          value: undefined,
+        }),
+    ],
+  ])(
+    'leaves the parameter out and still connects on %s',
+    (_label, silenceBrowser) => {
+      const { connection, states } = createConnection({
+        url: '/ws?room=7&browserTimeZone=Mars%2FStale',
+      })
+      silenceBrowser()
+      connection.connect()
+      MockWebSocket.last.open()
+
+      expect(MockWebSocket.last.url).toBe('/ws?room=7')
+      expect(states).toEqual(['connecting', 'connected'])
+    },
+  )
+
+  it("names neither the project's zone nor the person's own when the browser cannot say", () => {
+    const { connection } = createConnection({
+      projectSchemas: { handshake_response: z.looseObject({}) },
+    })
+    connection.connect()
+    MockWebSocket.last.open()
+    MockWebSocket.last.message(
+      JSON.stringify({
+        type: 'handshake',
+        data: { build: 'build-a', projectTimeZone: 'America/New_York' },
+      }),
+    )
+    MockWebSocket.last.message(
+      JSON.stringify({
+        type: 'handshake_response',
+        data: { entities: { currentUser: { id: 1, timeZone: 'Asia/Tokyo' } } },
+      }),
+    )
+    expect(connection.projectTimeZone).toBe('America/New_York')
+
+    reportZone(undefined)
+    MockWebSocket.last.drop()
+    vi.advanceTimersByTime(1000)
+
+    expect(MockWebSocket.last.url).toBe('ws://test/ws')
   })
 })
 

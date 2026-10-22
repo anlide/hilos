@@ -396,6 +396,17 @@ final class FrameworkMigrationStartupGuardTest extends TestCase
             $part->downSql,
             [$part],
         ));
+        foreach (['session' => '005', 'user' => '006'] as $unit => $number) {
+            $part = new FrameworkMigrationCatalog()->part('20261022124515804554_HIL-1582_browser_time_zones', $unit);
+            $this->writePair($number . '_' . $unit . '_browser_time_zone.sql', $this->pair(
+                $unit . '_browser_time_zone',
+                FrameworkMigrationOrigin::CHANGE,
+                [$unit],
+                $part->upSql,
+                $part->downSql,
+                [$part],
+            ));
+        }
         $persistenceCalled = false;
         EntrypointPrelude::run(StartupCoreHilos::class, $this->root, static function () use (&$persistenceCalled): void {
             $persistenceCalled = true;

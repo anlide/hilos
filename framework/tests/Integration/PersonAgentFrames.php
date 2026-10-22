@@ -33,6 +33,7 @@ use Hilos\Users\DTO\UserPushRemoveSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Users\DTO\UserEmailChangeSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
+use Hilos\Users\DTO\UserLastBrowserTimeZoneWriteSignalData;
 use Hilos\Users\DTO\UserPasskeyUseSignalData;
 use Hilos\Users\DTO\UserPasswordChangeSignalData;
 use Hilos\Users\DTO\UserPasswordRehashSignalData;
@@ -129,6 +130,7 @@ trait PersonAgentFrames
             $ask instanceof UserBlockWriteSignalData,
             $ask instanceof UserThemePickWriteSignalData,
             $ask instanceof UserTimeZoneWriteSignalData,
+            $ask instanceof UserLastBrowserTimeZoneWriteSignalData,
             $ask instanceof UserPasswordRehashSignalData,
             $ask instanceof UserAddressVerifySignalData,
             $ask instanceof UserPasskeyUseSignalData,

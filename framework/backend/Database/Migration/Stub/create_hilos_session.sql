@@ -89,6 +89,13 @@
 -- default 0 treats a card raised before this column as refused at sign-in - the safe
 -- side. No index: it is read off the row already in hand. Purged with the table, so it
 -- needs no anonymization strategy of its own either.
+--
+-- `browser_time_zone` (HIL-1582) is the IANA time zone this session's browser named on its
+-- last connection, a guest's browser too, kept for work done for the session without a
+-- browser. It is the browser's physical zone, not the person's own choice
+-- (`hilos_user.time_zone`); a missing or unusable report clears it. No index: it is read
+-- off the row already in hand. Purged with the table, so it needs no anonymization
+-- strategy of its own.
 
 CREATE TABLE `hilos_session` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -110,6 +117,7 @@ CREATE TABLE `hilos_session` (
     `ip_address` VARCHAR(45) DEFAULT NULL,
     `blocked_user_id` INT UNSIGNED DEFAULT NULL,
     `blocked_signed_in` TINYINT(1) NOT NULL DEFAULT 0,
+    `browser_time_zone` VARCHAR(64) NULL DEFAULT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_session_token` (`token`),
     KEY `idx_session_user` (`user_id`),

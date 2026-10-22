@@ -1,4 +1,4 @@
--- valid from migration #98
+-- valid from migration #100
 CREATE TRIGGER `hilos_cl_hilos_user_after_delete` AFTER DELETE ON `hilos_user`
 FOR EACH ROW BEGIN
     DECLARE v_created_at DATETIME(6);
@@ -42,6 +42,11 @@ FOR EACH ROW BEGIN
         VALUES (v_created_at, v_log_id, v_field_id, 'inline', 1, 0, CAST(OLD.`theme_pick_initialized` AS CHAR), NULL);
     INSERT IGNORE INTO {{change_log_database}}.`hilos_change_log_field` (`table_id`, `name`) VALUES (v_table_id, 'time_zone');
     SELECT `id` INTO v_field_id FROM {{change_log_database}}.`hilos_change_log_field` WHERE `table_id` = v_table_id AND `name` = 'time_zone';
+    INSERT INTO {{change_log_database}}.`hilos_change_log_change`
+        (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`)
+        VALUES (v_created_at, v_log_id, v_field_id, 'fact', 1, 0, NULL, NULL);
+    INSERT IGNORE INTO {{change_log_database}}.`hilos_change_log_field` (`table_id`, `name`) VALUES (v_table_id, 'last_browser_time_zone');
+    SELECT `id` INTO v_field_id FROM {{change_log_database}}.`hilos_change_log_field` WHERE `table_id` = v_table_id AND `name` = 'last_browser_time_zone';
     INSERT INTO {{change_log_database}}.`hilos_change_log_change`
         (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`)
         VALUES (v_created_at, v_log_id, v_field_id, 'fact', 1, 0, NULL, NULL);

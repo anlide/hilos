@@ -11,6 +11,7 @@ import type {
 } from '../core/bin/initial-bundle-budget.mjs'
 import {
   createSocketFrameReader,
+  isApplicationSocket,
   watchSocketFrames,
   type SocketFrame,
 } from './socket.js'
@@ -450,7 +451,7 @@ export async function holdPageReply(page: Page, pageKey: string) {
   const buffered: { client: WebSocketRoute; message: string | Buffer }[] = []
   const replies: PageReply[] = []
   let sockets = 0
-  await page.routeWebSocket('**/ws', (client) => {
+  await page.routeWebSocket(isApplicationSocket, (client) => {
     const server = client.connectToServer()
     const read = createSocketFrameReader(++sockets)
     let holding = false

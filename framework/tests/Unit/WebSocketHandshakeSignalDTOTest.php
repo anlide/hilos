@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Auth\Session\BrowserTimeZone;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
@@ -28,6 +29,33 @@ final class WebSocketHandshakeSignalDTOTest extends TestCase
 
         $this->assertSame('abc', $restored->queryParams->requireString('token'));
         $this->assertSame(['token' => 'abc'], $restored->toArray()[WebSocketHandshakeSignalDTO::QUERY_PARAMS]);
+    }
+
+    public function testBrowserTimeZoneRidesTheQueryParamsWithoutChangingTheShape(): void
+    {
+        // The browser names its zone on the socket address (HIL-1582); the handshake carries it as one more query param.
+        $original = new WebSocketHandshakeSignalDTO(
+            headers: [],
+            acceptKey: 'unit-ak',
+            cookies: [],
+            clientIp: '127.0.0.1',
+            queryParams: RequestQueryParams::fromPath('/ws?browserTimeZone=Europe%2FWarsaw'),
+        );
+
+        $array = $original->toArray();
+        $restored = WebSocketHandshakeSignalDTO::fromArray($array);
+
+        $this->assertSame([
+            WebSocketHandshakeSignalDTO::HEADERS,
+            WebSocketHandshakeSignalDTO::ACCEPT_KEY,
+            WebSocketHandshakeSignalDTO::COOKIES,
+            WebSocketHandshakeSignalDTO::CLIENT_IP,
+            WebSocketHandshakeSignalDTO::QUERY_PARAMS,
+            WebSocketHandshakeSignalDTO::SESSION_TOKEN,
+        ], array_keys($array));
+        $this->assertSame([BrowserTimeZone::QUERY_PARAM => 'Europe/Warsaw'], $array[WebSocketHandshakeSignalDTO::QUERY_PARAMS]);
+        $this->assertSame('Europe/Warsaw', $restored->queryParams->getString(BrowserTimeZone::QUERY_PARAM));
+        $this->assertSame($array, $restored->toArray());
     }
 
     public function testPayloadWithoutClientIpReadsBackAsAbsent(): void
