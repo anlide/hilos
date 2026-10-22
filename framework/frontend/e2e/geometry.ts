@@ -327,6 +327,14 @@ interface TableFrame {
   readonly time: number
   readonly bounds: TableBounds | null
   readonly error?: string
+  readonly environment?: {
+    readonly viewport: readonly number[]
+    readonly rootWidth: number
+    readonly tableLayout: string | undefined
+    readonly tableWidth: string | undefined
+    readonly declaredWidth: string | undefined
+    readonly columns: readonly string[]
+  }
 }
 
 interface BrowserGeometryWatch {
@@ -451,13 +459,28 @@ export async function watchTableGeometry(
     }
     function sample() {
       if (stopped) return
+      const table = root.querySelector('table')
+      const style = table ? getComputedStyle(table) : null
+      const environment = {
+        viewport: [window.innerWidth, window.innerHeight],
+        rootWidth: root.getBoundingClientRect().width / root.currentCSSZoom,
+        tableLayout: style?.tableLayout,
+        tableWidth: style?.width,
+        declaredWidth: table?.style.getPropertyValue('--hilos-table-width-px'),
+        columns: table
+          ? [...table.querySelectorAll('col')].map((column) =>
+              column.style.getPropertyValue('--hilos-table-track-px'),
+            )
+          : [],
+      }
       try {
-        frames.push({ time: performance.now(), bounds: read() })
+        frames.push({ time: performance.now(), bounds: read(), environment })
       } catch (error) {
         frames.push({
           time: performance.now(),
           bounds: null,
           error: String(error),
+          environment,
         })
       }
     }
@@ -899,6 +922,22 @@ export async function watchTableFirstLive(
       }
       for (const root of document.querySelectorAll('[data-v-app]'))
         visit((root as Element & { _vnode?: VNode })._vnode)
+      // React's committed host fiber links upward to the public table props.
+      // Read its controller identity only; no SDK registry or test hook is needed.
+      interface Fiber {
+        readonly memoizedProps?: { controller?: object }
+        readonly return?: Fiber
+      }
+      const key = Object.keys(table).find((key) =>
+        key.startsWith('__reactFiber$'),
+      )
+      let fiber = key
+        ? (table as unknown as Record<string, Fiber>)[key]
+        : undefined
+      while (!found && fiber) {
+        found = fiber.memoizedProps?.controller ?? null
+        fiber = fiber.return
+      }
       return found
     }
     const controller = currentController()

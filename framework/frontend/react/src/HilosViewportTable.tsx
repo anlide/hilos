@@ -2,7 +2,7 @@
 // TableViewportController. Search, sort, and paging change the viewport
 // descriptor and are sent to the backend (NO local filtering); live changes
 // arrive as pending and are resolved with the Apply button. A removed row renders
-// as a placeholder in its slot while the set still has rows elsewhere. It holds
+// as a placeholder in its slot until a replacement window arrives. It holds
 // NO table logic (multiframework-core.md): the controller owns the descriptor,
 // pending, and Apply. Body cells come from the page — one renderer per declared
 // column (`cells`) — plus one framework-owned cell at the end of the row carrying
@@ -25,8 +25,8 @@
 // of the four worded states drawn by HilosTableEmptyState — the page's own "nothing
 // here yet", the framework's "Nothing found", and "List unavailable" (mockups/components/table section
 // 10). Bootstrap classes only.
-import { Fragment, useContext, useId } from 'react'
-import type { ReactNode } from 'react'
+import { Fragment, useContext, useId, useLayoutEffect, useRef } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import {
   TABLE_DETAIL_COPY,
   TABLE_STALENESS_COPY,
@@ -56,6 +56,7 @@ import { HilosTableProgress } from './HilosTableProgress.js'
 import { HilosPageHeadingIdContext } from './hilosPageHeadingContext.js'
 import { HilosTableSelectionEdgeContext } from './hilosTableSelectionEdge.js'
 import { useSignal } from './useSignal.js'
+import { useTableViewportGeometry } from './useTableViewportGeometry.js'
 
 /** Props for {@link HilosViewportTable}. */
 export interface HilosViewportTableProps<R> {
@@ -128,7 +129,6 @@ export function HilosViewportTable<R>({
 }: HilosViewportTableProps<R>) {
   const rows = useSignal(controller.rows)
   const order = useSignal(controller.order)
-  const pendingCount = useSignal(controller.pendingCount)
   // Which state the body is in — rows, the skeleton, or one of the four worded
   // states. The core decides it (tableFrame.ts, HilosTableBody) so that the three
   // view layers cannot decide it three ways, and both branches below read this one
@@ -175,20 +175,9 @@ export function HilosViewportTable<R>({
   // has no arithmetic of its own about it; like the declaration it follows from, it
   // changes with the resolved columns.
   const card = useSignal(controller.frame.card)
-  // The row-state cell stands while anything waits OR while a shown row's values are
-  // behind OR while the table declared a field to expand into: it carries all three,
-  // and a table with no pending change still needs it the moment a source goes quiet
-  // or a reader is given something to open. Header cell and body cell read this ONE
-  // condition, so the two cannot drift apart into a row wider than its header.
-  const markColumn =
-    pendingCount > 0 || staleSources.size > 0 || detailFields.length > 0
-  // Every cell that spans the whole row — the placeholder of a removed row, the panel
-  // a row expands into, the skeleton and the worded states — counts the columns left
-  // standing in the row plus the mark column while it stands plus the checkbox column
-  // while the table has marks. This is the ONE place the width is worked out, and
-  // everything that spans a row reads it rather than counting again.
-  const bodyColspan =
-    rowColumns.length + (markColumn ? 1 : 0) + (selectionEnabled ? 1 : 0)
+  // State always has its own track, including before the first mark arrives.
+  // Every full-row cell counts this same permanent room and optional selection.
+  const bodyColspan = rowColumns.length + 1 + (selectionEnabled ? 1 : 0)
   const titleId = useId()
   // The base every expanded row's panel takes its id from — minted the same way the
   // title above is, and for the same reason: the control that points at a panel and
@@ -210,11 +199,34 @@ export function HilosViewportTable<R>({
   // take.
   const pageHeadingId = useContext(HilosPageHeadingIdContext)
   const nameId = declaration.title ? titleId : pageHeadingId
+  const root = useRef<HTMLDivElement>(null)
+  const table = useRef<HTMLTableElement>(null)
+  const columnKeys = [
+    ...rowColumns.map((column) => `column:${column.key}`),
+    'state',
+  ]
+  if (selectionEnabled) {
+    if (selectionEdge === 'start') columnKeys.unshift('selection')
+    else columnKeys.push('selection')
+  }
+  const geometry = useTableViewportGeometry(
+    controller.geometry,
+    root,
+    table,
+    columnKeys,
+  )
+  const previousColumns = useRef(frameColumns)
+  useLayoutEffect(() => {
+    if (previousColumns.current !== frameColumns) {
+      previousColumns.current = frameColumns
+      geometry.layoutChanged()
+    }
+  }, [frameColumns, geometry.layoutChanged])
 
   // The cells of a row bar's row, in the order the columns are declared: runs of
   // marked columns merge into one covered cell, runs of unmarked ones into one
-  // empty cell, and the waiting cell is added exactly while it stands over the
-  // ordinary rows. No column marked means one covered cell across the whole row.
+  // empty cell, followed by the permanent state cell. No column marked means
+  // one covered cell across the content columns.
   // The checkbox column takes an empty cell of its own on whichever edge it sits.
   //
   // The spans add up to bodyColspan by construction, which is what keeps the row
@@ -235,9 +247,7 @@ export function HilosViewportTable<R>({
       covered: true,
     })
   }
-  if (markColumn) {
-    progressCells.push({ span: 1, covered: false })
-  }
+  progressCells.push({ span: 1, covered: false })
   if (selectionEnabled) {
     const selectionCell: ProgressCell = { span: 1, covered: false }
     if (selectionEdge === 'start') {
@@ -317,6 +327,107 @@ export function HilosViewportTable<R>({
     )
   }
 
+  // Only framework copy and inert spans size the mark room; no record renderer
+  // or interactive twin participates in measuring it.
+  function markRoom(): ReactNode {
+    return (
+      <span className="hilos-table-marks invisible" aria-hidden="true" inert>
+        <i className="bi bi-snow" />
+        <span className="hilos-stack">
+          <span className="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle">
+            <i className="bi bi-arrows-move" /> Will move
+          </span>
+          <span className="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle">
+            <i className="bi bi-box-arrow-right" /> Will leave
+          </span>
+        </span>
+        {detailFields.length > 0 ? (
+          <span className="btn btn-sm btn-outline-secondary">
+            <i className="bi bi-chevron-down" />
+          </span>
+        ) : null}
+      </span>
+    )
+  }
+
+  function frameworkMarks(
+    view: TableViewportRow<R>,
+    panelId: string,
+  ): ReactNode {
+    return (
+      <span className="hilos-stack">
+        {markRoom()}
+        <span className="hilos-table-marks">
+          {view.staleSources.length > 0 ? (
+            <>
+              <i
+                className="bi bi-snow"
+                data-id={`hilos-table-stale-row-${view.rowKey}`}
+                aria-hidden="true"
+              />
+              <span className="visually-hidden">
+                {TABLE_STALENESS_COPY.rowMark}
+              </span>
+            </>
+          ) : null}
+          {view.pending === 'move' ? (
+            <span
+              className="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+              data-id={`hilos-table-pending-move-${view.rowKey}`}
+            >
+              <i className="bi bi-arrows-move" aria-hidden="true" /> Will move
+            </span>
+          ) : view.pending === 'remove' ? (
+            <span
+              className="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+              data-id={`hilos-table-pending-remove-${view.rowKey}`}
+            >
+              <i className="bi bi-box-arrow-right" aria-hidden="true" /> Will
+              leave
+            </span>
+          ) : null}
+          {detailFields.length > 0 && view.expandable
+            ? expandControl(view, panelId, 'btn btn-sm btn-outline-secondary')
+            : null}
+        </span>
+      </span>
+    )
+  }
+
+  function headerSnowflake(column: HilosTableColumn): ReactNode {
+    return column.source !== undefined ? (
+      <span className="hilos-stack">
+        <i className="bi bi-snow invisible" aria-hidden="true" inert />
+        {staleColumnKeys.has(column.key) ? (
+          <i
+            className="bi bi-snow"
+            data-id={`hilos-table-stale-column-${column.key}`}
+            aria-hidden="true"
+          />
+        ) : null}
+        <span className="visually-hidden">
+          {staleColumnKeys.has(column.key) ? staleColumnText(column) : ''}
+        </span>
+      </span>
+    ) : null
+  }
+
+  function reasonTwins(): ReactNode {
+    return (
+      <div className="hilos-table-reason-twins hilos-stack text-center fst-italic">
+        {(['deleted', 'left_set', 'moved_out'] as const).map((reason) => {
+          const placeholder = hilosTablePlaceholder(reason)
+          return (
+            <span key={reason}>
+              <i className={`bi ${placeholder.icon} me-1`} />
+              {placeholder.text}
+            </span>
+          )
+        })}
+      </div>
+    )
+  }
+
   // The cells of one row of a table: one per column left standing in the
   // row, the content from the page's renderer for that column and the class from the
   // column itself. The cell stands even where the page gave no renderer: a row one
@@ -385,62 +496,28 @@ export function HilosViewportTable<R>({
     const bar = rowBar(rowKey)
 
     return (
-      <div className="card-body py-2 px-3">
-        <div className="d-flex align-items-start gap-2 mb-1">
+      <div
+        className="card-body py-2 px-3"
+        style={
+          {
+            '--hilos-table-reason-px': geometry.reasonFloors.card,
+          } as CSSProperties
+        }
+      >
+        <div className="d-flex flex-wrap align-items-start gap-2 mb-1">
           {selectionEdge === 'start' ? selectBox : null}
           {hasCell(layout.title) ? (
             <span className="fw-medium">
               {cells?.[layout.title.key]?.(record, rowKey)}
             </span>
           ) : null}
-          {/* The right of the head, in one group: what the PAGE says about the
-              row first, then what the FRAMEWORK says about it. The page's badge
-              is not pushed out by a framework mark — on a wide screen the two
-              stand in two different cells, and a card is a second projection of
-              the same columns rather than a smaller set of facts (Flow F6). */}
-          <span className="ms-auto d-flex align-items-center gap-1">
-            {hasCell(layout.badge)
-              ? cells?.[layout.badge.key]?.(record, rowKey)
-              : null}
-            {view.staleSources.length > 0 ? (
-              <>
-                <i
-                  className="bi bi-snow"
-                  data-id={`hilos-table-stale-row-${rowKey}`}
-                  aria-hidden="true"
-                />
-                <span className="visually-hidden">
-                  {TABLE_STALENESS_COPY.rowMark}
-                </span>
-              </>
-            ) : null}
-            {view.pending === 'move' ? (
-              <span
-                className="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
-                data-id={`hilos-table-pending-move-${rowKey}`}
-              >
-                <i className="bi bi-arrows-move" aria-hidden="true" /> Will move
-              </span>
-            ) : null}
-            {view.pending === 'remove' ? (
-              <span
-                className="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
-                data-id={`hilos-table-pending-remove-${rowKey}`}
-              >
-                <i className="bi bi-box-arrow-right" aria-hidden="true" /> Will
-                leave
-              </span>
-            ) : null}
-            {/* The control comes after everything that merely STATES something
-                about the record, exactly as it does at the end of a row: it is the
-                one thing in the head the reader acts on. */}
-            {detailFields.length > 0 && view.expandable
-              ? expandControl(
-                  view,
-                  cardDetailId(rowKey),
-                  'btn btn-sm btn-outline-secondary',
-                )
-              : null}
+          {hasCell(layout.badge) ? (
+            <span className="ms-auto">
+              {cells?.[layout.badge.key]?.(record, rowKey)}
+            </span>
+          ) : null}
+          <span className="hilos-table-card-marks d-flex justify-content-end align-items-center gap-1">
+            {frameworkMarks(view, cardDetailId(rowKey))}
             {selectionEdge === 'end' ? selectBox : null}
           </span>
         </div>
@@ -470,6 +547,9 @@ export function HilosViewportTable<R>({
         {view.expanded ? (
           <div
             id={cardDetailId(rowKey)}
+            ref={(node) =>
+              geometry.bind(rowKey, view.occurrence, 'card', 'detail', node)
+            }
             className="mb-2"
             data-id={`hilos-table-row-detail-${rowKey}`}
           >
@@ -508,7 +588,13 @@ export function HilosViewportTable<R>({
             across its whole width: which columns a bar stretches under says
             nothing here, a card having no columns standing in a row (Flow F7). */}
         {bar !== undefined ? (
-          <div className="mt-2" data-id={`hilos-table-progress-row-${rowKey}`}>
+          <div
+            ref={(node) =>
+              geometry.bind(rowKey, view.occurrence, 'card', 'work', node)
+            }
+            className="mt-2"
+            data-id={`hilos-table-progress-row-${rowKey}`}
+          >
             {rowProgress !== undefined ? (
               <div className="small text-body-secondary mb-1">
                 {rowProgress(bar, rowKey)}
@@ -516,6 +602,20 @@ export function HilosViewportTable<R>({
             ) : null}
             <HilosTableProgress progress={bar} label="Work on this row" />
           </div>
+        ) : geometry.workPixels(rowKey, 'card') > 0 ? (
+          <div
+            ref={(node) =>
+              geometry.bind(rowKey, view.occurrence, 'card', 'work', node)
+            }
+            className="hilos-table-work-space hilos-table-work-reserve"
+            aria-hidden="true"
+            inert
+            style={
+              {
+                '--hilos-table-work-px': geometry.workPixels(rowKey, 'card'),
+              } as CSSProperties
+            }
+          />
         ) : null}
       </div>
     )
@@ -615,7 +715,7 @@ export function HilosViewportTable<R>({
   ) : null
 
   return (
-    <div data-id={dataId}>
+    <div ref={root} tabIndex={-1} data-id={dataId}>
       <HilosTableBar
         controller={controller}
         titleId={titleId}
@@ -636,11 +736,50 @@ export function HilosViewportTable<R>({
 
       {/* The scroll wrapper belongs to the wide table: once the columns became
           lines of a card, there is nothing left to scroll sideways. */}
-      <div className="table-responsive d-none d-md-block">
+      <div className="table-responsive d-none d-md-block position-relative">
+        <div
+          className="table hilos-table-room hilos-table-room-wide invisible"
+          aria-hidden="true"
+          inert
+          style={
+            {
+              '--hilos-table-width-px': geometry.tracks?.tableWidth,
+            } as CSSProperties
+          }
+        >
+          <div className="hilos-table-replacement-body">
+            <div className="hilos-table-replacement-row">
+              <div className="hilos-table-replacement-cell">
+                {reasonTwins()}
+              </div>
+            </div>
+          </div>
+          <div className="hilos-table-fallback" />
+        </div>
         <table
-          className="table table-striped table-hover align-middle mb-0"
+          ref={table}
+          className={`table table-striped table-hover align-middle mb-0${geometry.tracks !== null ? ' hilos-table-fixed' : ''}`}
+          style={
+            {
+              '--hilos-table-width-px': geometry.tracks?.tableWidth,
+              '--hilos-table-reason-px': geometry.reasonFloors.wide,
+            } as CSSProperties
+          }
           aria-labelledby={nameId}
         >
+          <colgroup>
+            {columnKeys.map((key, index) => (
+              <col
+                key={key}
+                className="hilos-table-track"
+                style={
+                  {
+                    '--hilos-table-track-px': geometry.trackWidths[index],
+                  } as CSSProperties
+                }
+              />
+            ))}
+          </colgroup>
           <thead>
             <tr>
               {/* The checkbox column stands on the edge the installation chose,
@@ -679,20 +818,9 @@ export function HilosViewportTable<R>({
                           </span>
                         </>
                       ) : null}
-                      {staleColumnKeys.has(column.key) ? (
-                        <>
-                          <i
-                            className="bi bi-snow"
-                            data-id={`hilos-table-stale-column-${column.key}`}
-                            aria-hidden="true"
-                          />
-                          <span className="visually-hidden">
-                            {staleColumnText(column)}
-                          </span>
-                        </>
-                      ) : null}
+                      {headerSnowflake(column)}
                     </button>
-                  ) : staleColumnKeys.has(column.key) ? (
+                  ) : (
                     <span className="d-inline-flex align-items-center gap-1">
                       {column.label}
                       {sortComponent(column.key) !== undefined ? (
@@ -701,27 +829,15 @@ export function HilosViewportTable<R>({
                           aria-hidden="true"
                         />
                       ) : null}
-                      <i
-                        className="bi bi-snow"
-                        data-id={`hilos-table-stale-column-${column.key}`}
-                        aria-hidden="true"
-                      />
-                      <span className="visually-hidden">
-                        {staleColumnText(column)}
-                      </span>
+                      {headerSnowflake(column)}
                     </span>
-                  ) : (
-                    column.label
                   )}
                 </th>
               ))}
-              {markColumn ? (
-                <th scope="col" className="text-end">
-                  <span className="visually-hidden">
-                    Row state and controls
-                  </span>
-                </th>
-              ) : null}
+              <th scope="col" className="text-end text-nowrap">
+                {markRoom()}
+                <span className="visually-hidden">Row state and controls</span>
+              </th>
               {selectionEdge === 'end' ? selectPageCell : null}
             </tr>
           </thead>
@@ -777,10 +893,19 @@ export function HilosViewportTable<R>({
                 const placeholder = hilosTablePlaceholder(view.removal)
 
                 return (
-                  <Fragment key={view.rowKey}>
+                  <Fragment key={view.occurrence}>
                     <tr
+                      ref={(node) =>
+                        geometry.bind(
+                          view.rowKey,
+                          view.occurrence,
+                          'wide',
+                          'main',
+                          node,
+                        )
+                      }
                       data-id={`hilos-table-row-${view.rowKey}`}
-                      className={rowClass(view)}
+                      className={`${rowClass(view) ?? ''}${view.placeholder ? '' : ' hilos-table-main'}`}
                     >
                       {selectionEdge === 'start' ? selectRowCell : null}
                       {/* A placeholder row carries a null row; the null check also
@@ -788,70 +913,37 @@ export function HilosViewportTable<R>({
                       {view.placeholder || view.row === null ? (
                         <td
                           colSpan={bodyColspan}
-                          className="text-center text-muted fst-italic"
+                          className="hilos-table-placeholder-cell text-center text-body-secondary fst-italic"
                           data-id="hilos-table-placeholder"
                         >
-                          <i
-                            className={`bi ${placeholder.icon} me-1`}
-                            aria-hidden="true"
-                          />
-                          {placeholder.text}
+                          <div
+                            className="hilos-table-record-space"
+                            style={
+                              {
+                                '--hilos-table-record-px':
+                                  geometry.recordPixels(
+                                    view.rowKey,
+                                    view.occurrence,
+                                    'wide',
+                                  ),
+                              } as CSSProperties
+                            }
+                          >
+                            <span>
+                              <i
+                                className={`bi ${placeholder.icon} me-1`}
+                                aria-hidden="true"
+                              />
+                              {placeholder.text}
+                            </span>
+                          </div>
                         </td>
                       ) : (
                         declaredCells(view.row, view.rowKey)
                       )}
-                      {markColumn && !view.placeholder && view.row !== null ? (
+                      {!view.placeholder && view.row !== null ? (
                         <td className="text-end text-nowrap">
-                          {/* The freshness mark comes first and the waiting badge
-                            after it: a row can both wait and stand on values that
-                            are behind, and neither statement stands in for the
-                            other. */}
-                          {view.staleSources.length > 0 ? (
-                            <>
-                              <i
-                                className="bi bi-snow me-1"
-                                data-id={`hilos-table-stale-row-${view.rowKey}`}
-                                aria-hidden="true"
-                              />
-                              <span className="visually-hidden">
-                                {TABLE_STALENESS_COPY.rowMark}
-                              </span>
-                            </>
-                          ) : null}
-                          {view.pending === 'move' ? (
-                            <span
-                              className="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
-                              data-id={`hilos-table-pending-move-${view.rowKey}`}
-                            >
-                              <i
-                                className="bi bi-arrows-move"
-                                aria-hidden="true"
-                              />{' '}
-                              Will move
-                            </span>
-                          ) : null}
-                          {view.pending === 'remove' ? (
-                            <span
-                              className="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
-                              data-id={`hilos-table-pending-remove-${view.rowKey}`}
-                            >
-                              <i
-                                className="bi bi-box-arrow-right"
-                                aria-hidden="true"
-                              />{' '}
-                              Will leave
-                            </span>
-                          ) : null}
-                          {/* The control comes last and stands at the very edge:
-                            the badge STATES something about the row, while this
-                            one is the only thing in the cell the reader acts on. */}
-                          {detailFields.length > 0 && view.expandable
-                            ? expandControl(
-                                view,
-                                detailId(view.rowKey),
-                                'btn btn-sm btn-outline-secondary ms-1',
-                              )
-                            : null}
+                          {frameworkMarks(view, detailId(view.rowKey))}
                         </td>
                       ) : null}
                       {selectionEdge === 'end' ? selectRowCell : null}
@@ -867,7 +959,18 @@ export function HilosViewportTable<R>({
                     {bar !== undefined &&
                     !view.placeholder &&
                     view.row !== null ? (
-                      <tr data-id={`hilos-table-progress-row-${view.rowKey}`}>
+                      <tr
+                        ref={(node) =>
+                          geometry.bind(
+                            view.rowKey,
+                            view.occurrence,
+                            'wide',
+                            'work',
+                            node,
+                          )
+                        }
+                        data-id={`hilos-table-progress-row-${view.rowKey}`}
+                      >
                         {progressCells.map((cell, index) => (
                           <td key={index} colSpan={cell.span} className="pt-0">
                             {cell.covered ? (
@@ -886,6 +989,40 @@ export function HilosViewportTable<R>({
                           </td>
                         ))}
                       </tr>
+                    ) : !view.placeholder &&
+                      record !== null &&
+                      geometry.workPixels(view.rowKey, 'wide') > 0 ? (
+                      <tr
+                        ref={(node) =>
+                          geometry.bind(
+                            view.rowKey,
+                            view.occurrence,
+                            'wide',
+                            'work',
+                            node,
+                          )
+                        }
+                        className="hilos-table-work-reserve"
+                        aria-hidden="true"
+                        inert
+                      >
+                        <td
+                          colSpan={bodyColspan}
+                          className="hilos-table-placeholder-cell"
+                        >
+                          <div
+                            className="hilos-table-work-space"
+                            style={
+                              {
+                                '--hilos-table-work-px': geometry.workPixels(
+                                  view.rowKey,
+                                  'wide',
+                                ),
+                              } as CSSProperties
+                            }
+                          />
+                        </td>
+                      </tr>
                     ) : null}
 
                     {/* The panel this row expands into, drawn after the row's own
@@ -898,6 +1035,15 @@ export function HilosViewportTable<R>({
                     {view.expanded && record !== null ? (
                       <tr
                         id={detailId(view.rowKey)}
+                        ref={(node) =>
+                          geometry.bind(
+                            view.rowKey,
+                            view.occurrence,
+                            'wide',
+                            'detail',
+                            node,
+                          )
+                        }
                         className="table-active"
                         data-id={`hilos-table-row-detail-${view.rowKey}`}
                       >
@@ -969,7 +1115,17 @@ export function HilosViewportTable<R>({
           leaves the accessibility tree with its display (Flow F9). The list holds
           the cards and nothing else; what the table says in words when it has no
           rows stands BESIDE it, a sentence not being an item of a list. */}
-      <div className="d-md-none" data-id="hilos-table-cards">
+      <div className="d-md-none position-relative" data-id="hilos-table-cards">
+        <div
+          className="hilos-table-room hilos-table-room-card invisible card mb-2"
+          aria-hidden="true"
+          inert
+        >
+          <div className="card-body py-2 px-3 small">
+            {reasonTwins()}
+            <div className="hilos-table-fallback" />
+          </div>
+        </div>
         {body === 'rows' ? (
           <div role="list" aria-labelledby={nameId}>
             {rows.map((view) => {
@@ -978,26 +1134,48 @@ export function HilosViewportTable<R>({
 
               return (
                 <div
-                  key={view.rowKey}
+                  key={view.occurrence}
+                  ref={(node) =>
+                    geometry.bind(
+                      view.rowKey,
+                      view.occurrence,
+                      'card',
+                      'main',
+                      node,
+                    )
+                  }
                   className={
                     tint === undefined ? 'card mb-2' : `card mb-2 ${tint}`
                   }
                   role="listitem"
                   data-id={`hilos-table-card-${view.rowKey}`}
                 >
-                  {/* A removed row keeps its place as a card of one line,
-                      exactly as it keeps it as a row of one cell, until an
-                      empty set makes the whole window converge (Flow F4). */}
+                  {/* Only a reason and the numeric full record allocation survive. */}
                   {view.placeholder || view.row === null ? (
                     <div
                       className="card-body py-2 px-3 text-center text-body-secondary fst-italic small"
                       data-id="hilos-table-placeholder"
                     >
-                      <i
-                        className={`bi ${placeholder.icon} me-1`}
-                        aria-hidden="true"
-                      />
-                      {placeholder.text}
+                      <div
+                        className="hilos-table-record-space"
+                        style={
+                          {
+                            '--hilos-table-record-px': geometry.recordPixels(
+                              view.rowKey,
+                              view.occurrence,
+                              'card',
+                            ),
+                          } as CSSProperties
+                        }
+                      >
+                        <span>
+                          <i
+                            className={`bi ${placeholder.icon} me-1`}
+                            aria-hidden="true"
+                          />
+                          {placeholder.text}
+                        </span>
+                      </div>
                     </div>
                   ) : (
                     cardBody(card, view, view.row)

@@ -5,10 +5,11 @@
 // numbers fit in the row, which is a question about the width of a strip and
 // belongs to nobody else. Page numbers stand there exactly while the count is
 // exact: a page is a place counted from an end of the set, and a count stopped at
-// its ceiling has no such end (mockups/components/table section 8). On an empty
-// window it draws nothing at all: "0 of 0" says nothing, and the body of the table
-// is what speaks about emptiness. Internal to the React view layer on purpose: it
-// is not exported from index.ts, for the reason the bar is not. The React port of
+// its ceiling has no such end (mockups/components/table section 8). On a fresh
+// empty window it draws nothing; retained departure slots still report their
+// truthful zero range and count until that window is replaced. Internal to the
+// React view layer on purpose: it is not exported from index.ts, for the reason
+// the bar is not. The React port of
 // the Vue reference (vue/src/HilosTableFooter.vue), under the same names and words.
 import type { TableViewportController } from '@hilos/core/base'
 
@@ -85,8 +86,9 @@ export interface HilosTableFooterProps<R> {
  */
 export function HilosTableFooter<R>({ controller }: HilosTableFooterProps<R>) {
   const footer = useSignal(controller.frame.footer)
+  const body = useSignal(controller.frame.body)
 
-  if (footer.firstRow === 0) {
+  if (footer.firstRow === 0 && body !== 'rows') {
     return null
   }
 

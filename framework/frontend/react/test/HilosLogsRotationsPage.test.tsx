@@ -686,9 +686,9 @@ describe('HilosLogsRotationsPage', () => {
     ])
 
     expect(container.textContent).toContain('Moving to the archive')
-    expect(container.querySelector('.badge')?.className).toContain(
-      'text-bg-info',
-    )
+    expect(
+      container.querySelector('.badge:not([inert] *)')?.className,
+    ).toContain('text-bg-info')
     expect(
       container.querySelectorAll('[data-id="hilos-rotation-takeout"]'),
     ).toHaveLength(0)

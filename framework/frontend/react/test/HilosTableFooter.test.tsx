@@ -105,6 +105,54 @@ describe('HilosTableFooter', () => {
     expect(byId('hilos-table-prev')).toBeNull()
   })
 
+  it.each(['before removal', 'before Apply', 'after Apply'] as const)(
+    'keeps the retained zero range when zero count arrives %s',
+    (timing) => {
+      const { controller, sent } = makeController()
+      controller.ingestWindow(window(1), 1, true, null, null, 20)
+      const view = renderFooter(controller)
+      const count = () => byId('hilos-table-count')?.textContent
+      expect(count()).toBe('1 – 1 of 1')
+
+      if (timing === 'before removal')
+        act(() => controller.ingestCount(0, true))
+      act(() =>
+        controller.ingestDelta({
+          kind: 'row_removed',
+          rowKey: 'row-0',
+          reason: 'deleted',
+        }),
+      )
+      if (timing === 'before Apply') act(() => controller.ingestCount(0, true))
+      expect(controller.rows.get()[0]?.placeholder).toBe(false)
+      expect(controller.rows.get()[0]?.row).toEqual({ name: 'Row 0' })
+      expect(count()).toBe(
+        timing === 'after Apply' ? '1 – 1 of 1' : '0 – 0 of 0',
+      )
+
+      act(() => controller.apply())
+      expect(controller.frame.body.get()).toBe('rows')
+      expect(count()).toBe(
+        timing === 'after Apply' ? '0 – 0 of 1' : '0 – 0 of 0',
+      )
+      if (timing === 'after Apply') act(() => controller.ingestCount(0, true))
+      expect(count()).toBe('0 – 0 of 0')
+      expect(controller.pendingCount.get()).toBe(0)
+      expect(controller.rows.get()[0]?.placeholder).toBe(true)
+      expect(byId('hilos-table-prev')).toBeNull()
+      expect(byId('hilos-table-next')).toBeNull()
+      expect(pageNumbers()).toEqual([])
+      expect(sent).toEqual([])
+
+      // The footer also subscribes to body: a fresh empty snapshot can leave
+      // the same range/count while changing which presentation it describes.
+      act(() => controller.ingestWindow([], 0, true, null, null, 20))
+      expect(count()).toBeUndefined()
+      view.unmount()
+      controller.dispose()
+    },
+  )
+
   it('draws nothing at all when the window was refused', () => {
     const { controller } = makeController()
     controller.ingestWindow(window(20), 128, true, null, null, 20)

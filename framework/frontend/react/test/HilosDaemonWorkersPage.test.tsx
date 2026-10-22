@@ -194,12 +194,15 @@ describe('HilosDaemonWorkersPage', () => {
     expect(h.find('hilos-daemon-worker-agents-regular:1')?.textContent).toBe(
       'room:99',
     )
-    expect(regular.textContent).toContain('0 B')
+    const updated = h.find('hilos-table-row-regular:1')!
+    expect(updated).not.toBe(regular)
+    expect(regular.isConnected).toBe(false)
+    expect(updated.textContent).toContain('0 B')
     h.heading({ clustered: true, state: 'silent', silentSince: 1_700_000_000 })
     expect(h.find('hilos-daemon-workers-silent')?.textContent).toContain(
       'from its last report',
     )
-    expect(h.find('hilos-table-row-regular:1')).toBe(regular)
+    expect(h.find('hilos-table-row-regular:1')).toBe(updated)
     expect(h.find('hilos-daemon-worker-agents-regular:1')?.textContent).toBe(
       'room:99',
     )

@@ -317,7 +317,13 @@ describe('HilosAppearancePage', () => {
     const headers = Array.from(
       container.querySelectorAll('table thead th'),
     ).map((header) => header.textContent?.trim())
-    expect(headers).toEqual(['Setting', 'Current value', 'Default', ''])
+    expect(headers).toEqual([
+      'Setting',
+      'Current value',
+      'Default',
+      '',
+      'Will move Will leaveRow state and controls',
+    ])
     expect(container.querySelector('input[type="search"]')).toBeNull()
     expect(container.querySelector('table')?.textContent).toContain(
       'Theme switching',

@@ -66,7 +66,7 @@ Every modal names where focus lands, and the naming is visible at the mount.
   default for a project that mounts the SDK, never the close button.
 
 On close, `FocusTrap` returns to the original connected, visible, enabled
-trigger. A Vue table mount offers
+trigger. Vue and React table mounts offer
 [`registerFocusReturnFallback(root, read)`](../../../framework/frontend/core/src/dom/focusTrap.ts)
 from `core/dom`: activation captures the nearest mount-local offer through a
 bubbling DOM request, and release calls `read` only if the trigger became
@@ -83,7 +83,9 @@ modal is open, table updates keep focus inside it. A focus choice outside the
 dialog is preserved. The offer contains browser handles only; numeric core
 geometry contains no DOM references. Callers without an offer retain ordinary
 trigger return. The Vue registration and current fallback are wired in
-[`useTableViewportGeometry`](../../../framework/frontend/vue/src/useTableViewportGeometry.ts).
+[`useTableViewportGeometry`](../../../framework/frontend/vue/src/useTableViewportGeometry.ts);
+the React mount wires the same API and fallback in
+[`useTableViewportGeometry`](../../../framework/frontend/react/src/useTableViewportGeometry.ts).
 
 The empty default of `initialFocus` means the mark is in this file. The confirm
 step a dirty close raises is always the dialog itself: it has a heading, a

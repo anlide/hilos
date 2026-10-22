@@ -271,8 +271,11 @@ describe('HilosDaemonAgentsPage', () => {
     expect(h.find('hilos-table-row-room:12')).toBe(row)
     h.heading({ clustered: false, state: null, silentSince: null })
     h.window([agent({ idle: true, workerIndex: null, workerKind: null })])
+    const updated = h.find('hilos-table-row-room:12')!
+    expect(updated).not.toBe(row)
+    expect(row.isConnected).toBe(false)
     expect(
-      [...row.querySelectorAll('td')]
+      [...updated.querySelectorAll('td')]
         .slice(0, 3)
         .map((cell) => cell.textContent),
     ).toEqual(['room:12', '—', 'Lazy'])

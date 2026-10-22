@@ -783,11 +783,12 @@ Apply resolves exactly those two, on the rows already shown:
 The retained geometry covers the **complete record footprint** in each mounted
 projection. The wide projection includes the main row, work, detail, and all
 gaps; the card projection includes the whole card, including its border, padding,
-and external gap once, preserving fractional CSS pixels. Vue keeps a permanent
-state room and the full used wide colgroup under fixed layout; inert stale-mark
-holders in the header and state/detail room preserve their tracks, while card
-geometry stays independent. Only numeric allocations and column tracks survive
-departure, and only the existing reason is shown inside the placeholder.
+and external gap once, preserving fractional CSS pixels. Vue and React keep a
+permanent state room and the full used wide colgroup under fixed layout; inert
+stale-mark holders in the header and state/detail room preserve their tracks,
+while card geometry stays independent. Only numeric allocations and column
+tracks survive departure, and only the existing reason is shown inside the
+placeholder.
 
 A foreign departure removes row-progress content immediately. If work was still
 visible, pending state keeps only its numeric work reserve; Apply combines that
@@ -824,14 +825,20 @@ floor never shrinks a grown allocation. A wide extent is not transferred to a
 card. Allocations stay until the replacement window or controller lifecycle
 releases them; there is no timer, compaction, or page-size cap.
 
-Vue's `useTableViewportGeometry` owns the native DOM refs and observers and
-releases them with the mount. A hidden or zero-size projection supplies no
-measurement and does not reveal departed content. Inert measurement holders
-contain no row data, IDs, or focusable controls. When departure removes the
-active control, focus returns to a visible search or otherwise the table root;
-a focus choice made during the update is preserved. Static fallback geometry
-lives in the sanctioned Vue Sass file, while validated fractional measurements
-pass through numeric CSS custom properties.
+The mounted Vue
+[`useTableViewportGeometry`](../../../framework/frontend/vue/src/useTableViewportGeometry.ts)
+and React
+[`useTableViewportGeometry`](../../../framework/frontend/react/src/useTableViewportGeometry.ts)
+hooks own their native DOM refs and observers and release them with the mount.
+A hidden or zero-size projection supplies no measurement and does not reveal
+departed content. Inert measurement holders contain no row data, IDs, or
+focusable controls. When departure removes the active control, focus returns to
+a visible search or otherwise the table root; a focus choice made during the
+update is preserved. Static fallback geometry lives in the sanctioned Vue
+[`hilos-styles.scss`](../../../framework/frontend/vue/src/hilos-styles.scss) and
+React [`hilos-styles.scss`](../../../framework/frontend/react/src/hilos-styles.scss)
+files, while validated fractional measurements pass through numeric CSS custom
+properties.
 
 Search, filter, order, page, Show, and refresh invalidate the prior window
 appearance. Replacement snapshots, reconnects, refusals, and resets replace its
@@ -843,10 +850,11 @@ Counts update immediately and independently of Apply. A count of zero does not
 discard pending values or retained slots, and it does not request a replacement
 window. After the final removal is applied, the body remains `rows` with the
 truthful zero count and `0–0` range until that window is replaced; there is no
-empty tile or no-op Apply. Vue's `HilosTableFooter` stays visible for `rows` even
-when `firstRow` is zero, while a fresh empty snapshot still has no footer. An
-eligible unfiltered tail append may follow retained slots; those slots are not
-live members and consume no capacity. Existing append/own-create deduplication,
+empty tile or no-op Apply. Both the Vue and React `HilosTableFooter` components
+stay visible for `rows` even when `firstRow` is zero, while a fresh empty
+snapshot still has no footer. An eligible unfiltered tail append may follow
+retained slots; those slots are not live members and consume no capacity.
+Existing append/own-create deduplication,
 fresh occurrence identities, anchors, and own-create edge eviction determine
 the live window and range. Search arrivals still follow the table's existing
 membership classification. Bots' inherited `containsRow()` returns `null`, so
@@ -854,10 +862,9 @@ an arrival under search may update the count only. A
 `table_viewport_announce` changes only the count and the live room; Show requests
 a new window, and Apply does not Show.
 
-The shared core retention/ingress mechanism and Vue DOM geometry are built.
-React and Angular still need their geometry ports (HIL-1750 and HIL-1751), and
-declared height modes are separate work; this behavior does not introduce a
-height API.
+The shared core retention/ingress mechanism and Vue and React DOM geometry are
+built. Only the Angular geometry port (HIL-1751) remains; declared height modes
+are separate work, and this behavior does not introduce a height API.
 
 **Apply never brings a row in.** An announced row arrives through Show, which is
 a window change and not an Apply; a row that qualified for the tail was live from

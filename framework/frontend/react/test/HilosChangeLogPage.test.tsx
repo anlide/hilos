@@ -454,7 +454,7 @@ describe('HilosChangeLogPage', () => {
     expect(unattributed.textContent).toContain(
       'Changed past the application — no receipt',
     )
-    expect(unattributed.querySelector('.badge')).toBeNull()
+    expect(unattributed.querySelector('.badge:not([inert] *)')).toBeNull()
   })
 
   it('keeps viewer figures and marks hidden people beside their numbers', () => {

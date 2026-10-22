@@ -4,6 +4,140 @@
 // documented exceptions, each stating WHY a stock utility cannot achieve it and
 // WHAT it is for. It is loaded after Bootstrap so it wins on equal specificity.
 
+// WHY: auto table layout redistributes tracks when their widest record leaves;
+// Bootstrap has no measured fixed-track table utility.
+// WHAT: the complete colgroup and border-box width captured from the live table.
+.hilos-table-fixed {
+  table-layout: fixed;
+  box-sizing: border-box;
+  width: calc(var(--hilos-table-width-px) * 1px);
+}
+
+.hilos-table-fixed .hilos-table-track {
+  width: calc(var(--hilos-table-track-px) * 1px);
+}
+
+// WHY: three simultaneous framework marks need separate stable places, including
+// when a particular row has no detail control. Utilities cannot define tracks.
+// WHAT: static inert twins and live marks use identical metrics and grid slots.
+.hilos-table-marks {
+  display: inline-grid;
+  grid-template-columns: auto auto auto;
+  align-items: center;
+  column-gap: 0.25rem;
+  white-space: nowrap;
+
+  > .bi-snow {
+    grid-area: 1 / 1;
+  }
+
+  > .badge,
+  > .hilos-stack {
+    grid-area: 1 / 2;
+  }
+
+  > .btn {
+    grid-area: 1 / 3;
+  }
+}
+
+// WHY: the page badge and title must keep their line when pending marks arrive;
+// Bootstrap has no flex-basis:100% utility.
+// WHAT: the complete framework mark room always occupies its own card-head line.
+.hilos-table-card-marks {
+  flex-basis: 100%;
+}
+
+// WHY: a full-span replacement must consume the captured occupied extent once;
+// Bootstrap's padded cells would add that padding to the numeric sizing block.
+// WHAT: a reason plus empty space replaces main/work/detail and their separation.
+.table > tbody > tr > .hilos-table-placeholder-cell {
+  padding: 0;
+}
+
+.hilos-table-record-space {
+  display: grid;
+  align-items: center;
+  min-height: calc(var(--hilos-table-record-px, 0) * 1px);
+
+  &:not([style*='--hilos-table-record-px']) {
+    min-height: 3rem;
+  }
+}
+
+// WHY: observer-time subtraction of rem chrome lets a font change inflate a
+// departed card for one frame. Bootstrap cannot subtract a measured allocation.
+// WHAT: the card's retained total minus this template's py-2, mb-2 and borders,
+// in the current layout. The reason's natural height remains the readable floor.
+.card
+  > .card-body
+  > .hilos-table-record-space[style*='--hilos-table-record-px'] {
+  min-height: max(
+    0px,
+    calc(
+      var(--hilos-table-record-px) * 1px - 1.5rem - 2 *
+        var(--bs-card-border-width)
+    )
+  );
+}
+
+// WHY: progress payloads disappear before Apply, while their place must survive;
+// no Bootstrap utility can express a measured fractional block size.
+// WHAT: a data-free work reserve in a pending live row or card.
+.hilos-table-work-space {
+  height: calc(var(--hilos-table-work-px) * 1px);
+}
+
+.table > tbody > .hilos-table-work-reserve > td {
+  border: 0;
+}
+
+// WHY: the static reason needs a measurable width before departure, and hidden
+// branches need a Sass-owned fallback rather than a JS rem-to-pixel constant.
+// WHAT: inert framework-only probes; they contain no row values or controls.
+.hilos-table-room {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+}
+
+.hilos-table-room-wide {
+  display: table;
+  border-collapse: collapse;
+  width: calc(var(--hilos-table-width-px) * 1px);
+}
+
+.hilos-table-replacement-body {
+  display: table-row-group;
+}
+
+.hilos-table-replacement-row {
+  display: table-row;
+}
+
+.table .hilos-table-replacement-cell {
+  display: table-cell;
+  padding: 0;
+  // Bootstrap puts its cell border on td/th, not on this static div probe.
+  // Both edges reproduce the two collapsed half-borders of an occupied row.
+  border-block: var(--bs-border-width) solid var(--bs-table-border-color);
+}
+
+.hilos-table-fallback {
+  position: absolute;
+  height: 3rem;
+}
+
+// WHY: a reason that wraps must already fit before a live record leaves.
+// WHAT: a minimum main-row/card-body allocation, derived only from static copy.
+.hilos-table-main {
+  height: calc(var(--hilos-table-reason-px) * 1px);
+}
+
+.card-body[style*='--hilos-table-reason-px'] {
+  min-height: calc(var(--hilos-table-reason-px) * 1px);
+}
+
 // WHY: Bootstrap ships no min-height:0 utility, yet a flex child that owns its
 // own scroll — the app-shell main region and a scrollable list — needs
 // min-height:0 so it shrinks below its content instead of growing the page,
