@@ -11,6 +11,8 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Hilos;
 use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Users\DTO\UserSessionsRestateSignalData;
 use Hilos\Users\DTO\UserThemePickWriteSignalData;
@@ -21,6 +23,21 @@ use PHPUnit\Framework\TestCase;
 /** The owner writes before announcing; announcement failure cannot refuse a completed write. */
 final class TimeZoneWriteTest extends TestCase
 {
+    private ?HilosDbContext $previousDb = null;
+
+    protected function setUp(): void
+    {
+        $this->previousDb = Hilos::$db;
+        Hilos::$db = new PersonWriteTestDb();
+    }
+
+    protected function tearDown(): void
+    {
+        Hilos::$db = $this->previousDb;
+
+        parent::tearDown();
+    }
+
     /** The sequence and the address survive both an explicit choice and an automatic reset. */
     public function testSuccessfulWritingRestatesThePersonAndReturnsTheUnchangedAsk(): void
     {

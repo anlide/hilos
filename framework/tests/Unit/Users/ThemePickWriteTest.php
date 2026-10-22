@@ -9,6 +9,8 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Hilos;
 use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Users\DTO\UserSessionsRestateSignalData;
 use Hilos\Users\DTO\UserThemePickWriteDoneSignalData;
@@ -18,6 +20,21 @@ use PHPUnit\Framework\TestCase;
 /** Restating a theme is an announcement; a failed announcement cannot refuse a completed write. */
 final class ThemePickWriteTest extends TestCase
 {
+    private ?HilosDbContext $previousDb = null;
+
+    protected function setUp(): void
+    {
+        $this->previousDb = Hilos::$db;
+        Hilos::$db = new PersonWriteTestDb();
+    }
+
+    protected function tearDown(): void
+    {
+        Hilos::$db = $this->previousDb;
+
+        parent::tearDown();
+    }
+
     /** A successful write announces before completing its coordinator's action. */
     public function testSuccessfulWritingRestatesThePersonAndAnswers(): void
     {

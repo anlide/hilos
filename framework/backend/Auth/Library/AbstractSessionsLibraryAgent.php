@@ -5740,26 +5740,30 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * candidates hears of the merge by the change of the person's row, and reads "is this account
      * merged" from the merge table at that moment - so the row has to be there already.
      *
-     * The flag is written straight rather than through the person's agent
-     * ({@see AbstractUserAgent::writeBlockFlag()}), which refuses a folded account and whose
-     * answer here would arm the "Access closed" card: a merged loser is not a punished person,
-     * and its tabs get the plain sign-in form ({@see self::killUserSessions()}). The flag stays
-     * because it is what every sign-in check reads, the ways in the merge left the loser among
-     * them.
+     * The flag is written straight rather than through the person's agent: a block frame to
+     * that agent ({@see AbstractUserAgent::writeBlockFlag()}) is refused at its entry for a
+     * folded account, and its answer here would arm the "Access closed" card - a merged loser is
+     * not a punished person, and its tabs get the plain sign-in form
+     * ({@see self::killUserSessions()}). The flag stays because it is what every sign-in check
+     * reads, the ways in the merge left the loser among them.
      *
-     * Runs inside the merge transaction, after the project moved its rows.
+     * Runs inside the merge transaction, after the project moved its rows. The loser's row is
+     * read as required: one gone between the guard and this write is a storage failure, not a
+     * refusal.
      *
      * @param int $survivorId Survivor user id that absorbs the loser
      * @param int $loserId Loser user id folded into the survivor
-     * @throws ItemNotFoundForUpdateException When the loser row went missing between the guard and the write
+     * @throws ItemNotFoundForUpdateException When the loser row has no persisted id
+     * @throws DatabaseException When the loser row is not there, or cannot be loaded
+     * @throws LogicException When the people collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type
      * @throws HilosException On database or truth-source failure while writing the tombstone
      */
     private function foldAccount(int $survivorId, int $loserId): void
     {
         Hilos::$db->userMerges->actions->add($loserId, $survivorId);
 
-        $loser = Hilos::$db->users[$loserId] ?? throw new ItemNotFoundForUpdateException("No such user: {$loserId}");
-        $loser->actions->setBlock(true);
+        Hilos::$db->users[$loserId]->actions->setBlock(true);
     }
 
     /**

@@ -46,7 +46,6 @@ use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Database\View\Collection\Identities;
-use Hilos\Database\View\Item\User;
 use Hilos\Database\View\Item\UserRename;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -916,9 +915,10 @@ abstract class AbstractUserAgent extends AbstractAgent
      *
      * The name and the journal row are one transaction: a rename the journal does not know of did
      * not happen. A name that is already the person's, once trimmed, writes nothing and answers
-     * null. An account folded into another one is refused before anything is read of it
-     * (HIL-1292): its name is a tombstone's. What follows the commit - the notice to the person,
-     * the project's hook - is the users library's, on the answer.
+     * null. Whether the person may be written at all - there, and not folded into another one,
+     * whose name is a tombstone's (HIL-1292) - was settled at the entry of the request, before
+     * this is called; the row is read here as required. What follows the commit - the notice to
+     * the person, the project's hook - is the users library's, on the answer.
      *
      * Not final: the framework's test stands replace it to pin the route apart from the table.
      *
@@ -926,16 +926,16 @@ abstract class AbstractUserAgent extends AbstractAgent
      * @param ?int $renamedByUserId Person who did the rename - the renamed person's own id when they renamed
      *     themselves - or null when the author is not a person
      * @return ?UserRename Journal row of this rename, or null when the name was already the person's
-     * @throws ItemNotFoundForUpdateException When there is no such person
-     * @throws ValidationException When the account was merged into another one, or the name is empty, too short or too long
-     * @throws LogicException When a collection's class constants are not configured
+     * @throws ItemNotFoundForUpdateException When the person's row has no persisted id
+     * @throws ValidationException When the name is empty, too short or too long
+     * @throws LogicException When the people collection's class constants are not configured, or a transaction is already open
      * @throws InvalidArgumentException When a stored row is not the collection's object type
-     * @throws DatabaseException When the person or the merges cannot be loaded
+     * @throws DatabaseException When the person's row is not there, or cannot be loaded
      * @throws HilosException When the name, the journal row or the transaction cannot be written
      */
     protected function renamePerson(string $name, ?int $renamedByUserId): ?UserRename
     {
-        $user = $this->personToWrite();
+        $user = Hilos::$db->users[$this->userId];
         $oldName = $user->name;
         if (trim($name) === $oldName) {
             return null;
@@ -959,28 +959,29 @@ abstract class AbstractUserAgent extends AbstractAgent
      * Writes the person's admin flag, and nothing else.
      *
      * Telling the person's browsers is the sessions library's, once this answers. An account
-     * folded into another one is refused, both ways, before the write (HIL-1199): its rights belong
-     * to the account it became. Not final, for the reason {@see self::renamePerson()} gives.
+     * folded into another one is refused, both ways, at the entry of the request (HIL-1199): its
+     * rights belong to the account it became. The row is read here as required. Not final, for the
+     * reason {@see self::renamePerson()} gives.
      *
      * @param bool $admin New admin flag
-     * @throws ItemNotFoundForUpdateException When there is no such person
-     * @throws ValidationException When the account was merged into another one
-     * @throws LogicException When a collection's class constants are not configured
+     * @throws ItemNotFoundForUpdateException When the person's row has no persisted id
+     * @throws LogicException When the people collection's class constants are not configured
      * @throws InvalidArgumentException When a stored row is not the collection's object type
-     * @throws DatabaseException When the person or the merges cannot be loaded
+     * @throws DatabaseException When the person's row is not there, or cannot be loaded
      * @throws HilosException On database failure while reading or writing the flag
      */
     protected function writeAdminFlag(bool $admin): void
     {
-        $this->personToWrite()->actions->setAdmin($admin);
+        Hilos::$db->users[$this->userId]->actions->setAdmin($admin);
     }
 
     /**
      * Writes the person's block flag; the sessions library ends the sessions once this answers.
      *
      * The same shape as {@see self::writeAdminFlag()}: a folded account is refused, both ways,
-     * before the write - the merge closed its sign-in with the flag, and the flag is not an
-     * administrator's to reopen. A block takes away the trust of every browser of the person in the
+     * at the entry of the request - the merge closed its sign-in with the flag, and the flag is not
+     * an administrator's to reopen - and the row is read here as required. A block takes away the
+     * trust of every browser of the person in the
      * same transaction (HIL-1407): a blocked person who is let back in passes the second factor
      * again everywhere, and a block the trust survived did not happen whole. Lifting the block
      * writes the flag alone. Not final, for the reason {@see self::renamePerson()} gives.
@@ -990,16 +991,15 @@ abstract class AbstractUserAgent extends AbstractAgent
      * nothing. A notice that cannot be queued does not undo the write ({@see self::announceSecurity()}).
      *
      * @param bool $block New block flag
-     * @throws ItemNotFoundForUpdateException When there is no such person
-     * @throws ValidationException When the account was merged into another one
-     * @throws LogicException When a collection's class constants are not configured
+     * @throws ItemNotFoundForUpdateException When the person's row has no persisted id
+     * @throws LogicException When the people collection's class constants are not configured, or a transaction is already open
      * @throws InvalidArgumentException When a stored row is not the collection's object type, or a sync signal cannot be named
-     * @throws DatabaseException When the person or the merges cannot be loaded, or the trust cannot be removed
+     * @throws DatabaseException When the person's row is not there or cannot be loaded, or the trust cannot be removed
      * @throws HilosException On database or truth-source failure while reading or writing the flag, the trust or the transaction
      */
     protected function writeBlockFlag(bool $block): void
     {
-        $user = $this->personToWrite();
+        $user = Hilos::$db->users[$this->userId];
         $wasBlocked = $user->block;
         if (!$block) {
             $user->actions->setBlock(false);
@@ -1029,36 +1029,39 @@ abstract class AbstractUserAgent extends AbstractAgent
     /**
      * Writes this person's theme choice without touching the activity timestamp.
      *
-     * A merged account is refused before the write. Not final, for the reason
-     * {@see self::renamePerson()} gives.
+     * Whether the account may be written was settled at the entry of the request; the row is
+     * read here as required. Not final, for the reason {@see self::renamePerson()} gives.
      *
      * @param ?string $themePick Light, dark or system; null for an explicit reset
-     * @throws ItemNotFoundForUpdateException When there is no such person
-     * @throws ValidationException When the account was merged or the choice is invalid
-     * @throws LogicException When a collection's class constants are not configured
+     * @throws ItemNotFoundForUpdateException When the person's row has no persisted id
+     * @throws ValidationException When the choice is outside the theme catalog
+     * @throws LogicException When the people collection's class constants are not configured
      * @throws InvalidArgumentException When a stored row is not the collection's object type
-     * @throws DatabaseException When the person or the merges cannot be loaded
+     * @throws DatabaseException When the person's row is not there, or cannot be loaded
      * @throws HilosException On database or truth-source failure while writing the choice
      */
     protected function writeThemePick(?string $themePick): void
     {
-        $this->personToWrite()->actions->setThemePick($themePick);
+        Hilos::$db->users[$this->userId]->actions->setThemePick($themePick);
     }
 
     /**
      * Writes this person's time zone without touching activity time.
      *
+     * Whether the account may be written was settled at the entry of the request; the row is
+     * read here as required. Not final, for the reason {@see self::renamePerson()} gives.
+     *
      * @param ?string $timeZone Exact IANA identifier or an explicit reset
-     * @throws ItemNotFoundForUpdateException When there is no such person
-     * @throws ValidationException When the account was merged or the identifier is invalid
-     * @throws LogicException When a collection's class constants are not configured
+     * @throws ItemNotFoundForUpdateException When the person's row has no persisted id
+     * @throws ValidationException When the identifier is outside the IANA catalog
+     * @throws LogicException When the people collection's class constants are not configured
      * @throws InvalidArgumentException When a stored row is not the collection's object type
-     * @throws DatabaseException When the person or the merges cannot be loaded
+     * @throws DatabaseException When the person's row is not there, or cannot be loaded
      * @throws HilosException On database or truth-source failure while writing the time zone
      */
     protected function writeTimeZone(?string $timeZone): void
     {
-        $this->personToWrite()->actions->setTimeZone($timeZone);
+        Hilos::$db->users[$this->userId]->actions->setTimeZone($timeZone);
     }
 
     /**
@@ -1073,16 +1076,14 @@ abstract class AbstractUserAgent extends AbstractAgent
      *
      * @param int $identityId Password row to write
      * @param string $passwordHash `password_hash()` value to store
-     * @throws ItemNotFoundForUpdateException When there is no such person
-     * @throws ValidationException When the account was merged into another one, or the row is not this person's password
-     * @throws LogicException When a collection's class constants are not configured
+     * @throws ValidationException When the row is not this person's password
+     * @throws LogicException When the identities collection's class constants are not configured
      * @throws InvalidArgumentException When a stored row is not the collection's object type
-     * @throws DatabaseException When the person, the merges or the row cannot be loaded, or the secret cannot be written
+     * @throws DatabaseException When the row cannot be loaded, or the secret cannot be written
      * @throws HilosException On database or truth-source failure while reading or writing the row
      */
     protected function writePasswordHash(int $identityId, string $passwordHash): void
     {
-        $this->personToWrite();
         if (
             !isset(Hilos::$db->identities[$identityId])
             || Hilos::$db->identities[$identityId]->userId !== $this->userId
@@ -1109,16 +1110,14 @@ abstract class AbstractUserAgent extends AbstractAgent
      * @param int $identityId Password row to write
      * @param string $passwordHash `password_hash()` value to store
      * @param int $keepSessionId Session row of the browser that set the password, which keeps its trust; 0 when it has none
-     * @throws ItemNotFoundForUpdateException When there is no such person
-     * @throws ValidationException When the account was merged into another one, or the row is not this person's password
-     * @throws LogicException When a collection's class constants are not configured
+     * @throws ValidationException When the row is not this person's password
+     * @throws LogicException When the identities collection's class constants are not configured
      * @throws InvalidArgumentException When a stored row is not the collection's object type
-     * @throws DatabaseException When the person, the merges or the row cannot be loaded, or the secret cannot be written
+     * @throws DatabaseException When the row cannot be loaded, or the secret cannot be written
      * @throws HilosException On database or truth-source failure while taking the trust away or writing the row
      */
     protected function writeNewPassword(int $identityId, string $passwordHash, int $keepSessionId): void
     {
-        $this->personToWrite();
         Hilos::$db->secondFactorTrusts->actions->deleteForUserExceptSession($this->userId, $keepSessionId);
         $this->writePasswordHash($identityId, $passwordHash);
     }
@@ -1131,16 +1130,13 @@ abstract class AbstractUserAgent extends AbstractAgent
      * {@see self::renamePerson()} gives.
      *
      * @param int $identityId Password row on the proven address
-     * @throws ItemNotFoundForUpdateException When there is no such person
-     * @throws ValidationException When the account was merged into another one
-     * @throws LogicException When a collection's class constants are not configured
+     * @throws LogicException When the identities collection's class constants are not configured
      * @throws InvalidArgumentException When a stored row is not the collection's object type, or the sync signal cannot be named
-     * @throws DatabaseException When the person, the merges or the row cannot be loaded, or the flag cannot be written
+     * @throws DatabaseException When the row cannot be loaded, or the flag cannot be written
      * @throws HilosException On database or truth-source failure while reading or writing the row
      */
     protected function markAddressVerified(int $identityId): void
     {
-        $this->personToWrite();
         if (!isset(Hilos::$db->identities[$identityId])) {
             return;
         }
@@ -1160,17 +1156,14 @@ abstract class AbstractUserAgent extends AbstractAgent
      *
      * @param int $passkeyId Row of the key
      * @param int $signCount Signature counter the authenticator reported
-     * @throws ItemNotFoundForUpdateException When there is no such person
-     * @throws ValidationException When the account was merged into another one, or the key is not this person's
+     * @throws ValidationException When the key is not this person's
      * @throws WebAuthnVerificationException When the counter did not advance past the stored one
-     * @throws LogicException When a collection's class constants are not configured
-     * @throws InvalidArgumentException When a stored row is not the collection's object type
-     * @throws DatabaseException When the person, the merges or the key cannot be loaded, or the use cannot be written
+     * @throws InvalidArgumentException When the keys' query is given an invalid order direction
+     * @throws DatabaseException When the keys cannot be loaded, or the use cannot be written
      * @throws HilosException On database or truth-source failure while reading or writing the key
      */
     protected function recordPasskeyUse(int $passkeyId, int $signCount): void
     {
-        $this->personToWrite();
         foreach (Hilos::$db->passkeyCredentials->listByUser($this->userId) as $credential) {
             if ($credential->id === $passkeyId) {
                 $credential->recordUse($signCount);
@@ -1192,16 +1185,14 @@ abstract class AbstractUserAgent extends AbstractAgent
      *
      * @param string $from Lowercased address the account holds now
      * @param string $to Lowercased address it moves to
-     * @throws ItemNotFoundForUpdateException When there is no such person
-     * @throws ValidationException When the account was merged into another one, or another account holds the address
-     * @throws LogicException When a collection's class constants are not configured
-     * @throws InvalidArgumentException When a stored row is not the collection's object type
-     * @throws DatabaseException When the person, the merges or the rows cannot be loaded
+     * @throws ValidationException When another account holds the address
+     * @throws LogicException When a transaction is already open
+     * @throws InvalidArgumentException When the rows' query is given an invalid order direction
+     * @throws DatabaseException When the rows cannot be loaded or rewritten
      * @throws HilosException When the rows or the transaction cannot be written
      */
     protected function moveEmail(string $from, string $to): void
     {
-        $this->personToWrite();
         Database::transactionStart();
         try {
             Hilos::$db->identities->changeEmail($this->userId, $from, $to);
@@ -1230,16 +1221,15 @@ abstract class AbstractUserAgent extends AbstractAgent
      * for the reason {@see self::renamePerson()} gives.
      *
      * @param int $identityId Sign-in method to remove
-     * @throws ItemNotFoundForUpdateException When there is no such person
-     * @throws ValidationException When the account was merged into another one, or the method is not this person's or their last
-     * @throws LogicException When a collection's class constants are not configured
-     * @throws InvalidArgumentException When a stored row is not the collection's object type
-     * @throws DatabaseException When the person, the merges or the rows cannot be loaded or deleted
+     * @throws ValidationException When the method is not this person's or their last
+     * @throws LogicException When the identities collection's class constants are not configured, or a passkey method is
+     *     deleted while its credential is still stored
+     * @throws InvalidArgumentException When a stored row is not the collection's object type, or a query is given an invalid order
+     * @throws DatabaseException When the rows cannot be loaded or deleted
      * @throws HilosException On database or truth-source failure while reading or deleting the rows
      */
     protected function unlinkIdentity(int $identityId): void
     {
-        $this->personToWrite();
         if (
             isset(Hilos::$db->identities[$identityId])
             && Hilos::$db->identities[$identityId]->userId === $this->userId
@@ -1264,16 +1254,12 @@ abstract class AbstractUserAgent extends AbstractAgent
      *
      * @param string $sessionTokenHash Hash of the session token of the browser the operation is confirmed in
      * @param string $operation Protected operation confirmed
-     * @throws ItemNotFoundForUpdateException When there is no such person
-     * @throws ValidationException When the account was merged into another one
-     * @throws LogicException When a collection's class constants are not configured
-     * @throws InvalidArgumentException When a stored row is not the collection's object type, or the frame cannot be named or queued
-     * @throws DatabaseException When the person or the merges cannot be loaded, or a confirmation cannot be read, written or removed
+     * @throws InvalidArgumentException When the confirmations' query is invalid, or the frame cannot be named or queued
+     * @throws DatabaseException When a confirmation cannot be read, written or removed
      * @throws HilosException On truth-source failure while writing a confirmation, or when the lifetime cannot be read
      */
     protected function recordStepUp(string $sessionTokenHash, string $operation): void
     {
-        $this->personToWrite();
         StepUpConfirmations::record($this, $sessionTokenHash, $this->userId, $operation);
     }
 
@@ -1287,16 +1273,10 @@ abstract class AbstractUserAgent extends AbstractAgent
      *
      * @param int $sessionId Session row of the browser losing trust, or with others the one keeping it
      * @param bool $others Whether every browser of the person but the named one loses trust
-     * @throws ItemNotFoundForUpdateException When there is no such person
-     * @throws ValidationException When the account was merged into another one
-     * @throws LogicException When a collection's class constants are not configured
-     * @throws InvalidArgumentException When a stored row is not the collection's object type
-     * @throws DatabaseException When the person or the merges cannot be loaded
      * @throws HilosException On truth-source, lookup, transaction or delete failure while taking the trust away
      */
     protected function revokeBrowserTrust(int $sessionId, bool $others): void
     {
-        $this->personToWrite();
         if ($others) {
             Hilos::$db->secondFactorTrusts->actions->deleteForUserExceptSession($this->userId, $sessionId);
 
@@ -1314,16 +1294,15 @@ abstract class AbstractUserAgent extends AbstractAgent
      * {@see self::renamePerson()} gives.
      *
      * @param ?int $notificationId Notification to mark, or null for every one of the person's
-     * @throws ItemNotFoundForUpdateException When there is no such person, or the notification row has no id
-     * @throws ValidationException When the account was merged into another one, or the notification is missing or another person's
-     * @throws LogicException When a collection's class constants are not configured
+     * @throws ItemNotFoundForUpdateException When the notification row has no id
+     * @throws ValidationException When the notification is missing or another person's
+     * @throws LogicException When the notifications collection's class constants are not configured
      * @throws InvalidArgumentException When a stored row is not the collection's object type, or the frame cannot be named or queued
-     * @throws DatabaseException When the person, the merges or a notification cannot be loaded
+     * @throws DatabaseException When a notification cannot be loaded
      * @throws HilosException When a notification cannot be marked read
      */
     protected function markNotificationsRead(?int $notificationId): void
     {
-        $this->personToWrite();
         if ($notificationId === null) {
             Hilos::$db->notifications->actions->markAllReadForUser($this->userId);
         } else {
@@ -1353,12 +1332,9 @@ abstract class AbstractUserAgent extends AbstractAgent
      *
      * @param string $channel Channel to set
      * @param bool $enabled Whether the channel stays on
-     * @throws ItemNotFoundForUpdateException When there is no such person
-     * @throws ValidationException When the account was merged into another one
      * @throws EmptyValueException When the channel name is empty
-     * @throws LogicException When a collection's class constants are not configured
-     * @throws InvalidArgumentException When a stored row is not the collection's object type, or the frame cannot be named or queued
-     * @throws DatabaseException When the person, the merges, a preference or a channel address cannot be loaded or written
+     * @throws InvalidArgumentException When the preferences' query is invalid, or the frame cannot be named or queued
+     * @throws DatabaseException When a preference or a channel address cannot be loaded or written
      * @throws SourceChangeSubscriberException Whatever a subscriber to the preference store announcement raises
      * @throws SettingException When the settings accessor refuses a channel's enablement key
      * @throws DbCollectionNotReadableException When nothing here reads the preferences or a channel's address collection
@@ -1366,7 +1342,6 @@ abstract class AbstractUserAgent extends AbstractAgent
      */
     protected function setNotificationChannel(string $channel, bool $enabled): void
     {
-        $this->personToWrite();
         Hilos::$db->notificationPreferences->actions->setChannel($this->userId, $channel, $enabled);
         $this->sendToGroup(
             NotificationSignalName::PREFERENCES_CHANGED,
@@ -1385,17 +1360,13 @@ abstract class AbstractUserAgent extends AbstractAgent
      * {@see self::renamePerson()} gives.
      *
      * @param string $endpoint Browser push endpoint of the subscription to drop
-     * @throws ItemNotFoundForUpdateException When there is no such person
-     * @throws ValidationException When the account was merged into another one
-     * @throws LogicException When a collection's class constants are not configured
-     * @throws InvalidArgumentException When a stored row is not the collection's object type, or the lookup order is invalid
-     * @throws DatabaseException When the person, the merges or the subscription cannot be loaded or removed
+     * @throws InvalidArgumentException When the lookup order is invalid
+     * @throws DatabaseException When the subscription cannot be loaded or removed
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws WriteNotAllowedException When the caller holds no right to remove that person's subscriptions
      */
     protected function unsubscribePush(string $endpoint): void
     {
-        $this->personToWrite();
         Hilos::$db->pushSubscriptions->actions->unsubscribeOwned($this->userId, $endpoint);
     }
 
@@ -1406,17 +1377,14 @@ abstract class AbstractUserAgent extends AbstractAgent
      * told. Not final, for the reason {@see self::renamePerson()} gives.
      *
      * @param int $subscriptionId Push subscription row to remove
-     * @throws ItemNotFoundForUpdateException When there is no such person
-     * @throws ValidationException When the account was merged into another one, or the device is already gone
-     * @throws LogicException When a collection's class constants are not configured, or it has no usable object metadata
-     * @throws InvalidArgumentException When a stored row is not the collection's object type
-     * @throws DatabaseException When the person, the merges or the subscription cannot be loaded or removed
+     * @throws ValidationException When the device is already gone
+     * @throws LogicException When the collection has no usable object metadata
+     * @throws DatabaseException When the subscription cannot be loaded or removed
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws WriteNotAllowedException When the caller holds no right to remove that person's subscriptions
      */
     protected function removePush(int $subscriptionId): void
     {
-        $this->personToWrite();
         if (Hilos::$db->pushSubscriptions->actions->removeOwned($this->userId, $subscriptionId) === false) {
             throw new ValidationException('This device is already gone');
         }
@@ -1431,16 +1399,13 @@ abstract class AbstractUserAgent extends AbstractAgent
      * {@see self::renamePerson()} gives.
      *
      * @return bool True when this call canceled a standing request, false when none stood
-     * @throws ItemNotFoundForUpdateException When there is no such person
-     * @throws ValidationException When the account was merged into another one
-     * @throws LogicException When a collection's class constants are not configured
+     * @throws LogicException When the requests collection's class constants are not configured
      * @throws InvalidArgumentException When a stored row is not the collection's object type, or a sync signal cannot be named
-     * @throws DatabaseException When the person, the merges or the request cannot be loaded or updated
+     * @throws DatabaseException When the request cannot be loaded or updated
      * @throws HilosException On database or truth-source failure while reading or canceling the request
      */
     protected function cancelAccountDeletion(): bool
     {
-        $this->personToWrite();
         $deletion = Hilos::$db->accountDeletions->liveOf($this->userId);
 
         return $deletion !== null && $deletion->actions->cancel();
@@ -1454,16 +1419,11 @@ abstract class AbstractUserAgent extends AbstractAgent
      *
      * @param int $fileId Registry file the photo is set from
      * @return ?int Registry file of the photo this one replaced, or null when there was none
-     * @throws ItemNotFoundForUpdateException When there is no such person
-     * @throws ValidationException When the account was merged into another one
-     * @throws LogicException When a collection's class constants are not configured
-     * @throws InvalidArgumentException When a stored row is not the collection's object type
-     * @throws DatabaseException When the person, the merges or the photo cannot be loaded or written
+     * @throws LogicException When a transaction is already open
      * @throws HilosException When the photo or the transaction cannot be written
      */
     protected function putPhoto(int $fileId): ?int
     {
-        $this->personToWrite();
         Database::transactionStart();
         try {
             $former = Hilos::$db->userPhotos->actions->put($this->userId, $fileId);
@@ -1484,16 +1444,13 @@ abstract class AbstractUserAgent extends AbstractAgent
      * for the reason {@see self::renamePerson()} gives.
      *
      * @return ?int Registry file of the photo that was removed, or null when there was none
-     * @throws ItemNotFoundForUpdateException When there is no such person
-     * @throws ValidationException When the account was merged into another one
-     * @throws LogicException When a collection's class constants are not configured
+     * @throws LogicException When the photos collection's class constants are not configured, or a transaction is already open
      * @throws InvalidArgumentException When a stored row is not the collection's object type
-     * @throws DatabaseException When the person, the merges or the photo cannot be loaded or removed
+     * @throws DatabaseException When the photo cannot be loaded or removed
      * @throws HilosException When the photo or the transaction cannot be written
      */
     protected function removePhoto(): ?int
     {
-        $this->personToWrite();
         if (!isset(Hilos::$db->userPhotos[$this->userId])) {
             return null;
         }
@@ -1526,9 +1483,12 @@ abstract class AbstractUserAgent extends AbstractAgent
     /**
      * Writes a rename and answers the users library with its row or its refusal.
      *
-     * The refusals keep the sentences the administrator always read: a missing person and a name
-     * the row refuses are said, and a storage or wiring failure travels as the placeholder with
-     * its detail beside it, written to this agent's log.
+     * The person is checked first, on every frame ({@see AddressablePerson::require()}): one
+     * erased, or folded into someone else between the hop and this frame, is refused rather than
+     * written. The refusals keep the sentences the administrator always read: a missing person and
+     * a name the row refuses are said, a folded account reads as a name the row refuses, and a
+     * storage or wiring failure travels as the placeholder with its detail beside it, written to
+     * this agent's log.
      *
      * @param UserRenameSignalData $ask Whom to rename, to what, and on whose word
      * @throws InvalidArgumentException When the answer frame cannot be named or queued
@@ -1538,6 +1498,7 @@ abstract class AbstractUserAgent extends AbstractAgent
         $rename = null;
         $refusal = null;
         try {
+            AddressablePerson::require($this->userId);
             $rename = $this->renamePerson($ask->name, $ask->renamedByUserId);
         } catch (ValidationException $e) {
             $refusal = ActionRefusal::said(self::renameRefusalWords($this->userId, $e));
@@ -1571,7 +1532,7 @@ abstract class AbstractUserAgent extends AbstractAgent
         $refusal = $this->flagRefusal(function () use ($ask): void {
             if (
                 !$ask->adoptOnly
-                || ($this->personToWrite()->themePick === null && !$this->personToWrite()->themePickInitialized)
+                || (Hilos::$db->users[$this->userId]->themePick === null && !Hilos::$db->users[$this->userId]->themePickInitialized)
             ) {
                 $this->writeThemePick($ask->themePick);
             }
@@ -1618,8 +1579,11 @@ abstract class AbstractUserAgent extends AbstractAgent
     /**
      * Runs one write and says why it was refused, if it was.
      *
-     * Every failure is an answer, the wiring refusal included: the coordinator continues only on
-     * the answer, and a card, a parked command or a browser action is waiting on it.
+     * The person is checked first, on every frame ({@see AddressablePerson::require()}): one
+     * erased, or folded into someone else between the hop and this frame, is refused in that
+     * check's own words, and nothing is written. Every failure is an answer, the wiring refusal
+     * included: the coordinator continues only on the answer, and a card, a parked command or a
+     * browser action is waiting on it.
      *
      * @param callable(): void $write The write - a flag, or one of the person's ways of signing in
      * @param string $what Which write, for the log line
@@ -1628,6 +1592,7 @@ abstract class AbstractUserAgent extends AbstractAgent
     private function flagRefusal(callable $write, string $what): ?ActionRefusal
     {
         try {
+            AddressablePerson::require($this->userId);
             $write();
         } catch (Throwable $e) {
             $refusal = ActionRefusal::fromThrowable($e);
@@ -1718,11 +1683,8 @@ abstract class AbstractUserAgent extends AbstractAgent
      *
      * @param UserSecondFactorProveSignalData $ask The code, where it was typed, and the operation it confirms if any
      * @return UserSecondFactorProveDoneSignalData Whether it proved the person, what it counted, and what it canceled
-     * @throws ItemNotFoundForUpdateException When there is no such person
-     * @throws ValidationException When the account was merged into another one
-     * @throws LogicException When a collection's class constants are not configured
-     * @throws InvalidArgumentException When a stored row is not the collection's object type, or the frame cannot be named or queued
-     * @throws DatabaseException When the person or the merges cannot be loaded, or a confirmation cannot be read, written or removed
+     * @throws InvalidArgumentException When the confirmations' query is invalid, or the frame cannot be named or queued
+     * @throws DatabaseException When a confirmation cannot be read, written or removed
      * @throws HilosException When a lookup, a write or the env read of the check or of the confirmation fails
      */
     private function proveSecondFactor(UserSecondFactorProveSignalData $ask): UserSecondFactorProveDoneSignalData
@@ -1733,29 +1695,6 @@ abstract class AbstractUserAgent extends AbstractAgent
         }
 
         return $proof;
-    }
-
-    /**
-     * @return User The person's row, open to an edit
-     * @throws ItemNotFoundForUpdateException When there is no such person
-     * @throws ValidationException When the account was merged into another one
-     * @throws LogicException When a collection's class constants are not configured
-     * @throws InvalidArgumentException When a stored row is not the collection's object type
-     * @throws DatabaseException When the person or the merges cannot be loaded
-     */
-    private function personToWrite(): User
-    {
-        AddressablePerson::require($this->userId);
-        $user = Hilos::$db->users[$this->userId];
-        if (!$user instanceof User) {
-            // The check above is the refusal. Asked again so a row gone on this read
-            // keeps that same refusal instead of a second copy of its words.
-            AddressablePerson::require($this->userId);
-
-            throw new LogicException("Person #{$this->userId} is not a user row");
-        }
-
-        return $user;
     }
 
     /**

@@ -15,9 +15,11 @@ use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
+use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
@@ -236,28 +238,44 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
     /** @throws HilosException When a fixture row cannot be written or a frame fails */
     public function testTheThemePickOfAFoldedAccountIsRefused(): void
     {
-        $survivorId = self::seedPerson('Survivor', admin: false);
-        $userId = self::seedPerson('Folded', admin: false);
-        Database::sqlRun(
-            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, NOW())',
-            [$userId, $survivorId],
+        $userId = self::seedFoldedPerson('Folded');
+        $ask = new UserThemePickWriteSignalData($userId, 'dark', 'theme_pick_done', self::ACCEPT_KEY, null, 'theme_pick', null, true);
+
+        $this->deliverToPerson($this->frame(HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE, $ask));
+
+        $answer = $this->onlyAnswer('theme_pick_done');
+        self::assertInstanceOf(UserThemePickWriteDoneSignalData::class, $answer);
+        self::assertSame($ask->toArray(), $answer->ask->toArray());
+        self::assertSame(AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE, $answer->error);
+        self::assertNull($answer->errorType);
+        self::assertNull($answer->errorDetail);
+        self::assertNull(self::personRow($userId)['theme_pick']);
+    }
+
+    /**
+     * An adoption that would only skip a choice already made is still refused for a folded account:
+     * the late frame meets the entry check, not the skip, so nothing is restated or chosen.
+     *
+     * @throws HilosException When a fixture row cannot be written or a frame fails
+     */
+    public function testAnAdoptionOnAFoldedAccountThatAlreadyChoseIsRefusedRatherThanSkipped(): void
+    {
+        $userId = self::seedFoldedPerson('Folded');
+        Database::sqlRun('UPDATE `hilos_user` SET `theme_pick` = ?, `theme_pick_initialized` = 1 WHERE `id` = ?', ['light', $userId]);
+        $ask = new UserThemePickWriteSignalData(
+            $userId, 'dark', 'theme_pick_done', self::ACCEPT_KEY, null, HilosSignalConstants::HILOS_THEME_ADOPT, null, true,
         );
 
-        $this->deliverToPerson($this->frame(
-            HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE,
-            new UserThemePickWriteSignalData($userId, 'dark', 'theme_pick_done', self::ACCEPT_KEY, null, 'theme_pick', null, true),
-        ));
+        $this->deliverToPerson($this->frame(HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE, $ask));
 
-        $next = Hilos::$sr->getNextQueuedSignal();
-        self::assertNotNull($next);
-        self::assertSame('theme_pick_done', $next->signalName->getName(), 'A refused adoption must not restate sessions');
-        self::assertInstanceOf(AgentSignalData::class, $next->data);
-        $answer = $next->data->data;
+        $answer = $this->onlyAnswer('theme_pick_done');
         self::assertInstanceOf(UserThemePickWriteDoneSignalData::class, $answer);
-        self::assertNotNull($answer->error);
-        self::assertStringContainsString('merged', strtolower($answer->error));
-        self::assertNull(self::personRow($userId)['theme_pick']);
-        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+        self::assertSame($ask->toArray(), $answer->ask->toArray());
+        self::assertSame(AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE, $answer->error);
+        self::assertNull($answer->errorType);
+        self::assertNull($answer->errorDetail);
+        self::assertSame('light', self::personRow($userId)['theme_pick']);
+        self::assertSame(1, (int)self::personRow($userId)['theme_pick_initialized']);
     }
 
     /** @throws HilosException When a frame or fixture query fails */
@@ -269,11 +287,12 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
 
         $this->deliverToPerson($this->frame(HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE, $ask));
 
-        $answer = $this->answer('theme_pick_done');
+        $answer = $this->onlyAnswer('theme_pick_done');
         self::assertInstanceOf(UserThemePickWriteDoneSignalData::class, $answer);
         self::assertSame($ask->toArray(), $answer->ask->toArray());
         self::assertSame("No such user: {$userId}", $answer->error);
         self::assertNull($answer->errorType);
+        self::assertNull($answer->errorDetail);
     }
 
     /** @throws HilosException When fixture rows cannot be written or a frame fails */
@@ -414,6 +433,51 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
         self::assertNull(Hilos::$sr->getNextQueuedSignal());
     }
 
+    /** @throws HilosException When a frame or fixture query fails */
+    public function testATimeZoneOfAMissingPersonIsRefusedBeforeTheWriteAndTheRestate(): void
+    {
+        $userId = self::seedPerson('Gone', admin: false);
+        Database::sqlRun('DELETE FROM `hilos_user` WHERE `id` = ?', [$userId]);
+        $ask = new UserTimeZoneWriteSignalData(
+            $userId, 'UTC', HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE_DONE, self::ACCEPT_KEY, null, 'time_zone', null,
+        );
+
+        $this->deliverToPerson($this->frame(HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE, $ask));
+
+        $answer = $this->onlyAnswer(HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE_DONE);
+        self::assertInstanceOf(UserTimeZoneWriteDoneSignalData::class, $answer);
+        self::assertSame($ask, $answer->ask);
+        self::assertSame("No such user: {$userId}", $answer->error);
+        self::assertNull($answer->errorType);
+        self::assertNull($answer->errorDetail);
+    }
+
+    /** @throws HilosException When a fixture row cannot be written or a frame fails */
+    public function testATimeZoneOfAFoldedAccountIsRefusedBeforeTheWriteAndTheRestate(): void
+    {
+        $userId = self::seedFoldedPerson('Folded');
+        $activity = '2026-10-01 12:34:56';
+        Database::sqlRun(
+            'UPDATE `hilos_user` SET `time_zone` = ?, `last_activity` = ? WHERE `id` = ?',
+            ['Europe/Warsaw', $activity, $userId],
+        );
+        $ask = new UserTimeZoneWriteSignalData(
+            $userId, 'UTC', HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE_DONE, self::ACCEPT_KEY, null, 'time_zone', null,
+        );
+
+        $this->deliverToPerson($this->frame(HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE, $ask));
+
+        $answer = $this->onlyAnswer(HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE_DONE);
+        self::assertInstanceOf(UserTimeZoneWriteDoneSignalData::class, $answer);
+        self::assertSame($ask, $answer->ask);
+        self::assertSame(AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE, $answer->error);
+        self::assertNull($answer->errorType);
+        self::assertNull($answer->errorDetail);
+        self::assertSame('Europe/Warsaw', self::personRow($userId)['time_zone']);
+        self::assertSame($activity, self::personRow($userId)['last_activity']);
+        self::assertSame('Europe/Warsaw', Hilos::$db->users[$userId]->timeZone);
+    }
+
     /**
      * @throws HilosException When a fixture row cannot be written or a frame fails
      */
@@ -447,18 +511,42 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
     }
 
     /**
+     * A rename reaching the agent of a person who is gone is refused in the words the
+     * administrator always read, and no journal row is written.
+     *
+     * @throws HilosException When a frame or fixture query fails
+     */
+    public function testARenameOfAMissingPersonIsRefusedInTheOldWords(): void
+    {
+        $adminId = self::seedPerson('Root', admin: true);
+        $userId = self::seedPerson('Gone', admin: false);
+        Database::sqlRun('DELETE FROM `hilos_user` WHERE `id` = ?', [$userId]);
+        $ask = new UserRenameSignalData(
+            $userId, 'Grace', $adminId, HilosSignalConstants::HILOS_USER_RENAME_DONE, self::ACCEPT_KEY, null,
+            HilosSignalConstants::HILOS_USER_UPDATE, null, HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE,
+        );
+
+        $this->deliverToPerson($this->frame(HilosSignalConstants::HILOS_USER_RENAME, $ask));
+
+        $answer = $this->onlyAnswer(HilosSignalConstants::HILOS_USER_RENAME_DONE);
+        self::assertInstanceOf(UserRenameDoneSignalData::class, $answer);
+        self::assertSame($ask->toArray(), $answer->ask->toArray());
+        self::assertNull($answer->renameId);
+        self::assertSame("User #{$userId} not found", $answer->error);
+        self::assertNull($answer->errorType);
+        self::assertNull($answer->errorDetail);
+        self::assertSame([], Database::sql('SELECT `id` FROM `hilos_user_rename`')->rows());
+    }
+
+    /**
      * A merged account renamed by its own owner is refused, and the refusal reaches their window.
      *
      * @throws HilosException When a fixture row cannot be written or a frame fails
      */
     public function testARefusedOwnRenameIsAnsweredToTheConnectionAsAnActionError(): void
     {
-        $survivorId = self::seedPerson('Survivor', admin: false);
-        $userId = self::seedPerson('Folded', admin: false);
-        Database::sqlRun(
-            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, NOW())',
-            [$userId, $survivorId],
-        );
+        $userId = self::seedFoldedPerson('Folded');
+        $refusedWords = 'Failed to update user: ' . AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE;
 
         $this->deliverToPerson($this->frame(HilosSignalConstants::HILOS_USER_RENAME, new UserRenameSignalData(
             $userId,
@@ -473,7 +561,13 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
         )));
         $answer = Hilos::$sr->getNextQueuedSignal();
         self::assertNotNull($answer);
+        self::assertSame(HilosSignalConstants::HILOS_USER_RENAME_DONE, $answer->signalName->getName());
         self::assertInstanceOf(AgentSignalData::class, $answer->data);
+        self::assertInstanceOf(UserRenameDoneSignalData::class, $answer->data->data);
+        self::assertNull($answer->data->data->renameId);
+        self::assertSame($refusedWords, $answer->data->data->error);
+        self::assertNull($answer->data->data->errorType);
+        self::assertNull($answer->data->data->errorDetail);
         ExecutionContext::run(
             new ExecutionFrame(agentId: $this->users->getId()),
             fn () => $this->users->onSignalAgent($answer->data, '', HilosSignalConstants::HILOS_USER_RENAME_DONE),
@@ -482,6 +576,9 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
         $refusal = Hilos::$sr->getNextQueuedSignal();
         self::assertNotNull($refusal);
         self::assertSame(SignalConstants::ACTION_ERROR, $refusal->signalName->getName());
+        self::assertInstanceOf(WebSocketSignalData::class, $refusal->data);
+        self::assertInstanceOf(PageActionErrorSignalData::class, $refusal->data->data);
+        self::assertSame($refusedWords, $refusal->data->data->reason);
         self::assertSame('Folded', self::personRow($userId)['name']);
         self::assertSame([], Database::sql('SELECT `id` FROM `hilos_user_rename`')->rows());
     }
@@ -720,6 +817,24 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
     }
 
     /**
+     * Takes the one frame the agent sent, which must travel under the given name: a refusal
+     * restates no sessions and syncs nothing.
+     *
+     * @param string $name Agent-signal name of the answer
+     * @return mixed The answer's payload
+     */
+    private function onlyAnswer(string $name): mixed
+    {
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        self::assertNotNull($signal);
+        self::assertSame($name, $signal->signalName->getName(), 'A refusal must be the only frame the agent sends');
+        self::assertInstanceOf(AgentSignalData::class, $signal->data);
+        self::assertNull(Hilos::$sr->getNextQueuedSignal(), 'A refusal must not restate or sync');
+
+        return $signal->data->data;
+    }
+
+    /**
      * @param string $command Command wire name
      * @param int $userId Person the command names
      */
@@ -772,6 +887,23 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
     }
 
     /**
+     * @param string $name Name the folded row carries
+     * @return int Id of a person folded into a survivor seeded beside them
+     * @throws DatabaseException When an insert fails
+     */
+    private static function seedFoldedPerson(string $name): int
+    {
+        $survivorId = self::seedPerson('Survivor', admin: false);
+        $userId = self::seedPerson($name, admin: false);
+        Database::sqlRun(
+            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, NOW())',
+            [$userId, $survivorId],
+        );
+
+        return $userId;
+    }
+
+    /**
      * @param int $userId Person to read
      * @return array<string, mixed> Name and both flags, past every in-memory collection
      * @throws DatabaseException When the query fails
@@ -779,7 +911,7 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
     private static function personRow(int $userId): array
     {
         Database::sql(
-            'SELECT `name`, `admin`, `block`, `last_activity`, `theme_pick`, `time_zone` FROM `hilos_user` WHERE `id` = ?',
+            'SELECT `name`, `admin`, `block`, `last_activity`, `theme_pick`, `theme_pick_initialized`, `time_zone` FROM `hilos_user` WHERE `id` = ?',
             [$userId],
         );
         $row = Database::row();

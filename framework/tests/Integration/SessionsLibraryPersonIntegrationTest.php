@@ -8,11 +8,13 @@ use Hilos\Auth\Impersonation\ImpersonationMessages;
 use Hilos\Auth\Impersonation\ImpersonationSettings;
 use Hilos\Auth\Impersonation\ImpersonationSettingsCatalog;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
-use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
+use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
@@ -26,17 +28,22 @@ use Hilos\HilosException;
 use Hilos\Users\AccountStandingResolver;
 use Hilos\Users\AdminAudience;
 use Hilos\Users\Agent\AbstractUserAgent;
+use Hilos\Users\DTO\UserAdminWriteDoneSignalData;
+use Hilos\Users\DTO\UserAdminWriteSignalData;
+use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
+use Hilos\Users\DTO\UserBlockWriteSignalData;
 
 /**
  * The person as the framework's sessions library mints and judges it (HIL-1197) and as the
- * person's own agent flags and blocks it (HIL-1404), and an account folded into another one as
- * the agent refuses it (HIL-1199).
+ * person's own agent flags and blocks it (HIL-1404), and an account folded into another one, or
+ * gone, as the agent refuses it at the entry of the frame (HIL-1199, HIL-1703).
  *
  * The library and the agent under test are the base classes with nothing overridden, so what
  * answers is the framework's own body over `hilos_user`, and no project stands between the two.
  * Every write runs in its writer's own frame and under the claim that writer's class declares:
  * in a frame a write passes only by that agent's own grant, which is what proves each holds the
- * share of the row it writes.
+ * share of the row it writes. A refusal is read the way the sessions library reads it: off the
+ * frame the agent answers with, taken from the queue of a router of this case's own.
  *
  * Whom a takeover may reach is judged with the impersonation settings of the installation
  * (HIL-1170), read from a fixture catalog whose defaults a case switches off: a default is the
@@ -48,9 +55,14 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
 
     private const int MISSING_USER_ID = 9999;
 
+    /** Accept key standing in for the administrator's browser. */
+    private const string ACCEPT_KEY = 'accept-1';
+
     private SessionsLibraryPersonTestLibrary $library;
 
     private ?SettingsAccessor $previousSetting = null;
+
+    private ?SignalRouter $previousRouter = null;
 
     /**
      * @throws HilosException When the schema reset or the context build fails
@@ -59,6 +71,8 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
     {
         parent::setUp();
 
+        $this->previousRouter = Hilos::$sr;
+        Hilos::$sr = new SignalRouter();
         $this->library = new SessionsLibraryPersonTestLibrary();
         OwnershipDeclaration::claimDb($this->library::class, $this->library->getId());
         $this->previousSetting = Hilos::$setting;
@@ -76,6 +90,7 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
         Hilos::$setting = $this->previousSetting;
         TruthSourceRegistry::unregisterAgent($this->library->getId());
         SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($this->library->getId()));
+        Hilos::$sr = $this->previousRouter;
 
         parent::tearDown();
     }
@@ -109,14 +124,17 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
     }
 
     /**
-     * @throws HilosException When the grant cannot read the person
+     * A frame to a person with no row is answered, not raised: the entry of the frame refuses it
+     * in the words the card reads, with nothing held back.
+     *
+     * @throws HilosException When the frame cannot be queued or the agent fails on it
      */
     public function testRefusesToGrantAPersonWithNoRow(): void
     {
-        $this->expectException(ItemNotFoundForUpdateException::class);
-        $this->expectExceptionMessage('No such user: ' . self::MISSING_USER_ID);
-
-        $this->asPerson(self::MISSING_USER_ID, static fn (SessionsLibraryPersonTestUserAgent $agent) => $agent->grant(true));
+        self::assertRefusedInWords(
+            $this->askAdmin(self::MISSING_USER_ID, true),
+            'No such user: ' . self::MISSING_USER_ID,
+        );
     }
 
     /**
@@ -134,19 +152,19 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
     }
 
     /**
-     * @throws HilosException When the block cannot read the person
+     * @throws HilosException When the frame cannot be queued or the agent fails on it
      */
     public function testRefusesToBlockAPersonWithNoRow(): void
     {
-        $this->expectException(ItemNotFoundForUpdateException::class);
-        $this->expectExceptionMessage('No such user: ' . self::MISSING_USER_ID);
-
-        $this->asPerson(self::MISSING_USER_ID, static fn (SessionsLibraryPersonTestUserAgent $agent) => $agent->block(true));
+        self::assertRefusedInWords(
+            $this->askBlock(self::MISSING_USER_ID, true),
+            'No such user: ' . self::MISSING_USER_ID,
+        );
     }
 
     /**
-     * An account folded into another one gets no rights and loses none: both ways are refused
-     * before the write, and the flag stays as it was.
+     * An account folded into another one gets no rights and loses none: both ways are refused at
+     * the entry of the frame, before the write, and the flag stays as it was.
      *
      * @throws HilosException When a fixture row cannot be written or the flag cannot be read
      */
@@ -159,12 +177,10 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
         self::seedMerge($adminId, $survivorId);
 
         foreach ([[$plainId, true], [$adminId, false]] as [$userId, $admin]) {
-            try {
-                $this->asPerson($userId, static fn (SessionsLibraryPersonTestUserAgent $agent) => $agent->grant($admin));
-                self::fail('A merged account must not have its rights changed');
-            } catch (ValidationException $e) {
-                self::assertSame(AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE, $e->getMessage());
-            }
+            self::assertRefusedInWords(
+                $this->askAdmin($userId, $admin),
+                AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE,
+            );
         }
 
         self::assertSame(0, (int)self::personRow($plainId)['admin']);
@@ -173,7 +189,8 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
 
     /**
      * An account folded into another one is neither blocked nor unblocked by an administrator:
-     * the merge closed its sign-in, and that is not a block to lift.
+     * the merge closed its sign-in, and that is not a block to lift. Both ways are refused at the
+     * entry of the frame.
      *
      * @throws HilosException When a fixture row cannot be written or the flag cannot be read
      */
@@ -186,12 +203,10 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
         self::seedMerge($reopenedId, $survivorId);
 
         foreach ([[$closedId, false], [$reopenedId, true]] as [$userId, $block]) {
-            try {
-                $this->asPerson($userId, static fn (SessionsLibraryPersonTestUserAgent $agent) => $agent->block($block));
-                self::fail('A merged account must not have its block changed');
-            } catch (ValidationException $e) {
-                self::assertSame(AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE, $e->getMessage());
-            }
+            self::assertRefusedInWords(
+                $this->askBlock($userId, $block),
+                AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE,
+            );
         }
 
         self::assertSame(1, (int)self::personRow($closedId)['block']);
@@ -362,6 +377,100 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
     protected function newPersonAgent(string $userId): SessionsLibraryPersonTestUserAgent
     {
         return new SessionsLibraryPersonTestUserAgent($userId);
+    }
+
+    /**
+     * Hands the person's agent the sessions library's admin flag frame, in the agent's own frame,
+     * and reads its answer off the queue.
+     *
+     * @param int $userId Person the frame names
+     * @param bool $admin New admin flag
+     * @return UserAdminWriteDoneSignalData What the agent answered the library
+     */
+    private function askAdmin(int $userId, bool $admin): UserAdminWriteDoneSignalData
+    {
+        $ask = new UserAdminWriteSignalData(
+            userId: $userId,
+            admin: $admin,
+            replySignal: HilosSignalConstants::HILOS_USER_ADMIN_WRITE_DONE,
+            acceptKey: self::ACCEPT_KEY,
+            requestId: 'req-admin-' . $userId,
+            action: HilosSignalConstants::HILOS_USER_ADMIN_SET,
+            successMessage: null,
+            answerSignal: HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET_DONE,
+        );
+        $done = $this->answerTo($userId, $ask, HilosSignalConstants::HILOS_USER_ADMIN_WRITE);
+        self::assertInstanceOf(UserAdminWriteDoneSignalData::class, $done);
+
+        return $done;
+    }
+
+    /**
+     * Hands the person's agent the sessions library's block flag frame, in the agent's own frame,
+     * and reads its answer off the queue.
+     *
+     * @param int $userId Person the frame names
+     * @param bool $block New block flag
+     * @return UserBlockWriteDoneSignalData What the agent answered the library
+     */
+    private function askBlock(int $userId, bool $block): UserBlockWriteDoneSignalData
+    {
+        $ask = new UserBlockWriteSignalData(
+            userId: $userId,
+            block: $block,
+            by: 1,
+            replySignal: HilosSignalConstants::HILOS_USER_BLOCK_WRITE_DONE,
+            acceptKey: self::ACCEPT_KEY,
+            requestId: 'req-block-' . $userId,
+            action: HilosSignalConstants::HILOS_USER_BLOCK_SET,
+            successMessage: null,
+            answerSignal: HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET_DONE,
+        );
+        $done = $this->answerTo($userId, $ask, HilosSignalConstants::HILOS_USER_BLOCK_WRITE);
+        self::assertInstanceOf(UserBlockWriteDoneSignalData::class, $done);
+
+        return $done;
+    }
+
+    /**
+     * Runs the production handler of the person's agent on one frame and takes the answer sent
+     * under the ask's reply signal off the queue.
+     *
+     * @param int $userId Person whose agent takes the frame
+     * @param UserAdminWriteSignalData|UserBlockWriteSignalData $ask The frame's payload
+     * @param string $name Agent-signal name the frame travels under
+     * @return mixed Payload of the answer
+     */
+    private function answerTo(int $userId, UserAdminWriteSignalData|UserBlockWriteSignalData $ask, string $name): mixed
+    {
+        $this->asPerson($userId, static fn (AbstractUserAgent $agent) => $agent->onSignalAgent(
+            new AgentSignalData(data: $ask),
+            '',
+            $name,
+        ));
+
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() === $ask->replySignal) {
+                self::assertInstanceOf(AgentSignalData::class, $signal->data);
+
+                return $signal->data->data;
+            }
+        }
+
+        self::fail("Nothing was sent under {$ask->replySignal}");
+    }
+
+    /**
+     * The refusal the card reads: the sentence alone, with no failure held back beside it.
+     *
+     * @param UserAdminWriteDoneSignalData|UserBlockWriteDoneSignalData $done The agent's answer
+     * @param string $words Sentence the refusal must carry
+     */
+    private static function assertRefusedInWords(UserAdminWriteDoneSignalData|UserBlockWriteDoneSignalData $done, string $words): void
+    {
+        self::assertSame($words, $done->error);
+        self::assertNull($done->errorType);
+        self::assertNull($done->errorDetail);
     }
 
     /**

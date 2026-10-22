@@ -101,7 +101,7 @@ final class EventsActions extends DbActions
      * @param UserRename $rename Journal row of the rename just committed
      * @return DbEvent Created event
      * @throws HilosException On database or truth-source failure
-     * @throws LogicException If event id is null after sync, or the journal row is not there
+     * @throws LogicException If event id is null after sync
      */
     public function addUserRenamed(UserRename $rename): DbEvent
     {
@@ -110,9 +110,7 @@ final class EventsActions extends DbActions
                 ? ChatEventType::USER_RENAMED->value
                 : ChatEventType::USER_RENAMED_BY_ADMIN->value,
         );
-        (Hilos::$db->userRenames[(int)$rename->id] ?? throw new LogicException(
-            "Rename #{$rename->id} is not in the journal",
-        ))->actions->linkEvent((int)$event->id);
+        Hilos::$db->userRenames[(int)$rename->id]->actions->linkEvent((int)$event->id);
 
         return $event;
     }
