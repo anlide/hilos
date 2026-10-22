@@ -201,12 +201,11 @@ const fTopics = field('topics')
 const fPersonality = field('personality')
 const fActive = field('active')
 const live = useSignal(editor.state)
-const canSave = useSignal(editor.canSave)
+const saveAvailable = useSignal(editor.saveAvailable)
 const saveLabel = useSignal(editor.saveLabel)
 const formNoticeText = useSignal(editor.noticeText)
 const formAction = useTrackedAction()
 const {
-  loading: formLoading,
   busy: formBusy,
   run: runFormAction,
   clearError: clearFormError,
@@ -217,7 +216,6 @@ const deleteOpen = ref(false)
 const deleteRow = ref<BotRow | null>(null)
 const deleteAction = useTrackedAction()
 const {
-  loading: deleteLoading,
   busy: deleteBusy,
   run: runDeleteAction,
   clearError: clearDeleteError,
@@ -253,12 +251,13 @@ const formDirty = computed(() => {
   return live.value.dirty
 })
 
-// Save is locked while there is nothing to save: for an add an empty name or a
-// save in flight; for an edit whatever the session says — nothing changed, a
-// row that is gone, a conflict, a save in flight (rules-and-violations.md,
-// section E).
+// Save is unavailable while there is nothing to save: for an add an empty name;
+// for an edit whatever the session says — nothing changed, a row that is gone, a
+// conflict (rules-and-violations.md, section E). A save in flight is not in it:
+// it is the button's own `loading`, which locks it at once and keeps its look
+// until the spinner comes, and the guard of the submit.
 const saveDisabled = computed(() =>
-  editing.value ? !canSave.value : !form.value.name.trim() || formBusy.value,
+  editing.value ? !saveAvailable.value : !form.value.name.trim(),
 )
 
 function openCreate(): void {
@@ -534,7 +533,7 @@ async function submitDelete(): Promise<void> {
             <template #save-button="{ disabled, onSave }">
               <LoadingButton
                 class="btn-primary"
-                :loading="formLoading"
+                :loading="formBusy"
                 :disabled="disabled"
                 data-id="admin-bots-save"
                 @click="onSave"
@@ -579,7 +578,7 @@ async function submitDelete(): Promise<void> {
           </button>
           <LoadingButton
             class="btn-danger"
-            :loading="deleteLoading"
+            :loading="deleteBusy"
             :disabled="deleteGone"
             data-id="admin-bots-delete-confirm"
             @click="submitDelete"

@@ -70,7 +70,7 @@ const editForm = useSignal(editor.form)
 const state = useSignal(editor.state)
 const noticeText = useSignal(editor.noticeText)
 const saveLabel = useSignal(editor.saveLabel)
-const canSave = useSignal(editor.canSave)
+const saveAvailable = useSignal(editor.saveAvailable)
 const editHidden = computed(() => editForm.value.hidden)
 const enabled = computed({
   get: () => editForm.value.enabled,
@@ -78,7 +78,7 @@ const enabled = computed({
 })
 const noticeKind = computed(() => state.value.notice?.kind ?? null)
 const editAction = useTrackedAction()
-const { loading, busy, run, clearError } = editAction
+const { busy, run, clearError } = editAction
 
 const defaultThemeEditor = createHilosAppearanceDefaultThemeEdit(
   table.controller,
@@ -96,7 +96,7 @@ const defaultThemeForm = useSignal(defaultThemeEditor.form)
 const defaultThemeState = useSignal(defaultThemeEditor.state)
 const defaultThemeNoticeText = useSignal(defaultThemeEditor.noticeText)
 const defaultThemeSaveLabel = useSignal(defaultThemeEditor.saveLabel)
-const defaultThemeCanSave = useSignal(defaultThemeEditor.canSave)
+const defaultThemeSaveAvailable = useSignal(defaultThemeEditor.saveAvailable)
 const defaultThemeHidden = computed(() =>
   isHiddenValue(defaultThemeForm.value.defaultTheme),
 )
@@ -110,7 +110,6 @@ const defaultThemeNoticeKind = computed(
 )
 const defaultThemeAction = useTrackedAction()
 const {
-  loading: defaultThemeLoading,
   busy: defaultThemeBusy,
   run: runDefaultTheme,
   clearError: clearDefaultThemeError,
@@ -281,7 +280,7 @@ function valueLabel(value: boolean | string): string {
       <template #actions="{ requestClose }">
         <ConflictActions
           :conflict="state.conflict"
-          :disable-save="!canSave"
+          :disable-save="!saveAvailable"
           :save-label="saveLabel"
           @save="submitEdit"
           @accept-mine="editor.keepMine()"
@@ -301,7 +300,7 @@ function valueLabel(value: boolean | string): string {
           <template #save-button="{ disabled, onSave }">
             <LoadingButton
               class="btn-primary"
-              :loading="loading"
+              :loading="busy"
               :disabled="disabled"
               data-id="appearance-switching-save"
               @click="onSave"
@@ -383,7 +382,7 @@ function valueLabel(value: boolean | string): string {
       <template #actions="{ requestClose }">
         <ConflictActions
           :conflict="defaultThemeState.conflict"
-          :disable-save="!defaultThemeCanSave"
+          :disable-save="!defaultThemeSaveAvailable"
           :save-label="defaultThemeSaveLabel"
           @save="submitDefaultThemeEdit"
           @accept-mine="defaultThemeEditor.keepMine()"
@@ -403,7 +402,7 @@ function valueLabel(value: boolean | string): string {
           <template #save-button="{ disabled, onSave }">
             <LoadingButton
               class="btn-primary"
-              :loading="defaultThemeLoading"
+              :loading="defaultThemeBusy"
               :disabled="disabled"
               data-id="appearance-default-theme-save"
               @click="onSave"

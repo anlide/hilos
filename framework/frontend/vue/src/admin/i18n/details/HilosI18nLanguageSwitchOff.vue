@@ -132,8 +132,8 @@ async function confirm(): Promise<void> {
       </button>
       <LoadingButton
         class="btn-danger"
-        :loading="action.loading.value"
-        :disabled="action.busy.value || elsewhere || verdict.disabled"
+        :loading="action.busy.value"
+        :disabled="elsewhere || verdict.disabled"
         data-id="language-card-switch-off-confirm"
         @click="confirm"
       >

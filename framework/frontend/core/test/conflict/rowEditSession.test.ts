@@ -1,9 +1,11 @@
 // Covers the row-edit session (HIL-1279): opening and the refusal on a missing
 // row, the key check of the table source, the step landing in the form with a
-// hidden value left out, Keep mine / Take theirs, the one verdict "can save",
-// the one door of the send — unchanged closes, blocked sends nothing, success
-// closes, failure stays, a late outcome moves nothing — the close that lets the
-// row go and forgets, and the save that waits for the live row.
+// hidden value left out, Keep mine / Take theirs, the verdict "fit to save" a
+// save in flight leaves standing and the verdict "can save" it takes down
+// (HIL-1766), the one door of the send — unchanged closes, blocked sends
+// nothing, success closes, failure stays, a late outcome moves nothing — the
+// close that lets the row go and forgets, and the save that waits for the live
+// row.
 import { describe, expect, it, vi } from 'vitest'
 import {
   createHilosRowEdit,
@@ -266,6 +268,62 @@ describe('row-edit session: can save and the one door of the send', () => {
     expect(edit.canSave.get()).toBe(true)
   })
 
+  it('is fit to save only when open, present, settled, valid and dirty', () => {
+    const { edit, live } = signalHarness()
+    expect(edit.saveAvailable.get()).toBe(false)
+    edit.open()
+    expect(edit.saveAvailable.get()).toBe(false)
+    edit.patchForm({ name: 'Bob' })
+    expect(edit.saveAvailable.get()).toBe(true)
+    edit.patchForm({ name: 'B' })
+    expect(edit.saveAvailable.get()).toBe(false)
+    edit.patchForm({ name: 'Bob' })
+    live.set({ id: 1, name: 'Carl', note: null })
+    expect(edit.saveAvailable.get()).toBe(false)
+    edit.keepMine()
+    expect(edit.saveAvailable.get()).toBe(true)
+    live.set(undefined)
+    expect(edit.saveAvailable.get()).toBe(false)
+    live.set({ id: 1, name: 'Carl', note: null })
+    expect(edit.saveAvailable.get()).toBe(true)
+    edit.close()
+    expect(edit.saveAvailable.get()).toBe(false)
+  })
+
+  it('stays fit to save through its own save in flight, which it does not send again', async () => {
+    const { edit, live } = signalHarness()
+    edit.open()
+    edit.patchForm({ name: 'Bob' })
+    const send = vi.fn(() => Promise.resolve(true))
+    let release: (saved: boolean) => void = () => undefined
+    const pending = edit.save(
+      () => new Promise<boolean>((resolve) => (release = resolve)),
+    )
+    expect(edit.saving.get()).toBe(true)
+    expect(edit.canSave.get()).toBe(false)
+    expect(edit.saveAvailable.get()).toBe(true)
+    await edit.save(send)
+    expect(send).not.toHaveBeenCalled()
+
+    live.set({ id: 1, name: 'Carl', note: null })
+    expect(edit.saveAvailable.get()).toBe(false)
+    edit.keepMine()
+    expect(edit.saveAvailable.get()).toBe(true)
+    expect(edit.canSave.get()).toBe(false)
+    live.set(undefined)
+    expect(edit.saveAvailable.get()).toBe(false)
+    expect(edit.canSave.get()).toBe(false)
+
+    release(false)
+    await pending
+    expect(edit.saving.get()).toBe(false)
+    expect(edit.saveAvailable.get()).toBe(false)
+    expect(edit.canSave.get()).toBe(false)
+    live.set({ id: 1, name: 'Carl', note: null })
+    expect(edit.saveAvailable.get()).toBe(true)
+    expect(edit.canSave.get()).toBe(true)
+  })
+
   it('closes an unchanged draft without a send', async () => {
     const { edit } = signalHarness()
     edit.open()
@@ -418,9 +476,13 @@ describe('row-edit session: a save that waits for the live row', () => {
     expect(sent).toEqual([{ name: 'Bob', note: null }])
     expect(edit.saving.get()).toBe(true)
     expect(edit.canSave.get()).toBe(false)
+    expect(edit.saveAvailable.get()).toBe(true)
+    edit.saveLanded(send, refusal)
+    expect(sent).toHaveLength(1)
     live.set({ id: 1, name: 'Carl', note: null })
     expect(edit.opened.get()).toBe(true)
     expect(edit.state.get().conflict).toBe(true)
+    expect(edit.saveAvailable.get()).toBe(false)
     edit.takeTheirs()
     expect(edit.form.get().name).toBe('Carl')
     expect(edit.saving.get()).toBe(true)

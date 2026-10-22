@@ -57,7 +57,7 @@ const restartOpen = useSignal(restart.opened)
 const restartTarget = useSignal(restart.target)
 const canRestart = useSignal(restart.canSubmit)
 const restartAction = useTrackedAction()
-const { busy: restartBusy, loading: restartLoading } = restartAction
+const { busy: restartBusy } = restartAction
 const restartIdentity = ref<HilosDaemonAgentRow | null>(null)
 const restartUnavailable = computed(
   () =>
@@ -274,8 +274,8 @@ async function submitRestart(): Promise<void> {
         </button>
         <LoadingButton
           class="btn-primary"
-          :loading="restartLoading"
-          :disabled="restartBusy || !canRestart"
+          :loading="restartBusy"
+          :disabled="restartUnavailable"
           data-id="hilos-daemon-restart-confirm"
           @click="submitRestart"
           >Restart</LoadingButton

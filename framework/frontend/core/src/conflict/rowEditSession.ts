@@ -4,14 +4,15 @@
 // holds everything a window built on it used to assemble by hand, in every
 // view layer and every project: the snapshot taken on open, the live row read
 // from the table's focus with its key checked, the step applied as it comes,
-// Keep mine / Take theirs, the one line of notice, the one verdict "can save"
-// that the Save button and the form's submit both read, and one door for the
-// send with "nothing changed — close". A window's own part — how its row
-// projects onto fields and onto its form, its words, its check of the input,
-// what the form forgets on close — comes in as options. A framework window
-// wraps this once in a factory beside its module (hilosSettingEdit.ts and its
-// kin); a project window takes createHilosRowEdit directly. Nobody assembles
-// a window from the four merge functions any more — the linter refuses it.
+// Keep mine / Take theirs, the one line of notice, the verdict "fit to save"
+// the Save button's look reads and the verdict "can save" the form's submit
+// reads, and one door for the send with "nothing changed — close". A
+// window's own part — how its row projects onto fields and onto its form, its
+// words, its check of the input, what the form forgets on close — comes in as
+// options. A framework window wraps this once in a factory beside its module
+// (hilosSettingEdit.ts and its kin); a project window takes createHilosRowEdit
+// directly. Nobody assembles a window from the four merge functions any more
+// — the linter refuses it.
 //
 // Core signals only (state/signal.ts): the three view layers mirror them
 // through their own bridge and keep the markup, nothing else.
@@ -243,10 +244,17 @@ export interface HilosRowEdit<R, T extends object, F = T> {
   /** True while a save is in flight. */
   readonly saving: ReadonlySignal<boolean>
   /**
-   * Whether a save may leave now: the window is open, the row is still there,
-   * no conflict stands, nothing is in flight, the input passes the window's
-   * check, and the draft differs from the live row. The Save button and the
-   * form's submit read this one verdict.
+   * Whether the form is fit to save, whatever is in flight: the window is
+   * open, the row is still there, no conflict stands, the input passes the
+   * window's check, and the draft differs from the live row. The Save button
+   * looks enabled by this; its own save in flight locks it through its
+   * `loading`, not through this verdict.
+   */
+  readonly saveAvailable: ReadonlySignal<boolean>
+  /**
+   * Whether a save may leave now: the form is fit to save
+   * ({@link HilosRowEdit.saveAvailable}) and no save is in flight. The form's
+   * submit and the send itself are guarded by this.
    */
   readonly canSave: ReadonlySignal<boolean>
   /** The Save button's word: "Deleted" once the row is gone. */
@@ -409,18 +417,18 @@ export function createHilosRowEdit<R, T extends object, F = T>(
 
     return current !== null && (options.valid?.(form.get(), current) ?? true)
   })
-  const canSave = computedSignal(() => {
+  const saveAvailable = computedSignal(() => {
     const verdict = state.get()
 
     return (
       opened.get() &&
       !verdict.gone &&
       !verdict.conflict &&
-      !saving.get() &&
       valid.get() &&
       verdict.dirty
     )
   })
+  const canSave = computedSignal(() => saveAvailable.get() && !saving.get())
   const saveLabel = computedSignal(() =>
     state.get().gone ? HILOS_ROW_EDIT_COPY.gone : HILOS_ROW_EDIT_COPY.save,
   )
@@ -495,6 +503,7 @@ export function createHilosRowEdit<R, T extends object, F = T>(
     state,
     noticeText,
     saving,
+    saveAvailable,
     canSave,
     saveLabel,
     open(key) {

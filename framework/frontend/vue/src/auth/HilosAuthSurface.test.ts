@@ -28,6 +28,7 @@ import {
   AUTH_ACTION_REGISTRATION_PASSKEY_OPTIONS,
   AUTH_ACTION_REQUEST_MAGIC_LINK,
   AUTH_ACTION_REQUEST_PHONE_CODE,
+  AUTH_CODE_REASON_CHANNEL_UNAVAILABLE,
   AUTH_CONVERGE_SIGNAL,
   AUTH_SURFACE_HEADING_ID,
   bindCodeSendProgress,
@@ -59,6 +60,7 @@ import {
   SIGNAL_HANDSHAKE_RESPONSE,
   SIGNAL_TYPE_PAGE_RESPONSE,
   SMS_CODE_CHANNEL,
+  TELEGRAM_CODE_CHANNEL,
   type ActionHandle,
   type AuthGate,
   type AuthMethodEntry,
@@ -1042,7 +1044,7 @@ describe('HilosAuthSurface Continue waits for its subscription (HIL-1557)', () =
       await vi.advanceTimersByTimeAsync(DEFAULT_SPINNER_DELAY_MS)
       await flush(wrapper)
       expect(wrapper.text()).toContain('You are signed in.')
-      expect(button.attributes('disabled')).toBeDefined()
+      expect(button.attributes('aria-disabled')).toBe('true')
       expect(button.attributes('aria-busy')).toBe('true')
       expect(button.find('[data-id="loading-button-spinner"]').exists()).toBe(
         true,
@@ -1074,7 +1076,7 @@ describe('HilosAuthSurface Continue waits for its subscription (HIL-1557)', () =
       await flushPromises()
       await flush(wrapper)
       expect(dismissed).toHaveBeenCalledTimes(1)
-      expect(button.attributes('disabled')).toBeUndefined()
+      expect(button.attributes('aria-disabled')).toBeUndefined()
       expect(button.attributes('aria-busy')).toBeUndefined()
       expect(button.find('[data-id="loading-button-spinner"]').exists()).toBe(
         false,
@@ -1179,7 +1181,7 @@ describe('HilosAuthSurface Continue waits for its subscription (HIL-1557)', () =
       expect(dismissed).not.toHaveBeenCalled()
       expect(current.sent).toEqual([])
       expect(wrapper.text()).toContain('You are signed in.')
-      expect(button.attributes('disabled')).toBeDefined()
+      expect(button.attributes('aria-disabled')).toBe('true')
       expect(button.attributes('aria-busy')).toBe('true')
 
       identify()
@@ -1205,7 +1207,7 @@ describe('HilosAuthSurface Continue waits for its subscription (HIL-1557)', () =
       await flushPromises()
       await flush(wrapper)
       expect(dismissed).toHaveBeenCalledTimes(1)
-      expect(button.attributes('disabled')).toBeUndefined()
+      expect(button.attributes('aria-disabled')).toBeUndefined()
       expect(button.attributes('aria-busy')).toBeUndefined()
       expect(current.sent).toHaveLength(2)
     } finally {
@@ -4150,6 +4152,236 @@ describe('HilosAuthSurface loads real consent (HIL-499)', () => {
     expect(wrapper.find('[data-id="auth-cancel-registration"]').exists()).toBe(
       false,
     )
+    wrapper.unmount()
+  })
+})
+
+/**
+ * A context that reaches a number by SMS first and by Telegram beside it, whose
+ * lookup answers a number with an account. An order for a code is answered with
+ * its ticket, and the send line of that ticket closes it the way the server does
+ * when Telegram cannot reach the number (HIL-492).
+ *
+ * @returns The context to mount with, and the dispatch log to assert on.
+ */
+function unreachableTelegramContext(): {
+  context: HilosAuthContext
+  dispatched: Dispatched
+} {
+  const dispatched: Dispatched = []
+  const listeners: Array<(signal: ProjectSignal) => void> = []
+  const connection = {
+    on: (event: string, listener: (payload: never) => void) => {
+      if (event !== 'projectSignal') {
+        return () => undefined
+      }
+      const typed = listener as unknown as (signal: ProjectSignal) => void
+      listeners.push(typed)
+
+      return () => {
+        const index = listeners.indexOf(typed)
+        if (index >= 0) {
+          listeners.splice(index, 1)
+        }
+      }
+    },
+  } as unknown as HilosConnection
+  const actions = {
+    dispatch: (action: string, payload: Record<string, unknown>) => {
+      dispatched.push({ action, payload })
+      if (action === AUTH_ACTION_REQUEST_PHONE_CODE) {
+        const ticket = `phone-send-${dispatched.length}`
+        for (const listener of [...listeners]) {
+          listener({
+            type: SIGNAL_CODE_SEND_PROGRESS,
+            data: {
+              ticket,
+              reason: AUTH_CODE_REASON_CHANNEL_UNAVAILABLE,
+              state: CODE_SEND_STATE_FAILED,
+              message: 'Telegram cannot reach this number.',
+              channel: payload['channel'],
+              detail: null,
+              resendAt: null,
+              expiresAt: null,
+            },
+          } as unknown as ProjectSignal)
+        }
+
+        return {
+          requestId: `req-${dispatched.length}`,
+          loading: createSignal(false),
+          done: Promise.resolve({ reply: { ticket } }),
+        } as unknown as ActionHandle
+      }
+      const identifier = String(payload['identifier'] ?? '')
+      const reply =
+        action === AUTH_ACTION_DETECT_IDENTIFIER
+          ? {
+              identifier,
+              normalized: identifier,
+              kind: 'phone',
+              status: 'active',
+              methods: [SMS_CODE_CHANNEL.key],
+              registerable: [],
+              registrationBlock: null,
+              signInBlock: null,
+              message: null,
+            }
+          : undefined
+
+      return {
+        requestId: `req-${dispatched.length}`,
+        loading: createSignal(false),
+        done: Promise.resolve({ reply }),
+      } as unknown as ActionHandle
+    },
+  } as unknown as ActionLifecycle
+
+  return {
+    dispatched,
+    context: createHilosAuthContext({
+      connection,
+      scopes: scopesWith([{ key: SMS_CODE_CHANNEL.key, name: null }]),
+      actions,
+      channels: [SMS_CODE_CHANNEL, TELEGRAM_CODE_CHANNEL],
+    }),
+  }
+}
+
+// A pressed icon method or channel leaves the field for the step it opens in the
+// same turn, so the field's group is seen in flight through its own submit: Sign
+// in is the pressed button, and the icons beside it are the others.
+describe('HilosAuthSurface locks a pressed button at once and the others by its flight (HIL-1766)', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it('keeps a pressed Sign in live-looking until its spinner while the link icon beside it goes off at once', async () => {
+    vi.useFakeTimers()
+    const { context } = magicLinkContext()
+    const dispatch = vi.spyOn(context.actions, 'dispatch')
+    const sentActions = (): string[] =>
+      dispatch.mock.calls.map(([action]) => action)
+    // Attached, so a click on the submit button submits its form, as in a page.
+    const wrapper = mount(HilosAuthSurface, {
+      props: { context },
+      attachTo: document.body,
+    })
+    await wrapper
+      .find('[data-id="auth-identifier"]')
+      .setValue('someone@example.com')
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(wrapper)
+    await wrapper.find('[data-id="auth-password"]').setValue('correct horse')
+
+    let refuse!: (error: ActionError) => void
+    dispatch.mockReturnValueOnce({
+      requestId: 'login',
+      loading: createSignal(false),
+      done: new Promise((_resolve, reject) => {
+        refuse = reject
+      }),
+    } as unknown as ActionHandle)
+    const submit = wrapper.get('[data-id="auth-submit"]')
+    const link = wrapper.get('[data-id="auth-icon-magic-link"]')
+    const spinner = (): boolean =>
+      submit.find('[data-id="loading-button-spinner"]').exists()
+    expect(link.attributes('disabled')).toBeUndefined()
+
+    await submit.trigger('click')
+    await flush(wrapper)
+    expect(sentActions()).toEqual([
+      AUTH_ACTION_DETECT_IDENTIFIER,
+      AUTH_ACTION_LOGIN,
+    ])
+    // The pressed button is locked at once and keeps its look; the icon beside
+    // it is off natively from the same moment, by a flight that is not its own.
+    expect(submit.attributes('aria-busy')).toBe('true')
+    expect(submit.attributes('aria-disabled')).toBe('true')
+    expect(submit.attributes('disabled')).toBeUndefined()
+    expect(submit.classes()).not.toContain('disabled')
+    expect(link.attributes('disabled')).toBeDefined()
+    expect(link.attributes('aria-busy')).toBeUndefined()
+
+    await submit.trigger('click')
+    await wrapper.find('form').trigger('submit')
+    ;(link.element as HTMLButtonElement).click()
+    await flush(wrapper)
+    expect(sentActions()).toEqual([
+      AUTH_ACTION_DETECT_IDENTIFIER,
+      AUTH_ACTION_LOGIN,
+    ])
+
+    await vi.advanceTimersByTimeAsync(DEFAULT_SPINNER_DELAY_MS - 1)
+    await flush(wrapper)
+    expect(spinner()).toBe(false)
+    expect(submit.classes()).not.toContain('disabled')
+    await vi.advanceTimersByTimeAsync(1)
+    await flush(wrapper)
+    expect(spinner()).toBe(true)
+    expect(submit.classes()).toContain('disabled')
+    expect(submit.attributes('disabled')).toBeUndefined()
+
+    await submit.trigger('click')
+    await wrapper.find('form').trigger('submit')
+    await flush(wrapper)
+    expect(sentActions()).toEqual([
+      AUTH_ACTION_DETECT_IDENTIFIER,
+      AUTH_ACTION_LOGIN,
+    ])
+
+    refuse(new ActionError(AUTH_ACTION_LOGIN, 'fail', 'Incorrect password'))
+    await flushPromises()
+    await flush(wrapper)
+    expect(wrapper.text()).toContain('Incorrect password')
+    expect(submit.attributes('aria-busy')).toBeUndefined()
+    expect(submit.attributes('aria-disabled')).toBeUndefined()
+    expect(spinner()).toBe(false)
+    expect(link.attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('keeps a channel that cannot reach the number off while the send beside it stays live', async () => {
+    vi.useFakeTimers()
+    const { context, dispatched } = unreachableTelegramContext()
+    const sentActions = (): string[] => dispatched.map((call) => call.action)
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await wrapper.find('[data-id="auth-identifier"]').setValue('+15551234567')
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(wrapper)
+    expect(
+      wrapper.get('[data-id="auth-channel-telegram"]').attributes('disabled'),
+    ).toBeUndefined()
+
+    await wrapper.get('[data-id="auth-channel-telegram"]').trigger('click')
+    await flushPromises()
+    await flush(wrapper)
+    expect(
+      sentActions().filter(
+        (action) => action === AUTH_ACTION_REQUEST_PHONE_CODE,
+      ),
+    ).toHaveLength(1)
+    expect(
+      dispatched.find((call) => call.action === AUTH_ACTION_REQUEST_PHONE_CODE)
+        ?.payload,
+    ).toMatchObject({ channel: 'telegram' })
+
+    // Back on the number with nothing in flight: the channel it was sent over
+    // stays off for the reason the server gave, the main send stays live.
+    const telegram = wrapper.get('[data-id="auth-channel-telegram"]')
+    const sms = wrapper.get('[data-id="auth-channel-sms"]')
+    expect(wrapper.text()).toContain('Telegram cannot reach this number')
+    expect(telegram.attributes('disabled')).toBeDefined()
+    expect(telegram.attributes('aria-busy')).toBeUndefined()
+    expect(sms.attributes('disabled')).toBeUndefined()
+    expect(sms.attributes('aria-disabled')).toBeUndefined()
+
+    ;(telegram.element as HTMLButtonElement).click()
+    await flushPromises()
+    await flush(wrapper)
+    expect(
+      sentActions().filter(
+        (action) => action === AUTH_ACTION_REQUEST_PHONE_CODE,
+      ),
+    ).toHaveLength(1)
     wrapper.unmount()
   })
 })

@@ -59,7 +59,7 @@ const registry = computed(() => [...HILOS_BROWSER_VALUES, ...props.values])
 const labels = computed(() => registry.value.map((value) => value.label))
 
 const erase = useTrackedAction()
-const { busy, loading, error } = erase
+const { busy, error } = erase
 
 const confirming = ref(false)
 
@@ -145,7 +145,6 @@ async function onConfirm(): Promise<void> {
       v-model="confirming"
       :labels="labels"
       :busy="busy"
-      :loading="loading"
       @confirm="onConfirm"
     />
   </HilosStaticPage>

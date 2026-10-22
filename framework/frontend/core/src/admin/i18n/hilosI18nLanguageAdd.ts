@@ -67,6 +67,9 @@ export interface HilosI18nLanguageAdd {
   readonly form: ReadonlySignal<HilosI18nLanguageAddForm>
   readonly known: ReadonlySignal<HilosI18nBuiltInLanguage | null>
   readonly complete: ReadonlySignal<boolean>
+  /** The form is fit to submit, whatever is in flight: the Add button's look. */
+  readonly submitAvailable: ReadonlySignal<boolean>
+  /** The form is fit to submit and nothing is in flight: the submit's guard. */
   readonly canSubmit: ReadonlySignal<boolean>
   readonly saving: ReadonlySignal<boolean>
   open(): void
@@ -102,14 +105,14 @@ export function createHilosI18nLanguageAdd(
       ? (catalog.get()?.find((entry) => entry.code === form.get().code) ?? null)
       : null,
   )
-  const canSubmit = computedSignal(
+  const submitAvailable = computedSignal(
     () =>
       step.get() !== 'closed' &&
-      !saving.get() &&
       complete.get() &&
       catalog.get() !== null &&
       form.get().nativeName.trim() !== '',
   )
+  const canSubmit = computedSignal(() => submitAvailable.get() && !saving.get())
 
   function close(): void {
     if (saving.get()) return
@@ -144,6 +147,7 @@ export function createHilosI18nLanguageAdd(
     form,
     known,
     complete,
+    submitAvailable,
     canSubmit,
     saving,
     open() {

@@ -7,8 +7,11 @@
 // `loading` in and renders `showSpinner` out (multiframework-core.md).
 //
 // The trivial parts stay in the view by design (the floor of the primitive
-// contract): `disabled || loading` and swallowing a click while disabled are
-// one-liners no view gets wrong, so they are not pulled down here.
+// contract): the lock and the disabled look are two things there — `loading`
+// blocks the button at once, while the native `disabled` comes only from an
+// independent reason and the disabled look only with `showSpinner` — and
+// swallowing a blocked click is a one-liner no view gets wrong, so none of it
+// is pulled down here.
 
 import type { ReadonlySignal } from '../state/signal.js'
 import { createDeferredFlagState, type DeferredDelay } from './deferredFlag.js'

@@ -124,13 +124,14 @@ const refusal = computed(() =>
 const acceptOffered = computed(
   () => props.variant !== 'frozen' || !impersonated.value,
 )
+// The acceptance in flight is not a reason here: busy is Accept's own loading,
+// which blocks it at once and keeps its look until the spinner comes.
 const acceptDisabled = computed(
   () =>
     props.variant === 'preview' ||
     props.content === null ||
     sections.value.length === 0 ||
-    props.loading ||
-    props.busy,
+    props.loading,
 )
 const address = computed(() =>
   describeHilosLegalReconsentAddress(props.content),

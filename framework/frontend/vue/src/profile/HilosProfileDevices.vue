@@ -35,7 +35,6 @@ const supported = useSignal(props.pushStore.supported)
 const permission = useSignal(props.pushStore.permission)
 const refreshed = useSignal(props.pushStore.refreshed)
 const removeAction = useTrackedAction()
-const removeLoading = computed(() => removeAction.loading.value)
 const removeBusy = computed(() => removeAction.busy.value)
 const hasCurrent = computed(() =>
   props.devices.some((device) => device.current),
@@ -104,8 +103,8 @@ async function removeDevice(subscriptionId: number): Promise<void> {
           <LoadingButton
             v-else
             class="btn-outline-danger btn-sm"
-            :loading="removeLoading"
-            :disabled="!refreshed || removeBusy"
+            :loading="removeBusy"
+            :disabled="!refreshed"
             data-id="profile-device-remove"
             @click="removeDevice(device.id)"
           >

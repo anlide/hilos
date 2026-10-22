@@ -148,7 +148,7 @@ describe('HilosI18nLanguageWindow', () => {
       payload: { languageId: 19, nativeName: 'My name', rtl: true },
     })
     expect(button('cancel')?.disabled).toBe(true)
-    expect(button('submit')?.disabled).toBe(true)
+    expect(button('submit')?.getAttribute('aria-disabled')).toBe('true')
     expect(input('native-name').disabled).toBe(true)
     document.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),

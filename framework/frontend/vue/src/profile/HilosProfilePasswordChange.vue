@@ -327,7 +327,7 @@ watch(step, () => {
           :form="`${id}-code-form`"
           class="btn-primary"
           :loading="busy"
-          :disabled="code.trim() === '' || busy"
+          :disabled="code.trim() === ''"
           data-id="profile-password-confirm-code"
           >{{ COPY.continue }}</LoadingButton
         >
@@ -337,7 +337,7 @@ watch(step, () => {
           :form="`${id}-password-form`"
           class="btn-primary"
           :loading="busy"
-          :disabled="newPassword === '' || busy"
+          :disabled="newPassword === ''"
           data-id="profile-password-save"
           >{{ COPY.save }}</LoadingButton
         >

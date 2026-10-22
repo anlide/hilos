@@ -235,6 +235,7 @@ describe('language name window', () => {
       })
       h.window.open('47', localeCode === null ? null : 501)
       expect(h.window.canSubmit.get()).toBe(true)
+      expect(h.window.submitAvailable.get()).toBe(true)
       expect(h.window.dirty.get()).toBe(false)
       await h.window.save(() => Promise.resolve(false))
       expect(h.dispatch).toHaveBeenLastCalledWith(
@@ -430,6 +431,7 @@ describe('language name window', () => {
       if (lost === 'locale') h.update({ ...original, corrections: [] })
       if (lost === 'subject') h.card.set(null)
       expect(h.window.canSubmit.get()).toBe(false)
+      expect(h.window.submitAvailable.get()).toBe(false)
       expect(h.window.saveLabel.get()).toBe('Deleted')
       expect(h.window.form.get().name).toBe('Copy add')
       await h.window.save(vi.fn())
@@ -475,6 +477,38 @@ describe('language name window', () => {
       expect(h.window.saving.get()).toBe(false)
       h.window.dispose()
       expect(h.controller.focusedRow.get()).toBeUndefined()
+    },
+  )
+
+  it.each([null, 'Original'])(
+    'stays fit to send through its own send, until the name is gone (%s)',
+    async (name) => {
+      const h = harness({
+        ...original,
+        nameId: name === null ? null : 301,
+        name,
+      })
+      h.window.open('47')
+      h.window.patchForm({ name: 'Mine' })
+      const available =
+        name === null ? h.window.submitAvailable : h.window.saveAvailable
+      const allowed = name === null ? h.window.canSubmit : h.window.canSave
+      expect(available.get()).toBe(true)
+      expect(allowed.get()).toBe(true)
+      const p = pending()
+      const saved = h.window.save(p.run)
+      expect(h.window.saving.get()).toBe(true)
+      expect(allowed.get()).toBe(false)
+      expect(available.get()).toBe(true)
+      await h.window.save(vi.fn())
+      expect(h.dispatch).toHaveBeenCalledOnce()
+      h.card.set(null)
+      expect(available.get()).toBe(false)
+      p.finish(false)
+      await saved
+      expect(h.window.saving.get()).toBe(false)
+      expect(allowed.get()).toBe(false)
+      h.window.dispose()
     },
   )
 

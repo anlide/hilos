@@ -437,7 +437,6 @@ const mergeGone = computed(
 )
 const mergeDisabled = computed(
   () =>
-    mergeAction.busy.value ||
     mergeGone.value ||
     selectedCandidate.value === null ||
     (passwordChoiceRequired.value && passwordFate.value === null) ||
@@ -534,6 +533,7 @@ async function submitMerge(): Promise<void> {
   if (
     !survivor ||
     !loser ||
+    mergeAction.busy.value ||
     mergeDisabled.value ||
     typeof survivor.hasSecondFactor !== 'boolean' ||
     typeof loser.hasSecondFactor !== 'boolean'
@@ -582,7 +582,7 @@ const draftText = computed({
 const loading = useSignal(editor.saving)
 const live = useSignal(editor.state)
 const dirty = computed(() => live.value.dirty)
-const canSave = useSignal(editor.canSave)
+const saveAvailable = useSignal(editor.saveAvailable)
 const editTitle = computed(() =>
   detail.value ? `Rename · ${hiddenAsWord(detail.value.name)}` : 'Rename user',
 )
@@ -919,10 +919,8 @@ function submit(): void {
         <LoadingButton
           v-else-if="lifecycleProof === 'skip'"
           :class="lifecyclePrompt?.danger ? 'btn-danger' : 'btn-primary'"
-          :loading="lifecycleAction.loading.value"
-          :disabled="
-            lifecycleAction.busy.value || !lifecyclePrompt || !lifecycleOffered
-          "
+          :loading="lifecycleAction.busy.value"
+          :disabled="!lifecyclePrompt || !lifecycleOffered"
           data-id="hilos-user-lifecycle-confirm"
           @click="submitLifecycle"
           >{{ lifecyclePrompt?.confirm }}</LoadingButton
@@ -997,9 +995,8 @@ function submit(): void {
         <LoadingButton
           v-else-if="impersonateProof === 'skip'"
           class="btn-primary"
-          :loading="impersonateAction.loading.value"
+          :loading="impersonateAction.busy.value"
           :disabled="
-            impersonateAction.busy.value ||
             impersonation === null ||
             impersonation.disabled ||
             detail?.id !== impersonateTarget?.userId
@@ -1061,7 +1058,7 @@ function submit(): void {
       <template #actions="{ requestClose }">
         <ConflictActions
           :conflict="live.conflict"
-          :disable-save="!canSave"
+          :disable-save="!saveAvailable"
           :save-label="saveLabel"
           @save="submit"
           @accept-mine="acceptMine"
@@ -1356,7 +1353,7 @@ function submit(): void {
           </button>
           <LoadingButton
             class="btn-danger"
-            :loading="mergeAction.loading.value"
+            :loading="mergeAction.busy.value"
             :disabled="mergeDisabled"
             data-id="hilos-user-merge-confirm"
             @click="submitMerge"

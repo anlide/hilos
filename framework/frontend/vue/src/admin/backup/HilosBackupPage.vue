@@ -190,7 +190,6 @@ function outOfReachClass(row: HilosBackupRow): string | undefined {
 const createScope = ref(HILOS_BACKUP_SCOPES[0].value)
 const createAction = useTrackedAction()
 const {
-  loading: createLoading,
   busy: createBusy,
   run: runCreateAction,
   clearError: clearCreateError,
@@ -234,7 +233,6 @@ const deleteOpen = ref(false)
 const deleteRow = ref<HilosBackupRow | null>(null)
 const deleteAction = useTrackedAction()
 const {
-  loading: deleteLoading,
   busy: deleteBusy,
   run: runDeleteAction,
   clearError: clearDeleteError,
@@ -306,7 +304,6 @@ const restoreNotes = computed(() =>
 const restoreTyped = ref('')
 const restoreAction = useTrackedAction()
 const {
-  loading: restoreLoading,
   busy: restoreBusy,
   run: runRestoreAction,
   clearError: clearRestoreError,
@@ -342,7 +339,6 @@ async function submitRestore(): Promise<void> {
 const reopenOpen = ref(false)
 const reopenAction = useTrackedAction()
 const {
-  loading: reopenLoading,
   busy: reopenBusy,
   run: runReopenAction,
   clearError: clearReopenError,
@@ -714,7 +710,7 @@ function openOutcome(row: HilosBackupRow): void {
         </button>
         <LoadingButton
           class="btn-danger"
-          :loading="deleteLoading"
+          :loading="deleteBusy"
           data-id="hilos-backup-delete-confirm"
           @click="submitDelete"
         >
@@ -749,7 +745,7 @@ function openOutcome(row: HilosBackupRow): void {
         </button>
         <LoadingButton
           class="btn-warning"
-          :loading="reopenLoading"
+          :loading="reopenBusy"
           data-id="hilos-backup-reopen-confirm"
           @click="submitReopen"
         >
@@ -891,7 +887,7 @@ function openOutcome(row: HilosBackupRow): void {
         </button>
         <LoadingButton
           class="btn-warning"
-          :loading="restoreLoading"
+          :loading="restoreBusy"
           :disabled="!restoreConfirmed"
           data-id="hilos-backup-restore-confirm"
           @click="submitRestore"
@@ -1012,7 +1008,7 @@ function openOutcome(row: HilosBackupRow): void {
         </button>
         <LoadingButton
           class="btn-primary"
-          :loading="createLoading"
+          :loading="createBusy"
           data-id="hilos-backup-create-confirm"
           @click="submitCreate"
         >

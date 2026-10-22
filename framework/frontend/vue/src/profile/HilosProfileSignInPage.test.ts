@@ -506,6 +506,45 @@ describe('profile sign-in page passkey-only warning', () => {
       document.querySelector('[data-id="profile-sign-in-choose-password"]'),
     ).toBeNull()
   })
+  it('keeps the pressed way live-looking while the dialog opens and turns the others off at once', async () => {
+    const world = setup(NO_STEP, passkeyOnly)
+    let answer!: (value: { reply: object }) => void
+    world.dispatch.mockImplementationOnce(() => ({
+      loading: createSignal(false),
+      done: new Promise<{ reply: object }>((resolve) => {
+        answer = resolve
+      }),
+    }))
+    const pressed = byId(
+      'profile-sign-in-passkey-only-password',
+    ) as HTMLButtonElement
+    const others = [
+      'profile-sign-in-passkey-only-phone',
+      'profile-sign-in-passkey-only-link-oauth:github',
+      'profile-sign-in-add',
+    ].map((id) => byId(id) as HTMLButtonElement)
+    const starts = () =>
+      world.dispatch.mock.calls.filter(
+        ([action]) => action === 'hilos_step_up_start',
+      )
+
+    pressed.click()
+    await flushPromises()
+    expect(starts()).toHaveLength(1)
+    expect(pressed.getAttribute('aria-busy')).toBe('true')
+    expect(pressed.getAttribute('aria-disabled')).toBe('true')
+    expect(pressed.disabled).toBe(false)
+    expect(others.map((button) => button.disabled)).toEqual([true, true, true])
+
+    pressed.click()
+    for (const button of others) button.click()
+    await flushPromises()
+    expect(starts()).toHaveLength(1)
+
+    answer({ reply: NO_STEP })
+    await flushPromises()
+    expect(byId('profile-add-password-email')).toBeDefined()
+  })
   it('leaves a method switched off by the administrator out of the chooser', async () => {
     const world = setup(NO_STEP, passkeyOnly, [{ key: 'password', name: null }])
     await world.wrapper.get('[data-id="profile-sign-in-add"]').trigger('click')

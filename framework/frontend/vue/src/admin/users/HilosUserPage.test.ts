@@ -1107,8 +1107,8 @@ describe('HilosUserPage lifecycle', () => {
       block: true,
     })
     expect(
-      (find('hilos-user-lifecycle-confirm') as HTMLButtonElement).disabled,
-    ).toBe(true)
+      find('hilos-user-lifecycle-confirm')?.getAttribute('aria-disabled'),
+    ).toBe('true')
     expect(
       (find('hilos-user-lifecycle-cancel') as HTMLButtonElement).disabled,
     ).toBe(true)
@@ -1727,8 +1727,8 @@ describe('HilosUserPage impersonation (HIL-1170)', () => {
       world.sent.find((entry) => entry.action === 'hilos_impersonate_start'),
     ).toMatchObject({ data: { targetUserId: 1 } })
     expect(
-      (modalEl('hilos-user-impersonate-confirm') as HTMLButtonElement).disabled,
-    ).toBe(true)
+      modalEl('hilos-user-impersonate-confirm')?.getAttribute('aria-disabled'),
+    ).toBe('true')
 
     world.answerImpersonate()
     await settle()

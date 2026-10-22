@@ -1,10 +1,13 @@
-<!-- LoadingButton — a button that disables itself and shows a spinner while an
-async action is in flight (the authoritative-backend pattern: act -> block ->
-backend reply clears it). The delayed-spinner timer is the headless core state
-machine (createLoadingButtonState); this view only drives `loading` into it and
-renders `showSpinner`. The spinner appears only after a short delay so a fast
-reply never flashes it, and the label stays in the layout under the spinner so
-the button keeps its width. Pass the Bootstrap variant as a class
+<!-- LoadingButton — a button that locks itself the moment its async action is in
+flight and shows a spinner while it stays there (the authoritative-backend
+pattern: act -> block -> backend reply clears it). The lock is at once — a
+second press is swallowed and the button says it is busy — but the look is not:
+the button keeps its look, and its focus, until the spinner comes, and only then
+looks disabled, so a fast reply changes nothing on screen. The delayed-spinner
+timer is the headless core state machine (createLoadingButtonState); this view
+only drives `loading` into it and renders `showSpinner`. The label stays in the
+layout under the spinner so the button keeps its width. Pass the Bootstrap
+variant as a class
 (`class="btn-primary"`); class, aria, and data attributes fall through to the
 button. Inside an admin page a viewer of the admin view mode finds the button
 plainly disabled, described by the mode's strip (HIL-1261), and so does an
@@ -28,9 +31,18 @@ defineOptions({ inheritAttrs: false })
 
 const props = withDefaults(
   defineProps<{
-    /** Whether the action is in flight: disables the button and arms the spinner. */
+    /**
+     * Whether the button's own action is in flight — the immediate flag, raised
+     * on the press and lowered by the reply, never a deferred one: the delay is
+     * the button's own timer. It locks the button at once (busy, a press
+     * swallowed) and arms the spinner; the disabled look comes with the spinner.
+     */
     loading?: boolean
-    /** Disable independently of loading (e.g. an invalid form). */
+    /**
+     * An independent reason the button may not be pressed — a form not yet
+     * filled, a screen that only looks — never the button's own action in
+     * flight. Disables it natively at once, while it loads as well.
+     */
     disabled?: boolean
     /** Milliseconds to wait before showing the spinner, so a fast reply never flashes it. */
     loadingDelay?: number
@@ -70,29 +82,43 @@ const attrs = useAttrs()
 
 const lockedToLook = computed(() => locked.value && !props.opensWindow)
 
-const isDisabled = computed(
-  () => props.disabled || props.loading || lockedToLook.value,
-)
+// A reason other than its own action turns the button off natively from the
+// first moment; its own action in flight only blocks it, so the focus stays on
+// it and its look holds until the spinner comes.
+const nativeDisabled = computed(() => props.disabled || lockedToLook.value)
+const blocked = computed(() => nativeDisabled.value || props.loading)
 
-// While the button may be pressed the caller's attributes reach it as they are.
-// Locked to look, it is also described by the strip that says why, beside
-// whatever describes it already (a row's reason on the person's card).
+// The caller's attributes reach the button as they are, save that none of them
+// takes back the busy or blocked state the button says of itself. Locked to
+// look, it is also described by the strip that says why, beside whatever
+// describes it already (a row's reason on the person's card).
 const buttonAttrs = computed(() => {
+  // Read on every pass: a read is what ties this computed to the caller's
+  // attributes, and spreading none of them reads nothing.
+  const theirs = attrs['aria-describedby']
   const strip = describedBy.value
-  if (!lockedToLook.value || strip === undefined) {
-    return attrs
+  const own: Record<string, unknown> = {}
+  if (lockedToLook.value && strip !== undefined) {
+    own['aria-describedby'] =
+      typeof theirs === 'string' && theirs !== '' ? `${theirs} ${strip}` : strip
   }
-  const own = attrs['aria-describedby']
+  if (props.loading) {
+    own['aria-busy'] = true
+  }
+  if (blocked.value) {
+    own['aria-disabled'] = true
+  }
 
-  return {
-    ...attrs,
-    'aria-describedby':
-      typeof own === 'string' && own !== '' ? `${own} ${strip}` : strip,
-  }
+  return { ...attrs, ...own }
 })
 
+// A blocked press is canceled before it leaves: no submit of the button's
+// form, by a click or by Enter in a field, and no click on its ancestors.
 function onClick(event: MouseEvent): void {
-  if (isDisabled.value) {
+  if (blocked.value) {
+    event.preventDefault()
+    event.stopPropagation()
+
     return
   }
   emit('click', event)
@@ -102,9 +128,9 @@ function onClick(event: MouseEvent): void {
 <template>
   <button
     :type="type"
-    :disabled="isDisabled"
-    :aria-busy="loading || undefined"
+    :disabled="nativeDisabled"
     class="btn position-relative"
+    :class="{ disabled: showSpinner }"
     v-bind="buttonAttrs"
     @click="onClick"
   >

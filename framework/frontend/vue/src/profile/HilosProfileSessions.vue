@@ -32,9 +32,7 @@ const endError = computed(() =>
     ? 'This session has already ended'
     : endAction.error.value,
 )
-const endLoading = computed(() => endAction.loading.value)
 const endBusy = computed(() => endAction.busy.value)
-const endOthersLoading = computed(() => endOthersAction.loading.value)
 const endOthersBusy = computed(() => endOthersAction.busy.value)
 const endableCount = computed(() => endableProfileSessionCount(props.sessions))
 const endOthersError = computed(() =>
@@ -223,8 +221,8 @@ async function confirmEndOthers(): Promise<void> {
         </button>
         <LoadingButton
           class="btn-danger"
-          :loading="endLoading"
-          :disabled="selectedSession === undefined || endBusy"
+          :loading="endBusy"
+          :disabled="selectedSession === undefined"
           data-id="profile-session-end-confirm"
           @click="confirmEnd"
         >
@@ -267,8 +265,8 @@ async function confirmEndOthers(): Promise<void> {
         </button>
         <LoadingButton
           class="btn-danger"
-          :loading="endOthersLoading"
-          :disabled="endableCount === 0 || endOthersBusy"
+          :loading="endOthersBusy"
+          :disabled="endableCount === 0"
           data-id="profile-sessions-end-others-confirm"
           @click="confirmEndOthers"
         >

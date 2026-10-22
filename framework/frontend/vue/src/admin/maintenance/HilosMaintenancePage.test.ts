@@ -914,7 +914,7 @@ describe('HilosMaintenancePage enable confirmation', () => {
     expect(dispatched).toMatchObject([
       { action: 'maintenance_enable', payload: {} },
     ])
-    expect(enableButton('confirm').disabled).toBe(true)
+    expect(enableButton('confirm').getAttribute('aria-disabled')).toBe('true')
     expect(enableButton('cancel').disabled).toBe(true)
     enableButton('cancel').click()
     dialog.querySelector<HTMLButtonElement>('[data-id="modal-close"]')?.click()
@@ -1148,7 +1148,7 @@ describe('HilosMaintenancePage disable confirmation', () => {
     expect(dispatched).toMatchObject([
       { action: 'maintenance_disable', payload: {} },
     ])
-    expect(disableButton('confirm').disabled).toBe(true)
+    expect(disableButton('confirm').getAttribute('aria-disabled')).toBe('true')
     expect(disableButton('cancel').disabled).toBe(true)
     disableButton('cancel').click()
     dialog.querySelector<HTMLButtonElement>('[data-id="modal-close"]')?.click()
@@ -1366,7 +1366,7 @@ describe('HilosMaintenancePage pass confirmation', () => {
     expect(dispatched).toMatchObject([
       { action: 'maintenance_pass', payload: {} },
     ])
-    expect(passButton('confirm').disabled).toBe(true)
+    expect(passButton('confirm').getAttribute('aria-disabled')).toBe('true')
     expect(passButton('cancel').disabled).toBe(true)
     passButton('cancel').click()
     dialog.querySelector<HTMLButtonElement>('[data-id="modal-close"]')?.click()

@@ -133,7 +133,7 @@ describe('HilosI18nLanguageDelete', () => {
         payload: { languageId: 13 },
       })
       expect(control('cancel').disabled).toBe(true)
-      expect(control('confirm').disabled).toBe(true)
+      expect(control('confirm').getAttribute('aria-disabled')).toBe('true')
       control('confirm').click()
       control('cancel').click()
       document

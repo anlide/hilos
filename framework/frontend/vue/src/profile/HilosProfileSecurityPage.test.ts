@@ -1,7 +1,8 @@
 // Covers what the profile's security page view owns rather than the core store
-// (HIL-494): a form sent again while its action is out dispatches nothing, the
-// step a modal moves to takes the focus, and backup codes shown once ask before
-// the modal closes. Connecting an app is a protected operation (HIL-1138): the
+// (HIL-494): a form sent again while its action is out dispatches nothing, and
+// the pressed button keeps its look while it does (HIL-1766), the step a modal
+// moves to takes the focus, and backup codes shown once ask before the modal
+// closes. Connecting an app is a protected operation (HIL-1138): the
 // modal opens on the server's word, at the confirmation step or at the name.
 // Turned off by the administrator (HIL-1303), the page is one plate, beside a
 // removal that stands, and an open window closes when it turns off.
@@ -73,7 +74,8 @@ const REPLIES: Record<string, unknown> = {
  * A mounted page whose section says no app is connected, over an action
  * lifecycle that records every dispatch and answers from {@link REPLIES}.
  *
- * @param replies The server's answers by action name.
+ * @param replies The server's answers by action name; one given as a promise
+ *   is held until it settles.
  * @param section The section the group frame carries.
  */
 function pageWorld(
@@ -98,11 +100,15 @@ function pageWorld(
   const actions = {
     dispatch(action: string): ActionHandle {
       dispatched.push(action)
+      const reply = replies[action]
 
       return {
         requestId: `req-${dispatched.length}`,
         loading: createSignal(false),
-        done: Promise.resolve({ reply: replies[action] }),
+        done:
+          reply instanceof Promise
+            ? reply.then((settled: unknown) => ({ reply: settled }))
+            : Promise.resolve({ reply }),
       } as unknown as ActionHandle
     },
   } as unknown as ActionLifecycle
@@ -199,6 +205,90 @@ describe('HilosProfileSecurityPage', () => {
     expect(document.querySelector('.modal-title')?.textContent).toBe(
       'Add an authenticator app',
     )
+  })
+
+  it('keeps Confirm live-looking while the confirmation is out and sends it once', async () => {
+    let answer!: (reply: unknown) => void
+    const { dispatched, wrapper } = pageWorld({
+      ...REPLIES,
+      hilos_step_up_start: {
+        required: true,
+        purpose: 'add an authenticator app',
+        method: 'password',
+      },
+      hilos_step_up_confirm: new Promise((resolve) => {
+        answer = resolve
+      }),
+    })
+    await nextTick()
+    await wrapper.find('[data-id="profile-2fa-add"]').trigger('click')
+    await flushPromises()
+    await nextTick()
+    const confirms = () =>
+      dispatched.filter((action) => action === 'hilos_step_up_confirm')
+
+    typeInto('step-up-password', 'secret')
+    submit('profile-2fa-enroll')
+    await flushPromises()
+    const confirm = byId('profile-2fa-enroll-submit') as HTMLButtonElement
+    expect(confirms()).toHaveLength(1)
+    expect(confirm.getAttribute('aria-busy')).toBe('true')
+    expect(confirm.getAttribute('aria-disabled')).toBe('true')
+    expect(confirm.disabled).toBe(false)
+
+    submit('profile-2fa-enroll')
+    confirm.click()
+    await flushPromises()
+    expect(confirms()).toHaveLength(1)
+
+    answer([])
+    await flushPromises()
+    await nextTick()
+    expect(byId('profile-2fa-enroll-label')).toBeTruthy()
+  })
+
+  it('keeps Connect another live-looking while the next opening is out and asks once', async () => {
+    let answer!: (reply: unknown) => void
+    const replies: Record<string, unknown> = {
+      ...REPLIES,
+      profile_second_factor_enroll_confirm: {},
+    }
+    const { dispatched, wrapper } = pageWorld(replies)
+    await nextTick()
+    await openEnrolment(wrapper)
+    submit('profile-2fa-enroll')
+    await flushPromises()
+    typeInto('profile-2fa-enroll-code', '123456')
+    submit('profile-2fa-enroll')
+    await flushPromises()
+    await nextTick()
+    const more = byId('profile-2fa-enroll-submit') as HTMLButtonElement
+    expect(more.textContent?.trim()).toBe('Connect another')
+    const openings = () =>
+      dispatched.filter((action) => action === 'hilos_step_up_start')
+    expect(openings()).toHaveLength(1)
+
+    replies.hilos_step_up_start = new Promise((resolve) => {
+      answer = resolve
+    })
+    more.click()
+    await flushPromises()
+    expect(openings()).toHaveLength(2)
+    expect(more.getAttribute('aria-busy')).toBe('true')
+    expect(more.getAttribute('aria-disabled')).toBe('true')
+    expect(more.disabled).toBe(false)
+    expect(more.classList.contains('disabled')).toBe(false)
+    expect(more.querySelector('[data-id="loading-button-spinner"]')).toBeNull()
+
+    more.click()
+    submit('profile-2fa-enroll')
+    await flushPromises()
+    expect(openings()).toHaveLength(2)
+
+    answer({ required: false, purpose: 'add an authenticator app' })
+    await flushPromises()
+    await nextTick()
+    expect(byId('profile-2fa-enroll-label')).toBeTruthy()
   })
 
   it('asks a second app for a code from the connected one after the name, as before', async () => {

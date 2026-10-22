@@ -213,7 +213,7 @@ describe('HilosCommunicationsDeliveriesPage retry', () => {
     expect(sent).toHaveLength(1)
     expect(sent[0]?.action).toBe('communications_delivery_retry')
     expect(sent[0]?.payload).toEqual({ deliveryId: 57 })
-    expect((retryButton() as HTMLButtonElement).disabled).toBe(true)
+    expect(retryButton().getAttribute('aria-disabled')).toBe('true')
 
     answer(sent[0]?.requestId ?? '')
     await nextTick()

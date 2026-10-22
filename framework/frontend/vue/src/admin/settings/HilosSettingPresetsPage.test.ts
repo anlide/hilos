@@ -348,8 +348,8 @@ describe('HilosSettingPresetsPage', () => {
     expect(document.body.textContent).not.toContain('Overwrite your own edits?')
   })
 
-  it('disables every card while the action is in flight', async () => {
-    const { context, push } = makeContext()
+  it('locks every card while the action is in flight, the clicked one by its own flight', async () => {
+    const { context, push, dispatched } = makeContext()
     const wrapper = mountPage(context)
 
     push(groupState())
@@ -357,9 +357,16 @@ describe('HilosSettingPresetsPage', () => {
     await wrapper.find(card('frugal')).trigger('click')
     await nextTick()
 
-    for (const name of ['frugal', 'normal', 'investigation']) {
+    const clicked = wrapper.find(card('frugal'))
+    expect(clicked.attributes('disabled')).toBeUndefined()
+    expect(clicked.attributes('aria-disabled')).toBe('true')
+    expect(clicked.attributes('aria-busy')).toBe('true')
+    for (const name of ['normal', 'investigation']) {
       expect(wrapper.find(card(name)).attributes('disabled')).toBeDefined()
     }
+
+    await clicked.trigger('click')
+    expect(dispatched).toHaveLength(1)
   })
 
   it('draws a refusal above the cards when the click applied at once', async () => {

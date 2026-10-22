@@ -53,11 +53,11 @@ const editRow = useSignal(editor.row)
 const editForm = useSignal(editor.form)
 const editState = useSignal(editor.state)
 const editNotice = useSignal(editor.noticeText)
-const editCanSave = useSignal(editor.canSave)
+const editSaveAvailable = useSignal(editor.saveAvailable)
 const editSaveLabel = useSignal(editor.saveLabel)
 const addRow = useSignal(creator.row)
 const addForm = useSignal(creator.form)
-const addCanSave = useSignal(creator.canAdd)
+const addAvailable = useSignal(creator.addAvailable)
 const addElsewhere = useSignal(creator.elsewhere)
 const addGone = useSignal(creator.gone)
 const focusedRow = useSignal(props.controller.focusedRow)
@@ -650,8 +650,13 @@ async function submit(): Promise<void> {
             </button>
             <LoadingButton
               class="btn-primary"
-              :loading="switchAction.loading.value"
-              :disabled="busy || unsavedAtStep || lockedOn || editState.gone"
+              :loading="switchAction.busy.value"
+              :disabled="
+                (busy && !switchAction.busy.value) ||
+                unsavedAtStep ||
+                lockedOn ||
+                editState.gone
+              "
               data-id="i18n-locale-switch-on-confirm"
               @click="confirm"
               >{{
@@ -662,7 +667,7 @@ async function submit(): Promise<void> {
           <ConflictActions
             v-else
             :conflict="editState.conflict"
-            :disable-save="!editCanSave"
+            :disable-save="!editSaveAvailable"
             :save-label="editSaveLabel"
             @save="submit"
             @accept-mine="editor.keepMine"
@@ -691,7 +696,7 @@ async function submit(): Promise<void> {
             <template #save-button="{ disabled, onSave }">
               <LoadingButton
                 class="btn-primary"
-                :loading="editAction.loading.value"
+                :loading="editAction.busy.value"
                 :disabled="disabled"
                 data-id="i18n-locale-submit"
                 @click="onSave"
@@ -713,8 +718,8 @@ async function submit(): Promise<void> {
         </button>
         <LoadingButton
           class="btn-primary"
-          :loading="addAction.loading.value"
-          :disabled="!addCanSave"
+          :loading="addAction.busy.value"
+          :disabled="!addAvailable"
           data-id="i18n-locale-submit"
           @click="submit"
           >{{ addGone ? 'Deleted' : copy.add }}</LoadingButton
@@ -753,8 +758,8 @@ async function submit(): Promise<void> {
             </button>
             <LoadingButton
               class="btn-danger"
-              :loading="offAction.loading.value"
-              :disabled="busy || offVerdict.disabled"
+              :loading="offAction.busy.value"
+              :disabled="(busy && !offAction.busy.value) || offVerdict.disabled"
               data-id="i18n-locale-switch-off-confirm"
               @click="confirmSwitchOff"
               >{{ copy.switchOff.confirm }}</LoadingButton

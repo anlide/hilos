@@ -169,7 +169,7 @@ const editForm = useSignal(editor.form)
 const live = useSignal(editor.state)
 const editNoticeText = useSignal(editor.noticeText)
 const editSaveLabel = useSignal(editor.saveLabel)
-const canSave = useSignal(editor.canSave)
+const saveAvailable = useSignal(editor.saveAvailable)
 const editHidden = computed(() => editForm.value.hidden)
 // The number input's model: v-model on a number input hands back a number, and
 // the value is text everywhere else (the form, the session, the wire).
@@ -179,12 +179,7 @@ const editValue = computed({
 })
 const editValueText = editValue
 const editAction = useTrackedAction()
-const {
-  loading: editLoading,
-  busy: editBusy,
-  run: runEdit,
-  clearError: clearEditError,
-} = editAction
+const { busy: editBusy, run: runEdit, clearError: clearEditError } = editAction
 const editNotice = computed(() => live.value.notice?.kind ?? null)
 const editTitle = computed(() =>
   editRow.value ? labelOf(editRow.value) : 'Edit setting',
@@ -341,7 +336,7 @@ function submitEdit(): void {
       <template #actions="{ requestClose }">
         <ConflictActions
           :conflict="live.conflict"
-          :disable-save="!canSave"
+          :disable-save="!saveAvailable"
           :save-label="editSaveLabel"
           @save="submitEdit"
           @accept-mine="acceptMine"
@@ -360,7 +355,7 @@ function submitEdit(): void {
           <template #save-button="{ disabled, onSave }">
             <LoadingButton
               class="btn-primary"
-              :loading="editLoading"
+              :loading="editBusy"
               :disabled="disabled"
               data-id="hilos-2fa-save"
               @click="onSave"
@@ -431,7 +426,6 @@ function submitEdit(): void {
           v-else-if="disableStep === 'consequences'"
           class="btn-danger"
           :loading="disableBusy"
-          :disabled="disableBusy"
           data-id="hilos-2fa-disable-confirm"
           @click="disable.confirm()"
           >{{ DISABLE_COPY.confirm }}</LoadingButton

@@ -129,7 +129,7 @@ describe('HilosI18nLocaleDelete', () => {
       payload: { languageId: 12, countryId: 108, localeId: 12108 },
     })
     expect(control('cancel').disabled).toBe(true)
-    expect(control('confirm').disabled).toBe(true)
+    expect(control('confirm').getAttribute('aria-disabled')).toBe('true')
     control('confirm').click()
     s.view.findComponent(LoadingButton).vm.$emit('click')
     control('cancel').click()

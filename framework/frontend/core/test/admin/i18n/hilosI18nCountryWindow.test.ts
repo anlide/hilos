@@ -405,6 +405,30 @@ describe('country window', () => {
     h.window.dispose()
   })
 
+  it('stays fit to save through its own save in flight, until switched on elsewhere', async () => {
+    const h = harness()
+    let finish: (result: boolean) => void = () => {}
+    h.window.setSymbol('IE€')
+    expect(h.window.saveAvailable.get()).toBe(true)
+    expect(h.window.canSave.get()).toBe(true)
+    const saved = h.window.save(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finish = resolve
+        }),
+    )
+    expect(h.window.saving.get()).toBe(true)
+    expect(h.window.canSave.get()).toBe(false)
+    expect(h.window.saveAvailable.get()).toBe(true)
+    h.source.set({ ...country, enabled: true })
+    expect(h.window.saveAvailable.get()).toBe(false)
+    finish(false)
+    await saved
+    expect(h.window.saveAvailable.get()).toBe(false)
+    expect(h.window.canSave.get()).toBe(false)
+    h.window.dispose()
+  })
+
   it('uses a distinct tracked action for each door with the same trimmed payload', async () => {
     const dispatch = vi.fn(() => ({}) as ActionHandle)
     const context = {

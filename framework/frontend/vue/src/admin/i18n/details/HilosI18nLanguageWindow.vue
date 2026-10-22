@@ -26,7 +26,7 @@ const state = useSignal(props.window.state)
 const frozen = useSignal(props.window.frozen)
 const plate = useSignal(props.window.plate)
 const notice = useSignal(props.window.notice)
-const canSave = useSignal(props.window.canSave)
+const saveAvailable = useSignal(props.window.saveAvailable)
 const saveLabel = useSignal(props.window.saveLabel)
 const action = useTrackedAction()
 const busy = computed(() => action.busy.value)
@@ -193,7 +193,7 @@ async function submit(): Promise<void> {
       <ConflictActions
         v-if="mode === 'edit'"
         :conflict="state.conflict"
-        :disable-save="!canSave"
+        :disable-save="!saveAvailable"
         :save-label="saveLabel"
         @save="submit"
         @accept-mine="window.keepMine"
@@ -213,7 +213,7 @@ async function submit(): Promise<void> {
         <template #save-button="{ disabled: saveDisabled, onSave }">
           <LoadingButton
             class="btn-primary"
-            :loading="action.loading.value"
+            :loading="action.busy.value"
             :disabled="saveDisabled"
             data-id="i18n-language-edit-submit"
             @click="onSave"

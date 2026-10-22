@@ -29,7 +29,7 @@ const plate = useSignal(props.window.plate)
 const options = useSignal(props.window.options)
 const localeHint = useSignal(props.window.localeHint)
 const touched = useSignal(props.window.touched)
-const canSave = useSignal(props.window.canSave)
+const saveAvailable = useSignal(props.window.saveAvailable)
 const saveLabel = useSignal(props.window.saveLabel)
 const saving = useSignal(props.window.saving)
 const action = useTrackedAction()
@@ -138,7 +138,7 @@ async function submit(): Promise<void> {
       <ConflictActions
         v-if="mode === 'edit'"
         :conflict="state.conflict"
-        :disable-save="!canSave || busy"
+        :disable-save="!saveAvailable"
         :save-label="saveLabel"
         @save="submit"
         @accept-mine="window.keepMine"
@@ -158,7 +158,7 @@ async function submit(): Promise<void> {
         <template #save-button="{ disabled, onSave }">
           <LoadingButton
             class="btn-primary"
-            :loading="action.loading.value"
+            :loading="action.busy.value"
             :disabled="disabled"
             data-id="i18n-country-save"
             @click="onSave"

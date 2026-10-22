@@ -97,7 +97,7 @@ const editForm = useSignal(editor.form)
 const live = useSignal(editor.state)
 const editNoticeText = useSignal(editor.noticeText)
 const editSaveLabel = useSignal(editor.saveLabel)
-const canSave = useSignal(editor.canSave)
+const saveAvailable = useSignal(editor.saveAvailable)
 const editHidden = computed(() => editForm.value.hidden)
 const editValue = computed({
   get: () => editForm.value.text,
@@ -105,7 +105,6 @@ const editValue = computed({
 })
 const editAction = useTrackedAction()
 const {
-  loading: editLoading,
   busy: editBusy,
   run: runEditAction,
   clearError: clearEditError,
@@ -122,7 +121,6 @@ const resetOpen = ref(false)
 const resetRow = ref<HilosOAuthRedirectRow | null>(null)
 const resetAction = useTrackedAction()
 const {
-  loading: resetLoading,
   busy: resetBusy,
   run: runResetAction,
   clearError: clearResetError,
@@ -336,7 +334,7 @@ async function submitReset(): Promise<void> {
       <template #actions="{ requestClose }">
         <ConflictActions
           :conflict="live.conflict"
-          :disable-save="!canSave"
+          :disable-save="!saveAvailable"
           :save-label="editSaveLabel"
           @save="submitEdit"
           @accept-mine="acceptMine"
@@ -355,7 +353,7 @@ async function submitReset(): Promise<void> {
           <template #save-button="{ disabled, onSave }">
             <LoadingButton
               class="btn-primary"
-              :loading="editLoading"
+              :loading="editBusy"
               :disabled="disabled"
               data-id="hilos-oauth-redirect-save"
               @click="onSave"
@@ -407,8 +405,8 @@ async function submitReset(): Promise<void> {
         </button>
         <LoadingButton
           class="btn-danger"
-          :loading="resetLoading"
-          :disabled="resetBusy || resetGone"
+          :loading="resetBusy"
+          :disabled="resetGone"
           data-id="hilos-oauth-redirect-reset-confirm"
           @click="submitReset"
         >

@@ -135,7 +135,7 @@ watch(step, (next, previous) => {
       <template v-else>
         <ConflictActions
           :conflict="edit.conflict"
-          :disable-save="!valid || !edit.dirty || busy || edit.gone"
+          :disable-save="!valid || !edit.dirty || edit.gone"
           :save-label="saveLabel"
           @save="flow.save()"
           @accept-mine="flow.keepMine()"

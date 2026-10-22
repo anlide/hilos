@@ -89,6 +89,12 @@ export interface HilosI18nLanguageNameWindow extends Omit<
   readonly target: ReadonlySignal<HilosI18nLanguageNameTarget | null>
   readonly mode: ReadonlySignal<'add' | 'edit' | null>
   readonly dirty: ReadonlySignal<boolean>
+  /**
+   * Creation is fit to submit, whatever is in flight: the Add button's look.
+   * Creation may submit even an untouched empty draft.
+   */
+  readonly submitAvailable: ReadonlySignal<boolean>
+  /** Creation is fit to submit and nothing is in flight: the submit's guard. */
   readonly canSubmit: ReadonlySignal<boolean>
   readonly notice: ReadonlySignal<{
     kind: RowEditNoticeKind
@@ -165,8 +171,11 @@ export function createHilosI18nLanguageNameWindow(
   const missing = computedSignal(() =>
     mode.get() === 'add' ? selected.get() === undefined : edit.state.get().gone,
   )
+  const submitAvailable = computedSignal(
+    () => mode.get() === 'add' && !missing.get(),
+  )
   const canSubmit = computedSignal(
-    () => mode.get() === 'add' && !creating.get() && !missing.get(),
+    () => submitAvailable.get() && !creating.get(),
   )
 
   // Route teardown is allowed during a write. User close goes through the busy
@@ -226,6 +235,7 @@ export function createHilosI18nLanguageNameWindow(
     opened,
     mode,
     saving,
+    submitAvailable,
     canSubmit,
     dirty: computedSignal(() =>
       mode.get() === 'add' ? form.get().name !== '' : edit.state.get().dirty,

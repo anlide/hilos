@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { markRaw, nextTick } from 'vue'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ActionLifecycle,
   bindAdminAccess,
@@ -253,6 +253,7 @@ afterEach(() => {
     wrapper.unmount()
   }
   document.body.classList.remove('modal-open')
+  vi.useRealTimers()
 })
 
 async function mountPage(context: HilosSettingsContext) {
@@ -278,6 +279,30 @@ function editButton(key: string): HTMLElement {
 
 function modalEl(id: string): HTMLElement | null {
   return document.querySelector(`[data-id="${id}"]`)
+}
+
+async function settle(): Promise<void> {
+  await nextTick()
+  await nextTick()
+  await nextTick()
+}
+
+async function type(value: string): Promise<void> {
+  const input = modalEl('hilos-settings-edit-value') as HTMLInputElement
+  input.value = value
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  await settle()
+}
+
+// Enter in the edit dialog: the submit of its form.
+function submitEdit(): void {
+  document
+    .querySelector('[data-id="modal"] form')
+    ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+}
+
+function spinner(save: HTMLButtonElement): Element | null {
+  return save.querySelector('[data-id="loading-button-spinner"]')
 }
 
 describe('HilosSettingsPage', () => {
@@ -621,6 +646,82 @@ describe('HilosSettingsPage', () => {
     await nextTick()
     expect(focus).toEqual(['site_name', ''])
   })
+
+  // The production LoadingButton and ActionLifecycle together: the button's
+  // own 300 ms timer is the only delay, so the spinner never waits for the
+  // lifecycle's deferred loading on top of it.
+  it('locks Save at once on the first send and greys it only with its spinner at 300 ms', async () => {
+    vi.useFakeTimers()
+    const { context, sent, answer } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: 'Hilos',
+        overrideValue: 'Hilos',
+      }),
+    ])
+    await mountPage(context)
+    editButton('site_name').click()
+    await settle()
+    await type('Mine')
+    const save = modalEl('hilos-settings-edit-save') as HTMLButtonElement
+    expect(save.disabled).toBe(false)
+    save.click()
+    await settle()
+    expect(sent.map((entry) => entry.action)).toEqual(['setting_add'])
+    expect(save.getAttribute('aria-busy')).toBe('true')
+    expect(save.getAttribute('aria-disabled')).toBe('true')
+    expect(save.disabled).toBe(false)
+    expect(save.classList.contains('disabled')).toBe(false)
+    save.click()
+    submitEdit()
+    await settle()
+    expect(sent).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(299)
+    await settle()
+    expect(save.getAttribute('aria-disabled')).toBe('true')
+    expect(save.disabled).toBe(false)
+    expect(save.classList.contains('disabled')).toBe(false)
+    expect(spinner(save)).toBeNull()
+    await vi.advanceTimersByTimeAsync(1)
+    await settle()
+    expect(spinner(save)).not.toBeNull()
+    expect(save.classList.contains('disabled')).toBe(true)
+    expect(save.disabled).toBe(false)
+    save.click()
+    submitEdit()
+    await settle()
+    expect(sent).toHaveLength(1)
+    answer('success')
+    await settle()
+    expect(modalEl('modal')).toBeNull()
+  })
+
+  it('turns Save off at once for a draft with nothing to save', async () => {
+    vi.useFakeTimers()
+    const { context, sent } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: 'Hilos',
+        overrideValue: 'Hilos',
+      }),
+    ])
+    await mountPage(context)
+    editButton('site_name').click()
+    await settle()
+    await type('Mine')
+    await type('Hilos')
+    const save = modalEl('hilos-settings-edit-save') as HTMLButtonElement
+    expect(save.disabled).toBe(true)
+    expect(save.getAttribute('aria-busy')).toBeNull()
+    save.click()
+    submitEdit()
+    await vi.advanceTimersByTimeAsync(300)
+    await settle()
+    expect(spinner(save)).toBeNull()
+    expect(sent).toHaveLength(0)
+  })
 })
 
 describe('HilosSettingsPage reset dialog', () => {
@@ -848,6 +949,34 @@ describe('HilosSettingsPage in the admin view mode', () => {
     cancel.click()
     await nextTick()
     expect(modalEl('modal')).toBeNull()
+  })
+
+  // A viewer's value is always hidden (HIL-1258): Save is off from the first
+  // frame, natively, and neither a click nor Enter sends anything.
+  it('turns Save off at once in the admin view mode', async () => {
+    vi.useFakeTimers()
+    bindSession().handshake(null, true)
+    const { context, sent } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: { _hidden: true },
+        overrideValue: { _hidden: true },
+      }),
+    ])
+    await mountPage(context)
+    editButton('site_name').click()
+    await settle()
+
+    const save = modalEl('hilos-settings-edit-save') as HTMLButtonElement
+    expect(save.disabled).toBe(true)
+    expect(save.getAttribute('aria-busy')).toBeNull()
+    save.click()
+    submitEdit()
+    await vi.advanceTimersByTimeAsync(300)
+    await settle()
+    expect(spinner(save)).toBeNull()
+    expect(sent).toHaveLength(0)
   })
 
   it('a viewer opens the reset of a setting and has nothing to reset it with', async () => {

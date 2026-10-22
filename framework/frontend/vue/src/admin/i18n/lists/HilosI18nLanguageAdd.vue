@@ -23,7 +23,7 @@ const step = useSignal(props.add.step)
 const form = useSignal(props.add.form)
 const known = useSignal(props.add.known)
 const complete = useSignal(props.add.complete)
-const canSubmit = useSignal(props.add.canSubmit)
+const submitAvailable = useSignal(props.add.submitAvailable)
 const catalog = useSignal(createHilosI18nBuiltInLanguages(props.context))
 const formAction = useTrackedAction()
 const confirmAction = useTrackedAction()
@@ -182,8 +182,8 @@ async function confirm(): Promise<void> {
         class="btn-primary"
         type="submit"
         form="i18n-language-add-form"
-        :loading="formAction.loading.value"
-        :disabled="!canSubmit || formAction.busy.value"
+        :loading="formAction.busy.value"
+        :disabled="!submitAvailable"
         data-id="i18n-language-add-submit"
       >
         {{ copy.submit }}
@@ -240,8 +240,8 @@ async function confirm(): Promise<void> {
       </button>
       <LoadingButton
         class="btn-warning"
-        :loading="confirmAction.loading.value"
-        :disabled="!canSubmit || confirmAction.busy.value"
+        :loading="confirmAction.busy.value"
+        :disabled="!submitAvailable"
         data-id="i18n-language-confirm-submit"
         @click="confirm"
       >

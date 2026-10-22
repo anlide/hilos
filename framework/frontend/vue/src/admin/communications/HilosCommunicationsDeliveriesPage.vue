@@ -139,7 +139,7 @@ async function retry(row: HilosDeliveryRow): Promise<void> {
           v-if="isDeliveryRetryable(row)"
           class="btn-outline-primary btn-sm"
           :loading="retryBusy && retryPendingId === row.rowKey"
-          :disabled="retryBusy"
+          :disabled="retryBusy && retryPendingId !== row.rowKey"
           :data-id="`hilos-delivery-retry-${row.rowKey}`"
           @click="retry(row)"
         >

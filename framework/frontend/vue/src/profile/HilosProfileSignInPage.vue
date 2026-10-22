@@ -348,7 +348,7 @@ onUnmounted(() => {
               :key="wayKey(way)"
               class="btn-sm btn-outline-secondary"
               :loading="addOpening && addPressed === wayKey(way)"
-              :disabled="addOpening"
+              :disabled="addOpening && addPressed !== wayKey(way)"
               :data-id="passkeyOnlyWayId(way)"
               @click="openAdd(way)"
               >{{ passkeyOnlyWayLabel(way) }}</LoadingButton
@@ -429,7 +429,7 @@ onUnmounted(() => {
     <LoadingButton
       class="btn-sm btn-outline-primary mt-3"
       :loading="addOpening && addPressed === 'add'"
-      :disabled="addOpening"
+      :disabled="addOpening && addPressed !== 'add'"
       data-id="profile-sign-in-add"
       @click="openAdd()"
       >Add a way to sign in</LoadingButton
@@ -465,8 +465,7 @@ onUnmounted(() => {
         </button>
         <LoadingButton
           class="btn btn-danger"
-          :loading="unlinkAction.loading.value"
-          :disabled="unlinkAction.busy.value"
+          :loading="unlinkAction.busy.value"
           data-id="identity-unlink-yes"
           @click="remove"
           >Remove</LoadingButton
@@ -639,7 +638,7 @@ onUnmounted(() => {
                 v-else-if="way.kind === 'provider'"
                 class="btn btn-outline-secondary"
                 :loading="busy && pendingProvider === way.key"
-                :disabled="busy"
+                :disabled="busy && pendingProvider !== way.key"
                 :data-id="`profile-oauth-link-${way.key}`"
                 @click="flow.chooseProvider(way.key)"
                 ><span class="d-flex align-items-center gap-3 text-start"
@@ -661,7 +660,7 @@ onUnmounted(() => {
                 v-else
                 class="btn btn-outline-secondary"
                 :loading="busy && pendingProvider === null"
-                :disabled="busy"
+                :disabled="busy && pendingProvider !== null"
                 data-id="profile-passkey-add"
                 @click="flow.choosePasskey"
                 ><span class="d-flex align-items-center gap-3 text-start"
@@ -745,7 +744,6 @@ onUnmounted(() => {
           :form="`${baseId}-step-up`"
           class="btn btn-primary"
           :loading="stepUpBusy"
-          :disabled="stepUpBusy"
           data-id="profile-sign-in-add-step-up-confirm"
           >{{ HILOS_STEP_UP_COPY.confirm }}</LoadingButton
         >
@@ -764,7 +762,7 @@ onUnmounted(() => {
             :form="`${baseId}-add`"
             class="btn btn-primary"
             :loading="busy"
-            :disabled="!addValid || busy"
+            :disabled="!addValid"
             :data-id="submitId"
             >{{
               step === 'password-email' || step === 'phone-number'

@@ -23,8 +23,6 @@ defineProps<{
   labels: readonly string[]
   /** The erase is in flight: the answers are held and the dialog cannot be dismissed. */
   busy: boolean
-  /** Deferred loading of the erase, for the confirming button's spinner. */
-  loading: boolean
 }>()
 
 const emit = defineEmits<{
@@ -68,7 +66,7 @@ const emit = defineEmits<{
       </button>
       <LoadingButton
         class="btn-danger"
-        :loading="loading"
+        :loading="busy"
         data-id="privacy-erase-confirm"
         @click="emit('confirm')"
       >

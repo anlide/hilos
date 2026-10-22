@@ -144,7 +144,6 @@ const takeoutClustered = ref(false)
 const takeoutRow = ref<HilosLogRotationRow | null>(null)
 const takeoutAction = useTrackedAction()
 const {
-  loading: takeoutLoading,
   busy: takeoutBusy,
   run: runTakeout,
   clearError: clearTakeoutError,
@@ -210,12 +209,7 @@ async function submitTakeout(): Promise<void> {
 const undoOpen = ref(false)
 const undoRow = ref<HilosLogRotationRow | null>(null)
 const undoAction = useTrackedAction()
-const {
-  loading: undoLoading,
-  busy: undoBusy,
-  run: runUndo,
-  clearError: clearUndoError,
-} = undoAction
+const { busy: undoBusy, run: runUndo, clearError: clearUndoError } = undoAction
 
 function offersUndo(row: HilosLogRotationRow): boolean {
   return row.retentionState === HILOS_ROTATION_STATE_TAKEN
@@ -491,7 +485,7 @@ const legendOpen = ref(false)
         </button>
         <LoadingButton
           class="btn-primary"
-          :loading="takeoutLoading"
+          :loading="takeoutBusy"
           :disabled="takeoutNotice !== null"
           data-id="hilos-rotation-takeout-confirm"
           @click="submitTakeout"
@@ -545,7 +539,7 @@ const legendOpen = ref(false)
         </button>
         <LoadingButton
           class="btn-primary"
-          :loading="undoLoading"
+          :loading="undoBusy"
           :disabled="undoNotice !== null"
           data-id="hilos-rotation-undo-confirm"
           @click="submitUndo"

@@ -74,6 +74,9 @@ export interface HilosI18nCountryAdd {
   readonly form: ReadonlySignal<HilosI18nCountryAddForm>
   readonly kind: ReadonlySignal<'known' | 'own' | null>
   readonly catalogSize: ReadonlySignal<number | null>
+  /** The form is fit to submit, whatever is in flight: the Add button's look. */
+  readonly submitAvailable: ReadonlySignal<boolean>
+  /** The form is fit to submit and nothing is in flight: the submit's guard. */
   readonly canSubmit: ReadonlySignal<boolean>
   readonly saving: ReadonlySignal<boolean>
   open(): void
@@ -110,15 +113,15 @@ export function createHilosI18nCountryAdd(
     if (codes === null || !/^[a-z]{2}$/.test(code)) return null
     return codes.includes(code) ? 'known' : 'own'
   })
-  const canSubmit = computedSignal(
+  const submitAvailable = computedSignal(
     () =>
       step.get() !== 'closed' &&
-      !saving.get() &&
       kind.get() !== null &&
       form.get().currencySymbol.trim() !== '' &&
       [...form.get().currencySymbol.trim()].length <= 8 &&
       /^[A-Z]{3}$/.test(form.get().currencyCode),
   )
+  const canSubmit = computedSignal(() => submitAvailable.get() && !saving.get())
 
   async function dispatch(run: HilosActionRun): Promise<void> {
     if (!canSubmit.get()) return
@@ -150,6 +153,7 @@ export function createHilosI18nCountryAdd(
     form,
     kind,
     catalogSize,
+    submitAvailable,
     canSubmit,
     saving,
     open() {

@@ -95,10 +95,9 @@ const editForm = useSignal(editor.form)
 const live = useSignal(editor.state)
 const editNoticeText = useSignal(editor.noticeText)
 const editSaveLabel = useSignal(editor.saveLabel)
-const canSave = useSignal(editor.canSave)
+const saveAvailable = useSignal(editor.saveAvailable)
 const editAction = useTrackedAction()
 const {
-  loading: editLoading,
   busy: editBusy,
   run: runEditAction,
   clearError: clearEditError,
@@ -134,7 +133,6 @@ const deleteOpen = ref(false)
 const deleteRow = ref<HilosSettingRow | null>(null)
 const deleteAction = useTrackedAction()
 const {
-  loading: deleteLoading,
   busy: deleteBusy,
   run: runDeleteAction,
   clearError: clearDeleteError,
@@ -147,7 +145,6 @@ const resetOpen = ref(false)
 const resetRow = ref<HilosSettingRow | null>(null)
 const resetAction = useTrackedAction()
 const {
-  loading: resetLoading,
   busy: resetBusy,
   run: runResetAction,
   clearError: clearResetError,
@@ -391,7 +388,7 @@ async function submitReset(): Promise<void> {
       <template #actions="{ requestClose }">
         <ConflictActions
           :conflict="live.conflict"
-          :disable-save="!canSave"
+          :disable-save="!saveAvailable"
           :save-label="editSaveLabel"
           @save="submitEdit"
           @accept-mine="acceptMine"
@@ -411,7 +408,7 @@ async function submitReset(): Promise<void> {
           <template #save-button="{ disabled, onSave }">
             <LoadingButton
               class="btn-primary"
-              :loading="editLoading"
+              :loading="editBusy"
               :disabled="disabled"
               data-id="hilos-settings-edit-save"
               @click="onSave"
@@ -459,8 +456,8 @@ async function submitReset(): Promise<void> {
         </button>
         <LoadingButton
           class="btn-danger"
-          :loading="deleteLoading"
-          :disabled="deleteBusy || deleteGone"
+          :loading="deleteBusy"
+          :disabled="deleteGone"
           data-id="hilos-settings-delete-confirm"
           @click="submitDelete"
         >
@@ -520,8 +517,8 @@ async function submitReset(): Promise<void> {
         </button>
         <LoadingButton
           class="btn-danger"
-          :loading="resetLoading"
-          :disabled="resetBusy || resetGone"
+          :loading="resetBusy"
+          :disabled="resetGone"
           data-id="hilos-settings-reset-confirm"
           @click="submitReset"
         >

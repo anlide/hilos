@@ -353,6 +353,7 @@ export function createHilosI18nCountryWindow(
           : 'alert-info',
       icon: mode.get() === 'view' || lockedOn.get() ? 'bi-lock' : 'bi-pencil',
     })),
+    saveAvailable: edit.saveAvailable,
     canSave: edit.canSave,
     saveLabel: edit.saveLabel,
     saving: edit.saving,

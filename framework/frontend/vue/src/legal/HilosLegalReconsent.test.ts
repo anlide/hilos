@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   RECONSENT_NOW,
   reconsentContent,
@@ -8,6 +8,10 @@ import {
 import HilosLegalReconsent from './HilosLegalReconsent.vue'
 
 const PERSON = { name: 'Bob', impersonated: false }
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 describe('the "the terms have changed" screen (HIL-500)', () => {
   it('draws a section per document with its plate, the accepted revision and the changes', () => {
@@ -126,6 +130,39 @@ describe('the "the terms have changed" screen (HIL-500)', () => {
     await view.get('[data-id="legal-reconsent-later"]').trigger('click')
     await view.get('[data-id="legal-reconsent-accept"]').trigger('click')
     expect(view.emitted('later')).toHaveLength(1)
+    expect(view.emitted('accept')).toHaveLength(1)
+    view.unmount()
+  })
+
+  it('blocks Accept by its own acceptance at once and keeps its look until the spinner (HIL-1766)', async () => {
+    vi.useFakeTimers()
+    const view = mount(HilosLegalReconsent, {
+      props: {
+        variant: 'window',
+        content: reconsentContent(),
+        view: { kind: 'changes' },
+        busy: true,
+        now: RECONSENT_NOW,
+      },
+    })
+    const accept = view.get('[data-id="legal-reconsent-accept"]')
+    expect(accept.attributes('aria-busy')).toBe('true')
+    expect(accept.attributes('aria-disabled')).toBe('true')
+    expect(accept.attributes('disabled')).toBeUndefined()
+    expect(accept.classes()).not.toContain('disabled')
+    expect(accept.find('[data-id="loading-button-spinner"]').exists()).toBe(
+      false,
+    )
+    await accept.trigger('click')
+    expect(view.emitted('accept')).toBeUndefined()
+    await vi.advanceTimersByTimeAsync(300)
+    expect(accept.find('[data-id="loading-button-spinner"]').exists()).toBe(
+      true,
+    )
+    expect(accept.classes()).toContain('disabled')
+    await view.setProps({ busy: false })
+    expect(accept.attributes('aria-disabled')).toBeUndefined()
+    await accept.trigger('click')
     expect(view.emitted('accept')).toHaveLength(1)
     view.unmount()
   })

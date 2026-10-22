@@ -1,11 +1,12 @@
 import { enableAutoUnmount, mount } from '@vue/test-utils'
 import {
   ActionError,
+  ActionLifecycle,
   createSignal,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   hilosToasts,
   type ActionHandle,
-  type ActionLifecycle,
+  type ActionLifecycleSource,
   type ActionResult,
 } from '@hilos/core/base'
 import {
@@ -13,7 +14,7 @@ import {
   type HilosI18nCountryCard,
   type HilosI18nCountryContext,
 } from '@hilos/core/admin/i18n'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 import { hilosAdminViewModeKey } from '../../../hilosAdminViewMode.js'
 import HilosI18nCountryWindow from './HilosI18nCountryWindow.vue'
@@ -23,6 +24,7 @@ const disposals: Array<() => void> = []
 afterEach(() => {
   for (const dispose of disposals.splice(0)) dispose()
   hilosToasts.clear()
+  vi.useRealTimers()
 })
 
 const country: HilosI18nCountryCard = {
@@ -54,7 +56,6 @@ interface Dispatch {
 
 function harness(initial = country, viewer = false) {
   const sent: Dispatch[] = []
-  const source = createSignal<HilosI18nCountryCard | null>(initial)
   const loading = createSignal(false)
   const actions = {
     dispatch(action: string, payload: unknown): ActionHandle {
@@ -68,6 +69,53 @@ function harness(initial = country, viewer = false) {
       return { requestId: String(sent.length), loading, done }
     },
   } as ActionLifecycle
+  return { ...mountWindow(actions, initial, viewer), sent, loading }
+}
+
+/**
+ * The production lifecycle — its own requestId, its own deferred loading at
+ * 300 ms — over a connection that records each frame and answers on demand.
+ */
+function liveHarness(viewer = false) {
+  const frames: Array<{ action: string; requestId?: string }> = []
+  const replies = new Set<(signal: Record<string, unknown>) => void>()
+  const actions = new ActionLifecycle({
+    sendAction: (action: string, _data: unknown, requestId?: string) => {
+      frames.push({ action, requestId })
+      return true
+    },
+    on: (
+      event: string,
+      listener: (signal: Record<string, unknown>) => void,
+    ) => {
+      if (event !== 'actionSuccess') return () => {}
+      replies.add(listener)
+      return () => replies.delete(listener)
+    },
+  } as unknown as ActionLifecycleSource)
+  return {
+    ...mountWindow(actions, country, viewer),
+    frames,
+    // Answer the last frame sent the way the server confirms it.
+    confirm(): void {
+      const last = frames[frames.length - 1]
+      for (const listener of [...replies]) {
+        listener({
+          kind: 'actionSuccess',
+          action: last?.action,
+          requestId: last?.requestId,
+        })
+      }
+    },
+  }
+}
+
+function mountWindow(
+  actions: ActionLifecycle,
+  initial: HilosI18nCountryCard,
+  viewer: boolean,
+) {
+  const source = createSignal<HilosI18nCountryCard | null>(initial)
   const window = createHilosI18nCountryCardWindow(source, {
     actions,
   } as HilosI18nCountryContext)
@@ -79,7 +127,7 @@ function harness(initial = country, viewer = false) {
     global: { provide: { [hilosAdminViewModeKey as symbol]: ref(viewer) } },
   })
   window.open(initial.enabled ? 'view' : 'edit')
-  return { window, source, sent, loading }
+  return { window, source }
 }
 
 function element<T extends HTMLElement = HTMLElement>(id: string): T {
@@ -100,6 +148,14 @@ async function input(id: string, value: string): Promise<void> {
   field.value = value
   field.dispatchEvent(new Event('input', { bubbles: true }))
   await settle()
+}
+function submitForm(): void {
+  document
+    .getElementById('i18n-country-edit-form')
+    ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+}
+function spinner(save: HTMLButtonElement): Element | null {
+  return save.querySelector('[data-id="loading-button-spinner"]')
 }
 
 describe('HilosI18nCountryWindow', () => {
@@ -397,5 +453,76 @@ describe('HilosI18nCountryWindow', () => {
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await settle()
     expect(h.sent).toHaveLength(0)
+  })
+
+  // The production LoadingButton and ActionLifecycle together: the button's
+  // own 300 ms timer is the only delay, so the spinner never waits for the
+  // lifecycle's deferred loading on top of it.
+  it('locks Save at once on the first send and greys it only with its spinner at 300 ms', async () => {
+    vi.useFakeTimers()
+    const h = liveHarness()
+    await settle()
+    await input('currency-symbol', 'IE€')
+    const save = button('i18n-country-save')
+    expect(save.disabled).toBe(false)
+    save.click()
+    await settle()
+    expect(h.frames.map((frame) => frame.action)).toEqual([
+      'hilos_i18n_country_update',
+    ])
+    expect(save.getAttribute('aria-busy')).toBe('true')
+    expect(save.getAttribute('aria-disabled')).toBe('true')
+    expect(save.disabled).toBe(false)
+    expect(save.classList.contains('disabled')).toBe(false)
+    save.click()
+    submitForm()
+    await settle()
+    expect(h.frames).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(299)
+    await settle()
+    expect(save.getAttribute('aria-disabled')).toBe('true')
+    expect(save.disabled).toBe(false)
+    expect(save.classList.contains('disabled')).toBe(false)
+    expect(spinner(save)).toBeNull()
+    await vi.advanceTimersByTimeAsync(1)
+    await settle()
+    expect(spinner(save)).not.toBeNull()
+    expect(save.classList.contains('disabled')).toBe(true)
+    expect(save.disabled).toBe(false)
+    save.click()
+    submitForm()
+    await settle()
+    expect(h.frames).toHaveLength(1)
+    h.confirm()
+    await settle()
+    expect(h.window.opened.get()).toBe(false)
+  })
+
+  it('turns Save off at once for a form unfit to send', async () => {
+    vi.useFakeTimers()
+    const h = liveHarness()
+    await settle()
+    await input('currency-code', ' eu ')
+    const save = button('i18n-country-save')
+    expect(save.disabled).toBe(true)
+    expect(spinner(save)).toBeNull()
+    save.click()
+    submitForm()
+    await settle()
+    expect(h.frames).toHaveLength(0)
+  })
+
+  it('turns Save off at once in the admin view mode', async () => {
+    vi.useFakeTimers()
+    const h = liveHarness(true)
+    await settle()
+    await input('currency-symbol', 'IE€')
+    const save = button('i18n-country-save')
+    expect(save.disabled).toBe(true)
+    expect(spinner(save)).toBeNull()
+    save.click()
+    submitForm()
+    await settle()
+    expect(h.frames).toHaveLength(0)
   })
 })

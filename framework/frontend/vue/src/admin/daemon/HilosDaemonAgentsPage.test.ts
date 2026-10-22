@@ -405,8 +405,8 @@ describe('HilosDaemonAgentsPage restart', () => {
       nodeId: 'n1',
     })
     expect(
-      (modal('hilos-daemon-restart-confirm') as HTMLButtonElement).disabled,
-    ).toBe(true)
+      modal('hilos-daemon-restart-confirm').getAttribute('aria-disabled'),
+    ).toBe('true')
     expect(
       (modal('hilos-daemon-restart-cancel') as HTMLButtonElement).disabled,
     ).toBe(true)

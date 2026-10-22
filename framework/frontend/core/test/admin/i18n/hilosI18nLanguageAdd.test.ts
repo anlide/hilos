@@ -178,9 +178,9 @@ describe('createHilosI18nLanguageAdd', () => {
   )
 
   it.each(['fr', 'cy'])(
-    'locks closing and repeat sends while saving %s',
+    'locks closing and repeat sends while saving %s, and stays fit to submit',
     async (code) => {
-      const { add, calls } = harness()
+      const { add, catalog, calls } = harness()
       add.open()
       add.setCode(code)
       add.setNativeName('Name')
@@ -193,16 +193,22 @@ describe('createHilosI18nLanguageAdd', () => {
       const pending = code === 'fr' ? add.submit(run) : add.confirm(run)
       expect(add.saving.get()).toBe(true)
       expect(add.canSubmit.get()).toBe(false)
+      expect(add.submitAvailable.get()).toBe(true)
       add.close()
       add.open()
       await add.submit(run)
       await add.confirm(run)
       expect(calls).toHaveLength(1)
       expect(add.step.get()).toBe(code === 'fr' ? 'form' : 'confirm')
+      catalog.set(null)
+      expect(add.submitAvailable.get()).toBe(false)
+      catalog.set(languages)
+      expect(add.submitAvailable.get()).toBe(true)
       settle?.(true)
       await pending
       expect(add.step.get()).toBe('closed')
       expect(add.saving.get()).toBe(false)
+      expect(add.submitAvailable.get()).toBe(false)
     },
   )
 

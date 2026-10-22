@@ -323,6 +323,9 @@ export interface HilosI18nLocaleAdd {
   readonly saving: ReadonlySignal<boolean>
   readonly elsewhere: ReadonlySignal<boolean>
   readonly gone: ReadonlySignal<boolean>
+  /** The form is fit to add, whatever is in flight: the Add button's look. */
+  readonly addAvailable: ReadonlySignal<boolean>
+  /** The form is fit to add and nothing is in flight: the add's guard. */
   readonly canAdd: ReadonlySignal<boolean>
   open(rowKey: string): boolean
   setField(field: keyof HilosI18nLocaleFormats, value: string): void
@@ -362,15 +365,15 @@ export function createHilosI18nLocaleAdd(
       live.get()?.localeCode !== null &&
       !gone.get(),
   )
-  const canAdd = computedSignal(
+  const addAvailable = computedSignal(
     () =>
       opened.get() &&
-      !saving.get() &&
       !gone.get() &&
       !elsewhere.get() &&
       Object.values(form.get()).every((value) => value !== '') &&
       hilosI18nLocaleFormatsSchema.safeParse(form.get()).success,
   )
+  const canAdd = computedSignal(() => addAvailable.get() && !saving.get())
 
   function close(): void {
     if (saving.get()) return
@@ -386,6 +389,7 @@ export function createHilosI18nLocaleAdd(
     saving,
     elsewhere,
     gone,
+    addAvailable,
     canAdd,
     open(rowKey) {
       if (saving.get()) return false

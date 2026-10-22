@@ -9,8 +9,9 @@ Two gestures, one action: choosing an unapplied mode, and putting the applied
 mode's values back when they have drifted. The applied card is never the gesture
 itself — with no drift there is nothing to press, and with drift the one button
 inside it says out loud what it will do. While the action is in flight every card
-is disabled, or two quick clicks would race and the later write would win.
-Inside the admin view mode a viewer finds every card and the button inside the
+is locked, or two quick clicks would race and the later write would win: the card
+whose click applied at once by its own flight, keeping its look until its spinner
+comes, and the others plainly disabled. Inside the admin view mode a viewer finds every card and the button inside the
 applied one plainly disabled — each is a `LoadingButton` (HIL-1261) — so the
 confirmation never opens for a viewer.
 
@@ -73,7 +74,10 @@ onMounted(() => presets.start())
 onUnmounted(() => presets.dispose())
 
 const applyAction = useTrackedAction()
-const { loading: applyLoading, busy: applyBusy, clearError } = applyAction
+const { busy: applyBusy, clearError } = applyAction
+// The card whose click applied at once; null when the apply came through the
+// confirmation or the button inside the applied card, which no card pressed.
+const pressedCard = ref<string | null>(null)
 
 const cards = computed(() => presetsOf(state.value))
 const differences = computed(() => differencesOf(state.value))
@@ -120,12 +124,14 @@ function choose(name: string): void {
 
     return
   }
+  pressedCard.value = name
   void apply(name)
 }
 
 /** Send the apply and, when it was confirmed, close the confirmation on success. */
 async function apply(name: string): Promise<void> {
   const applyOk = await applyAction.run(sendSettingPresetApply(name))
+  pressedCard.value = null
   if (applyOk) {
     confirmOpen.value = false
     confirmPreset.value = null
@@ -193,7 +199,10 @@ function valueLines(values: unknown): string[] {
         >
           <LoadingButton
             class="text-start border-0 rounded-0 rounded-top-3 p-3 flex-grow-1"
-            :disabled="applyBusy || applied(preset.name)"
+            :loading="applyBusy && pressedCard === preset.name"
+            :disabled="
+              (applyBusy && pressedCard !== preset.name) || applied(preset.name)
+            "
             :aria-current="applied(preset.name) ? 'true' : undefined"
             :data-id="`hilos-setting-preset-${preset.name}`"
             @click="choose(preset.name)"
@@ -241,8 +250,7 @@ function valueLines(values: unknown): string[] {
             </ul>
             <LoadingButton
               class="btn-sm btn-outline-secondary w-100"
-              :loading="applyLoading"
-              :disabled="applyBusy"
+              :loading="applyBusy"
               data-id="hilos-setting-preset-revert"
               @click="revert"
             >
@@ -302,7 +310,7 @@ function valueLines(values: unknown): string[] {
         </button>
         <LoadingButton
           class="btn-primary"
-          :loading="applyLoading"
+          :loading="applyBusy"
           data-id="hilos-setting-preset-apply-confirm"
           @click="confirmApply"
         >

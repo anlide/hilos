@@ -278,13 +278,15 @@ describe('HilosLayout impersonation strip', () => {
     expect(session.source.sent[0]?.action).toBe('hilos_impersonate_stop')
     expect(session.source.sent[0]?.data).toEqual({})
     expect(session.source.sent[0]?.requestId).toBeTruthy()
-    expect(stop.attributes('disabled')).toBeDefined()
+    expect(stop.attributes('aria-disabled')).toBe('true')
 
     session.source.succeed(session.source.sent[0]?.requestId)
     await flushPromises()
 
     expect(
-      wrapper.find('[data-id="impersonation-stop"]').attributes('disabled'),
+      wrapper
+        .find('[data-id="impersonation-stop"]')
+        .attributes('aria-disabled'),
     ).toBeUndefined()
     expect(hilosToasts.toasts.get()).toEqual([])
   })
@@ -565,7 +567,7 @@ describe('HilosLayout account standing (HIL-945)', () => {
     expect(session.source.sent[0]?.action).toBe('hilos_account_deletion_cancel')
     expect(session.source.sent[0]?.data).toEqual({})
     expect(session.source.sent[0]?.requestId).toBeTruthy()
-    expect(keep.attributes('disabled')).toBeDefined()
+    expect(keep.attributes('aria-disabled')).toBe('true')
 
     session.source.succeed(
       session.source.sent[0]?.requestId,
@@ -856,7 +858,7 @@ describe('HilosLayout sign-out', () => {
 
     button.click()
     await flushPromises()
-    expect(button.disabled).toBe(true)
+    expect(button.getAttribute('aria-disabled')).toBe('true')
     expect(button.getAttribute('aria-busy')).toBe('true')
     expect(surface(container, 'loading-button-spinner')).toBeNull()
     button.click()
@@ -869,7 +871,7 @@ describe('HilosLayout sign-out', () => {
     session.source.succeed(session.source.sent[0]?.requestId, 'hilos_logout')
     await flushPromises()
 
-    expect(button.disabled).toBe(false)
+    expect(button.getAttribute('aria-disabled')).toBeNull()
     expect(hilosToasts.toasts.get()).toEqual([])
   })
 
@@ -982,7 +984,7 @@ describe('HilosLayout account blocked card', () => {
     expect(session.source.sent[0]?.action).toBe('hilos_dismiss_account_blocked')
     expect(session.source.sent[0]?.data).toEqual({})
     expect(session.source.sent[0]?.requestId).toBeTruthy()
-    expect(signOut.attributes('disabled')).toBeDefined()
+    expect(signOut.attributes('aria-disabled')).toBe('true')
 
     session.source.succeed(session.source.sent[0]?.requestId)
     await flushPromises()
@@ -990,7 +992,7 @@ describe('HilosLayout account blocked card', () => {
     expect(
       wrapper
         .find('[data-id="account-blocked-sign-out"]')
-        .attributes('disabled'),
+        .attributes('aria-disabled'),
     ).toBeUndefined()
   })
 

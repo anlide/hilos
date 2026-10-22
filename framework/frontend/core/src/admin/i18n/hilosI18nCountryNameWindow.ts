@@ -90,7 +90,12 @@ export interface HilosI18nCountryNameWindow extends Omit<
   readonly target: ReadonlySignal<HilosI18nCountryNameTarget | null>
   readonly mode: ReadonlySignal<'add' | 'edit' | null>
   readonly dirty: ReadonlySignal<boolean>
-  /** Creation may submit even an untouched empty draft. */
+  /**
+   * Creation is fit to submit, whatever is in flight: the Add button's look.
+   * Creation may submit even an untouched empty draft.
+   */
+  readonly submitAvailable: ReadonlySignal<boolean>
+  /** Creation is fit to submit and nothing is in flight: the submit's guard. */
   readonly canSubmit: ReadonlySignal<boolean>
   readonly noticeKind: ReadonlySignal<RowEditNoticeKind | null>
   /** Open from the fresh parent row; a missing locale or base refuses a correction. */
@@ -166,8 +171,11 @@ export function createHilosI18nCountryNameWindow(
   const missing = computedSignal(() =>
     mode.get() === 'add' ? selected.get() === undefined : edit.state.get().gone,
   )
+  const submitAvailable = computedSignal(
+    () => mode.get() === 'add' && !missing.get(),
+  )
   const canSubmit = computedSignal(
-    () => mode.get() === 'add' && !creating.get() && !missing.get(),
+    () => submitAvailable.get() && !creating.get(),
   )
   const noticeKind = computedSignal(() => {
     if (!opened.get()) return null
@@ -234,6 +242,7 @@ export function createHilosI18nCountryNameWindow(
     opened,
     mode,
     saving,
+    submitAvailable,
     canSubmit,
     dirty: computedSignal(() =>
       mode.get() === 'add' ? form.get().name !== '' : edit.state.get().dirty,

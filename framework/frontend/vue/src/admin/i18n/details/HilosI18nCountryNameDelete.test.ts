@@ -203,7 +203,7 @@ describe('HilosI18nCountryNameDelete', () => {
           ...(kind === 'override' ? { localeId: 501 } : {}),
         },
       })
-      expect(control('confirm').disabled).toBe(true)
+      expect(control('confirm').getAttribute('aria-disabled')).toBe('true')
       expect(control('cancel').disabled).toBe(true)
       control('confirm').click()
       control('cancel').click()

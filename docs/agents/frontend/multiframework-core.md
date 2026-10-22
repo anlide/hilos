@@ -181,7 +181,14 @@ is split the same way the whole SDK is: a **headless controller** in the core an
 **The floor.** Only logic with state, timing, or subtlety goes to the controller —
 a debounce, a focus trap, a 3-way merge, table sort / paginate. A trivial pure
 derivation (`disabled || loading`) or a one-line event guard stays in the view;
-pulling a one-liner into the core is noise, not portability.
+pulling a one-liner into the core is noise, not portability. That derivation is
+the button's lock: `loading` keeps the action from running as surely as
+`disabled` does, whatever the button looks like while its spinner waits. Vue's
+`LoadingButton` feeds it to `aria-disabled` and its click guard, and only the
+independent reasons to the native `disabled`; React and Angular still feed the
+whole of it to the native attribute. React feeds it the Vue way
+(not in the code yet — HIL-1767). Angular feeds it the Vue way
+(not in the code yet — HIL-1768).
 
 **The slot seam.** Templates can't be shared, but a primitive that projects
 consumer content still shares one contract: the **core owns the data** that flows

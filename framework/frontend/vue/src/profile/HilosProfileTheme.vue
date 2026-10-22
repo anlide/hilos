@@ -13,6 +13,7 @@ import {
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import HilosActionError from '../HilosActionError.vue'
 import HilosModal from '../HilosModal.vue'
+import LoadingButton from '../LoadingButton.vue'
 import { useSignal } from '../useSignal.js'
 import { useTrackedAction } from '../useTrackedAction.js'
 
@@ -113,25 +114,15 @@ async function choose(pick: ThemePick): Promise<void> {
         </button>
       </div>
       <hr />
-      <button
-        type="button"
-        class="btn btn-outline-secondary w-100 position-relative"
-        :disabled="busy"
-        :aria-busy="busy && submitted === null ? true : undefined"
+      <LoadingButton
+        class="btn-outline-secondary w-100"
+        :loading="busy && submitted === null"
+        :disabled="busy && submitted !== null"
         data-id="profile-theme-default"
         @click="choose(null)"
       >
-        <span :class="{ invisible: loading && submitted === null }">{{
-          THEME_COPY.siteDefault
-        }}</span>
-        <span
-          v-if="loading && submitted === null"
-          class="position-absolute top-50 start-50 translate-middle spinner-border spinner-border-sm"
-          role="status"
-          data-id="profile-theme-loading"
-          ><span class="visually-hidden">Loading…</span></span
-        >
-      </button>
+        {{ THEME_COPY.siteDefault }}
+      </LoadingButton>
     </div>
     <template #actions="{ requestClose }">
       <button

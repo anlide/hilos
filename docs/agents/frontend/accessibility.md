@@ -198,8 +198,10 @@ The rules to apply when building a view or an SDK component:
 - **A control that can be disabled does not explain itself with a title.** A
   disabled element gets no mouse events, so the browser never shows its `title`,
   and a phone or a screen reader never reaches one at all — the reason is hidden
-  exactly when it is wanted. `loading` counts too: `LoadingButton` turns its own
-  button off while it loads. The reason lives in visible content instead: a short
+  exactly when it is wanted. `loading` counts too: a loading `LoadingButton`
+  takes no press, whatever it looks like before its spinner comes (Busy state
+  below), and a phone or a screen reader reaches its `title` no better than a
+  disabled one's. The reason lives in visible content instead: a short
   word in the row (`MISMATCH`, `incompatible`, `failed`) and a live "why" icon
   button beside the dark action that opens the whole sentence, as on the backup
   page; where the reason is short and there is room under the controls, a visible
@@ -211,7 +213,21 @@ The rules to apply when building a view or an SDK component:
   A `title` stays legal on such a control only as its name repeated — the same
   text as its `aria-label`. Checked automatically: `DISABLED-TITLE`.
 - **Busy state** — a control performing an action sets `aria-busy` while in
-  flight (`LoadingButton`).
+  flight (`LoadingButton`). Vue's `LoadingButton` takes `loading` as the
+  immediate flag of its own action, raised by the press, and `disabled` only as
+  a reason of another kind — a form not yet filled, a screen that only looks.
+  It locks its own action at once: `aria-busy` and `aria-disabled` from the
+  press, a second press swallowed before it submits the form or reaches an
+  ancestor, the focus left where it was. It keeps its look until its spinner
+  comes, after the one delay of the core timer (`DEFAULT_SPINNER_DELAY_MS`,
+  300 ms), and the disabled look comes with the spinner, so a fast reply changes
+  nothing on screen. An independent reason — `disabled`, the admin view mode, a
+  takeover that only looks — turns the button off natively from the first
+  moment, and a mode's button stays described by the strip of its mode through
+  `aria-describedby`. React and Angular still turn the button off natively
+  while it loads. React takes the inputs and locks the button the Vue way
+  (not in the code yet — HIL-1767). Angular takes the inputs and locks the
+  button the Vue way (not in the code yet — HIL-1768).
 - **Live regions** — a live region is a **permanent** node that stands there
   before it has anything to say, and what changes is its **content**. A node
   carrying `aria-live` that is inserted together with its own text guarantees no

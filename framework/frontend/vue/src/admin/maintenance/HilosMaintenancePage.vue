@@ -101,7 +101,7 @@ const enableAction = useTrackedAction({
       ? error.message
       : HILOS_MAINTENANCE_ENABLE_COPY.unconfirmedNote,
 })
-const { loading: enableLoading, busy: enableBusy } = enableAction
+const { busy: enableBusy } = enableAction
 
 function openEnable(): void {
   if (enableBusy.value || position.value !== 'open') return
@@ -127,7 +127,7 @@ const disableAction = useTrackedAction({
       ? error.message
       : HILOS_MAINTENANCE_DISABLE_COPY.unconfirmedNote,
 })
-const { loading: disableLoading, busy: disableBusy } = disableAction
+const { busy: disableBusy } = disableAction
 
 function openDisable(): void {
   if (disableBusy.value || position.value !== 'manual') return
@@ -156,7 +156,7 @@ const passAction = useTrackedAction({
       ? error.message
       : HILOS_MAINTENANCE_PASS_COPY.unconfirmedNote,
 })
-const { loading: passLoading, busy: passBusy } = passAction
+const { busy: passBusy } = passAction
 
 function openPass(): void {
   if (passDisposed || passBusy.value || position.value !== 'manual') return
@@ -205,7 +205,6 @@ const circleAddOpen = ref(false)
 const circleAddIdentifier = ref('')
 const circleAddAction = useTrackedAction()
 const {
-  loading: circleAddLoading,
   busy: circleAddBusy,
   run: runCircleAddAction,
   clearError: clearCircleAddError,
@@ -240,7 +239,6 @@ const circleRemoveOpen = ref(false)
 const circleRemoveRow = ref<HilosMaintenanceCircleRow | null>(null)
 const circleRemoveAction = useTrackedAction()
 const {
-  loading: circleRemoveLoading,
   busy: circleRemoveBusy,
   run: runCircleRemoveAction,
   clearError: clearCircleRemoveError,
@@ -404,8 +402,7 @@ async function submitCircleRemove(): Promise<void> {
           >
             <LoadingButton
               class="btn-outline-primary btn-sm"
-              :loading="passLoading"
-              :disabled="passBusy"
+              :loading="passBusy"
               data-id="hilos-maintenance-pass"
               @click="openPass"
             >
@@ -413,8 +410,7 @@ async function submitCircleRemove(): Promise<void> {
             </LoadingButton>
             <LoadingButton
               class="btn-warning btn-sm"
-              :loading="disableLoading"
-              :disabled="disableBusy"
+              :loading="disableBusy"
               data-id="hilos-maintenance-disable"
               @click="openDisable"
             >
@@ -468,8 +464,8 @@ async function submitCircleRemove(): Promise<void> {
         </button>
         <LoadingButton
           class="btn-warning"
-          :loading="enableLoading"
-          :disabled="enableBusy || position !== 'open'"
+          :loading="enableBusy"
+          :disabled="position !== 'open'"
           data-id="hilos-maintenance-enable-confirm"
           @click="submitEnable"
         >
@@ -507,8 +503,8 @@ async function submitCircleRemove(): Promise<void> {
         </button>
         <LoadingButton
           class="btn-warning"
-          :loading="disableLoading"
-          :disabled="disableBusy || position !== 'manual'"
+          :loading="disableBusy"
+          :disabled="position !== 'manual'"
           data-id="hilos-maintenance-disable-confirm"
           @click="submitDisable"
         >
@@ -574,8 +570,8 @@ async function submitCircleRemove(): Promise<void> {
         <LoadingButton
           v-if="passStep === 'confirm'"
           class="btn-primary"
-          :loading="passLoading"
-          :disabled="passBusy || position !== 'manual'"
+          :loading="passBusy"
+          :disabled="position !== 'manual'"
           data-id="hilos-maintenance-pass-confirm"
           @click="submitPass"
         >
@@ -661,7 +657,7 @@ async function submitCircleRemove(): Promise<void> {
         </button>
         <LoadingButton
           class="btn-primary"
-          :loading="circleAddLoading"
+          :loading="circleAddBusy"
           :disabled="circleAddIdentifier.trim() === ''"
           data-id="hilos-maintenance-circle-add-confirm"
           @click="submitCircleAdd"
@@ -708,7 +704,7 @@ async function submitCircleRemove(): Promise<void> {
         </button>
         <LoadingButton
           class="btn-danger"
-          :loading="circleRemoveLoading"
+          :loading="circleRemoveBusy"
           :disabled="removeGone"
           data-id="hilos-maintenance-circle-remove-confirm"
           @click="submitCircleRemove"

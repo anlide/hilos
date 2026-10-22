@@ -79,6 +79,37 @@ describe('createHilosI18nCountryAdd', () => {
     expect(add.canSubmit.get()).toBe(false)
   })
 
+  it('stays fit to submit through its own send, which it does not send again', async () => {
+    const { add, catalog, calls } = harness()
+    expect(add.submitAvailable.get()).toBe(false)
+    add.open()
+    add.setCode('US')
+    add.setCurrencySymbol('$')
+    add.setCurrencyCode('usd')
+    expect(add.submitAvailable.get()).toBe(true)
+    let settle: ((value: boolean) => void) | undefined
+    const run = () =>
+      new Promise<boolean>((resolve) => {
+        settle = resolve
+      })
+    const pending = add.submit(run)
+    expect(add.saving.get()).toBe(true)
+    expect(add.canSubmit.get()).toBe(false)
+    expect(add.submitAvailable.get()).toBe(true)
+    await add.submit(run)
+    expect(calls).toHaveLength(1)
+    catalog.set(null)
+    expect(add.submitAvailable.get()).toBe(false)
+    catalog.set(['us', 'gb'])
+    expect(add.submitAvailable.get()).toBe(true)
+    settle?.(false)
+    await pending
+    expect(add.saving.get()).toBe(false)
+    expect(add.canSubmit.get()).toBe(true)
+    add.close()
+    expect(add.submitAvailable.get()).toBe(false)
+  })
+
   it('asks before dispatching an own code and sends trimmed values on confirmation', async () => {
     const { add, calls } = harness()
     add.open()

@@ -19,7 +19,7 @@ const step = useSignal(props.add.step)
 const form = useSignal(props.add.form)
 const kind = useSignal(props.add.kind)
 const catalogSize = useSignal(props.add.catalogSize)
-const canSubmit = useSignal(props.add.canSubmit)
+const submitAvailable = useSignal(props.add.submitAvailable)
 const formAction = useTrackedAction()
 const confirmAction = useTrackedAction()
 const { locked } = useLookOnly()
@@ -116,8 +116,8 @@ async function confirm(): Promise<void> {
         class="btn-primary"
         type="submit"
         form="i18n-country-add-form"
-        :loading="formAction.loading.value"
-        :disabled="!canSubmit || formAction.busy.value"
+        :loading="formAction.busy.value"
+        :disabled="!submitAvailable"
         data-id="i18n-country-add-submit"
       >
         {{ copy.submit }}
@@ -177,8 +177,8 @@ async function confirm(): Promise<void> {
       </button>
       <LoadingButton
         class="btn-warning"
-        :loading="confirmAction.loading.value"
-        :disabled="!canSubmit || confirmAction.busy.value"
+        :loading="confirmAction.busy.value"
+        :disabled="!submitAvailable"
         data-id="i18n-country-confirm-submit"
         @click="confirm"
       >

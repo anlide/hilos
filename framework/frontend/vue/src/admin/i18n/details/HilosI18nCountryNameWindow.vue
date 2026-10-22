@@ -29,6 +29,8 @@ const noticeText = useSignal(props.window.noticeText)
 const saving = useSignal(props.window.saving)
 const canSave = useSignal(props.window.canSave)
 const canSubmit = useSignal(props.window.canSubmit)
+const saveAvailable = useSignal(props.window.saveAvailable)
+const submitAvailable = useSignal(props.window.submitAvailable)
 const saveLabel = useSignal(props.window.saveLabel)
 const { locked } = useLookOnly()
 // Each opening has its own runner: a previous address's late failure cannot
@@ -144,7 +146,7 @@ async function submit(): Promise<void> {
       <ConflictActions
         v-if="mode === 'edit'"
         :conflict="state.conflict"
-        :disable-save="!canSave"
+        :disable-save="!saveAvailable"
         :save-label="saveLabel"
         @save="submit"
         @accept-mine="window.keepMine"
@@ -164,7 +166,7 @@ async function submit(): Promise<void> {
         <template #save-button="{ disabled, onSave }">
           <LoadingButton
             class="btn-primary"
-            :loading="action.loading.value"
+            :loading="action.busy.value"
             :disabled="disabled"
             data-id="i18n-country-name-submit"
             @click="onSave"
@@ -184,8 +186,8 @@ async function submit(): Promise<void> {
         </button>
         <LoadingButton
           class="btn-primary"
-          :loading="action.loading.value"
-          :disabled="!canSubmit"
+          :loading="action.busy.value"
+          :disabled="!submitAvailable"
           data-id="i18n-country-name-submit"
           @click="submit"
           >{{ saveLabel }}</LoadingButton

@@ -341,6 +341,8 @@ describe('locale window core', () => {
     )
     focused.set({ ...known, localeId: 11101, localeCode: 'en-GB', formats })
     expect(add.elsewhere.get()).toBe(false)
+    expect(add.canAdd.get()).toBe(false)
+    expect(add.addAvailable.get()).toBe(true)
     finish(true)
     await running
     expect(sent).toEqual([
@@ -363,6 +365,43 @@ describe('locale window core', () => {
     expect(add.canAdd.get()).toBe(true)
     focused.set({ ...own, localeId: 11142, localeCode: 'en-AD', formats })
     expect(add.elsewhere.get()).toBe(true)
+    expect(add.canAdd.get()).toBe(false)
+    expect(add.addAvailable.get()).toBe(false)
+    add.dispose()
+  })
+
+  it('stays fit to add through its own add in flight, until the pair is gone', async () => {
+    const known = row('en-GB', null, formats)
+    const { controller, focused, context, sent } = setup([known])
+    const add = createHilosI18nLocaleAdd(controller, context)
+    expect(add.addAvailable.get()).toBe(false)
+    expect(add.open('11:101')).toBe(true)
+    expect(add.addAvailable.get()).toBe(true)
+    add.setField('date', '')
+    expect(add.addAvailable.get()).toBe(false)
+    add.setField('date', formats.date)
+    add.setField('measurement', 'nautical')
+    expect(add.addAvailable.get()).toBe(false)
+    add.setField('measurement', formats.measurement)
+    expect(add.addAvailable.get()).toBe(true)
+    let finish: (success: boolean) => void = () => {}
+    const run = () =>
+      new Promise<boolean>((resolve) => {
+        finish = resolve
+      })
+    const running = add.add(run)
+    expect(add.saving.get()).toBe(true)
+    expect(add.canAdd.get()).toBe(false)
+    expect(add.addAvailable.get()).toBe(true)
+    await add.add(run)
+    expect(sent).toHaveLength(1)
+    focused.set(undefined)
+    expect(add.gone.get()).toBe(true)
+    expect(add.addAvailable.get()).toBe(false)
+    finish(false)
+    await running
+    expect(add.saving.get()).toBe(false)
+    expect(add.opened.get()).toBe(true)
     expect(add.canAdd.get()).toBe(false)
     add.dispose()
   })

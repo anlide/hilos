@@ -245,11 +245,8 @@ const enrollSubmitLabel = computed(
 
 const enrollSubmitDisabled = computed(() => {
   switch (enrollStep.value) {
-    case 'opening':
     case 'refused':
       return true
-    case 'step-up':
-      return enrollStepUpBusy.value
     case 'proof':
       return proofCode.value.trim() === ''
     case 'scan':
@@ -262,8 +259,14 @@ const enrollSubmitDisabled = computed(() => {
 })
 
 function enrollSubmit(): void {
-  // Enter submits the form past the disabled button, so the guard is here too.
-  if (enrollAction.busy.value || enrollSubmitDisabled.value) {
+  // Enter submits the form past the button, so what holds the button holds
+  // here too: a flight in progress, which only blocks it, and the step's own
+  // verdict, which disables it.
+  if (
+    enrollAction.busy.value ||
+    enrollStepUpBusy.value ||
+    enrollSubmitDisabled.value
+  ) {
     return
   }
   switch (enrollStep.value) {
@@ -569,7 +572,6 @@ watch(view, (current) => {
         <LoadingButton
           class="btn-sm btn-outline-primary mb-4"
           :loading="enrollStep === 'opening'"
-          :disabled="enrollStep === 'opening'"
           data-id="profile-2fa-add"
           @click="openEnroll()"
         >
@@ -616,8 +618,7 @@ watch(view, (current) => {
         </span>
         <LoadingButton
           class="btn-sm btn-outline-secondary"
-          :loading="resetCancelAction.loading.value"
-          :disabled="resetCancelAction.busy.value"
+          :loading="resetCancelAction.busy.value"
           data-id="profile-2fa-reset-cancel"
           @click="cancelReset()"
         >
@@ -778,8 +779,8 @@ watch(view, (current) => {
         <LoadingButton
           v-if="enrollStep !== 'refused'"
           class="btn-primary"
-          :loading="enrollAction.loading.value || enrollStepUpBusy"
-          :disabled="enrollAction.busy.value || enrollSubmitDisabled"
+          :loading="enrollAction.busy.value || enrollStepUpBusy"
+          :disabled="enrollSubmitDisabled"
           data-id="profile-2fa-enroll-submit"
           @click="enrollSubmit()"
         >
@@ -876,8 +877,8 @@ watch(view, (current) => {
         </button>
         <LoadingButton
           class="btn-primary"
-          :loading="codesAction.loading.value"
-          :disabled="codesAction.busy.value || codesSubmitDisabled"
+          :loading="codesAction.busy.value"
+          :disabled="codesSubmitDisabled"
           data-id="profile-2fa-codes-submit"
           @click="codesSubmit()"
         >
@@ -934,8 +935,8 @@ watch(view, (current) => {
         </button>
         <LoadingButton
           class="btn-danger"
-          :loading="removeAction.loading.value"
-          :disabled="removeAction.busy.value || removeSubmitDisabled"
+          :loading="removeAction.busy.value"
+          :disabled="removeSubmitDisabled"
           data-id="profile-2fa-remove-submit"
           @click="removeSubmit()"
         >
@@ -982,8 +983,8 @@ watch(view, (current) => {
         </button>
         <LoadingButton
           class="btn-primary"
-          :loading="waitAction.loading.value"
-          :disabled="waitAction.busy.value || waitSubmitDisabled"
+          :loading="waitAction.busy.value"
+          :disabled="waitSubmitDisabled"
           data-id="profile-2fa-wait-save"
           @click="waitSubmit()"
         >
@@ -1022,8 +1023,7 @@ watch(view, (current) => {
         </button>
         <LoadingButton
           class="btn-danger"
-          :loading="resetAction.loading.value"
-          :disabled="resetAction.busy.value"
+          :loading="resetAction.busy.value"
           data-id="profile-2fa-reset-submit"
           @click="resetSubmit()"
         >

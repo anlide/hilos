@@ -33,10 +33,10 @@ const row = useSignal(editor.row)
 const form = useSignal(editor.form)
 const state = useSignal(editor.state)
 const noticeText = useSignal(editor.noticeText)
-const canSave = useSignal(editor.canSave)
+const saveAvailable = useSignal(editor.saveAvailable)
 const saveLabel = useSignal(editor.saveLabel)
 const action = useTrackedAction({ toast: false })
-const { busy, loading, clearError, run } = action
+const { busy, clearError, run } = action
 const inputId = useId()
 const modalOpen = computed({
   get: () => opened.value,
@@ -217,7 +217,7 @@ function save(): void {
       <template #actions="{ requestClose }">
         <ConflictActions
           :conflict="state.conflict"
-          :disable-save="!canSave"
+          :disable-save="!saveAvailable"
           :save-label="saveLabel"
           @save="save"
           @accept-mine="editor.keepMine"
@@ -237,7 +237,7 @@ function save(): void {
           <template #save-button="{ disabled, onSave }"
             ><LoadingButton
               class="btn-primary"
-              :loading="loading"
+              :loading="busy"
               :disabled="disabled"
               data-id="legal-setting-save"
               @click="onSave"

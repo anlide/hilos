@@ -72,12 +72,7 @@ const confirmAction = ref<HilosTableBulkAction | null>(null)
 const confirmOpen = ref(false)
 
 const bulkTracked = useTrackedAction()
-const {
-  loading: bulkLoading,
-  busy: bulkBusy,
-  run: runBulk,
-  clearError: clearBulkError,
-} = bulkTracked
+const { busy: bulkBusy, run: runBulk, clearError: clearBulkError } = bulkTracked
 
 const confirmBody = computed(() =>
   byFilter.value
@@ -203,8 +198,7 @@ async function submitBulk(): Promise<void> {
       </button>
       <LoadingButton
         :class="confirmAction?.danger === true ? 'btn-danger' : 'btn-primary'"
-        :loading="bulkLoading"
-        :disabled="bulkBusy"
+        :loading="bulkBusy"
         data-id="hilos-table-bulk-confirm"
         @click="submitBulk"
       >

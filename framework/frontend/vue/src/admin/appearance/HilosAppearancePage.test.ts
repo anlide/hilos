@@ -364,7 +364,7 @@ describe('Appearance page', () => {
       },
     ])
     expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
-    expect(save().disabled).toBe(true)
+    expect(save().getAttribute('aria-disabled')).toBe('true')
     expect(
       document.querySelector(
         'table [data-id="appearance-setting-value-theme.switching_enabled"]',
@@ -590,7 +590,7 @@ describe('Appearance default theme window', () => {
       },
     ])
     expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
-    expect(themeSave().disabled).toBe(true)
+    expect(themeSave().getAttribute('aria-disabled')).toBe('true')
     expect(
       document.querySelector(
         'table [data-id="appearance-setting-value-theme.default"]',
