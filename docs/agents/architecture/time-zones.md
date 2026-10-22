@@ -77,8 +77,59 @@ and retention boundaries (owner's decision, 2026-10-17).
 Resolve one effective reader zone in this order: **the person's own IANA zone
 → the current browser's zone → the project zone → UTC**. Skip an absent or
 invalid browser zone. A guest uses the current browser with the same fallback
-to project and UTC, without a manual choice. All SDKs and demos read the one
-effective value. (not in the code yet — HIL-1583)
+to project and UTC, without a manual choice.
+
+[`resolveTimeZone()`](../../../framework/frontend/core/src/timeZone/timeZoneRule.ts)
+is that order as one function: the first usable of own, browser and project,
+else `UTC`. A name is usable when it is a non-empty string without outer
+whitespace, is not a numeric offset (`+02:00`, `-0500`, `−05:00`), and
+`Intl.DateTimeFormat` accepts it as `timeZone`; an alias the engine knows passes
+under the name it came with, an unusable step is skipped without a word, and an
+engine with no `Intl` answers `UTC`.
+[`readBrowserTimeZone()`](../../../framework/frontend/core/src/timeZone/timeZoneBrowser.ts)
+asks the engine for its resolved zone on every call, remembers nothing, and
+returns `null` when the browser cannot say.
+
+Each tab keeps the three inputs as one snapshot in
+[timeZoneState.ts](../../../framework/frontend/core/src/timeZone/timeZoneState.ts)
+and projects it into three read-only signals, exported from `@hilos/core` and
+`@hilos/core/base`: `hilosTimeZone`, the effective zone, always a usable name;
+`hilosOwnTimeZone`, the person's own usable choice, where `null` is Automatic, a
+guest, or a name this engine cannot use; and `hilosBrowserTimeZone`, what the
+browser said at its latest read, or `null`. One input event publishes one new
+snapshot, so a reader never sees a zone between two steps of it. The snapshot is
+the tab's own memory and not `Hilos::$rt`: the browser's zone belongs to that
+browser alone, and the person's choice is already stored on the server.
+
+`bootHilos` binds it with `bindTimeZoneState()` right after the session scope
+and before the socket opens, for every SDK. It reads the browser at once and
+takes the project zone from the connection, then follows three sources:
+
+- **Every welcome.** The project zone is `data.projectTimeZone`; a welcome
+  without the field clears it.
+- **Every `handshake_response`.** The person's own zone is
+  `entities.currentUser.timeZone` of that frame (the configured current-user
+  slot, never `impersonatedBy`). The frame is the source, not the merged session
+  entity: a page or a group may overlay the same person, and a merge keeps a
+  field the newer response omits. A user without the field, a `null`, an unusable
+  name and a guest all read as Automatic; a payload whose container does not
+  validate is no sign-out and keeps the last answer.
+- **The browser itself.** Its zone is read again on bind, on every welcome and
+  session response, on window `focus` and when the document becomes visible. There
+  is no polling, so a hidden tab learns a new system zone when it returns.
+
+A disconnect alone keeps the person's own zone: it changes with the next
+response. A second bind releases the first; the release returned is idempotent
+and leaves the last values readable. A change of the person's own zone reaches
+every open tab through the session restate below, each tab applies the response
+it receives, and a reset to Automatic returns each tab to its own browser.
+
+The signals are the one effective value every SDK and demo reads, and no reader
+is written yet. The core formatter reads `hilosTimeZone`
+(not in the code yet — HIL-1584). The profile's Time zone row reads
+`hilosOwnTimeZone` and `hilosBrowserTimeZone`
+(not in the code yet — HIL-1585), and so does the selection window
+(not in the code yet — HIL-1593).
 
 **Automatic** means the person has no choice of their own, so the current
 browser supplies the zone; it is not a zone name. The nullable account column
@@ -104,8 +155,9 @@ carries the stored value as
 [HandshakeResponseSignalData](../../../framework/backend/Socket/WebSocket/DTO/HandshakeResponseSignalData.php);
 a guest has `currentUser: null`, and an older payload without `timeZone` reads
 as null. This value is on `currentUser`, not `impersonatedBy` or `data`. The
-SDKs do not yet apply it as the effective reader zone, and this leaf adds no
-selection window.
+core applies it as the person's own zone, as described above; the window where a
+person chooses a zone is not part of that mechanism.
+(not in the code yet — HIL-1593)
 
 The [User Entity](../../../framework/backend/Database/Entity/Item/User.php)
 classifies `time_zone` as personal and assigns `NULLIFY` for restore

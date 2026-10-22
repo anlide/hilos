@@ -47,6 +47,19 @@ const publicEntries: Record<string, Record<string, unknown>> = {
 const legacy = JSON.parse(
   readFileSync(new URL('./legacyCoreExports.json', import.meta.url), 'utf8'),
 ) as { value: string[]; type: string[] }
+/**
+ * The values the reader's time zone adds past the snapshot, listed by hand so
+ * any other new export still fails the strict equality below.
+ */
+const timeZoneValues = [
+  'bindTimeZoneState',
+  'hilosBrowserTimeZone',
+  'hilosOwnTimeZone',
+  'hilosTimeZone',
+  'readBrowserTimeZone',
+  'resolveTimeZone',
+]
+const expectedValues = [...legacy.value, ...timeZoneValues].sort()
 
 /**
  * Follow emitted ESM edges, so type-only imports never become fake runtime edges.
@@ -133,7 +146,7 @@ describe('core public entries', () => {
   })
 
   it('preserves every legacy value and one instance across root, base and sections', () => {
-    expect(Object.keys(core).sort()).toEqual(legacy.value)
+    expect(Object.keys(core).sort()).toEqual(expectedValues)
     const names = new Set<string>()
     const root: Record<string, unknown> = core
     for (const api of Object.values(publicEntries)) {
@@ -142,9 +155,17 @@ describe('core public entries', () => {
         expect(Object.is(value, root[name]), name).toBe(true)
       }
     }
-    expect([...names].sort()).toEqual(legacy.value)
+    expect([...names].sort()).toEqual(expectedValues)
     expect(base.hilosLegalDocumentLabel('terms')).toBe('Terms')
     expect(base.hilosLegalDocumentLabel('project-key')).toBe('project-key')
+    for (const name of timeZoneValues) {
+      expect(base, name).toHaveProperty(name)
+      expect(Object.is(base[name as keyof typeof base], root[name]), name).toBe(
+        true,
+      )
+    }
+    expect(base.hilosTimeZone).toBe(core.hilosTimeZone)
+    expect(base.bindTimeZoneState).toBe(core.bindTimeZoneState)
     expect(base.hilosNotifications).toBe(core.hilosNotifications)
     expect(base.hilosLegalReconsent).toBe(core.hilosLegalReconsent)
     expect(base.createHilosConnection().connection).toBeInstanceOf(

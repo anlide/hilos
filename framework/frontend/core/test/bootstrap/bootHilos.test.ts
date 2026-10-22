@@ -31,20 +31,42 @@ import {
 import { hilosToasts } from '../../src/state/toasts.js'
 import { hilosThemeMode, hilosThemePick } from '../../src/theme/themeState.js'
 import {
+  hilosBrowserTimeZone,
+  hilosOwnTimeZone,
+  hilosTimeZone,
+} from '../../src/timeZone/timeZoneState.js'
+import {
   type ConnectionState,
+  type HandshakeSignal,
   type HilosConnection,
   type ProjectSignal,
 } from '../../src/index.js'
 
+const resolved = new Intl.DateTimeFormat().resolvedOptions()
+
 /**
- * A connection double recording connect()/send() and replaying project signals —
- * the slice bootHilos and the subscriptions it binds touch.
+ * Make the engine report `timeZone` as this browser's zone.
+ *
+ * @param timeZone The zone the next reads report; undefined when it cannot say.
+ */
+function reportZone(timeZone: string | undefined): void {
+  vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+    ...resolved,
+    timeZone: timeZone as string,
+  })
+}
+
+/**
+ * A connection double recording connect()/send() and replaying welcome and
+ * project signals — the slice bootHilos and the subscriptions it binds touch.
  */
 function fakeConnection() {
   const projectListeners: Array<(signal: ProjectSignal) => void> = []
+  const handshakeListeners: Array<(signal: HandshakeSignal) => void> = []
 
   return {
     state: 'connected' as ConnectionState,
+    projectTimeZone: undefined as string | undefined,
     connectCalls: 0,
     listenerEvents: [] as string[],
     sent: [] as Array<Record<string, unknown>>,
@@ -65,8 +87,22 @@ function fakeConnection() {
       if (event === 'projectSignal') {
         projectListeners.push(listener as (signal: ProjectSignal) => void)
       }
+      if (event === 'handshake') {
+        handshakeListeners.push(listener as (signal: HandshakeSignal) => void)
+      }
 
       return () => {}
+    },
+    emitHandshake(projectTimeZone?: string): void {
+      // The real connection stores the welcome's zone before it emits.
+      this.projectTimeZone = projectTimeZone
+      const signal = {
+        type: 'handshake',
+        data: { build: 'test' },
+      } as unknown as HandshakeSignal
+      for (const listener of handshakeListeners) {
+        listener(signal)
+      }
     },
     emitProjectSignal(type: string, data: unknown): void {
       const signal = {
@@ -309,6 +345,144 @@ describe('bootHilos', () => {
     expect(
       connection.listenerEvents.filter((event) => event === 'actionError'),
     ).toHaveLength(1)
+  })
+
+  it("binds the reader's zone before connect after session scope, for the configured slot", () => {
+    reportZone('Europe/Warsaw')
+    const connection = fakeConnection()
+    connection.projectTimeZone = 'America/New_York'
+    const connect = connection.connect
+    connection.connect = function (): void {
+      expect(hilosOwnTimeZone.get()).toBeNull()
+      expect(hilosBrowserTimeZone.get()).toBe('Europe/Warsaw')
+      expect(hilosTimeZone.get()).toBe('Europe/Warsaw')
+      connect.call(this)
+      // The welcome and the session response can arrive as soon as connect
+      // starts; the binding must already follow both.
+      this.emitHandshake('Asia/Tokyo')
+      this.emitProjectSignal('handshake_response', {
+        entities: {
+          currentUser: { id: 1, timeZone: 'Europe/Lisbon' },
+          me: { id: 1, timeZone: 'America/Chicago' },
+        },
+      })
+      expect(hilosOwnTimeZone.get()).toBe('America/Chicago')
+      expect(hilosTimeZone.get()).toBe('America/Chicago')
+    }
+    try {
+      bootHilos({
+        viewLayer: 'vue',
+        connection: connection as unknown as HilosConnection,
+        actions: new ActionLifecycle(connection as unknown as HilosConnection),
+        scopes: new ScopeManager(),
+        router: createAppPageRouter({ main: { path: '/', admin: false } }),
+        session: { currentUserSlot: 'me' },
+        navigationEnvironment: fakeNavigation('/'),
+      })
+      expect(connection.connectCalls).toBe(1)
+      expect(connection.listenerEvents.indexOf('handshake')).toBeGreaterThan(
+        connection.listenerEvents.indexOf('projectSignal'),
+      )
+
+      connection.emitProjectSignal('handshake_response', {
+        entities: { currentUser: null, me: null },
+      })
+      expect(hilosTimeZone.get()).toBe('Europe/Warsaw')
+      reportZone(undefined)
+      connection.emitHandshake('Asia/Tokyo')
+      expect(hilosTimeZone.get()).toBe('Asia/Tokyo')
+    } finally {
+      vi.restoreAllMocks()
+    }
+  })
+
+  it("follows the reader's zone off real welcome and session frames, across a reconnect", () => {
+    const sockets: Array<ReturnType<typeof scriptedSocket>> = []
+    const { connection, actions } = createHilosConnection({
+      url: 'ws://test/ws',
+      webSocketFactory: () => {
+        const socket = scriptedSocket()
+        sockets.push(socket)
+        return socket.socket
+      },
+    })
+    reportZone(undefined)
+    bootHilos({
+      connection,
+      actions,
+      scopes: new ScopeManager(),
+      viewLayer: 'vue',
+      router: createAppPageRouter({ main: { path: '/', admin: false } }),
+      navigationEnvironment: fakeNavigation('/'),
+    })
+    const own: Array<string | null> = []
+    const effective: string[] = []
+    const stopOwn = subscribeSignal(hilosOwnTimeZone, (zone) => own.push(zone))
+    const stopEffective = subscribeSignal(hilosTimeZone, (zone) =>
+      effective.push(zone),
+    )
+    const answer = (currentUser: unknown) => ({
+      type: 'handshake_response',
+      data: { entities: { currentUser } },
+    })
+    const tokyo = answer({ id: 1, name: 'Ada', timeZone: 'Asia/Tokyo' })
+    try {
+      const first = sockets[0]!
+      first.open()
+      expect(hilosTimeZone.get()).toBe('UTC')
+      first.message({
+        type: 'handshake',
+        data: { build: 'test-build', projectTimeZone: 'America/New_York' },
+      })
+      expect(hilosOwnTimeZone.get()).toBeNull()
+      expect(hilosBrowserTimeZone.get()).toBeNull()
+      expect(hilosTimeZone.get()).toBe('America/New_York')
+
+      reportZone('Europe/Warsaw')
+      first.message(tokyo)
+      expect(hilosOwnTimeZone.get()).toBe('Asia/Tokyo')
+      expect(hilosBrowserTimeZone.get()).toBe('Europe/Warsaw')
+      expect(hilosTimeZone.get()).toBe('Asia/Tokyo')
+
+      first.message(tokyo)
+      expect(own).toEqual(['Asia/Tokyo'])
+      expect(effective).toEqual(['America/New_York', 'Asia/Tokyo'])
+
+      first.message(answer({ id: 1, name: 'Ada', timeZone: null }))
+      expect(hilosOwnTimeZone.get()).toBeNull()
+      expect(hilosTimeZone.get()).toBe('Europe/Warsaw')
+
+      first.message(tokyo)
+      first.message(answer(null))
+      expect(hilosOwnTimeZone.get()).toBeNull()
+      expect(hilosTimeZone.get()).toBe('Europe/Warsaw')
+
+      // The browser stops answering, so the project zone is all that would
+      // stand between the reader and UTC.
+      reportZone(undefined)
+      connection.close()
+      connection.connect()
+      const second = sockets[1]!
+      second.open()
+      second.message({ type: 'handshake', data: { build: 'test-build' } })
+      expect(hilosBrowserTimeZone.get()).toBeNull()
+      expect(hilosTimeZone.get()).toBe('UTC')
+
+      expect(own).toEqual(['Asia/Tokyo', null, 'Asia/Tokyo', null])
+      expect(effective).toEqual([
+        'America/New_York',
+        'Asia/Tokyo',
+        'Europe/Warsaw',
+        'Asia/Tokyo',
+        'Europe/Warsaw',
+        'UTC',
+      ])
+    } finally {
+      stopOwn()
+      stopEffective()
+      connection.close()
+      vi.restoreAllMocks()
+    }
   })
 
   it.each([false, true])(

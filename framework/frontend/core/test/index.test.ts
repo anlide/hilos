@@ -86,6 +86,12 @@ import {
   type HilosUploadField,
   type HilosUploadFieldFile,
   UPLOAD_ACTION_INIT,
+  resolveTimeZone,
+  readBrowserTimeZone,
+  bindTimeZoneState,
+  hilosTimeZone,
+  hilosOwnTimeZone,
+  hilosBrowserTimeZone,
   type DeferredDelay,
   type DeferredFlagState,
   logLineClock,
@@ -187,4 +193,10 @@ it('exports the @hilos/core public surface', () => {
   const flag: DeferredFlagState = createDeferredFlagState(delay)
   expect(flag.shown.get()).toBe(false)
   flag.dispose()
+  expect(resolveTimeZone(null, null, 'Europe/Warsaw')).toBe('Europe/Warsaw')
+  expect(readBrowserTimeZone).toBeTypeOf('function')
+  expect(bindTimeZoneState).toBeTypeOf('function')
+  expect(hilosTimeZone.get()).toBe('UTC')
+  expect(hilosOwnTimeZone.get()).toBeNull()
+  expect(hilosBrowserTimeZone.get()).toBeNull()
 })

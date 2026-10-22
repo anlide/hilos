@@ -92,12 +92,12 @@
     "outputSha256": "0ba08342c48f9f6398a879320b2c5d70ef51bda56be225919a77e4cabf599633"
   },
   "src/base/index.ts": {
-    "sourceSha256": "93b26f1b1eaf47f4117aafb46aa9904c3a218c70ab86a8b84025b638cac1027f",
-    "outputSha256": "92368299190ea0c1be39a0758d89d99bb07e18e5b82cd4cd184ea6020c233a6d"
+    "sourceSha256": "96f9dc555b478b5153369670281881188950abff79c13f41216538a01db5d88d",
+    "outputSha256": "80dd783afd22ec1ff2fecf4e00a980ba85e80e6033ac6c10ac3a86f3508b58b3"
   },
   "src/bootstrap/bootHilos.ts": {
-    "sourceSha256": "77ef087e09eeb4b0554d230cdacfdda10eb8a397be1c422cc399b0134d033dab",
-    "outputSha256": "f3eacc06f41dea103a375693a556119e69514d7173e4cebbb500b953cfc5d2af"
+    "sourceSha256": "a5ddce13305c6fff6e7f1e6b299e31b400ba1ed59dc0c87c1bfe874c11949cfa",
+    "outputSha256": "9f21cfed98210367f4cf6fd9cabedbf34cee8d6acde327d0db7c42d29f16e9b0"
   },
   "src/browser/browserStorage.ts": {
     "sourceSha256": "19bc7deba4501b3280bbc9e5f025ee4984f6a9d84ea60a73fccf6e2b014bf919",
@@ -642,6 +642,18 @@
   "src/theme/themeStored.ts": {
     "sourceSha256": "ce78ffc34167694a3c15e9b175060f811a80136f295958b4c55416e1360ee744",
     "outputSha256": "23d1306774e68b40f9b6057ac05332a2e429e508af0b27dc77eb6b2bed24932c"
+  },
+  "src/timeZone/timeZoneBrowser.ts": {
+    "sourceSha256": "5feeafae2b95441fa0ffc29d38b94bfdcbf0c1f05ef027ea0725d84a33f2961a",
+    "outputSha256": "1e7e9eb82f277e6a895c012b48a2075241d9b1c1da6030ae7a4f557bd5d1bfa2"
+  },
+  "src/timeZone/timeZoneRule.ts": {
+    "sourceSha256": "2d0f09b9996384372c6d88b767f7f77082732ffb81d1a3786e878223d7a6bb3c",
+    "outputSha256": "597c03c4e832203f867697631ef8a14cc1caf01bf78b9b96a70ea34b51db643e"
+  },
+  "src/timeZone/timeZoneState.ts": {
+    "sourceSha256": "046755ed6fa60a8d64e4b1fe74eb03f96720be7398510f6b0056fd758fc2c799",
+    "outputSha256": "7f59a48394e0b4a01a7166b340e771321487fbec16eab75428cd243c48857beb"
   },
   "src/uploads/hilosUploads.ts": {
     "sourceSha256": "ea1cc98b99f42aaa55cc2d37d88c00fd1670409540680668bea8d9a32f5a3137",

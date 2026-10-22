@@ -41,6 +41,7 @@ import { bindAdminAccess } from '../session/adminAccess.js'
 import { bindImpersonation } from '../session/impersonation.js'
 import { bindSignOut } from '../session/signOut.js'
 import { bindThemeState } from '../theme/themeState.js'
+import { bindTimeZoneState } from '../timeZone/timeZoneState.js'
 import {
   bindSessionToasts,
   clearToastsOnSignOut,
@@ -119,6 +120,9 @@ export interface BootHilosConfig {
  */
 export function bootHilos(config: BootHilosConfig): HilosRouter {
   bindSessionScope(config.connection, config.scopes, config.session)
+  // The reader's zone reads the browser and the connection's project zone now,
+  // then follows every welcome and session response from the first one.
+  bindTimeZoneState(config.connection, config.session)
   // Theme belongs to the common browser shell. It reads cached values and
   // applies the mode before the socket opens, then follows session frames.
   bindThemeState(config.connection, config.scopes, config.actions)
