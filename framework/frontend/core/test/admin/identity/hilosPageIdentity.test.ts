@@ -5,6 +5,8 @@ import {
   pageIdentity,
 } from '../../../src/admin/identity/hilosPageIdentity.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
+import { bindPageInstanceName } from '../../../src/admin/identity/hilosPageInstanceName.js'
+import { computedSignal, createSignal } from '../../../src/state/signal.js'
 
 describe('pageIdentity', () => {
   it('reads nothing before a page is subscribed', () => {
@@ -112,6 +114,197 @@ describe('pageIdentity', () => {
     scopes.openPage('hilos_profile').data.set('greeting', 'hi')
 
     expect(pageIdentity(scopes).get()).toBeUndefined()
+  })
+
+  it('projects the owner without changing the subscribing tab or child cards', () => {
+    const scopes = new ScopeManager()
+    const scope = scopes.openPage('names')
+    scope.data.set('pageLabel', 'Names')
+    scope.data.set('pageLead', 'The subscribing tab lead')
+    scope.data.set('pageHeadOwner', {
+      page: 'country',
+      label: 'Country',
+      lead: 'Owner lead',
+      icon: 'bi-flag',
+    })
+    scope.data.set('pageChildren', [
+      { page: 'country', label: 'Country', lead: 'Child lead' },
+    ])
+    bindPageInstanceName(scopes, 'country', createSignal('Ireland'))
+    expect(pageIdentity(scopes).get()).toEqual({
+      label: 'Names',
+      lead: 'The subscribing tab lead',
+      breadcrumb: [],
+      children: [
+        { page: 'country', label: 'Country', lead: 'Child lead', icon: null },
+      ],
+      pageHeadOwner: {
+        page: 'country',
+        label: 'Ireland',
+        lead: 'Owner lead',
+        icon: 'bi-flag',
+      },
+    })
+  })
+
+  it.each([
+    undefined,
+    null,
+    'Country',
+    [],
+    {},
+    { page: 1, label: 'Country', lead: '' },
+    { page: 'country', label: null, lead: '' },
+    { page: 'country', label: 'Country' },
+    { page: 'country', label: 'Country', lead: 1 },
+  ])('omits a missing or malformed owner entirely: %j', (owner) => {
+    const scopes = new ScopeManager()
+    const scope = scopes.openPage('legacy')
+    scope.data.set('pageLabel', 'Legacy')
+    scope.data.set('pageHeadOwner', owner)
+    expect(pageIdentity(scopes).get()).toEqual({
+      label: 'Legacy',
+      lead: '',
+      breadcrumb: [],
+      children: [],
+    })
+  })
+
+  it('reads an absent owner icon as null', () => {
+    const scopes = new ScopeManager()
+    const scope = scopes.openPage('names')
+    scope.data.set('pageLabel', 'Names')
+    scope.data.set('pageHeadOwner', {
+      page: 'country',
+      label: 'Country',
+      lead: '',
+    })
+    expect(pageIdentity(scopes).get()?.pageHeadOwner).toEqual({
+      page: 'country',
+      label: 'Country',
+      lead: '',
+      icon: null,
+    })
+  })
+
+  it('uses only the permitted page name for a viewer, with no session fallback', () => {
+    const scopes = new ScopeManager()
+    scopes.session.data.set('instanceName', 'Hidden real name')
+    scopes.user.data.set('instanceName', 'Another hidden name')
+    const scope = scopes.openPage('entity_names')
+    scope.data.set('pageLabel', 'Names')
+    scope.data.set('pageBreadcrumb', [{ page: 'entity', label: 'Entity' }])
+    scope.data.set('pageHeadOwner', {
+      page: 'entity',
+      label: 'Entity',
+      lead: '',
+    })
+    scope.data.set('instanceName', 'Permitted alias')
+    const name = scopes.pageDataSignal('instanceName')
+    bindPageInstanceName(
+      scopes,
+      'entity',
+      computedSignal(() => {
+        const value = name.get()
+        return typeof value === 'string' ? value : undefined
+      }),
+    )
+    const identity = pageIdentity(scopes)
+    expect(identity.get()?.breadcrumb[0].label).toBe('Permitted alias')
+    expect(identity.get()?.pageHeadOwner?.label).toBe('Permitted alias')
+    scope.data.set('instanceName', undefined)
+    expect(identity.get()?.breadcrumb[0].label).toBe('Entity')
+    expect(identity.get()?.pageHeadOwner?.label).toBe('Entity')
+    scopes.dropPage()
+    expect(identity.get()).toBeUndefined()
+  })
+
+  it('names only the bound entity key, including an intermediate repeated caption', () => {
+    const scopes = new ScopeManager()
+    const scope = scopes.openPage('child_names')
+    scope.data.set('pageLabel', 'Names')
+    scope.data.set('pageBreadcrumb', [
+      { page: 'root', label: 'Root' },
+      { page: 'parent', label: 'Entity' },
+      { page: 'child', label: 'Entity' },
+    ])
+    scope.data.set('pageHeadOwner', {
+      page: 'child',
+      label: 'Entity',
+      lead: '',
+    })
+    const identity = pageIdentity(scopes)
+    expect(identity.get()?.breadcrumb.map((crumb) => crumb.label)).toEqual([
+      'Root',
+      'Entity',
+      'Entity',
+    ])
+    const parent = createSignal<string | undefined>('Parent instance')
+    bindPageInstanceName(scopes, 'parent', parent)
+    expect(identity.get()?.breadcrumb).toEqual([
+      { page: 'root', label: 'Root' },
+      { page: 'parent', label: 'Parent instance' },
+      { page: 'child', label: 'Entity' },
+    ])
+    expect(identity.get()?.pageHeadOwner?.label).toBe('Entity')
+    const child = createSignal<string | undefined>('Child instance')
+    bindPageInstanceName(scopes, 'child', child)
+    child.set('Renamed')
+    expect(identity.get()?.breadcrumb[2].label).toBe('Renamed')
+    expect(identity.get()?.pageHeadOwner?.label).toBe('Renamed')
+    parent.set('')
+    child.set(undefined)
+    expect(identity.get()?.breadcrumb.map((crumb) => crumb.label)).toEqual([
+      'Root',
+      '',
+      'Entity',
+    ])
+    expect(identity.get()?.pageHeadOwner?.label).toBe('Entity')
+    bindPageInstanceName(scopes, 'absent', createSignal('No synthetic crumb'))
+    expect(identity.get()?.breadcrumb).toHaveLength(3)
+  })
+
+  it('reads the new scope after reset and drops the old name on an error', () => {
+    const scopes = new ScopeManager()
+    const identity = pageIdentity(scopes)
+    const name = scopes.pageDataSignal('name')
+    bindPageInstanceName(
+      scopes,
+      'country',
+      computedSignal(() => {
+        const value = name.get()
+        return typeof value === 'string' ? value : undefined
+      }),
+    )
+    const answer = (name: string) => {
+      const scope = scopes.openPage('names')
+      scope.data.set('pageLabel', 'Names')
+      scope.data.set('name', name)
+      scope.data.set('pageHeadOwner', {
+        page: 'country',
+        label: 'Country',
+        lead: '',
+      })
+      scope.data.set('pageBreadcrumb', [{ page: 'country', label: 'Country' }])
+      return scope
+    }
+    const first = answer('First')
+    expect(identity.get()?.pageHeadOwner?.label).toBe('First')
+    scopes.dropPage()
+    expect(identity.get()).toBeUndefined()
+    answer('Second')
+    expect(identity.get()?.breadcrumb[0].label).toBe('Second')
+    first.data.set('name', 'Old answer')
+    expect(identity.get()?.pageHeadOwner?.label).toBe('Second')
+    scopes.openPage('names')
+    expect(identity.get()).toBeUndefined()
+    scopes.openPage('unrelated').data.set('pageLabel', 'Other page')
+    expect(identity.get()).toEqual({
+      label: 'Other page',
+      lead: '',
+      breadcrumb: [],
+      children: [],
+    })
   })
 })
 

@@ -51,6 +51,36 @@ describe('hilosDashboardLinks', () => {
 })
 
 describe('admin route links', () => {
+  it('addresses equally named countries by their codes and keeps URLs on rename', () => {
+    const router = createAppPageRouter({ main: { path: '/', admin: false } })
+    const links = (countryCode: string, label: string) =>
+      hilosCrumbLinks(
+        [
+          { page: HilosPages.I18N_COUNTRY, label },
+          { page: HilosPages.I18N_COUNTRY_NAMES, label: 'Names' },
+        ],
+        { countryCode },
+        router.path,
+      )
+
+    const first = links('us', 'Unnamed country')
+    const second = links('ie', 'Unnamed country')
+    expect(first.map((link) => link.to)).toEqual([
+      '/hilos/i18n/countries/us',
+      '/hilos/i18n/countries/us/names',
+    ])
+    expect(second.map((link) => link.to)).toEqual([
+      '/hilos/i18n/countries/ie',
+      '/hilos/i18n/countries/ie/names',
+    ])
+    expect(links('us', 'Renamed / 🌍').map((link) => link.to)).toEqual(
+      first.map((link) => link.to),
+    )
+    expect(links('ie', '').map((link) => link.to)).toEqual(
+      second.map((link) => link.to),
+    )
+  })
+
   it.each(['node-1', 'node /?#%', '%2F', 'узел🌍'])(
     'roundtrips %s through framework, child and breadcrumb resolvers',
     (nodeId) => {

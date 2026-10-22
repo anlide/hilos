@@ -605,7 +605,7 @@ export function sdkEvidence(projectRoot) {
       if (/^(?:src|dist)\/index\.[^/]+$/.test(path)) return 'compatibility root'
       if (
         /^(?:src|dist)\/admin\//.test(path) &&
-        !/^(?:src|dist)\/admin\/(?:identity\/hilosPageIdentity|viewMode)\.[^/]+$/.test(
+        !/^(?:src|dist)\/admin\/(?:identity\/hilosPage(?:Identity|InstanceName)|viewMode)\.[^/]+$/.test(
           path,
         )
       )

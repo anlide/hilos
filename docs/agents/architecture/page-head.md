@@ -4,12 +4,11 @@ Read this before building or redrawing a section or entity head, declaring its
 catalog identity, changing breadcrumbs, page tabs or a live instance name, or
 moving an owner from child cards to the shared head.
 
-This is the approved rule for adoption, written ahead of its implementation.
-The markers name the leaves that implement each part; the binding points below
-describe today's code separately. An owner that has not been adopted keeps its
-existing head and child cards. Country is the first carrier in HIL-1559; it does
-not adopt the whole Internationalization section. Other owners move in their
-own redraws after HIL-1606 has merged.
+This is the approved rule for adoption. Markers name the parts that later leaves
+still implement; the binding points below describe today's code separately. An
+owner that has not been adopted keeps its existing head and child cards. Country
+is the first carrier in HIL-1559; it does not adopt the whole Internationalization
+section. Other owners move in their own redraws after HIL-1606 has merged.
 
 ## Core Rule And Ownership
 
@@ -95,15 +94,48 @@ or companion signal supplies the first screen. This extends the existing
 the owner-based identity in that reply is assembled by the backend catalog
 resolver.
 
-Each tab's page supplies the instance name from its own data to the breadcrumb
-entry with the **entity's page key**, never by position from the end. The same
-reactive name appears in that entry, the entity block and the browser title
-`<name> · <app>`. A rename here or in another window updates all three without
-reload; direct entry and F5 show the same result. Do not introduce a local name
-catalog, a static `document.title`, or replace the name with a code. The
-carrier's interview owns missing-name data and fallback policy; this document
-does not choose one. Key-based name binding and the Vue title path are
-(not in the code yet — HIL-1601).
+Each tab's page may supply the instance name from its own permitted data to the
+breadcrumb entry with the **entity's page key**, never by position from the end.
+The public API is
+`bindPageInstanceName(scopes: ScopeManager, page: string, name: ReadonlySignal<string | undefined>): Unsubscribe`.
+It stores read-only signal registrations in a `WeakMap` keyed by `ScopeManager`,
+not name snapshots. Its reader reacts to registration and source changes, and
+returns `undefined` when there is no current page scope; otherwise the current
+source is projected onto matching existing breadcrumb entries and the optional
+`pageHeadOwner` identity. It does not add a missing crumb, change the subscribing
+page's own label or lead, or change its child cards. For a given scope manager
+and owner key, the latest producer wins; its idempotent disposer removes only its
+own registration, and an older producer is not restored. The caller-supplied
+source must read the current page's permitted data, not another session's
+identity. `undefined` keeps the catalog caption; every string, including `''`,
+is a valid live name.
+
+The client reads the existing wire `pageHeadOwner` as the optional
+`{ page, label, lead, icon }` identity (`icon` is a string or `null`). An absent
+or malformed owner is omitted, preserving the legacy identity shape.
+
+`bootHilos` reads page identity inside its reactive title closure.
+`resolvePageTitle` accepts `ownerLabel` as its optional sixth argument and uses
+project page titles, framework footer labels, the live owner label, then the
+subscribing page's catalog label. `appName` composition is unchanged, including
+a bare label when it is empty; loading, error and route-miss behavior is
+unchanged. No new `BootHilosConfig` field or `bindPageScope` option was added.
+When an adopted shared head draws the owner block, it can use the same name;
+the shared head itself remains (not in the code yet — HIL-1602). A rename
+updates the existing name consumers without reload; direct entry and F5 use the
+same page data. Do not introduce a local name catalog, a static `document.title`,
+or replace the name with a code.
+The carrier's interview owns missing-name data and fallback policy, except for
+the country display fallback specified below.
+
+The binding API is exported from `@hilos/core/base` and the compatibility root;
+both exports share one implementation and registration state. Its internal
+`pageInstanceName` reader is not a barrel export. Both Vue country pages bind
+under `HilosPages.I18N_COUNTRY` during setup, before rendering
+`HilosAdminPage`. Their computed source reads the existing country card only
+while the current page is Country or Country Names; no card yields `undefined`,
+and unmount disposes that page's binding. This name binding and the Vue title
+path are implemented; no extra mount action or name-catalog request is made.
 
 An admin-view-mode viewer gets the same row as an administrator. The name is
 the one already permitted in that viewer's entity block; neither breadcrumb
@@ -195,9 +227,10 @@ gate or enable Internationalization as a whole.
    entity block content. Use the implemented interface, not today's manual
    country header as a proposed generic API. The first Vue carrier is
    (not in the code yet — HIL-1602).
-4. Bind each tab's live instance name to the owner's entry, block and browser
-   title through the implemented name interface. The Vue binding is
-   (not in the code yet — HIL-1601).
+4. Bind each tab's live instance name to the owner's entry and browser title
+   through `bindPageInstanceName(scopes, ownerPageKey, name)`. The Vue country
+   pages use this binding from setup and dispose it on unmount; drawing the name
+   in the shared owner block remains (not in the code yet — HIL-1602).
 5. Remove this owner's manual head, manual row and child-navigation cards as
    the shared head takes over. Preserve dashboard section cards and unchanged
    owners. The first Vue replacement is
@@ -224,11 +257,11 @@ adds no product tests or selectors.
 These are navigation scenarios, not declarations of page keys, routes or
 activation. The backend owner, breadcrumb and tab calculations are implemented;
 Country is the only owner currently opted in. Its server reply carries the
-catalog head skeleton; `<name>` is data from the page, not a literal caption,
-and binding its live value remains HIL-1601. Bold marks the current tab. The
-Country head is first drawn by HIL-1602, with React and Angular following in
-HIL-1604 and HIL-1605. Roles, Users and the other examples wait for their own
-redraws; naming them here does not enable them.
+catalog head skeleton; `<name>` is data from the page, not a literal caption.
+The core binding and title path are implemented, while the shared Country head
+is first drawn by HIL-1602, with React and Angular following in HIL-1604 and
+HIL-1605. Bold marks the current tab. Roles, Users and the other examples wait
+for their own redraws; naming them here does not enable them.
 
 | Open page | Owner | Breadcrumb | Row |
 |---|---|---|---|
@@ -255,7 +288,7 @@ sequence without studying these files. They do not specify a future API.
 | Backend catalog | `PageCatalogProviderInterface::pages()`, `PageCatalogConstants`, `HilosPageCatalog::CATALOG`, `TopologyValidator::validatePageCatalogEntry()` and `validatePageCatalogHead()` | Optional `breadcrumb`, `entity` and `pageHead` fields; validation checks their types, owner placement and non-empty captions for tabs of an adopted owner. Country is the only current owner opted in. |
 | Backend owner and row calculation | `PageCatalogResolver::identity()`, `rowOwner()`, `rowOwnerOf()`, `breadcrumb()`, `head()`, `children()` and private `pageTabs()` | Resolves the nearest entity or top-level admin section, uses legacy page-label breadcrumbs for unadopted owners, and builds the adopted breadcrumb and depth-first row. The row filters pages the project serves and pages applicable to the owner's route params. |
 | Backend assembly | `AbstractPage::onSubscribe()`, `withPageIdentity()`, `servedPageCards()` and `PageHead::toArray()` | Adds `pageHeadOwner`, `pageBreadcrumb`, `pageTabs` and empty `pageChildren` to the same `page_response`. The readonly `PageHead` is built for the subscription; `pageLabel` and `pageLead` remain the subscribing page's identity, with the existing admin/viewer payload precedence. |
-| Name and Vue title | `framework/frontend/core/src/admin/identity/hilosPageIdentity.ts`, `framework/frontend/core/src/routing/pageTitle.ts`, `framework/frontend/core/src/bootstrap/bootHilos.ts` | Instance name by entity key and its reactive title binding (not in the code yet — HIL-1601) |
+| Name and Vue title | `framework/frontend/core/src/admin/identity/hilosPageInstanceName.ts`, `framework/frontend/core/src/admin/identity/hilosPageIdentity.ts`, `framework/frontend/core/src/routing/pageTitle.ts`, `framework/frontend/core/src/bootstrap/bootHilos.ts` | `bindPageInstanceName()` keeps a live source per scope manager and owner page key; `pageIdentity()` applies it to matching crumbs and the optional `pageHeadOwner`; `bootHilos` reads identity inside the reactive title closure. `resolvePageTitle()` chooses project title, framework footer label, owner label, then catalog label. The country Vue pages bind their page-scoped card name during setup. The shared owner block remains HIL-1602. |
 | Vue head and country | `framework/frontend/vue/src/HilosAdminPage.vue`; `framework/frontend/vue/src/admin/i18n/details/HilosI18nCountryHeader.vue`, `HilosI18nCountryPage.vue`, `HilosI18nCountryNamesPage.vue` | Shared head/block/row and both country tabs using it (not in the code yet — HIL-1602) |
 | React parity | `framework/frontend/react/src/HilosAdminPage.tsx` and its country page modules | Equivalent head, states, accessibility, live name and title (not in the code yet — HIL-1604) |
 | Angular parity | `framework/frontend/angular/src/HilosAdminPage.ts` and its country page modules | Equivalent head, states, accessibility, live name and title (not in the code yet — HIL-1605) |
@@ -288,8 +321,14 @@ describe the subscribing page, including Analytics' existing use of
 administrator (`$payload->data + $shell`); the shell wins for an admin-view-mode
 viewer (`$shell + $payload->data`) after the page's own data is hidden. The
 current country header still draws a manual row; it is not the shared frontend
-API described here. Do not turn the legacy chain into the owner's chain on
-pages whose owner has not opted in.
+head API described here. Its display name comes from
+`hilosI18nCountryDisplayName(card)`: `null` and `''` produce `Unnamed country`,
+and any other name is returned unchanged, without trimming or translation. The
+country code remains a separate badge. Country addresses use the unique,
+unchanging `countryCode` in `/hilos/i18n/countries/{countryCode}` and
+`/hilos/i18n/countries/{countryCode}/names`; renaming a country does not change
+its URL, and equal display names do not share an address. Do not turn the legacy
+chain into the owner's chain on pages whose owner has not opted in.
 
 The implementing leaf clears only the markers for behavior it lands, in the
 same commit, following [rule-authoring.md](../rule-authoring.md#a-rule-written-ahead-of-its-code).

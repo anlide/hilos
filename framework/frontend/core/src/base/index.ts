@@ -1034,8 +1034,10 @@ export {
   type HilosPageCrumb,
   type HilosPageChild,
   type HilosPageIdentity,
+  type HilosPageHeadOwner,
   type HilosDashboardSection,
 } from '../admin/identity/hilosPageIdentity.js'
+export { bindPageInstanceName } from '../admin/identity/hilosPageInstanceName.js'
 export { resolvePageTitle } from '../routing/pageTitle.js'
 export { assertNever } from '../protocol/assertNever.js'
 export {

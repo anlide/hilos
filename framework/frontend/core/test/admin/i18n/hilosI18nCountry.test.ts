@@ -5,6 +5,7 @@ import {
   COUNTRY_CARD_DATA,
   countryCardSchema,
   createHilosI18nCountryCard,
+  hilosI18nCountryDisplayName,
   type HilosI18nCountryContext,
 } from '../../../src/admin/i18n/hilosI18nCountry.js'
 import { HilosPages } from '../../../src/routing/hilosPages.js'
@@ -36,6 +37,21 @@ const card = {
 }
 
 describe('country locale payloads', () => {
+  it.each([
+    ['Ireland', 'Ireland'],
+    ['  Ireland  ', '  Ireland  '],
+    [' ', ' '],
+    [null, 'Unnamed country'],
+    ['', 'Unnamed country'],
+  ])('displays %j as %j without changing the summary', (name, expected) => {
+    const value = countryCardSchema.parse({
+      ...card,
+      summary: { ...card.summary, name },
+    })
+    expect(hilosI18nCountryDisplayName(value)).toBe(expected)
+    expect(value.summary.name).toBe(name)
+  })
+
   it('accepts the complete card without losing locale choices or deletion hints', () => {
     expect(countryCardSchema.parse(card)).toEqual(card)
   })

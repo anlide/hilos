@@ -6,7 +6,11 @@ loading skeleton, card with table, and unavailable alert when deleted.
 Bootstrap classes only, painted with classes that follow the theme
 (styling-rules.md). -->
 <script setup lang="ts">
-import { computedSignal, HilosPages } from '@hilos/core/base'
+import {
+  bindPageInstanceName,
+  computedSignal,
+  HilosPages,
+} from '@hilos/core/base'
 import {
   createHilosI18nCountryCard,
   createHilosI18nCountryNameWindow,
@@ -14,6 +18,7 @@ import {
   HILOS_I18N_COUNTRY_NAMES,
   HILOS_I18N_COUNTRY_NAME_COPY,
   HILOS_I18N_COUNTRY_NAME_DELETE_COPY,
+  hilosI18nCountryDisplayName,
   type HilosI18nCountryContext,
   type HilosI18nCountryNameDeleteTarget,
   type HilosI18nNameRow,
@@ -39,6 +44,22 @@ import HilosI18nNamesTable from './HilosI18nNamesTable.vue'
 
 const props = defineProps<{ context: HilosI18nCountryContext }>()
 const liveCard = createHilosI18nCountryCard(props.context)
+const unbindName = bindPageInstanceName(
+  props.context.scopes,
+  HilosPages.I18N_COUNTRY,
+  computedSignal(() => {
+    const page = props.context.scopes.page()?.key
+    if (
+      page !== HilosPages.I18N_COUNTRY &&
+      page !== HilosPages.I18N_COUNTRY_NAMES
+    ) {
+      return undefined
+    }
+    const current = liveCard.get()
+    return current === null ? undefined : hilosI18nCountryDisplayName(current)
+  }),
+)
+onUnmounted(unbindName)
 const card = useSignal(liveCard)
 const router = inject(hilosRouterKey)
 if (!router) {

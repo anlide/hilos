@@ -259,6 +259,7 @@ export {
   COUNTRY_CARD_DATA,
   countryCardSchema,
   createHilosI18nCountryCard,
+  hilosI18nCountryDisplayName,
   type HilosI18nCountryCard,
   type HilosI18nCountryContext,
 } from './admin/i18n/hilosI18nCountry.js'
@@ -1268,8 +1269,10 @@ export {
   type HilosPageCrumb,
   type HilosPageChild,
   type HilosPageIdentity,
+  type HilosPageHeadOwner,
   type HilosDashboardSection,
 } from './admin/identity/hilosPageIdentity.js'
+export { bindPageInstanceName } from './admin/identity/hilosPageInstanceName.js'
 export { resolvePageTitle } from './routing/pageTitle.js'
 export { assertNever } from './protocol/assertNever.js'
 export {

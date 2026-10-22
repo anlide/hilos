@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { HilosPages } from '@hilos/core/base'
-import { type HilosI18nCountryCard } from '@hilos/core/admin/i18n'
+import {
+  hilosI18nCountryDisplayName,
+  type HilosI18nCountryCard,
+} from '@hilos/core/admin/i18n'
 import { computed, inject } from 'vue'
 
 import HilosLink from '../../../HilosLink.vue'
@@ -30,14 +33,10 @@ const tabs = computed(() =>
 <template>
   <div class="border rounded-3 p-3 mb-3" data-id="country-card-header">
     <div class="d-flex flex-wrap align-items-center gap-2">
+      <span class="h5 mb-0" data-id="country-card-title">{{
+        hilosI18nCountryDisplayName(card)
+      }}</span>
       <span
-        class="h5 mb-0"
-        :class="{ 'text-uppercase': card.summary.name === null }"
-        data-id="country-card-title"
-        >{{ card.summary.name ?? card.code }}</span
-      >
-      <span
-        v-if="card.summary.name !== null"
         class="text-body-secondary text-uppercase"
         data-id="country-card-code-badge"
       >

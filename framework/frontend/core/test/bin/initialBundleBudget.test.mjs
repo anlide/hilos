@@ -901,6 +901,7 @@ function coreSdk() {
     'state/hiddenValue.ts',
     'state/signal.ts',
     'admin/viewMode.ts',
+    'admin/identity/hilosPageInstanceName.ts',
     'protocol/accountStandingSignals.ts',
     'protocol/backupSignals.ts',
     'connection/restoreProgress.ts',
@@ -955,33 +956,64 @@ describe('core tsc source/output ownership', () => {
     }
   })
 
-  it('proves the minimal restore shell closure and refuses rehashed admin code at that owner', () => {
+  it('still refuses an unknown identity owner with real binding code and compiler evidence', () => {
     const { pkg, compile, save } = coreSdk()
-    const output = join(pkg, 'dist/connection/restoreProgress.js')
-    expect(
-      inputReport(output)
-        .initial.modules.filter((name) => name.includes('/src/'))
-        .map((name) => relative(join(pkg, 'src'), name))
-        .sort(),
-    ).toEqual([
-      'connection/restoreProgress.ts',
-      'protocol/backupSignals.ts',
-      'state/signal.ts',
-    ])
-    compile(
-      'connection/restoreProgress.ts',
-      'export * from "../admin/users/index.js";',
+    const source = join(pkg, 'src/admin/identity/hilosPageInstanceName.ts')
+    const output = compile(
+      'admin/identity/unknown.ts',
+      readFileSync(source, 'utf8'),
     )
     save()
-    const report = inputReport(output)
-    expect(report.initial.modules).toContain(output)
-    expect(checkInitialBundleBudget(report).errors).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining('unapproved core source snapshot'),
-        expect.stringContaining('admin implementation'),
-      ]),
-    )
+    for (const id of [output, join(pkg, 'src/admin/identity/unknown.ts')])
+      expect(errors(id)).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('admin implementation or section entrypoint'),
+        ]),
+      )
   })
+
+  it.each([
+    {
+      name: 'connection/restoreProgress',
+      sources: [
+        'connection/restoreProgress.ts',
+        'protocol/backupSignals.ts',
+        'state/signal.ts',
+      ],
+      admin: '../admin/users/index.js',
+    },
+    {
+      name: 'admin/identity/hilosPageInstanceName',
+      sources: ['admin/identity/hilosPageInstanceName.ts', 'state/signal.ts'],
+      admin: '../users/index.js',
+    },
+  ])(
+    'proves the minimal shared closure at $name and refuses rehashed admin code',
+    ({ name, sources, admin }) => {
+      const { pkg, compile, save } = coreSdk()
+      const output = join(pkg, `dist/${name}.js`)
+      for (const id of [output, join(pkg, `src/${name}.ts`)]) {
+        const report = inputReport(id)
+        expect(checkInitialBundleBudget(report).errors).toEqual([])
+        expect(
+          report.initial.modules
+            .filter((name) => name.includes('/src/'))
+            .map((name) => relative(join(pkg, 'src'), name))
+            .sort(),
+        ).toEqual(sources)
+      }
+      compile(`${name}.ts`, `export * from "${admin}";`)
+      save()
+      const report = inputReport(output)
+      expect(report.initial.modules).toContain(output)
+      expect(checkInitialBundleBudget(report).errors).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('unapproved core source snapshot'),
+          expect.stringContaining('admin implementation'),
+        ]),
+      )
+    },
+  )
 
   it.each([
     '@hilos/core',
@@ -999,22 +1031,24 @@ describe('core tsc source/output ownership', () => {
     ).toBe(true)
   })
 
-  it.each(['state/factory.ts', 'protocol/pageOnlySchema.ts', 'base/shared.ts'])(
-    'rejects renamed admin composition at %s',
-    (name) => {
-      const { compile, save } = coreSdk()
-      const output = compile(
-        name,
-        'export const createAdminTable = () => ({ pageOnlySchema: true });',
-      )
-      save()
-      expect(
-        errors(output).some((error) =>
-          error.includes('unapproved core source snapshot'),
-        ),
-      ).toBe(true)
-    },
-  )
+  it.each([
+    'state/factory.ts',
+    'protocol/pageOnlySchema.ts',
+    'base/shared.ts',
+    'admin/identity/hilosPageInstanceName.ts',
+  ])('rejects renamed admin composition at %s', (name) => {
+    const { compile, save } = coreSdk()
+    const output = compile(
+      name,
+      'export const createAdminTable = () => ({ pageOnlySchema: true });',
+    )
+    save()
+    expect(
+      errors(output).some((error) =>
+        error.includes('unapproved core source snapshot'),
+      ),
+    ).toBe(true)
+  })
 
   it('rejects dirty base source even with consistent regenerated maps and receipts', () => {
     const { compile, save } = coreSdk()
@@ -1037,48 +1071,59 @@ describe('core tsc source/output ownership', () => {
     ).toBe(true)
   })
 
-  it('refuses tampered implementation even when its receipt is rehashed against clean compiler snapshots', () => {
-    const { pkg } = coreSdk()
-    const output = join(pkg, 'dist/state/hiddenValue.js')
-    const code = readFileSync(output, 'utf8').replace(
-      '//# sourceMappingURL=',
-      'export const createAdminTable = () => ({});\n//# sourceMappingURL=',
-    )
-    writeFileSync(output, code)
-    const file = join(pkg, 'dist/core-provenance.json')
-    const proof = JSON.parse(readFileSync(file, 'utf8'))
-    proof.files['state/hiddenValue.js'].outputSha256 = sha256(code)
-    writeFileSync(file, JSON.stringify(proof))
-    expect(errors('@hilos/core/base')[0]).toContain(
-      'unapproved core compiler output',
-    )
-    expect(errors(join(pkg, 'src/state/hiddenValue.ts'))[0]).toContain(
-      'unapproved core compiler output',
-    )
-  })
-
   it.each([
-    'missing proof',
-    'bad proof',
-    'missing receipt',
-    'wrong owner',
-    'wrong source hash',
-    'wrong output hash',
-    'wrong map hash',
-    'missing map',
-    'bad map',
-    'tampered output',
-    'tampered snapshot',
-    'changed source',
-    'unknown output',
-  ])('refuses %s with its actual compiled input', (fault) => {
+    { name: 'state/hiddenValue', input: '@hilos/core/base' },
+    { name: 'admin/identity/hilosPageInstanceName' },
+  ])(
+    'refuses rehashed implementation at $name against clean compiler snapshots',
+    ({ name, input }) => {
+      const { pkg } = coreSdk()
+      const output = join(pkg, `dist/${name}.js`)
+      const code = readFileSync(output, 'utf8').replace(
+        '//# sourceMappingURL=',
+        'export const createAdminTable = () => ({});\n//# sourceMappingURL=',
+      )
+      writeFileSync(output, code)
+      const file = join(pkg, 'dist/core-provenance.json')
+      const proof = JSON.parse(readFileSync(file, 'utf8'))
+      proof.files[`${name}.js`].outputSha256 = sha256(code)
+      writeFileSync(file, JSON.stringify(proof))
+      expect(errors(input ?? output)[0]).toContain(
+        'unapproved core compiler output',
+      )
+      expect(errors(join(pkg, `src/${name}.ts`))[0]).toContain(
+        'unapproved core compiler output',
+      )
+    },
+  )
+
+  it.each(
+    [
+      'missing proof',
+      'bad proof',
+      'missing receipt',
+      'wrong owner',
+      'wrong source hash',
+      'wrong output hash',
+      'wrong map hash',
+      'missing map',
+      'bad map',
+      'tampered output',
+      'tampered snapshot',
+      'changed source',
+      'unknown output',
+    ].flatMap((fault) =>
+      ['state/hiddenValue', 'admin/identity/hilosPageInstanceName'].map(
+        (name) => ({ fault, name }),
+      ),
+    ),
+  )('refuses $fault with actual compiled input $name', ({ fault, name }) => {
     const { pkg } = coreSdk()
-    let output = join(pkg, 'dist/state/hiddenValue.js')
+    let output = join(pkg, `dist/${name}.js`)
     const file = join(pkg, 'dist/core-provenance.json')
     const metadata = JSON.parse(readFileSync(file, 'utf8'))
-    const record = metadata.files['state/hiddenValue.js']
-    if (fault === 'missing receipt')
-      delete metadata.files['state/hiddenValue.js']
+    const record = metadata.files[`${name}.js`]
+    if (fault === 'missing receipt') delete metadata.files[`${name}.js`]
     if (fault === 'wrong owner') record.source = 'src/base/other.ts'
     if (fault === 'wrong source hash') record.sourceSha256 = 'bad'
     if (fault === 'wrong output hash') record.outputSha256 = 'bad'
@@ -1099,7 +1144,7 @@ describe('core tsc source/output ownership', () => {
       writeFileSync(`${output}.map`, JSON.stringify(map))
     }
     if (fault === 'changed source')
-      writeFileSync(join(pkg, 'src/state/hiddenValue.ts'), 'changed')
+      writeFileSync(join(pkg, `src/${name}.ts`), 'changed')
     if (fault === 'unknown output') {
       output = join(pkg, 'dist/unknown.js')
       writeFileSync(output, 'export {}')
@@ -1175,6 +1220,9 @@ describe('core tsc source/output ownership', () => {
     symlinkSync(relocated, pkg)
     expect(errors('@hilos/core/base')).toEqual([])
     expect(errors(join(pkg, 'dist/admin/viewMode.js'))).toEqual([])
+    expect(
+      errors(join(pkg, 'dist/admin/identity/hilosPageInstanceName.js')),
+    ).toEqual([])
   })
 
   it('refuses a direct compiled core symlink that escapes the installed package', () => {

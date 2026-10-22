@@ -13,6 +13,10 @@ test('opens a reflowed country card directly with read-only details and staged t
   await expect(page.getByTestId('country-card-title')).toHaveText(
     'United States',
   )
+  await expect(
+    page.getByTestId('hilos-breadcrumb').locator('[aria-current="page"]'),
+  ).toHaveText('United States')
+  await expect(page).toHaveTitle('United States · BTC Tracker')
   await expect(page.getByTestId('country-card-code-badge')).toHaveText('us')
   await expect(page.getByTestId('country-card-own')).toHaveCount(0)
   await expect(page.getByTestId('country-card-line')).toHaveText(
@@ -69,6 +73,19 @@ test('opens a reflowed country card directly with read-only details and staged t
   await deleteCountry.press('Space')
   await expect(page.getByTestId('i18n-country-delete-window')).toHaveCount(0)
   await expect(page.getByTestId('country-card-code')).toHaveText('us')
+
+  await gotoPage(page, '/hilos/i18n/countries/us/names', PAGE_READY)
+  await expect(page.getByTestId('country-card-title')).toHaveText(
+    'United States',
+  )
+  await expect(
+    page.getByTestId('hilos-breadcrumb').locator('[aria-current="page"]'),
+  ).toHaveText('United States')
+  await expect(page).toHaveTitle('United States · BTC Tracker')
+  await expect(page).toHaveURL(/\/hilos\/i18n\/countries\/us\/names$/)
+  await expect(
+    page.getByTestId('country-card-tab-hilos_i18n_country_names'),
+  ).toHaveAttribute('aria-current', 'page')
 
   await gotoPage(page, '/hilos/i18n/countries', PAGE_READY)
   await gotoPage(page, '/hilos/i18n', PAGE_READY)

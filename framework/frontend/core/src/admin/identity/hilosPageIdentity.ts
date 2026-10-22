@@ -15,6 +15,7 @@
 import { readString, readStringOrNull } from '../../state/fieldReaders.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import { computedSignal, type ReadonlySignal } from '../../state/signal.js'
+import { pageInstanceName } from './hilosPageInstanceName.js'
 
 /** Wire key of the subscribing page's own heading. */
 const PAGE_LABEL_KEY = 'pageLabel'
@@ -27,6 +28,9 @@ const PAGE_BREADCRUMB_KEY = 'pageBreadcrumb'
 
 /** Wire key of this page's subsection cards, empty on a leaf. */
 const PAGE_CHILDREN_KEY = 'pageChildren'
+
+/** Wire key of the section or entity whose head this page shares. */
+const PAGE_HEAD_OWNER_KEY = 'pageHeadOwner'
 
 /** Wire key of the dashboard's section grouping; the dashboard alone is sent it. */
 const DASHBOARD_SECTIONS_KEY = 'dashboardSections'
@@ -68,6 +72,14 @@ export interface HilosPageChild extends HilosPageCrumb {
   icon: string | null
 }
 
+/** The catalog owner with its permitted live instance name, when bound. */
+export interface HilosPageHeadOwner extends HilosPageCrumb {
+  /** The owner's one-line description. */
+  lead: string
+  /** Bootstrap icon name (`bi-*`), or null when the catalog gives none. */
+  icon: string | null
+}
+
 /** Everything a page knows about itself: what it is called and where it sits. */
 export interface HilosPageIdentity {
   /** The heading, also the last breadcrumb caption. */
@@ -78,6 +90,8 @@ export interface HilosPageIdentity {
   breadcrumb: HilosPageCrumb[]
   /** The cards of this page's subsections, empty on a leaf. */
   children: HilosPageChild[]
+  /** The shared head's owner; absent on legacy pages. */
+  pageHeadOwner?: HilosPageHeadOwner
 }
 
 /** A labelled group of cards on the admin dashboard. */
@@ -155,6 +169,25 @@ function readChildren(value: unknown): HilosPageChild[] {
   })
 }
 
+/** Read a complete owner, omitting absent or malformed catalog entries. */
+function readHeadOwner(value: unknown): HilosPageHeadOwner | undefined {
+  const fields = asRecord(value)
+  if (
+    fields === null ||
+    typeof fields[ENTRY_PAGE_KEY] !== 'string' ||
+    typeof fields[ENTRY_LABEL_KEY] !== 'string' ||
+    typeof fields[ENTRY_LEAD_KEY] !== 'string'
+  ) {
+    return undefined
+  }
+  return {
+    page: fields[ENTRY_PAGE_KEY],
+    label: fields[ENTRY_LABEL_KEY],
+    lead: fields[ENTRY_LEAD_KEY],
+    icon: readStringOrNull(fields, ENTRY_ICON_KEY),
+  }
+}
+
 /**
  * The identity of the page currently subscribed, or `undefined` while its answer
  * is still on the wire — which is the state the shell draws its skeleton for.
@@ -170,6 +203,7 @@ export function pageIdentity(
   const lead = scopes.pageDataSignal(PAGE_LEAD_KEY)
   const breadcrumb = scopes.pageDataSignal(PAGE_BREADCRUMB_KEY)
   const children = scopes.pageDataSignal(PAGE_CHILDREN_KEY)
+  const owner = scopes.pageDataSignal(PAGE_HEAD_OWNER_KEY)
 
   return computedSignal<HilosPageIdentity | undefined>(() => {
     const heading = label.get()
@@ -179,12 +213,25 @@ export function pageIdentity(
       return undefined
     }
     const description = lead.get()
+    const headOwner = readHeadOwner(owner.get())
 
     return {
       label: heading,
       lead: typeof description === 'string' ? description : '',
-      breadcrumb: readCrumbs(breadcrumb.get()),
+      breadcrumb: readCrumbs(breadcrumb.get()).map((crumb) => ({
+        ...crumb,
+        label: pageInstanceName(scopes, crumb.page) ?? crumb.label,
+      })),
       children: readChildren(children.get()),
+      ...(headOwner === undefined
+        ? {}
+        : {
+            pageHeadOwner: {
+              ...headOwner,
+              label:
+                pageInstanceName(scopes, headOwner.page) ?? headOwner.label,
+            },
+          }),
     }
   })
 }

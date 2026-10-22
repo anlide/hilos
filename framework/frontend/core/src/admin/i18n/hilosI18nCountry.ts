@@ -38,6 +38,15 @@ export const countryCardSchema = z.strictObject({
 
 export type HilosI18nCountryCard = z.infer<typeof countryCardSchema>
 
+/** The permitted page name, with a display-only fallback for an unnamed country. */
+export function hilosI18nCountryDisplayName(
+  card: HilosI18nCountryCard,
+): string {
+  return card.summary.name === null || card.summary.name === ''
+    ? 'Unnamed country'
+    : card.summary.name
+}
+
 /** The project binds its live connection and page scopes to the shared card. */
 export interface HilosI18nCountryContext {
   readonly connection: HilosConnection

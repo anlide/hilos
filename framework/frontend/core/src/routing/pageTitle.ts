@@ -1,8 +1,8 @@
 // Resolving a page to the document title shown in the browser tab and announced
-// on no-refresh navigation (WCAG 2.4.2 Page Titled). The sources are three and
+// on no-refresh navigation (WCAG 2.4.2 Page Titled). The sources are merged
 // in this order: a project's own titles (bootHilos `pageTitles`), the label of a
-// public footer page, and the heading the backend catalog sent with the page's
-// subscription answer. This module is the read-only merge over them, kept
+// public footer page, the shared owner's label and the subscribing page's
+// catalog heading. This module is the read-only merge over them, kept
 // DOM-free so the view layer only reads the resolved string from the navigator's
 // currentTitle signal.
 
@@ -23,9 +23,9 @@ function frameworkPageLabel(pageKey: string): string | undefined {
 
 /**
  * Resolve a page to its document title. A project title (`pageTitles`) wins over
- * a footer label, which wins over the catalog heading; whichever is found
- * composes with the application name as `"<page> · <app>"`, and an empty
- * application name yields the bare label.
+ * a footer label, which wins over the owner label and then the catalog heading;
+ * whichever is found composes with the application name as `"<page> · <app>"`,
+ * and an empty application name yields the bare label.
  *
  * While the page has not answered, a page with no project title resolves to the
  * EMPTY string rather than to the application name. That is load-bearing, not a
@@ -46,6 +46,7 @@ function frameworkPageLabel(pageKey: string): string | undefined {
  * @param appName The application name composed into every title.
  * @param catalogLabel The heading the page's own answer carried, if it has come.
  * @param pageAnswered Whether that answer has landed, either payload or error.
+ * @param ownerLabel The shared head owner's label, including its live name.
  */
 export function resolvePageTitle(
   pageKey: string | null,
@@ -53,6 +54,7 @@ export function resolvePageTitle(
   appName: string,
   catalogLabel: string | undefined,
   pageAnswered: boolean,
+  ownerLabel?: string,
 ): string {
   if (pageKey === null) {
     const label = ROUTE_NOT_FOUND_ERROR.title
@@ -60,7 +62,10 @@ export function resolvePageTitle(
     return appName === '' ? label : `${label} · ${appName}`
   }
   const label =
-    pageTitles[pageKey] ?? frameworkPageLabel(pageKey) ?? catalogLabel
+    pageTitles[pageKey] ??
+    frameworkPageLabel(pageKey) ??
+    ownerLabel ??
+    catalogLabel
   if (label === undefined) {
     return pageAnswered ? appName : ''
   }

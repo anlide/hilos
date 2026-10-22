@@ -70,9 +70,19 @@ view files, which live in `views/<Page>/`:
   catalogs. Frontend config, never emitted on the wire.
   For an adopted entity owner, read
   [page-head.md](../architecture/page-head.md#one-reply-and-live-name) before
-  binding its title: its instance name follows the page's data instead of a
-  new static name map. The canon marks the pending name/title implementation
-  separately for each view layer; owners not adopted keep their current path.
+  binding its live name. A page view calls
+  `bindPageInstanceName(scopes, ownerPageKey, name)` during setup and disposes
+  the returned function when it unmounts. The binder keeps the reactive source;
+  `pageIdentity()` uses it for matching existing crumbs and the optional
+  `pageHeadOwner` label while a page scope is active. It is exported from
+  `@hilos/core/base` and the compatibility root from the same implementation.
+  `bootHilos` reads the identity inside its reactive title closure, and
+  `resolvePageTitle` chooses project `pageTitles`, framework footer label, live
+  owner label, then the page's catalog label. Country's Vue pages bind their
+  page-scoped card name this way. This adds no static name map or boot setting,
+  and does not change the route: country detail pages keep their stable
+  `countryCode` address when a display name changes. Owners not adopted keep
+  their current path.
 
 Do **not** add a barrel `index.ts` inside `pages/` — import each file by its own
 path (`./pages/keys`, `./pages/routes`). The folder is small and self-contained.

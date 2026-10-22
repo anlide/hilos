@@ -277,6 +277,7 @@ describe('core public entries', () => {
     expect(closure).not.toContain('index.ts')
     expect(closure.filter((file) => file.startsWith('admin/'))).toEqual([
       'admin/identity/hilosPageIdentity.ts',
+      'admin/identity/hilosPageInstanceName.ts',
       'admin/viewMode.ts',
     ])
     expect(closure.filter((file) => file.endsWith('/index.ts'))).toEqual([

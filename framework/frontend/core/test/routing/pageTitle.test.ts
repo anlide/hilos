@@ -87,4 +87,45 @@ describe('resolvePageTitle', () => {
       resolvePageTitle('main', { main: 'Conversations' }, '', undefined, true),
     ).toBe('Conversations')
   })
+
+  it.each([HilosPages.I18N_COUNTRY, HilosPages.I18N_COUNTRY_NAMES])(
+    'uses the owner label on %s ahead of the subscribing tab heading',
+    (page) => {
+      expect(resolvePageTitle(page, {}, 'Demo', 'Names', true, 'Ireland')).toBe(
+        'Ireland · Demo',
+      )
+      expect(resolvePageTitle(page, {}, '', 'Names', true, 'Ireland')).toBe(
+        'Ireland',
+      )
+      expect(resolvePageTitle(page, {}, '', 'Names', true, '')).toBe('')
+    },
+  )
+
+  it('keeps project and footer labels ahead of an owner label', () => {
+    expect(
+      resolvePageTitle(
+        HilosPages.I18N_COUNTRY,
+        { [HilosPages.I18N_COUNTRY]: 'Custom title' },
+        'Demo',
+        'Country',
+        true,
+        'Ireland',
+      ),
+    ).toBe('Custom title · Demo')
+    expect(
+      resolvePageTitle(HilosPages.ABOUT, {}, 'Demo', 'Catalog', true, 'Owner'),
+    ).toBe('About · Demo')
+  })
+
+  it('ignores an owner on a route miss and retains loading and error titles', () => {
+    expect(resolvePageTitle(null, {}, 'Demo', 'Names', false, 'Ireland')).toBe(
+      'Page Not Found · Demo',
+    )
+    expect(
+      resolvePageTitle(HilosPages.I18N_COUNTRY, {}, 'Demo', undefined, false),
+    ).toBe('')
+    expect(
+      resolvePageTitle(HilosPages.I18N_COUNTRY, {}, 'Demo', undefined, true),
+    ).toBe('Demo')
+  })
 })

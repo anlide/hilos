@@ -4,6 +4,7 @@ import {
   createSignal,
   bindAdminAccess,
   HilosPages,
+  pageIdentity,
   ScopeManager,
   type ActionResult,
   type ActionLifecycle,
@@ -19,7 +20,7 @@ import {
   type HilosI18nCountryContext,
 } from '@hilos/core/admin/i18n'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { markRaw, nextTick } from 'vue'
 
 import HilosI18nCountryNamesPage from './HilosI18nCountryNamesPage.vue'
 import HilosI18nCountryNameDelete from './HilosI18nCountryNameDelete.vue'
@@ -48,7 +49,10 @@ const initialCard: HilosI18nCountryCard = {
   },
 }
 
-function makeRouter(pageLoading = createSignal(false)) {
+function makeRouter(
+  scopes = new ScopeManager(),
+  pageLoading = createSignal(false),
+) {
   const currentRoute = createSignal<PageRouteMatch>({
     page: HilosPages.I18N_COUNTRY_NAMES,
     params: { countryCode: 'us' },
@@ -60,7 +64,7 @@ function makeRouter(pageLoading = createSignal(false)) {
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading,
-    pageIdentity: createSignal(undefined),
+    pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
     resolvePath: (page, params) => {
       const base = `/hilos/i18n/countries/${params?.countryCode}`
@@ -154,12 +158,28 @@ function harness(
     pageLoading?: boolean
     initialCardValue?: HilosI18nCountryCard | null
     rows?: Array<Record<string, unknown>>
+    realShell?: boolean
+    viewer?: boolean
   } = {},
 ) {
   const pageLoadingSignal = createSignal(options.pageLoading ?? false)
-  const { navigation, currentRoute } = makeRouter(pageLoadingSignal)
   const { context, scopes, receivedFilters } = seededContext(options.rows ?? [])
+  const { navigation, currentRoute } = makeRouter(scopes, pageLoadingSignal)
   const scope = scopes.openPage(HilosPages.I18N_COUNTRY_NAMES)
+  if (options.realShell) {
+    scopes.session.data.set('adminViewMode', options.viewer ?? false)
+    releases.push(bindAdminAccess(scopes))
+    scope.data.set('pageLabel', 'Names')
+    scope.data.set('pageHeadOwner', {
+      page: HilosPages.I18N_COUNTRY,
+      label: 'Country',
+      lead: '',
+    })
+    scope.data.set('pageBreadcrumb', [
+      { page: HilosPages.I18N_COUNTRIES, label: 'Countries' },
+      { page: HilosPages.I18N_COUNTRY, label: 'Country' },
+    ])
+  }
   if (
     options.initialCardValue !== undefined &&
     options.initialCardValue !== null
@@ -167,10 +187,12 @@ function harness(
     scope.data.set(COUNTRY_CARD_DATA, options.initialCardValue)
   }
   const view = mount(HilosI18nCountryNamesPage, {
-    props: { context },
+    props: { context: markRaw(context) },
     global: {
       provide: { [hilosRouterKey as symbol]: navigation },
-      stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
+      stubs: options.realShell
+        ? {}
+        : { HilosAdminPage: { template: '<main><slot /></main>' } },
     },
   })
   mounted.push(view)
@@ -181,6 +203,7 @@ function harness(
     receivedFilters,
     navigation,
     currentRoute,
+    scopes,
   }
 }
 
@@ -272,6 +295,115 @@ describe('HilosI18nCountryNamesPage', () => {
     expect(h.view.find('[data-id="country-card-title"]').text()).toBe('USA')
   })
 
+  it.each([
+    ['Visible country', 'Visible country', false],
+    [null, 'Unnamed country', true],
+    ['', 'Unnamed country', true],
+  ] as const)(
+    'binds %j as %j before the Names shell renders (viewer %s)',
+    async (name, expected, viewer) => {
+      const h = harness({
+        realShell: true,
+        viewer,
+        initialCardValue: {
+          ...initialCard,
+          summary: { ...initialCard.summary, name },
+        },
+      })
+      const crumb = () =>
+        h.view.get('[data-id="hilos-breadcrumb"] li:last-child').text()
+      expect(crumb()).toBe(expected)
+      expect(h.view.get('[data-id="country-card-title"]').text()).toBe(expected)
+      expect(h.navigation.pageIdentity.get()?.pageHeadOwner?.label).toBe(
+        expected,
+      )
+      expect(h.navigation.pageIdentity.get()?.label).toBe('Names')
+      expect(h.view.get('[data-id="country-card-code-badge"]').text()).toBe(
+        'us',
+      )
+      expect(
+        h.view
+          .get('[data-id="country-card-tab-hilos_i18n_country"]')
+          .attributes('href'),
+      ).toBe('/hilos/i18n/countries/us')
+      for (const liveName of ['Renamed', null, '']) {
+        const display =
+          liveName === null || liveName === '' ? 'Unnamed country' : liveName
+        h.scope.data.set(COUNTRY_CARD_DATA, {
+          ...initialCard,
+          summary: { ...initialCard.summary, name: liveName },
+        })
+        await nextTick()
+        expect(crumb()).toBe(display)
+        expect(h.view.get('[data-id="country-card-title"]').text()).toBe(
+          display,
+        )
+        expect(h.navigation.pageIdentity.get()?.pageHeadOwner?.label).toBe(
+          display,
+        )
+      }
+    },
+  )
+
+  it('has no placeholder name without a card and follows a new country until unmount', async () => {
+    const h = harness({ realShell: true, pageLoading: true })
+    const identity = h.navigation.pageIdentity
+    expect(identity.get()?.pageHeadOwner?.label).toBe('Country')
+    expect(h.view.find('[data-id="country-card-header"]').exists()).toBe(false)
+    h.scope.data.set(COUNTRY_CARD_DATA, initialCard)
+    expect(identity.get()?.pageHeadOwner?.label).toBe('United States')
+    h.scopes.dropPage()
+    expect(identity.get()).toBeUndefined()
+    h.currentRoute.set({
+      page: HilosPages.I18N_COUNTRY_NAMES,
+      params: { countryCode: 'ie' },
+      admin: true,
+    })
+    const next = h.scopes.openPage(HilosPages.I18N_COUNTRY_NAMES)
+    next.data.set('pageLabel', 'Names')
+    next.data.set('pageHeadOwner', {
+      page: HilosPages.I18N_COUNTRY,
+      label: 'Country',
+      lead: '',
+    })
+    expect(identity.get()?.pageHeadOwner?.label).toBe('Country')
+    next.data.set(COUNTRY_CARD_DATA, {
+      ...initialCard,
+      countryId: 140,
+      code: 'ie',
+      summary: { ...initialCard.summary, name: 'Ireland' },
+    })
+    await nextTick()
+    expect(h.view.get('[data-id="country-card-title"]').text()).toBe('Ireland')
+    expect(identity.get()?.pageHeadOwner?.label).toBe('Ireland')
+    h.scope.data.set(COUNTRY_CARD_DATA, initialCard)
+    expect(identity.get()?.pageHeadOwner?.label).toBe('Ireland')
+    const unrelated = h.scopes.openPage(HilosPages.SETTINGS)
+    unrelated.data.set('pageLabel', 'Settings')
+    unrelated.data.set('pageBreadcrumb', [
+      { page: HilosPages.I18N_COUNTRY, label: 'Country' },
+    ])
+    unrelated.data.set(COUNTRY_CARD_DATA, initialCard)
+    expect(identity.get()?.breadcrumb[0].label).toBe('Country')
+    const current = h.scopes.openPage(HilosPages.I18N_COUNTRY_NAMES)
+    current.data.set('pageLabel', 'Names')
+    current.data.set('pageHeadOwner', {
+      page: HilosPages.I18N_COUNTRY,
+      label: 'Country',
+      lead: '',
+    })
+    current.data.set(COUNTRY_CARD_DATA, initialCard)
+    expect(identity.get()?.pageHeadOwner?.label).toBe('United States')
+    h.view.unmount()
+    expect(identity.get()?.pageHeadOwner?.label).toBe('Country')
+    current.data.set(COUNTRY_CARD_DATA, {
+      ...initialCard,
+      summary: { ...initialCard.summary, name: 'After unmount' },
+    })
+    expect(identity.get()?.pageHeadOwner?.label).toBe('Country')
+    mounted.splice(mounted.indexOf(h.view), 1)
+  })
+
   it('shows unavailable alert with neither header nor table when card is cleared after deletion', async () => {
     const h = harness({ initialCardValue: initialCard })
     await nextTick()
@@ -307,7 +439,7 @@ function deletionPage(viewer = false) {
     params: { countryCode: 'us' },
     admin: true,
   })
-  const router = { ...makeRouter().navigation, currentRoute: route }
+  const router = { ...makeRouter(scopes).navigation, currentRoute: route }
   const wrapper = mount(HilosI18nCountryNamesPage, {
     props: { context },
     attachTo: document.body,

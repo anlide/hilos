@@ -113,9 +113,10 @@ export interface HilosRouter {
    */
   readonly pageLoading: ReadonlySignal<boolean>
   /**
-   * The current page's identity as the backend catalog holds it: its heading,
-   * its lead, its breadcrumb chain and the cards of its subsections. `undefined`
-   * while the page's answer is still on the wire — which is what the admin shell
+   * The current page's catalog identity: its own heading and lead, its breadcrumb
+   * chain, subsection cards and optional shared head owner. Bound instance names
+   * project onto the matching breadcrumb keys and owner. `undefined` while the
+   * page's answer is still on the wire — which is what the admin shell
    * draws its skeleton for — and `undefined` for a page the catalog carries no
    * entry for, which the shell draws as no heading rather than as a raw page key.
    * {@link HilosRouter.pageLoading} tells the two apart.

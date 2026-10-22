@@ -9,10 +9,15 @@ import {
   HILOS_I18N_COUNTRY_DELETE_COPY,
   hilosI18nCountryDeleteFromCard,
   hilosI18nCountryDeleteReason,
+  hilosI18nCountryDisplayName,
   type HilosI18nCountryContext,
   type HilosI18nCountryDeleteTarget,
 } from '@hilos/core/admin/i18n'
-import { HilosPages } from '@hilos/core/base'
+import {
+  bindPageInstanceName,
+  computedSignal,
+  HilosPages,
+} from '@hilos/core/base'
 import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosAdminPage from '../../../HilosAdminPage.vue'
@@ -26,6 +31,22 @@ import HilosI18nCountrySwitchOn from './HilosI18nCountrySwitchOn.vue'
 
 const props = defineProps<{ context: HilosI18nCountryContext }>()
 const cardSignal = createHilosI18nCountryCard(props.context)
+const unbindName = bindPageInstanceName(
+  props.context.scopes,
+  HilosPages.I18N_COUNTRY,
+  computedSignal(() => {
+    const page = props.context.scopes.page()?.key
+    if (
+      page !== HilosPages.I18N_COUNTRY &&
+      page !== HilosPages.I18N_COUNTRY_NAMES
+    ) {
+      return undefined
+    }
+    const current = cardSignal.get()
+    return current === null ? undefined : hilosI18nCountryDisplayName(current)
+  }),
+)
+onUnmounted(unbindName)
 const card = useSignal(cardSignal)
 const window = createHilosI18nCountryCardWindow(cardSignal, props.context)
 const copy = HILOS_I18N_COUNTRY_WINDOW_COPY

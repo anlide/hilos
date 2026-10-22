@@ -17,7 +17,17 @@ import { hilosImpersonation } from '../../src/session/impersonation.js'
 import { hilosSignedIn } from '../../src/session/signOut.js'
 import { hilosAdminAccess } from '../../src/session/adminAccess.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
-import { createSignal } from '../../src/state/signal.js'
+import {
+  computedSignal,
+  createSignal,
+  subscribeSignal,
+} from '../../src/state/signal.js'
+import { bindPageInstanceName } from '../../src/admin/identity/hilosPageInstanceName.js'
+import {
+  createHilosI18nCountryCard,
+  hilosI18nCountryDisplayName,
+  type HilosI18nCountryContext,
+} from '../../src/admin/i18n/hilosI18nCountry.js'
 import { hilosToasts } from '../../src/state/toasts.js'
 import { hilosThemeMode, hilosThemePick } from '../../src/theme/themeState.js'
 import {
@@ -556,6 +566,132 @@ describe('bootHilos', () => {
     expect(hilosRouter.currentTitle.get()).toBe('Page Not Found · Demo')
     expect(hilosRouter.pageError.get()?.errorCode).toBe('route_not_found')
   })
+
+  it.each([
+    [HilosPages.I18N_COUNTRY, '/hilos/i18n/countries/us', 'Demo'],
+    [HilosPages.I18N_COUNTRY_NAMES, '/hilos/i18n/countries/us/names', ''],
+  ])(
+    'binds the live owner title on %s from one complete answer',
+    (page, path, appName) => {
+      const connection = fakeConnection()
+      const scopes = new ScopeManager()
+      const context: HilosI18nCountryContext = {
+        scopes,
+        connection: connection as unknown as HilosConnection,
+        actions: new ActionLifecycle(connection as unknown as HilosConnection),
+      }
+      const router = bootHilos({
+        ...context,
+        viewLayer: 'vue',
+        router: createAppPageRouter({ main: { path: '/', admin: false } }),
+        navigationEnvironment: fakeNavigation(path),
+        appName,
+      })
+      router.start()
+      const titles: string[] = []
+      const stop = subscribeSignal(router.currentTitle, (title) =>
+        titles.push(title),
+      )
+      const expected = (label: string) =>
+        appName === '' ? label : `${label} · ${appName}`
+      expect(router.currentTitle.get()).toBe('')
+      const card = {
+        countryId: 102,
+        code: 'us',
+        currencySymbol: '$',
+        currencyCode: 'USD',
+        enabled: false,
+        summary: {
+          name: 'United States',
+          isOwn: false,
+          defaultLocaleId: null,
+          defaultLocaleCode: null,
+          defaultLocale: 'missing',
+          localeCount: 0,
+          nameCount: 0,
+          locales: [],
+          catalogDefaultLocaleCode: null,
+          canDelete: false,
+          deleteReason: 'known',
+        },
+      }
+      const data = {
+        pageLabel: page === HilosPages.I18N_COUNTRY ? 'Country' : 'Names',
+        pageLead: 'Tab lead',
+        pageHeadOwner: {
+          page: HilosPages.I18N_COUNTRY,
+          label: 'Country',
+          lead: 'Owner lead',
+        },
+        pageBreadcrumb: [{ page: HilosPages.I18N_COUNTRY, label: 'Country' }],
+        countryCard: card,
+      }
+      connection.emitProjectSignal('page_response', { page, payload: { data } })
+      expect(router.currentTitle.get()).toBe(expected('Country'))
+
+      // Lazy view setup happens after the response; it binds the existing source.
+      const liveCard = createHilosI18nCountryCard(context)
+      const dispose = bindPageInstanceName(
+        scopes,
+        HilosPages.I18N_COUNTRY,
+        computedSignal(() => {
+          const current = liveCard.get()
+          return current === null
+            ? undefined
+            : hilosI18nCountryDisplayName(current)
+        }),
+      )
+      expect(router.currentTitle.get()).toBe(expected('United States'))
+      expect(titles.at(-1)).toBe(expected('United States'))
+      for (const name of ['Renamed', null, '']) {
+        connection.emitProjectSignal('page_response', {
+          page,
+          payload: {
+            data: {
+              ...data,
+              countryCard: { ...card, summary: { ...card.summary, name } },
+            },
+          },
+        })
+        expect(router.currentTitle.get()).toBe(
+          expected(name == null || name === '' ? 'Unnamed country' : name),
+        )
+        expect(router.currentPath.get()).toBe(path)
+      }
+      router.navigate('/hilos/i18n/countries/ie/names')
+      expect(router.currentTitle.get()).toBe('')
+      connection.emitProjectSignal('page_response', {
+        page: HilosPages.I18N_COUNTRY_NAMES,
+        payload: {
+          data: {
+            ...data,
+            pageLabel: 'Names',
+            countryCard: {
+              ...card,
+              countryId: 140,
+              code: 'ie',
+              summary: { ...card.summary, name: 'Ireland' },
+            },
+          },
+        },
+      })
+      expect(router.currentTitle.get()).toBe(expected('Ireland'))
+      dispose()
+      expect(router.currentTitle.get()).toBe(expected('Country'))
+      connection.emitProjectSignal('subscription_page_error', {
+        page: HilosPages.I18N_COUNTRY_NAMES,
+        httpCode: 404,
+        errorCode: 'not_found',
+        title: 'Page Not Found',
+        message: 'Missing',
+      })
+      expect(router.currentTitle.get()).toBe(appName)
+      router.navigate('/no-such-address')
+      expect(router.currentTitle.get()).toBe(expected('Page Not Found'))
+      stop()
+      router.stop()
+    },
+  )
 
   it('opens the page-ready latch on an auth return once the session answers', async () => {
     vi.resetModules()

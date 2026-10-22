@@ -230,6 +230,7 @@ export {
   COUNTRY_CARD_DATA,
   countryCardSchema,
   createHilosI18nCountryCard,
+  hilosI18nCountryDisplayName,
   type HilosI18nCountryCard,
   type HilosI18nCountryContext,
 } from './hilosI18nCountry.js'

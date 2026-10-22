@@ -206,19 +206,22 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
     config.router,
     pages,
     config.navigationEnvironment ?? browserNavigationEnvironment(),
-    // The two signal reads happen INSIDE the closure, which is what makes the
+    // The signal reads happen INSIDE the closure, which is what makes the
     // title reactive: currentTitle is a computed over this call, so it recomputes
     // when the page's heading lands, not only when the route changes.
-    (pageKey) =>
-      resolvePageTitle(
+    (pageKey) => {
+      const identity = pageKey === null ? undefined : pages.pageIdentity.get()
+      return resolvePageTitle(
         pageKey,
         config.pageTitles ?? {},
         config.appName ?? '',
         // A miss is named before any lookup, so the page being left does not
         // lend its catalog heading to the route-404 title.
-        pageKey === null ? undefined : pages.pageIdentity.get()?.label,
+        identity?.label,
         pageKey !== null && !pages.pageLoading.get(),
-      ),
+        identity?.pageHeadOwner?.label,
+      )
+    },
     hilosUnbuiltPages(config.viewLayer, config.projectViews),
   )
   // A rights change reaches the open tab (HIL-621): the handshake response the
