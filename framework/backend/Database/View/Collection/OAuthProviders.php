@@ -8,6 +8,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Actions\Collection\OAuthProvidersActions;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\View\Collection\ItemNotFoundException;
 use Hilos\Database\Object\Collection\OAuthProviders as ObjectOAuthProviders;
 use Hilos\Database\View\Item\OAuthProvider;
 
@@ -16,8 +17,8 @@ use Hilos\Database\View\Item\OAuthProvider;
  *
  * Provider rows support key-based array access: `$oauthProviders[$providerKey]`, the
  * provider key the project declares ('oauth:github'). Integer offsets are still treated
- * as DB primary keys. A provider without a row reads as null - it is simply not
- * configured in the admin.
+ * as DB primary keys. A provider without a row is simply not configured in the admin: its
+ * nullable form is `$oauthProviders[$providerKey] ?? null`, since a direct read refuses.
  *
  * @extends DbCollection<OAuthProvider, ObjectOAuthProviders>
  * @method ObjectOAuthProviders|null getObjectCollection()
@@ -52,24 +53,25 @@ class OAuthProviders extends DbCollection
     }
 
     /**
-     * Returns a provider row by provider key or primary id.
+     * Returns a provider row by provider key or primary id; a provider without a row refuses.
      *
-     * @param mixed $offset Provider key string or primary id integer
-     * @return ?OAuthProvider Provider Db item, or null when the provider has no row
+     * @param mixed $offset Provider key string or primary id integer of a row the caller requires
+     * @return OAuthProvider Provider Db item at the key or id
+     * @throws ItemNotFoundException When no provider row holds the key or id, `null` or another unsupported offset included
      * @throws DatabaseException On database error while resolving the row
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
      */
-    public function offsetGet(mixed $offset): ?OAuthProvider
+    public function offsetGet(mixed $offset): OAuthProvider
     {
         if (is_string($offset)) {
-            return $this->findByProviderKey($offset);
+            return $this->findByProviderKey($offset) ?? throw new ItemNotFoundException(static::class, $offset);
         }
         if (!is_int($offset)) {
-            return null;
+            throw new ItemNotFoundException(static::class, $offset);
         }
 
-        /** @var ?OAuthProvider $provider */
+        /** @var OAuthProvider $provider */
         $provider = parent::offsetGet($offset);
         return $provider;
     }

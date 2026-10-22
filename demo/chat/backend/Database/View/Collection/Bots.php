@@ -26,7 +26,7 @@ use Hilos\Core\Exception\LogicException;
  * @method Bot|null current()
  * @method Bot|null first()
  * @method Bot|null last()
- * @method Bot|null offsetGet(mixed $offset)
+ * @method Bot offsetGet(mixed $offset)
  * @property-read BotsActions $actions Collection actions (create); items use BotActions
  * @property-read self $activeOnly Bots with active=true
  */

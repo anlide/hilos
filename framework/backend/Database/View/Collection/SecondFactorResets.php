@@ -20,7 +20,7 @@ use Hilos\Database\View\Item\SecondFactorReset;
  * @method ObjectSecondFactorResets|null getObjectCollection()
  * @method SecondFactorReset|null first()
  * @method SecondFactorReset|null last()
- * @method SecondFactorReset|null offsetGet(mixed $offset)
+ * @method SecondFactorReset offsetGet(mixed $offset)
  */
 class SecondFactorResets extends DbCollection
 {

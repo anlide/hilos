@@ -22,7 +22,7 @@ use Hilos\Database\View\Item\RegistrationReservation;
  * @method ObjectRegistrationReservations|null getObjectCollection()
  * @method RegistrationReservation|null first()
  * @method RegistrationReservation|null last()
- * @method RegistrationReservation|null offsetGet(mixed $offset)
+ * @method RegistrationReservation offsetGet(mixed $offset)
  */
 class RegistrationReservations extends DbCollection
 {

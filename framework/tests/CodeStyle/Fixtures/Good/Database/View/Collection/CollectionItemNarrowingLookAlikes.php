@@ -22,7 +22,7 @@ use Hilos\Database\View\Item\User;
  * @method User|null current()
  * @method User|null first()
  * @method User|null last()
- * @method User|null offsetGet(mixed $offset)
+ * @method User offsetGet(mixed $offset)
  */
 class CollectionItemNarrowingLookAlikes extends DbCollection
 {
@@ -39,7 +39,7 @@ class CollectionItemNarrowingLookAlikes extends DbCollection
  * @method ObjectSecondFactorSettings|null getObjectCollection()
  * @method ?SecondFactorSetting first()
  * @method SecondFactorSetting|null last()
- * @method SecondFactorSetting|null offsetGet(mixed $offset)
+ * @method SecondFactorSetting offsetGet(mixed $offset)
  */
 class AliasedObjectCollection extends DbCollection
 {
@@ -62,12 +62,14 @@ class RealOffsetGet extends DbCollection
     public const string OBJECT_COLLECTION_CLASS = ObjectLanguages::class;
 
     /**
-     * @param mixed $offset Language code or primary id
-     * @return ?Language Language or null
+     * @param mixed $offset Primary id of a row the caller requires
+     * @return Language Language at the id
      */
-    public function offsetGet(mixed $offset): ?Language
+    public function offsetGet(mixed $offset): Language
     {
-        return null;
+        /** @var Language $language */
+        $language = parent::offsetGet($offset);
+        return $language;
     }
 
     /**

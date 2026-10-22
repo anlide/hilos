@@ -22,7 +22,7 @@ use Hilos\Database\View\Item\SecondFactorSetting;
  * @method ObjectSecondFactorSettings|null getObjectCollection()
  * @method SecondFactorSetting|null first()
  * @method SecondFactorSetting|null last()
- * @method SecondFactorSetting|null offsetGet(mixed $offset)
+ * @method SecondFactorSetting offsetGet(mixed $offset)
  */
 class SecondFactorSettings extends DbCollection
 {

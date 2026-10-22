@@ -23,7 +23,7 @@ use Hilos\HilosException;
  * @method ObjectLanguageNames|null getObjectCollection()
  * @method LanguageName|null first()
  * @method LanguageName|null last()
- * @method LanguageName|null offsetGet(mixed $offset)
+ * @method LanguageName offsetGet(mixed $offset)
  */
 class LanguageNames extends DbCollection
 {

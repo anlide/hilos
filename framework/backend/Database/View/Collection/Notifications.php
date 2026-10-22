@@ -19,7 +19,7 @@ use Hilos\Database\View\Item\Notification;
  * @method ObjectNotifications|null getObjectCollection()
  * @method Notification|null first()
  * @method Notification|null last()
- * @method Notification|null offsetGet(mixed $offset)
+ * @method Notification offsetGet(mixed $offset)
  */
 class Notifications extends DbCollection
 {

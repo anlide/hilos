@@ -16,7 +16,7 @@ use Hilos\Database\View\Item\UserPhoto;
  * @method UserPhoto|null current()
  * @method UserPhoto|null first()
  * @method UserPhoto|null last()
- * @method UserPhoto|null offsetGet(mixed $offset)
+ * @method UserPhoto offsetGet(mixed $offset)
  * @property-read UserPhotosActions $actions
  */
 class UserPhotos extends DbCollection

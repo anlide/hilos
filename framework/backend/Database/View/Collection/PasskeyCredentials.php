@@ -38,7 +38,7 @@ use Hilos\Hilos;
  * @method ObjectPasskeyCredentials|null getObjectCollection()
  * @method PasskeyCredential|null first()
  * @method PasskeyCredential|null last()
- * @method PasskeyCredential|null offsetGet(mixed $offset)
+ * @method PasskeyCredential offsetGet(mixed $offset)
  */
 class PasskeyCredentials extends DbCollection
 {

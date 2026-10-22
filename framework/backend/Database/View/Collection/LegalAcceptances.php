@@ -20,7 +20,7 @@ use Hilos\Legal\LegalDocument;
  * @method ObjectLegalAcceptances|null getObjectCollection()
  * @method LegalAcceptance|null first()
  * @method LegalAcceptance|null last()
- * @method LegalAcceptance|null offsetGet(mixed $offset)
+ * @method LegalAcceptance offsetGet(mixed $offset)
  * @property-read LegalAcceptancesActions $actions
  */
 class LegalAcceptances extends DbCollection

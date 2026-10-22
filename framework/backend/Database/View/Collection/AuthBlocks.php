@@ -25,7 +25,7 @@ use Hilos\Database\View\Item\AuthBlock;
  * @method ObjectAuthBlocks|null getObjectCollection()
  * @method AuthBlock|null first()
  * @method AuthBlock|null last()
- * @method AuthBlock|null offsetGet(mixed $offset)
+ * @method AuthBlock offsetGet(mixed $offset)
  */
 class AuthBlocks extends DbCollection
 {

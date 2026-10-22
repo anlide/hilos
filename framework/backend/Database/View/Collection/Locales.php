@@ -8,6 +8,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Actions\Collection\LocalesActions;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\View\Collection\ItemNotFoundException;
 use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Collection\Locales as ObjectLocales;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
@@ -88,23 +89,24 @@ class Locales extends DbCollection
     }
 
     /**
-     * @param mixed $offset Locale code or primary id
-     * @return ?Locale Locale or null
+     * @param mixed $offset Locale code or primary id of a row the caller requires
+     * @return Locale Locale at the code or id
+     * @throws ItemNotFoundException When no locale holds the code or id, `null` or another unsupported offset included
      * @throws DatabaseException When the lookup fails
      * @throws LogicException When collection classes are not configured
      * @throws InvalidArgumentException When a loaded object has the wrong type
      */
-    public function offsetGet(mixed $offset): ?Locale
+    public function offsetGet(mixed $offset): Locale
     {
         if (is_string($offset)) {
             $object = $this->objectCollection->findByCode($offset);
-            return $this->getItemForKey($object?->id);
+            return $this->getItemForKey($object?->id) ?? throw new ItemNotFoundException(static::class, $offset);
         }
         if (!is_int($offset)) {
-            return null;
+            throw new ItemNotFoundException(static::class, $offset);
         }
 
-        /** @var ?Locale $locale */
+        /** @var Locale $locale */
         $locale = parent::offsetGet($offset);
         return $locale;
     }

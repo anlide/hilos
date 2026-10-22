@@ -18,7 +18,7 @@ use Hilos\HilosException;
  * @method ObjectDataExports|null getObjectCollection()
  * @method DataExport|null first()
  * @method DataExport|null last()
- * @method DataExport|null offsetGet(mixed $offset)
+ * @method DataExport offsetGet(mixed $offset)
  */
 class DataExports extends DbCollection
 {

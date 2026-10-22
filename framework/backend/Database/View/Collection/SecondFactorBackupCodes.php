@@ -22,7 +22,7 @@ use Hilos\Database\View\Item\SecondFactorBackupCode;
  * @method ObjectSecondFactorBackupCodes|null getObjectCollection()
  * @method SecondFactorBackupCode|null first()
  * @method SecondFactorBackupCode|null last()
- * @method SecondFactorBackupCode|null offsetGet(mixed $offset)
+ * @method SecondFactorBackupCode offsetGet(mixed $offset)
  */
 class SecondFactorBackupCodes extends DbCollection
 {

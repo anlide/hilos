@@ -18,7 +18,7 @@ use Hilos\Database\View\Item\NotificationDelivery;
  * @method ObjectNotificationDeliveries|null getObjectCollection()
  * @method NotificationDelivery|null first()
  * @method NotificationDelivery|null last()
- * @method NotificationDelivery|null offsetGet(mixed $offset)
+ * @method NotificationDelivery offsetGet(mixed $offset)
  */
 class NotificationDeliveries extends DbCollection
 {

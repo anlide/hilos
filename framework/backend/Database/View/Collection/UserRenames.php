@@ -22,7 +22,7 @@ use Hilos\Database\View\Item\UserRename;
  * @method UserRename|null current()
  * @method UserRename|null first()
  * @method UserRename|null last()
- * @method UserRename|null offsetGet(mixed $offset)
+ * @method UserRename offsetGet(mixed $offset)
  * @property-read UserRenamesActions $actions Actions for write operations
  */
 class UserRenames extends DbCollection

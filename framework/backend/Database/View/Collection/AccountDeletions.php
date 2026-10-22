@@ -20,7 +20,7 @@ use Hilos\Database\View\Item\AccountDeletion;
  * @method ObjectAccountDeletions|null getObjectCollection()
  * @method AccountDeletion|null first()
  * @method AccountDeletion|null last()
- * @method AccountDeletion|null offsetGet(mixed $offset)
+ * @method AccountDeletion offsetGet(mixed $offset)
  */
 class AccountDeletions extends DbCollection
 {

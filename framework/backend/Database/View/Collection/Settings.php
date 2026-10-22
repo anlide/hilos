@@ -8,6 +8,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Actions\Collection\SettingsActions;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\View\Collection\ItemNotFoundException;
 use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Collection\Settings as ObjectSettings;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
@@ -53,24 +54,25 @@ class Settings extends DbCollection
     }
 
     /**
-     * Returns a setting by setting key or primary id.
+     * Returns a setting by setting key or primary id; a key with no setting refuses.
      *
-     * @param mixed $offset Setting key string or primary id integer
-     * @return ?Setting Setting Db item or null if not found
+     * @param mixed $offset Setting key string or primary id integer of a row the caller requires
+     * @return Setting Setting Db item at the key or id
+     * @throws ItemNotFoundException When no setting holds the key or id, `null` or another unsupported offset included
      * @throws DatabaseException On database error while resolving the setting
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
      */
-    public function offsetGet(mixed $offset): ?Setting
+    public function offsetGet(mixed $offset): Setting
     {
         if (is_string($offset)) {
-            return $this->findByKey($offset);
+            return $this->findByKey($offset) ?? throw new ItemNotFoundException(static::class, $offset);
         }
         if (!is_int($offset)) {
-            return null;
+            throw new ItemNotFoundException(static::class, $offset);
         }
 
-        /** @var ?Setting $setting */
+        /** @var Setting $setting */
         $setting = parent::offsetGet($offset);
         return $setting;
     }

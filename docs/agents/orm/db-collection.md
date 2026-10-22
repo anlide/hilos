@@ -146,8 +146,7 @@ permits absence, and `$collection[$id] ?? null` for a nullable item value or
 bridge. `isset` and `??` already support absent and `null` keys; they do not
 suppress DB or configuration errors. Direct DB View `[]` returns an item or
 throws an exception from the `DatabaseException` family for a missing or `null`
-key. (not in the code yet — HIL-1702)
-Unset with `null` remains a no-op.
+key. Unset with `null` remains a no-op.
 
 Put reusable lookups on the collection layer instead of rebuilding the same
 filter in pages or tables. Example: `Sessions::findByToken()` delegates to the
@@ -194,7 +193,6 @@ The class-level `@method` blocks live in
 `framework/backend/Database/View/Collection/Users.php` and
 `framework/backend/Database/Object/Collection/Users.php`.
 The View example below documents a nonnullable `offsetGet()` result.
-(not in the code yet — HIL-1702)
 View `first()`, `last()`, and `getObjectCollection()` keep their nullable
 results, as do the Object readers, including `get()` and `offsetGet()`.
 
@@ -215,10 +213,9 @@ class Users extends DbCollection
 A real method with the narrow native return type counts the same and is the
 shape when the reader also changes behavior. In
 `framework/backend/Database/View/Collection/Languages.php`, the corresponding
-View override is `offsetGet(mixed $offset): Language`.
-(not in the code yet — HIL-1702)
-That override currently returns `?Language`. The item type is exactly the class
-the constant names, with nullability governed by the reader's layer and contract:
+View override is `offsetGet(mixed $offset): Language`. The item type is exactly
+the class the constant names, with nullability governed by the reader's layer and
+contract:
 a base class, a foreign class, or an extra union branch does not narrow.
 `current()` is not required. An abstract base that does
 not declare the constant, or leaves it empty, names no item and is not judged;

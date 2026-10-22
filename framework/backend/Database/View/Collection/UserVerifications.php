@@ -25,7 +25,7 @@ use Hilos\Database\View\Item\UserVerification;
  * @method ObjectUserVerifications|null getObjectCollection()
  * @method UserVerification|null first()
  * @method UserVerification|null last()
- * @method UserVerification|null offsetGet(mixed $offset)
+ * @method UserVerification offsetGet(mixed $offset)
  */
 class UserVerifications extends DbCollection
 {

@@ -20,7 +20,7 @@ use Hilos\Database\DatabaseException;
  * @method User|null current()
  * @method User|null first()
  * @method User|null last()
- * @method User|null offsetGet(mixed $offset)
+ * @method User offsetGet(mixed $offset)
  * @property-read UsersActions $actions Actions for write operations
  */
 class Users extends DbCollection

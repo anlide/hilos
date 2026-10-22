@@ -15,7 +15,7 @@ use Hilos\Database\View\Collection\DbCollection;
  * @method ModeratorPromptPiece|null current()
  * @method ModeratorPromptPiece|null first()
  * @method ModeratorPromptPiece|null last()
- * @method ModeratorPromptPiece|null offsetGet(mixed $offset)
+ * @method ModeratorPromptPiece offsetGet(mixed $offset)
  * @property-read ModeratorPromptPiecesActions $actions Collection actions (create); items use ModeratorPromptPieceActions
  */
 final class ModeratorPromptPieces extends DbCollection

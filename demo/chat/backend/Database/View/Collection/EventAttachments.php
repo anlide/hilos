@@ -20,7 +20,7 @@ use Hilos\Database\View\Collection\DbCollection;
  * @method EventAttachment|null current()
  * @method EventAttachment|null first()
  * @method EventAttachment|null last()
- * @method EventAttachment|null offsetGet(mixed $offset)
+ * @method EventAttachment offsetGet(mixed $offset)
  * @property-read EventAttachmentsActions $actions Collection actions
  */
 final class EventAttachments extends DbCollection

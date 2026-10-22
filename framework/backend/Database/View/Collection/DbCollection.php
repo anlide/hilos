@@ -22,6 +22,7 @@ use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Collection\CloneException;
 use Hilos\Database\Exception\View\Collection\DirectSetException;
 use Hilos\Database\Exception\View\Collection\DirectUnsetException;
+use Hilos\Database\Exception\View\Collection\ItemNotFoundException;
 use Hilos\Database\Exception\View\Collection\PropertyNotFoundException;
 use Hilos\Database\Exception\View\Collection\UnserializeException;
 use Hilos\Database\Exception\View\CollectionNotManualException;
@@ -786,17 +787,21 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
     }
 
     /**
-     * Get item by primary key.
+     * Get the item by primary key; a key that holds no item, `null` included, refuses.
      *
-     * @param mixed $offset Primary key ID, or null for a missing optional relation key
-     * @return ?T Item or null
+     * `isset()` and `??` ask `offsetExists()` first and never reach the refusal; a direct `[]`
+     * read is a row the caller counts on.
+     *
+     * @param mixed $offset Primary key ID of a row the caller requires; `null` holds no item
+     * @return T Item at the key
+     * @throws ItemNotFoundException When no item holds the key, `null` included
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
      * @throws DatabaseException When lazy-loading an object from the database fails
      */
-    public function offsetGet(mixed $offset): ?DbItem
+    public function offsetGet(mixed $offset): DbItem
     {
-        return $this->getItemForKey($offset);
+        return $this->getItemForKey($offset) ?? throw new ItemNotFoundException(static::class, $offset);
     }
 
     /**

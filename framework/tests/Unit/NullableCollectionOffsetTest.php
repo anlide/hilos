@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Database\Entity\Collection\EntityCollection;
+use Hilos\Database\Exception\View\Collection\ItemNotFoundException;
 use Hilos\Database\Object\Collection\ObjectCollection;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\DbCollection;
@@ -42,6 +43,21 @@ final class NullableCollectionOffsetTest extends TestCase
         $this->assertFalse(isset($entityCollection[null]));
         $this->assertNull($entityCollection[null]);
         unset($entityCollection[null]);
+    }
+
+    /**
+     * The DB View layer alone turns a direct `[null]` read into a refusal: the optional forms
+     * above stay quiet, and the Object and Entity layers keep answering null.
+     */
+    public function testDatabaseViewDirectNullReadRefuses(): void
+    {
+        $dbCollection = NullableOffsetDbCollection::init();
+
+        $this->expectException(ItemNotFoundException::class);
+        $this->expectExceptionMessage(
+            'Item not found in collection [' . NullableOffsetDbCollection::class . '] for key [NULL]',
+        );
+        $dbCollection[null];
     }
 
     public function testRuntimeCollectionsDoNotTreatNullAsEmptyStringKey(): void

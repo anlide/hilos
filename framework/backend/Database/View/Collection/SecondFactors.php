@@ -21,7 +21,7 @@ use Hilos\Database\View\Item\SecondFactor;
  * @method ObjectSecondFactors|null getObjectCollection()
  * @method SecondFactor|null first()
  * @method SecondFactor|null last()
- * @method SecondFactor|null offsetGet(mixed $offset)
+ * @method SecondFactor offsetGet(mixed $offset)
  */
 class SecondFactors extends DbCollection
 {

@@ -17,7 +17,7 @@ use Hilos\Database\View\Collection\DbCollection;
  * @method Guest|null current()
  * @method Guest|null first()
  * @method Guest|null last()
- * @method Guest|null offsetGet(mixed $offset)
+ * @method Guest offsetGet(mixed $offset)
  * @property-read GuestsActions $actions Actions for write operations
  */
 final class Guests extends DbCollection

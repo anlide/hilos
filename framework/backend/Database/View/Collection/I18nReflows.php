@@ -20,7 +20,7 @@ use Hilos\Database\View\Item\I18nReflow;
  * @method ObjectI18nReflows|null getObjectCollection()
  * @method I18nReflow|null first()
  * @method I18nReflow|null last()
- * @method I18nReflow|null offsetGet(mixed $offset)
+ * @method I18nReflow offsetGet(mixed $offset)
  */
 class I18nReflows extends DbCollection
 {

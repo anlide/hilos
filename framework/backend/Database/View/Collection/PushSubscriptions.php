@@ -19,7 +19,7 @@ use Hilos\Database\View\Item\PushSubscription;
  * @method ObjectPushSubscriptions|null getObjectCollection()
  * @method PushSubscription|null first()
  * @method PushSubscription|null last()
- * @method PushSubscription|null offsetGet(mixed $offset)
+ * @method PushSubscription offsetGet(mixed $offset)
  */
 class PushSubscriptions extends DbCollection
 {

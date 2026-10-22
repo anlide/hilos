@@ -18,7 +18,7 @@ use Hilos\Database\View\Item\FileVariant;
  * @method ObjectFileVariants|null getObjectCollection()
  * @method FileVariant|null first()
  * @method FileVariant|null last()
- * @method FileVariant|null offsetGet(mixed $offset)
+ * @method FileVariant offsetGet(mixed $offset)
  * @property-read FileVariantsActions $actions
  */
 class FileVariants extends DbCollection

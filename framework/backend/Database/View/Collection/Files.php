@@ -24,7 +24,7 @@ use Hilos\Files\Library\AbstractFilesLibraryAgent;
  * @method File|null current()
  * @method File|null first()
  * @method File|null last()
- * @method File|null offsetGet(mixed $offset)
+ * @method File offsetGet(mixed $offset)
  * @property-read FilesActions $actions Actions for write operations
  */
 class Files extends DbCollection

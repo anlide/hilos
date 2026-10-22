@@ -77,11 +77,10 @@ access blindly.
 
 ## DB View: Required And Optional Reads
 
-DB View `[$id]` returns the collection's typed item or throws an exception from
-the `DatabaseException` family when the row is absent.
-(not in the code yet — HIL-1702)
-Direct DB View `[null]` also throws an exception from that family.
-(not in the code yet — HIL-1702)
+DB View `[$id]` returns the collection's typed item or throws
+`Hilos\Database\Exception\View\Collection\ItemNotFoundException`, a direct
+subclass of `DatabaseException`, when the row is absent.
+Direct DB View `[null]` also throws `ItemNotFoundException`.
 
 When the row is required, read it directly:
 

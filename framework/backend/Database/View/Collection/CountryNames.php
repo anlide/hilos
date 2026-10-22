@@ -23,7 +23,7 @@ use Hilos\HilosException;
  * @method ObjectCountryNames|null getObjectCollection()
  * @method CountryName|null first()
  * @method CountryName|null last()
- * @method CountryName|null offsetGet(mixed $offset)
+ * @method CountryName offsetGet(mixed $offset)
  */
 class CountryNames extends DbCollection
 {

@@ -22,7 +22,7 @@ use Hilos\Database\View\Item\VerifierCircleMember;
  * @method ObjectVerifierCircleMembers|null getObjectCollection()
  * @method VerifierCircleMember|null first()
  * @method VerifierCircleMember|null last()
- * @method VerifierCircleMember|null offsetGet(mixed $offset)
+ * @method VerifierCircleMember offsetGet(mixed $offset)
  */
 class VerifierCircleMembers extends DbCollection
 {

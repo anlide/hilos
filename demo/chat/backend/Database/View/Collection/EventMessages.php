@@ -24,7 +24,7 @@ use Hilos\HilosException;
  * @method EventMessage|null current()
  * @method EventMessage|null first()
  * @method EventMessage|null last()
- * @method EventMessage|null offsetGet(mixed $offset)
+ * @method EventMessage offsetGet(mixed $offset)
  * @property-read EventMessagesActions $actions Actions for write operations
  */
 final class EventMessages extends DbCollection

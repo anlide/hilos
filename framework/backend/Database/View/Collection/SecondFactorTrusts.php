@@ -21,7 +21,7 @@ use Hilos\Database\View\Item\SecondFactorTrust;
  * @method ObjectSecondFactorTrusts|null getObjectCollection()
  * @method SecondFactorTrust|null first()
  * @method SecondFactorTrust|null last()
- * @method SecondFactorTrust|null offsetGet(mixed $offset)
+ * @method SecondFactorTrust offsetGet(mixed $offset)
  */
 class SecondFactorTrusts extends DbCollection
 {

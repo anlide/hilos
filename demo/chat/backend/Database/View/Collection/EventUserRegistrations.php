@@ -22,7 +22,7 @@ use Hilos\HilosException;
  * @method EventUserRegistration|null current()
  * @method EventUserRegistration|null first()
  * @method EventUserRegistration|null last()
- * @method EventUserRegistration|null offsetGet(mixed $offset)
+ * @method EventUserRegistration offsetGet(mixed $offset)
  * @property-read EventUserRegistrationsActions $actions Actions for write operations
  */
 final class EventUserRegistrations extends DbCollection

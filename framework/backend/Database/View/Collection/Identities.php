@@ -33,7 +33,7 @@ use Hilos\Database\View\Item\Identity;
  * @method ObjectIdentities|null getObjectCollection()
  * @method Identity|null first()
  * @method Identity|null last()
- * @method Identity|null offsetGet(mixed $offset)
+ * @method Identity offsetGet(mixed $offset)
  */
 class Identities extends DbCollection
 {

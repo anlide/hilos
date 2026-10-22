@@ -16,7 +16,7 @@ use Hilos\Database\View\Item\StepUp;
  * @method ObjectStepUps|null getObjectCollection()
  * @method StepUp|null first()
  * @method StepUp|null last()
- * @method StepUp|null offsetGet(mixed $offset)
+ * @method StepUp offsetGet(mixed $offset)
  */
 class StepUps extends DbCollection
 {

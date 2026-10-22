@@ -26,7 +26,7 @@ use Hilos\HilosException;
  * @method UserRename|null current()
  * @method UserRename|null first()
  * @method UserRename|null last()
- * @method UserRename|null offsetGet(mixed $offset)
+ * @method UserRename offsetGet(mixed $offset)
  * @property-read UserRenamesActions $actions Actions for write operations
  */
 final class UserRenames extends FrameworkUserRenames

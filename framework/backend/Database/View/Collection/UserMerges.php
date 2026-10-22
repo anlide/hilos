@@ -27,7 +27,7 @@ use Hilos\Database\View\Item\UserMerge;
  * @method UserMerge|null current()
  * @method UserMerge|null first()
  * @method UserMerge|null last()
- * @method UserMerge|null offsetGet(mixed $offset)
+ * @method UserMerge offsetGet(mixed $offset)
  * @property-read UserMergesActions $actions Actions for write operations
  */
 class UserMerges extends DbCollection

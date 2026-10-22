@@ -18,7 +18,7 @@ use Hilos\HilosException;
  * @method ObjectLegalAcceptanceExports|null getObjectCollection()
  * @method LegalAcceptanceExport|null first()
  * @method LegalAcceptanceExport|null last()
- * @method LegalAcceptanceExport|null offsetGet(mixed $offset)
+ * @method LegalAcceptanceExport offsetGet(mixed $offset)
  */
 class LegalAcceptanceExports extends DbCollection
 {

@@ -17,7 +17,7 @@ use Hilos\Database\View\Collection\DbCollection;
  * @method Event|null current()
  * @method Event|null first()
  * @method Event|null last()
- * @method Event|null offsetGet(mixed $offset)
+ * @method Event offsetGet(mixed $offset)
  * @property-read EventsActions $actions Actions for write operations
  */
 final class Events extends DbCollection

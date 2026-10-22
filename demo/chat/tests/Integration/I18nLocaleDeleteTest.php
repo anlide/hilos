@@ -80,7 +80,7 @@ final class I18nLocaleDeleteTest extends IntegrationTestCase
             Hilos::$db->countries->actions->create('gb', '£', 'GBP');
             foreach ([null, 'gb'] as $countryCode) {
                 Hilos::$db->locales->actions->create(
-                    Hilos::$db->languages['en'], Hilos::$db->countries[$countryCode],
+                    Hilos::$db->languages['en'], Hilos::$db->countries[$countryCode] ?? null,
                     'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
                     'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
                 );

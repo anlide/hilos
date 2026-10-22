@@ -27,7 +27,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @method Session|null current()
  * @method Session|null first()
  * @method Session|null last()
- * @method Session|null offsetGet(mixed $offset)
+ * @method Session offsetGet(mixed $offset)
  * @property-read SessionsActions $actions Actions for write operations
  */
 class Sessions extends DbCollection

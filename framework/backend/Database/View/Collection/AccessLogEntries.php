@@ -17,7 +17,7 @@ use Hilos\Database\View\Item\AccessLogEntry;
  * @method ObjectAccessLogEntries|null getObjectCollection()
  * @method AccessLogEntry|null first()
  * @method AccessLogEntry|null last()
- * @method AccessLogEntry|null offsetGet(mixed $offset)
+ * @method AccessLogEntry offsetGet(mixed $offset)
  */
 class AccessLogEntries extends DbCollection
 {
