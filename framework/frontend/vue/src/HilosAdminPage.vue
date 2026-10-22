@@ -7,11 +7,19 @@ pageIdentity — which is what the page's own subscription answered with, not a
 frontend constant. It is page-agnostic — it renders whichever key it is given,
 never choosing the page itself (that is the app shell's page→view map).
 
-Under the heading the shell always draws the section's sub-navigation cards — one
-for every child the live params can resolve — and a page's own content goes in
-the one default slot, drawn beneath them: the way on stands above what the admin
-came for, and no page's content can cost its children their cards. A leaf that
-passes no content gets a stub empty-state instead.
+A page whose answer names a head owner (pageHeadOwner: its owner opted in to the
+shared head) gets HilosPageHead in place of all that — the breadcrumb, the owner's
+block and its one row of tabs, and no heading, lead or cards of the shell's own
+(docs/agents/architecture/page-head.md). The answer alone decides it: the head
+props and the head-* slots only dress the owner's block, and on a page without an
+owner they are ignored. Until an answer arrives, a page that names its head kind
+already stands on that head's skeleton rather than on the legacy one.
+
+Under the legacy heading the shell always draws the section's sub-navigation
+cards — one for every child the live params can resolve — and a page's own
+content goes in the one default slot, drawn beneath them: the way on stands above
+what the admin came for, and no page's content can cost its children their cards.
+A leaf that passes no content gets a stub empty-state instead.
 
 While the identity is still on the wire the heading is a neutral placeholder and
 neither the cards nor the stub is drawn; a page's own content already is, and the
@@ -19,9 +27,9 @@ cards rise above it once the identity lands. The raw page key is never printed,
 and an empty h1 under the same data-id would make "the name did not arrive" look
 exactly like "the name arrived empty".
 
-The heading carries an id the shell provides to what it holds: a table that
-declares no title of its own takes its accessible name from this heading, which
-already names it.
+The heading — the legacy one or the shared head's — carries an id the shell
+provides to what it holds: a table that declares no title of its own takes its
+accessible name from this heading, which already names it.
 
 The shell also tells what it holds whether a viewer of the admin view mode
 stands here (hilosAdminAccess is 'view', HIL-1253): the controls of the mode
@@ -32,11 +40,13 @@ import {
   hilosAdminAccess,
   hilosChildLinks,
   hilosCrumbLinks,
+  type HilosPageHeadAction,
 } from '@hilos/core/base'
 import { computed, inject, provide, useId } from 'vue'
 
 import HilosBreadcrumb from './HilosBreadcrumb.vue'
 import HilosLink from './HilosLink.vue'
+import HilosPageHead from './HilosPageHead.vue'
 import { hilosAdminViewModeKey } from './hilosAdminViewMode.js'
 import { hilosPageHeadingIdKey } from './hilosPageHeading.js'
 import { hilosRouterKey } from './hilosRouterKey.js'
@@ -46,6 +56,30 @@ const props = defineProps<{
   page: string
   /** Extra context for child cards; breadcrumbs keep the current route params. */
   childParams?: Record<string, string>
+  /**
+   * The shared head's kind: a section head or an entity block. It does not opt
+   * the owner in; it only lets the skeleton stand before the answer arrives.
+   */
+  headKind?: 'section' | 'entity'
+  /** The one transition the shared head offers as a button. */
+  headAction?: HilosPageHeadAction
+  /** The shared head's breadcrumb navigation's accessible name. */
+  breadcrumbLabel?: string
+  /** The shared head's tab row navigation's accessible name. */
+  tabsLabel?: string
+}>()
+
+defineSlots<{
+  /** The page's own content, beneath the head. */
+  default?(): unknown
+  /** The shared head's block picture: an entity's tile or avatar. */
+  'head-visual'?(): unknown
+  /** A short mark beside the shared head's title, such as the entity's code. */
+  'head-meta'?(): unknown
+  /** Status badges beside the shared head's title. */
+  'head-badges'?(): unknown
+  /** The line under the shared head's title. */
+  'head-description'?(): unknown
 }>()
 
 const router = inject(hilosRouterKey)
@@ -54,6 +88,7 @@ if (!router) {
     'HilosAdminPage requires a provided router: app.provide(hilosRouterKey, router).',
   )
 }
+const resolvePath = router.resolvePath
 
 const headingId = useId()
 provide(hilosPageHeadingIdKey, headingId)
@@ -66,25 +101,55 @@ provide(
 const route = useSignal(router.currentRoute)
 const identity = useSignal(router.pageIdentity)
 const params = computed(() => route.value.params)
+// The answer's owner opts the page in; before the answer, the kind the page
+// names picks the shared head's skeleton over the legacy one.
+const sharedHead = computed(() =>
+  identity.value === undefined
+    ? props.headKind !== undefined
+    : identity.value.pageHeadOwner !== undefined,
+)
 const crumbs = computed(() =>
-  hilosCrumbLinks(
-    identity.value?.breadcrumb ?? [],
-    params.value,
-    router.resolvePath,
-  ),
+  hilosCrumbLinks(identity.value?.breadcrumb ?? [], params.value, resolvePath),
 )
 const children = computed(() =>
-  hilosChildLinks(
-    identity.value?.children ?? [],
-    { ...params.value, ...props.childParams },
-    router.resolvePath,
-  ),
+  sharedHead.value
+    ? []
+    : hilosChildLinks(
+        identity.value?.children ?? [],
+        { ...params.value, ...props.childParams },
+        resolvePath,
+      ),
 )
 </script>
 
 <template>
   <section data-id="hilos-admin-page" :data-page="page">
-    <template v-if="identity">
+    <HilosPageHead
+      v-if="sharedHead"
+      :identity="identity"
+      :page="page"
+      :params="params"
+      :resolve-path="resolvePath"
+      :heading-id="headingId"
+      :kind="headKind"
+      :action="headAction"
+      :breadcrumb-label="breadcrumbLabel"
+      :tabs-label="tabsLabel"
+    >
+      <template v-if="$slots['head-visual']" #visual>
+        <slot name="head-visual" />
+      </template>
+      <template v-if="$slots['head-meta']" #meta>
+        <slot name="head-meta" />
+      </template>
+      <template v-if="$slots['head-badges']" #badges>
+        <slot name="head-badges" />
+      </template>
+      <template v-if="$slots['head-description']" #description>
+        <slot name="head-description" />
+      </template>
+    </HilosPageHead>
+    <template v-else-if="identity">
       <HilosBreadcrumb :crumbs="crumbs" />
       <h1 :id="headingId" class="h4 mb-1" data-id="hilos-admin-title">
         {{ identity.label }}

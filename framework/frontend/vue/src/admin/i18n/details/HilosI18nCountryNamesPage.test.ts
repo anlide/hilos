@@ -11,6 +11,7 @@ import {
   type HilosConnection,
   type HilosRouter,
   type PageRouteMatch,
+  type Scope,
 } from '@hilos/core/base'
 import {
   COUNTRY_CARD_DATA,
@@ -47,6 +48,60 @@ const initialCard: HilosI18nCountryCard = {
     canDelete: false,
     deleteReason: 'known',
   },
+}
+
+/** The country owner as the catalog answers it: no icon, its own lead. */
+const COUNTRY_OWNER = {
+  page: HilosPages.I18N_COUNTRY,
+  label: 'Country',
+  lead: 'A single country: currency, default locale, and state.',
+  icon: null,
+}
+
+/**
+ * Answer the way the Names tab does: its own label, the country as the owner,
+ * the chain through Countries ending at the country, not at Names, the
+ * Overview · Names row and no child cards.
+ *
+ * @param scope The page scope the answer lands in.
+ */
+function answerAsNames(scope: Scope): void {
+  scope.data.set('pageLabel', 'Country names')
+  scope.data.set('pageHeadOwner', COUNTRY_OWNER)
+  scope.data.set('pageBreadcrumb', [
+    { page: HilosPages.DASHBOARD, label: 'Hilos' },
+    { page: HilosPages.I18N, label: 'Internationalization' },
+    { page: HilosPages.I18N_COUNTRIES, label: 'Countries' },
+    { page: HilosPages.I18N_COUNTRY, label: 'Country' },
+  ])
+  scope.data.set('pageTabs', [
+    { page: HilosPages.I18N_COUNTRY, label: 'Overview' },
+    { page: HilosPages.I18N_COUNTRY_NAMES, label: 'Names' },
+  ])
+  scope.data.set('pageChildren', [])
+}
+
+/** The data-ids the manual country header carried; none of them stays. */
+const RETIRED_HEADER = [
+  'country-card-header',
+  'country-card-title',
+  'country-card-tabs',
+  'country-card-code-badge',
+  'country-card-own',
+  'country-card-line',
+]
+
+/**
+ * Whether anything of the manual country header is left on the page, its tab
+ * links included.
+ *
+ * @param view The mounted page.
+ */
+function retiredHeaderLeft(view: VueWrapper): boolean {
+  return (
+    RETIRED_HEADER.some((id) => view.find(`[data-id="${id}"]`).exists()) ||
+    view.find('[data-id^="country-card-tab-"]').exists()
+  )
 }
 
 function makeRouter(
@@ -169,16 +224,7 @@ function harness(
   if (options.realShell) {
     scopes.session.data.set('adminViewMode', options.viewer ?? false)
     releases.push(bindAdminAccess(scopes))
-    scope.data.set('pageLabel', 'Names')
-    scope.data.set('pageHeadOwner', {
-      page: HilosPages.I18N_COUNTRY,
-      label: 'Country',
-      lead: '',
-    })
-    scope.data.set('pageBreadcrumb', [
-      { page: HilosPages.I18N_COUNTRIES, label: 'Countries' },
-      { page: HilosPages.I18N_COUNTRY, label: 'Country' },
-    ])
+    answerAsNames(scope)
   }
   if (
     options.initialCardValue !== undefined &&
@@ -208,15 +254,20 @@ function harness(
 }
 
 describe('HilosI18nCountryNamesPage', () => {
-  it('shows a loading skeleton while the card is loading, with no header or table', async () => {
-    const h = harness({ pageLoading: true })
+  it('shows a loading skeleton while the card is loading, with no country block or table', async () => {
+    const h = harness({ pageLoading: true, realShell: true })
     expect(h.view.find('[aria-label="Loading country"]').exists()).toBe(true)
-    expect(h.view.find('[data-id="country-card-header"]').exists()).toBe(false)
+    expect(h.view.find('[data-id="country-head-tile"]').exists()).toBe(false)
+    expect(h.view.find('[data-id="country-head-code"]').exists()).toBe(false)
+    expect(h.view.find('[data-id="country-head-description"]').exists()).toBe(
+      false,
+    )
     expect(h.view.find('[data-id="country-names"]').exists()).toBe(false)
   })
 
-  it('renders the header, tabs, and the names table filtered by country=us', async () => {
+  it('renders the country block, the Overview · Names row, and the names table filtered by country=us', async () => {
     const h = harness({
+      realShell: true,
       initialCardValue: initialCard,
       rows: [
         {
@@ -232,22 +283,47 @@ describe('HilosI18nCountryNamesPage', () => {
     })
     await nextTick()
 
-    expect(h.view.find('[data-id="country-card-title"]').text()).toBe(
-      'United States',
+    const headings = h.view.findAll('h1')
+    expect(headings).toHaveLength(1)
+    expect(headings[0].attributes('data-id')).toBe('hilos-page-head-title')
+    expect(headings[0].text()).toBe('United States')
+    expect(headings[0].text()).toBe(
+      h.navigation.pageIdentity.get()?.pageHeadOwner?.label,
     )
-    expect(h.view.find('[data-id="country-card-code-badge"]').text()).toBe('us')
+    const block = h.view.get('[data-id="hilos-page-head-block"]')
+    const tile = block.get('[data-id="country-head-tile"]')
+    expect(tile.text()).toBe('us')
+    expect(tile.classes()).toContain('text-uppercase')
+    expect(tile.attributes('aria-hidden')).toBe('true')
+    expect(block.get('[data-id="country-head-code"]').text()).toBe('us')
+    expect(block.get('[data-id="country-head-description"]').text()).toBe(
+      'Currency $ USD · Default locale not chosen',
+    )
+    expect(block.find('[data-id="country-head-own"]').exists()).toBe(false)
+    expect(retiredHeaderLeft(h.view)).toBe(false)
+    expect(h.view.find('[data-id="hilos-admin-children"]').exists()).toBe(false)
 
-    const namesTab = h.view.find(
-      '[data-id="country-card-tab-hilos_i18n_country_names"]',
+    const tabs = h.view.get('[data-id="hilos-page-tabs"]')
+    expect(tabs.attributes('aria-label')).toBe('Country pages')
+    expect(tabs.findAll('a').map((link) => link.text())).toEqual([
+      'Overview',
+      'Names',
+    ])
+    const namesTab = h.view.get(
+      '[data-id="hilos-page-tab-hilos_i18n_country_names"]',
     )
     expect(namesTab.attributes('aria-current')).toBe('page')
     expect(namesTab.attributes('href')).toBe('/hilos/i18n/countries/us/names')
 
-    const mainTab = h.view.find(
-      '[data-id="country-card-tab-hilos_i18n_country"]',
+    const overviewTab = h.view.get(
+      '[data-id="hilos-page-tab-hilos_i18n_country"]',
     )
-    expect(mainTab.attributes('href')).toBe('/hilos/i18n/countries/us')
-    expect(mainTab.attributes('aria-current')).toBeUndefined()
+    expect(overviewTab.attributes('href')).toBe('/hilos/i18n/countries/us')
+    expect(overviewTab.attributes('aria-current')).toBeUndefined()
+    // The chain ends at the country, not at Names.
+    expect(
+      h.view.get('[data-id="hilos-breadcrumb"] li:last-child').text(),
+    ).toBe('United States')
 
     const section = h.view.find('[data-id="country-names"]')
     expect(section.exists()).toBe(true)
@@ -280,19 +356,47 @@ describe('HilosI18nCountryNamesPage', () => {
     })
   })
 
-  it('updates the header title on live card changes', async () => {
-    const h = harness({ initialCardValue: initialCard })
+  it('updates the country block on live card changes', async () => {
+    const h = harness({ realShell: true, initialCardValue: initialCard })
     await nextTick()
-    expect(h.view.find('[data-id="country-card-title"]').text()).toBe(
+    expect(h.view.get('[data-id="hilos-page-head-title"]').text()).toBe(
       'United States',
     )
 
     h.scope.data.set(COUNTRY_CARD_DATA, {
       ...initialCard,
-      summary: { ...initialCard.summary, name: 'USA' },
+      currencySymbol: '€',
+      currencyCode: 'EUR',
+      summary: {
+        ...initialCard.summary,
+        name: 'USA',
+        isOwn: true,
+        defaultLocaleCode: 'en-US',
+      },
     })
     await nextTick()
-    expect(h.view.find('[data-id="country-card-title"]').text()).toBe('USA')
+    expect(h.view.get('[data-id="hilos-page-head-title"]').text()).toBe('USA')
+    expect(h.view.get('[data-id="country-head-description"]').text()).toBe(
+      'Currency € EUR · Default locale en-US',
+    )
+    const own = h.view.get(
+      '[data-id="hilos-page-head-block"] [data-id="country-head-own"]',
+    )
+    expect(own.classes()).toEqual(
+      expect.arrayContaining([
+        'badge',
+        'text-bg-warning-subtle',
+        'text-warning-emphasis',
+      ]),
+    )
+    expect(own.get('i').classes()).toContain('bi-question-circle')
+    expect(own.get('i').attributes('aria-hidden')).toBe('true')
+    expect(own.get('.visually-hidden').text()).toBe(
+      'Custom country. This country is absent from the catalog and source.',
+    )
+    expect(own.attributes('title')).toBe(
+      'This country is absent from the catalog and source.',
+    )
   })
 
   it.each([
@@ -313,17 +417,18 @@ describe('HilosI18nCountryNamesPage', () => {
       const crumb = () =>
         h.view.get('[data-id="hilos-breadcrumb"] li:last-child').text()
       expect(crumb()).toBe(expected)
-      expect(h.view.get('[data-id="country-card-title"]').text()).toBe(expected)
+      expect(h.view.findAll('h1')).toHaveLength(1)
+      expect(h.view.get('[data-id="hilos-page-head-title"]').text()).toBe(
+        expected,
+      )
       expect(h.navigation.pageIdentity.get()?.pageHeadOwner?.label).toBe(
         expected,
       )
-      expect(h.navigation.pageIdentity.get()?.label).toBe('Names')
-      expect(h.view.get('[data-id="country-card-code-badge"]').text()).toBe(
-        'us',
-      )
+      expect(h.navigation.pageIdentity.get()?.label).toBe('Country names')
+      expect(h.view.get('[data-id="country-head-code"]').text()).toBe('us')
       expect(
         h.view
-          .get('[data-id="country-card-tab-hilos_i18n_country"]')
+          .get('[data-id="hilos-page-tab-hilos_i18n_country"]')
           .attributes('href'),
       ).toBe('/hilos/i18n/countries/us')
       for (const liveName of ['Renamed', null, '']) {
@@ -335,7 +440,7 @@ describe('HilosI18nCountryNamesPage', () => {
         })
         await nextTick()
         expect(crumb()).toBe(display)
-        expect(h.view.get('[data-id="country-card-title"]').text()).toBe(
+        expect(h.view.get('[data-id="hilos-page-head-title"]').text()).toBe(
           display,
         )
         expect(h.navigation.pageIdentity.get()?.pageHeadOwner?.label).toBe(
@@ -349,7 +454,7 @@ describe('HilosI18nCountryNamesPage', () => {
     const h = harness({ realShell: true, pageLoading: true })
     const identity = h.navigation.pageIdentity
     expect(identity.get()?.pageHeadOwner?.label).toBe('Country')
-    expect(h.view.find('[data-id="country-card-header"]').exists()).toBe(false)
+    expect(h.view.find('[data-id="country-head-tile"]').exists()).toBe(false)
     h.scope.data.set(COUNTRY_CARD_DATA, initialCard)
     expect(identity.get()?.pageHeadOwner?.label).toBe('United States')
     h.scopes.dropPage()
@@ -360,12 +465,7 @@ describe('HilosI18nCountryNamesPage', () => {
       admin: true,
     })
     const next = h.scopes.openPage(HilosPages.I18N_COUNTRY_NAMES)
-    next.data.set('pageLabel', 'Names')
-    next.data.set('pageHeadOwner', {
-      page: HilosPages.I18N_COUNTRY,
-      label: 'Country',
-      lead: '',
-    })
+    answerAsNames(next)
     expect(identity.get()?.pageHeadOwner?.label).toBe('Country')
     next.data.set(COUNTRY_CARD_DATA, {
       ...initialCard,
@@ -374,7 +474,15 @@ describe('HilosI18nCountryNamesPage', () => {
       summary: { ...initialCard.summary, name: 'Ireland' },
     })
     await nextTick()
-    expect(h.view.get('[data-id="country-card-title"]').text()).toBe('Ireland')
+    expect(h.view.get('[data-id="hilos-page-head-title"]').text()).toBe(
+      'Ireland',
+    )
+    expect(h.view.get('[data-id="country-head-code"]').text()).toBe('ie')
+    expect(
+      h.view
+        .get('[data-id="hilos-page-tab-hilos_i18n_country"]')
+        .attributes('href'),
+    ).toBe('/hilos/i18n/countries/ie')
     expect(identity.get()?.pageHeadOwner?.label).toBe('Ireland')
     h.scope.data.set(COUNTRY_CARD_DATA, initialCard)
     expect(identity.get()?.pageHeadOwner?.label).toBe('Ireland')
@@ -386,12 +494,7 @@ describe('HilosI18nCountryNamesPage', () => {
     unrelated.data.set(COUNTRY_CARD_DATA, initialCard)
     expect(identity.get()?.breadcrumb[0].label).toBe('Country')
     const current = h.scopes.openPage(HilosPages.I18N_COUNTRY_NAMES)
-    current.data.set('pageLabel', 'Names')
-    current.data.set('pageHeadOwner', {
-      page: HilosPages.I18N_COUNTRY,
-      label: 'Country',
-      lead: '',
-    })
+    answerAsNames(current)
     current.data.set(COUNTRY_CARD_DATA, initialCard)
     expect(identity.get()?.pageHeadOwner?.label).toBe('United States')
     h.view.unmount()
@@ -404,10 +507,10 @@ describe('HilosI18nCountryNamesPage', () => {
     mounted.splice(mounted.indexOf(h.view), 1)
   })
 
-  it('shows unavailable alert with neither header nor table when card is cleared after deletion', async () => {
-    const h = harness({ initialCardValue: initialCard })
+  it('shows unavailable alert with neither country block nor table when card is cleared after deletion', async () => {
+    const h = harness({ realShell: true, initialCardValue: initialCard })
     await nextTick()
-    expect(h.view.find('[data-id="country-card-header"]').exists()).toBe(true)
+    expect(h.view.find('[data-id="country-head-tile"]').exists()).toBe(true)
 
     h.scope.data.set(COUNTRY_CARD_DATA, null)
     await nextTick()
@@ -415,7 +518,14 @@ describe('HilosI18nCountryNamesPage', () => {
     const alert = h.view.find('[data-id="country-names-unavailable"]')
     expect(alert.exists()).toBe(true)
     expect(alert.text()).toBe('Country details are no longer available.')
-    expect(h.view.find('[data-id="country-card-header"]').exists()).toBe(false)
+    expect(h.view.find('[data-id="country-head-tile"]').exists()).toBe(false)
+    expect(h.view.find('[data-id="country-head-code"]').exists()).toBe(false)
+    expect(h.view.find('[data-id="country-head-description"]').exists()).toBe(
+      false,
+    )
+    expect(h.view.get('[data-id="hilos-page-head-title"]').text()).toBe(
+      'Country',
+    )
     expect(h.view.find('[data-id="country-names"]').exists()).toBe(false)
   })
 })

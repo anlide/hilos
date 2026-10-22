@@ -1,7 +1,7 @@
 // Turning page keys into the links the admin chrome renders: the breadcrumb
-// chain and the subsection cards a page answered with, each entry resolved to a
-// path in the context of the current route params, plus the framework's own
-// key→path resolver. The chain and the cards themselves arrive from the backend
+// chain, the owner's tab row and the subsection cards a page answered with, each
+// entry resolved to a path in the context of the current route params, plus the
+// framework's own key→path resolver. The chain and the cards themselves arrive from the backend
 // catalog (admin/identity/hilosPageIdentity); this module holds only the mapping
 // to a target, so the Vue/React/Angular breadcrumb and admin-page-shell
 // components stay thin. No page's content or render logic lives here — those are
@@ -90,6 +90,31 @@ export interface HilosAdminChild extends HilosCrumb {
   to: string
 }
 
+/** A resolved tab of the owner's row: the page it opens, its caption, and its target. */
+export interface HilosPageTabLink extends HilosPageCrumb {
+  /** The path the tab navigates to; a tab without one is not drawn at all. */
+  to: string
+}
+
+/**
+ * One transition a page head offers as a button: the page it opens and the
+ * caption it shows — a navigation, not a callback or an action. The head
+ * resolves it with `resolvePath(action.page, action.params ?? currentParams)`
+ * and draws no button when that gives no address. The caption and the entity's
+ * name never take part in the URL.
+ */
+export interface HilosPageHeadAction {
+  /** The page key the button opens. */
+  page: string
+  /** The visible caption. */
+  label: string
+  /**
+   * The target's whole route context, used instead of the current route params
+   * rather than laid over them; absent, the current params are used as they are.
+   */
+  params?: Record<string, string>
+}
+
 /**
  * Resolve a breadcrumb chain to links. Every link the chain carries is kept,
  * with or without a target — dropping one would renumber the ancestry and put
@@ -142,6 +167,28 @@ export function hilosChildLinks(
             to,
           },
         ]
+  })
+}
+
+/**
+ * Resolve the owner's tab row to links in the order the page answered with,
+ * dropping every tab the route map has no address for — a page not built in
+ * this view layer, or one whose route needs a param the current route does not
+ * carry. A tab is a target and nothing else, so one without a path is not a tab.
+ *
+ * @param tabs The owner's tabs the page answered with, owner first.
+ * @param params The current route params, so every tab opens the same instance.
+ * @param resolvePath Resolves a page key to its path.
+ */
+export function hilosTabLinks(
+  tabs: readonly HilosPageCrumb[],
+  params: Record<string, string>,
+  resolvePath: HilosPathResolver,
+): HilosPageTabLink[] {
+  return tabs.flatMap((tab) => {
+    const to = resolvePath(tab.page, params)
+
+    return to === undefined ? [] : [{ page: tab.page, label: tab.label, to }]
   })
 }
 

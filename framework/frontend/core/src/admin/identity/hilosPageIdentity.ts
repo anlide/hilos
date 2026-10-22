@@ -56,6 +56,9 @@ const SECTION_DESCRIPTION_KEY = 'description'
 /** Section key of the cards the group holds, in display order. */
 const SECTION_ITEMS_KEY = 'items'
 
+/** Wire key of the owner's tab row: its eligible tabs in catalog order, owner first. */
+const PAGE_TABS_FIELD = 'pageTabs'
+
 /** One link of the breadcrumb: the page it names and the caption it shows. */
 export interface HilosPageCrumb {
   /** The page key the crumb points at; the URL is built from it. */
@@ -92,6 +95,12 @@ export interface HilosPageIdentity {
   children: HilosPageChild[]
   /** The shared head's owner; absent on legacy pages. */
   pageHeadOwner?: HilosPageHeadOwner
+  /**
+   * The owner's tab row, owner first as Overview, in the order it arrived; set
+   * exactly when `pageHeadOwner` is. Captions are the catalog's: the live
+   * instance name renames the owner and its crumb, never a tab.
+   */
+  pageTabs?: HilosPageCrumb[]
 }
 
 /** A labelled group of cards on the admin dashboard. */
@@ -169,6 +178,29 @@ function readChildren(value: unknown): HilosPageChild[] {
   })
 }
 
+/**
+ * Read the owner's tab row off a wire value, keeping the order it arrived in; an
+ * absent or non-list value reads as no tabs, and an entry without a string page
+ * and label is skipped rather than drawn as a tab that names nothing.
+ *
+ * @param value The raw value under the tabs key.
+ */
+function readTabs(value: unknown): HilosPageCrumb[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value.flatMap((element) => {
+    const fields = asRecord(element)
+    const page = fields?.[ENTRY_PAGE_KEY]
+    const label = fields?.[ENTRY_LABEL_KEY]
+
+    return typeof page === 'string' && typeof label === 'string'
+      ? [{ page, label }]
+      : []
+  })
+}
+
 /** Read a complete owner, omitting absent or malformed catalog entries. */
 function readHeadOwner(value: unknown): HilosPageHeadOwner | undefined {
   const fields = asRecord(value)
@@ -204,6 +236,7 @@ export function pageIdentity(
   const breadcrumb = scopes.pageDataSignal(PAGE_BREADCRUMB_KEY)
   const children = scopes.pageDataSignal(PAGE_CHILDREN_KEY)
   const owner = scopes.pageDataSignal(PAGE_HEAD_OWNER_KEY)
+  const tabs = scopes.pageDataSignal(PAGE_TABS_FIELD)
 
   return computedSignal<HilosPageIdentity | undefined>(() => {
     const heading = label.get()
@@ -231,6 +264,7 @@ export function pageIdentity(
               label:
                 pageInstanceName(scopes, headOwner.page) ?? headOwner.label,
             },
+            pageTabs: readTabs(tabs.get()),
           }),
     }
   })

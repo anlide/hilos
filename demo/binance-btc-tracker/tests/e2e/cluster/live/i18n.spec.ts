@@ -137,7 +137,9 @@ test.fixme('cluster i18n: country currencySymbol reaches a card on another maste
     await typeInto(writer.getByTestId('hilos-table-search'), 'ie')
     await expect(shownByTestId(writer, 'i18n-countries-edit-ie')).toBeVisible()
     await gotoPage(observer, '/hilos/i18n/countries/ie', PAGE_READY)
-    originalLine = (await observer.getByTestId('country-card-line').innerText())
+    originalLine = (
+      await observer.getByTestId('country-head-description').innerText()
+    )
       .replace(/\s+/g, ' ')
       .trim()
     const live = await watchI18nLivePages(expect, [writer, observer])
@@ -155,9 +157,9 @@ test.fixme('cluster i18n: country currencySymbol reaches a card on another maste
     changed = true
     await clickSubmit(writer.getByTestId('i18n-country-save'))
     await expect(writer.getByTestId('i18n-country-window')).toHaveCount(0)
-    await expect(observer.getByTestId('country-card-line')).toContainText(
-      `Currency ${value} ${original.currency}`,
-    )
+    await expect(
+      observer.getByTestId('country-head-description'),
+    ).toContainText(`Currency ${value} ${original.currency}`)
     await live.unchanged()
   } finally {
     if (changed && original) {
@@ -169,7 +171,7 @@ test.fixme('cluster i18n: country currencySymbol reaches a card on another maste
       await locale.selectOption(original.locale)
       await clickSubmit(writer.getByTestId('i18n-country-save'))
       await expect(writer.getByTestId('i18n-country-window')).toHaveCount(0)
-      await expect(observer.getByTestId('country-card-line')).toHaveText(
+      await expect(observer.getByTestId('country-head-description')).toHaveText(
         originalLine,
       )
     }

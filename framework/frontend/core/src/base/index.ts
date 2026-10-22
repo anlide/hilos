@@ -1030,10 +1030,13 @@ export {
   resolveHilosPath,
   hilosCrumbLinks,
   hilosChildLinks,
+  hilosTabLinks,
   hilosDashboardLinks,
   type HilosDashboardLinkSection,
   type HilosCrumb,
   type HilosAdminChild,
+  type HilosPageTabLink,
+  type HilosPageHeadAction,
   type HilosPathResolver,
 } from '../routing/hilosAdmin.js'
 export {

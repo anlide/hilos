@@ -15,10 +15,11 @@ import type {
   PageRouteMatch,
   ProjectSignal,
 } from '@hilos/core/base'
-import { defineComponent, h } from 'vue'
+import { defineComponent, h, inject, nextTick } from 'vue'
 
 import HilosAdminPage from './HilosAdminPage.vue'
 import { useAdminViewMode } from './hilosAdminViewMode.js'
+import { hilosPageHeadingIdKey } from './hilosPageHeading.js'
 import { hilosRouterKey } from './hilosRouterKey.js'
 
 /** The identity a section answers with: a chain above it and cards below. */
@@ -46,6 +47,31 @@ const LEAF_IDENTITY: HilosPageIdentity = {
   breadcrumb: [{ page: HilosPages.I18N_LANGUAGE, label: 'Language' }],
   children: [],
 }
+
+/**
+ * The identity of an owner opted in to the shared head. It still carries a card
+ * below it, so a test can see that the shared branch does not draw it.
+ */
+const OWNER_IDENTITY: HilosPageIdentity = {
+  ...SECTION_IDENTITY,
+  pageHeadOwner: {
+    page: HilosPages.I18N,
+    label: 'Internationalization',
+    lead: 'Languages, countries, and translation screens.',
+    icon: 'bi-translate',
+  },
+  pageTabs: [
+    { page: HilosPages.I18N, label: 'Overview' },
+    { page: HilosPages.I18N_LANGUAGES, label: 'Languages' },
+  ],
+}
+
+/** What a table without a title of its own would take its name from. */
+const HeadingProbe = defineComponent(() => {
+  const headingId = inject(hilosPageHeadingIdKey)
+
+  return () => h('span', { 'data-id': 'heading-probe' }, headingId)
+})
 
 function router(identity: HilosPageIdentity | undefined): HilosRouter {
   return {
@@ -203,6 +229,175 @@ describe('HilosAdminPage', () => {
   })
 })
 
+describe('HilosAdminPage with the shared head', () => {
+  it('draws the shared head in place of its own heading, lead and cards when the answer names an owner', () => {
+    const wrapper = mountPage(HilosPages.I18N, OWNER_IDENTITY)
+
+    expect(wrapper.find('[data-id="hilos-page-head"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="hilos-admin-title"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="hilos-admin-children"]').exists()).toBe(
+      false,
+    )
+    const headings = wrapper.findAll('h1')
+    expect(headings).toHaveLength(1)
+    expect(headings[0].attributes('data-id')).toBe('hilos-page-head-title')
+    expect(headings[0].text()).toBe('Internationalization')
+    // No slot of the page's own: the section keeps the head's icon and lead,
+    // and the lead stands once — not again under a heading of the shell's own.
+    expect(
+      wrapper.find('[data-id="hilos-page-head-block"] .bi-translate').exists(),
+    ).toBe(true)
+    expect(
+      wrapper.text().split('Languages, countries, and translation screens.'),
+    ).toHaveLength(2)
+    expect(
+      wrapper
+        .get(`[data-id="hilos-page-tab-${HilosPages.I18N}"]`)
+        .attributes('aria-current'),
+    ).toBe('page')
+    expect(wrapper.find('[data-id="hilos-breadcrumb"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="hilos-admin-empty"]').exists()).toBe(true)
+  })
+
+  it("hands the head its kind, its labels, its action and the page's head slots", () => {
+    const wrapper = mount(HilosAdminPage, {
+      props: {
+        page: HilosPages.I18N_LANGUAGES,
+        headKind: 'entity',
+        breadcrumbLabel: 'Path',
+        tabsLabel: 'Section pages',
+        headAction: { page: HilosPages.I18N_COUNTRIES, label: 'Countries' },
+      },
+      slots: {
+        'head-visual': '<span data-id="probe-tile">IN</span>',
+        'head-meta': '<span data-id="probe-code">i18n</span>',
+        'head-badges': '<span data-id="probe-badge" class="badge">Own</span>',
+        'head-description': '<p data-id="probe-description">One line</p>',
+        default: '<p data-id="page-body">The body</p>',
+      },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(OWNER_IDENTITY) },
+      },
+    })
+
+    const block = wrapper.get('[data-id="hilos-page-head-block"]')
+    for (const probe of ['tile', 'code', 'badge', 'description']) {
+      expect(block.find(`[data-id="probe-${probe}"]`).exists()).toBe(true)
+    }
+    // The page's slots replace the section defaults: no icon, no lead.
+    expect(block.find('.bi-translate').exists()).toBe(false)
+    expect(block.text()).not.toContain(
+      'Languages, countries, and translation screens.',
+    )
+    expect(
+      wrapper.get('[data-id="hilos-breadcrumb"]').attributes('aria-label'),
+    ).toBe('Path')
+    expect(
+      wrapper.get('[data-id="hilos-page-tabs"]').attributes('aria-label'),
+    ).toBe('Section pages')
+    expect(
+      wrapper
+        .get(`[data-id="hilos-page-tab-${HilosPages.I18N_LANGUAGES}"]`)
+        .attributes('aria-current'),
+    ).toBe('page')
+    const action = wrapper.get('[data-id="hilos-page-head-action"]')
+    expect(action.text()).toBe('Countries')
+    expect(action.attributes('href')).toBe(
+      `/hilos/${HilosPages.I18N_COUNTRIES}`,
+    )
+    const body = wrapper.get('[data-id="page-body"]')
+    expect(
+      wrapper
+        .get('[data-id="hilos-page-head"]')
+        .element.compareDocumentPosition(body.element) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(wrapper.find('[data-id="hilos-admin-empty"]').exists()).toBe(false)
+  })
+
+  it('keeps its own head for an answer without an owner, even when the page names a head kind', () => {
+    const wrapper = mount(HilosAdminPage, {
+      props: { page: HilosPages.I18N, headKind: 'entity' },
+      slots: { 'head-visual': '<span data-id="probe-tile">IN</span>' },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(SECTION_IDENTITY) },
+      },
+    })
+
+    expect(wrapper.find('[data-id="hilos-page-head"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="probe-tile"]').exists()).toBe(false)
+    expect(wrapper.get('[data-id="hilos-admin-title"]').text()).toBe(
+      'Internationalization',
+    )
+    expect(
+      wrapper
+        .find(`[data-id="hilos-admin-child-${HilosPages.I18N_LANGUAGES}"]`)
+        .exists(),
+    ).toBe(true)
+  })
+
+  it('stands on the shared skeleton before the answer only for a page that names its head kind', async () => {
+    const identity = createSignal<HilosPageIdentity | undefined>(undefined)
+    const wrapper = mount(HilosAdminPage, {
+      props: { page: HilosPages.I18N, headKind: 'entity' },
+      global: {
+        provide: {
+          [hilosRouterKey as symbol]: {
+            ...router(undefined),
+            pageIdentity: identity,
+          },
+        },
+      },
+    })
+
+    expect(wrapper.find('[data-id="hilos-page-head-skeleton"]').exists()).toBe(
+      true,
+    )
+    expect(
+      wrapper.find('[data-id="hilos-admin-title-skeleton"]').exists(),
+    ).toBe(false)
+    expect(wrapper.find('h1').exists()).toBe(false)
+    expect(wrapper.find('[data-id="hilos-admin-empty"]').exists()).toBe(false)
+
+    identity.set(OWNER_IDENTITY)
+    await nextTick()
+    expect(wrapper.get('[data-id="hilos-page-head-title"]').text()).toBe(
+      'Internationalization',
+    )
+    expect(wrapper.find('[data-id="hilos-page-head-skeleton"]').exists()).toBe(
+      false,
+    )
+
+    // The kind never opts the page in: an answer without an owner is legacy.
+    identity.set(SECTION_IDENTITY)
+    await nextTick()
+    expect(wrapper.find('[data-id="hilos-page-head"]').exists()).toBe(false)
+    expect(wrapper.get('[data-id="hilos-admin-title"]').text()).toBe(
+      'Internationalization',
+    )
+  })
+
+  it.each([
+    ['the shared head', OWNER_IDENTITY],
+    ['its own heading', SECTION_IDENTITY],
+  ] as const)(
+    "provides the id of %s's one h1 to what it holds",
+    (_head, identity) => {
+      const wrapper = mount(HilosAdminPage, {
+        props: { page: HilosPages.I18N },
+        slots: { default: () => h(HeadingProbe) },
+        global: { provide: { [hilosRouterKey as symbol]: router(identity) } },
+      })
+
+      const headings = wrapper.findAll('h1')
+      expect(headings).toHaveLength(1)
+      const id = headings[0].attributes('id')
+      expect(id).toBeTruthy()
+      expect(wrapper.get('[data-id="heading-probe"]').text()).toBe(id)
+    },
+  )
+})
+
 describe('HilosAdminPage and the admin view mode', () => {
   const releases: (() => void)[] = []
 
@@ -266,12 +461,12 @@ describe('HilosAdminPage and the admin view mode', () => {
     return () => h('span', { 'data-id': 'probe' }, String(viewMode.value))
   })
 
-  function mountWithProbe() {
+  function mountWithProbe(identity: HilosPageIdentity = LEAF_IDENTITY) {
     return mount(HilosAdminPage, {
       props: { page: HilosPages.I18N_LANGUAGE },
       slots: { default: () => h(Probe) },
       global: {
-        provide: { [hilosRouterKey as symbol]: router(LEAF_IDENTITY) },
+        provide: { [hilosRouterKey as symbol]: router(identity) },
       },
     })
   }
@@ -290,6 +485,14 @@ describe('HilosAdminPage and the admin view mode', () => {
 
     session.handshake({ id: 1, admin: true }, true)
     expect(mountWithProbe().find('[data-id="probe"]').text()).toBe('false')
+  })
+
+  it('tells the viewer to what it holds under the shared head too', () => {
+    bindSession().handshake(null, true)
+    const wrapper = mountWithProbe(OWNER_IDENTITY)
+
+    expect(wrapper.find('[data-id="hilos-page-head"]').exists()).toBe(true)
+    expect(wrapper.get('[data-id="probe"]').text()).toBe('true')
   })
 
   it('follows the rights live: given, then taken away', async () => {

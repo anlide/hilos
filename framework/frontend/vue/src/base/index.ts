@@ -40,6 +40,7 @@ export {
   type HilosTableSelectionEdge,
 } from '../hilosTableSelectionEdge.js'
 export { default as HilosAdminPage } from '../HilosAdminPage.vue'
+export { default as HilosPageHead } from '../HilosPageHead.vue'
 export { default as HilosPageHeading } from '../HilosPageHeading.vue'
 export { default as HilosProfilePage } from '../profile/HilosProfilePage.vue'
 export { default as HilosProfileRename } from '../profile/HilosProfileRename.vue'

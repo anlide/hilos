@@ -1,5 +1,8 @@
 <!-- The country main card shows its details and state action buttons. Its one
-page-scoped browser datum supplies both the initial view and live updates. -->
+page-scoped browser datum supplies both the initial view and live updates, the
+content of the country's block in the shared head among them: the code tile, the
+code, the custom-country mark and the currency and default-locale line. The name
+in the head is the live owner label this page binds, not drawn here. -->
 <script setup lang="ts">
 import {
   createHilosI18nCountryCard,
@@ -7,6 +10,7 @@ import {
   createHilosI18nCountryDelete,
   HILOS_I18N_COUNTRY_WINDOW_COPY,
   HILOS_I18N_COUNTRY_DELETE_COPY,
+  HILOS_I18N_COUNTRY_MARKS,
   hilosI18nCountryDeleteFromCard,
   hilosI18nCountryDeleteReason,
   hilosI18nCountryDisplayName,
@@ -24,7 +28,6 @@ import HilosAdminPage from '../../../HilosAdminPage.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
 import { useSignal } from '../../../useSignal.js'
 import HilosI18nCountryDelete from './HilosI18nCountryDelete.vue'
-import HilosI18nCountryHeader from './HilosI18nCountryHeader.vue'
 import HilosI18nCountryWindow from './HilosI18nCountryWindow.vue'
 import HilosI18nCountrySwitchOff from './HilosI18nCountrySwitchOff.vue'
 import HilosI18nCountrySwitchOn from './HilosI18nCountrySwitchOn.vue'
@@ -75,13 +78,51 @@ const deleted = (): void => {
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.I18N_COUNTRY">
+  <HilosAdminPage
+    :page="HilosPages.I18N_COUNTRY"
+    head-kind="entity"
+    tabs-label="Country pages"
+  >
+    <template v-if="card" #head-visual>
+      <span
+        class="hilos-avatar-md rounded-3 bg-secondary-subtle text-body-emphasis d-inline-flex align-items-center justify-content-center flex-shrink-0 fw-semibold text-uppercase"
+        aria-hidden="true"
+        data-id="country-head-tile"
+        >{{ card.code }}</span
+      >
+    </template>
+    <template v-if="card" #head-meta>
+      <span
+        class="font-monospace small text-body-secondary text-uppercase"
+        data-id="country-head-code"
+        >{{ card.code }}</span
+      >
+    </template>
+    <template v-if="card?.summary.isOwn" #head-badges>
+      <span
+        class="badge"
+        :class="HILOS_I18N_COUNTRY_MARKS.own.tone"
+        title="This country is absent from the catalog and source."
+        data-id="country-head-own"
+      >
+        <i
+          class="bi"
+          :class="HILOS_I18N_COUNTRY_MARKS.own.icon"
+          aria-hidden="true"
+        ></i>
+        <span class="visually-hidden"
+          >{{ HILOS_I18N_COUNTRY_MARKS.own.label }}. This country is absent from
+          the catalog and source.</span
+        >
+      </span>
+    </template>
+    <template v-if="card" #head-description>
+      <p class="text-body-secondary mb-0" data-id="country-head-description">
+        Currency {{ card.currencySymbol }} {{ card.currencyCode }} · Default
+        locale {{ card.summary.defaultLocaleCode ?? 'not chosen' }}
+      </p>
+    </template>
     <template v-if="card">
-      <HilosI18nCountryHeader
-        :card="card"
-        :active-page="HilosPages.I18N_COUNTRY"
-      />
-
       <section class="mb-4" data-id="country-card-main">
         <div class="d-flex align-items-center gap-2 mb-2">
           <h2 class="h5 mb-0">Main</h2>

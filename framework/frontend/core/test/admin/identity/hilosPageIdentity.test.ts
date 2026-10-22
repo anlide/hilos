@@ -130,8 +130,12 @@ describe('pageIdentity', () => {
     scope.data.set('pageChildren', [
       { page: 'country', label: 'Country', lead: 'Child lead' },
     ])
+    scope.data.set('pageTabs', [
+      { page: 'country', label: 'Overview' },
+      { page: 'names', label: 'Names' },
+    ])
     bindPageInstanceName(scopes, 'country', createSignal('Ireland'))
-    expect(pageIdentity(scopes).get()).toEqual({
+    expect(pageIdentity(scopes).get()).toStrictEqual({
       label: 'Names',
       lead: 'The subscribing tab lead',
       breadcrumb: [],
@@ -144,7 +148,109 @@ describe('pageIdentity', () => {
         lead: 'Owner lead',
         icon: 'bi-flag',
       },
+      pageTabs: [
+        { page: 'country', label: 'Overview' },
+        { page: 'names', label: 'Names' },
+      ],
     })
+  })
+
+  it('follows the tab row of the current scope and never names a tab after the instance', () => {
+    const scopes = new ScopeManager()
+    const identity = pageIdentity(scopes)
+    const name = createSignal<string | undefined>('Ireland')
+    bindPageInstanceName(scopes, 'country', name)
+    const owner = { page: 'country', label: 'Country', lead: '' }
+    const first = scopes.openPage('country')
+    first.data.set('pageLabel', 'Country')
+    first.data.set('pageHeadOwner', owner)
+    expect(identity.get()?.pageTabs).toStrictEqual([])
+    first.data.set('pageTabs', [
+      { page: 'country', label: 'Overview' },
+      { page: 'names', label: 'Names' },
+    ])
+    expect(identity.get()?.pageTabs).toStrictEqual([
+      { page: 'country', label: 'Overview' },
+      { page: 'names', label: 'Names' },
+    ])
+    name.set('Renamed')
+    expect(identity.get()?.pageHeadOwner?.label).toBe('Renamed')
+    expect(identity.get()?.pageTabs?.map((tab) => tab.label)).toEqual([
+      'Overview',
+      'Names',
+    ])
+    const next = scopes.openPage('names')
+    expect(identity.get()).toBeUndefined()
+    next.data.set('pageLabel', 'Names')
+    next.data.set('pageHeadOwner', owner)
+    next.data.set('pageTabs', [{ page: 'country', label: 'Overview' }])
+    expect(identity.get()?.pageTabs).toStrictEqual([
+      { page: 'country', label: 'Overview' },
+    ])
+    first.data.set('pageTabs', [{ page: 'stale', label: 'Stale' }])
+    expect(identity.get()?.pageTabs).toStrictEqual([
+      { page: 'country', label: 'Overview' },
+    ])
+    next.data.set('pageHeadOwner', null)
+    expect(identity.get()).toStrictEqual({
+      label: 'Names',
+      lead: '',
+      breadcrumb: [],
+      children: [],
+    })
+    scopes.dropPage()
+    expect(identity.get()).toBeUndefined()
+  })
+
+  it.each([
+    undefined,
+    null,
+    'Overview',
+    {},
+    { page: 'country', label: 'Overview' },
+  ])(
+    'reads a missing or non-list tab row beside an owner as no tabs: %j',
+    (tabs) => {
+      const scopes = new ScopeManager()
+      const scope = scopes.openPage('country')
+      scope.data.set('pageLabel', 'Country')
+      scope.data.set('pageHeadOwner', {
+        page: 'country',
+        label: 'Country',
+        lead: '',
+      })
+      scope.data.set('pageTabs', tabs)
+      expect(pageIdentity(scopes).get()?.pageTabs).toStrictEqual([])
+    },
+  )
+
+  it('skips tab entries without a string page and label, keeping the rest in order', () => {
+    const scopes = new ScopeManager()
+    const scope = scopes.openPage('country')
+    scope.data.set('pageLabel', 'Country')
+    scope.data.set('pageHeadOwner', {
+      page: 'country',
+      label: 'Country',
+      lead: '',
+    })
+    scope.data.set('pageTabs', [
+      { page: 'country', label: 'Overview' },
+      null,
+      'names',
+      [],
+      {},
+      { page: 'names' },
+      { label: 'Names' },
+      { page: 1, label: 'Names' },
+      { page: 'names', label: null },
+      { page: 'names', label: 'Names', lead: 'Not a tab field' },
+      { page: 'blank', label: '' },
+    ])
+    expect(pageIdentity(scopes).get()?.pageTabs).toStrictEqual([
+      { page: 'country', label: 'Overview' },
+      { page: 'names', label: 'Names' },
+      { page: 'blank', label: '' },
+    ])
   })
 
   it.each([
@@ -169,6 +275,30 @@ describe('pageIdentity', () => {
       children: [],
     })
   })
+
+  it.each([undefined, { page: 'country', label: 'Country' }])(
+    'keeps the exact legacy shape without a valid owner, even beside tabs: %j',
+    (owner) => {
+      const scopes = new ScopeManager()
+      const scope = scopes.openPage('legacy')
+      scope.data.set('pageLabel', 'Legacy')
+      scope.data.set('pageHeadOwner', owner)
+      scope.data.set('pageTabs', [{ page: 'legacy', label: 'Overview' }])
+      const identity = pageIdentity(scopes).get()
+      expect(identity).toStrictEqual({
+        label: 'Legacy',
+        lead: '',
+        breadcrumb: [],
+        children: [],
+      })
+      expect(Object.keys(identity ?? {})).toEqual([
+        'label',
+        'lead',
+        'breadcrumb',
+        'children',
+      ])
+    },
+  )
 
   it('reads an absent owner icon as null', () => {
     const scopes = new ScopeManager()

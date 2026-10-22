@@ -4,18 +4,27 @@ knows nothing about any specific page: the caller supplies the resolved trail
 (for the Hilos admin tree, hilosCrumbLinks in @hilos/core builds it from the chain
 the page answered with), so the same component serves any page that has a
 breadcrumb. A crumb the route map has no address for is drawn as plain text: the
-chain has to stay whole, and a link to nowhere is worse than no link. Bootstrap
-classes only (styling-rules.md). -->
+chain has to stay whole, and a link to nowhere is worse than no link. The
+navigation's accessible name is the caller's translatable label, 'breadcrumb'
+when it gives none. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import type { HilosCrumb } from '@hilos/core/base'
 
 import HilosLink from './HilosLink.vue'
 
-defineProps<{ crumbs: HilosCrumb[] }>()
+withDefaults(
+  defineProps<{
+    /** The resolved trail, root first, the current page last. */
+    crumbs: HilosCrumb[]
+    /** The navigation's accessible name. */
+    label?: string
+  }>(),
+  { label: 'breadcrumb' },
+)
 </script>
 
 <template>
-  <nav v-if="crumbs.length" aria-label="breadcrumb" data-id="hilos-breadcrumb">
+  <nav v-if="crumbs.length" :aria-label="label" data-id="hilos-breadcrumb">
     <ol class="breadcrumb small mb-2">
       <template v-for="(crumb, index) in crumbs" :key="crumb.page">
         <li v-if="index < crumbs.length - 1" class="breadcrumb-item">

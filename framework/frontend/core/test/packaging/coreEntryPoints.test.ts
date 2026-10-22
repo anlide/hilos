@@ -61,10 +61,15 @@ const timeZoneValues = [
 ]
 /** The viewer's new selectors, shared by the compatibility root and logs entry. */
 const logViewerValues = ['logViewerLatestBatchPath', 'logViewerStreamKeys']
+/** The page head's tab links resolver, shared by the compatibility root and base. */
+const pageHeadValues = ['hilosTabLinks']
+/** The page head's types past the snapshot, resolved through root and base. */
+const pageHeadTypes = ['HilosPageHeadAction', 'HilosPageTabLink']
 const expectedValues = [
   ...legacy.value,
   ...timeZoneValues,
   ...logViewerValues,
+  ...pageHeadValues,
 ].sort()
 
 /**
@@ -165,6 +170,12 @@ describe('core public entries', () => {
     expect(base.hilosLegalDocumentLabel('terms')).toBe('Terms')
     expect(base.hilosLegalDocumentLabel('project-key')).toBe('project-key')
     for (const name of timeZoneValues) {
+      expect(base, name).toHaveProperty(name)
+      expect(Object.is(base[name as keyof typeof base], root[name]), name).toBe(
+        true,
+      )
+    }
+    for (const name of pageHeadValues) {
       expect(base, name).toHaveProperty(name)
       expect(Object.is(base[name as keyof typeof base], root[name]), name).toBe(
         true,
@@ -288,7 +299,12 @@ describe('core public entries', () => {
         .filter(([, symbol]) => symbol.flags & ts.SymbolFlags.Type)
         .map(([name]) => name)
         .sort(),
-    ).toEqual(legacy.type)
+    ).toEqual([...legacy.type, ...pageHeadTypes].sort())
+    const baseExports = exportsOf('base/index.ts')
+    for (const name of pageHeadTypes) {
+      expect(root.get(name), name).toBeDefined()
+      expect(baseExports.get(name), name).toBe(root.get(name))
+    }
     const names = new Set<string>()
     for (const entry of entries.slice(1)) {
       for (const [name, symbol] of exportsOf(entry)) {

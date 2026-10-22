@@ -1,8 +1,9 @@
 <!-- HilosI18nCountryNamesPage — the names of one country
 (HilosPages.I18N_COUNTRY_NAMES): how the country the address names is called in
-every language of the system (HIL-1483). The card's header and tabs (shared
-with the main country page) stand above the names table, with three states:
-loading skeleton, card with table, and unavailable alert when deleted.
+every language of the system (HIL-1483). The country's shared head — the same
+block and Overview · Names row as on the main country page, its content from this
+page's live card — stands above the names table, with three states: loading
+skeleton, card with table, and unavailable alert when deleted.
 Bootstrap classes only, painted with classes that follow the theme
 (styling-rules.md). -->
 <script setup lang="ts">
@@ -18,6 +19,7 @@ import {
   HILOS_I18N_COUNTRY_NAMES,
   HILOS_I18N_COUNTRY_NAME_COPY,
   HILOS_I18N_COUNTRY_NAME_DELETE_COPY,
+  HILOS_I18N_COUNTRY_MARKS,
   hilosI18nCountryDisplayName,
   type HilosI18nCountryContext,
   type HilosI18nCountryNameDeleteTarget,
@@ -37,7 +39,6 @@ import HilosAdminPage from '../../../HilosAdminPage.vue'
 import LoadingButton from '../../../LoadingButton.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
 import { useSignal } from '../../../useSignal.js'
-import HilosI18nCountryHeader from './HilosI18nCountryHeader.vue'
 import HilosI18nCountryNameDelete from './HilosI18nCountryNameDelete.vue'
 import HilosI18nCountryNameWindow from './HilosI18nCountryNameWindow.vue'
 import HilosI18nNamesTable from './HilosI18nNamesTable.vue'
@@ -187,12 +188,51 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.I18N_COUNTRY_NAMES">
+  <HilosAdminPage
+    :page="HilosPages.I18N_COUNTRY_NAMES"
+    head-kind="entity"
+    tabs-label="Country pages"
+  >
+    <template v-if="card" #head-visual>
+      <span
+        class="hilos-avatar-md rounded-3 bg-secondary-subtle text-body-emphasis d-inline-flex align-items-center justify-content-center flex-shrink-0 fw-semibold text-uppercase"
+        aria-hidden="true"
+        data-id="country-head-tile"
+        >{{ card.code }}</span
+      >
+    </template>
+    <template v-if="card" #head-meta>
+      <span
+        class="font-monospace small text-body-secondary text-uppercase"
+        data-id="country-head-code"
+        >{{ card.code }}</span
+      >
+    </template>
+    <template v-if="card?.summary.isOwn" #head-badges>
+      <span
+        class="badge"
+        :class="HILOS_I18N_COUNTRY_MARKS.own.tone"
+        title="This country is absent from the catalog and source."
+        data-id="country-head-own"
+      >
+        <i
+          class="bi"
+          :class="HILOS_I18N_COUNTRY_MARKS.own.icon"
+          aria-hidden="true"
+        ></i>
+        <span class="visually-hidden"
+          >{{ HILOS_I18N_COUNTRY_MARKS.own.label }}. This country is absent from
+          the catalog and source.</span
+        >
+      </span>
+    </template>
+    <template v-if="card" #head-description>
+      <p class="text-body-secondary mb-0" data-id="country-head-description">
+        Currency {{ card.currencySymbol }} {{ card.currencyCode }} · Default
+        locale {{ card.summary.defaultLocaleCode ?? 'not chosen' }}
+      </p>
+    </template>
     <template v-if="card">
-      <HilosI18nCountryHeader
-        :card="card"
-        :active-page="HilosPages.I18N_COUNTRY_NAMES"
-      />
       <section class="mb-4" data-id="country-names">
         <h2 class="h5 d-flex flex-wrap align-items-center gap-2">
           Names in different languages

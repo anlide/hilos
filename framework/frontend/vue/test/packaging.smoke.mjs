@@ -49,6 +49,9 @@ const base = closure('base.js')
 assert.ok(modules(base).includes('src/base/index.ts'))
 assert.ok(!modules(base).some((id) => id.startsWith('src/admin/')))
 assert.ok(!modules(base).includes('src/index.ts'))
+// The shared page head is a common primitive: it ships in that same clean base
+// closure, not in an admin section or in the compatibility root.
+assert.ok(modules(base).some((id) => id.startsWith('src/HilosPageHead.vue')))
 const metadata = closure('admin-views.js')
 assert.deepEqual(modules(metadata), ['src/admin/hilosAdminViews.ts'])
 assert.ok(graph['admin-views.js'].dynamicImports.length > 0)
@@ -158,6 +161,8 @@ try {
               )
               .join(' && ')}
             export const samePage = root.HilosSettingsPage === HilosSettingsPage
+            export const samePageHead =
+              root.HilosPageHead !== undefined && root.HilosPageHead === base.HilosPageHead
             export const descriptors = Object.values(hilosAdminViews()).every(
               view => view.kind === 'lazy-page' && typeof view.load === 'function',
             )
@@ -184,6 +189,7 @@ try {
   assert.equal(consumer.sameCoreSection, true)
   assert.equal(consumer.sameTokens, true)
   assert.equal(consumer.samePage, true)
+  assert.equal(consumer.samePageHead, true)
   assert.equal(consumer.descriptors, true)
   assert.equal(await consumer.loadDashboard(), true)
   assert.equal(await consumer.loadDefaults(), true)

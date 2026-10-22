@@ -20,7 +20,7 @@ const CANCEL = 'i18n-country-name-delete-cancel'
 /** Open the fixture's names and its corrections through the native row chevron. */
 async function openNames(page: Page): Promise<void> {
   await gotoPage(page, NAMES_PATH, PAGE_READY)
-  await expect(page.getByTestId('country-card-title')).toHaveText(
+  await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
     'Unnamed country',
   )
   await expect(i18nNameRow(page, 'country', 'qk')).toContainText('Fixture base')
@@ -80,7 +80,7 @@ test('removes country name corrections and their base live in two windows, inclu
     await clickSubmit(correctionTrash)
     await confirmDelete(page, 'Correction qk-GB of the name of qj removed.')
     for (const tab of [page, observer]) {
-      await expect(tab.getByTestId('country-card-title')).toHaveText(
+      await expect(tab.getByTestId('hilos-page-head-title')).toHaveText(
         'Unnamed country',
       )
       await expect(shownByTestId(tab, 'i18n-names-inherit-qk-GB')).toHaveText(
@@ -101,7 +101,7 @@ test('removes country name corrections and their base live in two windows, inclu
     )
     await confirmDelete(page, 'Correction qk-US of the name of qj removed.')
     for (const tab of [page, observer]) {
-      await expect(tab.getByTestId('country-card-title')).toHaveText(
+      await expect(tab.getByTestId('hilos-page-head-title')).toHaveText(
         'Unnamed country',
       )
       await expect(shownByTestId(tab, 'i18n-names-inherit-qk-US')).toHaveText(
@@ -137,7 +137,7 @@ test('removes country name corrections and their base live in two windows, inclu
     await clickSubmit(baseTrash)
     await confirmDelete(page, 'Name of qj in HIL-1501 writing (qk) removed.')
     for (const tab of [page, observer]) {
-      await expect(tab.getByTestId('country-card-title')).toHaveText(
+      await expect(tab.getByTestId('hilos-page-head-title')).toHaveText(
         'Unnamed country',
       )
       await expect(shownByTestId(tab, 'i18n-names-none-qk')).toHaveText(

@@ -29,7 +29,7 @@ const DUPLICATE = 'A name already exists for this language or locale.'
 /** Open the fixture without creating the env-language name or the FR correction. */
 async function openNames(page: Page): Promise<void> {
   await gotoPage(page, NAMES_PATH, PAGE_READY)
-  await expect(page.getByTestId('country-card-title')).toHaveText(
+  await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
     'Unnamed country',
   )
   await expect(shownByTestId(page, 'i18n-names-none-en')).toHaveText('No name')
@@ -129,22 +129,20 @@ test('keeps the live country name and code URLs in Names and Overview through re
       }
       const displayName = step.value || 'Unnamed country'
       for (const { tab, url } of tabs) {
-        await expect(tab.getByTestId('country-card-title')).toHaveText(
+        await expect(tab.getByTestId('hilos-page-head-title')).toHaveText(
           displayName,
         )
         await expect(
           tab.getByTestId('hilos-breadcrumb').locator('[aria-current="page"]'),
         ).toHaveText(displayName)
         await expect(tab).toHaveTitle(`${displayName} · BTC Tracker`)
-        await expect(tab.getByTestId('country-card-code-badge')).toHaveText(
-          'qj',
-        )
+        await expect(tab.getByTestId('country-head-code')).toHaveText('qj')
         await expect(tab).toHaveURL(url)
         await expect(
-          tab.getByTestId('country-card-tab-hilos_i18n_country'),
+          tab.getByTestId('hilos-page-tab-hilos_i18n_country'),
         ).toHaveAttribute('href', COUNTRY_PATH)
         await expect(
-          tab.getByTestId('country-card-tab-hilos_i18n_country_names'),
+          tab.getByTestId('hilos-page-tab-hilos_i18n_country_names'),
         ).toHaveAttribute('href', NAMES_PATH)
       }
       await live.unchanged()
@@ -154,20 +152,20 @@ test('keeps the live country name and code URLs in Names and Overview through re
     await observer.reload()
     await expectPageReady(observer)
     for (const { tab, url } of tabs) {
-      await expect(tab.getByTestId('country-card-title')).toHaveText(
+      await expect(tab.getByTestId('hilos-page-head-title')).toHaveText(
         'Unnamed country',
       )
       await expect(
         tab.getByTestId('hilos-breadcrumb').locator('[aria-current="page"]'),
       ).toHaveText('Unnamed country')
       await expect(tab).toHaveTitle('Unnamed country · BTC Tracker')
-      await expect(tab.getByTestId('country-card-code-badge')).toHaveText('qj')
+      await expect(tab.getByTestId('country-head-code')).toHaveText('qj')
       await expect(tab).toHaveURL(url)
       await expect(
-        tab.getByTestId('country-card-tab-hilos_i18n_country'),
+        tab.getByTestId('hilos-page-tab-hilos_i18n_country'),
       ).toHaveAttribute('href', COUNTRY_PATH)
       await expect(
-        tab.getByTestId('country-card-tab-hilos_i18n_country_names'),
+        tab.getByTestId('hilos-page-tab-hilos_i18n_country_names'),
       ).toHaveAttribute('href', NAMES_PATH)
     }
     await openName(page, 'edit-en')
@@ -198,7 +196,7 @@ test('writes country names and corrections live in two tabs, including literal e
     await typeInto(page.getByTestId(INPUT), 'Country from UI')
     await saveName(page, 'Name of Country from UI (qj) in English (en) added.')
     for (const tab of [page, observer]) {
-      await expect(tab.getByTestId('country-card-title')).toHaveText(
+      await expect(tab.getByTestId('hilos-page-head-title')).toHaveText(
         'Country from UI',
       )
       await expectName(tab, 'en', 'Country from UI')
@@ -213,7 +211,7 @@ test('writes country names and corrections live in two tabs, including literal e
     )
     for (const tab of [page, observer]) {
       await expectName(tab, 'qk', 'Edited base')
-      await expect(tab.getByTestId('country-card-title')).toHaveText(
+      await expect(tab.getByTestId('hilos-page-head-title')).toHaveText(
         'Country from UI',
       )
     }
@@ -226,7 +224,7 @@ test('writes country names and corrections live in two tabs, including literal e
     )
     for (const tab of [page, observer]) {
       await expectName(tab, 'qk-GB', 'Edited British correction')
-      await expect(tab.getByTestId('country-card-title')).toHaveText(
+      await expect(tab.getByTestId('hilos-page-head-title')).toHaveText(
         'Country from UI',
       )
     }
@@ -318,7 +316,7 @@ test('refuses a concurrent correction ADD and keeps its draft', async ({
       await expect(shownByTestId(tab, 'i18n-names-none-en')).toHaveText(
         'No name',
       )
-      await expect(tab.getByTestId('country-card-title')).toHaveText(
+      await expect(tab.getByTestId('hilos-page-head-title')).toHaveText(
         'Unnamed country',
       )
     }
@@ -486,7 +484,7 @@ test('lets a viewer open, draft and cancel every country name form without writi
       await clickSubmit(page.getByTestId('modal-confirm-discard'))
       await expect(page.getByTestId(WINDOW)).toHaveCount(0)
     }
-    await expect(page.getByTestId('country-card-title')).toHaveText(
+    await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
       'Unnamed country',
     )
     await expect(shownByTestId(page, 'i18n-names-none-en')).toHaveText(
