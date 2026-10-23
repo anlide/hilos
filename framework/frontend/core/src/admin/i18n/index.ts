@@ -1,6 +1,13 @@
 // @hilos/core/admin/i18n: lazy section APIs.
 
 export {
+  I18N_OVERVIEW_DATA,
+  i18nOverviewSchema,
+  createHilosI18nOverview,
+  type HilosI18nOverview,
+  type HilosI18nOverviewContext,
+} from './hilosI18nOverview.js'
+export {
   LANGUAGE_CARD_DATA,
   languageCardSchema,
   createHilosI18nLanguageCard,

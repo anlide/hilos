@@ -1,12 +1,17 @@
 import { expect, test } from '@playwright/test'
+import { expectI18nPageHead } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
+import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
 
 test('opens the languages list with the default language and searches it', async ({
   page,
 }) => {
   await signUpAdmin(page)
   await gotoPage(page, '/hilos/i18n/languages', PAGE_READY)
+  await expectI18nPageHead(expect, page, {
+    currentPage: 'hilos_i18n_languages',
+    appName: 'Hilos Tasks',
+  })
 
   const catalog = page.getByTestId('i18n-languages-catalog')
   await expect(catalog).toBeVisible()
@@ -46,10 +51,17 @@ test('opens the languages list with the default language and searches it', async
   await expect(legend).toBeVisible()
 
   await gotoPage(page, '/hilos/i18n', PAGE_READY)
-  await expect(
-    page.getByTestId('hilos-admin-child-hilos_i18n_languages'),
-  ).toBeVisible()
-  await expect(
-    page.getByTestId('hilos-admin-child-hilos_i18n_countries'),
-  ).toBeVisible()
+  await expectI18nPageHead(expect, page, {
+    currentPage: 'hilos_i18n',
+    appName: 'Hilos Tasks',
+  })
+  const sectionTab = page.getByTestId('hilos-page-tab-hilos_i18n_languages')
+  await sectionTab.click()
+  await expect(page).toHaveURL(/\/hilos\/i18n\/languages$/)
+  await expectPageReady(page)
+  await expectI18nPageHead(expect, page, {
+    currentPage: 'hilos_i18n_languages',
+    appName: 'Hilos Tasks',
+  })
+  await expect(catalog).toBeVisible()
 })

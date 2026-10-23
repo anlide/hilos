@@ -299,6 +299,68 @@ final class PageCatalogResolverTest extends TestCase
         self::assertSame([], $head->toArray()['pageChildren']);
     }
 
+    public function testI18nRootAndListsShareTheHeadAndKeepServedFutureTabs(): void
+    {
+        I18nPageHeadTestHilos::initBrowser();
+        foreach ([
+            HilosPageConstants::HILOS_I18N,
+            HilosPageConstants::HILOS_I18N_LANGUAGES,
+            HilosPageConstants::HILOS_I18N_COUNTRIES,
+        ] as $page) {
+            self::assertSame(HilosPageConstants::HILOS_I18N, PageCatalogResolver::rowOwner($page));
+            $head = PageCatalogResolver::head($page, new PageRouteParams([]));
+            self::assertNotNull($head);
+            self::assertSame([
+                'pageHeadOwner' => [
+                    'page' => HilosPageConstants::HILOS_I18N,
+                    'label' => 'Internationalization',
+                    'lead' => 'Languages, countries, locales, and translation screens.',
+                    'icon' => 'bi-translate',
+                ],
+                'pageBreadcrumb' => [
+                    ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                    ['page' => HilosPageConstants::HILOS_I18N, 'label' => 'Internationalization'],
+                ],
+                'pageTabs' => [
+                    ['page' => HilosPageConstants::HILOS_I18N, 'label' => 'Overview'],
+                    ['page' => HilosPageConstants::HILOS_I18N_LANGUAGES, 'label' => 'Languages'],
+                    ['page' => HilosPageConstants::HILOS_I18N_COUNTRIES, 'label' => 'Countries'],
+                    ['page' => HilosPageConstants::HILOS_I18N_GROUPS, 'label' => 'Groups'],
+                ],
+                'pageChildren' => [],
+            ], $head->toArray());
+            self::assertSame($head->pageBreadcrumb, PageCatalogResolver::breadcrumb($page));
+        }
+        self::assertSame([
+            'label' => 'Languages',
+            'lead' => 'Supported interface languages and their locales.',
+        ], PageCatalogResolver::identity(HilosPageConstants::HILOS_I18N_LANGUAGES));
+        self::assertSame([
+            'label' => 'Countries',
+            'lead' => 'Country catalog used for locale and formatting.',
+        ], PageCatalogResolver::identity(HilosPageConstants::HILOS_I18N_COUNTRIES));
+    }
+
+    public function testLanguageBoundaryKeepsItsWholeBranchOnTheLegacyHead(): void
+    {
+        I18nPageHeadTestHilos::initBrowser();
+        foreach ([
+            HilosPageConstants::HILOS_I18N_LANGUAGE,
+            HilosPageConstants::HILOS_I18N_LANGUAGE_NAMES,
+            HilosPageConstants::HILOS_I18N_LANGUAGE_LOCALES,
+        ] as $page) {
+            self::assertSame(HilosPageConstants::HILOS_I18N_LANGUAGE, PageCatalogResolver::rowOwner($page));
+            self::assertNull(PageCatalogResolver::head($page, new PageRouteParams([])));
+        }
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+            ['page' => HilosPageConstants::HILOS_I18N, 'label' => 'Internationalization'],
+            ['page' => HilosPageConstants::HILOS_I18N_LANGUAGES, 'label' => 'Languages'],
+            ['page' => HilosPageConstants::HILOS_I18N_LANGUAGE, 'label' => 'Language'],
+            ['page' => HilosPageConstants::HILOS_I18N_LANGUAGE_NAMES, 'label' => 'Language names'],
+        ], PageCatalogResolver::breadcrumb(HilosPageConstants::HILOS_I18N_LANGUAGE_NAMES));
+    }
+
     public function testCountryAndNamesShareTheExactHeadWithoutChangingTheirIdentity(): void
     {
         CountryPageHeadTestHilos::initBrowser();
@@ -643,6 +705,21 @@ abstract class CountryPageHeadTestHilos extends Hilos
     public const array PAGES = [
         HilosPageConstants::HILOS_I18N_COUNTRY => PageHeadTestPage::class,
         HilosPageConstants::HILOS_I18N_COUNTRY_NAMES => PageHeadTestPage::class,
+    ];
+}
+
+/** Real section metadata with entity branches and one served future frontend tab. */
+abstract class I18nPageHeadTestHilos extends CountryPageHeadTestHilos
+{
+    public const array PAGES = [
+        ...parent::PAGES,
+        HilosPageConstants::HILOS_I18N => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_I18N_LANGUAGES => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_I18N_LANGUAGE => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_I18N_LANGUAGE_NAMES => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_I18N_LANGUAGE_LOCALES => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_I18N_COUNTRIES => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_I18N_GROUPS => PageHeadTestPage::class,
     ];
 }
 

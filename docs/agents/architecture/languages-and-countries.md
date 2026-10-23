@@ -551,9 +551,10 @@ by the same `languageCard` datum (HIL-1479). So is its Vue locales page
 alone and one for every country, keyed by `<languageId>:<countryId>` or
 `<languageId>:null`,
 whether the pair has a locale or not, standing under the card's shared header
-and tabs fed by the same `languageCard` datum. The Vue section root is built
-(HIL-1474) and shows the Languages card; the Vue languages list is built whole
-with its table (HIL-1474), the catalog tally callout above it
+and tabs fed by the same `languageCard` datum. The Vue section root (HIL-1474)
+mounts a context-bound overview with live, read-only Languages and Countries
+tiles; each tile follows the section tabs' route eligibility. The Vue languages
+list is built whole with its table (HIL-1474), the catalog tally callout above it
 (`builtInCatalog`), and the marks legend below it (HIL-112), kept live by the
 table's own fan-out. The Vue names page of a country is built too (HIL-1483):
 the names table opened on that country, standing under the card's shared header
@@ -562,11 +563,11 @@ whole with its table (HIL-1475), the catalog tally callout above it
 (`builtInCatalog`), and the marks legend below it (HIL-1481), kept live by the
 table's own fan-out. It has an Add country main action with the own-country
 confirmation (HIL-1495). The callout and legend are the shared components of
-the languages and countries lists. The root shows the Countries card (HIL-1475).
-React also serves all eight reference pages (HIL-1502); its section root remains
-the self-contained default shell with Languages and Countries cards.
-Angular serves the same eight pages (HIL-1503), with its section root the same
-self-contained default shell showing both cards.
+the languages and countries lists. React also serves all eight reference pages
+(HIL-1502); its section root remains the context-free default shell, with
+overview tiles and their context in HIL-1726. Angular serves the same eight
+pages (HIL-1503), with its section root also the context-free default shell;
+overview tiles and their context are HIL-1727.
 
 | Page key | Route |
 |---|---|
@@ -632,8 +633,13 @@ serves the section root at `/hilos/i18n` and the languages list at
 `/hilos/i18n/languages` (HIL-1474), the main language card at
 `/hilos/i18n/languages/{languageCode}` (HIL-1478), its names at
 `/hilos/i18n/languages/{languageCode}/names` (HIL-1477) and its locales at
-`/hilos/i18n/languages/{languageCode}/locales` (HIL-1476). The card shows the
-code, native name, direction, enabled state, locale/name counts, and a delete
+`/hilos/i18n/languages/{languageCode}/locales` (HIL-1476). The Binance BTC
+Tracker and Chat mount thin, lazy Vue wrappers for the section overview and both
+lists outside `hilosAdminViews()`: the overview receives its current page scopes,
+and each list receives its project context. Both lists draw the shared section
+head with `head-kind="section"` and `tabs-label="Internationalization pages"`.
+The language card shows the code, native name, direction, enabled state,
+locale/name counts, and a delete
 control with its verdict. Its summary also carries whether the countryless locale is
 missing, off or on. The main card has Switch off and Switch on controls
 (HIL-1486/1487) and the edit or view control of its Main section, which also

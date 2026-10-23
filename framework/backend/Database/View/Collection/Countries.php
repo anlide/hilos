@@ -19,6 +19,7 @@ use Hilos\Hilos;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\DTO\CountryCardSummary;
 use Hilos\I18n\DTO\CountryLocaleChoice;
+use Hilos\I18n\DTO\CountryOverviewTally;
 use Hilos\I18n\DefaultLanguage;
 
 /**
@@ -34,6 +35,30 @@ class Countries extends DbCollection
 {
     public const string DB_ITEM_CLASS = Country::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectCountries::class;
+
+    /**
+     * @return CountryOverviewTally Counts over installed rows, classified by catalog membership
+     * @throws DatabaseException When reading the reference fails
+     * @throws InvalidArgumentException When a loaded object has the wrong type
+     * @throws LogicException When collection classes are not configured
+     */
+    public function overviewTally(): CountryOverviewTally
+    {
+        $enabledCount = 0;
+        $totalCount = 0;
+        $builtInCount = 0;
+        foreach ($this->getIterator() as $country) {
+            ++$totalCount;
+            if ($country->enabled) {
+                ++$enabledCount;
+            }
+            if (BuiltInI18nCatalog::country($country->code) !== null) {
+                ++$builtInCount;
+            }
+        }
+
+        return new CountryOverviewTally($enabledCount, $totalCount, $builtInCount, $totalCount - $builtInCount);
+    }
 
     /**
      * @param int $countryId Country primary id

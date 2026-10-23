@@ -90,7 +90,11 @@ const languagePath = (row: HilosI18nLanguageRow): string | undefined =>
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.I18N_LANGUAGES">
+  <HilosAdminPage
+    :page="HilosPages.I18N_LANGUAGES"
+    head-kind="section"
+    tabs-label="Internationalization pages"
+  >
     <HilosI18nCatalogNote
       v-if="builtInCatalog"
       :catalog="builtInCatalog"

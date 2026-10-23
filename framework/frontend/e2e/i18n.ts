@@ -106,6 +106,71 @@ export async function expectI18nName(
 }
 
 /**
+ * The section keeps one owner head and three native page links on every tab.
+ * Entity cards keep their own heads and never enter this row.
+ *
+ * @param expect The spec's expect.
+ * @param page A page on the section's Overview, Languages or Countries tab.
+ * @param section The current page key, application name and row's accessible name.
+ */
+export async function expectI18nPageHead(
+  expect: Expect,
+  page: Page,
+  section: { currentPage: string; appName: string; tabsLabel?: string },
+): Promise<void> {
+  await expect(page.getByTestId('hilos-page-head')).toBeVisible()
+  await expect(page.getByTestId('hilos-page-head-skeleton')).toHaveCount(0)
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveAttribute('data-id', 'hilos-page-head-title')
+  await expect(heading).toHaveText('Internationalization')
+  await expect(page.getByTestId('hilos-page-head-block')).toContainText(
+    'Languages, countries, locales, and translation screens.',
+  )
+  await expect(page).toHaveTitle(`Internationalization · ${section.appName}`)
+
+  const crumbs = page.getByTestId('hilos-breadcrumb')
+  await expect(crumbs).toHaveAccessibleName('Breadcrumb')
+  await expect(crumbs.getByRole('link')).toHaveText(['Hilos'])
+  await expect(crumbs.getByTestId('hilos-breadcrumb-hilos')).toHaveAttribute(
+    'href',
+    '/hilos',
+  )
+  const currentCrumb = crumbs.locator('[aria-current="page"]')
+  await expect(currentCrumb).toHaveCount(1)
+  await expect(currentCrumb).toContainText('Internationalization')
+  await expect(currentCrumb.locator('a')).toHaveCount(0)
+
+  const tabs = page.getByTestId('hilos-page-tabs')
+  await expect(tabs).toHaveAccessibleName(section.tabsLabel ?? 'Page sections')
+  await expect(tabs.getByRole('link')).toHaveText([
+    'Overview',
+    'Languages',
+    'Countries',
+  ])
+  await expect(tabs).toHaveRole('navigation')
+  await expect(page.getByRole('tablist')).toHaveCount(0)
+  for (const [key, path] of [
+    ['hilos_i18n', ''],
+    ['hilos_i18n_languages', '/languages'],
+    ['hilos_i18n_countries', '/countries'],
+  ]) {
+    const tab = tabs.getByTestId(`hilos-page-tab-${key}`)
+    await expect(tab).toHaveAttribute('href', `/hilos/i18n${path}`)
+    if (key === section.currentPage) {
+      await expect(tab).toHaveAttribute('aria-current', 'page')
+      await expect(tab).toHaveClass(/\bactive\b/)
+    } else {
+      await expect(tab).not.toHaveAttribute('aria-current')
+      await expect(tab).not.toHaveClass(/\bactive\b/)
+    }
+  }
+  await expect(tabs.locator('[aria-current]')).toHaveCount(1)
+  await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
+  await expect(page.getByTestId(/^hilos-admin-child-/)).toHaveCount(0)
+}
+
+/**
  * The shared head of a country on either of its tabs: the one h1, the last
  * crumb and the browser tab carry the shown name; the trail is the named
  * Breadcrumb, its Countries link keeps the section's address and its last

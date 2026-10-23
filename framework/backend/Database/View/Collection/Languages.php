@@ -13,7 +13,9 @@ use Hilos\Database\Object\Collection\Languages as ObjectLanguages;
 use Hilos\Database\View\Item\Language;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Environment\Exception\EnvInvalidValueException;
+use Hilos\I18n\DefaultLanguage;
 use Hilos\I18n\DTO\LanguageCardSummary;
+use Hilos\I18n\DTO\LanguageOverviewTally;
 
 /**
  * Languages support code strings and primary-id integers as offsets.
@@ -28,6 +30,35 @@ class Languages extends DbCollection
 {
     public const string DB_ITEM_CLASS = Language::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectLanguages::class;
+
+    /**
+     * @return LanguageOverviewTally Counts over the full reference and the current default row's name
+     * @throws DatabaseException When reading the reference fails
+     * @throws ItemNotFoundException When the required default language row is missing
+     * @throws InvalidArgumentException When a loaded object has the wrong type
+     * @throws LogicException When collection classes are not configured
+     * @throws EnvException When the default language environment key is absent
+     * @throws EnvInvalidValueException When the configured default code is unknown
+     */
+    public function overviewTally(): LanguageOverviewTally
+    {
+        $enabledCount = 0;
+        $totalCount = 0;
+        foreach ($this->getIterator() as $language) {
+            ++$totalCount;
+            if ($language->enabled) {
+                ++$enabledCount;
+            }
+        }
+        $defaultLanguageCode = DefaultLanguage::code();
+
+        return new LanguageOverviewTally(
+            $enabledCount,
+            $totalCount,
+            $defaultLanguageCode,
+            $this[$defaultLanguageCode]->nativeName,
+        );
+    }
 
     /**
      * @param int $languageId Language primary id

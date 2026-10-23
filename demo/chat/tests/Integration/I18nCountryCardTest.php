@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Hilos;
+use Demo\Chat\Pages\Hilos\I18nPage;
 use Demo\Chat\Pages\Hilos\I18n\Details\CountryDetailPage;
 use Demo\Chat\Pages\Hilos\I18n\Details\CountryNamesPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
@@ -30,18 +31,22 @@ use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
+use Hilos\Database\ChangeLog\JournalReceiptData;
+use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\Entity\Item\Country as EntityCountry;
 use Hilos\Database\Entity\Item\CountryName as EntityCountryName;
 use Hilos\Database\Entity\Item\Locale as EntityLocale;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\I18n\Browser\CountryCardBrowserData;
 use Hilos\I18n\DTO\CountryCardSummary;
+use Hilos\I18n\DTO\I18nOverviewData;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\MeasurementSystem;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Throwable;
 
 /** The country card reads its name, default locale and deletion verdict from persisted rows. */
 final class I18nCountryCardTest extends IntegrationTestCase
@@ -49,6 +54,7 @@ final class I18nCountryCardTest extends IntegrationTestCase
     private I18nCountryServingWorker $worker;
     private I18nLibraryAgent $agent;
     private string|false $previousDefaultLanguage;
+    private bool $overviewViewerMode = false;
 
     protected function setUp(): void
     {
@@ -76,7 +82,11 @@ final class I18nCountryCardTest extends IntegrationTestCase
     protected function tearDown(): void
     {
         Hilos::$rt->connections->actions->clear();
-        foreach (['card-one', 'card-two', 'card-viewer', 'card-detail', 'card-names'] as $acceptKey) {
+        if ($this->overviewViewerMode) {
+            Hilos::$rt->hilosAdminViewModeRuntime?->actions->set(false);
+            RtTruthSourceRegistry::unregisterDaemon(AdminViewModeRuntime::RT_ITEM);
+        }
+        foreach (['card-one', 'card-two', 'card-viewer', 'card-detail', 'card-names', 'overview-admin', 'overview-viewer'] as $acceptKey) {
             SourceInterestRegistry::releaseConsumer(SourceConsumer::page($acceptKey));
         }
         ExecutionContext::setCurrentAgentId(null);
@@ -537,6 +547,194 @@ final class I18nCountryCardTest extends IntegrationTestCase
         $this->assertLiveDeletion($byKey['card-names'] ?? [], CountryNamesPage::PAGE);
         self::assertNull(Hilos::$sr?->pageResource('card-detail'));
         self::assertNull(Hilos::$sr?->pageResource('card-names'));
+    }
+
+    public function testOverviewSubscriptionAndCommittedActionsDeliverTheSameWholeToAdminAndViewer(): void
+    {
+        $this->prepareOverview();
+        $this->assertOverviewForBoth(1, 3, 1, 2, 1, 1, 'Installation English', initial: true);
+        $englishId = Hilos::$db->languages['en']->id;
+        $countryId = Hilos::$db->countries['qx']->id;
+        $this->underAgent($this->agent, function () use ($englishId, $countryId): void {
+            JournalReceiptScope::run(JournalReceiptData::agent('test.i18n.overview', $this->agent->getId()), function () use (
+                $englishId,
+                $countryId,
+            ): void {
+                Database::transactionStart();
+                try {
+                    Hilos::$db->languages[$englishId]->actions->update('Current English', false);
+                    Hilos::$db->languages[$englishId]->actions->switchOn();
+                    Hilos::$db->languages->actions->create('de', 'Deutsch', false)->actions->switchOn();
+                    Hilos::$db->countries[$countryId]->actions->switchOff();
+                    Hilos::$db->countries->actions->create('gb', '£', 'GBP')->actions->switchOn();
+                    Hilos::$db->countries->actions->create('qz', '¤', 'XQZ');
+                    $this->worker->recordCommittedSync();
+                    self::assertSame([], Hilos::$browser->flushToSignalRouter());
+                    self::assertSame([], $this->drainByAcceptKey());
+                    Database::transactionCommit();
+                } catch (Throwable $failure) {
+                    Database::transactionRollbackSilent();
+                    throw $failure;
+                }
+            });
+        });
+        $this->worker->recordCommittedSync();
+        self::assertSame([], Hilos::$browser->flushToSignalRouter());
+        $this->assertOverviewForBoth(3, 4, 1, 4, 2, 2, 'Current English');
+        self::assertSame([], Hilos::$browser->flushToSignalRouter());
+        self::assertSame([], $this->drainByAcceptKey());
+
+        $languageId = Hilos::$db->languages['qx']->id;
+        $countryId = Hilos::$db->countries['qz']->id;
+        $this->underAgent($this->agent, function () use ($languageId, $countryId): void {
+            JournalReceiptScope::run(JournalReceiptData::agent('test.i18n.overview.delete', $this->agent->getId()), static function () use (
+                $languageId,
+                $countryId,
+            ): void {
+                Hilos::$db->languages[$languageId]->actions->delete();
+                Hilos::$db->countries[$countryId]->actions->delete();
+            });
+        });
+        $this->worker->recordCommittedSync();
+        self::assertSame([], Hilos::$browser->flushToSignalRouter());
+        $this->assertOverviewForBoth(3, 3, 1, 3, 2, 1, 'Current English');
+    }
+
+    public function testOverviewRollbackPublishesNothingAndRestoresThePersistedRows(): void
+    {
+        $this->prepareOverview();
+        $this->assertOverviewForBoth(1, 3, 1, 2, 1, 1, 'Installation English', initial: true);
+        $englishId = Hilos::$db->languages['en']->id;
+        $countryId = Hilos::$db->countries['qx']->id;
+        $this->underAgent($this->agent, function () use ($englishId, $countryId): void {
+            JournalReceiptScope::run(JournalReceiptData::agent('test.i18n.overview.rollback', $this->agent->getId()), function () use (
+                $englishId,
+                $countryId,
+            ): void {
+                Database::transactionStart();
+                try {
+                    Hilos::$db->languages[$englishId]->actions->update('Rolled back English', false);
+                    Hilos::$db->languages->actions->create('de', 'Deutsch', false);
+                    Hilos::$db->countries[$countryId]->actions->switchOff();
+                    Hilos::$db->countries->actions->create('qz', '¤', 'XQZ');
+                    $this->worker->recordCommittedSync();
+                    self::assertSame([], Hilos::$browser->flushToSignalRouter());
+                    self::assertSame([], $this->drainByAcceptKey());
+                } finally {
+                    Database::transactionRollback();
+                }
+            });
+        });
+        $this->worker->recordCommittedSync();
+        self::assertSame([], Hilos::$browser->flushToSignalRouter());
+        self::assertSame([], $this->drainByAcceptKey());
+        self::assertSame([['native_name' => 'Installation English']], Database::sql(
+            'SELECT native_name FROM hilos_language WHERE id = ?', [$englishId],
+        )->rows());
+        self::assertSame([], Database::sql('SELECT id FROM hilos_language WHERE code = ?', ['de'])->rows());
+        self::assertSame([], Database::sql('SELECT id FROM hilos_country WHERE code = ?', ['qz'])->rows());
+        self::assertSame([['enabled' => '1']], Database::sql('SELECT enabled FROM hilos_country WHERE id = ?', [$countryId])->rows());
+
+        $this->underAgent($this->agent, static function () use ($englishId): void {
+            Hilos::$db->languages[$englishId]->actions->update('After rollback', false);
+        });
+        $this->worker->recordCommittedSync();
+        self::assertSame([], Hilos::$browser->flushToSignalRouter());
+        $this->assertOverviewForBoth(1, 3, 1, 2, 1, 1, 'After rollback');
+    }
+
+    /** Uses this class's existing persisted fixture and worker, without a rollback root that would hold announcements. */
+    private function prepareOverview(): void
+    {
+        $this->underAgent($this->agent, static function (): void {
+            Hilos::$db->languages->actions->create('en', 'Installation English', false);
+            Hilos::$db->languages->actions->create('fr', 'Français', false)->actions->switchOn();
+            Hilos::$db->languages->actions->create('qx', 'Project language', false);
+            Hilos::$db->countries->actions->create('us', '$', 'USD');
+            Hilos::$db->countries->actions->create('qx', '¤', 'XQX')->actions->switchOn();
+        });
+        foreach (['overview-admin' => true, 'overview-viewer' => false] as $acceptKey => $admin) {
+            $user = Hilos::$db->users->actions->createWithName($acceptKey);
+            if ($admin) {
+                $user->actions->setAdmin(true);
+            }
+            $session = Hilos::$db->sessions->actions->createAnonymous(substr(hash('sha256', __METHOD__ . $this->name() . $acceptKey), 0, 32));
+            $session->actions->bindUser((int) $user->id);
+            Hilos::$rt->connections->actions->register($acceptKey, (int) $user->id, $session->token, (int) $session->id);
+        }
+        RtTruthSourceRegistry::registerDaemon(AdminViewModeRuntime::RT_ITEM);
+        Hilos::$rt->hilosAdminViewModeRuntime?->actions->set(true);
+        $this->overviewViewerMode = true;
+        $this->worker->recordCommittedSync();
+        self::assertSame([], Hilos::$browser->flushToSignalRouter());
+        $this->drainByAcceptKey();
+        foreach (['overview-admin', 'overview-viewer'] as $acceptKey) {
+            $this->worker->deliver(
+                SignalTypeConstants::PAGE_SUBSCRIBE,
+                new WebSocketPageSubscribeSignalDTO($acceptKey, I18nPage::PAGE),
+                I18nPage::PAGE,
+            );
+        }
+    }
+
+    /**
+     * @param int $enabledLanguages Enabled languages
+     * @param int $totalLanguages Installed languages
+     * @param int $enabledCountries Enabled countries
+     * @param int $totalCountries Installed countries
+     * @param int $builtIn Built-in countries
+     * @param int $own Custom countries
+     * @param string $defaultName Current native name of the default language
+     * @param bool $initial Whether the worker also sends its initial freshness frame
+     */
+    private function assertOverviewForBoth(
+        int $enabledLanguages,
+        int $totalLanguages,
+        int $enabledCountries,
+        int $totalCountries,
+        int $builtIn,
+        int $own,
+        string $defaultName,
+        bool $initial = false,
+    ): void {
+        $byKey = $this->drainByAcceptKey();
+        self::assertSame(['overview-admin', 'overview-viewer'], array_keys($byKey));
+        $overviews = [];
+        foreach ($byKey as $frames) {
+            self::assertSame(
+                $initial ? [SignalTypeConstants::RT_STALENESS, SignalTypeConstants::PAGE_RESPONSE] : [SignalTypeConstants::PAGE_RESPONSE],
+                array_map(static fn (SignalDTO $frame): string => $frame->signalName->getName(), $frames),
+            );
+            $responseFrame = $frames[array_key_last($frames)];
+            self::assertInstanceOf(PageResponseSignalData::class, $responseFrame->data->data);
+            $response = $responseFrame->data->data;
+            self::assertSame(I18nPage::PAGE, $response->pageKey);
+            $overviews[] = $response->payload->data[I18nOverviewData::DATA];
+            self::assertSame([
+                'languages' => [
+                    'enabledCount' => $enabledLanguages, 'totalCount' => $totalLanguages,
+                    'defaultLanguageCode' => 'en', 'defaultLanguageName' => $defaultName,
+                ],
+                'countries' => [
+                    'enabledCount' => $enabledCountries, 'totalCount' => $totalCountries,
+                    'builtInCount' => $builtIn, 'ownCount' => $own,
+                ],
+            ], $response->payload->data[I18nOverviewData::DATA]);
+            self::assertSame('Internationalization', $response->payload->data[PageCatalogConstants::WIRE_PAGE_LABEL]);
+            self::assertSame([
+                'page' => HilosPageConstants::HILOS_I18N,
+                'label' => 'Internationalization',
+                'lead' => 'Languages, countries, locales, and translation screens.',
+                'icon' => 'bi-translate',
+            ], $response->payload->data[PageCatalogConstants::WIRE_PAGE_HEAD_OWNER]);
+            self::assertSame([
+                ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                ['page' => HilosPageConstants::HILOS_I18N, 'label' => 'Internationalization'],
+            ], $response->payload->data[PageCatalogConstants::WIRE_PAGE_BREADCRUMB]);
+            self::assertSame([], $response->payload->data[PageCatalogConstants::WIRE_PAGE_CHILDREN]);
+            self::assertStringNotContainsString(HiddenValue::KEY, json_encode($overviews[array_key_last($overviews)], JSON_THROW_ON_ERROR));
+        }
+        self::assertSame($overviews[0], $overviews[1]);
     }
 
     /**

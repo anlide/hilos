@@ -7,6 +7,7 @@ namespace Hilos\Core\Browser\Context;
 use Hilos\Auth\Impersonation\ImpersonationSettings;
 use Hilos\Auth\Impersonation\Takeover;
 use Hilos\Auth\Session\SessionCarrier;
+use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
@@ -60,6 +61,7 @@ use Hilos\Core\Page\PageResender;
 use Hilos\Core\Page\PageResource;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Page\PageSignalRouter;
+use Hilos\Pages\AbstractHilosI18nPage;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeSet;
@@ -2416,9 +2418,23 @@ abstract class BrowserContext
             return;
         }
 
+        $current = Hilos::$sr?->pageSubscription($acceptKey);
         $pageParams = $subscription[SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY];
         $guardAllows[$acceptKey] ??= $this->pageGuardsAllow($page, $pageConfig, $acceptKey, $pageParams);
         if (!$guardAllows[$acceptKey]) {
+            return;
+        }
+
+        if ($page === HilosPageConstants::HILOS_I18N && AbstractHilosI18nPage::observesOverviewChange($change)) {
+            if ($current === null || $current->page !== $page || Hilos::$sr?->pageSubscription($acceptKey) !== $current) {
+                $guardAllows[$acceptKey] = false;
+                unset($signalTables[$acceptKey]);
+
+                return;
+            }
+            $this->resendPageWhole($page, $acceptKey);
+            unset($signalTables[$acceptKey]);
+
             return;
         }
 

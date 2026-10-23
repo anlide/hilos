@@ -8,8 +8,10 @@ import {
   type HilosI18nLanguageContext,
 } from '@hilos/core/admin/i18n'
 import {
+  createAppPageRouter,
   createSignal,
   HilosPages,
+  pageIdentity,
   ScopeManager,
   type ActionLifecycle,
   type ActionResult,
@@ -181,6 +183,63 @@ function context(
 }
 
 describe('HilosI18nLanguagesPage', () => {
+  it('keeps the section owner and breadcrumb with Languages current above the table', async () => {
+    const c = context()
+    c.scope.data.set('pageLabel', 'Languages')
+    c.scope.data.set('pageHeadOwner', {
+      page: HilosPages.I18N,
+      label: 'Internationalization',
+      lead: 'Languages, countries, locales, and translation screens.',
+      icon: 'bi-translate',
+    })
+    c.scope.data.set('pageBreadcrumb', [
+      { page: HilosPages.DASHBOARD, label: 'Hilos' },
+      { page: HilosPages.I18N, label: 'Internationalization' },
+    ])
+    c.scope.data.set('pageTabs', [
+      { page: HilosPages.I18N, label: 'Overview' },
+      { page: HilosPages.I18N_LANGUAGES, label: 'Languages' },
+      { page: HilosPages.I18N_COUNTRIES, label: 'Countries' },
+    ])
+    c.scope.data.set('pageChildren', [])
+    const navigation = {
+      ...router(),
+      pageIdentity: pageIdentity(c.context.scopes),
+      resolvePath: createAppPageRouter({}).path,
+    }
+    const view = mount(HilosI18nLanguagesPage, {
+      props: { context: c.context },
+      global: { provide: { [hilosRouterKey as symbol]: navigation } },
+    })
+    await nextTick()
+    expect(view.findAll('h1').map((heading) => heading.text())).toEqual([
+      'Internationalization',
+    ])
+    const crumbs = view.get('nav[aria-label="Breadcrumb"]')
+    expect(crumbs.findAll('li').map((crumb) => crumb.text())).toEqual([
+      'Hilos',
+      'Internationalization',
+    ])
+    expect(crumbs.get('a').attributes('href')).toBe('/hilos')
+    expect(crumbs.findAll('a')).toHaveLength(1)
+    const tabs = view.get('nav[aria-label="Internationalization pages"]')
+    expect(tabs.findAll('a').map((link) => link.text())).toEqual([
+      'Overview',
+      'Languages',
+      'Countries',
+    ])
+    expect(tabs.findAll('[aria-current="page"]')).toHaveLength(1)
+    const current = tabs.get('[aria-current="page"]')
+    expect(current.text()).toBe('Languages')
+    expect(current.attributes('href')).toBe('/hilos/i18n/languages')
+    expect(current.classes()).toContain('active')
+    expect(view.get('table').attributes('aria-labelledby')).toBe(
+      view.get('h1').attributes('id'),
+    )
+    expect(view.find('[data-id="hilos-admin-children"]').exists()).toBe(false)
+    view.unmount()
+  })
+
   it.each(['default', 'locales', 'names'] as const)(
     'shows the accessible %s refusal without hover',
     async (deleteReason) => {

@@ -180,6 +180,9 @@ const pages: Record<string, PageView<Component>> = {
   [HilosPages.LEGAL_SETTINGS]: lazyPage(() =>
     import('./views/Hilos/Legal/LegalSettings.vue').then((m) => m.default),
   ),
+  [HilosPages.I18N]: lazyPage(() =>
+    import('./views/Hilos/I18n/I18n.vue').then((m) => m.default),
+  ),
   [HilosPages.I18N_LANGUAGES]: lazyPage(() =>
     import('./views/Hilos/I18n/Languages/Languages.vue').then((m) => m.default),
   ),

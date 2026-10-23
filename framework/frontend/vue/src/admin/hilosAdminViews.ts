@@ -43,11 +43,9 @@ export function hilosAdminViews(): Record<string, PageView<Component>> {
     [HilosPages.ROLES]: lazyPage(() =>
       import('@hilos/vue/admin/roles').then((m) => m.HilosRolesPage),
     ),
-    [HilosPages.I18N]: lazyPage(() =>
-      import('@hilos/vue/admin/i18n').then((m) => m.HilosI18nPage),
-    ),
-    // I18N_LANGUAGES and I18N_COUNTRIES are real framework pages: their tables
-    // read a live connection, so a project mounts them directly with its context.
+    // I18N Overview, I18N_LANGUAGES and I18N_COUNTRIES need project context:
+    // the overview reads page scopes, and the lists use a live connection and
+    // action lifecycle. Projects mount thin views that provide these contexts.
     [HilosPages.I18N_ENTITIES]: lazyPage(() =>
       import('@hilos/vue/admin/i18n').then((m) => m.HilosI18nEntitiesPage),
     ),

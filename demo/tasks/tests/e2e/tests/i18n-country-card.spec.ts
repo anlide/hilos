@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 import {
   countSentFrames,
   expectCountryPageHead,
+  expectI18nPageHead,
   watchClientDocument,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
@@ -11,8 +12,8 @@ import { clickSubmit } from '../helpers/session.js'
 // The React country tabs on the shared page head: the built-in United States on
 // Overview and Names, opened directly, reloaded, and switched in place from the
 // pointer and the keyboard. Overview reads the card's own details and a
-// deletion the built-in catalog blocks. The section above the country has not
-// moved to the shared head and keeps its own title and child cards.
+// deletion the built-in catalog blocks. The section above the country keeps
+// Internationalization as its shared head, with Overview, Languages and Countries.
 
 const APP_NAME = 'Hilos Tasks'
 const OVERVIEW = 'hilos_i18n_country'
@@ -147,18 +148,17 @@ test('opens both country tabs directly under the shared head, reads the card and
     await expect(page.getByTestId(tab.body)).toBeVisible()
   }
 
-  // The section above keeps the legacy shell: its own title and child cards,
-  // and no shared head.
+  // The entity keeps its own row; the containing section has three page links.
   await gotoPage(page, '/hilos/i18n/countries', PAGE_READY)
+  await expectI18nPageHead(expect, page, {
+    currentPage: 'hilos_i18n_countries',
+    appName: APP_NAME,
+  })
   await gotoPage(page, '/hilos/i18n', PAGE_READY)
-  await expect(page.getByTestId('hilos-page-head')).toHaveCount(0)
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText(
-    'Internationalization',
-  )
-  await expect(page.getByTestId('hilos-admin-children')).toBeVisible()
-  await expect(
-    page.getByTestId('hilos-admin-child-hilos_i18n_countries'),
-  ).toHaveAttribute('href', '/hilos/i18n/countries')
+  await expectI18nPageHead(expect, page, {
+    currentPage: 'hilos_i18n',
+    appName: APP_NAME,
+  })
   expect(deleteRequests()).toBe(0)
 })
 

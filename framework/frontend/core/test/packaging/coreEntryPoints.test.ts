@@ -62,6 +62,13 @@ const timeZoneValues = [
 ]
 /** The viewer's new selectors, shared by the compatibility root and logs entry. */
 const logViewerValues = ['logViewerLatestBatchPath', 'logViewerStreamKeys']
+/** The i18n overview APIs shared by the compatibility root and section entry. */
+const i18nOverviewValues = [
+  'I18N_OVERVIEW_DATA',
+  'createHilosI18nOverview',
+  'i18nOverviewSchema',
+]
+const i18nOverviewTypes = ['HilosI18nOverview', 'HilosI18nOverviewContext']
 /** The page head's tab links resolver, shared by the compatibility root and base. */
 const pageHeadValues = ['hilosTabLinks']
 /** The page head's types past the snapshot, resolved through root and base. */
@@ -125,6 +132,7 @@ const expectedValues = [
   ...legacy.value.filter((name) => !moderationRemovedValues.includes(name)),
   ...timeZoneValues,
   ...logViewerValues,
+  ...i18nOverviewValues,
   ...pageHeadValues,
   ...publicLegalValues,
   ...momentValues,
@@ -373,6 +381,7 @@ describe('core public entries', () => {
     ).toEqual(
       [
         ...legacy.type,
+        ...i18nOverviewTypes,
         ...pageHeadTypes,
         ...publicLegalTypes,
         ...momentTypes,

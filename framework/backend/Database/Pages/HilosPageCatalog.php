@@ -148,16 +148,20 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Languages, countries, locales, and translation screens.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
             PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-translate',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Internationalization',
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ],
         HilosPageConstants::HILOS_I18N_LANGUAGES => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Languages',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Supported interface languages and their locales.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_I18N,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Languages',
         ],
         HilosPageConstants::HILOS_I18N_LANGUAGE => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Language',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'A single language: code, native name, and writing direction.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_I18N_LANGUAGES,
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
         ],
         HilosPageConstants::HILOS_I18N_LANGUAGE_NAMES => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Language names',
@@ -173,6 +177,7 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Countries',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Country catalog used for locale and formatting.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_I18N,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Countries',
         ],
         HilosPageConstants::HILOS_I18N_COUNTRY => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Country',

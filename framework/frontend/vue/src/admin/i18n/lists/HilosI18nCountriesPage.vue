@@ -104,7 +104,11 @@ const countryPath = (row: HilosI18nCountryRow): string | undefined =>
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.I18N_COUNTRIES">
+  <HilosAdminPage
+    :page="HilosPages.I18N_COUNTRIES"
+    head-kind="section"
+    tabs-label="Internationalization pages"
+  >
     <HilosI18nCatalogNote
       v-if="builtInCatalog"
       :catalog="builtInCatalog"

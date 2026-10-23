@@ -268,6 +268,7 @@ export {
   expectDeletedCountryCard,
   expectDeletedCountryCardReloaded,
   expectI18nName,
+  expectI18nPageHead,
   expectNoOtherLanguageNames,
   i18nLocaleRow,
   i18nNameRow,
