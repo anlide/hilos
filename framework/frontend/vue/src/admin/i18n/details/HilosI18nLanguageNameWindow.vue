@@ -20,16 +20,13 @@ const props = defineProps<{ window: HilosI18nLanguageNameWindow }>()
 const copy = HILOS_I18N_LANGUAGE_NAME_COPY
 const opened = useSignal(props.window.opened)
 const target = useSignal(props.window.target)
-const mode = useSignal(props.window.mode)
 const form = useSignal(props.window.form)
 const state = useSignal(props.window.state)
 const dirty = useSignal(props.window.dirty)
 const notice = useSignal(props.window.notice)
 const saving = useSignal(props.window.saving)
 const canSave = useSignal(props.window.canSave)
-const canSubmit = useSignal(props.window.canSubmit)
 const saveAvailable = useSignal(props.window.saveAvailable)
-const submitAvailable = useSignal(props.window.submitAvailable)
 const saveLabel = useSignal(props.window.saveLabel)
 const { locked } = useLookOnly()
 // Each opening has its own runner: a previous address's late failure cannot
@@ -70,12 +67,7 @@ function changeName(event: Event): void {
     props.window.patchForm({ name: event.target.value })
 }
 async function submit(): Promise<void> {
-  if (
-    locked.value ||
-    saving.value ||
-    !(mode.value === 'add' ? canSubmit.value : canSave.value)
-  )
-    return
+  if (locked.value || !canSave.value) return
   await props.window.save(action.value.run)
 }
 </script>
@@ -89,12 +81,7 @@ async function submit(): Promise<void> {
   >
     <template #header>
       <div data-id="i18n-language-name-title">
-        <ConflictHeader
-          v-if="mode === 'edit'"
-          :title="title"
-          :conflict="state.conflict"
-        />
-        <h5 v-else class="modal-title mb-0">{{ title }}</h5>
+        <ConflictHeader :title="title" :conflict="state.conflict" />
       </div>
     </template>
     <div data-id="i18n-language-name-window">
@@ -140,7 +127,6 @@ async function submit(): Promise<void> {
     </div>
     <template #actions="{ requestClose }">
       <ConflictActions
-        v-if="mode === 'edit'"
         :conflict="state.conflict"
         :disable-save="!saveAvailable"
         :save-label="saveLabel"
@@ -170,25 +156,6 @@ async function submit(): Promise<void> {
           >
         </template>
       </ConflictActions>
-      <template v-else>
-        <button
-          type="button"
-          class="btn btn-secondary"
-          :disabled="saving"
-          data-id="i18n-language-name-cancel"
-          @click="requestClose"
-        >
-          {{ copy.cancel }}
-        </button>
-        <LoadingButton
-          class="btn-primary"
-          :loading="action.busy.value"
-          :disabled="!submitAvailable"
-          data-id="i18n-language-name-submit"
-          @click="submit"
-          >{{ saveLabel }}</LoadingButton
-        >
-      </template>
     </template>
   </HilosModal>
 </template>

@@ -5,6 +5,7 @@ import {
   i18nNameRow,
   shownByTestId,
   watchHeight,
+  watchTop,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import {
@@ -25,7 +26,6 @@ const BASE_ADD = 'i18n-language-name-add-qv'
 const BASE_EDIT = 'i18n-language-name-edit-qv'
 const CORRECTION_ADD = 'i18n-language-name-locale-add-qv-GB'
 const CORRECTION_EDIT = 'i18n-language-name-locale-edit-qv-GB'
-const DUPLICATE = 'A name already exists for this language or locale.'
 
 /** Open the unseeded reverse pair; all of its writes belong to the UI. */
 async function openNames(page: Page): Promise<void> {
@@ -162,93 +162,128 @@ test('creates and edits a base and correction live, preserving literal empty val
   }
 })
 
-test('refuses concurrent base and correction ADD without overwriting', async ({
-  page,
-  context,
-}) => {
-  // Two duplicate races, keyboard checks and details dialogs share one fixture.
-  test.slow()
-  await clearLanguageNamesFixture()
-  const observer = await context.newPage()
-  try {
-    await seedLanguageNamesFixture()
-    await signUpAdmin(page)
-    for (const tab of [page, observer]) {
-      await openNames(tab)
-    }
+for (const correction of [false, true]) {
+  for (const choice of ['mine', 'theirs', 'matching', 'untouched'] as const) {
+    test(`merges concurrent ${correction ? 'correction' : 'base'} ADD with ${choice}`, async ({
+      page,
+      context,
+    }) => {
+      // Two tabs, a live merge and correction setup exceed a single form path.
+      test.slow()
+      await clearLanguageNamesFixture()
+      const observer = await context.newPage()
+      try {
+        await seedLanguageNamesFixture()
+        await signUpAdmin(page)
+        for (const tab of [page, observer]) await openNames(tab)
+        if (correction) {
+          await openName(page, BASE_ADD)
+          await typeInto(page.getByTestId(INPUT), 'Base for corrections')
+          await saveName(page)
+          await expectName(observer, false, 'Base for corrections')
+          for (const tab of [page, observer]) await expandCorrections(tab)
+        }
+        const control = correction ? CORRECTION_ADD : BASE_ADD
+        const edit = correction ? CORRECTION_EDIT : BASE_EDIT
+        const title = `${correction ? 'Add locale correction' : 'Add name'} · HIL-1490 writing`
+        const trigger = shownByTestId(page, control)
+        await dismissToasts(page)
+        await expect(trigger).toHaveAccessibleName(
+          `Add ${correction ? 'locale correction' : 'name'} · HIL-1490 writing in HIL-1490 target${correction ? ' · qv-GB' : ''}`,
+        )
+        await trigger.focus()
+        await trigger.press('Enter')
+        await expect(page.getByTestId(INPUT)).toBeFocused()
+        await expect(page.getByTestId('modal')).toHaveAccessibleName(title)
+        await expect(page.getByTestId('modal')).toHaveAttribute(
+          'aria-modal',
+          'true',
+        )
+        await page.getByTestId(INPUT).press('Escape')
+        await expect(page.getByTestId(WINDOW)).toHaveCount(0)
+        await expect(trigger).toBeFocused()
 
-    for (const correction of [false, true]) {
-      const control = correction ? CORRECTION_ADD : BASE_ADD
-      const title = `${correction ? 'Add locale correction' : 'Add name'} · HIL-1490 writing`
-      if (correction) {
-        for (const tab of [page, observer]) await expandCorrections(tab)
+        await openName(page, control)
+        await openName(observer, control)
+        const mine = 'Second writer'
+        const theirs = 'First writer'
+        await typeInto(page.getByTestId(INPUT), theirs)
+        if (choice !== 'untouched') {
+          await typeInto(
+            observer.getByTestId(INPUT),
+            choice === 'matching' ? theirs : mine,
+          )
+        }
+        const errorRoom = await watchHeight(
+          observer.getByTestId('i18n-language-name-error'),
+        )
+        const noticeRoom = await watchHeight(
+          observer.getByTestId(`${NOTICE}-slot`),
+        )
+        const bodyRoom = await watchHeight(observer.getByTestId(WINDOW))
+        const submitTop = await watchTop(observer.getByTestId(SUBMIT))
+        await saveName(page)
+        await expectName(observer, correction, theirs)
+        await expect(observer.getByTestId('modal')).toHaveAccessibleName(title)
+        await expect(observer.getByTestId(TITLE)).toContainText(title)
+        await expect(observer.getByTestId(SUBMIT)).toHaveText('Save')
+        await expect(observer.getByTestId(SUBMIT)).toBeDisabled()
+        await expect(observer.getByTestId('hilos-action-error')).toHaveCount(0)
+        await expect(observer.getByTestId('conflict-merge')).toHaveCount(0)
+        if (choice === 'matching' || choice === 'untouched') {
+          await expect(observer.getByTestId(INPUT)).toHaveValue(theirs)
+          await expect(observer.getByTestId(NOTICE)).toHaveText(
+            'Updated just now',
+          )
+          await expect(observer.getByTestId('conflict-choices')).toHaveCount(0)
+        } else {
+          await expect(observer.getByTestId(INPUT)).toHaveValue(mine)
+          await expect(observer.getByTestId(NOTICE)).toContainText(
+            `Name changed elsewhere to "${theirs}".`,
+          )
+          await expect(observer.getByTestId('conflict-choices')).toBeVisible()
+        }
+        await errorRoom.unchanged()
+        await noticeRoom.unchanged()
+        await bodyRoom.unchanged()
+        await submitTop.unchanged()
+        // Enter shares the disabled Save verdict and leaves the stored name alone.
+        await observer.getByTestId(INPUT).press('Enter')
+        await expect(observer.getByTestId(WINDOW)).toBeVisible()
+        await expectName(page, correction, theirs)
+        if (choice === 'mine' || choice === 'theirs') {
+          await clickSubmit(observer.getByTestId(`conflict-accept-${choice}`))
+          await expect(observer.getByTestId('conflict-choices')).toHaveCount(0)
+          await errorRoom.unchanged()
+          await noticeRoom.unchanged()
+          await bodyRoom.unchanged()
+          await submitTop.unchanged()
+          if (choice === 'mine') {
+            await expect(observer.getByTestId(INPUT)).toHaveValue(mine)
+            // Choosing advances the baseline; only the explicit Save writes.
+            await expectName(page, correction, theirs)
+            await saveName(observer)
+            for (const tab of [page, observer])
+              await expectName(tab, correction, mine)
+          } else {
+            await expect(observer.getByTestId(INPUT)).toHaveValue(theirs)
+            await expect(observer.getByTestId(SUBMIT)).toBeDisabled()
+          }
+        }
+        if (choice !== 'mine') {
+          await clickSubmit(observer.getByTestId(CANCEL))
+          await expect(observer.getByTestId(WINDOW)).toHaveCount(0)
+          for (const tab of [page, observer])
+            await expectName(tab, correction, theirs)
+        }
+        await expect(shownByTestId(observer, edit)).toBeFocused()
+      } finally {
+        await observer.close()
+        await clearNames(page)
       }
-      const trigger = shownByTestId(page, control)
-      await expect(trigger).toHaveAccessibleName(
-        `Add ${correction ? 'locale correction' : 'name'} · HIL-1490 writing in HIL-1490 target${correction ? ' · qv-GB' : ''}`,
-      )
-      await trigger.focus()
-      await trigger.press('Enter')
-      await expect(page.getByTestId(INPUT)).toBeFocused()
-      await expect(page.getByTestId('modal')).toHaveAccessibleName(title)
-      await expect(page.getByTestId('modal')).toHaveAttribute(
-        'aria-modal',
-        'true',
-      )
-      await page.getByTestId(INPUT).press('Escape')
-      await expect(page.getByTestId(WINDOW)).toHaveCount(0)
-      await expect(trigger).toBeFocused()
-
-      await openName(page, control)
-      await openName(observer, control)
-      await typeInto(page.getByTestId(INPUT), 'First writer')
-      await typeInto(observer.getByTestId(INPUT), 'Second writer')
-      const errorRoom = await watchHeight(
-        observer.getByTestId('i18n-language-name-error'),
-      )
-      const bodyRoom = await watchHeight(observer.getByTestId(WINDOW))
-      await saveName(page)
-      await expectName(observer, correction, 'First writer')
-      await expect(observer.getByTestId(TITLE)).toHaveText(title)
-      await expect(observer.getByTestId(INPUT)).toHaveValue('Second writer')
-      await expect(observer.getByTestId(SUBMIT)).toHaveText('Add')
-      await clickSubmit(observer.getByTestId(SUBMIT))
-      await expect(observer.getByTestId('hilos-action-error')).toContainText(
-        DUPLICATE,
-      )
-      await expect(observer.getByTestId(SUBMIT)).toBeEnabled()
-      await expect(observer.getByTestId(INPUT)).toHaveValue('Second writer')
-      await expect(observer.getByTestId(WINDOW)).toBeVisible()
-      await errorRoom.unchanged()
-      await bodyRoom.unchanged()
-      await expect(
-        observer.getByTestId('hilos-action-error-slot'),
-      ).toHaveAttribute('aria-live', 'assertive')
-      await clickSubmit(observer.getByTestId('hilos-action-error-details'))
-      await expect(
-        observer.getByTestId('hilos-action-error-full'),
-      ).toContainText(DUPLICATE)
-      await clickSubmit(observer.getByTestId('hilos-action-error-close'))
-      await expect(
-        observer.getByTestId('hilos-action-error-details'),
-      ).toBeFocused()
-      await clickSubmit(observer.getByTestId(CANCEL))
-      await expect(observer.getByTestId('modal-confirm')).toBeFocused()
-      await clickSubmit(observer.getByTestId('modal-confirm-discard'))
-      await expect(observer.getByTestId(WINDOW)).toHaveCount(0)
-      for (const tab of [page, observer]) {
-        await expectName(tab, correction, 'First writer')
-        await openName(tab, correction ? CORRECTION_EDIT : BASE_EDIT)
-        await expect(tab.getByTestId(INPUT)).toHaveValue('First writer')
-        await tab.getByTestId(INPUT).press('Escape')
-        await expect(tab.getByTestId(WINDOW)).toHaveCount(0)
-      }
-    }
-  } finally {
-    await observer.close()
-    await clearNames(page)
+    })
   }
-})
+}
 
 for (const correction of [false, true]) {
   test(`resolves both EDIT choices for a ${correction ? 'correction' : 'base'} using the latest live name`, async ({
@@ -388,11 +423,27 @@ test('sends captured name IDs and refuses an old ID after recreating the same te
     await saveName(page)
     await openName(page, BASE_EDIT)
     await typeInto(page.getByTestId(INPUT), 'New text')
+    const errorRoom = await watchHeight(
+      page.getByTestId('i18n-language-name-error'),
+    )
+    const bodyRoom = await watchHeight(page.getByTestId(WINDOW))
     await clickSubmit(page.getByTestId(SUBMIT))
     await expect(page.getByTestId('i18n-language-name-error')).toContainText(
       'The name no longer exists.',
     )
     await expect(page.getByTestId(SUBMIT)).toBeEnabled()
+    await errorRoom.unchanged()
+    await bodyRoom.unchanged()
+    await expect(page.getByTestId('hilos-action-error-slot')).toHaveAttribute(
+      'aria-live',
+      'assertive',
+    )
+    await clickSubmit(page.getByTestId('hilos-action-error-details'))
+    await expect(page.getByTestId('hilos-action-error-full')).toContainText(
+      'The name no longer exists.',
+    )
+    await clickSubmit(page.getByTestId('hilos-action-error-close'))
+    await expect(page.getByTestId('hilos-action-error-details')).toBeFocused()
     await expectName(page, false, 'Same text')
     expect(writes[3].data).toEqual({
       languageId: writes[0].data.languageId,

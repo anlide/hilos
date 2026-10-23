@@ -100,6 +100,36 @@ function pending() {
   return { run, finish: (saved: boolean) => finish(saved) }
 }
 
+/** A known empty base or correction, with independently delivered occupancy. */
+function emptyPlace(correction: boolean) {
+  const empty: HilosI18nNameRow = correction
+    ? {
+        ...original,
+        corrections: [
+          { ...original.corrections[0]!, nameId: null, name: null },
+        ],
+      }
+    : { ...original, nameId: null, name: null }
+  const h = harness(empty)
+  const localeId = correction ? 501 : null
+  const storedNameId = correction ? 801 : 701
+  return {
+    ...h,
+    localeId,
+    storedNameId,
+    receive(name: string | null, nameId = name === null ? null : storedNameId) {
+      h.update(
+        correction
+          ? {
+              ...original,
+              corrections: [{ ...original.corrections[0]!, nameId, name }],
+            }
+          : { ...original, nameId, name },
+      )
+    },
+  }
+}
+
 describe('language name window', () => {
   it.each(['base', 'correction', 'base-for-add', 'locale', 'subject'])(
     'keeps the draft and refuses a replacement of %s with the same labels',
@@ -222,53 +252,320 @@ describe('language name window', () => {
     h.window.dispose()
   })
 
-  it.each([null, 'qw-GB'])(
-    'creates an empty value at %s, keeps add on a late duplicate, and preserves literal text',
-    async (localeCode) => {
-      const h = harness({
-        ...original,
-        nameId: localeCode === null ? null : 301,
-        name: localeCode === null ? null : '',
-        corrections: [
-          { ...original.corrections[0]!, nameId: null, name: null },
-        ],
-      })
-      h.window.open('47', localeCode === null ? null : 501)
+  it.each([false, true])(
+    'creates untouched empty text with a clean baseline (correction: %s)',
+    async (correction) => {
+      const h = emptyPlace(correction)
+      h.window.open('47', h.localeId)
+      expect(h.window.canSave.get()).toBe(true)
+      expect(h.window.saveAvailable.get()).toBe(true)
       expect(h.window.canSubmit.get()).toBe(true)
       expect(h.window.submitAvailable.get()).toBe(true)
       expect(h.window.dirty.get()).toBe(false)
+      expect(h.window.state.get().gone).toBe(false)
+      expect(h.window.notice.get()).toBeNull()
       await h.window.save(() => Promise.resolve(false))
       expect(h.dispatch).toHaveBeenLastCalledWith(
         'hilos_i18n_language_name_add',
         {
           languageId: 46,
           inLanguageId: 47,
-          baseNameId: localeCode === null ? null : 301,
-          localeId: localeCode === null ? null : 501,
+          baseNameId: correction ? 301 : null,
+          localeId: h.localeId,
           name: '',
         },
       )
-      h.window.patchForm({ name: '  My value  ' })
-      h.update(original)
-      expect(h.window.mode.get()).toBe('add')
-      expect(h.window.canSubmit.get()).toBe(true)
-      expect(h.window.form.get().name).toBe('  My value  ')
-      await h.window.save(() => Promise.resolve(false))
       expect(h.window.opened.get()).toBe(true)
-      expect(h.dispatch).toHaveBeenLastCalledWith(
-        'hilos_i18n_language_name_add',
-        {
-          languageId: 46,
-          inLanguageId: 47,
-          baseNameId: localeCode === null ? null : 301,
-          localeId: localeCode === null ? null : 501,
-          name: '  My value  ',
-        },
-      )
+      expect(h.controller.focusedRow.get()?.rowKey).toBe('47')
       await h.window.save(() => Promise.resolve(true))
+      expect(h.dispatch).toHaveBeenCalledTimes(2)
       expect(h.window.opened.get()).toBe(false)
       expect(h.controller.focusedRow.get()).toBeUndefined()
       h.window.dispose()
+    },
+  )
+
+  it.each([false, true])(
+    'merges occupation and advances Keep mine before an update (correction: %s)',
+    async (correction) => {
+      const h = emptyPlace(correction)
+      h.window.open('47', h.localeId)
+      const target = h.window.target.get()
+      h.window.patchForm({ name: '  My value  ' })
+      h.receive('First incoming')
+      expect(h.window.mode.get()).toBe('edit')
+      expect(h.window.target.get()).toBe(target)
+      expect(target).toMatchObject({ mode: 'add', nameId: null })
+      expect(h.window.saveLabel.get()).toBe('Save')
+      expect(h.window.form.get().name).toBe('  My value  ')
+      expect(h.window.dirty.get()).toBe(true)
+      expect(h.window.notice.get()).toEqual({
+        kind: 'conflict',
+        text: 'Name changed elsewhere to "First incoming".',
+      })
+      expect(h.window.canSave.get()).toBe(false)
+      expect(h.window.saveAvailable.get()).toBe(false)
+      expect(h.window.canSubmit.get()).toBe(false)
+      expect(h.window.submitAvailable.get()).toBe(false)
+      await h.window.save(vi.fn())
+      h.window.keepMine()
+      expect(h.dispatch).not.toHaveBeenCalled()
+      expect(h.window.canSave.get()).toBe(true)
+      h.receive('Second incoming')
+      expect(h.window.state.get().conflict).toBe(true)
+      expect(h.window.canSave.get()).toBe(false)
+      h.window.keepMine()
+      expect(h.window.canSave.get()).toBe(true)
+      await h.window.save(() => Promise.resolve(true))
+      expect(h.dispatch).toHaveBeenCalledExactlyOnceWith(
+        'hilos_i18n_language_name_update',
+        {
+          languageId: 46,
+          inLanguageId: 47,
+          nameId: h.storedNameId,
+          localeId: h.localeId,
+          name: '  My value  ',
+          expectedName: 'Second incoming',
+        },
+      )
+      expect(h.window.opened.get()).toBe(false)
+      expect(h.controller.focusedRow.get()).toBeUndefined()
+      h.window.dispose()
+    },
+  )
+
+  it.each([false, true])(
+    'advances Take theirs and allows a later literal edit (correction: %s)',
+    async (correction) => {
+      const h = emptyPlace(correction)
+      h.window.open('47', h.localeId)
+      h.window.patchForm({ name: 'Mine' })
+      h.receive('Theirs')
+      h.window.takeTheirs()
+      expect(h.dispatch).not.toHaveBeenCalled()
+      expect(h.window.form.get().name).toBe('Theirs')
+      expect(h.window.dirty.get()).toBe(false)
+      expect(h.window.canSave.get()).toBe(false)
+      expect(h.window.notice.get()?.kind).toBe('updated')
+      await h.window.save(vi.fn())
+      expect(h.window.opened.get()).toBe(true)
+      h.receive('Another')
+      expect(h.window.form.get().name).toBe('Another')
+      expect(h.window.state.get().conflict).toBe(false)
+      h.window.patchForm({ name: '   ' })
+      expect(h.window.notice.get()).toBeNull()
+      expect(h.window.canSave.get()).toBe(true)
+      await h.window.save(() => Promise.resolve(false))
+      expect(h.dispatch).toHaveBeenCalledExactlyOnceWith(
+        'hilos_i18n_language_name_update',
+        {
+          languageId: 46,
+          inLanguageId: 47,
+          nameId: h.storedNameId,
+          localeId: h.localeId,
+          name: '   ',
+          expectedName: 'Another',
+        },
+      )
+      h.window.dispose()
+    },
+  )
+
+  describe.each([false, true])(
+    'known-place acceptance (correction: %s)',
+    (correction) => {
+      it.each(['matching', 'untouched', 'entered-empty', 'stored-empty'])(
+        'accepts %s without a conflict or another write',
+        async (draft) => {
+          const h = emptyPlace(correction)
+          h.window.open('47', h.localeId)
+          const target = h.window.target.get()
+          if (draft === 'matching') h.window.patchForm({ name: 'Incoming' })
+          if (draft === 'entered-empty') {
+            h.window.patchForm({ name: 'Erased' })
+            h.window.patchForm({ name: '' })
+          }
+          const incoming = draft === 'stored-empty' ? '' : 'Incoming'
+          h.receive(incoming)
+          expect(h.window.target.get()).toBe(target)
+          expect(h.window.mode.get()).toBe('edit')
+          expect(h.window.saveLabel.get()).toBe('Save')
+          expect(h.window.form.get().name).toBe(incoming)
+          expect(h.window.state.get().gone).toBe(false)
+          expect(h.window.state.get().conflict).toBe(false)
+          expect(h.window.notice.get()).toEqual({
+            kind: 'updated',
+            text: 'Updated just now',
+          })
+          expect(h.window.dirty.get()).toBe(false)
+          expect(h.window.canSave.get()).toBe(false)
+          expect(h.window.saveAvailable.get()).toBe(false)
+          await h.window.save(vi.fn())
+          expect(h.dispatch).not.toHaveBeenCalled()
+          expect(h.window.opened.get()).toBe(true)
+          h.receive('Later')
+          expect(h.window.form.get().name).toBe('Later')
+          expect(h.window.state.get().conflict).toBe(false)
+          h.window.patchForm({ name: 'Mine now' })
+          expect(h.window.notice.get()).toBeNull()
+          expect(h.window.canSave.get()).toBe(true)
+          h.window.dispose()
+        },
+      )
+
+      it('keeps an existing draft when the first stored value is empty', async () => {
+        const h = emptyPlace(correction)
+        h.window.open('47', h.localeId)
+        h.window.patchForm({ name: 'Mine' })
+        h.receive('')
+        expect(h.window.mode.get()).toBe('edit')
+        expect(h.window.state.get().gone).toBe(false)
+        expect(h.window.state.get().conflict).toBe(false)
+        expect(h.window.canSave.get()).toBe(true)
+        await h.window.save(() => Promise.resolve(false))
+        expect(h.dispatch).toHaveBeenCalledExactlyOnceWith(
+          'hilos_i18n_language_name_update',
+          {
+            languageId: 46,
+            inLanguageId: 47,
+            localeId: h.localeId,
+            nameId: h.storedNameId,
+            name: 'Mine',
+            expectedName: '',
+          },
+        )
+        h.window.dispose()
+      })
+
+      it.each(['removed', 'replaced'])(
+        'keeps Deleted when its first stored id is %s',
+        async (lost) => {
+          const h = emptyPlace(correction)
+          h.window.open('47', h.localeId)
+          h.window.patchForm({ name: 'Copy this' })
+          h.receive('Same text')
+          h.window.keepMine()
+          h.receive(
+            lost === 'removed' ? null : 'Same text',
+            lost === 'removed' ? null : 999,
+          )
+          expect(h.window.mode.get()).toBe('edit')
+          expect(h.window.saveLabel.get()).toBe('Deleted')
+          expect(h.window.notice.get()?.kind).toBe('deleted')
+          expect(h.window.form.get().name).toBe('Copy this')
+          expect(h.window.canSave.get()).toBe(false)
+          expect(h.window.canSubmit.get()).toBe(false)
+          await h.window.save(vi.fn())
+          expect(h.dispatch).not.toHaveBeenCalled()
+          h.receive('Same text', 1000)
+          expect(h.window.saveLabel.get()).toBe('Deleted')
+          expect(h.window.form.get().name).toBe('Copy this')
+          h.window.dispose()
+        },
+      )
+
+      it.each([
+        { order: 'refusal-first', incoming: 'Theirs' },
+        { order: 'live-first', incoming: 'Theirs' },
+        { order: 'refusal-first', incoming: 'Mine' },
+        { order: 'live-first', incoming: 'Mine' },
+      ])(
+        'merges a duplicate in $order order with $incoming without retry',
+        async ({ order, incoming }) => {
+          const h = emptyPlace(correction)
+          h.window.open('47', h.localeId)
+          const target = h.window.target.get()
+          h.window.patchForm({ name: 'Mine' })
+          const p = pending()
+          const run = vi.fn(p.run)
+          const saved = h.window.save(run)
+          if (order === 'refusal-first') {
+            p.finish(false)
+            await saved
+            h.receive(incoming)
+          } else {
+            h.receive(incoming)
+            expect(h.window.saving.get()).toBe(true)
+            expect(h.window.canSave.get()).toBe(false)
+            p.finish(false)
+            await saved
+          }
+          expect(h.window.saving.get()).toBe(false)
+          expect(h.window.opened.get()).toBe(true)
+          expect(h.window.target.get()).toBe(target)
+          expect(h.controller.focusedRow.get()?.rowKey).toBe('47')
+          expect(h.window.mode.get()).toBe('edit')
+          expect(h.window.form.get().name).toBe('Mine')
+          expect(h.window.notice.get()).toEqual(
+            incoming === 'Mine'
+              ? { kind: 'updated', text: 'Updated just now' }
+              : {
+                  kind: 'conflict',
+                  text: 'Name changed elsewhere to "Theirs".',
+                },
+          )
+          expect(h.dispatch).toHaveBeenCalledOnce()
+          expect(run).toHaveBeenCalledOnce()
+          h.window.keepMine()
+          expect(h.window.canSave.get()).toBe(incoming !== 'Mine')
+          expect(h.dispatch).toHaveBeenCalledOnce()
+          h.window.dispose()
+        },
+      )
+
+      it.each(['reply', 'route', 'dispose'])(
+        'holds a pending add through occupation until %s',
+        async (end) => {
+          const h = emptyPlace(correction)
+          h.window.open('47', h.localeId)
+          const target = h.window.target.get()
+          h.window.patchForm({ name: 'Mine' })
+          const p = pending()
+          const run = vi.fn(p.run)
+          const saved = h.window.save(run)
+          h.receive('Theirs')
+          h.window.keepMine()
+          expect(h.window.mode.get()).toBe('edit')
+          expect(h.window.target.get()).toBe(target)
+          expect(h.window.saving.get()).toBe(true)
+          expect(h.window.saveAvailable.get()).toBe(true)
+          expect(h.window.canSave.get()).toBe(false)
+          h.window.close()
+          expect(h.window.opened.get()).toBe(true)
+          expect(h.window.open('47', h.localeId)).toBe(false)
+          await h.window.save(run)
+          expect(run).toHaveBeenCalledOnce()
+          expect(h.dispatch).toHaveBeenCalledOnce()
+          if (end === 'reply') {
+            p.finish(true)
+            await saved
+            expect(h.window.opened.get()).toBe(false)
+            expect(h.controller.focusedRow.get()).toBeUndefined()
+          } else {
+            if (end === 'route') h.language.set('qz')
+            else h.window.dispose()
+            expect(h.window.opened.get()).toBe(false)
+            expect(h.controller.focusedRow.get()).toBeUndefined()
+            h.card.set({ ...originalCard, code: 'qz' })
+            h.language.set('qz')
+            h.window.start()
+            h.window.open('47', h.localeId)
+            h.window.patchForm({ name: 'New opening' })
+            const next = pending()
+            const newSave = h.window.save(next.run)
+            p.finish(true)
+            await saved
+            expect(h.window.opened.get()).toBe(true)
+            expect(h.window.saving.get()).toBe(true)
+            expect(h.window.form.get().name).toBe('New opening')
+            expect(h.controller.focusedRow.get()?.rowKey).toBe('47')
+            next.finish(false)
+            await newSave
+            expect(h.window.saving.get()).toBe(false)
+          }
+          h.window.dispose()
+        },
+      )
     },
   )
 

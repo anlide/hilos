@@ -139,10 +139,13 @@ describe('React language name window', () => {
       expect(el('i18n-language-name-error').textContent).toContain(
         'A name already exists',
       )
-      expect(h.window.mode.get()).toBe('add')
+      expect(h.window.mode.get()).toBe('edit')
       change('i18n-language-name-input', '  My value  ')
       click('i18n-language-name-submit')
-      expect(h.calls[1]?.payload).toMatchObject({ name: '  My value  ' })
+      expect(h.calls[1]).toMatchObject({
+        action: 'hilos_i18n_language_name_update',
+        payload: { name: '  My value  ' },
+      })
       await settle(() => h.succeed(1))
       expect(el('i18n-language-name-window')).toBeNull()
     },

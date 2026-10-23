@@ -1,9 +1,9 @@
 // HilosI18nLanguageNameWindow — the one window of a language's name written in
 // another language: the base name or one locale correction of it, added where
 // there is none and edited where there is one. The session is the core's
-// (createHilosI18nLanguageNameWindow): the parent row held in focus, the mode
-// fixed at opening, the creation form, the baseline/draft/incoming merge of an
-// edit, its notice and the one canSave verdict. This view mirrors it, starts and
+// (createHilosI18nLanguageNameWindow): the parent row held in focus, the title
+// fixed at opening, live occupancy, the baseline/draft/incoming merge,
+// its notice and the one canSave verdict. This view mirrors it, starts and
 // disposes it with itself and with a new session bound in its place, and gives
 // every opening a tracked action of its own, so a late refusal from a previous
 // address paints nothing on the next one. An empty text is a value the server
@@ -66,15 +66,11 @@ type NameWindowNotice = ReturnType<NameWindow['notice']['get']>
       [busy]="saving()"
     >
       <div modalHeader data-id="i18n-language-name-title">
-        @if (mode() === 'edit') {
-          <h5
-            hilosConflictHeader
-            [title]="title()"
-            [conflict]="state().conflict"
-          ></h5>
-        } @else {
-          <h5 class="modal-title mb-0">{{ title() }}</h5>
-        }
+        <h5
+          hilosConflictHeader
+          [title]="title()"
+          [conflict]="state().conflict"
+        ></h5>
       </div>
       <div data-id="i18n-language-name-window">
         <dl class="row small mb-3">
@@ -123,65 +119,43 @@ type NameWindowNotice = ReturnType<NameWindow['notice']['get']>
         />
       </div>
       <ng-template #modalActions let-requestClose="requestClose">
-        @if (mode() === 'edit') {
-          <div
-            hilosConflictActions
-            [conflict]="state().conflict"
-            [disableSave]="!saveAvailable()"
-            [saveLabel]="saveLabel()"
-            (save)="submit()"
-            (acceptMine)="window().keepMine()"
-            (acceptTheirs)="window().takeTheirs()"
-          >
-            <ng-template #cancelButton>
-              <button
-                type="button"
-                class="btn btn-secondary"
-                [disabled]="saving()"
-                data-id="i18n-language-name-cancel"
-                (click)="requestClose()"
-              >
-                {{ copy.cancel }}
-              </button>
-            </ng-template>
-            <ng-template
-              #saveButton
-              let-saveDisabled="disabled"
-              let-onSave="onSave"
+        <div
+          hilosConflictActions
+          [conflict]="state().conflict"
+          [disableSave]="!saveAvailable()"
+          [saveLabel]="saveLabel()"
+          (save)="submit()"
+          (acceptMine)="window().keepMine()"
+          (acceptTheirs)="window().takeTheirs()"
+        >
+          <ng-template #cancelButton>
+            <button
+              type="button"
+              class="btn btn-secondary"
+              [disabled]="saving()"
+              data-id="i18n-language-name-cancel"
+              (click)="requestClose()"
             >
-              <button
-                hilosLoadingButton
-                class="btn-primary"
-                [loading]="action().busy()"
-                [disabled]="saveDisabled"
-                data-id="i18n-language-name-submit"
-                (click)="onSave()"
-              >
-                {{ saveLabel() }}
-              </button>
-            </ng-template>
-          </div>
-        } @else {
-          <button
-            type="button"
-            class="btn btn-secondary"
-            [disabled]="saving()"
-            data-id="i18n-language-name-cancel"
-            (click)="requestClose()"
+              {{ copy.cancel }}
+            </button>
+          </ng-template>
+          <ng-template
+            #saveButton
+            let-saveDisabled="disabled"
+            let-onSave="onSave"
           >
-            {{ copy.cancel }}
-          </button>
-          <button
-            hilosLoadingButton
-            class="btn-primary"
-            [loading]="action().busy()"
-            [disabled]="!submitAvailable()"
-            data-id="i18n-language-name-submit"
-            (click)="submit()"
-          >
-            {{ saveLabel() }}
-          </button>
-        }
+            <button
+              hilosLoadingButton
+              class="btn-primary"
+              [loading]="action().busy()"
+              [disabled]="saveDisabled"
+              data-id="i18n-language-name-submit"
+              (click)="onSave()"
+            >
+              {{ saveLabel() }}
+            </button>
+          </ng-template>
+        </div>
       </ng-template>
     </hilos-modal>
   `,
@@ -194,16 +168,13 @@ export class HilosI18nLanguageNameWindow {
   protected readonly nameMax = HILOS_I18N_LANGUAGE_NAME_MAX
   protected readonly opened = signal(false)
   protected readonly target = signal<HilosI18nLanguageNameTarget | null>(null)
-  protected readonly mode = signal<'add' | 'edit' | null>(null)
   protected readonly form = signal({ name: '' })
   protected readonly state = signal(hilosRowEditIdle({ name: '' }))
   protected readonly dirty = signal(false)
   protected readonly notice = signal<NameWindowNotice>(null)
   protected readonly saving = signal(false)
   protected readonly canSave = signal(false)
-  protected readonly canSubmit = signal(false)
   protected readonly saveAvailable = signal(false)
-  protected readonly submitAvailable = signal(false)
   protected readonly saveLabel = signal<string>(
     HILOS_I18N_LANGUAGE_NAME_COPY.add,
   )
@@ -239,16 +210,13 @@ export class HilosI18nLanguageNameWindow {
       const stops = [
         mirrorHilosSignal(window.opened, this.opened),
         mirrorHilosSignal(window.target, this.target),
-        mirrorHilosSignal(window.mode, this.mode),
         mirrorHilosSignal(window.form, this.form),
         mirrorHilosSignal(window.state, this.state),
         mirrorHilosSignal(window.dirty, this.dirty),
         mirrorHilosSignal(window.notice, this.notice),
         mirrorHilosSignal(window.saving, this.saving),
         mirrorHilosSignal(window.canSave, this.canSave),
-        mirrorHilosSignal(window.canSubmit, this.canSubmit),
         mirrorHilosSignal(window.saveAvailable, this.saveAvailable),
-        mirrorHilosSignal(window.submitAvailable, this.submitAvailable),
         mirrorHilosSignal(window.saveLabel, this.saveLabel),
         subscribeSignal(window.target, () =>
           this.action.set(createHilosTrackedAction()),
@@ -275,11 +243,7 @@ export class HilosI18nLanguageNameWindow {
   // save is in flight, or while the session refuses what would leave.
   protected submit(event?: Event): void {
     event?.preventDefault()
-    if (
-      this.lookOnly.locked() ||
-      this.saving() ||
-      !(this.mode() === 'add' ? this.canSubmit() : this.canSave())
-    ) {
+    if (this.lookOnly.locked() || !this.canSave()) {
       return
     }
     void this.window().save(this.action().run)

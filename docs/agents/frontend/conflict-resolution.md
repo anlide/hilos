@@ -58,7 +58,7 @@ is idempotent; that property does not extend to other creations.
 These windows use, or still need to adopt, creation in a known place; each
 implementing leaf removes its own marker in the commit that lands the behavior:
 
-- `createHilosI18nLanguageNameWindow` (not in the code yet — HIL-1641)
+- `createHilosI18nLanguageNameWindow`
 - `createHilosI18nCountryNameWindow` (not in the code yet — HIL-1642)
 - `createHilosI18nLocaleAdd`
 

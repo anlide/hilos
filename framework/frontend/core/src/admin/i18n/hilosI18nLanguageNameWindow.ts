@@ -81,12 +81,13 @@ export interface HilosI18nLanguageNameTarget {
   readonly mode: 'add' | 'edit'
 }
 
-/** One modal's creation form or ordinary row-edit session over a selected name. */
+/** One modal's known-place row-edit session over a selected name. */
 export interface HilosI18nLanguageNameWindow extends Omit<
   HilosTrackedRowEdit<NameFields, NameFields>,
   'open'
 > {
   readonly target: ReadonlySignal<HilosI18nLanguageNameTarget | null>
+  /** Live occupancy chooses add or edit; target.mode keeps the opening title. */
   readonly mode: ReadonlySignal<'add' | 'edit' | null>
   readonly dirty: ReadonlySignal<boolean>
   /**
@@ -106,8 +107,9 @@ export interface HilosI18nLanguageNameWindow extends Omit<
 
 /**
  * Hold a parent row live and project just the base name or one locale correction.
- * Creation has no baseline; a concurrent creation remains the server's duplicate
- * refusal. Edits use the shared session, including its choices and late-ack guard.
+ * Both creation and editing merge against the shown name, initially '' at an
+ * empty place. Live occupancy chooses mode; target keeps the opening title and
+ * coordinates. The first stored id stays bound through choices and late replies.
  *
  * @param controller The names table holding the writing language in focus.
  * @param card The live subject card.
@@ -123,10 +125,10 @@ export function createHilosI18nLanguageNameWindow(
   const parent = hilosTableRowEditSource(controller, (row) => row.rowKey)
   const target = createSignal<HilosI18nLanguageNameTarget | null>(null)
   const form = createSignal<NameFields>({ name: '' })
-  const adding = createSignal(false)
+  const boundNameId = createSignal<number | null>(null)
   const creating = createSignal(false)
   let round = 0
-  let stop: Unsubscribe | null = null
+  const stops: Unsubscribe[] = []
   const selected = computedSignal(() => {
     const held = target.get()
     const row = parent.live.get()
@@ -138,73 +140,77 @@ export function createHilosI18nLanguageNameWindow(
     )
       return undefined
     if (held.localeId === null) {
-      if (held.mode === 'edit' && row.nameId !== held.nameId) return undefined
-      return { name: row.name }
+      return {
+        nameId: row.nameId,
+        name: row.nameId === null ? '' : (row.name ?? ''),
+      }
     }
     if (row.nameId !== held.baseNameId) return undefined
     const correction = row.corrections.find(
       (item) => item.localeId === held.localeId,
     )
-    if (held.mode === 'edit' && correction?.nameId !== held.nameId)
-      return undefined
-    return correction
+    return correction === undefined
+      ? undefined
+      : {
+          nameId: correction.nameId,
+          name: correction.nameId === null ? '' : (correction.name ?? ''),
+        }
   })
   const source: HilosRowEditSource<NameFields> = {
     open: () => source.live.get() ?? null,
     live: computedSignal(() => {
       const current = selected.get()
-      return current?.name == null ? undefined : { name: current.name }
+      const bound = boundNameId.get()
+      return current === undefined ||
+        (bound !== null && current.nameId !== bound)
+        ? undefined
+        : { name: current.name }
     }),
     close: () => parent.close(),
   }
   const edit = createHilosRowEdit<NameFields, NameFields>(source, {
     formSignal: form,
     fields: (row) => ({ name: row.name }),
+    creating: () => selected.get()?.nameId === null,
     notice: {
       conflict: (state) =>
         HILOS_I18N_LANGUAGE_NAME_COPY.conflict(state.fields.name.incoming),
     },
   })
-  const opened = computedSignal(() => adding.get() || edit.opened.get())
-  const mode = computedSignal(() => (opened.get() ? target.get()!.mode : null))
+  const opened = edit.opened
+  const mode = computedSignal(() =>
+    opened.get() ? (boundNameId.get() === null ? 'add' : 'edit') : null,
+  )
   const saving = computedSignal(() => creating.get() || edit.saving.get())
-  const missing = computedSignal(() =>
-    mode.get() === 'add' ? selected.get() === undefined : edit.state.get().gone,
-  )
+  const saveAvailable = edit.saveAvailable
+  const canSave = computedSignal(() => saveAvailable.get() && !saving.get())
   const submitAvailable = computedSignal(
-    () => mode.get() === 'add' && !missing.get(),
+    () => mode.get() === 'add' && saveAvailable.get(),
   )
-  const canSubmit = computedSignal(
-    () => submitAvailable.get() && !creating.get(),
-  )
+  const canSubmit = computedSignal(() => mode.get() === 'add' && canSave.get())
 
   // Route teardown is allowed during a write. User close goes through the busy
   // guard below. An idle window never releases another dialog's parent focus.
   function close(): void {
     round++
-    if (adding.get()) {
-      adding.set(false)
-      creating.set(false)
-      parent.close()
-    }
+    creating.set(false)
     edit.close()
   }
 
   async function save(run: HilosActionRun): Promise<void> {
     const held = target.get()
-    if (held === null) return
+    if (held === null || !canSave.get()) return
     const coordinates = {
       languageId: held.languageId,
       inLanguageId: held.inLanguageId,
       localeId: held.localeId,
     }
     if (mode.get() === 'edit') {
-      if (!edit.canSave.get()) return
       await edit.save((draft) =>
         run(
           context.actions.dispatch(HILOS_I18N_LANGUAGE_NAME_UPDATE_ACTION, {
             ...coordinates,
-            nameId: held.nameId,
+            nameId: boundNameId.get(),
             name: draft.name,
             expectedName: source.live.get()!.name,
           }),
@@ -212,7 +218,6 @@ export function createHilosI18nLanguageNameWindow(
       )
       return
     }
-    if (!canSubmit.get()) return
     const started = round
     creating.set(true)
     try {
@@ -235,13 +240,13 @@ export function createHilosI18nLanguageNameWindow(
     opened,
     mode,
     saving,
+    saveAvailable,
+    canSave,
     submitAvailable,
     canSubmit,
-    dirty: computedSignal(() =>
-      mode.get() === 'add' ? form.get().name !== '' : edit.state.get().dirty,
-    ),
+    dirty: computedSignal(() => edit.state.get().dirty),
     saveLabel: computedSignal(() =>
-      missing.get()
+      edit.state.get().gone
         ? HILOS_ROW_EDIT_COPY.gone
         : mode.get() === 'add'
           ? HILOS_I18N_LANGUAGE_NAME_COPY.add
@@ -249,10 +254,8 @@ export function createHilosI18nLanguageNameWindow(
     ),
     notice: computedSignal(() => {
       if (!opened.get()) return null
-      if (missing.get())
-        return { kind: 'deleted', text: HILOS_ROW_EDIT_COPY.deleted }
       const notice = edit.state.get().notice
-      return mode.get() === 'edit' && notice !== null
+      return notice !== null
         ? { kind: notice.kind, text: edit.noticeText.get() }
         : null
     }),
@@ -295,11 +298,7 @@ export function createHilosI18nLanguageNameWindow(
         baseNameId: localeId === null ? null : fresh.nameId,
         mode: nameId === null ? 'add' : 'edit',
       })
-      if (nameId === null) {
-        form.set({ name: '' })
-        adding.set(true)
-        return true
-      }
+      boundNameId.set(nameId)
       return edit.open()
     },
     save,
@@ -307,13 +306,22 @@ export function createHilosI18nLanguageNameWindow(
       if (!saving.get()) close()
     },
     start() {
+      for (const stop of stops.splice(0)) stop()
+      stops.push(
+        subscribeSignal(selected, (current) => {
+          if (
+            opened.get() &&
+            boundNameId.get() === null &&
+            current !== undefined
+          )
+            boundNameId.set(current.nameId)
+        }),
+        subscribeSignal(language, close),
+      )
       edit.start()
-      stop?.()
-      stop = subscribeSignal(language, close)
     },
     dispose() {
-      stop?.()
-      stop = null
+      for (const stop of stops.splice(0)) stop()
       close()
       edit.dispose()
     },

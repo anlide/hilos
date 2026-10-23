@@ -244,20 +244,24 @@ describe('language name modal', () => {
         ),
       )
       await settled()
-      expect(h.window.mode.get()).toBe('add')
-      expect(input().value).toBe('')
+      expect(h.window.mode.get()).toBe('edit')
+      expect(input().value).toBe(
+        localeCode === null ? 'Original' : 'Correction',
+      )
       expect(el('i18n-language-name-error')?.textContent).toContain(
         'A name already exists',
       )
       await fill('  My value  ')
       button('submit').click()
       expect(h.dispatched[1]).toMatchObject({
+        name: 'hilos_i18n_language_name_update',
         payload: {
           languageId: 46,
           inLanguageId: 47,
-          baseNameId: localeCode === null ? null : 301,
+          nameId: localeCode === null ? 301 : 401,
           localeId: localeCode === null ? null : 501,
           name: '  My value  ',
+          expectedName: localeCode === null ? 'Original' : 'Correction',
         },
       })
       h.dispatched[1]!.settle({ message: 'Language name added.' })

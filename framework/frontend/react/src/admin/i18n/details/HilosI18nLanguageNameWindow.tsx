@@ -44,16 +44,13 @@ function NameForm({
   target: HilosI18nLanguageNameTarget
 }) {
   const copy = HILOS_I18N_LANGUAGE_NAME_COPY
-  const mode = useSignal(window.mode),
-    form = useSignal(window.form),
+  const form = useSignal(window.form),
     state = useSignal(window.state),
     dirty = useSignal(window.dirty),
     notice = useSignal(window.notice),
     saving = useSignal(window.saving),
     canSave = useSignal(window.canSave),
-    canSubmit = useSignal(window.canSubmit),
     saveAvailable = useSignal(window.saveAvailable),
-    submitAvailable = useSignal(window.submitAvailable),
     saveLabel = useSignal(window.saveLabel)
   const action = useTrackedAction(),
     { locked } = useLookOnly()
@@ -67,8 +64,7 @@ function NameForm({
   const hint =
     target.localeCode === null ? copy.hints.base : copy.hints.correction
   function submit(): void {
-    if (!locked && !saving && (mode === 'add' ? canSubmit : canSave))
-      void window.save(action.run)
+    if (!locked && canSave) void window.save(action.run)
   }
   return (
     <HilosModal
@@ -79,47 +75,18 @@ function NameForm({
       busy={saving}
       header={
         <div data-id="i18n-language-name-title">
-          {mode === 'edit' ? (
-            <ConflictHeader title={title} conflict={state.conflict} />
-          ) : (
-            <h5 className="modal-title mb-0">{title}</h5>
-          )}
+          <ConflictHeader title={title} conflict={state.conflict} />
         </div>
       }
-      actions={({ requestClose }) =>
-        mode === 'edit' ? (
-          <ConflictActions
-            conflict={state.conflict}
-            disableSave={!saveAvailable}
-            saveLabel={saveLabel}
-            onSave={submit}
-            onAcceptMine={window.keepMine}
-            onAcceptTheirs={window.takeTheirs}
-            cancelButton={
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={saving}
-                data-id="i18n-language-name-cancel"
-                onClick={requestClose}
-              >
-                {copy.cancel}
-              </button>
-            }
-            saveButton={({ disabled, onSave }) => (
-              <LoadingButton
-                className="btn-primary"
-                loading={action.busy}
-                disabled={disabled}
-                data-id="i18n-language-name-submit"
-                onClick={onSave}
-              >
-                {saveLabel}
-              </LoadingButton>
-            )}
-          />
-        ) : (
-          <>
+      actions={({ requestClose }) => (
+        <ConflictActions
+          conflict={state.conflict}
+          disableSave={!saveAvailable}
+          saveLabel={saveLabel}
+          onSave={submit}
+          onAcceptMine={window.keepMine}
+          onAcceptTheirs={window.takeTheirs}
+          cancelButton={
             <button
               type="button"
               className="btn btn-secondary"
@@ -129,18 +96,20 @@ function NameForm({
             >
               {copy.cancel}
             </button>
+          }
+          saveButton={({ disabled, onSave }) => (
             <LoadingButton
               className="btn-primary"
               loading={action.busy}
-              disabled={!submitAvailable}
+              disabled={disabled}
               data-id="i18n-language-name-submit"
-              onClick={submit}
+              onClick={onSave}
             >
               {saveLabel}
             </LoadingButton>
-          </>
-        )
-      }
+          )}
+        />
+      )}
     >
       <div data-id="i18n-language-name-window">
         <dl className="row small mb-3">
