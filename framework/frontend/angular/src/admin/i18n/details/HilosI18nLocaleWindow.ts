@@ -412,8 +412,8 @@ const FOOTER = 'modal-footer hilos-button-row p-0 m-0 border-0 align-self-end'
             <button
               hilosLoadingButton
               class="btn-primary"
-              [loading]="addAction.loading()"
-              [disabled]="!addCanSave()"
+              [loading]="addAction.busy()"
+              [disabled]="!addAvailable()"
               data-id="i18n-locale-submit"
               (click)="submit()"
             >
@@ -461,9 +461,11 @@ const FOOTER = 'modal-footer hilos-button-row p-0 m-0 border-0 align-self-end'
                   <button
                     hilosLoadingButton
                     class="btn-primary"
-                    [loading]="switchAction.loading()"
+                    [loading]="switchAction.busy()"
                     [disabled]="
-                      busy() ||
+                      addAction.busy() ||
+                      editAction.busy() ||
+                      offAction.busy() ||
                       unsavedAtStep() ||
                       lockedOn() ||
                       editState().gone
@@ -477,7 +479,7 @@ const FOOTER = 'modal-footer hilos-button-row p-0 m-0 border-0 align-self-end'
                   <div
                     hilosConflictActions
                     [conflict]="editState().conflict"
-                    [disableSave]="!editCanSave()"
+                    [disableSave]="!editSaveAvailable()"
                     [saveLabel]="editSaveLabel()"
                     (save)="submit()"
                     (acceptMine)="session().editor.keepMine()"
@@ -511,7 +513,7 @@ const FOOTER = 'modal-footer hilos-button-row p-0 m-0 border-0 align-self-end'
                       <button
                         hilosLoadingButton
                         class="btn-primary"
-                        [loading]="editAction.loading()"
+                        [loading]="editAction.busy()"
                         [disabled]="saveDisabled"
                         data-id="i18n-locale-submit"
                         (click)="onSave()"
@@ -556,8 +558,13 @@ const FOOTER = 'modal-footer hilos-button-row p-0 m-0 border-0 align-self-end'
                   <button
                     hilosLoadingButton
                     class="btn-danger"
-                    [loading]="offAction.loading()"
-                    [disabled]="busy() || offVerdict().disabled"
+                    [loading]="offAction.busy()"
+                    [disabled]="
+                      addAction.busy() ||
+                      editAction.busy() ||
+                      switchAction.busy() ||
+                      offVerdict().disabled
+                    "
                     data-id="i18n-locale-switch-off-confirm"
                     (click)="confirmSwitchOff()"
                   >
@@ -644,11 +651,11 @@ export class HilosI18nLocaleWindow {
     hilosRowEditIdle<HilosI18nLocaleFormats>(this.editForm()),
   )
   protected readonly editNotice = signal('')
-  protected readonly editCanSave = signal(false)
+  protected readonly editSaveAvailable = signal(false)
   protected readonly editSaveLabel = signal<string>(HILOS_I18N_LOCALE_COPY.save)
   protected readonly addRow = signal<HilosI18nLocaleRow | null>(null)
   protected readonly addForm = signal<HilosI18nLocaleAddForm>(NOTHING_CHOSEN)
-  protected readonly addCanSave = signal(false)
+  protected readonly addAvailable = signal(false)
   protected readonly addElsewhere = signal(false)
   protected readonly addGone = signal(false)
   private readonly focusedRow = signal<HilosI18nLocaleRow | undefined>(
@@ -833,11 +840,11 @@ export class HilosI18nLocaleWindow {
         mirrorHilosSignal(editor.form, this.editForm),
         mirrorHilosSignal(editor.state, this.editState),
         mirrorHilosSignal(editor.noticeText, this.editNotice),
-        mirrorHilosSignal(editor.canSave, this.editCanSave),
+        mirrorHilosSignal(editor.saveAvailable, this.editSaveAvailable),
         mirrorHilosSignal(editor.saveLabel, this.editSaveLabel),
         mirrorHilosSignal(creator.row, this.addRow),
         mirrorHilosSignal(creator.form, this.addForm),
-        mirrorHilosSignal(creator.canAdd, this.addCanSave),
+        mirrorHilosSignal(creator.addAvailable, this.addAvailable),
         mirrorHilosSignal(creator.elsewhere, this.addElsewhere),
         mirrorHilosSignal(creator.gone, this.addGone),
         mirrorHilosSignal(controller.focusedRow, this.focusedRow),

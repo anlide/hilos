@@ -223,8 +223,8 @@ import type { HilosDaemonNodeHeading } from '@hilos/core/admin/daemon'
           <button
             hilosLoadingButton
             class="btn-primary"
-            [loading]="restartLoading()"
-            [disabled]="restartBusy() || !canRestart()"
+            [loading]="restartBusy()"
+            [disabled]="restartUnavailable()"
             data-id="hilos-daemon-restart-confirm"
             (click)="submitRestart()"
           >
@@ -287,7 +287,6 @@ export class HilosDaemonAgentsPage {
   protected readonly restartIdentity = signal<HilosDaemonAgentRow | null>(null)
   protected readonly restartAction = createHilosTrackedAction()
   protected readonly restartBusy = this.restartAction.busy
-  protected readonly restartLoading = this.restartAction.loading
   protected readonly restartUnavailable = computed(
     () =>
       this.restartTarget() === undefined ||

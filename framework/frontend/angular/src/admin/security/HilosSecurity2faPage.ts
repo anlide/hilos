@@ -229,7 +229,7 @@ import {
           <div
             hilosConflictActions
             [conflict]="live().conflict"
-            [disableSave]="!canSave()"
+            [disableSave]="!saveAvailable()"
             [saveLabel]="editSaveLabel()"
             (save)="submitEdit()"
             (acceptMine)="acceptMine()"
@@ -253,7 +253,7 @@ import {
               <button
                 hilosLoadingButton
                 class="btn-primary"
-                [loading]="edit.loading()"
+                [loading]="edit.busy()"
                 [disabled]="disabled"
                 data-id="hilos-2fa-save"
                 (click)="onSave()"
@@ -329,7 +329,6 @@ import {
               hilosLoadingButton
               class="btn-danger"
               [loading]="disableBusy()"
-              [disabled]="disableBusy()"
               data-id="hilos-2fa-disable-confirm"
               (click)="disable().confirm()"
             >
@@ -402,7 +401,7 @@ export class HilosSecurity2faPage {
   )
   protected readonly editNoticeText = signal('')
   protected readonly editSaveLabel = signal('Save')
-  protected readonly canSave = signal(false)
+  protected readonly saveAvailable = signal(false)
   protected readonly edit = createHilosTrackedAction()
   protected readonly editTitle = computed(() => {
     const row = this.editRow()
@@ -430,7 +429,7 @@ export class HilosSecurity2faPage {
         mirrorHilosSignal(editor.state, this.live),
         mirrorHilosSignal(editor.noticeText, this.editNoticeText),
         mirrorHilosSignal(editor.saveLabel, this.editSaveLabel),
-        mirrorHilosSignal(editor.canSave, this.canSave),
+        mirrorHilosSignal(editor.saveAvailable, this.saveAvailable),
       ]
       onCleanup(() => {
         for (const stop of off) stop()

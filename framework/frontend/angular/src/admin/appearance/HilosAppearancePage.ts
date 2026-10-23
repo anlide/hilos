@@ -238,7 +238,7 @@ export class AppearanceForm {
           <div
             hilosConflictActions
             [conflict]="switchingState().conflict"
-            [disableSave]="!switchingCanSave()"
+            [disableSave]="!switchingSaveAvailable()"
             [saveLabel]="switchingSaveLabel()"
             (save)="submitSwitching()"
             (acceptMine)="switchingEditor().keepMine()"
@@ -263,7 +263,7 @@ export class AppearanceForm {
               <button
                 hilosLoadingButton
                 class="btn-primary"
-                [loading]="switchingAction.loading()"
+                [loading]="switchingAction.busy()"
                 [disabled]="saveDisabled"
                 data-id="appearance-switching-save"
                 (click)="onSave()"
@@ -357,7 +357,7 @@ export class AppearanceForm {
           <div
             hilosConflictActions
             [conflict]="defaultThemeState().conflict"
-            [disableSave]="!defaultThemeCanSave()"
+            [disableSave]="!defaultThemeSaveAvailable()"
             [saveLabel]="defaultThemeSaveLabel()"
             (save)="submitDefaultTheme()"
             (acceptMine)="defaultThemeEditor().keepMine()"
@@ -382,7 +382,7 @@ export class AppearanceForm {
               <button
                 hilosLoadingButton
                 class="btn-primary"
-                [loading]="defaultThemeAction.loading()"
+                [loading]="defaultThemeAction.busy()"
                 [disabled]="saveDisabled"
                 data-id="appearance-default-theme-save"
                 (click)="onSave()"
@@ -435,7 +435,7 @@ export class HilosAppearancePage {
   )
   protected readonly switchingNoticeText = signal('')
   protected readonly switchingSaveLabel = signal('Save')
-  protected readonly switchingCanSave = signal(false)
+  protected readonly switchingSaveAvailable = signal(false)
   protected readonly switchingAction = createHilosTrackedAction()
 
   // Default theme: one of the three positions, never a fallback for a value
@@ -461,7 +461,7 @@ export class HilosAppearancePage {
   )
   protected readonly defaultThemeNoticeText = signal('')
   protected readonly defaultThemeSaveLabel = signal('Save')
-  protected readonly defaultThemeCanSave = signal(false)
+  protected readonly defaultThemeSaveAvailable = signal(false)
   protected readonly defaultThemeAction = createHilosTrackedAction()
   protected readonly defaultThemeHidden = computed(() =>
     isHiddenValue(this.defaultThemeForm().defaultTheme),
@@ -485,14 +485,17 @@ export class HilosAppearancePage {
         mirrorHilosSignal(switching.state, this.switchingState),
         mirrorHilosSignal(switching.noticeText, this.switchingNoticeText),
         mirrorHilosSignal(switching.saveLabel, this.switchingSaveLabel),
-        mirrorHilosSignal(switching.canSave, this.switchingCanSave),
+        mirrorHilosSignal(switching.saveAvailable, this.switchingSaveAvailable),
         mirrorHilosSignal(defaultTheme.opened, this.defaultThemeOpen),
         mirrorHilosSignal(defaultTheme.row, this.defaultThemeRow),
         mirrorHilosSignal(defaultTheme.form, this.defaultThemeForm),
         mirrorHilosSignal(defaultTheme.state, this.defaultThemeState),
         mirrorHilosSignal(defaultTheme.noticeText, this.defaultThemeNoticeText),
         mirrorHilosSignal(defaultTheme.saveLabel, this.defaultThemeSaveLabel),
-        mirrorHilosSignal(defaultTheme.canSave, this.defaultThemeCanSave),
+        mirrorHilosSignal(
+          defaultTheme.saveAvailable,
+          this.defaultThemeSaveAvailable,
+        ),
       ]
       onCleanup(() => {
         for (const stop of off) stop()

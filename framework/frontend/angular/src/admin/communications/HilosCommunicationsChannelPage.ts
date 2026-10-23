@@ -105,8 +105,7 @@ const SOURCE_LABEL: Record<ChannelValueSource, string> = {
         <button
           hilosLoadingButton
           class="btn-outline-primary btn-sm"
-          [loading]="test.loading()"
-          [disabled]="test.busy()"
+          [loading]="test.busy()"
           data-id="hilos-channel-test"
           (click)="sendTest()"
         >
@@ -223,7 +222,7 @@ const SOURCE_LABEL: Record<ChannelValueSource, string> = {
           <div
             hilosConflictActions
             [conflict]="live().conflict"
-            [disableSave]="!canSave()"
+            [disableSave]="!saveAvailable()"
             [saveLabel]="editSaveLabel()"
             (save)="submitEdit()"
             (acceptMine)="acceptMine()"
@@ -247,7 +246,7 @@ const SOURCE_LABEL: Record<ChannelValueSource, string> = {
               <button
                 hilosLoadingButton
                 class="btn-primary"
-                [loading]="edit.loading()"
+                [loading]="edit.busy()"
                 [disabled]="disabled"
                 data-id="hilos-channel-edit-save"
                 (click)="onSave()"
@@ -311,8 +310,8 @@ const SOURCE_LABEL: Record<ChannelValueSource, string> = {
           <button
             hilosLoadingButton
             class="btn-danger"
-            [loading]="reset.loading()"
-            [disabled]="reset.busy() || resetGone()"
+            [loading]="reset.busy()"
+            [disabled]="resetGone()"
             data-id="hilos-channel-reset-confirm"
             (click)="submitReset()"
           >
@@ -375,7 +374,7 @@ export class HilosCommunicationsChannelPage {
   )
   protected readonly editNoticeText = signal('')
   protected readonly editSaveLabel = signal('Save')
-  protected readonly canSave = signal(false)
+  protected readonly saveAvailable = signal(false)
   protected readonly editHidden = computed(() => this.editForm().hidden)
   protected readonly editValue = computed(() => this.editForm().text)
   // The live row the open reset dialog is about: the row the table holds in
@@ -436,7 +435,7 @@ export class HilosCommunicationsChannelPage {
         mirrorHilosSignal(editor.state, this.live),
         mirrorHilosSignal(editor.noticeText, this.editNoticeText),
         mirrorHilosSignal(editor.saveLabel, this.editSaveLabel),
-        mirrorHilosSignal(editor.canSave, this.canSave),
+        mirrorHilosSignal(editor.saveAvailable, this.saveAvailable),
       ]
       onCleanup(() => {
         for (const stop of off) stop()

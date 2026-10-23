@@ -1,8 +1,11 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
+  ActionError,
+  AUTH_ACTION_PASSKEY_REGISTER_OPTIONS,
   bindProfileFlows,
   createSignal,
   HILOS_PROFILE_IDENTITIES_LIST,
+  PROFILE_UNLINK_IDENTITY_ACTION,
   profileFlowsSchema,
   ScopeManager,
   SIGNAL_PROFILE_FLOWS,
@@ -13,7 +16,7 @@ import {
   type HilosRouter,
   type ProjectSignal,
 } from '@hilos/core'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HilosProfileSignInPage } from '../src/profile/HilosProfileSignInPage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 
@@ -69,6 +72,19 @@ const PASSKEY_ONLY = resolveHilosProfileSignInMethods(
   ],
   [],
 )
+const MAGIC_LINK = resolveHilosProfileSignInMethods(
+  [
+    {
+      id: 1,
+      type: 'magic_link',
+      provider: null,
+      identifier: 'a@example.test',
+      verified: true,
+    },
+  ],
+  [],
+)
+const LINK_AND_PASSKEY = [...MAGIC_LINK, ...PASSKEY_ONLY]
 
 /** Feed the framework list and normalized identities to the page scope. */
 function setMethods(
@@ -428,3 +444,299 @@ it.each(CODE_WAYS)(
     fixture.destroy()
   },
 )
+
+/**
+ * A dispatch answer that stays in flight until the test settles it.
+ *
+ * @returns The answer to hand back from dispatch, and how to settle it.
+ */
+function held(): {
+  answer: {
+    loading: ReturnType<typeof createSignal<boolean>>
+    done: Promise<{ reply: object }>
+  }
+  resolve: (value: { reply: object }) => void
+  reject: (error: unknown) => void
+} {
+  let resolve!: (value: { reply: object }) => void
+  let reject!: (error: unknown) => void
+  const done = new Promise<{ reply: object }>((settle, refuse) => {
+    resolve = settle
+    reject = refuse
+  })
+
+  return { answer: { loading: createSignal(false), done }, resolve, reject }
+}
+
+/**
+ * Let the answers the page awaits arrive under a fake clock, and draw what they
+ * changed.
+ *
+ * @param fixture The page under test.
+ */
+async function flush(fixture: ComponentFixture<unknown>): Promise<void> {
+  for (let tick = 0; tick < 10; tick += 1) await Promise.resolve()
+  fixture.detectChanges()
+}
+
+/**
+ * Let every answer the page awaits arrive on the real clock, however long its
+ * chain, and draw what it changed.
+ *
+ * @param fixture The page under test.
+ */
+async function drain(fixture: ComponentFixture<unknown>): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  fixture.detectChanges()
+}
+
+/**
+ * Move the fake clock and draw what it changed.
+ *
+ * @param fixture The page under test.
+ * @param ms How far to move the clock.
+ */
+function wait(fixture: ComponentFixture<unknown>, ms: number): void {
+  vi.advanceTimersByTime(ms)
+  fixture.detectChanges()
+}
+
+/** The delayed spinner of a LoadingButton, if it shows. */
+function spinnerOf(button: HTMLElement): Element | null {
+  return button.querySelector('[data-id="loading-button-spinner"]')
+}
+
+// In a group the pressed button carries the flight: it is locked at once and
+// keeps its look until its one spinner comes; the others are off natively from
+// the same moment, by a flight that is not theirs (HIL-1768).
+describe('profile sign-in page locks a pressed button at once and the others by its flight', () => {
+  afterEach(() => {
+    delete (globalThis as { PublicKeyCredential?: unknown }).PublicKeyCredential
+    delete (navigator as { credentials?: unknown }).credentials
+  })
+
+  it.each(['profile-sign-in-passkey-only-password', 'profile-sign-in-add'])(
+    'keeps %s live-looking while the dialog opens and turns the others off at once',
+    async (pressedId) => {
+      vi.useFakeTimers()
+      const { dispatch, fixture, node } = setup(NO_STEP, PASSKEY_ONLY)
+      const opening = held()
+      dispatch.mockImplementationOnce(() => opening.answer)
+      const pressed = node(pressedId) as HTMLButtonElement
+      const others = [
+        'profile-sign-in-passkey-only-password',
+        'profile-sign-in-passkey-only-phone',
+        'profile-sign-in-passkey-only-link-oauth:github',
+        'profile-sign-in-add',
+      ]
+        .filter((id) => id !== pressedId)
+        .map((id) => node(id) as HTMLButtonElement)
+      const starts = () =>
+        dispatch.mock.calls.filter(
+          ([action]) => action === 'hilos_step_up_start',
+        )
+
+      pressed.click()
+      fixture.detectChanges()
+      expect(starts()).toHaveLength(1)
+      expect(pressed.getAttribute('aria-busy')).toBe('true')
+      expect(pressed.getAttribute('aria-disabled')).toBe('true')
+      expect(pressed.disabled).toBe(false)
+      expect(others.map((button) => button.disabled)).toEqual([
+        true,
+        true,
+        true,
+      ])
+      for (const button of others)
+        expect(button.hasAttribute('aria-busy')).toBe(false)
+
+      pressed.click()
+      for (const button of others) button.click()
+      fixture.detectChanges()
+      expect(starts()).toHaveLength(1)
+
+      wait(fixture, 299)
+      expect(spinnerOf(pressed)).toBeNull()
+      expect(pressed.classList.contains('disabled')).toBe(false)
+      wait(fixture, 1)
+      expect(spinnerOf(pressed)).not.toBeNull()
+      expect(pressed.classList.contains('disabled')).toBe(true)
+      expect(pressed.disabled).toBe(false)
+      for (const button of others) expect(spinnerOf(button)).toBeNull()
+
+      opening.resolve({ reply: NO_STEP })
+      await flush(fixture)
+      expect(node('profile-sign-in-add-modal')).not.toBeNull()
+      expect(starts()).toHaveLength(1)
+      fixture.destroy()
+    },
+  )
+
+  it('keeps a pressed passkey live-looking while the provider beside it goes off at once', async () => {
+    ;(globalThis as { PublicKeyCredential?: unknown }).PublicKeyCredential =
+      class {}
+    Object.defineProperty(navigator, 'credentials', {
+      configurable: true,
+      value: { create: vi.fn(), get: vi.fn() },
+    })
+    const { dispatch, fixture, node } = setup(NO_STEP, MAGIC_LINK, [
+      ...OFFERED,
+      { key: 'passkey', name: null },
+    ])
+    node('profile-sign-in-add').click()
+    await settle(fixture)
+    const options = held()
+    dispatch.mockImplementationOnce(() => options.answer)
+    const passkey = node('profile-passkey-add') as HTMLButtonElement
+    const provider = node(
+      'profile-oauth-link-oauth:github',
+    ) as HTMLButtonElement
+    const requests = () =>
+      dispatch.mock.calls.filter(
+        ([action]) => action === AUTH_ACTION_PASSKEY_REGISTER_OPTIONS,
+      )
+    expect(provider.disabled).toBe(false)
+
+    passkey.click()
+    fixture.detectChanges()
+    expect(requests()).toHaveLength(1)
+    expect(passkey.getAttribute('aria-busy')).toBe('true')
+    expect(passkey.getAttribute('aria-disabled')).toBe('true')
+    expect(passkey.disabled).toBe(false)
+    expect(provider.disabled).toBe(true)
+    expect(provider.hasAttribute('aria-busy')).toBe(false)
+
+    passkey.click()
+    provider.click()
+    fixture.detectChanges()
+    expect(requests()).toHaveLength(1)
+    expect(
+      dispatch.mock.calls.filter(
+        ([action]) => action !== 'hilos_step_up_start',
+      ),
+    ).toHaveLength(1)
+
+    options.reject(
+      new ActionError(
+        AUTH_ACTION_PASSKEY_REGISTER_OPTIONS,
+        'fail',
+        'Passkeys are off.',
+      ),
+    )
+    await drain(fixture)
+    expect(passkey.hasAttribute('aria-busy')).toBe(false)
+    expect(passkey.hasAttribute('aria-disabled')).toBe(false)
+    expect(provider.disabled).toBe(false)
+    fixture.destroy()
+  })
+
+  it('locks Remove at once by its own flight, keeps Cancel off and sends once', async () => {
+    vi.useFakeTimers()
+    const { dispatch, fixture, node } = setup(NO_STEP, LINK_AND_PASSKEY)
+    node('identity-unlink').click()
+    fixture.detectChanges()
+    const removal = held()
+    dispatch.mockImplementationOnce(() => removal.answer)
+    const remove = node('identity-unlink-yes') as HTMLButtonElement
+    const cancel = node('identity-unlink-cancel') as HTMLButtonElement
+    const sends = () =>
+      dispatch.mock.calls.filter(
+        ([action]) => action === PROFILE_UNLINK_IDENTITY_ACTION,
+      )
+
+    remove.click()
+    fixture.detectChanges()
+    expect(sends()).toHaveLength(1)
+    expect(remove.getAttribute('aria-busy')).toBe('true')
+    expect(remove.getAttribute('aria-disabled')).toBe('true')
+    expect(remove.disabled).toBe(false)
+    expect(cancel.disabled).toBe(true)
+
+    remove.click()
+    wait(fixture, 299)
+    expect(sends()).toHaveLength(1)
+    expect(spinnerOf(remove)).toBeNull()
+    expect(remove.classList.contains('disabled')).toBe(false)
+    wait(fixture, 1)
+    expect(spinnerOf(remove)).not.toBeNull()
+    expect(remove.disabled).toBe(false)
+
+    removal.resolve({ reply: {} })
+    await flush(fixture)
+    expect(node('profile-unlink-modal')).toBeNull()
+    expect(sends()).toHaveLength(1)
+    fixture.destroy()
+  })
+
+  it('locks the confirmation of the step by its own flight, not natively', async () => {
+    const { dispatch, fill, fixture, node } = setup(PASSWORD_STEP)
+    node('profile-sign-in-add').click()
+    await settle(fixture)
+    fill('step-up-password', 'secret')
+    const confirmation = held()
+    dispatch.mockImplementationOnce(() => confirmation.answer)
+    const confirm = node(
+      'profile-sign-in-add-step-up-confirm',
+    ) as HTMLButtonElement
+    const confirms = () =>
+      dispatch.mock.calls.filter(
+        ([action]) => action === 'hilos_step_up_confirm',
+      )
+    const submitStep = () =>
+      node('profile-sign-in-add-step-up').dispatchEvent(
+        new Event('submit', { cancelable: true }),
+      )
+
+    submitStep()
+    fixture.detectChanges()
+    expect(confirms()).toHaveLength(1)
+    expect(confirm.getAttribute('aria-busy')).toBe('true')
+    expect(confirm.getAttribute('aria-disabled')).toBe('true')
+    expect(confirm.disabled).toBe(false)
+
+    confirm.click()
+    submitStep()
+    fixture.detectChanges()
+    expect(confirms()).toHaveLength(1)
+
+    confirmation.resolve({ reply: {} })
+    await drain(fixture)
+    expect(node('profile-sign-in-choose-phone')).not.toBeNull()
+    fixture.destroy()
+  })
+
+  it('turns Save off natively while the form is unfit, and only locks it by its own flight', async () => {
+    const { dispatch, fill, fixture, node } = setup(NO_STEP, MAGIC_LINK)
+    node('profile-sign-in-add').click()
+    await settle(fixture)
+    node('profile-sign-in-choose-password').click()
+    fixture.detectChanges()
+    const save = node('profile-add-password-save') as HTMLButtonElement
+    expect(save.disabled).toBe(true)
+    expect(save.hasAttribute('aria-busy')).toBe(false)
+    fill('profile-add-password-new', 'new-secret')
+    fill('profile-add-password-confirm', 'new-secret')
+    expect(save.disabled).toBe(false)
+    const setting = held()
+    dispatch.mockImplementationOnce(() => setting.answer)
+    const sends = () =>
+      dispatch.mock.calls.filter(
+        ([action]) => action === 'profile_set_password',
+      )
+
+    save.click()
+    fixture.detectChanges()
+    expect(sends()).toHaveLength(1)
+    expect(save.getAttribute('aria-busy')).toBe('true')
+    expect(save.getAttribute('aria-disabled')).toBe('true')
+    expect(save.disabled).toBe(false)
+    expect(
+      (node('profile-sign-in-add-back') as HTMLButtonElement).disabled,
+    ).toBe(true)
+
+    save.click()
+    fixture.detectChanges()
+    expect(sends()).toHaveLength(1)
+    fixture.destroy()
+  })
+})

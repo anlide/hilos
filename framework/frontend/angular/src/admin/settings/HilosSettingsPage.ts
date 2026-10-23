@@ -253,7 +253,7 @@ function inputStep(type: string | undefined): 'any' | undefined {
           <div
             hilosConflictActions
             [conflict]="live().conflict"
-            [disableSave]="!canSave()"
+            [disableSave]="!saveAvailable()"
             [saveLabel]="editSaveLabel()"
             (save)="submitEdit()"
             (acceptMine)="acceptMine()"
@@ -278,7 +278,7 @@ function inputStep(type: string | undefined): 'any' | undefined {
               <button
                 hilosLoadingButton
                 class="btn-primary"
-                [loading]="edit.loading()"
+                [loading]="edit.busy()"
                 [disabled]="disabled"
                 data-id="hilos-settings-edit-save"
                 (click)="onSave()"
@@ -330,8 +330,8 @@ function inputStep(type: string | undefined): 'any' | undefined {
           <button
             hilosLoadingButton
             class="btn-danger"
-            [loading]="del.loading()"
-            [disabled]="del.busy() || deleteGone()"
+            [loading]="del.busy()"
+            [disabled]="deleteGone()"
             data-id="hilos-settings-delete-confirm"
             (click)="submitDelete()"
           >
@@ -395,8 +395,8 @@ function inputStep(type: string | undefined): 'any' | undefined {
           <button
             hilosLoadingButton
             class="btn-danger"
-            [loading]="reset.loading()"
-            [disabled]="reset.busy() || resetGone()"
+            [loading]="reset.busy()"
+            [disabled]="resetGone()"
             data-id="hilos-settings-reset-confirm"
             (click)="submitReset()"
           >
@@ -440,7 +440,7 @@ export class HilosSettingsPage {
   )
   protected readonly editNoticeText = signal('')
   protected readonly editSaveLabel = signal('Save')
-  protected readonly canSave = signal(false)
+  protected readonly saveAvailable = signal(false)
   protected readonly edit = createHilosTrackedAction()
   // The live row the open delete or reset dialog is about: the row the table
   // holds in focus, which the server follows wherever it goes; undefined once the
@@ -513,7 +513,7 @@ export class HilosSettingsPage {
         mirrorHilosSignal(editor.state, this.live),
         mirrorHilosSignal(editor.noticeText, this.editNoticeText),
         mirrorHilosSignal(editor.saveLabel, this.editSaveLabel),
-        mirrorHilosSignal(editor.canSave, this.canSave),
+        mirrorHilosSignal(editor.saveAvailable, this.saveAvailable),
       ]
       onCleanup(() => {
         for (const stop of off) stop()

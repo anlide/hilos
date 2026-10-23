@@ -25,6 +25,7 @@ import {
 import { HilosActionError } from '../HilosActionError.js'
 import { HilosModal } from '../HilosModal.js'
 import { hilosSignal } from '../hilosSignal.js'
+import { LoadingButton } from '../LoadingButton.js'
 import { createHilosTrackedAction } from '../hilosTrackedAction.js'
 
 /**
@@ -45,7 +46,7 @@ function available(): boolean {
 @Component({
   selector: 'hilos-profile-theme',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosActionError, HilosModal],
+  imports: [HilosActionError, HilosModal, LoadingButton],
   template: `
     <hilos-modal
       [open]="shown()"
@@ -103,24 +104,14 @@ function available(): boolean {
         </div>
         <hr />
         <button
-          type="button"
-          class="btn btn-outline-secondary w-100 position-relative"
-          [disabled]="busy()"
-          [attr.aria-busy]="busy() && submitted() === null ? true : null"
+          hilosLoadingButton
+          class="btn-outline-secondary w-100"
+          [loading]="busy() && submitted() === null"
+          [disabled]="busy() && submitted() !== null"
           data-id="profile-theme-default"
           (click)="choose(null)"
         >
-          <span [class.invisible]="loading() && submitted() === null">{{
-            copy.siteDefault
-          }}</span>
-          @if (loading() && submitted() === null) {
-            <span
-              class="position-absolute top-50 start-50 translate-middle spinner-border spinner-border-sm"
-              role="status"
-              data-id="profile-theme-loading"
-              ><span class="visually-hidden">Loading…</span></span
-            >
-          }
+          {{ copy.siteDefault }}
         </button>
       </div>
       <ng-template #modalActions let-requestClose="requestClose">

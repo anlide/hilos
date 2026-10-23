@@ -72,8 +72,8 @@ import { createHilosTrackedAction } from '../hilosTrackedAction.js'
                 <button
                   hilosLoadingButton
                   class="btn-outline-danger btn-sm"
-                  [loading]="removeAction.loading()"
-                  [disabled]="!refreshed() || removeAction.busy()"
+                  [loading]="removeAction.busy()"
+                  [disabled]="!refreshed()"
                   data-id="profile-device-remove"
                   (click)="removeDevice(device.id)"
                 >

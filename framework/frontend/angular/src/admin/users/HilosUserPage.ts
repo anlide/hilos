@@ -482,7 +482,7 @@ function focusWindow(body: HTMLElement | undefined): void {
           <div
             hilosConflictActions
             [conflict]="live().conflict"
-            [disableSave]="!canSave()"
+            [disableSave]="!saveAvailable()"
             [saveLabel]="saveLabel()"
             (save)="submit()"
             (acceptMine)="acceptMine()"
@@ -587,12 +587,8 @@ function focusWindow(body: HTMLElement | undefined): void {
               hilosLoadingButton
               [class.btn-danger]="lifecyclePrompt()?.danger"
               [class.btn-primary]="!lifecyclePrompt()?.danger"
-              [loading]="lifecycleAction.loading()"
-              [disabled]="
-                lifecycleAction.busy() ||
-                !lifecyclePrompt() ||
-                !lifecycleOffered()
-              "
+              [loading]="lifecycleAction.busy()"
+              [disabled]="!lifecyclePrompt() || !lifecycleOffered()"
               data-id="hilos-user-lifecycle-confirm"
               (click)="submitLifecycle()"
             >
@@ -669,9 +665,8 @@ function focusWindow(body: HTMLElement | undefined): void {
             <button
               hilosLoadingButton
               class="btn-primary"
-              [loading]="impersonateAction.loading()"
+              [loading]="impersonateAction.busy()"
               [disabled]="
-                impersonateAction.busy() ||
                 impersonation() === null ||
                 impersonation()?.disabled ||
                 detail()?.id !== impersonateTarget()?.userId
@@ -979,7 +974,7 @@ function focusWindow(body: HTMLElement | undefined): void {
             <button
               hilosLoadingButton
               class="btn-danger"
-              [loading]="mergeAction.loading()"
+              [loading]="mergeAction.busy()"
               [disabled]="mergeDisabled()"
               data-id="hilos-user-merge-confirm"
               (click)="submitMerge()"
@@ -1189,7 +1184,6 @@ export class HilosUserPage {
   )
   protected readonly mergeDisabled = computed(
     () =>
-      this.mergeAction.busy() ||
       this.mergeGone() ||
       this.selectedCandidate() === null ||
       (this.passwordChoiceRequired() && this.passwordFate() === null) ||
@@ -1227,7 +1221,7 @@ export class HilosUserPage {
   protected readonly live = signal(
     hilosRowEditIdle<HilosUserRenameEditFields>({ name: '' }),
   )
-  protected readonly canSave = signal(false)
+  protected readonly saveAvailable = signal(false)
   protected readonly editNoticeText = signal('')
   protected readonly saveLabel = signal('Save')
   protected readonly dirty = computed(() => this.live().dirty)
@@ -1312,7 +1306,7 @@ export class HilosUserPage {
         mirrorHilosSignal(editor.state, this.live),
         mirrorHilosSignal(editor.noticeText, this.editNoticeText),
         mirrorHilosSignal(editor.saveLabel, this.saveLabel),
-        mirrorHilosSignal(editor.canSave, this.canSave),
+        mirrorHilosSignal(editor.saveAvailable, this.saveAvailable),
       ]
       this.mergeCandidates = mergeCandidates
       this.accountMerge = createHilosAccountMerge(context)
@@ -1676,6 +1670,7 @@ export class HilosUserPage {
       !survivor ||
       !loser ||
       !this.accountMerge ||
+      this.mergeAction.busy() ||
       this.mergeDisabled() ||
       typeof survivor.hasSecondFactor !== 'boolean' ||
       typeof loser.hasSecondFactor !== 'boolean'

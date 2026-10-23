@@ -79,8 +79,8 @@ import {
         <button
           hilosLoadingButton
           class="btn-danger"
-          [loading]="action.loading()"
-          [disabled]="action.busy() || elsewhere()"
+          [loading]="action.busy()"
+          [disabled]="elsewhere()"
           data-id="i18n-country-delete-confirm"
           (click)="confirm()"
         >

@@ -415,6 +415,32 @@ function typeDraft(fixture: ComponentFixture<unknown>, text: string): void {
   fixture.detectChanges()
 }
 
+function mergeConfirm(fixture: ComponentFixture<unknown>): HTMLButtonElement {
+  return el(fixture, 'hilos-user-merge-confirm') as HTMLButtonElement
+}
+
+/** Mount the card, open its merge window and take Bob to the second step. */
+async function openMergeOnBob(
+  context: HilosUsersContext,
+): Promise<ComponentFixture<HilosUserPage>> {
+  TestBed.configureTestingModule({
+    providers: [{ provide: HILOS_ROUTER, useValue: router() }],
+  })
+  const fixture = TestBed.createComponent(HilosUserPage)
+  fixture.componentRef.setInput('context', context)
+  fixture.detectChanges()
+  for (const id of [
+    'hilos-user-merge-open',
+    'hilos-user-merge-row-2',
+    'hilos-user-merge-next',
+  ]) {
+    el(fixture, id)?.click()
+    await settle(fixture)
+  }
+
+  return fixture
+}
+
 describe('HilosUserPage rename modal', () => {
   it('shows the merge zone only when enabled and locks Next without a candidate', async () => {
     const fixture = openModal(userContext().context)
@@ -463,6 +489,67 @@ describe('HilosUserPage rename modal', () => {
     expect(
       (el(fixture, 'hilos-user-merge-confirm') as HTMLButtonElement).disabled,
     ).toBe(true)
+  })
+
+  // Merge is locked by its own merge in flight, which never turns it off
+  // natively; a reason of its own does — a password fate not chosen yet, the
+  // other account gone from the list.
+  it('turns Merge off for a missing password fate, apart from its own flight', async () => {
+    const world = userContext(true, 'skip', {
+      detailHasPassword: true,
+      candidateHasPassword: true,
+    })
+    const fixture = await openMergeOnBob(world.context)
+    const merges = () =>
+      world.sent.filter((entry) => entry.action === 'hilos_user_merge')
+
+    expect(mergeConfirm(fixture).disabled).toBe(true)
+    expect(mergeConfirm(fixture).getAttribute('aria-busy')).toBeNull()
+    mergeConfirm(fixture).click()
+    await settle(fixture)
+    expect(merges()).toHaveLength(0)
+
+    el(fixture, 'hilos-user-merge-fate-survivor')?.click()
+    await settle(fixture)
+    expect(mergeConfirm(fixture).disabled).toBe(false)
+
+    mergeConfirm(fixture).click()
+    // Pressed again before change detection: the send guard holds.
+    mergeConfirm(fixture).click()
+    expect(merges()).toHaveLength(1)
+    await settle(fixture)
+    expect(mergeConfirm(fixture).disabled).toBe(false)
+    expect(mergeConfirm(fixture).getAttribute('aria-busy')).toBe('true')
+    expect(mergeConfirm(fixture).getAttribute('aria-disabled')).toBe('true')
+    mergeConfirm(fixture).click()
+    await settle(fixture)
+    expect(merges()).toHaveLength(1)
+  })
+
+  it('turns Merge off when the other account goes while its merge flies', async () => {
+    const world = userContext(true)
+    const fixture = await openMergeOnBob(world.context)
+    mergeConfirm(fixture).click()
+    await settle(fixture)
+    expect(mergeConfirm(fixture).disabled).toBe(false)
+    expect(mergeConfirm(fixture).getAttribute('aria-busy')).toBe('true')
+
+    world.removeCandidate()
+    await settle(fixture)
+    expect(el(fixture, 'hilos-user-merge-gone')).not.toBeNull()
+    expect(mergeConfirm(fixture).disabled).toBe(true)
+    expect(mergeConfirm(fixture).getAttribute('aria-busy')).toBe('true')
+
+    world.answerMerge('Merge refused')
+    await settle(fixture)
+    expect(el(fixture, 'modal')).not.toBeNull()
+    expect(mergeConfirm(fixture).disabled).toBe(true)
+    expect(mergeConfirm(fixture).getAttribute('aria-busy')).toBeNull()
+    mergeConfirm(fixture).click()
+    await settle(fixture)
+    expect(
+      world.sent.filter((entry) => entry.action === 'hilos_user_merge'),
+    ).toHaveLength(1)
   })
 
   it('opens on the committed name with save locked and the message line empty', () => {
@@ -830,8 +917,8 @@ describe('HilosUserPage lifecycle', () => {
       block: true,
     })
     expect(
-      (find('hilos-user-lifecycle-confirm') as HTMLButtonElement).disabled,
-    ).toBe(true)
+      find('hilos-user-lifecycle-confirm')?.getAttribute('aria-disabled'),
+    ).toBe('true')
     expect(
       (find('hilos-user-lifecycle-cancel') as HTMLButtonElement).disabled,
     ).toBe(true)
@@ -1530,9 +1617,10 @@ describe('HilosUserPage impersonation (HIL-1170)', () => {
       world.sent.find((entry) => entry.action === 'hilos_impersonate_start'),
     ).toMatchObject({ data: { targetUserId: 1 } })
     expect(
-      (el(fixture, 'hilos-user-impersonate-confirm') as HTMLButtonElement)
-        .disabled,
-    ).toBe(true)
+      el(fixture, 'hilos-user-impersonate-confirm')?.getAttribute(
+        'aria-disabled',
+      ),
+    ).toBe('true')
 
     world.answerImpersonate()
     await settle(fixture)

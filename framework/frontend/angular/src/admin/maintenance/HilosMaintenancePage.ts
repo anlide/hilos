@@ -175,8 +175,7 @@ function describeManualError(
                   <button
                     hilosLoadingButton
                     class="btn-outline-primary btn-sm"
-                    [loading]="passAction.loading()"
-                    [disabled]="passAction.busy()"
+                    [loading]="passAction.busy()"
                     data-id="hilos-maintenance-pass"
                     (click)="openPass()"
                   >
@@ -185,8 +184,7 @@ function describeManualError(
                   <button
                     hilosLoadingButton
                     class="btn-warning btn-sm"
-                    [loading]="disableAction.loading()"
-                    [disabled]="disableAction.busy()"
+                    [loading]="disableAction.busy()"
                     data-id="hilos-maintenance-disable"
                     (click)="openDisable()"
                   >
@@ -241,8 +239,8 @@ function describeManualError(
           <button
             hilosLoadingButton
             class="btn-warning"
-            [loading]="enableAction.loading()"
-            [disabled]="enableAction.busy() || position() !== 'open'"
+            [loading]="enableAction.busy()"
+            [disabled]="position() !== 'open'"
             data-id="hilos-maintenance-enable-confirm"
             (click)="submitEnable()"
           >
@@ -279,8 +277,8 @@ function describeManualError(
           <button
             hilosLoadingButton
             class="btn-warning"
-            [loading]="disableAction.loading()"
-            [disabled]="disableAction.busy() || position() !== 'manual'"
+            [loading]="disableAction.busy()"
+            [disabled]="position() !== 'manual'"
             data-id="hilos-maintenance-disable-confirm"
             (click)="submitDisable()"
           >
@@ -338,8 +336,8 @@ function describeManualError(
             <button
               hilosLoadingButton
               class="btn-primary"
-              [loading]="passAction.loading()"
-              [disabled]="passAction.busy() || position() !== 'manual'"
+              [loading]="passAction.busy()"
+              [disabled]="position() !== 'manual'"
               data-id="hilos-maintenance-pass-confirm"
               (click)="submitPass()"
             >
@@ -430,7 +428,7 @@ function describeManualError(
           <button
             hilosLoadingButton
             class="btn-primary"
-            [loading]="circleAdd.loading()"
+            [loading]="circleAdd.busy()"
             [disabled]="circleAddIdentifier().trim() === ''"
             data-id="hilos-maintenance-circle-add-confirm"
             (click)="submitCircleAdd()"
@@ -481,7 +479,7 @@ function describeManualError(
           <button
             hilosLoadingButton
             class="btn-danger"
-            [loading]="circleRemove.loading()"
+            [loading]="circleRemove.busy()"
             [disabled]="removeGone()"
             data-id="hilos-maintenance-circle-remove-confirm"
             (click)="submitCircleRemove()"

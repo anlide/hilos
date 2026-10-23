@@ -63,7 +63,7 @@ import { LoadingButton } from '../LoadingButton.js'
           hilosLoadingButton
           type="button"
           class="btn btn-danger"
-          [loading]="loading()"
+          [loading]="busy()"
           data-id="privacy-erase-confirm"
           (click)="confirm.emit()"
         >
@@ -82,9 +82,6 @@ export class HilosPrivacyEraseModal {
 
   /** The erase is in flight: the answers are held and the dialog cannot be dismissed. */
   readonly busy = input(false)
-
-  /** Deferred loading of the erase, for the confirming button's spinner. */
-  readonly loading = input(false)
 
   /** Raised when the dialog opens or closes itself. */
   readonly openChange = output<boolean>()

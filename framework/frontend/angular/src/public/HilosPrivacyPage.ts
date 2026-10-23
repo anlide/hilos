@@ -162,7 +162,6 @@ import { HilosPrivacyEraseModal } from './HilosPrivacyEraseModal.js'
         (openChange)="confirming.set($event)"
         [labels]="labels()"
         [busy]="erase.busy()"
-        [loading]="erase.loading()"
         (confirm)="onConfirm()"
       />
       <hilos-modal

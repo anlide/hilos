@@ -299,7 +299,7 @@ let passwordChangeSequence = 0
               [attr.form]="id + '-code-form'"
               class="btn-primary"
               [loading]="busy()"
-              [disabled]="code().trim() === '' || busy()"
+              [disabled]="code().trim() === ''"
               data-id="profile-password-confirm-code"
             >
               {{ copy.continue }}
@@ -312,7 +312,7 @@ let passwordChangeSequence = 0
               [attr.form]="id + '-password-form'"
               class="btn-primary"
               [loading]="busy()"
-              [disabled]="newPassword() === '' || busy()"
+              [disabled]="newPassword() === ''"
               data-id="profile-password-save"
             >
               {{ copy.save }}

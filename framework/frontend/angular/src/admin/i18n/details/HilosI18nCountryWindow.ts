@@ -160,7 +160,7 @@ const NO_FIELDS: HilosI18nCountryEditFields = {
           <div
             hilosConflictActions
             [conflict]="state().conflict"
-            [disableSave]="!canSave() || busy()"
+            [disableSave]="!saveAvailable()"
             [saveLabel]="saveLabel()"
             (save)="submit()"
             (acceptMine)="window().keepMine()"
@@ -185,7 +185,7 @@ const NO_FIELDS: HilosI18nCountryEditFields = {
               <button
                 hilosLoadingButton
                 class="btn-primary"
-                [loading]="action.loading()"
+                [loading]="action.busy()"
                 [disabled]="saveDisabled"
                 data-id="i18n-country-save"
                 (click)="onSave()"
@@ -234,7 +234,7 @@ export class HilosI18nCountryWindow {
   )
   protected readonly localeHint = signal('')
   protected readonly touched = signal(false)
-  protected readonly canSave = signal(false)
+  protected readonly saveAvailable = signal(false)
   protected readonly saveLabel = signal<string>(
     HILOS_I18N_COUNTRY_WINDOW_COPY.save,
   )
@@ -264,7 +264,7 @@ export class HilosI18nCountryWindow {
         mirrorHilosSignal(window.options, this.options),
         mirrorHilosSignal(window.localeHint, this.localeHint),
         mirrorHilosSignal(window.touched, this.touched),
-        mirrorHilosSignal(window.canSave, this.canSave),
+        mirrorHilosSignal(window.saveAvailable, this.saveAvailable),
         mirrorHilosSignal(window.saveLabel, this.saveLabel),
         mirrorHilosSignal(window.saving, this.saving),
         subscribeSignal(window.opened, (next) => {

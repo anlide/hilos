@@ -512,13 +512,20 @@ describe('HilosLayout impersonation strip', () => {
     expect(session.source.sent[0]?.action).toBe('hilos_impersonate_stop')
     expect(session.source.sent[0]?.data).toEqual({})
     expect(session.source.sent[0]?.requestId).toBeTruthy()
-    expect(stop.disabled).toBe(true)
+    expect(stop.disabled).toBe(false)
+    expect(stop.getAttribute('aria-disabled')).toBe('true')
+    expect(stop.getAttribute('aria-busy')).toBe('true')
+    stop.click()
+    fixture.detectChanges()
+    expect(session.source.sent).toHaveLength(1)
 
     session.source.succeed(session.source.sent[0]?.requestId)
     await settle()
     fixture.detectChanges()
 
     expect(stop.disabled).toBe(false)
+    expect(stop.getAttribute('aria-disabled')).toBeNull()
+    expect(stop.getAttribute('aria-busy')).toBeNull()
     expect(hilosToasts.toasts.get()).toEqual([])
   })
 
@@ -808,7 +815,12 @@ describe('HilosLayout account standing (HIL-945)', () => {
     expect(session.source.sent[0]?.action).toBe('hilos_account_deletion_cancel')
     expect(session.source.sent[0]?.data).toEqual({})
     expect(session.source.sent[0]?.requestId).toBeTruthy()
-    expect(keep.disabled).toBe(true)
+    expect(keep.disabled).toBe(false)
+    expect(keep.getAttribute('aria-disabled')).toBe('true')
+    expect(keep.getAttribute('aria-busy')).toBe('true')
+    keep.click()
+    fixture.detectChanges()
+    expect(session.source.sent).toHaveLength(1)
 
     session.source.succeed(
       session.source.sent[0]?.requestId,
@@ -965,7 +977,8 @@ describe('HilosLayout sign-out', () => {
 
     button.click()
     mounted?.detectChanges()
-    expect(button.disabled).toBe(true)
+    expect(button.disabled).toBe(false)
+    expect(button.getAttribute('aria-disabled')).toBe('true')
     expect(button.getAttribute('aria-busy')).toBe('true')
     expect(surface(container, 'loading-button-spinner')).toBeNull()
     button.click()
@@ -980,6 +993,8 @@ describe('HilosLayout sign-out', () => {
     mounted?.detectChanges()
 
     expect(button.disabled).toBe(false)
+    expect(button.getAttribute('aria-disabled')).toBeNull()
+    expect(button.getAttribute('aria-busy')).toBeNull()
     expect(hilosToasts.toasts.get()).toEqual([])
   })
 
@@ -1104,13 +1119,20 @@ describe('HilosLayout account blocked card', () => {
     expect(session.source.sent[0]?.action).toBe('hilos_dismiss_account_blocked')
     expect(session.source.sent[0]?.data).toEqual({})
     expect(session.source.sent[0]?.requestId).toBeTruthy()
-    expect(signOut.disabled).toBe(true)
+    expect(signOut.disabled).toBe(false)
+    expect(signOut.getAttribute('aria-disabled')).toBe('true')
+    expect(signOut.getAttribute('aria-busy')).toBe('true')
+    signOut.click()
+    fixture.detectChanges()
+    expect(session.source.sent).toHaveLength(1)
 
     session.source.succeed(session.source.sent[0]?.requestId)
     await settle()
     fixture.detectChanges()
 
     expect(signOut.disabled).toBe(false)
+    expect(signOut.getAttribute('aria-disabled')).toBeNull()
+    expect(signOut.getAttribute('aria-busy')).toBeNull()
   })
 
   it('takes the card down when a handshake carries none', () => {

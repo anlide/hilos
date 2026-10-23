@@ -206,10 +206,9 @@ derivation (`disabled || loading`) or a one-line event guard stays in the view;
 pulling a one-liner into the core is noise, not portability. That derivation is
 the button's lock: `loading` keeps the action from running as surely as
 `disabled` does, whatever the button looks like while its spinner waits. The
-`LoadingButton` of Vue and of React feeds it to `aria-disabled` and its click
-guard, and only the independent reasons to the native `disabled`; Angular still
-feeds the whole of it to the native attribute. Angular feeds it the Vue way
-(not in the code yet — HIL-1768).
+`LoadingButton` of each view package — Vue, React and Angular — feeds it to
+`aria-disabled` and its click guard, and only the independent reasons to the
+native `disabled`.
 
 **The slot seam.** Templates can't be shared, but a primitive that projects
 consumer content still shares one contract: the **core owns the data** that flows

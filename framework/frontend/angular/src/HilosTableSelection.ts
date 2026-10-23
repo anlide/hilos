@@ -132,8 +132,7 @@ import { createHilosTrackedAction } from './hilosTrackedAction.js'
           hilosLoadingButton
           [class.btn-danger]="confirmAction()?.danger === true"
           [class.btn-primary]="confirmAction()?.danger !== true"
-          [loading]="bulkTracked.loading()"
-          [disabled]="bulkTracked.busy()"
+          [loading]="bulkTracked.busy()"
           data-id="hilos-table-bulk-confirm"
           (click)="submitBulk()"
         >

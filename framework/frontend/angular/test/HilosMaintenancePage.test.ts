@@ -1100,7 +1100,7 @@ describe.each(MANUAL_CASES)(
       await settled(fixture)
 
       expect(dispatched).toMatchObject([{ action: manual.action, payload: {} }])
-      expect(confirm().disabled).toBe(true)
+      expect(confirm().getAttribute('aria-disabled')).toBe('true')
       expect(cancel().disabled).toBe(true)
       await tryEveryClose(fixture, dialog, cancel())
       expect(modal()).not.toBeNull()

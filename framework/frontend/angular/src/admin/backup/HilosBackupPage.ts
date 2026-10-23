@@ -443,7 +443,7 @@ import {
           <button
             hilosLoadingButton
             class="btn-danger"
-            [loading]="del.loading()"
+            [loading]="del.busy()"
             data-id="hilos-backup-delete-confirm"
             (click)="submitDelete()"
           >
@@ -477,7 +477,7 @@ import {
           <button
             hilosLoadingButton
             class="btn-warning"
-            [loading]="reopen.loading()"
+            [loading]="reopen.busy()"
             data-id="hilos-backup-reopen-confirm"
             (click)="submitReopen()"
           >
@@ -632,7 +632,7 @@ import {
           <button
             hilosLoadingButton
             class="btn-warning"
-            [loading]="restore.loading()"
+            [loading]="restore.busy()"
             [disabled]="!restoreConfirmed()"
             data-id="hilos-backup-restore-confirm"
             (click)="submitRestore()"
@@ -767,7 +767,7 @@ import {
           <button
             hilosLoadingButton
             class="btn-primary"
-            [loading]="create.loading()"
+            [loading]="create.busy()"
             data-id="hilos-backup-create-confirm"
             (click)="submitCreate()"
           >

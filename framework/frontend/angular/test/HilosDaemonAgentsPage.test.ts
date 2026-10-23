@@ -129,7 +129,7 @@ describe('HilosDaemonAgentsPage', () => {
       'hilos_daemon_agent_restart',
       { agentId: 'agent:1', nodeId: 'n1' },
     )
-    expect(confirm.disabled).toBe(true)
+    expect(confirm.getAttribute('aria-disabled')).toBe('true')
     expect(
       (h.el('hilos-daemon-restart-cancel') as HTMLButtonElement).disabled,
     ).toBe(true)
@@ -147,6 +147,34 @@ describe('HilosDaemonAgentsPage', () => {
     await settle(h)
     expect(h.el('modal')).toBeNull()
     expect(h.el('hilos-daemon-agent-restarting-agent:1')).toBeNull()
+    h.fixture.destroy()
+    expect(h.listeners()).toBe(0)
+  })
+
+  it('locks the confirmation for its own restart without turning it off, and turns it off at once for an independent reason', async () => {
+    const h = harness()
+    open(h)
+    const confirm = () =>
+      h.el('hilos-daemon-restart-confirm') as HTMLButtonElement
+    expect(confirm().disabled).toBe(false)
+    expect(confirm().hasAttribute('aria-disabled')).toBe(false)
+    confirm().click()
+    h.detect()
+    expect(confirm().getAttribute('aria-disabled')).toBe('true')
+    expect(confirm().disabled).toBe(false)
+    confirm().click()
+    h.detect()
+    expect(h.dispatch).toHaveBeenCalledTimes(1)
+    h.scope.data.set(DAEMON_NODE_DATA, {
+      clustered: true,
+      state: 'silent',
+      silentSince: 1700000000,
+    })
+    h.detect()
+    expect(confirm().disabled).toBe(true)
+    expect(confirm().getAttribute('aria-disabled')).toBe('true')
+    h.success()
+    await settle(h)
     h.fixture.destroy()
     expect(h.listeners()).toBe(0)
   })

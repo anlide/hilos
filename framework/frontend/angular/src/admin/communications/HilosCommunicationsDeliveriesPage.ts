@@ -135,7 +135,7 @@ const STATUS_CLASS: Record<string, string> = {
               hilosLoadingButton
               class="btn-outline-primary btn-sm"
               [loading]="retry.busy() && retryPendingId() === row.rowKey"
-              [disabled]="retry.busy()"
+              [disabled]="retry.busy() && retryPendingId() !== row.rowKey"
               [attr.data-id]="'hilos-delivery-retry-' + row.rowKey"
               (click)="doRetry(row)"
             >

@@ -457,13 +457,14 @@ export class HilosLegalReconsent {
   protected readonly acceptOffered = computed(
     () => this.variant() !== 'frozen' || !this.impersonated(),
   )
+  // The acceptance in flight is not a reason here: busy is Accept's own loading,
+  // which blocks it at once and keeps its look until the spinner comes.
   protected readonly acceptDisabled = computed(
     () =>
       this.variant() === 'preview' ||
       this.content() === null ||
       this.sections().length === 0 ||
-      this.loading() ||
-      this.busy(),
+      this.loading(),
   )
   protected readonly address = computed(() =>
     describeHilosLegalReconsentAddress(this.content()),

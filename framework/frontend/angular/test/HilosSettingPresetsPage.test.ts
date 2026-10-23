@@ -2,18 +2,20 @@
 // what a viewer of the admin view mode finds on the screen — every card a
 // LoadingButton standing disabled under the view-mode strip, the hidden mark in
 // place of the values a card lists, no overwrite question and nothing sent —
-// and that an administrator on a node in the mode applies a mode as before.
+// and that an administrator on a node in the mode applies a mode as before,
+// the card they pressed carrying the apply in flight while the others wait.
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
+  ActionError,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   ScopeManager,
   bindAdminAccess,
   bindSessionScope,
   createSignal,
+  hilosToasts,
 } from '@hilos/core'
 import type {
-  ActionError,
   ActionHandle,
   ActionResult,
   HilosConnection,
@@ -24,7 +26,7 @@ import type {
   PageRouteMatch,
   ProjectSignal,
 } from '@hilos/core'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosSettingPresetsPage } from '../src/admin/settings/HilosSettingPresetsPage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
@@ -218,6 +220,29 @@ function cardOf(root: HTMLElement, name: string): HTMLButtonElement {
   return el(root, `hilos-setting-preset-${name}`) as HTMLButtonElement
 }
 
+// What a card or a button tells a sighted person and a screen reader now.
+function buttonState(button: HTMLButtonElement) {
+  return {
+    nativeDisabled: button.disabled,
+    disabledLook: button.classList.contains('disabled'),
+    spinner:
+      button.querySelector('[data-id="loading-button-spinner"]') !== null,
+    ariaBusy: button.getAttribute('aria-busy'),
+    ariaDisabled: button.getAttribute('aria-disabled'),
+  }
+}
+
+const RESTING = {
+  nativeDisabled: false,
+  disabledLook: false,
+  spinner: false,
+  ariaBusy: null,
+  ariaDisabled: null,
+}
+const OFF = { ...RESTING, nativeDisabled: true, ariaDisabled: 'true' }
+const LOCKED = { ...RESTING, ariaBusy: 'true', ariaDisabled: 'true' }
+const SPINNING = { ...LOCKED, disabledLook: true, spinner: true }
+
 describe('HilosSettingPresetsPage in the admin view mode', () => {
   const releases: (() => void)[] = []
 
@@ -345,5 +370,230 @@ describe('HilosSettingPresetsPage in the admin view mode', () => {
     expect(dispatched).toMatchObject([
       { action: 'setting_preset_apply', payload: { preset: 'frugal' } },
     ])
+  })
+
+  // The production LoadingButton and its 300 ms timer under a real admin
+  // session: the card whose click applied at once carries its own flight —
+  // locked at once, spinning at 300 ms — and the others are off natively from
+  // the first moment. An apply no card pressed — through the confirmation or
+  // the button inside the applied card — lights no card at all. The applied
+  // card and the view mode stay reasons of their own, in flight as at rest.
+  describe('with an apply in flight', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+      hilosToasts.clear()
+    })
+
+    const DRIFTED = groupState({
+      differences: [
+        { key: 'level', presetValue: 'INFO', currentValue: 'DEBUG' },
+      ],
+    })
+
+    /** Mount the page for an administrator and draw the given group frame. */
+    function mountForAdmin(frame: HilosSettingPresetsState) {
+      const session = bindSession()
+      session.handshake({ id: 1, admin: true }, false)
+      const { context, push, dispatched } = makeContext()
+      const fixture = mountPage(context)
+      push(frame)
+      fixture.detectChanges()
+
+      return {
+        session,
+        fixture,
+        root: fixture.nativeElement as HTMLElement,
+        push,
+        dispatched,
+      }
+    }
+
+    // Every card's state, by the preset it stands for.
+    function cardStates(root: HTMLElement) {
+      return Object.fromEntries(
+        ['frugal', 'normal', 'investigation'].map((name) => [
+          name,
+          buttonState(cardOf(root, name)),
+        ]),
+      )
+    }
+
+    const ALL_OFF = { frugal: OFF, normal: OFF, investigation: OFF }
+
+    /** Let the fake clock run and the page take what its timers decided. */
+    function wait(fixture: ComponentFixture<unknown>, ms: number): void {
+      vi.advanceTimersByTime(ms)
+      fixture.detectChanges()
+    }
+
+    /** Let a settled action resolve through its microtasks, then redraw. */
+    async function answered(fixture: ComponentFixture<unknown>): Promise<void> {
+      for (let tick = 0; tick < 6; tick += 1) await Promise.resolve()
+      fixture.detectChanges()
+    }
+
+    function confirmButton(): HTMLButtonElement {
+      return document.querySelector(
+        '[data-id="hilos-setting-preset-apply-confirm"]',
+      ) as HTMLButtonElement
+    }
+
+    it('locks the pressed card at once, turns the others off and spins it only at 300 ms', async () => {
+      const { fixture, root, dispatched } = mountForAdmin(groupState())
+      expect(cardStates(root)).toEqual({
+        frugal: RESTING,
+        normal: OFF,
+        investigation: RESTING,
+      })
+
+      cardOf(root, 'frugal').click()
+      // Pressed again before change detection: no second handle, and the other
+      // card does not take the press over.
+      cardOf(root, 'frugal').click()
+      cardOf(root, 'investigation').click()
+      expect(dispatched).toHaveLength(1)
+      expect(dispatched[0]?.payload).toEqual({ preset: 'frugal' })
+
+      fixture.detectChanges()
+      expect(cardStates(root)).toEqual({
+        frugal: LOCKED,
+        normal: OFF,
+        investigation: OFF,
+      })
+      wait(fixture, 299)
+      expect(cardStates(root)).toEqual({
+        frugal: LOCKED,
+        normal: OFF,
+        investigation: OFF,
+      })
+      wait(fixture, 1)
+      expect(cardStates(root)).toEqual({
+        frugal: SPINNING,
+        normal: OFF,
+        investigation: OFF,
+      })
+      cardOf(root, 'frugal').click()
+      cardOf(root, 'investigation').click()
+      expect(dispatched).toHaveLength(1)
+
+      dispatched[0]?.settle({})
+      await answered(fixture)
+      expect(cardStates(root)).toEqual({
+        frugal: RESTING,
+        normal: OFF,
+        investigation: RESTING,
+      })
+    })
+
+    it('changes nothing on screen for a fast reply', async () => {
+      const { fixture, root, dispatched } = mountForAdmin(groupState())
+
+      cardOf(root, 'frugal').click()
+      fixture.detectChanges()
+      wait(fixture, 100)
+      expect(buttonState(cardOf(root, 'frugal'))).toEqual(LOCKED)
+
+      dispatched[0]?.settle({})
+      await answered(fixture)
+      expect(buttonState(cardOf(root, 'frugal'))).toEqual(RESTING)
+      wait(fixture, 300)
+      expect(buttonState(cardOf(root, 'frugal'))).toEqual(RESTING)
+    })
+
+    it('lights no card for the apply the confirmation sent', () => {
+      const { fixture, root, dispatched } = mountForAdmin(DRIFTED)
+
+      cardOf(root, 'frugal').click()
+      fixture.detectChanges()
+      confirmButton().click()
+      confirmButton().click()
+      expect(dispatched).toHaveLength(1)
+      expect(dispatched[0]?.payload).toEqual({ preset: 'frugal' })
+
+      fixture.detectChanges()
+      expect(buttonState(confirmButton())).toEqual(LOCKED)
+      expect(cardStates(root)).toEqual(ALL_OFF)
+      const cancel = Array.from(
+        document.querySelectorAll<HTMLButtonElement>(
+          '[data-id="modal"] button',
+        ),
+      ).find((button) => button.textContent?.trim() === 'Cancel')
+      expect(cancel?.disabled).toBe(true)
+
+      wait(fixture, 300)
+      expect(buttonState(confirmButton())).toEqual(SPINNING)
+      expect(cardStates(root)).toEqual(ALL_OFF)
+    })
+
+    it('lights no card for putting the applied values back', () => {
+      const { fixture, root, dispatched } = mountForAdmin(DRIFTED)
+      const revert = () =>
+        el(root, 'hilos-setting-preset-revert') as HTMLButtonElement
+
+      revert().click()
+      revert().click()
+      expect(dispatched).toHaveLength(1)
+      expect(dispatched[0]?.payload).toEqual({ preset: 'normal' })
+
+      fixture.detectChanges()
+      expect(buttonState(revert())).toEqual(LOCKED)
+      expect(cardStates(root)).toEqual(ALL_OFF)
+
+      wait(fixture, 300)
+      expect(buttonState(revert())).toEqual(SPINNING)
+      expect(cardStates(root)).toEqual(ALL_OFF)
+    })
+
+    it('forgets the pressed card once its apply is answered', async () => {
+      const { fixture, root, push, dispatched } = mountForAdmin(groupState())
+
+      cardOf(root, 'frugal').click()
+      fixture.detectChanges()
+      dispatched[0]?.refuse(
+        new ActionError('setting_preset_apply', 'fail', 'Rule said no.'),
+      )
+      await answered(fixture)
+
+      push(DRIFTED)
+      fixture.detectChanges()
+      ;(el(root, 'hilos-setting-preset-revert') as HTMLButtonElement).click()
+      fixture.detectChanges()
+      expect(dispatched).toHaveLength(2)
+      expect(cardStates(root)).toEqual(ALL_OFF)
+    })
+
+    it('keeps the applied card and the view mode as reasons of their own in flight', () => {
+      const { session, fixture, root, push, dispatched } =
+        mountForAdmin(groupState())
+
+      cardOf(root, 'frugal').click()
+      fixture.detectChanges()
+      expect(dispatched).toHaveLength(1)
+
+      // The new state lands by push before the reply: the pressed card is the
+      // applied one now, off natively under its own lock.
+      push(groupState({ selected: 'frugal' }))
+      fixture.detectChanges()
+      expect(cardStates(root)).toEqual({
+        frugal: { ...LOCKED, nativeDisabled: true },
+        normal: OFF,
+        investigation: OFF,
+      })
+
+      push(groupState())
+      session.handshake(null, true)
+      fixture.detectChanges()
+      expect(buttonState(cardOf(root, 'frugal'))).toEqual({
+        ...LOCKED,
+        nativeDisabled: true,
+      })
+      expect(cardOf(root, 'frugal').getAttribute('aria-describedby')).toBe(
+        HILOS_VIEW_MODE_STRIP_TEXT_ID,
+      )
+    })
   })
 })

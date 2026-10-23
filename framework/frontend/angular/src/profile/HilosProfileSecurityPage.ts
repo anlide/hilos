@@ -235,7 +235,6 @@ function focusStep(form: HTMLFormElement | undefined): void {
             type="button"
             class="btn btn-sm btn-outline-primary mb-4"
             [loading]="enrollStep() === 'opening'"
-            [disabled]="enrollStep() === 'opening'"
             data-id="profile-2fa-add"
             (click)="openEnroll()"
           >
@@ -286,8 +285,7 @@ function focusStep(form: HTMLFormElement | undefined): void {
             <button
               hilosLoadingButton
               class="btn-sm btn-outline-secondary"
-              [loading]="resetCancelAction.loading()"
-              [disabled]="resetCancelAction.busy()"
+              [loading]="resetCancelAction.busy()"
               data-id="profile-2fa-reset-cancel"
               (click)="cancelReset()"
             >
@@ -445,8 +443,8 @@ function focusStep(form: HTMLFormElement | undefined): void {
             <button
               hilosLoadingButton
               class="btn-primary"
-              [loading]="enrollAction.loading() || enrollStepUpBusy()"
-              [disabled]="enrollAction.busy() || enrollDisabled()"
+              [loading]="enrollAction.busy() || enrollStepUpBusy()"
+              [disabled]="enrollDisabled()"
               data-id="profile-2fa-enroll-submit"
               (click)="enrollSubmit()"
             >
@@ -529,8 +527,8 @@ function focusStep(form: HTMLFormElement | undefined): void {
           <button
             hilosLoadingButton
             class="btn-primary"
-            [loading]="codesAction.loading()"
-            [disabled]="codesAction.busy() || codesDisabled()"
+            [loading]="codesAction.busy()"
+            [disabled]="codesDisabled()"
             data-id="profile-2fa-codes-submit"
             (click)="codesSubmit()"
           >
@@ -577,8 +575,8 @@ function focusStep(form: HTMLFormElement | undefined): void {
           <button
             hilosLoadingButton
             class="btn-danger"
-            [loading]="removeAction.loading()"
-            [disabled]="removeAction.busy() || removeDisabled()"
+            [loading]="removeAction.busy()"
+            [disabled]="removeDisabled()"
             data-id="profile-2fa-remove-submit"
             (click)="removeSubmit()"
           >
@@ -630,8 +628,8 @@ function focusStep(form: HTMLFormElement | undefined): void {
           <button
             hilosLoadingButton
             class="btn-primary"
-            [loading]="waitAction.loading()"
-            [disabled]="waitAction.busy() || !waitChanged()"
+            [loading]="waitAction.busy()"
+            [disabled]="!waitChanged()"
             data-id="profile-2fa-wait-save"
             (click)="waitSubmit()"
           >
@@ -672,8 +670,7 @@ function focusStep(form: HTMLFormElement | undefined): void {
           <button
             hilosLoadingButton
             class="btn-danger"
-            [loading]="resetAction.loading()"
-            [disabled]="resetAction.busy()"
+            [loading]="resetAction.busy()"
             data-id="profile-2fa-reset-submit"
             (click)="resetSubmit()"
           >
@@ -738,13 +735,13 @@ export class HilosProfileSecurityPage {
   protected readonly enrollSubmitLabel = computed(
     () => ENROLL_SUBMIT[this.enrollStep()],
   )
+  // The step's own verdict. The submit's own flight — the step's action, the
+  // confirmation, or the opening after Connect another — is no reason here: it
+  // blocks the button at once and keeps its look until the spinner comes.
   protected readonly enrollDisabled = computed(() => {
     switch (this.enrollStep()) {
-      case 'opening':
       case 'refused':
         return true
-      case 'step-up':
-        return this.enrollStepUpBusy()
       case 'proof':
         return this.proofCode().trim() === ''
       case 'scan':
@@ -988,8 +985,14 @@ export class HilosProfileSecurityPage {
 
   protected async enrollSubmit(event?: Event): Promise<void> {
     event?.preventDefault()
-    // Enter submits the form past the disabled button, so the guard is here too.
-    if (this.enrollAction.busy() || this.enrollDisabled()) {
+    // Enter submits the form past the button, so what holds the button holds
+    // here too: a flight in progress, which only blocks it, and the step's own
+    // verdict, which disables it.
+    if (
+      this.enrollAction.busy() ||
+      this.enrollStepUpBusy() ||
+      this.enrollDisabled()
+    ) {
       return
     }
     const step = this.enrollStep()

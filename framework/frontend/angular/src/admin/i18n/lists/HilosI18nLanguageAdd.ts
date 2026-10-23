@@ -161,8 +161,8 @@ type LanguageAddForm = ReturnType<LanguageAdd['form']['get']>
           class="btn-primary"
           type="submit"
           form="i18n-language-add-form"
-          [loading]="formAction.loading()"
-          [disabled]="!canSubmit() || formAction.busy()"
+          [loading]="formAction.busy()"
+          [disabled]="!submitAvailable()"
           data-id="i18n-language-add-submit"
         >
           {{ copy.submit }}
@@ -220,8 +220,8 @@ type LanguageAddForm = ReturnType<LanguageAdd['form']['get']>
         <button
           hilosLoadingButton
           class="btn-warning"
-          [loading]="confirmAction.loading()"
-          [disabled]="!canSubmit() || confirmAction.busy()"
+          [loading]="confirmAction.busy()"
+          [disabled]="!submitAvailable()"
           data-id="i18n-language-confirm-submit"
           (click)="confirm()"
         >
@@ -249,7 +249,7 @@ export class HilosI18nLanguageAdd {
     })
   protected readonly known = signal<HilosI18nBuiltInLanguage | null>(null)
   protected readonly complete = signal(false)
-  protected readonly canSubmit = signal(false)
+  protected readonly submitAvailable = signal(false)
   protected readonly catalog = signal<
     readonly HilosI18nBuiltInLanguage[] | null
   >(null)
@@ -269,7 +269,7 @@ export class HilosI18nLanguageAdd {
         mirrorHilosSignal(add.form, this.form),
         mirrorHilosSignal(add.known, this.known),
         mirrorHilosSignal(add.complete, this.complete),
-        mirrorHilosSignal(add.canSubmit, this.canSubmit),
+        mirrorHilosSignal(add.submitAvailable, this.submitAvailable),
         mirrorHilosSignal(
           createHilosI18nBuiltInLanguages(this.context()),
           this.catalog,

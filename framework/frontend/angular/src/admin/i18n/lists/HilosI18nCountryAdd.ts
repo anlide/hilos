@@ -119,8 +119,8 @@ type CountryAddKind = ReturnType<CountryAdd['kind']['get']>
           class="btn-primary"
           type="submit"
           form="i18n-country-add-form"
-          [loading]="formAction.loading()"
-          [disabled]="!canSubmit() || formAction.busy()"
+          [loading]="formAction.busy()"
+          [disabled]="!submitAvailable()"
           data-id="i18n-country-add-submit"
         >
           {{ copy.submit }}
@@ -182,8 +182,8 @@ type CountryAddKind = ReturnType<CountryAdd['kind']['get']>
         <button
           hilosLoadingButton
           class="btn-warning"
-          [loading]="confirmAction.loading()"
-          [disabled]="!canSubmit() || confirmAction.busy()"
+          [loading]="confirmAction.busy()"
+          [disabled]="!submitAvailable()"
           data-id="i18n-country-confirm-submit"
           (click)="confirm()"
         >
@@ -210,7 +210,7 @@ export class HilosI18nCountryAdd {
   protected readonly kind = signal<CountryAddKind>(null)
   /** How many countries the catalog the page answer carried holds. */
   protected readonly catalogSize = signal<number | null>(null)
-  protected readonly canSubmit = signal(false)
+  protected readonly submitAvailable = signal(false)
   /** Whether the person typed anything a close would discard. */
   protected readonly dirty = computed(() => {
     const form = this.form()
@@ -233,7 +233,7 @@ export class HilosI18nCountryAdd {
         mirrorHilosSignal(add.form, this.form),
         mirrorHilosSignal(add.kind, this.kind),
         mirrorHilosSignal(add.catalogSize, this.catalogSize),
-        mirrorHilosSignal(add.canSubmit, this.canSubmit),
+        mirrorHilosSignal(add.submitAvailable, this.submitAvailable),
         subscribeSignal(add.step, (next) => {
           if (next === 'form') this.formAction.clearError()
           if (next === 'confirm') this.confirmAction.clearError()

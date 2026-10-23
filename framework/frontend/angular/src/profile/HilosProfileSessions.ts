@@ -163,8 +163,8 @@ import { createHilosTrackedAction } from '../hilosTrackedAction.js'
           <button
             hilosLoadingButton
             class="btn-danger"
-            [loading]="endAction.loading()"
-            [disabled]="selectedSession() === undefined || endAction.busy()"
+            [loading]="endAction.busy()"
+            [disabled]="selectedSession() === undefined"
             data-id="profile-session-end-confirm"
             (click)="confirmEnd()"
           >
@@ -208,8 +208,8 @@ import { createHilosTrackedAction } from '../hilosTrackedAction.js'
           <button
             hilosLoadingButton
             class="btn-danger"
-            [loading]="endOthersAction.loading()"
-            [disabled]="endableCount() === 0 || endOthersAction.busy()"
+            [loading]="endOthersAction.busy()"
+            [disabled]="endableCount() === 0"
             data-id="profile-sessions-end-others-confirm"
             (click)="confirmEndOthers()"
           >

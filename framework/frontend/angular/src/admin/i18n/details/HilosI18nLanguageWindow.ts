@@ -188,7 +188,7 @@ type LanguageWindowPlate = ReturnType<LanguageWindow['plate']['get']>
           <div
             hilosConflictActions
             [conflict]="state().conflict"
-            [disableSave]="!canSave()"
+            [disableSave]="!saveAvailable()"
             [saveLabel]="saveLabel()"
             (save)="submit()"
             (acceptMine)="window().keepMine()"
@@ -213,7 +213,7 @@ type LanguageWindowPlate = ReturnType<LanguageWindow['plate']['get']>
               <button
                 hilosLoadingButton
                 class="btn-primary"
-                [loading]="action.loading()"
+                [loading]="action.busy()"
                 [disabled]="saveDisabled"
                 data-id="i18n-language-edit-submit"
                 (click)="onSave()"
@@ -261,7 +261,7 @@ export class HilosI18nLanguageWindow {
   protected readonly frozen = signal(false)
   protected readonly plate = signal<LanguageWindowPlate>('known')
   protected readonly notice = signal<LanguageWindowNotice>(null)
-  protected readonly canSave = signal(false)
+  protected readonly saveAvailable = signal(false)
   protected readonly saveLabel = signal<string>(
     HILOS_I18N_LANGUAGE_WINDOW_COPY.save,
   )
@@ -299,7 +299,7 @@ export class HilosI18nLanguageWindow {
         mirrorHilosSignal(window.frozen, this.frozen),
         mirrorHilosSignal(window.plate, this.plate),
         mirrorHilosSignal(window.notice, this.notice),
-        mirrorHilosSignal(window.canSave, this.canSave),
+        mirrorHilosSignal(window.saveAvailable, this.saveAvailable),
         mirrorHilosSignal(window.saveLabel, this.saveLabel),
         subscribeSignal(window.mode, (next) => {
           if (next !== null && previous === null) this.action.clearError()

@@ -28,7 +28,7 @@ import type {
   ProjectSignal,
   ThemePosition,
 } from '@hilos/core'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosAppearancePage } from '../src/admin/appearance/HilosAppearancePage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
@@ -212,6 +212,18 @@ function harness() {
           kind: 'row_updated',
           rowKey: key,
           row: row(key, value, defaultValue),
+        },
+      })
+    },
+    // Another administrator removed the row.
+    remove(key: string): void {
+      emit('tableViewportDelta', {
+        data: {
+          page: HilosPages.APPEARANCE,
+          tableKey: HILOS_APPEARANCE_SETTINGS_TABLE,
+          kind: 'row_removed',
+          rowKey: key,
+          reason: 'deleted',
         },
       })
     },
@@ -479,7 +491,7 @@ describe('HilosAppearancePage Theme switching window', () => {
       },
     ])
     expect(byId('modal')).not.toBeNull()
-    expect(switchingSave().disabled).toBe(true)
+    expect(switchingSave().getAttribute('aria-disabled')).toBe('true')
     expect(tableText('appearance-setting-value-theme.switching_enabled')).toBe(
       'On',
     )
@@ -544,6 +556,187 @@ describe('HilosAppearancePage Theme switching window', () => {
         requestId: expect.any(String),
       },
     ])
+  })
+})
+
+// What a window's Save tells a sighted person and a screen reader now.
+function saveState(save: HTMLButtonElement) {
+  return {
+    nativeDisabled: save.disabled,
+    disabledLook: save.classList.contains('disabled'),
+    spinner: save.querySelector('[data-id="loading-button-spinner"]') !== null,
+    ariaBusy: save.getAttribute('aria-busy'),
+    ariaDisabled: save.getAttribute('aria-disabled'),
+  }
+}
+
+const SAVE_RESTING = {
+  nativeDisabled: false,
+  disabledLook: false,
+  spinner: false,
+  ariaBusy: null,
+  ariaDisabled: null,
+}
+const SAVE_OFF = { ...SAVE_RESTING, nativeDisabled: true, ariaDisabled: 'true' }
+const SAVE_LOCKED = { ...SAVE_RESTING, ariaBusy: 'true', ariaDisabled: 'true' }
+const SAVE_SPINNING = { ...SAVE_LOCKED, disabledLook: true, spinner: true }
+
+/** Enter in the open window: the submit of its form, before the view catches up. */
+function enter(): void {
+  document
+    .querySelector('[data-id="modal"] form')
+    ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+}
+
+/** Let the fake clock run and the page take what its timers decided. */
+function wait(ms: number): void {
+  vi.advanceTimersByTime(ms)
+  update()
+}
+
+// The production LoadingButton, ConflictActions and ActionLifecycle together,
+// Save fed by the window's saveAvailable: the button's own 300 ms timer is the
+// only delay, so the spinner never waits for the lifecycle's deferred loading
+// on top of it, and the own save in flight never turns Save off natively —
+// only a reason of its own does.
+describe('HilosAppearancePage Save in flight', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('locks Save at once on the first send and greys it only with its spinner at 300 ms', async () => {
+    const h = harness()
+    openSwitching(h)
+    click(switchingInput())
+    expect(saveState(switchingSave())).toEqual(SAVE_RESTING)
+
+    switchingSave().click()
+    expect(h.sent.map((entry) => entry.action)).toEqual([
+      'appearance_theme_switching_set',
+    ])
+    // Pressed again before the view has caught up: the window's own door holds.
+    switchingSave().click()
+    enter()
+    expect(h.sent).toHaveLength(1)
+
+    update()
+    expect(saveState(switchingSave())).toEqual(SAVE_LOCKED)
+    click(switchingSave())
+    enter()
+    expect(h.sent).toHaveLength(1)
+
+    wait(299)
+    expect(saveState(switchingSave())).toEqual(SAVE_LOCKED)
+    wait(1)
+    expect(saveState(switchingSave())).toEqual(SAVE_SPINNING)
+    click(switchingSave())
+    enter()
+    expect(h.sent).toHaveLength(1)
+
+    h.answer('success', 'Theme switching saved.')
+    await settle()
+    expect(byId('modal')).toBeNull()
+  })
+
+  it('returns Save to rest on a refusal and lets the next press send', async () => {
+    const h = harness()
+    openSwitching(h)
+    click(switchingInput())
+    click(switchingSave())
+    wait(300)
+    expect(saveState(switchingSave())).toEqual(SAVE_SPINNING)
+
+    h.answer('fail', 'The setting could not be saved.')
+    await settle()
+    expect(byId('hilos-action-error')).not.toBeNull()
+    expect(saveState(switchingSave())).toEqual(SAVE_RESTING)
+
+    click(switchingSave())
+    expect(h.sent).toHaveLength(2)
+  })
+
+  it('turns Save off at once for a draft with nothing to save', () => {
+    const h = harness()
+    openSwitching(h)
+    click(switchingInput())
+    click(switchingInput())
+    expect(saveState(switchingSave())).toEqual(SAVE_OFF)
+
+    click(switchingSave())
+    wait(300)
+    expect(saveState(switchingSave())).toEqual(SAVE_OFF)
+    enter()
+    expect(h.sent).toEqual([])
+  })
+
+  it('turns Save off at once for a choice over a value the catalog does not know', () => {
+    const h = harness()
+    openDefaultTheme(h, 'sepia')
+    click(themeRadio('dark'))
+    expect(saveState(themeSave())).toEqual(SAVE_OFF)
+
+    click(themeSave())
+    wait(300)
+    expect(saveState(themeSave())).toEqual(SAVE_OFF)
+    enter()
+    expect(h.sent).toEqual([])
+  })
+
+  it('turns Save off for a removal that comes while the save flies', async () => {
+    const h = harness()
+    openSwitching(h)
+    click(switchingInput())
+    click(switchingSave())
+    expect(saveState(switchingSave())).toEqual(SAVE_LOCKED)
+
+    h.remove(HilosAppearanceSettingKey.switchingEnabled)
+    expect(saveState(switchingSave())).toEqual({
+      ...SAVE_LOCKED,
+      nativeDisabled: true,
+    })
+    expect(switchingSave().textContent?.trim()).toBe('Deleted')
+
+    h.answer('fail', 'The setting could not be saved.')
+    await settle()
+    expect(saveState(switchingSave())).toEqual(SAVE_OFF)
+    expect(switchingSave().textContent?.trim()).toBe('Deleted')
+  })
+
+  it('turns Save off for a conflict that comes while the save flies', async () => {
+    const h = harness()
+    openDefaultTheme(h)
+    click(themeRadio('dark'))
+    click(themeSave())
+    expect(saveState(themeSave())).toEqual(SAVE_LOCKED)
+
+    h.change(HilosAppearanceSettingKey.defaultTheme, 'light', 'system')
+    expect(byId('conflict-accept-mine')).not.toBeNull()
+    expect(saveState(themeSave())).toEqual({
+      ...SAVE_LOCKED,
+      nativeDisabled: true,
+    })
+
+    h.answer('fail', 'The setting could not be saved.')
+    await settle()
+    expect(saveState(themeSave())).toEqual(SAVE_OFF)
+  })
+
+  it('turns Save off at once in the admin view mode', () => {
+    const h = harness()
+    h.viewer()
+    openSwitching(h)
+    click(switchingInput())
+    expect(saveState(switchingSave())).toEqual(SAVE_OFF)
+
+    click(switchingSave())
+    wait(300)
+    expect(saveState(switchingSave())).toEqual(SAVE_OFF)
+    enter()
+    expect(h.sent).toEqual([])
   })
 })
 

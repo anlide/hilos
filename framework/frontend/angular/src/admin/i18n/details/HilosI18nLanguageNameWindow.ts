@@ -127,7 +127,7 @@ type NameWindowNotice = ReturnType<NameWindow['notice']['get']>
           <div
             hilosConflictActions
             [conflict]="state().conflict"
-            [disableSave]="!canSave()"
+            [disableSave]="!saveAvailable()"
             [saveLabel]="saveLabel()"
             (save)="submit()"
             (acceptMine)="window().keepMine()"
@@ -152,7 +152,7 @@ type NameWindowNotice = ReturnType<NameWindow['notice']['get']>
               <button
                 hilosLoadingButton
                 class="btn-primary"
-                [loading]="action().loading()"
+                [loading]="action().busy()"
                 [disabled]="saveDisabled"
                 data-id="i18n-language-name-submit"
                 (click)="onSave()"
@@ -174,8 +174,8 @@ type NameWindowNotice = ReturnType<NameWindow['notice']['get']>
           <button
             hilosLoadingButton
             class="btn-primary"
-            [loading]="action().loading()"
-            [disabled]="!canSubmit()"
+            [loading]="action().busy()"
+            [disabled]="!submitAvailable()"
             data-id="i18n-language-name-submit"
             (click)="submit()"
           >
@@ -202,6 +202,8 @@ export class HilosI18nLanguageNameWindow {
   protected readonly saving = signal(false)
   protected readonly canSave = signal(false)
   protected readonly canSubmit = signal(false)
+  protected readonly saveAvailable = signal(false)
+  protected readonly submitAvailable = signal(false)
   protected readonly saveLabel = signal<string>(
     HILOS_I18N_LANGUAGE_NAME_COPY.add,
   )
@@ -245,6 +247,8 @@ export class HilosI18nLanguageNameWindow {
         mirrorHilosSignal(window.saving, this.saving),
         mirrorHilosSignal(window.canSave, this.canSave),
         mirrorHilosSignal(window.canSubmit, this.canSubmit),
+        mirrorHilosSignal(window.saveAvailable, this.saveAvailable),
+        mirrorHilosSignal(window.submitAvailable, this.submitAvailable),
         mirrorHilosSignal(window.saveLabel, this.saveLabel),
         subscribeSignal(window.target, () =>
           this.action.set(createHilosTrackedAction()),

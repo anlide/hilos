@@ -9,7 +9,9 @@
 // mode's values back when they have drifted. The applied card is never the gesture
 // itself — with no drift there is nothing to press, and with drift the one button
 // inside it says out loud what it will do. While the action is in flight every card
-// is disabled, or two quick clicks would race and the later write would win.
+// is locked, or two quick clicks would race and the later write would win: the card
+// whose click applied at once by its own flight, keeping its look until its spinner
+// comes, and the others plainly disabled.
 // Inside the admin view mode a viewer finds every card and the button inside the
 // applied one plainly disabled — each is a `LoadingButton` (HIL-1261) — so the
 // confirmation never opens for a viewer.
@@ -103,7 +105,11 @@ import {
               <button
                 hilosLoadingButton
                 class="text-start border-0 rounded-0 rounded-top-3 p-3 flex-grow-1"
-                [disabled]="applyAction.busy() || applied(preset.name)"
+                [loading]="applyAction.busy() && pressedCard() === preset.name"
+                [disabled]="
+                  (applyAction.busy() && pressedCard() !== preset.name) ||
+                  applied(preset.name)
+                "
                 [attr.aria-current]="applied(preset.name) ? 'true' : null"
                 [attr.data-id]="'hilos-setting-preset-' + preset.name"
                 (click)="choose(preset.name)"
@@ -153,8 +159,7 @@ import {
                   <button
                     hilosLoadingButton
                     class="btn-sm btn-outline-secondary w-100"
-                    [loading]="applyAction.loading()"
-                    [disabled]="applyAction.busy()"
+                    [loading]="applyAction.busy()"
                     data-id="hilos-setting-preset-revert"
                     (click)="revert()"
                   >
@@ -217,7 +222,7 @@ import {
           <button
             hilosLoadingButton
             class="btn-primary"
-            [loading]="applyAction.loading()"
+            [loading]="applyAction.busy()"
             data-id="hilos-setting-preset-apply-confirm"
             (click)="confirmApply()"
           >
@@ -239,6 +244,9 @@ export class HilosSettingPresetsPage {
   readonly vocabulary = input.required<HilosSettingPresetsVocabulary>()
 
   protected readonly applyAction = createHilosTrackedAction()
+  // The card whose click applied at once; null when the apply came through the
+  // confirmation or the button inside the applied card, which no card pressed.
+  protected readonly pressedCard = signal<string | null>(null)
 
   private readonly presets = computed(() =>
     createHilosSettingPresets(this.context(), this.signal()),
@@ -308,6 +316,11 @@ export class HilosSettingPresetsPage {
    * the confirmation when their hand-made edits would go with it.
    */
   protected choose(name: string): void {
+    // A press that lands before change detection has locked the cards sends no
+    // second write and does not take the pressed card over.
+    if (this.applyAction.busy()) {
+      return
+    }
     this.applyAction.clearError()
     if (this.drifted()) {
       this.confirmPreset.set(name)
@@ -315,6 +328,7 @@ export class HilosSettingPresetsPage {
 
       return
     }
+    this.pressedCard.set(name)
     void this.apply(name)
   }
 
@@ -355,14 +369,28 @@ export class HilosSettingPresetsPage {
     return this.vocabulary().valueLines(values)
   }
 
-  /** Send the apply and, when it was confirmed, close the confirmation on success. */
+  /**
+   * Send the apply and, when it was confirmed, close the confirmation on success.
+   * The guard stands before the handle is created: a repeat press of the
+   * confirmation or of the button inside the applied card before change detection
+   * dispatches nothing.
+   *
+   * @param name The preset to write.
+   */
   private async apply(name: string): Promise<void> {
-    const applyOk = await this.applyAction.run(
-      this.actions().sendSettingPresetApply(name),
-    )
-    if (applyOk) {
-      this.confirmOpen.set(false)
-      this.confirmPreset.set(null)
+    if (this.applyAction.busy()) {
+      return
+    }
+    try {
+      const applyOk = await this.applyAction.run(
+        this.actions().sendSettingPresetApply(name),
+      )
+      if (applyOk) {
+        this.confirmOpen.set(false)
+        this.confirmPreset.set(null)
+      }
+    } finally {
+      this.pressedCard.set(null)
     }
   }
 }

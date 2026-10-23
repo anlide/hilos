@@ -642,7 +642,7 @@ const ERROR_DETAILS_TWIN_CLASS =
                       hilosLoadingButton
                       class="btn-outline-secondary"
                       [loading]="pending() && state().methodKey === method.key"
-                      [disabled]="pending()"
+                      [disabled]="pending() && state().methodKey !== method.key"
                       [attr.aria-label]="method.label"
                       [title]="method.label"
                       [attr.data-id]="methodDataId(method.key)"
@@ -755,7 +755,9 @@ const ERROR_DETAILS_TWIN_CLASS =
                           [loading]="
                             pending() && state().methodKey === method.key
                           "
-                          [disabled]="pending()"
+                          [disabled]="
+                            pending() && state().methodKey !== method.key
+                          "
                           [attr.aria-label]="method.label"
                           [title]="method.label"
                           [attr.data-id]="methodDataId(method.key)"
@@ -882,7 +884,6 @@ const ERROR_DETAILS_TWIN_CLASS =
                       hilosLoadingButton
                       class="btn-primary w-100"
                       [loading]="pending()"
-                      [disabled]="pending()"
                       [attr.data-id]="methodDataId(method.key)"
                       (click)="chooseMethod(method.key)"
                     >
@@ -898,9 +899,7 @@ const ERROR_DETAILS_TWIN_CLASS =
                       hilosLoadingButton
                       class="btn-primary w-100"
                       [loading]="pending()"
-                      [disabled]="
-                        pending() || unavailableChannels().has(channel.key)
-                      "
+                      [disabled]="unavailableChannels().has(channel.key)"
                       [attr.data-id]="channelDataId(channel.key)"
                       (click)="chooseChannel(channel.key)"
                     >
@@ -944,7 +943,8 @@ const ERROR_DETAILS_TWIN_CLASS =
                                 pending() && state().channelKey === other.key
                               "
                               [disabled]="
-                                pending() ||
+                                (pending() &&
+                                  state().channelKey !== other.key) ||
                                 unavailableChannels().has(other.key)
                               "
                               [attr.aria-label]="

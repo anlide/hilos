@@ -108,8 +108,8 @@ import {
         <button
           hilosLoadingButton
           class="btn-danger"
-          [loading]="action.loading()"
-          [disabled]="action.busy() || elsewhere()"
+          [loading]="action.busy()"
+          [disabled]="elsewhere()"
           data-id="country-card-switch-off-confirm"
           (click)="confirm()"
         >

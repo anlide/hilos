@@ -95,7 +95,9 @@ let signInSequence = 0
                     [loading]="
                       step() === 'opening' && addPressed() === wayKey(way)
                     "
-                    [disabled]="step() === 'opening'"
+                    [disabled]="
+                      step() === 'opening' && addPressed() !== wayKey(way)
+                    "
                     [attr.data-id]="passkeyOnlyWayId(way)"
                     (click)="openAdd(way)"
                   >
@@ -186,7 +188,7 @@ let signInSequence = 0
         class="btn btn-sm btn-outline-primary mt-3"
         type="button"
         [loading]="step() === 'opening' && addPressed() === 'add'"
-        [disabled]="step() === 'opening'"
+        [disabled]="step() === 'opening' && addPressed() !== 'add'"
         data-id="profile-sign-in-add"
         (click)="openAdd()"
       >
@@ -224,8 +226,7 @@ let signInSequence = 0
           <button
             hilosLoadingButton
             class="btn btn-danger"
-            [loading]="unlinkAction.loading()"
-            [disabled]="unlinkAction.busy()"
+            [loading]="unlinkAction.busy()"
             data-id="identity-unlink-yes"
             (click)="remove()"
           >
@@ -398,7 +399,7 @@ let signInSequence = 0
                       hilosLoadingButton
                       class="btn btn-outline-secondary"
                       [loading]="busy() && pendingProvider() === way.key"
-                      [disabled]="busy()"
+                      [disabled]="busy() && pendingProvider() !== way.key"
                       [attr.data-id]="'profile-oauth-link-' + way.key"
                       (click)="flow().chooseProvider(way.key)"
                     >
@@ -422,7 +423,7 @@ let signInSequence = 0
                       hilosLoadingButton
                       class="btn btn-outline-secondary"
                       [loading]="busy() && pendingProvider() === null"
-                      [disabled]="busy()"
+                      [disabled]="busy() && pendingProvider() !== null"
                       data-id="profile-passkey-add"
                       (click)="flow().choosePasskey()"
                     >
@@ -518,7 +519,6 @@ let signInSequence = 0
               [attr.form]="baseId + '-step-up'"
               class="btn btn-primary"
               [loading]="stepUpBusy()"
-              [disabled]="stepUpBusy()"
               data-id="profile-sign-in-add-step-up-confirm"
             >
               {{ stepUpCopy.confirm }}
@@ -539,7 +539,7 @@ let signInSequence = 0
               [attr.form]="baseId + '-add'"
               class="btn btn-primary"
               [loading]="busy()"
-              [disabled]="!addValid() || busy()"
+              [disabled]="!addValid()"
               [attr.data-id]="submitId()"
             >
               {{

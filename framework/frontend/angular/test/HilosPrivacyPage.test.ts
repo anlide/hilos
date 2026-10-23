@@ -113,7 +113,24 @@ async function erase(
   fixture.detectChanges()
 }
 
+/**
+ * Let the reply the page awaits arrive under a fake clock, and draw what it
+ * changed.
+ *
+ * @param fixture The mounted page to draw.
+ */
+async function flush(
+  fixture: ComponentFixture<HilosPrivacyPage>,
+): Promise<void> {
+  for (let tick = 0; tick < 10; tick += 1) await Promise.resolve()
+  fixture.detectChanges()
+}
+
 describe('HilosPrivacyPage', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('offers the erase without asking anything of the browser first', () => {
     const fixture = mountPage(
       fakeConnection(),
@@ -210,6 +227,55 @@ describe('HilosPrivacyPage', () => {
     expect(byId(fixture, 'privacy-erase-done')?.textContent).toContain(
       'were erased',
     )
+  })
+
+  it('holds the confirmation from the first moment of the erase, keeps Erase looking live until its spinner, and sends once (HIL-1768)', async () => {
+    vi.useFakeTimers()
+    const connection = fakeConnection()
+    let answer!: (reply: { message?: string }) => void
+    const actions = fakeActions(
+      new Promise((resolve) => {
+        answer = resolve
+      }),
+    )
+    const fixture = mountPage(connection, actions)
+    byId(fixture, 'privacy-erase')?.click()
+    fixture.detectChanges()
+    const confirm = byId(fixture, 'privacy-erase-confirm') as HTMLButtonElement
+    const spinner = (): Element | null =>
+      confirm.querySelector('[data-id="loading-button-spinner"]')
+
+    confirm.click()
+    await flush(fixture)
+    expect(actions.dispatch).toHaveBeenCalledOnce()
+    expect(
+      (byId(fixture, 'privacy-erase-cancel') as HTMLButtonElement).disabled,
+    ).toBe(true)
+    expect((byId(fixture, 'modal-close') as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+    expect(confirm.getAttribute('aria-busy')).toBe('true')
+    expect(confirm.getAttribute('aria-disabled')).toBe('true')
+    expect(confirm.disabled).toBe(false)
+    expect(confirm.classList.contains('disabled')).toBe(false)
+    expect(spinner()).toBeNull()
+
+    confirm.click()
+    vi.advanceTimersByTime(299)
+    fixture.detectChanges()
+    expect(spinner()).toBeNull()
+    expect(confirm.classList.contains('disabled')).toBe(false)
+    vi.advanceTimersByTime(1)
+    fixture.detectChanges()
+    expect(spinner()).not.toBeNull()
+    expect(confirm.classList.contains('disabled')).toBe(true)
+    expect(actions.dispatch).toHaveBeenCalledOnce()
+    expect(connection.forgetProtectedModePass).toHaveBeenCalledOnce()
+
+    answer({})
+    await flush(fixture)
+    expect(byId(fixture, 'privacy-erase-done')).not.toBeNull()
+    expect(byId(fixture, 'privacy-erase-confirm')).toBeNull()
   })
 })
 

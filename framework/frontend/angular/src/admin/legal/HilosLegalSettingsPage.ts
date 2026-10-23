@@ -203,7 +203,7 @@ let inputSequence = 0
           <div
             hilosConflictActions
             [conflict]="state().conflict"
-            [disableSave]="!canSave()"
+            [disableSave]="!saveAvailable()"
             [saveLabel]="saveLabel()"
             (save)="save()"
             (acceptMine)="editor().keepMine()"
@@ -224,7 +224,7 @@ let inputSequence = 0
               ><button
                 hilosLoadingButton
                 class="btn-primary"
-                [loading]="action.loading()"
+                [loading]="action.busy()"
                 [disabled]="disabled"
                 data-id="legal-setting-save"
                 (click)="onSave()"
@@ -269,7 +269,7 @@ export class HilosLegalSettingsPage {
     hilosRowEditIdle<HilosLegalSettingEditFields>({ value: '' }),
   )
   protected readonly noticeText = signal('')
-  protected readonly canSave = signal(false)
+  protected readonly saveAvailable = signal(false)
   protected readonly saveLabel = signal('Save')
   protected readonly title = computed(() => {
     const row = this.row()
@@ -286,7 +286,7 @@ export class HilosLegalSettingsPage {
         mirrorHilosSignal(editor.form, this.form),
         mirrorHilosSignal(editor.state, this.state),
         mirrorHilosSignal(editor.noticeText, this.noticeText),
-        mirrorHilosSignal(editor.canSave, this.canSave),
+        mirrorHilosSignal(editor.saveAvailable, this.saveAvailable),
         mirrorHilosSignal(editor.saveLabel, this.saveLabel),
       ]
       table.start()

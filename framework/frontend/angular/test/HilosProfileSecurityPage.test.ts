@@ -2,6 +2,10 @@
 // is a protected operation, so the modal opens on the server's word - at the
 // confirmation step for the first app, at the name when no step is needed - and
 // a second app is still asked for a code from the connected one after the name.
+// While the opening, the confirmation or the next opening is out the button that
+// sent it is locked at once and keeps its look until its spinner comes, and a
+// repeat sends nothing; an empty code or codes not marked saved turn the submit
+// off at once (HIL-1768).
 // Turned off by the administrator (HIL-1303), the page is one plate, beside a
 // removal that stands, and an open window closes when it turns off.
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
@@ -12,9 +16,13 @@ import {
   type HilosSecondFactorContext,
   type ProjectSignal,
 } from '@hilos/core'
-import { expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { HilosProfileSecurityPage } from '../src/profile/HilosProfileSecurityPage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 /** A section with no app connected yet, as the group frame carries it. */
 const SECTION_OFF = {
@@ -57,11 +65,19 @@ function setup(
   section: object = SECTION_OFF,
 ) {
   const listeners = new Set<(signal: ProjectSignal) => void>()
-  const dispatch = vi.fn((action: string) => ({
-    requestId: action,
-    loading: createSignal(false),
-    done: Promise.resolve({ reply: replies[action] }),
-  }))
+  const dispatch = vi.fn((action: string) => {
+    const reply = replies[action]
+
+    return {
+      requestId: action,
+      loading: createSignal(false),
+      // A reply given as a promise is held until it settles.
+      done:
+        reply instanceof Promise
+          ? reply.then((settled: unknown) => ({ reply: settled }))
+          : Promise.resolve({ reply }),
+    }
+  })
   const context = {
     actions: { dispatch },
     connection: {
@@ -120,6 +136,65 @@ async function settle(fixture: ComponentFixture<unknown>): Promise<void> {
 }
 
 /**
+ * Let the answers the page awaits arrive under a fake clock, and draw what they
+ * changed.
+ *
+ * @param fixture The page under test.
+ */
+async function flush(fixture: ComponentFixture<unknown>): Promise<void> {
+  for (let tick = 0; tick < 10; tick += 1) await Promise.resolve()
+  fixture.detectChanges()
+}
+
+/**
+ * Let the fake clock run and draw what the timers decided.
+ *
+ * @param fixture The page under test.
+ * @param ms How far the clock moves.
+ */
+function wait(fixture: ComponentFixture<unknown>, ms: number): void {
+  vi.advanceTimersByTime(ms)
+  fixture.detectChanges()
+}
+
+/** A reply the test holds out until it settles it. */
+function held(): { reply: Promise<unknown>; settle: (reply: unknown) => void } {
+  let settle!: (reply: unknown) => void
+  const reply = new Promise<unknown>((resolve) => {
+    settle = resolve
+  })
+
+  return { reply, settle }
+}
+
+/**
+ * What a button tells a sighted person and a screen reader now.
+ *
+ * @param button The button to read.
+ */
+function buttonState(button: HTMLElement) {
+  return {
+    nativeDisabled: (button as HTMLButtonElement).disabled,
+    disabledLook: button.classList.contains('disabled'),
+    spinner:
+      button.querySelector('[data-id="loading-button-spinner"]') !== null,
+    ariaBusy: button.getAttribute('aria-busy'),
+    ariaDisabled: button.getAttribute('aria-disabled'),
+  }
+}
+
+const RESTING = {
+  nativeDisabled: false,
+  disabledLook: false,
+  spinner: false,
+  ariaBusy: null,
+  ariaDisabled: null,
+}
+const OFF = { ...RESTING, nativeDisabled: true, ariaDisabled: 'true' }
+const LOCKED = { ...RESTING, ariaBusy: 'true', ariaDisabled: 'true' }
+const SPINNING = { ...LOCKED, disabledLook: true, spinner: true }
+
+/**
  * Send the enrolment form the way Enter does: past its buttons.
  *
  * @param node The page's element lookup.
@@ -172,6 +247,168 @@ it('opens at the confirmation step for the first app and moves to the name once 
     passkey: null,
   })
   expect(node('profile-2fa-enroll-label')).not.toBeNull()
+  fixture.destroy()
+})
+
+it('keeps Add an authenticator app live-looking while it asks, dims it only with its spinner and asks once', async () => {
+  vi.useFakeTimers()
+  const answer = held()
+  const { dispatch, fixture, node } = setup({
+    ...REPLIES,
+    hilos_step_up_start: answer.reply,
+  })
+  const openings = () =>
+    dispatch.mock.calls.filter(([action]) => action === 'hilos_step_up_start')
+  const add = node('profile-2fa-add')!
+  add.click()
+  await flush(fixture)
+  expect(openings()).toHaveLength(1)
+  expect(buttonState(add)).toEqual(LOCKED)
+
+  wait(fixture, 299)
+  expect(buttonState(add)).toEqual(LOCKED)
+  add.click()
+  await flush(fixture)
+  expect(openings()).toHaveLength(1)
+  wait(fixture, 1)
+  expect(buttonState(add)).toEqual(SPINNING)
+
+  answer.settle({ required: false, purpose: 'add an authenticator app' })
+  await flush(fixture)
+  expect(node('profile-2fa-enroll-label')).not.toBeNull()
+  expect(buttonState(add)).toEqual(RESTING)
+  fixture.destroy()
+})
+
+it('keeps Confirm live-looking while the confirmation is out, dims it only with its spinner and sends it once', async () => {
+  vi.useFakeTimers()
+  const answer = held()
+  const { dispatch, fill, fixture, node } = setup({
+    ...REPLIES,
+    hilos_step_up_start: {
+      required: true,
+      purpose: 'add an authenticator app',
+      method: 'password',
+    },
+    hilos_step_up_confirm: answer.reply,
+  })
+  node('profile-2fa-add')!.click()
+  await flush(fixture)
+  const confirms = () =>
+    dispatch.mock.calls.filter(([action]) => action === 'hilos_step_up_confirm')
+  fill('step-up-password', 'secret')
+  submitEnrolment(node)
+  await flush(fixture)
+  const confirm = node('profile-2fa-enroll-submit')!
+  expect(confirms()).toHaveLength(1)
+  expect(buttonState(confirm)).toEqual(LOCKED)
+
+  wait(fixture, 299)
+  expect(buttonState(confirm)).toEqual(LOCKED)
+  submitEnrolment(node)
+  confirm.click()
+  await flush(fixture)
+  expect(confirms()).toHaveLength(1)
+  wait(fixture, 1)
+  expect(buttonState(confirm)).toEqual(SPINNING)
+
+  answer.settle(undefined)
+  await flush(fixture)
+  expect(node('profile-2fa-enroll-label')).not.toBeNull()
+  expect(buttonState(node('profile-2fa-enroll-submit')!)).toEqual(RESTING)
+  fixture.destroy()
+})
+
+it('keeps Connect another live-looking while the next opening is out, dims it only with its spinner and asks once', async () => {
+  vi.useFakeTimers()
+  const replies: Record<string, unknown> = {
+    ...REPLIES,
+    profile_second_factor_enroll_confirm: {},
+  }
+  const { dispatch, fill, fixture, node } = setup(replies)
+  node('profile-2fa-add')!.click()
+  await flush(fixture)
+  submitEnrolment(node)
+  await flush(fixture)
+  fill('profile-2fa-enroll-code', '123456')
+  submitEnrolment(node)
+  await flush(fixture)
+  const more = node('profile-2fa-enroll-submit')!
+  expect(more.textContent?.trim()).toBe('Connect another')
+  const openings = () =>
+    dispatch.mock.calls.filter(([action]) => action === 'hilos_step_up_start')
+  expect(openings()).toHaveLength(1)
+
+  const answer = held()
+  replies['hilos_step_up_start'] = answer.reply
+  more.click()
+  await flush(fixture)
+  expect(openings()).toHaveLength(2)
+  expect(buttonState(more)).toEqual(LOCKED)
+
+  wait(fixture, 299)
+  expect(buttonState(more)).toEqual(LOCKED)
+  more.click()
+  submitEnrolment(node)
+  await flush(fixture)
+  expect(openings()).toHaveLength(2)
+  wait(fixture, 1)
+  expect(buttonState(more)).toEqual(SPINNING)
+
+  answer.settle({ required: false, purpose: 'add an authenticator app' })
+  await flush(fixture)
+  expect(node('profile-2fa-enroll-label')).not.toBeNull()
+  expect(buttonState(node('profile-2fa-enroll-submit')!)).toEqual(RESTING)
+  fixture.destroy()
+})
+
+it('turns the submit off at once for an empty code and for codes not marked saved', async () => {
+  const { dispatch, fill, fixture, node } = setup(
+    {
+      ...REPLIES,
+      profile_second_factor_enroll_confirm: {
+        backupCodes: ['1111-2222', '3333-4444'],
+      },
+    },
+    SECTION_OFF,
+  )
+  node('profile-2fa-add')!.click()
+  await settle(fixture)
+  submitEnrolment(node)
+  await settle(fixture)
+  expect(buttonState(node('profile-2fa-enroll-submit')!)).toEqual(OFF)
+  submitEnrolment(node)
+  await settle(fixture)
+  expect(
+    dispatch.mock.calls.filter(
+      ([action]) => action === 'profile_second_factor_enroll_confirm',
+    ),
+  ).toHaveLength(0)
+
+  fill('profile-2fa-enroll-code', '123456')
+  expect(buttonState(node('profile-2fa-enroll-submit')!)).toEqual(RESTING)
+  submitEnrolment(node)
+  await settle(fixture)
+  expect(node('backup-codes')).not.toBeNull()
+  expect(buttonState(node('profile-2fa-enroll-submit')!)).toEqual(OFF)
+
+  node('backup-codes-saved')!.click()
+  fixture.detectChanges()
+  expect(buttonState(node('profile-2fa-enroll-submit')!)).toEqual(RESTING)
+  fixture.destroy()
+})
+
+it('turns the submit off at once for an empty code from the connected app', async () => {
+  const { fill, fixture, node } = setup(REPLIES, SECTION_ON)
+  node('profile-2fa-add')!.click()
+  await settle(fixture)
+  submitEnrolment(node)
+  await settle(fixture)
+  expect(node('profile-2fa-proof')).not.toBeNull()
+  expect(buttonState(node('profile-2fa-enroll-submit')!)).toEqual(OFF)
+
+  fill('profile-2fa-proof', '654321')
+  expect(buttonState(node('profile-2fa-enroll-submit')!)).toEqual(RESTING)
   fixture.destroy()
 })
 

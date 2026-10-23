@@ -324,7 +324,7 @@ const RETENTION_CLASS: Record<string, string> = {
           <button
             hilosLoadingButton
             class="btn-primary"
-            [loading]="takeout.loading()"
+            [loading]="takeout.busy()"
             [disabled]="takeoutNotice() !== null"
             data-id="hilos-rotation-takeout-confirm"
             (click)="submitTakeout()"
@@ -379,7 +379,7 @@ const RETENTION_CLASS: Record<string, string> = {
           <button
             hilosLoadingButton
             class="btn-primary"
-            [loading]="undo.loading()"
+            [loading]="undo.busy()"
             [disabled]="undoNotice() !== null"
             data-id="hilos-rotation-undo-confirm"
             (click)="submitUndo()"

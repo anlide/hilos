@@ -129,7 +129,7 @@ import { mirrorHilosSignal as mirror } from '../hilosSignal.js'
           <div
             hilosConflictActions
             [conflict]="edit().conflict"
-            [disableSave]="!valid() || !edit().dirty || busy() || edit().gone"
+            [disableSave]="!valid() || !edit().dirty || edit().gone"
             [saveLabel]="saveLabel()"
             (save)="flow().save()"
             (acceptMine)="flow().keepMine()"

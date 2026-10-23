@@ -19,7 +19,7 @@ import type {
   HilosI18nLocaleRow,
   HilosI18nLocaleWindowMode,
 } from '@hilos/core'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosI18nLocaleWindow } from '../src/admin/i18n/details/HilosI18nLocaleWindow.js'
 import { HILOS_ADMIN_VIEW_MODE } from '../src/hilosLookOnly.js'
@@ -510,4 +510,238 @@ describe('HilosI18nLocaleWindow — room, viewer and teardown', () => {
     h.fixture.destroy()
     expect(h.focuses.at(-1)).toBe('')
   })
+})
+
+// What a footer button tells a sighted person and a screen reader now.
+function buttonState(button: HTMLButtonElement) {
+  return {
+    nativeDisabled: button.disabled,
+    disabledLook: button.classList.contains('disabled'),
+    spinner:
+      button.querySelector('[data-id="loading-button-spinner"]') !== null,
+    ariaBusy: button.getAttribute('aria-busy'),
+    ariaDisabled: button.getAttribute('aria-disabled'),
+  }
+}
+
+const RESTING = {
+  nativeDisabled: false,
+  disabledLook: false,
+  spinner: false,
+  ariaBusy: null,
+  ariaDisabled: null,
+}
+const OFF = { ...RESTING, nativeDisabled: true, ariaDisabled: 'true' }
+const LOCKED = { ...RESTING, ariaBusy: 'true', ariaDisabled: 'true' }
+const SPINNING = { ...LOCKED, disabledLook: true, spinner: true }
+
+/** Enter in the window's form, before the view catches up. */
+function enter(): void {
+  document
+    .querySelector('[data-id="modal"] form')
+    ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+}
+
+/** A bench whose clock is fake: waits and replies land without real time. */
+function flight(options: Parameters<typeof setup>[0] = {}) {
+  const h = setup(options)
+
+  return {
+    ...h,
+    state: (id: string) => buttonState(h.button(id)),
+    wait(ms: number): void {
+      vi.advanceTimersByTime(ms)
+      h.detect()
+    },
+    async settle(change: () => void): Promise<void> {
+      change()
+      for (let tick = 0; tick < 4; tick += 1) await Promise.resolve()
+      h.detect()
+    },
+  }
+}
+
+// The real locale factories, the production LoadingButton and ActionLifecycle
+// together: Add looks by the creator's addAvailable and Save by the editor's
+// saveAvailable, so their own send only locks them and the disabled look comes
+// with the spinner at 300 ms, while the guarded canAdd and canSave and the
+// window's busy keep a second press or Enter from sending. The pressed switch
+// confirm spins and only the other actions in flight turn it off; its Back is
+// off natively. A pair taken or gone, an unchosen pair, a conflict and the
+// admin view mode turn the button off natively.
+describe('HilosI18nLocaleWindow — in flight', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('locks Add at once and greys it only with its spinner at 300 ms', async () => {
+    const h = flight()
+    h.open('19:145', 'add')
+    expect(h.state('i18n-locale-submit')).toEqual(RESTING)
+
+    h.button('i18n-locale-submit').click()
+    expect(h.calls).toHaveLength(1)
+    expect(h.calls[0]?.action).toBe('hilos_i18n_locale_add')
+    // Pressed again before the view has caught up: the window's door holds.
+    h.button('i18n-locale-submit').click()
+    enter()
+    expect(h.calls).toHaveLength(1)
+
+    h.detect()
+    expect(h.state('i18n-locale-submit')).toEqual(LOCKED)
+    expect(h.button('i18n-locale-cancel').disabled).toBe(true)
+    h.click('i18n-locale-submit')
+    enter()
+    expect(h.calls).toHaveLength(1)
+
+    h.wait(299)
+    expect(h.state('i18n-locale-submit')).toEqual(LOCKED)
+    h.wait(1)
+    expect(h.state('i18n-locale-submit')).toEqual(SPINNING)
+    h.click('i18n-locale-submit')
+    enter()
+    expect(h.calls).toHaveLength(1)
+
+    await h.settle(() => h.refuse(0, 'A locale of this pair exists.'))
+    expect(h.state('i18n-locale-submit')).toEqual(RESTING)
+    h.click('i18n-locale-submit')
+    expect(h.calls).toHaveLength(2)
+  })
+
+  it('turns Add off at once for a pair taken elsewhere', () => {
+    const h = flight()
+    h.open('19:145', 'add')
+    h.act(() =>
+      h.delta({
+        ...moldovaPair,
+        localeId: 19145,
+        localeCode: 'uk-MD',
+        enabled: false,
+        formats: catalogFormats,
+      }),
+    )
+    expect(h.state('i18n-locale-submit')).toEqual(OFF)
+
+    h.click('i18n-locale-submit')
+    enter()
+    h.wait(300)
+    expect(h.state('i18n-locale-submit')).toEqual(OFF)
+    expect(h.calls).toEqual([])
+  })
+
+  it('turns Add off natively under its lock when the pair goes in flight', async () => {
+    const h = flight()
+    h.open('19:145', 'add')
+    h.click('i18n-locale-submit')
+    expect(h.state('i18n-locale-submit')).toEqual(LOCKED)
+
+    h.act(() => h.delta(moldovaPair, 'row_removed'))
+    expect(h.state('i18n-locale-submit')).toEqual({
+      ...LOCKED,
+      nativeDisabled: true,
+    })
+    expect(h.button('i18n-locale-submit').textContent?.trim()).toBe('Deleted')
+
+    await h.settle(() => h.refuse())
+    expect(h.state('i18n-locale-submit')).toEqual(OFF)
+    expect(h.calls).toHaveLength(1)
+  })
+
+  it.each([
+    ['an unchosen unknown pair', '19:146', false],
+    ['a viewer', '19:145', true],
+  ] as const)('turns Add off at once for %s', (_case, rowKey, viewer) => {
+    const h = flight({ viewer })
+    h.open(rowKey, 'add')
+    expect(h.state('i18n-locale-submit')).toEqual(OFF)
+
+    h.click('i18n-locale-submit')
+    enter()
+    h.wait(300)
+    expect(h.state('i18n-locale-submit')).toEqual(OFF)
+    expect(h.calls).toEqual([])
+  })
+
+  it('locks the edit Save at once, spins it at 300 ms and turns it off for a conflict in flight', async () => {
+    const h = flight()
+    h.open('19:108', 'edit')
+    h.choose('date', 'yyyy-MM-dd')
+    expect(h.state('i18n-locale-submit')).toEqual(RESTING)
+
+    h.button('i18n-locale-submit').click()
+    expect(h.calls).toHaveLength(1)
+    expect(h.calls[0]?.action).toBe('hilos_i18n_locale_update')
+    h.button('i18n-locale-submit').click()
+    enter()
+    expect(h.calls).toHaveLength(1)
+
+    h.detect()
+    expect(h.state('i18n-locale-submit')).toEqual(LOCKED)
+    expect(h.button('i18n-locale-switch-on').disabled).toBe(true)
+    h.click('i18n-locale-submit')
+    enter()
+    expect(h.calls).toHaveLength(1)
+
+    h.wait(299)
+    expect(h.state('i18n-locale-submit')).toEqual(LOCKED)
+    h.wait(1)
+    expect(h.state('i18n-locale-submit')).toEqual(SPINNING)
+
+    h.act(() =>
+      h.delta({
+        ...ukraineLocale,
+        formats: { ...catalogFormats, date: 'MM/dd/yyyy' },
+      }),
+    )
+    expect(h.state('i18n-locale-submit')).toEqual({
+      ...SPINNING,
+      nativeDisabled: true,
+    })
+
+    await h.settle(() => h.refuse(0, 'Formats were refused.'))
+    expect(h.state('i18n-locale-submit')).toEqual(OFF)
+    expect(h.calls).toHaveLength(1)
+  })
+
+  it.each([
+    ['on', '19:108', 'edit', languageCard],
+    ['off', '19:null', 'view', { ...languageCard, enabled: false }],
+  ] as const)(
+    'locks the switch-%s confirm at once with Back off natively and spins it at 300 ms',
+    async (direction, rowKey, mode, card) => {
+      const h = flight({ card })
+      h.open(rowKey, mode)
+      h.click(`i18n-locale-switch-${direction}`)
+      const confirm = `i18n-locale-switch-${direction}-confirm`
+      expect(h.state(confirm)).toEqual(RESTING)
+
+      h.button(confirm).click()
+      expect(h.calls).toHaveLength(1)
+      expect(h.calls[0]?.action).toBe(`hilos_i18n_locale_switch_${direction}`)
+      h.button(confirm).click()
+      expect(h.calls).toHaveLength(1)
+
+      h.detect()
+      expect(h.state(confirm)).toEqual(LOCKED)
+      expect(h.button(`i18n-locale-switch-${direction}-back`).disabled).toBe(
+        true,
+      )
+      h.click(confirm)
+      expect(h.calls).toHaveLength(1)
+
+      h.wait(299)
+      expect(h.state(confirm)).toEqual(LOCKED)
+      h.wait(1)
+      expect(h.state(confirm)).toEqual(SPINNING)
+
+      await h.settle(() => h.refuse())
+      expect(h.state(confirm)).toEqual(RESTING)
+      h.click(confirm)
+      expect(h.calls).toHaveLength(2)
+    },
+  )
 })

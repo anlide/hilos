@@ -192,7 +192,7 @@ import {
           <div
             hilosConflictActions
             [conflict]="live().conflict"
-            [disableSave]="!canSave()"
+            [disableSave]="!saveAvailable()"
             [saveLabel]="editSaveLabel()"
             (save)="submitEdit()"
             (acceptMine)="acceptMine()"
@@ -216,7 +216,7 @@ import {
               <button
                 hilosLoadingButton
                 class="btn-primary"
-                [loading]="edit.loading()"
+                [loading]="edit.busy()"
                 [disabled]="disabled"
                 data-id="hilos-impersonation-scope-save"
                 (click)="onSave()"
@@ -272,7 +272,7 @@ export class HilosSecurityImpersonationPage {
   )
   protected readonly editNoticeText = signal('')
   protected readonly editSaveLabel = signal('Save')
-  protected readonly canSave = signal(false)
+  protected readonly saveAvailable = signal(false)
   protected readonly edit = createHilosTrackedAction()
   protected readonly editTitle = computed(() => {
     const row = this.editRow()
@@ -300,7 +300,7 @@ export class HilosSecurityImpersonationPage {
         mirrorHilosSignal(editor.state, this.live),
         mirrorHilosSignal(editor.noticeText, this.editNoticeText),
         mirrorHilosSignal(editor.saveLabel, this.editSaveLabel),
-        mirrorHilosSignal(editor.canSave, this.canSave),
+        mirrorHilosSignal(editor.saveAvailable, this.saveAvailable),
       ]
       onCleanup(() => {
         for (const stop of off) stop()

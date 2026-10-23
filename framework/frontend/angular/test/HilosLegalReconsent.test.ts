@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TestBed } from '@angular/core/testing'
 import {
   RECONSENT_NOW,
@@ -7,7 +7,10 @@ import {
 } from '../../core/test/legal/reconsentFixture.js'
 import { HilosLegalReconsent } from '../src/legal/HilosLegalReconsent.js'
 
-afterEach(() => TestBed.resetTestingModule())
+afterEach(() => {
+  TestBed.resetTestingModule()
+  vi.useRealTimers()
+})
 
 const PERSON = { name: 'Bob', impersonated: false }
 
@@ -122,6 +125,45 @@ describe('Angular "the terms have changed" screen (HIL-500)', () => {
     )
     one('legal-reconsent-retry')!.click()
     expect(retried).toBe(1)
+  })
+
+  it('blocks Accept by its own acceptance at once and keeps its look until the spinner, while reading the text turns it off (HIL-1768)', async () => {
+    vi.useFakeTimers()
+    const { fixture, one } = await draw({
+      variant: 'window',
+      content: reconsentContent(),
+      view: { kind: 'changes' },
+      now: RECONSENT_NOW,
+      busy: true,
+    })
+    let accepted = 0
+    fixture.componentInstance.accept.subscribe(() => accepted++)
+    const accept = one('legal-reconsent-accept') as HTMLButtonElement
+    const spinner = (): Element | null =>
+      accept.querySelector('[data-id="loading-button-spinner"]')
+    expect(accept.getAttribute('aria-busy')).toBe('true')
+    expect(accept.getAttribute('aria-disabled')).toBe('true')
+    expect(accept.disabled).toBe(false)
+    expect(accept.classList.contains('disabled')).toBe(false)
+    expect(spinner()).toBeNull()
+    accept.click()
+    expect(accepted).toBe(0)
+
+    vi.advanceTimersByTime(300)
+    fixture.detectChanges()
+    expect(spinner()).not.toBeNull()
+    expect(accept.classList.contains('disabled')).toBe(true)
+
+    fixture.componentRef.setInput('busy', false)
+    fixture.detectChanges()
+    expect(accept.getAttribute('aria-disabled')).toBeNull()
+    accept.click()
+    expect(accepted).toBe(1)
+
+    fixture.componentRef.setInput('loading', true)
+    fixture.detectChanges()
+    expect(accept.disabled).toBe(true)
+    expect(accept.getAttribute('aria-busy')).toBeNull()
   })
 
   it('holds Accept when nothing is left to accept', async () => {

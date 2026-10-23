@@ -331,13 +331,33 @@ describe('HilosProfileTheme', () => {
     )
     expect(hilosThemePick.get()).toBe('dark')
     expect(localStorage.getItem(THEME_PICK_STORAGE_KEY)).toBe('dark')
-    expect(byId('profile-theme-default').disabled).toBe(true)
-    expect(byId('profile-theme-default').getAttribute('aria-busy')).toBe('true')
-    await vi.advanceTimersByTimeAsync(300)
+    // The reset is locked by its own flight at once and keeps its look; the
+    // rows are off natively by a flight that is not theirs.
+    const reset = byId('profile-theme-default')
+    const spinner = (): Element | null =>
+      reset.querySelector('[data-id="loading-button-spinner"]')
+    expect(reset.disabled).toBe(false)
+    expect(reset.getAttribute('aria-disabled')).toBe('true')
+    expect(reset.getAttribute('aria-busy')).toBe('true')
+    for (const pick of ['light', 'dark', 'system'])
+      expect(byId(`profile-theme-option-${pick}`).disabled).toBe(true)
+    click('profile-theme-default')
+    expect(server.sendAction).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(299)
     update()
-    expect(byId('profile-theme-loading').parentElement).toBe(
-      byId('profile-theme-default'),
-    )
+    expect(reset.classList.contains('disabled')).toBe(false)
+    expect(spinner()).toBeNull()
+    await vi.advanceTimersByTimeAsync(1)
+    update()
+    expect(spinner()).not.toBeNull()
+    expect(reset.classList.contains('disabled')).toBe(true)
+    expect(reset.disabled).toBe(false)
+    // The rows keep their own deferred indicator, and none of them shows it.
+    expect(maybe('profile-theme-loading')).toBeNull()
+    for (const pick of ['light', 'dark', 'system'])
+      expect(
+        byId(`profile-theme-option-${pick}`).hasAttribute('aria-busy'),
+      ).toBe(false)
     server.handshake(null, 1, true)
     expect(
       byId('profile-theme-option-light').getAttribute('aria-current'),
@@ -371,17 +391,50 @@ describe('HilosProfileTheme', () => {
       'Theme switching is disabled.',
     )
     expect(byId('profile-theme-default').disabled).toBe(false)
+    expect(byId('profile-theme-default').hasAttribute('aria-disabled')).toBe(
+      false,
+    )
     click('profile-theme-default')
     click('profile-theme-close')
     expect(shown()).toBe(false)
     server.open()
-    expect(byId('profile-theme-default').disabled).toBe(true)
+    expect(byId('profile-theme-default').disabled).toBe(false)
+    expect(byId('profile-theme-default').getAttribute('aria-disabled')).toBe(
+      'true',
+    )
     server.handshake(null, 1, true)
     await server.reply('success')
     expect(shown()).toBe(true)
     expect(byId('profile-theme-default').disabled).toBe(false)
+    expect(byId('profile-theme-default').hasAttribute('aria-disabled')).toBe(
+      false,
+    )
     expect(byId('profile-theme-option-light').textContent).toContain('default')
     expect(hilosThemePick.get()).toBeNull()
+  })
+
+  it('keeps the focus on a reset answered before its spinner, with no disabled look', async () => {
+    const server = setup('dark')
+    server.open()
+    const reset = byId('profile-theme-default')
+    reset.focus()
+    click('profile-theme-default')
+    expect(server.sendAction).toHaveBeenCalledOnce()
+    expect(reset.getAttribute('aria-busy')).toBe('true')
+    expect(document.activeElement).toBe(reset)
+    await vi.advanceTimersByTimeAsync(299)
+    update()
+    expect(document.activeElement).toBe(reset)
+    await server.reply('fail')
+    expect(reset.hasAttribute('aria-busy')).toBe(false)
+    expect(reset.hasAttribute('aria-disabled')).toBe(false)
+    await vi.advanceTimersByTimeAsync(300)
+    update()
+    expect(reset.disabled).toBe(false)
+    expect(reset.classList.contains('disabled')).toBe(false)
+    expect(reset.querySelector('[data-id="loading-button-spinner"]')).toBeNull()
+    expect(document.activeElement).toBe(reset)
+    expect(server.sendAction).toHaveBeenCalledOnce()
   })
 
   it('blocks a double click before change detection and places deferred loading only on the submitted position', async () => {
@@ -399,6 +452,7 @@ describe('HilosProfileTheme', () => {
     for (const pick of ['light', 'dark', 'system'])
       expect(byId(`profile-theme-option-${pick}`).disabled).toBe(true)
     expect(byId('profile-theme-default').disabled).toBe(true)
+    expect(byId('profile-theme-default').hasAttribute('aria-busy')).toBe(false)
     expect(byId('profile-theme-option-dark').getAttribute('aria-busy')).toBe(
       'true',
     )
