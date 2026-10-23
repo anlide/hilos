@@ -6,6 +6,7 @@ namespace Hilos\Core\TruthSource;
 
 use Closure;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
+use Hilos\Core\TruthSource\Exception\ExternalWriterException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 
 /**
@@ -40,6 +41,7 @@ class DbWriteGuard
      *     each once, empty for a row outside every set; called only when a claim over a set judges the
      *     creation, and whatever it raises reaches the caller
      * @throws CreateNotAllowedException When no grant in this process may add this row here
+     * @throws ExternalWriterException When the mounted Entity declares an external database writer
      */
     public static function guardCreate(string $collection, Closure $setKeys): void
     {

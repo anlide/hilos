@@ -40,6 +40,17 @@ class MyEntity extends Entity {
 - Do not add business logic to Entity — it's a data container only
 - Do not add methods that query the DB inside Entity
 
+## External Database Writer
+
+`Entity::_externalWriter` is a `public const bool` declaring that rows are written
+outside the application. Its metadata key is `Entity::META_EXTERNAL_WRITER`, and the
+base value is `false`. A mounted Entity that sets it to `true` refuses direct ORM writes
+and database truth-source registration or claims with `ExternalWriterException`, which
+extends `WriteNotAllowedException`, even if a grant already exists. The refusal
+precedes SQL and registry or collection-membership changes. This is a DB declaration:
+it does not grant reads, relax other write guards, or change RT ownership.
+See [A Collection Written Outside The Application](../architecture/truth-source.md#a-collection-written-outside-the-application).
+
 ## The Database An Entity Lives In
 
 An Entity declares the logical database name in `_database`, identified by
@@ -183,10 +194,11 @@ cannot give. `EntitySchemaAudit::auditTableCoverage()` asks the opposite questio
 `BASE TABLE` of the live schema must be the table of an audited Entity, or a table
 declared to have none. The framework declares its own in
 `Hilos\Database\Schema\FrameworkTablesWithoutEntity` — `migration` and the analytics
-tables live outside the ORM. The journal's six tables are currently unmapped too,
-with their verdicts in `ChangeLogTablesWithoutEntity`; this is transitional.
-They become six Entities in their own database and leave the tables-without-entity
-providers. (not in the code yet — HIL-1615)
+tables live outside the ORM. The six journal tables are mapped by framework Entities
+in the built-in `change_log` binding (schema index 1, row connection 0); their full
+collection chains mount under `HilosDbContext` only when `CHANGE_LOG` is enabled.
+Their exact collection, Entity, and table names are listed in
+[Where The Journal Lives](../architecture/change-log.md#where-the-journal-lives).
 An unmapped table's provider also carries its personal-data verdict, for the reason
 the next section gives. A project table that does the same
 is named in the `$allowedTablesWithoutEntity` argument; anything left over is a finding
@@ -258,9 +270,21 @@ declares the verdicts on its own columns and inherits the base's; see
 
 At backup and restore, `PiiRegistry` places the Entity's verdict under its
 binding's `schemaIndex`, independent of the row connection and ambient database
-index. The verdict itself does not name a connection index. The journal's six
-Entities take over the journal provider's verdicts in HIL-1615; that provider
-remains responsible for the journal until then.
+index. The verdict itself does not name a connection index. The six journal Entity
+verdicts are collected from the mounted Entities at schema index 1; the journal no
+longer has a `TablesWithoutEntityProvider` entry. Providers remain for tables that
+are genuinely unmapped.
+
+The journal Entity verdicts are:
+
+| Entity | `_pii` | `_piiNotPersonal` |
+|---|---|---|
+| `ChangeLogTable` | `[]` | `id`, `name` |
+| `ChangeLogField` | `[]` | `id`, `table_id`, `name` |
+| `ChangeLogReceipt` | `actor_user_id`, `subject_user_id`, `session_id`: `AnonymizationStrategy::NULLIFY`; `agent`, `source`: `AnonymizationStrategy::MASK` | `id`, `created_at`, `channel`, `action`, `open_handovers` |
+| `ChangeLogEntry` | `record_key`: `AnonymizationStrategy::MASK`; `record_key_hash`: `AnonymizationStrategy::NULLIFY` | `id`, `created_at`, `receipt_id`, `table_id`, `mutation_type` |
+| `ChangeLogChange` | `old_value`, `new_value`: `AnonymizationStrategy::MASK` | `id`, `created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present` |
+| `ChangeLogValue` | `old_value`, `new_value`: `AnonymizationStrategy::MASK` | `id`, `created_at`, `change_id` |
 
 How to choose a strategy, and what the gates of a restore and of a startup refuse
 on:

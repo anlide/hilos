@@ -30,6 +30,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\CollectionNotFullyLoadedException;
 use Hilos\Database\Exception\OrmForgetRefusedException;
 use Hilos\Database\Exception\UnknownLazyStrategyException;
+use Hilos\Database\Exception\UnboundedCollectionReadException;
 use Hilos\Environment\NonProductionGate;
 use Hilos\Hilos;
 use Hilos\Database\Entity\Collection\EntityCollection;
@@ -77,6 +78,9 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
     /** Collection key for TruthSourceRegistry */
     public const string COLLECTION_KEY = '';
 
+    /** Whether a mounted collection retains rows between reads. */
+    public const bool CACHE_ROWS = true;
+
     /**
      * Lazy loading strategies
      */
@@ -119,6 +123,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * @param int $strategy Lazy loading strategy (LAZY_STRATEGY_BATCH by default)
      * @return static Collection instance
      * @throws UnknownLazyStrategyException When the strategy is none of the four this class names
+     * @throws UnboundedCollectionReadException When a cacheless collection is mounted with a whole-table strategy
      */
     public static function initDB(int $strategy = self::LAZY_STRATEGY_BATCH): static
     {
@@ -134,6 +139,10 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
             throw new UnknownLazyStrategyException(
                 "Unknown lazy loading strategy {$strategy} for collection '" . static::COLLECTION_KEY . "'"
             );
+        }
+
+        if (!static::CACHE_ROWS && $strategy !== self::LAZY_STRATEGY_KEY) {
+            throw new UnboundedCollectionReadException(static::COLLECTION_KEY);
         }
 
         $self = new static();
@@ -170,6 +179,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      */
     public function loadAllFromDB(): void
     {
+        $this->requireBoundedRead();
         $this->rememberWhole();
         $this->objects = [];
         $entityCollectionClass = static::ENTITY_COLLECTION_CLASS;
@@ -234,19 +244,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      */
     protected function lazyLoadCount(): int
     {
-        $database = $this->getDatabase();
-        $resultSetCollection = Database::sql(
-            'SELECT COUNT(*) as count FROM ' . ($database?->getSqlTableName($this->getTableName()) ?? '`' . $this->getTableName() . '`'),
-            index: $database?->connectionIndex,
-        );
-        $firstResultSet = $resultSetCollection->first();
-
-        if ($firstResultSet === null) {
-            return 0;
-        }
-
-        $row = $firstResultSet->first();
-        return $row !== null ? (int)($row['count'] ?? 0) : 0;
+        return static::entityClass()::count();
     }
 
     /**
@@ -258,6 +256,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      */
     protected function lazyLoadAll(): void
     {
+        $this->requireBoundedRead();
         // Remembered whole, so the completeness flags its callers set after the read go back too.
         $this->rememberWhole();
         $entityCollectionClass = static::ENTITY_COLLECTION_CLASS;
@@ -307,6 +306,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      */
     public function preloadAll(): void
     {
+        $this->requireBoundedRead();
         if (!$this->_allLoaded && $this->_allowLazyLoading) {
             $this->lazyLoadAll();
             $this->_allLoaded = true;
@@ -329,6 +329,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      */
     public function loadByColumn(string $column, int|string ...$values): Generator
     {
+        $this->requireBoundedRead();
         $resolvedColumn = $this->requireColumn($column);
         if ($values === []) {
             return;
@@ -590,7 +591,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
 
     /**
      * Query a page of objects from DB with search, sort and keyset pagination.
-     * Loaded objects are merged into $this->objects (common storage).
+     * Cached collections merge loaded objects into common storage; cacheless reads return fresh snapshots.
      *
      * The order's fields are held against the entity's own columns here as well as at the table
      * boundary: this is where a name becomes an SQL identifier, so it answers for itself
@@ -640,6 +641,9 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      */
     public function queryPage(TableQueryDTO $query): array
     {
+        if ($query->limit <= 0) {
+            $this->requireBoundedRead();
+        }
         $objectClass = static::OBJECT_CLASS;
         $entityClass = $objectClass::ENTITY_CLASS;
 
@@ -729,7 +733,9 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
 
         $pageObjects = [];
         foreach ($entities as $key => $entity) {
-            if (isset($this->objects[$key])) {
+            if (!$this->cachesRows()) {
+                $pageObjects[$key] = $objectClass::fromEntity($entity);
+            } elseif (isset($this->objects[$key])) {
                 $pageObjects[$key] = $this->objects[$key];
             } else {
                 $object = $objectClass::fromEntity($entity);
@@ -853,6 +859,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * Debug info for var_dump/print_r.
      *
      * @return array<string, mixed> Collection data as array
+     * @throws UnboundedCollectionReadException When a mounted cacheless collection is serialized as a set
      */
     public function __debugInfo(): array
     {
@@ -900,6 +907,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      */
     private function settleSetForWalk(): void
     {
+        $this->requireBoundedRead();
         $this->loadWholeIfPromised();
 
         if (!$this->_allowLazyLoading || $this->_allLoaded) {
@@ -950,7 +958,8 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * covered: what a dependent view has to hear is that this key now holds a different object.
      * Reading the collection out of the database goes through {@see self::hydrate()} instead,
      * which is what keeps a load from announcing rows as new. Under an open transaction what the
-     * key held is remembered first, for a rollback to put back.
+     * key held is remembered first, for a rollback to put back. A cacheless mount announces the
+     * same fact without retaining the row; an appended row uses its own id as the announcement key.
      *
      * @param mixed $offset Array key (int or string), or null to append under the next one
      * @param T $value Object instance to set
@@ -966,7 +975,9 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
         if ($objectClass !== '' && !($value instanceof $objectClass)) {
             return;
         }
-        if ($offset === null) {
+        if (!$this->cachesRows()) {
+            $offset ??= $value->getIdString();
+        } elseif ($offset === null) {
             $this->objects[] = $value;
             $offset = array_key_last($this->objects);
             // The key is known only once the row is in, and it held nothing before.
@@ -1005,6 +1016,9 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      */
     protected function hydrate(int|string $key, Object_ $object): void
     {
+        if (!$this->cachesRows()) {
+            return;
+        }
         $this->rememberKey($key, held: $this->objects[$key] ?? null);
         $this->objects[$key] = $object;
     }
@@ -1027,9 +1041,8 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * Unset object at offset and announce the lost membership of the mirror.
      *
      * The object is read out before the key is dropped, so the announcement carries what the key
-     * held. A key holding nothing is not announced: nothing left the mirror, and the store is
-     * read directly rather than through {@see self::offsetGet()} so that dropping an absent key
-     * cannot fetch it from the database first.
+     * held. A cached key holding nothing is not announced. A cacheless mount announces the removal
+     * with no previous row. Neither branch fetches a row through {@see self::offsetGet()}.
      *
      * @param mixed $offset Array key to unset, or null for no-op
      * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
@@ -1046,13 +1059,13 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
         }
         unset($this->objects[$offset]);
         $collectionKey = $this->getCollectionKey();
-        if ($previous === null || $collectionKey === '') {
+        if (($previous === null && $this->cachesRows()) || $collectionKey === '') {
             return;
         }
         SourceChangeBus::publish(SourceChange::dbDeleted(
             $collectionKey,
             (string)$offset,
-            $previous->toArray(),
+            $previous?->toArray() ?? [],
             ExecutionContext::currentAcceptKey(),
             ExecutionContext::currentRequestId(),
         ), connectionIndex: $this->getDatabase()?->connectionIndex);
@@ -1074,6 +1087,9 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
     {
         if ($offset === null) {
             return null;
+        }
+        if (!$this->cachesRows()) {
+            return $this->lazyLoadObject($offset);
         }
         if (!isset($this->objects[$offset])) {
             $this->loadWholeIfPromised();
@@ -1114,6 +1130,9 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      */
     public function count(): int
     {
+        if (!$this->cachesRows()) {
+            return $this->lazyLoadCount();
+        }
         $this->loadWholeIfPromised();
 
         if ($this->_allowLazyLoading && !$this->_allLoaded) {
@@ -1215,6 +1234,16 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
     public function getDatabase(): ?DatabaseBinding
     {
         return $this->databaseBacked ? static::entityClass()::getDatabase() : null;
+    }
+
+    /**
+     * Manual selections retain their own bounded snapshots regardless of the mount policy.
+     *
+     * @return bool Whether reads and hydration may retain rows in this instance
+     */
+    public function cachesRows(): bool
+    {
+        return !$this->databaseBacked || static::CACHE_ROWS;
     }
 
     /**
@@ -1351,6 +1380,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      */
     public function first(): ?Object_
     {
+        $this->requireBoundedRead();
         $this->loadWholeIfPromised();
 
         if (empty($this->objects)) {
@@ -1372,6 +1402,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      */
     public function last(): ?Object_
     {
+        $this->requireBoundedRead();
         $this->loadWholeIfPromised();
 
         if (empty($this->objects)) {
@@ -1453,12 +1484,24 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * Convert collection to array
      *
      * @return array<int|string, array<string, mixed>> Array of object arrays (key preserved)
+     * @throws UnboundedCollectionReadException When a mounted cacheless collection is serialized as a set
      */
     public function toArray(): array
     {
+        $this->requireBoundedRead();
         return array_map(function ($object) {
             return $object->toArray();
         }, $this->objects);
+    }
+
+    /**
+     * @throws UnboundedCollectionReadException When the mounted store cannot answer for a whole set
+     */
+    private function requireBoundedRead(): void
+    {
+        if (!$this->cachesRows()) {
+            throw new UnboundedCollectionReadException($this->getCollectionKey());
+        }
     }
 
     /**

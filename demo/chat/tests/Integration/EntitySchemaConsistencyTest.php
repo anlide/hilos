@@ -111,9 +111,12 @@ final class EntitySchemaConsistencyTest extends IntegrationTestCase
     public function testFrameworkEntityMatchesSchema(string $entityClass): void
     {
         $table = (string) constant("{$entityClass}::" . Entity::META_TABLE);
-        if (!in_array($table, EntitySchemaAudit::liveTables(), true)) {
+        $schemaIndex = $entityClass::getDatabase()->schemaIndex;
+        $liveTables = EntitySchemaAudit::liveTables($schemaIndex);
+        if ($schemaIndex === 0 && !in_array($table, $liveTables, true)) {
             $this->markTestSkipped("{$table} is not created by this demo");
         }
+        $this->assertContains($table, $liveTables, "{$table} must exist in its declared schema {$schemaIndex}");
 
         $mismatches = array_values(array_filter(
             EntitySchemaAudit::audit([EntitySchemaAudit::mountedClassOf($entityClass)]),

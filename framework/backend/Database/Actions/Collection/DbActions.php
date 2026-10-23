@@ -10,6 +10,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
+use Hilos\Core\TruthSource\Exception\ExternalWriterException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\CallbackNotSetException;
@@ -244,6 +245,7 @@ abstract class DbActions
      * in a set asks ensureCanCreateInSet().
      *
      * @throws CreateNotAllowedException If create is not allowed
+     * @throws ExternalWriterException When the mounted Entity declares an external database writer
      * @throws DatabaseException When the binding is unresolved or a foreign application transaction is open
      */
     protected function ensureCanCreate(): void
@@ -265,6 +267,7 @@ abstract class DbActions
      *
      * @param string $setKey Value of the table's set column the new row will carry
      * @throws CreateNotAllowedException If creating a row in that set is not allowed
+     * @throws ExternalWriterException When the mounted Entity declares an external database writer
      * @throws DatabaseException When the binding is unresolved or a foreign application transaction is open
      */
     protected function ensureCanCreateInSet(string $setKey): void

@@ -14,6 +14,7 @@ use Hilos\Core\Source\SourceChange;
 use Hilos\Core\TruthSource\Exception\ClaimedRowKeysMissingException;
 use Hilos\Core\TruthSource\Exception\ClaimedSetKeyMissingException;
 use Hilos\Core\TruthSource\Exception\ClaimWidthConflictException;
+use Hilos\Core\TruthSource\Exception\ExternalWriterException;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
@@ -58,6 +59,7 @@ final class OwnershipDeclaration
      * @throws ClaimWidthConflictException When one collection is named by more than one width of a half
      * @throws ClaimedRowKeysMissingException When the seam names no row of a narrowly declared collection
      * @throws ClaimedSetKeyMissingException When the seam names no set key of a collection declared by a set
+     * @throws ExternalWriterException When a declared DB collection is written outside the application
      */
     public static function claimAll(AbstractAgent $agent): void
     {
@@ -120,6 +122,7 @@ final class OwnershipDeclaration
      *
      * @param class-string<TruthSourceOwner> $agentClass Class to read the declaration off
      * @param string $ownerId Id the claim is registered under - an agent's own id, or the id of the runner that claims for a class
+     * @throws ExternalWriterException When a declared DB collection is written outside the application
      */
     public static function claimDb(string $agentClass, string $ownerId): void
     {
@@ -178,6 +181,7 @@ final class OwnershipDeclaration
      * @param AbstractAgent $agent Agent whose class declares the collections and whose instance names the rows
      * @throws ClaimWidthConflictException When one collection is named by more than one width of this half
      * @throws ClaimedRowKeysMissingException When the seam names no row of a narrowly declared collection
+     * @throws ExternalWriterException When a declared DB collection is written outside the application
      */
     public static function claimDbRows(AbstractAgent $agent): void
     {
@@ -243,6 +247,7 @@ final class OwnershipDeclaration
      * @param AbstractAgent $agent Agent whose class declares the collections and whose instance names the set
      * @throws ClaimWidthConflictException When one collection is named by more than one width of this half
      * @throws ClaimedSetKeyMissingException When the seam names no set key of a collection declared by a set
+     * @throws ExternalWriterException When a declared DB collection is written outside the application
      */
     public static function claimDbSet(AbstractAgent $agent): void
     {
@@ -316,6 +321,7 @@ final class OwnershipDeclaration
      *
      * @param class-string<TruthSourceOwner> $agentClass Class to read the declaration off
      * @param string $ownerId Id the claim is registered under - an agent's own id, or the id of the runner that claims for a class
+     * @throws ExternalWriterException As permitted by the inherited registration contract for its DB specialization
      */
     public static function claimRt(string $agentClass, string $ownerId): void
     {
@@ -360,6 +366,7 @@ final class OwnershipDeclaration
      * @param AbstractAgent $agent Agent whose class declares the collections and whose instance names the rows
      * @throws ClaimWidthConflictException When one collection is named by more than one width of this half
      * @throws ClaimedRowKeysMissingException When the seam names no row of a narrowly declared collection
+     * @throws ExternalWriterException As permitted by the inherited registration contract for its DB specialization
      */
     public static function claimRtRows(AbstractAgent $agent): void
     {
@@ -418,6 +425,7 @@ final class OwnershipDeclaration
      * @param AbstractAgent $agent Agent whose class declares the collections and whose instance names the set
      * @throws ClaimWidthConflictException When one collection is named by more than one width of this half
      * @throws ClaimedSetKeyMissingException When the seam names no set key of a collection declared by a set
+     * @throws ExternalWriterException As permitted by the inherited registration contract for its DB specialization
      */
     public static function claimRtSet(AbstractAgent $agent): void
     {

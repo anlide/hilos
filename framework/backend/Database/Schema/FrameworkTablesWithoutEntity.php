@@ -32,7 +32,6 @@ use Hilos\Database\MigrationClaim;
  * - **The analytics tables** are append-only facts and their dictionaries, written in
  *   bulk on the hot path.
  *
- * The separate journal is classified by {@see ChangeLogTablesWithoutEntity}.
  * Whether any analytics table gets an Entity is an Analytics Phase-2 question, HIL-1402;
  * its standing decision is ORM only over aggregate tables, with raw facts staying on raw
  * SQL. Until then, the tables are declared here rather than passing unnoticed.

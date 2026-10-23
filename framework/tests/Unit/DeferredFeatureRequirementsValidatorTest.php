@@ -16,7 +16,6 @@ use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration\FrameworkSchemaCatalog;
-use Hilos\Database\Schema\ChangeLogTablesWithoutEntity;
 use Hilos\Fs\FsPath;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
@@ -300,7 +299,7 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
     public function testJournalTablesInThePrimaryOrAnUnrelatedSchemaDoNotSatisfyTheJournalUnit(): void
     {
         $sql = '';
-        foreach (ChangeLogTablesWithoutEntity::tables() as $table) {
+        foreach (FrameworkSchemaCatalog::CHANGE_LOG_TABLES as $table) {
             $sql .= "CREATE TABLE `{$table}` (`id` INT);\nCREATE TABLE `elsewhere`.`{$table}` (`id` INT);\n";
         }
         $this->expectException(IncompleteFeatureActivationException::class);
@@ -312,7 +311,7 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
     {
         $unit = new FrameworkSchemaCatalog()->unit(FrameworkSchemaCatalog::CHANGE_LOG);
         $sql = FsPath::read($unit->upPath);
-        $tables = ChangeLogTablesWithoutEntity::tables();
+        $tables = FrameworkSchemaCatalog::CHANGE_LOG_TABLES;
         $missing = array_pop($tables);
         $incomplete = '';
         foreach ($tables as $table) {

@@ -40,6 +40,7 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\TruthSource\Exception\ExternalWriterException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\ChangeLog\JournalReceiptData;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
@@ -900,6 +901,7 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      * @throws ItemNotFoundForUpdateException When the acting connection has no resolvable user
      * @throws EmptyValueException When the endpoint is empty
      * @throws DatabaseException When the subscription write query fails
+     * @throws ExternalWriterException When the mounted subscription Entity declares an external database writer
      */
     private function subscribePush(string $acceptKey, PushSubscribeActionDTO $dto): void
     {

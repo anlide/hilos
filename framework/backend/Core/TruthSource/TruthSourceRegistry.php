@@ -7,7 +7,9 @@ namespace Hilos\Core\TruthSource;
 use Closure;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
+use Hilos\Core\TruthSource\Exception\ExternalWriterException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Hilos;
 
 /**
  * Database Truth Source Registry.
@@ -48,6 +50,29 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
     }
 
     /**
+     * Registers an application claim only when the mounted Entity has no external writer.
+     *
+     * @param string $collection Collection/table name
+     * @param TruthSourceKeys $keys Rows the agent claims
+     * @param string $agentId Agent ID from agent->getId()
+     * @param TruthSourceOperations $operations Operations the agent may perform on those rows
+     * @throws ExternalWriterException When the collection is written outside the application
+     */
+    public static function register(
+        string $collection,
+        TruthSourceKeys $keys,
+        string $agentId,
+        TruthSourceOperations $operations = new TruthSourceOperations(
+            TruthSourceOperation::Add,
+            TruthSourceOperation::Update,
+            TruthSourceOperation::Remove,
+        ),
+    ): void {
+        self::assertApplicationWritable($collection);
+        parent::register($collection, $keys, $agentId, $operations);
+    }
+
+    /**
      * Register agent as having create permission for collection
      *
      * On its own the grant covers no rows, and that is deliberate: minting a record is not
@@ -61,9 +86,11 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
      *
      * @param string $collection Collection/table name
      * @param string $agentId Agent ID from agent->getId()
+     * @throws ExternalWriterException When the collection is written outside the application
      */
     public static function registerCreate(string $collection, string $agentId): void
     {
+        self::assertApplicationWritable($collection);
         $grant = self::grantOf($collection, $agentId);
         if ($grant === null) {
             self::register(
@@ -91,6 +118,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
      *
      * @param string $collection Collection/table name
      * @param string $agentId Agent ID
+     * @throws ExternalWriterException When a retained grant belongs to an externally written collection
      */
     public static function unregisterCreate(string $collection, string $agentId): void
     {
@@ -149,9 +177,11 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
      *     each once, empty for a row outside every set; called only when a claim over a set judges the
      *     creation, and whatever it raises reaches the caller
      * @throws CreateNotAllowedException If create is not allowed
+     * @throws ExternalWriterException When the collection is written outside the application
      */
     public static function checkCanCreate(string $collection, Closure $setKeys): void
     {
+        self::assertApplicationWritable($collection);
         if (!self::hasCreateSource($collection)) {
             throw new CreateNotAllowedException(
                 "Create operation not allowed: no create or write permission registered for table '{$collection}'. " .
@@ -220,6 +250,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
      */
     public static function checkCanWrite(string $collection, TruthSourceOperation $operation): void
     {
+        self::assertApplicationWritable($collection);
         if (!self::hasTruthSource($collection)) {
             throw new WriteNotAllowedException(
                 "Write operation not allowed: no truth source registered for table '{$collection}'. " .
@@ -296,6 +327,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
         Closure $setKeys,
         TruthSourceOperation $operation,
     ): void {
+        self::assertApplicationWritable($collection);
         if (!self::hasTruthSource($collection)) {
             throw new WriteNotAllowedException(
                 "Write operation not allowed: no truth source registered for table '{$collection}'. " .
@@ -372,6 +404,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
         Closure $topSetKeys,
         TruthSourceOperation $operation,
     ): void {
+        self::assertApplicationWritable($collection);
         if (!self::hasTruthSource($collection)) {
             throw new WriteNotAllowedException(
                 "Write operation not allowed: no truth source registered for table '{$collection}'. " .
@@ -420,6 +453,28 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
             "with operations [" . $grant->operations->asText() . "] and may not " .
             "{$operation->value} rows of set '{$setKey}'."
         );
+    }
+
+    /**
+     * Reads the mounted class links alone: no SQL, reader interest, or second map of external collections.
+     *
+     * Unmounted and manual collections keep their existing guard contract. Their low-level Entity writes
+     * are still refused by the Entity itself when it declares an external writer.
+     *
+     * @param string $collection Collection key whose application write or claim is being judged
+     * @throws ExternalWriterException When the mounted Entity declares an external database writer
+     */
+    private static function assertApplicationWritable(string $collection): void
+    {
+        $objects = Hilos::$db?->mountedObjectCollection($collection);
+        if ($objects === null || $objects::OBJECT_CLASS === '') {
+            return;
+        }
+
+        $entityClass = ($objects::OBJECT_CLASS)::ENTITY_CLASS;
+        if ($entityClass !== '' && $entityClass::_externalWriter) {
+            throw new ExternalWriterException($collection);
+        }
     }
 
     /**

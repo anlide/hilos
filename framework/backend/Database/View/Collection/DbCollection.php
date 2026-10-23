@@ -18,6 +18,7 @@ use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\Database\Actions\Item\DbActions as ItemDbActions;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\UnboundedCollectionReadException;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Collection\CloneException;
 use Hilos\Database\Exception\View\Collection\DirectSetException;
@@ -349,23 +350,21 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
         if ($key === null) {
             return null;
         }
-        if (isset($this->items[$key])) {
-            return $this->items[$key];
-        }
         if ($this->isManual) {
-            return null;
+            return $this->items[$key] ?? null;
         }
         $objectCollection = $this->getObjectCollection();
         if ($objectCollection === null) {
             return null;
         }
+        if ($objectCollection->cachesRows() && isset($this->items[$key])) {
+            return $this->items[$key];
+        }
         $object = $objectCollection->offsetGet($key);
         if ($object === null) {
             return null;
         }
-        $item = $this->createDbItem($object);
-        $this->items[$key] = $item;
-        return $item;
+        return $this->getOrCreateItemForLoadedObject($key, $object);
     }
 
     /**
@@ -379,6 +378,9 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
      */
     protected function getOrCreateItemForLoadedObject(int|string $key, Object_ $object): DbItem
     {
+        if (!$this->isManual && $this->getObjectCollection()?->cachesRows() === false) {
+            return $this->createDbItem($object);
+        }
         if (isset($this->items[$key])) {
             return $this->items[$key];
         }
@@ -524,6 +526,9 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
      */
     public function whereColumnIs(string $column, int|string|null $value): static
     {
+        if ($this->getObjectCollection()?->cachesRows() === false) {
+            throw new UnboundedCollectionReadException($this->getObjectCollection()->getCollectionKey());
+        }
         if ($value === null) {
             return static::initEmpty();
         }
@@ -552,6 +557,9 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
     {
         $matched = static::initEmpty();
         $objectCollection = $this->getObjectCollection();
+        if ($objectCollection?->cachesRows() === false) {
+            throw new UnboundedCollectionReadException($objectCollection->getCollectionKey());
+        }
         if ($objectCollection === null || $values === []) {
             return $matched;
         }
@@ -568,7 +576,7 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
 
     /**
      * Query a page of items from DB via the Object layer.
-     * Objects are stored in the common collection; DbItems pass through View-layer
+     * Objects follow the store's cache policy; DbItems pass through View-layer
      * transformations (toFrontend filtering, calculated fields, etc.).
      *
      * @param TableQueryDTO $query Query parameters
@@ -664,11 +672,8 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
         $result = $objectCollection->queryPage($query);
 
         $rows = [];
-        foreach (array_keys($result[TableConstants::RESULT_KEY_OBJECTS]) as $key) {
-            $item = $this->getItemForKey($key);
-            if ($item !== null) {
-                $rows[] = $item;
-            }
+        foreach ($result[TableConstants::RESULT_KEY_OBJECTS] as $key => $object) {
+            $rows[] = $this->getOrCreateItemForLoadedObject($key, $object);
         }
 
         return [

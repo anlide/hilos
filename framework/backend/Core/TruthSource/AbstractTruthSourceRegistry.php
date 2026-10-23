@@ -2,6 +2,8 @@
 
 namespace Hilos\Core\TruthSource;
 
+use Hilos\Core\TruthSource\Exception\ExternalWriterException;
+
 /**
  * Abstract Truth Source Registry.
  *
@@ -52,6 +54,7 @@ abstract class AbstractTruthSourceRegistry
      * @param TruthSourceKeys $keys Rows the agent claims - the whole collection, or those it names
      * @param string $agentId Agent ID from agent->getId()
      * @param TruthSourceOperations $operations Operations the agent may perform on those rows
+     * @throws ExternalWriterException When the DB specialization refuses a claim on an externally written collection
      */
     public static function register(
         string $collection,

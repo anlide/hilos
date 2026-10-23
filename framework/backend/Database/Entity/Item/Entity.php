@@ -7,6 +7,7 @@ namespace Hilos\Database\Entity\Item;
 use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\TruthSource\Exception\ExternalWriterException;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseBinding;
 use Hilos\Database\DatabaseException;
@@ -26,6 +27,7 @@ use Hilos\Database\SqlSortDirection;
  * Child classes must define:
  * - const string _table — table name
  * - const string _database — optional logical database name, inherited as primary by default
+ * - const bool _externalWriter — whether rows are written outside the application, default false
  * - const string|array _primary — primary key column(s)
  * - const array _columns — all column names
  * - const array _types — column types mapping
@@ -60,6 +62,7 @@ abstract class Entity
     // Meta property names
     public const string META_TABLE = '_table';
     public const string META_DATABASE = '_database';
+    public const string META_EXTERNAL_WRITER = '_externalWriter';
     public const string META_PRIMARY = '_primary';
     public const string META_COLUMNS = '_columns';
     public const string META_TYPES = '_types';
@@ -75,6 +78,7 @@ abstract class Entity
     public const string META_JOURNAL_NOISE = '_journalNoise';
 
     public const string _database = DatabaseNames::PRIMARY;
+    public const bool _externalWriter = false;
     public const bool _journaled = false;
     public const array _journalSecrets = [];
     public const array _journalNoise = [];
@@ -149,9 +153,11 @@ abstract class Entity
      * @param list<string> $columns Specific columns to save (empty = all changed columns)
      * @return bool Always true on success
      * @throws DatabaseException When the write fails or a foreign application transaction forbids it
+     * @throws ExternalWriterException When the table is written outside the application
      */
     public function save(array $columns = []): bool
     {
+        self::assertApplicationWritable();
         Database::assertCanWrite(static::getDatabase()->connectionIndex);
 
         if ($this->_related) {
@@ -168,9 +174,11 @@ abstract class Entity
      * @param Entity $originalEntity Entity state to compare against
      * @return bool True if saved (or no changes)
      * @throws DatabaseException When the write fails or a foreign application transaction forbids it, even for an unchanged diff
+     * @throws ExternalWriterException When the table is written outside the application, even for an unchanged diff
      */
     public function saveDiff(Entity $originalEntity): bool
     {
+        self::assertApplicationWritable();
         Database::assertCanWrite(static::getDatabase()->connectionIndex);
 
         $changedColumns = [];
@@ -277,9 +285,11 @@ abstract class Entity
      * Delete entity from database.
      *
      * @throws DatabaseException When the entity is unrelated, SQL fails, or a foreign application transaction forbids the write
+     * @throws ExternalWriterException When the table is written outside the application
      */
     public function delete(): void
     {
+        self::assertApplicationWritable();
         Database::assertCanWrite(static::getDatabase()->connectionIndex);
 
         if (!$this->_related) {
@@ -304,6 +314,18 @@ abstract class Entity
 
         $this->_related = false;
         $this->_originalData = [];
+    }
+
+    /**
+     * Refuses even low-level writes with no mounted collection, before resolving a database or changing saved state.
+     *
+     * @throws ExternalWriterException When the Entity declares an external database writer
+     */
+    private static function assertApplicationWritable(): void
+    {
+        if (static::_externalWriter) {
+            throw new ExternalWriterException(static::_table);
+        }
     }
 
     /**

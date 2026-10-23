@@ -125,13 +125,12 @@ The framework's own verdicts cover the primary database and every database where
 the project names a provider. A project adds no provider for tables already
 mapped by Entities.
 
-The journal's six verdicts move from `ChangeLogTablesWithoutEntity` to its six
-Entities in the journal database. (not in the code yet — HIL-1615)
-Until that move, a backup-enabled installation with the journal still names
-`ChangeLogTablesWithoutEntity` for connection 1. Providers remain the declaration
-for genuinely unmapped tables in other databases; the move does not remove that
-path. Coverage, compatibility, every column strategy and the anonymization
-result remain the same. See
+The journal's six verdicts are read from its mounted Entities under the
+`change_log` binding's schema index 1. Do not register `ChangeLogTablesWithoutEntity`
+for connection 1; it is no longer a provider source for the journal. Providers
+remain the declaration for genuinely unmapped tables in other databases. Coverage,
+compatibility, every column strategy and the anonymization result remain the same.
+See
 [The Database An Entity Lives In](../orm/entity.md#the-database-an-entity-lives-in)
 and [Where The Journal Lives](change-log.md#where-the-journal-lives).
 

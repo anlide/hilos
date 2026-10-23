@@ -9,7 +9,14 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Hilos;
+use Hilos\Database\View\Collection\ChangeLogTables as DbCollectionChangeLogTables;
+use Hilos\Database\View\Collection\ChangeLogFields as DbCollectionChangeLogFields;
+use Hilos\Database\View\Collection\ChangeLogReceipts as DbCollectionChangeLogReceipts;
+use Hilos\Database\View\Collection\ChangeLogEntries as DbCollectionChangeLogEntries;
+use Hilos\Database\View\Collection\ChangeLogChanges as DbCollectionChangeLogChanges;
+use Hilos\Database\View\Collection\ChangeLogValues as DbCollectionChangeLogValues;
 use Hilos\Database\Exception\UnknownLazyStrategyException;
+use Hilos\Database\Exception\UnboundedCollectionReadException;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Actions\Collection\DbActions as CollectionDbActions;
 use Hilos\Database\Actions\Item\DbActions as ItemDbActions;
@@ -167,11 +174,24 @@ use Hilos\Database\Exception\InvalidMountedCollectionException;
  * @property-read DbCollectionLocales $locales
  * @property-read DbCollectionI18nReflows $i18nReflows Fingerprint of the catalog last taken into the reference tables
  * @property-read DbCollectionModerationRules $moderationRules Administrators' own rules per moderation kind
+ * @property-read DbCollectionChangeLogTables $changeLogTables
+ * @property-read DbCollectionChangeLogFields $changeLogFields
+ * @property-read DbCollectionChangeLogReceipts $changeLogReceipts
+ * @property-read DbCollectionChangeLogEntries $changeLogEntries
+ * @property-read DbCollectionChangeLogChanges $changeLogChanges
+ * @property-read DbCollectionChangeLogValues $changeLogValues
  * @property-read DbCollectionStatusIncidents $statusIncidents Status candidates and durable history, mounted only for STATUS
  * @property-read DbCollectionStatusIncidentUpdates $statusIncidentUpdates Immutable Status timeline, mounted only for STATUS
  */
 abstract class HilosDbContext extends DbContext
 {
+    public const string changeLogTables = 'changeLogTables';
+    public const string changeLogFields = 'changeLogFields';
+    public const string changeLogReceipts = 'changeLogReceipts';
+    public const string changeLogEntries = 'changeLogEntries';
+    public const string changeLogChanges = 'changeLogChanges';
+    public const string changeLogValues = 'changeLogValues';
+
     public const string settings = 'settings';
     public const string setting = 'setting';
     public const string identities = 'identities';
@@ -337,6 +357,7 @@ abstract class HilosDbContext extends DbContext
      * @throws ObjectCollectionNotFoundException When a framework object collection is missing
      * @throws UnknownLazyStrategyException When a collection is mounted under a strategy initDB() does not know
      * @throws InvalidMountedCollectionException When a project mount declares an invalid or occupied key
+     * @throws UnboundedCollectionReadException When a cacheless collection is mounted with a whole-table strategy
      */
     public function configure(): void
     {
@@ -575,6 +596,15 @@ abstract class HilosDbContext extends DbContext
             UserPhotosActions::class,
         );
 
+        if (Hilos::hasFeature(HilosFeature::CHANGE_LOG)) {
+            $this->mountFramework(self::changeLogTables, Objects::LAZY_STRATEGY_KEY, DbCollectionChangeLogTables::class);
+            $this->mountFramework(self::changeLogFields, Objects::LAZY_STRATEGY_KEY, DbCollectionChangeLogFields::class);
+            $this->mountFramework(self::changeLogReceipts, Objects::LAZY_STRATEGY_KEY, DbCollectionChangeLogReceipts::class);
+            $this->mountFramework(self::changeLogEntries, Objects::LAZY_STRATEGY_KEY, DbCollectionChangeLogEntries::class);
+            $this->mountFramework(self::changeLogChanges, Objects::LAZY_STRATEGY_KEY, DbCollectionChangeLogChanges::class);
+            $this->mountFramework(self::changeLogValues, Objects::LAZY_STRATEGY_KEY, DbCollectionChangeLogValues::class);
+        }
+
         if (Hilos::hasFeature(HilosFeature::STATUS)) {
             $this->mountFramework(
                 self::statusIncidents,
@@ -734,6 +764,7 @@ abstract class HilosDbContext extends DbContext
      * @throws CollectionAlreadyMountedException When a view is already mounted under the key
      * @throws ObjectCollectionNotFoundException When the object collection is not there for the view to wrap
      * @throws UnknownLazyStrategyException When the strategy is none initDB() knows
+     * @throws UnboundedCollectionReadException When a cacheless extension is mounted with a whole-table strategy
      */
     private function mountFramework(
         string $key,

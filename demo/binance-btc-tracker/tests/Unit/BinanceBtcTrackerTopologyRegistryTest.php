@@ -108,6 +108,8 @@ use Hilos\Core\Agent\Hilos\DaemonNodeAgent;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\ChangeLog\ChangeLogDatabase;
+use Hilos\Database\Database;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
 use Hilos\DataExport\DataExportAgentDaemon;
 use Hilos\DataExport\DataExportHttp;
@@ -167,6 +169,7 @@ use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguagesTable;
 use Hilos\I18n\Library\I18nLibraryAgentDaemon;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 use Hilos\Core\Agent\Daemon\StatusAgentDaemon;
 use Hilos\Core\Agent\TopologyAgentFactory;
 use Hilos\Core\Feature\FeatureRegistry;
@@ -1427,12 +1430,22 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         // every key passes as the framework's own; the day one is, this names the refusal in
         // seconds instead of a stand that did not come up.
         $previous = Hilos::$db;
+        $databaseMetadata = [];
+        foreach (['configurations', 'databaseBindings'] as $property) {
+            $databaseMetadata[$property] = new ReflectionProperty(Database::class, $property)->getValue();
+        }
         try {
+            // The mounted journal chains need physical schema identities; configuration alone opens no connection.
+            Database::configure(database: 'topology_unit');
+            Database::configure(index: 1, database: ChangeLogDatabase::configuredName());
             Hilos::$db = new BinanceBtcTrackerDbContext();
             Hilos::$db->configure();
             FrameworkExtensionGuard::assertMountedExtensionsWhole();
         } finally {
             Hilos::$db = $previous;
+            foreach ($databaseMetadata as $property => $value) {
+                new ReflectionProperty(Database::class, $property)->setValue(null, $value);
+            }
         }
 
         $this->addToAssertionCount(1);

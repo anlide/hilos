@@ -6,7 +6,12 @@ namespace Hilos\Tests\Integration;
 
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseNames;
+use Hilos\Database\Migration\FrameworkSchemaCatalog;
+use Hilos\Database\Migration;
+use ReflectionMethod;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseConnectionPolicy;
 use Hilos\Database\DatabaseException;
@@ -48,6 +53,7 @@ final class EntitySchemaConsistencyTest extends FrameworkIntegrationTestCase
     protected function setUp(): void
     {
         parent::setUp();
+        self::configureJournal();
 
         if (self::$schemaApplied) {
             return;
@@ -101,8 +107,8 @@ final class EntitySchemaConsistencyTest extends FrameworkIntegrationTestCase
     {
         $table = constant("{$entityClass}::" . Entity::META_TABLE);
 
-        $this->assertFileExists(self::stubPath($table, down: false), "missing create stub for {$table}");
-        $this->assertFileExists(self::stubPath($table, down: true), "missing down stub for {$table}");
+        $this->assertFileExists(self::stubPath($entityClass, down: false), "missing create stub for {$table}");
+        $this->assertFileExists(self::stubPath($entityClass, down: true), "missing down stub for {$table}");
     }
 
     /**
@@ -146,10 +152,20 @@ final class EntitySchemaConsistencyTest extends FrameworkIntegrationTestCase
      */
     private static function runStubDirection(bool $down): void
     {
+        $unit = new FrameworkSchemaCatalog()->unit(FrameworkSchemaCatalog::CHANGE_LOG);
+        $journalSql = file_get_contents($down ? $unit->downPath : $unit->upPath);
+        $journalSql = str_replace('{{change_log_database}}', ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName()), $journalSql);
+        $runJournal = new ReflectionMethod(Migration::class, 'runSqlWithDelimiter');
+        if ($down && array_intersect($unit->tables, EntitySchemaAudit::liveTables(ChangeLogDatabase::CONNECTION_INDEX)) !== []) {
+            // The real down stub checks all six tables and uses DELIMITER for its history guard.
+            $runJournal->invoke(null, $journalSql);
+        }
         $entities = self::stubEntitiesInDependencyOrder();
         foreach ($down ? array_reverse($entities) : $entities as $entityClass) {
-            $table = constant("{$entityClass}::" . Entity::META_TABLE);
-            Database::sqlRun(file_get_contents(self::stubPath($table, $down)));
+            Database::sqlRun(file_get_contents(self::stubPath($entityClass, $down)));
+        }
+        if (!$down) {
+            $runJournal->invoke(null, $journalSql);
         }
     }
 
@@ -163,7 +179,9 @@ final class EntitySchemaConsistencyTest extends FrameworkIntegrationTestCase
     {
         $byTable = [];
         foreach (EntitySchemaAudit::frameworkEntities() as $entityClass) {
-            $byTable[constant("{$entityClass}::" . Entity::META_TABLE)] = $entityClass;
+            if ($entityClass::getDatabaseName() === DatabaseNames::PRIMARY) {
+                $byTable[$entityClass::_table] = $entityClass;
+            }
         }
 
         $ordered = [];
@@ -227,15 +245,36 @@ final class EntitySchemaConsistencyTest extends FrameworkIntegrationTestCase
             maxRetries: DatabaseConnectionPolicy::CONNECT_RETRY_MAX_ATTEMPTS,
             retryDelaySeconds: DatabaseConnectionPolicy::CONNECT_RETRY_DELAY_SECONDS,
         );
+        self::configureJournal();
+    }
+
+    /** Configure the derived schema for metadata reads; all stub SQL still runs on primary. */
+    private static function configureJournal(): void
+    {
+        $primary = Database::getConnectionConfig(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        Database::configure(
+            index: ChangeLogDatabase::CONNECTION_INDEX,
+            host: $primary->host,
+            user: $primary->user,
+            password: $primary->password,
+            database: ChangeLogDatabase::configuredName(),
+            port: $primary->port,
+            charset: $primary->charset,
+        );
     }
 
     /**
-     * @param string $table Table name
+     * @param class-string<Entity> $entityClass Entity whose schema unit supplies the stub
      * @param bool $down True for the down (drop) stub, false for the create stub
      * @return string Absolute path of the migration stub file
      */
-    private static function stubPath(string $table, bool $down): string
+    private static function stubPath(string $entityClass, bool $down): string
     {
+        if ($entityClass::getDatabaseName() === DatabaseNames::CHANGE_LOG) {
+            $unit = new FrameworkSchemaCatalog()->unit(FrameworkSchemaCatalog::CHANGE_LOG);
+            return $down ? $unit->downPath : $unit->upPath;
+        }
+        $table = $entityClass::_table;
         // external-boundary: the neutral element of the name being built — the up file carries no suffix
         $suffix = $down ? '_down' : '';
         return dirname(__DIR__, 2) . "/backend/Database/Migration/Stub/create_{$table}{$suffix}.sql";

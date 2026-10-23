@@ -12,6 +12,7 @@ use Hilos\Database\Exception\CollectionAlreadyMountedException;
 use Hilos\Database\Exception\FrameworkExtensionException;
 use Hilos\Database\Exception\InvalidMountedCollectionException;
 use Hilos\Database\Exception\UnknownLazyStrategyException;
+use Hilos\Database\Exception\UnboundedCollectionReadException;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Object\Objects;
 
@@ -36,6 +37,7 @@ final class TasksDbContext extends HilosDbContext
      * @throws ObjectCollectionNotFoundException When a represented object collection is missing
      * @throws UnknownLazyStrategyException When a collection is mounted under a strategy initDB() does not know
      * @throws InvalidMountedCollectionException When a project collection key is empty or already mounted
+     * @throws UnboundedCollectionReadException When a cacheless collection is mounted with a whole-table strategy
      */
     public function configure(): void
     {

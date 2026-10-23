@@ -34,8 +34,9 @@ For attribution a journal row carries only the receipt number; the receipt says
 who acted, on whose behalf and through what.
 
 The journal lives in its own derived database on the same server. Its six tables
-become Entities in that database, mounted when `CHANGE_LOG` is declared.
-(not in the code yet — HIL-1615)
+are framework Entities in the `change_log` binding and mount with their full
+collection chains when `CHANGE_LOG` is enabled. The binding uses schema index 1
+and row connection 0; see [The Database An Entity Lives In](../orm/entity.md#the-database-an-entity-lives-in).
 Triggers write five of them, including both dictionaries; the framework writes
 the receipt in the process executing the action.
 
@@ -332,23 +333,36 @@ The six tables are two stable dictionaries (`hilos_change_log_table`,
 `hilos_change_log_field`) and four append-only tables: receipts
 (`hilos_change_log_receipt`), one row per changed record (`hilos_change_log`),
 one row per changed field (`hilos_change_log_change`), and long values
-(`hilos_change_log_value`). The latter four have composite `PRIMARY KEY
-(id,created_at)`. No foreign keys point at a partitioned table. The field
-dictionary alone has a foreign key to the table dictionary. The receipt carries
-soft actor, subject and session numbers; the log carries a canonical record key
-and nullable hash. Field rows distinguish inline, fact-only and long values;
-their presence flags distinguish an absent side from SQL NULL.
+(`hilos_change_log_value`). The latter four have composite physical `PRIMARY KEY
+(id,created_at)`. Their Object collections still use the numeric `id`, as a
+string, for the logical Object key. No foreign keys point at a partitioned table.
+The field dictionary alone has a foreign key to the table dictionary. The receipt
+carries soft actor, subject and session numbers; the log carries a canonical
+record key and nullable hash. Field rows distinguish inline, fact-only and long
+values; their presence flags distinguish an absent side from SQL NULL.
 
-These six tables have Entities in their own named database, with their full
-collection chains mounted under `CHANGE_LOG`; each Entity carries its
-personal-data verdict. (not in the code yet — HIL-1615)
-Five collections, including the table and field dictionaries, declare an
-external trigger writer and refuse ORM writes; the receipt collection declares
-the framework's and attribution agent's respective operations.
-(not in the code yet — HIL-1615)
-Today `ChangeLogTablesWithoutEntity` on connection 1 still supplies all six
-verdicts and remains required until that move. The move changes neither column
-strategies nor the coverage and compatibility gates of a restore.
+The framework collection keys, Entities, Object collections and physical tables
+are:
+
+| `HilosDbContext` key | Entity / Object collection | Physical table | `_externalWriter` |
+|---|---|---|---|
+| `changeLogTables` | `ChangeLogTable` / `ChangeLogTables` | `hilos_change_log_table` | `true` |
+| `changeLogFields` | `ChangeLogField` / `ChangeLogFields` | `hilos_change_log_field` | `true` |
+| `changeLogReceipts` | `ChangeLogReceipt` / `ChangeLogReceipts` | `hilos_change_log_receipt` | `false` |
+| `changeLogEntries` | `ChangeLogEntry` / `ChangeLogEntries` | `hilos_change_log` | `true` |
+| `changeLogChanges` | `ChangeLogChange` / `ChangeLogChanges` | `hilos_change_log_change` | `true` |
+| `changeLogValues` | `ChangeLogValue` / `ChangeLogValues` | `hilos_change_log_value` | `true` |
+
+All six Entities declare `_journaled = false` and `_setVia = Entity::SET_STANDALONE`.
+The five trigger-written collections refuse ORM writes; the receipt is written by
+the framework. The aggregate `change_log` schema unit uses
+`FrameworkSchemaCatalog::CHANGE_LOG_TABLES`, which lists the six Entity `_table`
+names in their existing creation order; the DDL stubs and partition declarations
+are unchanged. Each Entity carries its exact personal-data verdict under schema
+index 1; see [The personal-data verdict](../orm/entity.md#the-personal-data-verdict).
+The removed `ChangeLogTablesWithoutEntity` provider is not needed for the journal;
+providers remain the mechanism for genuinely unmapped tables. Coverage,
+compatibility, column strategies and restore results are unchanged.
 
 A project carrying `CHANGE_LOG` provisions the derived database and grants the
 app access to it before starting. Its `Database::initialize()` configures and
@@ -461,16 +475,18 @@ the receipt scope replaces the old attribution shape.
 
 Any agent with declared reading may read the journal through typed collections
 on `Hilos::$db`; no agent reads it by default.
-(not in the code yet — HIL-1615)
+The change-log agent declares interest in the five trigger-written collections;
+its receipt `Update` ownership claim carries its reader interest for receipts.
 Do not repeat journal SQL in a page, table or agent; missing reads belong on the
 owning ORM layer. Feed windows and modal receipt/entry reads move to those
 collections. (not in the code yet — HIL-1619)
 The tables, history and overview reads follow, after which
 `ChangeLogSectionReader` is removed. (not in the code yet — HIL-1620)
 Journal collections use bounded database queries without loading the journal
-whole or treating their ORM cache as the source of trigger inserts.
-(not in the code yet — HIL-1615)
-The ORM emits no sync frames for those inserts.
+whole or treating their ORM cache as the source of trigger inserts; their
+freshness and bounded-read contract is in
+[DbCollection](../orm/db-collection.md#collections-in-a-named-database). The ORM
+emits no sync frames for trigger inserts.
 
 Until those reading leaves land, the section still uses
 `ChangeLogSectionReader`: it runs SQL on primary with qualified journal table
@@ -802,12 +818,12 @@ those guarantees need their future carriers as well as journal scenarios.
   only a personal change's fact and nothing of a secret.
 - Giving an administrator a “journal this table” switch moves the declaration
   out of its owner; put it on the Entity.
-- Querying the journal directly from a page, table, or agent duplicates the
+- Adding a new journal query directly in a page, table, or agent duplicates the
   ORM's reads and their bounds; use typed `Hilos::$db` collections with declared
-  reading. (not in the code yet — HIL-1615)
-  The existing section keeps its reader until the feed and receipt/entry reads
-  migrate (not in the code yet — HIL-1619), then the tables, history and overview
-  migrate and the reader is removed (not in the code yet — HIL-1620).
+  reading. The existing section keeps `ChangeLogSectionReader` until feed and
+  receipt/entry reads migrate (not in the code yet — HIL-1619), then tables,
+  history and overview migrate and the reader is removed (not in the code yet —
+  HIL-1620).
 - Using the April stub as a worked example revives a rejected design;
   follow this page instead.
 - Naming here what a leaf introduces — Entity constants, journal tables and

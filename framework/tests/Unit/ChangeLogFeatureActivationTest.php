@@ -14,6 +14,26 @@ use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Core\Feature\FeatureRegistry;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Context\FrameworkExtension;
+use Hilos\Database\Entity\Collection\ChangeLogReceipts as EntityChangeLogReceipts;
+use Hilos\Database\Object\Item\ChangeLogReceipt as ObjectChangeLogReceipt;
+use Hilos\Database\Object\Collection\ChangeLogReceipts as ObjectChangeLogReceipts;
+use Hilos\Database\View\Item\ChangeLogReceipt as DbItemChangeLogReceipt;
+use Hilos\Database\View\Collection\ChangeLogReceipts as DbCollectionChangeLogReceipts;
+use Hilos\Database\Database;
+use Hilos\Database\DatabaseNames;
+use Hilos\Database\ChangeLog\ChangeLogDatabase;
+use Hilos\Database\Object\Objects;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Source\SourceChange;
+use Hilos\Database\Schema\FrameworkExtensionGuard;
+use ReflectionProperty;
+use Hilos\Database\Entity\Item\ChangeLogTable;
+use Hilos\Database\Entity\Item\ChangeLogField;
+use Hilos\Database\Entity\Item\ChangeLogReceipt;
+use Hilos\Database\Entity\Item\ChangeLogEntry;
+use Hilos\Database\Entity\Item\ChangeLogChange;
+use Hilos\Database\Entity\Item\ChangeLogValue;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Pages\ChangeLog\AbstractHilosChangeLogDashboardPage;
 use Hilos\Pages\ChangeLog\AbstractHilosChangeLogTablePage;
@@ -27,6 +47,72 @@ use PHPUnit\Framework\TestCase;
 /** Exercises activation through the real validator, independently of Backup. */
 final class ChangeLogFeatureActivationTest extends TestCase
 {
+    public function testRealContextMountsJournalOnlyWhenFeatureIsEnabledWithoutSqlOrImplicitReaders(): void
+    {
+        $appClass = new ReflectionProperty(HilosFacade::class, 'appClass');
+        $previous = $appClass->getValue();
+        $previousDb = HilosFacade::$db;
+        $properties = [];
+        foreach (['configurations', 'databaseBindings'] as $property) {
+            $properties[$property] = new ReflectionProperty(Database::class, $property)->getValue();
+        }
+        try {
+            Database::configure(database: 'journal_mount_unit');
+            Database::configure(index: 1, database: ChangeLogDatabase::configuredName());
+            $expected = [
+                HilosDbContext::changeLogTables => ChangeLogTable::class,
+                HilosDbContext::changeLogFields => ChangeLogField::class,
+                HilosDbContext::changeLogReceipts => ChangeLogReceipt::class,
+                HilosDbContext::changeLogEntries => ChangeLogEntry::class,
+                HilosDbContext::changeLogChanges => ChangeLogChange::class,
+                HilosDbContext::changeLogValues => ChangeLogValue::class,
+            ];
+            foreach ([false, true] as $enabled) {
+                $appClass->setValue(null, $enabled ? ChangeLogFeatureCompleteHilos::class : ChangeLogFeatureUndeclaredHilos::class);
+                $context = new ChangeLogRealMountContext();
+                $context->configure();
+                $mounted = $context->getMountedEntities();
+                self::assertSame($enabled ? $expected : [], array_intersect_key($mounted, $expected));
+                foreach ($expected as $key => $entityClass) {
+                    self::assertNotContains($key, $context->processReads());
+                    self::assertFalse(SourceInterestRegistry::hasConsumers(SourceChange::KIND_DB, $key));
+                    if (!$enabled) {
+                        self::assertNull($context->mountedObjectCollection($key));
+                        continue;
+                    }
+                    $store = $context->mountedObjectCollection($key);
+                    self::assertFalse($store->cachesRows());
+                    self::assertFalse($store->isAllLoaded());
+                    self::assertSame(Objects::LAZY_STRATEGY_KEY, $store->getLazyStrategy());
+                    self::assertSame(DatabaseNames::CHANGE_LOG, $entityClass::getDatabaseName());
+                    self::assertSame(1, $entityClass::getDatabase()->schemaIndex);
+                    self::assertSame(0, $entityClass::getDatabase()->connectionIndex);
+                    self::assertNull($context->frameworkRegistrations()[$key]->actions);
+                    self::assertNull($context->frameworkRegistrations()[$key]->itemActions);
+                }
+                HilosFacade::$db = $context;
+                FrameworkExtensionGuard::assertMountedExtensionsWhole();
+            }
+            $context = new ChangeLogExtendedMountContext();
+            $context->configure();
+            HilosFacade::$db = $context;
+            FrameworkExtensionGuard::assertMountedExtensionsWhole();
+            self::assertSame(ExtendedJournalReceipt::class, $context->getMountedEntities()[HilosDbContext::changeLogReceipts]);
+            self::assertInstanceOf(ExtendedJournalReceipts::class, $context->getDbItemCollection(HilosDbContext::changeLogReceipts));
+            self::assertInstanceOf(ExtendedJournalObjectReceipts::class, $context->mountedObjectCollection(HilosDbContext::changeLogReceipts));
+            self::assertSame(ExtendedJournalViewReceipt::class, ExtendedJournalReceipts::DB_ITEM_CLASS);
+            self::assertFalse($context->mountedObjectCollection(HilosDbContext::changeLogReceipts)->cachesRows());
+            self::assertFalse(Database::isConnected(0));
+            self::assertFalse(Database::isConnected(1));
+        } finally {
+            $appClass->setValue(null, $previous);
+            HilosFacade::$db = $previousDb;
+            foreach ($properties as $property => $value) {
+                new ReflectionProperty(Database::class, $property)->setValue(null, $value);
+            }
+        }
+    }
+
     public function testDefinitionHasNoPrimaryDbOrRuntimeRequirement(): void
     {
         $definition = (new FeatureRegistry())->definition(HilosFeature::CHANGE_LOG);
@@ -225,4 +311,67 @@ final class ChangeLogFeatureMissingHistoryBindingHilos extends ChangeLogFeatureC
         ChangeLogFeatureDashboardPage::PAGE => [HilosChangeLogFeedTable::TABLE => []],
         ChangeLogFeatureTablesPage::PAGE => [HilosChangeLogTablesTable::TABLE => []],
     ];
+}
+
+/** Exercises parent configure(), unlike the pure activation fixture. */
+final class ChangeLogRealMountContext extends HilosDbContext
+{
+    /** @return list<string> Process-wide reads without adding journal interest */
+    public function processReads(): array
+    {
+        return $this->processWideReadCollections();
+    }
+}
+
+/** A whole journal chain substituted under the framework key, with no extra actions. */
+final class ChangeLogExtendedMountContext extends HilosDbContext
+{
+    /** @return array<string, FrameworkExtension> Receipt chain under its original framework key */
+    protected function frameworkExtensions(): array
+    {
+        return [self::changeLogReceipts => new FrameworkExtension(ExtendedJournalReceipts::class)];
+    }
+}
+
+final class ExtendedJournalReceipt extends ChangeLogReceipt
+{
+}
+
+final class ExtendedJournalEntityReceipts extends EntityChangeLogReceipts
+{
+    public const string ENTITY_CLASS = ExtendedJournalReceipt::class;
+}
+
+final class ExtendedJournalObjectReceipt extends ObjectChangeLogReceipt
+{
+    public const string ENTITY_CLASS = ExtendedJournalReceipt::class;
+    public const string OBJECT_COLLECTION_CLASS = ExtendedJournalObjectReceipts::class;
+}
+
+/**
+ * @method ExtendedJournalObjectReceipt|null first()
+ * @method ExtendedJournalObjectReceipt|null last()
+ * @method ExtendedJournalObjectReceipt|null get(int|string $key)
+ * @method ExtendedJournalObjectReceipt|null offsetGet(mixed $offset)
+ */
+final class ExtendedJournalObjectReceipts extends ObjectChangeLogReceipts
+{
+    public const string OBJECT_CLASS = ExtendedJournalObjectReceipt::class;
+    public const string ENTITY_COLLECTION_CLASS = ExtendedJournalEntityReceipts::class;
+}
+
+final class ExtendedJournalViewReceipt extends DbItemChangeLogReceipt
+{
+}
+
+/**
+ * @method ExtendedJournalObjectReceipts|null getObjectCollection()
+ * @method ExtendedJournalViewReceipt|null first()
+ * @method ExtendedJournalViewReceipt|null last()
+ * @method ExtendedJournalViewReceipt offsetGet(mixed $offset)
+ */
+final class ExtendedJournalReceipts extends DbCollectionChangeLogReceipts
+{
+    public const string DB_ITEM_CLASS = ExtendedJournalViewReceipt::class;
+    public const string OBJECT_COLLECTION_CLASS = ExtendedJournalObjectReceipts::class;
 }

@@ -390,6 +390,8 @@ use Hilos\Users\DTO\UserTimeZoneWriteDoneSignalData;
 use Hilos\Users\DTO\UserTimeZoneWriteSignalData;
 use Hilos\Users\DTO\UserLastBrowserTimeZoneWriteSignalData;
 use Hilos\HilosException;
+use Hilos\Database\ChangeLog\ChangeLogDatabase;
+use Hilos\Database\Database;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
 use Hilos\Database\Schema\MountedCollectionKeyGuard;
 use Demo\Chat\Pages\Hilos\I18nPage;
@@ -408,6 +410,7 @@ use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguagesTable;
 use Hilos\I18n\Library\I18nLibraryAgentDaemon;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 use ReflectionClass;
 use Hilos\Core\Agent\Daemon\StatusAgentDaemon;
 use Hilos\Core\Agent\TopologyAgentFactory;
@@ -2359,13 +2362,23 @@ final class ChatTopologyRegistryTest extends TestCase
         // without a database: configure() reads nothing. The chain judged is this demo's rename
         // journal, which carries the event of the feed (HIL-1196).
         $previous = Hilos::$db;
+        $databaseMetadata = [];
+        foreach (['configurations', 'databaseBindings'] as $property) {
+            $databaseMetadata[$property] = new ReflectionProperty(Database::class, $property)->getValue();
+        }
         try {
+            // The mounted journal chains need physical schema identities; configuration alone opens no connection.
+            Database::configure(database: 'topology_unit');
+            Database::configure(index: 1, database: ChangeLogDatabase::configuredName());
             Hilos::$db = new ChatDbContext();
             Hilos::$db->configure();
             FrameworkExtensionGuard::assertMountedExtensionsWhole();
             MountedCollectionKeyGuard::assertMountedKeysAgree();
         } finally {
             Hilos::$db = $previous;
+            foreach ($databaseMetadata as $property => $value) {
+                new ReflectionProperty(Database::class, $property)->setValue(null, $value);
+            }
         }
 
         $this->addToAssertionCount(1);

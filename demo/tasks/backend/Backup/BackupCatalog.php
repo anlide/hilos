@@ -7,8 +7,6 @@ namespace Demo\Tasks\Backup;
 use Hilos\Backup\BackupConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Entity\Item\Entity;
-use Hilos\Database\ChangeLog\ChangeLogDatabase;
-use Hilos\Database\Schema\ChangeLogTablesWithoutEntity;
 
 /**
  * BackupCatalog - the tasks demo's backup catalog.
@@ -25,8 +23,7 @@ use Hilos\Database\Schema\ChangeLogTablesWithoutEntity;
  * alone - rather than borrowing a seed table from another demo's data.
  *
  * What a restore into a lesser environment must rewrite is declared on each table's own
- * Entity ({@see Entity::META_PII} and {@see Entity::META_PII_NOT_PERSONAL}). This demo names
- * {@see ChangeLogTablesWithoutEntity} on connection 1 for its derived journal.
+ * Entity ({@see Entity::META_PII} and {@see Entity::META_PII_NOT_PERSONAL}).
  * All three of its own primary tables have an Entity.
  */
 final class BackupCatalog implements CatalogProviderInterface
@@ -37,9 +34,6 @@ final class BackupCatalog implements CatalogProviderInterface
     public static function getCatalog(): array
     {
         return [
-            BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => [
-                ChangeLogDatabase::CONNECTION_INDEX => ChangeLogTablesWithoutEntity::class,
-            ],
             BackupConstants::CATALOG_REFERENCES => [
                 0 => [],
             ],

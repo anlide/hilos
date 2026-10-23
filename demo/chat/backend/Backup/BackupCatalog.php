@@ -8,7 +8,6 @@ use Demo\Chat\Database\Object\Collection\Bots;
 use Hilos\Backup\BackupConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Entity\Item\Entity;
-use Hilos\Database\Schema\ChangeLogTablesWithoutEntity;
 
 /**
  * BackupCatalog - the chat demo's backup catalog.
@@ -23,13 +22,12 @@ use Hilos\Database\Schema\ChangeLogTablesWithoutEntity;
  * per connection index; the framework derives their table names and keeps their rows
  * under the schema-seed scope. The chat demo seeds only the `bot` table
  * (see Migration/Seed/001_truncate_and_seed_bot.sql), so it is the sole reference table
- * on connection index 0. The journal's unmapped tables live on connection 1.
+ * on connection index 0.
  *
  * What a restore into a lesser environment must rewrite is declared elsewhere and
  * deliberately: each table carries its own verdict on its Entity ({@see Entity::META_PII}
  * and {@see Entity::META_PII_NOT_PERSONAL}), so a migration that adds a column is
- * classified in the file it was added to. The journal tables have no Entity and
- * are classified by {@see ChangeLogTablesWithoutEntity} on their own connection.
+ * classified in the file it was added to.
  */
 final class BackupCatalog implements CatalogProviderInterface
 {
@@ -42,9 +40,6 @@ final class BackupCatalog implements CatalogProviderInterface
         return [
             BackupConstants::CATALOG_REFERENCES => [
                 0 => [Bots::class],
-            ],
-            BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => [
-                1 => ChangeLogTablesWithoutEntity::class,
             ],
         ];
     }

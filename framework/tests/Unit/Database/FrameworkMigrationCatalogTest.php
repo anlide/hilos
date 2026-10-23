@@ -16,7 +16,6 @@ use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration\FrameworkSchemaCatalog;
 use Hilos\Database\Migration\FrameworkSchemaUnit;
-use Hilos\Database\Schema\ChangeLogTablesWithoutEntity;
 use Hilos\Database\Schema\FrameworkTablesWithoutEntity;
 use Hilos\Hilos;
 use Hilos\Runtime\View\Context\RtContext;
@@ -191,7 +190,7 @@ final class FrameworkMigrationCatalogTest extends TestCase
             array_column($units, 'key'),
         );
         $journal = $units[array_key_last($units)];
-        $this->assertSame(ChangeLogTablesWithoutEntity::tables(), $journal->tables);
+        $this->assertSame(FrameworkSchemaCatalog::CHANGE_LOG_TABLES, $journal->tables);
         $this->assertCount(6, $journal->tables);
         $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, $journal->connection);
         $this->assertFalse($journal->bootstrapOwned);

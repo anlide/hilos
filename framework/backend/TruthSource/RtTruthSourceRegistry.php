@@ -7,6 +7,7 @@ namespace Hilos\TruthSource;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\TruthSource\AbstractTruthSourceRegistry;
+use Hilos\Core\TruthSource\Exception\ExternalWriterException;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceGrant;
 use Hilos\Core\TruthSource\TruthSourceKeys;
@@ -72,6 +73,7 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
      * singleton is not owned by halves, and none of this method's callers ever named rows.
      *
      * @param string $collection Runtime collection name
+     * @throws ExternalWriterException As permitted by the inherited registration contract for its DB specialization
      */
     public static function registerDaemon(string $collection): void
     {

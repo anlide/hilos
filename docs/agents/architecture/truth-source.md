@@ -52,37 +52,44 @@ it judges today, and no sentence there is callable.
 ## A Collection Written Outside The Application
 
 A collection whose rows are written by database triggers has no application
-writer. Its readers declare ordinary reader interest, and an ORM write is
-refused with an explanation that the collection is written externally.
-(not in the code yet — HIL-1615)
-Do not invent an owner to make the collection fit the registry, or treat a read
-declaration as permission to bypass a write guard. HIL-1615 defines the external
-writer declaration and its refusal; the ordinary operation rights and registry
-guards remain in force.
+writer. Its mounted Entity declares `_externalWriter = true`; direct Entity writes
+and database truth-source registration or claims refuse with
+`ExternalWriterException`, even if a grant already exists. The refusal is before
+SQL, grant changes, collection membership or reader-interest changes. The metadata
+does not change RT ownership, and a read declaration never permits a write. The
+usual operation rights and registry guards still govern the other application-owned
+collections. Do not invent an owner for trigger-written data.
 
 Five [journal tables](change-log.md#where-the-journal-lives), including both
-dictionaries, are written by triggers and use this form when their collections
-are mounted. (not in the code yet — HIL-1615)
-Any agent may declare that it reads the journal; none has that read by default.
-(not in the code yet — HIL-1615)
-The ORM does not emit sync frames for a trigger's inserts, so an interest is not
-a promise that a row cache is current. The journal collections answer bounded
-reads from the database without relying on unannounced rows being cached.
-(not in the code yet — HIL-1615)
+dictionaries, are written by triggers; their mounted Entities set that metadata.
+The receipt Entity does not: the framework writes it in the process executing the
+action. All six collection chains mount when `CHANGE_LOG` is enabled. The change-log
+agent declares `READS_DB` interest in the five trigger-written collections; it does
+not list receipts there because its receipt ownership declaration already raises
+reader interest. Any other agent may declare its own read, and none has it by default.
+The ORM emits no sync frames for trigger inserts, so interest is not a promise that a
+row cache is current. Cacheless journal collections answer bounded reads from the
+database; see [DbCollection](../orm/db-collection.md#collections-in-a-named-database).
 
 The receipt is different: the framework creates it in the process executing the
 action, before its handler or SQL file. The journal agent is not its creator.
-The receipt collection declares rights for that framework path and for the
-agent's attribution operations. (not in the code yet — HIL-1615)
+`JournalReceiptScope` implements `TruthSourceOwner`, declares `Add`, `Update` and
+`Remove` on `changeLogReceipts`, and returns that same operation set from
+`defaultTruthSourceOperations()`. The change-log agent declares `Update` on receipts;
+its handler that attributes rows is HIL-1618. These are scoped operation declarations,
+not a blanket grant in each process or a permission to make the agent the receipt
+creator. Do not widen the agent's claim to `Add` or `Remove` in place of the scoped
+framework lifecycle. The framework receipt scope is not yet connected to this ORM lifecycle.
 Creation, atomic `open_handovers` changes and deletion only when there are no
 journal rows or holders move into the collection layer.
 (not in the code yet — HIL-1616)
 The journal agent updates who wrote under its declared operations, using the
 business-row change notifications described in
 [The Receipt](change-log.md#the-receipt). (not in the code yet — HIL-1618)
-Until these leaves land, the journal has no mounted collections and the receipt
-scope performs its existing SQL operations; this transition grants no new
-application write rights over the five trigger-written tables.
+Until HIL-1616 lands, `JournalReceiptScope` keeps its existing SQL lifecycle; the
+declaration does not move receipt creation, handover updates or deletion to ORM
+actions. The external-writer guard still blocks writes to the five trigger-written
+collections. Attribution and its `COUNT` removal remain HIL-1618.
 
 ## Interest And Ownership Are One Fact
 
@@ -152,8 +159,8 @@ waited on before the first agent is built
 else here reads waits its round trip.
 
 For a database collection written externally, `READS_DB` expresses the same
-reader interest without an application owner.
-(not in the code yet — HIL-1615)
+reader interest without an application owner; the change-log agent uses that
+declaration for the five trigger-written journal collections.
 
 The rule is sufficient and not complete, and says so rather than promise
 otherwise. A co-owner that may add rows as well holds no copy of the rows the

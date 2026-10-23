@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Database\ChangeLog;
 
+use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Core\TruthSource\TruthSourceOperations;
+use Hilos\Core\TruthSource\TruthSourceOwner;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
@@ -13,14 +17,24 @@ use Hilos\Utils\Logger;
  * Creates a receipt around a synchronous write and restores the previous connection attribution
  * ({@see run()}), joins agent frames, and retains one attempt across local parts until finish().
  */
-final class JournalReceiptScope
+final class JournalReceiptScope implements TruthSourceOwner
 {
+    public const array OWNS_DB = [
+        HilosDbContext::changeLogReceipts => [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove],
+    ];
+
     private const string FRAME_ID = 'id';
 
     private const string FRAME_HANDOVERS = 'handovers';
 
     /** @var list<array{id: int, handovers: int}> Active receipt scopes, outermost first */
     private static array $ids = [];
+
+    /** @return TruthSourceOperations Receipt creation, handover updates and empty-receipt removal */
+    public static function defaultTruthSourceOperations(): TruthSourceOperations
+    {
+        return TruthSourceOperations::of(TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove);
+    }
 
     /** @return ?int Receipt assigned to a new primary connection */
     public static function currentId(): ?int

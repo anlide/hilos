@@ -175,6 +175,8 @@ use Hilos\Mail\Delivery\MailDeliveryChannel;
 use Hilos\Notification\Delivery\DeliveryChannelSettings;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\HilosException;
+use Hilos\Database\ChangeLog\ChangeLogDatabase;
+use Hilos\Database\Database;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
 use Hilos\Database\Schema\MountedCollectionKeyGuard;
 use Demo\Polls\Pages\Hilos\I18nPage;
@@ -190,6 +192,7 @@ use Hilos\I18n\Browser\CountryCardBrowserData;
 use Hilos\I18n\Browser\LanguageCardBrowserData;
 use Hilos\I18n\Library\I18nLibraryAgentDaemon;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 use Demo\Polls\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\Polls\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
 use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
@@ -1550,13 +1553,23 @@ final class PollsTopologyRegistryTest extends TestCase
         // today, so every key passes as the framework's own; the day one is, this names the
         // refusal in seconds instead of a stand that did not come up.
         $previous = Hilos::$db;
+        $databaseMetadata = [];
+        foreach (['configurations', 'databaseBindings'] as $property) {
+            $databaseMetadata[$property] = new ReflectionProperty(Database::class, $property)->getValue();
+        }
         try {
+            // The mounted journal chains need physical schema identities; configuration alone opens no connection.
+            Database::configure(database: 'topology_unit');
+            Database::configure(index: 1, database: ChangeLogDatabase::configuredName());
             Hilos::$db = new PollsDbContext();
             Hilos::$db->configure();
             FrameworkExtensionGuard::assertMountedExtensionsWhole();
             MountedCollectionKeyGuard::assertMountedKeysAgree();
         } finally {
             Hilos::$db = $previous;
+            foreach ($databaseMetadata as $property => $value) {
+                new ReflectionProperty(Database::class, $property)->setValue(null, $value);
+            }
         }
 
         $this->addToAssertionCount(1);

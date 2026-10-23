@@ -22,7 +22,6 @@ use Hilos\Database\Migration\FrameworkMigrationStartupGuard;
 use Hilos\Database\Migration\FrameworkSchemaCatalog;
 use Hilos\Database\Migration\FrameworkSchemaUnit;
 use Hilos\Database\MigrationClaim;
-use Hilos\Database\Schema\ChangeLogTablesWithoutEntity;
 use Hilos\Database\Schema\EntitySchemaAudit;
 use Hilos\Database\Schema\EntitySchemaMismatch;
 use Hilos\Hilos;
@@ -298,18 +297,15 @@ final class FrameworkMigrationBaselineIntegrationTest extends FrameworkIntegrati
             $live = EntitySchemaAudit::liveTables($index);
             sort($live);
             $this->assertSame($tables, $live, 'Exact tables on connection ' . $index);
-            // On this code base every framework Entity belongs to PRIMARY. Journal tables have no Entity;
-            // do not let an equal table name on another physical database claim one of them.
-            $entities = $index === DatabaseConnectionDefaults::PRIMARY_INDEX
-                ? array_values(array_filter(EntitySchemaAudit::frameworkEntities(), static fn (string $entity): bool =>
-                    in_array(constant($entity . '::' . Entity::META_TABLE), $tables, true)))
-                : [];
+            $entities = array_values(array_filter(EntitySchemaAudit::frameworkEntities(), static fn (string $entity): bool =>
+                $entity::getDatabase()->schemaIndex === $index && in_array($entity::_table, $tables, true)));
             if ($index === DatabaseConnectionDefaults::PRIMARY_INDEX) {
                 $this->assertNotEmpty($entities);
+            } else {
+                $this->assertCount($tables === [] ? 0 : 6, $entities);
             }
             $this->assertNoMismatches(EntitySchemaAudit::audit($entities, $index));
-            $this->assertNoMismatches(EntitySchemaAudit::auditTableCoverage($entities,
-                $index === ChangeLogDatabase::CONNECTION_INDEX ? ChangeLogTablesWithoutEntity::tables() : [], $index));
+            $this->assertNoMismatches(EntitySchemaAudit::auditTableCoverage($entities, [], $index));
         }
         $this->assertSame(DatabaseConnectionDefaults::PRIMARY_INDEX, Database::getCurrentIndex());
     }

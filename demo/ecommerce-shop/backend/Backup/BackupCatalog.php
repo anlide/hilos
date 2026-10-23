@@ -7,8 +7,6 @@ namespace Demo\EcommerceShop\Backup;
 use Hilos\Backup\BackupConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Entity\Item\Entity;
-use Hilos\Database\ChangeLog\ChangeLogDatabase;
-use Hilos\Database\Schema\ChangeLogTablesWithoutEntity;
 
 /**
  * BackupCatalog - this demo's backup catalog.
@@ -25,8 +23,7 @@ use Hilos\Database\Schema\ChangeLogTablesWithoutEntity;
  * empty list - schema-seed then captures the schema alone.
  *
  * What a restore into a lesser environment must rewrite is declared on each table's own
- * Entity ({@see Entity::META_PII} and {@see Entity::META_PII_NOT_PERSONAL}). The six journal
- * tables have no Entity; {@see ChangeLogTablesWithoutEntity} classifies them on connection 1.
+ * Entity ({@see Entity::META_PII} and {@see Entity::META_PII_NOT_PERSONAL}).
  */
 final class BackupCatalog implements CatalogProviderInterface
 {
@@ -38,9 +35,6 @@ final class BackupCatalog implements CatalogProviderInterface
         return [
             BackupConstants::CATALOG_REFERENCES => [
                 0 => [],
-            ],
-            BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => [
-                ChangeLogDatabase::CONNECTION_INDEX => ChangeLogTablesWithoutEntity::class,
             ],
         ];
     }

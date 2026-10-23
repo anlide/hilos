@@ -13,6 +13,9 @@ use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\ChangeLog\JournalReceiptScope;
+use Hilos\Core\Agent\Hilos\AbstractHilosChangeLogAgent;
 use PHPUnit\Framework\TestCase;
 use TypeError;
 
@@ -21,6 +24,33 @@ use TypeError;
  */
 final class DeclaredDbOwnershipTest extends TestCase
 {
+    public function testJournalDeclaresExactFrameworkAndAgentOperations(): void
+    {
+        $framework = OwnershipDeclaration::dbCollectionsOf(JournalReceiptScope::class);
+        self::assertSame([HilosDbContext::changeLogReceipts], array_keys($framework));
+        $operations = [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove];
+        self::assertSame($operations, $framework[HilosDbContext::changeLogReceipts]->asList());
+        self::assertSame($operations, JournalReceiptScope::defaultTruthSourceOperations()->asList());
+        $agent = OwnershipDeclaration::dbCollectionsOf(AbstractHilosChangeLogAgent::class);
+        self::assertSame([HilosDbContext::changeLogReceipts], array_keys($agent));
+        self::assertSame([TruthSourceOperation::Update], $agent[HilosDbContext::changeLogReceipts]->asList());
+        self::assertFalse($agent[HilosDbContext::changeLogReceipts]->allows(TruthSourceOperation::Add));
+        self::assertFalse($agent[HilosDbContext::changeLogReceipts]->allows(TruthSourceOperation::Remove));
+        self::assertSame([
+            HilosDbContext::changeLogTables,
+            HilosDbContext::changeLogFields,
+            HilosDbContext::changeLogEntries,
+            HilosDbContext::changeLogChanges,
+            HilosDbContext::changeLogValues,
+        ], AbstractHilosChangeLogAgent::READS_DB);
+        self::assertSame([], AbstractAgent::READS_DB);
+        self::assertArrayNotHasKey(HilosDbContext::changeLogReceipts,
+            OwnershipDeclaration::dbCollectionsOf(DeclaredDbOwnershipTestAgent::class));
+        foreach ([HilosDbContext::changeLogReceipts, ...AbstractHilosChangeLogAgent::READS_DB] as $key) {
+            self::assertFalse(SourceInterestRegistry::hasConsumers(SourceChange::KIND_DB, $key));
+        }
+    }
+
     public function tearDown(): void
     {
         ExecutionContext::setCurrentAgentId(null);

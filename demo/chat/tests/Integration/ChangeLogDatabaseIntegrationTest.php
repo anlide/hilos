@@ -15,6 +15,17 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\DatabaseConnectionException;
+use Hilos\Database\Entity\Item\ChangeLogTable;
+use Hilos\Database\Entity\Item\ChangeLogField;
+use Hilos\Database\Entity\Item\ChangeLogReceipt;
+use Hilos\Database\Entity\Item\ChangeLogEntry;
+use Hilos\Database\Entity\Item\ChangeLogChange;
+use Hilos\Database\Entity\Item\ChangeLogValue;
+use Hilos\Database\Schema\EntityDatabaseStartupGuard;
+use Hilos\Database\Schema\EntitySchemaAudit;
+use Hilos\Database\Schema\EntitySchemaMismatch;
+use Hilos\Database\Schema\Schema;
+use Demo\Chat\Hilos;
 
 /**
  * The chat migration and startup contract against both live test databases.
@@ -155,6 +166,66 @@ final class ChangeLogDatabaseIntegrationTest extends IntegrationTestCase
         ChangeLogPartitions::ensure($month);
         ChangeLogPartitions::ensure($month);
         $this->assertSame($before, self::partitionNames());
+    }
+
+    /** The real partitioned tables and both dictionaries match all six mounted declarations. */
+    public function testMountedJournalEntitiesMatchTheirRealSchema(): void
+    {
+        ChangeLogPartitions::ensure(new DateTimeImmutable('first day of this month', new DateTimeZone('UTC')));
+        $entities = [
+            ChangeLogTable::class, ChangeLogField::class, ChangeLogReceipt::class,
+            ChangeLogEntry::class, ChangeLogChange::class, ChangeLogValue::class,
+        ];
+        $mounted = Hilos::$db->getMountedEntities();
+        foreach ($entities as $entity) {
+            $this->assertContains($entity, $mounted);
+            $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, $entity::getDatabase()->schemaIndex);
+        }
+        $this->assertSame([], EntitySchemaAudit::audit($entities, ChangeLogDatabase::CONNECTION_INDEX));
+        EntityDatabaseStartupGuard::assertMountedSchemasMatch();
+    }
+
+    /** A matching primary decoy cannot hide type, nullability or missing-column drift in the journal. */
+    public function testJournalSchemaMismatchRefusesAndFixtureIsRestored(): void
+    {
+        $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
+        Database::sql("CREATE TABLE `hilos_change_log_receipt` LIKE {$journal}.`hilos_change_log_receipt`");
+        try {
+            foreach ([
+                "MODIFY `open_handovers` VARCHAR(20) NOT NULL DEFAULT '0'",
+                'MODIFY `open_handovers` INT NULL DEFAULT 0',
+                'CHANGE `open_handovers` `fixture_handovers` INT NOT NULL DEFAULT 0',
+            ] as $alter) {
+                Database::sql("ALTER TABLE {$journal}.`hilos_change_log_receipt` {$alter}");
+                try {
+                    Schema::reset(ChangeLogDatabase::CONNECTION_INDEX);
+                    $mismatches = EntitySchemaAudit::audit([ChangeLogReceipt::class], ChangeLogDatabase::CONNECTION_INDEX);
+                    $this->assertNotEmpty($mismatches, $alter);
+                    $this->assertContains('open_handovers', array_map(
+                        static fn (EntitySchemaMismatch $mismatch): ?string => $mismatch->subject,
+                        $mismatches,
+                    ));
+                    try {
+                        EntityDatabaseStartupGuard::assertMountedSchemasMatch();
+                        $this->fail('Journal drift must refuse startup despite the matching primary table');
+                    } catch (DatabaseException $refusal) {
+                        $this->assertStringContainsString('schema connection 1, table hilos_change_log_receipt', $refusal->getMessage());
+                        $this->assertStringContainsString('open_handovers', $refusal->getMessage());
+                    }
+                } finally {
+                    $restore = str_starts_with($alter, 'CHANGE')
+                        ? 'CHANGE `fixture_handovers` `open_handovers` INT NOT NULL DEFAULT 0'
+                        : 'MODIFY `open_handovers` INT NOT NULL DEFAULT 0';
+                    Database::sql("ALTER TABLE {$journal}.`hilos_change_log_receipt` {$restore}");
+                    Schema::reset(ChangeLogDatabase::CONNECTION_INDEX);
+                }
+                $this->assertSame([], EntitySchemaAudit::audit([ChangeLogReceipt::class], ChangeLogDatabase::CONNECTION_INDEX));
+            }
+        } finally {
+            Database::sql('DROP TABLE `hilos_change_log_receipt`');
+            Schema::reset(ChangeLogDatabase::CONNECTION_INDEX);
+        }
+        EntityDatabaseStartupGuard::assertMountedSchemasMatch();
     }
 
     /**

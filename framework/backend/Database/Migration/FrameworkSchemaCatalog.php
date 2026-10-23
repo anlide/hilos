@@ -13,7 +13,12 @@ use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DatabaseMarker;
 use Hilos\Database\MigrationClaim;
-use Hilos\Database\Schema\ChangeLogTablesWithoutEntity;
+use Hilos\Database\Entity\Item\ChangeLogTable;
+use Hilos\Database\Entity\Item\ChangeLogField;
+use Hilos\Database\Entity\Item\ChangeLogReceipt;
+use Hilos\Database\Entity\Item\ChangeLogEntry;
+use Hilos\Database\Entity\Item\ChangeLogChange;
+use Hilos\Database\Entity\Item\ChangeLogValue;
 use Hilos\Database\Schema\FrameworkTablesWithoutEntity;
 use Hilos\Hilos;
 
@@ -21,6 +26,16 @@ use Hilos\Hilos;
 class FrameworkSchemaCatalog
 {
     public const string CHANGE_LOG = 'change_log';
+
+    /** @var list<string> Tables of the aggregate journal schema unit, in creation order */
+    public const array CHANGE_LOG_TABLES = [
+        ChangeLogTable::_table,
+        ChangeLogField::_table,
+        ChangeLogReceipt::_table,
+        ChangeLogEntry::_table,
+        ChangeLogChange::_table,
+        ChangeLogValue::_table,
+    ];
 
     private const string USER = 'user';
     private const string SESSION = 'session';
@@ -191,7 +206,7 @@ class FrameworkSchemaCatalog
             ),
             new FrameworkSchemaUnit(
                 self::CHANGE_LOG,
-                ChangeLogTablesWithoutEntity::tables(),
+                self::CHANGE_LOG_TABLES,
                 __DIR__ . '/Stub/create_hilos_change_log.sql',
                 __DIR__ . '/Stub/create_hilos_change_log_down.sql',
                 connection: ChangeLogDatabase::CONNECTION_INDEX,

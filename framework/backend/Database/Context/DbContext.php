@@ -21,6 +21,7 @@ use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Exception\InvalidMountedCollectionException;
 use Hilos\Database\Exception\OrmForgetRefusedException;
 use Hilos\Database\Exception\UnknownLazyStrategyException;
+use Hilos\Database\Exception\UnboundedCollectionReadException;
 use Hilos\Database\Exception\View\CloneNotAllowedException;
 use Hilos\Database\Exception\View\CollectionNotFoundException;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
@@ -217,6 +218,7 @@ abstract class DbContext
      * @param int $strategy Loading strategy for the object collection
      * @throws InvalidMountedCollectionException When the declared key is empty or already mounted
      * @throws UnknownLazyStrategyException When the loading strategy is unknown
+     * @throws UnboundedCollectionReadException When a cacheless collection is mounted with a whole-table strategy
      */
     protected function mountObjectCollection(string $collectionClass, int $strategy): void
     {

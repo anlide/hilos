@@ -13,6 +13,15 @@ use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Entity\Item\ChangeLogTable;
+use Hilos\Database\Entity\Item\ChangeLogField;
+use Hilos\Database\Entity\Item\ChangeLogReceipt;
+use Hilos\Database\Entity\Item\ChangeLogEntry;
+use Hilos\Database\Entity\Item\ChangeLogChange;
+use Hilos\Database\Entity\Item\ChangeLogValue;
+use Hilos\Core\Feature\HilosFeature;
+use Hilos\Database\Migration\FrameworkSchemaCatalog;
+use ReflectionProperty;
 use Hilos\Database\Entity\Item\Identity;
 use Hilos\Database\Entity\Item\Session;
 use Hilos\Database\Schema\TablesWithoutEntityProvider;
@@ -57,6 +66,94 @@ final class PiiRegistryTest extends TestCase
         Hilos::resetBrowser();
 
         parent::tearDown();
+    }
+
+    public function testJournalMountIsTheOnlySourceOfItsOriginalVerdictsOnSchemaOne(): void
+    {
+        $previous = [];
+        foreach (['configurations', 'databaseBindings'] as $property) {
+            $previous[$property] = new ReflectionProperty(Database::class, $property)->getValue();
+        }
+        try {
+            Database::configure(database: 'journal_pii_unit');
+            Database::configure(index: 1, database: ChangeLogDatabase::configuredName());
+            JournalPiiHilos::initBrowser();
+            Hilos::$db = new FrameworkPiiTestDbContext();
+            Hilos::$db->configure();
+            $registry = PiiRegistry::collect();
+            foreach (self::journalVerdicts() as [$entityClass, $personal, $notPersonal]) {
+                self::assertSame($personal, $registry->strategiesFor(1, $entityClass::_table));
+                self::assertSame($notPersonal, $registry->notPersonalColumns(1, $entityClass::_table));
+                self::assertContains($entityClass::_table, $registry->declaredTables(1));
+                self::assertNotContains($entityClass::_table, $registry->declaredTables(0));
+                self::assertSame(1, $entityClass::getDatabase()->schemaIndex);
+                self::assertSame(0, $entityClass::getDatabase()->connectionIndex);
+            }
+            self::assertCount(6, array_intersect(FrameworkSchemaCatalog::CHANGE_LOG_TABLES, $registry->declaredTables(1)));
+            self::assertFalse(Database::isConnected(0));
+            self::assertFalse(Database::isConnected(1));
+        } finally {
+            foreach ($previous as $property => $value) {
+                new ReflectionProperty(Database::class, $property)->setValue(null, $value);
+            }
+        }
+    }
+
+    /** @return iterable<string, array{class-string<Entity>, array<string, AnonymizationStrategy>, list<string>}> Original journal verdicts */
+    public static function journalVerdicts(): iterable
+    {
+        yield 'Table' => [ChangeLogTable::class, [], [
+            'id',
+            'name',
+        ]];
+        yield 'Field' => [ChangeLogField::class, [], [
+            'id',
+            'table_id',
+            'name',
+        ]];
+        yield 'Receipt' => [ChangeLogReceipt::class, [
+            'actor_user_id' => AnonymizationStrategy::NULLIFY,
+            'subject_user_id' => AnonymizationStrategy::NULLIFY,
+            'session_id' => AnonymizationStrategy::NULLIFY,
+            'agent' => AnonymizationStrategy::MASK,
+            'source' => AnonymizationStrategy::MASK,
+        ], [
+            'id',
+            'created_at',
+            'channel',
+            'action',
+            'open_handovers',
+        ]];
+        yield 'Entry' => [ChangeLogEntry::class, [
+            'record_key' => AnonymizationStrategy::MASK,
+            'record_key_hash' => AnonymizationStrategy::NULLIFY,
+        ], [
+            'id',
+            'created_at',
+            'receipt_id',
+            'table_id',
+            'mutation_type',
+        ]];
+        yield 'Change' => [ChangeLogChange::class, [
+            'old_value' => AnonymizationStrategy::MASK,
+            'new_value' => AnonymizationStrategy::MASK,
+        ], [
+            'id',
+            'created_at',
+            'log_id',
+            'field_id',
+            'kind',
+            'old_present',
+            'new_present',
+        ]];
+        yield 'Value' => [ChangeLogValue::class, [
+            'old_value' => AnonymizationStrategy::MASK,
+            'new_value' => AnonymizationStrategy::MASK,
+        ], [
+            'id',
+            'created_at',
+            'change_id',
+        ]];
     }
 
     public function testTheFrameworkCollectsAWellFormedRegistryOfItsOwn(): void
@@ -712,4 +809,16 @@ final class NamedRemotePiiObject extends Object_
 final class NamedRemotePiiRows extends Objects
 {
     public const string OBJECT_CLASS = NamedRemotePiiObject::class;
+}
+
+/** Activates journal mounts without a tables-without-Entity provider. */
+final class JournalPiiHilos extends Hilos
+{
+    protected const array FEATURES = [HilosFeature::CHANGE_LOG];
+
+    /** @return HilosDbContext The real framework mounts */
+    protected static function createDb(): HilosDbContext
+    {
+        return new FrameworkPiiTestDbContext();
+    }
 }

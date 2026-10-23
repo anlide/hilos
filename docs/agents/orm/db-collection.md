@@ -94,15 +94,29 @@ get generic journal trigger installation. See the
 [transaction rule](transactions.md) for the named callback API, hook indexing,
 and rollback details.
 
-A collection written by triggers has no application writer; its readers declare
-ordinary interest and ORM writes refuse, as described in
+A DB collection written by triggers has no application writer. Its mounted Entity
+declares `_externalWriter = true`; direct ORM writes and database truth-source
+registration or claims refuse with `ExternalWriterException`, before SQL or registry
+and collection-membership changes. Readers declare ordinary interest, which is not
+permission to write. This DB declaration does not change RT ownership. See
 [A Collection Written Outside The Application](../architecture/truth-source.md#a-collection-written-outside-the-application).
-(not in the code yet — HIL-1615)
-Read journal collections through bounded queries, without loading the whole
-journal or trusting a row cache to contain inserts the ORM never announced.
-(not in the code yet — HIL-1615)
-Trigger inserts produce no ORM sync frames; reader interest alone does not make
-such a cache current.
+
+The six journal Object collections are mounted only under `CHANGE_LOG`, with
+`Objects::LAZY_STRATEGY_KEY`. `Objects::CACHE_ROWS` defaults to `true`, independently
+of the lazy strategy; all six journal Object collections set it to `false`. A new
+bounded key or page read queries the database and returns a fresh snapshot. A snapshot
+already handed to a caller does not refresh. The Object collection retains no positive
+key result, negative miss or completeness flag between reads. Bounded page results
+become their View wrappers directly, without a SELECT per row. `count()` and bounded
+count queries use SQL counts without hydrating rows. A manually selected bounded
+result can be walked.
+
+Whole-set reads, preloads, collection walks and serialization, an unbounded page query,
+and Object collection loaders whose matching rows are not capped, including
+`loadByColumn()`, refuse with `UnboundedCollectionReadException`. These collections do
+not use DB forget/rehydrate, TTLs, or RT copies for freshness; freshness comes from the
+next bounded read. Trigger inserts produce no ORM sync frames, and reader interest
+alone does not make a row cache current.
 
 ## Finding Existing Logic
 

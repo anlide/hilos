@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database;
 
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
@@ -41,6 +42,7 @@ final class DbSyncApplicator
      *
      * A row created on THIS node is taken as it always was. The two are not the same question:
      * something in this process just wrote that row, and it is about to be read.
+     * Cacheless stores announce an incoming creation from either node without retaining its row.
      *
      * @param DbSyncCreatedSignalData $data Full created row payload from another process
      * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
@@ -69,7 +71,7 @@ final class DbSyncApplicator
             return;
         }
 
-        if ($originNodeId !== null && !$collection->isAllLoaded()) {
+        if ($collection->cachesRows() && $originNodeId !== null && !$collection->isAllLoaded()) {
             return;
         }
 
@@ -108,7 +110,8 @@ final class DbSyncApplicator
      * targeted query, {@see Object_::announceUnmappedUpdate()}): nothing to apply, so the held
      * object is only told to forget what it derived from that column
      * ({@see Object_::applyDbSyncUnmappedUpdate()}, HIL-1080). A row this process does not hold
-     * is left alone, and not read in to be told.
+     * is left alone, and not read in to be told. A cacheless store announces the fact directly,
+     * including an unmapped update, without fetching a row or changing snapshots already handed out.
      *
      * @param DbSyncUpdatedSignalData $data Diff payload from another process
      * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
@@ -121,21 +124,7 @@ final class DbSyncApplicator
         bool $skipSelfBroadcastCheck = true,
         ?string $originNodeId = null,
     ): void {
-        if ($data->row === []) {
-            self::applyUnmappedUpdate($data, $skipSelfBroadcastCheck);
-
-            return;
-        }
-
-        if (
-            !self::shouldApplyDbSyncRow(
-                $data->collectionKey,
-                $data->idString,
-                $data->row,
-                $data->emitter,
-                $skipSelfBroadcastCheck,
-            )
-        ) {
+        if (!self::shouldApplyDbSync($data->collectionKey, $data->idString, $data->emitter, $skipSelfBroadcastCheck)) {
             return;
         }
 
@@ -144,12 +133,31 @@ final class DbSyncApplicator
             return;
         }
 
+        if (!$collection->cachesRows()) {
+            SourceChangeBus::whileApplyingRemote(static function () use ($collection, $data): void {
+                SourceChangeBus::publish(SourceChange::dbUpdated(
+                    $data->collectionKey,
+                    $data->idString,
+                    $data->row,
+                    $data->origin,
+                    $data->originRequestId,
+                    $data->previous,
+                ), connectionIndex: $collection->getDatabase()?->connectionIndex);
+            });
+
+            return;
+        }
+
         $object = $collection[$data->idString] ?? null;
         if (!$object instanceof Object_) {
             return;
         }
 
-        $object->applyDbSyncEntityUpdate($data->row);
+        if ($data->row === []) {
+            $object->applyDbSyncUnmappedUpdate();
+        } else {
+            $object->applyDbSyncEntityUpdate($data->row);
+        }
     }
 
     /**
@@ -175,6 +183,20 @@ final class DbSyncApplicator
 
         $collection = Hilos::$db->mountedObjectCollection($data->collectionKey);
         if (!$collection instanceof Objects) {
+            return;
+        }
+
+        if (!$collection->cachesRows()) {
+            SourceChangeBus::whileApplyingRemote(static function () use ($collection, $data): void {
+                SourceChangeBus::publish(SourceChange::dbDeleted(
+                    $data->collectionKey,
+                    $data->idString,
+                    $data->row,
+                    $data->origin,
+                    $data->originRequestId,
+                ), connectionIndex: $collection->getDatabase()?->connectionIndex);
+            });
+
             return;
         }
 
@@ -243,29 +265,6 @@ final class DbSyncApplicator
     public static function applyReHydrate(): void
     {
         Hilos::$db?->reHydrateDbBackedCollections();
-    }
-
-    /**
-     * Tells a held object that its row changed outside the ORM-mapped columns.
-     *
-     * @param DbSyncUpdatedSignalData $data Empty-row payload from another process
-     * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
-     */
-    private static function applyUnmappedUpdate(DbSyncUpdatedSignalData $data, bool $skipSelfBroadcastCheck): void
-    {
-        if (!self::shouldApplyDbSync($data->collectionKey, $data->idString, $data->emitter, $skipSelfBroadcastCheck)) {
-            return;
-        }
-
-        $collection = Hilos::$db->mountedObjectCollection($data->collectionKey);
-        if (!$collection instanceof Objects) {
-            return;
-        }
-
-        $object = $collection[$data->idString] ?? null;
-        if ($object instanceof Object_) {
-            $object->applyDbSyncUnmappedUpdate();
-        }
     }
 
     /**

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Integration;
 
+use Hilos\Backup\Anonymization\AnonymizationStrategy;
+use Hilos\Backup\Anonymization\PiiRegistry;
+use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupConnectionMeta;
 use Hilos\Backup\BackupCreator;
 use Hilos\Backup\BackupMetadata;
@@ -45,6 +48,35 @@ final class ChangeLogRestoreIntegrationTest extends IntegrationTestCase
         'hilos_change_log_value',
     ];
 
+    /** Frozen verdicts from Code Base 2c7177fff: ChangeLogTablesWithoutEntity::pii(). */
+    private const array LEGACY_PII = [
+        'hilos_change_log_table' => [],
+        'hilos_change_log_field' => [],
+        'hilos_change_log_receipt' => [
+            'actor_user_id' => AnonymizationStrategy::NULLIFY,
+            'subject_user_id' => AnonymizationStrategy::NULLIFY,
+            'session_id' => AnonymizationStrategy::NULLIFY,
+            'agent' => AnonymizationStrategy::MASK,
+            'source' => AnonymizationStrategy::MASK,
+        ],
+        'hilos_change_log' => [
+            'record_key' => AnonymizationStrategy::MASK,
+            'record_key_hash' => AnonymizationStrategy::NULLIFY,
+        ],
+        'hilos_change_log_change' => ['old_value' => AnonymizationStrategy::MASK, 'new_value' => AnonymizationStrategy::MASK],
+        'hilos_change_log_value' => ['old_value' => AnonymizationStrategy::MASK, 'new_value' => AnonymizationStrategy::MASK],
+    ];
+
+    /** Frozen non-personal columns from the same pre-transfer provider. */
+    private const array LEGACY_NOT_PERSONAL = [
+        'hilos_change_log_table' => ['id', 'name'],
+        'hilos_change_log_field' => ['id', 'table_id', 'name'],
+        'hilos_change_log_receipt' => ['id', 'created_at', 'channel', 'action', 'open_handovers'],
+        'hilos_change_log' => ['id', 'created_at', 'receipt_id', 'table_id', 'mutation_type'],
+        'hilos_change_log_change' => ['id', 'created_at', 'log_id', 'field_id', 'kind', 'old_present', 'new_present'],
+        'hilos_change_log_value' => ['id', 'created_at', 'change_id'],
+    ];
+
     private string $storeRoot = '';
 
     private string|false $previousBackupDir = false;
@@ -68,6 +100,14 @@ final class ChangeLogRestoreIntegrationTest extends IntegrationTestCase
             Database::sql('UPDATE `hilos_user` SET `name` = ? WHERE `id` = ?', ['Archived name', $id]);
             return $id;
         });
+        $this->seedEveryJournalField();
+        $registry = PiiRegistry::collect();
+        foreach (self::LEGACY_PII as $table => $strategies) {
+            $this->assertSame($strategies, $registry->strategiesFor(ChangeLogDatabase::CONNECTION_INDEX, $table), $table);
+            $this->assertSame(self::LEGACY_NOT_PERSONAL[$table], $registry->notPersonalColumns(ChangeLogDatabase::CONNECTION_INDEX, $table));
+            $this->assertNull($registry->strategiesFor(DatabaseConnectionDefaults::PRIMARY_INDEX, $table), $table);
+        }
+        $archivedRows = $this->journalRows();
         new BackupCreator()->create(self::ARCHIVE_ID, BackupScope::FULL);
         $archivedCounts = $this->journalCounts();
         $this->assertGreaterThan(0, $archivedCounts['hilos_change_log']);
@@ -90,6 +130,24 @@ final class ChangeLogRestoreIntegrationTest extends IntegrationTestCase
         Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
 
         $this->assertSame($archivedCounts, $this->journalCounts());
+        $restoredRows = $this->journalRows();
+        foreach ($archivedRows as $table => $rows) {
+            $this->assertNotEmpty($rows, $table . ' must exercise real restore rows');
+            foreach ($rows as $position => $row) {
+                $expected = $row;
+                foreach (self::LEGACY_PII[$table] as $column => $strategy) {
+                    $expected[$column] = $strategy === AnonymizationStrategy::NULLIFY || $row[$column] === null
+                        ? null : BackupConstants::ANONYMIZATION_MASK;
+                }
+                // Full row equality also pins every non-personal field, id and relationship.
+                $this->assertSame($expected, $restoredRows[$table][$position], $table . ' row ' . $row['id']);
+            }
+        }
+        $restoredRegistry = PiiRegistry::collect();
+        foreach (self::LEGACY_PII as $table => $strategies) {
+            $this->assertSame($strategies, $restoredRegistry->strategiesFor(ChangeLogDatabase::CONNECTION_INDEX, $table));
+            $this->assertSame(self::LEGACY_NOT_PERSONAL[$table], $restoredRegistry->notPersonalColumns(ChangeLogDatabase::CONNECTION_INDEX, $table));
+        }
         Database::sql('SELECT `name`, `admin` FROM `hilos_user` WHERE `id` = ?', [$userId]);
         $person = Database::row();
         $this->assertNotNull($person);
@@ -221,6 +279,48 @@ final class ChangeLogRestoreIntegrationTest extends IntegrationTestCase
             $this->removeTree($this->storeRoot);
             parent::tearDown();
         }
+    }
+
+    /** Fixture SQL supplies historical personal values that today's privacy-aware triggers never capture. */
+    private function seedEveryJournalField(): void
+    {
+        $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
+        $at = '2026-10-20 12:34:56.654321';
+        Database::sql("INSERT INTO {$journal}.`hilos_change_log_table` (`name`) VALUES ('restore_fixture')");
+        $tableId = Database::lastInsertId();
+        Database::sql("INSERT INTO {$journal}.`hilos_change_log_field` (`table_id`, `name`) VALUES (?, 'historical_field')", [$tableId]);
+        $fieldId = Database::lastInsertId();
+        Database::sql("INSERT INTO {$journal}.`hilos_change_log_receipt`"
+            . ' (`created_at`, `actor_user_id`, `subject_user_id`, `session_id`, `channel`, `action`, `agent`, `source`, `open_handovers`)'
+            . " VALUES (?, 12, 13, 14, 'web', 'restore.fixture', 'private-agent', 'private-source', 3)", [$at]);
+        $receiptId = Database::lastInsertId();
+        Database::sql("INSERT INTO {$journal}.`hilos_change_log`"
+            . ' (`created_at`, `receipt_id`, `table_id`, `record_key`, `record_key_hash`, `mutation_type`)'
+            . " VALUES (?, ?, ?, 'private-key', ?, 'update')", [$at, $receiptId, $tableId, hash('sha256', 'private-key', true)]);
+        $logId = Database::lastInsertId();
+        foreach (['inline', 'long', 'fact'] as $kind) {
+            Database::sql("INSERT INTO {$journal}.`hilos_change_log_change`"
+                . ' (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`)'
+                . ' VALUES (?, ?, ?, ?, 0, 1, ?, ?)', [$at, $logId, $fieldId, $kind,
+                    $kind === 'fact' ? null : 'private-old', $kind === 'fact' ? null : 'private-new']);
+            if ($kind === 'long') {
+                $changeId = Database::lastInsertId();
+                Database::sql("INSERT INTO {$journal}.`hilos_change_log_value` (`created_at`, `change_id`, `old_value`, `new_value`)"
+                    . ' VALUES (?, ?, ?, ?)', [$at, $changeId, str_repeat('old private ', 1000), str_repeat('new private ', 1000)]);
+            }
+        }
+    }
+
+    /** @return array<string, list<array<string, mixed>>> All journal columns in stable physical identity order */
+    private function journalRows(): array
+    {
+        $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
+        $rows = [];
+        foreach (self::JOURNAL_TABLES as $table) {
+            Database::sql("SELECT * FROM {$journal}.`{$table}` ORDER BY `id`");
+            $rows[$table] = Database::rows();
+        }
+        return $rows;
     }
 
     /** @return array<string, int> Row counts of all six journal tables */

@@ -6,6 +6,13 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Entity\Item\ChangeLogTable;
+use Hilos\Database\Entity\Item\ChangeLogField;
+use Hilos\Database\Entity\Item\ChangeLogReceipt;
+use Hilos\Database\Entity\Item\ChangeLogEntry;
+use Hilos\Database\Entity\Item\ChangeLogChange;
+use Hilos\Database\Entity\Item\ChangeLogValue;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Hilos\Database\Entity\Item\User;
 use Hilos\Database\Schema\EntitySchemaAudit;
 use PHPUnit\Framework\TestCase;
@@ -29,6 +36,76 @@ final class FrameworkEntityPiiVerdictTest extends TestCase
      * framework ships eleven Entities today; it is a floor, not the exact number.
      */
     private const int MIN_FRAMEWORK_ENTITIES = 11;
+
+    /** @return iterable<string, array{class-string<Entity>, array<string, AnonymizationStrategy>, list<string>}> Original journal verdicts */
+    public static function journalVerdicts(): iterable
+    {
+        yield 'Table' => [ChangeLogTable::class, [], [
+            'id',
+            'name',
+        ]];
+        yield 'Field' => [ChangeLogField::class, [], [
+            'id',
+            'table_id',
+            'name',
+        ]];
+        yield 'Receipt' => [ChangeLogReceipt::class, [
+            'actor_user_id' => AnonymizationStrategy::NULLIFY,
+            'subject_user_id' => AnonymizationStrategy::NULLIFY,
+            'session_id' => AnonymizationStrategy::NULLIFY,
+            'agent' => AnonymizationStrategy::MASK,
+            'source' => AnonymizationStrategy::MASK,
+        ], [
+            'id',
+            'created_at',
+            'channel',
+            'action',
+            'open_handovers',
+        ]];
+        yield 'Entry' => [ChangeLogEntry::class, [
+            'record_key' => AnonymizationStrategy::MASK,
+            'record_key_hash' => AnonymizationStrategy::NULLIFY,
+        ], [
+            'id',
+            'created_at',
+            'receipt_id',
+            'table_id',
+            'mutation_type',
+        ]];
+        yield 'Change' => [ChangeLogChange::class, [
+            'old_value' => AnonymizationStrategy::MASK,
+            'new_value' => AnonymizationStrategy::MASK,
+        ], [
+            'id',
+            'created_at',
+            'log_id',
+            'field_id',
+            'kind',
+            'old_present',
+            'new_present',
+        ]];
+        yield 'Value' => [ChangeLogValue::class, [
+            'old_value' => AnonymizationStrategy::MASK,
+            'new_value' => AnonymizationStrategy::MASK,
+        ], [
+            'id',
+            'created_at',
+            'change_id',
+        ]];
+    }
+
+    /**
+     * @param class-string<Entity> $entityClass Journal Entity discovered by the ordinary scan
+     * @param array<string, AnonymizationStrategy> $personal Original per-column strategies
+     * @param list<string> $notPersonal Original reviewed columns
+     */
+    #[DataProvider('journalVerdicts')]
+    public function testJournalEntitiesKeepTheExactOriginalVerdicts(string $entityClass, array $personal, array $notPersonal): void
+    {
+        self::assertContains($entityClass, EntitySchemaAudit::frameworkEntities());
+        self::assertSame($personal, $entityClass::_pii);
+        self::assertSame($notPersonal, $entityClass::_piiNotPersonal);
+    }
 
     public function testEveryFrameworkEntityCarriesAVerdict(): void
     {
