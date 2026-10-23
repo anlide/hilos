@@ -55,12 +55,12 @@ it follows a catalog key while `overrideValue` starts at `null`, using
 the separation of place and value and the standard session. Its `setting_add`
 is idempotent; that property does not extend to other creations.
 
-These windows still need to adopt creation in a known place; each implementing
-leaf removes its own marker in the commit that lands the behavior:
+These windows use, or still need to adopt, creation in a known place; each
+implementing leaf removes its own marker in the commit that lands the behavior:
 
 - `createHilosI18nLanguageNameWindow` (not in the code yet — HIL-1641)
 - `createHilosI18nCountryNameWindow` (not in the code yet — HIL-1642)
-- `createHilosI18nLocaleAdd` (not in the code yet — HIL-1643)
+- `createHilosI18nLocaleAdd`
 
 ## The modal owns the edit session
 
@@ -170,6 +170,12 @@ of an edit window is written once, not once per window.
   accepted automatically or through **Keep mine** / **Take theirs**, so a second
   change compares against that, not against what the modal opened with. The
   window supplies projections; the view does not assemble its own merge.
+  The optional `creating(live)` projection, false by default, reports whether
+  the known place still has no record independently of those field values.
+  On the first occupation, the session marks visible fields whose merged
+  values match incoming as updated once, including unchanged prefills. It
+  consumes that acceptance before applying the ordinary settle step; later
+  changes use the advanced baseline and do not repeat the occupation mark.
 - **The notice** is one line by precedence deleted › conflict › updated. The
   window gives the conflict's words (`notice.conflict`) and may give its own
   for deleted and updated; the defaults are `HILOS_ROW_EDIT_COPY`. "Updated
@@ -188,13 +194,15 @@ of an edit window is written once, not once per window.
   another tab does not become editable. The Save button and the form's submit
   — Enter — read the same verdict; deletion makes the button read "Deleted".
   The lock of the admin view mode stays in the markup (`ConflictActions`); the
-  server refuses a viewer's send on its own. Use the existing session and
-  window projections; this rule adds no API.
+  server refuses a viewer's send on its own. `saveAvailable` includes a valid
+  still-empty place through `creating(live)`; `canSave` also excludes a save
+  in flight. The window supplies this projection to the existing session.
 - **One door of the send.** `save(send)` refuses when the verdict says so,
   closes a draft unchanged from an already saved value without a round-trip,
   and otherwise sends, is saving until the outcome, and closes on success —
   the reply of the tracked action for a window over a table. A valid creation
-  in an empty place is not that unchanged-edit shortcut.
+  in an empty place, as reported by `creating(live)`, is excluded from that
+  unchanged-edit shortcut and sends even when the draft equals the baseline.
   `saveLanded(send, refusal)` is the same door for a window whose project answers
   over the row and not over the action's reply (the person's name): saving until
   the live fields read as the draft sent — Take theirs in the meantime rewrites

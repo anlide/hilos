@@ -15,7 +15,10 @@ import {
   hilosI18nLocaleSwitchOff,
   hilosI18nLocaleWindowMode,
 } from '../../../src/admin/i18n/hilosI18nLocaleWindow.js'
-import { type HilosI18nLocaleRow } from '../../../src/admin/i18n/hilosI18nLocales.js'
+import {
+  type HilosI18nLocaleFormats,
+  type HilosI18nLocaleRow,
+} from '../../../src/admin/i18n/hilosI18nLocales.js'
 import {
   type HilosI18nLanguageCard,
   type HilosI18nLanguageContext,
@@ -51,8 +54,8 @@ const templates = {
 
 function row(
   rowKey: string,
-  formatsOfRow: typeof formats | null,
-  catalogFormats: typeof formats | null,
+  formatsOfRow: HilosI18nLocaleFormats | null,
+  catalogFormats: HilosI18nLocaleFormats | null,
 ): HilosI18nLocaleRow {
   return {
     languageId: 11,
@@ -329,6 +332,7 @@ describe('locale window core', () => {
     const own = row('en-AD', null, null)
     const { controller, focused, context, sent } = setup([known, own])
     const add = createHilosI18nLocaleAdd(controller, context)
+    add.start()
     expect(add.open('11:101')).toBe(true)
     expect(add.form.get()).toEqual(formats)
     expect(add.canAdd.get()).toBe(true)
@@ -340,9 +344,10 @@ describe('locale window core', () => {
         }),
     )
     focused.set({ ...known, localeId: 11101, localeCode: 'en-GB', formats })
-    expect(add.elsewhere.get()).toBe(false)
+    expect(add.noticeKind.get()).toBe(null)
+    expect(add.opened.get()).toBe(true)
     expect(add.canAdd.get()).toBe(false)
-    expect(add.addAvailable.get()).toBe(true)
+    expect(add.addAvailable.get()).toBe(false)
     finish(true)
     await running
     expect(sent).toEqual([
@@ -364,7 +369,8 @@ describe('locale window core', () => {
     }
     expect(add.canAdd.get()).toBe(true)
     focused.set({ ...own, localeId: 11142, localeCode: 'en-AD', formats })
-    expect(add.elsewhere.get()).toBe(true)
+    expect(add.noticeKind.get()).toBe('updated')
+    expect(add.saveLabel.get()).toBe('Save')
     expect(add.canAdd.get()).toBe(false)
     expect(add.addAvailable.get()).toBe(false)
     add.dispose()
@@ -374,6 +380,7 @@ describe('locale window core', () => {
     const known = row('en-GB', null, formats)
     const { controller, focused, context, sent } = setup([known])
     const add = createHilosI18nLocaleAdd(controller, context)
+    add.start()
     expect(add.addAvailable.get()).toBe(false)
     expect(add.open('11:101')).toBe(true)
     expect(add.addAvailable.get()).toBe(true)
@@ -403,6 +410,273 @@ describe('locale window core', () => {
     expect(add.saving.get()).toBe(false)
     expect(add.opened.get()).toBe(true)
     expect(add.canAdd.get()).toBe(false)
+    add.dispose()
+  })
+
+  it('keeps the shown prefill until occupation and accepts an identical record once', async () => {
+    const known = row('en-GB', null, formats)
+    const { controller, focused, context, sent } = setup([known])
+    const add = createHilosI18nLocaleAdd(controller, context)
+    add.start()
+    add.start()
+    add.open(known.rowKey)
+    expect(add.state.get().dirty).toBe(false)
+    expect(add.saveLabel.get()).toBe('Add')
+    focused.set({
+      ...known,
+      catalogFormats: { ...formats, date: 'MM/DD/YYYY' },
+    })
+    expect(add.form.get()).toEqual(formats)
+    expect(add.noticeKind.get()).toBe(null)
+    focused.set(row('en-GB', formats, formats))
+    expect(add.gone.get()).toBe(false)
+    expect(add.form.get()).toEqual(formats)
+    expect(add.noticeText.get()).toBe('Updated just now')
+    expect(add.saveLabel.get()).toBe('Save')
+    expect(add.canAdd.get()).toBe(false)
+    add.setField('date', 'YYYY-MM-DD')
+    expect(add.canAdd.get()).toBe(true)
+    await add.add(async () => true)
+    expect(sent).toEqual([
+      [
+        HILOS_I18N_LOCALE_UPDATE_ACTION,
+        {
+          languageId: 11,
+          countryId: 101,
+          localeId: 11101,
+          formats: { ...formats, date: 'YYYY-MM-DD' },
+        },
+      ],
+    ])
+    expect(add.opened.get()).toBe(false)
+    expect(focused.get()).toBeUndefined()
+    add.dispose()
+  })
+
+  it('starts unknown pairs with seven empty fields and merges independent and matching choices', () => {
+    const missing = row('en-AD', null, null)
+    const { controller, focused, context } = setup([missing])
+    const add = createHilosI18nLocaleAdd(controller, context)
+    add.start()
+    add.open(missing.rowKey)
+    expect(Object.values(add.form.get())).toEqual(['', '', '', '', '', '', ''])
+    expect(add.gone.get()).toBe(false)
+    add.setField('date', 'YYYY-MM-DD')
+    focused.set(row('en-AD', { ...formats, date: 'YYYY-MM-DD' }, null))
+    expect(add.form.get()).toEqual({ ...formats, date: 'YYYY-MM-DD' })
+    expect(add.state.get().conflict).toBe(false)
+    expect(add.noticeKind.get()).toBe('updated')
+    expect(add.canAdd.get()).toBe(false)
+    add.dispose()
+  })
+
+  it.each(['mine', 'theirs'] as const)(
+    'advances the baseline after taking %s and merges later incoming',
+    async (choice) => {
+      const missing = row('en-GB', null, formats)
+      const { controller, focused, context, sent } = setup([missing])
+      const add = createHilosI18nLocaleAdd(controller, context)
+      add.start()
+      add.open(missing.rowKey)
+      add.setField('date', 'YYYY-MM-DD')
+      add.setField('phone', '+1 XXX XXX XXXX')
+      const incoming = row(
+        'en-GB',
+        { ...formats, date: 'DD.MM.YYYY', measurement: 'imperial' },
+        formats,
+      )
+      focused.set(incoming)
+      expect(add.form.get()).toEqual({
+        ...formats,
+        date: 'YYYY-MM-DD',
+        phone: '+1 XXX XXX XXXX',
+        measurement: 'imperial',
+      })
+      expect(add.state.get().conflict).toBe(true)
+      expect(add.noticeText.get()).toContain(
+        'Date changed elsewhere to "DD.MM.YYYY"',
+      )
+      expect(add.canAdd.get()).toBe(false)
+      await add.add(async () => true)
+      expect(sent).toEqual([])
+      if (choice === 'mine') add.keepMine()
+      else add.takeTheirs()
+      expect(add.state.get().conflict).toBe(false)
+      expect(add.form.get().date).toBe(
+        choice === 'mine' ? 'YYYY-MM-DD' : 'DD.MM.YYYY',
+      )
+      focused.set({
+        ...incoming,
+        formats: { ...incoming.formats!, date: 'MM/DD/YYYY' },
+      })
+      expect(add.state.get().conflict).toBe(choice === 'mine')
+      if (choice === 'mine') add.takeTheirs()
+      expect(add.form.get().date).toBe('MM/DD/YYYY')
+      expect(add.form.get().phone).toBe('+1 XXX XXX XXXX')
+      add.dispose()
+    },
+  )
+
+  it('takes all conflicting incoming choices and leaves nothing to save', () => {
+    const missing = row('en-GB', null, formats)
+    const { controller, focused, context } = setup([missing])
+    const add = createHilosI18nLocaleAdd(controller, context)
+    add.start()
+    add.open(missing.rowKey)
+    add.setField('date', 'YYYY-MM-DD')
+    focused.set(row('en-GB', { ...formats, date: 'DD.MM.YYYY' }, formats))
+    add.takeTheirs()
+    expect(add.form.get().date).toBe('DD.MM.YYYY')
+    expect(add.canAdd.get()).toBe(false)
+    expect(add.state.get().dirty).toBe(false)
+    expect(add.noticeKind.get()).toBe('updated')
+    add.dispose()
+  })
+
+  it('keeps the enabled prohibition live through choices and its own saving', async () => {
+    const missing = row('en-GB', null, formats)
+    const { controller, focused, context, sent } = setup([missing])
+    const add = createHilosI18nLocaleAdd(controller, context)
+    add.start()
+    add.open(missing.rowKey)
+    add.setField('date', 'YYYY-MM-DD')
+    const occupied = row('en-GB', { ...formats, date: 'DD.MM.YYYY' }, formats)
+    focused.set({ ...occupied, enabled: true })
+    expect(add.lockedOn.get()).toBe(true)
+    expect(add.noticeText.get()).toBe('Switched on elsewhere just now.')
+    expect(add.form.get().date).toBe('YYYY-MM-DD')
+    add.keepMine()
+    expect(add.addAvailable.get()).toBe(false)
+    await add.add(async () => true)
+    expect(sent).toEqual([])
+    focused.set(occupied)
+    expect(add.lockedOn.get()).toBe(false)
+    expect(add.canAdd.get()).toBe(true)
+    let finish!: (success: boolean) => void
+    const pending = add.add(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finish = resolve
+        }),
+    )
+    focused.set({ ...occupied, enabled: true })
+    expect(add.addAvailable.get()).toBe(false)
+    expect(add.noticeText.get()).toBe('')
+    finish(false)
+    await pending
+    expect(add.noticeText.get()).toBe('Switched on elsewhere just now.')
+    expect(add.canAdd.get()).toBe(false)
+    add.takeTheirs()
+    expect(add.canAdd.get()).toBe(false)
+    add.dispose()
+  })
+
+  it.each(['row', 'formats', 'id', 'replacement', 'focus'] as const)(
+    'treats %s loss after occupation as gone and preserves the draft',
+    async (loss) => {
+      const missing = row('en-GB', null, formats)
+      const { controller, focused, context, sent } = setup([missing])
+      const add = createHilosI18nLocaleAdd(controller, context)
+      add.start()
+      add.open(missing.rowKey)
+      focused.set(row('en-GB', formats, formats))
+      add.setField('date', 'YYYY-MM-DD')
+      if (loss === 'focus') controller.releaseFocus()
+      else
+        focused.set(
+          loss === 'row'
+            ? undefined
+            : {
+                ...row('en-GB', formats, formats),
+                ...(loss === 'formats'
+                  ? { formats: null }
+                  : { localeId: loss === 'id' ? null : 999 }),
+              },
+        )
+      expect(add.live.get()).toBeUndefined()
+      expect(add.gone.get()).toBe(true)
+      expect(add.saveLabel.get()).toBe('Deleted')
+      expect(add.noticeKind.get()).toBe('deleted')
+      expect(add.form.get().date).toBe('YYYY-MM-DD')
+      await add.add(async () => true)
+      expect(sent).toEqual([])
+      add.close()
+      expect(add.open(missing.rowKey)).toBe(true)
+      expect(add.form.get()).toEqual(formats)
+      expect(add.saveLabel.get()).toBe('Add')
+      add.dispose()
+      expect(focused.get()).toBeUndefined()
+      focused.set(row('en-GB', { ...formats, date: 'MM/DD/YYYY' }, formats))
+      expect(add.form.get()).toEqual(formats)
+    },
+  )
+
+  it.each([true, false])(
+    'merges a racing record before refusal: %s, retaining focus without retry',
+    async (incomingFirst) => {
+      const missing = row('en-GB', null, formats)
+      const { controller, focused, context, sent } = setup([missing])
+      const add = createHilosI18nLocaleAdd(controller, context)
+      add.start()
+      add.open(missing.rowKey)
+      add.setField('date', 'YYYY-MM-DD')
+      let finish!: (success: boolean) => void
+      const pending = add.add(
+        () =>
+          new Promise<boolean>((resolve) => {
+            finish = resolve
+          }),
+      )
+      const incoming = row('en-GB', { ...formats, date: 'DD.MM.YYYY' }, formats)
+      if (incomingFirst) focused.set(incoming)
+      expect(add.opened.get()).toBe(true)
+      expect(add.saving.get()).toBe(true)
+      expect(add.canAdd.get()).toBe(false)
+      expect(add.noticeText.get()).toBe('')
+      await add.add(async () => true)
+      finish(false)
+      await pending
+      if (!incomingFirst) focused.set(incoming)
+      expect(sent).toHaveLength(1)
+      expect(sent[0]?.[0]).toBe(HILOS_I18N_LOCALE_ADD_ACTION)
+      expect(add.opened.get()).toBe(true)
+      expect(focused.get()).toBe(incoming)
+      expect(add.form.get().date).toBe('YYYY-MM-DD')
+      expect(add.state.get().conflict).toBe(true)
+      expect(add.noticeText.get()).toContain('DD.MM.YYYY')
+      expect(add.saveLabel.get()).toBe('Save')
+      add.dispose()
+    },
+  )
+
+  it('rejects occupied or missing openings and ignores a late outcome after dispose and reopen', async () => {
+    const missing = row('en-GB', null, formats)
+    const { controller, context, focused } = setup([
+      missing,
+      row('en', formats, formats),
+    ])
+    const add = createHilosI18nLocaleAdd(controller, context)
+    add.start()
+    expect(add.open('11:null')).toBe(false)
+    expect(add.open('missing')).toBe(false)
+    expect(focused.get()).toBeUndefined()
+    add.open(missing.rowKey)
+    let finish!: (success: boolean) => void
+    const pending = add.add(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finish = resolve
+        }),
+    )
+    expect(add.open(missing.rowKey)).toBe(false)
+    add.dispose()
+    add.start()
+    add.open(missing.rowKey)
+    add.setField('date', 'YYYY-MM-DD')
+    finish(true)
+    await pending
+    expect(add.opened.get()).toBe(true)
+    expect(add.form.get().date).toBe('YYYY-MM-DD')
     add.dispose()
   })
 

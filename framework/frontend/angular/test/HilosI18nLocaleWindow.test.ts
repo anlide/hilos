@@ -76,7 +76,10 @@ function setup(
       context: bench.context,
       controller: locales.controller,
       card: options.card ?? languageCard,
-      templates: localeTemplates,
+      templates: {
+        ...localeTemplates,
+        date: [...localeTemplates.date, 'MM/dd/yyyy'],
+      },
       opened: null,
     },
     [
@@ -214,26 +217,109 @@ describe('HilosI18nLocaleWindow — add', () => {
     },
   )
 
-  it('keeps the draft when the pair gains a locale elsewhere and draws no twins', () => {
+  it('keeps the Add title, merges a new locale and saves a resolved draft by live id', async () => {
     const h = setup()
-    h.open('19:146', 'add')
+    h.open('19:145', 'add')
+    const title = h.el('i18n-locale-title')!.textContent
     h.choose('date', 'yyyy-MM-dd')
     h.act(() =>
       h.delta({
-        ...polandPair,
-        localeId: 19146,
-        localeCode: 'uk-PL',
+        ...moldovaPair,
+        localeId: 19145,
+        localeCode: 'uk-MD',
         enabled: false,
-        formats: catalogFormats,
+        formats: {
+          ...catalogFormats,
+          date: 'MM/dd/yyyy',
+          measurement: 'imperial',
+        },
       }),
     )
-    expect(h.el('i18n-locale-notice')?.textContent).toContain(
-      'Added elsewhere just now.',
-    )
+    expect(h.el('i18n-locale-title')!.textContent).toContain(title!)
+    expect(h.el('conflict-badge')).not.toBeNull()
+    expect(h.el('i18n-locale-notice')!.textContent).toContain('MM/dd/yyyy')
     expect(h.select('date').value).toBe('yyyy-MM-dd')
-    expect(h.button('i18n-locale-submit').disabled).toBe(true)
-    expect(document.querySelector('.hilos-stack.invisible')).toBeNull()
+    expect(h.select('measurement').value).toBe('imperial')
+    expect(h.el('conflict-merge')).toBeNull()
+    h.submit()
+    expect(h.calls).toEqual([])
+    h.click('conflict-accept-mine')
+    expect(h.button('i18n-locale-submit').textContent?.trim()).toBe('Save')
+    h.click('i18n-locale-submit')
+    expect(h.calls[0]).toMatchObject({
+      action: 'hilos_i18n_locale_update',
+      payload: {
+        languageId: 19,
+        countryId: 145,
+        localeId: 19145,
+        formats: {
+          ...catalogFormats,
+          date: 'yyyy-MM-dd',
+          measurement: 'imperial',
+        },
+      },
+    })
+    expect(h.closed()).toBe(0)
+    await h.settle(() => h.succeed())
+    expect(h.closed()).toBe(1)
   })
+  it.each(['untouched', 'matching', 'theirs'] as const)(
+    'accepts %s incoming without leaving a save',
+    (kind) => {
+      const h = setup()
+      h.open('19:145', 'add')
+      if (kind !== 'untouched') h.choose('date', 'yyyy-MM-dd')
+      const incoming = kind === 'matching' ? 'yyyy-MM-dd' : 'MM/dd/yyyy'
+      h.act(() =>
+        h.delta({
+          ...moldovaPair,
+          localeId: 19145,
+          localeCode: 'uk-MD',
+          enabled: false,
+          formats: { ...catalogFormats, date: incoming },
+        }),
+      )
+      if (kind === 'theirs') h.click('conflict-accept-theirs')
+      expect(h.select('date').value).toBe(incoming)
+      expect(h.el('conflict-badge')).toBeNull()
+      expect(h.el('i18n-locale-notice')!.textContent).toContain(
+        'Updated just now',
+      )
+      expect(h.button('i18n-locale-submit').disabled).toBe(true)
+      expect(h.calls).toEqual([])
+    },
+  )
+  it.each([false, true])(
+    'keeps an occupied Add draft readable while enabled and preserves viewer guards (%s)',
+    (viewer) => {
+      const h = setup({ viewer })
+      h.open('19:145', 'add')
+      h.choose('date', 'yyyy-MM-dd')
+      const occupied = {
+        ...moldovaPair,
+        localeId: 19145,
+        localeCode: 'uk-MD',
+        enabled: true,
+        formats: { ...catalogFormats, date: 'MM/dd/yyyy' },
+      }
+      h.act(() => h.delta(occupied))
+      expect(h.el('i18n-locale-notice')!.textContent).toContain(
+        'Switched on elsewhere just now.',
+      )
+      expect(h.el('i18n-locale-plate')!.textContent).toContain('switched on')
+      expect(h.select('date').value).toBe('yyyy-MM-dd')
+      h.click('conflict-accept-mine')
+      h.click('i18n-locale-submit')
+      h.submit()
+      expect(h.calls).toEqual([])
+      h.act(() => h.delta({ ...occupied, enabled: false }))
+      expect(h.button('i18n-locale-submit').disabled).toBe(viewer)
+      if (viewer) {
+        h.submit()
+        expect(h.calls).toEqual([])
+      }
+    },
+  )
 })
 
 describe('HilosI18nLocaleWindow — edit and switch on', () => {

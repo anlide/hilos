@@ -169,6 +169,15 @@ export interface HilosRowEditProjection<R, T extends object, F = T> {
    */
   fields(row: R): T
   /**
+   * Whether the known place still has no record; false by default. This reads
+   * the live carrier row, independently of the draft or opening values. An
+   * unchanged valid form may save while the place is empty. On its first
+   * occupation, visible fields matching incoming are marked updated once.
+   *
+   * @param live The carrier row as it stands now.
+   */
+  creating?(live: R): boolean
+  /**
    * The form the window opens with on a fresh row; on a row hidden from a
    * viewer, an empty form that says so.
    *
@@ -246,9 +255,10 @@ export interface HilosRowEdit<R, T extends object, F = T> {
   /**
    * Whether the form is fit to save, whatever is in flight: the window is
    * open, the row is still there, no conflict stands, the input passes the
-   * window's check, and the draft differs from the live row. The Save button
-   * looks enabled by this; its own save in flight locks it through its
-   * `loading`, not through this verdict.
+   * window's check, and the draft differs from the live row or the known place
+   * is still empty ({@link HilosRowEditProjection.creating}). The Save button
+   * looks enabled by this; its own save in flight locks it through its `loading`,
+   * not through this verdict.
    */
   readonly saveAvailable: ReadonlySignal<boolean>
   /**
@@ -285,10 +295,11 @@ export interface HilosRowEdit<R, T extends object, F = T> {
   /**
    * Save by the reply of an action: nothing leaves while the window is closed,
    * the row is gone, a conflict stands, a save is in flight or the input fails
-   * the window's check; an unchanged draft closes without a round-trip; else
-   * the draft is sent, the window is saving until the reply, and closes on
-   * success. The outcome of a save whose window closed in the meantime moves
-   * nothing.
+   * the window's check; an unchanged draft closes without a round-trip unless
+   * the known place is still empty ({@link HilosRowEditProjection.creating});
+   * else the draft is sent, the window is saving until the reply, and closes
+   * on success. The outcome of a save whose window closed in the meantime
+   * moves nothing.
    *
    * @param send Dispatch the draft and resolve true on success.
    */
@@ -382,6 +393,12 @@ export function createHilosRowEdit<R, T extends object, F = T>(
   let round = 0
   let stop: Unsubscribe | null = null
   let landing: Unsubscribe[] = []
+  let awaitingOccupation = false
+  const creating = computedSignal(() => {
+    const live = source.live.get()
+
+    return live !== undefined && (options.creating?.(live) ?? false)
+  })
 
   const state = computedSignal<RowEditState<T>>(() => {
     const snapshot = baseline.get()
@@ -392,12 +409,34 @@ export function createHilosRowEdit<R, T extends object, F = T>(
       return hilosRowEditIdle(snapshot?.values ?? ({} as T))
     }
     const live = source.live.get()
-
-    return resolveRowEdit(
+    const verdict = resolveRowEdit(
       live === undefined ? undefined : options.fields(live),
       snapshot,
       projectDraft(form.get(), current),
     )
+    if (!awaitingOccupation || verdict.gone || creating.get()) {
+      return verdict
+    }
+    // The first record can save the prefill unchanged or match the draft.
+    // Keep the ordinary step's values and take; only add the acceptance mark
+    // for visible fields whose merged value agrees with that first record.
+    const step = verdict.settle ?? { baseline: snapshot, take: {} }
+    const refreshed = [...step.baseline.refreshed]
+    for (const key of Object.keys(verdict.fields) as (keyof T & string)[]) {
+      const field = verdict.fields[key]
+      if (
+        !isHiddenValue(field.value) &&
+        Object.is(field.value, field.incoming) &&
+        !refreshed.includes(key)
+      ) {
+        refreshed.push(key)
+      }
+    }
+
+    return {
+      ...verdict,
+      settle: { ...step, baseline: { ...step.baseline, refreshed } },
+    }
   })
   const noticeText = computedSignal(() => {
     const verdict = state.get()
@@ -425,7 +464,7 @@ export function createHilosRowEdit<R, T extends object, F = T>(
       !verdict.gone &&
       !verdict.conflict &&
       valid.get() &&
-      verdict.dirty
+      (verdict.dirty || creating.get())
     )
   })
   const canSave = computedSignal(() => saveAvailable.get() && !saving.get())
@@ -463,6 +502,7 @@ export function createHilosRowEdit<R, T extends object, F = T>(
     }
     round += 1
     stopLanding()
+    awaitingOccupation = false
     opened.set(false)
     saving.set(false)
     source.close()
@@ -472,8 +512,8 @@ export function createHilosRowEdit<R, T extends object, F = T>(
   }
   // The one door Save and Enter share. Null when nothing leaves: the window is
   // closed, the row is gone, a conflict stands, a save is in flight, the input
-  // fails the window's check — or the draft is unchanged, which closes the
-  // window without a round-trip.
+  // fails the window's check — or the draft is unchanged at an occupied place,
+  // which closes the window without a round-trip.
   function passSave(): { readonly draft: T; readonly row: R } | null {
     const current = row.get()
     const verdict = state.get()
@@ -487,7 +527,7 @@ export function createHilosRowEdit<R, T extends object, F = T>(
     ) {
       return null
     }
-    if (!verdict.dirty) {
+    if (!verdict.dirty && !creating.get()) {
       close()
 
       return null
@@ -514,6 +554,7 @@ export function createHilosRowEdit<R, T extends object, F = T>(
       if (fresh === null) {
         return false
       }
+      awaitingOccupation = options.creating?.(fresh) ?? false
       row.set(fresh)
       baseline.set(openRowEdit(options.fields(fresh)))
       form.set(projectForm(fresh))
@@ -595,6 +636,10 @@ export function createHilosRowEdit<R, T extends object, F = T>(
       stop?.()
       stop = subscribeSignal(state, (next) => {
         if (opened.get() && next.settle !== null) {
+          if (awaitingOccupation && !next.gone && !creating.get()) {
+            // Consume before apply changes the signals and resolves again.
+            awaitingOccupation = false
+          }
           apply(next.settle)
         }
       })

@@ -922,6 +922,123 @@ describe('HilosI18nLocaleWindow', () => {
     )
   })
 
+  it('keeps the Add title, merges a new locale and saves a resolved draft by live id', async () => {
+    const h = harness(known, 'add')
+    await nextTick()
+    const title = el('i18n-locale-title')!.textContent
+    const date = el('i18n-locale-field-date') as HTMLSelectElement
+    date.value = 'YYYY-MM-DD'
+    date.dispatchEvent(new Event('change', { bubbles: true }))
+    h.focused.set({
+      ...editable,
+      formats: { ...formats, date: 'DD.MM.YYYY', measurement: 'imperial' },
+    })
+    await nextTick()
+    expect(el('i18n-locale-title')!.textContent).toContain(title!)
+    expect(el('conflict-badge')).not.toBeNull()
+    expect(el('i18n-locale-notice')!.textContent).toContain('DD.MM.YYYY')
+    expect(date.value).toBe('YYYY-MM-DD')
+    expect(
+      (el('i18n-locale-field-measurement') as HTMLSelectElement).value,
+    ).toBe('imperial')
+    expect(el('conflict-merge')).toBeNull()
+    document
+      .querySelector('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await nextTick()
+    expect(h.dispatched).toEqual([])
+    el('conflict-accept-mine')!.click()
+    await nextTick()
+    expect(el('i18n-locale-submit')!.textContent).toBe('Save')
+    el('i18n-locale-submit')!.click()
+    expect(h.dispatched[0]).toMatchObject({
+      name: HILOS_I18N_LOCALE_UPDATE_ACTION,
+      payload: {
+        languageId: 11,
+        countryId: 101,
+        localeId: 11101,
+        formats: { ...formats, date: 'YYYY-MM-DD', measurement: 'imperial' },
+      },
+    })
+    expect(h.view.emitted('close')).toBeUndefined()
+    h.dispatched[0]!.settle({ message: 'Locale saved.' })
+    await settled()
+    expect(h.view.emitted('close')).toHaveLength(1)
+  })
+  it.each(['untouched', 'matching', 'theirs'] as const)(
+    'accepts %s incoming without leaving a save',
+    async (kind) => {
+      const h = harness(known, 'add')
+      await nextTick()
+      const date = el('i18n-locale-field-date') as HTMLSelectElement
+      if (kind !== 'untouched') {
+        date.value = 'YYYY-MM-DD'
+        date.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+      const incoming = kind === 'matching' ? 'YYYY-MM-DD' : 'DD.MM.YYYY'
+      h.focused.set({ ...editable, formats: { ...formats, date: incoming } })
+      await nextTick()
+      if (kind === 'theirs') {
+        el('conflict-accept-theirs')!.click()
+        await nextTick()
+      }
+      expect(date.value).toBe(incoming)
+      expect(el('conflict-badge')).toBeNull()
+      expect(el('i18n-locale-notice')!.textContent).toContain(
+        'Updated just now',
+      )
+      expect((el('i18n-locale-submit') as HTMLButtonElement).disabled).toBe(
+        true,
+      )
+      expect(h.dispatched).toEqual([])
+    },
+  )
+  it.each([false, true])(
+    'keeps an occupied Add draft readable while enabled and preserves viewer guards (%s)',
+    async (viewer) => {
+      const h = harness(known, 'add', viewer)
+      await nextTick()
+      const date = el('i18n-locale-field-date') as HTMLSelectElement
+      date.value = 'YYYY-MM-DD'
+      date.dispatchEvent(new Event('change', { bubbles: true }))
+      h.focused.set({
+        ...editable,
+        enabled: true,
+        formats: { ...formats, date: 'DD.MM.YYYY' },
+      })
+      await nextTick()
+      expect(el('i18n-locale-notice')!.textContent).toContain(
+        'Switched on elsewhere just now.',
+      )
+      expect(el('i18n-locale-plate')!.textContent).toContain('switched on')
+      expect(date.value).toBe('YYYY-MM-DD')
+      el('conflict-accept-mine')!.click()
+      await nextTick()
+      el('i18n-locale-submit')!.click()
+      document
+        .querySelector('form')!
+        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await nextTick()
+      expect(h.dispatched).toEqual([])
+      h.focused.set({
+        ...editable,
+        formats: { ...formats, date: 'DD.MM.YYYY' },
+      })
+      await nextTick()
+      expect((el('i18n-locale-submit') as HTMLButtonElement).disabled).toBe(
+        viewer,
+      )
+      if (viewer) {
+        document
+          .querySelector('form')!
+          .dispatchEvent(
+            new Event('submit', { bubbles: true, cancelable: true }),
+          )
+        await nextTick()
+        expect(h.dispatched).toEqual([])
+      }
+    },
+  )
   it('merges edits, locks when switched on, and keeps refusal in the window', async () => {
     const h = harness(editable, 'edit')
     await nextTick()

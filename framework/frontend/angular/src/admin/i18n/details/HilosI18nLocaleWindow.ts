@@ -125,35 +125,38 @@ const FOOTER = 'modal-footer hilos-button-row p-0 m-0 border-0 align-self-end'
       [open]="opened() !== null"
       (openChange)="$event || closeWindow()"
       [title]="title()"
-      [confirmOnClose]="mode() === 'edit' && editState().dirty"
+      [confirmOnClose]="
+        mode() === 'add'
+          ? addState().dirty
+          : mode() === 'edit' && editState().dirty
+      "
       [busy]="busy()"
       initialFocus="dialog"
     >
-      <div
-        modalHeader
-        [class]="mode() !== 'add' ? 'hilos-stack flex-grow-1' : ''"
-      >
+      <div modalHeader class="hilos-stack flex-grow-1">
         <!-- Each part holds its tallest ordinary step: a body twin alone cannot
         keep a wrapped heading or the footer's conflict row from moving Save. -->
-        @if (mode() !== 'add') {
-          <div class="hilos-stack invisible" aria-hidden="true" inert>
-            <h5 class="modal-title d-inline-flex align-items-center gap-2 mb-0">
-              <span>{{ formTitle() }}</span>
-              @if (mode() === 'edit') {
-                <span class="badge text-bg-danger">conflict</span>
-              }
-            </h5>
+        <div class="hilos-stack invisible" aria-hidden="true" inert>
+          <h5 class="modal-title d-inline-flex align-items-center gap-2 mb-0">
+            <span>{{ formTitle() }}</span>
+            @if (mode() !== 'view') {
+              <span class="badge text-bg-danger">conflict</span>
+            }
+          </h5>
+          @if (mode() !== 'add') {
             <h5 class="modal-title mb-0">
               {{ mode() === 'edit' ? switchOnTitle() : switchOffTitle() }}
             </h5>
-          </div>
-        }
+          }
+        </div>
         <div data-id="i18n-locale-title">
-          @if (mode() === 'edit' && step() === 'form') {
+          @if (mode() !== 'view' && step() === 'form') {
             <h5
               hilosConflictHeader
               [title]="title()"
-              [conflict]="editState().conflict"
+              [conflict]="
+                mode() === 'add' ? addState().conflict : editState().conflict
+              "
             ></h5>
           } @else {
             <h5 class="modal-title mb-0">{{ title() }}</h5>
@@ -400,25 +403,43 @@ const FOOTER = 'modal-footer hilos-button-row p-0 m-0 border-0 align-self-end'
       <ng-template #modalActions let-requestClose="requestClose">
         @switch (mode()) {
           @case ('add') {
-            <button
-              type="button"
-              class="btn btn-secondary"
-              [disabled]="busy()"
-              data-id="i18n-locale-cancel"
-              (click)="requestClose()"
+            <div
+              hilosConflictActions
+              [conflict]="addState().conflict"
+              [disableSave]="!addAvailable()"
+              [saveLabel]="addSaveLabel()"
+              (save)="submit()"
+              (acceptMine)="session().creator.keepMine()"
+              (acceptTheirs)="session().creator.takeTheirs()"
             >
-              {{ copy.cancel }}
-            </button>
-            <button
-              hilosLoadingButton
-              class="btn-primary"
-              [loading]="addAction.busy()"
-              [disabled]="!addAvailable()"
-              data-id="i18n-locale-submit"
-              (click)="submit()"
-            >
-              {{ addGone() ? 'Deleted' : copy.add }}
-            </button>
+              <ng-template #cancelButton>
+                <button
+                  type="button"
+                  class="btn btn-secondary"
+                  [disabled]="busy()"
+                  data-id="i18n-locale-cancel"
+                  (click)="requestClose()"
+                >
+                  {{ copy.cancel }}
+                </button>
+              </ng-template>
+              <ng-template
+                #saveButton
+                let-saveDisabled="disabled"
+                let-onSave="onSave"
+              >
+                <button
+                  hilosLoadingButton
+                  class="btn-primary"
+                  [loading]="addAction.busy()"
+                  [disabled]="saveDisabled"
+                  data-id="i18n-locale-submit"
+                  (click)="onSave()"
+                >
+                  {{ addSaveLabel() }}
+                </button>
+              </ng-template>
+            </div>
           }
           @case ('edit') {
             <div class="hilos-stack w-100 m-0">
@@ -656,7 +677,14 @@ export class HilosI18nLocaleWindow {
   protected readonly addRow = signal<HilosI18nLocaleRow | null>(null)
   protected readonly addForm = signal<HilosI18nLocaleAddForm>(NOTHING_CHOSEN)
   protected readonly addAvailable = signal(false)
-  protected readonly addElsewhere = signal(false)
+  protected readonly addState = signal(
+    hilosRowEditIdle<HilosI18nLocaleAddForm>(NOTHING_CHOSEN),
+  )
+  protected readonly addNoticeKind = signal<RowEditNoticeKind | null>(null)
+  protected readonly addNoticeText = signal('')
+  protected readonly addSaveLabel = signal<string>(HILOS_I18N_LOCALE_COPY.add)
+  protected readonly addLockedOn = signal(false)
+  protected readonly addSaving = signal(false)
   protected readonly addGone = signal(false)
   private readonly focusedRow = signal<HilosI18nLocaleRow | undefined>(
     undefined,
@@ -732,6 +760,7 @@ export class HilosI18nLocaleWindow {
   })
   protected readonly busy = computed(
     () =>
+      this.addSaving() ||
       this.addAction.busy() ||
       this.editAction.busy() ||
       this.switchAction.busy() ||
@@ -750,11 +779,12 @@ export class HilosI18nLocaleWindow {
   protected readonly offVerdict = computed(() =>
     hilosI18nLocaleSwitchOff(this.card(), this.liveRow()),
   )
-  protected readonly lockedOn = computed(
-    () =>
-      this.mode() === 'edit' &&
-      !this.busy() &&
-      this.liveRow()?.enabled === true,
+  protected readonly lockedOn = computed(() =>
+    this.mode() === 'add'
+      ? this.addLockedOn()
+      : this.mode() === 'edit' &&
+        !this.busy() &&
+        this.liveRow()?.enabled === true,
   )
   private readonly switchedOff = computed(
     () =>
@@ -783,9 +813,7 @@ export class HilosI18nLocaleWindow {
       if (mode === 'add') {
         return this.addGone()
           ? { kind: 'deleted', text: elsewhere.deleted }
-          : this.addElsewhere()
-            ? { kind: 'updated', text: elsewhere.added }
-            : { kind: null, text: '' }
+          : { kind: this.addNoticeKind(), text: this.addNoticeText() }
       }
       if (mode === 'edit') {
         const state = this.editState()
@@ -807,6 +835,7 @@ export class HilosI18nLocaleWindow {
   protected readonly plate = computed(() => {
     const plate = this.copy.plate
     const known = (this.row()?.catalogFormats ?? null) !== null
+    if (this.lockedOn()) return plate.view
     if (this.mode() === 'add') return known ? plate.addKnown : plate.addOwn
     if (this.frozen()) return plate.view
 
@@ -834,6 +863,7 @@ export class HilosI18nLocaleWindow {
     // this view, disposes the old ones and lets their row go.
     effect((onCleanup) => {
       const { controller, editor, creator } = this.session()
+      creator.start()
       editor.start()
       const stops = [
         mirrorHilosSignal(editor.row, this.editRow),
@@ -845,7 +875,12 @@ export class HilosI18nLocaleWindow {
         mirrorHilosSignal(creator.row, this.addRow),
         mirrorHilosSignal(creator.form, this.addForm),
         mirrorHilosSignal(creator.addAvailable, this.addAvailable),
-        mirrorHilosSignal(creator.elsewhere, this.addElsewhere),
+        mirrorHilosSignal(creator.state, this.addState),
+        mirrorHilosSignal(creator.noticeKind, this.addNoticeKind),
+        mirrorHilosSignal(creator.noticeText, this.addNoticeText),
+        mirrorHilosSignal(creator.saveLabel, this.addSaveLabel),
+        mirrorHilosSignal(creator.lockedOn, this.addLockedOn),
+        mirrorHilosSignal(creator.saving, this.addSaving),
         mirrorHilosSignal(creator.gone, this.addGone),
         mirrorHilosSignal(controller.focusedRow, this.focusedRow),
       ]

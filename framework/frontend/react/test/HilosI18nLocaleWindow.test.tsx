@@ -163,6 +163,104 @@ describe('React locale window forms', () => {
     )
     expect(el<HTMLButtonElement>('i18n-locale-submit').disabled).toBe(false)
   })
+  it('keeps the Add title, merges a new locale and saves a resolved draft by live id', async () => {
+    const h = setup(absentLocale)
+    const title = el('i18n-locale-title').textContent
+    change('i18n-locale-field-date', 'YYYY-MM-DD')
+    act(() =>
+      h.focused.set({
+        ...localeRow,
+        formats: { ...formats, date: 'DD.MM.YYYY', measurement: 'imperial' },
+      }),
+    )
+    expect(el('i18n-locale-title').textContent).toContain(title!)
+    expect(el('conflict-badge')).not.toBeNull()
+    expect(el('i18n-locale-notice').textContent).toContain('DD.MM.YYYY')
+    expect(el<HTMLSelectElement>('i18n-locale-field-date').value).toBe(
+      'YYYY-MM-DD',
+    )
+    expect(el<HTMLSelectElement>('i18n-locale-field-measurement').value).toBe(
+      'imperial',
+    )
+    expect(el('conflict-merge')).toBeNull()
+    enter()
+    expect(h.calls).toEqual([])
+    click('conflict-accept-mine')
+    expect(el('i18n-locale-submit').textContent).toBe('Save')
+    click('i18n-locale-submit')
+    expect(h.calls[0]).toMatchObject({
+      action: 'hilos_i18n_locale_update',
+      payload: {
+        languageId: 19,
+        countryId: 101,
+        localeId: 19101,
+        formats: { ...formats, date: 'YYYY-MM-DD', measurement: 'imperial' },
+      },
+    })
+    expect(el('modal')).not.toBeNull()
+    await settle(() => h.succeed())
+    expect(el('modal')).toBeNull()
+  })
+  it.each(['untouched', 'matching', 'theirs'] as const)(
+    'accepts %s incoming without leaving a save',
+    (kind) => {
+      const h = setup(absentLocale)
+      if (kind !== 'untouched') change('i18n-locale-field-date', 'YYYY-MM-DD')
+      const incoming = kind === 'matching' ? 'YYYY-MM-DD' : 'DD.MM.YYYY'
+      act(() =>
+        h.focused.set({
+          ...localeRow,
+          formats: { ...formats, date: incoming },
+        }),
+      )
+      if (kind === 'theirs') click('conflict-accept-theirs')
+      expect(el<HTMLSelectElement>('i18n-locale-field-date').value).toBe(
+        incoming,
+      )
+      expect(el('conflict-badge')).toBeNull()
+      expect(el('i18n-locale-notice').textContent).toContain('Updated just now')
+      expect(el<HTMLButtonElement>('i18n-locale-submit').disabled).toBe(true)
+      expect(h.calls).toEqual([])
+    },
+  )
+  it.each([false, true])(
+    'keeps an occupied Add draft readable while enabled and preserves viewer guards (%s)',
+    (viewer) => {
+      const h = setup(absentLocale, viewer)
+      change('i18n-locale-field-date', 'YYYY-MM-DD')
+      act(() =>
+        h.focused.set({
+          ...localeRow,
+          enabled: true,
+          formats: { ...formats, date: 'DD.MM.YYYY' },
+        }),
+      )
+      expect(el('i18n-locale-notice').textContent).toContain(
+        'Switched on elsewhere just now.',
+      )
+      expect(el('i18n-locale-plate').textContent).toContain('switched on')
+      expect(el<HTMLSelectElement>('i18n-locale-field-date').value).toBe(
+        'YYYY-MM-DD',
+      )
+      click('conflict-accept-mine')
+      click('i18n-locale-submit')
+      enter()
+      expect(h.calls).toEqual([])
+      act(() =>
+        h.focused.set({
+          ...localeRow,
+          formats: { ...formats, date: 'DD.MM.YYYY' },
+        }),
+      )
+      expect(el<HTMLButtonElement>('i18n-locale-submit').disabled).toBe(viewer)
+      if (viewer) {
+        enter()
+        expect(h.calls).toEqual([])
+      }
+      h.viewer(false)
+      expect(el<HTMLButtonElement>('i18n-locale-submit').disabled).toBe(false)
+    },
+  )
   it('merges incoming fields, offers both conflict choices and preserves refusal through editing', async () => {
     const h = setup()
     expect(el<HTMLButtonElement>('i18n-locale-submit').disabled).toBe(true)

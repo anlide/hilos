@@ -1,6 +1,10 @@
 import { z } from 'zod'
 import { type ActionHandle } from '../../connection/actionLifecycle.js'
 import {
+  type RowEditNoticeKind,
+  type RowEditState,
+} from '../../conflict/rowEdit.js'
+import {
   createHilosRowEdit,
   hilosTableRowEditSource,
   type HilosActionRun,
@@ -9,7 +13,9 @@ import {
 import {
   computedSignal,
   createSignal,
+  subscribeSignal,
   type ReadonlySignal,
+  type Unsubscribe,
 } from '../../state/signal.js'
 import { type TableViewportController } from '../../table/TableViewportController.js'
 import {
@@ -137,7 +143,6 @@ export const HILOS_I18N_LOCALE_COPY = {
     edit: "Couldn't save the locale",
   },
   elsewhere: {
-    added: 'Added elsewhere just now.',
     switchedOn: 'Switched on elsewhere just now.',
     switchedOff: 'Switched off elsewhere just now.',
     deleted: 'Deleted elsewhere — your text stays to copy.',
@@ -314,34 +319,44 @@ export type HilosI18nLocaleAddForm = Record<
   string
 >
 
-/** Live creation dialog over a pair which has no locale yet. */
+/** A known-place creation session that becomes an edit when the pair gains a locale. */
 export interface HilosI18nLocaleAdd {
   readonly opened: ReadonlySignal<boolean>
+  /** The pair as it stood on open; retained for the opening title. */
   readonly row: ReadonlySignal<HilosI18nLocaleRow | null>
+  /** The held pair, or undefined after it or its first accepted locale is gone. */
   readonly live: ReadonlySignal<HilosI18nLocaleRow | undefined>
   readonly form: ReadonlySignal<HilosI18nLocaleAddForm>
+  readonly state: ReadonlySignal<RowEditState<HilosI18nLocaleAddForm>>
   readonly saving: ReadonlySignal<boolean>
-  readonly elsewhere: ReadonlySignal<boolean>
   readonly gone: ReadonlySignal<boolean>
-  /** The form is fit to add, whatever is in flight: the Add button's look. */
+  readonly noticeKind: ReadonlySignal<RowEditNoticeKind | null>
+  readonly noticeText: ReadonlySignal<string>
+  /** Deleted, Add at an empty place, or Save at the first accepted locale. */
+  readonly saveLabel: ReadonlySignal<string>
+  /** The accepted locale is switched on; the draft stays visible to copy. */
+  readonly lockedOn: ReadonlySignal<boolean>
+  /** The form is fit to add or update, independently of its own request in flight. */
   readonly addAvailable: ReadonlySignal<boolean>
-  /** The form is fit to add and nothing is in flight: the add's guard. */
+  /** The form is fit to save and no request is in flight: the submit guard. */
   readonly canAdd: ReadonlySignal<boolean>
   open(rowKey: string): boolean
   setField(field: keyof HilosI18nLocaleFormats, value: string): void
+  /** Dispatch add or update from the live place, closing only on tracked success. */
   add(run: HilosActionRun): Promise<void>
+  keepMine(): void
+  takeTheirs(): void
   close(): void
+  start(): void
   dispose(): void
 }
 
-/** Creation asks for formats while keeping the pair's row in focus. */
+/** Creation merges the seven shown choices while retaining the first locale's identity. */
 export function createHilosI18nLocaleAdd(
   controller: TableViewportController<HilosI18nLocaleRow>,
   context: HilosI18nLanguageContext,
 ): HilosI18nLocaleAdd {
-  const opened = createSignal(false)
-  const row = createSignal<HilosI18nLocaleRow | null>(null)
-  const form = createSignal<HilosI18nLocaleAddForm>({
+  const empty: HilosI18nLocaleAddForm = {
     date: '',
     time: '',
     number: '',
@@ -349,97 +364,142 @@ export function createHilosI18nLocaleAdd(
     address: '',
     measurement: '',
     collation: '',
-  })
-  const saving = createSignal(false)
-  const live = computedSignal(() => {
-    const focused = controller.focusedRow.get()
-    return opened.get() && focused?.rowKey === row.get()?.rowKey
-      ? focused
-      : undefined
-  })
-  const gone = computedSignal(() => opened.get() && live.get() === undefined)
-  const elsewhere = computedSignal(
-    () =>
-      opened.get() &&
-      !saving.get() &&
-      live.get()?.localeCode !== null &&
-      !gone.get(),
-  )
-  const addAvailable = computedSignal(
-    () =>
-      opened.get() &&
-      !gone.get() &&
-      !elsewhere.get() &&
-      Object.values(form.get()).every((value) => value !== '') &&
-      hilosI18nLocaleFormatsSchema.safeParse(form.get()).success,
-  )
-  const canAdd = computedSignal(() => addAvailable.get() && !saving.get())
-
-  function close(): void {
-    if (saving.get()) return
-    opened.set(false)
-    controller.releaseFocus()
   }
+  const tableSource = hilosTableRowEditSource(controller, (row) => row.rowKey)
+  const shown = createSignal<HilosI18nLocaleAddForm>(empty)
+  const heldLocaleId = createSignal<number | null>(null)
+  let stop: Unsubscribe | null = null
+  const source = {
+    open(key?: string) {
+      tableSource.close()
+      heldLocaleId.set(null)
+      const fresh = tableSource.open(key)
+      if (fresh === null || fresh.localeId !== null || fresh.formats !== null) {
+        tableSource.close()
+        return null
+      }
+      shown.set({ ...(fresh.catalogFormats ?? empty) })
+      return fresh
+    },
+    live: computedSignal(() => {
+      const live = tableSource.live.get()
+      const held = heldLocaleId.get()
+      return held !== null && (live?.localeId !== held || live.formats === null)
+        ? undefined
+        : live
+    }),
+    close: () => tableSource.close(),
+  }
+  const edit = createHilosRowEdit<HilosI18nLocaleRow, HilosI18nLocaleAddForm>(
+    source,
+    {
+      initial: empty,
+      fields: (live) => live.formats ?? shown.get(),
+      creating: (live) => live.localeId === null,
+      valid: (form) =>
+        source.live.get()?.enabled !== true &&
+        Object.values(form).every((value) => value !== '') &&
+        hilosI18nLocaleFormatsSchema.safeParse(form).success,
+      notice: {
+        conflict: (state) =>
+          (state.notice?.fields ?? [])
+            .map(
+              (field) =>
+                `${HILOS_I18N_LOCALE_COPY.labels[field]} changed elsewhere to "${state.fields[field].incoming}"; your choice stays selected.`,
+            )
+            .join(' '),
+      },
+    },
+  )
+  const gone = computedSignal(() => edit.state.get().gone)
+  const lockedOn = computedSignal(() => source.live.get()?.enabled === true)
+  const noticeKind = computedSignal(() =>
+    gone.get()
+      ? 'deleted'
+      : edit.saving.get()
+        ? null
+        : lockedOn.get()
+          ? 'updated'
+          : (edit.state.get().notice?.kind ?? null),
+  )
+  const noticeText = computedSignal(() =>
+    gone.get()
+      ? edit.noticeText.get()
+      : edit.saving.get()
+        ? ''
+        : lockedOn.get()
+          ? HILOS_I18N_LOCALE_COPY.elsewhere.switchedOn
+          : edit.noticeText.get(),
+  )
+  const saveLabel = computedSignal(() =>
+    gone.get()
+      ? 'Deleted'
+      : source.live.get()?.localeId === null
+        ? HILOS_I18N_LOCALE_COPY.add
+        : HILOS_I18N_LOCALE_COPY.save,
+  )
 
   return {
-    opened,
-    row,
-    live,
-    form,
-    saving,
-    elsewhere,
+    opened: edit.opened,
+    row: edit.row,
+    live: source.live,
+    form: edit.form,
+    state: edit.state,
+    saving: edit.saving,
     gone,
-    addAvailable,
-    canAdd,
-    open(rowKey) {
-      if (saving.get()) return false
-      const fresh = controller.focusRow(rowKey)
-      if (fresh === null || fresh.localeCode !== null) {
-        controller.releaseFocus()
-        return false
-      }
-      row.set(fresh)
-      form.set(
-        fresh.catalogFormats ?? {
-          date: '',
-          time: '',
-          number: '',
-          phone: '',
-          address: '',
-          measurement: '',
-          collation: '',
-        },
-      )
-      opened.set(true)
-      return true
-    },
-    setField(field, value) {
-      form.set({ ...form.get(), [field]: value })
-    },
-    async add(run) {
-      if (!canAdd.get()) return
-      const formats = hilosI18nLocaleFormatsSchema.parse(form.get())
-      const target = row.get()
-      if (target === null) return
-      saving.set(true)
-      try {
+    lockedOn,
+    noticeKind,
+    noticeText,
+    saveLabel,
+    addAvailable: edit.saveAvailable,
+    canAdd: edit.canSave,
+    open: (rowKey) => edit.open(rowKey),
+    setField: (field, value) => edit.patchForm({ [field]: value }),
+    add: (run) =>
+      edit.save((draft) => {
+        const live = source.live.get()
         if (
-          await run(
-            context.actions.dispatch(HILOS_I18N_LOCALE_ADD_ACTION, {
-              languageId: target.languageId,
-              countryId: target.countryId,
+          live === undefined ||
+          (live.localeId !== null && live.localeId !== heldLocaleId.get())
+        )
+          return Promise.resolve(false)
+        const formats = hilosI18nLocaleFormatsSchema.parse(draft)
+        return run(
+          context.actions.dispatch(
+            live.localeId === null
+              ? HILOS_I18N_LOCALE_ADD_ACTION
+              : HILOS_I18N_LOCALE_UPDATE_ACTION,
+            {
+              languageId: live.languageId,
+              countryId: live.countryId,
+              ...(live.localeId === null
+                ? {}
+                : { localeId: heldLocaleId.get() }),
               formats,
-            }),
-          )
+            },
+          ),
+        )
+      }),
+    keepMine: edit.keepMine,
+    takeTheirs: edit.takeTheirs,
+    close: edit.close,
+    start() {
+      stop?.()
+      stop = subscribeSignal(tableSource.live, (live) => {
+        if (
+          heldLocaleId.get() === null &&
+          live?.localeId != null &&
+          live.formats !== null
         ) {
-          saving.set(false)
-          close()
+          heldLocaleId.set(live.localeId)
         }
-      } finally {
-        saving.set(false)
-      }
+      })
+      edit.start()
     },
-    close,
-    dispose: close,
+    dispose() {
+      stop?.()
+      stop = null
+      edit.dispose()
+    },
   }
 }

@@ -109,7 +109,12 @@ function LocaleWindow({
   const addRow = useSignal(creator.row),
     addForm = useSignal(creator.form),
     addAvailable = useSignal(creator.addAvailable),
-    addElsewhere = useSignal(creator.elsewhere),
+    addState = useSignal(creator.state),
+    addNoticeKind = useSignal(creator.noticeKind),
+    addNoticeText = useSignal(creator.noticeText),
+    addSaveLabel = useSignal(creator.saveLabel),
+    addLockedOn = useSignal(creator.lockedOn),
+    addSaving = useSignal(creator.saving),
     pairGone = useSignal(creator.gone)
   const focused = useSignal(controller.focusedRow)
   const addAction = useTrackedAction(),
@@ -128,6 +133,7 @@ function LocaleWindow({
   closeCallback.current = onClose
   useEffect(() => {
     mounted.current = true
+    creator.start()
     editor.start()
     const fresh = controller.focusRow(opened.rowKey)
     if (!fresh) closeCallback.current()
@@ -167,7 +173,11 @@ function LocaleWindow({
         : (shownRow?.formats ?? viewSnapshot?.formats ?? addForm)
   const country = row ? hilosI18nLocaleCountryLabel(row) : null
   const busy =
-    addAction.busy || editAction.busy || switchAction.busy || offAction.busy
+    addSaving ||
+    addAction.busy ||
+    editAction.busy ||
+    switchAction.busy ||
+    offAction.busy
   const subjectGone = card?.languageId !== address.get()
   const editGone = editState.gone || subjectGone,
     addGone = pairGone || subjectGone
@@ -180,15 +190,16 @@ function LocaleWindow({
     subjectGone ? null : card,
     liveRow,
   )
-  const lockedOn = mode === 'edit' && !busy && liveRow?.enabled === true
+  const lockedOn =
+    mode === 'add'
+      ? addLockedOn
+      : mode === 'edit' && !busy && liveRow?.enabled === true
   const switchedOff = mode === 'view' && !busy && liveRow?.enabled === false
   const noticeKind =
     mode === 'add'
       ? addGone
         ? 'deleted'
-        : addElsewhere
-          ? 'updated'
-          : null
+        : addNoticeKind
       : mode === 'edit'
         ? editGone
           ? 'deleted'
@@ -204,9 +215,7 @@ function LocaleWindow({
     mode === 'add'
       ? addGone
         ? copy.elsewhere.deleted
-        : addElsewhere
-          ? copy.elsewhere.added
-          : ''
+        : addNoticeText
       : mode === 'edit'
         ? editGone
           ? copy.elsewhere.deleted
@@ -218,8 +227,9 @@ function LocaleWindow({
           : switchedOff
             ? copy.elsewhere.switchedOff
             : ''
-  const plate =
-    mode === 'add'
+  const plate = lockedOn
+    ? copy.plate.view
+    : mode === 'add'
       ? row?.catalogFormats
         ? copy.plate.addKnown
         : copy.plate.addOwn
@@ -326,27 +336,36 @@ function LocaleWindow({
       open
       title={title}
       onClose={close}
-      confirmOnClose={mode === 'edit' && editState.dirty}
+      confirmOnClose={
+        mode === 'add' ? addState.dirty : mode === 'edit' && editState.dirty
+      }
       busy={busy}
       initialFocus="dialog"
       header={
-        <div className={mode !== 'add' ? 'hilos-stack flex-grow-1' : undefined}>
-          {mode !== 'add' && (
+        <div className="hilos-stack flex-grow-1">
+          {
             <div className="hilos-stack invisible" aria-hidden="true" inert>
               <h5 className="modal-title d-inline-flex align-items-center gap-2 mb-0">
                 <span>{formTitle}</span>
-                {mode === 'edit' && (
+                {mode !== 'view' && (
                   <span className="badge text-bg-danger">conflict</span>
                 )}
               </h5>
-              <h5 className="modal-title mb-0">
-                {mode === 'edit' ? switchOnTitle : switchOffTitle}
-              </h5>
+              {mode !== 'add' && (
+                <h5 className="modal-title mb-0">
+                  {mode === 'edit' ? switchOnTitle : switchOffTitle}
+                </h5>
+              )}
             </div>
-          )}
+          }
           <div data-id="i18n-locale-title">
-            {mode === 'edit' && step === 'form' ? (
-              <ConflictHeader title={title} conflict={editState.conflict} />
+            {mode !== 'view' && step === 'form' ? (
+              <ConflictHeader
+                title={title}
+                conflict={
+                  mode === 'add' ? addState.conflict : editState.conflict
+                }
+              />
             ) : (
               <h5 className="modal-title mb-0">{title}</h5>
             )}
@@ -496,26 +515,36 @@ function LocaleWindow({
                 )}
               />
             ) : mode === 'add' ? (
-              <>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  disabled={busy}
-                  data-id="i18n-locale-cancel"
-                  onClick={requestClose}
-                >
-                  {copy.cancel}
-                </button>
-                <LoadingButton
-                  className="btn-primary"
-                  loading={addAction.busy}
-                  disabled={!addAvailable || addGone}
-                  data-id="i18n-locale-submit"
-                  onClick={() => void submit()}
-                >
-                  {addGone ? 'Deleted' : copy.add}
-                </LoadingButton>
-              </>
+              <ConflictActions
+                conflict={addState.conflict}
+                disableSave={!addAvailable || addGone}
+                saveLabel={addGone ? 'Deleted' : addSaveLabel}
+                onSave={() => void submit()}
+                onAcceptMine={creator.keepMine}
+                onAcceptTheirs={creator.takeTheirs}
+                cancelButton={
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    disabled={busy}
+                    data-id="i18n-locale-cancel"
+                    onClick={requestClose}
+                  >
+                    {copy.cancel}
+                  </button>
+                }
+                saveButton={({ disabled: saveDisabled, onSave }) => (
+                  <LoadingButton
+                    className="btn-primary"
+                    loading={addAction.busy}
+                    disabled={saveDisabled}
+                    data-id="i18n-locale-submit"
+                    onClick={onSave}
+                  >
+                    {addGone ? 'Deleted' : addSaveLabel}
+                  </LoadingButton>
+                )}
+              />
             ) : (
               <>
                 <button

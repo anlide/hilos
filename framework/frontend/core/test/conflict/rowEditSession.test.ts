@@ -5,7 +5,9 @@
 // (HIL-1766), the one door of the send — unchanged closes, blocked sends
 // nothing, success closes, failure stays, a late outcome moves nothing — the
 // close that lets the row go and forgets, and the save that waits for the live
-// row.
+// row. Creation in a known place (HIL-1643) may send unchanged shown values;
+// its first occupation marks matching visible fields updated once, and keeps
+// the same save guards, merge steps and opening-scoped outcomes.
 import { describe, expect, it, vi } from 'vitest'
 import {
   createHilosRowEdit,
@@ -71,6 +73,30 @@ function signalHarness(
         conflict: (state) =>
           `Changed to "${String(state.fields.name.incoming)}".`,
       },
+    },
+  )
+  edit.start()
+
+  return { edit, live }
+}
+
+interface PlaceRow extends Row {
+  readonly recordId: number | null
+}
+
+/** A known live place, whose record may not exist yet. */
+function creationHarness(
+  initial: PlaceRow = { id: 1, recordId: null, name: 'Ann', note: null },
+) {
+  const live = createSignal<PlaceRow | undefined>(initial)
+  const edit = createHilosRowEdit<PlaceRow, Fields>(
+    hilosSignalRowEditSource(live),
+    {
+      initial: { name: '', note: null },
+      fields: (row) => ({ name: row.name, note: row.note }),
+      creating: (live) => live.recordId === null,
+      valid: (form) => isHiddenValue(form.name) || form.name.length >= 2,
+      notice: { conflict: () => 'conflict' },
     },
   )
   edit.start()
@@ -416,6 +442,250 @@ describe('row-edit session: can save and the one door of the send', () => {
     edit.close()
     expect(edit.open()).toBe(true)
   })
+})
+
+describe('row-edit session: creation in a known place', () => {
+  it.each([true, false])(
+    'sends unchanged prefill and waits for the action outcome %s',
+    async (saved) => {
+      const { edit, live } = creationHarness()
+      edit.open()
+      expect(edit.state.get().dirty).toBe(false)
+      expect(edit.saveAvailable.get()).toBe(true)
+      expect(edit.canSave.get()).toBe(true)
+      let release: (saved: boolean) => void = () => undefined
+      const send = vi.fn(
+        () => new Promise<boolean>((resolve) => (release = resolve)),
+      )
+      const pending = edit.save(send)
+      expect(send).toHaveBeenCalledExactlyOnceWith(
+        { name: 'Ann', note: null },
+        { id: 1, recordId: null, name: 'Ann', note: null },
+      )
+      expect(edit.opened.get()).toBe(true)
+      expect(edit.saving.get()).toBe(true)
+      expect(edit.saveAvailable.get()).toBe(true)
+      expect(edit.canSave.get()).toBe(false)
+      await edit.save(send)
+      expect(send).toHaveBeenCalledTimes(1)
+
+      live.set({ id: 1, recordId: 7, name: 'Ann', note: null })
+      expect(edit.opened.get()).toBe(true)
+      expect(edit.saving.get()).toBe(true)
+      expect(edit.saveAvailable.get()).toBe(false)
+      expect(edit.canSave.get()).toBe(false)
+      release(saved)
+      await pending
+      expect(edit.saving.get()).toBe(false)
+      expect(edit.opened.get()).toBe(!saved)
+    },
+  )
+
+  it.each(['save', 'saveLanded'] as const)(
+    'sends nothing through %s after an equal record occupies the place',
+    async (method) => {
+      const { edit, live } = creationHarness()
+      edit.open()
+      live.set({ id: 1, recordId: 7, name: 'Ann', note: null })
+      expect(edit.row.get()?.recordId).toBeNull()
+      expect(edit.saveAvailable.get()).toBe(false)
+      expect(edit.canSave.get()).toBe(false)
+      const send = vi.fn(() => true)
+      if (method === 'save') {
+        await edit.save(() => Promise.resolve(send()))
+      } else {
+        edit.saveLanded(send, createSignal<string | null>(null))
+      }
+      expect(send).not.toHaveBeenCalled()
+      expect(edit.opened.get()).toBe(false)
+    },
+  )
+
+  it('keeps closed, invalid, conflict and gone guards while the place is empty', async () => {
+    const { edit, live } = creationHarness()
+    const send = vi.fn(() => Promise.resolve(false))
+    expect(edit.saveAvailable.get()).toBe(false)
+    expect(edit.canSave.get()).toBe(false)
+    await edit.save(send)
+    edit.open()
+    edit.patchForm({ name: 'A' })
+    expect(edit.saveAvailable.get()).toBe(false)
+    expect(edit.canSave.get()).toBe(false)
+    await edit.save(send)
+    edit.patchForm({ name: 'Bob' })
+    live.set({ id: 1, recordId: null, name: 'Carl', note: null })
+    expect(edit.state.get().conflict).toBe(true)
+    expect(edit.saveAvailable.get()).toBe(false)
+    expect(edit.canSave.get()).toBe(false)
+    await edit.save(send)
+    edit.keepMine()
+    expect(edit.canSave.get()).toBe(true)
+    live.set(undefined)
+    expect(edit.state.get().gone).toBe(true)
+    expect(edit.saveAvailable.get()).toBe(false)
+    expect(edit.canSave.get()).toBe(false)
+    await edit.save(send)
+    expect(send).not.toHaveBeenCalled()
+    expect(edit.opened.get()).toBe(true)
+  })
+
+  it.each(['Ann', 'Bob'])(
+    'marks the first matching name %s updated beside a field changed only by the person',
+    (name) => {
+      const { edit, live } = creationHarness()
+      edit.open()
+      edit.patchForm({ name, note: 'mine' })
+      live.set({ id: 1, recordId: 7, name, note: null })
+      expect(edit.form.get()).toEqual({ name, note: 'mine' })
+      expect(edit.state.get().fields.name.refreshed).toBe(true)
+      expect(edit.state.get().fields.note.refreshed).toBe(false)
+      expect(edit.state.get().notice).toEqual({
+        kind: 'updated',
+        fields: ['name'],
+      })
+      expect(edit.noticeText.get()).toBe(HILOS_ROW_EDIT_COPY.updated)
+      expect(edit.state.get().dirty).toBe(true)
+      expect(edit.state.get().settle).toBeNull()
+
+      edit.patchForm({ name: 'Annie' })
+      expect(edit.state.get().fields.name.refreshed).toBe(false)
+      expect(edit.noticeText.get()).toBe('')
+      expect(edit.state.get().settle).toBeNull()
+      edit.patchForm({ name })
+      live.set({ id: 1, recordId: 7, name: 'Carl', note: null })
+      expect(edit.state.get().conflict).toBe(false)
+      expect(edit.form.get()).toEqual({ name: 'Carl', note: 'mine' })
+      expect(edit.state.get().fields.name.refreshed).toBe(true)
+      expect(edit.state.get().settle).toBeNull()
+    },
+  )
+
+  it('keeps the ordinary incoming step beside the first acceptance mark', () => {
+    const { edit, live } = creationHarness()
+    edit.open()
+    edit.patchForm({ name: 'Bob' })
+    live.set({ id: 1, recordId: 7, name: 'Bob', note: 'theirs' })
+    expect(edit.form.get()).toEqual({ name: 'Bob', note: 'theirs' })
+    expect(edit.state.get().notice).toEqual({
+      kind: 'updated',
+      fields: ['name', 'note'],
+    })
+    expect(edit.state.get().dirty).toBe(false)
+    expect(edit.state.get().settle).toBeNull()
+    edit.patchForm({ name: 'Dan', note: 'mine' })
+    expect(edit.noticeText.get()).toBe('')
+    live.set({ id: 1, recordId: 7, name: 'Ann', note: null })
+    expect(edit.state.get().fields.name.conflict).toBe(true)
+    expect(edit.state.get().fields.note.conflict).toBe(true)
+  })
+
+  it('does not mark conflicting or hidden fields updated on occupation', () => {
+    const { edit, live } = creationHarness()
+    edit.open()
+    edit.patchForm({ name: 'Bob' })
+    live.set({ id: 1, recordId: 7, name: 'Carl', note: null })
+    expect(edit.state.get().conflict).toBe(true)
+    expect(edit.state.get().fields.name.refreshed).toBe(false)
+    expect(edit.state.get().fields.note.refreshed).toBe(true)
+    expect(edit.state.get().settle).toBeNull()
+    edit.keepMine()
+    edit.patchForm({ note: 'mine' })
+    live.set({ id: 1, recordId: 7, name: 'Bob', note: null })
+    expect(edit.noticeText.get()).toBe('')
+    expect(edit.state.get().fields.name.refreshed).toBe(false)
+    expect(edit.state.get().fields.note.refreshed).toBe(false)
+
+    const hidden = creationHarness({
+      id: 1,
+      recordId: null,
+      name: HIDDEN_VALUE,
+      note: null,
+    })
+    hidden.edit.open()
+    hidden.edit.patchForm({ note: 'mine' })
+    hidden.live.set({ id: 1, recordId: 7, name: HIDDEN_VALUE, note: null })
+    expect(hidden.edit.state.get().fields.name.refreshed).toBe(false)
+    expect(hidden.edit.noticeText.get()).toBe('')
+    expect(hidden.edit.state.get().settle).toBeNull()
+  })
+
+  it('does not mark ordinary converged fields updated without creating', () => {
+    const { edit, live } = signalHarness()
+    edit.open()
+    edit.patchForm({ name: 'Bob', note: 'mine' })
+    live.set({ id: 1, name: 'Bob', note: null })
+    expect(edit.state.get().fields.name.refreshed).toBe(false)
+    expect(edit.noticeText.get()).toBe('')
+    expect(edit.state.get().settle).toBeNull()
+  })
+
+  it('resets the occupation mark on close and open, including dispose and start', () => {
+    const { edit, live } = creationHarness()
+    edit.open()
+    edit.close()
+    live.set({ id: 1, recordId: 7, name: 'Ann', note: null })
+    edit.open()
+    expect(edit.noticeText.get()).toBe('')
+    expect(edit.state.get().settle).toBeNull()
+    edit.dispose()
+    live.set({ id: 1, recordId: null, name: 'Ann', note: null })
+    edit.start()
+    edit.open()
+    live.set({ id: 1, recordId: 8, name: 'Ann', note: null })
+    expect(edit.noticeText.get()).toBe(HILOS_ROW_EDIT_COPY.updated)
+    expect(edit.state.get().settle).toBeNull()
+  })
+
+  it('waits for a live landing when an unchanged creation is sent through saveLanded', () => {
+    const { edit, live } = creationHarness()
+    const refusal = createSignal<string | null>(null)
+    const send = vi.fn(() => true)
+    edit.open()
+    edit.saveLanded(send, refusal)
+    expect(send).toHaveBeenCalledExactlyOnceWith(
+      { name: 'Ann', note: null },
+      { id: 1, recordId: null, name: 'Ann', note: null },
+    )
+    expect(edit.opened.get()).toBe(true)
+    expect(edit.saving.get()).toBe(true)
+    expect(edit.saveAvailable.get()).toBe(true)
+    expect(edit.canSave.get()).toBe(false)
+    edit.saveLanded(send, refusal)
+    expect(send).toHaveBeenCalledTimes(1)
+    live.set({ id: 1, recordId: 7, name: 'Ann', note: null })
+    expect(edit.opened.get()).toBe(false)
+    expect(edit.saving.get()).toBe(false)
+  })
+
+  it.each([true, false])(
+    'ignores a late creation outcome %s while a new opening saves',
+    async (saved) => {
+      const { edit } = creationHarness()
+      edit.open()
+      let releaseOld: (saved: boolean) => void = () => undefined
+      const oldSave = edit.save(
+        () => new Promise<boolean>((resolve) => (releaseOld = resolve)),
+      )
+      edit.close()
+      edit.open()
+      edit.patchForm({ note: 'new' })
+      let releaseNew: (saved: boolean) => void = () => undefined
+      const newSave = edit.save(
+        () => new Promise<boolean>((resolve) => (releaseNew = resolve)),
+      )
+      releaseOld(saved)
+      await oldSave
+      expect(edit.opened.get()).toBe(true)
+      expect(edit.saving.get()).toBe(true)
+      expect(edit.form.get()).toEqual({ name: 'Ann', note: 'new' })
+      expect(edit.saveAvailable.get()).toBe(true)
+      expect(edit.canSave.get()).toBe(false)
+      releaseNew(false)
+      await newSave
+      expect(edit.saving.get()).toBe(false)
+      expect(edit.canSave.get()).toBe(true)
+    },
+  )
 })
 
 describe('row-edit session: closing', () => {

@@ -25,6 +25,7 @@ import HilosModal from '../../../HilosModal.vue'
 import LoadingButton from '../../../LoadingButton.vue'
 import { useSignal } from '../../../useSignal.js'
 import { useTrackedAction } from '../../../useTrackedAction.js'
+import { useLookOnly } from '../../../hilosAdminViewMode.js'
 
 const props = defineProps<{
   context: HilosI18nLanguageContext
@@ -58,7 +59,13 @@ const editSaveLabel = useSignal(editor.saveLabel)
 const addRow = useSignal(creator.row)
 const addForm = useSignal(creator.form)
 const addAvailable = useSignal(creator.addAvailable)
-const addElsewhere = useSignal(creator.elsewhere)
+const addState = useSignal(creator.state)
+const addNoticeKind = useSignal(creator.noticeKind)
+const addNoticeText = useSignal(creator.noticeText)
+const addSaveLabel = useSignal(creator.saveLabel)
+const addLockedOn = useSignal(creator.lockedOn)
+const addSaving = useSignal(creator.saving)
+const { locked } = useLookOnly()
 const addGone = useSignal(creator.gone)
 const focusedRow = useSignal(props.controller.focusedRow)
 const addAction = useTrackedAction()
@@ -117,6 +124,7 @@ const form = computed(() =>
 )
 const busy = computed(
   () =>
+    addSaving.value ||
     addAction.busy.value ||
     editAction.busy.value ||
     switchAction.busy.value ||
@@ -132,16 +140,17 @@ const viewGone = computed(
 const offVerdict = computed(() =>
   hilosI18nLocaleSwitchOff(props.card, liveRow.value),
 )
-const lockedOn = computed(
-  () => mode.value === 'edit' && !busy.value && liveRow.value?.enabled === true,
+const lockedOn = computed(() =>
+  mode.value === 'add'
+    ? addLockedOn.value
+    : mode.value === 'edit' && !busy.value && liveRow.value?.enabled === true,
 )
 const switchedOff = computed(
   () =>
     mode.value === 'view' && !busy.value && liveRow.value?.enabled === false,
 )
 const noticeKind = computed(() => {
-  if (mode.value === 'add')
-    return addGone.value ? 'deleted' : addElsewhere.value ? 'updated' : null
+  if (mode.value === 'add') return addNoticeKind.value
   if (mode.value === 'edit')
     return editState.value.gone
       ? 'deleted'
@@ -151,12 +160,7 @@ const noticeKind = computed(() => {
   return viewGone.value ? 'deleted' : switchedOff.value ? 'updated' : null
 })
 const noticeText = computed(() => {
-  if (mode.value === 'add')
-    return addGone.value
-      ? copy.elsewhere.deleted
-      : addElsewhere.value
-        ? copy.elsewhere.added
-        : ''
+  if (mode.value === 'add') return addNoticeText.value
   if (mode.value === 'edit')
     return editState.value.gone
       ? editNotice.value
@@ -170,6 +174,7 @@ const noticeText = computed(() => {
       : ''
 })
 const plate = computed(() => {
+  if (lockedOn.value) return copy.plate.view
   if (mode.value === 'add')
     return row.value?.catalogFormats ? copy.plate.addKnown : copy.plate.addOwn
   if (mode.value === 'view' || lockedOn.value) return copy.plate.view
@@ -191,7 +196,10 @@ const modalOpen = computed({
   },
 })
 
-onMounted(() => editor.start())
+onMounted(() => {
+  creator.start()
+  editor.start()
+})
 onUnmounted(() => {
   editor.dispose()
   creator.dispose()
@@ -318,6 +326,7 @@ function changeField(field: (typeof fields)[number], event: Event): void {
 }
 
 async function submit(): Promise<void> {
+  if (locked.value || busy.value || step.value !== 'form') return
   if (mode.value === 'add') {
     await creator.add(addAction.run)
     if (!creator.opened.get()) emit('close')
@@ -332,7 +341,9 @@ async function submit(): Promise<void> {
   <HilosModal
     v-model="modalOpen"
     :title="title"
-    :confirm-on-close="mode === 'edit' ? editState.dirty : false"
+    :confirm-on-close="
+      mode === 'add' ? addState.dirty : mode === 'edit' && editState.dirty
+    "
     :busy="busy"
     initial-focus="dialog"
     @cancel="closeWindow"
@@ -340,29 +351,26 @@ async function submit(): Promise<void> {
     <template #header>
       <!-- Each part holds its tallest ordinary step: a body twin alone cannot
       keep a wrapped heading or the footer's conflict row from moving Save. -->
-      <div :class="mode !== 'add' ? 'hilos-stack flex-grow-1' : undefined">
-        <div
-          v-if="mode !== 'add'"
-          class="hilos-stack invisible"
-          aria-hidden="true"
-          inert
-        >
+      <div class="hilos-stack flex-grow-1">
+        <div class="hilos-stack invisible" aria-hidden="true" inert>
           <h5 class="modal-title d-inline-flex align-items-center gap-2 mb-0">
             <span>{{ formTitle }}</span>
-            <span v-if="mode === 'edit'" class="badge text-bg-danger"
+            <span v-if="mode !== 'view'" class="badge text-bg-danger"
               >conflict</span
             >
           </h5>
           <h5 v-if="mode === 'edit'" class="modal-title mb-0">
             {{ switchOnTitle }}
           </h5>
-          <h5 v-else class="modal-title mb-0">{{ switchOffTitle }}</h5>
+          <h5 v-else-if="mode === 'view'" class="modal-title mb-0">
+            {{ switchOffTitle }}
+          </h5>
         </div>
         <div data-id="i18n-locale-title">
           <ConflictHeader
-            v-if="mode === 'edit' && step === 'form'"
+            v-if="mode !== 'view' && step === 'form'"
             :title="title"
-            :conflict="editState.conflict"
+            :conflict="mode === 'add' ? addState.conflict : editState.conflict"
           />
           <h5 v-else class="modal-title mb-0">{{ title }}</h5>
         </div>
@@ -706,25 +714,37 @@ async function submit(): Promise<void> {
           </ConflictActions>
         </div>
       </div>
-      <template v-else-if="mode === 'add'">
-        <button
-          type="button"
-          class="btn btn-secondary"
-          :disabled="busy"
-          data-id="i18n-locale-cancel"
-          @click="requestClose"
-        >
-          {{ copy.cancel }}
-        </button>
-        <LoadingButton
-          class="btn-primary"
-          :loading="addAction.busy.value"
-          :disabled="!addAvailable"
-          data-id="i18n-locale-submit"
-          @click="submit"
-          >{{ addGone ? 'Deleted' : copy.add }}</LoadingButton
-        >
-      </template>
+      <ConflictActions
+        v-else-if="mode === 'add'"
+        :conflict="addState.conflict"
+        :disable-save="!addAvailable"
+        :save-label="addSaveLabel"
+        @save="submit"
+        @accept-mine="creator.keepMine"
+        @accept-theirs="creator.takeTheirs"
+      >
+        <template #cancel-button>
+          <button
+            type="button"
+            class="btn btn-secondary"
+            :disabled="busy"
+            data-id="i18n-locale-cancel"
+            @click="requestClose"
+          >
+            {{ copy.cancel }}
+          </button>
+        </template>
+        <template #save-button="{ disabled, onSave }">
+          <LoadingButton
+            class="btn-primary"
+            :loading="addAction.busy.value"
+            :disabled="disabled"
+            data-id="i18n-locale-submit"
+            @click="onSave"
+            >{{ addSaveLabel }}</LoadingButton
+          >
+        </template>
+      </ConflictActions>
 
       <div v-else class="hilos-stack w-100 m-0">
         <div class="hilos-stack invisible" aria-hidden="true" inert>

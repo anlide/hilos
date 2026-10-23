@@ -120,8 +120,8 @@
     "outputSha256": "1a3c8960f68b3eb7a87b8a432450d266e47e57795b3dc4fe44547c612cabc286"
   },
   "src/conflict/rowEditSession.ts": {
-    "sourceSha256": "ba8f975dbcaa1f3b6a588f4b6bc78466fa2514448ad594c1511f827118d6e059",
-    "outputSha256": "af0a765685a120fa4cfbb74d3f5e718ceb1f66e8599bcb7080bd95954ccb6931"
+    "sourceSha256": "b9f85b6cac9297fdc0918c3182b3eb90bef2ebc32503baa36d4afdd1e3b4899d",
+    "outputSha256": "0e2887647d7444db884d746d048b00d6a130971b3ee391ca03df8a5687889106"
   },
   "src/conflict/threeWayMerge.ts": {
     "sourceSha256": "288d65cbb79843173720da523f2e47e1dc3dbad8178e4d286aa6de0d42da267a",
