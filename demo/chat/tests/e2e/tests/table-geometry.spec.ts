@@ -22,6 +22,16 @@ import {
   watchTableNativeLifecycle,
   expectTableNativeLifecycle,
   watchTableModalFocus,
+  expectTableTextTrack,
+  tableTextRegion,
+  tableTextToggle,
+  expectTableTextControl,
+  expectTableTextGeometry,
+  expectTableTextParts,
+  expectTableIntrinsicRows,
+  watchTableTextRoom,
+  watchTableTextInline,
+  type TableTextPolicy,
   type TableEnvironment,
   type TableGeometryWatch,
 } from '../../../../../framework/frontend/e2e/index.js'
@@ -36,6 +46,8 @@ const REASONS = [
   ['moved_out', 'Moved to another page'],
   ['future_reason', 'Removed'],
 ] as const
+
+test.use({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' })
 
 async function press(page: Page, id: string): Promise<void> {
   const button = shownByTestId(page, id)
@@ -352,7 +364,7 @@ test.describe('wide', () => {
   for (const open of [false, true]) {
     for (const work of [false, true]) {
       for (const text of [false, true]) {
-        test(`G03/G04 detail=${open} work=${work} expanded-text=${text}`, async ({
+        test(`G03/G04 detail=${open} work=${work} long-synthetic-text=${text}`, async ({
           page,
         }, info) => {
           await page
@@ -817,7 +829,9 @@ test.describe('wide', () => {
       'geometry-fixture',
     )
     await settleTableLayout(page)
-    const initial = await expectTableNativeLifecycle(expect, page, true)
+    // Three geometry listeners plus five value wrappers per record (three
+    // wide cells, a card title and a card field), each with its resize listener.
+    const initial = await expectTableNativeLifecycle(expect, page, true, 38)
     await press(page, 'geometry-own')
     await press(page, 'geometry-churn')
     await expect(page.getByTestId('geometry-state')).toContainText(
@@ -826,11 +840,13 @@ test.describe('wide', () => {
     const churned = (await page.getByTestId('geometry-state').textContent())!
     expect(churned.split(',')).toHaveLength(31)
     expect(churned).toContain('cycle-0:departed')
-    await expectTableNativeLifecycle(expect, page, true)
+    await expectTableNativeLifecycle(expect, page, true, 33)
     await press(page, 'geometry-reconnect')
     await expect(page.getByTestId('hilos-table-placeholder')).toHaveCount(0)
     await settleTableLayout(page)
-    expect(await expectTableNativeLifecycle(expect, page, true)).toBe(initial)
+    expect(await expectTableNativeLifecycle(expect, page, true, 38)).toBe(
+      initial,
+    )
     await press(page, 'geometry-refuse')
     await expect(page.getByTestId('geometry-state')).toHaveAttribute(
       'data-body',
@@ -846,14 +862,18 @@ test.describe('wide', () => {
     )
     await expect(shownByTestId(page, 'geometry-name-a')).toHaveText('Record a')
     await settleTableLayout(page)
-    expect(await expectTableNativeLifecycle(expect, page, true)).toBe(initial)
+    expect(await expectTableNativeLifecycle(expect, page, true, 38)).toBe(
+      initial,
+    )
     for (let cycle = 0; cycle < 3; cycle++) {
       await press(page, 'geometry-unmount')
       await settleTableLayout(page)
       await expectTableNativeLifecycle(expect, page, false)
       await press(page, 'geometry-mount')
       await settleTableLayout(page)
-      expect(await expectTableNativeLifecycle(expect, page, true)).toBe(initial)
+      expect(await expectTableNativeLifecycle(expect, page, true, 38)).toBe(
+        initial,
+      )
     }
     await info.attach('native-lifetime', {
       body: initial,
@@ -1169,6 +1189,599 @@ test.describe('wide', () => {
       await info.attach(`focus-${focus}`, {
         body: await page.getByTestId('hilos-viewport-table').screenshot(),
         contentType: 'image/png',
+      })
+    })
+  }
+})
+
+test.describe('public SDK text reading with synthetic ingress', () => {
+  test.beforeEach(async ({ page }) => {
+    await openTableFixture(
+      expect,
+      page,
+      '/__table_geometry/index.html',
+      'geometry-fixture',
+    )
+  })
+
+  async function reading(
+    page: Page,
+    policy: TableTextPolicy | { readonly mode: 'default' },
+    content: 'text' | 'parts' = 'text',
+  ): Promise<void> {
+    await page.getByTestId('geometry-height-mode').selectOption(policy.mode)
+    if (policy.mode === 'lines')
+      await page
+        .getByTestId('geometry-lines')
+        .selectOption(String(policy.count))
+    if (policy.mode === 'height')
+      await page.getByTestId('geometry-rem').selectOption(String(policy.rem))
+    await page.getByTestId('geometry-height-content').selectOption(content)
+    await press(page, 'geometry-reading')
+    await expect(page.getByTestId('geometry-state')).toContainText('g:live')
+    await settleTableLayout(page)
+  }
+
+  async function textEvidence(
+    page: Page,
+    info: TestInfo,
+    key: string,
+    policy: TableTextPolicy,
+    expanded = false,
+    overflow = false,
+  ): Promise<void> {
+    await info.attach(`${key}-${policy.mode}-${expanded ? 'open' : 'closed'}`, {
+      body: await expectTableTextGeometry(
+        expect,
+        page,
+        key,
+        policy,
+        expanded,
+        overflow,
+      ),
+      contentType: 'application/json',
+    })
+  }
+
+  for (const mode of ['default', 'content'] as const) {
+    for (const content of ['text', 'parts'] as const) {
+      test(`H01 ${mode}/${content}: intrinsic text wraps completely without cap, room or control`, async ({
+        page,
+      }, info) => {
+        await reading(page, { mode }, content)
+        for (const key of ['a', 'b', 'c', 'd', 'e'])
+          await textEvidence(page, info, key, { mode: 'content' })
+        await expectTableIntrinsicRows(expect, page, 'a', 'b')
+        await expect(tableTextRegion(page, 'a')).toContainText(
+          'LAST READABLE LINE',
+        )
+        await expect(page.getByTestId('hilos-table-text-toggle')).toHaveCount(0)
+      })
+    }
+  }
+
+  const PRESETS: readonly TableTextPolicy[] = [
+    ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((count) => ({
+      mode: 'lines' as const,
+      count,
+    })),
+    ...[2, 3, 4.5, 6, 9, 12].map((rem) => ({ mode: 'height' as const, rem })),
+  ]
+  for (const policy of PRESETS) {
+    test(`H02 shipped ${JSON.stringify(policy)} reserves short/empty and clips overflowing text`, async ({
+      page,
+    }, info) => {
+      await reading(page, policy)
+      await textEvidence(page, info, 'a', policy, false, true)
+      for (const key of ['b', 'c']) {
+        await textEvidence(page, info, key, policy)
+        await expect(tableTextToggle(page, key)).toHaveCount(0)
+      }
+      await expectTableTextControl(expect, page, 'a', false)
+    })
+  }
+
+  const BOUNDARIES: readonly TableTextPolicy[] = [
+    { mode: 'lines', count: 1 },
+    { mode: 'lines', count: 3 },
+    { mode: 'lines', count: 12 },
+    { mode: 'height', rem: 4.5 },
+  ]
+  for (const policy of BOUNDARIES) {
+    for (const content of ['text', 'parts'] as const) {
+      test(`H03/H04 ${JSON.stringify(policy)}/${content}: newline/token reading, independent chrome and constant room`, async ({
+        page,
+      }, info) => {
+        await reading(page, policy, content)
+        const room = await watchTableTextRoom(page, 'b')
+        const inline = await watchTableTextInline(expect, page, 'b')
+        const stable = await watchTableGeometry(expect, page, {
+          bodyId: 'geometry-body',
+          projection: 'wide',
+          rowKeys: ['a', 'b', 'c', ...SURVIVORS, 'g'],
+          lastKey: 'g',
+        })
+        try {
+          await page.getByTestId('geometry-target').selectOption('b')
+          await press(page, 'geometry-value')
+          await expectTableTextControl(expect, page, 'b', false)
+          await settleTableLayout(page)
+          await room.unchanged()
+          await inline.unchanged()
+          await stable.check()
+        } finally {
+          await stable.stop()
+          await info.attach('overflow-arrival-bounds', {
+            body: await stable.evidence(),
+            contentType: 'application/json',
+          })
+        }
+        for (const key of ['a', 'd', 'e']) {
+          await textEvidence(page, info, key, policy, false, true)
+          const inline = await watchTableTextInline(expect, page, key)
+          const control = tableTextToggle(page, key)
+          await control.click()
+          await expectTableTextControl(expect, page, key, true)
+          await settleTableLayout(page)
+          await textEvidence(page, info, key, policy, true)
+          await inline.unchanged()
+          if (key === 'd')
+            expect(await tableTextRegion(page, key).textContent()).toBe(
+              `${Array.from({ length: 16 }, (_, index) => `Explicit line ${index + 1}`).join('\n')}\nLAST READABLE LINE`,
+            )
+          if (key === 'e')
+            await expect(tableTextRegion(page, key)).toContainText('ENDTOKEN')
+          if (content === 'parts')
+            await expectTableTextParts(expect, page, key, [
+              'geometry-text-badge',
+              'geometry-text-link',
+              'geometry-text-action',
+            ])
+          await control.click()
+          await expectTableTextControl(expect, page, key, false)
+          await settleTableLayout(page)
+          await textEvidence(page, info, key, policy, false, true)
+          await inline.unchanged()
+          await info.attach(`${key}-text-only-inline-footprint`, {
+            body: await inline.evidence(),
+            contentType: 'application/json',
+          })
+        }
+        await info.attach('overflow-arrival-inline-footprint', {
+          body: await inline.evidence(),
+          contentType: 'application/json',
+        })
+        if (content === 'parts') {
+          const hidden = page.getByTestId('hilos-table-row-f')
+          await expect(hidden.getByTestId('hilos-hidden')).toBeVisible()
+          await expect(hidden).not.toContainText('[object Object]')
+          await expect(
+            hidden.getByTestId('hilos-table-text-toggle'),
+          ).toHaveCount(0)
+          await expectTableTextParts(expect, page, 'f', [
+            'hilos-hidden',
+            'geometry-text-badge',
+            'geometry-text-link',
+            'geometry-text-action',
+          ])
+        }
+        await expect(page.getByTestId('geometry-state')).toHaveAttribute(
+          'data-selected',
+          'null',
+        )
+        await expect(page.getByTestId('geometry-state')).toHaveAttribute(
+          'data-requests',
+          '0',
+        )
+        await expect(page.getByTestId('geometry-actions')).toHaveText('')
+        await expect(page.getByTestId('modal')).toHaveCount(0)
+        await expect(page.getByTestId('geometry-detail-a')).toHaveCount(0)
+      })
+    }
+  }
+
+  for (const policy of [{ mode: 'lines', count: 3 }] as const) {
+    test(`H02/H06 ${policy.mode}: root rem, text-only lh, width, spacing and late font invalidate actual layout`, async ({
+      page,
+    }, info) => {
+      await reading(page, policy)
+      await textEvidence(page, info, 'b', policy)
+      await setTableEnvironment(page, { kind: 'font', size: 20 })
+      await settleTableLayout(page)
+      await textEvidence(page, info, 'b', policy)
+      const root = await page
+        .locator('html')
+        .evaluate((node) => getComputedStyle(node).fontSize)
+      expect(root).toBe('20px')
+      await setTableEnvironment(page, {
+        kind: 'text-font',
+        size: 48,
+        lineHeight: 2,
+      })
+      await settleTableLayout(page)
+      await expect(tableTextToggle(page, 'b')).toHaveCount(0)
+      await textEvidence(page, info, 'b', policy)
+      expect(
+        await page
+          .locator('html')
+          .evaluate((node) => getComputedStyle(node).fontSize),
+      ).toBe(root)
+      await setTableEnvironment(page, {
+        kind: 'text-font',
+        size: 16,
+        lineHeight: 1.5,
+      })
+      await settleTableLayout(page)
+      await expect(tableTextToggle(page, 'b')).toHaveCount(0)
+      await setTableEnvironment(page, { kind: 'container', narrow: true })
+      await setTableEnvironment(page, { kind: 'spacing', enabled: true })
+      await info.attach('late-font-condition', {
+        body: await loadLateTableFont(
+          expect,
+          page,
+          'geometry-body',
+          'geometry-name-b',
+        ),
+        contentType: 'application/json',
+      })
+      await settleTableLayout(page)
+      await textEvidence(page, info, 'a', policy, false, true)
+      await tableTextToggle(page, 'a').click()
+      await expectTableTextControl(expect, page, 'a', true)
+      await settleTableLayout(page)
+      await textEvidence(page, info, 'a', policy, true)
+    })
+  }
+
+  for (const ingress of ['own', 'foreign', 'immediate'] as const) {
+    test(`H06/G03 ${ingress}: expanded reading plus detail/work captured once, then data-free grow-only retention`, async ({
+      page,
+    }, info) => {
+      const policy = { mode: 'lines', count: 3 } as const
+      await reading(page, policy, 'parts')
+      await page.getByTestId('geometry-detail').selectOption('expanded')
+      await press(page, 'geometry-configure')
+      await press(page, 'geometry-value')
+      await press(page, 'geometry-work')
+      const live = await watchTableAllocation(expect, page, 'a', 'wide')
+      await tableTextToggle(page, 'a').click()
+      await expectTableTextControl(expect, page, 'a', true)
+      await settleTableLayout(page)
+      await live.changed('extent', 'grew')
+      await textEvidence(page, info, 'a', policy, true)
+      const open = await watchTableAllocation(expect, page, 'a', 'wide')
+      await tableTextToggle(page, 'a').click()
+      await expectTableTextControl(expect, page, 'a', false)
+      await settleTableLayout(page)
+      await open.changed('extent', 'shrank')
+      await open.stop()
+      const collapsed = await watchTableAllocation(expect, page, 'a', 'wide')
+      await tableTextToggle(page, 'a').click()
+      await expectTableTextControl(expect, page, 'a', true)
+      await settleTableLayout(page)
+      await collapsed.changed('extent', 'grew')
+      await live.stop()
+      await collapsed.stop()
+      if (ingress === 'immediate')
+        await page.getByTestId('geometry-payload').selectOption('longer')
+      const allocation = await watchTableAllocation(expect, page, 'a', 'wide')
+      const stable = await watchTableGeometry(expect, page, {
+        bodyId: 'geometry-body',
+        projection: 'wide',
+        rowKeys: SURVIVORS,
+        lastKey: 'g',
+      })
+      try {
+        if (ingress === 'foreign') {
+          await press(page, 'geometry-remove')
+          await expect(page.getByTestId('geometry-state')).toContainText(
+            'a:remove',
+          )
+          await expect(tableTextRegion(page, 'a')).toContainText(
+            'LAST READABLE LINE',
+          )
+          await expectTableTextControl(expect, page, 'a', true)
+          await stable.check()
+          await allocation.check()
+          await press(page, 'geometry-apply')
+        } else
+          await press(
+            page,
+            ingress === 'own' ? 'geometry-own' : 'geometry-immediate',
+          )
+        await retired(page, 'a')
+        await expect(page.getByTestId('geometry-state')).toHaveAttribute(
+          'data-text-intent',
+          '[]',
+        )
+        if (ingress === 'immediate') await allocation.changed('extent', 'grew')
+        else await stable.check()
+        await allocation.check()
+        await setTableEnvironment(page, { kind: 'font', size: 24 })
+        await setTableEnvironment(page, { kind: 'spacing', enabled: true })
+        await setTableEnvironment(page, { kind: 'container', narrow: true })
+        await settleTableLayout(page)
+        await allocation.check()
+        await press(page, 'geometry-complete')
+        await allocation.check()
+        await retired(page, 'a')
+      } finally {
+        await stable.stop()
+        await allocation.stop()
+        await info.attach('disclosure-departure-bounds', {
+          body: await stable.evidence(),
+          contentType: 'application/json',
+        })
+        await info.attach('disclosure-retained-bounds', {
+          body: await allocation.evidence(),
+          contentType: 'application/json',
+        })
+      }
+    })
+  }
+
+  test('H06/B04 reset/reuse/window/reconnect/refusal retire disclosure intent and stale controls', async ({
+    page,
+  }) => {
+    await reading(page, { mode: 'lines', count: 3 })
+    for (const transition of [
+      'reuse',
+      'reset',
+      'deliver',
+      'reconnect',
+      'window',
+      'refuse',
+      'replace',
+    ]) {
+      // A fresh occurrence starts short, then receives a genuinely overflowing value.
+      await page.getByTestId('geometry-payload').selectOption('long')
+      await press(page, 'geometry-value')
+      await expectTableTextControl(expect, page, 'a', false)
+      await tableTextToggle(page, 'a').click()
+      await expectTableTextControl(expect, page, 'a', true)
+      const old = await tableTextToggle(page, 'a').elementHandle()
+      await press(page, `geometry-${transition}`)
+      await expect(page.getByTestId('geometry-state')).toHaveAttribute(
+        'data-text-intent',
+        '[]',
+      )
+      await old!.evaluate((button: HTMLButtonElement) => button.click())
+      await expect(page.getByTestId('geometry-state')).toHaveAttribute(
+        'data-text-intent',
+        '[]',
+      )
+      await old!.dispose()
+      if (transition === 'window' || transition === 'refuse')
+        await press(page, 'geometry-deliver')
+      await settleTableLayout(page)
+      await expect(tableTextRegion(page, 'a')).not.toHaveClass(/is-open/)
+    }
+  })
+
+  for (const content of ['text', 'parts'] as const) {
+    test(`H06/B04 ${content}: reading observers release on departure, reconnect and unmount`, async ({
+      page,
+    }, info) => {
+      await watchTableNativeLifecycle(page)
+      await openTableFixture(
+        expect,
+        page,
+        '/__table_geometry/index.html',
+        'geometry-fixture',
+      )
+      await reading(page, { mode: 'lines', count: 3 }, content)
+      // Existing 38 listeners plus three reading listeners per text window in
+      // each projection. The parts fixture's hidden f has no reading window.
+      const listeners = content === 'text' ? 80 : 74
+      const initial = await expectTableNativeLifecycle(
+        expect,
+        page,
+        true,
+        listeners,
+      )
+      await tableTextToggle(page, 'a').click()
+      await expectTableTextControl(expect, page, 'a', true)
+      await press(page, 'geometry-own')
+      await retired(page, 'a')
+      await settleTableLayout(page)
+      await expectTableNativeLifecycle(expect, page, true, listeners - 11)
+      await press(page, 'geometry-reconnect')
+      await settleTableLayout(page)
+      expect(
+        await expectTableNativeLifecycle(expect, page, true, listeners),
+      ).toBe(initial)
+      await press(page, 'geometry-unmount')
+      await settleTableLayout(page)
+      await expectTableNativeLifecycle(expect, page, false)
+      // Real browser invalidations after disposal cannot recreate controls,
+      // retained nodes or listeners through an already queued callback.
+      await setTableEnvironment(page, { kind: 'font', size: 20 })
+      await setTableEnvironment(page, { kind: 'spacing', enabled: true })
+      await settleTableLayout(page)
+      await expectTableNativeLifecycle(expect, page, false)
+      await expect(page.getByTestId('hilos-table-text-toggle')).toHaveCount(0)
+      await expect(page.getByTestId('geometry-text-a')).toHaveCount(0)
+      await info.attach('reading-native-lifetime', {
+        body: initial,
+        contentType: 'application/json',
+      })
+    })
+  }
+})
+
+test.describe('text calibration regression', () => {
+  test.use({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' })
+  for (const mode of ['content', 'lines'] as const) {
+    for (const content of ['text', 'parts'] as const) {
+      test(`R08 ${mode}/${content}: long tokens fit the first retained tracks`, async ({
+        page,
+      }, info) => {
+        await openTableFixture(
+          expect,
+          page,
+          '/__table_geometry/index.html',
+          'geometry-fixture',
+        )
+        await page.getByTestId('geometry-height-mode').selectOption(mode)
+        await page.getByTestId('geometry-height-content').selectOption(content)
+        await press(page, 'geometry-reading')
+        await settleTableLayout(page)
+        const lines = mode === 'lines' ? 3 : null
+        for (const key of ['a', 'd', 'e']) {
+          await info.attach(`${key}-collapsed`, {
+            body: await expectTableTextTrack(expect, page, key, lines),
+            contentType: 'application/json',
+          })
+        }
+        for (const key of ['b', 'c']) {
+          await expectTableTextTrack(expect, page, key, lines, false, false)
+          await expect(tableTextToggle(page, key)).toHaveCount(0)
+        }
+        if (mode === 'content') {
+          await expect(page.getByTestId('hilos-table-text-toggle')).toHaveCount(
+            0,
+          )
+        } else {
+          await expectTableTextControl(expect, page, 'a', false)
+          const toggle = tableTextToggle(page, 'a')
+          await toggle.focus()
+          await toggle.press('Enter')
+          await expectTableTextControl(expect, page, 'a', true)
+          await settleTableLayout(page)
+          await info.attach('expanded', {
+            body: await expectTableTextTrack(expect, page, 'a', lines, true),
+            contentType: 'application/json',
+          })
+          await expect(toggle).toBeFocused()
+          await toggle.press('Space')
+          await expectTableTextControl(expect, page, 'a', false)
+          await settleTableLayout(page)
+          await expectTableTextTrack(expect, page, 'a', lines)
+          await expect(toggle).toBeFocused()
+        }
+      })
+    }
+  }
+})
+
+test.describe('fixed rem text window stylesheet invalidation', () => {
+  test.use({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' })
+
+  for (const content of ['text', 'parts'] as const) {
+    test(`H02/H06 height ${content}: natural font/spacing changes remeasure without a DOM nudge`, async ({
+      page,
+    }, info) => {
+      const policy = { mode: 'height', rem: 4.5 } as const
+      await openTableFixture(
+        expect,
+        page,
+        '/__table_geometry/index.html',
+        'geometry-fixture',
+      )
+      await page.getByTestId('geometry-height-mode').selectOption('height')
+      await page.getByTestId('geometry-rem').selectOption('4.5')
+      await page.getByTestId('geometry-height-content').selectOption(content)
+      await press(page, 'geometry-reading')
+      await setTableEnvironment(page, { kind: 'font', size: 20 })
+      await settleTableLayout(page)
+      const region = tableTextRegion(page, 'b')
+      const toggle = tableTextToggle(page, 'b')
+      const cap = await watchHeight(region)
+      const width = await region.evaluate((node) => node.clientWidth)
+      await expect(toggle).toHaveCount(0)
+      const evidence = async (
+        phase: string,
+        expanded = false,
+        overflow = false,
+      ) => {
+        await info.attach(`${content}-${phase}`, {
+          body: await expectTableTextGeometry(
+            expect,
+            page,
+            'b',
+            policy,
+            expanded,
+            overflow,
+          ),
+          contentType: 'application/json',
+        })
+      }
+      await evidence('before')
+      // Only a head stylesheet changes. No class/render/resize/requestMeasure
+      // on the text window can supply the missing overflow invalidation.
+      for (const size of [48, 96]) {
+        await setTableEnvironment(page, {
+          kind: 'text-font',
+          size,
+          lineHeight: 2,
+        })
+        await settleTableLayout(page)
+        expect(await region.evaluate((node) => node.scrollHeight)).toBe(
+          size * 2,
+        )
+        expect(await region.evaluate((node) => node.clientHeight)).toBe(90)
+        expect(await region.evaluate((node) => node.clientWidth)).toBe(width)
+        await cap.unchanged()
+        await expectTableTextControl(expect, page, 'b', false)
+      }
+      await evidence('font96-glyph-outside90', false, true)
+      await setTableEnvironment(page, {
+        kind: 'text-font',
+        size: 16,
+        lineHeight: 1.5,
+      })
+      await settleTableLayout(page)
+      await expect(toggle).toHaveCount(0)
+      await cap.unchanged()
+      await evidence('small-again')
+      await setTableEnvironment(page, {
+        kind: 'text-font',
+        size: 96,
+        lineHeight: 2,
+      })
+      await expectTableTextControl(expect, page, 'b', false)
+      await toggle.focus()
+      const button = await toggle.elementHandle()
+      await toggle.press('Enter')
+      await expectTableTextControl(expect, page, 'b', true)
+      await settleTableLayout(page)
+      await evidence('expanded', true)
+      await setTableEnvironment(page, {
+        kind: 'text-font',
+        size: 16,
+        lineHeight: 1.5,
+      })
+      await settleTableLayout(page)
+      await expectTableTextControl(expect, page, 'b', true)
+      await toggle.press('Enter')
+      await expectTableTextControl(expect, page, 'b', false)
+      await settleTableLayout(page)
+      await expect(toggle).toBeFocused()
+      expect(
+        await toggle.evaluate((node, before) => node === before, button),
+      ).toBe(true)
+      await page.getByTestId('geometry-height-content').focus()
+      await expect(toggle).toHaveCount(0)
+      await evidence('collapsed-small')
+      await setTableEnvironment(page, { kind: 'container', narrow: true })
+      await setTableEnvironment(page, { kind: 'spacing', enabled: true })
+      await info.attach(`${content}-late-font-condition`, {
+        body: await loadLateTableFont(
+          expect,
+          page,
+          'geometry-body',
+          'geometry-name-b',
+        ),
+        contentType: 'application/json',
+      })
+      await settleTableLayout(page)
+      await expectTableTextControl(expect, page, 'a', false)
+      await tableTextToggle(page, 'a').click()
+      await expectTableTextControl(expect, page, 'a', true)
+      await settleTableLayout(page)
+      await info.attach(`${content}-width-spacing-font`, {
+        body: await expectTableTextGeometry(expect, page, 'a', policy, true),
+        contentType: 'application/json',
       })
     })
   }

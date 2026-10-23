@@ -372,6 +372,13 @@ export {
   type HilosTableMainAction,
   type HilosTableSearch,
 } from './table/tableFrame.js'
+export {
+  type HilosTableLineCount,
+  type HilosTableTextRem,
+  type HilosTableRowHeight,
+  hilosTableRowHeight,
+  hilosTableTextClass,
+} from './table/tableTextHeight.js'
 export { type HilosTableCard, hilosTableCard } from './table/tableCard.js'
 export { hilosTableRenderedKeys } from './table/tableRendered.js'
 export {

@@ -355,6 +355,60 @@ function fixture(
 }
 
 describe('useTableViewportGeometry (numeric DOM stubs)', () => {
+  it('reads exact live identities and retires saved readers before DOM replacement', async () => {
+    const f = fixture()
+    const identity = f.registration.measurement('a', 'wide')!.record
+    const wide = f.adapter.recordReader('a', identity.occurrence, 'wide')
+    const card = f.adapter.recordReader('a', identity.occurrence, 'card')
+    expect(wide()).toBe(identity)
+    expect(card()).toBe(identity)
+    expect(f.adapter.recordReader('a', -1, 'wide')()).toBeNull()
+    f.adapter.layoutChanged()
+    expect(wide()).toBe(identity)
+    f.owner.invalidateWindow()
+    expect(f.owner.record('a')!.occurrence).toBe(identity.occurrence)
+    expect(f.owner.record('a')).not.toBe(identity)
+    expect(wide()).toBeNull()
+    expect(card()).toBeNull()
+    // Ref callbacks from the outgoing DOM may still run on a Vue update.
+    f.redraw.value++
+    await nextTick()
+    expect(wide()).toBeNull()
+    f.owner.replaceWindow(['a', 'b'])
+    expect(wide()).toBeNull()
+    const fresh = f.adapter.recordReader(
+      'a',
+      f.owner.record('a')!.occurrence,
+      'wide',
+    )
+    expect(fresh()).toBe(f.owner.record('a'))
+    f.depart()
+    expect(fresh()).toBeNull()
+    f.wrapper.unmount()
+    expect(fresh()).toBeNull()
+  })
+
+  it('invalidates old readers synchronously on controller replacement', () => {
+    const f = fixture()
+    const read = f.adapter.recordReader(
+      'a',
+      f.owner.record('a')!.occurrence,
+      'wide',
+    )
+    const next = new TableViewportGeometry()
+    next.replaceWindow(['a', 'b'])
+    f.current.value = next.view
+    expect(read()).toBeNull()
+    const current = f.adapter.recordReader(
+      'a',
+      next.record('a')!.occurrence,
+      'wide',
+    )
+    expect(current()).toBe(next.record('a'))
+    next.dispose()
+    expect(current()).toBeNull()
+  })
+
   it.each(['measure', 'capture', 'hidden'] as const)(
     'waits for connected live wide content after initial empty %s',
     async (entry) => {

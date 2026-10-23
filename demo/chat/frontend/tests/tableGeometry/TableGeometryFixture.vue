@@ -15,16 +15,22 @@ import {
 import {
   Scope,
   TableViewportController,
+  HIDDEN_VALUE,
   hilosTableRemovalReason,
   ingest,
   subscribeSignal,
   type EntityRef,
+  type Hideable,
   type HilosTableFrame,
+  type HilosTableLineCount,
+  type HilosTableRowHeight,
+  type HilosTableTextRem,
   type TableRow,
   type TableViewportDescriptor,
 } from '@hilos/core/base'
 import {
   HilosModal,
+  HilosTableText,
   HilosViewportTable,
   hilosTableSelectionEdgeKey,
   useSignal,
@@ -33,6 +39,7 @@ import {
 interface RecordValue {
   readonly name: string
   readonly paragraph: string
+  readonly hiddenParagraph: boolean
   readonly badge: string
   readonly detail: string
   readonly expandable: boolean
@@ -51,6 +58,26 @@ const stale = ref(false)
 const pending = ref<'none' | 'move' | 'remove'>('none')
 const detail = ref<'absent' | 'collapsed' | 'expanded'>('collapsed')
 const expandedText = ref(false)
+const heightMode = ref<'default' | 'content' | 'lines' | 'height'>('default')
+const lineCount = ref<HilosTableLineCount>(3)
+const textRem = ref<HilosTableTextRem>(4.5)
+const heightContent = ref<'text' | 'parts'>('text')
+const mountedHeightContent = ref<'text' | 'parts'>('text')
+const readingSamples = ref(false)
+const payload = ref('long')
+const LINE_COUNTS: readonly HilosTableLineCount[] = [
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+]
+const TEXT_REMS: readonly HilosTableTextRem[] = [2, 3, 4.5, 6, 9, 12]
+const TEXT_SAMPLES = {
+  short: 'Short value',
+  empty: '',
+  long: `${Array.from({ length: 24 }, () => PARAGRAPH).join(' ')} LAST READABLE LINE`,
+  longer: `${Array.from({ length: 48 }, () => PARAGRAPH).join(' ')} LAST READABLE LINE`,
+  newline: `${Array.from({ length: 16 }, (_, index) => `Explicit line ${index + 1}`).join('\n')}\nLAST READABLE LINE`,
+  token: `${'UnbrokenToken'.repeat(200)}ENDTOKEN`,
+  hidden: '',
+} as const
 const edge = ref<'start' | 'end'>('start')
 const SelectionEdge = defineComponent({
   props: {
@@ -96,7 +123,13 @@ const frame: HilosTableFrame = {
       sortable: true,
       card: 'title',
     },
-    { key: 'paragraph', label: 'Description', progress: true, source: SOURCE },
+    {
+      key: 'paragraph',
+      label: 'Description',
+      heightContent: mountedHeightContent.value,
+      progress: true,
+      source: SOURCE,
+    },
     { key: 'badge', label: 'Status', card: 'badge', source: SOURCE },
     ...(iconActions.value
       ? ARCHIVE_COLUMNS.map(({ key, label }) => ({
@@ -141,6 +174,7 @@ function resolve(row: TableRow): RecordValue {
   return {
     name: String(fields?.name ?? ''),
     paragraph: String(fields?.paragraph ?? ''),
+    hiddenParagraph: fields?.hiddenParagraph === true,
     badge: String(fields?.badge ?? ''),
     detail: String(fields?.detail ?? ''),
     expandable: fields?.expandable !== false,
@@ -148,8 +182,16 @@ function resolve(row: TableRow): RecordValue {
 }
 
 function makeController(search = true): TableViewportController<RecordValue> {
+  const rowHeight: HilosTableRowHeight | undefined =
+    heightMode.value === 'default'
+      ? undefined
+      : heightMode.value === 'lines'
+        ? { mode: 'lines', count: lineCount.value }
+        : heightMode.value === 'height'
+          ? { mode: 'height', rem: textRem.value }
+          : { mode: 'content' }
   return new TableViewportController<RecordValue>({
-    frame: { ...frame, search: search ? frame.search : undefined },
+    frame: { ...frame, rowHeight, search: search ? frame.search : undefined },
     resolve,
     expandable: (row) => row.expandable,
     sendViewport: (descriptor) => {
@@ -164,6 +206,7 @@ function mirrors() {
     footer: useSignal(controller.value.frame.footer),
     body: useSignal(controller.value.frame.body),
     selected: useSignal(controller.value.selection.target),
+    expandedText: useSignal(controller.value.expandedText),
     tableWork: useSignal(controller.value.progress.table),
     bulkWork: useSignal(controller.value.progress.bulk),
     report: useSignal(controller.value.bulk.report),
@@ -204,10 +247,28 @@ function reset(): void {
           ? 'The widest unbroken name WWWWWWWWWWWWWWWW'
           : `Record ${key}`,
       paragraph: key === 'c' ? EXPANDED : PARAGRAPH,
+      hiddenParagraph: false,
       badge: 'Available',
       detail: `Private detail for ${key}. ${EXPANDED}`,
       expandable: true,
     })
+  }
+  if (readingSamples.value) {
+    for (const [key, sample] of [
+      ['a', 'long'],
+      ['b', 'short'],
+      ['c', 'empty'],
+      ['d', 'newline'],
+      ['e', 'token'],
+      ['f', mountedHeightContent.value === 'parts' ? 'hidden' : 'short'],
+      ['g', 'short'],
+    ] as const) {
+      write(key, {
+        name: `Record ${key}`,
+        paragraph: TEXT_SAMPLES[sample],
+        hiddenParagraph: sample === 'hidden',
+      })
+    }
   }
   controller.value.ingestWindow(
     KEYS.map(raw),
@@ -476,8 +537,45 @@ function deliver(reconnect = false): void {
 function replace(search = true): void {
   previousController?.dispose()
   previousController = controller.value
+  mountedHeightContent.value = heightContent.value
   controller.value = makeController(search)
   reset()
+}
+
+function startReading(): void {
+  readingSamples.value = true
+  replace()
+}
+
+function readingValue(row: RecordValue): Hideable<string> {
+  return row.hiddenParagraph ? HIDDEN_VALUE : row.paragraph
+}
+
+function changeText(): void {
+  const sample = payload.value as keyof typeof TEXT_SAMPLES
+  controller.value.withPresentationUpdate(
+    { kind: 'rows', rowKeys: [target.value] },
+    () => {
+      write(target.value, {
+        paragraph: TEXT_SAMPLES[sample],
+        hiddenParagraph: sample === 'hidden',
+      })
+      controller.value.ingestDelta({
+        kind: 'row_updated',
+        rowKey: target.value,
+        row: raw(target.value),
+      })
+    },
+  )
+  revision.value++
+}
+
+async function immediateDeparture(): Promise<void> {
+  // Change connected full text, flush Vue, and remove in the same task before
+  // ResizeObserver's next delivery. The SDK's sync capture must read this DOM.
+  changeText()
+  await nextTick()
+  depart(true)
 }
 
 function updateLive(): void {
@@ -621,7 +719,7 @@ onScopeDispose(() => {
           class="form-check-input"
           type="checkbox"
           data-id="geometry-text"
-        />Expanded text</label
+        />Long synthetic paragraph</label
       >
       <label
         >Selection edge
@@ -630,6 +728,95 @@ onScopeDispose(() => {
           <option value="end">End</option>
         </select>
       </label>
+    </div>
+    <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+      <label
+        >Row height
+        <select
+          v-model="heightMode"
+          class="form-select"
+          data-id="geometry-height-mode"
+        >
+          <option
+            v-for="mode in ['default', 'content', 'lines', 'height']"
+            :key="mode"
+            :value="mode"
+          >
+            {{ mode }}
+          </option>
+        </select>
+      </label>
+      <label
+        >Lines
+        <select
+          v-model="lineCount"
+          class="form-select"
+          data-id="geometry-lines"
+        >
+          <option v-for="value in LINE_COUNTS" :key="value" :value="value">
+            {{ value }}
+          </option>
+        </select>
+      </label>
+      <label
+        >Rem
+        <select v-model="textRem" class="form-select" data-id="geometry-rem">
+          <option v-for="value in TEXT_REMS" :key="value" :value="value">
+            {{ value }}
+          </option>
+        </select>
+      </label>
+      <label
+        >Height content
+        <select
+          v-model="heightContent"
+          class="form-select"
+          data-id="geometry-height-content"
+        >
+          <option value="text">text</option>
+          <option value="parts">parts</option>
+        </select>
+      </label>
+      <button
+        type="button"
+        class="btn btn-secondary"
+        data-id="geometry-reading"
+        @click="startReading"
+      >
+        Create reading controller
+      </button>
+      <label
+        >Live text
+        <select
+          v-model="payload"
+          class="form-select"
+          data-id="geometry-payload"
+        >
+          <option
+            v-for="sample in Object.keys(TEXT_SAMPLES)"
+            :key="sample"
+            :value="sample"
+          >
+            {{ sample }}
+          </option>
+        </select>
+      </label>
+      <button
+        type="button"
+        class="btn btn-secondary"
+        data-id="geometry-value"
+        @click="changeText"
+      >
+        Publish text
+      </button>
+      <button
+        type="button"
+        class="btn btn-secondary"
+        data-id="geometry-immediate"
+        @click="immediateDeparture"
+      >
+        Publish and remove before observer
+      </button>
     </div>
     <div class="d-flex flex-wrap gap-2 mb-3">
       <button class="btn btn-secondary" data-id="geometry-reset" @click="reset">
@@ -880,6 +1067,14 @@ onScopeDispose(() => {
       :data-range="`${footer.firstRow}:${footer.lastRow}`"
       :data-body="body"
       :data-selected="JSON.stringify(selected)"
+      :data-text-intent="
+        JSON.stringify(
+          [...current.expandedText.value].map(([key, columns]) => [
+            key,
+            [...columns],
+          ]),
+        )
+      "
       :data-identities="identities"
       :data-requests="requests.length"
       :data-descriptor="
@@ -897,9 +1092,29 @@ onScopeDispose(() => {
             }}</span></template
           >
           <template #cell-paragraph="{ row, rowKey }"
-            ><p class="mb-0" :data-id="`geometry-text-${rowKey}`">
-              {{ iconActions ? 'Completed archive' : row.paragraph }}
-            </p></template
+            ><div
+              v-if="mountedHeightContent === 'parts'"
+              :data-id="`geometry-text-${rowKey}`"
+            >
+              <HilosTableText :value="readingValue(row)" />
+              <span class="badge text-bg-info" data-id="geometry-text-badge"
+                >Plain text metadata</span
+              >
+              <a href="#geometry-reading-note" data-id="geometry-text-link"
+                >Reading note</a
+              >
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-secondary"
+                data-id="geometry-text-action"
+                @click="actionLog.push(`${rowKey}:text-action`)"
+              >
+                Inspect text
+              </button>
+            </div>
+            <span v-else :data-id="`geometry-text-${rowKey}`">{{
+              iconActions ? 'Completed archive' : row.paragraph
+            }}</span></template
           >
           <template #cell-badge="{ row, rowKey }"
             ><span
@@ -960,6 +1175,10 @@ onScopeDispose(() => {
         </HilosViewportTable>
       </SelectionEdge>
     </div>
+    <p id="geometry-reading-note" class="small">
+      Synthetic text samples exercise the public SDK; they do not prove server
+      delivery.
+    </p>
     <HilosModal
       v-model="focusModalOpen"
       title="Inspect geometry record"

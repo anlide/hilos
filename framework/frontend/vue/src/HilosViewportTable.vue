@@ -69,6 +69,7 @@ import HilosTableEmptyState from './HilosTableEmptyState.vue'
 import HilosTableFooter from './HilosTableFooter.vue'
 import HilosTableLive from './HilosTableLive.vue'
 import HilosTableProgress from './HilosTableProgress.vue'
+import HilosTableValue from './HilosTableValue.vue'
 import { hilosPageHeadingIdKey } from './hilosPageHeading.js'
 import { hilosTableSelectionEdgeKey } from './hilosTableSelectionEdge.js'
 import { useSignal } from './useSignal.js'
@@ -239,6 +240,7 @@ const geometry = useTableViewportGeometry(
   root,
   table,
   () => columnKeys.value,
+  (record) => props.controller.isTextRecordCurrent(record),
 )
 watch(frameColumns, geometry.layoutChanged)
 const tracks = computed(() => geometry.tracks.value)
@@ -750,12 +752,28 @@ function onSelectPage(event: Event): void {
                       :row-key="view.rowKey"
                     />
                   </span>
-                  <slot
-                    v-else
-                    :name="`cell-${column.key}`"
-                    :row="view.row"
-                    :row-key="view.rowKey"
-                  />
+                  <HilosTableValue
+                    v-else-if="hasCell(column)"
+                    :key="column.heightContent"
+                    :controller="props.controller"
+                    :read-record="
+                      geometry.recordReader(
+                        view.rowKey,
+                        view.occurrence,
+                        'wide',
+                      )
+                    "
+                    :column-key="column.key"
+                    :label="column.label"
+                    :height-content="column.heightContent"
+                    projection="wide"
+                  >
+                    <slot
+                      :name="`cell-${column.key}`"
+                      :row="view.row"
+                      :row-key="view.rowKey"
+                    />
+                  </HilosTableValue>
                 </td>
               </template>
               <td
@@ -1107,16 +1125,28 @@ function onSelectPage(event: Event): void {
                 :checked="view.selected"
                 @change="onSelectRow(view.rowKey, $event)"
               />
-              <span
+              <div
                 v-if="hasCell(card.title)"
                 class="fw-medium flex-grow-1 min-w-0 text-break"
               >
-                <slot
-                  :name="`cell-${card.title!.key}`"
-                  :row="view.row"
-                  :row-key="view.rowKey"
-                />
-              </span>
+                <HilosTableValue
+                  :key="`${card.title!.key}:${card.title!.heightContent}`"
+                  :controller="props.controller"
+                  :read-record="
+                    geometry.recordReader(view.rowKey, view.occurrence, 'card')
+                  "
+                  :column-key="card.title!.key"
+                  :label="card.title!.label"
+                  :height-content="card.title!.heightContent"
+                  projection="card"
+                >
+                  <slot
+                    :name="`cell-${card.title!.key}`"
+                    :row="view.row"
+                    :row-key="view.rowKey"
+                  />
+                </HilosTableValue>
+              </div>
               <!-- The right of the head, in one group: what the PAGE says about
               the row first, then what the FRAMEWORK says about it. The page's
               badge is not pushed out by a framework mark — on a wide screen the
@@ -1230,11 +1260,27 @@ function onSelectPage(event: Event): void {
                   {{ field.label }}
                 </dt>
                 <dd class="col-7 mb-0">
-                  <slot
-                    :name="`cell-${field.key}`"
-                    :row="view.row"
-                    :row-key="view.rowKey"
-                  />
+                  <HilosTableValue
+                    :key="field.heightContent"
+                    :controller="props.controller"
+                    :read-record="
+                      geometry.recordReader(
+                        view.rowKey,
+                        view.occurrence,
+                        'card',
+                      )
+                    "
+                    :column-key="field.key"
+                    :label="field.label"
+                    :height-content="field.heightContent"
+                    projection="card"
+                  >
+                    <slot
+                      :name="`cell-${field.key}`"
+                      :row="view.row"
+                      :row-key="view.rowKey"
+                    />
+                  </HilosTableValue>
                 </dd>
               </template>
             </dl>

@@ -1,7 +1,11 @@
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { h, ref, shallowRef } from 'vue'
-import { TableViewportController } from '@hilos/core/base'
+import { h, nextTick, ref, shallowRef } from 'vue'
+import {
+  createSignal,
+  HIDDEN_VALUE,
+  TableViewportController,
+} from '@hilos/core/base'
 import type {
   ActionHandle,
   HilosTableBulkAccepted,
@@ -12,6 +16,8 @@ import type {
 } from '@hilos/core/base'
 
 import HilosModal from './HilosModal.vue'
+import HilosTableText from './HilosTableText.vue'
+import HilosTableValue from './HilosTableValue.vue'
 import HilosViewportTable from './HilosViewportTable.vue'
 import { hilosPageHeadingIdKey } from './hilosPageHeading.js'
 import {
@@ -2986,6 +2992,570 @@ describe('HilosViewportTable capture and disappearing controls', () => {
     await wrapper.vm.$nextTick()
     expect(document.activeElement).toBe(outside)
     controller.dispose()
+  })
+})
+
+// Mocked boxes prove capture/wiring/lifetime only. CSS wrapping and keyboard
+// layout evidence belong to the real browser fixture in HIL-1752 slice 7.
+describe('HilosViewportTable text integration', () => {
+  const owners: TableViewportController<unknown>[] = []
+  afterEach(() => {
+    owners.splice(0).forEach((owner) => owner.dispose())
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    document.body.replaceChildren()
+  })
+
+  function textDOM() {
+    let serial = 0
+    let long = true
+    let cardVisible = true
+    let cardLong = true
+    const frames = new Map<number, FrameRequestCallback>()
+    const observers: {
+      changed: () => void
+      targets: Set<Element>
+    }[] = []
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.set(++serial, callback)
+      return serial
+    })
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id))
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        readonly targets = new Set<Element>()
+        constructor(readonly changed: () => void) {
+          observers.push(this)
+        }
+        observe(node: Element) {
+          this.targets.add(node)
+        }
+        unobserve(node: Element) {
+          this.targets.delete(node)
+        }
+        disconnect() {
+          this.targets.clear()
+        }
+      },
+    )
+    vi.stubGlobal(
+      'MutationObserver',
+      class {
+        readonly targets = new Set<Element>()
+        constructor(readonly changed: () => void) {
+          observers.push(this)
+        }
+        observe(node: Element) {
+          this.targets.add(node)
+        }
+        disconnect() {
+          this.targets.clear()
+        }
+      },
+    )
+    const card = (node: HTMLElement) =>
+      node.closest('[data-id="hilos-table-cards"]') !== null
+    const style = window.getComputedStyle.bind(window)
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((node) => {
+      const result = style(node)
+      return new Proxy(result, {
+        get(target, property) {
+          if (
+            property === 'display' &&
+            !cardVisible &&
+            card(node as HTMLElement)
+          )
+            return 'none'
+          return Reflect.get(target, property)
+        },
+      })
+    })
+    const opened = (node: Element | null) =>
+      (node?.querySelectorAll('.hilos-table-text.is-open').length ?? 0) * 100
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+      function (this: HTMLElement) {
+        if (!cardVisible && card(this)) return new DOMRect()
+        const row = this.closest('tbody')?.querySelector(
+          '[data-id="hilos-table-row-a"]',
+        )
+        const extra = opened(row ?? null)
+        if (this.dataset.id === 'hilos-table-row-a')
+          return new DOMRect(0, 40, 400, 40.25 + extra)
+        if (this.dataset.id === 'hilos-table-card-a')
+          return new DOMRect(0, 300, 400, 260.75 + opened(this))
+        if (this.dataset.id === 'hilos-table-progress-row-a')
+          return new DOMRect(0, 80.25 + extra, 400, 18.5)
+        if (this.dataset.id === 'hilos-table-row-detail-a')
+          return new DOMRect(0, 98.75 + extra, 400, 60.25)
+        if (this.classList.contains('hilos-table-text'))
+          return new DOMRect(0, 0, 200, 40)
+        if (this.classList.contains('hilos-table-reason-twins'))
+          return new DOMRect(0, 0, 400, 18)
+        if (this.classList.contains('hilos-table-replacement-row'))
+          return new DOMRect(0, 0, 400, 19)
+        if (this.parentElement?.classList.contains('hilos-table-record-space'))
+          return new DOMRect(0, 0, 400, 18)
+        return new DOMRect(0, 0, 400, 100)
+      },
+    )
+    for (const property of [
+      'clientWidth',
+      'clientHeight',
+      'scrollWidth',
+      'scrollHeight',
+    ] as const) {
+      vi.spyOn(HTMLElement.prototype, property, 'get').mockImplementation(
+        function (this: HTMLElement) {
+          if (!cardVisible && card(this)) return 0
+          if (property === 'clientHeight') return 40
+          if (property === 'scrollHeight')
+            return (card(this) ? cardLong : long) ? 80 : 40
+          return 200
+        },
+      )
+    }
+    return {
+      observers,
+      frames,
+      shorten() {
+        long = false
+        cardLong = false
+        observers.forEach((observer) => observer.changed())
+      },
+      shortenCard() {
+        cardLong = false
+        observers.forEach((observer) => observer.changed())
+      },
+      hideCard() {
+        cardVisible = false
+        observers.forEach((observer) => observer.changed())
+      },
+      async flush() {
+        await nextTick()
+        for (let pass = 0; pass < 3 && frames.size > 0; pass++) {
+          const callbacks = [...frames.values()]
+          frames.clear()
+          callbacks.forEach((callback) => callback(0))
+          await nextTick()
+        }
+      },
+    }
+  }
+
+  function textTable(columns?: () => readonly HilosTableColumn[]) {
+    const mode = shallowRef<'text' | 'parts' | 'unsafe'>('text')
+    const value = shallowRef('Complete live name')
+    const note = shallowRef<string | typeof HIDDEN_VALUE>('Complete note')
+    const { controller } = makeController({
+      title: 'Text values',
+      search: {},
+      rowHeight: { mode: 'lines', count: 2 },
+      columns: columns ?? [
+        { key: 'name', label: 'Name', heightContent: 'text' },
+        { key: 'note', label: 'Note', heightContent: 'parts' },
+        { key: 'badge', label: 'Status', card: 'badge' },
+        { key: 'empty', label: 'Empty', heightContent: 'text' },
+        { key: 'missing', label: 'Missing', heightContent: 'parts' },
+        { key: 'actions', label: 'Actions' },
+        { key: 'detail', label: 'Detail', detail: true },
+      ],
+    })
+    owners.push(controller)
+    const snapshot = () =>
+      controller.ingestWindow(
+        [{ rowKey: 'a', slots: { name: value.value } }],
+        1,
+        true,
+        null,
+        null,
+        10,
+      )
+    snapshot()
+    const wrapper = mount(HilosViewportTable, {
+      props: { controller },
+      attachTo: document.body,
+      slots: {
+        'cell-name': () =>
+          mode.value === 'parts'
+            ? h(HilosTableText, { value: value.value })
+            : mode.value === 'unsafe'
+              ? h('button', { 'data-id': 'unsafe-text-action' }, value.value)
+              : value.value,
+        'cell-note': () => [
+          h(HilosTableText, { value: note.value }),
+          h('span', { class: 'badge' }, 'outside cap'),
+        ],
+        'cell-badge': () => h('span', { class: 'badge' }, 'Active'),
+        'cell-empty': () => [],
+        'cell-actions': () => h('button', { 'data-id': 'text-action' }, 'Act'),
+        'detail-detail': () => 'private detail',
+        'row-progress': () => 'private work',
+      },
+    })
+    const wide = () => wrapper.get('[data-id="hilos-table-row-a"]')
+    const card = () => wrapper.get('[data-id="hilos-table-card-a"]')
+    return { wrapper, controller, snapshot, wide, card, value, note, mode }
+  }
+
+  it('connects text/parts in both projections, preserving missing/empty renderers and valid card blocks', async () => {
+    const dom = textDOM()
+    const f = textTable()
+    await dom.flush()
+    expect(f.wrapper.findAllComponents(HilosTableValue)).toHaveLength(7)
+    expect(f.wide().findAll('td')).toHaveLength(7)
+    expect(
+      f
+        .card()
+        .findAll('dt')
+        .map((node) => node.text()),
+    ).toEqual(['Note', 'Empty'])
+    expect(f.wrapper.findAll('.hilos-table-text-lines-2')).toHaveLength(6)
+    expect(
+      f.wrapper
+        .findAll('.hilos-table-text')
+        .filter((node) => node.text() === ''),
+    ).toHaveLength(2)
+    const title = f.card().get('.fw-medium.flex-grow-1')
+    expect(title.element.tagName).toBe('DIV')
+    expect(title.find('span > div').exists()).toBe(false)
+    for (const branch of [f.wide(), f.card()]) {
+      expect(
+        branch
+          .get('[data-id="text-action"]')
+          .element.closest('.hilos-table-text'),
+      ).toBeNull()
+      for (const badge of branch.findAll('.badge'))
+        expect(badge.element.closest('.hilos-table-text')).toBeNull()
+    }
+    f.note.value = HIDDEN_VALUE
+    await dom.flush()
+    expect(f.wrapper.findAll('[data-id="hilos-hidden"]')).toHaveLength(2)
+    for (const mark of f.wrapper.findAll('[data-id="hilos-hidden"]'))
+      expect(mark.element.closest('.hilos-table-text')).toBeNull()
+    expect(f.wrapper.text()).not.toContain('[object Object]')
+  })
+
+  it('keeps unsafe text slot controls intrinsic through live safe/unsafe changes', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const dom = textDOM()
+    const f = textTable()
+    await dom.flush()
+    f.mode.value = 'unsafe'
+    await dom.flush()
+    for (const branch of [f.wide(), f.card()]) {
+      expect(
+        branch
+          .get('[data-id="unsafe-text-action"]')
+          .element.closest('.hilos-table-text'),
+      ).toBeNull()
+      expect(branch.find('[aria-label="Show in full: Name"]').exists()).toBe(
+        false,
+      )
+    }
+    expect(warning).toHaveBeenCalledTimes(2)
+    f.mode.value = 'text'
+    await dom.flush()
+    expect(f.wrapper.findAll('[aria-label="Show in full: Name"]')).toHaveLength(
+      2,
+    )
+  })
+
+  it('shares intent with independent ids/overflow and columns, keeps focus after live shortening and collapse', async () => {
+    const dom = textDOM()
+    const f = textTable()
+    await dom.flush()
+    const texts = f.wrapper.findAll('.hilos-table-text')
+    expect(new Set(texts.map((node) => node.attributes('id'))).size).toBe(6)
+    dom.shortenCard()
+    await dom.flush()
+    expect(f.card().find('[data-id="hilos-table-text-toggle"]').exists()).toBe(
+      false,
+    )
+    const toggle = f.wide().get('[aria-label="Show in full: Name"]')
+    const button = toggle.element as HTMLButtonElement
+    expect(document.getElementById(toggle.attributes('aria-controls')!)).toBe(
+      texts[0].element,
+    )
+    button.focus()
+    await toggle.trigger('click')
+    await dom.flush()
+    expect(f.wrapper.findAll('.hilos-table-text.is-open')).toHaveLength(2)
+    expect(
+      f.card().get('[aria-label="Collapse: Name"]').attributes('aria-expanded'),
+    ).toBe('true')
+    expect(f.controller.rows.get()[0]!.expanded).toBe(false)
+    expect(f.wide().find('[aria-label="Collapse: Note"]').exists()).toBe(false)
+    await f.wide().get('[aria-label="Show in full: Note"]').trigger('click')
+    expect(f.wrapper.findAll('.hilos-table-text.is-open')).toHaveLength(4)
+    await f.wide().get('[aria-label="Collapse: Note"]').trigger('click')
+    expect(f.wrapper.findAll('.hilos-table-text.is-open')).toHaveLength(2)
+    dom.hideCard()
+    await dom.flush()
+    expect(f.wrapper.findAll('.hilos-table-text.is-open')).toHaveLength(2)
+    f.value.value = 'Short'
+    dom.shorten()
+    await dom.flush()
+    expect(toggle.text()).toBe('Collapse')
+    await toggle.trigger('click')
+    await dom.flush()
+    expect(f.wide().get('[aria-label="Show in full: Name"]').element).toBe(
+      button,
+    )
+    expect(document.activeElement).toBe(button)
+    expect(f.card().find('[data-id="hilos-table-text-toggle"]').exists()).toBe(
+      false,
+    )
+    button.blur()
+    await dom.flush()
+    expect(f.wide().find('[aria-label="Show in full: Name"]').exists()).toBe(
+      false,
+    )
+  })
+
+  it.each([
+    'refresh',
+    'search',
+    'reset',
+    'snapshot',
+    'refusal',
+    'dispose',
+  ] as const)(
+    'makes saved read/command/observer callbacks inert on %s before Vue flush',
+    async (action) => {
+      const dom = textDOM()
+      const f = textTable()
+      await dom.flush()
+      const inputs = f.wrapper
+        .findAllComponents(HilosTableValue)
+        .map((value) => value.props())
+      const read = inputs[0].readRecord
+      const old = read()!
+      expect(old).not.toBeNull()
+      const expand = vi.spyOn(f.controller, 'expandText')
+      const toggle = f.wide().get('[aria-label="Show in full: Name"]')
+        .element as HTMLButtonElement
+      const late = [...dom.frames.values()]
+      if (action === 'refresh') f.controller.refresh()
+      if (action === 'search') f.controller.setSearch('next')
+      if (action === 'reset') f.controller.resetWindowRequests()
+      if (action === 'snapshot') f.snapshot()
+      if (action === 'refusal') f.controller.ingestRefusal('denied')
+      if (action === 'dispose') f.controller.dispose()
+      expect(read()).toBeNull()
+      toggle.click()
+      dom.observers.forEach((observer) => observer.changed())
+      late.forEach((callback) => callback(0))
+      expect(expand).not.toHaveBeenCalled()
+      expect(f.controller.expandedText.get().size).toBe(0)
+      await dom.flush()
+      if (['refresh', 'search', 'reset'].includes(action)) {
+        expect(f.wide().text()).toContain('Complete live name')
+        expect(
+          f.wrapper.find('[data-id="hilos-table-text-toggle"]').exists(),
+        ).toBe(false)
+        for (const value of f.wrapper.findAllComponents(HilosTableValue))
+          expect(value.props().readRecord()).toBeNull()
+        f.snapshot()
+        await dom.flush()
+        expect(
+          f.wrapper.find('[aria-label="Show in full: Name"]').exists(),
+        ).toBe(true)
+        expect(read()).toBeNull()
+      }
+    },
+  )
+
+  it('captures full expanded DOM with detail/work before immediate departure and releases both projections', async () => {
+    const dom = textDOM()
+    const f = textTable()
+    f.controller.expandRow('a', true)
+    f.controller.ingestProgress({
+      scope: 'row',
+      progressKey: 'job',
+      rowKey: 'a',
+      current: 1,
+      total: 2,
+    })
+    await dom.flush()
+    const inputs = f.wrapper
+      .findAllComponents(HilosTableValue)
+      .map((value) => value.props())
+    const button = f.wide().get('[aria-label="Show in full: Name"]')
+    ;(button.element as HTMLElement).focus()
+    await button.trigger('click')
+    // No ResizeObserver/RAF measurement after expansion: departure must read DOM.
+    expect(f.wide().find('.is-open').exists()).toBe(true)
+    const late = [...dom.frames.values()]
+    f.controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+      own: true,
+    })
+    expect(inputs.every((input) => input.readRecord() === null)).toBe(true)
+    await nextTick()
+    // The replacement row contributes one pixel of shell outside this block.
+    expect(f.wide().get('.hilos-table-record-space').attributes('style')).toBe(
+      '--hilos-table-record-px: 218;',
+    )
+    expect(f.card().get('.hilos-table-record-space').attributes('style')).toBe(
+      '--hilos-table-record-px: 360.75;',
+    )
+    for (const branch of [f.wide(), f.card()]) {
+      expect(branch.text()).not.toMatch(/Complete|private|outside cap/)
+      expect(
+        branch
+          .find('.hilos-table-text, button, [data-id="text-action"]')
+          .exists(),
+      ).toBe(false)
+    }
+    expect(f.wrapper.findAllComponents(HilosTableValue)).toHaveLength(0)
+    expect(f.controller.expandedText.get().size).toBe(0)
+    expect(document.activeElement).toBe(
+      f.wrapper.get('[data-id="hilos-table-search"]').element,
+    )
+    expect(
+      dom.observers.every((observer) =>
+        [...observer.targets].every((node) => node.isConnected),
+      ),
+    ).toBe(true)
+    late.forEach((callback) => callback(0))
+    dom.observers.forEach((observer) => observer.changed())
+    await dom.flush()
+    expect(f.wide().get('.hilos-table-record-space').attributes('style')).toBe(
+      '--hilos-table-record-px: 218;',
+    )
+    f.snapshot()
+    await dom.flush()
+    expect(f.wrapper.find('.is-open').exists()).toBe(false)
+    f.wrapper.unmount()
+    expect(dom.observers.every((observer) => observer.targets.size === 0)).toBe(
+      true,
+    )
+  })
+
+  it('keeps pending foreign removal live until Apply and measures collapse as a smaller live extent', async () => {
+    const dom = textDOM()
+    const f = textTable()
+    await dom.flush()
+    await f.wide().get('[aria-label="Show in full: Name"]').trigger('click')
+    await dom.flush()
+    const input = f.wrapper.findComponent(HilosTableValue).props()
+    const registration = f.controller.geometry.register(() => ({ records: [] }))
+    const old = input.readRecord()!
+    f.controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'left_set',
+    })
+    await dom.flush()
+    expect(input.readRecord()).toBe(old)
+    expect(
+      f.controller.expandedText.get().get(old.occurrence)?.has('name'),
+    ).toBe(true)
+    await f.wide().get('[aria-label="Collapse: Name"]').trigger('click')
+    await dom.flush()
+    f.controller.apply()
+    await dom.flush()
+    expect(input.readRecord()).toBeNull()
+    expect(f.wide().get('.hilos-table-record-space').attributes('style')).toBe(
+      '--hilos-table-record-px: 39.25;',
+    )
+    expect(f.card().get('.hilos-table-record-space').attributes('style')).toBe(
+      '--hilos-table-record-px: 260.75;',
+    )
+    expect(registration.record('a', 'wide')!.reason).toBe('left_set')
+    registration.dispose()
+  })
+
+  it.each(['eviction', 'reused key'] as const)(
+    'retires text readers and intent on %s inside the same window',
+    async (action) => {
+      const dom = textDOM()
+      const f = textTable()
+      f.controller.ingestWindow(
+        [{ rowKey: 'a', slots: { name: 'First' } }],
+        2,
+        true,
+        null,
+        null,
+        1,
+      )
+      await dom.flush()
+      const read = f.wrapper.findComponent(HilosTableValue).props().readRecord
+      const old = read()!
+      await f.wide().get('[aria-label="Show in full: Name"]').trigger('click')
+      if (action === 'reused key') {
+        f.controller.ingestDelta({
+          kind: 'row_removed',
+          rowKey: 'a',
+          reason: 'deleted',
+          own: true,
+        })
+        await dom.flush()
+      }
+      f.controller.ingestOwnCreate(
+        { rowKey: action === 'eviction' ? 'b' : 'a', slots: { name: 'New' } },
+        0,
+        2,
+        true,
+        null,
+        null,
+      )
+      expect(read()).toBeNull()
+      expect(f.controller.expandedText.get().has(old.occurrence)).toBe(false)
+      await dom.flush()
+      expect(f.wrapper.find('.is-open').exists()).toBe(false)
+      if (action === 'eviction') {
+        expect(
+          f.wrapper
+            .find(
+              '[data-id="hilos-table-row-a"], [data-id="hilos-table-card-a"]',
+            )
+            .exists(),
+        ).toBe(false)
+      } else {
+        expect(
+          f.wrapper.findComponent(HilosTableValue).props().readRecord()!
+            .occurrence,
+        ).not.toBe(old.occurrence)
+      }
+    },
+  )
+
+  it('replaces dynamic text/parts contexts and controller readers without inheriting old intent', async () => {
+    const dom = textDOM()
+    const columns = createSignal<readonly HilosTableColumn[]>([
+      { key: 'name', label: 'Name', heightContent: 'text' },
+    ])
+    const f = textTable(() => columns.get())
+    await dom.flush()
+    const old = f.wrapper.findComponent(HilosTableValue).props()
+    await f.wide().get('[aria-label="Show in full: Name"]').trigger('click')
+    f.mode.value = 'parts'
+    columns.set([{ key: 'name', label: 'Renamed', heightContent: 'parts' }])
+    await dom.flush()
+    expect(f.wrapper.findAllComponents(HilosTableText)).toHaveLength(2)
+    expect(f.wide().get('[aria-label="Collapse: Renamed"]').text()).toBe(
+      'Collapse',
+    )
+    columns.set([
+      { key: 'name', label: 'Intrinsic' },
+      { key: 'reserve', label: 'Reserve', heightContent: 'text' },
+    ])
+    f.mode.value = 'text'
+    await dom.flush()
+    expect(f.wrapper.find('.hilos-table-text').exists()).toBe(false)
+    expect(f.controller.expandedText.get().size).toBe(0)
+    columns.set([{ key: 'name', label: 'Again', heightContent: 'text' }])
+    await dom.flush()
+    expect(f.wrapper.find('.is-open').exists()).toBe(false)
+    const next = textTable()
+    await f.wrapper.setProps({ controller: next.controller })
+    expect(old.readRecord()).toBeNull()
+    await dom.flush()
+    expect(f.wrapper.find('.is-open').exists()).toBe(false)
   })
 })
 

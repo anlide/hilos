@@ -6,6 +6,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import ts from 'typescript'
 import { build } from 'vite'
 import { sdkEvidence } from '../../core/bin/initial-bundle-sdk.mjs'
 
@@ -52,6 +53,65 @@ assert.ok(!modules(base).includes('src/index.ts'))
 // The shared page head is a common primitive: it ships in that same clean base
 // closure, not in an admin section or in the compatibility root.
 assert.ok(modules(base).some((id) => id.startsWith('src/HilosPageHead.vue')))
+assert.ok(modules(base).some((id) => id.startsWith('src/HilosTableText.vue')))
+const textTypes = await readFile(
+  join(packageDir, 'dist/HilosTableText.vue.d.ts'),
+  'utf8',
+)
+assert.match(textTypes, /value: Hideable<string>/)
+assert.doesNotMatch(textTypes, /height\??:/)
+assert.deepEqual(
+  Object.keys(manifest.exports).filter((key) => /text|value/i.test(key)),
+  [],
+)
+
+// Type-check an installed consumer against emitted declarations, with no source
+// alias and no fixture written into the repository.
+const typeFixture = join(packageDir, 'test/__packaging_types__.ts')
+const typeSource = `
+  import { HilosTableText } from '@hilos/vue/base'
+  import type { Hideable } from '@hilos/core/base'
+  type Props = InstanceType<typeof HilosTableText>['$props']
+  type Same<A, B> = (<T>() => T extends A ? 1 : 2) extends
+    (<T>() => T extends B ? 1 : 2) ? true : false
+  const exactValue: Same<Props['value'], Hideable<string>> = true
+  const plain: Props['value'] = 'Full text'
+  const hidden: Props['value'] = { _hidden: true }
+  // @ts-expect-error The value is a string, never a numeric cell renderer.
+  const numeric: Props['value'] = 42
+  // @ts-expect-error Height belongs to the table, not this component.
+  const height: Props['height'] = { mode: 'content' }
+  // @ts-expect-error The main text has no arbitrary child slot.
+  const slot: InstanceType<typeof HilosTableText>['$slots']['default'] = () => []
+  // @ts-expect-error Named slots cannot introduce arbitrary child markup either.
+  const namedSlot: InstanceType<typeof HilosTableText>['$slots']['custom'] = () => []
+`
+const typeOptions = {
+  target: ts.ScriptTarget.ES2022,
+  module: ts.ModuleKind.ESNext,
+  moduleResolution: ts.ModuleResolutionKind.Bundler,
+  strict: true,
+  noEmit: true,
+  types: ['vite/client'],
+}
+const typeHost = ts.createCompilerHost(typeOptions)
+const readSource = typeHost.getSourceFile.bind(typeHost)
+typeHost.getSourceFile = (path, languageVersion, onError, shouldCreateNew) =>
+  path === typeFixture
+    ? ts.createSourceFile(path, typeSource, languageVersion, true)
+    : readSource(path, languageVersion, onError, shouldCreateNew)
+const diagnostics = ts.getPreEmitDiagnostics(
+  ts.createProgram([typeFixture], typeOptions, typeHost),
+)
+assert.equal(
+  diagnostics.length,
+  0,
+  ts.formatDiagnostics(diagnostics, {
+    getCanonicalFileName: (path) => path,
+    getCurrentDirectory: () => packageDir,
+    getNewLine: () => '\n',
+  }),
+)
 const metadata = closure('admin-views.js')
 assert.deepEqual(modules(metadata), ['src/admin/hilosAdminViews.ts'])
 assert.ok(graph['admin-views.js'].dynamicImports.length > 0)
@@ -163,6 +223,16 @@ try {
             export const samePage = root.HilosSettingsPage === HilosSettingsPage
             export const samePageHead =
               root.HilosPageHead !== undefined && root.HilosPageHead === base.HilosPageHead
+            export const sameTableText =
+              root.HilosTableText !== undefined && root.HilosTableText === base.HilosTableText
+            export const privateText = ${[
+              'HilosTableValue',
+              'hilosTableTextKey',
+              'useTableTextReading',
+              'useTableTextOverflow',
+            ]
+              .map((name) => `!('${name}' in root) && !('${name}' in base)`)
+              .join(' && ')}
             export const descriptors = Object.values(hilosAdminViews()).every(
               view => view.kind === 'lazy-page' && typeof view.load === 'function',
             )
@@ -190,6 +260,8 @@ try {
   assert.equal(consumer.sameTokens, true)
   assert.equal(consumer.samePage, true)
   assert.equal(consumer.samePageHead, true)
+  assert.equal(consumer.sameTableText, true)
+  assert.equal(consumer.privateText, true)
   assert.equal(consumer.descriptors, true)
   assert.equal(await consumer.loadDashboard(), true)
   assert.equal(await consumer.loadDefaults(), true)

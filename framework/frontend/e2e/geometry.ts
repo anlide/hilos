@@ -123,6 +123,455 @@ export async function watchHeight(element: Locator): Promise<Watched> {
   return take(what, () => measureBox(element, 'height', what))
 }
 
+/** Text policy expected by the spec, independently of the shipped CSS classes. */
+export type TableTextPolicy =
+  | { readonly mode: 'content' }
+  | { readonly mode: 'lines'; readonly count: number }
+  | { readonly mode: 'height'; readonly rem: number }
+
+/** The single visible full-text window; a hidden reserve has no id. */
+export function tableTextRegion(page: Page, rowKey: string): Locator {
+  return page
+    .getByTestId(`hilos-table-row-${rowKey}`)
+    .or(page.getByTestId(`hilos-table-card-${rowKey}`))
+    .filter({ visible: true })
+    .locator('.hilos-table-text[id]')
+}
+
+/**
+ * Check authentic text/track bounds, including non-whitespace glyphs in the
+ * unbroken token, in both the natural and the capped reading window.
+ */
+export async function expectTableTextTrack(
+  expect: Expect,
+  page: Page,
+  rowKey: string,
+  lines: number | null,
+  expanded = false,
+  overflow = true,
+): Promise<string> {
+  const region = tableTextRegion(page, rowKey)
+  await expect(region).toHaveCount(1)
+  const sample = await region.evaluate((node) => {
+    const box = node.getBoundingClientRect()
+    const style = getComputedStyle(node)
+    const range = document.createRange()
+    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT)
+    const glyphs: DOMRect[] = []
+    // pre-wrap can hang trailing spaces; only actual glyphs must fit.
+    for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+      for (const word of text.textContent!.matchAll(/\S+/g)) {
+        range.setStart(text, word.index)
+        range.setEnd(text, word.index + word[0].length)
+        glyphs.push(...range.getClientRects())
+      }
+    }
+    const table = node.closest('table')!
+    const room = node.parentElement!.querySelector(':scope > .hilos-stack')
+    return {
+      height: box.height,
+      lineHeight: Number.parseFloat(style.lineHeight),
+      minHeight: Number.parseFloat(style.minBlockSize) || 0,
+      whiteSpace: style.whiteSpace,
+      overflowWrap: style.overflowWrap,
+      overflowY: style.overflowY,
+      scrollHeight: node.scrollHeight,
+      clientHeight: node.clientHeight,
+      scrollWidth: node.scrollWidth,
+      clientWidth: node.clientWidth,
+      tableWidth: table.getBoundingClientRect().width,
+      portWidth: table.parentElement!.clientWidth,
+      tracks: [...table.querySelectorAll('col')].map(
+        (col) => col.getBoundingClientRect().width,
+      ),
+      escapedGlyphs: glyphs.filter(
+        (glyph) => glyph.left < box.left - 1 || glyph.right > box.right + 1,
+      ).length,
+      firstGlyph: glyphs.length
+        ? Math.min(...glyphs.map((glyph) => glyph.top)) - box.top
+        : 0,
+      lastGlyph: glyphs.length
+        ? Math.max(...glyphs.map((glyph) => glyph.bottom)) - box.top
+        : 0,
+      lineCount: new Set(glyphs.map((glyph) => glyph.top)).size,
+      hidden: !!node.closest('[aria-hidden="true"], [inert]'),
+      open: node.classList.contains('is-open'),
+      room: room
+        ? {
+            height: room.getBoundingClientRect().height,
+            hidden: room
+              .querySelector('.invisible')
+              ?.getAttribute('aria-hidden'),
+            inert: room.querySelector('.invisible')?.hasAttribute('inert'),
+          }
+        : null,
+    }
+  })
+  const diagnostic = JSON.stringify(sample)
+  expect(sample.tableWidth, diagnostic).toBeLessThanOrEqual(
+    sample.portWidth + SLACK_PX,
+  )
+  expect(sample.escapedGlyphs, diagnostic).toBe(0)
+  expect(sample.scrollWidth, diagnostic).toBeLessThanOrEqual(
+    sample.clientWidth + SLACK_PX,
+  )
+  expect(sample.whiteSpace).toBe('pre-wrap')
+  expect(sample.overflowWrap).toBe('anywhere')
+  expect(sample.hidden).toBe(false)
+  expect(sample.open).toBe(expanded)
+  expect(sample.lineHeight).toBeGreaterThan(0)
+  if (lines === null) {
+    expect(sample.room).toBeNull()
+    expect(sample.overflowY).toBe('visible')
+  } else {
+    const reserve = lines * sample.lineHeight
+    if (expanded) {
+      expect(sample.minHeight).toBe(reserve)
+      expect(sample.height).toBeGreaterThanOrEqual(reserve - SLACK_PX)
+    } else {
+      expect(Math.abs(sample.height - reserve)).toBeLessThanOrEqual(SLACK_PX)
+      expect(sample.scrollHeight > sample.clientHeight).toBe(overflow)
+    }
+    expect(sample.room!.height).toBeGreaterThan(0)
+    expect(sample.room!.hidden).toBe('true')
+    expect(sample.room!.inert).toBe(true)
+  }
+  if (expanded || lines === null) {
+    expect(sample.scrollHeight).toBeLessThanOrEqual(
+      sample.clientHeight + SLACK_PX,
+    )
+    expect(sample.firstGlyph).toBeGreaterThanOrEqual(-SLACK_PX)
+    expect(sample.lastGlyph).toBeLessThanOrEqual(sample.height + SLACK_PX)
+  } else if (overflow) {
+    expect(sample.lastGlyph).toBeGreaterThan(sample.height)
+  }
+  return JSON.stringify({ rowKey, lines, expanded, ...sample }, null, 2)
+}
+
+/** Watch reserved reading room across changes of text and overflow controls. */
+export async function watchTableTextRoom(
+  page: Page,
+  rowKey: string,
+): Promise<Watched> {
+  return watchHeight(
+    tableTextRegion(page, rowKey)
+      .locator('..')
+      .locator(':scope > .hilos-stack'),
+  )
+}
+
+/**
+ * Watch the inline footprint across a text-only update or disclosure toggle.
+ * Whole-port excess stays diagnostic (invisible mark reserves: P-698); text
+ * must add none, and neither the used table nor any track may grow or shrink.
+ * Keep the same browser chrome and layout conditions between these readings.
+ */
+export async function watchTableTextInline(
+  expect: Expect,
+  page: Page,
+  rowKey: string,
+): Promise<{ unchanged(): Promise<void>; evidence(): Promise<string> }> {
+  const read = () =>
+    tableTextRegion(page, rowKey).evaluate((node) => {
+      const table = node.closest('table')!
+      const port = table.parentElement!
+      const zoom = node.currentCSSZoom
+      return {
+        available: port.clientWidth,
+        excess: Math.max(0, port.scrollWidth - port.clientWidth),
+        extent: port.scrollWidth,
+        table: table.getBoundingClientRect().width / zoom,
+        tracks: [...table.querySelectorAll('col')].map(
+          (column) => column.getBoundingClientRect().width / zoom,
+        ),
+      }
+    })
+  const initial = await read()
+  const frames = [initial]
+  return {
+    async unchanged() {
+      const current = await read()
+      frames.push(current)
+      const diagnostic = JSON.stringify({ rowKey, initial, current })
+      expect(
+        Math.abs(current.available - initial.available),
+        diagnostic,
+      ).toBeLessThanOrEqual(SLACK_PX)
+      expect(current.excess, diagnostic).toBeLessThanOrEqual(
+        initial.excess + SLACK_PX,
+      )
+      expect(
+        Math.abs(current.table - initial.table),
+        diagnostic,
+      ).toBeLessThanOrEqual(SLACK_PX)
+      expect(current.tracks.length).toBe(initial.tracks.length)
+      for (const [index, width] of current.tracks.entries())
+        expect(
+          Math.abs(width - initial.tracks[index]!),
+          diagnostic,
+        ).toBeLessThanOrEqual(SLACK_PX)
+    },
+    async evidence() {
+      return JSON.stringify(
+        {
+          rowKey,
+          wholePortAttribution:
+            'P-698: invisible mark reserves; age not established',
+          frames,
+        },
+        null,
+        2,
+      )
+    },
+  }
+}
+
+/**
+ * Prove real used text height and readable glyph bounds, not just textContent.
+ * The range covers the sole live value, including its last wrapped line. It
+ * never changes clipping, measures a clone, or substitutes browser rectangles.
+ */
+export async function expectTableTextGeometry(
+  expect: Expect,
+  page: Page,
+  rowKey: string,
+  policy: TableTextPolicy,
+  expanded = false,
+  overflow = false,
+): Promise<string> {
+  const region = tableTextRegion(page, rowKey)
+  await expect(region).toHaveCount(1)
+  const sample = await region.evaluate((node) => {
+    const box = node.getBoundingClientRect()
+    const style = getComputedStyle(node)
+    const zoom = node.currentCSSZoom
+    // pre-wrap may hang trailing spaces outside a line box. Measure every
+    // non-whitespace glyph run instead, so readability means actual ink fits.
+    const range = document.createRange()
+    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT)
+    const lines: DOMRect[] = []
+    for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+      for (const word of text.textContent!.matchAll(/\S+/g)) {
+        range.setStart(text, word.index)
+        range.setEnd(text, word.index + word[0].length)
+        lines.push(...range.getClientRects())
+      }
+    }
+    const room = node.parentElement!.querySelector(':scope > .hilos-stack')
+    const holder = room?.querySelector(':scope > .invisible')
+    const roomBox = room?.getBoundingClientRect()
+    const holderBox = holder?.getBoundingClientRect()
+    const scrollport = node.closest('.table-responsive')!
+    const table = node.closest('table')!
+    const tableBox = table.getBoundingClientRect()
+    const cell = node.closest('td')!
+    const cellBox = cell.getBoundingClientRect()
+    const portBox = scrollport.getBoundingClientRect()
+    return {
+      height: box.height / zoom,
+      width: box.width / zoom,
+      lineHeight: Number.parseFloat(style.lineHeight),
+      fontSize: Number.parseFloat(style.fontSize),
+      rootFont: Number.parseFloat(
+        getComputedStyle(document.documentElement).fontSize,
+      ),
+      minHeight: Number.parseFloat(style.minBlockSize) || 0,
+      overflowY: style.overflowY,
+      whiteSpace: style.whiteSpace,
+      open: node.classList.contains('is-open'),
+      hidden: !!node.closest('[aria-hidden="true"], [inert]'),
+      content: node.textContent,
+      scrollHeight: node.scrollHeight,
+      clientHeight: node.clientHeight,
+      scrollWidth: node.scrollWidth,
+      clientWidth: node.clientWidth,
+      scrollportWidth: scrollport.clientWidth,
+      scrollportExtent: scrollport.scrollWidth,
+      wholePortAttribution:
+        'P-698: invisible mark reserves; age not established',
+      tableWidth: tableBox.width / zoom,
+      tableLeft: (tableBox.left - portBox.left) / zoom,
+      tableClass: table.className,
+      cellWidth: cellBox.width / zoom,
+      cellScrollWidth: cell.scrollWidth,
+      cellClientWidth: cell.clientWidth,
+      textLeft: (box.left - cellBox.left) / zoom,
+      textRight: (box.right - cellBox.left) / zoom,
+      tracks: [...table.querySelectorAll('col')].map(
+        (column) => column.getBoundingClientRect().width / zoom,
+      ),
+      overflowWrap: style.overflowWrap,
+      lineCount: new Set(lines.map((line) => line.top)).size,
+      firstLine: lines.length
+        ? (Math.min(...lines.map((line) => line.top)) - box.top) / zoom
+        : 0,
+      lastLine: lines.length
+        ? (Math.max(...lines.map((line) => line.bottom)) - box.top) / zoom
+        : 0,
+      escapedLines: lines.filter(
+        (line) => line.left < box.left - 1 || line.right > box.right + 1,
+      ).length,
+      room: roomBox
+        ? {
+            height: roomBox.height / zoom,
+            separation: (roomBox.top - box.bottom) / zoom,
+            holderHeight: (holderBox?.height ?? 0) / zoom,
+            holderText: holder?.textContent?.trim(),
+            holderHidden: holder?.getAttribute('aria-hidden'),
+            holderInert: holder?.hasAttribute('inert'),
+            holderUnsafe: holder?.querySelectorAll(
+              '[id], [data-id], button, a, input, [tabindex]',
+            ).length,
+            holderOwnId:
+              holder?.hasAttribute('id') || holder?.hasAttribute('data-id'),
+          }
+        : null,
+    }
+  })
+  expect(
+    sample.hidden,
+    'full plain text remains in the accessibility tree',
+  ).toBe(false)
+  expect(sample.lineHeight).toBeGreaterThan(0)
+  expect(sample.whiteSpace).toBe('pre-wrap')
+  expect(sample.lineCount).toBeGreaterThanOrEqual(
+    (sample.content ?? '').split('\n').filter((line) => line.length > 0).length,
+  )
+  expect(sample.open).toBe(expanded)
+  const diagnostic = JSON.stringify({
+    ...sample,
+    content: sample.content?.slice(0, 40),
+  })
+  expect(
+    sample.escapedLines,
+    `long tokens wrap within their track: ${diagnostic}`,
+  ).toBe(0)
+  expect(sample.scrollWidth).toBeLessThanOrEqual(sample.clientWidth + SLACK_PX)
+  expect(sample.cellScrollWidth, diagnostic).toBeLessThanOrEqual(
+    sample.cellClientWidth + SLACK_PX,
+  )
+  expect(sample.textLeft, diagnostic).toBeGreaterThanOrEqual(-SLACK_PX)
+  expect(sample.textRight, diagnostic).toBeLessThanOrEqual(
+    sample.cellWidth + SLACK_PX,
+  )
+  expect(sample.tableLeft, diagnostic).toBeGreaterThanOrEqual(-SLACK_PX)
+  expect(sample.tableLeft + sample.tableWidth, diagnostic).toBeLessThanOrEqual(
+    sample.scrollportWidth + SLACK_PX,
+  )
+  expect(
+    sample.tracks.reduce((sum, width) => sum + width, 0),
+    diagnostic,
+  ).toBeLessThanOrEqual(sample.tableWidth + SLACK_PX)
+  expect(['auto', 'scroll']).not.toContain(sample.overflowY)
+  if (policy.mode === 'content') {
+    expect(sample.room).toBeNull()
+    expect(sample.minHeight).toBe(0)
+  } else {
+    const reserve =
+      policy.mode === 'lines'
+        ? policy.count * sample.lineHeight
+        : policy.rem * sample.rootFont
+    if (expanded) {
+      expect(Math.abs(sample.minHeight - reserve)).toBeLessThanOrEqual(SLACK_PX)
+      expect(sample.height).toBeGreaterThanOrEqual(reserve - SLACK_PX)
+    } else {
+      expect(
+        Math.abs(sample.height - reserve),
+        'used block-size follows the declared lh/rem preset',
+      ).toBeLessThanOrEqual(SLACK_PX)
+      expect(sample.scrollHeight > sample.clientHeight).toBe(overflow)
+    }
+    expect(sample.room).not.toBeNull()
+    expect(sample.room!.height).toBeGreaterThan(0)
+    expect(
+      Math.abs(sample.room!.height - sample.room!.holderHeight),
+    ).toBeLessThanOrEqual(SLACK_PX)
+    expect(sample.room!.separation).toBeGreaterThanOrEqual(-SLACK_PX)
+    expect(sample.room!.holderText).toBe('Show in full')
+    expect(sample.room!.holderHidden).toBe('true')
+    expect(sample.room!.holderInert).toBe(true)
+    expect(sample.room!.holderUnsafe).toBe(0)
+    expect(sample.room!.holderOwnId).toBe(false)
+  }
+  if (expanded || policy.mode === 'content') {
+    expect(sample.scrollHeight).toBeLessThanOrEqual(
+      sample.clientHeight + SLACK_PX,
+    )
+    expect(sample.firstLine).toBeGreaterThanOrEqual(-SLACK_PX)
+    expect(
+      sample.lastLine,
+      'the last glyph line is inside the full reading window',
+    ).toBeLessThanOrEqual(sample.height + SLACK_PX)
+  } else if (overflow) {
+    expect(sample.lastLine).toBeGreaterThan(sample.height)
+  }
+  return JSON.stringify(
+    { rowKey, policy, expanded, overflow, ...sample },
+    null,
+    2,
+  )
+}
+
+/** Mixed-value metadata and actions must remain outside every clipped ancestor. */
+export async function expectTableTextParts(
+  expect: Expect,
+  page: Page,
+  rowKey: string,
+  outsideIds: readonly string[],
+): Promise<void> {
+  const row = page
+    .getByTestId(`hilos-table-row-${rowKey}`)
+    .or(page.getByTestId(`hilos-table-card-${rowKey}`))
+    .filter({ visible: true })
+  for (const id of outsideIds) {
+    const part = row.getByTestId(id)
+    await expect(part).toBeVisible()
+    const state = await part.evaluate((node) => {
+      const box = node.getBoundingClientRect()
+      const clipped: string[] = []
+      for (
+        let ancestor = node.parentElement;
+        ancestor;
+        ancestor = ancestor.parentElement
+      ) {
+        const style = getComputedStyle(ancestor)
+        const bounds = ancestor.getBoundingClientRect()
+        if (
+          /(hidden|clip)/.test(style.overflowY) &&
+          (box.top < bounds.top - 1 || box.bottom > bounds.bottom + 1)
+        )
+          clipped.push(ancestor.tagName)
+        if (
+          /(hidden|clip|auto|scroll)/.test(style.overflowX) &&
+          (box.left < bounds.left - 1 || box.right > bounds.right + 1)
+        )
+          clipped.push(`${ancestor.tagName}:inline`)
+      }
+      return { inText: !!node.closest('.hilos-table-text'), clipped }
+    })
+    expect(state.inText).toBe(false)
+    expect(state.clipped).toEqual([])
+  }
+}
+
+/** Intrinsic rows keep their own height rather than borrowing the tallest row. */
+export async function expectTableIntrinsicRows(
+  expect: Expect,
+  page: Page,
+  tallKey: string,
+  shortKey: string,
+): Promise<void> {
+  const heights = await page.getByTestId(TABLE).evaluate(
+    (root, keys) =>
+      keys.map((key) => {
+        const row = root.querySelector(`[data-id="hilos-table-row-${key}"]`)!
+        return row.getBoundingClientRect().height / row.currentCSSZoom
+      }),
+    [tallKey, shortKey],
+  )
+  expect(heights[0]).toBeGreaterThan(heights[1]! + SLACK_PX)
+}
+
 /**
  * Find the point of `under` that `over` lies on, as a click position on `under`.
  *

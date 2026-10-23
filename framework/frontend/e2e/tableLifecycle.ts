@@ -234,6 +234,11 @@ export type TableEnvironment =
   | { readonly kind: 'container'; readonly narrow: boolean }
   | { readonly kind: 'projection'; readonly projection: 'wide' | 'card' }
   | { readonly kind: 'font'; readonly size: number }
+  | {
+      readonly kind: 'text-font'
+      readonly size: number
+      readonly lineHeight: number
+    }
   | { readonly kind: 'spacing'; readonly enabled: boolean }
   | {
       readonly kind: 'zoom'
@@ -285,6 +290,9 @@ export async function setTableEnvironment(
   switch (change.kind) {
     case 'font':
       content = `html { font-size: ${change.size}px; }`
+      break
+    case 'text-font':
+      content = `[data-id="${bodyId}"] .hilos-table-text { font-size: ${change.size}px; line-height: ${change.lineHeight}; }`
       break
     case 'zoom':
       content = `html { zoom: ${change.factor}; } [data-id="${bodyId}"] { zoom: ${change.ancestorFactor ?? 1}; }`
@@ -472,6 +480,7 @@ export async function expectTableNativeLifecycle(
   expect: Expect,
   page: Page,
   mounted: boolean,
+  expectedListeners = 3,
 ): Promise<string> {
   const stats = await page.evaluate(() =>
     (
@@ -490,7 +499,7 @@ export async function expectTableNativeLifecycle(
     expect(stats.listeners).toBe(0)
   } else {
     expect(stats.targets).toBeGreaterThan(0)
-    expect(stats.listeners).toBe(3)
+    expect(stats.listeners).toBe(expectedListeners)
   }
   return JSON.stringify(stats)
 }

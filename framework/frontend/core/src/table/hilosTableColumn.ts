@@ -38,6 +38,12 @@ export interface HilosTableColumn {
   key: string
   /** Header text. */
   label: string
+  /**
+   * Main text governed by rowHeight: the whole value, or explicit text parts
+   * beside unconstrained content. Omitted keeps the existing intrinsic render.
+   * Detail, actions and card badges cannot participate.
+   */
+  heightContent?: 'text' | 'parts'
   /** Whether the header offers a sort control (default false). */
   sortable?: boolean
   /** Extra classes for the header cell, e.g. `text-end` for a numeric column. */

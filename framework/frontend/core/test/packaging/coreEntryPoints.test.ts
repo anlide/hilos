@@ -97,6 +97,13 @@ const publicLegalTypes = [
 /** The moment formatter's explicit additions to the frozen legacy snapshot. */
 const momentValues = ['formatMoment']
 const momentTypes = ['MomentFormatOptions']
+/** Closed table text policy additions, shared by root and base. */
+const tableTextValues = ['hilosTableRowHeight', 'hilosTableTextClass']
+const tableTextTypes = [
+  'HilosTableLineCount',
+  'HilosTableTextRem',
+  'HilosTableRowHeight',
+]
 /**
  * The photo's own check frame gave way to the shared moderation one: the two
  * names it took out of the frozen snapshot and the three it added, by hand.
@@ -117,6 +124,7 @@ const expectedValues = [
   ...pageHeadValues,
   ...publicLegalValues,
   ...momentValues,
+  ...tableTextValues,
   ...moderationValues,
 ].sort()
 
@@ -227,6 +235,7 @@ describe('core public entries', () => {
       ...pageHeadValues,
       ...publicLegalValues,
       ...momentValues,
+      ...tableTextValues,
       ...moderationValues,
     ]) {
       expect(base, name).toHaveProperty(name)
@@ -358,6 +367,7 @@ describe('core public entries', () => {
         ...pageHeadTypes,
         ...publicLegalTypes,
         ...momentTypes,
+        ...tableTextTypes,
       ].sort(),
     )
     const baseExports = exportsOf('base/index.ts')
@@ -366,6 +376,8 @@ describe('core public entries', () => {
       ...publicLegalTypes,
       ...momentTypes,
       ...momentValues,
+      ...tableTextTypes,
+      ...tableTextValues,
     ]) {
       expect(root.get(name), name).toBeDefined()
       expect(baseExports.get(name), name).toBe(root.get(name))
@@ -397,6 +409,11 @@ describe('core public entries', () => {
     ])
     expect(closure).toContain('connection/restoreProgress.ts')
     expect(closure).toContain('format/moment.ts')
+    expect(closure).toContain('table/tableTextExpansion.ts')
+    expect(runtimeClosure('table/tableTextExpansion.ts')).toEqual([
+      'state/signal.ts',
+      'table/tableTextExpansion.ts',
+    ])
     for (const module of [
       'legalPublicDocument',
       'legalPrivacy',
@@ -427,6 +444,10 @@ describe('core public entries', () => {
     'subscription/PageSubscription.ts',
     'subscription/bindTableViewport.ts',
     'table/TableViewportController.ts',
+    'table/hilosTableColumn.ts',
+    'table/tableFrame.ts',
+    'table/tableTextExpansion.ts',
+    'table/tableTextHeight.ts',
     'table/tableViewportGeometry.ts',
     'legal/legalTerms.ts',
     'legal/legalPublicDocument.ts',

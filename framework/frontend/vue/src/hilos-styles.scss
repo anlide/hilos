@@ -4,6 +4,168 @@
 // documented exceptions, each stating WHY a stock utility cannot achieve it and
 // WHAT it is for. It is loaded after Bootstrap so it wins on equal specificity.
 
+// WHY: Bootstrap has no text-only wrapping rule for preserved whitespace or
+// long words, and clipping a row would also clip its controls and badges.
+// WHAT: the main text node wraps naturally without imposing a height.
+.hilos-table-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+// WHY: Bootstrap has no line-based block-size utility for a text node.
+// WHAT: each preset clips its text at the declared number of line-heights.
+.hilos-table-text-lines-1 {
+  block-size: 1lh;
+  overflow: hidden;
+}
+.hilos-table-text-lines-2 {
+  block-size: 2lh;
+  overflow: hidden;
+}
+.hilos-table-text-lines-3 {
+  block-size: 3lh;
+  overflow: hidden;
+}
+.hilos-table-text-lines-4 {
+  block-size: 4lh;
+  overflow: hidden;
+}
+.hilos-table-text-lines-5 {
+  block-size: 5lh;
+  overflow: hidden;
+}
+.hilos-table-text-lines-6 {
+  block-size: 6lh;
+  overflow: hidden;
+}
+.hilos-table-text-lines-7 {
+  block-size: 7lh;
+  overflow: hidden;
+}
+.hilos-table-text-lines-8 {
+  block-size: 8lh;
+  overflow: hidden;
+}
+.hilos-table-text-lines-9 {
+  block-size: 9lh;
+  overflow: hidden;
+}
+.hilos-table-text-lines-10 {
+  block-size: 10lh;
+  overflow: hidden;
+}
+.hilos-table-text-lines-11 {
+  block-size: 11lh;
+  overflow: hidden;
+}
+.hilos-table-text-lines-12 {
+  block-size: 12lh;
+  overflow: hidden;
+}
+
+// WHY: Bootstrap has no fixed text-only block-size utility for rem presets.
+// WHAT: each preset clips its text at the declared rem height.
+.hilos-table-text-height-2 {
+  block-size: 2rem;
+  overflow: hidden;
+}
+.hilos-table-text-height-3 {
+  block-size: 3rem;
+  overflow: hidden;
+}
+.hilos-table-text-height-4-5 {
+  block-size: 4.5rem;
+  overflow: hidden;
+}
+.hilos-table-text-height-6 {
+  block-size: 6rem;
+  overflow: hidden;
+}
+.hilos-table-text-height-9 {
+  block-size: 9rem;
+  overflow: hidden;
+}
+.hilos-table-text-height-12 {
+  block-size: 12rem;
+  overflow: hidden;
+}
+
+// WHY: Bootstrap cannot expand a capped text node while retaining its original
+// reserved extent.
+// WHAT: expanded text grows naturally and keeps the matching preset as a floor.
+.hilos-table-text-lines-1.is-open {
+  block-size: auto;
+  min-block-size: 1lh;
+}
+.hilos-table-text-lines-2.is-open {
+  block-size: auto;
+  min-block-size: 2lh;
+}
+.hilos-table-text-lines-3.is-open {
+  block-size: auto;
+  min-block-size: 3lh;
+}
+.hilos-table-text-lines-4.is-open {
+  block-size: auto;
+  min-block-size: 4lh;
+}
+.hilos-table-text-lines-5.is-open {
+  block-size: auto;
+  min-block-size: 5lh;
+}
+.hilos-table-text-lines-6.is-open {
+  block-size: auto;
+  min-block-size: 6lh;
+}
+.hilos-table-text-lines-7.is-open {
+  block-size: auto;
+  min-block-size: 7lh;
+}
+.hilos-table-text-lines-8.is-open {
+  block-size: auto;
+  min-block-size: 8lh;
+}
+.hilos-table-text-lines-9.is-open {
+  block-size: auto;
+  min-block-size: 9lh;
+}
+.hilos-table-text-lines-10.is-open {
+  block-size: auto;
+  min-block-size: 10lh;
+}
+.hilos-table-text-lines-11.is-open {
+  block-size: auto;
+  min-block-size: 11lh;
+}
+.hilos-table-text-lines-12.is-open {
+  block-size: auto;
+  min-block-size: 12lh;
+}
+.hilos-table-text-height-2.is-open {
+  block-size: auto;
+  min-block-size: 2rem;
+}
+.hilos-table-text-height-3.is-open {
+  block-size: auto;
+  min-block-size: 3rem;
+}
+.hilos-table-text-height-4-5.is-open {
+  block-size: auto;
+  min-block-size: 4.5rem;
+}
+.hilos-table-text-height-6.is-open {
+  block-size: auto;
+  min-block-size: 6rem;
+}
+.hilos-table-text-height-9.is-open {
+  block-size: auto;
+  min-block-size: 9rem;
+}
+.hilos-table-text-height-12.is-open {
+  block-size: auto;
+  min-block-size: 12rem;
+}
+
 // WHY: auto table layout redistributes tracks when their widest record leaves;
 // Bootstrap has no measured fixed-track table utility.
 // WHAT: the complete colgroup and border-box width captured from the live table.

@@ -54,6 +54,26 @@ Checked automatically: `STYLE-SHEET-HOME`. The layer is a list of sanctioned
 paths — one file per view package — and a stylesheet anywhere else is reported by
 its path alone, whether or not anything imports it.
 
+### Table text presets
+
+The table text classes are a closed Sass catalog, delivered with matching preset
+names and values in Vue, React, and Angular. Core's `hilosTableTextClass()` maps
+a validated `HilosTableRowHeight` to the base class and its catalog token; it
+does not accept an arbitrary CSS length. The base class preserves whitespace
+with `white-space: pre-wrap` and wraps long tokens with `overflow-wrap: anywhere`.
+The `lines` catalog reserves 1 through 12 `lh` units, and the `height` catalog
+reserves 2, 3, 4.5, 6, 9, or 12 `rem`. Each limited class clips only the main
+text window, so its preset remains reserved for short and empty values without
+clipping the surrounding row or card. `.is-open` changes the text window to
+natural size while keeping the same preset as `min-block-size`.
+
+The control's inert, invisible twin keeps its Bootstrap metrics reserved in the
+same grid cell as the real control; it has no row value, id, `data-id`, or
+focusable child. The text window and its reading control therefore keep their
+room as the control appears or disappears. These rules remain Sass declarations
+with their `WHY` and `WHAT` comments. The class mapper is not a route to dynamic
+styles, arbitrary lengths, or CSS-based measurement probes.
+
 ## A computed value — the one legal channel
 
 A number the template computes still has to reach CSS, and no class can express

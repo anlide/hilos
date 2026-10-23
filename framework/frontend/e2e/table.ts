@@ -43,6 +43,59 @@ export function shownByTestId(
   return scope.getByTestId(testId).filter({ visible: true })
 }
 
+/** The real reading control of one visible record, independent of its projection. */
+export function tableTextToggle(page: Page, rowKey: string): Locator {
+  return shownByTestId(
+    page
+      .getByTestId(`hilos-table-row-${rowKey}`)
+      .or(page.getByTestId(`hilos-table-card-${rowKey}`)),
+    'hilos-table-text-toggle',
+  )
+}
+
+/** Check native semantics and every mounted control's unique, live text target. */
+export async function expectTableTextControl(
+  expect: Expect,
+  page: Page,
+  rowKey: string,
+  expanded: boolean,
+  label = 'Description',
+): Promise<void> {
+  const toggle = tableTextToggle(page, rowKey)
+  await expect(toggle).toBeVisible()
+  await expect(toggle).toHaveAttribute('type', 'button')
+  await expect(toggle).toHaveText(expanded ? 'Collapse' : 'Show in full')
+  await expect(toggle).toHaveAccessibleName(
+    `${expanded ? 'Collapse' : 'Show in full'}: ${label}`,
+  )
+  await expect(toggle).toHaveAttribute('aria-expanded', String(expanded))
+  const targets = await page
+    .getByTestId('hilos-table-text-toggle')
+    .evaluateAll((buttons) =>
+      buttons.map((button) => {
+        const id = button.getAttribute('aria-controls')
+        const nodes = [...document.querySelectorAll('[id]')].filter(
+          (node) => node.id === id,
+        )
+        return {
+          id,
+          count: nodes.length,
+          text: nodes[0]?.classList.contains('hilos-table-text'),
+          hidden: !!nodes[0]?.closest('[aria-hidden="true"], [inert]'),
+          native: button instanceof HTMLButtonElement,
+        }
+      }),
+    )
+  expect(new Set(targets.map(({ id }) => id)).size).toBe(targets.length)
+  for (const target of targets) {
+    expect(target.id).toBeTruthy()
+    expect(target.count).toBe(1)
+    expect(target.text).toBe(true)
+    expect(target.hidden).toBe(false)
+    expect(target.native).toBe(true)
+  }
+}
+
 /**
  * Settle a table after a row the page itself removed on the server: the
  * ordinary removal gate of the table may leave this window owing an Apply, or may

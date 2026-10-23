@@ -1824,7 +1824,11 @@ describe('bindTableViewport presentation ingress', () => {
         refusedWindows: { settings: { errorCode: 'internal_error' } },
       },
     })
+    expect(f.capture).not.toHaveBeenCalled()
     f.scopes.openPage('other')
+    // S6 publishes a reset even without expanded intent, invalidating mounted
+    // text callbacks. That lifecycle boundary captures the still-connected DOM.
+    expect(f.capture).toHaveBeenCalledTimes(1)
     f.connection.emitDelta(frame)
     f.connection.emitPageResponse({
       page: 'main',
@@ -1842,9 +1846,32 @@ describe('bindTableViewport presentation ingress', () => {
         },
       },
     })
+    expect(f.capture).toHaveBeenCalledTimes(1)
     f.scopes.dropPage()
+    expect(f.capture).toHaveBeenCalledTimes(2)
     f.connection.emitDelta(frame)
-    expect(f.capture).not.toHaveBeenCalled()
+    expect(f.capture).toHaveBeenCalledTimes(2)
+    expect(
+      f.capture.mock.calls.map(([request]) =>
+        request.records.map(({ record, layout }) => [
+          record.rowKey,
+          layout.projection,
+        ]),
+      ),
+    ).toEqual([
+      [
+        ['a', 'wide'],
+        ['a', 'card'],
+        ['b', 'wide'],
+        ['b', 'card'],
+      ],
+      [
+        ['a', 'wide'],
+        ['a', 'card'],
+        ['b', 'wide'],
+        ['b', 'card'],
+      ],
+    ])
     expect(f.writes).toEqual([])
     expect(f.registration.measurement('a', 'wide')).toEqual(ticket)
     f.stop()
@@ -1856,6 +1883,19 @@ describe('bindTableViewport presentation ingress', () => {
     const f = fixture()
     f.unbind()
     expect(f.connection.registered.size).toBe(0)
+    expect(f.capture).toHaveBeenCalledTimes(1)
+    expect(
+      f.capture.mock.calls[0]![0].records.map(({ record, layout }) => [
+        record.rowKey,
+        layout.projection,
+      ]),
+    ).toEqual([
+      ['a', 'wide'],
+      ['a', 'card'],
+      ['b', 'wide'],
+      ['b', 'card'],
+    ])
+    f.capture.mockClear()
     const frame = {
       ...ADDRESS,
       kind: 'row_removed',

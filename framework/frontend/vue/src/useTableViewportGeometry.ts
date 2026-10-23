@@ -13,6 +13,7 @@ import {
   type TableColumnTracks,
   type TableGeometryCaptureRequest,
   type TableGeometryMeasurement,
+  type TableGeometryRecord,
   type TableGeometryRegistration,
   type TableGeometrySample,
   type TableProjection,
@@ -85,6 +86,7 @@ export function useTableViewportGeometry(
   root: Ref<HTMLElement | null>,
   table: Ref<HTMLTableElement | null>,
   columnKeys: () => readonly string[],
+  isCurrentRecord: (record: TableGeometryRecord) => boolean = () => true,
 ) {
   const revision = shallowRef(0)
   const tracks = shallowRef<TableColumnTracks | null>(null)
@@ -505,6 +507,36 @@ export function useTableViewportGeometry(
     }
   }
 
+  /**
+   * Capture this render's exact registration identity. A saved reader never
+   * follows another mount, window or occurrence, even before Vue flushes.
+   */
+  function recordReader(
+    rowKey: string,
+    occurrence: number,
+    projection: TableProjection,
+  ): () => TableGeometryRecord | null {
+    const source = controller()
+    const owner = registration
+    const identity = owner?.measurement(rowKey, projection)?.record
+    return () => {
+      void revision.value
+      if (
+        stopped ||
+        !owner ||
+        registration !== owner ||
+        controller() !== source ||
+        identity?.occurrence !== occurrence ||
+        !isCurrentRecord(identity)
+      )
+        return null
+      const state = owner.record(rowKey, projection)
+      return state?.reason === null && state.record === identity
+        ? identity
+        : null
+    }
+  }
+
   function recordPixels(
     rowKey: string,
     occurrence: number,
@@ -630,6 +662,7 @@ export function useTableViewportGeometry(
     trackWidths,
     reasonFloors,
     bind,
+    recordReader,
     recordPixels,
     workPixels,
     layoutChanged: invalidate,

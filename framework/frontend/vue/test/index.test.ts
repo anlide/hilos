@@ -7,6 +7,7 @@ import {
   HilosPageHead,
   HilosSkeleton,
   HilosSwitch,
+  HilosTableText,
   HilosView,
   hilosRouterKey,
   useConnectionState,
@@ -28,4 +29,16 @@ it('exports the @hilos/vue public surface', () => {
 
 it('exports the shared page head once, from the base entry the root re-exports', () => {
   expect(base.HilosPageHead).toBe(HilosPageHead)
+})
+
+it('exports only the public text primitive with the same root/base identity', () => {
+  expect(HilosTableText).toBeTypeOf('object')
+  expect(base.HilosTableText).toBe(HilosTableText)
+  for (const name of [
+    'HilosTableValue',
+    'hilosTableTextKey',
+    'useTableTextReading',
+    'useTableTextOverflow',
+  ])
+    expect(base).not.toHaveProperty(name)
 })

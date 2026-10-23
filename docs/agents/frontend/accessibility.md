@@ -204,6 +204,22 @@ The rules to apply when building a view or an SDK component:
   entity block that supplies the heading; do not create a second heading to
   name the table. See [page-head.md](../architecture/page-head.md) for the
   component's pending implementation.
+- **Limited table text has one native reading control.** The button says
+  “Show in full” or “Collapse”; its accessible name is
+  `<caption>: <field label>`, `aria-expanded` reports its state, and
+  `aria-controls` names the text window with an id unique to that projection.
+  For a visible value, the complete plain text is present once in the normal
+  accessibility tree, never copied into a hidden node or marked `aria-hidden`.
+  The room holder is invisible, `aria-hidden`, and inert, with no row copy or
+  focusable child. A hidden-value mark stays outside the clipped window and has
+  no reading button.
+
+  A native button appears only for actual overflow or while the text is
+  expanded or the button itself has focus. If shortening the text or collapsing
+  it removes the need for the button, the same focused button stays until blur.
+  When departure removes it, the existing focus-return path uses the visible
+  table search or root and honors the nearest registered modal fallback. A
+  focus move outside the table is preserved.
 - **A listbox owns only `option` and `group`.** An intermediate `<li>`
   carries `role="presentation"` so the listbox owns the options directly;
   `HilosDropdown`'s empty row is one `role="option"` with `aria-disabled`; a

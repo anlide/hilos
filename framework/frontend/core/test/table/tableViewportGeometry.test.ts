@@ -559,6 +559,25 @@ describe('TableViewportGeometry synchronous presentation boundary', () => {
 })
 
 describe('TableViewportGeometry controller identity integration', () => {
+  it('retires both projections of a live text layout without changing departed allocations', () => {
+    const { geometry, view } = setup()
+    for (const projection of ['wide', 'card'] as const) {
+      measure(view, extent(30, 10, 20), projection, 'a')
+      measure(view, extent(40, 10, 30), projection, 'b')
+    }
+    geometry.depart('b', 'deleted')
+    const tickets = [ticket(view, 'a', 'wide'), ticket(view, 'a', 'card')]
+    const departed = [view.record('b', 'wide'), view.record('b', 'card')]
+    geometry.invalidateRows(['a', 'b'])
+    for (const [index, projection] of (['wide', 'card'] as const).entries()) {
+      expect(ticket(view, 'a', projection)).not.toBe(tickets[index])
+      expect(ticket(view, 'a', projection).record).toBe(tickets[index]!.record)
+      expect(view.record('a', projection)?.live).toBeNull()
+      expect(view.record('b', projection)).toEqual(departed[index])
+      expect(view.record('b', projection)?.retained).toBe(82.5)
+    }
+  })
+
   it('reads the same owner identity without a mount and does not create missing records', () => {
     const { geometry, view } = setup()
     expect(geometry.record('a')).toBe(ticket(view).record)
@@ -615,5 +634,46 @@ describe('TableViewportGeometry canceled departure reserve', () => {
     geometry.depart('a', 'deleted')
     geometry.releaseWork('a')
     expect(view.record('a', 'wide')?.retained).toBe(52)
+  })
+})
+
+describe('TableViewportGeometry text presentation boundary', () => {
+  it('captures before collapse, retires only measurements and retains the final full footprint on departure', () => {
+    const geometry = new TableViewportGeometry()
+    geometry.replaceWindow(['a'])
+    let expanded = true
+    const seen: boolean[] = []
+    const view = geometry.view.register((request) => {
+      seen.push(expanded)
+      return {
+        records: request.records.map((measurement) => ({
+          measurement,
+          extent: extent(expanded ? 120.25 : 40.25, 11.5, 30.75, 4.5),
+          workGap: 1.5,
+        })),
+        tracks: { layout: request.layout, tracks },
+      }
+    })
+    const old = ticket(view)
+    geometry.withPresentationUpdate({ kind: 'rows', rowKeys: ['a'] }, () => {
+      expanded = false
+    })
+    expect(seen).toEqual([true])
+    expect(ticket(view).record).toBe(old.record)
+    expect(ticket(view)).not.toBe(old)
+    view.measure({ measurement: old, extent: extent(999), workGap: 0 })
+    expect(view.record('a', 'wide')?.live).toBeNull()
+    geometry.withPresentationUpdate({ kind: 'rows', rowKeys: ['a'] }, () => {
+      geometry.depart('a', 'deleted')
+    })
+    expect(seen).toEqual([true, false])
+    expect(view.record('a', 'wide')).toMatchObject({
+      record: old.record,
+      live: null,
+      retained: 87,
+    })
+    expect(view.record('a', 'card')?.retained).toBe(87)
+    expect(view.tracks()).toEqual(tracks)
+    geometry.dispose()
   })
 })

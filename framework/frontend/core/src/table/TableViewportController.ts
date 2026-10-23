@@ -45,6 +45,10 @@ import {
   type WritableSignal,
 } from '../state/signal.js'
 import {
+  HILOS_TABLE_ACTIONS_KEY,
+  type HilosTableColumn,
+} from './hilosTableColumn.js'
+import {
   type HilosTableBulkAccepted,
   type HilosTableBulkReport,
   type HilosTableBulkStarted,
@@ -84,8 +88,14 @@ import {
   type HilosTableSortOrder,
 } from './tableSortOrder.js'
 import { hilosTableStaleSources } from './tableStaleness.js'
+import { TableTextExpansion } from './tableTextExpansion.js'
+import {
+  hilosTableRowHeight,
+  type HilosTableRowHeight,
+} from './tableTextHeight.js'
 import {
   TableViewportGeometry,
+  type TableGeometryRecord,
   type TablePresentationChange,
   type TableViewportGeometryView,
 } from './tableViewportGeometry.js'
@@ -515,6 +525,40 @@ export interface TableViewportControllerOptions<R> {
   frame: HilosTableFrame
 }
 
+/** Validate local text participation on every consumption of dynamic columns. */
+function validateTextColumns(
+  columns: readonly HilosTableColumn[],
+  height: HilosTableRowHeight,
+): void {
+  let participating = false
+  for (const column of columns) {
+    if (column.heightContent === undefined) {
+      continue
+    }
+    if (
+      (column.heightContent !== 'text' && column.heightContent !== 'parts') ||
+      column.detail === true ||
+      column.key === HILOS_TABLE_ACTIONS_KEY ||
+      column.card === 'badge'
+    ) {
+      throw new TypeError(`Invalid table heightContent for ${column.key}`)
+    }
+    participating = true
+  }
+  if (height.mode !== 'content' && !participating) {
+    throw new TypeError('Limited table rowHeight requires main text content')
+  }
+}
+
+/** Snapshot structural text declarations rather than retaining mutable columns. */
+function textColumnLayout(columns: readonly HilosTableColumn[]): string {
+  return JSON.stringify(
+    columns
+      .filter((column) => column.heightContent !== undefined)
+      .map((column) => [column.key, column.heightContent, column.card ?? null]),
+  )
+}
+
 /** A departed slot has no raw row, resolved value or reference to its slots. */
 type WindowEntry =
   | {
@@ -532,10 +576,21 @@ type WindowEntry =
 
 export class TableViewportController<R> implements TableWindowSink {
   private readonly geometryOwner = new TableViewportGeometry()
+  private readonly textExpansionOwner = new TableTextExpansion()
+  /** A reset may leave outgoing rows visible until the next snapshot. */
+  private textWindowActive = true
   private readonly subscriptions: Unsubscribe[] = []
 
   /** Scoped numeric registrations; only this controller writes identities. */
   readonly geometry: TableViewportGeometryView = this.geometryOwner.view
+
+  /**
+   * Open text columns by geometry occurrence, shared by wide/card projections.
+   * An absent pair is collapsed. Independent of the row's detail panel.
+   */
+  readonly expandedText: ReadonlySignal<
+    ReadonlyMap<number, ReadonlySet<string>>
+  > = this.textExpansionOwner.expanded
 
   private readonly filterSignal: WritableSignal<Record<string, unknown>>
 
@@ -1049,18 +1104,27 @@ export class TableViewportController<R> implements TableWindowSink {
     this.announced = this.announcedSignal
     this.loaded = this.loadedSignal
     const declaration = options.frame
-    const resolvedFrame = computedSignal(() => ({
-      columns:
+    const rowHeight = hilosTableRowHeight(declaration.rowHeight)
+    const resolvedFrame = computedSignal(() => {
+      const columns =
         typeof declaration.columns === 'function'
           ? declaration.columns()
-          : declaration.columns,
-      filters:
-        typeof declaration.filters === 'function'
-          ? declaration.filters()
-          : (declaration.filters ?? []),
-    }))
+          : declaration.columns
+      validateTextColumns(columns, rowHeight)
+
+      return {
+        columns,
+        filters:
+          typeof declaration.filters === 'function'
+            ? declaration.filters()
+            : (declaration.filters ?? []),
+      }
+    })
     const columns = computedSignal(() => resolvedFrame.get().columns)
     const filters = computedSignal(() => resolvedFrame.get().filters)
+    // Consume once before registering effects, so invalid declarations leave no
+    // subscriptions behind. Later dynamic columns pass the same validation.
+    let previousTextColumns = textColumnLayout(columns.get())
     this.renderedKeys = computedSignal(() =>
       hilosTableRenderedKeys(columns.get()),
     )
@@ -1175,6 +1239,21 @@ export class TableViewportController<R> implements TableWindowSink {
       subscribeSignal(
         resolvedFrame,
         ({ columns: nextColumns, filters: nextFilters }) => {
+          const nextTextColumns = textColumnLayout(nextColumns)
+          if (nextTextColumns !== previousTextColumns) {
+            previousTextColumns = nextTextColumns
+            this.withPresentationUpdate(
+              { kind: 'rows', rowKeys: this.liveRowKeys() },
+              () =>
+                this.textExpansionOwner.retainColumns(
+                  new Set(
+                    nextColumns
+                      .filter((column) => column.heightContent !== undefined)
+                      .map((column) => column.key),
+                  ),
+                ),
+            )
+          }
           const availableKeys = new Set(nextColumns.map(({ key }) => key))
           const nextFilterKeys = new Set<string>()
           const nextFilter = { ...this.filterSignal.get() }
@@ -1245,6 +1324,7 @@ export class TableViewportController<R> implements TableWindowSink {
     this.frameState = {
       declaration,
       columns,
+      rowHeight,
       card: computedSignal(() => hilosTableCard(columns.get())),
       searchPlaceholder: computedSignal(() => {
         const placeholder = declaration.search?.placeholder
@@ -1506,6 +1586,15 @@ export class TableViewportController<R> implements TableWindowSink {
     this.windowRequestPending = false
     this.lastAppliedWindowRequestIdSignal.set(null)
     this.clearWindowPending()
+    const resetText = (): void => {
+      this.textWindowActive = false
+      this.textExpansionOwner.clear()
+    }
+    if (this.disposed) {
+      resetText()
+    } else {
+      this.withPresentationUpdate({ kind: 'reset' }, resetText)
+    }
   }
 
   /**
@@ -1528,6 +1617,8 @@ export class TableViewportController<R> implements TableWindowSink {
   refresh(): void {
     this.withPresentationUpdate({ kind: 'reset' }, () => {
       this.geometryOwner.invalidateWindow()
+      this.textWindowActive = false
+      this.textExpansionOwner.clear()
       this.send()
     })
   }
@@ -1830,6 +1921,8 @@ export class TableViewportController<R> implements TableWindowSink {
     }
     this.withPresentationUpdate({ kind: 'refusal' }, () => {
       this.geometryOwner.replaceWindow([])
+      this.textWindowActive = false
+      this.textExpansionOwner.clear()
       this.refusalSignal.set(errorCode)
       this.frozenSinceSignal.set(null)
       this.windowSignal.set([])
@@ -1917,6 +2010,8 @@ export class TableViewportController<R> implements TableWindowSink {
       this.clearHighlights()
       this.clearPending()
       this.geometryOwner.replaceWindow(rows.map((row) => row.rowKey))
+      this.textExpansionOwner.clear()
+      this.textWindowActive = true
       this.windowSignal.set(rows.map((row) => this.liveEntry(row)))
       this.totalCountSignal.set(Math.max(0, totalCount))
       this.totalExactSignal.set(totalExact)
@@ -2837,6 +2932,66 @@ export class TableViewportController<R> implements TableWindowSink {
     })
   }
 
+  /** Read the existing text lifetime without issuing a command or a new identity. */
+  isTextRecordCurrent(record: TableGeometryRecord): boolean {
+    return (
+      !this.disposed &&
+      this.textWindowActive &&
+      this.geometryOwner.record(record.rowKey) === record &&
+      this.windowSignal
+        .get()
+        .some(
+          (entry) =>
+            entry.kind === 'live' &&
+            entry.rowKey === record.rowKey &&
+            entry.occurrence === record.occurrence,
+        )
+    )
+  }
+
+  /**
+   * Expand/collapse one text value using its captured geometry identity.
+   * Stale commands, outgoing windows, and nonparticipating columns are inert.
+   * The adapter decides overflow; capture precedes any intent publication.
+   *
+   * @param record The geometry owner's current record identity, never rebuilt from a key.
+   * @param columnKey The participating text/parts column.
+   * @param expanded Whether the text should be shown in full.
+   */
+  expandText(
+    record: TableGeometryRecord,
+    columnKey: string,
+    expanded: boolean,
+  ): void {
+    const current = (): boolean =>
+      this.isTextRecordCurrent(record) &&
+      this.frame.columns
+        .get()
+        .some(
+          (column) =>
+            column.key === columnKey && column.heightContent !== undefined,
+        )
+    if (
+      !current() ||
+      (this.expandedText.get().get(record.occurrence)?.has(columnKey) ??
+        false) === expanded
+    ) {
+      return
+    }
+    this.withPresentationUpdate(
+      { kind: 'rows', rowKeys: [record.rowKey] },
+      () => {
+        if (current()) {
+          this.textExpansionOwner.setExpanded(
+            record.occurrence,
+            columnKey,
+            expanded,
+          )
+        }
+      },
+    )
+  }
+
   /**
    * Mark every live row of the window, or take the marks off them — the header
    * checkbox, one input for both directions. It takes the rows of the current
@@ -3006,6 +3161,10 @@ export class TableViewportController<R> implements TableWindowSink {
 
   /** Drop row-bound state when an occurrence leaves or a key is reused. */
   private forgetRowState(rowKey: string): void {
+    const entry = this.windowSignal.get().find((row) => row.rowKey === rowKey)
+    if (entry !== undefined) {
+      this.textExpansionOwner.forgetOccurrence(entry.occurrence)
+    }
     this.pendingMoves.delete(rowKey)
     this.pendingRemoved.delete(rowKey)
     const selected = new Set(this.selectedKeysSignal.get())
@@ -3160,6 +3319,8 @@ export class TableViewportController<R> implements TableWindowSink {
   private changeWindow(): void {
     this.withPresentationUpdate({ kind: 'reset' }, () => {
       this.geometryOwner.invalidateWindow()
+      this.textWindowActive = false
+      this.textExpansionOwner.clear()
       this.clearHighlights()
       this.clearPending()
       this.clearAnnounced()

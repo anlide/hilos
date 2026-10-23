@@ -92,8 +92,8 @@
     "outputSha256": "0ba08342c48f9f6398a879320b2c5d70ef51bda56be225919a77e4cabf599633"
   },
   "src/base/index.ts": {
-    "sourceSha256": "10b70087524b8fc94da89e52587bd770a4afdbb610d676af1e15ad4852e516bd",
-    "outputSha256": "e4493f24e9ce9cca2d31ea31ef9ab38edd9dda0d15e817cac725116abb8ec564"
+    "sourceSha256": "283c816b2e20f6b252297843b0a44981f993cec7ee429efa43f7bd0d6e48da27",
+    "outputSha256": "fa4f1e804dcb60a00d603c0e69ce7dd9ac5d9f9ccf4bdc671e0a2e3fba6dadb2"
   },
   "src/bootstrap/bootHilos.ts": {
     "sourceSha256": "a5ddce13305c6fff6e7f1e6b299e31b400ba1ed59dc0c87c1bfe874c11949cfa",
@@ -592,11 +592,11 @@
     "outputSha256": "82a42ce7b51b795b737601842d5b7a48514b3b6f898bcdb3870a9d443e44b39c"
   },
   "src/table/TableViewportController.ts": {
-    "sourceSha256": "1cc6090eca51e5da270c090154ef0c76ec61643183988012af772cf5878f712f",
-    "outputSha256": "b8f4438c3e7adc85458e3e4f172bf8f0086119ba80d39b2de8b0f3d87a6ca158"
+    "sourceSha256": "2660a94404d7bb8dc8b9bc773435f853ca6eee3865eed7b02e82f51bd02efb0c",
+    "outputSha256": "46387d2856d79ec6d3fa3adc6005e627ffa2885dc59007d928e791abe78cdaf8"
   },
   "src/table/hilosTableColumn.ts": {
-    "sourceSha256": "23cb139f75095e2010e1027c0ae5a834ef9b6bb963d0ba711649325a8758bdfc",
+    "sourceSha256": "30ae4f7d042525888bc00ca9916ed291ae4adc9c5461b5bd9c317a385004776e",
     "outputSha256": "bd0c2d0a8e870e88cff9ec32ca3085577d86a897e4592a1011ab2cc07cde5030"
   },
   "src/table/tableBulkRequest.ts": {
@@ -612,7 +612,7 @@
     "outputSha256": "fa7bd59ebc54cd70419e716ada3bf337595b407986ae64f4bdffabc02fe7c80d"
   },
   "src/table/tableFrame.ts": {
-    "sourceSha256": "400c44df69cae840605a1aa860c43b199d01e92184b0f02ad7fa203cb5bcc497",
+    "sourceSha256": "9cb655d075c6f44462c4316f32285e94cfa2faa10887c7584b5e5314c9c5fd29",
     "outputSha256": "41e953ffda9087963b819617e064367243868a20266cb214a0f7810cd315b751"
   },
   "src/table/tableFrozen.ts": {
@@ -638,6 +638,14 @@
   "src/table/tableStaleness.ts": {
     "sourceSha256": "1efab036ad2bd2db6bcca6976002c2a96d7db186930a05dc6fdb45a641d40793",
     "outputSha256": "d5085a48628102937d1e7059cb9b8a65a60c0cfbd8671c162f53fad37e63fcd7"
+  },
+  "src/table/tableTextExpansion.ts": {
+    "sourceSha256": "c8e2f5813d75fe5fb5ffec3f0195f71341dd64a1899997c9f4f8727d4d351712",
+    "outputSha256": "06a79d3015c04a87fd9ae22d5980bd7c091b47a763fc6fa8319a6c64aab9a5ba"
+  },
+  "src/table/tableTextHeight.ts": {
+    "sourceSha256": "5b8a4e8572af1b45bf5242c84571a3099d4ea04726736b4d6cca3241a0a79d3e",
+    "outputSha256": "0620b819b6299c35daa990044d49905d6e2c9c2b1646d71cac254cf82d536225"
   },
   "src/table/tableViewportGeometry.ts": {
     "sourceSha256": "1ee6d39b5c5e6e126903d3421649f8d22f5bb599ec513c7a69e3f3bfa1ba16c4",

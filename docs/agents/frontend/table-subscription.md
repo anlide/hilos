@@ -878,8 +878,9 @@ an arrival under search may update the count only. A
 a new window, and Apply does not Show.
 
 The shared core retention/ingress mechanism and Vue, React, and Angular DOM
-geometry are built. Declared height modes remain separate future work, and this
-behavior does not introduce a height API.
+geometry are built. The shared core also declares and validates text-height
+policies. Vue renders the declared text and parts regions; React and Angular
+share the Sass catalog but their text renderers remain future work.
 
 **Apply never brings a row in.** An announced row arrives through Show, which is
 a window change and not an Apply; a row that qualified for the tail was live from
@@ -930,6 +931,100 @@ frame was in flight) and the reconnect (the row changed while the connection was
 down: the page's answer brings a window, the focus follows it, the body comes
 back). One row is in focus per table per tab; a second `focusRow` on the same
 table replaces the first.
+
+## Declared text height and reading
+
+The existing `HilosTableFrame` has `rowHeight?: HilosTableRowHeight`, and the
+existing `HilosTableColumn` has `heightContent?: 'text' | 'parts'`;
+`HilosTableColumnOf<TRow>` inherits the same column field. There is one table
+declaration. Its policy type is:
+
+```ts
+type HilosTableRowHeight =
+  | { readonly mode: 'content' }
+  | { readonly mode: 'lines'; readonly count: HilosTableLineCount }
+  | { readonly mode: 'height'; readonly rem: HilosTableTextRem }
+```
+
+The line catalog is 1 through 12; the rem catalog is 2, 3, 4.5, 6, 9, and 12.
+The one fallback is an omitted or `undefined` `rowHeight`, which normalizes to
+`content`. Unknown modes, extra or incompatible keys, missing `count` or `rem`,
+non-finite or non-number values, and values outside the catalog throw `TypeError`;
+nothing is rounded or clamped. The controller gives every view branch the
+normalized policy through its frame state. The same validation runs when a
+dynamic column declaration changes. A limited policy needs at least one
+participating main-text column. Detail columns, the actions column, and card
+badges cannot declare `heightContent`. A structural change to participating
+text/parts columns captures and retires the live layout in both projections;
+departed numeric allocations remain unchanged.
+
+`content` leaves text at its natural height and adds no SDK reading control or
+reserved control room. `lines` reserves the declared number of line-heights even
+for short or empty text. `height` sets a rem-sized reading window for the main
+text; the outer row or card still sizes from its contents, and the preset does
+not set the outer box height. Controls, badges, labels, detail,
+work, and hidden value marks stay outside that window. Calls without either
+declaration keep the intrinsic render, `renderedKeys`, and wire behavior already
+in use.
+
+Vue's `text` mode accepts ordinary inline cell-slot content. It checks the
+rendered DOM, including descendants of child components; an unsafe slot stays
+intrinsic and receives a diagnostic in development. Before the first positive
+DOM check, the pending slot gets wrapping only, never a cap. `parts` mode uses the
+public `HilosTableText` component with `value: Hideable<string>` for the main
+text beside unconstrained content. A limited parts value has exactly one such
+text region. It has no arbitrary child-slot API: the parts context is internal
+to the SDK. A page continues to use the ordinary `HilosViewportTable` cell slot
+and places `HilosTableText` there; `HilosTableValue` and its context are internal
+mount machinery, not project components. Internally, `HilosTableValue` reads
+only the controller's existing `frame`, `expandedText`, and `expandText`, plus
+the exact-record reader, column key, field label, `heightContent`, and projection;
+its context supplies the policy, record scope, and parts-region registration.
+An empty declared text region still
+reserves its preset. A missing card renderer creates no field. A hidden-value
+mark remains outside the cap while an inert empty region keeps the preset's
+minimum reserve; it has no reading control.
+
+The core root and existing `/base` entry re-export from one source module and
+expose `HilosTableLineCount`, `HilosTableTextRem`, and `HilosTableRowHeight`,
+plus exactly two runtime helpers:
+`hilosTableRowHeight(value: unknown): HilosTableRowHeight` and
+`hilosTableTextClass(height: HilosTableRowHeight): string`. Each helper has one
+function identity across those entries, and the types are exported through both.
+The public `HilosTableText` export likewise has one component identity from the
+existing Vue root and `/base`; no package subpath was added, and the common
+`/base` closure remains free of admin implementations.
+
+The controller exposes
+`expandedText: ReadonlySignal<ReadonlyMap<number, ReadonlySet<string>>>`, a
+read-only map from geometry occurrence to open column keys, independent of
+row-detail expansion. `expandText` takes a `TableGeometryRecord`, a column key,
+and an expanded boolean; it accepts only the geometry owner's exact current
+record. Vue's existing `useTableViewportGeometry.recordReader` captures the
+registration, mount, window, occurrence, and projection identity and returns
+`null` when that record is no longer current. `TableViewportController.isTextRecordCurrent()`
+is a read-only verdict; it does not create an identity. The geometry reader
+tracks its existing revision even when the intent map is empty, so resets
+recheck the captured record. A fresh occurrence never inherits intent from a
+reused row key, and stale identities cannot change it.
+
+Intent survives live updates, moves, and a pending foreign removal until Apply.
+It is cleared at final departure or eviction, on a replacement window,
+reconnect, refusal, reset or disposal, and when a column stops participating.
+The browser controller owns this presentation preference: it is not row data,
+database or RT state, a wire field, persistent storage, or a global cache. On
+Apply, the existing synchronous geometry boundary captures the expanded live
+DOM before its destructive write; departed records retain numeric geometry
+only. Both mounted projections release their text controls, observers, and DOM
+bindings when the record or controller leaves.
+
+Vue's existing `ResizeObserver` measures both the actual capped window and its
+one live, uncapped content node; mutation observation and exact scope guards
+keep asynchronous reads bound to that registration. The natural content node is
+observed because font or spacing changes can alter its scroll extent while a
+fixed rem window keeps the same box size. Hidden or zero-size projections do
+not reset intent, and expanded natural content is never treated as a collapsed
+overflow measurement. There is no hidden clone, injected probe, or polling.
 
 ## The count and its ceiling
 

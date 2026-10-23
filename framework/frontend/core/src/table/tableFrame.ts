@@ -13,6 +13,7 @@ import { type HilosTableBulkAccepted } from './tableBulk.js'
 import { type HilosTableCard } from './tableCard.js'
 import { type HilosTableSelectionTarget } from './tableSelection.js'
 import { type HilosTableOrderView } from './tableSortOrder.js'
+import { type HilosTableRowHeight } from './tableTextHeight.js'
 
 /**
  * The search box of a table: present means the table searches, absent means it
@@ -155,6 +156,8 @@ export interface HilosTableFrame {
   /** The columns of the table, in display order. */
   readonly columns:
     readonly HilosTableColumn[] | (() => readonly HilosTableColumn[])
+  /** Height of participating main text regions; omitted means intrinsic content. */
+  readonly rowHeight?: HilosTableRowHeight
   /** The operations offered for the marked rows. */
   readonly bulkActions?: readonly HilosTableBulkAction[]
   /** What the table says when it is empty and nothing is filtering it. */
@@ -287,6 +290,8 @@ export interface HilosTableFrameState {
   readonly card: ReadonlySignal<HilosTableCard>
   /** The columns currently offered by the page. */
   readonly columns: ReadonlySignal<readonly HilosTableColumn[]>
+  /** Validated text policy local to this controller's mount lifetime. */
+  readonly rowHeight: HilosTableRowHeight
   /** The current search placeholder, or undefined when none was declared. */
   readonly searchPlaceholder: ReadonlySignal<string | undefined>
   /** The declared filters with their current values, in declaration order. */

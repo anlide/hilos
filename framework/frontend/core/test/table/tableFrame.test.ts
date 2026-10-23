@@ -5,6 +5,7 @@ import {
 } from '../../src/connection/HilosConnection.js'
 import { type ActionHandle } from '../../src/connection/actionLifecycle.js'
 import { type TableRow } from '../../src/state/TableRowsStore.js'
+import { type HilosTableColumn } from '../../src/table/hilosTableColumn.js'
 import { TableViewportController } from '../../src/table/TableViewportController.js'
 import { type HilosTableBulkAccepted } from '../../src/table/tableBulk.js'
 import { createSignal } from '../../src/state/signal.js'
@@ -100,6 +101,119 @@ const backupsFrame: HilosTableFrame = {
 }
 
 describe('TableViewportController frame declaration', () => {
+  it('normalizes omission without changing columns, rendered keys or the wire descriptor', () => {
+    const columns = [{ key: 'name', label: 'Name', reads: ['description'] }]
+    const { controller: legacy, open: openLegacy } = makeController({ columns })
+    const { controller: explicit, open: openExplicit } = makeController({
+      columns,
+      rowHeight: { mode: 'content' },
+    })
+    openLegacy([{ rowKey: 'a', slots: {} }], 1)
+    openExplicit([{ rowKey: 'a', slots: {} }], 1)
+    expect(legacy.frame.rowHeight).toEqual({ mode: 'content' })
+    expect(legacy.frame.columns.get()).toBe(columns)
+    expect(legacy.descriptor()?.rendered).toEqual(['name', 'description'])
+    expect(legacy.descriptor()).toEqual(explicit.descriptor())
+    expect(legacy.descriptor()).not.toHaveProperty('rowHeight')
+    expect(legacy.descriptor()).not.toHaveProperty('heightContent')
+    legacy.dispose()
+    explicit.dispose()
+  })
+
+  it.each(['text', 'parts'] as const)(
+    'exposes one normalized policy for participating %s columns in both projections',
+    (heightContent) => {
+      const { controller, open } = makeController({
+        rowHeight: { mode: 'height', rem: 4.5 },
+        columns: [{ key: 'name', label: 'Name', heightContent }],
+      })
+      open([{ rowKey: 'a', slots: {} }], 1)
+      expect(controller.frame.rowHeight).toEqual({ mode: 'height', rem: 4.5 })
+      expect(controller.frame.columns.get()[0]?.heightContent).toBe(
+        heightContent,
+      )
+      expect(controller.frame.card.get().title?.heightContent).toBe(
+        heightContent,
+      )
+      expect(controller.descriptor()?.rendered).toEqual(['name'])
+      controller.dispose()
+    },
+  )
+
+  it.each([
+    { mode: 'unknown' },
+    { mode: 'lines', count: '3' },
+    { mode: 'lines', count: 3, rem: 3 },
+    { mode: 'height', rem: Infinity },
+    null,
+  ])(
+    'validates untyped rowHeight at controller construction %#',
+    (rowHeight) => {
+      expect(() =>
+        makeController({
+          columns: [],
+          rowHeight,
+        } as unknown as HilosTableFrame),
+      ).toThrow(/rowHeight/)
+    },
+  )
+
+  it.each([
+    { key: 'detail', label: 'Detail', detail: true, heightContent: 'text' },
+    { key: 'actions', label: '', reads: [], heightContent: 'parts' },
+    { key: 'state', label: 'State', card: 'badge', heightContent: 'text' },
+    { key: 'name', label: 'Name', heightContent: 'unknown' },
+    { key: 'name', label: 'Name', heightContent: null },
+    { key: 'name', label: 'Name', heightContent: false },
+  ])(
+    'refuses inapplicable heightContent even with intrinsic content %#',
+    (column) => {
+      expect(() =>
+        makeController({ columns: [column] as HilosTableColumn[] }),
+      ).toThrow(/heightContent/)
+    },
+  )
+
+  it.each([
+    { mode: 'lines', count: 3 },
+    { mode: 'height', rem: 4.5 },
+  ] as const)(
+    'refuses limited policy $mode without participating main text',
+    (rowHeight) => {
+      for (const columns of [
+        [],
+        [{ key: 'name', label: 'Name' }],
+        [{ key: 'detail', label: 'Detail', detail: true }],
+        [{ key: 'state', label: 'State', card: 'badge' as const }],
+        [{ key: 'actions', label: '', reads: [] }],
+      ]) {
+        expect(() => makeController({ columns, rowHeight })).toThrow(
+          /requires main text/,
+        )
+      }
+    },
+  )
+
+  it('validates dynamic columns before they can replace a valid frame', () => {
+    const columns = createSignal<readonly HilosTableColumn[]>([
+      { key: 'name', label: 'Name', heightContent: 'text' },
+    ])
+    const { controller } = makeController({
+      columns: () => columns.get(),
+      rowHeight: { mode: 'lines', count: 3 },
+    })
+    expect(() => columns.set([])).toThrow(/requires main text/)
+    expect(() =>
+      columns.set([
+        { key: 'name', label: 'Name', heightContent: 'parts', detail: true },
+      ]),
+    ).toThrow(/heightContent/)
+    columns.set([{ key: 'name', label: 'Name', heightContent: 'parts' }])
+    expect(controller.frame.columns.get()[0]?.heightContent).toBe('parts')
+    expect(controller.frame.rowHeight).toEqual({ mode: 'lines', count: 3 })
+    controller.dispose()
+  })
+
   it('resolves late columns, filters and placeholder, then clears a vanished node and order', () => {
     const cluster = createSignal(false)
     const sent: TableViewportDescriptor[] = []

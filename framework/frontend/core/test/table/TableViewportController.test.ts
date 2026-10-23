@@ -6,7 +6,10 @@ import {
 } from '../../src/connection/HilosConnection.js'
 import { type TableRow } from '../../src/state/TableRowsStore.js'
 import { type HilosTableBulkAccepted } from '../../src/table/tableBulk.js'
-import { HILOS_TABLE_ACTIONS_KEY } from '../../src/table/hilosTableColumn.js'
+import {
+  HILOS_TABLE_ACTIONS_KEY,
+  type HilosTableColumn,
+} from '../../src/table/hilosTableColumn.js'
 import { type HilosTableBulkAction } from '../../src/table/tableFrame.js'
 import { type HilosTableProgressFrame } from '../../src/table/tableProgress.js'
 import { createSignal, subscribeSignal } from '../../src/state/signal.js'
@@ -3841,6 +3844,102 @@ function captureGeometry(
 }
 
 describe('TableViewportController retained presentation', () => {
+  it('invalidates text/parts live measurements while retaining occurrences, detail and departed allocations', () => {
+    const columns = createSignal<readonly HilosTableColumn[]>([
+      { key: 'name', label: 'Name', heightContent: 'text' },
+      { key: 'detail', label: 'Detail', detail: true },
+    ])
+    const sent = vi.fn()
+    const rendered = vi.fn()
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: sent,
+      sendRendered: rendered,
+      frame: {
+        rowHeight: { mode: 'lines', count: 3 },
+        columns: () => columns.get(),
+      },
+    })
+    controller.ingestWindow(
+      ['a', 'b'].map((rowKey) => ({ rowKey, slots: {} })),
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+    controller.expandRow('a', true)
+    const { registration } = captureGeometry(controller, () => ({
+      main: 40.25,
+      work: 10,
+      detail: 20,
+      gap: 2.25,
+    }))
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'b',
+      reason: 'deleted',
+      own: true,
+    })
+    const oldTickets = (['wide', 'card'] as const).map((projection) => {
+      const measurement = registration.measurement('a', projection)!
+      registration.measure({
+        measurement,
+        extent: { main: 40, work: 0, detail: 20, gap: 2, total: 62 },
+        workGap: 0,
+      })
+      return measurement
+    })
+    const occurrences = controller.rows
+      .get()
+      .map(({ occurrence }) => occurrence)
+    const departed = (['wide', 'card'] as const).map((projection) =>
+      registration.record('b', projection),
+    )
+    const descriptor = controller.descriptor()
+    rendered.mockClear()
+
+    // A label-only replacement keeps the measured text layout usable.
+    columns.set(
+      columns.get().map((column) => ({ ...column, label: `${column.label}!` })),
+    )
+    expect(registration.measurement('a', 'wide')).toBe(oldTickets[0])
+    columns.set(
+      columns
+        .get()
+        .map((column) =>
+          column.key === 'name'
+            ? { ...column, heightContent: 'parts' }
+            : column,
+        ),
+    )
+
+    for (const [index, projection] of (['wide', 'card'] as const).entries()) {
+      expect(registration.measurement('a', projection)).not.toBe(
+        oldTickets[index],
+      )
+      expect(registration.record('a', projection)?.live).toBeNull()
+      expect(registration.record('b', projection)).toEqual(departed[index])
+      expect(registration.record('b', projection)?.retained).toBe(72.5)
+      registration.measure({
+        measurement: oldTickets[index]!,
+        extent: { main: 1, work: 0, detail: 0, gap: 0, total: 1 },
+        workGap: 0,
+      })
+      expect(registration.record('a', projection)?.live).toBeNull()
+    }
+    expect(controller.rows.get().map(({ occurrence }) => occurrence)).toEqual(
+      occurrences,
+    )
+    expect(controller.rows.get()[0]?.expanded).toBe(true)
+    expect(controller.frame.rowHeight).toEqual({ mode: 'lines', count: 3 })
+    expect(controller.descriptor()?.rendered).toEqual(['name', 'detail'])
+    expect(controller.descriptor()).toEqual(descriptor)
+    expect(sent).not.toHaveBeenCalled()
+    expect(rendered).not.toHaveBeenCalled()
+    controller.dispose()
+  })
+
   it.each(['before-removal', 'before-apply', 'after-apply'] as const)(
     'G06 retains slots and converges live metadata with count %s',
     (timing) => {
@@ -4864,5 +4963,378 @@ describe('TableViewportController append range after zero', () => {
     expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['a', 'b'])
     expect(controller.rowsBefore.get()).toBeNull()
     expect(controller.descriptor()).toEqual(address)
+  })
+})
+
+describe('TableViewportController text expansion', () => {
+  function setupText() {
+    const columns = createSignal<readonly HilosTableColumn[]>([
+      { key: 'name', label: 'Name', heightContent: 'text' },
+      { key: 'description', label: 'Description', heightContent: 'parts' },
+      { key: 'state', label: 'State' },
+      { key: 'detail', label: 'Detail', detail: true },
+    ])
+    const send = vi.fn()
+    const rendered = vi.fn()
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: send,
+      sendRendered: rendered,
+      frame: {
+        rowHeight: { mode: 'lines', count: 3 },
+        columns: () => columns.get(),
+      },
+    })
+    const rows = ['a', 'b'].map((rowKey) => ({
+      rowKey,
+      slots: { name: rowKey, secret: 'not retained by text intent' },
+    }))
+    const open = () => controller.ingestWindow(rows, 5, true, null, null, 2)
+    open()
+    const registration = controller.geometry.register(() => ({ records: [] }))
+    const record = (rowKey = 'a') => {
+      const identity = registration.measurement(rowKey, 'wide')?.record
+      if (identity === undefined) throw new Error(`Missing record: ${rowKey}`)
+      return identity
+    }
+    const expanded = (rowKey = 'a', columnKey = 'name') =>
+      controller.expandedText
+        .get()
+        .get(record(rowKey).occurrence)
+        ?.has(columnKey) ?? false
+    return {
+      controller,
+      columns,
+      rows,
+      open,
+      record,
+      expanded,
+      registration,
+      send,
+      rendered,
+    }
+  }
+
+  it('publishes reset lifetime even with no text intent to clear', () => {
+    const { controller, registration, record, open } = setupText()
+    const old = record()
+    const revision = registration.revision.get()
+    expect(controller.isTextRecordCurrent(old)).toBe(true)
+    controller.resetWindowRequests()
+    expect(registration.revision.get()).toBeGreaterThan(revision)
+    expect(controller.isTextRecordCurrent(old)).toBe(false)
+    expect(controller.isTextRecordCurrent(record())).toBe(false)
+    open()
+    expect(controller.isTextRecordCurrent(record())).toBe(true)
+    expect(controller.isTextRecordCurrent(old)).toBe(false)
+    controller.dispose()
+  })
+
+  it('isolates text pairs, controllers and detail without changing the wire declaration', () => {
+    const { controller, record, expanded, send, rendered } = setupText()
+    const other = setupText()
+    const descriptor = controller.descriptor()
+    controller.expandText(record(), 'name', true)
+    controller.expandText(record(), 'description', true)
+    controller.expandText(record('b'), 'name', true)
+    expect(controller.expandedText.get()).toEqual(
+      new Map([
+        [record().occurrence, new Set(['name', 'description'])],
+        [record('b').occurrence, new Set(['name'])],
+      ]),
+    )
+    expect(controller.rows.get().every((row) => !row.expanded)).toBe(true)
+    controller.expandRow('a', true)
+    controller.expandText(record(), 'name', false)
+    expect(controller.rows.get()[0]?.expanded).toBe(true)
+    expect(expanded()).toBe(false)
+    expect(expanded('a', 'description')).toBe(true)
+    controller.expandRow('a', false)
+    expect(expanded('a', 'description')).toBe(true)
+    expect(expanded('b')).toBe(true)
+    expect(other.controller.expandedText.get().size).toBe(0)
+    controller.expandText(other.record(), 'name', true)
+    expect(expanded()).toBe(false)
+    expect(controller.descriptor()).toEqual(descriptor)
+    expect(send).not.toHaveBeenCalled()
+    expect(rendered).not.toHaveBeenCalled()
+    controller.dispose()
+    other.controller.dispose()
+  })
+
+  it('keeps intent on live values, staleness and moves, including pending foreign removal before Apply', () => {
+    vi.useFakeTimers()
+    const { controller, record, expanded } = setupText()
+    const identity = record()
+    controller.expandText(identity, 'name', true)
+    const state = controller.expandedText.get()
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'updated' } },
+    })
+    controller.ingestDelta({
+      kind: 'row_stale',
+      rowKey: 'a',
+      staleSources: ['user'],
+    })
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'moved' } },
+      position: 1,
+    })
+    controller.apply()
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['b', 'a'])
+    expect(record()).toBe(identity)
+    expect(controller.expandedText.get()).toBe(state)
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      own: true,
+      row: { rowKey: 'a', slots: { name: 'own move' } },
+      position: 0,
+    })
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    expect(controller.rows.get()[0]?.placeholder).toBe(false)
+    expect(expanded()).toBe(true)
+    controller.expandText(identity, 'name', false)
+    controller.expandText(identity, 'name', true)
+    controller.ingestCount(0, true)
+    expect(expanded()).toBe(true)
+    controller.apply()
+    expect(controller.rows.get()[0]?.placeholder).toBe(true)
+    expect(controller.expandedText.get().size).toBe(0)
+    controller.expandText(identity, 'name', true)
+    expect(controller.expandedText.get().size).toBe(0)
+    controller.dispose()
+  })
+
+  it.each(['own-create', 'append', 'eviction'] as const)(
+    'releases every pair on %s and refuses reused-key commands',
+    (replacement) => {
+      const { controller, rows, record, expanded } = setupText()
+      const old = record()
+      controller.expandText(old, 'name', true)
+      controller.expandText(old, 'description', true)
+      controller.expandText(record('b'), 'name', true)
+      if (replacement === 'eviction') {
+        controller.ingestOwnCreate(
+          { rowKey: 'c', slots: {} },
+          1,
+          6,
+          true,
+          null,
+          null,
+        )
+        // Inserting in the middle evicts the last live member, b.
+        expect(controller.expandedText.get().has(record('a').occurrence)).toBe(
+          true,
+        )
+        expect(controller.expandedText.get().size).toBe(1)
+        controller.ingestOwnCreate(rows[0]!, 1, 6, true, null, null)
+      } else if (replacement === 'own-create') {
+        controller.ingestOwnCreate(rows[0]!, 0, 5, true, null, null)
+      } else {
+        controller.ingestDelta({
+          kind: 'row_removed',
+          rowKey: 'a',
+          reason: 'deleted',
+          own: true,
+        })
+        expect(controller.expandedText.get().has(old.occurrence)).toBe(false)
+        controller.ingestAppend(rows[0]!, 5, true, null, null)
+      }
+      expect(record().occurrence).not.toBe(old.occurrence)
+      expect(expanded()).toBe(false)
+      expect(controller.expandedText.get().has(old.occurrence)).toBe(false)
+      controller.expandText(old, 'name', true)
+      expect(expanded()).toBe(false)
+      controller.expandText(record(), 'name', true)
+      controller.expandText(old, 'name', false)
+      expect(expanded()).toBe(true)
+      controller.dispose()
+    },
+  )
+
+  it.each([
+    'search',
+    'filter',
+    'order',
+    'page',
+    'Show',
+    'refresh',
+    'reset',
+    'reconnect',
+    'refusal',
+    'dispose',
+  ] as const)(
+    'clears text intent and rejects old and outgoing identities on %s',
+    (action) => {
+      vi.useFakeTimers()
+      const { controller, record, expanded, open } = setupText()
+      const old = record()
+      controller.expandText(old, 'name', true)
+      controller.expandText(record('b'), 'description', true)
+      if (action === 'search') controller.setSearch('new')
+      if (action === 'filter') controller.setFilter('status', 'new')
+      if (action === 'order')
+        controller.setOrder([{ field: 'name', direction: 'asc' }])
+      if (action === 'page') controller.setPage(1)
+      if (action === 'Show') controller.show()
+      if (action === 'refresh') controller.refresh()
+      if (action === 'reset') controller.resetWindowRequests()
+      if (action === 'reconnect') open()
+      if (action === 'refusal') controller.ingestRefusal('denied')
+      if (action === 'dispose') controller.dispose()
+      expect(controller.expandedText.get().size).toBe(0)
+      controller.expandText(old, 'name', true)
+      expect(controller.expandedText.get().size).toBe(0)
+      if (!['reconnect', 'refusal', 'dispose'].includes(action)) {
+        expect(controller.rows.get()[0]?.rowKey).toBe('a')
+        // Geometry reissues identities while the outgoing rows are still visible.
+        controller.expandText(record(), 'name', true)
+        expect(expanded()).toBe(false)
+      }
+      if (action !== 'dispose') {
+        open()
+        controller.expandText(record(), 'name', true)
+        controller.expandText(old, 'name', false)
+        expect(expanded()).toBe(true)
+        controller.dispose()
+      }
+    },
+  )
+
+  it('ignores a stale window/refusal and keeps current text intent', () => {
+    const { controller, record, expanded, send, open } = setupText()
+    controller.show()
+    const oldId = send.mock.calls.at(-1)?.[0].requestId as string
+    controller.show()
+    open()
+    controller.expandText(record(), 'name', true)
+    const current = controller.expandedText.get()
+    controller.ingestWindow([], 0, true, null, null, 2, null, oldId)
+    controller.ingestRefusal('denied', oldId)
+    expect(controller.expandedText.get()).toBe(current)
+    expect(expanded()).toBe(true)
+    controller.dispose()
+  })
+
+  it('prunes removed and nonparticipating columns while preserving declaration updates and layout switches', () => {
+    const { controller, columns, record, expanded, registration } = setupText()
+    controller.expandText(record(), 'name', true)
+    controller.expandText(record(), 'description', true)
+    const initial = controller.expandedText.get()
+    controller.expandText(record(), 'state', true)
+    controller.expandText(record(), 'detail', true)
+    controller.expandText(record(), 'absent', true)
+    controller.expandText({ ...record(), occurrence: 999 }, 'name', true)
+    expect(controller.expandedText.get()).toBe(initial)
+    registration.invalidateLayout('wide')
+    registration.invalidateLayout('card')
+    columns.set(
+      columns.get().map((column) => ({ ...column, label: `${column.label}!` })),
+    )
+    expect(controller.expandedText.get()).toBe(initial)
+    columns.set(
+      columns
+        .get()
+        .map((column) =>
+          column.key === 'name'
+            ? { ...column, heightContent: 'parts' }
+            : column,
+        ),
+    )
+    expect(expanded()).toBe(true)
+    columns.set(columns.get().filter((column) => column.key !== 'name'))
+    expect(expanded()).toBe(false)
+    columns.set([
+      { key: 'name', label: 'Name', heightContent: 'text' },
+      ...columns.get(),
+    ])
+    expect(expanded()).toBe(false)
+    columns.set(
+      columns
+        .get()
+        .map((column) =>
+          column.key === 'description'
+            ? { key: column.key, label: column.label }
+            : column,
+        ),
+    )
+    expect(controller.expandedText.get().size).toBe(0)
+    controller.expandText(record(), 'description', true)
+    expect(controller.expandedText.get().size).toBe(0)
+    controller.dispose()
+  })
+
+  it('captures the complete expanded footprint before departure cleans text, detail and row data', () => {
+    const { controller, record, registration } = setupText()
+    const identity = record()
+    const events: string[] = []
+    const { registration: geometry } = captureGeometry(controller, () => {
+      events.push(`capture:${controller.expandedText.get().size}`)
+      return {
+        main: controller.expandedText.get().size > 0 ? 120.25 : 40.25,
+        work: 0,
+        detail: controller.rows.get()[0]?.expanded ? 20.5 : 0,
+        gap: 2.25,
+      }
+    })
+    const stop = subscribeSignal(controller.expandedText, () =>
+      events.push('intent'),
+    )
+    controller.expandText(identity, 'name', true)
+    expect(events).toEqual(['capture:0', 'intent'])
+    controller.expandRow('a', true)
+    events.length = 0
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+      own: true,
+    })
+    expect(events).toEqual(['capture:1', 'intent'])
+    expect(geometry.record('a', 'wide')?.retained).toBe(143)
+    expect(geometry.record('a', 'card')?.retained).toBe(143)
+    expect(geometry.record('a', 'wide')?.live).toBeNull()
+    expect(controller.rows.get()[0]).toMatchObject({
+      row: null,
+      expanded: false,
+      placeholder: true,
+    })
+    expect(controller.expandedText.get().size).toBe(0)
+    controller.expandText(identity, 'name', true)
+    expect(geometry.record('a', 'wide')?.retained).toBe(143)
+    registration.dispose()
+    stop()
+    controller.dispose()
+  })
+
+  it('captures deliberate collapse and departure retains the latest collapsed footprint', () => {
+    const { controller, record } = setupText()
+    controller.expandText(record(), 'name', true)
+    const { registration, capture } = captureGeometry(controller, () => ({
+      main: controller.expandedText.get().size > 0 ? 120 : 40,
+      work: 0,
+      detail: 0,
+      gap: 2,
+    }))
+    controller.expandText(record(), 'name', false)
+    expect(capture).toHaveBeenCalledTimes(1)
+    expect(registration.record('a', 'wide')?.live).toBeNull()
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'left_set',
+      own: true,
+    })
+    expect(registration.record('a', 'wide')?.retained).toBe(42)
+    controller.dispose()
   })
 })
