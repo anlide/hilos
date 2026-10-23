@@ -24,6 +24,8 @@ class DbSyncUpdatedSignalData extends BaseDTO implements DbSyncSignalDataInterfa
      * @param ?string $originRequestId Request id of the action behind the write, or null when no action is behind it
      * @param ?string $emitter Identity of the process that sent this fact, or null when unstamped
      * @param array<string, mixed> $previous Previous values of the changed columns
+     * @param ?int $receiptId Existing receipt primary key for the write, or null outside a receipt
+     * @param ?string $writerAgentId Current writing agent under the receipt, or null without an active agent
      */
     public function __construct(
         public readonly string $collectionKey,
@@ -33,6 +35,8 @@ class DbSyncUpdatedSignalData extends BaseDTO implements DbSyncSignalDataInterfa
         public readonly ?string $originRequestId = null,
         public readonly ?string $emitter = null,
         public readonly array $previous = [],
+        public readonly ?int $receiptId = null,
+        public readonly ?string $writerAgentId = null,
     ) {
     }
 
@@ -52,6 +56,8 @@ class DbSyncUpdatedSignalData extends BaseDTO implements DbSyncSignalDataInterfa
             originRequestId: $this->originRequestId,
             emitter: $emitter,
             previous: $this->previous,
+            receiptId: $this->receiptId,
+            writerAgentId: $this->writerAgentId,
         );
     }
 
@@ -70,6 +76,8 @@ class DbSyncUpdatedSignalData extends BaseDTO implements DbSyncSignalDataInterfa
             SyncSignalDataKey::ORIGIN => $this->origin,
             SyncSignalDataKey::ORIGIN_REQUEST_ID => $this->originRequestId,
             SyncSignalDataKey::EMITTER => $this->emitter,
+            SyncSignalDataKey::RECEIPT_ID => $this->receiptId,
+            SyncSignalDataKey::WRITER_AGENT_ID => $this->writerAgentId,
         ];
     }
 
@@ -90,6 +98,8 @@ class DbSyncUpdatedSignalData extends BaseDTO implements DbSyncSignalDataInterfa
             originRequestId: self::optionalString($data, SyncSignalDataKey::ORIGIN_REQUEST_ID),
             emitter: self::optionalString($data, SyncSignalDataKey::EMITTER),
             previous: self::requireArray($data, SyncSignalDataKey::PREVIOUS),
+            receiptId: self::optionalInt($data, SyncSignalDataKey::RECEIPT_ID),
+            writerAgentId: self::optionalString($data, SyncSignalDataKey::WRITER_AGENT_ID),
         );
     }
 }

@@ -6,9 +6,13 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Database\Database;
+use Demo\Chat\Database\Settings\SettingsCatalog;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Cluster\Peer\DTO\PeerDbSyncDTO;
+use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Page\AbstractPage;
@@ -19,28 +23,47 @@ use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
+use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncSignalDataInterface;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\Database\ChangeLog\JournalReceiptData;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\ChangeLog\JournalTriggerFiles;
 use Hilos\Database\ChangeLog\JournalTriggerInstaller;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Entity\Item\Setting;
+use Hilos\Database\Exception\SqlRuntime\DataTooLongException;
 use Hilos\Database\Migration;
+use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
 use mysqli;
 use RuntimeException;
+use Throwable;
 
 /** Real journal triggers and migration files under the receipt scope. */
 final class JournalReceiptIntegrationTest extends IntegrationTestCase
 {
     private const string KEY_PREFIX = 'journal.receipt.hil1449.';
+
+    private const string WRITER_AGENT_ID = 'receipt-orm-writer';
+
+    private const string INITIATOR_AGENT_ID = 'receipt-orm-initiator';
 
     private const array JOURNAL_CLEANUP_ORDER = [
         'hilos_change_log_value', 'hilos_change_log_change', 'hilos_change_log',
@@ -219,6 +242,240 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
         ], $this->receiptFields((int) $rows[1]['id']));
         $this->assertSame(1, $this->logCount((int) $rows[0]['id']));
         $this->assertSame(1, $this->logCount((int) $rows[1]['id']));
+    }
+
+    /** Real ORM frames keep their attribution on every transport and clear it after the scope. */
+    public function testOrmRowFramesCarryReceiptAndWriterThroughTransportWithoutLeaking(): void
+    {
+        $key = self::KEY_PREFIX . 'orm-transport';
+        $this->withSettingsWriter(function () use ($key): void {
+            $rowId = null;
+            $receiptId = JournalReceiptScope::run(
+                JournalReceiptData::agent('setting.orm-transport', self::INITIATOR_AGENT_ID),
+                function () use ($key, &$rowId): ?int {
+                    $rowId = $this->writeSettingLifecycle($key);
+                    return JournalReceiptScope::currentId();
+                },
+            );
+            $this->assertNotNull($receiptId);
+            $this->assertNotNull($rowId);
+            $this->assertNull(JournalReceiptScope::currentId());
+            $this->assertSame(3, $this->logCount($receiptId));
+            $frames = $this->drainSettingsFrames();
+            $this->assertSettingLifecycleFrames($frames, $key, $rowId, $receiptId, self::WRITER_AGENT_ID);
+            foreach ($frames as $frame) {
+                $this->assertTransportPreservesFrame($frame);
+            }
+
+            $nextRowId = $this->writeSettingLifecycle($key);
+            $this->assertNotSame($rowId, $nextRowId);
+            $frames = $this->drainSettingsFrames();
+            $this->assertSettingLifecycleFrames($frames, $key, $nextRowId, null, null);
+            foreach ($frames as $frame) {
+                $this->assertTransportPreservesFrame($frame);
+            }
+        }, [$key]);
+    }
+
+    /** A nested receipt replaces the outer one only for its own write. */
+    public function testNestedOrmWritesUseTheCurrentReceiptAndRestoreTheOuterOne(): void
+    {
+        $key = self::KEY_PREFIX . 'orm-nested';
+        $this->withSettingsWriter(function () use ($key): void {
+            $innerId = null;
+            $rowId = null;
+            $outerId = JournalReceiptScope::run(
+                JournalReceiptData::agent('setting.orm-outer', self::INITIATOR_AGENT_ID),
+                function () use ($key, &$innerId, &$rowId): ?int {
+                    $outerId = JournalReceiptScope::currentId();
+                    $rowId = $this->createSetting($key);
+                    $innerId = JournalReceiptScope::run(
+                        JournalReceiptData::agent('setting.orm-inner', self::INITIATOR_AGENT_ID),
+                        static function () use ($key): ?int {
+                            Hilos::$db->settings[$key]->actions->updateValue('after');
+                            return JournalReceiptScope::currentId();
+                        },
+                    );
+                    $this->assertSame($outerId, JournalReceiptScope::currentId());
+                    Hilos::$db->settings[$key]->actions->delete();
+                    return $outerId;
+                },
+            );
+            $this->assertNotNull($outerId);
+            $this->assertNotNull($innerId);
+            $this->assertNotNull($rowId);
+            $this->assertNotSame($outerId, $innerId);
+            $this->assertNull(JournalReceiptScope::currentId());
+            $frames = $this->drainSettingsFrames();
+            $this->assertCount(3, $frames);
+            $this->assertSettingsFrame($frames[0], SignalConstants::DB_SYNC_CREATED, $rowId, $outerId, self::WRITER_AGENT_ID);
+            $this->assertSettingsFrame($frames[1], SignalConstants::DB_SYNC_UPDATED, $rowId, $innerId, self::WRITER_AGENT_ID);
+            $this->assertSettingsFrame($frames[2], SignalConstants::DB_SYNC_DELETED, $rowId, $outerId, self::WRITER_AGENT_ID);
+            $this->assertSame(2, $this->logCount($outerId));
+            $this->assertSame(1, $this->logCount($innerId));
+        }, [$key]);
+    }
+
+    /** A handed-over receipt belongs to the initiator; the row frames name the executing writer. */
+    public function testJoinedOrmWritesKeepTheReceiptAndNameTheReceivingAgent(): void
+    {
+        $key = self::KEY_PREFIX . 'orm-joined';
+        $this->withSettingsWriter(function () use ($key): void {
+            ExecutionContext::setCurrentAgentId(self::INITIATOR_AGENT_ID);
+            $receiptId = JournalReceiptScope::run(
+                JournalReceiptData::agent('setting.orm-handover', self::INITIATOR_AGENT_ID),
+                static fn (): ?int => JournalReceiptScope::stampHandover(),
+            );
+            $this->assertNotNull($receiptId);
+            $this->assertNull(JournalReceiptScope::currentId());
+            $this->assertSame([
+                null, null, null, 'agent', 'setting.orm-handover', self::INITIATOR_AGENT_ID, self::INITIATOR_AGENT_ID,
+            ], $this->receiptFields($receiptId));
+
+            ExecutionContext::setCurrentAgentId(self::WRITER_AGENT_ID);
+            $rowId = JournalReceiptScope::join($receiptId, self::WRITER_AGENT_ID, function () use ($key, $receiptId): int {
+                $this->assertSame($receiptId, JournalReceiptScope::currentId());
+                return $this->writeSettingLifecycle($key);
+            });
+            $this->assertNull(JournalReceiptScope::currentId());
+            $this->assertSame(3, $this->logCount($receiptId));
+            $this->assertSettingLifecycleFrames($this->drainSettingsFrames(), $key, $rowId, $receiptId, self::WRITER_AGENT_ID);
+        }, [$key]);
+    }
+
+    /** A receipt outside an agent callback retains its number without inventing a writer. */
+    public function testOrmWritesWithoutAnAgentCarryTheReceiptAndANullWriter(): void
+    {
+        $key = self::KEY_PREFIX . 'orm-no-agent';
+        $this->withSettingsWriter(function () use ($key): void {
+            ExecutionContext::setCurrentAgentId(null);
+            $rowId = null;
+            $receiptId = JournalReceiptScope::run(
+                JournalReceiptData::agent('setting.orm-no-agent', self::INITIATOR_AGENT_ID),
+                function () use ($key, &$rowId): ?int {
+                    $rowId = $this->writeSettingLifecycle($key);
+                    return JournalReceiptScope::currentId();
+                },
+            );
+            $this->assertNotNull($receiptId);
+            $this->assertNotNull($rowId);
+            $this->assertSame(3, $this->logCount($receiptId));
+            $this->assertSettingLifecycleFrames($this->drainSettingsFrames(), $key, $rowId, $receiptId, null);
+        }, [$key]);
+    }
+
+    /** afterCommit releases the snapshots taken before both the receipt and agent changed. */
+    public function testCommitReleasesOrmFramesWithTheOriginalReceiptAndWriter(): void
+    {
+        $key = self::KEY_PREFIX . 'orm-commit';
+        $this->withSettingsWriter(function () use ($key): void {
+            $rowId = null;
+            Database::transactionStart();
+            try {
+                $receiptId = JournalReceiptScope::run(
+                    JournalReceiptData::agent('setting.orm-commit', self::INITIATOR_AGENT_ID),
+                    function () use ($key, &$rowId): ?int {
+                        $rowId = $this->writeSettingLifecycle($key);
+                        return JournalReceiptScope::currentId();
+                    },
+                );
+                $this->assertNotNull($receiptId);
+                $this->assertNotNull($rowId);
+                $this->assertNull(JournalReceiptScope::currentId());
+                ExecutionContext::setCurrentAgentId(self::INITIATOR_AGENT_ID);
+                $this->assertSame([], $this->drainSettingsFrames());
+                $this->assertFalse(Hilos::$sr->shouldSkipDbSyncApply(HilosDbContext::settings, (string) $rowId, Hilos::$sr->getEmitter()));
+                Database::transactionCommit();
+            } catch (Throwable $failure) {
+                Database::transactionRollbackSilent();
+                throw $failure;
+            }
+
+            $frames = $this->drainSettingsFrames();
+            $this->assertSettingLifecycleFrames($frames, $key, $rowId, $receiptId, self::WRITER_AGENT_ID);
+            foreach ($frames as $frame) {
+                $this->assertTransportPreservesFrame($frame);
+            }
+            $this->assertTrue(Hilos::$sr->shouldSkipDbSyncApply(HilosDbContext::settings, (string) $rowId, $frames[0]->data->emitter));
+            $this->assertFalse(Hilos::$sr->shouldSkipDbSyncApply(HilosDbContext::settings, (string) $rowId, Hilos::$sr->getEmitter()));
+            $this->assertSame(3, $this->logCount($receiptId));
+        }, [$key]);
+    }
+
+    /** Rollback discards all three row frames and their pending self-echo registrations. */
+    public function testRollbackDropsOrmFramesAndTheirEchoRegistrations(): void
+    {
+        $key = self::KEY_PREFIX . 'orm-rollback';
+        $this->withSettingsWriter(function () use ($key): void {
+            $rowId = null;
+            Database::transactionStart();
+            try {
+                $receiptId = JournalReceiptScope::run(
+                    JournalReceiptData::agent('setting.orm-rollback', self::INITIATOR_AGENT_ID),
+                    function () use ($key, &$rowId): ?int {
+                        $rowId = $this->writeSettingLifecycle($key);
+                        return JournalReceiptScope::currentId();
+                    },
+                );
+                $this->assertNotNull($receiptId);
+                $this->assertNotNull($rowId);
+                $this->assertNull(JournalReceiptScope::currentId());
+                ExecutionContext::setCurrentAgentId(self::INITIATOR_AGENT_ID);
+                $this->assertSame([], $this->drainSettingsFrames());
+                $this->assertFalse(Hilos::$sr->shouldSkipDbSyncApply(HilosDbContext::settings, (string) $rowId, Hilos::$sr->getEmitter()));
+                Database::transactionRollback();
+            } catch (Throwable $failure) {
+                Database::transactionRollbackSilent();
+                throw $failure;
+            }
+
+            $this->assertSame([], $this->drainSettingsFrames());
+            $this->assertFalse(Hilos::$sr->shouldSkipDbSyncApply(HilosDbContext::settings, (string) $rowId, Hilos::$sr->getEmitter()));
+            $this->assertArrayNotHasKey($key, Hilos::$db->settings);
+            $this->assertNull($this->receiptFields($receiptId));
+            $this->assertSame(0, $this->logCount($receiptId));
+        }, [$key]);
+    }
+
+    /** A no-op update and an INSERT refused by MySQL must not announce a row change. */
+    public function testNoOpAndFailedOrmSqlQueueNoFrames(): void
+    {
+        $key = self::KEY_PREFIX . 'orm-noop';
+        $tooLongKey = self::KEY_PREFIX . str_repeat('x', 101);
+        $this->withSettingsWriter(function () use ($key, $tooLongKey): void {
+            $this->createSetting($key);
+            $this->assertCount(1, $this->drainSettingsFrames());
+            $emptyId = JournalReceiptScope::run(
+                JournalReceiptData::agent('setting.orm-noop', self::INITIATOR_AGENT_ID),
+                static function () use ($key): ?int {
+                    Hilos::$db->settings[$key]->actions->updateValue('before');
+                    return JournalReceiptScope::currentId();
+                },
+            );
+            $this->assertNotNull($emptyId);
+            $this->assertSame([], $this->drainSettingsFrames());
+            $this->assertNull($this->receiptFields($emptyId));
+            $this->assertSame(0, $this->logCount($emptyId));
+
+            $failedId = null;
+            try {
+                JournalReceiptScope::run(
+                    JournalReceiptData::agent('setting.orm-failed', self::INITIATOR_AGENT_ID),
+                    function () use ($tooLongKey, &$failedId): void {
+                        $failedId = JournalReceiptScope::currentId();
+                        $this->createSetting($tooLongKey);
+                    },
+                );
+                self::fail('MySQL must refuse an orphan key wider than hilos_setting.key');
+            } catch (DataTooLongException) {
+                $this->assertNotNull($failedId);
+            }
+            $this->assertNull(JournalReceiptScope::currentId());
+            $this->assertSame([], $this->drainSettingsFrames());
+            $this->assertArrayNotHasKey($tooLongKey, Hilos::$db->settings);
+            $this->assertNull($this->receiptFields($failedId));
+            $this->assertSame(0, $this->logCount($failedId));
+        }, [$key, $tooLongKey]);
     }
 
     public function testNoOpAndErrorLeaveOnlyReceiptsWithJournalRows(): void
@@ -437,6 +694,143 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
         $this->assertSame(1, Migration::migrateUp($index));
         $this->assertSame($this->baseline['hilos_change_log_receipt'], $this->newestReceiptId());
         $this->assertSame(1, Migration::migrateDown($current));
+    }
+
+    /**
+     * @param callable(): void $body Case run with a real settings claim and a private signal queue
+     * @param list<string> $keysToCleanup Only orphan keys this case may have created
+     */
+    private function withSettingsWriter(callable $body, array $keysToCleanup): void
+    {
+        $previousRouter = Hilos::$sr;
+        $previousAgent = ExecutionContext::currentAgentId();
+        TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::WRITER_AGENT_ID);
+        try {
+            Hilos::$sr = new SignalRouter();
+            ExecutionContext::setCurrentAgentId(self::WRITER_AGENT_ID);
+            $body();
+        } finally {
+            ExecutionContext::setCurrentAgentId(self::WRITER_AGENT_ID);
+            try {
+                foreach ($keysToCleanup as $key) {
+                    if (isset(Hilos::$db->settings[$key])) {
+                        Hilos::$db->settings[$key]->actions->delete();
+                    }
+                }
+            } finally {
+                TruthSourceRegistry::unregisterAgent(self::WRITER_AGENT_ID);
+                ExecutionContext::setCurrentAgentId($previousAgent);
+                Hilos::$sr = $previousRouter;
+            }
+        }
+    }
+
+    /**
+     * @param string $key Uncataloged key owned by this case
+     * @return int Primary key captured before the row is deleted
+     */
+    private function createSetting(string $key): int
+    {
+        return Hilos::$db->settings->actions->addOrphan(
+            $key, SettingsCatalogConstants::TYPE_STRING, 'before', SettingsCatalog::getCatalog(),
+        )->id;
+    }
+
+    /**
+     * @param string $key Uncataloged key owned by this case
+     * @return int Primary key of the created, updated and deleted row
+     */
+    private function writeSettingLifecycle(string $key): int
+    {
+        $id = $this->createSetting($key);
+        Hilos::$db->settings[$key]->actions->updateValue('after');
+        Hilos::$db->settings[$key]->actions->delete();
+        return $id;
+    }
+
+    /** @return list<SignalDTO> Actual ORM row frames, in queue order */
+    private function drainSettingsFrames(): array
+    {
+        $frames = [];
+        while (($frame = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            $this->assertSame(SignalSource::DB, $frame->signalSource->getSource());
+            $this->assertInstanceOf(DbSyncSignalDataInterface::class, $frame->data);
+            $this->assertSame(HilosDbContext::settings, $frame->data->collectionKey);
+            $frames[] = $frame;
+        }
+        return $frames;
+    }
+
+    /**
+     * @param list<SignalDTO> $frames Captured ORM frames
+     * @param string $key Setting business key carried in the full rows
+     * @param int $rowId Primary key of the setting
+     * @param ?int $receiptId Expected write receipt, or null outside a scope
+     * @param ?string $writerAgentId Expected executing agent, or null without attribution
+     */
+    private function assertSettingLifecycleFrames(array $frames, string $key, int $rowId, ?int $receiptId, ?string $writerAgentId): void
+    {
+        $this->assertCount(3, $frames);
+        foreach ([SignalConstants::DB_SYNC_CREATED, SignalConstants::DB_SYNC_UPDATED, SignalConstants::DB_SYNC_DELETED] as $index => $name) {
+            $this->assertSettingsFrame($frames[$index], $name, $rowId, $receiptId, $writerAgentId);
+        }
+        $this->assertSame([
+            Setting::id => $rowId, Setting::key => $key, Setting::type => SettingsCatalogConstants::TYPE_STRING, Setting::value => 'before',
+        ], $frames[0]->data->row);
+        $this->assertSame([Setting::value => 'after'], $frames[1]->data->row);
+        $this->assertSame([Setting::value => 'before'], $frames[1]->data->previous);
+        $this->assertSame([
+            Setting::id => $rowId, Setting::key => $key, Setting::type => SettingsCatalogConstants::TYPE_STRING, Setting::value => 'after',
+        ], $frames[2]->data->row);
+    }
+
+    /**
+     * @param SignalDTO $frame Captured ORM frame
+     * @param string $name Expected DB sync type and name
+     * @param int $rowId Primary key announced by the frame
+     * @param ?int $receiptId Expected write receipt, or null outside a scope
+     * @param ?string $writerAgentId Expected executing agent, or null without attribution
+     */
+    private function assertSettingsFrame(SignalDTO $frame, string $name, int $rowId, ?int $receiptId, ?string $writerAgentId): void
+    {
+        $this->assertSame($name, $frame->signalType->getType());
+        $this->assertSame($name, $frame->signalName->getName());
+        $this->assertInstanceOf(match ($name) {
+            SignalConstants::DB_SYNC_CREATED => DbSyncCreatedSignalData::class,
+            SignalConstants::DB_SYNC_UPDATED => DbSyncUpdatedSignalData::class,
+            SignalConstants::DB_SYNC_DELETED => DbSyncDeletedSignalData::class,
+        }, $frame->data);
+        $this->assertSame(HilosDbContext::settings, $frame->data->collectionKey);
+        $this->assertSame((string) $rowId, $frame->data->idString);
+        $this->assertSame($receiptId, $frame->data->receiptId);
+        $this->assertSame($writerAgentId, $frame->data->writerAgentId);
+        $this->assertSame(Hilos::$sr->getEmitter(), $frame->data->emitter);
+    }
+
+    /** @param SignalDTO $frame Actual ORM frame to pass through worker, peer and replica envelopes */
+    private function assertTransportPreservesFrame(SignalDTO $frame): void
+    {
+        $signal = SignalDTO::fromJson($frame->toJson());
+        $this->assertSame($frame->toArray(), $signal->toArray());
+        $this->assertInstanceOf($frame->data::class, $signal->data);
+        $peer = PeerDTO::fromWire((new PeerDbSyncDTO('receipt-origin-node', $signal->signalType->getType(), $signal))->toJson());
+        $this->assertInstanceOf(PeerDbSyncDTO::class, $peer);
+        $this->assertSame('receipt-origin-node', $peer->originNodeId);
+        $this->assertSame($frame->toArray(), $peer->signal->toArray());
+        $this->assertInstanceOf($frame->data::class, $peer->signal->data);
+        $message = match (true) {
+            $peer->signal->data instanceof DbSyncCreatedSignalData => new WorkerDbSyncCreatedMessageDTO($peer->signal->data, $peer->originNodeId),
+            $peer->signal->data instanceof DbSyncUpdatedSignalData => new WorkerDbSyncUpdatedMessageDTO($peer->signal->data, $peer->originNodeId),
+            $peer->signal->data instanceof DbSyncDeletedSignalData => new WorkerDbSyncDeletedMessageDTO($peer->signal->data, $peer->originNodeId),
+        };
+        $worker = WorkerDTO::factoryWorkerDTO($message->toJson());
+        $this->assertInstanceOf($message::class, $worker);
+        $this->assertSame($peer->originNodeId, $worker->originNodeId);
+        foreach ([$signal->data, $peer->signal->data, $worker->signalData] as $payload) {
+            $this->assertSame($frame->data->toArray(), $payload->toArray());
+            $this->assertSame($frame->data->receiptId, $payload->receiptId);
+            $this->assertSame($frame->data->writerAgentId, $payload->writerAgentId);
+        }
     }
 
     /** @return ?list<?string> Scalar receipt fields in stored order, or null when it was deleted */

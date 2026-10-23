@@ -17,4 +17,6 @@ final class SyncSignalDataKey
     public const string ORIGIN = 'origin';
     public const string ORIGIN_REQUEST_ID = 'originRequestId';
     public const string EMITTER = 'emitter';
+    public const string RECEIPT_ID = 'receiptId';
+    public const string WRITER_AGENT_ID = 'writerAgentId';
 }

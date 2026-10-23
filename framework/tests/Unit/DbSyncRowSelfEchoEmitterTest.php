@@ -8,7 +8,12 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Router\SelfBroadcastRegistry;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncSignalDataInterface;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -81,25 +86,68 @@ final class DbSyncRowSelfEchoEmitterTest extends TestCase
      * someone else's, and self-echo suppression would be dead without a single failing
      * assertion above — those read the payload object, this one reads what actually travels.
      */
-    public function testEmitterSurvivesTheWorkerMessageRoundtrip(): void
+    public function testReceiptMetadataAndEmitterSurviveEveryWorkerMessageRoundtrip(): void
     {
-        $router = new SignalRouter();
-        $this->queueOwnRowSync($router);
+        foreach ([
+            [
+                SignalTypeConstants::DB_SYNC_CREATED,
+                new DbSyncCreatedSignalData(
+                    self::COLLECTION_KEY,
+                    self::ID,
+                    ['id' => 7],
+                    receiptId: 47,
+                    writerAgentId: 'chat:7',
+                ),
+                WorkerDbSyncCreatedMessageDTO::class,
+            ],
+            [
+                SignalTypeConstants::DB_SYNC_UPDATED,
+                new DbSyncUpdatedSignalData(
+                    self::COLLECTION_KEY,
+                    self::ID,
+                    ['name' => 'Grace'],
+                    previous: ['name' => 'Ada'],
+                    receiptId: 47,
+                    writerAgentId: 'chat:7',
+                ),
+                WorkerDbSyncUpdatedMessageDTO::class,
+            ],
+            [
+                SignalTypeConstants::DB_SYNC_DELETED,
+                new DbSyncDeletedSignalData(
+                    self::COLLECTION_KEY,
+                    self::ID,
+                    ['name' => 'Grace'],
+                    receiptId: 47,
+                    writerAgentId: 'chat:7',
+                ),
+                WorkerDbSyncDeletedMessageDTO::class,
+            ],
+        ] as [$signalType, $payload, $workerMessageClass]) {
+            $router = new SignalRouter();
+            $router->queueDbSyncSignal($signalType, $payload);
 
-        $signal = $router->getNextQueuedSignal();
-        $this->assertNotNull($signal);
-        $signalData = $signal->data;
-        $this->assertInstanceOf(DbSyncCreatedSignalData::class, $signalData);
+            $signal = $router->getNextQueuedSignal();
+            $this->assertNotNull($signal);
+            $signalData = $signal->data;
+            $this->assertInstanceOf(DbSyncSignalDataInterface::class, $signalData);
 
-        // The daemon fans the row sync out to workers as this message, serialized as JSON.
-        $transported = json_decode((new WorkerDbSyncCreatedMessageDTO($signalData))->toJson(), true);
-        $this->assertIsArray($transported);
-        $delivered = WorkerDbSyncCreatedMessageDTO::fromArray($transported)->signalData;
+            // The daemon fans the row sync out to workers as this message, serialized as JSON.
+            $transported = json_decode((new $workerMessageClass($signalData))->toJson(), true);
+            $this->assertIsArray($transported);
+            $delivered = $workerMessageClass::fromArray($transported)->signalData;
 
-        $this->assertSame($router->getEmitter(), $delivered->emitter);
-        $this->assertTrue(
-            $router->shouldSkipDbSyncApply($delivered->collectionKey, $delivered->idString, $delivered->emitter),
-        );
+            $this->assertSame($router->getEmitter(), $delivered->emitter);
+            $this->assertSame(47, $delivered->receiptId);
+            $this->assertSame('chat:7', $delivered->writerAgentId);
+            $this->assertTrue(
+                $router->shouldSkipDbSyncApply(
+                    $delivered->collectionKey,
+                    $delivered->idString,
+                    $delivered->emitter,
+                ),
+            );
+        }
     }
 
     /**

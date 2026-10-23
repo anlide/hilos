@@ -208,13 +208,16 @@ node. Only a write during the handed-over frame belongs to the person's receipt.
 Today the scope counts journal rows before and after the work to record the last
 agent that actually wrote a journaled row. That attribution path is transitional.
 
-The created, updated or deleted business-row frame carries the receipt of that
-write and the writer's data, captured at the write and preserved through
-`afterCommit()` and forwarding to another node.
-(not in the code yet — HIL-1617)
-This is the ORM change frame, distinct from the existing handover `receipt` in
-`AgentSignalData`; it is delivered only to subscribers, without a broadcast.
-(not in the code yet — HIL-1617)
+Business-row frames for created, updated and deleted rows carry `receiptId` and
+`writerAgentId`. `receiptId` is the current journal receipt or null outside one;
+`writerAgentId` is the current agent ID under that receipt, or null when there
+is no receipt or active agent. Both values are captured as the ORM queues the
+frame, before `afterCommit()`, and that snapshot is preserved through commit
+and peer forwarding. The writer ID names the agent active at the write, not the
+frame emitter or its recipient.
+This is the ORM change frame, distinct from the existing
+`AgentSignalData::receipt` handover field; it is delivered only to subscribers,
+without a broadcast.
 The journal agent declares reading the journaled business collections and uses
 those notifications to update the receipt's `agent`, removing both journal
 `COUNT` queries from attribution. (not in the code yet — HIL-1618)
@@ -751,8 +754,8 @@ actor, action, writer agent, `block` values `0` → `1` and complete visible
 attribution header, including When and Source, must agree. The leader and term
 stay unchanged (HIL-1465).
 
-The new business-row frame preserves its write receipt and writer data between
-nodes. (not in the code yet — HIL-1617)
+Peer forwarding preserves the business-row frame's `receiptId` and
+`writerAgentId` snapshot.
 The journal agent applies attribution through that frame path under its declared
 operations. (not in the code yet — HIL-1618)
 A separate cluster scenario proves the collection-based reading and new

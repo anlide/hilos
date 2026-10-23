@@ -30,6 +30,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Server\WorkerServer;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Tests\Unit\Cluster\Peer\PeerTestMarkers;
@@ -62,6 +63,12 @@ final class DaemonManagerDbSyncPeerTest extends TestCase
 
     /** @var string Row id every case syncs */
     public const string ROW_ID = '7';
+
+    /** Receipt primary key carried by each DB row fact */
+    public const int RECEIPT_ID = 47;
+
+    /** Writing agent address carried by each DB row fact */
+    public const string WRITER_AGENT_ID = 'chat:7';
 
     protected function tearDown(): void
     {
@@ -109,6 +116,8 @@ final class DaemonManagerDbSyncPeerTest extends TestCase
         $this->assertInstanceOf(DbSyncUpdatedSignalData::class, $data);
         $this->assertSame(self::COLLECTION, $data->collectionKey);
         $this->assertSame(['title' => 'Ada'], $data->row);
+        $this->assertSame(self::RECEIPT_ID, $data->receiptId);
+        $this->assertSame(self::WRITER_AGENT_ID, $data->writerAgentId);
     }
 
     /**
@@ -201,6 +210,16 @@ final class DaemonManagerDbSyncPeerTest extends TestCase
             [WorkerConstants::MESSAGE_DB_SYNC_UPDATED],
             $daemon->workerServer->frameTypes(),
         );
+
+        $frames = $daemon->workerServer->writtenFrames();
+        $this->assertCount(1, $frames);
+        $workerPayload = json_decode($frames[0], true);
+        $this->assertIsArray($workerPayload);
+        $workerMessage = WorkerDbSyncUpdatedMessageDTO::fromArray($workerPayload);
+
+        $this->assertSame(self::REMOTE_NODE, $workerMessage->originNodeId);
+        $this->assertSame(self::RECEIPT_ID, $workerMessage->signalData->receiptId);
+        $this->assertSame(self::WRITER_AGENT_ID, $workerMessage->signalData->writerAgentId);
     }
 
     /**
@@ -432,6 +451,8 @@ final class DbSyncPeerTestManager extends DaemonManager
                 DaemonManagerDbSyncPeerTest::COLLECTION,
                 DaemonManagerDbSyncPeerTest::ROW_ID,
                 ['title' => $title],
+                receiptId: DaemonManagerDbSyncPeerTest::RECEIPT_ID,
+                writerAgentId: DaemonManagerDbSyncPeerTest::WRITER_AGENT_ID,
             ),
         );
     }
@@ -700,6 +721,21 @@ final class DbSyncPeerTestWorkerServer extends WorkerServer
         return $types;
     }
 
+    /**
+     * @return list<string> Raw frames written to the workers, in order
+     */
+    public function writtenFrames(): array
+    {
+        $frames = [];
+        foreach ($this->clients as $client) {
+            if ($client instanceof DbSyncPeerTestWorkerClient) {
+                $frames = [...$frames, ...$client->writtenFrames()];
+            }
+        }
+
+        return $frames;
+    }
+
     protected function onStart(): void
     {
     }
@@ -749,5 +785,13 @@ final class DbSyncPeerTestWorkerClient extends WorkerClient
         }
 
         return $types;
+    }
+
+    /**
+     * @return list<string> Raw frames written to this worker, in order
+     */
+    public function writtenFrames(): array
+    {
+        return $this->written;
     }
 }

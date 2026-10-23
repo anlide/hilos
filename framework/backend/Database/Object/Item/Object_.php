@@ -18,6 +18,7 @@ use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Entity;
@@ -524,6 +525,7 @@ abstract class Object_
      */
     private function queueDbSyncCreated(string $collectionKey, string $idString, array $row): void
     {
+        $receiptId = JournalReceiptScope::currentId();
         Hilos::$sr?->queueDbSyncSignal(
             SignalConstants::DB_SYNC_CREATED,
             new DbSyncCreatedSignalData(
@@ -532,6 +534,8 @@ abstract class Object_
                 $row,
                 ExecutionContext::currentAcceptKey(),
                 ExecutionContext::currentRequestId(),
+                receiptId: $receiptId,
+                writerAgentId: $receiptId === null ? null : ExecutionContext::currentAgentId(),
             ),
             connectionIndex: $this->entity::getDatabase()->connectionIndex,
         );
@@ -548,6 +552,7 @@ abstract class Object_
      */
     private function queueDbSyncUpdated(string $collectionKey, string $idString, array $row, array $previous): void
     {
+        $receiptId = JournalReceiptScope::currentId();
         Hilos::$sr?->queueDbSyncSignal(
             SignalConstants::DB_SYNC_UPDATED,
             new DbSyncUpdatedSignalData(
@@ -557,6 +562,8 @@ abstract class Object_
                 ExecutionContext::currentAcceptKey(),
                 ExecutionContext::currentRequestId(),
                 previous: $previous,
+                receiptId: $receiptId,
+                writerAgentId: $receiptId === null ? null : ExecutionContext::currentAgentId(),
             ),
             connectionIndex: $this->entity::getDatabase()->connectionIndex,
         );
@@ -572,6 +579,7 @@ abstract class Object_
      */
     private function queueDbSyncDeleted(string $collectionKey, string $idString, array $row): void
     {
+        $receiptId = JournalReceiptScope::currentId();
         Hilos::$sr?->queueDbSyncSignal(
             SignalConstants::DB_SYNC_DELETED,
             new DbSyncDeletedSignalData(
@@ -580,6 +588,8 @@ abstract class Object_
                 $row,
                 ExecutionContext::currentAcceptKey(),
                 ExecutionContext::currentRequestId(),
+                receiptId: $receiptId,
+                writerAgentId: $receiptId === null ? null : ExecutionContext::currentAgentId(),
             ),
             connectionIndex: $this->entity::getDatabase()->connectionIndex,
         );

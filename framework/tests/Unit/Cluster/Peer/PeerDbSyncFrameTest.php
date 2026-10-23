@@ -13,7 +13,13 @@ use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -48,6 +54,76 @@ final class PeerDbSyncFrameTest extends TestCase
         $this->assertSame('settings', $data->collectionKey);
         $this->assertSame('7', $data->idString);
         $this->assertSame(['title' => 'Ada'], $data->row);
+    }
+
+    public function testReceiptMetadataSurvivesPeerAndWorkerWireRoundtrips(): void
+    {
+        foreach ([
+            [
+                SignalTypeConstants::DB_SYNC_CREATED,
+                SignalConstants::DB_SYNC_CREATED,
+                new DbSyncCreatedSignalData(
+                    'settings',
+                    '7',
+                    ['title' => 'Ada'],
+                    receiptId: 41,
+                    writerAgentId: 'settings:writer',
+                ),
+                WorkerDbSyncCreatedMessageDTO::class,
+            ],
+            [
+                SignalTypeConstants::DB_SYNC_UPDATED,
+                SignalConstants::DB_SYNC_UPDATED,
+                new DbSyncUpdatedSignalData(
+                    'settings',
+                    '7',
+                    ['title' => 'Grace'],
+                    previous: ['title' => 'Ada'],
+                    receiptId: 42,
+                    writerAgentId: 'settings:writer',
+                ),
+                WorkerDbSyncUpdatedMessageDTO::class,
+            ],
+            [
+                SignalTypeConstants::DB_SYNC_DELETED,
+                SignalConstants::DB_SYNC_DELETED,
+                new DbSyncDeletedSignalData(
+                    'settings',
+                    '7',
+                    ['title' => 'Grace'],
+                    receiptId: 43,
+                    writerAgentId: 'settings:writer',
+                ),
+                WorkerDbSyncDeletedMessageDTO::class,
+            ],
+        ] as [$signalType, $signalName, $signalData, $workerMessageClass]) {
+            $frame = new PeerDbSyncDTO(
+                originNodeId: 'node-A',
+                signalType: $signalType,
+                signal: new SignalDTO(
+                    new SignalSource(SignalSource::DAEMON),
+                    new SignalType($signalType),
+                    new SignalName($signalName),
+                    $signalData,
+                ),
+            );
+
+            $peerMessage = PeerDTO::fromWire($frame->toJson());
+            $this->assertInstanceOf(PeerDbSyncDTO::class, $peerMessage);
+            $replicatedSignalData = $peerMessage->signal->data;
+            $this->assertInstanceOf(DbSyncSignalDataInterface::class, $replicatedSignalData);
+            $this->assertSame($signalData->receiptId, $replicatedSignalData->receiptId);
+            $this->assertSame($signalData->writerAgentId, $replicatedSignalData->writerAgentId);
+
+            $workerMessage = new $workerMessageClass($replicatedSignalData, 'node-A');
+            $workerPayload = json_decode($workerMessage->toJson(), true);
+            $this->assertIsArray($workerPayload);
+            $delivered = $workerMessageClass::fromArray($workerPayload);
+
+            $this->assertSame('node-A', $delivered->originNodeId);
+            $this->assertSame($signalData->receiptId, $delivered->signalData->receiptId);
+            $this->assertSame($signalData->writerAgentId, $delivered->signalData->writerAgentId);
+        }
     }
 
     public function testRejectsMissingOriginNodeId(): void

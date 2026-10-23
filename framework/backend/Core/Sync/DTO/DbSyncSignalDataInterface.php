@@ -17,4 +17,10 @@ interface DbSyncSignalDataInterface extends EmitterStampedSyncSignalDataInterfac
 
     /** @var array<string, mixed> Row data carried by this fact */
     public array $row { get; }
+
+    /** @var ?int Existing receipt primary key for the write, or null outside a receipt */
+    public ?int $receiptId { get; }
+
+    /** @var ?string Writing agent under the receipt, or null without an active agent */
+    public ?string $writerAgentId { get; }
 }

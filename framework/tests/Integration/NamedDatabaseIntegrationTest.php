@@ -1757,6 +1757,8 @@ final class NamedDatabaseIntegrationTest extends FrameworkIntegrationTestCase
                 SyncSignalDataKey::ROW, SyncSignalDataKey::ORIGIN, SyncSignalDataKey::ORIGIN_REQUEST_ID];
             if ($db) {
                 $keys[] = SyncSignalDataKey::EMITTER;
+                $keys[] = SyncSignalDataKey::RECEIPT_ID;
+                $keys[] = SyncSignalDataKey::WRITER_AGENT_ID;
             }
             if (in_array($name, [SignalConstants::DB_SYNC_UPDATED, SignalConstants::RT_SYNC_UPDATED], true)) {
                 $keys[] = SyncSignalDataKey::PREVIOUS;
@@ -1766,6 +1768,8 @@ final class NamedDatabaseIntegrationTest extends FrameworkIntegrationTestCase
             sort($actualKeys);
             self::assertSame($keys, $actualKeys, 'Connection indexes must stay out of the wire contract');
             if ($db) {
+                self::assertNull($payload[SyncSignalDataKey::RECEIPT_ID]);
+                self::assertNull($payload[SyncSignalDataKey::WRITER_AGENT_ID]);
                 self::assertSame(Hilos::$sr->getEmitter(), $payload[SyncSignalDataKey::EMITTER]);
                 self::assertFalse(Hilos::$sr->shouldSkipDbSyncApply($key, $id, 'foreign-emitter'));
                 self::assertTrue(Hilos::$sr->shouldSkipDbSyncApply($key, $id, $payload[SyncSignalDataKey::EMITTER]));

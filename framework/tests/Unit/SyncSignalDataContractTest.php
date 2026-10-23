@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
@@ -15,6 +16,7 @@ use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\SyncSignalDataInterface;
+use Hilos\Core\Sync\DTO\SyncSignalDataKey;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncMessageInterface;
@@ -38,6 +40,12 @@ final class SyncSignalDataContractTest extends TestCase
     /** Collection key used by every payload built here. */
     private const string COLLECTION_KEY = 'events';
 
+    /** Receipt primary key carried by metadata cases. */
+    private const int RECEIPT_ID = 47;
+
+    /** Agent address carried by metadata cases. */
+    private const string WRITER_AGENT_ID = 'chat:7';
+
     public function testUpdatedPayloadsRoundtripPreviousValues(): void
     {
         $dbPayload = new DbSyncUpdatedSignalData(
@@ -59,12 +67,80 @@ final class SyncSignalDataContractTest extends TestCase
 
     public function testRowScopedDbPayloadsImplementTheDbInterface(): void
     {
-        foreach ([
-            new DbSyncCreatedSignalData(self::COLLECTION_KEY, '1', ['name' => 'Ada']),
-            new DbSyncUpdatedSignalData(self::COLLECTION_KEY, '1', ['name' => 'Grace']),
-            new DbSyncDeletedSignalData(self::COLLECTION_KEY, '1', ['name' => 'Grace']),
-        ] as $signalData) {
+        foreach ($this->dbRowPayloads(null, null) as $signalData) {
             $this->assertInstanceOf(DbSyncSignalDataInterface::class, $signalData);
+        }
+    }
+
+    public function testDbRowMetadataSurvivesArrayAndJsonRoundtrips(): void
+    {
+        foreach ([
+            [self::RECEIPT_ID, self::WRITER_AGENT_ID],
+            [null, null],
+            [self::RECEIPT_ID, null],
+        ] as [$receiptId, $writerAgentId]) {
+            foreach ($this->dbRowPayloads($receiptId, $writerAgentId) as $signalData) {
+                $this->assertSame($receiptId, $signalData->receiptId);
+                $this->assertSame($writerAgentId, $signalData->writerAgentId);
+
+                $payload = $signalData->toArray();
+                $this->assertArrayHasKey(SyncSignalDataKey::RECEIPT_ID, $payload);
+                $this->assertArrayHasKey(SyncSignalDataKey::WRITER_AGENT_ID, $payload);
+                $this->assertSame($receiptId, $payload[SyncSignalDataKey::RECEIPT_ID]);
+                $this->assertSame($writerAgentId, $payload[SyncSignalDataKey::WRITER_AGENT_ID]);
+
+                $signalDataClass = $signalData::class;
+                $this->assertEquals($signalData, $signalDataClass::fromArray($payload));
+                $this->assertEquals($signalData, $signalDataClass::fromJson($signalData->toJson()));
+            }
+        }
+    }
+
+    public function testOldDbRowPayloadsDefaultReceiptMetadataToNull(): void
+    {
+        foreach ($this->dbRowPayloads(self::RECEIPT_ID, self::WRITER_AGENT_ID) as $signalData) {
+            $payload = $signalData->toArray();
+            unset($payload[SyncSignalDataKey::RECEIPT_ID], $payload[SyncSignalDataKey::WRITER_AGENT_ID]);
+
+            $signalDataClass = $signalData::class;
+            $restored = $signalDataClass::fromArray($payload);
+
+            $this->assertNull($restored->receiptId);
+            $this->assertNull($restored->writerAgentId);
+        }
+    }
+
+    public function testDbRowMetadataReadersRejectWrongTypes(): void
+    {
+        foreach ($this->dbRowPayloads(self::RECEIPT_ID, self::WRITER_AGENT_ID) as $signalData) {
+            foreach ([
+                [SyncSignalDataKey::RECEIPT_ID, (string) self::RECEIPT_ID],
+                [SyncSignalDataKey::WRITER_AGENT_ID, self::RECEIPT_ID],
+            ] as [$key, $value]) {
+                $payload = $signalData->toArray();
+                $payload[$key] = $value;
+                $signalDataClass = $signalData::class;
+
+                try {
+                    $signalDataClass::fromArray($payload);
+                    $this->fail('A DB row payload with mistyped receipt metadata must be refused.');
+                } catch (InvalidFormatException $exception) {
+                    $this->assertStringContainsString('Payload carries a non-', $exception->getMessage());
+                }
+            }
+        }
+    }
+
+    public function testWithEmitterChangesOnlyTheEmitterOnDbRowPayloads(): void
+    {
+        foreach ($this->dbRowPayloads(self::RECEIPT_ID, self::WRITER_AGENT_ID) as $signalData) {
+            $stamped = $signalData->withEmitter('node-b');
+            $expected = $signalData->toArray();
+            $expected[SyncSignalDataKey::EMITTER] = 'node-b';
+
+            $this->assertSame($expected, $stamped->toArray());
+            $this->assertSame(self::RECEIPT_ID, $stamped->receiptId);
+            $this->assertSame(self::WRITER_AGENT_ID, $stamped->writerAgentId);
         }
     }
 
@@ -125,6 +201,19 @@ final class SyncSignalDataContractTest extends TestCase
         $this->assertNotInstanceOf(DbSyncSignalDataInterface::class, $signalData);
     }
 
+    public function testClearAndRtPayloadsDoNotDeclareReceiptMetadata(): void
+    {
+        foreach ([
+            new DbSyncClearedSignalData(self::COLLECTION_KEY),
+            new RtSyncCreatedSignalData(self::COLLECTION_KEY, 'ak-1', ['userId' => 1]),
+            new RtSyncUpdatedSignalData(self::COLLECTION_KEY, 'ak-1', ['presence' => 'online']),
+            new RtSyncDeletedSignalData(self::COLLECTION_KEY, 'ak-1', ['presence' => 'online']),
+        ] as $signalData) {
+            $this->assertFalse(property_exists($signalData, 'receiptId'));
+            $this->assertFalse(property_exists($signalData, 'writerAgentId'));
+        }
+    }
+
     public function testDbTransportMessagesCarryARowScopedPayload(): void
     {
         foreach ([
@@ -147,5 +236,47 @@ final class SyncSignalDataContractTest extends TestCase
             $this->assertInstanceOf(WorkerRtSyncMessageInterface::class, $message);
             $this->assertInstanceOf(RtSyncSignalDataInterface::class, $message->signalData);
         }
+    }
+
+    /**
+     * @param ?int $receiptId Receipt primary key for the test payloads
+     * @param ?string $writerAgentId Writing agent address for the test payloads
+     * @return list<DbSyncSignalDataInterface> The three row-scoped DB sync payloads
+     */
+    private function dbRowPayloads(?int $receiptId, ?string $writerAgentId): array
+    {
+        return [
+            new DbSyncCreatedSignalData(
+                collectionKey: self::COLLECTION_KEY,
+                idString: '1',
+                row: ['name' => 'Ada'],
+                origin: 'accept-1',
+                originRequestId: 'request-1',
+                emitter: 'node-a',
+                receiptId: $receiptId,
+                writerAgentId: $writerAgentId,
+            ),
+            new DbSyncUpdatedSignalData(
+                collectionKey: self::COLLECTION_KEY,
+                idString: '1',
+                row: ['name' => 'Grace'],
+                origin: 'accept-1',
+                originRequestId: 'request-1',
+                emitter: 'node-a',
+                previous: ['name' => 'Ada'],
+                receiptId: $receiptId,
+                writerAgentId: $writerAgentId,
+            ),
+            new DbSyncDeletedSignalData(
+                collectionKey: self::COLLECTION_KEY,
+                idString: '1',
+                row: ['name' => 'Grace'],
+                origin: 'accept-1',
+                originRequestId: 'request-1',
+                emitter: 'node-a',
+                receiptId: $receiptId,
+                writerAgentId: $writerAgentId,
+            ),
+        ];
     }
 }
