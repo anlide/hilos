@@ -8,37 +8,17 @@ import { signUpAdmin } from '../helpers/adminGrant.js'
 import { gotoPage, PAGE_READY } from '../helpers/page.js'
 import { clickSubmit } from '../helpers/session.js'
 
-test('opens the names of a reflowed country directly with the shared header, tabs, and the names table', async ({
+// The Names tab's own table of the built-in United States. The shared head and
+// the Overview · Names row above it are read by i18n-country-card.spec.ts on
+// this tab, directly opened and reloaded; here only the table is read.
+
+test('opens the names of a reflowed country directly with the names table and sends no action', async ({
   page,
 }) => {
   const actionRequests = countSentFrames(page, '"type":"action"')
   await signUpAdmin(page)
   await gotoPage(page, '/hilos/i18n/countries/us/names', PAGE_READY)
   const actionsBeforeReading = actionRequests()
-
-  await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
-    'United States',
-  )
-  await expect(page.getByTestId('country-head-code')).toHaveText('us')
-  await expect(page.getByTestId('country-head-own')).toHaveCount(0)
-  await expect(page.getByTestId('country-head-description')).toHaveText(
-    'Currency $ USD · Default locale not chosen',
-  )
-
-  const tabs = page.getByTestId('hilos-page-tabs')
-  await expect(tabs).toContainText('Overview')
-  await expect(tabs).toContainText('Names')
-  await expect(tabs.locator('a')).toHaveCount(2)
-
-  const namesTab = page.getByTestId('hilos-page-tab-hilos_i18n_country_names')
-  await expect(namesTab).toHaveAttribute('aria-current', 'page')
-  await expect(namesTab).toHaveAttribute(
-    'href',
-    '/hilos/i18n/countries/us/names',
-  )
-
-  const overviewTab = page.getByTestId('hilos-page-tab-hilos_i18n_country')
-  await expect(overviewTab).toHaveAttribute('href', '/hilos/i18n/countries/us')
 
   const enRow = i18nNameRow(page, 'country', 'en')
   await expect(enRow).toContainText('English')

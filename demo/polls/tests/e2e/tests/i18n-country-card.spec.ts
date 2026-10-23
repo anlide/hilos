@@ -1,5 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
-import { countSentFrames } from '../../../../../framework/frontend/e2e/index.js'
+import {
+  countSentFrames,
+  expectCountryPageHead,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import {
   expectDocumentUnchanged,
@@ -10,42 +13,33 @@ import {
 } from '../helpers/page.js'
 import { clickSubmit } from '../helpers/session.js'
 
+const APP_NAME = 'Hilos Polls'
 const OVERVIEW = 'hilos_i18n_country'
 const NAMES = 'hilos_i18n_country_names'
 const OVERVIEW_PATH = '/hilos/i18n/countries/us'
 const NAMES_PATH = '/hilos/i18n/countries/us/names'
 
 /**
- * The shared head of the reflowed United States on either tab: the one h1 with
- * the live name, the browser tab composed with the polls application name, the
- * country's own block, the breadcrumb ending in the name as text, and the
- * Overview · Names row of native links with only the rendered tab current. The
- * hand-made country header and the child cards the legacy shell drew under its
- * heading are gone.
+ * The United States head on either tab: the shared checks; the last crumb read
+ * through the accessibility tree and the rendered tab marked active as well, as
+ * the Angular kit draws them; the country's own block, which carries no action;
+ * and no hand-made country header.
+ *
+ * @param page A page on the country's Overview or Names tab.
+ * @param current The page key of the tab on screen.
  */
 async function expectCountryHead(page: Page, current: string): Promise<void> {
-  await expect(page.getByTestId('hilos-page-head')).toBeVisible()
-  await expect(page.getByTestId('hilos-page-head-skeleton')).toHaveCount(0)
-  const heading = page.getByRole('heading', { level: 1 })
-  await expect(heading).toHaveCount(1)
-  await expect(heading).toHaveAttribute('data-id', 'hilos-page-head-title')
-  await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
-    'United States',
-  )
-  await expect(page).toHaveTitle('United States · Hilos Polls')
-
-  const crumbs = page.getByTestId('hilos-breadcrumb')
-  await expect(crumbs).toHaveAccessibleName('Breadcrumb')
+  await expectCountryPageHead(expect, page, {
+    code: 'us',
+    name: 'United States',
+    appName: APP_NAME,
+    currentPage: current,
+  })
+  // The last crumb's words are the name alone in the accessibility tree too:
+  // the divider before it is hidden from assistive technology.
   await expect(
-    page.getByTestId('hilos-breadcrumb-hilos_i18n_countries'),
-  ).toHaveAttribute('href', '/hilos/i18n/countries')
-  // The last crumb is the page itself: text, not a link, and its words are the
-  // name alone — the divider before it is hidden from assistive technology.
-  const lastCrumb = crumbs.locator('[aria-current]')
-  await expect(lastCrumb).toHaveCount(1)
-  await expect(lastCrumb).toHaveAttribute('aria-current', 'page')
-  await expect(lastCrumb.locator('a')).toHaveCount(0)
-  await expect(lastCrumb).toMatchAriaSnapshot('- listitem: United States')
+    page.getByTestId('hilos-breadcrumb').locator('[aria-current="page"]'),
+  ).toMatchAriaSnapshot('- listitem: United States')
 
   const block = page.getByTestId('hilos-page-head-block')
   await expect(block.getByTestId('country-head-tile')).toHaveText('us')
@@ -57,28 +51,16 @@ async function expectCountryHead(page: Page, current: string): Promise<void> {
   await expect(page.getByTestId('hilos-page-head-action')).toHaveCount(0)
 
   const tabs = page.getByTestId('hilos-page-tabs')
-  await expect(tabs).toHaveAccessibleName('Country pages')
-  await expect(tabs.getByRole('link')).toHaveText(['Overview', 'Names'])
-  const overview = tabs.getByTestId(`hilos-page-tab-${OVERVIEW}`)
-  const names = tabs.getByTestId(`hilos-page-tab-${NAMES}`)
-  await expect(overview).toHaveAttribute('href', OVERVIEW_PATH)
-  await expect(names).toHaveAttribute('href', NAMES_PATH)
-  for (const [tab, key] of [
-    [overview, OVERVIEW],
-    [names, NAMES],
-  ] as const) {
+  for (const key of [OVERVIEW, NAMES]) {
+    const tab = tabs.getByTestId(`hilos-page-tab-${key}`)
     if (key === current) {
-      await expect(tab).toHaveAttribute('aria-current', 'page')
       await expect(tab).toHaveClass(/\bactive\b/)
     } else {
-      await expect(tab).not.toHaveAttribute('aria-current')
       await expect(tab).not.toHaveClass(/\bactive\b/)
     }
   }
 
   await expect(page.getByTestId('country-card-header')).toHaveCount(0)
-  await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
-  await expect(page.getByTestId(`hilos-admin-child-${NAMES}`)).toHaveCount(0)
 }
 
 /**

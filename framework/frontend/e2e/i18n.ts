@@ -3,10 +3,13 @@ import type { Expect, Locator, Page } from '@playwright/test'
 import type { PageErrorFrameLog } from './pageErrorFrames.js'
 import { shownByTestId } from './table.js'
 
-// The country tabs' page keys and the server's 404 catalog. This folder does
-// not import the core, so the words are copied. A live deletion adds the line
-// on the frame and the screen draws it under the 404; a later subscribe omits
-// the key, and the screen draws no line.
+// The countries section's page key and address, the country tabs' page keys
+// and the server's 404 catalog. This folder does not import the core, so the
+// words are copied. A live deletion adds the line on the frame and the screen
+// draws it under the 404; a later subscribe omits the key, and the screen
+// draws no line.
+const COUNTRIES_PAGE = 'hilos_i18n_countries'
+const COUNTRIES_PATH = '/hilos/i18n/countries'
 const COUNTRY_CARD_PAGE = 'hilos_i18n_country'
 const COUNTRY_NAMES_PAGE = 'hilos_i18n_country_names'
 const COUNTRY_NOT_FOUND_TITLE = 'Page Not Found'
@@ -104,10 +107,12 @@ export async function expectI18nName(
 
 /**
  * The shared head of a country on either of its tabs: the one h1, the last
- * crumb and the browser tab carry the shown name, the Overview and Names links
- * keep the code-based addresses whatever the name, only the tab on screen is
- * current, and no child cards stand under the head. The row's labels and the
- * country's own block stay in the spec.
+ * crumb and the browser tab carry the shown name; the trail is the named
+ * Breadcrumb, its Countries link keeps the section's address and its last
+ * crumb is text rather than a link; the Country pages row reads Overview and
+ * Names, the two links keep the code-based addresses whatever the name, only
+ * the tab on screen is current; and no child cards stand under the head. The
+ * country's own block stays in the spec, with the fixture it describes.
  *
  * @param expect The spec's expect.
  * @param page A page on the country's Overview or Names tab.
@@ -127,11 +132,16 @@ export async function expectCountryPageHead(
   await expect(heading).toHaveText(country.name)
   await expect(page).toHaveTitle(`${country.name} · ${country.appName}`)
 
-  const lastCrumb = page
-    .getByTestId('hilos-breadcrumb')
-    .locator('[aria-current]')
+  const crumbs = page.getByTestId('hilos-breadcrumb')
+  await expect(crumbs).toHaveAccessibleName('Breadcrumb')
+  await expect(
+    page.getByTestId(`hilos-breadcrumb-${COUNTRIES_PAGE}`),
+  ).toHaveAttribute('href', COUNTRIES_PATH)
+  const lastCrumb = crumbs.locator('[aria-current]')
   await expect(lastCrumb).toHaveCount(1)
   await expect(lastCrumb).toHaveAttribute('aria-current', 'page')
+  // The page itself is the last crumb: text, not a link.
+  await expect(lastCrumb.locator('a')).toHaveCount(0)
   // The crumb's own words: a kit may draw its divider as a decoration hidden
   // from assistive technology inside the crumb, and that is not the name.
   await expect
@@ -147,7 +157,9 @@ export async function expectCountryPageHead(
   await expect(lastCrumb.locator('xpath=following-sibling::*')).toHaveCount(0)
 
   const tabs = page.getByTestId('hilos-page-tabs')
-  const overviewPath = `/hilos/i18n/countries/${country.code}`
+  await expect(tabs).toHaveAccessibleName('Country pages')
+  await expect(tabs.getByRole('link')).toHaveText(['Overview', 'Names'])
+  const overviewPath = `${COUNTRIES_PATH}/${country.code}`
   for (const [key, href] of [
     [COUNTRY_CARD_PAGE, overviewPath],
     [COUNTRY_NAMES_PAGE, `${overviewPath}/names`],

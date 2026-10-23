@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 import {
   countSentFrames,
   dismissToasts,
+  expectCountryPageHead,
   i18nNameRow,
   shownByTestId,
   watchHeight,
@@ -16,6 +17,9 @@ import {
 import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
 import { clickSubmit, typeInto } from '../helpers/session.js'
 
+const APP_NAME = 'BTC Tracker'
+const OVERVIEW = 'hilos_i18n_country'
+const NAMES = 'hilos_i18n_country_names'
 const COUNTRY_PATH = '/hilos/i18n/countries/qj'
 const NAMES_PATH = '/hilos/i18n/countries/qj/names'
 const WINDOW = 'i18n-country-name-window'
@@ -65,6 +69,29 @@ async function saveName(page: Page, message: string): Promise<void> {
   ).toBeVisible()
 }
 
+/**
+ * Each window names the country alike in its shared head, on the tab it is
+ * open on, and stays on the code-based address it opened.
+ *
+ * @param tabs The windows, each with its address and the page key of its tab.
+ * @param name The name both heads show.
+ */
+async function expectHeads(
+  tabs: readonly { tab: Page; url: string; currentPage: string }[],
+  name: string,
+): Promise<void> {
+  for (const { tab, url, currentPage } of tabs) {
+    await expectCountryPageHead(expect, tab, {
+      code: 'qj',
+      name,
+      appName: APP_NAME,
+      currentPage,
+    })
+    await expect(tab.getByTestId('country-head-code')).toHaveText('qj')
+    await expect(tab).toHaveURL(url)
+  }
+}
+
 /** Read a base or correction in place; names do not move their language row. */
 async function expectName(
   page: Page,
@@ -99,8 +126,8 @@ test('keeps the live country name and code URLs in Names and Overview through re
     await openNames(page)
     await gotoPage(observer, COUNTRY_PATH, PAGE_READY)
     const tabs = [
-      { tab: page, url: page.url() },
-      { tab: observer, url: observer.url() },
+      { tab: page, url: page.url(), currentPage: NAMES },
+      { tab: observer, url: observer.url(), currentPage: OVERVIEW },
     ]
     const live = await watchI18nLivePages(expect, [page, observer])
 
@@ -127,47 +154,14 @@ test('keeps the live country name and code URLs in Names and Overview through re
         await typeInto(page.getByTestId(INPUT), step.value)
         await saveName(page, step.message)
       }
-      const displayName = step.value || 'Unnamed country'
-      for (const { tab, url } of tabs) {
-        await expect(tab.getByTestId('hilos-page-head-title')).toHaveText(
-          displayName,
-        )
-        await expect(
-          tab.getByTestId('hilos-breadcrumb').locator('[aria-current="page"]'),
-        ).toHaveText(displayName)
-        await expect(tab).toHaveTitle(`${displayName} · BTC Tracker`)
-        await expect(tab.getByTestId('country-head-code')).toHaveText('qj')
-        await expect(tab).toHaveURL(url)
-        await expect(
-          tab.getByTestId('hilos-page-tab-hilos_i18n_country'),
-        ).toHaveAttribute('href', COUNTRY_PATH)
-        await expect(
-          tab.getByTestId('hilos-page-tab-hilos_i18n_country_names'),
-        ).toHaveAttribute('href', NAMES_PATH)
-      }
+      await expectHeads(tabs, step.value || 'Unnamed country')
       await live.unchanged()
     }
 
     await gotoPage(page, NAMES_PATH, PAGE_READY)
     await observer.reload()
     await expectPageReady(observer)
-    for (const { tab, url } of tabs) {
-      await expect(tab.getByTestId('hilos-page-head-title')).toHaveText(
-        'Unnamed country',
-      )
-      await expect(
-        tab.getByTestId('hilos-breadcrumb').locator('[aria-current="page"]'),
-      ).toHaveText('Unnamed country')
-      await expect(tab).toHaveTitle('Unnamed country · BTC Tracker')
-      await expect(tab.getByTestId('country-head-code')).toHaveText('qj')
-      await expect(tab).toHaveURL(url)
-      await expect(
-        tab.getByTestId('hilos-page-tab-hilos_i18n_country'),
-      ).toHaveAttribute('href', COUNTRY_PATH)
-      await expect(
-        tab.getByTestId('hilos-page-tab-hilos_i18n_country_names'),
-      ).toHaveAttribute('href', NAMES_PATH)
-    }
+    await expectHeads(tabs, 'Unnamed country')
     await openName(page, 'edit-en')
     await expect(page.getByTestId(INPUT)).toHaveValue('')
     await expect(page.getByTestId(SUBMIT)).toBeDisabled()

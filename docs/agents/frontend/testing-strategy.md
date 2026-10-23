@@ -285,12 +285,20 @@ binance-btc-tracker additionally carries the separate cluster proof in
 reads identically through every master (HIL-1465).
 
 The languages and countries section is proved on every kit by the same 25
-`i18n-*.spec.ts` files with the same test titles: binance-btc-tracker (Vue),
-tasks (React) and polls (Angular). The Vue kit moved from chat to
-binance-btc-tracker on the owner's word (2026-10-15), taking about 4.4 minutes
-off chat-e2e, the floor of the run; ecommerce-shop and online-testing mount the
-section without specs. The section's tests share the database state in file
-order, and each demo's `helpers/i18n.ts` is its test-command helper (HIL-1504).
+`i18n-*.spec.ts` files: binance-btc-tracker (Vue), tasks (React) and polls
+(Angular). Their test titles match but for the country head scenarios of
+`i18n-country-card` and `i18n-country-name-write`, which each kit splits its
+own way. The Vue kit moved from chat to binance-btc-tracker on the owner's word
+(2026-10-15), taking about 4.4 minutes off chat-e2e, the floor of the run. The
+country's shared head, its Overview · Names row, its live name and its live 404
+are proved in these files on all three kits, through the checks of
+`framework/frontend/e2e/i18n.ts`: `expectCountryPageHead`,
+`watchI18nLivePages`, `expectDeletedCountryCard` and
+`expectDeletedCountryCardReloaded`. The temporary React head specs of
+ecommerce-shop (HIL-1604) moved into tasks (HIL-1606), so ecommerce-shop and
+online-testing mount the section without specs. The section's tests share the
+database state in file order, and each demo's `helpers/i18n.ts` is its
+test-command helper (HIL-1504).
 
 **What stays in chat:** its product (the specs marked `demo`), the stand's own
 specs (marked `stand`), the shell (`a11y`, `about`, `navigation`, `layout`,
@@ -751,7 +759,11 @@ the cluster spec.
 
 `i18n.ts` owns `i18nNameRow` and `i18nLocaleRow`, a names or locales row found
 through its stable control, and the checks the three kits meet alike:
-`expectDefaultLanguageHeader` and `expectNoOtherLanguageNames`, each taking the
+`expectDefaultLanguageHeader`, `expectNoOtherLanguageNames`,
+`expectCountryPageHead` (a country's shared head, trail and Overview · Names
+row on either tab) and `expectDeletedCountryCard` /
+`expectDeletedCountryCardReloaded` (a deleted country's tab as the live 404,
+with the deletion line and, after a reload, without it), each taking the
 spec's `expect` first, then its `Page`; the tests, their order and navigation
 stay in the demo spec. Beside them, `settleRemovedRow` (`table.ts`) waits a
 removed row out through the table's Apply gate, and `countSentFrames`

@@ -1,5 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
-import { countSentFrames } from '../../../../../framework/frontend/e2e/index.js'
+import {
+  countSentFrames,
+  expectCountryPageHead,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import {
   expectDocumentUnchanged,
@@ -10,36 +13,26 @@ import {
 } from '../helpers/page.js'
 import { clickSubmit } from '../helpers/session.js'
 
+const APP_NAME = 'BTC Tracker'
 const OVERVIEW = 'hilos_i18n_country'
 const NAMES = 'hilos_i18n_country_names'
 const OVERVIEW_PATH = '/hilos/i18n/countries/us'
 const NAMES_PATH = '/hilos/i18n/countries/us/names'
 
 /**
- * The shared head of the reflowed United States on either tab: the one h1 with
- * the live name, the country's own block, the breadcrumb, and the Overview ·
- * Names row of native links with only the rendered tab current. The child card
- * the legacy shell drew under its heading is gone.
+ * The United States head on either tab: the shared checks, then the country's
+ * own block, which carries no action.
+ *
+ * @param page A page on the country's Overview or Names tab.
+ * @param current The page key of the tab on screen.
  */
 async function expectCountryHead(page: Page, current: string): Promise<void> {
-  await expect(page.getByTestId('hilos-page-head')).toBeVisible()
-  await expect(page.getByTestId('hilos-page-head-skeleton')).toHaveCount(0)
-  const heading = page.getByRole('heading', { level: 1 })
-  await expect(heading).toHaveCount(1)
-  await expect(heading).toHaveAttribute('data-id', 'hilos-page-head-title')
-  await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
-    'United States',
-  )
-  await expect(page).toHaveTitle('United States · BTC Tracker')
-
-  const crumbs = page.getByTestId('hilos-breadcrumb')
-  await expect(crumbs).toHaveAccessibleName('Breadcrumb')
-  await expect(crumbs.locator('[aria-current="page"]')).toHaveText(
-    'United States',
-  )
-  await expect(
-    page.getByTestId('hilos-breadcrumb-hilos_i18n_countries'),
-  ).toHaveAttribute('href', '/hilos/i18n/countries')
+  await expectCountryPageHead(expect, page, {
+    code: 'us',
+    name: 'United States',
+    appName: APP_NAME,
+    currentPage: current,
+  })
 
   const block = page.getByTestId('hilos-page-head-block')
   await expect(block.getByTestId('country-head-tile')).toHaveText('us')
@@ -49,27 +42,6 @@ async function expectCountryHead(page: Page, current: string): Promise<void> {
     'Currency $ USD · Default locale not chosen',
   )
   await expect(page.getByTestId('hilos-page-head-action')).toHaveCount(0)
-
-  const tabs = page.getByTestId('hilos-page-tabs')
-  await expect(tabs).toHaveAccessibleName('Country pages')
-  await expect(tabs.getByRole('link')).toHaveText(['Overview', 'Names'])
-  const overview = tabs.getByTestId(`hilos-page-tab-${OVERVIEW}`)
-  const names = tabs.getByTestId(`hilos-page-tab-${NAMES}`)
-  await expect(overview).toHaveAttribute('href', OVERVIEW_PATH)
-  await expect(names).toHaveAttribute('href', NAMES_PATH)
-  for (const [tab, key] of [
-    [overview, OVERVIEW],
-    [names, NAMES],
-  ] as const) {
-    if (key === current) {
-      await expect(tab).toHaveAttribute('aria-current', 'page')
-    } else {
-      await expect(tab).not.toHaveAttribute('aria-current')
-    }
-  }
-
-  await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
-  await expect(page.getByTestId(`hilos-admin-child-${NAMES}`)).toHaveCount(0)
 }
 
 test('opens a reflowed country card directly with read-only details under the shared head', async ({

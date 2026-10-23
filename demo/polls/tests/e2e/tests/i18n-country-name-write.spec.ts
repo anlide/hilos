@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 import {
   countSentFrames,
   dismissToasts,
+  expectCountryPageHead,
   i18nNameRow,
   shownByTestId,
   watchHeight,
@@ -118,35 +119,31 @@ async function deleteName(page: Page): Promise<void> {
 }
 
 /**
- * Both windows name the country alike in the one h1, the last crumb and the
- * browser tab, and each keeps its own address on the code: the window's URL, the
- * hrefs of both tabs and the code in the head block never follow the name.
+ * Both windows name the country alike in their shared heads, each on the tab it
+ * stands on, and each keeps its own address on the code: the window's URL and
+ * the code in the head block never follow the name.
+ *
+ * @param windows The windows, each with its address and the page key of its tab.
+ * @param name The name both heads show.
  */
 async function expectBothHeads(
-  windows: readonly { tab: Page; path: string }[],
+  windows: readonly { tab: Page; path: string; currentPage: string }[],
   name: string,
 ): Promise<void> {
-  for (const { tab, path } of windows) {
-    const heading = tab.getByRole('heading', { level: 1 })
-    await expect(heading).toHaveCount(1)
-    await expect(heading).toHaveAttribute('data-id', 'hilos-page-head-title')
-    await expect(tab.getByTestId('hilos-page-head-title')).toHaveText(name)
-    const lastCrumb = tab
-      .getByTestId('hilos-breadcrumb')
-      .locator('[aria-current="page"]')
-    // The words are the name alone: the divider before the crumb is hidden from
-    // assistive technology, so only the accessibility tree reads them clean.
-    await expect(lastCrumb).toMatchAriaSnapshot(`- listitem: ${name}`)
-    await expect(lastCrumb.locator('a')).toHaveCount(0)
-    await expect(tab).toHaveTitle(`${name} · ${APP_NAME}`)
+  for (const { tab, path, currentPage } of windows) {
+    await expectCountryPageHead(expect, tab, {
+      code: 'qj',
+      name,
+      appName: APP_NAME,
+      currentPage,
+    })
+    // The last crumb's words are the name alone in the accessibility tree too:
+    // the divider before it is hidden from assistive technology.
+    await expect(
+      tab.getByTestId('hilos-breadcrumb').locator('[aria-current="page"]'),
+    ).toMatchAriaSnapshot(`- listitem: ${name}`)
     await expect(tab.getByTestId('country-head-code')).toHaveText('qj')
     await expect(tab).toHaveURL(new RegExp(`${path}$`))
-    await expect(
-      tab.getByTestId(`hilos-page-tab-${OVERVIEW_TAB}`),
-    ).toHaveAttribute('href', COUNTRY_PATH)
-    await expect(
-      tab.getByTestId(`hilos-page-tab-${NAMES_TAB}`),
-    ).toHaveAttribute('href', NAMES_PATH)
   }
 }
 
@@ -164,8 +161,8 @@ test('keeps the live country name and code URLs in Names and Overview through cr
     await openNames(page)
     await gotoPage(observer, COUNTRY_PATH, PAGE_READY)
     const windows = [
-      { tab: page, path: NAMES_PATH },
-      { tab: observer, path: COUNTRY_PATH },
+      { tab: page, path: NAMES_PATH, currentPage: NAMES_TAB },
+      { tab: observer, path: COUNTRY_PATH, currentPage: OVERVIEW_TAB },
     ]
     await expectBothHeads(windows, UNNAMED)
 

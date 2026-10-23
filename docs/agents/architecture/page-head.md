@@ -285,7 +285,7 @@ gate or enable Internationalization as a whole.
 
 1. Put the redraw behind **HIL-1606** with `blocked-after`, and wait for its
    merge: it is the shared component and navigation verification gate across
-   Vue, React and Angular (not in the code yet — HIL-1606).
+   Vue, React and Angular.
 2. Identify the owner and its tabs from the catalog tree. Declare entity
    boundaries, Breadcrumb captions and adoption in the backend catalog:
    `entity: true`, `breadcrumb: '<caption>'`, and `pageHead: true` on the owner.
@@ -421,8 +421,20 @@ gate or enable Internationalization as a whole.
 7. Use the same shared head and name path in Angular: the `#head*` templates of
    step 3 and the `bindPageInstanceName` effect of step 4.
 8. Move this owner's navigation checks from child cards to tabs, using the
-   shared coverage established by HIL-1606. That coverage is
-   (not in the code yet — HIL-1606).
+   shared coverage established by HIL-1606. That coverage is the shared check
+   `expectCountryPageHead` in `framework/frontend/e2e/i18n.ts` and its three
+   carriers. The check reads a country's head on either tab: one `h1`, the
+   last crumb and the browser tab carry the shown name, the named Breadcrumb
+   ends in a crumb that is text, the Overview · Names row keeps its code-based
+   addresses with only the tab on screen current, and no child cards stand
+   under the head. The carriers are the country specs of `binance-btc-tracker`
+   (Vue), `tasks` (React) and `polls` (Angular): `i18n-country-card` reads both
+   tabs opened directly, switched in place and reloaded,
+   `i18n-country-name-write` the live name in two windows,
+   `i18n-country-name-delete` the head's title, and `i18n-country-delete` the
+   live 404 through `expectDeletedCountryCard` and
+   `expectDeletedCountryCardReloaded`. The country's own block stays in each
+   spec, with the fixture it describes.
 
 After adoption, check both Overview and a child tab: same breadcrumb through
 the owner, correct current tab, one head and row, no leftover child cards, and
@@ -474,7 +486,7 @@ sequence without studying these files. They do not specify a future API.
 | Angular head and country | `framework/frontend/angular/src/HilosPageHead.ts`, `HilosBreadcrumb.ts`, `HilosLink.ts`, `HilosAdminPage.ts`; `framework/frontend/core/src/routing/hilosAdmin.ts`; `framework/frontend/angular/src/admin/i18n/details/HilosI18nCountryPage.ts`, `HilosI18nCountryNamesPage.ts` | In the code: the shared head, block and row; `HilosAdminPage` draws it for an answer naming `pageHeadOwner`; the live name bound in the country pages' effect; both country tabs stand on it with the Overview · Names row |
 | Live 404, server | `AbstractPage::resolvePageResource`, `PageResource::db`, `BrowserContext::refuseDeletedPageResources`, `PageSignalRouter::refuseDeletedResource` | In the code: other open windows get `not_found` and `transitionMessage`; the initiator keeps its acknowledgement and goes to the country list |
 | Live 404, clients | `framework/frontend/core/src/routing/pageViewState.ts`, `framework/frontend/core/src/dom/focusTrap.ts`; per kit under `framework/frontend/{vue,react,angular}/src/`: `ErrorPage`, `HilosView`, `HilosAdminPage` and the internal bridge `hilosPageErrorBoundaryKey.ts` (Vue), `hilosPageErrorBoundaryContext.ts` (React), `hilosPageErrorBoundaryToken.ts` (Angular); both country tabs in `admin/i18n/details/` (`HilosI18nCountryPage`, `HilosI18nCountryNamesPage`) | In the code: `ErrorPage` draws `error.transitionMessage` as a line; the outlet keeps a registered page through a live 404 `not_found`; `HilosAdminPage` with `preserveModalDraftsOnDelete` replaces head, row, cards and body with one `ErrorPage` and keeps its dialogs mounted, returning their focus to Back to home; both country tabs opt in with their edit window |
-| Adoption gate | HIL-1606 | Shared e2e navigation coverage before other owners' redraws (not in the code yet — HIL-1606) |
+| Adoption gate | `expectCountryPageHead` in `framework/frontend/e2e/i18n.ts`; `i18n-country-card`, `i18n-country-name-write`, `i18n-country-name-delete` and `i18n-country-delete` in `demo/binance-btc-tracker`, `demo/tasks` and `demo/polls` | In the code: the shared e2e navigation coverage of HIL-1606, before other owners' redraws; one check reads the country head, trail and Overview · Names row on all three kits, and each kit's specs keep the country's own block |
 
 `PageCatalogConstants` names the optional catalog fields `breadcrumb`, `entity`
 and `pageHead`, separately from wire keys. `PageCatalogResolver::rowOwner()`
@@ -621,16 +633,14 @@ The head's `data-id`s are `hilos-page-head`, `hilos-page-head-block`,
 `hilos-page-tabs` and `hilos-page-tab-<page>`, beside the breadcrumb's
 `hilos-breadcrumb` and `hilos-breadcrumb-<page>`. The country block adds
 `country-head-tile`, `country-head-code`, `country-head-own` and
-`country-head-description`; the binance e2e specs `i18n-country-card`,
-`i18n-country-names`, `i18n-country-name-write` and `i18n-country-name-delete`
-read them. The React head and country draw the same `data-id`s: the React demo
-`tasks` reads them in its country specs, and `ecommerce-shop` checks the
-country head through `expectCountryPageHead` in
-`framework/frontend/e2e/i18n.ts`. The Angular head and country draw the same
-`data-id`s too: the Angular demo `polls` reads them in its country specs
-`i18n-country-card`, `i18n-country-names`, `i18n-country-name-write` and
-`i18n-country-name-delete`, where `i18n-country-name-write` also covers the
-live name in two windows.
+`country-head-description`. The React and Angular heads and countries draw the
+same `data-id`s. Each kit reads them in the same country specs of its demo —
+`binance-btc-tracker` (Vue), `tasks` (React) and `polls` (Angular):
+`i18n-country-card` and `i18n-country-name-write` check the head, trail and row
+through `expectCountryPageHead` in `framework/frontend/e2e/i18n.ts` and the
+country block on their own, `i18n-country-name-write` also covers the live name
+in two windows, and `i18n-country-name-delete` reads the head's title.
+`i18n-country-names` reads only the Names table under that head.
 
 The implementing leaf clears only the markers for behavior it lands, in the
 same commit, following [rule-authoring.md](../rule-authoring.md#a-rule-written-ahead-of-its-code).
